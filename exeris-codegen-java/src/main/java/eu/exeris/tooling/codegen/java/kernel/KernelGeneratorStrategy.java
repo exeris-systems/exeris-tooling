@@ -1,6 +1,5 @@
 package eu.exeris.tooling.codegen.java.kernel;
 
-import eu.exeris.tooling.codegen.core.PluggableBackend;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.core.generator.GeneratorRegistry;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
@@ -37,7 +36,7 @@ public class KernelGeneratorStrategy {
     }
 
     public List<GeneratedFile> generate(DomainMetadata metadata) {
-        return registry.generateAll(metadata, PluggableBackend.KERNEL);
+        return registry.generateAll(metadata);
     }
 
     public GeneratorRegistry getRegistry() { return registry; }

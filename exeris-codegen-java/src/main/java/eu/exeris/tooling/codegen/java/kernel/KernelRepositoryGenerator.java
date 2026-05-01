@@ -2,7 +2,6 @@ package eu.exeris.tooling.codegen.java.kernel;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import eu.exeris.tooling.codegen.core.PluggableBackend;
 import eu.exeris.tooling.codegen.core.generator.BackendGenerator;
 import eu.exeris.tooling.codegen.core.generator.BackendGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
@@ -340,9 +339,6 @@ public class KernelRepositoryGenerator implements BackendGenerator {
     private String capitalize(String s) {
         return s.isEmpty() ? s : Character.toUpperCase(s.charAt(0)) + s.substring(1);
     }
-
-    @Override
-    public PluggableBackend backend() { return PluggableBackend.KERNEL; }
 
     @Override
     public ArtifactType artifactType() { return ArtifactType.REPOSITORY; }

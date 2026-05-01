@@ -1,6 +1,5 @@
 package eu.exeris.tooling.codegen.java.kernel;
 
-import eu.exeris.tooling.codegen.core.PluggableBackend;
 import eu.exeris.tooling.codegen.core.generator.BackendGenerator;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
@@ -505,11 +504,6 @@ public class KernelSagaGenerator implements BackendGenerator {
     private String uncapitalize(String s) {
         if (s == null || s.isEmpty()) return s;
         return Character.toLowerCase(s.charAt(0)) + s.substring(1);
-    }
-
-    @Override
-    public PluggableBackend backend() {
-        return PluggableBackend.KERNEL;
     }
 
     @Override

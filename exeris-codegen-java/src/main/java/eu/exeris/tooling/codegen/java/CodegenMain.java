@@ -1,7 +1,6 @@
 package eu.exeris.tooling.codegen.java;
 
 import eu.exeris.tooling.codegen.core.OutputWriter;
-import eu.exeris.tooling.codegen.core.PluggableBackend;
 import eu.exeris.tooling.codegen.core.generator.BackendGenerator;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.core.generator.GeneratorRegistry;
@@ -37,7 +36,6 @@ import java.util.stream.Stream;
  * java -cp ... eu.exeris.tooling.codegen.java.CodegenMain \
  *     --metadata-dir=target/exeris-metadata \
  *     --output-dir=target/generated-sources/exeris \
- *     --backend=KERNEL \
  *     --base-package=eu.exeris.foundation
  * </pre>
  *
@@ -58,7 +56,6 @@ public final class CodegenMain {
             // Parse arguments
             Path metadataDir = null;
             Path outputDir = null;
-            PluggableBackend backend = PluggableBackend.KERNEL;
             String basePackage = null;
 
             for (String arg : args) {
@@ -66,9 +63,6 @@ public final class CodegenMain {
                     metadataDir = Path.of(arg.substring("--metadata-dir=".length()));
                 } else if (arg.startsWith("--output-dir=")) {
                     outputDir = Path.of(arg.substring("--output-dir=".length()));
-                } else if (arg.startsWith("--backend=")) {
-                    String backendName = arg.substring("--backend=".length());
-                    backend = PluggableBackend.valueOf(backendName.toUpperCase());
                 } else if (arg.startsWith("--base-package=")) {
                     basePackage = arg.substring("--base-package=".length());
                 }
@@ -81,7 +75,7 @@ public final class CodegenMain {
 
             System.out.println("\n📂 Metadata dir:  " + metadataDir);
             System.out.println("📁 Output dir:    " + outputDir);
-            System.out.println("🎯 Backend:       " + backend);
+            System.out.println("🎯 Target:        Exeris Kernel");
             System.out.println("📦 Base package:  " + (basePackage != null ? basePackage : "(auto-detect)"));
 
             // Load metadata
@@ -121,7 +115,7 @@ public final class CodegenMain {
             KernelGeneratorStrategy strategy = new KernelGeneratorStrategy();
             GeneratorRegistry registry = strategy.getRegistry();
 
-            List<BackendGenerator> generators = registry.getGenerators(backend);
+            List<BackendGenerator> generators = registry.getGenerators();
 
             // Filter out application generator (we'll handle it separately)
             generators = generators.stream()
@@ -228,7 +222,6 @@ public final class CodegenMain {
         System.err.println("  --metadata-dir=<path>   Path to exeris-metadata JSON files");
         System.err.println("  --output-dir=<path>     Path for generated Java sources");
         System.err.println("\nOptional:");
-        System.err.println("  --backend=KERNEL        Target backend (KERNEL, SPRING, QUARKUS, MICRONAUT)");
         System.err.println("  --base-package=<pkg>    Base package for application classes");
     }
 }

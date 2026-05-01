@@ -1,22 +1,22 @@
 package eu.exeris.tooling.codegen.core.generator;
 
-import eu.exeris.tooling.codegen.core.PluggableBackend;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 
 /**
- * Base interface for all backend-specific code generators.
+ * Base interface for all kernel-target code generators.
  * <p>
- * Each generator produces code for a specific backend (KERNEL, SPRING, etc.)
- * and a specific artifact type (Controller, Service, Repository, etc.).
+ * Each generator produces a specific artifact (handler, service, repository,
+ * saga, OpenAPI spec, …) for a single Exeris kernel target. There is no
+ * "backend" abstraction — the kernel is the only generation target. Detachment
+ * to community/enterprise tiers is a runtime dependency swap, not a codegen
+ * variation.
  *
  * <h2>Implementation Guidelines</h2>
  * <ul>
  *   <li>Generators must be stateless</li>
  *   <li>Generated code must be readable (Glass Box principle)</li>
- *   <li>No cross-backend dependencies (Sovereignty First)</li>
  * </ul>
  *
- * @author Exeris Team
  * @since 0.2.0
  */
 public interface BackendGenerator {
@@ -28,13 +28,6 @@ public interface BackendGenerator {
      * @return generated file containing code
      */
     GeneratedFile generate(DomainMetadata metadata);
-
-    /**
-     * The backend this generator targets.
-     *
-     * @return the target backend
-     */
-    PluggableBackend backend();
 
     /**
      * The type of artifact this generator produces.

@@ -1,6 +1,5 @@
 package eu.exeris.tooling.codegen.java.kernel;
 
-import eu.exeris.tooling.codegen.core.PluggableBackend;
 import eu.exeris.tooling.codegen.core.generator.BackendGenerator;
 import eu.exeris.tooling.codegen.core.generator.BackendGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
@@ -188,11 +187,6 @@ public class KernelHandlerGenerator implements BackendGenerator {
 
     private String toLowerFirst(String s) {
         return s.isEmpty() ? s : Character.toLowerCase(s.charAt(0)) + s.substring(1);
-    }
-
-    @Override
-    public PluggableBackend backend() {
-        return PluggableBackend.KERNEL;
     }
 
     @Override

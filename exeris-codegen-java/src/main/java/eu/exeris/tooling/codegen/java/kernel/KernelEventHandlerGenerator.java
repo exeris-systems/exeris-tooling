@@ -1,6 +1,5 @@
 package eu.exeris.tooling.codegen.java.kernel;
 
-import eu.exeris.tooling.codegen.core.PluggableBackend;
 import eu.exeris.tooling.codegen.core.generator.BackendGenerator;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata;
@@ -196,11 +195,6 @@ public class KernelEventHandlerGenerator implements BackendGenerator {
             result.append(Character.toUpperCase(c));
         }
         return result.toString();
-    }
-
-    @Override
-    public PluggableBackend backend() {
-        return PluggableBackend.KERNEL;
     }
 
     @Override
