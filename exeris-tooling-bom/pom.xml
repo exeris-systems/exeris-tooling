@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>eu.exeris.tooling</groupId>
+        <artifactId>exeris-tooling-root</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>exeris-tooling-bom</artifactId>
+    <packaging>pom</packaging>
+
+    <name>Exeris Tooling :: BOM</name>
+    <description>Bill of materials for tooling modules and third-party deps.</description>
+
+    <properties>
+        <exeris.sdk.version>0.1.0-SNAPSHOT</exeris.sdk.version>
+
+        <auto-service.version>1.1.1</auto-service.version>
+        <jackson.version>2.18.2</jackson.version>
+        <freemarker.version>2.3.33</freemarker.version>
+
+        <junit.version>5.11.4</junit.version>
+        <assertj.version>3.27.3</assertj.version>
+        <compile-testing.version>0.21.0</compile-testing.version>
+        <json-schema-validator.version>1.5.4</json-schema-validator.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- Exeris SDK -->
+            <dependency>
+                <groupId>eu.exeris</groupId>
+                <artifactId>exeris-sdk-annotations</artifactId>
+                <version>${exeris.sdk.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>eu.exeris</groupId>
+                <artifactId>exeris-sdk-source-model</artifactId>
+                <version>${exeris.sdk.version}</version>
+            </dependency>
+
+            <!-- Internal tooling modules -->
+            <dependency>
+                <groupId>eu.exeris.tooling</groupId>
+                <artifactId>exeris-processor</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>eu.exeris.tooling</groupId>
+                <artifactId>exeris-codegen-core</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>eu.exeris.tooling</groupId>
+                <artifactId>exeris-codegen-java</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- Google Auto Service (annotation processor self-registration) -->
+            <dependency>
+                <groupId>com.google.auto.service</groupId>
+                <artifactId>auto-service</artifactId>
+                <version>${auto-service.version}</version>
+            </dependency>
+
+            <!-- Jackson 2.x (build-time JSON I/O for metadata files) -->
+            <dependency>
+                <groupId>com.fasterxml.jackson.core</groupId>
+                <artifactId>jackson-databind</artifactId>
+                <version>${jackson.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.fasterxml.jackson.datatype</groupId>
+                <artifactId>jackson-datatype-jsr310</artifactId>
+                <version>${jackson.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.fasterxml.jackson.dataformat</groupId>
+                <artifactId>jackson-dataformat-yaml</artifactId>
+                <version>${jackson.version}</version>
+            </dependency>
+
+            <!-- Freemarker (template engine for codegen) -->
+            <dependency>
+                <groupId>org.freemarker</groupId>
+                <artifactId>freemarker</artifactId>
+                <version>${freemarker.version}</version>
+            </dependency>
+
+            <!-- Test deps -->
+            <dependency>
+                <groupId>org.junit.jupiter</groupId>
+                <artifactId>junit-jupiter</artifactId>
+                <version>${junit.version}</version>
+                <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.assertj</groupId>
+                <artifactId>assertj-core</artifactId>
+                <version>${assertj.version}</version>
+                <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>com.google.testing.compile</groupId>
+                <artifactId>compile-testing</artifactId>
+                <version>${compile-testing.version}</version>
+                <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>com.networknt</groupId>
+                <artifactId>json-schema-validator</artifactId>
+                <version>${json-schema-validator.version}</version>
+                <scope>test</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+</project>

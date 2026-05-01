@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>eu.exeris.tooling</groupId>
+        <artifactId>exeris-tooling-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+        <relativePath>../exeris-tooling-parent</relativePath>
+    </parent>
+
+    <artifactId>exeris-codegen-core</artifactId>
+    <packaging>jar</packaging>
+    <name>Exeris Tooling :: Codegen Core</name>
+    <description>
+        Shared code-generation infrastructure: Freemarker template engine,
+        metadata loading from exeris-metadata/*.json, generator registry, and
+        pluggable backend abstractions. Target: Exeris kernel only.
+    </description>
+
+    <dependencies>
+        <!-- Canonical metadata records consumed by all generators -->
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-sdk-source-model</artifactId>
+        </dependency>
+
+        <!-- Freemarker for template-based generation -->
+        <dependency>
+            <groupId>org.freemarker</groupId>
+            <artifactId>freemarker</artifactId>
+        </dependency>
+
+        <!-- Jackson for metadata loading -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.datatype</groupId>
+            <artifactId>jackson-datatype-jsr310</artifactId>
+        </dependency>
+
+        <!-- Testing -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+</project>
+
