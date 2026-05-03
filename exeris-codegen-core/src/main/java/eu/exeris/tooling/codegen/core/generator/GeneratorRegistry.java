@@ -25,7 +25,7 @@ import java.util.stream.Collectors;
  * List<GeneratedFile> files = registry.generateAll(metadata);
  * }</pre>
  *
- * @since 0.2.0
+ * @since 0.1.0
  */
 public class GeneratorRegistry {
 

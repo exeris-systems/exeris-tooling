@@ -6,10 +6,9 @@ import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
  * Base interface for all kernel-target code generators.
  * <p>
  * Each generator produces a specific artifact (handler, service, repository,
- * saga, OpenAPI spec, …) for a single Exeris kernel target. There is no
- * "backend" abstraction — the kernel is the only generation target. Detachment
- * to community/enterprise tiers is a runtime dependency swap, not a codegen
- * variation.
+ * saga, OpenAPI spec, …) targeting the Exeris kernel directly. Tier separation
+ * (community vs. enterprise) is a runtime dependency swap, not a codegen
+ * concern.
  *
  * <h2>Implementation Guidelines</h2>
  * <ul>

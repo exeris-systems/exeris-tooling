@@ -12,7 +12,7 @@ import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
  * Handlers receive requests from Http3ServerExchange and delegate to services.
  *
  * @author Exeris Team
- * @since 0.2.0
+ * @since 0.1.0
  */
 public class KernelHandlerGenerator implements KernelArtifactGenerator {
 

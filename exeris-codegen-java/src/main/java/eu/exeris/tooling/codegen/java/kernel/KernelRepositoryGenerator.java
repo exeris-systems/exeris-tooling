@@ -19,7 +19,7 @@ import java.util.Set;
  * Uses pure JDBC, no ORM, optimized for performance.
  *
  * @author Exeris Team
- * @since 0.2.0
+ * @since 0.1.0
  */
 public class KernelRepositoryGenerator implements KernelArtifactGenerator {
 

@@ -10,7 +10,7 @@ package eu.exeris.tooling.codegen.core.generator;
  * @param extension    the file extension (e.g., "java", "sql", "ts")
  *
  * @author Exeris Team
- * @since 0.2.0
+ * @since 0.1.0
  */
 public record GeneratedFile(
     String packageName,
