@@ -16,13 +16,13 @@ public record GeneratedFile(
     String packageName,
     String className,
     String content,
-    BackendGenerator.ArtifactType artifactType,
+    KernelArtifactGenerator.ArtifactType artifactType,
     String extension
 ) {
     /**
      * Constructor with default .java extension for backward compatibility.
      */
-    public GeneratedFile(String packageName, String className, String content, BackendGenerator.ArtifactType artifactType) {
+    public GeneratedFile(String packageName, String className, String content, KernelArtifactGenerator.ArtifactType artifactType) {
         this(packageName, className, content, artifactType, "java");
     }
 
@@ -53,13 +53,13 @@ public record GeneratedFile(
         private String packageName = "";
         private String className = "";
         private String content = "";
-        private BackendGenerator.ArtifactType artifactType;
+        private KernelArtifactGenerator.ArtifactType artifactType;
         private String extension = "java";
 
         public Builder packageName(String v) { this.packageName = v; return this; }
         public Builder className(String v) { this.className = v; return this; }
         public Builder content(String v) { this.content = v; return this; }
-        public Builder artifactType(BackendGenerator.ArtifactType v) { this.artifactType = v; return this; }
+        public Builder artifactType(KernelArtifactGenerator.ArtifactType v) { this.artifactType = v; return this; }
         public Builder extension(String v) { this.extension = v; return this; }
 
         public GeneratedFile build() {

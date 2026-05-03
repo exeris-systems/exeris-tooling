@@ -1,6 +1,6 @@
 package eu.exeris.tooling.codegen.java.kernel;
 
-import eu.exeris.tooling.codegen.core.generator.BackendGenerator;
+import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
@@ -20,7 +20,7 @@ import eu.exeris.sdk.sourcemodel.ast.SagaMetadata;
  * @author Exeris Team
  * @since 0.1.0
  */
-public class KernelEventHandlerGenerator implements BackendGenerator {
+public class KernelEventHandlerGenerator implements KernelArtifactGenerator {
 
     @Override
     public GeneratedFile generate(DomainMetadata metadata) {

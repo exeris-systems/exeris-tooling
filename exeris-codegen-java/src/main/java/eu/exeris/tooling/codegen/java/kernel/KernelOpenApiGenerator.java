@@ -1,6 +1,6 @@
 package eu.exeris.tooling.codegen.java.kernel;
 
-import eu.exeris.tooling.codegen.core.generator.BackendGenerator;
+import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.java.openapi.OpenApiGenerator;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
@@ -8,7 +8,7 @@ import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import java.io.IOException;
 
 /**
- * KernelOpenApiGenerator - Adapter dla OpenApiGenerator zgodny z BackendGenerator.
+ * KernelOpenApiGenerator - Adapter dla OpenApiGenerator zgodny z KernelArtifactGenerator.
  *
  * <p>Generuje specyfikację OpenAPI 3.1 dla każdej domeny.
  * Wynikowy plik YAML może być:
@@ -21,7 +21,7 @@ import java.io.IOException;
  *
  * @see OpenApiGenerator
  */
-public class KernelOpenApiGenerator implements BackendGenerator {
+public class KernelOpenApiGenerator implements KernelArtifactGenerator {
 
     private final OpenApiGenerator openApiGenerator;
 

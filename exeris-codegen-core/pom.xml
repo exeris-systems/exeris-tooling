@@ -15,9 +15,9 @@
     <packaging>jar</packaging>
     <name>Exeris Tooling :: Codegen Core</name>
     <description>
-        Shared code-generation infrastructure: Freemarker template engine,
-        metadata loading from exeris-metadata/*.json, generator registry, and
-        pluggable backend abstractions. Target: Exeris kernel only.
+        Shared code-generation infrastructure: metadata loading from
+        exeris-metadata/*.json, generator registry, and shared utilities.
+        Target: Exeris kernel only.
     </description>
 
     <dependencies>
@@ -25,12 +25,6 @@
         <dependency>
             <groupId>eu.exeris</groupId>
             <artifactId>exeris-sdk-source-model</artifactId>
-        </dependency>
-
-        <!-- Freemarker for template-based generation -->
-        <dependency>
-            <groupId>org.freemarker</groupId>
-            <artifactId>freemarker</artifactId>
         </dependency>
 
         <!-- Jackson for metadata loading -->

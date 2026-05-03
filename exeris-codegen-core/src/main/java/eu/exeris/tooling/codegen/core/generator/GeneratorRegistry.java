@@ -12,7 +12,7 @@ import java.util.stream.Collectors;
 /**
  * Registry for kernel-target code generators.
  * <p>
- * Holds an ordered list of {@link BackendGenerator} instances and dispatches
+ * Holds an ordered list of {@link KernelArtifactGenerator} instances and dispatches
  * generation across them. Single-target: there is no per-backend keying — every
  * registered generator targets the Exeris kernel.
  *
@@ -29,14 +29,14 @@ import java.util.stream.Collectors;
  */
 public class GeneratorRegistry {
 
-    private final List<BackendGenerator> generators = new ArrayList<>();
+    private final List<KernelArtifactGenerator> generators = new ArrayList<>();
 
-    public void register(BackendGenerator generator) {
+    public void register(KernelArtifactGenerator generator) {
         generators.add(generator);
     }
 
-    public void registerAll(BackendGenerator... toRegister) {
-        for (BackendGenerator g : toRegister) {
+    public void registerAll(KernelArtifactGenerator... toRegister) {
+        for (KernelArtifactGenerator g : toRegister) {
             register(g);
         }
     }
@@ -44,13 +44,13 @@ public class GeneratorRegistry {
     /**
      * @return all generators sorted by priority (lower runs first).
      */
-    public List<BackendGenerator> getGenerators() {
+    public List<KernelArtifactGenerator> getGenerators() {
         return generators.stream()
-                .sorted(Comparator.comparingInt(BackendGenerator::priority))
+                .sorted(Comparator.comparingInt(KernelArtifactGenerator::priority))
                 .toList();
     }
 
-    public Optional<BackendGenerator> getGenerator(BackendGenerator.ArtifactType artifactType) {
+    public Optional<KernelArtifactGenerator> getGenerator(KernelArtifactGenerator.ArtifactType artifactType) {
         return getGenerators().stream()
                 .filter(g -> g.artifactType() == artifactType)
                 .findFirst();
@@ -65,7 +65,7 @@ public class GeneratorRegistry {
     }
 
     public Optional<GeneratedFile> generate(DomainMetadata metadata,
-                                            BackendGenerator.ArtifactType artifactType) {
+                                            KernelArtifactGenerator.ArtifactType artifactType) {
         return getGenerator(artifactType)
                 .filter(g -> g.supports(metadata))
                 .map(g -> g.generate(metadata));

@@ -17,9 +17,9 @@ import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
  *   <li>Generated code must be readable (Glass Box principle)</li>
  * </ul>
  *
- * @since 0.2.0
+ * @since 0.1.0
  */
-public interface BackendGenerator {
+public interface KernelArtifactGenerator {
 
     /**
      * Generate code for the given domain metadata.
@@ -61,41 +61,16 @@ public interface BackendGenerator {
      * Types of artifacts that can be generated.
      */
     enum ArtifactType {
-        // Core artifacts
-        ENTITY,
         REPOSITORY,
         SERVICE,
-        SERVICE_INTERFACE,
         CONTROLLER,
-        DTO,
-        MAPPER,
-        CLIENT,  // HTTP/3 client for service-to-service communication
-
-        // Event-driven artifacts
+        CLIENT,          // HTTP/3 client for service-to-service communication
         EVENT,           // Domain event classes and publisher
         EVENT_HANDLER,
-        PROJECTION,
-        QUERY_HANDLER,
-        COMMAND_HANDLER,
-
-        // Graph artifacts
         GRAPH_SYNC,      // Graph synchronization service
-
-        // Saga orchestration
         SAGA,            // Saga definition and executor
-        SAGA_ORCHESTRATOR,
-
-        // Infrastructure
         CONFIGURATION,
-        SECURITY_CONFIG,
-        ROUTING,
-        APPLICATION_BOOTSTRAP,
-        OPENAPI_SPEC,  // OpenAPI 3.1 specification (YAML)
-
-        // Polyfills
-        SAGA_POLYFILL,
-        EVENT_STORE_POLYFILL,
-        TRANSACTION_MANAGER_POLYFILL
+        OPENAPI_SPEC     // OpenAPI 3.1 specification (YAML)
     }
 }
 

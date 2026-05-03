@@ -1,7 +1,7 @@
 package eu.exeris.tooling.codegen.java;
 
 import eu.exeris.tooling.codegen.core.OutputWriter;
-import eu.exeris.tooling.codegen.core.generator.BackendGenerator;
+import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.core.generator.GeneratorRegistry;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
@@ -115,16 +115,11 @@ public final class CodegenMain {
             KernelGeneratorStrategy strategy = new KernelGeneratorStrategy();
             GeneratorRegistry registry = strategy.getRegistry();
 
-            List<BackendGenerator> generators = registry.getGenerators();
-
-            // Filter out application generator (we'll handle it separately)
-            generators = generators.stream()
-                    .filter(g -> !(g instanceof KernelApplicationGenerator))
-                    .toList();
+            List<KernelArtifactGenerator> generators = registry.getGenerators();
 
             for (DomainMetadata domain : domains) {
                 System.out.println("\n   📝 " + domain.entityName() + ":");
-                for (BackendGenerator generator : generators) {
+                for (KernelArtifactGenerator generator : generators) {
                     GeneratedFile file = generator.generate(domain);
                     if (file != null) {
                         writeFile(writer, file);

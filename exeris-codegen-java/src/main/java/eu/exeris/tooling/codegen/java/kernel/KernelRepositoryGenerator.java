@@ -2,8 +2,8 @@ package eu.exeris.tooling.codegen.java.kernel;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import eu.exeris.tooling.codegen.core.generator.BackendGenerator;
-import eu.exeris.tooling.codegen.core.generator.BackendGenerator.ArtifactType;
+import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
+import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
@@ -21,7 +21,7 @@ import java.util.Set;
  * @author Exeris Team
  * @since 0.2.0
  */
-public class KernelRepositoryGenerator implements BackendGenerator {
+public class KernelRepositoryGenerator implements KernelArtifactGenerator {
 
     @Override
     public GeneratedFile generate(DomainMetadata metadata) {

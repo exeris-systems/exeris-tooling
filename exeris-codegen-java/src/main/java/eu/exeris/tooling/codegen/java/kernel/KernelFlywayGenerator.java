@@ -1,7 +1,7 @@
 package eu.exeris.tooling.codegen.java.kernel;
 
-import eu.exeris.tooling.codegen.core.generator.BackendGenerator;
-import eu.exeris.tooling.codegen.core.generator.BackendGenerator.ArtifactType;
+import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
+import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
@@ -16,7 +16,7 @@ import java.util.Set;
  * - Indexes for searchable/filterable fields
  * - Soft delete, audit, version columns
  */
-public class KernelFlywayGenerator implements BackendGenerator {
+public class KernelFlywayGenerator implements KernelArtifactGenerator {
 
     // System fields that are handled separately (not from domain fields)
     private static final Set<String> SYSTEM_FIELDS = Set.of(

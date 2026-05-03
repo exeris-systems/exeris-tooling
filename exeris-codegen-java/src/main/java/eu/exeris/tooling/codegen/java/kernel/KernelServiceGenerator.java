@@ -1,11 +1,11 @@
 package eu.exeris.tooling.codegen.java.kernel;
 
-import eu.exeris.tooling.codegen.core.generator.BackendGenerator;
-import eu.exeris.tooling.codegen.core.generator.BackendGenerator.ArtifactType;
+import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
+import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 
-public class KernelServiceGenerator implements BackendGenerator {
+public class KernelServiceGenerator implements KernelArtifactGenerator {
 
     @Override
     public GeneratedFile generate(DomainMetadata metadata) {

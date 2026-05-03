@@ -1,6 +1,6 @@
 package eu.exeris.tooling.codegen.java.kernel;
 
-import eu.exeris.tooling.codegen.core.generator.BackendGenerator;
+import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 
@@ -12,7 +12,7 @@ import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
  *
  * @see eu.exeris.kernel.transport.http3.client.ExerisWebClient
  */
-public class KernelClientGenerator implements BackendGenerator {
+public class KernelClientGenerator implements KernelArtifactGenerator {
 
     private static final String WEB_CLIENT_IMPORT = "eu.exeris.kernel.transport.http3.client.ExerisWebClient";
     private static final String WEB_CLIENT_EXCEPTION_IMPORT = "eu.exeris.kernel.transport.http3.client.ExerisWebClient.WebClientException";

@@ -1,7 +1,7 @@
 package eu.exeris.tooling.codegen.java.kernel;
 
-import eu.exeris.tooling.codegen.core.generator.BackendGenerator;
-import eu.exeris.tooling.codegen.core.generator.BackendGenerator.ArtifactType;
+import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
+import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 
@@ -14,7 +14,7 @@ import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
  * @author Exeris Team
  * @since 0.2.0
  */
-public class KernelHandlerGenerator implements BackendGenerator {
+public class KernelHandlerGenerator implements KernelArtifactGenerator {
 
     @Override
     public GeneratedFile generate(DomainMetadata metadata) {
@@ -37,6 +37,7 @@ public class KernelHandlerGenerator implements BackendGenerator {
         code.append("import org.slf4j.Logger;\n");
         code.append("import org.slf4j.LoggerFactory;\n\n");
         code.append("import java.util.List;\n");
+        code.append("import java.util.Map;\n");
         code.append("import java.util.UUID;\n\n");
 
         // Javadoc
@@ -166,7 +167,7 @@ public class KernelHandlerGenerator implements BackendGenerator {
 
         code.append("    private void sendError(Http3ServerExchange exchange, int status, String message) {\n");
         code.append("        try {\n");
-        code.append("            String json = \"{\\\"error\\\":\\\"\" + message + \"\\\"}\";\n");
+        code.append("            String json = MAPPER.writeValueAsString(Map.of(\"error\", message));\n");
         code.append("            exchange.response().sendHeaders(status, null);\n");
         code.append("            exchange.response().sendText(json);\n");
         code.append("        } catch (Exception e) {\n");

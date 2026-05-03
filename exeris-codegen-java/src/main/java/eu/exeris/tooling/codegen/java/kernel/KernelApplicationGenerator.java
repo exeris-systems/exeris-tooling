@@ -1,6 +1,6 @@
 package eu.exeris.tooling.codegen.java.kernel;
 
-import eu.exeris.tooling.codegen.core.generator.BackendGenerator;
+import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 
@@ -19,7 +19,7 @@ import java.util.List;
  * @author Exeris Team
  * @since 0.1.0
  */
-public class KernelApplicationGenerator implements BackendGenerator {
+public class KernelApplicationGenerator implements KernelArtifactGenerator {
 
     /**
      * Generates Application.java - the entry point.

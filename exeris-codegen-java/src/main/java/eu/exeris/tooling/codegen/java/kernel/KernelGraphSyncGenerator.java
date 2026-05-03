@@ -1,6 +1,6 @@
 package eu.exeris.tooling.codegen.java.kernel;
 
-import eu.exeris.tooling.codegen.core.generator.BackendGenerator;
+import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
@@ -28,7 +28,7 @@ import java.util.stream.Collectors;
  * @since 0.1.0
  * @see eu.exeris.kernel.graph.sync.GraphSyncService
  */
-public class KernelGraphSyncGenerator implements BackendGenerator {
+public class KernelGraphSyncGenerator implements KernelArtifactGenerator {
 
     @Override
     public GeneratedFile generate(DomainMetadata metadata) {

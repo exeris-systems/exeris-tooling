@@ -18,9 +18,9 @@ migrations, sagas, and corresponding Angular/TypeScript frontend artifacts.
 exeris-metadata/Order.json         ← canonical DomainMetadata (records defined in
                                      exeris-sdk-source-model)
         ↓
-[ exeris-codegen-core ]            ← Freemarker template engine + GeneratorRegistry
-   ├── exeris-codegen-java         ← kernel-target Java emission (JavaPoet)
-   └── exeris-codegen-ts           ← Angular components, services, stores (Handlebars)
+[ exeris-codegen-core ]            ← MetadataLoader + GeneratorRegistry
+   ├── exeris-codegen-java         ← kernel-target Java emission
+   └── exeris-codegen-ts           ← Angular components, services, stores (npm package, separate build)
         ↓
 src/main/generated/java/...        ← committed to repo, regenerated on demand
 src/main/generated/typescript/...  ← Studio-friendly clean output
@@ -31,7 +31,7 @@ src/main/generated/typescript/...  ← Studio-friendly clean output
 | Module | Stack | Purpose |
 |---|---|---|
 | [`exeris-processor`](exeris-processor) | Java 26 | Annotation processor — extracts `DomainMetadata` from annotated sources at compile time. Self-registered via `@AutoService`. |
-| [`exeris-codegen-core`](exeris-codegen-core) | Java 26 | Shared infrastructure: Freemarker engine, `MetadataLoader`, `GeneratorRegistry`, `PluggableBackend` config. |
+| [`exeris-codegen-core`](exeris-codegen-core) | Java 26 | Shared infrastructure: `MetadataLoader`, `GeneratorRegistry`, `KernelArtifactGenerator` interface. |
 | [`exeris-codegen-java`](exeris-codegen-java) | Java 26 | Java code generators — kernel-target only (handlers, services, repositories, sagas, events, OpenAPI). |
 | [`exeris-codegen-ts`](exeris-codegen-ts) | Node 18+ / TypeScript | Angular generators — component, service, store, guard, form, list, detail, app structure, sagas. |
 | [`exeris-e2e-tests`](exeris-e2e-tests) | JUnit 5 | Codegen output verification. Heavyweight runtime integration tests (Postgres, RestAssured) live in downstream platform repos. |
@@ -56,9 +56,13 @@ tooling).
 
 ## Build
 
+> **Note:** `exeris-codegen-ts` is **not** part of the Maven reactor. The Java
+> and TypeScript generators are built independently — `mvn install` builds only
+> the Java side. Build the TS generator separately as shown below.
+
 ```bash
-mvn clean install            # build + test all Java modules
-cd exeris-codegen-ts && npm install && npm test    # frontend generator
+mvn clean install                                  # build + test Java modules (no TS)
+cd exeris-codegen-ts && npm install && npm test    # frontend generator (separate build)
 ```
 
 ## License

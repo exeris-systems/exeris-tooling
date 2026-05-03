@@ -29,17 +29,6 @@ import java.util.*;
  * For each processed domain class, generates a JSON file in
  * {@code exeris-metadata/} containing complete domain metadata.
  *
- * <h2>Migration from Corelio</h2>
- * This processor replaces the legacy {@code CorelioDomainProcessor}.
- * Key changes:
- * <ul>
- *   <li>Rebranded package: {@code com.corelio.sdk.processor} → {@code eu.exeris.tooling.processor}</li>
- *   <li>New annotations: {@code @CorelioDomain} → {@code @ExerisDomain}</li>
- *   <li>New metadata directory: {@code corelio-metadata} → {@code exeris-metadata}</li>
- * </ul>
- *
- * @author Exeris Team
- * @version 0.1.0
  * @since 0.1.0
  */
 @AutoService(Processor.class)

@@ -20,12 +20,13 @@
 
         <auto-service.version>1.1.1</auto-service.version>
         <jackson.version>2.18.2</jackson.version>
-        <freemarker.version>2.3.33</freemarker.version>
+        <swagger-parser.version>2.1.22</swagger-parser.version>
 
         <junit.version>5.11.4</junit.version>
         <assertj.version>3.27.3</assertj.version>
         <compile-testing.version>0.21.0</compile-testing.version>
         <json-schema-validator.version>1.5.4</json-schema-validator.version>
+        <approvaltests.version>24.16.0</approvaltests.version>
     </properties>
 
     <dependencyManagement>
@@ -83,11 +84,11 @@
                 <version>${jackson.version}</version>
             </dependency>
 
-            <!-- Freemarker (template engine for codegen) -->
+            <!-- Swagger Parser (OpenAPI 3 emission) -->
             <dependency>
-                <groupId>org.freemarker</groupId>
-                <artifactId>freemarker</artifactId>
-                <version>${freemarker.version}</version>
+                <groupId>io.swagger.parser.v3</groupId>
+                <artifactId>swagger-parser</artifactId>
+                <version>${swagger-parser.version}</version>
             </dependency>
 
             <!-- Test deps -->
@@ -113,6 +114,12 @@
                 <groupId>com.networknt</groupId>
                 <artifactId>json-schema-validator</artifactId>
                 <version>${json-schema-validator.version}</version>
+                <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>com.approvaltests</groupId>
+                <artifactId>approvaltests</artifactId>
+                <version>${approvaltests.version}</version>
                 <scope>test</scope>
             </dependency>
         </dependencies>
