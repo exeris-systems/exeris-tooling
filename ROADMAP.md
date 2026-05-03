@@ -24,7 +24,7 @@ This file tracks scope per milestone. Items marked `[ ]` are open; `[x]` shipped
 > Goal: regressions caught by CI, generated code provably compiles, processor diagnostics usable in real builds.
 
 - [ ] **CI** — `.github/workflows/build.yml` (clones + installs `exeris-sdk` first, then `mvn verify`)
-- [ ] **Compile-test gate** — KernelCodegenE2ETest currently asserts substring presence. Add a stage that compiles generator output against the kernel SPI in CI. **Highest priority — only deferred item that materially affects shipped quality.**
+- [x] **Compile-test gate** — `KernelCodegenCompileTest` runs the full Kernel generator strategy and feeds the union of generated `.java` artifacts plus a synthetic source entity through `javax.tools.JavaCompiler`, against minimal kernel SPI stubs in `src/test/java/eu/exeris/kernel/...`. Catches broken imports / removed-symbol references that the substring assertions in `KernelCodegenE2ETest` miss. Currently scoped to the no-events / no-saga / no-graph CRUD path; richer scenarios (Saga generator imports `tools.jackson.databind.*`, Events generator references `EventStore` / `OutboxSignal`, etc.) require Jackson 3 + larger SPI stub coverage and are tracked as a 0.3 follow-up
 - [ ] **Processor minors** (see [issue #2](https://github.com/exeris-systems/exeris-tooling/issues/2)): `triggerToEventSuffix` exact match; `-Aexeris.verbose` flag for `note()`; `e.toString()` + stack in error diagnostics; typed `AnnotationMirror` helper; `// LIMITATION` comments on `extractPathId`/`extractTargetEntityFromType`; `MetadataLoader` unused import; `@ActionParam`/`@InternalApi` default-drift verification against SDK
 - [ ] **Pre-publish POM metadata** — `<scm>`, `<url>`, `<developers>`, `<distributionManagement>`
 
