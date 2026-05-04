@@ -3,31 +3,18 @@ name: Claude Code Review
 on:
   pull_request:
     types: [opened, synchronize, ready_for_review, reopened]
-    # Optional: Only run on specific file changes
-    # paths:
-    #   - "src/**/*.ts"
-    #   - "src/**/*.tsx"
-    #   - "src/**/*.js"
-    #   - "src/**/*.jsx"
 
 jobs:
   claude-review:
-    # Optional: Filter by PR author
-    # if: |
-    #   github.event.pull_request.user.login == 'external-contributor' ||
-    #   github.event.pull_request.user.login == 'new-developer' ||
-    #   github.event.pull_request.author_association == 'FIRST_TIME_CONTRIBUTOR'
-
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: read
-      issues: read
+      pull-requests: write
       id-token: write
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 1
 
@@ -36,9 +23,36 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
-          plugins: 'code-review@claude-code-plugins'
-          prompt: '/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }}'
-          # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
-          # or https://code.claude.com/docs/en/cli-reference for available options
 
+          track_progress: true
+
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            Review this PR. The repo is a Java 26 / Maven project in the Exeris
+            open-core stack.
+
+            Focus on:
+            1. **Correctness** — bugs, edge cases, broken contracts, merge artifacts
+               (duplicated sections, orphan blocks, etc.)
+            2. **Scope** — does the diff match the PR title/description? Anything
+               in scope that's missing? Anything out of scope that should be split?
+            3. **Public API** — flag anything that would need deprecation handling
+               before 1.0.0 freezes the contract
+            4. **Build / publish** — POM correctness, missing javadoc/sources jars
+               on publishable modules, Maven Central metadata gaps
+            5. **Risk** — call out functional, security, performance risks
+               explicitly (state "none" if applicable; don't pad)
+
+            Skip cosmetic nits unless they affect the above. Be specific: cite
+            `file:line`. Lead with blockers, then in-scope improvements, then
+            non-blocking suggestions. End with a clear verdict
+            (LGTM / Approve with nits / Request changes).
+
+            Post your review as a single PR review (not many separate comments).
+            Use inline comments only when they materially help — file:line in the
+            text body is usually clearer.
+
+          claude_args: |
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh api:*),Bash(git log:*),Bash(git show:*),Bash(git diff:*),Bash(git status:*),Bash(git branch:*),Bash(git remote:*)"
