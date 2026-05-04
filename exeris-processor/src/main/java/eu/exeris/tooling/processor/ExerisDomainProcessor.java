@@ -467,9 +467,62 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             if (validationValues.containsKey("min")) builder.min(((Number) validationValues.get("min")).longValue());
             if (validationValues.containsKey("max")) builder.max(((Number) validationValues.get("max")).longValue());
             if (validationValues.containsKey("pattern")) builder.pattern((String) validationValues.get("pattern"));
+
+            applyDeprecatedValidationFallbacks(field, values, validationValues, builder);
         }
 
         return builder.build();
+    }
+
+    /**
+     * Read-and-warn fallback for the two attributes deprecated in SDK 0.2.0:
+     * {@code @Validation.required} and {@code @Validation.validateOn}. Both
+     * are scheduled for removal in SDK 1.0.0. During the 0.2.x window we carry
+     * the value over to the canonical {@code @Field} attribute when the
+     * canonical one is unset, and emit a build warning so users see a
+     * mechanical migration path before 1.0.0 turns the silent drop into a
+     * footgun.
+     */
+    private void applyDeprecatedValidationFallbacks(
+            VariableElement field,
+            Map<String, Object> fieldValues,
+            Map<String, Object> validationValues,
+            FieldMetadata.Builder builder) {
+
+        if (validationValues.containsKey("required")) {
+            Boolean validationRequired = (Boolean) validationValues.get("required");
+            if (Boolean.TRUE.equals(validationRequired)) {
+                if (!fieldValues.containsKey("required")) {
+                    builder.required(true);
+                }
+                warnDeprecatedValidationAttribute(field, "required", "@Field.required",
+                        "required-ness is a field-shape property, not a validation rule");
+            }
+        }
+
+        if (validationValues.containsKey("validateOn")) {
+            String validateOn = (String) validationValues.get("validateOn");
+            if (validateOn != null && !validateOn.isEmpty()) {
+                if ("CREATE".equals(validateOn) && !fieldValues.containsKey("inUpdate")) {
+                    builder.inUpdate(false);
+                } else if ("UPDATE".equals(validateOn) && !fieldValues.containsKey("inCreate")) {
+                    builder.inCreate(false);
+                }
+                warnDeprecatedValidationAttribute(field, "validateOn",
+                        "@Field.inCreate / @Field.inUpdate",
+                        "form-lifecycle scope is a field property, not a validation rule");
+            }
+        }
+    }
+
+    private void warnDeprecatedValidationAttribute(
+            VariableElement field, String attribute, String canonical, String reason) {
+        messager.printMessage(
+                Diagnostic.Kind.WARNING,
+                "[Exeris] @Validation." + attribute + " is deprecated for removal in SDK 1.0.0; "
+                        + "use " + canonical + " instead — " + reason
+                        + ". See MIGRATION.md in exeris-sdk.",
+                field);
     }
 
     private List<ActionMetadata> extractActionsMetadata(TypeElement element) {
