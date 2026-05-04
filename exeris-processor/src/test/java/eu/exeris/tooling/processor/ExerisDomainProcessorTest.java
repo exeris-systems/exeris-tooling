@@ -616,6 +616,76 @@ class ExerisDomainProcessorTest {
         }
 
         @Test
+        @DisplayName("@Field(inUpdate=false) AND @Validation(validateOn=\"CREATE\") — Field wins, still warns once")
+        void bothValidateOnFieldWinsStillWarns() throws IOException {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Item",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Field;
+                    import eu.exeris.sdk.annotation.Validation;
+
+                    @ExerisDomain(module = "catalog", path = "/items")
+                    public class Item {
+                        @Field(label = "Created At", inUpdate = false)
+                        @Validation(validateOn = "CREATE")
+                        private String createdAt;
+                    }
+                    """
+            );
+
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).succeeded();
+            assertThat(compilation).hadWarningContaining("@Validation.validateOn is deprecated");
+            assertProcessorWarningCount(compilation, 1);
+
+            JsonNode field = readFirstField(compilation, "Item");
+            assertThat(field.path("inUpdate").asBoolean(false))
+                    .as("@Field.inUpdate=false set explicitly — value preserved")
+                    .isFalse();
+        }
+
+        @Test
+        @DisplayName("@Validation(validateOn=\"FOO\") — unrecognized value, two warnings, no fallback")
+        void unrecognizedValidateOnTwoWarnings() throws IOException {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Item",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Field;
+                    import eu.exeris.sdk.annotation.Validation;
+
+                    @ExerisDomain(module = "catalog", path = "/items")
+                    public class Item {
+                        @Field(label = "Mystery")
+                        @Validation(validateOn = "MAYBE")
+                        private String mystery;
+                    }
+                    """
+            );
+
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).succeeded();
+            assertThat(compilation).hadWarningContaining("@Validation.validateOn is deprecated");
+            assertThat(compilation).hadWarningContaining(
+                    "@Validation.validateOn = \"MAYBE\" is not a recognized value");
+            assertProcessorWarningCount(compilation, 2);
+
+            JsonNode field = readFirstField(compilation, "Item");
+            // Neither inCreate nor inUpdate touched — both stay at builder default true.
+            assertThat(field.path("inCreate").asBoolean(false))
+                    .as("inCreate untouched at builder default true")
+                    .isTrue();
+            assertThat(field.path("inUpdate").asBoolean(false))
+                    .as("inUpdate untouched at builder default true")
+                    .isTrue();
+        }
+
+        @Test
         @DisplayName("@Validation() with empty validateOn (default) — no warning, no behavior change")
         void emptyValidateOnNoWarning() throws IOException {
             JavaFileObject source = JavaFileObjects.forSourceString(
