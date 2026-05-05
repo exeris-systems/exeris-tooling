@@ -744,6 +744,128 @@ class ExerisDomainProcessorTest {
         }
     }
 
+    @Nested
+    @DisplayName("Processor minors — trigger suffix mapping")
+    class TriggerSuffixTests {
+
+        @Test
+        @DisplayName("Each canonical Trigger maps to its expected event-name suffix")
+        void canonicalTriggerSuffixMapping() throws IOException {
+            // Repeatable @DomainEvent on one entity covers each branch of
+            // triggerToEventSuffix. Names are derived from
+            // <EntitySimpleName> + suffix. STATE_TRANSITION has no explicit
+            // suffix mapping and must fall through to the generic "Event".
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.DomainEvent;
+                    import eu.exeris.sdk.annotation.DomainEvent.Trigger;
+
+                    @ExerisDomain(module = "sales", path = "/orders")
+                    @DomainEvent(trigger = Trigger.CREATE,           topic = "orders.created")
+                    @DomainEvent(trigger = Trigger.UPDATE,           topic = "orders.updated")
+                    @DomainEvent(trigger = Trigger.DELETE,           topic = "orders.deleted")
+                    @DomainEvent(trigger = Trigger.FIELD_CHANGED,    topic = "orders.changed", field  = "status")
+                    @DomainEvent(trigger = Trigger.ACTION,           topic = "orders.action",  action = "cancel")
+                    @DomainEvent(trigger = Trigger.STATE_TRANSITION, topic = "orders.state")
+                    public class Order {
+                    }
+                    """
+            );
+
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).succeeded();
+
+            JsonNode events = readMetadataRoot(compilation, "Order").path("events");
+            assertThat(events.isArray()).isTrue();
+
+            // Collect derived event names (order does not matter — JSR 269 makes
+            // no guarantee about repeatable-annotation iteration order).
+            java.util.Set<String> names = new java.util.HashSet<>();
+            for (JsonNode event : events) {
+                names.add(event.path("name").asText());
+            }
+            assertThat(names).containsExactlyInAnyOrder(
+                    "OrderCreatedEvent",
+                    "OrderUpdatedEvent",
+                    "OrderDeletedEvent",
+                    "OrderChangedEvent",
+                    "OrderActionEvent",
+                    "OrderEvent"
+            );
+        }
+
+        private JsonNode readMetadataRoot(Compilation compilation, String entity) throws IOException {
+            JavaFileObject metadataFile = compilation.generatedFile(
+                    StandardLocation.CLASS_OUTPUT, "exeris-metadata/" + entity + ".json")
+                    .orElseThrow();
+            return new ObjectMapper().readTree(readContent(metadataFile));
+        }
+    }
+
+    @Nested
+    @DisplayName("Processor minors — -Aexeris.verbose option")
+    class VerboseOptionTests {
+
+        @Test
+        @DisplayName("Default build emits no [Exeris] NOTE messages (clean output)")
+        void defaultBuildIsQuiet() {
+            JavaFileObject source = simpleDomainSource();
+
+            Compilation compilation = javac()
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(source);
+
+            assertThat(compilation).succeeded();
+            long exerisNotes = compilation.notes().stream()
+                    .filter(d -> d.getMessage(null) != null
+                            && d.getMessage(null).contains("[Exeris]"))
+                    .count();
+            assertThat(exerisNotes)
+                    .as("[Exeris] NOTE messages with verbose unset")
+                    .isZero();
+        }
+
+        @Test
+        @DisplayName("-Aexeris.verbose=true emits per-entity [Exeris] NOTE messages")
+        void verboseFlagEmitsNotes() {
+            JavaFileObject source = simpleDomainSource();
+
+            Compilation compilation = javac()
+                    .withOptions("-Aexeris.verbose=true")
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(source);
+
+            assertThat(compilation).succeeded();
+            long exerisNotes = compilation.notes().stream()
+                    .filter(d -> d.getMessage(null) != null
+                            && d.getMessage(null).contains("[Exeris]"))
+                    .count();
+            assertThat(exerisNotes)
+                    .as("[Exeris] NOTE messages with verbose set")
+                    .isPositive();
+        }
+
+        private JavaFileObject simpleDomainSource() {
+            return JavaFileObjects.forSourceString(
+                    "com.example.Widget",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+
+                    @ExerisDomain(module = "core", path = "/widgets")
+                    public class Widget {
+                        private String name;
+                    }
+                    """
+            );
+        }
+    }
+
     // Helper methods
 
     private Compilation compileWithProcessor(JavaFileObject... sources) {

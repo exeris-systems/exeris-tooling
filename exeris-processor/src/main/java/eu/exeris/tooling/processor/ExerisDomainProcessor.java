@@ -37,6 +37,7 @@ import java.util.*;
         "eu.exeris.sdk.annotation.Saga"
 })
 @SupportedSourceVersion(SourceVersion.RELEASE_26)
+@SupportedOptions(ExerisDomainProcessor.OPTION_VERBOSE)
 @SuppressWarnings({
         "PMD.TooManyMethods",
         "PMD.CouplingBetweenObjects"
@@ -48,9 +49,19 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      */
     public static final String METADATA_DIR = "exeris-metadata";
 
+    /**
+     * Annotation processor option that opts in to per-entity progress notes
+     * and full stack traces on processing failures. Pass via
+     * {@code -Aexeris.verbose=true} to {@code javac} (or
+     * {@code <compilerArg>-Aexeris.verbose=true</compilerArg>} in the
+     * Maven compiler plugin).
+     */
+    public static final String OPTION_VERBOSE = "exeris.verbose";
+
     private ObjectMapper objectMapper;
     private Messager messager;
     private Filer filer;
+    private boolean verbose;
 
     /** Collected enums from all processed entities */
     private final Set<TypeElement> discoveredEnums = new HashSet<>();
@@ -68,6 +79,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         this.messager = processingEnv.getMessager();
         this.filer = processingEnv.getFiler();
         this.objectMapper = createObjectMapper();
+        this.verbose = Boolean.parseBoolean(
+                processingEnv.getOptions().getOrDefault(OPTION_VERBOSE, "false"));
     }
 
     @Override
@@ -100,7 +113,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                 writeMetadata("enum_" + enumElement.getSimpleName(), metadata);
                 note("Generated enum metadata: " + enumElement.getSimpleName());
             } catch (Exception e) {
-                error(enumElement, "Failed to process enum: " + e.getMessage());
+                reportProcessingFailure(enumElement, "Failed to process enum", e);
             }
         }
     }
@@ -225,7 +238,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
 
             note("Generated metadata for: " + entityName);
         } catch (Exception e) {
-            error(element, "Failed to process domain entity: " + e.getMessage());
+            reportProcessingFailure(element, "Failed to process domain entity", e);
         }
     }
 
@@ -247,7 +260,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             writeMetadata(sagaName, metadata);
             note("Generated saga metadata for: " + sagaName);
         } catch (Exception e) {
-            error(element, "Failed to process saga: " + e.getMessage());
+            reportProcessingFailure(element, "Failed to process saga", e);
         }
     }
 
@@ -600,10 +613,12 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         String type = param.asType().toString();
         Map<String, Object> values = extractAnnotationValues(annotation);
 
+        // Default `required = true` mirrors @ActionParam.required's annotation
+        // default (verified against exeris-sdk-annotations:ActionParam).
         return ActionParamMetadata.builder(name, type)
-                .displayName(values.containsKey("displayName") ? (String) values.get("displayName") : null)
-                .description(values.containsKey("description") ? (String) values.get("description") : null)
-                .required(values.containsKey("required") ? (Boolean) values.get("required") : true)
+                .displayName(getString(values, "displayName", null))
+                .description(getString(values, "description", null))
+                .required(getBoolean(values, "required", true))
                 .build();
     }
 
@@ -669,14 +684,26 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         return new DomainEventMetadata(name, topic, description, element.getSimpleName().toString());
     }
 
+    /**
+     * Maps a {@code DomainEvent.Trigger} enum constant name to the suffix
+     * appended to the entity name when the user did not supply an explicit
+     * event name. Uses exact-string matching: a future or user-extended
+     * enum value such as {@code BULK_CREATE} must not silently match
+     * {@code CREATE} and produce {@code CreatedEvent}. Triggers without an
+     * explicit suffix mapping (e.g., {@code STATE_TRANSITION},
+     * {@code SCHEDULED}, {@code MANUAL}, {@code SNAPSHOT}) fall through to
+     * the generic {@code "Event"} suffix.
+     */
     private String triggerToEventSuffix(String trigger) {
         if (trigger == null) return "Event";
-        if (trigger.contains("CREATE")) return "CreatedEvent";
-        if (trigger.contains("UPDATE")) return "UpdatedEvent";
-        if (trigger.contains("DELETE")) return "DeletedEvent";
-        if (trigger.contains("FIELD_CHANGED")) return "ChangedEvent";
-        if (trigger.contains("ACTION")) return "ActionEvent";
-        return "Event";
+        return switch (trigger) {
+            case "CREATE" -> "CreatedEvent";
+            case "UPDATE" -> "UpdatedEvent";
+            case "DELETE" -> "DeletedEvent";
+            case "FIELD_CHANGED" -> "ChangedEvent";
+            case "ACTION" -> "ActionEvent";
+            default -> "Event";
+        };
     }
 
     private List<RelationshipMetadata> extractRelationshipsMetadata(TypeElement element) {
@@ -715,7 +742,12 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         if (type instanceof DeclaredType declaredType) {
             List<? extends TypeMirror> typeArgs = declaredType.getTypeArguments();
             if (!typeArgs.isEmpty()) {
-                // For List<Entity>, Set<Entity>, etc.
+                // LIMITATION: returns the first type argument unconditionally, which
+                // is correct for List<Entity>/Set<Entity>/Optional<Entity> but wrong
+                // for Map<K,V> (returns the key, not the value-side entity). Acceptable
+                // today because @Relationship fields are by convention single-entity
+                // references; revisit if Map-valued relationships become a real
+                // pattern in user domains.
                 return typeArgs.get(0).toString();
             }
             return declaredType.asElement().getSimpleName().toString();
@@ -770,7 +802,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                 : element.getSimpleName().toString();
 
         return EventSourcedMetadata.builder(aggregateType)
-                .snapshotEvery(values.containsKey("snapshotEvery") ? (Integer) values.get("snapshotEvery") : 100)
+                .snapshotEvery(getInt(values, "snapshotEvery", 100))
                 .build();
     }
 
@@ -807,10 +839,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
 
             if (stepAnnotation != null) {
                 Map<String, Object> values = extractAnnotationValues(stepAnnotation);
-                String name = values.containsKey("name")
-                        ? (String) values.get("name")
-                        : method.getSimpleName().toString();
-                int order = values.containsKey("order") ? (Integer) values.get("order") : 1;
+                String name = getString(values, "name", method.getSimpleName().toString());
+                int order = getInt(values, "order", 1);
 
                 SagaStepMetadata.Builder builder = SagaStepMetadata.builder(name, order);
 
@@ -831,17 +861,24 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         return steps;
     }
 
+    /**
+     * KNOWN SDK ↔ AST DRIFT: the SDK {@code @InternalApi} annotation
+     * (consumers, rateLimit, requireMtls, timeout, documented) and the AST
+     * {@code InternalApiMetadata} record (hidden, readOnly, internal, reason,
+     * since, disabledActions, allowedRoles) describe two different concepts.
+     * Until the SDK side is reconciled, the only signal we can extract from
+     * {@code @InternalApi} is its presence — which we map to
+     * {@code internal = true}, matching the {@code InternalApiMetadata.internal()}
+     * static factory's intent. The other AST fields stay at their defaults
+     * (all false / null / empty); reading them would be a noop today since
+     * those attributes don't exist on the annotation.
+     */
     private InternalApiMetadata extractInternalApiMetadata(TypeElement element) {
         AnnotationMirror internalAnnotation = findAnnotation(element, "eu.exeris.sdk.annotation.InternalApi");
         if (internalAnnotation == null) return null;
 
-        Map<String, Object> values = extractAnnotationValues(internalAnnotation);
-
         return InternalApiMetadata.builder()
-                .hidden(values.containsKey("hidden") ? (Boolean) values.get("hidden") : false)
-                .readOnly(values.containsKey("readOnly") ? (Boolean) values.get("readOnly") : false)
-                .internal(values.containsKey("internal") ? (Boolean) values.get("internal") : true)
-                .reason(values.containsKey("reason") ? (String) values.get("reason") : null)
+                .internal(true)
                 .build();
     }
 
@@ -865,6 +902,43 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         }
 
         return values;
+    }
+
+    // ---------------------------------------------------------------------
+    // Typed accessors over the raw `Map<String, Object>` returned by
+    // extractAnnotationValues. The map only contains keys for attributes
+    // the user wrote *explicitly* — the JSR 269 API exposes defaults
+    // separately, and we deliberately ignore them so callers can distinguish
+    // "user wrote this" from "annotation default" (the warn-and-read fallback
+    // for deprecated @Validation attributes depends on that distinction).
+    //
+    // Direct casts at call sites are fragile: a numeric attribute that the
+    // SDK declares as `int` arrives as `Integer`, but `long` arrives as
+    // `Long` — a cross-cast (`(Long) values.get("count")` when the attribute
+    // is declared `int`) blows up the user's `mvn compile` with a
+    // ClassCastException, not a useful error. These helpers do the typed
+    // extraction once, with consistent default handling, so the rest of the
+    // processor reads cleanly and fails predictably.
+    // ---------------------------------------------------------------------
+
+    private static String getString(Map<String, Object> values, String key, String fallback) {
+        Object v = values.get(key);
+        return v instanceof String s ? s : fallback;
+    }
+
+    private static boolean getBoolean(Map<String, Object> values, String key, boolean fallback) {
+        Object v = values.get(key);
+        return v instanceof Boolean b ? b : fallback;
+    }
+
+    private static int getInt(Map<String, Object> values, String key, int fallback) {
+        Object v = values.get(key);
+        return v instanceof Number n ? n.intValue() : fallback;
+    }
+
+    private static long getLong(Map<String, Object> values, String key, long fallback) {
+        Object v = values.get(key);
+        return v instanceof Number n ? n.longValue() : fallback;
     }
 
     private void writeMetadata(String entityName, Object metadata) throws IOException {
@@ -895,12 +969,43 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         return mapper;
     }
 
+    /**
+     * Emits a NOTE diagnostic, but only when {@code -Aexeris.verbose=true}
+     * is set. Per-entity progress chatter pollutes downstream build output
+     * (one line per processed entity is amplified by IDE incremental builds)
+     * — opt-in keeps the default build clean while preserving the trail when
+     * users need to debug processor behaviour.
+     */
     private void note(String message) {
-        messager.printMessage(Diagnostic.Kind.NOTE, "[Exeris] " + message);
+        if (verbose) {
+            messager.printMessage(Diagnostic.Kind.NOTE, "[Exeris] " + message);
+        }
     }
 
     private void error(Element element, String message) {
         messager.printMessage(Diagnostic.Kind.ERROR, "[Exeris] " + message, element);
+    }
+
+    /**
+     * Surface a processing failure to the user. Always includes
+     * {@code e.toString()} (class + message) rather than {@code e.getMessage()}
+     * — many JDK exceptions return {@code null} from {@code getMessage()},
+     * which would have produced "Failed to process …: null" with no signal
+     * about what actually went wrong. Under {@code -Aexeris.verbose=true},
+     * also dumps the stack trace.
+     */
+    private void reportProcessingFailure(Element element, String prefix, Exception e) {
+        StringBuilder message = new StringBuilder("[Exeris] ")
+                .append(prefix)
+                .append(": ")
+                .append(e);
+        if (verbose) {
+            message.append(System.lineSeparator());
+            for (StackTraceElement frame : e.getStackTrace()) {
+                message.append("    at ").append(frame).append(System.lineSeparator());
+            }
+        }
+        messager.printMessage(Diagnostic.Kind.ERROR, message.toString(), element);
     }
 }
 
