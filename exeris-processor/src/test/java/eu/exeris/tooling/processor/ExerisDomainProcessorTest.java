@@ -1,5 +1,7 @@
 package eu.exeris.tooling.processor;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.testing.compile.Compilation;
 import com.google.testing.compile.JavaFileObjects;
 import org.junit.jupiter.api.DisplayName;
@@ -442,6 +444,303 @@ class ExerisDomainProcessorTest {
                     .contains("\"entityName\" : \"Order\"")
                     .contains("\"actions\"")
                     .contains("\"module\" : \"sales\"");
+        }
+    }
+
+    @Nested
+    @DisplayName("1.1.6 Deprecated @Validation read-and-warn (SDK 0.2.x → 1.0.0)")
+    class DeprecatedValidationFallbackTests {
+
+        @Test
+        @DisplayName("@Field(required=true) alone — no warning, required=true")
+        void canonicalFieldRequiredNoWarning() throws IOException {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Item",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Field;
+
+                    @ExerisDomain(module = "catalog", path = "/items")
+                    public class Item {
+                        @Field(label = "Name", required = true)
+                        private String name;
+                    }
+                    """
+            );
+
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).succeededWithoutWarnings();
+
+            String metadata = readContent(compilation.generatedFile(
+                    StandardLocation.CLASS_OUTPUT, "exeris-metadata/Item.json").orElseThrow());
+            assertThat(metadata).contains("\"required\" : true");
+        }
+
+        @Test
+        @DisplayName("@Validation(required=true) only — read-and-warn, required carries over")
+        void deprecatedValidationRequiredOnly() throws IOException {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Item",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Field;
+                    import eu.exeris.sdk.annotation.Validation;
+
+                    @ExerisDomain(module = "catalog", path = "/items")
+                    public class Item {
+                        @Field(label = "Name")
+                        @Validation(required = true)
+                        private String name;
+                    }
+                    """
+            );
+
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).succeeded();
+            assertThat(compilation)
+                    .hadWarningContaining("@Validation.required is deprecated")
+                    .inFile(source)
+                    .onLineContaining("private String name");
+            assertProcessorWarningCount(compilation, 1);
+
+            String metadata = readContent(compilation.generatedFile(
+                    StandardLocation.CLASS_OUTPUT, "exeris-metadata/Item.json").orElseThrow());
+            assertThat(metadata).contains("\"required\" : true");
+        }
+
+        @Test
+        @DisplayName("@Field(required=true) AND @Validation(required=true) — Field wins, still warns once")
+        void bothRequiredFieldWinsStillWarns() throws IOException {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Item",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Field;
+                    import eu.exeris.sdk.annotation.Validation;
+
+                    @ExerisDomain(module = "catalog", path = "/items")
+                    public class Item {
+                        @Field(label = "Name", required = true)
+                        @Validation(required = true)
+                        private String name;
+                    }
+                    """
+            );
+
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).succeeded();
+            assertThat(compilation).hadWarningContaining("@Validation.required is deprecated");
+            assertProcessorWarningCount(compilation, 1);
+
+            String metadata = readContent(compilation.generatedFile(
+                    StandardLocation.CLASS_OUTPUT, "exeris-metadata/Item.json").orElseThrow());
+            assertThat(metadata).contains("\"required\" : true");
+        }
+
+        @Test
+        @DisplayName("@Validation(validateOn=\"CREATE\") — maps to inUpdate=false, warns")
+        void deprecatedValidateOnCreate() throws IOException {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Item",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Field;
+                    import eu.exeris.sdk.annotation.Validation;
+
+                    @ExerisDomain(module = "catalog", path = "/items")
+                    public class Item {
+                        @Field(label = "Created At")
+                        @Validation(validateOn = "CREATE")
+                        private String createdAt;
+                    }
+                    """
+            );
+
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).succeeded();
+            assertThat(compilation)
+                    .hadWarningContaining("@Validation.validateOn is deprecated")
+                    .inFile(source)
+                    .onLineContaining("private String createdAt");
+            assertProcessorWarningCount(compilation, 1);
+
+            JsonNode field = readFirstField(compilation, "Item");
+            assertThat(field.path("inUpdate").asBoolean(false))
+                    .as("validateOn=CREATE should force inUpdate=false")
+                    .isFalse();
+            assertThat(field.path("inCreate").asBoolean(false))
+                    .as("inCreate left untouched at default true")
+                    .isTrue();
+        }
+
+        @Test
+        @DisplayName("@Validation(validateOn=\"UPDATE\") — maps to inCreate=false, warns")
+        void deprecatedValidateOnUpdate() throws IOException {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Item",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Field;
+                    import eu.exeris.sdk.annotation.Validation;
+
+                    @ExerisDomain(module = "catalog", path = "/items")
+                    public class Item {
+                        @Field(label = "Modified At")
+                        @Validation(validateOn = "UPDATE")
+                        private String modifiedAt;
+                    }
+                    """
+            );
+
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).succeeded();
+            assertProcessorWarningCount(compilation, 1);
+
+            JsonNode field = readFirstField(compilation, "Item");
+            assertThat(field.path("inCreate").asBoolean(false))
+                    .as("validateOn=UPDATE should force inCreate=false")
+                    .isFalse();
+            assertThat(field.path("inUpdate").asBoolean(false))
+                    .as("inUpdate left untouched at default true")
+                    .isTrue();
+        }
+
+        @Test
+        @DisplayName("@Field(inUpdate=false) AND @Validation(validateOn=\"CREATE\") — Field wins, still warns once")
+        void bothValidateOnFieldWinsStillWarns() throws IOException {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Item",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Field;
+                    import eu.exeris.sdk.annotation.Validation;
+
+                    @ExerisDomain(module = "catalog", path = "/items")
+                    public class Item {
+                        @Field(label = "Created At", inUpdate = false)
+                        @Validation(validateOn = "CREATE")
+                        private String createdAt;
+                    }
+                    """
+            );
+
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).succeeded();
+            assertThat(compilation).hadWarningContaining("@Validation.validateOn is deprecated");
+            assertProcessorWarningCount(compilation, 1);
+
+            JsonNode field = readFirstField(compilation, "Item");
+            assertThat(field.path("inUpdate").asBoolean(false))
+                    .as("@Field.inUpdate=false set explicitly — value preserved")
+                    .isFalse();
+        }
+
+        @Test
+        @DisplayName("@Validation(validateOn=\"FOO\") — unrecognized value, two warnings, no fallback")
+        void unrecognizedValidateOnTwoWarnings() throws IOException {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Item",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Field;
+                    import eu.exeris.sdk.annotation.Validation;
+
+                    @ExerisDomain(module = "catalog", path = "/items")
+                    public class Item {
+                        @Field(label = "Mystery")
+                        @Validation(validateOn = "MAYBE")
+                        private String mystery;
+                    }
+                    """
+            );
+
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).succeeded();
+            assertThat(compilation).hadWarningContaining("@Validation.validateOn is deprecated");
+            assertThat(compilation).hadWarningContaining(
+                    "@Validation.validateOn = \"MAYBE\" is not a recognized value");
+            assertProcessorWarningCount(compilation, 2);
+
+            JsonNode field = readFirstField(compilation, "Item");
+            // Neither inCreate nor inUpdate touched — both stay at builder default true.
+            assertThat(field.path("inCreate").asBoolean(false))
+                    .as("inCreate untouched at builder default true")
+                    .isTrue();
+            assertThat(field.path("inUpdate").asBoolean(false))
+                    .as("inUpdate untouched at builder default true")
+                    .isTrue();
+        }
+
+        @Test
+        @DisplayName("@Validation() with empty validateOn (default) — no warning, no behavior change")
+        void emptyValidateOnNoWarning() throws IOException {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Item",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Field;
+                    import eu.exeris.sdk.annotation.Validation;
+
+                    @ExerisDomain(module = "catalog", path = "/items")
+                    public class Item {
+                        @Field(label = "Email")
+                        @Validation(email = true, minLength = 3)
+                        private String email;
+                    }
+                    """
+            );
+
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).succeededWithoutWarnings();
+        }
+
+        /**
+         * Counts only the warnings emitted by the processor itself (i.e. those
+         * carrying our {@code [Exeris]} prefix). javac may emit additional
+         * "removal" warnings at the user-side {@code @Validation(required=true)}
+         * call site because the SDK declares those attributes
+         * {@code @Deprecated(forRemoval=true)}; those are independent of this
+         * test's contract and should not be counted.
+         */
+        private void assertProcessorWarningCount(Compilation compilation, int expected) {
+            long count = compilation.warnings().stream()
+                    .filter(d -> d.getMessage(null) != null
+                            && d.getMessage(null).contains("[Exeris]"))
+                    .count();
+            assertThat(count)
+                    .as("processor-emitted [Exeris] warnings")
+                    .isEqualTo(expected);
+        }
+
+        /**
+         * Parses the generated {@code exeris-metadata/<entity>.json} and returns
+         * its first {@code fields[]} entry as a JsonNode. Using JsonNode rather
+         * than asserting on raw string substrings makes the inCreate/inUpdate
+         * checks robust against {@code @JsonInclude(NON_DEFAULT)} dropping
+         * primitive-default values from the wire form.
+         */
+        private JsonNode readFirstField(Compilation compilation, String entity) throws IOException {
+            JavaFileObject metadataFile = compilation.generatedFile(
+                    StandardLocation.CLASS_OUTPUT, "exeris-metadata/" + entity + ".json")
+                    .orElseThrow();
+            JsonNode root = new ObjectMapper().readTree(readContent(metadataFile));
+            return root.path("fields").get(0);
         }
     }
 

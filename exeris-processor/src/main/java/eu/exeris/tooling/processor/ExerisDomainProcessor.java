@@ -467,9 +467,88 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             if (validationValues.containsKey("min")) builder.min(((Number) validationValues.get("min")).longValue());
             if (validationValues.containsKey("max")) builder.max(((Number) validationValues.get("max")).longValue());
             if (validationValues.containsKey("pattern")) builder.pattern((String) validationValues.get("pattern"));
+
+            applyDeprecatedValidationFallbacks(field, values, validationValues, builder);
         }
 
         return builder.build();
+    }
+
+    /**
+     * Read-and-warn fallback for the two attributes deprecated in SDK 0.2.0:
+     * {@code @Validation.required} and {@code @Validation.validateOn}. Both
+     * are scheduled for removal in SDK 1.0.0. During the 0.2.x window we carry
+     * the value over to the canonical {@code @Field} attribute when the
+     * canonical one is unset, and emit a build warning so users see a
+     * mechanical migration path before 1.0.0 turns the silent drop into a
+     * footgun.
+     *
+     * <p><strong>Why {@code @Validation(required = false)} does not warn:</strong>
+     * {@code false} is the annotation default — a user who writes it
+     * explicitly is using the deprecated attribute meaninglessly (no
+     * required-ness is conveyed either way). Warning here would nag without
+     * giving the user anything to fix on their side beyond removing a no-op
+     * attribute. The {@code forRemoval=true} on the SDK side already produces
+     * a javac removal warning at the call site, which is sufficient nudge.
+     *
+     * <p><strong>Unrecognized {@code validateOn} values:</strong> only
+     * {@code "CREATE"} and {@code "UPDATE"} are mapped. Any other non-empty
+     * string emits an additional warning so the user sees that their intent
+     * is being silently dropped during the deprecation window — not at SDK
+     * 1.0.0, when the attribute is gone and the silent drop is permanent.
+     */
+    private void applyDeprecatedValidationFallbacks(
+            VariableElement field,
+            Map<String, Object> fieldValues,
+            Map<String, Object> validationValues,
+            FieldMetadata.Builder builder) {
+
+        if (validationValues.containsKey("required")) {
+            Boolean validationRequired = (Boolean) validationValues.get("required");
+            if (Boolean.TRUE.equals(validationRequired)) {
+                if (!fieldValues.containsKey("required")) {
+                    builder.required(true);
+                }
+                warnDeprecatedValidationAttribute(field, "required", "@Field.required",
+                        "required-ness is a field-shape property, not a validation rule");
+            }
+        }
+
+        if (validationValues.containsKey("validateOn")) {
+            String validateOn = (String) validationValues.get("validateOn");
+            if (validateOn != null && !validateOn.isEmpty()) {
+                boolean recognized = "CREATE".equals(validateOn) || "UPDATE".equals(validateOn);
+                if ("CREATE".equals(validateOn) && !fieldValues.containsKey("inUpdate")) {
+                    builder.inUpdate(false);
+                } else if ("UPDATE".equals(validateOn) && !fieldValues.containsKey("inCreate")) {
+                    builder.inCreate(false);
+                }
+                warnDeprecatedValidationAttribute(field, "validateOn",
+                        "@Field.inCreate / @Field.inUpdate",
+                        "form-lifecycle scope is a field property, not a validation rule");
+                if (!recognized) {
+                    messager.printMessage(
+                            Diagnostic.Kind.WARNING,
+                            "[Exeris] @Validation.validateOn = \"" + validateOn + "\" is not a "
+                                    + "recognized value (expected \"CREATE\" or \"UPDATE\"); "
+                                    + "no fallback applied — your intent is being silently "
+                                    + "dropped now and will continue to be when SDK 1.0.0 "
+                                    + "removes the attribute. Migrate to @Field.inCreate / "
+                                    + "@Field.inUpdate.",
+                            field);
+                }
+            }
+        }
+    }
+
+    private void warnDeprecatedValidationAttribute(
+            VariableElement field, String attribute, String canonical, String reason) {
+        messager.printMessage(
+                Diagnostic.Kind.WARNING,
+                "[Exeris] @Validation." + attribute + " is deprecated for removal in SDK 1.0.0; "
+                        + "use " + canonical + " instead — " + reason
+                        + ". See MIGRATION.md in exeris-sdk.",
+                field);
     }
 
     private List<ActionMetadata> extractActionsMetadata(TypeElement element) {
