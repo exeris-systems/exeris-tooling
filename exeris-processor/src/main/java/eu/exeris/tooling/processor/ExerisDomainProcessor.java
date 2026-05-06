@@ -58,6 +58,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      */
     public static final String OPTION_VERBOSE = "exeris.verbose";
 
+    /** Diagnostic prefix prepended to every NOTE/WARNING/ERROR this processor emits. */
+    private static final String DIAG_PREFIX = "[Exeris] ";
+
     private ObjectMapper objectMapper;
     private Messager messager;
     private Filer filer;
@@ -461,8 +464,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         if (values.containsKey("hidden")) builder.hidden((Boolean) values.get("hidden"));
         if (values.containsKey("inCreate")) builder.inCreate((Boolean) values.get("inCreate"));
         if (values.containsKey("inUpdate")) builder.inUpdate((Boolean) values.get("inUpdate"));
-        if (values.containsKey("minLength")) builder.minLength((Integer) values.get("minLength"));
-        if (values.containsKey("maxLength")) builder.maxLength((Integer) values.get("maxLength"));
+        if (values.containsKey("minLength")) builder.minLength(getInt(values, "minLength", 0));
+        if (values.containsKey("maxLength")) builder.maxLength(getInt(values, "maxLength", 0));
 
         // Handle computed fields
         if (values.containsKey("computed")) builder.computed((Boolean) values.get("computed"));
@@ -542,7 +545,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                 if (!recognized) {
                     messager.printMessage(
                             Diagnostic.Kind.WARNING,
-                            "[Exeris] @Validation.validateOn = \"" + validateOn + "\" is not a "
+                            DIAG_PREFIX + "@Validation.validateOn = \"" + validateOn + "\" is not a "
                                     + "recognized value (expected \"CREATE\" or \"UPDATE\"); "
                                     + "no fallback applied — your intent is being silently "
                                     + "dropped now and will continue to be when SDK 1.0.0 "
@@ -558,7 +561,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             VariableElement field, String attribute, String canonical, String reason) {
         messager.printMessage(
                 Diagnostic.Kind.WARNING,
-                "[Exeris] @Validation." + attribute + " is deprecated for removal in SDK 1.0.0; "
+                DIAG_PREFIX + "@Validation." + attribute + " is deprecated for removal in SDK 1.0.0; "
                         + "use " + canonical + " instead — " + reason
                         + ". See MIGRATION.md in exeris-sdk.",
                 field);
@@ -819,7 +822,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
 
         if (values.containsKey("description")) builder.description((String) values.get("description"));
         if (values.containsKey("timeout")) builder.timeout((String) values.get("timeout"));
-        if (values.containsKey("maxRetries")) builder.maxRetries((Integer) values.get("maxRetries"));
+        if (values.containsKey("maxRetries")) builder.maxRetries(getInt(values, "maxRetries", 0));
 
         // Extract saga steps from methods
         List<SagaStepMetadata> steps = extractSagaSteps(element);
@@ -936,11 +939,6 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         return v instanceof Number n ? n.intValue() : fallback;
     }
 
-    private static long getLong(Map<String, Object> values, String key, long fallback) {
-        Object v = values.get(key);
-        return v instanceof Number n ? n.longValue() : fallback;
-    }
-
     private void writeMetadata(String entityName, Object metadata) throws IOException {
         String jsonFileName = METADATA_DIR + "/" + entityName + ".json";
 
@@ -978,12 +976,12 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      */
     private void note(String message) {
         if (verbose) {
-            messager.printMessage(Diagnostic.Kind.NOTE, "[Exeris] " + message);
+            messager.printMessage(Diagnostic.Kind.NOTE, DIAG_PREFIX + message);
         }
     }
 
     private void error(Element element, String message) {
-        messager.printMessage(Diagnostic.Kind.ERROR, "[Exeris] " + message, element);
+        messager.printMessage(Diagnostic.Kind.ERROR, DIAG_PREFIX + message, element);
     }
 
     /**
@@ -995,7 +993,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      * also dumps the stack trace.
      */
     private void reportProcessingFailure(Element element, String prefix, Exception e) {
-        StringBuilder message = new StringBuilder("[Exeris] ")
+        StringBuilder message = new StringBuilder(DIAG_PREFIX)
                 .append(prefix)
                 .append(": ")
                 .append(e);
