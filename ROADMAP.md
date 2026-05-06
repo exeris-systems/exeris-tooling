@@ -42,10 +42,12 @@ This file tracks scope per milestone. Items marked `[ ]` are open; `[x]` shipped
 ## 0.4.0 — codegen quality refactor
 
 > Goal: collapse the duplication Sonar flagged (3.8% on new code, KernelHandlerGenerator 59.8%, KernelClientGenerator 40.6%).
+>
+> Strategy: see [ADR-001 — Codegen Emission Strategy](docs/adr/ADR-001%20Codegen%20Emission%20Strategy.md).
 
-- [ ] **`StringBuilder.append(...)` → text blocks** for SQL/YAML emission paths
-- [ ] **JavaPoet** for Java-emitting paths — type-safe, compile-checked
-- [ ] Shared scaffold extraction (package decl + imports + Javadoc + class header are duplicated across all `Kernel*Generator`s)
+- [ ] **Text blocks** for SQL/YAML emission paths (`KernelFlywayGenerator`, `KernelOpenApiGenerator`)
+- [ ] **JavaPoet** for Java-emitting paths — type-safe, compile-checked (Phase 1: `KernelHandlerGenerator` pilot; Phase 2: `KernelClientGenerator`; Phase 3: extract `kernelScaffold(...)` helper into `codegen-core`; Phase 4: remaining 10 generators)
+- [ ] Shared scaffold extraction — falls out of Phase 3 above
 - [ ] **slf4j in `CodegenMain`** — replace `System.out.println` + emoji + box-drawing with structured logging. Required for clean Maven plugin integration.
 
 ## 0.5.0 — `@Capability`-aware codegen
