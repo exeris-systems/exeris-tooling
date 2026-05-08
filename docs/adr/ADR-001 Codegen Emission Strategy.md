@@ -1,4 +1,4 @@
-# ADR-015 — Codegen Emission Strategy: JavaPoet for Java, Text Blocks for SQL/YAML
+# ADR-001 — Codegen Emission Strategy: JavaPoet for Java, Text Blocks for SQL/YAML
 
 **Status:** Proposed
 **Date:** 2026-05-06
@@ -133,9 +133,9 @@ The migration ships as a phased sequence, each phase one PR. Each PR keeps `Kern
 | 4 | Remaining Java generators (Repository, Service, Saga, Events, EventHandler, GraphSync, Application, CompositionRoot, RouterConfig, …) | Mechanical at this point — each generator becomes ~30% of its current LOC. |
 | 5 | `KernelFlywayGenerator` → text blocks | Independent of JavaPoet phases. Can land anytime after Phase 1. |
 | 6 | `KernelOpenApiGenerator` → text blocks | Same. |
-| 7 | `MIGRATION-0.x-to-1.0.md` entry | Document the one-time output-style diff downstream consumers will see. |
+| 7 | `MIGRATION-0.x-to-1.0.md` entry *(doc-only — no code change)* | Document the one-time output-style diff downstream consumers will see. |
 
-Each phase is independently reversible (revert that PR; remaining generators stay on JavaPoet or StringBuilder per their phase). The dep is added in Phase 1 and never removed.
+Each phase is independently reversible (revert that PR; remaining generators stay on JavaPoet or StringBuilder per their phase). The dep is added in Phase 1 and never removed. **Phases 5 and 6 (text blocks for SQL/YAML) are independent of the JavaPoet phases** — the table orders them after for readability, but they can land any time after Phase 1 ships.
 
 ---
 
@@ -166,7 +166,7 @@ A phase-1 PR is considered successful when:
 
 1. `KernelCodegenCompileTest` stays green (output compiles against kernel SPI stubs).
 2. `KernelCodegenE2ETest` either passes unchanged or its substring assertions are replaced with structural assertions on the JavaPoet output (`TypeSpec` structure, modifier set, import set).
-3. Sonar duplication on the migrated generator drops measurably.
+3. Sonar duplication on the migrated generator drops below 10% (Phase 1 target for `KernelHandlerGenerator`, baseline 59.8%; Phase 2 target for `KernelClientGenerator`, baseline 40.6%).
 4. Manual spot-check: regenerate a known consumer (budgetHQ if reachable, otherwise the e2e test fixture) and confirm the output diff is JavaPoet style differences and *not* semantic differences.
 
 A regression on any of (1)–(4) blocks merge.
