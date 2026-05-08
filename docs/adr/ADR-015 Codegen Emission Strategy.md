@@ -1,4 +1,4 @@
-# ADR-001 — Codegen Emission Strategy: JavaPoet for Java, Text Blocks for SQL/YAML
+# ADR-015 — Codegen Emission Strategy: JavaPoet for Java, Text Blocks for SQL/YAML
 
 **Status:** Proposed *(flips to Accepted at merge)*
 **Date:** 2026-05-06
