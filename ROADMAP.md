@@ -43,7 +43,7 @@ This file tracks scope per milestone. Items marked `[ ]` are open; `[x]` shipped
 
 > Goal: collapse the duplication Sonar flagged (3.8% on new code, KernelHandlerGenerator 59.8%, KernelClientGenerator 40.6%).
 >
-> Strategy: see [ADR-001 — Codegen Emission Strategy](docs/adr/ADR-001%20Codegen%20Emission%20Strategy.md).
+> Strategy: see [ADR-015 — Codegen Emission Strategy](docs/adr/ADR-015%20Codegen%20Emission%20Strategy.md).
 
 - [ ] **Text blocks** for SQL/YAML emission paths (`KernelFlywayGenerator`, `KernelOpenApiGenerator`)
 - [ ] **JavaPoet** for Java-emitting paths — type-safe, compile-checked (Phase 1: `KernelHandlerGenerator` pilot; Phase 2: `KernelClientGenerator`; Phase 3: extract `kernelScaffold(...)` helper into `codegen-core`; Phase 4: remaining 10 generators)
