@@ -99,7 +99,7 @@ public final class CodegenMain {
             LOG.log(Level.INFO, "Found " + domains.size() + " domain(s)");
             for (DomainMetadata domain : domains) {
                 int fieldCount = domain.fields() != null ? domain.fields().size() : 0;
-                LOG.log(Level.DEBUG, "domain=" + domain.entityName()
+                LOG.log(Level.DEBUG, () -> "domain=" + domain.entityName()
                         + " path=" + domain.effectivePath()
                         + " package=" + domain.packageName()
                         + " fields=" + fieldCount);
@@ -129,12 +129,12 @@ public final class CodegenMain {
             List<KernelArtifactGenerator> generators = registry.getGenerators();
 
             for (DomainMetadata domain : domains) {
-                LOG.log(Level.DEBUG, "generating entity=" + domain.entityName());
+                LOG.log(Level.DEBUG, () -> "generating entity=" + domain.entityName());
                 for (KernelArtifactGenerator generator : generators) {
                     GeneratedFile file = generator.generate(domain);
                     if (file != null) {
                         writeFile(writer, file);
-                        LOG.log(Level.DEBUG, "wrote " + file.className()
+                        LOG.log(Level.DEBUG, () -> "wrote " + file.className()
                                 + " (" + generator.artifactType() + ")");
                         filesGenerated++;
                     }
@@ -150,7 +150,7 @@ public final class CodegenMain {
 
             for (GeneratedFile file : appFiles) {
                 writeFile(writer, file);
-                LOG.log(Level.DEBUG, "wrote " + file.className());
+                LOG.log(Level.DEBUG, () -> "wrote " + file.className());
                 filesGenerated++;
             }
 
