@@ -1,6 +1,6 @@
 # ADR-001 — Codegen Emission Strategy: JavaPoet for Java, Text Blocks for SQL/YAML
 
-**Status:** Proposed
+**Status:** Proposed *(flips to Accepted at merge)*
 **Date:** 2026-05-06
 **Deciders:** @arkstack-dev
 **Scope:** `exeris-tooling` (codegen-core + codegen-java)
@@ -105,7 +105,7 @@ Adopt **Option C**:
 1. **JavaPoet for every Java-emitting generator** (`Kernel*Generator` that produces `.java` output).
 2. **Text blocks for SQL emission** (`KernelFlywayGenerator`).
 3. **Text blocks for YAML emission** (`KernelOpenApiGenerator`).
-4. **Shared scaffold helper** (`TypeSpec.Builder kernelScaffold(String packageName, String className, String javadoc, ...)`) extracted into `exeris-codegen-core` as a public-but-internal API. Generators compose it; they do not duplicate it.
+4. **Shared scaffold helper** (`TypeSpec.Builder kernelScaffold(String packageName, String className, String javadoc, ...)`) lives in `exeris-codegen-java` (e.g., `eu.exeris.tooling.codegen.java.support.KernelScaffold`). It cannot live in `exeris-codegen-core` because its signature exposes JavaPoet's `TypeSpec.Builder` — that would force JavaPoet into `codegen-core` and violate the pure-AST scope below. All `Kernel*Generator` classes already live in `codegen-java`, so no cross-module dependency is needed. Generators compose the helper; they do not duplicate it.
 
 JavaPoet dependency:
 
@@ -129,8 +129,8 @@ The migration ships as a phased sequence, each phase one PR. Each PR keeps `Kern
 |---|---|---|
 | 1 | Pilot: `KernelHandlerGenerator` (Sonar 59.8%) | Highest-duplication target — first to validate the approach gives the duplication numbers we expect. Also exercises imports, methods, and modifier sets in one go. |
 | 2 | `KernelClientGenerator` (Sonar 40.6%) | Second-highest duplication. After two generators, the shared-scaffold shape is settled and can be extracted. |
-| 3 | Extract `kernelScaffold(...)` into `codegen-core` | Codifies the pattern that emerged from Phase 1+2. Refactor — no behavior change. |
-| 4 | Remaining Java generators (Repository, Service, Saga, Events, EventHandler, GraphSync, Application, CompositionRoot, RouterConfig, …) | Mechanical at this point — each generator becomes ~30% of its current LOC. |
+| 3 | Extract `kernelScaffold(...)` into `exeris-codegen-java` (under `eu.exeris.tooling.codegen.java.support`) | Codifies the pattern that emerged from Phase 1+2. Refactor — no behavior change. Stays in `codegen-java` because the helper's signature uses JavaPoet's `TypeSpec.Builder`. |
+| 4 | Remaining 7 Java-emitting generators: `KernelRepositoryGenerator`, `KernelServiceGenerator`, `KernelSagaGenerator`, `KernelEventGenerator`, `KernelEventHandlerGenerator`, `KernelGraphSyncGenerator`, `KernelApplicationGenerator` (the last also emits Application + CompositionRoot + RouterConfig output files) | Mechanical at this point — each generator becomes ~30% of its current LOC. Total tally: 11 generator classes − Handler (P1) − Client (P2) − Flyway (P5) − OpenApi (P6) = 7. |
 | 5 | `KernelFlywayGenerator` → text blocks | Independent of JavaPoet phases. Can land anytime after Phase 1. |
 | 6 | `KernelOpenApiGenerator` → text blocks | Same. |
 | 7 | `MIGRATION-0.x-to-1.0.md` entry *(doc-only — no code change)* | Document the one-time output-style diff downstream consumers will see. |
