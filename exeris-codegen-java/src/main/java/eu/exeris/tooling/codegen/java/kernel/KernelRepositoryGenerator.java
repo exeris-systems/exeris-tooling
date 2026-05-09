@@ -292,9 +292,15 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
             String genericType = type.substring(5, type.length() - 1);
             // Pre-existing typo "List<X>( )>() {}" replaced with the correct
             // "List<X>>() {}" form on this migration. Codepath was untested.
+            // genericType resolved via ClassName.bestGuess so JavaPoet tracks
+            // the import when the user supplies a fully-qualified type
+            // (e.g. "java.util.UUID"). Short names like "UUID" still rely on
+            // the user qualifying in @Field(type=...) — same blind spot as
+            // before, just no worse.
+            ClassName elementType = ClassName.bestGuess(genericType);
             map.addCode(CodeBlock.of(
-                    "{ String v = rs.getString($S); if (v != null) $L(parseList(v, new $T<$T<$L>>() {})); }\n",
-                    col, setter, TYPE_REFERENCE, LIST_TYPE, genericType));
+                    "{ String v = rs.getString($S); if (v != null) $L(parseList(v, new $T<$T<$T>>() {})); }\n",
+                    col, setter, TYPE_REFERENCE, LIST_TYPE, elementType));
         } else if ("UUID".equals(type) || "java.util.UUID".equals(type)) {
             map.addStatement("$L(rs.getObject($S, $T.class))", setter, col, UUID_TYPE);
         } else if ("String".equals(type) || "java.lang.String".equals(type)) {

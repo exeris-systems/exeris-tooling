@@ -90,7 +90,7 @@ public class KernelGraphSyncGenerator implements KernelArtifactGenerator {
                 .addMethod(buildDeleteFromGraph());
 
         if (hasEdges) {
-            builder.addMethod(buildSyncEdges(entity, entityType, graph));
+            builder.addMethod(buildSyncEdges(entityType, graph));
         }
 
         builder.addMethod(buildBuildNodeProperties(entity, entityType, mapStringObject, metadata, graph))
@@ -155,7 +155,7 @@ public class KernelGraphSyncGenerator implements KernelArtifactGenerator {
                 .build();
     }
 
-    private MethodSpec buildSyncEdges(String entity, ClassName entityType, GraphMetadata graph) {
+    private MethodSpec buildSyncEdges(ClassName entityType, GraphMetadata graph) {
         MethodSpec.Builder sync = MethodSpec.methodBuilder("syncEdges")
                 .addJavadoc("Synchronizes edges for the entity.\n")
                 .addModifiers(Modifier.PRIVATE)
