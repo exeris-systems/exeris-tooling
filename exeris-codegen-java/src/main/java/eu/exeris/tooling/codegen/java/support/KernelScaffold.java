@@ -1,7 +1,7 @@
 package eu.exeris.tooling.codegen.java.support;
 
-import com.squareup.javapoet.JavaFile;
-import com.squareup.javapoet.TypeSpec;
+import com.palantir.javapoet.JavaFile;
+import com.palantir.javapoet.TypeSpec;
 
 import javax.lang.model.element.Modifier;
 import java.util.Objects;
