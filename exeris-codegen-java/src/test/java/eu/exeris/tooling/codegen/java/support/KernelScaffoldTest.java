@@ -1,5 +1,6 @@
 package eu.exeris.tooling.codegen.java.support;
 
+import com.squareup.javapoet.MethodSpec;
 import com.squareup.javapoet.TypeSpec;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -48,7 +49,7 @@ class KernelScaffoldTest {
         @DisplayName("emits 4-space indent")
         void fourSpaceIndent() {
             TypeSpec type = KernelScaffold.publicClass("Foo")
-                    .addMethod(com.squareup.javapoet.MethodSpec.methodBuilder("bar")
+                    .addMethod(MethodSpec.methodBuilder("bar")
                             .addModifiers(Modifier.PUBLIC)
                             .addStatement("int x = 1")
                             .build())
