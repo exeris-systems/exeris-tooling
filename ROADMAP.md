@@ -45,10 +45,10 @@ This file tracks scope per milestone. Items marked `[ ]` are open; `[x]` shipped
 >
 > Strategy: see [ADR-001 — Codegen Emission Strategy](docs/adr/ADR-001%20Codegen%20Emission%20Strategy.md).
 
-- [ ] **Text blocks** for SQL/YAML emission paths (`KernelFlywayGenerator`, `KernelOpenApiGenerator`)
-- [ ] **JavaPoet** for Java-emitting paths — type-safe, compile-checked (Phase 1: `KernelHandlerGenerator` pilot; Phase 2: `KernelClientGenerator`; Phase 3: extract `kernelScaffold(...)` helper into `codegen-java` under `…java.support`; Phase 4: remaining 7 Java-emitting generators)
-- [ ] Shared scaffold extraction — falls out of Phase 3 above
-- [ ] **slf4j in `CodegenMain`** — replace `System.out.println` + emoji + box-drawing with structured logging. Required for clean Maven plugin integration.
+- [ ] **`StringBuilder.append(...)` → text blocks** for SQL/YAML emission paths
+- [ ] **JavaPoet** for Java-emitting paths — type-safe, compile-checked
+- [ ] Shared scaffold extraction (package decl + imports + Javadoc + class header are duplicated across all `Kernel*Generator`s)
+- [x] **`System.Logger` in `CodegenMain`** — replaced `System.out/err.println` + emoji + box-drawing with JDK-standard `System.Logger` (JSR 264). No third-party logging dep; downstream consumers plug a `LoggerFinder` (or, for the eventual Maven plugin, opt in to `slf4j-jdk-platform-logging`). Per-domain detail at `DEBUG`, milestones at `INFO`, missing-metadata at `WARNING`, failure path at `ERROR` with attached `Throwable`. Argument-parsing usage hint stays on stderr (CLI contract; emitted before the JVM exits).
 
 ## 0.5.0 — `@Capability`-aware codegen
 

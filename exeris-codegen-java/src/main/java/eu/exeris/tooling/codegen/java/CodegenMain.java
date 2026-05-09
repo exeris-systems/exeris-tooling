@@ -11,6 +11,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
 import java.io.IOException;
+import java.lang.System.Logger;
+import java.lang.System.Logger.Level;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -39,18 +41,25 @@ import java.util.stream.Stream;
  *     --base-package=eu.exeris.foundation
  * </pre>
  *
+ * <h2>Logging:</h2>
+ * Uses {@link System.Logger} (JDK-standard, JSR 264). The default JDK
+ * implementation routes to stderr at INFO+; downstream consumers can plug a
+ * {@code LoggerFinder} (or, when running as a Maven plugin, the
+ * {@code slf4j-jdk-platform-logging} bridge) to fold output into the host's
+ * log infrastructure. No third-party logging dependency is brought into the
+ * tooling.
+ *
  * @author Exeris Team
  * @since 0.1.0
  */
 public final class CodegenMain {
 
+    private static final Logger LOG = System.getLogger(CodegenMain.class.getName());
+
     private static final ObjectMapper MAPPER = createMapper();
 
     public static void main(String[] args) {
-        System.out.println("═══════════════════════════════════════════════════════════════════");
-        System.out.println("  Exeris Java Code Generator v0.1.0");
-        System.out.println("  Generates COMPLETE application from domain entities");
-        System.out.println("═══════════════════════════════════════════════════════════════════");
+        LOG.log(Level.INFO, "Exeris Java Code Generator v0.1.0 starting");
 
         try {
             // Parse arguments
@@ -73,31 +82,33 @@ public final class CodegenMain {
                 System.exit(1);
             }
 
-            System.out.println("\n📂 Metadata dir:  " + metadataDir);
-            System.out.println("📁 Output dir:    " + outputDir);
-            System.out.println("🎯 Target:        Exeris Kernel");
-            System.out.println("📦 Base package:  " + (basePackage != null ? basePackage : "(auto-detect)"));
+            LOG.log(Level.INFO, "metadata-dir=" + metadataDir);
+            LOG.log(Level.INFO, "output-dir=" + outputDir);
+            LOG.log(Level.INFO, "target=Exeris Kernel");
+            LOG.log(Level.INFO, "base-package=" + (basePackage != null ? basePackage : "(auto-detect)"));
 
             // Load metadata
             List<DomainMetadata> domains = loadMetadata(metadataDir);
 
             if (domains.isEmpty()) {
-                System.out.println("\n⚠️ No domain metadata found in " + metadataDir);
-                System.out.println("   Make sure @ExerisDomain annotated classes are compiled first.");
+                LOG.log(Level.WARNING, "No domain metadata found in " + metadataDir
+                        + " — make sure @ExerisDomain-annotated classes are compiled first");
                 System.exit(0);
             }
 
-            System.out.println("\n📦 Found " + domains.size() + " domain(s):");
+            LOG.log(Level.INFO, "Found " + domains.size() + " domain(s)");
             for (DomainMetadata domain : domains) {
-                System.out.println("   - " + domain.entityName() + " (" + domain.effectivePath() + ")");
-                System.out.println("     Package: " + domain.packageName());
-                System.out.println("     Fields:  " + (domain.fields() != null ? domain.fields().size() : 0));
+                int fieldCount = domain.fields() != null ? domain.fields().size() : 0;
+                LOG.log(Level.DEBUG, () -> "domain=" + domain.entityName()
+                        + " path=" + domain.effectivePath()
+                        + " package=" + domain.packageName()
+                        + " fields=" + fieldCount);
             }
 
             // Auto-detect base package if not provided
-            if (basePackage == null && !domains.isEmpty()) {
+            if (basePackage == null) {
                 basePackage = domains.get(0).packageName().replace(".domain", "");
-                System.out.println("\n📦 Auto-detected base package: " + basePackage);
+                LOG.log(Level.INFO, "Auto-detected base-package=" + basePackage);
             }
 
             // Create output directory
@@ -106,10 +117,10 @@ public final class CodegenMain {
 
             int filesGenerated = 0;
 
-            // ═══════════════════════════════════════════════════════════════════
-            // 1. Generate per-entity code (Repository, Service, Handler, etc.)
-            // ═══════════════════════════════════════════════════════════════════
-            System.out.println("\n🔧 Generating per-entity code...");
+            // ---------------------------------------------------------------
+            // 1. Per-entity code (Repository, Service, Handler, etc.)
+            // ---------------------------------------------------------------
+            LOG.log(Level.INFO, "Generating per-entity code");
 
             // Use KernelGeneratorStrategy which registers all generators
             KernelGeneratorStrategy strategy = new KernelGeneratorStrategy();
@@ -118,42 +129,36 @@ public final class CodegenMain {
             List<KernelArtifactGenerator> generators = registry.getGenerators();
 
             for (DomainMetadata domain : domains) {
-                System.out.println("\n   📝 " + domain.entityName() + ":");
+                LOG.log(Level.DEBUG, () -> "generating entity=" + domain.entityName());
                 for (KernelArtifactGenerator generator : generators) {
                     GeneratedFile file = generator.generate(domain);
                     if (file != null) {
                         writeFile(writer, file);
-                        System.out.println("      ✅ " + file.className() + " (" + generator.artifactType() + ")");
+                        LOG.log(Level.DEBUG, () -> "wrote " + file.className()
+                                + " (" + generator.artifactType() + ")");
                         filesGenerated++;
                     }
                 }
             }
 
-            // ═══════════════════════════════════════════════════════════════════
-            // 2. Generate application infrastructure (Application, CompositionRoot, Router)
-            // ═══════════════════════════════════════════════════════════════════
-            System.out.println("\n🏗️ Generating application infrastructure...");
+            // ---------------------------------------------------------------
+            // 2. Application infrastructure (Application, CompositionRoot, Router)
+            // ---------------------------------------------------------------
+            LOG.log(Level.INFO, "Generating application infrastructure");
             KernelApplicationGenerator appGen = new KernelApplicationGenerator();
             List<GeneratedFile> appFiles = appGen.generateAll(domains, basePackage);
 
             for (GeneratedFile file : appFiles) {
                 writeFile(writer, file);
-                System.out.println("   ✅ " + file.className());
+                LOG.log(Level.DEBUG, () -> "wrote " + file.className());
                 filesGenerated++;
             }
 
-            // ═══════════════════════════════════════════════════════════════════
-            // Summary
-            // ═══════════════════════════════════════════════════════════════════
-            System.out.println("\n═══════════════════════════════════════════════════════════════════");
-            System.out.println("  ✅ Code generation complete!");
-            System.out.println("  📊 Files generated: " + filesGenerated);
-            System.out.println("  📁 Output: " + outputDir);
-            System.out.println("═══════════════════════════════════════════════════════════════════");
+            LOG.log(Level.INFO, "Code generation complete: files=" + filesGenerated
+                    + " output=" + outputDir);
 
         } catch (Exception e) {
-            System.err.println("\n❌ Code generation failed: " + e.getMessage());
-            e.printStackTrace();
+            LOG.log(Level.ERROR, "Code generation failed", e);
             System.exit(1);
         }
     }
@@ -212,12 +217,14 @@ public final class CodegenMain {
     }
 
     private static void printUsage() {
-        System.err.println("\nUsage: CodegenMain <options>");
-        System.err.println("\nRequired:");
+        // Argument-parsing usage hint — emitted to stderr because the JVM is about to
+        // exit with status 1, before the logging pipeline guarantees flush. CLI
+        // contract: usage goes to stderr, not the logger.
+        System.err.println("Usage: CodegenMain <options>");
+        System.err.println("Required:");
         System.err.println("  --metadata-dir=<path>   Path to exeris-metadata JSON files");
         System.err.println("  --output-dir=<path>     Path for generated Java sources");
-        System.err.println("\nOptional:");
+        System.err.println("Optional:");
         System.err.println("  --base-package=<pkg>    Base package for application classes");
     }
 }
-
