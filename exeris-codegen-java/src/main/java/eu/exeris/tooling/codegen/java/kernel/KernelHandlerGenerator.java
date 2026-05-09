@@ -3,7 +3,6 @@ package eu.exeris.tooling.codegen.java.kernel;
 import com.squareup.javapoet.ClassName;
 import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.FieldSpec;
-import com.squareup.javapoet.JavaFile;
 import com.squareup.javapoet.MethodSpec;
 import com.squareup.javapoet.ParameterizedTypeName;
 import com.squareup.javapoet.TypeName;
@@ -11,6 +10,7 @@ import com.squareup.javapoet.TypeSpec;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
+import eu.exeris.tooling.codegen.java.support.KernelScaffold;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 
 import javax.lang.model.element.Modifier;
@@ -61,12 +61,11 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         ClassName selfType = ClassName.get(packageName, className);
         TypeName listOfEntity = ParameterizedTypeName.get(LIST, entityType);
 
-        TypeSpec handler = TypeSpec.classBuilder(className)
+        TypeSpec handler = KernelScaffold.publicClass(className)
                 .addJavadoc("Generated HTTP Handler for $L.\n", entity)
                 .addJavadoc("<p>Source: {@link $T}\n", entityType)
                 .addJavadoc("<p>Path: $L\n", metadata.effectivePath())
                 .addJavadoc("<p><b>DO NOT EDIT</b> - Regenerate from domain model.\n")
-                .addModifiers(Modifier.PUBLIC)
                 .addField(FieldSpec.builder(SLF4J_LOGGER, "LOG",
                                 Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
                         .initializer("$T.getLogger($T.class)", SLF4J_LOGGER_FACTORY, selfType)
@@ -94,13 +93,8 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                 .addMethod(buildCreateMapper())
                 .build();
 
-        String content = JavaFile.builder(packageName, handler)
-                .indent("    ")
-                .skipJavaLangImports(true)
-                .build()
-                .toString();
-
-        return new GeneratedFile(packageName, className, content, ArtifactType.CONTROLLER);
+        return new GeneratedFile(packageName, className,
+                KernelScaffold.render(packageName, handler), ArtifactType.CONTROLLER);
     }
 
     private MethodSpec buildHandleGetAll(String entityLower, TypeName listOfEntity) {
