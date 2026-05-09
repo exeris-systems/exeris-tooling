@@ -82,11 +82,11 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                         .addParameter(serviceType, "service")
                         .addStatement("this.service = service")
                         .build())
-                .addMethod(buildHandleGetAll(entity, entityLower, listOfEntity))
-                .addMethod(buildHandleGetById(entity, entityLower, entityType))
-                .addMethod(buildHandleCreate(entity, entityLower, entityType))
-                .addMethod(buildHandleUpdate(entity, entityLower, entityType))
-                .addMethod(buildHandleDelete(entity, entityLower))
+                .addMethod(buildHandleGetAll(entityLower, listOfEntity))
+                .addMethod(buildHandleGetById(entityLower))
+                .addMethod(buildHandleCreate(entityLower, entityType))
+                .addMethod(buildHandleUpdate(entityLower, entityType))
+                .addMethod(buildHandleDelete(entityLower))
                 .addMethod(buildExtractPathId())
                 .addMethod(buildReadBody())
                 .addMethod(buildSendJson())
@@ -103,7 +103,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         return new GeneratedFile(packageName, className, content, ArtifactType.CONTROLLER);
     }
 
-    private MethodSpec buildHandleGetAll(String entity, String entityLower, TypeName listOfEntity) {
+    private MethodSpec buildHandleGetAll(String entityLower, TypeName listOfEntity) {
         return MethodSpec.methodBuilder("handleGetAll")
                 .addModifiers(Modifier.PUBLIC)
                 .addParameter(HTTP3_EXCHANGE, "exchange")
@@ -119,7 +119,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                 .build();
     }
 
-    private MethodSpec buildHandleGetById(String entity, String entityLower, ClassName entityType) {
+    private MethodSpec buildHandleGetById(String entityLower) {
         return MethodSpec.methodBuilder("handleGetById")
                 .addModifiers(Modifier.PUBLIC)
                 .addParameter(HTTP3_EXCHANGE, "exchange")
@@ -145,7 +145,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                 .build();
     }
 
-    private MethodSpec buildHandleCreate(String entity, String entityLower, ClassName entityType) {
+    private MethodSpec buildHandleCreate(String entityLower, ClassName entityType) {
         return MethodSpec.methodBuilder("handleCreate")
                 .addModifiers(Modifier.PUBLIC)
                 .addParameter(HTTP3_EXCHANGE, "exchange")
@@ -163,7 +163,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                 .build();
     }
 
-    private MethodSpec buildHandleUpdate(String entity, String entityLower, ClassName entityType) {
+    private MethodSpec buildHandleUpdate(String entityLower, ClassName entityType) {
         return MethodSpec.methodBuilder("handleUpdate")
                 .addModifiers(Modifier.PUBLIC)
                 .addParameter(HTTP3_EXCHANGE, "exchange")
@@ -185,7 +185,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                 .build();
     }
 
-    private MethodSpec buildHandleDelete(String entity, String entityLower) {
+    private MethodSpec buildHandleDelete(String entityLower) {
         return MethodSpec.methodBuilder("handleDelete")
                 .addModifiers(Modifier.PUBLIC)
                 .addParameter(HTTP3_EXCHANGE, "exchange")
