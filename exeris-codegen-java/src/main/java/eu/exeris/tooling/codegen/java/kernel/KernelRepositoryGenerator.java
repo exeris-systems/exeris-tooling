@@ -325,7 +325,6 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     }
 
     private MethodSpec buildParseList() {
-        // ObjectMapper is thread-safe; share a single instance via the class-static MAPPER.
         return MethodSpec.methodBuilder("parseList")
                 .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
                 .addTypeVariable(com.squareup.javapoet.TypeVariableName.get("T"))
@@ -345,9 +344,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     }
 
     private MethodSpec buildToJson() {
-        // Symmetric with parseList: serializes a value to JSON for VARCHAR columns
-        // backing List<X> fields. JDBC drivers don't know how to serialize collections;
-        // the generator routes List<X> writes through this helper instead of setObject.
+        // JDBC drivers don't know how to serialize collections; route through MAPPER.
         return MethodSpec.methodBuilder("toJson")
                 .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
                 .returns(String.class)
