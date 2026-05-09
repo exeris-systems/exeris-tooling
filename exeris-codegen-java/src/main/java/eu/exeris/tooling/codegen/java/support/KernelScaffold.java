@@ -4,6 +4,7 @@ import com.squareup.javapoet.JavaFile;
 import com.squareup.javapoet.TypeSpec;
 
 import javax.lang.model.element.Modifier;
+import java.util.Objects;
 
 /**
  * Shared scaffold for {@code Kernel*Generator} classes that emit Java sources
@@ -34,16 +35,24 @@ public final class KernelScaffold {
     /**
      * Returns a {@link TypeSpec.Builder} for a public class with the given
      * name. Caller chains Javadoc, fields, and methods.
+     *
+     * @param className must not be null
      */
     public static TypeSpec.Builder publicClass(String className) {
+        Objects.requireNonNull(className, "className must not be null");
         return TypeSpec.classBuilder(className).addModifiers(Modifier.PUBLIC);
     }
 
     /**
      * Renders a {@link TypeSpec} to its canonical Exeris-Kernel source form:
      * 4-space indent, {@code java.lang} imports skipped.
+     *
+     * @param packageName must not be null
+     * @param type        must not be null
      */
     public static String render(String packageName, TypeSpec type) {
+        Objects.requireNonNull(packageName, "packageName must not be null");
+        Objects.requireNonNull(type, "type must not be null");
         return JavaFile.builder(packageName, type)
                 .indent("    ")
                 .skipJavaLangImports(true)
