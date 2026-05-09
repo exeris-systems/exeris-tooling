@@ -19,7 +19,7 @@
         <exeris.sdk.version>0.1.0-SNAPSHOT</exeris.sdk.version>
 
         <auto-service.version>1.1.1</auto-service.version>
-        <javapoet.version>0.15.0</javapoet.version>
+        <palantir.javapoet.version>0.15.0</palantir.javapoet.version>
         <jackson.version>2.18.2</jackson.version>
         <swagger-parser.version>2.1.22</swagger-parser.version>
 
@@ -74,7 +74,7 @@
             <dependency>
                 <groupId>com.palantir.javapoet</groupId>
                 <artifactId>javapoet</artifactId>
-                <version>${javapoet.version}</version>
+                <version>${palantir.javapoet.version}</version>
             </dependency>
 
             <!-- Jackson 2.x (build-time JSON I/O for metadata files) -->
