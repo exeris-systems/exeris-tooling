@@ -80,6 +80,10 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                                 Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
                         .initializer("$S", table)
                         .build())
+                .addField(FieldSpec.builder(OBJECT_MAPPER, "MAPPER",
+                                Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                        .initializer("new $T()", OBJECT_MAPPER)
+                        .build())
                 .addField(FieldSpec.builder(DATA_SOURCE, "dataSource",
                         Modifier.PRIVATE, Modifier.FINAL).build())
                 .addMethod(MethodSpec.constructorBuilder()
@@ -95,6 +99,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                 .addMethod(buildCount(ctx))
                 .addMethod(buildMapRow(ctx))
                 .addMethod(buildParseList())
+                .addMethod(buildToJson())
                 .build();
 
         return new GeneratedFile(packageName, className,
@@ -116,8 +121,9 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                 .beginControlFlow("try ($T conn = dataSource.getConnection();\n     $T ps = conn.prepareStatement(sql))",
                         CONNECTION, PREPARED_STATEMENT)
                 .addStatement("ps.setObject(1, id)")
-                .addStatement("$T rs = ps.executeQuery()", RESULT_SET)
+                .beginControlFlow("try ($T rs = ps.executeQuery())", RESULT_SET)
                 .addStatement("return rs.next() ? $T.of(mapRow(rs)) : $T.empty()", OPTIONAL, OPTIONAL)
+                .endControlFlow()
                 .nextControlFlow("catch ($T e)", SQL_EXCEPTION)
                 .addStatement("LOG.error($S, id, e)", "Failed to find " + ctx.entity() + " by id: {}")
                 .addStatement("throw new RuntimeException($S, e)", "Database error")
@@ -131,9 +137,8 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                 .addModifiers(Modifier.PUBLIC)
                 .returns(listOfEntity)
                 .addStatement("String sql = $S + TABLE + $S", "SELECT * FROM ", softDeleteFilter)
-                .beginControlFlow("try ($T conn = dataSource.getConnection();\n     $T st = conn.createStatement())",
-                        CONNECTION, STATEMENT)
-                .addStatement("$T rs = st.executeQuery(sql)", RESULT_SET)
+                .beginControlFlow("try ($T conn = dataSource.getConnection();\n     $T st = conn.createStatement();\n     $T rs = st.executeQuery(sql))",
+                        CONNECTION, STATEMENT, RESULT_SET)
                 .addStatement("$T<$T> result = new $T<>()", LIST_TYPE, ctx.entityType(), ARRAY_LIST)
                 .beginControlFlow("while (rs.next())")
                 .addStatement("result.add(mapRow(rs))")
@@ -241,9 +246,8 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                 .addModifiers(Modifier.PUBLIC)
                 .returns(TypeName.LONG)
                 .addStatement("String sql = $S + TABLE + $S", "SELECT COUNT(*) FROM ", sqlTail)
-                .beginControlFlow("try ($T conn = dataSource.getConnection();\n     $T st = conn.createStatement())",
-                        CONNECTION, STATEMENT)
-                .addStatement("$T rs = st.executeQuery(sql)", RESULT_SET)
+                .beginControlFlow("try ($T conn = dataSource.getConnection();\n     $T st = conn.createStatement();\n     $T rs = st.executeQuery(sql))",
+                        CONNECTION, STATEMENT, RESULT_SET)
                 .addStatement("return rs.next() ? rs.getLong(1) : 0")
                 .nextControlFlow("catch ($T e)", SQL_EXCEPTION)
                 .addStatement("LOG.error($S, e)", "Failed to count " + ctx.entity())
@@ -290,13 +294,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
 
         if (type.startsWith("List<")) {
             String genericType = type.substring(5, type.length() - 1);
-            // Pre-existing typo "List<X>( )>() {}" replaced with the correct
-            // "List<X>>() {}" form on this migration. Codepath was untested.
-            // genericType resolved via ClassName.bestGuess so JavaPoet tracks
-            // the import when the user supplies a fully-qualified type
-            // (e.g. "java.util.UUID"). Short names like "UUID" still rely on
-            // the user qualifying in @Field(type=...) — same blind spot as
-            // before, just no worse.
+            // bestGuess only tracks the import when genericType is fully qualified.
             ClassName elementType = ClassName.bestGuess(genericType);
             map.addCode(CodeBlock.of(
                     "{ String v = rs.getString($S); if (v != null) $L(parseList(v, new $T<$T<$T>>() {})); }\n",
@@ -327,7 +325,6 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     }
 
     private MethodSpec buildParseList() {
-        // <T> List<T> parseList(String json, TypeReference<List<T>> typeRef)
         return MethodSpec.methodBuilder("parseList")
                 .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
                 .addTypeVariable(com.squareup.javapoet.TypeVariableName.get("T"))
@@ -339,9 +336,24 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                                 com.squareup.javapoet.TypeVariableName.get("T"))), "typeRef")
                 .addStatement("if (json == null || json.isEmpty()) return $T.emptyList()", COLLECTIONS)
                 .beginControlFlow("try")
-                .addStatement("return new $T().readValue(json, typeRef)", OBJECT_MAPPER)
+                .addStatement("return MAPPER.readValue(json, typeRef)")
                 .nextControlFlow("catch (Exception e)")
                 .addStatement("throw new RuntimeException($S, e)", "Failed to parse list JSON")
+                .endControlFlow()
+                .build();
+    }
+
+    private MethodSpec buildToJson() {
+        // JDBC drivers don't know how to serialize collections; route through MAPPER.
+        return MethodSpec.methodBuilder("toJson")
+                .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+                .returns(String.class)
+                .addParameter(Object.class, "value")
+                .addStatement("if (value == null) return null")
+                .beginControlFlow("try")
+                .addStatement("return MAPPER.writeValueAsString(value)")
+                .nextControlFlow("catch (Exception e)")
+                .addStatement("throw new RuntimeException($S, e)", "Failed to serialize to JSON")
                 .endControlFlow()
                 .build();
     }
@@ -350,7 +362,11 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         int idx = 1;
         save.addStatement("ps.setObject($L, entity.getId())", idx++);
         for (FieldMetadata field : fields) {
-            save.addStatement("ps.setObject($L, entity.get$L())", idx++, capitalize(field.name()));
+            if (field.type().startsWith("List<")) {
+                save.addStatement("ps.setString($L, toJson(entity.get$L()))", idx++, capitalize(field.name()));
+            } else {
+                save.addStatement("ps.setObject($L, entity.get$L())", idx++, capitalize(field.name()));
+            }
         }
         if (metadata.tenantScoped()) {
             save.addStatement("ps.setObject($L, entity.getTenantId())", idx++);
@@ -367,7 +383,11 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     private void emitUpdateSetters(MethodSpec.Builder update, List<FieldMetadata> fields, DomainMetadata metadata) {
         int idx = 1;
         for (FieldMetadata field : fields) {
-            update.addStatement("ps.setObject($L, entity.get$L())", idx++, capitalize(field.name()));
+            if (field.type().startsWith("List<")) {
+                update.addStatement("ps.setString($L, toJson(entity.get$L()))", idx++, capitalize(field.name()));
+            } else {
+                update.addStatement("ps.setObject($L, entity.get$L())", idx++, capitalize(field.name()));
+            }
         }
         if (metadata.audited()) {
             update.addStatement("ps.setTimestamp($L, $T.from(entity.getUpdatedAt()))", idx++, TIMESTAMP);

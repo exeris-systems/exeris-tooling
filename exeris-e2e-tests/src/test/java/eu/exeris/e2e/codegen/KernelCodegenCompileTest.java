@@ -52,6 +52,8 @@ class KernelCodegenCompileTest {
                                 .build(),
                         FieldMetadata.builder("amount", "BigDecimal")
                                 .required(true)
+                                .build(),
+                        FieldMetadata.builder("tags", "List<java.util.UUID>")
                                 .build()))
                 .build();
 
@@ -78,6 +80,7 @@ class KernelCodegenCompileTest {
 
                 import java.math.BigDecimal;
                 import java.time.Instant;
+                import java.util.List;
                 import java.util.UUID;
 
                 public class %s {
@@ -86,6 +89,7 @@ class KernelCodegenCompileTest {
                     private String orderNumber;
                     private String customerName;
                     private BigDecimal amount;
+                    private List<UUID> tags;
                     private UUID tenantId;
                     private Instant createdAt;
                     private Instant updatedAt;
@@ -102,6 +106,9 @@ class KernelCodegenCompileTest {
 
                     public BigDecimal getAmount() { return amount; }
                     public void setAmount(BigDecimal amount) { this.amount = amount; }
+
+                    public List<UUID> getTags() { return tags; }
+                    public void setTags(List<UUID> tags) { this.tags = tags; }
 
                     public UUID getTenantId() { return tenantId; }
                     public void setTenantId(UUID tenantId) { this.tenantId = tenantId; }
