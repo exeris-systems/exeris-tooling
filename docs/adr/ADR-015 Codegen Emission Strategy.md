@@ -185,3 +185,56 @@ A regression on any of (1)–(4) blocks merge.
 
 - JavaPoet's last release is 1.13.0 (May 2022). The library is mature and stable; lack of recent releases reflects feature-completeness, not abandonment. Active community fork ([Palantir's JavaPoet](https://github.com/palantir/javapoet)) exists if upstream stagnates further; both are wire-compatible.
 - This ADR does not commit to a JavaPoet successor (Kotlin's KotlinPoet is similar but Kotlin-target). If we ever generate Kotlin output, that is a separate ADR.
+
+---
+
+## Amendment 1 — switch to Palantir's JavaPoet fork (2026-05-09)
+
+**Status:** Accepted *(supersedes the `com.squareup:javapoet:1.13.0` choice in §Decision)*
+**Trigger:** Phase 4c migration of `KernelEventGenerator` (PR-pending)
+
+### What
+
+Switch the JavaPoet dependency from `com.squareup:javapoet:1.13.0` to `com.palantir.javapoet:javapoet` (current latest: `0.15.0`). The original ADR pinned Square's archived release; this amendment promotes the contingency named in §Notes ("Active community fork … if upstream stagnates further; both are wire-compatible").
+
+Note that §Notes' "wire-compatible" claim was imprecise. The two libraries share an **API surface** (same class/method names and signatures), but Palantir relocated the package from `com.squareup.javapoet` to `com.palantir.javapoet`. This means the swap is a mechanical import sweep, not a drop-in version bump — see §Cost surface and §Migration shape below. The §Notes line is preserved as the historical record of the original analysis; readers landing there should treat this amendment as the authoritative correction.
+
+### Why now
+
+`KernelEventGenerator` emits Java 14+ `record` declarations (one per `@DomainEvent`). During Phase 4b (PR #19) we discovered that **Square's JavaPoet 1.13.0 has no `TypeSpec.recordBuilder`** — verified by `javap` on the published jar (dated 2020-06-18, predating stable record support). The three workarounds were:
+
+1. Switch to a record-capable JavaPoet — clean.
+2. Bypass JavaPoet for the records, raw-text-inject them. Brittle; partial loss of the type-safety dividend ADR §Option C cited as the motivating win.
+3. Downgrade `record` → `class` in the generated code. Behavior change visible to downstream consumers; not Phase 4 scope.
+
+(1) is the only option that preserves both the ADR's strategic decision (JavaPoet for Java emission) and the generated-code shape contract.
+
+Square's `javapoet` repo has been archived; Palantir's fork is the canonical maintained branch the original ADR named as the contingency.
+
+### Cost surface
+
+- **Wire compatibility.** Same package (`com.squareup.javapoet`)? **No** — Palantir relocated to `com.palantir.javapoet`. All `import com.squareup.javapoet.*` lines need to flip to `com.palantir.javapoet.*`. Mechanical sed across the six migrated generators + `KernelScaffold` + the test class (8 files total, all under `exeris-codegen-java`).
+- **API compatibility.** Palantir's README says they preserve the original API plus additions (records, sealed classes, `permits` clauses). No breaking changes vs. 1.13.0 expected — Phase 1+2+3+4a+4b should compile after the import flip with no other edits.
+- **Supply chain.** Apache 2.0 license (same as Square's). Vendor (Palantir) is well known in the JVM ecosystem. Pinning Palantir 0.15.0 exactly in the BOM gates further bumps behind explicit review.
+- **Versioning.** Palantir is in `0.x` — semver pre-1.0. Pin exact version in the BOM; bump on a known-need basis only.
+
+### Migration shape (single PR after this amendment lands)
+
+1. BOM: replace `<javapoet.version>1.13.0</javapoet.version>` with `0.15.0`; update group/artifact in `dependencyManagement`.
+2. `exeris-codegen-java/pom.xml`: update group/artifact to `com.palantir.javapoet:javapoet`.
+3. Sed-replace `com.squareup.javapoet` → `com.palantir.javapoet` across:
+   - `KernelHandlerGenerator`, `KernelClientGenerator`, `KernelServiceGenerator`, `KernelRepositoryGenerator`, `KernelGraphSyncGenerator`, `KernelEventHandlerGenerator`
+   - `KernelScaffold` (helper)
+   - `KernelScaffoldTest` (unit test)
+4. Verify: `mvn -pl exeris-codegen-java compile -q` clean, `mvn -pl exeris-e2e-tests -am test` 23 + 4 green, byte-equivalent generated output for all migrated generators (Palantir's pretty-printer is a direct fork of Square's; spot-check Order Handler/Client output).
+5. Phase 4c (`KernelEventGenerator`) migration follows in a separate PR using `TypeSpec.recordBuilder`.
+
+### Reversibility
+
+Backing out the swap is a `git revert` of the migration PR. No on-disk artifact, plugin, or downstream consumer is locked in by the choice — the decision is contained to `exeris-codegen-java`'s build classpath.
+
+### What this amendment does NOT decide
+
+- Whether to upgrade Palantir versions on a schedule, or by need. Default: by need, pinned in BOM.
+- Whether to publish a maven-relocation pom. N/A — `exeris-codegen-java` is internal tooling; no downstream Maven consumers.
+- Anything about `KotlinPoet`. Out of scope per the original ADR §Notes.
