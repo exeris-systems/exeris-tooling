@@ -197,6 +197,8 @@ A regression on any of (1)–(4) blocks merge.
 
 Switch the JavaPoet dependency from `com.squareup:javapoet:1.13.0` to `com.palantir.javapoet:javapoet` (current latest: `0.15.0`). The original ADR pinned Square's archived release; this amendment promotes the contingency named in §Notes ("Active community fork … if upstream stagnates further; both are wire-compatible").
 
+Note that §Notes' "wire-compatible" claim was imprecise. The two libraries share an **API surface** (same class/method names and signatures), but Palantir relocated the package from `com.squareup.javapoet` to `com.palantir.javapoet`. This means the swap is a mechanical import sweep, not a drop-in version bump — see §Cost surface and §Migration shape below. The §Notes line is preserved as the historical record of the original analysis; readers landing there should treat this amendment as the authoritative correction.
+
 ### Why now
 
 `KernelEventGenerator` emits Java 14+ `record` declarations (one per `@DomainEvent`). During Phase 4b (PR #19) we discovered that **Square's JavaPoet 1.13.0 has no `TypeSpec.recordBuilder`** — verified by `javap` on the published jar (dated 2020-06-18, predating stable record support). The three workarounds were:
@@ -211,10 +213,9 @@ Square's `javapoet` repo has been archived; Palantir's fork is the canonical mai
 
 ### Cost surface
 
-- **Wire compatibility.** Same package (`com.squareup.javapoet`)? **No** — Palantir relocated to `com.palantir.javapoet`. All `import com.squareup.javapoet.*` lines need to flip to `com.palantir.javapoet.*`. Mechanical sed across the four migrated generators + `KernelScaffold` + the test class, scoped to `exeris-codegen-java`.
+- **Wire compatibility.** Same package (`com.squareup.javapoet`)? **No** — Palantir relocated to `com.palantir.javapoet`. All `import com.squareup.javapoet.*` lines need to flip to `com.palantir.javapoet.*`. Mechanical sed across the six migrated generators + `KernelScaffold` + the test class (8 files total, all under `exeris-codegen-java`).
 - **API compatibility.** Palantir's README says they preserve the original API plus additions (records, sealed classes, `permits` clauses). No breaking changes vs. 1.13.0 expected — Phase 1+2+3+4a+4b should compile after the import flip with no other edits.
-- **Supply chain.** Palantir is a known vendor; their `gradle-baseline` and `tritium` libraries are already pulled by parts of the JVM ecosystem we depend on. Marginal increase, similar profile to Square.
-- **License.** Apache 2.0 (same as Square's).
+- **Supply chain.** Apache 2.0 license (same as Square's). Vendor (Palantir) is well known in the JVM ecosystem. Pinning Palantir 0.15.0 exactly in the BOM gates further bumps behind explicit review.
 - **Versioning.** Palantir is in `0.x` — semver pre-1.0. Pin exact version in the BOM; bump on a known-need basis only.
 
 ### Migration shape (single PR after this amendment lands)
