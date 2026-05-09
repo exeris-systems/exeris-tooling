@@ -1,28 +1,33 @@
 package eu.exeris.tooling.codegen.java.kernel;
 
+import com.squareup.javapoet.ClassName;
+import com.squareup.javapoet.CodeBlock;
+import com.squareup.javapoet.FieldSpec;
+import com.squareup.javapoet.MethodSpec;
+import com.squareup.javapoet.ParameterizedTypeName;
+import com.squareup.javapoet.TypeName;
+import com.squareup.javapoet.TypeSpec;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
+import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
+import eu.exeris.tooling.codegen.java.support.KernelScaffold;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 import eu.exeris.sdk.sourcemodel.ast.GraphMetadata;
 import eu.exeris.sdk.sourcemodel.ast.GraphEdgeMetadata;
-import eu.exeris.sdk.sourcemodel.ast.GraphPropertyMetadata;
 
+import javax.lang.model.element.Modifier;
 import java.util.List;
 import java.util.stream.Collectors;
 
 /**
  * Generates graph synchronization service for Exeris Kernel.
  *
- * <p>For entities annotated with {@code @Graph}, generates:
- * <ul>
- *   <li>Graph sync service (maintains consistency between SQL and graph)</li>
- *   <li>Node mapping (entity fields to graph properties)</li>
- *   <li>Edge synchronization (relationships as graph edges)</li>
- * </ul>
+ * <p>For entities annotated with {@code @Graph}, generates a class that
+ * maintains consistency between SQL table and graph representation, mapping
+ * entity fields to graph properties and relationships to graph edges.
  *
- * <p>Integrates with {@code eu.exeris.kernel.graph} module using PostgreSQL
- * SQL/PGQ for graph operations.
+ * <p>Phase 4 of ADR-015: emission is JavaPoet-based.
  *
  * @author Exeris Team
  * @since 0.1.0
@@ -30,235 +35,212 @@ import java.util.stream.Collectors;
  */
 public class KernelGraphSyncGenerator implements KernelArtifactGenerator {
 
+    private static final ClassName UUID = ClassName.get("java.util", "UUID");
+    private static final ClassName MAP = ClassName.get("java.util", "Map");
+    private static final ClassName HASH_MAP = ClassName.get("java.util", "HashMap");
+    private static final ClassName GRAPH_SERVICE = ClassName.get("eu.exeris.kernel.graph", "GraphService");
+    private static final ClassName GRAPH_NODE_METADATA =
+            ClassName.get("eu.exeris.kernel.graph.model", "GraphNodeMetadata");
+    private static final ClassName GRAPH_SESSION = ClassName.get("eu.exeris.kernel.graph.spi", "GraphSession");
+    private static final ClassName SLF4J_LOGGER = ClassName.get("org.slf4j", "Logger");
+    private static final ClassName SLF4J_LOGGER_FACTORY = ClassName.get("org.slf4j", "LoggerFactory");
+
     @Override
     public GeneratedFile generate(DomainMetadata metadata) {
         if (!metadata.hasGraphMetadata()) {
-            return null; // No graph metadata - skip
+            return null;
         }
 
         GraphMetadata graph = metadata.graphMetadata();
         String packageName = metadata.packageName().replace(".domain", ".graph");
-        String className = metadata.entityName() + "GraphSync";
         String entity = metadata.entityName();
+        String className = entity + "GraphSync";
         String nodeLabel = graph.label() != null ? graph.label() : entity;
+        boolean hasEdges = graph.edges() != null && !graph.edges().isEmpty();
 
-        StringBuilder code = new StringBuilder();
-        code.append("package ").append(packageName).append(";\n\n");
+        ClassName entityType = ClassName.get(metadata.packageName(), entity);
+        ClassName selfType = ClassName.get(packageName, className);
+        TypeName mapStringObject = ParameterizedTypeName.get(MAP, ClassName.get(String.class), ClassName.OBJECT);
 
-        // Imports
-        code.append("import ").append(metadata.packageName()).append(".").append(entity).append(";\n");
-        code.append("import eu.exeris.kernel.graph.GraphService;\n");
-        code.append("import eu.exeris.kernel.graph.model.GraphNodeMetadata;\n");
-        code.append("import eu.exeris.kernel.graph.model.GraphEdgeMetadata;\n");
-        code.append("import eu.exeris.kernel.graph.sync.GraphSyncService;\n");
-        code.append("import eu.exeris.kernel.graph.spi.GraphSession;\n");
-        code.append("import org.slf4j.Logger;\n");
-        code.append("import org.slf4j.LoggerFactory;\n\n");
-        code.append("import java.util.HashMap;\n");
-        code.append("import java.util.Map;\n");
-        code.append("import java.util.UUID;\n\n");
+        TypeSpec.Builder builder = KernelScaffold.publicClass(className)
+                .addJavadoc("Graph synchronization for $L entities.\n", entity)
+                .addJavadoc("<p>Maintains consistency between SQL table and graph representation.\n")
+                .addJavadoc("\n")
+                .addJavadoc("<p>Node label: {@code $L}\n", nodeLabel)
+                .addJavadoc("<p>Generated by Exeris Codegen. DO NOT EDIT.\n")
+                .addJavadoc("\n")
+                .addJavadoc("@see $L\n", metadata.fullyQualifiedName())
+                .addJavadoc("@see $T\n", ClassName.get("eu.exeris.kernel.graph.sync", "GraphSyncService"))
+                .addField(FieldSpec.builder(SLF4J_LOGGER, "LOG",
+                                Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                        .initializer("$T.getLogger($T.class)", SLF4J_LOGGER_FACTORY, selfType)
+                        .build())
+                .addField(FieldSpec.builder(String.class, "NODE_LABEL",
+                                Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                        .initializer("$S", nodeLabel)
+                        .build())
+                .addField(FieldSpec.builder(GRAPH_SERVICE, "graphService",
+                        Modifier.PRIVATE, Modifier.FINAL).build())
+                .addMethod(MethodSpec.constructorBuilder()
+                        .addModifiers(Modifier.PUBLIC)
+                        .addParameter(GRAPH_SERVICE, "graphService")
+                        .addStatement("this.graphService = graphService")
+                        .build())
+                .addMethod(buildSyncToGraph(entity, entityType, hasEdges))
+                .addMethod(buildDeleteFromGraph());
 
-        // Class header
-        code.append("/**\n");
-        code.append(" * Graph synchronization for ").append(entity).append(" entities.\n");
-        code.append(" * <p>Maintains consistency between SQL table and graph representation.\n");
-        code.append(" *\n");
-        code.append(" * <p>Node label: {@code ").append(nodeLabel).append("}\n");
-        code.append(" * <p>Generated by Exeris Codegen. DO NOT EDIT.\n");
-        code.append(" *\n");
-        code.append(" * @see ").append(metadata.fullyQualifiedName()).append("\n");
-        code.append(" * @see GraphSyncService\n");
-        code.append(" */\n");
-        code.append("public class ").append(className).append(" {\n\n");
-
-        code.append("    private static final Logger LOG = LoggerFactory.getLogger(").append(className).append(".class);\n");
-        code.append("    private static final String NODE_LABEL = \"").append(nodeLabel).append("\";\n\n");
-
-        code.append("    private final GraphService graphService;\n\n");
-
-        // Constructor
-        code.append("    public ").append(className).append("(GraphService graphService) {\n");
-        code.append("        this.graphService = graphService;\n");
-        code.append("    }\n\n");
-
-        // syncToGraph method
-        generateSyncToGraph(code, metadata, graph);
-
-        // deleteFromGraph method
-        generateDeleteFromGraph(code, metadata);
-
-        // syncEdges method (if edges defined)
-        if (graph.edges() != null && !graph.edges().isEmpty()) {
-            generateSyncEdges(code, metadata, graph);
+        if (hasEdges) {
+            builder.addMethod(buildSyncEdges(entity, entityType, graph));
         }
 
-        // buildNodeProperties method
-        generateBuildNodeProperties(code, metadata, graph);
+        builder.addMethod(buildBuildNodeProperties(entity, entityType, mapStringObject, metadata, graph))
+                .addMethod(buildNodeMetadata(metadata, graph));
 
-        // Static metadata
-        generateNodeMetadata(code, metadata, graph);
-
-        code.append("}\n");
-
-        return new GeneratedFile(packageName, className, code.toString(), ArtifactType.GRAPH_SYNC);
+        return new GeneratedFile(packageName, className,
+                KernelScaffold.render(packageName, builder.build()), ArtifactType.GRAPH_SYNC);
     }
 
-    private void generateSyncToGraph(StringBuilder code, DomainMetadata metadata, GraphMetadata graph) {
-        String entity = metadata.entityName();
-
-        code.append("    // ═══════════════════════════════════════════════════════════════════════════\n");
-        code.append("    // Sync Operations\n");
-        code.append("    // ═══════════════════════════════════════════════════════════════════════════\n\n");
-
-        code.append("    /**\n");
-        code.append("     * Synchronizes entity to graph as a node.\n");
-        code.append("     * Creates node if not exists, updates properties if exists.\n");
-        code.append("     *\n");
-        code.append("     * @param entity the entity to sync\n");
-        code.append("     */\n");
-        code.append("    public void syncToGraph(").append(entity).append(" entity) {\n");
-        code.append("        LOG.debug(\"Syncing {} to graph: id={}\", NODE_LABEL, entity.getId());\n\n");
-
-        code.append("        try (var session = graphService.openSession()) {\n");
-        code.append("            Map<String, Object> properties = buildNodeProperties(entity);\n\n");
-
-        code.append("            // Upsert node (MERGE in SQL/PGQ)\n");
-        code.append("            session.upsertNode(\n");
-        code.append("                    NODE_LABEL,\n");
-        code.append("                    entity.getId().toString(),\n");
-        code.append("                    properties\n");
-        code.append("            );\n\n");
-
-        // Sync edges if defined
-        if (graph.edges() != null && !graph.edges().isEmpty()) {
-            code.append("            // Sync edges/relationships\n");
-            code.append("            syncEdges(session, entity);\n\n");
+    private MethodSpec buildSyncToGraph(String entity, ClassName entityType, boolean hasEdges) {
+        MethodSpec.Builder sync = MethodSpec.methodBuilder("syncToGraph")
+                .addJavadoc("Synchronizes entity to graph as a node.\n")
+                .addJavadoc("Creates node if not exists, updates properties if exists.\n")
+                .addJavadoc("\n")
+                .addJavadoc("@param entity the entity to sync\n")
+                .addModifiers(Modifier.PUBLIC)
+                .returns(TypeName.VOID)
+                .addParameter(entityType, "entity")
+                .addStatement("LOG.debug($S, NODE_LABEL, entity.getId())",
+                        "Syncing {} to graph: id={}")
+                .beginControlFlow("try (var session = graphService.openSession())")
+                .addStatement("$T<String, Object> properties = buildNodeProperties(entity)", MAP)
+                .addCode(CodeBlock.builder()
+                        .add("session.upsertNode(\n")
+                        .indent()
+                        .add("NODE_LABEL,\n")
+                        .add("entity.getId().toString(),\n")
+                        .add("properties\n")
+                        .unindent()
+                        .addStatement(")")
+                        .build());
+        if (hasEdges) {
+            sync.addStatement("syncEdges(session, entity)");
         }
-
-        code.append("            LOG.debug(\"Successfully synced {} to graph\", entity.getId());\n");
-        code.append("        } catch (Exception e) {\n");
-        code.append("            LOG.error(\"Failed to sync {} to graph: id={}\", NODE_LABEL, entity.getId(), e);\n");
-        code.append("            throw new RuntimeException(\"Graph sync failed\", e);\n");
-        code.append("        }\n");
-        code.append("    }\n\n");
+        return sync.addStatement("LOG.debug($S, entity.getId())", "Successfully synced {} to graph")
+                .nextControlFlow("catch (Exception e)")
+                .addStatement("LOG.error($S, NODE_LABEL, entity.getId(), e)",
+                        "Failed to sync {} to graph: id={}")
+                .addStatement("throw new RuntimeException($S, e)", "Graph sync failed")
+                .endControlFlow()
+                .build();
     }
 
-    private void generateDeleteFromGraph(StringBuilder code, DomainMetadata metadata) {
-        code.append("    /**\n");
-        code.append("     * Removes entity from graph (deletes node and connected edges).\n");
-        code.append("     *\n");
-        code.append("     * @param entityId the entity ID to remove\n");
-        code.append("     */\n");
-        code.append("    public void deleteFromGraph(UUID entityId) {\n");
-        code.append("        LOG.debug(\"Deleting {} from graph: id={}\", NODE_LABEL, entityId);\n\n");
-
-        code.append("        try (var session = graphService.openSession()) {\n");
-        code.append("            session.deleteNode(NODE_LABEL, entityId.toString());\n");
-        code.append("            LOG.debug(\"Successfully deleted {} from graph\", entityId);\n");
-        code.append("        } catch (Exception e) {\n");
-        code.append("            LOG.error(\"Failed to delete {} from graph: id={}\", NODE_LABEL, entityId, e);\n");
-        code.append("            throw new RuntimeException(\"Graph delete failed\", e);\n");
-        code.append("        }\n");
-        code.append("    }\n\n");
+    private MethodSpec buildDeleteFromGraph() {
+        return MethodSpec.methodBuilder("deleteFromGraph")
+                .addJavadoc("Removes entity from graph (deletes node and connected edges).\n")
+                .addJavadoc("\n")
+                .addJavadoc("@param entityId the entity ID to remove\n")
+                .addModifiers(Modifier.PUBLIC)
+                .returns(TypeName.VOID)
+                .addParameter(UUID, "entityId")
+                .addStatement("LOG.debug($S, NODE_LABEL, entityId)",
+                        "Deleting {} from graph: id={}")
+                .beginControlFlow("try (var session = graphService.openSession())")
+                .addStatement("session.deleteNode(NODE_LABEL, entityId.toString())")
+                .addStatement("LOG.debug($S, entityId)", "Successfully deleted {} from graph")
+                .nextControlFlow("catch (Exception e)")
+                .addStatement("LOG.error($S, NODE_LABEL, entityId, e)",
+                        "Failed to delete {} from graph: id={}")
+                .addStatement("throw new RuntimeException($S, e)", "Graph delete failed")
+                .endControlFlow()
+                .build();
     }
 
-    private void generateSyncEdges(StringBuilder code, DomainMetadata metadata, GraphMetadata graph) {
-        String entity = metadata.entityName();
-
-        code.append("    /**\n");
-        code.append("     * Synchronizes edges for the entity.\n");
-        code.append("     */\n");
-        code.append("    private void syncEdges(GraphSession session, ").append(entity).append(" entity) {\n");
+    private MethodSpec buildSyncEdges(String entity, ClassName entityType, GraphMetadata graph) {
+        MethodSpec.Builder sync = MethodSpec.methodBuilder("syncEdges")
+                .addJavadoc("Synchronizes edges for the entity.\n")
+                .addModifiers(Modifier.PRIVATE)
+                .returns(TypeName.VOID)
+                .addParameter(GRAPH_SESSION, "session")
+                .addParameter(entityType, "entity");
 
         for (GraphEdgeMetadata edge : graph.edges()) {
             String edgeType = edge.relationType() != null ? edge.relationType() : "RELATES_TO";
             String edgeName = edge.name();
             String targetLabel = edge.targetLabel() != null ? edge.targetLabel() : "Node";
+            String capName = capitalize(edgeName);
 
-            code.append("        // Edge: ").append(edgeType).append(" (").append(edgeName).append(")\n");
-            code.append("        if (entity.get").append(capitalize(edgeName)).append("() != null) {\n");
-            code.append("            session.upsertEdge(\n");
-            code.append("                    NODE_LABEL,\n");
-            code.append("                    entity.getId().toString(),\n");
-            code.append("                    \"").append(edgeType).append("\",\n");
-            code.append("                    \"").append(targetLabel).append("\",\n");
-            code.append("                    entity.get").append(capitalize(edgeName)).append("().toString(),\n");
-            code.append("                    Map.of()\n");
-            code.append("            );\n");
-            code.append("        }\n\n");
+            sync.addCode("// Edge: $L ($L)\n", edgeType, edgeName);
+            sync.beginControlFlow("if (entity.get$L() != null)", capName);
+            sync.addCode(CodeBlock.builder()
+                    .add("session.upsertEdge(\n")
+                    .indent()
+                    .add("NODE_LABEL,\n")
+                    .add("entity.getId().toString(),\n")
+                    .add("$S,\n", edgeType)
+                    .add("$S,\n", targetLabel)
+                    .add("entity.get$L().toString(),\n", capName)
+                    .add("$T.of()\n", MAP)
+                    .unindent()
+                    .addStatement(")")
+                    .build());
+            sync.endControlFlow();
         }
-
-        code.append("    }\n\n");
+        return sync.build();
     }
 
-    private void generateBuildNodeProperties(StringBuilder code, DomainMetadata metadata, GraphMetadata graph) {
-        String entity = metadata.entityName();
+    private MethodSpec buildBuildNodeProperties(String entity, ClassName entityType, TypeName mapStringObject,
+                                                DomainMetadata metadata, GraphMetadata graph) {
+        MethodSpec.Builder build = MethodSpec.methodBuilder("buildNodeProperties")
+                .addJavadoc("Builds node properties from entity.\n")
+                .addModifiers(Modifier.PRIVATE)
+                .returns(mapStringObject)
+                .addParameter(entityType, "entity")
+                .addStatement("$T<String, Object> props = new $T<>()", MAP, HASH_MAP);
 
-        code.append("    // ═══════════════════════════════════════════════════════════════════════════\n");
-        code.append("    // Property Mapping\n");
-        code.append("    // ═══════════════════════════════════════════════════════════════════════════\n\n");
-
-        code.append("    /**\n");
-        code.append("     * Builds node properties from entity.\n");
-        code.append("     */\n");
-        code.append("    private Map<String, Object> buildNodeProperties(").append(entity).append(" entity) {\n");
-        code.append("        Map<String, Object> props = new HashMap<>();\n\n");
-
-        // Map entity fields to graph properties
         List<FieldMetadata> graphFields = getGraphFields(metadata, graph);
         for (FieldMetadata field : graphFields) {
             String getter = "get" + capitalize(field.name()) + "()";
             String propName = toSnakeCase(field.name());
 
-            code.append("        if (entity.").append(getter).append(" != null) {\n");
-
-            // Handle special types
-            if (isTemporalType(field.type())) {
-                code.append("            props.put(\"").append(propName).append("\", entity.").append(getter).append(".toString());\n");
-            } else if (field.type().equalsIgnoreCase("uuid")) {
-                code.append("            props.put(\"").append(propName).append("\", entity.").append(getter).append(".toString());\n");
+            build.beginControlFlow("if (entity.$L != null)", getter);
+            if (isTemporalType(field.type()) || field.type().equalsIgnoreCase("uuid")) {
+                build.addStatement("props.put($S, entity.$L.toString())", propName, getter);
             } else {
-                code.append("            props.put(\"").append(propName).append("\", entity.").append(getter).append(");\n");
+                build.addStatement("props.put($S, entity.$L)", propName, getter);
             }
-            code.append("        }\n");
+            build.endControlFlow();
         }
-
-        code.append("\n        return props;\n");
-        code.append("    }\n\n");
+        return build.addStatement("return props").build();
     }
 
-    private void generateNodeMetadata(StringBuilder code, DomainMetadata metadata, GraphMetadata graph) {
+    private MethodSpec buildNodeMetadata(DomainMetadata metadata, GraphMetadata graph) {
         String nodeLabel = graph.label() != null ? graph.label() : metadata.entityName();
 
-        code.append("    // ═══════════════════════════════════════════════════════════════════════════\n");
-        code.append("    // Metadata\n");
-        code.append("    // ═══════════════════════════════════════════════════════════════════════════\n\n");
+        CodeBlock.Builder body = CodeBlock.builder()
+                .add("return $T.builder()\n", GRAPH_NODE_METADATA)
+                .indent()
+                .add(".nodeLabel($S)\n", nodeLabel);
 
-        code.append("    /**\n");
-        code.append("     * Returns node metadata for schema initialization.\n");
-        code.append("     */\n");
-        code.append("    public static GraphNodeMetadata nodeMetadata() {\n");
-        code.append("        return GraphNodeMetadata.builder()\n");
-        code.append("                .nodeLabel(\"").append(nodeLabel).append("\")\n");
-
-        // Add indexed properties
         List<FieldMetadata> graphFields = getGraphFields(metadata, graph);
         for (FieldMetadata field : graphFields) {
             if (field.indexed() || field.name().equals("id")) {
-                code.append("                .property(\"").append(toSnakeCase(field.name())).append("\", true)\n");
+                body.add(".property($S, true)\n", toSnakeCase(field.name()));
             }
         }
+        body.addStatement(".build()").unindent();
 
-        code.append("                .build();\n");
-        code.append("    }\n");
+        return MethodSpec.methodBuilder("nodeMetadata")
+                .addJavadoc("Returns node metadata for schema initialization.\n")
+                .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+                .returns(GRAPH_NODE_METADATA)
+                .addCode(body.build())
+                .build();
     }
 
     private List<FieldMetadata> getGraphFields(DomainMetadata metadata, GraphMetadata graph) {
         if (metadata.fields() == null) {
             return List.of();
         }
-
-        // If graph has explicit properties, use those
         if (graph.properties() != null && !graph.properties().isEmpty()) {
             List<String> propNames = graph.properties().stream()
                     .map(p -> p.name())
@@ -267,8 +249,6 @@ public class KernelGraphSyncGenerator implements KernelArtifactGenerator {
                     .filter(f -> propNames.contains(f.name()))
                     .collect(Collectors.toList());
         }
-
-        // Otherwise, use searchable/indexed fields
         return metadata.fields().stream()
                 .filter(f -> f.searchable() || f.indexed() || f.sortable())
                 .filter(f -> !isSystemField(f.name()))
@@ -303,4 +283,3 @@ public class KernelGraphSyncGenerator implements KernelArtifactGenerator {
         return ArtifactType.GRAPH_SYNC;
     }
 }
-
