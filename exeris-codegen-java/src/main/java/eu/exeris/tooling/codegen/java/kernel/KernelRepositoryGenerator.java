@@ -1,197 +1,375 @@
 package eu.exeris.tooling.codegen.java.kernel;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.squareup.javapoet.ClassName;
+import com.squareup.javapoet.CodeBlock;
+import com.squareup.javapoet.FieldSpec;
+import com.squareup.javapoet.MethodSpec;
+import com.squareup.javapoet.ParameterizedTypeName;
+import com.squareup.javapoet.TypeName;
+import com.squareup.javapoet.TypeSpec;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
+import eu.exeris.tooling.codegen.java.support.KernelScaffold;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 
-import java.util.Collections;
+import javax.lang.model.element.Modifier;
 import java.util.List;
 import java.util.Set;
 
 /**
  * Kernel Repository Generator.
- * <p>
- * Generates JDBC-based repository for Exeris Kernel.
- * Uses pure JDBC, no ORM, optimized for performance.
+ *
+ * <p>Generates a JDBC-based repository (no ORM, hand-rolled SQL) for the
+ * Exeris Kernel runtime. Branches on metadata flags (tenantScoped, audited,
+ * softDelete, versioned) to extend SELECT/INSERT/UPDATE/DELETE shape.
+ *
+ * <p>Phase 4 of ADR-015: emission is JavaPoet-based.
  *
  * @author Exeris Team
  * @since 0.1.0
  */
 public class KernelRepositoryGenerator implements KernelArtifactGenerator {
 
+    private static final ClassName UUID_TYPE = ClassName.get("java.util", "UUID");
+    private static final ClassName OPTIONAL = ClassName.get("java.util", "Optional");
+    private static final ClassName LIST_TYPE = ClassName.get("java.util", "List");
+    private static final ClassName ARRAY_LIST = ClassName.get("java.util", "ArrayList");
+    private static final ClassName INSTANT = ClassName.get("java.time", "Instant");
+    private static final ClassName TIMESTAMP = ClassName.get("java.sql", "Timestamp");
+    private static final ClassName CONNECTION = ClassName.get("java.sql", "Connection");
+    private static final ClassName PREPARED_STATEMENT = ClassName.get("java.sql", "PreparedStatement");
+    private static final ClassName STATEMENT = ClassName.get("java.sql", "Statement");
+    private static final ClassName RESULT_SET = ClassName.get("java.sql", "ResultSet");
+    private static final ClassName SQL_EXCEPTION = ClassName.get("java.sql", "SQLException");
+    private static final ClassName DATA_SOURCE = ClassName.get("javax.sql", "DataSource");
+    private static final ClassName SLF4J_LOGGER = ClassName.get("org.slf4j", "Logger");
+    private static final ClassName SLF4J_LOGGER_FACTORY = ClassName.get("org.slf4j", "LoggerFactory");
+    private static final ClassName TYPE_REFERENCE =
+            ClassName.get("com.fasterxml.jackson.core.type", "TypeReference");
+    private static final ClassName OBJECT_MAPPER =
+            ClassName.get("com.fasterxml.jackson.databind", "ObjectMapper");
+    private static final ClassName COLLECTIONS = ClassName.get("java.util", "Collections");
+
     @Override
     public GeneratedFile generate(DomainMetadata metadata) {
         String basePackage = metadata.packageName().replace(".domain", "");
         String packageName = basePackage + ".repository";
-        String className = metadata.entityName() + "Repository";
         String entity = metadata.entityName();
+        String className = entity + "Repository";
         String table = toSnakeCase(entity) + "s";
         List<FieldMetadata> fields = metadata.fields();
 
-        StringBuilder code = new StringBuilder();
+        ClassName entityType = ClassName.get(metadata.packageName(), entity);
+        ClassName selfType = ClassName.get(packageName, className);
+        TypeName optionalOfEntity = ParameterizedTypeName.get(OPTIONAL, entityType);
+        TypeName listOfEntity = ParameterizedTypeName.get(LIST_TYPE, entityType);
+        TypeVariableContext ctx = new TypeVariableContext(entity, entityType, fields, metadata);
 
-        // Package and imports
-        code.append("package ").append(packageName).append(";\n\n");
-        code.append("import ").append(metadata.packageName()).append(".").append(entity).append(";\n");
-        code.append("import org.slf4j.Logger;\n");
-        code.append("import org.slf4j.LoggerFactory;\n\n");
-        code.append("import javax.sql.DataSource;\n");
-        code.append("import java.sql.*;\n");
-        code.append("import java.time.Instant;\n");
-        code.append("import java.util.*;\n\n");
+        TypeSpec repo = KernelScaffold.publicClass(className)
+                .addJavadoc("Generated Repository for $L.\n", entity)
+                .addJavadoc("<p>Source: {@link $T}\n", entityType)
+                .addJavadoc("<p>Table: $L\n", table)
+                .addJavadoc("<p><b>DO NOT EDIT</b> - Regenerate from domain model.\n")
+                .addField(FieldSpec.builder(SLF4J_LOGGER, "LOG",
+                                Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                        .initializer("$T.getLogger($T.class)", SLF4J_LOGGER_FACTORY, selfType)
+                        .build())
+                .addField(FieldSpec.builder(String.class, "TABLE",
+                                Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                        .initializer("$S", table)
+                        .build())
+                .addField(FieldSpec.builder(DATA_SOURCE, "dataSource",
+                        Modifier.PRIVATE, Modifier.FINAL).build())
+                .addMethod(MethodSpec.constructorBuilder()
+                        .addModifiers(Modifier.PUBLIC)
+                        .addParameter(DATA_SOURCE, "dataSource")
+                        .addStatement("this.dataSource = dataSource")
+                        .build())
+                .addMethod(buildFindById(ctx, optionalOfEntity))
+                .addMethod(buildFindAll(ctx, listOfEntity))
+                .addMethod(buildSave(ctx))
+                .addMethod(buildUpdate(ctx))
+                .addMethod(buildDeleteById(ctx))
+                .addMethod(buildCount(ctx))
+                .addMethod(buildMapRow(ctx))
+                .addMethod(buildParseList())
+                .build();
 
-        // Javadoc
-        code.append("/**\n");
-        code.append(" * Generated Repository for ").append(entity).append(".\n");
-        code.append(" * <p>Source: {@link ").append(metadata.packageName()).append(".").append(entity).append("}\n");
-        code.append(" * <p>Table: ").append(table).append("\n");
-        code.append(" * <p><b>DO NOT EDIT</b> - Regenerate from domain model.\n");
-        code.append(" */\n");
-
-        // Class
-        code.append("public class ").append(className).append(" {\n\n");
-        code.append("    private static final Logger LOG = LoggerFactory.getLogger(").append(className).append(".class);\n");
-        code.append("    private static final String TABLE = \"").append(table).append("\";\n\n");
-        code.append("    private final DataSource dataSource;\n\n");
-
-        // Constructor
-        code.append("    public ").append(className).append("(DataSource dataSource) {\n");
-        code.append("        this.dataSource = dataSource;\n");
-        code.append("    }\n\n");
-
-        // findById
-        code.append("    public Optional<").append(entity).append("> findById(UUID id) {\n");
-        code.append("        String sql = \"SELECT * FROM \" + TABLE + \" WHERE id = ?");
-        if (metadata.softDelete()) {
-            code.append(" AND deleted = false");
-        }
-        code.append("\";\n");
-        code.append("        try (Connection conn = dataSource.getConnection();\n");
-        code.append("             PreparedStatement ps = conn.prepareStatement(sql)) {\n");
-        code.append("            ps.setObject(1, id);\n");
-        code.append("            ResultSet rs = ps.executeQuery();\n");
-        code.append("            return rs.next() ? Optional.of(mapRow(rs)) : Optional.empty();\n");
-        code.append("        } catch (SQLException e) {\n");
-        code.append("            LOG.error(\"Failed to find ").append(entity).append(" by id: {}\", id, e);\n");
-        code.append("            throw new RuntimeException(\"Database error\", e);\n");
-        code.append("        }\n");
-        code.append("    }\n\n");
-
-        // findAll
-        code.append("    public List<").append(entity).append("> findAll() {\n");
-        code.append("        String sql = \"SELECT * FROM \" + TABLE");
-        if (metadata.softDelete()) {
-            code.append(" + \" WHERE deleted = false\"");
-        }
-        code.append(";\n");
-        code.append("        try (Connection conn = dataSource.getConnection();\n");
-        code.append("             Statement st = conn.createStatement()) {\n");
-        code.append("            ResultSet rs = st.executeQuery(sql);\n");
-        code.append("            List<").append(entity).append("> result = new ArrayList<>();\n");
-        code.append("            while (rs.next()) result.add(mapRow(rs));\n");
-        code.append("            return result;\n");
-        code.append("        } catch (SQLException e) {\n");
-        code.append("            LOG.error(\"Failed to find all ").append(entity).append("\", e);\n");
-        code.append("            throw new RuntimeException(\"Database error\", e);\n");
-        code.append("        }\n");
-        code.append("    }\n\n");
-
-        // save
-        code.append("    public ").append(entity).append(" save(").append(entity).append(" entity) {\n");
-        code.append("        String sql = \"INSERT INTO \" + TABLE + \" (").append(buildInsertColumns(fields, metadata)).append(") VALUES (").append(buildInsertPlaceholders(fields, metadata)).append(")\";\n");
-        code.append("        try (Connection conn = dataSource.getConnection();\n");
-        code.append("             PreparedStatement ps = conn.prepareStatement(sql)) {\n");
-        code.append("            if (entity.getId() == null) entity.setId(UUID.randomUUID());\n");
-        if (metadata.audited()) {
-            code.append("            entity.setCreatedAt(Instant.now());\n");
-            code.append("            entity.setUpdatedAt(Instant.now());\n");
-        }
-        code.append(buildInsertSetters(fields, metadata));
-        code.append("            ps.executeUpdate();\n");
-        code.append("            LOG.info(\"Created ").append(entity).append(": {}\", entity.getId());\n");
-        code.append("            return entity;\n");
-        code.append("        } catch (SQLException e) {\n");
-        code.append("            LOG.error(\"Failed to save ").append(entity).append("\", e);\n");
-        code.append("            throw new RuntimeException(\"Database error\", e);\n");
-        code.append("        }\n");
-        code.append("    }\n\n");
-
-        // update
-        code.append("    public ").append(entity).append(" update(UUID id, ").append(entity).append(" entity) {\n");
-        code.append("        String sql = \"UPDATE \" + TABLE + \" SET ").append(buildUpdateSetClause(fields, metadata)).append(" WHERE id = ?\";\n");
-        code.append("        try (Connection conn = dataSource.getConnection();\n");
-        code.append("             PreparedStatement ps = conn.prepareStatement(sql)) {\n");
-        if (metadata.audited()) {
-            code.append("            entity.setUpdatedAt(Instant.now());\n");
-        }
-        code.append(buildUpdateSetters(fields, metadata));
-        code.append("            int updated = ps.executeUpdate();\n");
-        code.append("            if (updated == 0) throw new RuntimeException(\"").append(entity).append(" not found: \" + id);\n");
-        code.append("            entity.setId(id);\n");
-        code.append("            LOG.info(\"Updated ").append(entity).append(": {}\", id);\n");
-        code.append("            return entity;\n");
-        code.append("        } catch (SQLException e) {\n");
-        code.append("            LOG.error(\"Failed to update ").append(entity).append(": {}\", id, e);\n");
-        code.append("            throw new RuntimeException(\"Database error\", e);\n");
-        code.append("        }\n");
-        code.append("    }\n\n");
-
-        // deleteById (soft delete if enabled)
-        code.append("    public void deleteById(UUID id) {\n");
-        if (metadata.softDelete()) {
-            code.append("        String sql = \"UPDATE \" + TABLE + \" SET deleted = true, deleted_at = ? WHERE id = ?\";\n");
-            code.append("        try (Connection conn = dataSource.getConnection();\n");
-            code.append("             PreparedStatement ps = conn.prepareStatement(sql)) {\n");
-            code.append("            ps.setTimestamp(1, Timestamp.from(Instant.now()));\n");
-            code.append("            ps.setObject(2, id);\n");
-        } else {
-            code.append("        String sql = \"DELETE FROM \" + TABLE + \" WHERE id = ?\";\n");
-            code.append("        try (Connection conn = dataSource.getConnection();\n");
-            code.append("             PreparedStatement ps = conn.prepareStatement(sql)) {\n");
-            code.append("            ps.setObject(1, id);\n");
-        }
-        code.append("            int deleted = ps.executeUpdate();\n");
-        code.append("            if (deleted == 0) throw new RuntimeException(\"").append(entity).append(" not found: \" + id);\n");
-        code.append("            LOG.info(\"Deleted ").append(entity).append(": {}\", id);\n");
-        code.append("        } catch (SQLException e) {\n");
-        code.append("            LOG.error(\"Failed to delete ").append(entity).append(": {}\", id, e);\n");
-        code.append("            throw new RuntimeException(\"Database error\", e);\n");
-        code.append("        }\n");
-        code.append("    }\n\n");
-
-        // count
-        code.append("    public long count() {\n");
-        code.append("        String sql = \"SELECT COUNT(*) FROM \" + TABLE");
-        if (metadata.softDelete()) {
-            code.append(" + \" WHERE deleted = false\"");
-        }
-        code.append(";\n");
-        code.append("        try (Connection conn = dataSource.getConnection();\n");
-        code.append("             Statement st = conn.createStatement()) {\n");
-        code.append("            ResultSet rs = st.executeQuery(sql);\n");
-        code.append("            return rs.next() ? rs.getLong(1) : 0;\n");
-        code.append("        } catch (SQLException e) {\n");
-        code.append("            LOG.error(\"Failed to count ").append(entity).append("\", e);\n");
-        code.append("            throw new RuntimeException(\"Database error\", e);\n");
-        code.append("        }\n");
-        code.append("    }\n\n");
-
-        // mapRow
-        code.append("    private ").append(entity).append(" mapRow(ResultSet rs) throws SQLException {\n");
-        code.append("        ").append(entity).append(" entity = new ").append(entity).append("();\n");
-        code.append("        entity.setId(rs.getObject(\"id\", UUID.class));\n");
-        code.append(buildMapRowSetters(fields, metadata));
-        code.append("        return entity;\n");
-        code.append("    }\n");
-
-        code.append("}\n");
-
-        return new GeneratedFile(packageName, className, code.toString(), ArtifactType.REPOSITORY);
+        return new GeneratedFile(packageName, className,
+                KernelScaffold.render(packageName, repo), ArtifactType.REPOSITORY);
     }
+
+    /** Carrier for repeated build-time state — keeps signatures readable. */
+    private record TypeVariableContext(String entity, ClassName entityType,
+                                       List<FieldMetadata> fields, DomainMetadata metadata) {}
+
+    private MethodSpec buildFindById(TypeVariableContext ctx, TypeName optionalOfEntity) {
+        String softDeleteFilter = ctx.metadata().softDelete() ? " AND deleted = false" : "";
+        String sqlTail = " WHERE id = ?" + softDeleteFilter;
+        return MethodSpec.methodBuilder("findById")
+                .addModifiers(Modifier.PUBLIC)
+                .returns(optionalOfEntity)
+                .addParameter(UUID_TYPE, "id")
+                .addStatement("String sql = $S + TABLE + $S", "SELECT * FROM ", sqlTail)
+                .beginControlFlow("try ($T conn = dataSource.getConnection();\n     $T ps = conn.prepareStatement(sql))",
+                        CONNECTION, PREPARED_STATEMENT)
+                .addStatement("ps.setObject(1, id)")
+                .addStatement("$T rs = ps.executeQuery()", RESULT_SET)
+                .addStatement("return rs.next() ? $T.of(mapRow(rs)) : $T.empty()", OPTIONAL, OPTIONAL)
+                .nextControlFlow("catch ($T e)", SQL_EXCEPTION)
+                .addStatement("LOG.error($S, id, e)", "Failed to find " + ctx.entity() + " by id: {}")
+                .addStatement("throw new RuntimeException($S, e)", "Database error")
+                .endControlFlow()
+                .build();
+    }
+
+    private MethodSpec buildFindAll(TypeVariableContext ctx, TypeName listOfEntity) {
+        String softDeleteFilter = ctx.metadata().softDelete() ? " WHERE deleted = false" : "";
+        return MethodSpec.methodBuilder("findAll")
+                .addModifiers(Modifier.PUBLIC)
+                .returns(listOfEntity)
+                .addStatement("String sql = $S + TABLE + $S", "SELECT * FROM ", softDeleteFilter)
+                .beginControlFlow("try ($T conn = dataSource.getConnection();\n     $T st = conn.createStatement())",
+                        CONNECTION, STATEMENT)
+                .addStatement("$T rs = st.executeQuery(sql)", RESULT_SET)
+                .addStatement("$T<$T> result = new $T<>()", LIST_TYPE, ctx.entityType(), ARRAY_LIST)
+                .beginControlFlow("while (rs.next())")
+                .addStatement("result.add(mapRow(rs))")
+                .endControlFlow()
+                .addStatement("return result")
+                .nextControlFlow("catch ($T e)", SQL_EXCEPTION)
+                .addStatement("LOG.error($S, e)", "Failed to find all " + ctx.entity())
+                .addStatement("throw new RuntimeException($S, e)", "Database error")
+                .endControlFlow()
+                .build();
+    }
+
+    private MethodSpec buildSave(TypeVariableContext ctx) {
+        String columns = buildInsertColumns(ctx.fields(), ctx.metadata());
+        String placeholders = buildInsertPlaceholders(ctx.fields(), ctx.metadata());
+        String sqlTail = " (" + columns + ") VALUES (" + placeholders + ")";
+
+        MethodSpec.Builder save = MethodSpec.methodBuilder("save")
+                .addModifiers(Modifier.PUBLIC)
+                .returns(ctx.entityType())
+                .addParameter(ctx.entityType(), "entity")
+                .addStatement("String sql = $S + TABLE + $S", "INSERT INTO ", sqlTail)
+                .beginControlFlow("try ($T conn = dataSource.getConnection();\n     $T ps = conn.prepareStatement(sql))",
+                        CONNECTION, PREPARED_STATEMENT)
+                .addStatement("if (entity.getId() == null) entity.setId($T.randomUUID())", UUID_TYPE);
+        if (ctx.metadata().audited()) {
+            save.addStatement("entity.setCreatedAt($T.now())", INSTANT);
+            save.addStatement("entity.setUpdatedAt($T.now())", INSTANT);
+        }
+        emitInsertSetters(save, ctx.fields(), ctx.metadata());
+        return save
+                .addStatement("ps.executeUpdate()")
+                .addStatement("LOG.info($S, entity.getId())", "Created " + ctx.entity() + ": {}")
+                .addStatement("return entity")
+                .nextControlFlow("catch ($T e)", SQL_EXCEPTION)
+                .addStatement("LOG.error($S, e)", "Failed to save " + ctx.entity())
+                .addStatement("throw new RuntimeException($S, e)", "Database error")
+                .endControlFlow()
+                .build();
+    }
+
+    private MethodSpec buildUpdate(TypeVariableContext ctx) {
+        String setClause = buildUpdateSetClause(ctx.fields(), ctx.metadata());
+        String sqlTail = " SET " + setClause + " WHERE id = ?";
+
+        MethodSpec.Builder update = MethodSpec.methodBuilder("update")
+                .addModifiers(Modifier.PUBLIC)
+                .returns(ctx.entityType())
+                .addParameter(UUID_TYPE, "id")
+                .addParameter(ctx.entityType(), "entity")
+                .addStatement("String sql = $S + TABLE + $S", "UPDATE ", sqlTail)
+                .beginControlFlow("try ($T conn = dataSource.getConnection();\n     $T ps = conn.prepareStatement(sql))",
+                        CONNECTION, PREPARED_STATEMENT);
+        if (ctx.metadata().audited()) {
+            update.addStatement("entity.setUpdatedAt($T.now())", INSTANT);
+        }
+        emitUpdateSetters(update, ctx.fields(), ctx.metadata());
+        return update
+                .addStatement("int updated = ps.executeUpdate()")
+                .addStatement("if (updated == 0) throw new RuntimeException($S + id)",
+                        ctx.entity() + " not found: ")
+                .addStatement("entity.setId(id)")
+                .addStatement("LOG.info($S, id)", "Updated " + ctx.entity() + ": {}")
+                .addStatement("return entity")
+                .nextControlFlow("catch ($T e)", SQL_EXCEPTION)
+                .addStatement("LOG.error($S, id, e)", "Failed to update " + ctx.entity() + ": {}")
+                .addStatement("throw new RuntimeException($S, e)", "Database error")
+                .endControlFlow()
+                .build();
+    }
+
+    private MethodSpec buildDeleteById(TypeVariableContext ctx) {
+        MethodSpec.Builder delete = MethodSpec.methodBuilder("deleteById")
+                .addModifiers(Modifier.PUBLIC)
+                .returns(TypeName.VOID)
+                .addParameter(UUID_TYPE, "id");
+        if (ctx.metadata().softDelete()) {
+            delete.addStatement("String sql = $S + TABLE + $S",
+                            "UPDATE ", " SET deleted = true, deleted_at = ? WHERE id = ?")
+                    .beginControlFlow("try ($T conn = dataSource.getConnection();\n     $T ps = conn.prepareStatement(sql))",
+                            CONNECTION, PREPARED_STATEMENT)
+                    .addStatement("ps.setTimestamp(1, $T.from($T.now()))", TIMESTAMP, INSTANT)
+                    .addStatement("ps.setObject(2, id)");
+        } else {
+            delete.addStatement("String sql = $S + TABLE + $S", "DELETE FROM ", " WHERE id = ?")
+                    .beginControlFlow("try ($T conn = dataSource.getConnection();\n     $T ps = conn.prepareStatement(sql))",
+                            CONNECTION, PREPARED_STATEMENT)
+                    .addStatement("ps.setObject(1, id)");
+        }
+        return delete
+                .addStatement("int deleted = ps.executeUpdate()")
+                .addStatement("if (deleted == 0) throw new RuntimeException($S + id)",
+                        ctx.entity() + " not found: ")
+                .addStatement("LOG.info($S, id)", "Deleted " + ctx.entity() + ": {}")
+                .nextControlFlow("catch ($T e)", SQL_EXCEPTION)
+                .addStatement("LOG.error($S, id, e)", "Failed to delete " + ctx.entity() + ": {}")
+                .addStatement("throw new RuntimeException($S, e)", "Database error")
+                .endControlFlow()
+                .build();
+    }
+
+    private MethodSpec buildCount(TypeVariableContext ctx) {
+        String sqlTail = ctx.metadata().softDelete() ? " WHERE deleted = false" : "";
+        return MethodSpec.methodBuilder("count")
+                .addModifiers(Modifier.PUBLIC)
+                .returns(TypeName.LONG)
+                .addStatement("String sql = $S + TABLE + $S", "SELECT COUNT(*) FROM ", sqlTail)
+                .beginControlFlow("try ($T conn = dataSource.getConnection();\n     $T st = conn.createStatement())",
+                        CONNECTION, STATEMENT)
+                .addStatement("$T rs = st.executeQuery(sql)", RESULT_SET)
+                .addStatement("return rs.next() ? rs.getLong(1) : 0")
+                .nextControlFlow("catch ($T e)", SQL_EXCEPTION)
+                .addStatement("LOG.error($S, e)", "Failed to count " + ctx.entity())
+                .addStatement("throw new RuntimeException($S, e)", "Database error")
+                .endControlFlow()
+                .build();
+    }
+
+    private MethodSpec buildMapRow(TypeVariableContext ctx) {
+        MethodSpec.Builder map = MethodSpec.methodBuilder("mapRow")
+                .addModifiers(Modifier.PRIVATE)
+                .returns(ctx.entityType())
+                .addParameter(RESULT_SET, "rs")
+                .addException(SQL_EXCEPTION)
+                .addStatement("$T entity = new $T()", ctx.entityType(), ctx.entityType())
+                .addStatement("entity.setId(rs.getObject($S, $T.class))", "id", UUID_TYPE);
+
+        for (FieldMetadata field : ctx.fields()) {
+            if (isSystemField(field.name())) continue;
+            emitMapRowFieldSetter(map, field);
+        }
+        if (ctx.metadata().tenantScoped()) {
+            map.addStatement("entity.setTenantId(rs.getObject($S, $T.class))", "tenant_id", UUID_TYPE);
+        }
+        if (ctx.metadata().audited()) {
+            map.addCode(CodeBlock.of("{ $T ts = rs.getTimestamp($S); if (ts != null) entity.setCreatedAt(ts.toInstant()); }\n",
+                    TIMESTAMP, "created_at"));
+            map.addCode(CodeBlock.of("{ $T ts = rs.getTimestamp($S); if (ts != null) entity.setUpdatedAt(ts.toInstant()); }\n",
+                    TIMESTAMP, "updated_at"));
+        }
+        if (ctx.metadata().softDelete()) {
+            map.addStatement("entity.setDeleted(rs.getBoolean($S))", "deleted");
+        }
+        if (ctx.metadata().versioned()) {
+            map.addStatement("entity.setVersion(rs.getLong($S))", "version");
+        }
+        return map.addStatement("return entity").build();
+    }
+
+    private void emitMapRowFieldSetter(MethodSpec.Builder map, FieldMetadata field) {
+        String col = toSnakeCase(field.name());
+        String setter = "entity.set" + capitalize(field.name());
+        String type = field.type();
+
+        if (type.startsWith("List<")) {
+            String genericType = type.substring(5, type.length() - 1);
+            // Pre-existing typo "List<X>( )>() {}" replaced with the correct
+            // "List<X>>() {}" form on this migration. Codepath was untested.
+            map.addCode(CodeBlock.of(
+                    "{ String v = rs.getString($S); if (v != null) $L(parseList(v, new $T<$T<$L>>() {})); }\n",
+                    col, setter, TYPE_REFERENCE, LIST_TYPE, genericType));
+        } else if ("UUID".equals(type) || "java.util.UUID".equals(type)) {
+            map.addStatement("$L(rs.getObject($S, $T.class))", setter, col, UUID_TYPE);
+        } else if ("String".equals(type) || "java.lang.String".equals(type)) {
+            map.addStatement("$L(rs.getString($S))", setter, col);
+        } else if ("Long".equals(type) || "long".equals(type) || "java.lang.Long".equals(type)) {
+            map.addStatement("$L(rs.getLong($S))", setter, col);
+        } else if ("Integer".equals(type) || "int".equals(type) || "java.lang.Integer".equals(type)) {
+            map.addStatement("$L(rs.getInt($S))", setter, col);
+        } else if ("Boolean".equals(type) || "boolean".equals(type) || "java.lang.Boolean".equals(type)) {
+            map.addStatement("$L(rs.getBoolean($S))", setter, col);
+        } else if ("BigDecimal".equals(type) || "java.math.BigDecimal".equals(type)) {
+            map.addStatement("$L(rs.getBigDecimal($S))", setter, col);
+        } else if (type.contains("Instant") || type.contains("LocalDateTime")) {
+            map.addCode(CodeBlock.of("{ $T ts = rs.getTimestamp($S); if (ts != null) $L(ts.toInstant()); }\n",
+                    TIMESTAMP, col, setter));
+        } else if (type.contains("LocalDate")) {
+            map.addCode(CodeBlock.of("{ java.sql.Date d = rs.getDate($S); if (d != null) $L(d.toLocalDate()); }\n",
+                    col, setter));
+        } else {
+            // Enum or other — get as string and convert
+            map.addCode(CodeBlock.of("{ String v = rs.getString($S); if (v != null) $L($L.valueOf(v)); }\n",
+                    col, setter, type));
+        }
+    }
+
+    private MethodSpec buildParseList() {
+        // <T> List<T> parseList(String json, TypeReference<List<T>> typeRef)
+        return MethodSpec.methodBuilder("parseList")
+                .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+                .addTypeVariable(com.squareup.javapoet.TypeVariableName.get("T"))
+                .returns(ParameterizedTypeName.get(LIST_TYPE,
+                        com.squareup.javapoet.TypeVariableName.get("T")))
+                .addParameter(String.class, "json")
+                .addParameter(ParameterizedTypeName.get(TYPE_REFERENCE,
+                        ParameterizedTypeName.get(LIST_TYPE,
+                                com.squareup.javapoet.TypeVariableName.get("T"))), "typeRef")
+                .addStatement("if (json == null || json.isEmpty()) return $T.emptyList()", COLLECTIONS)
+                .beginControlFlow("try")
+                .addStatement("return new $T().readValue(json, typeRef)", OBJECT_MAPPER)
+                .nextControlFlow("catch (Exception e)")
+                .addStatement("throw new RuntimeException($S, e)", "Failed to parse list JSON")
+                .endControlFlow()
+                .build();
+    }
+
+    private void emitInsertSetters(MethodSpec.Builder save, List<FieldMetadata> fields, DomainMetadata metadata) {
+        int idx = 1;
+        save.addStatement("ps.setObject($L, entity.getId())", idx++);
+        for (FieldMetadata field : fields) {
+            save.addStatement("ps.setObject($L, entity.get$L())", idx++, capitalize(field.name()));
+        }
+        if (metadata.tenantScoped()) {
+            save.addStatement("ps.setObject($L, entity.getTenantId())", idx++);
+        }
+        if (metadata.audited()) {
+            save.addStatement("ps.setTimestamp($L, $T.from(entity.getCreatedAt()))", idx++, TIMESTAMP);
+            save.addStatement("ps.setTimestamp($L, $T.from(entity.getUpdatedAt()))", idx++, TIMESTAMP);
+        }
+        if (metadata.softDelete()) {
+            save.addStatement("ps.setBoolean($L, false)", idx);
+        }
+    }
+
+    private void emitUpdateSetters(MethodSpec.Builder update, List<FieldMetadata> fields, DomainMetadata metadata) {
+        int idx = 1;
+        for (FieldMetadata field : fields) {
+            update.addStatement("ps.setObject($L, entity.get$L())", idx++, capitalize(field.name()));
+        }
+        if (metadata.audited()) {
+            update.addStatement("ps.setTimestamp($L, $T.from(entity.getUpdatedAt()))", idx++, TIMESTAMP);
+        }
+        update.addStatement("ps.setObject($L, id)", idx);
+    }
+
+    // --- SQL fragment builders (string concatenation, embedded into Java string literals) ---
 
     private String buildInsertColumns(List<FieldMetadata> fields, DomainMetadata metadata) {
         StringBuilder sb = new StringBuilder("id");
@@ -215,26 +393,6 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         return sb.toString();
     }
 
-    private String buildInsertSetters(List<FieldMetadata> fields, DomainMetadata metadata) {
-        StringBuilder sb = new StringBuilder();
-        int idx = 1;
-        sb.append("            ps.setObject(").append(idx++).append(", entity.getId());\n");
-        for (FieldMetadata field : fields) {
-            sb.append("            ps.setObject(").append(idx++).append(", entity.get").append(capitalize(field.name())).append("());\n");
-        }
-        if (metadata.tenantScoped()) {
-            sb.append("            ps.setObject(").append(idx++).append(", entity.getTenantId());\n");
-        }
-        if (metadata.audited()) {
-            sb.append("            ps.setTimestamp(").append(idx++).append(", Timestamp.from(entity.getCreatedAt()));\n");
-            sb.append("            ps.setTimestamp(").append(idx++).append(", Timestamp.from(entity.getUpdatedAt()));\n");
-        }
-        if (metadata.softDelete()) {
-            sb.append("            ps.setBoolean(").append(idx).append(", false);\n");
-        }
-        return sb.toString();
-    }
-
     private String buildUpdateSetClause(List<FieldMetadata> fields, DomainMetadata metadata) {
         StringBuilder sb = new StringBuilder();
         boolean first = true;
@@ -249,87 +407,9 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         return sb.toString();
     }
 
-    private String buildUpdateSetters(List<FieldMetadata> fields, DomainMetadata metadata) {
-        StringBuilder sb = new StringBuilder();
-        int idx = 1;
-        for (FieldMetadata field : fields) {
-            sb.append("            ps.setObject(").append(idx++).append(", entity.get").append(capitalize(field.name())).append("());\n");
-        }
-        if (metadata.audited()) {
-            sb.append("            ps.setTimestamp(").append(idx++).append(", Timestamp.from(entity.getUpdatedAt()));\n");
-        }
-        sb.append("            ps.setObject(").append(idx).append(", id);\n");
-        return sb.toString();
-    }
-
-    private String buildMapRowSetters(List<FieldMetadata> fields, DomainMetadata metadata) {
-        StringBuilder sb = new StringBuilder();
-        for (FieldMetadata field : fields) {
-            // Skip system fields handled separately
-            if (isSystemField(field.name())) continue;
-
-            String col = toSnakeCase(field.name());
-            String setter = "entity.set" + capitalize(field.name());
-            String type = field.type();
-
-            if (type.startsWith("List<")) {
-                // List mapping: use helper method
-                String genericType = type.substring(5, type.length() - 1);
-                sb.append("        { String v = rs.getString(\"").append(col).append("\"); if (v != null) ")
-                  .append(setter).append("(parseList(v, new TypeReference<List<").append(genericType).append(">( )>() {})); }\n");
-            } else if ("UUID".equals(type) || "java.util.UUID".equals(type)) {
-                sb.append("        ").append(setter).append("(rs.getObject(\"").append(col).append("\", UUID.class));\n");
-            } else if ("String".equals(type) || "java.lang.String".equals(type)) {
-                sb.append("        ").append(setter).append("(rs.getString(\"").append(col).append("\"));\n");
-            } else if ("Long".equals(type) || "long".equals(type) || "java.lang.Long".equals(type)) {
-                sb.append("        ").append(setter).append("(rs.getLong(\"").append(col).append("\"));\n");
-            } else if ("Integer".equals(type) || "int".equals(type) || "java.lang.Integer".equals(type)) {
-                sb.append("        ").append(setter).append("(rs.getInt(\"").append(col).append("\"));\n");
-            } else if ("Boolean".equals(type) || "boolean".equals(type) || "java.lang.Boolean".equals(type)) {
-                sb.append("        ").append(setter).append("(rs.getBoolean(\"").append(col).append("\"));\n");
-            } else if ("BigDecimal".equals(type) || "java.math.BigDecimal".equals(type)) {
-                sb.append("        ").append(setter).append("(rs.getBigDecimal(\"").append(col).append("\"));\n");
-            } else if (type.contains("Instant") || type.contains("LocalDateTime")) {
-                sb.append("        { Timestamp ts = rs.getTimestamp(\"").append(col).append("\"); ");
-                sb.append("if (ts != null) ").append(setter).append("(ts.toInstant()); }\n");
-            } else if (type.contains("LocalDate")) {
-                sb.append("        { java.sql.Date d = rs.getDate(\"").append(col).append("\"); ");
-                sb.append("if (d != null) ").append(setter).append("(d.toLocalDate()); }\n");
-            } else {
-                // Enum or other - get as string and convert
-                sb.append("        { String v = rs.getString(\"").append(col).append("\"); ");
-                sb.append("if (v != null) ").append(setter).append("(").append(type).append(".valueOf(v)); }\n");
-            }
-        }
-        if (metadata.tenantScoped()) {
-            sb.append("        entity.setTenantId(rs.getObject(\"tenant_id\", UUID.class));\n");
-        }
-        if (metadata.audited()) {
-            sb.append("        { Timestamp ts = rs.getTimestamp(\"created_at\"); if (ts != null) entity.setCreatedAt(ts.toInstant()); }\n");
-            sb.append("        { Timestamp ts = rs.getTimestamp(\"updated_at\"); if (ts != null) entity.setUpdatedAt(ts.toInstant()); }\n");
-        }
-        if (metadata.softDelete()) {
-            sb.append("        entity.setDeleted(rs.getBoolean(\"deleted\"));\n");
-        }
-        if (metadata.versioned()) {
-            sb.append("        entity.setVersion(rs.getLong(\"version\"));\n");
-        }
-        return sb.toString();
-    }
-
-    // Add helper for list parsing
-    private static <T> List<T> parseList(String json, TypeReference<List<T>> typeRef) {
-        if (json == null || json.isEmpty()) return Collections.emptyList();
-        try {
-            return new ObjectMapper().readValue(json, typeRef);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to parse list JSON", e);
-        }
-    }
-
     private boolean isSystemField(String fieldName) {
         return Set.of("id", "tenantId", "createdAt", "createdBy", "updatedAt", "updatedBy",
-                      "deleted", "deletedAt", "deletedBy", "version").contains(fieldName);
+                "deleted", "deletedAt", "deletedBy", "version").contains(fieldName);
     }
 
     private String toSnakeCase(String camelCase) {
@@ -341,6 +421,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     }
 
     @Override
-    public ArtifactType artifactType() { return ArtifactType.REPOSITORY; }
+    public ArtifactType artifactType() {
+        return ArtifactType.REPOSITORY;
+    }
 }
-
