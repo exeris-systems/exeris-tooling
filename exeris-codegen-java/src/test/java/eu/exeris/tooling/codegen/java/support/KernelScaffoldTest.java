@@ -1,7 +1,7 @@
 package eu.exeris.tooling.codegen.java.support;
 
-import com.squareup.javapoet.MethodSpec;
-import com.squareup.javapoet.TypeSpec;
+import com.palantir.javapoet.MethodSpec;
+import com.palantir.javapoet.TypeSpec;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -22,14 +22,14 @@ class KernelScaffoldTest {
         @DisplayName("sets PUBLIC modifier")
         void setsPublicModifier() {
             TypeSpec spec = KernelScaffold.publicClass("Foo").build();
-            assertThat(spec.modifiers).contains(Modifier.PUBLIC);
+            assertThat(spec.modifiers()).contains(Modifier.PUBLIC);
         }
 
         @Test
         @DisplayName("preserves the class name")
         void preservesName() {
             TypeSpec spec = KernelScaffold.publicClass("OrderHandler").build();
-            assertThat(spec.name).isEqualTo("OrderHandler");
+            assertThat(spec.name()).isEqualTo("OrderHandler");
         }
 
         @Test

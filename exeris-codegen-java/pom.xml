@@ -25,9 +25,9 @@
             <artifactId>exeris-codegen-core</artifactId>
         </dependency>
 
-        <!-- JavaPoet — type-safe Java emission (ADR-015 Phase 1+) -->
+        <!-- JavaPoet — type-safe Java emission (ADR-015 + Amendment 1: Palantir fork) -->
         <dependency>
-            <groupId>com.squareup</groupId>
+            <groupId>com.palantir.javapoet</groupId>
             <artifactId>javapoet</artifactId>
         </dependency>
 

@@ -19,7 +19,7 @@
         <exeris.sdk.version>0.1.0-SNAPSHOT</exeris.sdk.version>
 
         <auto-service.version>1.1.1</auto-service.version>
-        <javapoet.version>1.13.0</javapoet.version>
+        <palantir.javapoet.version>0.15.0</palantir.javapoet.version>
         <jackson.version>2.18.2</jackson.version>
         <swagger-parser.version>2.1.22</swagger-parser.version>
 
@@ -68,11 +68,13 @@
                 <version>${auto-service.version}</version>
             </dependency>
 
-            <!-- JavaPoet (type-safe Java source emission for codegen-java; ADR-015) -->
+            <!-- JavaPoet (type-safe Java source emission for codegen-java;
+                 ADR-015 Amendment 1: Palantir's maintained fork — adds record support
+                 for Phase 4c KernelEventGenerator) -->
             <dependency>
-                <groupId>com.squareup</groupId>
+                <groupId>com.palantir.javapoet</groupId>
                 <artifactId>javapoet</artifactId>
-                <version>${javapoet.version}</version>
+                <version>${palantir.javapoet.version}</version>
             </dependency>
 
             <!-- Jackson 2.x (build-time JSON I/O for metadata files) -->

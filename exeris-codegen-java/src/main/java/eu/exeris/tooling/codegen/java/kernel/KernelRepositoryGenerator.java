@@ -1,12 +1,13 @@
 package eu.exeris.tooling.codegen.java.kernel;
 
-import com.squareup.javapoet.ClassName;
-import com.squareup.javapoet.CodeBlock;
-import com.squareup.javapoet.FieldSpec;
-import com.squareup.javapoet.MethodSpec;
-import com.squareup.javapoet.ParameterizedTypeName;
-import com.squareup.javapoet.TypeName;
-import com.squareup.javapoet.TypeSpec;
+import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.CodeBlock;
+import com.palantir.javapoet.FieldSpec;
+import com.palantir.javapoet.MethodSpec;
+import com.palantir.javapoet.ParameterizedTypeName;
+import com.palantir.javapoet.TypeName;
+import com.palantir.javapoet.TypeSpec;
+import com.palantir.javapoet.TypeVariableName;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
@@ -327,13 +328,13 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     private MethodSpec buildParseList() {
         return MethodSpec.methodBuilder("parseList")
                 .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
-                .addTypeVariable(com.squareup.javapoet.TypeVariableName.get("T"))
+                .addTypeVariable(TypeVariableName.get("T"))
                 .returns(ParameterizedTypeName.get(LIST_TYPE,
-                        com.squareup.javapoet.TypeVariableName.get("T")))
+                        TypeVariableName.get("T")))
                 .addParameter(String.class, "json")
                 .addParameter(ParameterizedTypeName.get(TYPE_REFERENCE,
                         ParameterizedTypeName.get(LIST_TYPE,
-                                com.squareup.javapoet.TypeVariableName.get("T"))), "typeRef")
+                                TypeVariableName.get("T"))), "typeRef")
                 .addStatement("if (json == null || json.isEmpty()) return $T.emptyList()", COLLECTIONS)
                 .beginControlFlow("try")
                 .addStatement("return MAPPER.readValue(json, typeRef)")
