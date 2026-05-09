@@ -79,7 +79,7 @@ public class KernelEventGenerator implements KernelArtifactGenerator {
             builder.addType(buildEventRecord(event, metadata, entityType, payloadFields));
         }
 
-        builder.addType(buildPublisher(metadata, entityType, payloadFields));
+        builder.addType(buildPublisher(metadata, entityType));
 
         return new GeneratedFile(packageName, className,
                 KernelScaffold.render(packageName, builder.build()), ArtifactType.EVENT);
@@ -147,8 +147,7 @@ public class KernelEventGenerator implements KernelArtifactGenerator {
         return record.build();
     }
 
-    private TypeSpec buildPublisher(DomainMetadata metadata, ClassName entityType,
-                                     List<FieldMetadata> payloadFields) {
+    private TypeSpec buildPublisher(DomainMetadata metadata, ClassName entityType) {
         String entity = metadata.entityName();
 
         TypeSpec.Builder publisher = TypeSpec.classBuilder("Publisher")
