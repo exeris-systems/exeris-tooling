@@ -1,6 +1,6 @@
 # ADR-015 — Codegen Emission Strategy: JavaPoet for Java, Text Blocks for SQL/YAML
 
-**Status:** Proposed *(flips to Accepted at merge)*
+**Status:** Accepted *(merged 2026-05-09 in #12)*
 **Date:** 2026-05-06
 **Deciders:** @arkstack-dev
 **Scope:** `exeris-tooling` (codegen-core + codegen-java)
