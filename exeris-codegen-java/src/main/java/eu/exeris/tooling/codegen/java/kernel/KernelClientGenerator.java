@@ -9,6 +9,7 @@ import com.squareup.javapoet.ParameterizedTypeName;
 import com.squareup.javapoet.TypeName;
 import com.squareup.javapoet.TypeSpec;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
+import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 
@@ -23,6 +24,9 @@ import javax.lang.model.element.Modifier;
  * <p>Phase 2 of ADR-015: emission is JavaPoet-based.
  *
  * @see eu.exeris.kernel.transport.http3.client.ExerisWebClient
+ *
+ * @author Exeris Team
+ * @since 0.1.0
  */
 public class KernelClientGenerator implements KernelArtifactGenerator {
 
@@ -33,6 +37,7 @@ public class KernelClientGenerator implements KernelArtifactGenerator {
     private static final ClassName UUID = ClassName.get("java.util", "UUID");
     private static final ClassName OPTIONAL = ClassName.get("java.util", "Optional");
     private static final ClassName LIST = ClassName.get("java.util", "List");
+    private static final ClassName VOID = ClassName.get("java.lang", "Void");
 
     @Override
     public GeneratedFile generate(DomainMetadata metadata) {
@@ -59,11 +64,11 @@ public class KernelClientGenerator implements KernelArtifactGenerator {
                 .addJavadoc("\n")
                 .addJavadoc("@see $T\n", WEB_CLIENT)
                 .addModifiers(Modifier.PUBLIC)
-                .addField(FieldSpec.builder(WEB_CLIENT, "client", Modifier.PRIVATE, Modifier.FINAL).build())
                 .addField(FieldSpec.builder(String.class, "BASE_PATH",
                                 Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
                         .initializer("$S", apiPath)
                         .build())
+                .addField(FieldSpec.builder(WEB_CLIENT, "client", Modifier.PRIVATE, Modifier.FINAL).build())
                 .addMethod(buildConstructor(className))
                 .addMethod(buildFindById(entity, entityType, optionalOfEntity))
                 .addMethod(buildFindAllPaged(entity, listOfEntity, uncheckedSuppression))
@@ -181,7 +186,7 @@ public class KernelClientGenerator implements KernelArtifactGenerator {
                 .addModifiers(Modifier.PUBLIC)
                 .returns(TypeName.VOID)
                 .addParameter(UUID, "id")
-                .addStatement("client.delete(BASE_PATH + $S + id, Void.class)", "/")
+                .addStatement("client.delete(BASE_PATH + $S + id, $T.class)", "/", VOID)
                 .build();
     }
 
