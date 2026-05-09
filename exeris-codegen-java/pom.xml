@@ -25,6 +25,12 @@
             <artifactId>exeris-codegen-core</artifactId>
         </dependency>
 
+        <!-- JavaPoet — type-safe Java emission (ADR-015 Phase 1+) -->
+        <dependency>
+            <groupId>com.squareup</groupId>
+            <artifactId>javapoet</artifactId>
+        </dependency>
+
         <!-- Swagger Parser for OpenAPI generation -->
         <dependency>
             <groupId>io.swagger.parser.v3</groupId>

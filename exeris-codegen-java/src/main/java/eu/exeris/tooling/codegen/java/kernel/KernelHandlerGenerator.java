@@ -1,189 +1,275 @@
 package eu.exeris.tooling.codegen.java.kernel;
 
+import com.squareup.javapoet.ClassName;
+import com.squareup.javapoet.CodeBlock;
+import com.squareup.javapoet.FieldSpec;
+import com.squareup.javapoet.JavaFile;
+import com.squareup.javapoet.MethodSpec;
+import com.squareup.javapoet.ParameterizedTypeName;
+import com.squareup.javapoet.TypeName;
+import com.squareup.javapoet.TypeSpec;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
+
+import javax.lang.model.element.Modifier;
 
 /**
  * Kernel Handler Generator.
  * <p>
  * Generates HTTP handlers for Exeris Kernel runtime (HTTP/3).
  * Handlers receive requests from Http3ServerExchange and delegate to services.
+ * <p>
+ * Phase 1 of ADR-015: emission is JavaPoet-based. Output style is owned by
+ * JavaPoet's pretty-printer; substring assertions in the E2E suite still hold,
+ * compile-gate verifies semantics.
  *
  * @author Exeris Team
  * @since 0.1.0
  */
 public class KernelHandlerGenerator implements KernelArtifactGenerator {
 
+    private static final ClassName HTTP3_EXCHANGE =
+            ClassName.get("eu.exeris.kernel.transport.http3.server", "Http3ServerExchange");
+    private static final ClassName OBJECT_MAPPER =
+            ClassName.get("com.fasterxml.jackson.databind", "ObjectMapper");
+    private static final ClassName JAVA_TIME_MODULE =
+            ClassName.get("com.fasterxml.jackson.datatype.jsr310", "JavaTimeModule");
+    private static final ClassName SLF4J_LOGGER = ClassName.get("org.slf4j", "Logger");
+    private static final ClassName SLF4J_LOGGER_FACTORY = ClassName.get("org.slf4j", "LoggerFactory");
+    private static final ClassName UUID = ClassName.get("java.util", "UUID");
+    private static final ClassName MAP = ClassName.get("java.util", "Map");
+    private static final ClassName LIST = ClassName.get("java.util", "List");
+    private static final ClassName STANDARD_CHARSETS =
+            ClassName.get("java.nio.charset", "StandardCharsets");
+    private static final ClassName ILLEGAL_ARGUMENT_EXCEPTION =
+            ClassName.get("java.lang", "IllegalArgumentException");
+    private static final ClassName EXCEPTION = ClassName.get("java.lang", "Exception");
+
     @Override
     public GeneratedFile generate(DomainMetadata metadata) {
         String basePackage = metadata.packageName().replace(".domain", "");
         String packageName = basePackage + ".handler";
-        String className = metadata.entityName() + "Handler";
         String entity = metadata.entityName();
+        String className = entity + "Handler";
         String entityLower = toLowerFirst(entity);
-        String serviceName = entity + "Service";
+        String serviceSimpleName = entity + "Service";
 
-        StringBuilder code = new StringBuilder();
+        ClassName entityType = ClassName.get(metadata.packageName(), entity);
+        ClassName serviceType = ClassName.get(basePackage + ".service", serviceSimpleName);
+        ClassName selfType = ClassName.get(packageName, className);
+        TypeName listOfEntity = ParameterizedTypeName.get(LIST, entityType);
 
-        // Package and imports
-        code.append("package ").append(packageName).append(";\n\n");
-        code.append("import ").append(metadata.packageName()).append(".").append(entity).append(";\n");
-        code.append("import ").append(basePackage).append(".service.").append(serviceName).append(";\n");
-        code.append("import eu.exeris.kernel.transport.http3.server.Http3ServerExchange;\n");
-        code.append("import com.fasterxml.jackson.databind.ObjectMapper;\n");
-        code.append("import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;\n");
-        code.append("import org.slf4j.Logger;\n");
-        code.append("import org.slf4j.LoggerFactory;\n\n");
-        code.append("import java.util.List;\n");
-        code.append("import java.util.Map;\n");
-        code.append("import java.util.UUID;\n\n");
+        TypeSpec handler = TypeSpec.classBuilder(className)
+                .addJavadoc("Generated HTTP Handler for $L.\n", entity)
+                .addJavadoc("<p>Source: {@link $T}\n", entityType)
+                .addJavadoc("<p>Path: $L\n", metadata.effectivePath())
+                .addJavadoc("<p><b>DO NOT EDIT</b> - Regenerate from domain model.\n")
+                .addModifiers(Modifier.PUBLIC)
+                .addField(FieldSpec.builder(SLF4J_LOGGER, "LOG",
+                                Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                        .initializer("$T.getLogger($T.class)", SLF4J_LOGGER_FACTORY, selfType)
+                        .build())
+                .addField(FieldSpec.builder(OBJECT_MAPPER, "MAPPER",
+                                Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                        .initializer("createMapper()")
+                        .build())
+                .addField(FieldSpec.builder(serviceType, "service", Modifier.PRIVATE, Modifier.FINAL)
+                        .build())
+                .addMethod(MethodSpec.constructorBuilder()
+                        .addModifiers(Modifier.PUBLIC)
+                        .addParameter(serviceType, "service")
+                        .addStatement("this.service = service")
+                        .build())
+                .addMethod(buildHandleGetAll(entityLower, listOfEntity))
+                .addMethod(buildHandleGetById(entityLower))
+                .addMethod(buildHandleCreate(entityLower, entityType))
+                .addMethod(buildHandleUpdate(entityLower, entityType))
+                .addMethod(buildHandleDelete(entityLower))
+                .addMethod(buildExtractPathId())
+                .addMethod(buildReadBody())
+                .addMethod(buildSendJson())
+                .addMethod(buildSendError())
+                .addMethod(buildCreateMapper())
+                .build();
 
-        // Javadoc
-        code.append("/**\n");
-        code.append(" * Generated HTTP Handler for ").append(entity).append(".\n");
-        code.append(" * <p>Source: {@link ").append(metadata.packageName()).append(".").append(entity).append("}\n");
-        code.append(" * <p>Path: ").append(metadata.effectivePath()).append("\n");
-        code.append(" * <p><b>DO NOT EDIT</b> - Regenerate from domain model.\n");
-        code.append(" */\n");
+        String content = JavaFile.builder(packageName, handler)
+                .indent("    ")
+                .skipJavaLangImports(true)
+                .build()
+                .toString();
 
-        // Class
-        code.append("public class ").append(className).append(" {\n\n");
-        code.append("    private static final Logger LOG = LoggerFactory.getLogger(").append(className).append(".class);\n");
-        code.append("    private static final ObjectMapper MAPPER = createMapper();\n\n");
-        code.append("    private final ").append(serviceName).append(" service;\n\n");
+        return new GeneratedFile(packageName, className, content, ArtifactType.CONTROLLER);
+    }
 
-        // Constructor
-        code.append("    public ").append(className).append("(").append(serviceName).append(" service) {\n");
-        code.append("        this.service = service;\n");
-        code.append("    }\n\n");
+    private MethodSpec buildHandleGetAll(String entityLower, TypeName listOfEntity) {
+        return MethodSpec.methodBuilder("handleGetAll")
+                .addModifiers(Modifier.PUBLIC)
+                .addParameter(HTTP3_EXCHANGE, "exchange")
+                .addException(EXCEPTION)
+                .addStatement("LOG.debug($S)", "GET all " + entityLower + "s")
+                .beginControlFlow("try")
+                .addStatement("$T entities = service.findAll()", listOfEntity)
+                .addStatement("sendJson(exchange, 200, entities)")
+                .nextControlFlow("catch ($T e)", EXCEPTION)
+                .addStatement("LOG.error($S, e)", "Failed to get all " + entityLower + "s")
+                .addStatement("sendError(exchange, 500, $S)", "Internal error")
+                .endControlFlow()
+                .build();
+    }
 
-        // handleGetAll
-        code.append("    public void handleGetAll(Http3ServerExchange exchange) throws Exception {\n");
-        code.append("        LOG.debug(\"GET all ").append(entityLower).append("s\");\n");
-        code.append("        try {\n");
-        code.append("            List<").append(entity).append("> entities = service.findAll();\n");
-        code.append("            sendJson(exchange, 200, entities);\n");
-        code.append("        } catch (Exception e) {\n");
-        code.append("            LOG.error(\"Failed to get all ").append(entityLower).append("s\", e);\n");
-        code.append("            sendError(exchange, 500, \"Internal error\");\n");
-        code.append("        }\n");
-        code.append("    }\n\n");
+    private MethodSpec buildHandleGetById(String entityLower) {
+        return MethodSpec.methodBuilder("handleGetById")
+                .addModifiers(Modifier.PUBLIC)
+                .addParameter(HTTP3_EXCHANGE, "exchange")
+                .addException(EXCEPTION)
+                .addStatement("String idStr = extractPathId(exchange)")
+                .addStatement("LOG.debug($S, idStr)", "GET " + entityLower + " by id: {}")
+                .beginControlFlow("try")
+                .addStatement("$T id = $T.fromString(idStr)", UUID, UUID)
+                .addCode(CodeBlock.builder()
+                        .add("service.findById(id).ifPresentOrElse(\n")
+                        .indent()
+                        .add("entity -> sendJson(exchange, 200, entity),\n")
+                        .add("() -> sendError(exchange, 404, $S)\n", "Not found")
+                        .unindent()
+                        .addStatement(")")
+                        .build())
+                .nextControlFlow("catch ($T e)", ILLEGAL_ARGUMENT_EXCEPTION)
+                .addStatement("sendError(exchange, 400, $S)", "Invalid UUID")
+                .nextControlFlow("catch ($T e)", EXCEPTION)
+                .addStatement("LOG.error($S, e)", "Failed to get " + entityLower)
+                .addStatement("sendError(exchange, 500, $S)", "Internal error")
+                .endControlFlow()
+                .build();
+    }
 
-        // handleGetById
-        code.append("    public void handleGetById(Http3ServerExchange exchange) throws Exception {\n");
-        code.append("        String idStr = extractPathId(exchange);\n");
-        code.append("        LOG.debug(\"GET ").append(entityLower).append(" by id: {}\", idStr);\n");
-        code.append("        try {\n");
-        code.append("            UUID id = UUID.fromString(idStr);\n");
-        code.append("            service.findById(id).ifPresentOrElse(\n");
-        code.append("                entity -> sendJson(exchange, 200, entity),\n");
-        code.append("                () -> sendError(exchange, 404, \"Not found\")\n");
-        code.append("            );\n");
-        code.append("        } catch (IllegalArgumentException e) {\n");
-        code.append("            sendError(exchange, 400, \"Invalid UUID\");\n");
-        code.append("        } catch (Exception e) {\n");
-        code.append("            LOG.error(\"Failed to get ").append(entityLower).append("\", e);\n");
-        code.append("            sendError(exchange, 500, \"Internal error\");\n");
-        code.append("        }\n");
-        code.append("    }\n\n");
+    private MethodSpec buildHandleCreate(String entityLower, ClassName entityType) {
+        return MethodSpec.methodBuilder("handleCreate")
+                .addModifiers(Modifier.PUBLIC)
+                .addParameter(HTTP3_EXCHANGE, "exchange")
+                .addException(EXCEPTION)
+                .addStatement("LOG.debug($S)", "POST create " + entityLower)
+                .beginControlFlow("try")
+                .addStatement("String body = readBody(exchange)")
+                .addStatement("$T entity = MAPPER.readValue(body, $T.class)", entityType, entityType)
+                .addStatement("$T saved = service.save(entity)", entityType)
+                .addStatement("sendJson(exchange, 201, saved)")
+                .nextControlFlow("catch ($T e)", EXCEPTION)
+                .addStatement("LOG.error($S, e)", "Failed to create " + entityLower)
+                .addStatement("sendError(exchange, 500, $S)", "Internal error")
+                .endControlFlow()
+                .build();
+    }
 
-        // handleCreate
-        code.append("    public void handleCreate(Http3ServerExchange exchange) throws Exception {\n");
-        code.append("        LOG.debug(\"POST create ").append(entityLower).append("\");\n");
-        code.append("        try {\n");
-        code.append("            String body = readBody(exchange);\n");
-        code.append("            ").append(entity).append(" entity = MAPPER.readValue(body, ").append(entity).append(".class);\n");
-        code.append("            ").append(entity).append(" saved = service.save(entity);\n");
-        code.append("            sendJson(exchange, 201, saved);\n");
-        code.append("        } catch (Exception e) {\n");
-        code.append("            LOG.error(\"Failed to create ").append(entityLower).append("\", e);\n");
-        code.append("            sendError(exchange, 500, \"Internal error\");\n");
-        code.append("        }\n");
-        code.append("    }\n\n");
+    private MethodSpec buildHandleUpdate(String entityLower, ClassName entityType) {
+        return MethodSpec.methodBuilder("handleUpdate")
+                .addModifiers(Modifier.PUBLIC)
+                .addParameter(HTTP3_EXCHANGE, "exchange")
+                .addException(EXCEPTION)
+                .addStatement("String idStr = extractPathId(exchange)")
+                .addStatement("LOG.debug($S, idStr)", "PUT update " + entityLower + " id: {}")
+                .beginControlFlow("try")
+                .addStatement("$T id = $T.fromString(idStr)", UUID, UUID)
+                .addStatement("String body = readBody(exchange)")
+                .addStatement("$T entity = MAPPER.readValue(body, $T.class)", entityType, entityType)
+                .addStatement("$T updated = service.update(id, entity)", entityType)
+                .addStatement("sendJson(exchange, 200, updated)")
+                .nextControlFlow("catch ($T e)", ILLEGAL_ARGUMENT_EXCEPTION)
+                .addStatement("sendError(exchange, 400, $S)", "Invalid UUID")
+                .nextControlFlow("catch ($T e)", EXCEPTION)
+                .addStatement("LOG.error($S, e)", "Failed to update " + entityLower)
+                .addStatement("sendError(exchange, 500, $S)", "Internal error")
+                .endControlFlow()
+                .build();
+    }
 
-        // handleUpdate
-        code.append("    public void handleUpdate(Http3ServerExchange exchange) throws Exception {\n");
-        code.append("        String idStr = extractPathId(exchange);\n");
-        code.append("        LOG.debug(\"PUT update ").append(entityLower).append(" id: {}\", idStr);\n");
-        code.append("        try {\n");
-        code.append("            UUID id = UUID.fromString(idStr);\n");
-        code.append("            String body = readBody(exchange);\n");
-        code.append("            ").append(entity).append(" entity = MAPPER.readValue(body, ").append(entity).append(".class);\n");
-        code.append("            ").append(entity).append(" updated = service.update(id, entity);\n");
-        code.append("            sendJson(exchange, 200, updated);\n");
-        code.append("        } catch (IllegalArgumentException e) {\n");
-        code.append("            sendError(exchange, 400, \"Invalid UUID\");\n");
-        code.append("        } catch (Exception e) {\n");
-        code.append("            LOG.error(\"Failed to update ").append(entityLower).append("\", e);\n");
-        code.append("            sendError(exchange, 500, \"Internal error\");\n");
-        code.append("        }\n");
-        code.append("    }\n\n");
+    private MethodSpec buildHandleDelete(String entityLower) {
+        return MethodSpec.methodBuilder("handleDelete")
+                .addModifiers(Modifier.PUBLIC)
+                .addParameter(HTTP3_EXCHANGE, "exchange")
+                .addException(EXCEPTION)
+                .addStatement("String idStr = extractPathId(exchange)")
+                .addStatement("LOG.debug($S, idStr)", "DELETE " + entityLower + " id: {}")
+                .beginControlFlow("try")
+                .addStatement("$T id = $T.fromString(idStr)", UUID, UUID)
+                .addStatement("service.delete(id)")
+                .addStatement("exchange.response().sendHeaders(204, null)")
+                .nextControlFlow("catch ($T e)", ILLEGAL_ARGUMENT_EXCEPTION)
+                .addStatement("sendError(exchange, 400, $S)", "Invalid UUID")
+                .nextControlFlow("catch ($T e)", EXCEPTION)
+                .addStatement("LOG.error($S, e)", "Failed to delete " + entityLower)
+                .addStatement("sendError(exchange, 500, $S)", "Internal error")
+                .endControlFlow()
+                .build();
+    }
 
-        // handleDelete
-        code.append("    public void handleDelete(Http3ServerExchange exchange) throws Exception {\n");
-        code.append("        String idStr = extractPathId(exchange);\n");
-        code.append("        LOG.debug(\"DELETE ").append(entityLower).append(" id: {}\", idStr);\n");
-        code.append("        try {\n");
-        code.append("            UUID id = UUID.fromString(idStr);\n");
-        code.append("            service.delete(id);\n");
-        code.append("            exchange.response().sendHeaders(204, null);\n");
-        code.append("        } catch (IllegalArgumentException e) {\n");
-        code.append("            sendError(exchange, 400, \"Invalid UUID\");\n");
-        code.append("        } catch (Exception e) {\n");
-        code.append("            LOG.error(\"Failed to delete ").append(entityLower).append("\", e);\n");
-        code.append("            sendError(exchange, 500, \"Internal error\");\n");
-        code.append("        }\n");
-        code.append("    }\n\n");
+    private MethodSpec buildExtractPathId() {
+        return MethodSpec.methodBuilder("extractPathId")
+                .addModifiers(Modifier.PRIVATE)
+                .returns(String.class)
+                .addParameter(HTTP3_EXCHANGE, "exchange")
+                .addStatement("String path = exchange.request().uri().getPath()")
+                .addStatement("int lastSlash = path.lastIndexOf('/')")
+                .addStatement("return lastSlash >= 0 ? path.substring(lastSlash + 1) : path")
+                .build();
+    }
 
-        // Helper methods
-        code.append("    // ═══════════════════════════════════════════════════════════════════\n");
-        code.append("    // Helper methods\n");
-        code.append("    // ═══════════════════════════════════════════════════════════════════\n\n");
+    private MethodSpec buildReadBody() {
+        return MethodSpec.methodBuilder("readBody")
+                .addModifiers(Modifier.PRIVATE)
+                .returns(String.class)
+                .addParameter(HTTP3_EXCHANGE, "exchange")
+                .addException(EXCEPTION)
+                .addStatement("byte[] bytes = exchange.request().bodyAsBytes()")
+                .addStatement("return new String(bytes, $T.UTF_8)", STANDARD_CHARSETS)
+                .build();
+    }
 
-        code.append("    private String extractPathId(Http3ServerExchange exchange) {\n");
-        code.append("        String path = exchange.request().uri().getPath();\n");
-        code.append("        int lastSlash = path.lastIndexOf('/');\n");
-        code.append("        return lastSlash >= 0 ? path.substring(lastSlash + 1) : path;\n");
-        code.append("    }\n\n");
+    private MethodSpec buildSendJson() {
+        return MethodSpec.methodBuilder("sendJson")
+                .addModifiers(Modifier.PRIVATE)
+                .returns(TypeName.VOID)
+                .addParameter(HTTP3_EXCHANGE, "exchange")
+                .addParameter(TypeName.INT, "status")
+                .addParameter(TypeName.OBJECT, "data")
+                .beginControlFlow("try")
+                .addStatement("String json = MAPPER.writeValueAsString(data)")
+                .addStatement("exchange.response().sendHeaders(status, null)")
+                .addStatement("exchange.response().sendText(json)")
+                .nextControlFlow("catch ($T e)", EXCEPTION)
+                .addStatement("LOG.error($S, e)", "Failed to serialize response")
+                .addStatement("sendError(exchange, 500, $S)", "Serialization error")
+                .endControlFlow()
+                .build();
+    }
 
-        code.append("    private String readBody(Http3ServerExchange exchange) throws Exception {\n");
-        code.append("        // Read body bytes and convert to string\n");
-        code.append("        byte[] bytes = exchange.request().bodyAsBytes();\n");
-        code.append("        return new String(bytes, java.nio.charset.StandardCharsets.UTF_8);\n");
-        code.append("    }\n\n");
+    private MethodSpec buildSendError() {
+        return MethodSpec.methodBuilder("sendError")
+                .addModifiers(Modifier.PRIVATE)
+                .returns(TypeName.VOID)
+                .addParameter(HTTP3_EXCHANGE, "exchange")
+                .addParameter(TypeName.INT, "status")
+                .addParameter(String.class, "message")
+                .beginControlFlow("try")
+                .addStatement("String json = MAPPER.writeValueAsString($T.of($S, message))", MAP, "error")
+                .addStatement("exchange.response().sendHeaders(status, null)")
+                .addStatement("exchange.response().sendText(json)")
+                .nextControlFlow("catch ($T e)", EXCEPTION)
+                .addStatement("LOG.error($S, e)", "Failed to send error response")
+                .endControlFlow()
+                .build();
+    }
 
-        code.append("    private void sendJson(Http3ServerExchange exchange, int status, Object data) {\n");
-        code.append("        try {\n");
-        code.append("            String json = MAPPER.writeValueAsString(data);\n");
-        code.append("            exchange.response().sendHeaders(status, null);\n");
-        code.append("            exchange.response().sendText(json);\n");
-        code.append("        } catch (Exception e) {\n");
-        code.append("            LOG.error(\"Failed to serialize response\", e);\n");
-        code.append("            sendError(exchange, 500, \"Serialization error\");\n");
-        code.append("        }\n");
-        code.append("    }\n\n");
-
-        code.append("    private void sendError(Http3ServerExchange exchange, int status, String message) {\n");
-        code.append("        try {\n");
-        code.append("            String json = MAPPER.writeValueAsString(Map.of(\"error\", message));\n");
-        code.append("            exchange.response().sendHeaders(status, null);\n");
-        code.append("            exchange.response().sendText(json);\n");
-        code.append("        } catch (Exception e) {\n");
-        code.append("            LOG.error(\"Failed to send error response\", e);\n");
-        code.append("        }\n");
-        code.append("    }\n\n");
-
-        code.append("    private static ObjectMapper createMapper() {\n");
-        code.append("        ObjectMapper mapper = new ObjectMapper();\n");
-        code.append("        mapper.registerModule(new JavaTimeModule());\n");
-        code.append("        return mapper;\n");
-        code.append("    }\n");
-
-        code.append("}\n");
-
-        return new GeneratedFile(packageName, className, code.toString(), ArtifactType.CONTROLLER);
+    private MethodSpec buildCreateMapper() {
+        return MethodSpec.methodBuilder("createMapper")
+                .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+                .returns(OBJECT_MAPPER)
+                .addStatement("$T mapper = new $T()", OBJECT_MAPPER, OBJECT_MAPPER)
+                .addStatement("mapper.registerModule(new $T())", JAVA_TIME_MODULE)
+                .addStatement("return mapper")
+                .build();
     }
 
     private String toLowerFirst(String s) {
@@ -195,4 +281,3 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         return ArtifactType.CONTROLLER;
     }
 }
-
