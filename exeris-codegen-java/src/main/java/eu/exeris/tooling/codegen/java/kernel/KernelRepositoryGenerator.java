@@ -99,6 +99,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                 .addMethod(buildCount(ctx))
                 .addMethod(buildMapRow(ctx))
                 .addMethod(buildParseList())
+                .addMethod(buildToJson())
                 .build();
 
         return new GeneratedFile(packageName, className,
@@ -293,13 +294,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
 
         if (type.startsWith("List<")) {
             String genericType = type.substring(5, type.length() - 1);
-            // Pre-existing typo "List<X>( )>() {}" replaced with the correct
-            // "List<X>>() {}" form on this migration. Codepath was untested.
-            // genericType resolved via ClassName.bestGuess so JavaPoet tracks
-            // the import when the user supplies a fully-qualified type
-            // (e.g. "java.util.UUID"). Short names like "UUID" still rely on
-            // the user qualifying in @Field(type=...) — same blind spot as
-            // before, just no worse.
+            // bestGuess only tracks the import when genericType is fully qualified.
             ClassName elementType = ClassName.bestGuess(genericType);
             map.addCode(CodeBlock.of(
                     "{ String v = rs.getString($S); if (v != null) $L(parseList(v, new $T<$T<$T>>() {})); }\n",
@@ -330,9 +325,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     }
 
     private MethodSpec buildParseList() {
-        // <T> List<T> parseList(String json, TypeReference<List<T>> typeRef)
-        // Uses the class-static MAPPER (added above) — instantiating ObjectMapper
-        // per call would burn ~1ms each invocation in a hot loop.
+        // ObjectMapper is thread-safe; share a single instance via the class-static MAPPER.
         return MethodSpec.methodBuilder("parseList")
                 .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
                 .addTypeVariable(com.squareup.javapoet.TypeVariableName.get("T"))
@@ -351,11 +344,32 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                 .build();
     }
 
+    private MethodSpec buildToJson() {
+        // Symmetric with parseList: serializes a value to JSON for VARCHAR columns
+        // backing List<X> fields. JDBC drivers don't know how to serialize collections;
+        // the generator routes List<X> writes through this helper instead of setObject.
+        return MethodSpec.methodBuilder("toJson")
+                .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+                .returns(String.class)
+                .addParameter(Object.class, "value")
+                .addStatement("if (value == null) return null")
+                .beginControlFlow("try")
+                .addStatement("return MAPPER.writeValueAsString(value)")
+                .nextControlFlow("catch (Exception e)")
+                .addStatement("throw new RuntimeException($S, e)", "Failed to serialize to JSON")
+                .endControlFlow()
+                .build();
+    }
+
     private void emitInsertSetters(MethodSpec.Builder save, List<FieldMetadata> fields, DomainMetadata metadata) {
         int idx = 1;
         save.addStatement("ps.setObject($L, entity.getId())", idx++);
         for (FieldMetadata field : fields) {
-            save.addStatement("ps.setObject($L, entity.get$L())", idx++, capitalize(field.name()));
+            if (field.type().startsWith("List<")) {
+                save.addStatement("ps.setString($L, toJson(entity.get$L()))", idx++, capitalize(field.name()));
+            } else {
+                save.addStatement("ps.setObject($L, entity.get$L())", idx++, capitalize(field.name()));
+            }
         }
         if (metadata.tenantScoped()) {
             save.addStatement("ps.setObject($L, entity.getTenantId())", idx++);
@@ -372,7 +386,11 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     private void emitUpdateSetters(MethodSpec.Builder update, List<FieldMetadata> fields, DomainMetadata metadata) {
         int idx = 1;
         for (FieldMetadata field : fields) {
-            update.addStatement("ps.setObject($L, entity.get$L())", idx++, capitalize(field.name()));
+            if (field.type().startsWith("List<")) {
+                update.addStatement("ps.setString($L, toJson(entity.get$L()))", idx++, capitalize(field.name()));
+            } else {
+                update.addStatement("ps.setObject($L, entity.get$L())", idx++, capitalize(field.name()));
+            }
         }
         if (metadata.audited()) {
             update.addStatement("ps.setTimestamp($L, $T.from(entity.getUpdatedAt()))", idx++, TIMESTAMP);
