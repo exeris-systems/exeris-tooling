@@ -46,9 +46,6 @@ public class KernelServiceGenerator implements KernelArtifactGenerator {
         TypeName optionalOfEntity = ParameterizedTypeName.get(OPTIONAL, entityType);
         TypeName listOfEntity = ParameterizedTypeName.get(LIST, entityType);
 
-        ClassName eventsType = hasEvents
-                ? ClassName.get(metadata.packageName().replace(".domain", ".event"), entity + "Events")
-                : null;
         ClassName publisherType = hasEvents
                 ? ClassName.get(metadata.packageName().replace(".domain", ".event"),
                         entity + "Events", "Publisher")
