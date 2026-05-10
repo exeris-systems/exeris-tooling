@@ -36,6 +36,9 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
             "version"
     );
 
+    // Substituted with the table name via String.formatted. Safe because the
+    // table name is a snake-cased Java identifier (no `%` possible); never
+    // pass arbitrary external input through this template.
     private static final String RLS_TEMPLATE = """
             -- Row Level Security for tenant isolation
             ALTER TABLE %1$s ENABLE ROW LEVEL SECURITY;
