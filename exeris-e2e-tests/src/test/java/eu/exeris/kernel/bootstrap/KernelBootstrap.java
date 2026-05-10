@@ -1,5 +1,9 @@
 package eu.exeris.kernel.bootstrap;
 
+import eu.exeris.kernel.events.outbox.OutboxSignal;
+import eu.exeris.kernel.events.store.EventStore;
+import eu.exeris.kernel.flow.SagaEngine;
+import eu.exeris.kernel.graph.GraphService;
 import eu.exeris.kernel.security.context.KernelContext;
 import eu.exeris.kernel.transport.carrier.CarrierConfig;
 import eu.exeris.kernel.transport.http3.server.Http3Router;
@@ -72,16 +76,16 @@ public final class KernelBootstrap {
     }
 
     public interface EventsBootstrap {
-        Object getEventStore();
+        EventStore getEventStore();
 
-        Object getOutboxSignal();
+        OutboxSignal getOutboxSignal();
     }
 
     public interface FlowBootstrap {
-        Object getSagaEngine();
+        SagaEngine getSagaEngine();
     }
 
     public interface GraphBootstrap {
-        Object getGraphService();
+        GraphService getGraphService();
     }
 }

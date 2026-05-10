@@ -6,6 +6,7 @@ import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 import eu.exeris.sdk.sourcemodel.ast.SagaMetadata;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
+import eu.exeris.tooling.codegen.java.kernel.KernelApplicationGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelGeneratorStrategy;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -69,10 +70,22 @@ class KernelCodegenCompileTest {
 
         List<GeneratedFile> generated = new KernelGeneratorStrategy().generate(metadata);
 
+        // Phase 4e: also feed the application-infrastructure files (Application,
+        // CompositionRoot, RouterConfig) so their references into the strategy
+        // output are exercised.
+        String basePackage = DOMAIN_PACKAGE.replace(".domain", "");
+        List<GeneratedFile> appFiles = new KernelApplicationGenerator()
+                .generateAll(List.of(metadata), basePackage);
+
         InMemoryJavaCompiler compiler = new InMemoryJavaCompiler()
                 .addSource(DOMAIN_PACKAGE + "." + ENTITY_NAME, sourceEntity());
 
         for (GeneratedFile file : generated) {
+            if ("java".equals(file.extension())) {
+                compiler.addSource(file.packageName() + "." + file.className(), file.content());
+            }
+        }
+        for (GeneratedFile file : appFiles) {
             if ("java".equals(file.extension())) {
                 compiler.addSource(file.packageName() + "." + file.className(), file.content());
             }
