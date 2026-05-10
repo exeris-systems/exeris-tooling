@@ -1,9 +1,17 @@
 package eu.exeris.tooling.codegen.java.kernel;
 
+import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.CodeBlock;
+import com.palantir.javapoet.FieldSpec;
+import com.palantir.javapoet.MethodSpec;
+import com.palantir.javapoet.TypeName;
+import com.palantir.javapoet.TypeSpec;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
+import eu.exeris.tooling.codegen.java.support.KernelScaffold;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 
+import javax.lang.model.element.Modifier;
 import java.util.List;
 
 /**
@@ -16,19 +24,33 @@ import java.util.List;
  *   <li>{@code RouterConfig.java} - HTTP/3 route registration</li>
  * </ul>
  *
+ * <p>Phase 4e of ADR-015: emission is JavaPoet-based via Palantir's fork.
+ *
  * @author Exeris Team
  * @since 0.1.0
  */
 public class KernelApplicationGenerator implements KernelArtifactGenerator {
 
-    /**
-     * Generates Application.java - the entry point.
-     */
+    private static final ClassName SLF4J_LOGGER = ClassName.get("org.slf4j", "Logger");
+    private static final ClassName SLF4J_LOGGER_FACTORY = ClassName.get("org.slf4j", "LoggerFactory");
+    private static final ClassName KERNEL_BOOTSTRAP = ClassName.get("eu.exeris.kernel.bootstrap", "KernelBootstrap");
+    private static final ClassName KERNEL_PROFILE = ClassName.get("eu.exeris.kernel.config", "KernelProfile");
+    private static final ClassName KERNEL_CONTEXT = ClassName.get("eu.exeris.kernel.security.context", "KernelContext");
+    private static final ClassName CARRIER_CONFIG = ClassName.get("eu.exeris.kernel.transport.carrier", "CarrierConfig");
+    private static final ClassName HTTP3_ROUTER = ClassName.get("eu.exeris.kernel.transport.http3.server", "Http3Router");
+    private static final ClassName PATH = ClassName.get("java.nio.file", "Path");
+    private static final ClassName COUNT_DOWN_LATCH = ClassName.get("java.util.concurrent", "CountDownLatch");
+    private static final ClassName DATASOURCE = ClassName.get("javax.sql", "DataSource");
+    private static final ClassName EVENT_STORE = ClassName.get("eu.exeris.kernel.events.store", "EventStore");
+    private static final ClassName OUTBOX_SIGNAL = ClassName.get("eu.exeris.kernel.events.outbox", "OutboxSignal");
+    private static final ClassName SAGA_ENGINE = ClassName.get("eu.exeris.kernel.flow", "SagaEngine");
+    private static final ClassName GRAPH_SERVICE = ClassName.get("eu.exeris.kernel.graph", "GraphService");
+
     @Override
     public GeneratedFile generate(DomainMetadata metadata) {
-        // This generator needs ALL domains, not just one
-        // For single-domain generation, we create a minimal app
-        return generateApplicationForSingleDomain(metadata);
+        // Single-domain path emits Application.java only.
+        String basePackage = metadata.packageName().replace(".domain", "");
+        return generateApplication(List.of(metadata), basePackage);
     }
 
     /**
@@ -43,581 +65,524 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
         );
     }
 
-    private GeneratedFile generateApplicationForSingleDomain(DomainMetadata metadata) {
-        String basePackage = metadata.packageName().replace(".domain", "");
-        String className = "Application";
-
-        String code = generateApplicationCode(basePackage, List.of(metadata));
-        return new GeneratedFile(basePackage, className, code, ArtifactType.CONFIGURATION);
-    }
-
     private GeneratedFile generateApplication(List<DomainMetadata> domains, String basePackage) {
         String className = "Application";
-        String code = generateApplicationCode(basePackage, domains);
-        return new GeneratedFile(basePackage, className, code, ArtifactType.CONFIGURATION);
-    }
+        ClassName selfType = ClassName.get(basePackage, className);
+        ClassName compositionRootType = ClassName.get(basePackage, "CompositionRoot");
+        ClassName routerConfigType = ClassName.get(basePackage, "RouterConfig");
+        ClassName failurePolicyType = KERNEL_CONTEXT.nestedClass("FailurePolicy");
 
-    private String generateApplicationCode(String basePackage, List<DomainMetadata> domains) {
-        StringBuilder sb = new StringBuilder();
-
-        // Package and imports
-        sb.append("package ").append(basePackage).append(";\n\n");
-        sb.append("import eu.exeris.kernel.bootstrap.KernelBootstrap;\n");
-        sb.append("import eu.exeris.kernel.config.KernelProfile;\n");
-        sb.append("import eu.exeris.kernel.security.context.KernelContext;\n");
-        sb.append("import eu.exeris.kernel.transport.carrier.CarrierConfig;\n");
-        sb.append("import eu.exeris.kernel.transport.http3.server.Http3Router;\n");
-        sb.append("import org.slf4j.Logger;\n");
-        sb.append("import org.slf4j.LoggerFactory;\n\n");
-        sb.append("import java.nio.file.Path;\n");
-        sb.append("import java.util.concurrent.CountDownLatch;\n\n");
-
-        // Javadoc
-        sb.append("/**\n");
-        sb.append(" * Generated Exeris Kernel Application Entry Point.\n");
-        sb.append(" * <p>Generated from domain entities:\n");
+        TypeSpec.Builder type = KernelScaffold.publicClass(className)
+                .addModifiers(Modifier.FINAL)
+                .addJavadoc("Generated Exeris Kernel Application Entry Point.\n")
+                .addJavadoc("<p>Generated from domain entities:\n");
         for (DomainMetadata domain : domains) {
-            sb.append(" * <li>{@link ").append(domain.packageName()).append(".").append(domain.entityName()).append("}</li>\n");
+            type.addJavadoc("<li>{@link $L.$L}</li>\n", domain.packageName(), domain.entityName());
         }
-        sb.append(" *\n");
-        sb.append(" * <p><b>DO NOT EDIT</b> - Regenerate from domain models.\n");
-        sb.append(" */\n");
+        type.addJavadoc("\n")
+                .addJavadoc("<p><b>DO NOT EDIT</b> - Regenerate from domain models.\n")
+                .addField(FieldSpec.builder(SLF4J_LOGGER, "LOG",
+                                Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                        .initializer("$T.getLogger($T.class)", SLF4J_LOGGER_FACTORY, selfType)
+                        .build())
+                .addField(FieldSpec.builder(COUNT_DOWN_LATCH, "SHUTDOWN_LATCH",
+                                Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                        .initializer("new $T(1)", COUNT_DOWN_LATCH)
+                        .build());
 
-        // Class declaration
-        sb.append("public final class Application {\n\n");
-        sb.append("    private static final Logger LOG = LoggerFactory.getLogger(Application.class);\n");
-        sb.append("    private static final CountDownLatch SHUTDOWN_LATCH = new CountDownLatch(1);\n\n");
+        String banner = "═══════════════════════════════════════════════════════════════════";
 
-        // Main method
-        sb.append("    public static void main(String[] args) {\n");
-        sb.append("        LOG.info(\"═══════════════════════════════════════════════════════════════════\");\n");
-        sb.append("        LOG.info(\"  Exeris Foundation - Generated Application\");\n");
-        sb.append("        LOG.info(\"  Domains: ").append(domains.size()).append("\");\n");
-        sb.append("        LOG.info(\"═══════════════════════════════════════════════════════════════════\");\n\n");
+        CodeBlock.Builder body = CodeBlock.builder()
+                .addStatement("LOG.info($S)", banner)
+                .addStatement("LOG.info($S)", "  Exeris Foundation - Generated Application")
+                .addStatement("LOG.info($S)", "  Domains: " + domains.size())
+                .addStatement("LOG.info($S)", banner)
+                .add("\n")
+                .beginControlFlow("try")
+                .add("// 1. Load configuration from environment\n")
+                .addStatement("$T profile = parseProfile($T.getenv().getOrDefault($S, $S))",
+                        KERNEL_PROFILE, System.class, "EXERIS_PROFILE", "DEV")
+                .addStatement("int port = $T.parseInt($T.getenv().getOrDefault($S, $S))",
+                        Integer.class, System.class, "EXERIS_PORT", "8443")
+                .addStatement("String configPath = $T.getenv().getOrDefault($S, $S)",
+                        System.class, "EXERIS_CONFIG_PATH", "config")
+                .addStatement("String certPath = $T.getenv().getOrDefault($S, $S)",
+                        System.class, "TLS_CERT_PATH", "config/tls/server.crt")
+                .addStatement("String keyPath = $T.getenv().getOrDefault($S, $S)",
+                        System.class, "TLS_KEY_PATH", "config/tls/server.key")
+                .add("\n")
+                .addStatement("LOG.info($S, profile, port)", "📦 Configuration: profile={}, port={}")
+                .add("\n")
+                .add("// 2. Build Kernel context\n")
+                .add("$T context = $T.builder()\n", KERNEL_CONTEXT, KERNEL_CONTEXT)
+                .add("        .profile(profile)\n")
+                .add("        .failurePolicy($T.FAIL_FAST)\n", failurePolicyType)
+                .add("        .configPath($T.of(configPath))\n", PATH)
+                .add("        .build();\n")
+                .add("\n")
+                .add("$T carrierConfig = $T.builder()\n", CARRIER_CONFIG, CARRIER_CONFIG)
+                .add("        .port(port)\n")
+                .add("        .certPath(certPath)\n")
+                .add("        .keyPath(keyPath)\n")
+                .add("        .build();\n")
+                .add("\n")
+                .add("// 3. Bootstrap Kernel\n")
+                .add("$T kernel = $T.builder()\n", KERNEL_BOOTSTRAP, KERNEL_BOOTSTRAP)
+                .add("        .context(context)\n")
+                .add("        .transportConfig(carrierConfig)\n")
+                .add("        .build();\n")
+                .add("\n")
+                .addStatement("LOG.info($S)", "🚀 Initializing Kernel subsystems...")
+                .addStatement("kernel.initialize()")
+                .add("\n")
+                .add("// 4. Create Composition Root (Generated DI wiring)\n")
+                .addStatement("LOG.info($S)", "🔧 Creating Composition Root...")
+                .addStatement("$T root = $T.create(kernel)", compositionRootType, compositionRootType)
+                .add("\n")
+                .add("// 5. Configure HTTP/3 Router (Generated routes)\n")
+                .addStatement("LOG.info($S)", "🌐 Configuring HTTP/3 routes...")
+                .addStatement("$T router = $T.configure(root)", HTTP3_ROUTER, routerConfigType)
+                .addStatement("kernel.getTransportBootstrap().setHttp3Router(router)")
+                .add("\n")
+                .add("// 6. Start Kernel\n")
+                .addStatement("LOG.info($S)", "🎯 Starting Kernel...")
+                .addStatement("kernel.start()")
+                .add("\n")
+                .addStatement("LOG.info($S)", banner)
+                .addStatement("LOG.info($S, port)", "  ✅ Application RUNNING on port {}")
+                .addStatement("LOG.info($S, port)", "  📍 API: https://localhost:{}/api/v1")
+                .addStatement("LOG.info($S)", banner)
+                .add("\n")
+                .add("// 7. Shutdown hook\n")
+                .add("$T.getRuntime().addShutdownHook(new $T(() -> {\n", Runtime.class, Thread.class)
+                .add("    LOG.info($S);\n", "🛑 Shutting down...")
+                .add("    try { kernel.shutdown(); } catch ($T e) { LOG.error($S, e); }\n",
+                        Exception.class, "Shutdown error")
+                .add("    SHUTDOWN_LATCH.countDown();\n")
+                .add("}));\n")
+                .add("\n")
+                .addStatement("SHUTDOWN_LATCH.await()")
+                .nextControlFlow("catch ($T e)", Exception.class)
+                .addStatement("LOG.error($S, e)", "❌ Fatal error")
+                .addStatement("$T.exit(1)", System.class)
+                .endControlFlow();
 
-        sb.append("        try {\n");
-        sb.append("            // 1. Load configuration from environment\n");
-        sb.append("            KernelProfile profile = parseProfile(System.getenv().getOrDefault(\"EXERIS_PROFILE\", \"DEV\"));\n");
-        sb.append("            int port = Integer.parseInt(System.getenv().getOrDefault(\"EXERIS_PORT\", \"8443\"));\n");
-        sb.append("            String configPath = System.getenv().getOrDefault(\"EXERIS_CONFIG_PATH\", \"config\");\n");
-        sb.append("            String certPath = System.getenv().getOrDefault(\"TLS_CERT_PATH\", \"config/tls/server.crt\");\n");
-        sb.append("            String keyPath = System.getenv().getOrDefault(\"TLS_KEY_PATH\", \"config/tls/server.key\");\n\n");
+        type.addMethod(MethodSpec.methodBuilder("main")
+                .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+                .returns(TypeName.VOID)
+                .addParameter(String[].class, "args")
+                .addCode(body.build())
+                .build());
 
-        sb.append("            LOG.info(\"📦 Configuration: profile={}, port={}\", profile, port);\n\n");
+        type.addMethod(MethodSpec.methodBuilder("parseProfile")
+                .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+                .returns(KERNEL_PROFILE)
+                .addParameter(String.class, "value")
+                .addCode("try { return $T.valueOf(value.toUpperCase()); }\n", KERNEL_PROFILE)
+                .addCode("catch ($T e) { return $T.DEV; }\n", Exception.class, KERNEL_PROFILE)
+                .build());
 
-        sb.append("            // 2. Build Kernel context\n");
-        sb.append("            KernelContext context = KernelContext.builder()\n");
-        sb.append("                    .profile(profile)\n");
-        sb.append("                    .failurePolicy(KernelContext.FailurePolicy.FAIL_FAST)\n");
-        sb.append("                    .configPath(Path.of(configPath))\n");
-        sb.append("                    .build();\n\n");
-
-        sb.append("            CarrierConfig carrierConfig = CarrierConfig.builder()\n");
-        sb.append("                    .port(port)\n");
-        sb.append("                    .certPath(certPath)\n");
-        sb.append("                    .keyPath(keyPath)\n");
-        sb.append("                    .build();\n\n");
-
-        sb.append("            // 3. Bootstrap Kernel\n");
-        sb.append("            KernelBootstrap kernel = KernelBootstrap.builder()\n");
-        sb.append("                    .context(context)\n");
-        sb.append("                    .transportConfig(carrierConfig)\n");
-        sb.append("                    .build();\n\n");
-
-        sb.append("            LOG.info(\"🚀 Initializing Kernel subsystems...\");\n");
-        sb.append("            kernel.initialize();\n\n");
-
-        sb.append("            // 4. Create Composition Root (Generated DI wiring)\n");
-        sb.append("            LOG.info(\"🔧 Creating Composition Root...\");\n");
-        sb.append("            CompositionRoot root = CompositionRoot.create(kernel);\n\n");
-
-        sb.append("            // 5. Configure HTTP/3 Router (Generated routes)\n");
-        sb.append("            LOG.info(\"🌐 Configuring HTTP/3 routes...\");\n");
-        sb.append("            Http3Router router = RouterConfig.configure(root);\n");
-        sb.append("            kernel.getTransportBootstrap().setHttp3Router(router);\n\n");
-
-        sb.append("            // 6. Start Kernel\n");
-        sb.append("            LOG.info(\"🎯 Starting Kernel...\");\n");
-        sb.append("            kernel.start();\n\n");
-
-        sb.append("            LOG.info(\"═══════════════════════════════════════════════════════════════════\");\n");
-        sb.append("            LOG.info(\"  ✅ Application RUNNING on port {}\", port);\n");
-        sb.append("            LOG.info(\"  📍 API: https://localhost:{}/api/v1\", port);\n");
-        sb.append("            LOG.info(\"═══════════════════════════════════════════════════════════════════\");\n\n");
-
-        sb.append("            // 7. Shutdown hook\n");
-        sb.append("            Runtime.getRuntime().addShutdownHook(new Thread(() -> {\n");
-        sb.append("                LOG.info(\"🛑 Shutting down...\");\n");
-        sb.append("                try { kernel.shutdown(); } catch (Exception e) { LOG.error(\"Shutdown error\", e); }\n");
-        sb.append("                SHUTDOWN_LATCH.countDown();\n");
-        sb.append("            }));\n\n");
-
-        sb.append("            SHUTDOWN_LATCH.await();\n\n");
-
-        sb.append("        } catch (Exception e) {\n");
-        sb.append("            LOG.error(\"❌ Fatal error\", e);\n");
-        sb.append("            System.exit(1);\n");
-        sb.append("        }\n");
-        sb.append("    }\n\n");
-
-        // Helper method
-        sb.append("    private static KernelProfile parseProfile(String value) {\n");
-        sb.append("        try { return KernelProfile.valueOf(value.toUpperCase()); }\n");
-        sb.append("        catch (Exception e) { return KernelProfile.DEV; }\n");
-        sb.append("    }\n");
-
-        sb.append("}\n");
-
-        return sb.toString();
+        return new GeneratedFile(basePackage, className,
+                KernelScaffold.render(basePackage, type.build()), ArtifactType.CONFIGURATION);
     }
 
     private GeneratedFile generateCompositionRoot(List<DomainMetadata> domains, String basePackage) {
         String className = "CompositionRoot";
-        StringBuilder sb = new StringBuilder();
+        ClassName selfType = ClassName.get(basePackage, className);
 
-        // Analyze what features we need
         boolean hasEvents = domains.stream().anyMatch(DomainMetadata::hasEvents);
         boolean hasSagas = domains.stream().anyMatch(DomainMetadata::isSaga);
         boolean hasGraph = domains.stream().anyMatch(DomainMetadata::hasGraphMetadata);
 
-        // Package and imports
-        sb.append("package ").append(basePackage).append(";\n\n");
-        sb.append("import eu.exeris.kernel.bootstrap.KernelBootstrap;\n");
-        sb.append("import org.slf4j.Logger;\n");
-        sb.append("import org.slf4j.LoggerFactory;\n");
-        sb.append("import javax.sql.DataSource;\n");
+        TypeSpec.Builder type = KernelScaffold.publicClass(className)
+                .addModifiers(Modifier.FINAL)
+                .addJavadoc("Generated Composition Root - Manual DI wiring.\n")
+                .addJavadoc("<p>Wires all generated components for $L domain(s).\n", domains.size());
+        if (hasEvents) type.addJavadoc("<p>Includes: Event Store, Event Publishers\n");
+        if (hasSagas) type.addJavadoc("<p>Includes: Saga Engine, Saga Orchestrators\n");
+        if (hasGraph) type.addJavadoc("<p>Includes: Graph Synchronization\n");
+        type.addJavadoc("<p><b>DO NOT EDIT</b> - Regenerate from domain models.\n");
 
-        // Event infrastructure imports
+        type.addField(FieldSpec.builder(SLF4J_LOGGER, "LOG",
+                        Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                .initializer("$T.getLogger($T.class)", SLF4J_LOGGER_FACTORY, selfType)
+                .build());
+
+        // Infrastructure fields
+        type.addField(FieldSpec.builder(DATASOURCE, "dataSource", Modifier.PRIVATE, Modifier.FINAL).build());
         if (hasEvents) {
-            sb.append("import eu.exeris.kernel.events.store.EventStore;\n");
-            sb.append("import eu.exeris.kernel.events.outbox.OutboxSignal;\n");
+            type.addField(FieldSpec.builder(EVENT_STORE, "eventStore", Modifier.PRIVATE, Modifier.FINAL).build());
+            type.addField(FieldSpec.builder(OUTBOX_SIGNAL, "outboxSignal", Modifier.PRIVATE, Modifier.FINAL).build());
         }
-
-        // Saga infrastructure imports
         if (hasSagas) {
-            sb.append("import eu.exeris.kernel.flow.SagaEngine;\n");
+            type.addField(FieldSpec.builder(SAGA_ENGINE, "sagaEngine", Modifier.PRIVATE, Modifier.FINAL).build());
         }
-
-        // Graph infrastructure imports
         if (hasGraph) {
-            sb.append("import eu.exeris.kernel.graph.GraphService;\n");
+            type.addField(FieldSpec.builder(GRAPH_SERVICE, "graphService", Modifier.PRIVATE, Modifier.FINAL).build());
         }
 
-        sb.append("\n");
-
-        // Import generated classes for each domain
+        // Per-domain fields
         for (DomainMetadata domain : domains) {
+            String name = domain.entityName();
+            String lower = toLowerFirst(name);
             String domainBase = domain.packageName().replace(".domain", "");
-            String name = domain.entityName();
-            sb.append("import ").append(domainBase).append(".repository.").append(name).append("Repository;\n");
-            sb.append("import ").append(domainBase).append(".service.").append(name).append("Service;\n");
-            sb.append("import ").append(domainBase).append(".handler.").append(name).append("Handler;\n");
-
-            // Event imports
-            if (domain.hasEvents()) {
-                sb.append("import ").append(domainBase).append(".event.").append(name).append("Events;\n");
-            }
-
-            // Event handler imports (if has events AND saga)
-            if (domain.hasEvents() && domain.isSaga()) {
-                sb.append("import ").append(domainBase).append(".event.").append(name).append("EventHandler;\n");
-            }
-
-            // Saga imports
-            if (domain.isSaga()) {
-                String sagaName = domain.sagaMetadata().name() != null
-                        ? domain.sagaMetadata().name()
-                        : name + "Saga";
-                sb.append("import ").append(domainBase).append(".saga.").append(sagaName).append(";\n");
-            }
-
-            // Graph imports
-            if (domain.hasGraphMetadata()) {
-                sb.append("import ").append(domainBase).append(".graph.").append(name).append("GraphSync;\n");
-            }
+            type.addField(FieldSpec.builder(
+                    ClassName.get(domainBase + ".repository", name + "Repository"),
+                    lower + "Repository", Modifier.PRIVATE, Modifier.FINAL).build());
         }
-        sb.append("\n");
-
-        // Javadoc
-        sb.append("/**\n");
-        sb.append(" * Generated Composition Root - Manual DI wiring.\n");
-        sb.append(" * <p>Wires all generated components for ").append(domains.size()).append(" domain(s).\n");
-        if (hasEvents) sb.append(" * <p>Includes: Event Store, Event Publishers\n");
-        if (hasSagas) sb.append(" * <p>Includes: Saga Engine, Saga Orchestrators\n");
-        if (hasGraph) sb.append(" * <p>Includes: Graph Synchronization\n");
-        sb.append(" * <p><b>DO NOT EDIT</b> - Regenerate from domain models.\n");
-        sb.append(" */\n");
-
-        // Class
-        sb.append("public final class CompositionRoot {\n\n");
-        sb.append("    private static final Logger LOG = LoggerFactory.getLogger(CompositionRoot.class);\n\n");
-
-        // ═══════════════════════════════════════════════════════════════════
-        // Fields
-        // ═══════════════════════════════════════════════════════════════════
-        sb.append("    // Infrastructure\n");
-        sb.append("    private final DataSource dataSource;\n");
+        for (DomainMetadata domain : domains) {
+            String name = domain.entityName();
+            String lower = toLowerFirst(name);
+            String domainBase = domain.packageName().replace(".domain", "");
+            type.addField(FieldSpec.builder(
+                    ClassName.get(domainBase + ".service", name + "Service"),
+                    lower + "Service", Modifier.PRIVATE, Modifier.FINAL).build());
+        }
+        for (DomainMetadata domain : domains) {
+            String name = domain.entityName();
+            String lower = toLowerFirst(name);
+            String domainBase = domain.packageName().replace(".domain", "");
+            type.addField(FieldSpec.builder(
+                    ClassName.get(domainBase + ".handler", name + "Handler"),
+                    lower + "Handler", Modifier.PRIVATE, Modifier.FINAL).build());
+        }
         if (hasEvents) {
-            sb.append("    private final EventStore eventStore;\n");
-            sb.append("    private final OutboxSignal outboxSignal;\n");
+            for (DomainMetadata domain : domains) {
+                if (!domain.hasEvents()) continue;
+                String name = domain.entityName();
+                String lower = toLowerFirst(name);
+                String domainBase = domain.packageName().replace(".domain", "");
+                ClassName publisherType = ClassName.get(domainBase + ".event", name + "Events", "Publisher");
+                type.addField(FieldSpec.builder(publisherType,
+                        lower + "EventPublisher", Modifier.PRIVATE, Modifier.FINAL).build());
+            }
         }
         if (hasSagas) {
-            sb.append("    private final SagaEngine sagaEngine;\n");
+            for (DomainMetadata domain : domains) {
+                if (!domain.isSaga()) continue;
+                String name = domain.entityName();
+                String lower = toLowerFirst(name);
+                String domainBase = domain.packageName().replace(".domain", "");
+                String sagaName = sagaTypeName(domain);
+                type.addField(FieldSpec.builder(
+                        ClassName.get(domainBase + ".saga", sagaName),
+                        lower + "Saga", Modifier.PRIVATE, Modifier.FINAL).build());
+            }
+            for (DomainMetadata domain : domains) {
+                if (!(domain.hasEvents() && domain.isSaga())) continue;
+                String name = domain.entityName();
+                String lower = toLowerFirst(name);
+                String domainBase = domain.packageName().replace(".domain", "");
+                type.addField(FieldSpec.builder(
+                        ClassName.get(domainBase + ".event", name + "EventHandler"),
+                        lower + "EventHandler", Modifier.PRIVATE, Modifier.FINAL).build());
+            }
         }
         if (hasGraph) {
-            sb.append("    private final GraphService graphService;\n");
-        }
-        sb.append("\n");
-
-        sb.append("    // Repositories\n");
-        for (DomainMetadata domain : domains) {
-            String name = domain.entityName();
-            sb.append("    private final ").append(name).append("Repository ").append(toLowerFirst(name)).append("Repository;\n");
-        }
-        sb.append("\n");
-
-        sb.append("    // Services\n");
-        for (DomainMetadata domain : domains) {
-            String name = domain.entityName();
-            sb.append("    private final ").append(name).append("Service ").append(toLowerFirst(name)).append("Service;\n");
-        }
-        sb.append("\n");
-
-        sb.append("    // Handlers\n");
-        for (DomainMetadata domain : domains) {
-            String name = domain.entityName();
-            sb.append("    private final ").append(name).append("Handler ").append(toLowerFirst(name)).append("Handler;\n");
-        }
-        sb.append("\n");
-
-        // Event publishers
-        if (hasEvents) {
-            sb.append("    // Event Publishers\n");
             for (DomainMetadata domain : domains) {
-                if (domain.hasEvents()) {
-                    String name = domain.entityName();
-                    sb.append("    private final ").append(name).append("Events.Publisher ").append(toLowerFirst(name)).append("EventPublisher;\n");
-                }
+                if (!domain.hasGraphMetadata()) continue;
+                String name = domain.entityName();
+                String lower = toLowerFirst(name);
+                String domainBase = domain.packageName().replace(".domain", "");
+                type.addField(FieldSpec.builder(
+                        ClassName.get(domainBase + ".graph", name + "GraphSync"),
+                        lower + "GraphSync", Modifier.PRIVATE, Modifier.FINAL).build());
             }
-            sb.append("\n");
         }
 
-        // Sagas
-        if (hasSagas) {
-            sb.append("    // Sagas\n");
-            for (DomainMetadata domain : domains) {
-                if (domain.isSaga()) {
-                    String name = domain.entityName();
-                    String sagaName = domain.sagaMetadata().name() != null
-                            ? domain.sagaMetadata().name()
-                            : name + "Saga";
-                    sb.append("    private final ").append(sagaName).append(" ").append(toLowerFirst(name)).append("Saga;\n");
-                }
-            }
-            sb.append("\n");
-
-            // Event Handlers (only for entities with both events and saga)
-            sb.append("    // Event Handlers (trigger sagas)\n");
-            for (DomainMetadata domain : domains) {
-                if (domain.hasEvents() && domain.isSaga()) {
-                    String name = domain.entityName();
-                    sb.append("    private final ").append(name).append("EventHandler ").append(toLowerFirst(name)).append("EventHandler;\n");
-                }
-            }
-            sb.append("\n");
-        }
-
-        // Graph syncs
-        if (hasGraph) {
-            sb.append("    // Graph Sync\n");
-            for (DomainMetadata domain : domains) {
-                if (domain.hasGraphMetadata()) {
-                    String name = domain.entityName();
-                    sb.append("    private final ").append(name).append("GraphSync ").append(toLowerFirst(name)).append("GraphSync;\n");
-                }
-            }
-            sb.append("\n");
-        }
-
-        // ═══════════════════════════════════════════════════════════════════
         // Constructor
-        // ═══════════════════════════════════════════════════════════════════
-        sb.append("    private CompositionRoot(KernelBootstrap kernel) {\n");
-        sb.append("        LOG.info(\"🔧 Wiring generated components...\");\n\n");
+        type.addMethod(buildCompositionRootConstructor(domains, hasEvents, hasSagas, hasGraph));
 
-        sb.append("        // DataSource\n");
-        sb.append("        this.dataSource = kernel.getPersistenceBootstrap() != null \n");
-        sb.append("                ? kernel.getPersistenceBootstrap().getDataSource() \n");
-        sb.append("                : null;\n");
-        sb.append("        if (dataSource == null) {\n");
-        sb.append("            LOG.warn(\"⚠️ DataSource is null - degraded mode\");\n");
-        sb.append("        }\n\n");
+        // Factory
+        type.addMethod(MethodSpec.methodBuilder("create")
+                .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+                .returns(selfType)
+                .addParameter(KERNEL_BOOTSTRAP, "kernel")
+                .addStatement("return new $T(kernel)", selfType)
+                .build());
 
-        // Event infrastructure
-        if (hasEvents) {
-            sb.append("        // Event Infrastructure\n");
-            sb.append("        var eventsBootstrap = kernel.getEventsBootstrap();\n");
-            sb.append("        this.eventStore = eventsBootstrap != null ? eventsBootstrap.getEventStore() : null;\n");
-            sb.append("        this.outboxSignal = eventsBootstrap != null ? eventsBootstrap.getOutboxSignal() : null;\n");
-            sb.append("        LOG.info(\"✅ Event Infrastructure wired\");\n\n");
-        }
-
-        // Saga infrastructure
-        if (hasSagas) {
-            sb.append("        // Saga Infrastructure\n");
-            sb.append("        var flowBootstrap = kernel.getFlowBootstrap();\n");
-            sb.append("        this.sagaEngine = flowBootstrap != null ? flowBootstrap.getSagaEngine() : null;\n");
-            sb.append("        LOG.info(\"✅ Saga Engine wired\");\n\n");
-        }
-
-        // Graph infrastructure
-        if (hasGraph) {
-            sb.append("        // Graph Infrastructure\n");
-            sb.append("        this.graphService = kernel.getGraphBootstrap() != null \n");
-            sb.append("                ? kernel.getGraphBootstrap().getGraphService() \n");
-            sb.append("                : null;\n");
-            sb.append("        LOG.info(\"✅ Graph Service wired\");\n\n");
-        }
-
-        sb.append("        // Repositories\n");
-        for (DomainMetadata domain : domains) {
-            String name = domain.entityName();
-            String lower = toLowerFirst(name);
-            sb.append("        this.").append(lower).append("Repository = new ").append(name).append("Repository(dataSource);\n");
-        }
-        sb.append("        LOG.info(\"✅ Repositories wired\");\n\n");
-
-        // Event publishers (before services, as services use them)
-        if (hasEvents) {
-            sb.append("        // Event Publishers\n");
-            for (DomainMetadata domain : domains) {
-                if (domain.hasEvents()) {
-                    String name = domain.entityName();
-                    String lower = toLowerFirst(name);
-                    sb.append("        this.").append(lower).append("EventPublisher = new ").append(name).append("Events.Publisher(eventStore, outboxSignal);\n");
-                }
-            }
-            sb.append("        LOG.info(\"✅ Event Publishers wired\");\n\n");
-        }
-
-        sb.append("        // Services\n");
-        for (DomainMetadata domain : domains) {
-            String name = domain.entityName();
-            String lower = toLowerFirst(name);
-            if (domain.hasEvents()) {
-                // Service with event publisher
-                sb.append("        this.").append(lower).append("Service = new ").append(name).append("Service(").append(lower).append("Repository, ").append(lower).append("EventPublisher);\n");
-            } else {
-                sb.append("        this.").append(lower).append("Service = new ").append(name).append("Service(").append(lower).append("Repository);\n");
-            }
-        }
-        sb.append("        LOG.info(\"✅ Services wired\");\n\n");
-
-        sb.append("        // Handlers\n");
-        for (DomainMetadata domain : domains) {
-            String name = domain.entityName();
-            String lower = toLowerFirst(name);
-            sb.append("        this.").append(lower).append("Handler = new ").append(name).append("Handler(").append(lower).append("Service);\n");
-        }
-        sb.append("        LOG.info(\"✅ Handlers wired\");\n\n");
-
-        // Sagas
-        if (hasSagas) {
-            sb.append("        // Sagas\n");
-            for (DomainMetadata domain : domains) {
-                if (domain.isSaga()) {
-                    String name = domain.entityName();
-                    String lower = toLowerFirst(name);
-                    String sagaName = domain.sagaMetadata().name() != null
-                            ? domain.sagaMetadata().name()
-                            : name + "Saga";
-                    sb.append("        this.").append(lower).append("Saga = new ").append(sagaName).append("(sagaEngine, eventStore, ").append(lower).append("Repository);\n");
-                }
-            }
-            sb.append("        LOG.info(\"✅ Sagas wired\");\n\n");
-
-            // Event Handlers (trigger sagas)
-            sb.append("        // Event Handlers (saga triggers)\n");
-            for (DomainMetadata domain : domains) {
-                if (domain.hasEvents() && domain.isSaga()) {
-                    String name = domain.entityName();
-                    String lower = toLowerFirst(name);
-                    sb.append("        this.").append(lower).append("EventHandler = new ").append(name).append("EventHandler(").append(lower).append("Saga, eventStore);\n");
-                }
-            }
-            sb.append("        LOG.info(\"✅ Event Handlers wired\");\n\n");
-        }
-
-        // Graph syncs
-        if (hasGraph) {
-            sb.append("        // Graph Sync\n");
-            for (DomainMetadata domain : domains) {
-                if (domain.hasGraphMetadata()) {
-                    String name = domain.entityName();
-                    String lower = toLowerFirst(name);
-                    sb.append("        this.").append(lower).append("GraphSync = new ").append(name).append("GraphSync(graphService);\n");
-                }
-            }
-            sb.append("        LOG.info(\"✅ Graph Sync wired\");\n\n");
-        }
-
-        sb.append("        LOG.info(\"🎯 Composition Root complete: ").append(domains.size()).append(" domain(s)\");\n");
-        sb.append("    }\n\n");
-
-        // ═══════════════════════════════════════════════════════════════════
-        // Factory method
-        // ═══════════════════════════════════════════════════════════════════
-        sb.append("    public static CompositionRoot create(KernelBootstrap kernel) {\n");
-        sb.append("        return new CompositionRoot(kernel);\n");
-        sb.append("    }\n\n");
-
-        // ═══════════════════════════════════════════════════════════════════
         // Getters
-        // ═══════════════════════════════════════════════════════════════════
-
-        // Infrastructure getters
         if (hasEvents) {
-            sb.append("    public EventStore eventStore() { return eventStore; }\n");
+            type.addMethod(simpleGetter(EVENT_STORE, "eventStore"));
         }
         if (hasSagas) {
-            sb.append("    public SagaEngine sagaEngine() { return sagaEngine; }\n");
+            type.addMethod(simpleGetter(SAGA_ENGINE, "sagaEngine"));
         }
         if (hasGraph) {
-            sb.append("    public GraphService graphService() { return graphService; }\n");
+            type.addMethod(simpleGetter(GRAPH_SERVICE, "graphService"));
         }
-        sb.append("\n");
-
-        // Handler getters
         for (DomainMetadata domain : domains) {
             String name = domain.entityName();
             String lower = toLowerFirst(name);
-            sb.append("    public ").append(name).append("Handler ").append(lower).append("Handler() { return ").append(lower).append("Handler; }\n");
+            String domainBase = domain.packageName().replace(".domain", "");
+            type.addMethod(simpleGetter(
+                    ClassName.get(domainBase + ".handler", name + "Handler"), lower + "Handler"));
         }
-        sb.append("\n");
-
-        // Service getters
         for (DomainMetadata domain : domains) {
             String name = domain.entityName();
             String lower = toLowerFirst(name);
-            sb.append("    public ").append(name).append("Service ").append(lower).append("Service() { return ").append(lower).append("Service; }\n");
+            String domainBase = domain.packageName().replace(".domain", "");
+            type.addMethod(simpleGetter(
+                    ClassName.get(domainBase + ".service", name + "Service"), lower + "Service"));
         }
-        sb.append("\n");
-
-        // Event publisher getters
         if (hasEvents) {
             for (DomainMetadata domain : domains) {
-                if (domain.hasEvents()) {
-                    String name = domain.entityName();
-                    String lower = toLowerFirst(name);
-                    sb.append("    public ").append(name).append("Events.Publisher ").append(lower).append("EventPublisher() { return ").append(lower).append("EventPublisher; }\n");
-                }
+                if (!domain.hasEvents()) continue;
+                String name = domain.entityName();
+                String lower = toLowerFirst(name);
+                String domainBase = domain.packageName().replace(".domain", "");
+                type.addMethod(simpleGetter(
+                        ClassName.get(domainBase + ".event", name + "Events", "Publisher"),
+                        lower + "EventPublisher"));
             }
-            sb.append("\n");
         }
-
-        // Saga getters
         if (hasSagas) {
             for (DomainMetadata domain : domains) {
-                if (domain.isSaga()) {
-                    String name = domain.entityName();
-                    String lower = toLowerFirst(name);
-                    String sagaName = domain.sagaMetadata().name() != null
-                            ? domain.sagaMetadata().name()
-                            : name + "Saga";
-                    sb.append("    public ").append(sagaName).append(" ").append(lower).append("Saga() { return ").append(lower).append("Saga; }\n");
-                }
+                if (!domain.isSaga()) continue;
+                String name = domain.entityName();
+                String lower = toLowerFirst(name);
+                String domainBase = domain.packageName().replace(".domain", "");
+                type.addMethod(simpleGetter(
+                        ClassName.get(domainBase + ".saga", sagaTypeName(domain)), lower + "Saga"));
             }
-            sb.append("\n");
-
-            // Event Handler getters
             for (DomainMetadata domain : domains) {
-                if (domain.hasEvents() && domain.isSaga()) {
-                    String name = domain.entityName();
-                    String lower = toLowerFirst(name);
-                    sb.append("    public ").append(name).append("EventHandler ").append(lower).append("EventHandler() { return ").append(lower).append("EventHandler; }\n");
-                }
+                if (!(domain.hasEvents() && domain.isSaga())) continue;
+                String name = domain.entityName();
+                String lower = toLowerFirst(name);
+                String domainBase = domain.packageName().replace(".domain", "");
+                type.addMethod(simpleGetter(
+                        ClassName.get(domainBase + ".event", name + "EventHandler"),
+                        lower + "EventHandler"));
             }
-            sb.append("\n");
         }
-
-        // Graph sync getters
         if (hasGraph) {
             for (DomainMetadata domain : domains) {
-                if (domain.hasGraphMetadata()) {
-                    String name = domain.entityName();
-                    String lower = toLowerFirst(name);
-                    sb.append("    public ").append(name).append("GraphSync ").append(lower).append("GraphSync() { return ").append(lower).append("GraphSync; }\n");
-                }
+                if (!domain.hasGraphMetadata()) continue;
+                String name = domain.entityName();
+                String lower = toLowerFirst(name);
+                String domainBase = domain.packageName().replace(".domain", "");
+                type.addMethod(simpleGetter(
+                        ClassName.get(domainBase + ".graph", name + "GraphSync"),
+                        lower + "GraphSync"));
             }
         }
 
-        sb.append("}\n");
+        return new GeneratedFile(basePackage, className,
+                KernelScaffold.render(basePackage, type.build()), ArtifactType.CONFIGURATION);
+    }
 
-        return new GeneratedFile(basePackage, className, sb.toString(), ArtifactType.CONFIGURATION);
+    private MethodSpec buildCompositionRootConstructor(List<DomainMetadata> domains,
+                                                       boolean hasEvents,
+                                                       boolean hasSagas,
+                                                       boolean hasGraph) {
+        CodeBlock.Builder body = CodeBlock.builder()
+                .addStatement("LOG.info($S)", "🔧 Wiring generated components...")
+                .add("\n")
+                .add("// DataSource\n")
+                .add("this.dataSource = kernel.getPersistenceBootstrap() != null \n")
+                .add("        ? kernel.getPersistenceBootstrap().getDataSource() \n")
+                .add("        : null;\n")
+                .beginControlFlow("if (dataSource == null)")
+                .addStatement("LOG.warn($S)", "⚠️ DataSource is null - degraded mode")
+                .endControlFlow()
+                .add("\n");
+
+        if (hasEvents) {
+            body.add("// Event Infrastructure\n")
+                    .addStatement("var eventsBootstrap = kernel.getEventsBootstrap()")
+                    .addStatement("this.eventStore = eventsBootstrap != null ? eventsBootstrap.getEventStore() : null")
+                    .addStatement("this.outboxSignal = eventsBootstrap != null ? eventsBootstrap.getOutboxSignal() : null")
+                    .addStatement("LOG.info($S)", "✅ Event Infrastructure wired")
+                    .add("\n");
+        }
+        if (hasSagas) {
+            body.add("// Saga Infrastructure\n")
+                    .addStatement("var flowBootstrap = kernel.getFlowBootstrap()")
+                    .addStatement("this.sagaEngine = flowBootstrap != null ? flowBootstrap.getSagaEngine() : null")
+                    .addStatement("LOG.info($S)", "✅ Saga Engine wired")
+                    .add("\n");
+        }
+        if (hasGraph) {
+            body.add("// Graph Infrastructure\n")
+                    .add("this.graphService = kernel.getGraphBootstrap() != null \n")
+                    .add("        ? kernel.getGraphBootstrap().getGraphService() \n")
+                    .add("        : null;\n")
+                    .addStatement("LOG.info($S)", "✅ Graph Service wired")
+                    .add("\n");
+        }
+
+        body.add("// Repositories\n");
+        for (DomainMetadata domain : domains) {
+            String name = domain.entityName();
+            String lower = toLowerFirst(name);
+            String domainBase = domain.packageName().replace(".domain", "");
+            ClassName repoType = ClassName.get(domainBase + ".repository", name + "Repository");
+            body.addStatement("this.$LRepository = new $T(dataSource)", lower, repoType);
+        }
+        body.addStatement("LOG.info($S)", "✅ Repositories wired").add("\n");
+
+        if (hasEvents) {
+            body.add("// Event Publishers\n");
+            for (DomainMetadata domain : domains) {
+                if (!domain.hasEvents()) continue;
+                String name = domain.entityName();
+                String lower = toLowerFirst(name);
+                String domainBase = domain.packageName().replace(".domain", "");
+                ClassName publisherType = ClassName.get(domainBase + ".event", name + "Events", "Publisher");
+                body.addStatement("this.$LEventPublisher = new $T(eventStore, outboxSignal)", lower, publisherType);
+            }
+            body.addStatement("LOG.info($S)", "✅ Event Publishers wired").add("\n");
+        }
+
+        body.add("// Services\n");
+        for (DomainMetadata domain : domains) {
+            String name = domain.entityName();
+            String lower = toLowerFirst(name);
+            String domainBase = domain.packageName().replace(".domain", "");
+            ClassName serviceType = ClassName.get(domainBase + ".service", name + "Service");
+            if (domain.hasEvents()) {
+                body.addStatement("this.$LService = new $T($LRepository, $LEventPublisher)",
+                        lower, serviceType, lower, lower);
+            } else {
+                body.addStatement("this.$LService = new $T($LRepository)", lower, serviceType, lower);
+            }
+        }
+        body.addStatement("LOG.info($S)", "✅ Services wired").add("\n");
+
+        body.add("// Handlers\n");
+        for (DomainMetadata domain : domains) {
+            String name = domain.entityName();
+            String lower = toLowerFirst(name);
+            String domainBase = domain.packageName().replace(".domain", "");
+            ClassName handlerType = ClassName.get(domainBase + ".handler", name + "Handler");
+            body.addStatement("this.$LHandler = new $T($LService)", lower, handlerType, lower);
+        }
+        body.addStatement("LOG.info($S)", "✅ Handlers wired").add("\n");
+
+        if (hasSagas) {
+            body.add("// Sagas\n");
+            for (DomainMetadata domain : domains) {
+                if (!domain.isSaga()) continue;
+                String name = domain.entityName();
+                String lower = toLowerFirst(name);
+                String domainBase = domain.packageName().replace(".domain", "");
+                ClassName sagaType = ClassName.get(domainBase + ".saga", sagaTypeName(domain));
+                body.addStatement("this.$LSaga = new $T(sagaEngine, eventStore, $LRepository)",
+                        lower, sagaType, lower);
+            }
+            body.addStatement("LOG.info($S)", "✅ Sagas wired").add("\n");
+
+            body.add("// Event Handlers (saga triggers)\n");
+            for (DomainMetadata domain : domains) {
+                if (!(domain.hasEvents() && domain.isSaga())) continue;
+                String name = domain.entityName();
+                String lower = toLowerFirst(name);
+                String domainBase = domain.packageName().replace(".domain", "");
+                ClassName handlerType = ClassName.get(domainBase + ".event", name + "EventHandler");
+                body.addStatement("this.$LEventHandler = new $T($LSaga, eventStore)",
+                        lower, handlerType, lower);
+            }
+            body.addStatement("LOG.info($S)", "✅ Event Handlers wired").add("\n");
+        }
+
+        if (hasGraph) {
+            body.add("// Graph Sync\n");
+            for (DomainMetadata domain : domains) {
+                if (!domain.hasGraphMetadata()) continue;
+                String name = domain.entityName();
+                String lower = toLowerFirst(name);
+                String domainBase = domain.packageName().replace(".domain", "");
+                ClassName syncType = ClassName.get(domainBase + ".graph", name + "GraphSync");
+                body.addStatement("this.$LGraphSync = new $T(graphService)", lower, syncType);
+            }
+            body.addStatement("LOG.info($S)", "✅ Graph Sync wired").add("\n");
+        }
+
+        body.addStatement("LOG.info($S)", "🎯 Composition Root complete: " + domains.size() + " domain(s)");
+
+        return MethodSpec.constructorBuilder()
+                .addModifiers(Modifier.PRIVATE)
+                .addParameter(KERNEL_BOOTSTRAP, "kernel")
+                .addCode(body.build())
+                .build();
     }
 
     private GeneratedFile generateRouterConfig(List<DomainMetadata> domains, String basePackage) {
         String className = "RouterConfig";
-        StringBuilder sb = new StringBuilder();
+        ClassName selfType = ClassName.get(basePackage, className);
+        ClassName compositionRootType = ClassName.get(basePackage, "CompositionRoot");
 
-        // Package and imports
-        sb.append("package ").append(basePackage).append(";\n\n");
-        sb.append("import eu.exeris.kernel.transport.http3.server.Http3Router;\n");
-        sb.append("import org.slf4j.Logger;\n");
-        sb.append("import org.slf4j.LoggerFactory;\n\n");
+        TypeSpec.Builder type = KernelScaffold.publicClass(className)
+                .addModifiers(Modifier.FINAL)
+                .addJavadoc("Generated HTTP/3 Router Configuration.\n")
+                .addJavadoc("<p>Registers routes for $L domain(s).\n", domains.size())
+                .addJavadoc("<p><b>DO NOT EDIT</b> - Regenerate from domain models.\n")
+                .addField(FieldSpec.builder(SLF4J_LOGGER, "LOG",
+                                Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                        .initializer("$T.getLogger($T.class)", SLF4J_LOGGER_FACTORY, selfType)
+                        .build())
+                .addMethod(MethodSpec.constructorBuilder().addModifiers(Modifier.PRIVATE).build());
 
-        // Javadoc
-        sb.append("/**\n");
-        sb.append(" * Generated HTTP/3 Router Configuration.\n");
-        sb.append(" * <p>Registers routes for ").append(domains.size()).append(" domain(s).\n");
-        sb.append(" * <p><b>DO NOT EDIT</b> - Regenerate from domain models.\n");
-        sb.append(" */\n");
+        CodeBlock.Builder body = CodeBlock.builder()
+                .addStatement("$T router = new $T()", HTTP3_ROUTER, HTTP3_ROUTER)
+                .add("\n")
+                .add("// Health check\n")
+                .add("router.register($S, $S, exchange -> {\n", "GET", "/health")
+                .add("    exchange.response().sendHeaders(200, null);\n")
+                .add("    exchange.response().sendText($S);\n", "{\"status\":\"UP\"}")
+                .add("});\n")
+                .add("\n")
+                .add("// API info\n")
+                .add("router.register($S, $S, exchange -> {\n", "GET", "/api/v1")
+                .add("    exchange.response().sendHeaders(200, null);\n")
+                .add("    exchange.response().sendText($S);\n",
+                        "{\"name\":\"Exeris Foundation API\",\"version\":\"v1\",\"domains\":" + domains.size() + "}")
+                .add("});\n")
+                .add("\n");
 
-        // Class
-        sb.append("public final class RouterConfig {\n\n");
-        sb.append("    private static final Logger LOG = LoggerFactory.getLogger(RouterConfig.class);\n\n");
-
-        sb.append("    private RouterConfig() {}\n\n");
-
-        // Configure method
-        sb.append("    public static Http3Router configure(CompositionRoot root) {\n");
-        sb.append("        Http3Router router = new Http3Router();\n\n");
-
-        // Health check
-        sb.append("        // Health check\n");
-        sb.append("        router.register(\"GET\", \"/health\", exchange -> {\n");
-        sb.append("            exchange.response().sendHeaders(200, null);\n");
-        sb.append("            exchange.response().sendText(\"{\\\"status\\\":\\\"UP\\\"}\");\n");
-        sb.append("        });\n\n");
-
-        // API info
-        sb.append("        // API info\n");
-        sb.append("        router.register(\"GET\", \"/api/v1\", exchange -> {\n");
-        sb.append("            exchange.response().sendHeaders(200, null);\n");
-        sb.append("            exchange.response().sendText(\"{\\\"name\\\":\\\"Exeris Foundation API\\\",\\\"version\\\":\\\"v1\\\",\\\"domains\\\":").append(domains.size()).append("}\");\n");
-        sb.append("        });\n\n");
-
-        // Routes for each domain
         for (DomainMetadata domain : domains) {
             String name = domain.entityName();
             String lower = toLowerFirst(name);
-            String path = domain.effectivePath() != null && !domain.effectivePath().isEmpty() ? domain.effectivePath() : "/" + toKebabCase(name) + "s";
+            String path = (domain.effectivePath() != null && !domain.effectivePath().isEmpty())
+                    ? domain.effectivePath()
+                    : "/" + toKebabCase(name) + "s";
             String apiPath = "/api/v1" + path;
+            String apiPathStar = apiPath + "/*";
 
-            sb.append("        // ═══ ").append(name).append(" routes ═══\n");
-            sb.append("        router.register(\"GET\", \"").append(apiPath).append("\", root.").append(lower).append("Handler()::handleGetAll);\n");
-            sb.append("        router.register(\"GET\", \"").append(apiPath).append("/*\", root.").append(lower).append("Handler()::handleGetById);\n");
-            sb.append("        router.register(\"POST\", \"").append(apiPath).append("\", root.").append(lower).append("Handler()::handleCreate);\n");
-            sb.append("        router.register(\"PUT\", \"").append(apiPath).append("/*\", root.").append(lower).append("Handler()::handleUpdate);\n");
-            sb.append("        router.register(\"DELETE\", \"").append(apiPath).append("/*\", root.").append(lower).append("Handler()::handleDelete);\n");
-            sb.append("        LOG.info(\"📍 Registered: CRUD ").append(apiPath).append("\");\n\n");
+            body.add("// ═══ $L routes ═══\n", name)
+                    .addStatement("router.register($S, $S, root.$LHandler()::handleGetAll)", "GET", apiPath, lower)
+                    .addStatement("router.register($S, $S, root.$LHandler()::handleGetById)", "GET", apiPathStar, lower)
+                    .addStatement("router.register($S, $S, root.$LHandler()::handleCreate)", "POST", apiPath, lower)
+                    .addStatement("router.register($S, $S, root.$LHandler()::handleUpdate)", "PUT", apiPathStar, lower)
+                    .addStatement("router.register($S, $S, root.$LHandler()::handleDelete)", "DELETE", apiPathStar, lower)
+                    .addStatement("LOG.info($S)", "📍 Registered: CRUD " + apiPath)
+                    .add("\n");
         }
 
-        sb.append("        return router;\n");
-        sb.append("    }\n");
-        sb.append("}\n");
+        body.addStatement("return router");
 
-        return new GeneratedFile(basePackage, className, sb.toString(), ArtifactType.CONFIGURATION);
+        type.addMethod(MethodSpec.methodBuilder("configure")
+                .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+                .returns(HTTP3_ROUTER)
+                .addParameter(compositionRootType, "root")
+                .addCode(body.build())
+                .build());
+
+        return new GeneratedFile(basePackage, className,
+                KernelScaffold.render(basePackage, type.build()), ArtifactType.CONFIGURATION);
+    }
+
+    private MethodSpec simpleGetter(TypeName returnType, String fieldName) {
+        return MethodSpec.methodBuilder(fieldName)
+                .addModifiers(Modifier.PUBLIC)
+                .returns(returnType)
+                .addStatement("return $L", fieldName)
+                .build();
+    }
+
+    private String sagaTypeName(DomainMetadata domain) {
+        String configured = domain.sagaMetadata() != null ? domain.sagaMetadata().name() : null;
+        return configured != null ? configured : domain.entityName() + "Saga";
     }
 
     private String toLowerFirst(String s) {
@@ -633,4 +598,3 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
         return ArtifactType.CONFIGURATION;
     }
 }
-
