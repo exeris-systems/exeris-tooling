@@ -6,19 +6,28 @@ import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 
 /**
- * Generates Flyway SQL migration scripts from @ExerisDomain metadata.
- * Creates:
- * - CREATE TABLE with all fields
- * - RLS policies for tenant isolation (if tenantScoped)
- * - Indexes for searchable/filterable fields
- * - Soft delete, audit, version columns
+ * Generates Flyway SQL migration scripts from {@code @ExerisDomain} metadata.
+ *
+ * <p>Produces, for each domain entity:
+ * <ul>
+ *   <li>{@code CREATE TABLE} with id + per-domain columns + system columns
+ *       (tenant, audit, soft-delete, version) gated by metadata flags</li>
+ *   <li>Indexes for {@code searchable}/{@code unique} fields and the tenant FK</li>
+ *   <li>Row-Level-Security policy for tenant isolation (when {@code tenantScoped})</li>
+ * </ul>
+ *
+ * <p>Phase 5 of ADR-015: emission uses Java text blocks + {@link String#join}
+ * over a list of column definitions instead of {@code StringBuilder.append}
+ * spaghetti. Output is byte-equivalent to the prior {@code StringBuilder}
+ * baseline.
  */
 public class KernelFlywayGenerator implements KernelArtifactGenerator {
 
-    // System fields that are handled separately (not from domain fields)
     private static final Set<String> SYSTEM_FIELDS = Set.of(
             "id", "tenantId", "tenant_id",
             "createdAt", "created_at", "createdBy", "created_by",
@@ -27,90 +36,92 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
             "version"
     );
 
+    // Substituted with the table name via String.formatted. Safe because the
+    // table name is a snake-cased Java identifier (no `%` possible); never
+    // pass arbitrary external input through this template.
+    private static final String RLS_TEMPLATE = """
+            -- Row Level Security for tenant isolation
+            ALTER TABLE %1$s ENABLE ROW LEVEL SECURITY;
+
+            CREATE POLICY %1$s_tenant_policy ON %1$s
+                USING (tenant_id = current_setting('app.tenant_id', true)::uuid)
+                WITH CHECK (tenant_id = current_setting('app.tenant_id', true)::uuid);
+            """;
+
     @Override
     public GeneratedFile generate(DomainMetadata metadata) {
         String tableName = toSnakeCase(metadata.entityName()) + "s";
         String version = "V" + System.currentTimeMillis() + "__create_" + tableName;
 
-        StringBuilder sql = new StringBuilder();
-        sql.append("-- Flyway migration: Create ").append(metadata.entityName()).append(" table\n");
-        sql.append("-- Generated from @ExerisDomain: ").append(metadata.fullyQualifiedName()).append("\n\n");
+        String header = """
+                -- Flyway migration: Create %s table
+                -- Generated from @ExerisDomain: %s
 
-        // CREATE TABLE
-        sql.append("CREATE TABLE IF NOT EXISTS ").append(tableName).append(" (\n");
-        sql.append("    id UUID PRIMARY KEY DEFAULT gen_random_uuid()");
+                """.formatted(metadata.entityName(), metadata.fullyQualifiedName());
 
-        // Tenant ID (if tenantScoped) - add early for FK constraints
+        String createTable = "CREATE TABLE IF NOT EXISTS " + tableName + " (\n"
+                + String.join(",\n", buildColumns(metadata))
+                + "\n);\n\n";
+
+        String indexes = String.join("", buildIndexes(metadata, tableName)) + "\n";
+
+        String rls = metadata.tenantScoped() ? RLS_TEMPLATE.formatted(tableName) : "";
+
+        String sql = header + createTable + indexes + rls;
+        return new GeneratedFile("db/migration", version, sql, ArtifactType.CONFIGURATION, "sql");
+    }
+
+    private List<String> buildColumns(DomainMetadata metadata) {
+        List<String> columns = new ArrayList<>();
+        columns.add("    id UUID PRIMARY KEY DEFAULT gen_random_uuid()");
+
         if (metadata.tenantScoped()) {
-            sql.append(",\n    tenant_id UUID NOT NULL REFERENCES tenants(id)");
+            columns.add("    tenant_id UUID NOT NULL REFERENCES tenants(id)");
         }
 
-        // Domain fields from nested FieldMetadata (excluding system fields)
-        for (var field : metadata.fields()) {
-            String fieldName = field.name();
-
-            // Skip system fields - they are handled separately
-            if (isSystemField(fieldName)) {
-                continue;
-            }
-
-            sql.append(",\n    ").append(toSnakeCase(fieldName)).append(" ");
-            sql.append(mapJavaTypeToSql(field.type()));
-            if (field.required()) sql.append(" NOT NULL");
-            if (field.unique()) sql.append(" UNIQUE");
-        }
-
-        // Audit columns (if audited)
-        if (metadata.audited()) {
-            sql.append(",\n    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP");
-            sql.append(",\n    created_by VARCHAR(255)");
-            sql.append(",\n    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP");
-            sql.append(",\n    updated_by VARCHAR(255)");
-        }
-
-        // Soft delete (if softDelete)
-        if (metadata.softDelete()) {
-            sql.append(",\n    deleted BOOLEAN DEFAULT FALSE");
-            sql.append(",\n    deleted_at TIMESTAMPTZ");
-            sql.append(",\n    deleted_by VARCHAR(255)");
-        }
-
-        // Version (if versioned)
-        if (metadata.versioned()) {
-            sql.append(",\n    version BIGINT DEFAULT 0");
-        }
-
-        sql.append("\n);\n\n");
-
-        // Indexes
-        if (metadata.tenantScoped()) {
-            sql.append("CREATE INDEX IF NOT EXISTS idx_").append(tableName).append("_tenant ON ")
-               .append(tableName).append("(tenant_id);\n");
-        }
-
-        for (var field : metadata.fields()) {
+        for (FieldMetadata field : metadata.fields()) {
             if (isSystemField(field.name())) continue;
+            StringBuilder col = new StringBuilder("    ")
+                    .append(toSnakeCase(field.name()))
+                    .append(' ')
+                    .append(mapJavaTypeToSql(field.type()));
+            if (field.required()) col.append(" NOT NULL");
+            if (field.unique()) col.append(" UNIQUE");
+            columns.add(col.toString());
+        }
 
+        if (metadata.audited()) {
+            columns.add("    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP");
+            columns.add("    created_by VARCHAR(255)");
+            columns.add("    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP");
+            columns.add("    updated_by VARCHAR(255)");
+        }
+        if (metadata.softDelete()) {
+            columns.add("    deleted BOOLEAN DEFAULT FALSE");
+            columns.add("    deleted_at TIMESTAMPTZ");
+            columns.add("    deleted_by VARCHAR(255)");
+        }
+        if (metadata.versioned()) {
+            columns.add("    version BIGINT DEFAULT 0");
+        }
+        return columns;
+    }
+
+    private List<String> buildIndexes(DomainMetadata metadata, String tableName) {
+        List<String> indexes = new ArrayList<>();
+        if (metadata.tenantScoped()) {
+            indexes.add("CREATE INDEX IF NOT EXISTS idx_" + tableName + "_tenant ON "
+                    + tableName + "(tenant_id);\n");
+        }
+        for (FieldMetadata field : metadata.fields()) {
+            if (isSystemField(field.name())) continue;
             if (field.searchable() || field.unique()) {
-                sql.append("CREATE INDEX IF NOT EXISTS idx_").append(tableName).append("_")
-                   .append(toSnakeCase(field.name())).append(" ON ")
-                   .append(tableName).append("(").append(toSnakeCase(field.name())).append(");\n");
+                String col = toSnakeCase(field.name());
+                indexes.add("CREATE INDEX IF NOT EXISTS idx_" + tableName + "_" + col + " ON "
+                        + tableName + "(" + col + ");\n");
             }
         }
-        sql.append("\n");
-
-        // RLS Policy (if tenantScoped)
-        if (metadata.tenantScoped()) {
-            sql.append("-- Row Level Security for tenant isolation\n");
-            sql.append("ALTER TABLE ").append(tableName).append(" ENABLE ROW LEVEL SECURITY;\n\n");
-            sql.append("CREATE POLICY ").append(tableName).append("_tenant_policy ON ").append(tableName).append("\n");
-            sql.append("    USING (tenant_id = current_setting('app.tenant_id', true)::uuid)\n");
-            sql.append("    WITH CHECK (tenant_id = current_setting('app.tenant_id', true)::uuid);\n");
-        }
-
-        // Generate SQL file in db/migration directory
-        String directory = "db/migration";
-        return new GeneratedFile(directory, version, sql.toString(), ArtifactType.CONFIGURATION, "sql");
+        return indexes;
     }
 
     private boolean isSystemField(String fieldName) {
@@ -123,8 +134,6 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
 
     private String mapJavaTypeToSql(String javaType) {
         if (javaType == null) return "VARCHAR(255)";
-
-        // Handle fully qualified and simple names
         String simpleType = javaType.contains(".")
                 ? javaType.substring(javaType.lastIndexOf('.') + 1)
                 : javaType;
