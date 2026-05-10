@@ -229,70 +229,55 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
 
         // Per-domain fields
         for (DomainMetadata domain : domains) {
-            String name = domain.entityName();
-            String lower = toLowerFirst(name);
-            String domainBase = domain.packageName().replace(".domain", "");
+            DomainNames d = DomainNames.from(domain);
             type.addField(FieldSpec.builder(
-                    ClassName.get(domainBase + ".repository", name + "Repository"),
-                    lower + "Repository", Modifier.PRIVATE, Modifier.FINAL).build());
+                    ClassName.get(d.domainBase() + ".repository", d.name() + "Repository"),
+                    d.lower() + "Repository", Modifier.PRIVATE, Modifier.FINAL).build());
         }
         for (DomainMetadata domain : domains) {
-            String name = domain.entityName();
-            String lower = toLowerFirst(name);
-            String domainBase = domain.packageName().replace(".domain", "");
+            DomainNames d = DomainNames.from(domain);
             type.addField(FieldSpec.builder(
-                    ClassName.get(domainBase + ".service", name + "Service"),
-                    lower + "Service", Modifier.PRIVATE, Modifier.FINAL).build());
+                    ClassName.get(d.domainBase() + ".service", d.name() + "Service"),
+                    d.lower() + "Service", Modifier.PRIVATE, Modifier.FINAL).build());
         }
         for (DomainMetadata domain : domains) {
-            String name = domain.entityName();
-            String lower = toLowerFirst(name);
-            String domainBase = domain.packageName().replace(".domain", "");
+            DomainNames d = DomainNames.from(domain);
             type.addField(FieldSpec.builder(
-                    ClassName.get(domainBase + ".handler", name + "Handler"),
-                    lower + "Handler", Modifier.PRIVATE, Modifier.FINAL).build());
+                    ClassName.get(d.domainBase() + ".handler", d.name() + "Handler"),
+                    d.lower() + "Handler", Modifier.PRIVATE, Modifier.FINAL).build());
         }
         if (hasEvents) {
             for (DomainMetadata domain : domains) {
                 if (!domain.hasEvents()) continue;
-                String name = domain.entityName();
-                String lower = toLowerFirst(name);
-                String domainBase = domain.packageName().replace(".domain", "");
-                ClassName publisherType = ClassName.get(domainBase + ".event", name + "Events", "Publisher");
+                DomainNames d = DomainNames.from(domain);
+                ClassName publisherType = ClassName.get(d.domainBase() + ".event", d.name() + "Events", "Publisher");
                 type.addField(FieldSpec.builder(publisherType,
-                        lower + "EventPublisher", Modifier.PRIVATE, Modifier.FINAL).build());
+                        d.lower() + "EventPublisher", Modifier.PRIVATE, Modifier.FINAL).build());
             }
         }
         if (hasSagas) {
             for (DomainMetadata domain : domains) {
                 if (!domain.isSaga()) continue;
-                String name = domain.entityName();
-                String lower = toLowerFirst(name);
-                String domainBase = domain.packageName().replace(".domain", "");
-                String sagaName = sagaTypeName(domain);
+                DomainNames d = DomainNames.from(domain);
                 type.addField(FieldSpec.builder(
-                        ClassName.get(domainBase + ".saga", sagaName),
-                        lower + "Saga", Modifier.PRIVATE, Modifier.FINAL).build());
+                        ClassName.get(d.domainBase() + ".saga", sagaTypeName(domain)),
+                        d.lower() + "Saga", Modifier.PRIVATE, Modifier.FINAL).build());
             }
             for (DomainMetadata domain : domains) {
                 if (!(domain.hasEvents() && domain.isSaga())) continue;
-                String name = domain.entityName();
-                String lower = toLowerFirst(name);
-                String domainBase = domain.packageName().replace(".domain", "");
+                DomainNames d = DomainNames.from(domain);
                 type.addField(FieldSpec.builder(
-                        ClassName.get(domainBase + ".event", name + "EventHandler"),
-                        lower + "EventHandler", Modifier.PRIVATE, Modifier.FINAL).build());
+                        ClassName.get(d.domainBase() + ".event", d.name() + "EventHandler"),
+                        d.lower() + "EventHandler", Modifier.PRIVATE, Modifier.FINAL).build());
             }
         }
         if (hasGraph) {
             for (DomainMetadata domain : domains) {
                 if (!domain.hasGraphMetadata()) continue;
-                String name = domain.entityName();
-                String lower = toLowerFirst(name);
-                String domainBase = domain.packageName().replace(".domain", "");
+                DomainNames d = DomainNames.from(domain);
                 type.addField(FieldSpec.builder(
-                        ClassName.get(domainBase + ".graph", name + "GraphSync"),
-                        lower + "GraphSync", Modifier.PRIVATE, Modifier.FINAL).build());
+                        ClassName.get(d.domainBase() + ".graph", d.name() + "GraphSync"),
+                        d.lower() + "GraphSync", Modifier.PRIVATE, Modifier.FINAL).build());
             }
         }
 
@@ -318,58 +303,49 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
             type.addMethod(simpleGetter(GRAPH_SERVICE, "graphService"));
         }
         for (DomainMetadata domain : domains) {
-            String name = domain.entityName();
-            String lower = toLowerFirst(name);
-            String domainBase = domain.packageName().replace(".domain", "");
+            DomainNames d = DomainNames.from(domain);
             type.addMethod(simpleGetter(
-                    ClassName.get(domainBase + ".handler", name + "Handler"), lower + "Handler"));
+                    ClassName.get(d.domainBase() + ".handler", d.name() + "Handler"),
+                    d.lower() + "Handler"));
         }
         for (DomainMetadata domain : domains) {
-            String name = domain.entityName();
-            String lower = toLowerFirst(name);
-            String domainBase = domain.packageName().replace(".domain", "");
+            DomainNames d = DomainNames.from(domain);
             type.addMethod(simpleGetter(
-                    ClassName.get(domainBase + ".service", name + "Service"), lower + "Service"));
+                    ClassName.get(d.domainBase() + ".service", d.name() + "Service"),
+                    d.lower() + "Service"));
         }
         if (hasEvents) {
             for (DomainMetadata domain : domains) {
                 if (!domain.hasEvents()) continue;
-                String name = domain.entityName();
-                String lower = toLowerFirst(name);
-                String domainBase = domain.packageName().replace(".domain", "");
+                DomainNames d = DomainNames.from(domain);
                 type.addMethod(simpleGetter(
-                        ClassName.get(domainBase + ".event", name + "Events", "Publisher"),
-                        lower + "EventPublisher"));
+                        ClassName.get(d.domainBase() + ".event", d.name() + "Events", "Publisher"),
+                        d.lower() + "EventPublisher"));
             }
         }
         if (hasSagas) {
             for (DomainMetadata domain : domains) {
                 if (!domain.isSaga()) continue;
-                String name = domain.entityName();
-                String lower = toLowerFirst(name);
-                String domainBase = domain.packageName().replace(".domain", "");
+                DomainNames d = DomainNames.from(domain);
                 type.addMethod(simpleGetter(
-                        ClassName.get(domainBase + ".saga", sagaTypeName(domain)), lower + "Saga"));
+                        ClassName.get(d.domainBase() + ".saga", sagaTypeName(domain)),
+                        d.lower() + "Saga"));
             }
             for (DomainMetadata domain : domains) {
                 if (!(domain.hasEvents() && domain.isSaga())) continue;
-                String name = domain.entityName();
-                String lower = toLowerFirst(name);
-                String domainBase = domain.packageName().replace(".domain", "");
+                DomainNames d = DomainNames.from(domain);
                 type.addMethod(simpleGetter(
-                        ClassName.get(domainBase + ".event", name + "EventHandler"),
-                        lower + "EventHandler"));
+                        ClassName.get(d.domainBase() + ".event", d.name() + "EventHandler"),
+                        d.lower() + "EventHandler"));
             }
         }
         if (hasGraph) {
             for (DomainMetadata domain : domains) {
                 if (!domain.hasGraphMetadata()) continue;
-                String name = domain.entityName();
-                String lower = toLowerFirst(name);
-                String domainBase = domain.packageName().replace(".domain", "");
+                DomainNames d = DomainNames.from(domain);
                 type.addMethod(simpleGetter(
-                        ClassName.get(domainBase + ".graph", name + "GraphSync"),
-                        lower + "GraphSync"));
+                        ClassName.get(d.domainBase() + ".graph", d.name() + "GraphSync"),
+                        d.lower() + "GraphSync"));
             }
         }
 
@@ -385,9 +361,8 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .addStatement("LOG.info($S)", "🔧 Wiring generated components...")
                 .add("\n")
                 .add("// DataSource\n")
-                .add("this.dataSource = kernel.getPersistenceBootstrap() != null \n")
-                .add("        ? kernel.getPersistenceBootstrap().getDataSource() \n")
-                .add("        : null;\n")
+                .addStatement("var persistenceBootstrap = kernel.getPersistenceBootstrap()")
+                .addStatement("this.dataSource = persistenceBootstrap != null ? persistenceBootstrap.getDataSource() : null")
                 .beginControlFlow("if (dataSource == null)")
                 .addStatement("LOG.warn($S)", "⚠️ DataSource is null - degraded mode")
                 .endControlFlow()
@@ -410,20 +385,17 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
         }
         if (hasGraph) {
             body.add("// Graph Infrastructure\n")
-                    .add("this.graphService = kernel.getGraphBootstrap() != null \n")
-                    .add("        ? kernel.getGraphBootstrap().getGraphService() \n")
-                    .add("        : null;\n")
+                    .addStatement("var graphBootstrap = kernel.getGraphBootstrap()")
+                    .addStatement("this.graphService = graphBootstrap != null ? graphBootstrap.getGraphService() : null")
                     .addStatement("LOG.info($S)", "✅ Graph Service wired")
                     .add("\n");
         }
 
         body.add("// Repositories\n");
         for (DomainMetadata domain : domains) {
-            String name = domain.entityName();
-            String lower = toLowerFirst(name);
-            String domainBase = domain.packageName().replace(".domain", "");
-            ClassName repoType = ClassName.get(domainBase + ".repository", name + "Repository");
-            body.addStatement("this.$LRepository = new $T(dataSource)", lower, repoType);
+            DomainNames d = DomainNames.from(domain);
+            ClassName repoType = ClassName.get(d.domainBase() + ".repository", d.name() + "Repository");
+            body.addStatement("this.$LRepository = new $T(dataSource)", d.lower(), repoType);
         }
         body.addStatement("LOG.info($S)", "✅ Repositories wired").add("\n");
 
@@ -431,37 +403,32 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
             body.add("// Event Publishers\n");
             for (DomainMetadata domain : domains) {
                 if (!domain.hasEvents()) continue;
-                String name = domain.entityName();
-                String lower = toLowerFirst(name);
-                String domainBase = domain.packageName().replace(".domain", "");
-                ClassName publisherType = ClassName.get(domainBase + ".event", name + "Events", "Publisher");
-                body.addStatement("this.$LEventPublisher = new $T(eventStore, outboxSignal)", lower, publisherType);
+                DomainNames d = DomainNames.from(domain);
+                ClassName publisherType = ClassName.get(d.domainBase() + ".event", d.name() + "Events", "Publisher");
+                body.addStatement("this.$LEventPublisher = new $T(eventStore, outboxSignal)",
+                        d.lower(), publisherType);
             }
             body.addStatement("LOG.info($S)", "✅ Event Publishers wired").add("\n");
         }
 
         body.add("// Services\n");
         for (DomainMetadata domain : domains) {
-            String name = domain.entityName();
-            String lower = toLowerFirst(name);
-            String domainBase = domain.packageName().replace(".domain", "");
-            ClassName serviceType = ClassName.get(domainBase + ".service", name + "Service");
+            DomainNames d = DomainNames.from(domain);
+            ClassName serviceType = ClassName.get(d.domainBase() + ".service", d.name() + "Service");
             if (domain.hasEvents()) {
                 body.addStatement("this.$LService = new $T($LRepository, $LEventPublisher)",
-                        lower, serviceType, lower, lower);
+                        d.lower(), serviceType, d.lower(), d.lower());
             } else {
-                body.addStatement("this.$LService = new $T($LRepository)", lower, serviceType, lower);
+                body.addStatement("this.$LService = new $T($LRepository)", d.lower(), serviceType, d.lower());
             }
         }
         body.addStatement("LOG.info($S)", "✅ Services wired").add("\n");
 
         body.add("// Handlers\n");
         for (DomainMetadata domain : domains) {
-            String name = domain.entityName();
-            String lower = toLowerFirst(name);
-            String domainBase = domain.packageName().replace(".domain", "");
-            ClassName handlerType = ClassName.get(domainBase + ".handler", name + "Handler");
-            body.addStatement("this.$LHandler = new $T($LService)", lower, handlerType, lower);
+            DomainNames d = DomainNames.from(domain);
+            ClassName handlerType = ClassName.get(d.domainBase() + ".handler", d.name() + "Handler");
+            body.addStatement("this.$LHandler = new $T($LService)", d.lower(), handlerType, d.lower());
         }
         body.addStatement("LOG.info($S)", "✅ Handlers wired").add("\n");
 
@@ -469,24 +436,20 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
             body.add("// Sagas\n");
             for (DomainMetadata domain : domains) {
                 if (!domain.isSaga()) continue;
-                String name = domain.entityName();
-                String lower = toLowerFirst(name);
-                String domainBase = domain.packageName().replace(".domain", "");
-                ClassName sagaType = ClassName.get(domainBase + ".saga", sagaTypeName(domain));
+                DomainNames d = DomainNames.from(domain);
+                ClassName sagaType = ClassName.get(d.domainBase() + ".saga", sagaTypeName(domain));
                 body.addStatement("this.$LSaga = new $T(sagaEngine, eventStore, $LRepository)",
-                        lower, sagaType, lower);
+                        d.lower(), sagaType, d.lower());
             }
             body.addStatement("LOG.info($S)", "✅ Sagas wired").add("\n");
 
             body.add("// Event Handlers (saga triggers)\n");
             for (DomainMetadata domain : domains) {
                 if (!(domain.hasEvents() && domain.isSaga())) continue;
-                String name = domain.entityName();
-                String lower = toLowerFirst(name);
-                String domainBase = domain.packageName().replace(".domain", "");
-                ClassName handlerType = ClassName.get(domainBase + ".event", name + "EventHandler");
+                DomainNames d = DomainNames.from(domain);
+                ClassName handlerType = ClassName.get(d.domainBase() + ".event", d.name() + "EventHandler");
                 body.addStatement("this.$LEventHandler = new $T($LSaga, eventStore)",
-                        lower, handlerType, lower);
+                        d.lower(), handlerType, d.lower());
             }
             body.addStatement("LOG.info($S)", "✅ Event Handlers wired").add("\n");
         }
@@ -495,11 +458,9 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
             body.add("// Graph Sync\n");
             for (DomainMetadata domain : domains) {
                 if (!domain.hasGraphMetadata()) continue;
-                String name = domain.entityName();
-                String lower = toLowerFirst(name);
-                String domainBase = domain.packageName().replace(".domain", "");
-                ClassName syncType = ClassName.get(domainBase + ".graph", name + "GraphSync");
-                body.addStatement("this.$LGraphSync = new $T(graphService)", lower, syncType);
+                DomainNames d = DomainNames.from(domain);
+                ClassName syncType = ClassName.get(d.domainBase() + ".graph", d.name() + "GraphSync");
+                body.addStatement("this.$LGraphSync = new $T(graphService)", d.lower(), syncType);
             }
             body.addStatement("LOG.info($S)", "✅ Graph Sync wired").add("\n");
         }
@@ -547,20 +508,19 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .add("\n");
 
         for (DomainMetadata domain : domains) {
-            String name = domain.entityName();
-            String lower = toLowerFirst(name);
+            DomainNames d = DomainNames.from(domain);
             String path = (domain.effectivePath() != null && !domain.effectivePath().isEmpty())
                     ? domain.effectivePath()
-                    : "/" + toKebabCase(name) + "s";
+                    : "/" + toKebabCase(d.name()) + "s";
             String apiPath = "/api/v1" + path;
             String apiPathStar = apiPath + "/*";
 
-            body.add("// ═══ $L routes ═══\n", name)
-                    .addStatement("router.register($S, $S, root.$LHandler()::handleGetAll)", "GET", apiPath, lower)
-                    .addStatement("router.register($S, $S, root.$LHandler()::handleGetById)", "GET", apiPathStar, lower)
-                    .addStatement("router.register($S, $S, root.$LHandler()::handleCreate)", "POST", apiPath, lower)
-                    .addStatement("router.register($S, $S, root.$LHandler()::handleUpdate)", "PUT", apiPathStar, lower)
-                    .addStatement("router.register($S, $S, root.$LHandler()::handleDelete)", "DELETE", apiPathStar, lower)
+            body.add("// ═══ $L routes ═══\n", d.name())
+                    .addStatement("router.register($S, $S, root.$LHandler()::handleGetAll)", "GET", apiPath, d.lower())
+                    .addStatement("router.register($S, $S, root.$LHandler()::handleGetById)", "GET", apiPathStar, d.lower())
+                    .addStatement("router.register($S, $S, root.$LHandler()::handleCreate)", "POST", apiPath, d.lower())
+                    .addStatement("router.register($S, $S, root.$LHandler()::handleUpdate)", "PUT", apiPathStar, d.lower())
+                    .addStatement("router.register($S, $S, root.$LHandler()::handleDelete)", "DELETE", apiPathStar, d.lower())
                     .addStatement("LOG.info($S)", "📍 Registered: CRUD " + apiPath)
                     .add("\n");
         }
@@ -586,17 +546,30 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .build();
     }
 
-    private String sagaTypeName(DomainMetadata domain) {
+    private static String sagaTypeName(DomainMetadata domain) {
         String configured = domain.sagaMetadata() != null ? domain.sagaMetadata().name() : null;
         return configured != null ? configured : domain.entityName() + "Saga";
     }
 
-    private String toLowerFirst(String s) {
+    private static String toLowerFirst(String s) {
         return s.isEmpty() ? s : Character.toLowerCase(s.charAt(0)) + s.substring(1);
     }
 
-    private String toKebabCase(String camelCase) {
+    private static String toKebabCase(String camelCase) {
         return camelCase.replaceAll("([a-z])([A-Z])", "$1-$2").toLowerCase();
+    }
+
+    /**
+     * Triple of derived names used by every per-domain field/wiring/getter
+     * loop. Centralized so SonarQube doesn't flag the same three lines across
+     * a dozen call sites.
+     */
+    private record DomainNames(String name, String lower, String domainBase) {
+        static DomainNames from(DomainMetadata domain) {
+            String name = domain.entityName();
+            return new DomainNames(name, toLowerFirst(name),
+                    domain.packageName().replace(".domain", ""));
+        }
     }
 
     @Override
