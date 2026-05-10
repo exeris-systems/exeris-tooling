@@ -69,7 +69,7 @@ public class KernelSagaGenerator implements KernelArtifactGenerator {
         ClassName repositoryType = ClassName.get(
                 metadata.packageName().replace(".domain", ".repository"), entity + "Repository");
         ClassName selfType = ClassName.get(packageName, className);
-        ClassName stateType = ClassName.bestGuess("State");
+        ClassName stateType = ClassName.get(packageName, className, "State");
 
         String timeout = saga.timeout() != null ? saga.timeout() : "PT30M";
 
@@ -183,7 +183,7 @@ public class KernelSagaGenerator implements KernelArtifactGenerator {
                 .returns(stateType)
                 .addParameter(String.class, "key")
                 .addParameter(Object.class, "value")
-                .addStatement("var newData = new java.util.HashMap<>(stepData)")
+                .addStatement("var newData = new $T<>(stepData)", HASH_MAP)
                 .addStatement("newData.put(key, value)")
                 .addStatement("return new $T(sagaId, entityId, tenantId, currentStep, startedAt, $T.copyOf(newData))",
                         stateType, MAP)
@@ -464,7 +464,6 @@ public class KernelSagaGenerator implements KernelArtifactGenerator {
                         .add("        )\n")
                         .add(");\n")
                         .build())
-                // suppress signature unused warning by referencing the type
                 .build();
     }
 
@@ -485,6 +484,9 @@ public class KernelSagaGenerator implements KernelArtifactGenerator {
     private MethodSpec buildGetStatusMethod() {
         return MethodSpec.methodBuilder("getStatus")
                 .addJavadoc("Gets saga status.\n")
+                .addJavadoc("\n")
+                .addJavadoc("@param sagaId the saga execution ID\n")
+                .addJavadoc("@return the snapshot, or {@code null} if no saga is registered for the given ID\n")
                 .addModifiers(Modifier.PUBLIC)
                 .returns(SAGA_SNAPSHOT)
                 .addParameter(UUID, "sagaId")
