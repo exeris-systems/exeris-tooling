@@ -46,9 +46,15 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
     private static final ClassName SAGA_ENGINE = ClassName.get("eu.exeris.kernel.flow", "SagaEngine");
     private static final ClassName GRAPH_SERVICE = ClassName.get("eu.exeris.kernel.graph", "GraphService");
 
+    /**
+     * Single-domain entry point — required by {@link KernelArtifactGenerator}
+     * and invoked by the strategy registry. Returns {@code Application.java}
+     * only. {@code CompositionRoot} and {@code RouterConfig} need cross-domain
+     * wiring and are emitted exclusively via
+     * {@link #generateAll(List, String)}.
+     */
     @Override
     public GeneratedFile generate(DomainMetadata metadata) {
-        // Single-domain path emits Application.java only.
         String basePackage = metadata.packageName().replace(".domain", "");
         return generateApplication(List.of(metadata), basePackage);
     }
