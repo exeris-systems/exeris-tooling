@@ -6,7 +6,8 @@ import java.util.UUID;
 
 /**
  * Test stub for the kernel domain event envelope. Generated event publishers
- * assemble instances via the fluent {@link #builder()} API.
+ * assemble instances via the fluent {@link #builder()} API; generated event
+ * handlers read fields via the accessor methods.
  */
 public final class DomainEvent {
 
@@ -16,6 +17,12 @@ public final class DomainEvent {
     public static Builder builder() {
         return new Builder();
     }
+
+    public String aggregateType() { return null; }
+    public String eventType() { return null; }
+    public UUID aggregateId() { return null; }
+    public UUID tenantId() { return null; }
+    public Map<String, Object> payload() { return null; }
 
     public static final class Builder {
         public Builder eventId(UUID v) { return this; }

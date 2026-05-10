@@ -1,11 +1,20 @@
 package eu.exeris.tooling.codegen.java.kernel;
 
+import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.CodeBlock;
+import com.palantir.javapoet.FieldSpec;
+import com.palantir.javapoet.MethodSpec;
+import com.palantir.javapoet.ParameterizedTypeName;
+import com.palantir.javapoet.TypeName;
+import com.palantir.javapoet.TypeSpec;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
+import eu.exeris.tooling.codegen.java.support.KernelScaffold;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.SagaMetadata;
 import eu.exeris.sdk.sourcemodel.ast.SagaStepMetadata;
 
+import javax.lang.model.element.Modifier;
 import java.util.List;
 
 /**
@@ -18,8 +27,8 @@ import java.util.List;
  *   <li>Saga executor (registers with SagaEngine)</li>
  * </ul>
  *
- * <p>Integrates with {@code eu.exeris.kernel.flow.SagaEngine} for
- * distributed saga orchestration with compensation support.
+ * <p>Phase 4d of ADR-015: emission is JavaPoet-based via Palantir's fork
+ * (the nested {@code State} record requires {@link TypeSpec#recordBuilder(String)}).
  *
  * @author Exeris Team
  * @since 0.1.0
@@ -27,10 +36,27 @@ import java.util.List;
  */
 public class KernelSagaGenerator implements KernelArtifactGenerator {
 
+    private static final ClassName UUID = ClassName.get("java.util", "UUID");
+    private static final ClassName INSTANT = ClassName.get("java.time", "Instant");
+    private static final ClassName DURATION = ClassName.get("java.time", "Duration");
+    private static final ClassName MAP = ClassName.get("java.util", "Map");
+    private static final ClassName OPTIONAL = ClassName.get("java.util", "Optional");
+    private static final ClassName HASH_MAP = ClassName.get("java.util", "HashMap");
+    private static final ClassName SLF4J_LOGGER = ClassName.get("org.slf4j", "Logger");
+    private static final ClassName SLF4J_LOGGER_FACTORY = ClassName.get("org.slf4j", "LoggerFactory");
+    private static final ClassName OBJECT_MAPPER = ClassName.get("tools.jackson.databind", "ObjectMapper");
+    private static final ClassName JSON_MAPPER = ClassName.get("tools.jackson.databind.json", "JsonMapper");
+    private static final ClassName JSON_NODE = ClassName.get("tools.jackson.databind", "JsonNode");
+    private static final ClassName SAGA_ENGINE = ClassName.get("eu.exeris.kernel.flow", "SagaEngine");
+    private static final ClassName SAGA_BUILDER = ClassName.get("eu.exeris.kernel.flow", "SagaBuilder");
+    private static final ClassName SAGA_SNAPSHOT = ClassName.get("eu.exeris.kernel.flow.model", "SagaSnapshot");
+    private static final ClassName STEP_RESULT = ClassName.get("eu.exeris.kernel.flow.model", "StepResult");
+    private static final ClassName EVENT_STORE = ClassName.get("eu.exeris.kernel.events.store", "EventStore");
+
     @Override
     public GeneratedFile generate(DomainMetadata metadata) {
         if (!metadata.isSaga()) {
-            return null; // No saga metadata - skip
+            return null;
         }
 
         SagaMetadata saga = metadata.sagaMetadata();
@@ -38,418 +64,477 @@ public class KernelSagaGenerator implements KernelArtifactGenerator {
         String sagaName = saga.name() != null ? saga.name() : metadata.entityName() + "Saga";
         String className = sagaName;
         String entity = metadata.entityName();
-        String lowerEntity = entity.substring(0, 1).toLowerCase() + entity.substring(1);
 
-        StringBuilder code = new StringBuilder();
-        code.append("package ").append(packageName).append(";\n\n");
+        ClassName entityType = ClassName.get(metadata.packageName(), entity);
+        ClassName repositoryType = ClassName.get(
+                metadata.packageName().replace(".domain", ".repository"), entity + "Repository");
+        ClassName selfType = ClassName.get(packageName, className);
+        ClassName stateType = ClassName.get(packageName, className, "State");
 
-        // Imports
-        code.append("import ").append(metadata.packageName()).append(".").append(entity).append(";\n");
-        code.append("import ").append(metadata.packageName().replace(".domain", ".repository")).append(".").append(entity).append("Repository;\n");
-        code.append("import eu.exeris.kernel.flow.SagaEngine;\n");
-        code.append("import eu.exeris.kernel.flow.SagaBuilder;\n");
-        code.append("import eu.exeris.kernel.flow.model.SagaDefinition;\n");
-        code.append("import eu.exeris.kernel.flow.model.SagaStep;\n");
-        code.append("import eu.exeris.kernel.flow.model.StepAction;\n");
-        code.append("import eu.exeris.kernel.flow.model.StepResult;\n");
-        code.append("import eu.exeris.kernel.flow.model.SagaSnapshot;\n");
-        code.append("import eu.exeris.kernel.events.store.EventStore;\n");
-        code.append("import org.slf4j.Logger;\n");
-        code.append("import org.slf4j.LoggerFactory;\n");
-        code.append("import tools.jackson.databind.ObjectMapper;\n");
-        code.append("import tools.jackson.databind.json.JsonMapper;\n");
-        code.append("import tools.jackson.databind.JsonNode;\n\n");
-        code.append("import java.time.Duration;\n");
-        code.append("import java.time.Instant;\n");
-        code.append("import java.util.Map;\n");
-        code.append("import java.util.UUID;\n");
-        code.append("import java.util.Optional;\n");
-        code.append("import java.util.function.Function;\n\n");
-
-        // Class header
-        code.append("/**\n");
-        code.append(" * Saga orchestration for ").append(entity).append(".\n");
-        if (saga.description() != null && !saga.description().isBlank()) {
-            code.append(" * <p>").append(saga.description()).append("\n");
-        }
-        code.append(" *\n");
-        code.append(" * <p>Timeout: ").append(saga.timeout() != null ? saga.timeout() : "PT30M").append("\n");
-        code.append(" * <p>Max retries: ").append(saga.maxRetries()).append("\n");
-        code.append(" * <p>Compensation: ").append(saga.compensationStrategy()).append("\n");
-        code.append(" * <p>Generated by Exeris Codegen. DO NOT EDIT.\n");
-        code.append(" *\n");
-        code.append(" * @see ").append(metadata.fullyQualifiedName()).append("\n");
-        code.append(" * @see SagaEngine\n");
-        code.append(" */\n");
-        code.append("public class ").append(className).append(" {\n\n");
-
-        code.append("    private static final Logger LOG = LoggerFactory.getLogger(").append(className).append(".class);\n");
-        code.append("    private static final String SAGA_NAME = \"").append(sagaName).append("\";\n");
-        code.append("    private static final ObjectMapper MAPPER = JsonMapper.builder().build();\n");
-
-        // Parse timeout
         String timeout = saga.timeout() != null ? saga.timeout() : "PT30M";
-        code.append("    private static final Duration TIMEOUT = Duration.parse(\"").append(timeout).append("\");\n\n");
 
-        // Dependencies
-        code.append("    private final SagaEngine sagaEngine;\n");
-        code.append("    private final EventStore eventStore;\n");
-        code.append("    private final ").append(entity).append("Repository repository;\n\n");
+        TypeSpec.Builder builder = KernelScaffold.publicClass(className)
+                .addJavadoc("Saga orchestration for $L.\n", entity);
+        if (saga.description() != null && !saga.description().isBlank()) {
+            builder.addJavadoc("<p>$L\n", saga.description());
+        }
+        builder.addJavadoc("\n")
+                .addJavadoc("<p>Timeout: $L\n", timeout)
+                .addJavadoc("<p>Max retries: $L\n", saga.maxRetries())
+                .addJavadoc("<p>Compensation: $L\n", saga.compensationStrategy())
+                .addJavadoc("<p>Generated by Exeris Codegen. DO NOT EDIT.\n")
+                .addJavadoc("\n")
+                .addJavadoc("@see $L\n", metadata.fullyQualifiedName())
+                .addJavadoc("@see SagaEngine\n");
 
-        // Constructor
-        code.append("    public ").append(className).append("(SagaEngine sagaEngine, EventStore eventStore, ").append(entity).append("Repository repository) {\n");
-        code.append("        this.sagaEngine = sagaEngine;\n");
-        code.append("        this.eventStore = eventStore;\n");
-        code.append("        this.repository = repository;\n");
-        code.append("        registerSaga();\n");
-        code.append("    }\n\n");
+        builder.addField(FieldSpec.builder(SLF4J_LOGGER, "LOG",
+                        Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                .initializer("$T.getLogger($T.class)", SLF4J_LOGGER_FACTORY, selfType)
+                .build());
+        builder.addField(FieldSpec.builder(String.class, "SAGA_NAME",
+                        Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                .initializer("$S", sagaName)
+                .build());
+        builder.addField(FieldSpec.builder(OBJECT_MAPPER, "MAPPER",
+                        Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                .initializer("$T.builder().build()", JSON_MAPPER)
+                .build());
+        builder.addField(FieldSpec.builder(DURATION, "TIMEOUT",
+                        Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                .initializer("$T.parse($S)", DURATION, timeout)
+                .build());
 
-        // Generate State record
-        generateStateRecord(code, saga, entity);
+        builder.addField(FieldSpec.builder(SAGA_ENGINE, "sagaEngine", Modifier.PRIVATE, Modifier.FINAL).build());
+        builder.addField(FieldSpec.builder(EVENT_STORE, "eventStore", Modifier.PRIVATE, Modifier.FINAL).build());
+        builder.addField(FieldSpec.builder(repositoryType, "repository", Modifier.PRIVATE, Modifier.FINAL).build());
 
-        // Generate saga definition
-        generateSagaDefinition(code, saga, entity);
+        builder.addMethod(MethodSpec.constructorBuilder()
+                .addModifiers(Modifier.PUBLIC)
+                .addParameter(SAGA_ENGINE, "sagaEngine")
+                .addParameter(EVENT_STORE, "eventStore")
+                .addParameter(repositoryType, "repository")
+                .addStatement("this.sagaEngine = sagaEngine")
+                .addStatement("this.eventStore = eventStore")
+                .addStatement("this.repository = repository")
+                .addStatement("registerSaga()")
+                .build());
 
-        // Generate step handlers
-        generateStepHandlers(code, saga, entity);
+        builder.addType(buildStateRecord(stateType));
 
-        // Generate compensation handlers
-        generateCompensationHandlers(code, saga, entity);
-
-        // Generate start method
-        generateStartMethod(code, saga, entity);
-
-        code.append("}\n");
-
-        return new GeneratedFile(packageName, className, code.toString(), ArtifactType.SAGA);
-    }
-
-    private void generateStateRecord(StringBuilder code, SagaMetadata saga, String entity) {
-        code.append("    // ═══════════════════════════════════════════════════════════════════════════\n");
-        code.append("    // Saga State\n");
-        code.append("    // ═══════════════════════════════════════════════════════════════════════════\n\n");
-
-        code.append("    /**\n");
-        code.append("     * Immutable saga state record.\n");
-        code.append("     * <p>Persisted to saga store for recovery.\n");
-        code.append("     */\n");
-        code.append("    public record State(\n");
-        code.append("            UUID sagaId,\n");
-        code.append("            UUID entityId,\n");
-        code.append("            UUID tenantId,\n");
-        code.append("            String currentStep,\n");
-        code.append("            Instant startedAt,\n");
-        code.append("            Map<String, Object> stepData\n");
-        code.append("    ) {\n");
-        code.append("        public static State initial(UUID entityId, UUID tenantId) {\n");
-        code.append("            return new State(\n");
-        code.append("                    UUID.randomUUID(),\n");
-        code.append("                    entityId,\n");
-        code.append("                    tenantId,\n");
-        code.append("                    \"start\",\n");
-        code.append("                    Instant.now(),\n");
-        code.append("                    Map.of()\n");
-        code.append("            );\n");
-        code.append("        }\n\n");
-        code.append("        public State withStep(String step) {\n");
-        code.append("            return new State(sagaId, entityId, tenantId, step, startedAt, stepData);\n");
-        code.append("        }\n\n");
-        code.append("        public State withData(String key, Object value) {\n");
-        code.append("            var newData = new java.util.HashMap<>(stepData);\n");
-        code.append("            newData.put(key, value);\n");
-        code.append("            return new State(sagaId, entityId, tenantId, currentStep, startedAt, Map.copyOf(newData));\n");
-        code.append("        }\n");
-        code.append("    }\n\n");
-    }
-
-    private void generateSagaDefinition(StringBuilder code, SagaMetadata saga, String entity) {
-        code.append("    // ═══════════════════════════════════════════════════════════════════════════\n");
-        code.append("    // Saga Definition\n");
-        code.append("    // ═══════════════════════════════════════════════════════════════════════════\n\n");
-
-        code.append("    /**\n");
-        code.append("     * Registers saga definition with the engine.\n");
-        code.append("     */\n");
-        code.append("    private void registerSaga() {\n");
-        code.append("        LOG.info(\"Registering saga: {}\", SAGA_NAME);\n\n");
-
-        code.append("        var definition = SagaBuilder.create(SAGA_NAME)\n");
-        code.append("                .timeout(TIMEOUT)\n");
-        code.append("                .maxRetries(").append(saga.maxRetries()).append(")\n");
-
-        // Get steps - either from annotation or generate entity-specific defaults
         List<SagaStepMetadata> steps = saga.hasSteps() ? saga.steps() : getEntityDefaultSteps(entity);
+
+        builder.addMethod(buildRegisterSagaMethod(saga, steps));
+
+        for (SagaStepMetadata step : steps) {
+            builder.addMethod(buildStepHandler(step, entity, entityType));
+        }
+
+        for (SagaStepMetadata step : steps) {
+            builder.addMethod(buildCompensationHandler(step, entity, entityType));
+        }
+
+        builder.addMethod(buildStartByIdMethod(stateType));
+        builder.addMethod(buildStartByEntityMethod(entity, entityType));
+        builder.addMethod(buildGetStatusMethod());
+
+        builder.addMethod(buildGetContextValueMethod());
+        builder.addMethod(buildGetContextUUIDMethod());
+
+        return new GeneratedFile(packageName, className,
+                KernelScaffold.render(packageName, builder.build()), ArtifactType.SAGA);
+    }
+
+    private TypeSpec buildStateRecord(ClassName stateType) {
+        MethodSpec.Builder ctor = MethodSpec.constructorBuilder()
+                .addParameter(UUID, "sagaId")
+                .addParameter(UUID, "entityId")
+                .addParameter(UUID, "tenantId")
+                .addParameter(String.class, "currentStep")
+                .addParameter(INSTANT, "startedAt")
+                .addParameter(ParameterizedTypeName.get(MAP,
+                        ClassName.get(String.class), ClassName.get(Object.class)), "stepData");
+
+        MethodSpec initial = MethodSpec.methodBuilder("initial")
+                .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+                .returns(stateType)
+                .addParameter(UUID, "entityId")
+                .addParameter(UUID, "tenantId")
+                .addCode(CodeBlock.builder()
+                        .add("return new $T(\n", stateType)
+                        .add("        $T.randomUUID(),\n", UUID)
+                        .add("        entityId,\n")
+                        .add("        tenantId,\n")
+                        .add("        $S,\n", "start")
+                        .add("        $T.now(),\n", INSTANT)
+                        .add("        $T.of()\n", MAP)
+                        .add(");\n")
+                        .build())
+                .build();
+
+        MethodSpec withStep = MethodSpec.methodBuilder("withStep")
+                .addModifiers(Modifier.PUBLIC)
+                .returns(stateType)
+                .addParameter(String.class, "step")
+                .addStatement("return new $T(sagaId, entityId, tenantId, step, startedAt, stepData)", stateType)
+                .build();
+
+        MethodSpec withData = MethodSpec.methodBuilder("withData")
+                .addModifiers(Modifier.PUBLIC)
+                .returns(stateType)
+                .addParameter(String.class, "key")
+                .addParameter(Object.class, "value")
+                .addStatement("var newData = new $T<>(stepData)", HASH_MAP)
+                .addStatement("newData.put(key, value)")
+                .addStatement("return new $T(sagaId, entityId, tenantId, currentStep, startedAt, $T.copyOf(newData))",
+                        stateType, MAP)
+                .build();
+
+        return TypeSpec.recordBuilder("State")
+                .addModifiers(Modifier.PUBLIC)
+                .addJavadoc("Immutable saga state record.\n")
+                .addJavadoc("<p>Persisted to saga store for recovery.\n")
+                .recordConstructor(ctor.build())
+                .addMethod(initial)
+                .addMethod(withStep)
+                .addMethod(withData)
+                .build();
+    }
+
+    private MethodSpec buildRegisterSagaMethod(SagaMetadata saga, List<SagaStepMetadata> steps) {
+        CodeBlock.Builder body = CodeBlock.builder()
+                .addStatement("LOG.info($S, SAGA_NAME)", "Registering saga: {}")
+                .add("\n")
+                .add("var definition = $T.create(SAGA_NAME)\n", SAGA_BUILDER)
+                .add("        .timeout(TIMEOUT)\n")
+                .add("        .maxRetries($L)\n", saga.maxRetries());
 
         for (SagaStepMetadata step : steps) {
             String stepName = step.name();
-            code.append("                .step(\"").append(stepName).append("\")\n");
-            code.append("                    .action(this::execute").append(capitalize(stepName)).append(")\n");
-            code.append("                    .compensation(this::compensate").append(capitalize(stepName)).append(")\n");
-            code.append("                    .timeout(Duration.parse(\"").append(step.timeout() != null ? step.timeout() : "PT1M").append("\"))\n");
+            String stepTimeout = step.timeout() != null ? step.timeout() : "PT1M";
+            body.add("        .step($S)\n", stepName)
+                .add("            .action(this::execute$L)\n", capitalize(stepName))
+                .add("            .compensation(this::compensate$L)\n", capitalize(stepName))
+                .add("            .timeout($T.parse($S))\n", DURATION, stepTimeout);
             if (step.maxRetries() > 0) {
-                code.append("                    .retries(").append(step.maxRetries()).append(")\n");
+                body.add("            .retries($L)\n", step.maxRetries());
             }
-            code.append("                .and()\n");
+            body.add("        .and()\n");
         }
 
-        code.append("                .build();\n\n");
-        code.append("        sagaEngine.register(definition);\n");
-        code.append("    }\n\n");
+        body.add("        .build();\n")
+            .add("\n")
+            .addStatement("sagaEngine.register(definition)");
+
+        return MethodSpec.methodBuilder("registerSaga")
+                .addJavadoc("Registers saga definition with the engine.\n")
+                .addModifiers(Modifier.PRIVATE)
+                .returns(TypeName.VOID)
+                .addCode(body.build())
+                .build();
     }
 
-    private void generateStepHandlers(StringBuilder code, SagaMetadata saga, String entity) {
-        code.append("    // ═══════════════════════════════════════════════════════════════════════════\n");
-        code.append("    // Step Handlers\n");
-        code.append("    // ═══════════════════════════════════════════════════════════════════════════\n\n");
+    private MethodSpec buildStepHandler(SagaStepMetadata step, String entity, ClassName entityType) {
+        String stepName = step.name();
+        String methodName = "execute" + capitalize(stepName);
 
-        List<SagaStepMetadata> steps = saga.hasSteps() ? saga.steps() : getEntityDefaultSteps(entity);
-
-        for (SagaStepMetadata step : steps) {
-            String stepName = step.name();
-            String methodName = "execute" + capitalize(stepName);
-
-            code.append("    /**\n");
-            code.append("     * Executes step: ").append(stepName).append("\n");
-            if (step.description() != null && !step.description().isBlank()) {
-                code.append("     * <p>").append(step.description()).append("\n");
-            }
-            code.append("     */\n");
-            code.append("    private StepResult ").append(methodName).append("(SagaSnapshot snapshot) {\n");
-            code.append("        LOG.debug(\"Executing step '{}' for saga: {}\", \"").append(stepName).append("\", snapshot.sagaIdMost());\n\n");
-
-            code.append("        try {\n");
-
-            // Generate step-specific logic based on step name pattern
-            generateStepLogic(code, stepName, entity, step);
-
-            code.append("            return StepResult.CONTINUE;\n");
-            code.append("        } catch (Exception e) {\n");
-            code.append("            LOG.error(\"Step '{}' failed for saga\", \"").append(stepName).append("\", e);\n");
-            code.append("            return StepResult.FAIL;\n");
-            code.append("        }\n");
-            code.append("    }\n\n");
+        MethodSpec.Builder method = MethodSpec.methodBuilder(methodName)
+                .addJavadoc("Executes step: $L\n", stepName);
+        if (step.description() != null && !step.description().isBlank()) {
+            method.addJavadoc("<p>$L\n", step.description());
         }
+        method.addModifiers(Modifier.PRIVATE)
+                .returns(STEP_RESULT)
+                .addParameter(SAGA_SNAPSHOT, "snapshot")
+                .addStatement("LOG.debug($S, $S, snapshot.sagaIdMost())",
+                        "Executing step '{}' for saga: {}", stepName)
+                .addCode("\n")
+                .beginControlFlow("try")
+                .addCode(buildStepLogic(stepName, entity, entityType))
+                .addStatement("return $T.CONTINUE", STEP_RESULT)
+                .nextControlFlow("catch ($T e)", Exception.class)
+                .addStatement("LOG.error($S, $S, e)", "Step '{}' failed for saga", stepName)
+                .addStatement("return $T.FAIL", STEP_RESULT)
+                .endControlFlow();
+
+        return method.build();
     }
 
-    private void generateStepLogic(StringBuilder code, String stepName, String entity, SagaStepMetadata step) {
+    private CodeBlock buildStepLogic(String stepName, String entity, ClassName entityType) {
         String lowerStep = stepName.toLowerCase();
+        String lowerEntity = entity.toLowerCase();
 
         if (lowerStep.contains("validate")) {
-            code.append("            // Extract and validate entity\n");
-            code.append("            UUID entityId = getContextUUID(snapshot, \"entityId\");\n");
-            code.append("            if (entityId == null) {\n");
-            code.append("                throw new IllegalArgumentException(\"Entity ID is required\");\n");
-            code.append("            }\n\n");
-            code.append("            // Verify entity exists\n");
-            code.append("            Optional<").append(entity).append("> entity = repository.findById(entityId);\n");
-            code.append("            if (entity.isEmpty()) {\n");
-            code.append("                throw new IllegalStateException(\"").append(entity).append(" not found: \" + entityId);\n");
-            code.append("            }\n");
-            code.append("            LOG.info(\"Validated ").append(entity.toLowerCase()).append(": {}\", entityId);\n\n");
-        } else if (lowerStep.contains("execute") || lowerStep.contains("logic") || lowerStep.contains("process")) {
-            code.append("            // Load entity and execute business logic\n");
-            code.append("            UUID entityId = getContextUUID(snapshot, \"entityId\");\n");
-            code.append("            ").append(entity).append(" entity = repository.findById(entityId)\n");
-            code.append("                    .orElseThrow(() -> new IllegalStateException(\"").append(entity).append(" not found: \" + entityId));\n\n");
-            code.append("            // Execute domain-specific business logic\n");
-            code.append("            LOG.info(\"Executing business logic for ").append(entity.toLowerCase()).append(": {}\", entityId);\n");
-            code.append("            // entity.activate(); // Example: activate the entity\n");
-            code.append("            // entity.setStatus(Status.PROCESSING);\n\n");
-        } else if (lowerStep.contains("persist") || lowerStep.contains("save")) {
-            code.append("            // Persist entity changes\n");
-            code.append("            UUID entityId = getContextUUID(snapshot, \"entityId\");\n");
-            code.append("            ").append(entity).append(" entity = repository.findById(entityId)\n");
-            code.append("                    .orElseThrow(() -> new IllegalStateException(\"").append(entity).append(" not found: \" + entityId));\n\n");
-            code.append("            // Save updated entity\n");
-            code.append("            repository.save(entity);\n");
-            code.append("            LOG.info(\"Persisted ").append(entity.toLowerCase()).append(": {}\", entityId);\n\n");
-        } else if (lowerStep.contains("notify") || lowerStep.contains("email") || lowerStep.contains("welcome")) {
-            code.append("            // Send completion notification\n");
-            code.append("            UUID entityId = getContextUUID(snapshot, \"entityId\");\n");
-            code.append("            LOG.info(\"Sending notification for ").append(entity.toLowerCase()).append(": {}\", entityId);\n\n");
-            code.append("            // Notification logic - fire and forget, failures should not rollback saga\n");
-            code.append("            // notificationService.sendWelcomeEmail(entityId);\n\n");
-        } else if (lowerStep.contains("provision") || lowerStep.contains("schema")) {
-            code.append("            // Provision resources\n");
-            code.append("            UUID entityId = getContextUUID(snapshot, \"entityId\");\n");
-            code.append("            UUID tenantId = getContextUUID(snapshot, \"tenantId\");\n");
-            code.append("            LOG.info(\"Provisioning resources for ").append(entity.toLowerCase()).append(": {} in tenant: {}\", entityId, tenantId);\n\n");
-            code.append("            // Resource provisioning logic\n");
-            code.append("            // schemaService.provision(tenantId);\n\n");
-        } else {
-            // Generic step
-            code.append("            // Execute step: ").append(stepName).append("\n");
-            code.append("            UUID entityId = getContextUUID(snapshot, \"entityId\");\n");
-            code.append("            LOG.info(\"Executing step '").append(stepName).append("' for ").append(entity.toLowerCase()).append(": {}\", entityId);\n\n");
+            return CodeBlock.builder()
+                    .add("// Extract and validate entity\n")
+                    .addStatement("$T entityId = getContextUUID(snapshot, $S)", UUID, "entityId")
+                    .beginControlFlow("if (entityId == null)")
+                    .addStatement("throw new $T($S)", IllegalArgumentException.class, "Entity ID is required")
+                    .endControlFlow()
+                    .add("\n")
+                    .add("// Verify entity exists\n")
+                    .addStatement("$T<$T> entity = repository.findById(entityId)", OPTIONAL, entityType)
+                    .beginControlFlow("if (entity.isEmpty())")
+                    .addStatement("throw new $T($S + entityId)", IllegalStateException.class, entity + " not found: ")
+                    .endControlFlow()
+                    .addStatement("LOG.info($S, entityId)", "Validated " + lowerEntity + ": {}")
+                    .add("\n")
+                    .build();
         }
+        if (lowerStep.contains("execute") || lowerStep.contains("logic") || lowerStep.contains("process")) {
+            return CodeBlock.builder()
+                    .add("// Load entity and execute business logic\n")
+                    .addStatement("$T entityId = getContextUUID(snapshot, $S)", UUID, "entityId")
+                    .add("$T entity = repository.findById(entityId)\n", entityType)
+                    .addStatement("        .orElseThrow(() -> new $T($S + entityId))",
+                            IllegalStateException.class, entity + " not found: ")
+                    .add("\n")
+                    .add("// Execute domain-specific business logic\n")
+                    .addStatement("LOG.info($S, entityId)", "Executing business logic for " + lowerEntity + ": {}")
+                    .add("// entity.activate(); // Example: activate the entity\n")
+                    .add("// entity.setStatus(Status.PROCESSING);\n")
+                    .add("\n")
+                    .build();
+        }
+        if (lowerStep.contains("persist") || lowerStep.contains("save")) {
+            return CodeBlock.builder()
+                    .add("// Persist entity changes\n")
+                    .addStatement("$T entityId = getContextUUID(snapshot, $S)", UUID, "entityId")
+                    .add("$T entity = repository.findById(entityId)\n", entityType)
+                    .addStatement("        .orElseThrow(() -> new $T($S + entityId))",
+                            IllegalStateException.class, entity + " not found: ")
+                    .add("\n")
+                    .add("// Save updated entity\n")
+                    .addStatement("repository.save(entity)")
+                    .addStatement("LOG.info($S, entityId)", "Persisted " + lowerEntity + ": {}")
+                    .add("\n")
+                    .build();
+        }
+        if (lowerStep.contains("notify") || lowerStep.contains("email") || lowerStep.contains("welcome")) {
+            return CodeBlock.builder()
+                    .add("// Send completion notification\n")
+                    .addStatement("$T entityId = getContextUUID(snapshot, $S)", UUID, "entityId")
+                    .addStatement("LOG.info($S, entityId)", "Sending notification for " + lowerEntity + ": {}")
+                    .add("\n")
+                    .add("// Notification logic - fire and forget, failures should not rollback saga\n")
+                    .add("// notificationService.sendWelcomeEmail(entityId);\n")
+                    .add("\n")
+                    .build();
+        }
+        if (lowerStep.contains("provision") || lowerStep.contains("schema")) {
+            return CodeBlock.builder()
+                    .add("// Provision resources\n")
+                    .addStatement("$T entityId = getContextUUID(snapshot, $S)", UUID, "entityId")
+                    .addStatement("$T tenantId = getContextUUID(snapshot, $S)", UUID, "tenantId")
+                    .addStatement("LOG.info($S, entityId, tenantId)",
+                            "Provisioning resources for " + lowerEntity + ": {} in tenant: {}")
+                    .add("\n")
+                    .add("// Resource provisioning logic\n")
+                    .add("// schemaService.provision(tenantId);\n")
+                    .add("\n")
+                    .build();
+        }
+        return CodeBlock.builder()
+                .add("// Execute step: $L\n", stepName)
+                .addStatement("$T entityId = getContextUUID(snapshot, $S)", UUID, "entityId")
+                .addStatement("LOG.info($S, entityId)",
+                        "Executing step '" + stepName + "' for " + lowerEntity + ": {}")
+                .add("\n")
+                .build();
     }
 
-    private void generateCompensationHandlers(StringBuilder code, SagaMetadata saga, String entity) {
-        code.append("    // ═══════════════════════════════════════════════════════════════════════════\n");
-        code.append("    // Compensation Handlers\n");
-        code.append("    // ═══════════════════════════════════════════════════════════════════════════\n\n");
+    private MethodSpec buildCompensationHandler(SagaStepMetadata step, String entity, ClassName entityType) {
+        String stepName = step.name();
+        String methodName = "compensate" + capitalize(stepName);
 
-        List<SagaStepMetadata> steps = saga.hasSteps() ? saga.steps() : getEntityDefaultSteps(entity);
-
-        for (SagaStepMetadata step : steps) {
-            String stepName = step.name();
-            String methodName = "compensate" + capitalize(stepName);
-
-            code.append("    /**\n");
-            code.append("     * Compensates step: ").append(stepName).append("\n");
-            code.append("     * <p>Called on saga failure to rollback this step.\n");
-            code.append("     */\n");
-            code.append("    private StepResult ").append(methodName).append("(SagaSnapshot snapshot) {\n");
-            code.append("        LOG.warn(\"Compensating step '{}' for saga\", \"").append(stepName).append("\");\n\n");
-
-            code.append("        try {\n");
-
-            // Generate compensation logic based on step type
-            generateCompensationLogic(code, stepName, entity, step);
-
-            code.append("            return StepResult.CONTINUE;\n");
-            code.append("        } catch (Exception e) {\n");
-            code.append("            LOG.error(\"Compensation '{}' failed\", \"").append(stepName).append("\", e);\n");
-            code.append("            return StepResult.FAIL;\n");
-            code.append("        }\n");
-            code.append("    }\n\n");
-        }
+        return MethodSpec.methodBuilder(methodName)
+                .addJavadoc("Compensates step: $L\n", stepName)
+                .addJavadoc("<p>Called on saga failure to rollback this step.\n")
+                .addModifiers(Modifier.PRIVATE)
+                .returns(STEP_RESULT)
+                .addParameter(SAGA_SNAPSHOT, "snapshot")
+                .addStatement("LOG.warn($S, $S)", "Compensating step '{}' for saga", stepName)
+                .addCode("\n")
+                .beginControlFlow("try")
+                .addCode(buildCompensationLogic(stepName, entity, entityType))
+                .addStatement("return $T.CONTINUE", STEP_RESULT)
+                .nextControlFlow("catch ($T e)", Exception.class)
+                .addStatement("LOG.error($S, $S, e)", "Compensation '{}' failed", stepName)
+                .addStatement("return $T.FAIL", STEP_RESULT)
+                .endControlFlow()
+                .build();
     }
 
-    private void generateCompensationLogic(StringBuilder code, String stepName, String entity, SagaStepMetadata step) {
+    private CodeBlock buildCompensationLogic(String stepName, String entity, ClassName entityType) {
         String lowerStep = stepName.toLowerCase();
+        String lowerEntity = entity.toLowerCase();
 
         if (lowerStep.contains("validate")) {
-            code.append("            // Validation has no side effects - nothing to compensate\n");
-            code.append("            UUID entityId = getContextUUID(snapshot, \"entityId\");\n");
-            code.append("            LOG.info(\"Validation compensation (no-op) for ").append(entity.toLowerCase()).append(": {}\", entityId);\n\n");
-        } else if (lowerStep.contains("execute") || lowerStep.contains("logic") || lowerStep.contains("process")) {
-            code.append("            // Rollback business logic changes\n");
-            code.append("            UUID entityId = getContextUUID(snapshot, \"entityId\");\n");
-            code.append("            ").append(entity).append(" entity = repository.findById(entityId).orElse(null);\n");
-            code.append("            if (entity != null) {\n");
-            code.append("                // Revert entity to previous state\n");
-            code.append("                // entity.setStatus(Status.PENDING);\n");
-            code.append("                repository.save(entity);\n");
-            code.append("                LOG.info(\"Rolled back business logic for ").append(entity.toLowerCase()).append(": {}\", entityId);\n");
-            code.append("            }\n\n");
-        } else if (lowerStep.contains("persist") || lowerStep.contains("save")) {
-            code.append("            // Delete the persisted entity (hard delete on saga failure)\n");
-            code.append("            UUID entityId = getContextUUID(snapshot, \"entityId\");\n");
-            code.append("            if (entityId != null) {\n");
-            code.append("                repository.deleteById(entityId);\n");
-            code.append("                LOG.info(\"Deleted ").append(entity.toLowerCase()).append(" on compensation: {}\", entityId);\n");
-            code.append("            }\n\n");
-        } else if (lowerStep.contains("notify") || lowerStep.contains("email") || lowerStep.contains("welcome")) {
-            code.append("            // Notifications cannot be recalled - log compensation event\n");
-            code.append("            UUID entityId = getContextUUID(snapshot, \"entityId\");\n");
-            code.append("            LOG.warn(\"Notification was sent for ").append(entity.toLowerCase()).append(": {} - cannot be undone\", entityId);\n");
-            code.append("            // Optionally publish a compensation event for audit\n");
-            code.append("            // eventStore.append(entityId, new NotificationCompensationEvent(entityId));\n\n");
-        } else if (lowerStep.contains("provision") || lowerStep.contains("schema")) {
-            code.append("            // Rollback provisioned resources\n");
-            code.append("            UUID tenantId = getContextUUID(snapshot, \"tenantId\");\n");
-            code.append("            if (tenantId != null) {\n");
-            code.append("                LOG.info(\"Rolling back provisioning for tenant: {}\", tenantId);\n");
-            code.append("                // schemaService.deprovision(tenantId);\n");
-            code.append("            }\n\n");
-        } else {
-            // Generic compensation
-            code.append("            // Generic compensation for step: ").append(stepName).append("\n");
-            code.append("            UUID entityId = getContextUUID(snapshot, \"entityId\");\n");
-            code.append("            LOG.info(\"Compensating step '").append(stepName).append("' for ").append(entity.toLowerCase()).append(": {}\", entityId);\n\n");
+            return CodeBlock.builder()
+                    .add("// Validation has no side effects - nothing to compensate\n")
+                    .addStatement("$T entityId = getContextUUID(snapshot, $S)", UUID, "entityId")
+                    .addStatement("LOG.info($S, entityId)",
+                            "Validation compensation (no-op) for " + lowerEntity + ": {}")
+                    .add("\n")
+                    .build();
         }
+        if (lowerStep.contains("execute") || lowerStep.contains("logic") || lowerStep.contains("process")) {
+            return CodeBlock.builder()
+                    .add("// Rollback business logic changes\n")
+                    .addStatement("$T entityId = getContextUUID(snapshot, $S)", UUID, "entityId")
+                    .addStatement("$T entity = repository.findById(entityId).orElse(null)", entityType)
+                    .beginControlFlow("if (entity != null)")
+                    .add("// Revert entity to previous state\n")
+                    .add("// entity.setStatus(Status.PENDING);\n")
+                    .addStatement("repository.save(entity)")
+                    .addStatement("LOG.info($S, entityId)",
+                            "Rolled back business logic for " + lowerEntity + ": {}")
+                    .endControlFlow()
+                    .add("\n")
+                    .build();
+        }
+        if (lowerStep.contains("persist") || lowerStep.contains("save")) {
+            return CodeBlock.builder()
+                    .add("// Delete the persisted entity (hard delete on saga failure)\n")
+                    .addStatement("$T entityId = getContextUUID(snapshot, $S)", UUID, "entityId")
+                    .beginControlFlow("if (entityId != null)")
+                    .addStatement("repository.deleteById(entityId)")
+                    .addStatement("LOG.info($S, entityId)",
+                            "Deleted " + lowerEntity + " on compensation: {}")
+                    .endControlFlow()
+                    .add("\n")
+                    .build();
+        }
+        if (lowerStep.contains("notify") || lowerStep.contains("email") || lowerStep.contains("welcome")) {
+            return CodeBlock.builder()
+                    .add("// Notifications cannot be recalled - log compensation event\n")
+                    .addStatement("$T entityId = getContextUUID(snapshot, $S)", UUID, "entityId")
+                    .addStatement("LOG.warn($S, entityId)",
+                            "Notification was sent for " + lowerEntity + ": {} - cannot be undone")
+                    .add("// Optionally publish a compensation event for audit\n")
+                    .add("// eventStore.append(entityId, new NotificationCompensationEvent(entityId));\n")
+                    .add("\n")
+                    .build();
+        }
+        if (lowerStep.contains("provision") || lowerStep.contains("schema")) {
+            return CodeBlock.builder()
+                    .add("// Rollback provisioned resources\n")
+                    .addStatement("$T tenantId = getContextUUID(snapshot, $S)", UUID, "tenantId")
+                    .beginControlFlow("if (tenantId != null)")
+                    .addStatement("LOG.info($S, tenantId)", "Rolling back provisioning for tenant: {}")
+                    .add("// schemaService.deprovision(tenantId);\n")
+                    .endControlFlow()
+                    .add("\n")
+                    .build();
+        }
+        return CodeBlock.builder()
+                .add("// Generic compensation for step: $L\n", stepName)
+                .addStatement("$T entityId = getContextUUID(snapshot, $S)", UUID, "entityId")
+                .addStatement("LOG.info($S, entityId)",
+                        "Compensating step '" + stepName + "' for " + lowerEntity + ": {}")
+                .add("\n")
+                .build();
     }
 
-    private void generateStartMethod(StringBuilder code, SagaMetadata saga, String entity) {
-        code.append("    // ═══════════════════════════════════════════════════════════════════════════\n");
-        code.append("    // Public API\n");
-        code.append("    // ═══════════════════════════════════════════════════════════════════════════\n\n");
+    private MethodSpec buildStartByIdMethod(ClassName stateType) {
+        TypeName mapStringString = ParameterizedTypeName.get(MAP,
+                ClassName.get(String.class), ClassName.get(String.class));
+        return MethodSpec.methodBuilder("start")
+                .addJavadoc("Starts a new saga instance.\n")
+                .addJavadoc("\n")
+                .addJavadoc("@param entityId the entity ID triggering this saga\n")
+                .addJavadoc("@param tenantId the tenant context\n")
+                .addJavadoc("@return saga execution ID\n")
+                .addModifiers(Modifier.PUBLIC)
+                .returns(UUID)
+                .addParameter(UUID, "entityId")
+                .addParameter(UUID, "tenantId")
+                .addStatement("LOG.info($S, SAGA_NAME, entityId)",
+                        "Starting saga '{}' for entity: {}")
+                .addCode("\n")
+                .addStatement("$T initialState = $T.initial(entityId, tenantId)", stateType, stateType)
+                .addCode("\n")
+                .addCode(CodeBlock.builder()
+                        .add("return sagaEngine.start(\n")
+                        .add("        SAGA_NAME,\n")
+                        .add("        initialState.sagaId(),\n")
+                        .add("        $T.of(\n", MAP)
+                        .add("                $S, entityId.toString(),\n", "entityId")
+                        .add("                $S, tenantId.toString(),\n", "tenantId")
+                        .add("                $S, initialState.startedAt().toString()\n", "startedAt")
+                        .add("        )\n")
+                        .add(");\n")
+                        .build())
+                .build();
+    }
 
-        code.append("    /**\n");
-        code.append("     * Starts a new saga instance.\n");
-        code.append("     *\n");
-        code.append("     * @param entityId the entity ID triggering this saga\n");
-        code.append("     * @param tenantId the tenant context\n");
-        code.append("     * @return saga execution ID\n");
-        code.append("     */\n");
-        code.append("    public UUID start(UUID entityId, UUID tenantId) {\n");
-        code.append("        LOG.info(\"Starting saga '{}' for entity: {}\", SAGA_NAME, entityId);\n\n");
-
-        code.append("        State initialState = State.initial(entityId, tenantId);\n\n");
-
-        code.append("        return sagaEngine.start(\n");
-        code.append("                SAGA_NAME,\n");
-        code.append("                initialState.sagaId(),\n");
-        code.append("                Map.of(\n");
-        code.append("                        \"entityId\", entityId.toString(),\n");
-        code.append("                        \"tenantId\", tenantId.toString(),\n");
-        code.append("                        \"startedAt\", initialState.startedAt().toString()\n");
-        code.append("                )\n");
-        code.append("        );\n");
-        code.append("    }\n\n");
-
-        code.append("    /**\n");
-        code.append("     * Starts saga from an entity.\n");
-        code.append("     */\n");
-        code.append("    public UUID start(").append(entity).append(" entity) {\n");
-        // For Tenant entity, there's no getTenantId() - the entity IS the tenant
+    private MethodSpec buildStartByEntityMethod(String entity, ClassName entityType) {
+        MethodSpec.Builder method = MethodSpec.methodBuilder("start")
+                .addJavadoc("Starts saga from an entity.\n")
+                .addModifiers(Modifier.PUBLIC)
+                .returns(UUID)
+                .addParameter(entityType, "entity");
         if (entity.equals("Tenant")) {
-            code.append("        return start(entity.getId(), entity.getId());\n");
+            method.addStatement("return start(entity.getId(), entity.getId())");
         } else {
-            code.append("        return start(entity.getId(), entity.getTenantId());\n");
+            method.addStatement("return start(entity.getId(), entity.getTenantId())");
         }
-        code.append("    }\n\n");
-
-        code.append("    /**\n");
-        code.append("     * Gets saga status.\n");
-        code.append("     */\n");
-        code.append("    public SagaSnapshot getStatus(UUID sagaId) {\n");
-        code.append("        return sagaEngine.getSnapshot(sagaId).orElse(null);\n");
-        code.append("    }\n\n");
-
-        // Generate helper methods
-        generateHelperMethods(code);
+        return method.build();
     }
 
-    private void generateHelperMethods(StringBuilder code) {
-        code.append("    // ═══════════════════════════════════════════════════════════════════════════\n");
-        code.append("    // Helper Methods\n");
-        code.append("    // ═══════════════════════════════════════════════════════════════════════════\n\n");
+    private MethodSpec buildGetStatusMethod() {
+        return MethodSpec.methodBuilder("getStatus")
+                .addJavadoc("Gets saga status.\n")
+                .addJavadoc("\n")
+                .addJavadoc("@param sagaId the saga execution ID\n")
+                .addJavadoc("@return the snapshot, or {@code null} if no saga is registered for the given ID\n")
+                .addModifiers(Modifier.PUBLIC)
+                .returns(SAGA_SNAPSHOT)
+                .addParameter(UUID, "sagaId")
+                .addStatement("return sagaEngine.getSnapshot(sagaId).orElse(null)")
+                .build();
+    }
 
-        code.append("    /**\n");
-        code.append("     * Extracts a string value from the saga context (JSON stored in opaqueState).\n");
-        code.append("     */\n");
-        code.append("    private String getContextValue(SagaSnapshot snapshot, String key) {\n");
-        code.append("        byte[] opaqueState = snapshot.opaqueState();\n");
-        code.append("        if (opaqueState == null || opaqueState.length == 0) {\n");
-        code.append("            return null;\n");
-        code.append("        }\n");
-        code.append("        try {\n");
-        code.append("            JsonNode root = MAPPER.readTree(opaqueState);\n");
-        code.append("            JsonNode node = root.get(key);\n");
-        code.append("            return node != null && !node.isNull() ? node.asText() : null;\n");
-        code.append("        } catch (Exception e) {\n");
-        code.append("            LOG.warn(\"Failed to parse context value '{}': {}\", key, e.getMessage());\n");
-        code.append("            return null;\n");
-        code.append("        }\n");
-        code.append("    }\n\n");
+    private MethodSpec buildGetContextValueMethod() {
+        return MethodSpec.methodBuilder("getContextValue")
+                .addJavadoc("Extracts a string value from the saga context (JSON stored in opaqueState).\n")
+                .addModifiers(Modifier.PRIVATE)
+                .returns(String.class)
+                .addParameter(SAGA_SNAPSHOT, "snapshot")
+                .addParameter(String.class, "key")
+                .addStatement("byte[] opaqueState = snapshot.opaqueState()")
+                .beginControlFlow("if (opaqueState == null || opaqueState.length == 0)")
+                .addStatement("return null")
+                .endControlFlow()
+                .beginControlFlow("try")
+                .addStatement("$T root = MAPPER.readTree(opaqueState)", JSON_NODE)
+                .addStatement("$T node = root.get(key)", JSON_NODE)
+                .addStatement("return node != null && !node.isNull() ? node.asText() : null")
+                .nextControlFlow("catch ($T e)", Exception.class)
+                .addStatement("LOG.warn($S, key, e.getMessage())",
+                        "Failed to parse context value '{}': {}")
+                .addStatement("return null")
+                .endControlFlow()
+                .build();
+    }
 
-        code.append("    /**\n");
-        code.append("     * Extracts a UUID value from the saga context.\n");
-        code.append("     */\n");
-        code.append("    private UUID getContextUUID(SagaSnapshot snapshot, String key) {\n");
-        code.append("        String value = getContextValue(snapshot, key);\n");
-        code.append("        if (value == null || value.isBlank()) {\n");
-        code.append("            return null;\n");
-        code.append("        }\n");
-        code.append("        try {\n");
-        code.append("            return UUID.fromString(value);\n");
-        code.append("        } catch (IllegalArgumentException e) {\n");
-        code.append("            LOG.warn(\"Invalid UUID in context '{}': {}\", key, value);\n");
-        code.append("            return null;\n");
-        code.append("        }\n");
-        code.append("    }\n");
+    private MethodSpec buildGetContextUUIDMethod() {
+        return MethodSpec.methodBuilder("getContextUUID")
+                .addJavadoc("Extracts a UUID value from the saga context.\n")
+                .addModifiers(Modifier.PRIVATE)
+                .returns(UUID)
+                .addParameter(SAGA_SNAPSHOT, "snapshot")
+                .addParameter(String.class, "key")
+                .addStatement("String value = getContextValue(snapshot, key)")
+                .beginControlFlow("if (value == null || value.isBlank())")
+                .addStatement("return null")
+                .endControlFlow()
+                .beginControlFlow("try")
+                .addStatement("return $T.fromString(value)", UUID)
+                .nextControlFlow("catch ($T e)", IllegalArgumentException.class)
+                .addStatement("LOG.warn($S, key, value)", "Invalid UUID in context '{}': {}")
+                .addStatement("return null")
+                .endControlFlow()
+                .build();
     }
 
     /**
@@ -501,14 +586,8 @@ public class KernelSagaGenerator implements KernelArtifactGenerator {
         return Character.toUpperCase(s.charAt(0)) + s.substring(1);
     }
 
-    private String uncapitalize(String s) {
-        if (s == null || s.isEmpty()) return s;
-        return Character.toLowerCase(s.charAt(0)) + s.substring(1);
-    }
-
     @Override
     public ArtifactType artifactType() {
         return ArtifactType.SAGA;
     }
 }
-
