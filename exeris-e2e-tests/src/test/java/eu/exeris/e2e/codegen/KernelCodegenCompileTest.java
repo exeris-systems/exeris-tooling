@@ -1,6 +1,7 @@
 package eu.exeris.e2e.codegen;
 
 import eu.exeris.e2e.codegen.compile.InMemoryJavaCompiler;
+import eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
@@ -55,6 +56,9 @@ class KernelCodegenCompileTest {
                                 .build(),
                         FieldMetadata.builder("tags", "List<java.util.UUID>")
                                 .build()))
+                .events(List.of(
+                        DomainEventMetadata.withTopic("OrderCreated", "orders.created"),
+                        DomainEventMetadata.simple("OrderUpdated")))
                 .build();
 
         List<GeneratedFile> generated = new KernelGeneratorStrategy().generate(metadata);
