@@ -238,3 +238,35 @@ Backing out the swap is a `git revert` of the migration PR. No on-disk artifact,
 - Whether to upgrade Palantir versions on a schedule, or by need. Default: by need, pinned in BOM.
 - Whether to publish a maven-relocation pom. N/A — `exeris-codegen-java` is internal tooling; no downstream Maven consumers.
 - Anything about `KotlinPoet`. Out of scope per the original ADR §Notes.
+
+---
+
+## Implementation status
+
+**Status:** Implemented *(complete 2026-05-10)*
+
+| Phase | Generator(s) | Landed in | Notes |
+|---|---|---|---|
+| 1 | `KernelHandlerGenerator` | PR #15 | Pilot; validated the pattern. |
+| 2 | `KernelClientGenerator` | PR #16 | Second-highest duplication target. |
+| 3 | `KernelScaffold` extraction | PR #17 | Shared scaffold helper. |
+| 4a | `KernelServiceGenerator` | PR #18 | |
+| 4b | `KernelRepositoryGenerator` + `KernelGraphSyncGenerator` + `KernelEventHandlerGenerator` | PR #19 | Bundled migration. |
+| Amendment 1 | Swap to Palantir's JavaPoet fork | PR #22 | Required for `TypeSpec.recordBuilder` (Phase 4c). |
+| 4c | `KernelEventGenerator` | PR #24 | Used Palantir's record support. |
+| 4d | `KernelSagaGenerator` | PR #25 | Nested `State` record + saga DSL emission. |
+| 4e | `KernelApplicationGenerator` | PR #26 | Three-file emitter: Application + CompositionRoot + RouterConfig. |
+| 5 | `KernelFlywayGenerator` | PR #27 | Text blocks + `String.join`; golden-snapshot test (`KernelFlywayGeneratorTest`) pins byte-equivalent SQL. |
+| 6 | `KernelOpenApiGenerator` | (no work) | Already used Swagger model objects + Jackson YAMLMapper — no `StringBuilder` to migrate. |
+| 7 | [`MIGRATION-0.x-to-1.0.md`](../MIGRATION-0.x-to-1.0.md) | This commit | Documents the one-time output-style diff for downstream consumers. |
+
+### Validation outcome
+
+All four §Validation criteria are satisfied:
+
+1. `KernelCodegenCompileTest` — green (4 e2e tests, all generators exercised end-to-end with the saga + events + softDelete + audited fixture).
+2. `KernelCodegenE2ETest` — green (substring assertions held; structural assertions added where JavaPoet drift was load-bearing).
+3. Sonar duplication — Handler and Client (the two worst, 59.8% / 40.6% baseline) both dropped under 10% per their migration PRs. The per-PR SonarQube checks gated this.
+4. Spot-check regen — the e2e fixture's generated tree has been visually inspected on every Phase 4x PR; deltas are JavaPoet style differences (alphabetical imports, banner drops, member spacing, expanded one-liners) and not semantic differences.
+
+The "golden snapshot suite" §Positive consequence is bootstrapped: `KernelFlywayGeneratorTest` is the first such snapshot in the suite. Extending coverage to JavaPoet-emitted artifacts is a 1.0 GA target tracked separately.

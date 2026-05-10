@@ -28,9 +28,9 @@ import java.util.stream.Collectors;
  *   <li>Event publisher (integrates with kernel events module)</li>
  * </ul>
  *
- * <p>Phase 4c of ADR-015: emission is JavaPoet-based via Palantir's fork
- * (records require {@link TypeSpec#recordBuilder(String)}, only present in
- * Palantir 0.15.0+).
+ * @implNote Emission is JavaPoet-based (ADR-015). The event records use
+ * {@link TypeSpec#recordBuilder(String)} from Palantir's JavaPoet fork
+ * (Square's archived 1.13.0 has no record support).
  *
  * @author Exeris Team
  * @since 0.1.0

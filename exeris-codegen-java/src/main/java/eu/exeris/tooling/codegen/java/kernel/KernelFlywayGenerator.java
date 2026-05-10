@@ -21,10 +21,10 @@ import java.util.Set;
  *   <li>Row-Level-Security policy for tenant isolation (when {@code tenantScoped})</li>
  * </ul>
  *
- * <p>Phase 5 of ADR-015: emission uses Java text blocks + {@link String#join}
- * over a list of column definitions instead of {@code StringBuilder.append}
- * spaghetti. Output is byte-equivalent to the prior {@code StringBuilder}
- * baseline.
+ * @implNote Emission uses Java text blocks + {@link String#join} over a list
+ * of column definitions (ADR-015 — JavaPoet does not apply to non-Java
+ * artifacts). The {@code KernelFlywayGeneratorTest} golden snapshots are the
+ * regression gate.
  */
 public class KernelFlywayGenerator implements KernelArtifactGenerator {
 

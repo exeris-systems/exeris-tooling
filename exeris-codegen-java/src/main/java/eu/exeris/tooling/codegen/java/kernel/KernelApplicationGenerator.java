@@ -24,7 +24,7 @@ import java.util.List;
  *   <li>{@code RouterConfig.java} - HTTP/3 route registration</li>
  * </ul>
  *
- * <p>Phase 4e of ADR-015: emission is JavaPoet-based via Palantir's fork.
+ * @implNote Emission is JavaPoet-based (ADR-015).
  *
  * @author Exeris Team
  * @since 0.1.0

@@ -23,7 +23,7 @@ import javax.lang.model.element.Modifier;
  * generates a {@code Consumer<DomainEvent>} that routes events through a
  * switch on {@code eventType} and calls the corresponding saga entry-point.
  *
- * <p>Phase 4 of ADR-015: emission is JavaPoet-based.
+ * @implNote Emission is JavaPoet-based (ADR-015).
  *
  * @author Exeris Team
  * @since 0.1.0

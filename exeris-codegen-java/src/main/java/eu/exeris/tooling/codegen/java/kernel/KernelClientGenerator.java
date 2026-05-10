@@ -21,7 +21,7 @@ import javax.lang.model.element.Modifier;
  * <p>Wygenerowany kod używa {@code ExerisWebClient} z pakietu
  * {@code eu.exeris.kernel.transport.http3.client}.
  *
- * <p>Phase 2 of ADR-015: emission is JavaPoet-based.
+ * @implNote Emission is JavaPoet-based (ADR-015).
  *
  * @see eu.exeris.kernel.transport.http3.client.ExerisWebClient
  *
