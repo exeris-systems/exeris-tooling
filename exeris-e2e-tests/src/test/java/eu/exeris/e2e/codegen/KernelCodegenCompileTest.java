@@ -4,6 +4,7 @@ import eu.exeris.e2e.codegen.compile.InMemoryJavaCompiler;
 import eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
+import eu.exeris.sdk.sourcemodel.ast.SagaMetadata;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.java.kernel.KernelGeneratorStrategy;
 import org.junit.jupiter.api.DisplayName;
@@ -59,6 +60,11 @@ class KernelCodegenCompileTest {
                 .events(List.of(
                         DomainEventMetadata.withTopic("OrderCreated", "orders.created"),
                         DomainEventMetadata.simple("OrderUpdated")))
+                .sagaMetadata(SagaMetadata.builder("OrderSaga")
+                        .description("Order placement saga")
+                        .timeout("PT45M")
+                        .maxRetries(5)
+                        .build())
                 .build();
 
         List<GeneratedFile> generated = new KernelGeneratorStrategy().generate(metadata);
