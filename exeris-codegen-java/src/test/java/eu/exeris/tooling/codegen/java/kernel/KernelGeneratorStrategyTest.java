@@ -350,7 +350,8 @@ class KernelGeneratorStrategyTest {
 
             assertThatThrownBy(() -> strategy.generate(metadata))
                     .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessageContaining("Duplicate edge names");
+                    .hasMessageContaining("Duplicate edge names")
+                    .hasMessageContaining("ownerId");
         }
     }
 

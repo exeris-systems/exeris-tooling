@@ -14,6 +14,9 @@ import eu.exeris.sdk.sourcemodel.ast.GraphEdgeMetadata;
 import eu.exeris.sdk.sourcemodel.ast.GraphMetadata;
 
 import javax.lang.model.element.Modifier;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * Kernel Graph Sync Generator.
@@ -87,9 +90,14 @@ public class KernelGraphSyncGenerator implements KernelArtifactGenerator {
         GraphMetadata graph = metadata.graphMetadata();
         String entity = metadata.entityName();
         String nodeLabel = graph.label() != null ? graph.label() : entity;
+        // Naive pluralisation — same default as KernelFlywayGenerator's table
+        // name. Irregular plurals (Category → categories, Address → addresses)
+        // are not handled here; downstream consumers that need explicit table
+        // names should extend GraphMetadata with a sourceTable override.
         String sourceTable = toSnakeCase(entity) + "s";
 
-        if (graph.edges() != null && !graph.edges().isEmpty()) {
+        boolean hasEdges = graph.edges() != null && !graph.edges().isEmpty();
+        if (hasEdges) {
             assertDistinctEdgeNames(entity, graph);
         }
 
@@ -117,7 +125,6 @@ public class KernelGraphSyncGenerator implements KernelArtifactGenerator {
                         .initializer("$T.create($S, $S)", GRAPH_NODE_DESCRIPTOR, nodeLabel, sourceTable)
                         .build());
 
-        boolean hasEdges = graph.edges() != null && !graph.edges().isEmpty();
         if (hasEdges) {
             for (GraphEdgeMetadata edge : graph.edges()) {
                 builder.addField(buildEdgeDescriptor(nodeLabel, edge));
@@ -192,7 +199,11 @@ public class KernelGraphSyncGenerator implements KernelArtifactGenerator {
                 .addModifiers(Modifier.PUBLIC)
                 .returns(TypeName.VOID)
                 .addParameter(UUID, "entityId")
-                .addJavadoc("Removes the entity's node (and all edges incident to it) from the graph.\n")
+                .addJavadoc("Removes the entity's node from the graph.\n")
+                .addJavadoc("<p>The SPI's {@link $T#deleteNode(String, java.util.UUID)} contract\n",
+                        GRAPH_SESSION)
+                .addJavadoc("guarantees that all edges incident to the node are deleted together;\n")
+                .addJavadoc("no explicit edge teardown is needed here.\n")
                 .beginControlFlow("try ($T session = graphEngine.openSession())", GRAPH_SESSION)
                 .addStatement("session.deleteNode(NODE_LABEL, entityId)")
                 .addStatement("LOG.debug($S, entityId)", "Deleted node from graph: id={}")
@@ -204,14 +215,18 @@ public class KernelGraphSyncGenerator implements KernelArtifactGenerator {
     }
 
     private void assertDistinctEdgeNames(String entity, GraphMetadata graph) {
-        long distinct = graph.edges().stream()
+        List<String> duplicates = graph.edges().stream()
                 .map(GraphEdgeMetadata::name)
-                .distinct()
-                .count();
-        if (distinct != graph.edges().size()) {
+                .collect(Collectors.groupingBy(n -> n, Collectors.counting()))
+                .entrySet().stream()
+                .filter(e -> e.getValue() > 1)
+                .map(Map.Entry::getKey)
+                .sorted()
+                .toList();
+        if (!duplicates.isEmpty()) {
             throw new IllegalArgumentException(
-                    "Duplicate edge names on entity '" + entity
-                            + "'. Each @GraphEdge must declare a unique name.");
+                    "Duplicate edge names on entity '" + entity + "': " + duplicates
+                            + ". Each @GraphEdge must declare a unique name.");
         }
     }
 
