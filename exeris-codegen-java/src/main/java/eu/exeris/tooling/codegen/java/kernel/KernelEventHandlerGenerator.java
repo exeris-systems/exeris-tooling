@@ -9,19 +9,46 @@ import com.palantir.javapoet.TypeSpec;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
+import eu.exeris.tooling.codegen.java.support.KernelEventSupport;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
 import eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
-import eu.exeris.sdk.sourcemodel.ast.SagaMetadata;
 
 import javax.lang.model.element.Modifier;
 
 /**
- * Generates event handlers that trigger sagas based on domain events.
- *
- * <p>For each entity with both events and saga trigger configuration,
- * generates a {@code Consumer<DomainEvent>} that routes events through a
- * switch on {@code eventType} and calls the corresponding saga entry-point.
+ * Kernel Event Handler Generator.
+ * <p>
+ * Emits a per-entity {@code *EventSubscriber} class that subscribes to the
+ * domain events emitted by the matching {@code *EventPublisher} through the
+ * Open-Core {@code eu.exeris.kernel.spi.events.EventBus}. Each declared
+ * {@link DomainEventMetadata} produces:
+ * <ul>
+ *   <li>One {@code private static final String} constant carrying the
+ *       event-type name (matches the {@code EventTypeSpec.name} the
+ *       publisher registers; together they form the routing key the
+ *       {@code EventBus} dispatches on).</li>
+ *   <li>One {@code protected void handle<EventName>(EventDescriptor descriptor,
+ *       EventPayload payload)} method. Each method matches the SPI's
+ *       {@link eu.exeris.kernel.spi.events.EventHandler} functional
+ *       interface and is subscribed individually by method reference.</li>
+ * </ul>
+ * The generated class exposes {@code subscribe()} and {@code unsubscribe()}
+ * for lifecycle control; subscriptions are tracked via the
+ * {@link eu.exeris.kernel.spi.events.SubscriptionToken}s the bus hands back.
+ * <p>
+ * The default {@code handle<EventName>} body is a logging stub that closes
+ * the payload (per the SPI's refCount contract — the handler that consumes
+ * the {@link eu.exeris.kernel.spi.events.EventPayload} <b>must</b> call
+ * {@code close()} or use {@code try-with-resources} to release the slab).
+ * Downstream consumers subclass the generated subscriber and override the
+ * handler methods to add behaviour.
+ * <p>
+ * Note: the legacy generator was coupled to {@link KernelSagaGenerator}
+ * (auto-invoked {@code saga.start(...)} on {@code *CreatedEvent}). That
+ * coupling is removed — saga triggering is now application-level wiring
+ * once the saga generator lands, kept symmetric with how
+ * {@link KernelServiceGenerator} no longer auto-publishes from {@code save()}.
  *
  * @implNote Emission is JavaPoet-based (ADR-015).
  *
@@ -30,168 +57,141 @@ import javax.lang.model.element.Modifier;
  */
 public class KernelEventHandlerGenerator implements KernelArtifactGenerator {
 
-    private static final ClassName UUID = ClassName.get("java.util", "UUID");
-    private static final ClassName MAP = ClassName.get("java.util", "Map");
-    private static final ClassName CONSUMER = ClassName.get("java.util.function", "Consumer");
-    private static final ClassName DOMAIN_EVENT = ClassName.get("eu.exeris.kernel.events.store", "DomainEvent");
-    private static final ClassName EVENT_STORE = ClassName.get("eu.exeris.kernel.events.store", "EventStore");
+    private static final ClassName ARRAY_LIST = ClassName.get("java.util", "ArrayList");
+    private static final ClassName LIST = ClassName.get("java.util", "List");
     private static final ClassName SLF4J_LOGGER = ClassName.get("org.slf4j", "Logger");
     private static final ClassName SLF4J_LOGGER_FACTORY = ClassName.get("org.slf4j", "LoggerFactory");
 
+    private static final ClassName EVENT_ENGINE = KernelEventSupport.EVENT_ENGINE;
+    private static final ClassName EVENT_DESCRIPTOR = KernelEventSupport.EVENT_DESCRIPTOR;
+    private static final ClassName EVENT_PAYLOAD = KernelEventSupport.EVENT_PAYLOAD;
+    private static final ClassName SUBSCRIPTION_TOKEN =
+            ClassName.get("eu.exeris.kernel.spi.events", "SubscriptionToken");
+
     @Override
     public GeneratedFile generate(DomainMetadata metadata) {
-        if (!metadata.isSaga() || metadata.sagaMetadata() == null) {
-            return null;
-        }
         if (!metadata.hasEvents()) {
             return null;
         }
 
-        SagaMetadata saga = metadata.sagaMetadata();
-        String packageName = metadata.packageName().replace(".domain", ".event");
+        KernelEventSupport.assertDistinctEventNames(metadata);
+
         String entity = metadata.entityName();
-        String className = entity + "EventHandler";
-        String sagaName = saga.name() != null ? saga.name() : entity + "Saga";
-
-        ClassName sagaType = ClassName.get(metadata.packageName().replace(".domain", ".saga"), sagaName);
+        String packageName = metadata.packageName().replace(".domain", ".event");
+        String className = entity + "EventSubscriber";
         ClassName selfType = ClassName.get(packageName, className);
-        TypeName consumerOfDomainEvent = ParameterizedTypeName.get(CONSUMER, DOMAIN_EVENT);
+        TypeName listOfTokens = ParameterizedTypeName.get(LIST, SUBSCRIPTION_TOKEN);
 
-        TypeSpec.Builder builder = KernelScaffold.publicClass(className)
-                .addJavadoc("Event handler for $L domain events.\n", entity)
-                .addJavadoc("<p>Triggers sagas and other reactions to domain events.\n")
-                .addJavadoc("<p>Generated by Exeris Codegen. DO NOT EDIT.\n")
-                .addJavadoc("\n")
-                .addJavadoc("@see $L\n", metadata.fullyQualifiedName())
-                .addJavadoc("@see $T\n", sagaType)
-                .addSuperinterface(consumerOfDomainEvent)
+        TypeSpec.Builder subscriber = KernelScaffold.publicClass(className)
+                .addJavadoc("Generated domain-event subscriber for $L.\n", entity)
+                .addJavadoc("<p>Subscribes the declared {@code handle<EventName>} methods\n")
+                .addJavadoc("to the Open-Core SPI {@link $T} bus. Each handler matches the\n", EVENT_ENGINE)
+                .addJavadoc("{@link eu.exeris.kernel.spi.events.EventHandler} functional\n")
+                .addJavadoc("interface; the default body logs the event and closes the\n")
+                .addJavadoc("payload (per the SPI refCount contract). Subclasses override\n")
+                .addJavadoc("the handler methods to add behaviour.\n")
+                .addJavadoc("<p><b>DO NOT EDIT</b> - Regenerate from domain model.\n")
                 .addField(FieldSpec.builder(SLF4J_LOGGER, "LOG",
                                 Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
                         .initializer("$T.getLogger($T.class)", SLF4J_LOGGER_FACTORY, selfType)
-                        .build())
-                .addField(FieldSpec.builder(sagaType, "saga", Modifier.PRIVATE, Modifier.FINAL).build())
-                .addField(FieldSpec.builder(EVENT_STORE, "eventStore", Modifier.PRIVATE, Modifier.FINAL).build())
-                .addMethod(MethodSpec.constructorBuilder()
-                        .addModifiers(Modifier.PUBLIC)
-                        .addParameter(sagaType, "saga")
-                        .addParameter(EVENT_STORE, "eventStore")
-                        .addStatement("this.saga = saga")
-                        .addStatement("this.eventStore = eventStore")
-                        .build())
-                .addMethod(buildAccept(entity, metadata));
-
-        for (DomainEventMetadata eventMeta : metadata.events()) {
-            builder.addMethod(buildEventHandler(eventMeta, metadata, sagaName));
-        }
-
-        // Event-type constants
-        for (DomainEventMetadata eventMeta : metadata.events()) {
-            String eventName = getEventName(eventMeta, metadata);
-            String constName = toConstantCase(eventName);
-            builder.addField(FieldSpec.builder(String.class, constName,
-                            Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
-                    .initializer("$S", eventName)
-                    .build());
-        }
-        // Topic constants (only those with a topic)
-        for (DomainEventMetadata eventMeta : metadata.events()) {
-            if (eventMeta.topic() != null && !eventMeta.topic().isBlank()) {
-                String eventName = getEventName(eventMeta, metadata);
-                String constName = toConstantCase(eventName) + "_TOPIC";
-                builder.addField(FieldSpec.builder(String.class, constName,
-                                Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
-                        .initializer("$S", eventMeta.topic())
                         .build());
-            }
+
+        for (DomainEventMetadata event : metadata.events()) {
+            subscriber.addField(buildEventNameConstant(entity, event));
+        }
+
+        subscriber.addField(FieldSpec.builder(EVENT_ENGINE, "eventEngine",
+                        Modifier.PRIVATE, Modifier.FINAL).build())
+                .addField(FieldSpec.builder(listOfTokens, "subscriptions",
+                                Modifier.PRIVATE, Modifier.FINAL)
+                        .initializer("new $T<>()", ARRAY_LIST)
+                        .build());
+
+        subscriber.addMethod(MethodSpec.constructorBuilder()
+                .addModifiers(Modifier.PUBLIC)
+                .addParameter(EVENT_ENGINE, "eventEngine")
+                .addStatement("this.eventEngine = eventEngine")
+                .build());
+
+        subscriber.addMethod(buildSubscribe(metadata));
+        subscriber.addMethod(buildUnsubscribe());
+
+        for (DomainEventMetadata event : metadata.events()) {
+            subscriber.addMethod(buildHandler(entity, event));
         }
 
         return new GeneratedFile(packageName, className,
-                KernelScaffold.render(packageName, builder.build()), ArtifactType.EVENT_HANDLER);
+                KernelScaffold.render(packageName, subscriber.build()), ArtifactType.EVENT_HANDLER);
     }
 
-    private MethodSpec buildAccept(String entity, DomainMetadata metadata) {
-        MethodSpec.Builder accept = MethodSpec.methodBuilder("accept")
-                .addAnnotation(Override.class)
+    private FieldSpec buildEventNameConstant(String entity, DomainEventMetadata event) {
+        String name = KernelEventSupport.eventName(event, entity);
+        return FieldSpec.builder(String.class, KernelEventSupport.toConstantCase(name),
+                        Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                .initializer("$S", name)
+                .build();
+    }
+
+    private MethodSpec buildSubscribe(DomainMetadata metadata) {
+        MethodSpec.Builder method = MethodSpec.methodBuilder("subscribe")
                 .addModifiers(Modifier.PUBLIC)
                 .returns(TypeName.VOID)
-                .addParameter(DOMAIN_EVENT, "event")
-                .beginControlFlow("if (!$S.equals(event.aggregateType()))", entity)
-                .addStatement("return")
-                .endControlFlow()
-                .addStatement("LOG.debug($S, event.eventType(), event.aggregateId())",
-                        "Handling event: {} for aggregate: {}")
-                .beginControlFlow("switch (event.eventType())");
-        for (DomainEventMetadata eventMeta : metadata.events()) {
-            String eventName = getEventName(eventMeta, metadata);
-            String handlerMethod = "handle" + eventName;
-            accept.addStatement("case $S -> $L(event)", eventName, handlerMethod);
+                .addJavadoc("Subscribes every declared {@code handle<EventName>} method to\n")
+                .addJavadoc("the event bus and tracks the returned {@link $T}s so they can\n", SUBSCRIPTION_TOKEN)
+                .addJavadoc("be released by {@link #unsubscribe()}.\n")
+                .addJavadoc("<p>Fails fast on double-subscribe: calling this method twice\n")
+                .addJavadoc("without an intervening {@link #unsubscribe()} throws\n")
+                .addJavadoc("{@link IllegalStateException}, because each new bus\n")
+                .addJavadoc("subscription duplicates downstream event delivery (the SPI\n")
+                .addJavadoc("dispatches once per subscriber).\n")
+                .beginControlFlow("if (!subscriptions.isEmpty())")
+                .addStatement("throw new $T($S)", ClassName.get("java.lang", "IllegalStateException"),
+                        "Already subscribed — call unsubscribe() before subscribing again")
+                .endControlFlow();
+        for (DomainEventMetadata event : metadata.events()) {
+            String name = KernelEventSupport.eventName(event, metadata.entityName());
+            String constantName = KernelEventSupport.toConstantCase(name);
+            String handlerMethod = "handle" + name;
+            method.addStatement("subscriptions.add(eventEngine.bus().subscribe($L, this::$L))",
+                    constantName, handlerMethod);
         }
-        accept.addStatement("default -> LOG.trace($S, event.eventType())",
-                "Unhandled event type: {}");
-        return accept.endControlFlow().build();
+        return method.build();
     }
 
-    private MethodSpec buildEventHandler(DomainEventMetadata eventMeta, DomainMetadata metadata, String sagaName) {
-        String eventName = getEventName(eventMeta, metadata);
-        String handlerMethod = "handle" + eventName;
-
-        MethodSpec.Builder handler = MethodSpec.methodBuilder(handlerMethod)
-                .addJavadoc("Handles $L.\n", eventName);
-        if (eventMeta.description() != null && !eventMeta.description().isBlank()) {
-            handler.addJavadoc("<p>$L\n", eventMeta.description());
-        }
-        handler.addModifiers(Modifier.PRIVATE)
+    private MethodSpec buildUnsubscribe() {
+        return MethodSpec.methodBuilder("unsubscribe")
+                .addModifiers(Modifier.PUBLIC)
                 .returns(TypeName.VOID)
-                .addParameter(DOMAIN_EVENT, "event")
-                .addStatement("LOG.info($S, event.eventType(), event.aggregateId())",
-                        "Processing {}: aggregateId={}");
-
-        if (eventName.endsWith("CreatedEvent")) {
-            handler.addStatement("$T entityId = event.aggregateId()", UUID)
-                    .addStatement("$T tenantId = event.tenantId()", UUID)
-                    .beginControlFlow("try")
-                    .addStatement("$T sagaId = saga.start(entityId, tenantId != null ? tenantId : entityId)", UUID)
-                    .beginControlFlow("if (sagaId != null)")
-                    .addStatement("LOG.info($S, $S, sagaId, entityId)",
-                            "Started saga '{}' with ID: {} for entity: {}", sagaName)
-                    .nextControlFlow("else")
-                    .addStatement("LOG.warn($S, $S, entityId)",
-                            "Saga '{}' already exists or could not be started for entity: {}", sagaName)
-                    .endControlFlow()
-                    .nextControlFlow("catch (Exception e)")
-                    .addStatement("LOG.error($S, event.eventType(), e)",
-                            "Failed to start saga for event: {}")
-                    .endControlFlow();
-        } else {
-            handler.addStatement("$T<String, Object> payload = event.payload()", MAP)
-                    .addStatement("LOG.debug($S, payload)", "Event payload: {}")
-                    .addCode("// TODO: Add custom handling for $L\n", eventName);
-        }
-        return handler.build();
+                .addJavadoc("Releases every subscription registered by {@link #subscribe()}.\n")
+                .addJavadoc("Idempotent: calling this when not currently subscribed is a no-op,\n")
+                .addJavadoc("symmetric with the strict double-subscribe guard in\n")
+                .addJavadoc("{@link #subscribe()}.\n")
+                .beginControlFlow("for ($T token : subscriptions)", SUBSCRIPTION_TOKEN)
+                .addStatement("eventEngine.bus().unsubscribe(token)")
+                .endControlFlow()
+                .addStatement("subscriptions.clear()")
+                .build();
     }
 
-    private String getEventName(DomainEventMetadata event, DomainMetadata metadata) {
-        String eventName = event.name();
-        if (eventName == null || eventName.isBlank()) {
-            eventName = metadata.entityName() + "Event";
-        }
-        if (!eventName.endsWith("Event")) {
-            eventName = eventName + "Event";
-        }
-        return eventName;
-    }
-
-    private String toConstantCase(String s) {
-        if (s == null || s.isEmpty()) return s;
-        StringBuilder result = new StringBuilder();
-        for (int i = 0; i < s.length(); i++) {
-            char c = s.charAt(i);
-            if (Character.isUpperCase(c) && i > 0) {
-                result.append('_');
-            }
-            result.append(Character.toUpperCase(c));
-        }
-        return result.toString();
+    private MethodSpec buildHandler(String entity, DomainEventMetadata event) {
+        String name = KernelEventSupport.eventName(event, entity);
+        return MethodSpec.methodBuilder("handle" + name)
+                .addModifiers(Modifier.PROTECTED)
+                .returns(TypeName.VOID)
+                .addParameter(EVENT_DESCRIPTOR, "descriptor")
+                .addParameter(EVENT_PAYLOAD, "payload")
+                .addJavadoc("Default handler for {@code $L}.\n", name)
+                .addJavadoc("<p>Closes the payload per the SPI refCount contract; subclasses\n")
+                .addJavadoc("override this method to add domain behaviour. Always use a\n")
+                .addJavadoc("{@code try-with-resources} (or explicit {@code payload.close()})\n")
+                .addJavadoc("in the overridden body to keep the slab pool from leaking.\n")
+                .addJavadoc("@param descriptor routing metadata — stream UUID, ordinal, flags, timestamp\n")
+                .addJavadoc("@param payload    ref-counted event bytes; the handler owns the close\n")
+                .beginControlFlow("try (payload)")
+                .addStatement("LOG.debug($S, descriptor.toEventUuid(), descriptor.toStreamUuid())",
+                        "Received " + name + ": eventId={} streamId={}")
+                .endControlFlow()
+                .build();
     }
 
     @Override

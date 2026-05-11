@@ -42,7 +42,7 @@ class KernelCodegenE2ETest {
         private final KernelGeneratorStrategy strategy = new KernelGeneratorStrategy();
 
         @Test
-        @DisplayName("Should generate exactly the SPI-aligned subset (Handler, Service, Repository, Event when declared, Migration, OpenAPI)")
+        @DisplayName("Should generate exactly the SPI-aligned subset (Controller, Service, Repository, Event + EventHandler when declared, Migration, OpenAPI)")
         void shouldGenerateCoreArtifacts() {
             List<GeneratedFile> files = strategy.generate(orderMetadata);
             assertThat(files).extracting(GeneratedFile::artifactType)
@@ -51,6 +51,7 @@ class KernelCodegenE2ETest {
                             ArtifactType.SERVICE,
                             ArtifactType.REPOSITORY,
                             ArtifactType.EVENT,
+                            ArtifactType.EVENT_HANDLER,
                             ArtifactType.CONFIGURATION,
                             ArtifactType.OPENAPI_SPEC);
         }
@@ -82,6 +83,24 @@ class KernelCodegenE2ETest {
                     .contains("eu.exeris.kernel.spi.events.EventTypeSpec")
                     .contains("EventTypeSpec.ofPersistent(\"OrderCreatedEvent\"")
                     .contains("eventEngine.bus().publish(descriptor, EventPayload.empty())");
+        }
+
+        @Test
+        @DisplayName("EventSubscriber emits against Open-Core SPI EventBus + EventHandler")
+        void eventSubscriberShouldUseSpiEventBus() {
+            List<GeneratedFile> files = strategy.generate(orderMetadata);
+            String subscriber = files.stream().filter(f -> f.artifactType() == ArtifactType.EVENT_HANDLER)
+                    .findFirst().orElseThrow().content();
+            assertThat(subscriber)
+                    .contains("eu.exeris.kernel.spi.events.EventDescriptor")
+                    .contains("eu.exeris.kernel.spi.events.EventPayload")
+                    .contains("eu.exeris.kernel.spi.events.SubscriptionToken")
+                    .contains("private static final String ORDER_CREATED_EVENT")
+                    .doesNotContain("public static final String ORDER_CREATED_EVENT")
+                    .contains("if (!subscriptions.isEmpty())")
+                    .contains("eventEngine.bus().subscribe(ORDER_CREATED_EVENT, this::handleOrderCreatedEvent)")
+                    .contains("protected void handleOrderCreatedEvent(EventDescriptor descriptor, EventPayload payload)")
+                    .contains("try (payload)");
         }
 
         @Test

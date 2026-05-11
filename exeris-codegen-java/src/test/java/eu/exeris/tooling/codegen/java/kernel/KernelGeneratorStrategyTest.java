@@ -205,11 +205,82 @@ class KernelGeneratorStrategyTest {
     }
 
     @Nested
+    @DisplayName("Event Handler Generation")
+    class EventHandlerGenerationTests {
+
+        @Test
+        @DisplayName("Should generate EventSubscriber emitting against Open-Core SPI EventBus + EventHandler")
+        void shouldGenerateEventSubscriber() {
+            DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                    .events(List.of(
+                            DomainEventMetadata.simple("OrderCreated"),
+                            DomainEventMetadata.withTopic("OrderShipped", "orders.shipped")))
+                    .build();
+
+            List<GeneratedFile> files = strategy.generate(metadata);
+
+            GeneratedFile subscriber = files.stream()
+                    .filter(f -> f.artifactType() == ArtifactType.EVENT_HANDLER)
+                    .findFirst()
+                    .orElseThrow();
+
+            assertThat(subscriber.className()).isEqualTo("OrderEventSubscriber");
+            assertThat(subscriber.packageName()).isEqualTo("com.example.event");
+            assertThat(subscriber.content())
+                    .contains("import eu.exeris.kernel.spi.events.EventEngine")
+                    .contains("import eu.exeris.kernel.spi.events.EventDescriptor")
+                    .contains("import eu.exeris.kernel.spi.events.EventPayload")
+                    .contains("import eu.exeris.kernel.spi.events.SubscriptionToken")
+                    .contains("public class OrderEventSubscriber")
+                    .contains("private static final String ORDER_CREATED_EVENT = \"OrderCreatedEvent\"")
+                    .contains("private static final String ORDER_SHIPPED_EVENT = \"OrderShippedEvent\"")
+                    .doesNotContain("public static final String ORDER_CREATED_EVENT")
+                    .contains("public OrderEventSubscriber(EventEngine eventEngine)")
+                    .contains("public void subscribe()")
+                    .contains("public void unsubscribe()")
+                    .contains("if (!subscriptions.isEmpty())")
+                    .contains("throw new IllegalStateException(\"Already subscribed")
+                    .contains("subscriptions.add(eventEngine.bus().subscribe(ORDER_CREATED_EVENT, this::handleOrderCreatedEvent))")
+                    .contains("subscriptions.add(eventEngine.bus().subscribe(ORDER_SHIPPED_EVENT, this::handleOrderShippedEvent))")
+                    .contains("protected void handleOrderCreatedEvent(EventDescriptor descriptor, EventPayload payload)")
+                    .contains("protected void handleOrderShippedEvent(EventDescriptor descriptor, EventPayload payload)")
+                    .contains("try (payload)")
+                    .contains("eventEngine.bus().unsubscribe(token)");
+        }
+
+        @Test
+        @DisplayName("Should not emit a subscriber for domains without events")
+        void shouldSkipSubscriberWhenNoEvents() {
+            DomainMetadata metadata = DomainMetadata.builder("Tenant", "com.example.domain")
+                    .build();
+
+            List<GeneratedFile> files = strategy.generate(metadata);
+
+            assertThat(files).extracting(GeneratedFile::artifactType)
+                    .doesNotContain(ArtifactType.EVENT_HANDLER);
+        }
+
+        @Test
+        @DisplayName("Should reject duplicate event names after normalisation")
+        void shouldRejectDuplicateNormalisedEventNames() {
+            DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                    .events(List.of(
+                            DomainEventMetadata.simple(null),
+                            DomainEventMetadata.simple("Order")))
+                    .build();
+
+            assertThatThrownBy(() -> strategy.generate(metadata))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("Duplicate event names after normalisation");
+        }
+    }
+
+    @Nested
     @DisplayName("Full Generation")
     class FullGenerationTests {
 
         @Test
-        @DisplayName("Should generate the six SPI-aligned artifacts when events are declared (Handler, Service, Repository, Event, Flyway, OpenAPI)")
+        @DisplayName("Should generate the seven SPI-aligned artifacts when events are declared (Controller, Service, Repository, Event, EventHandler, Flyway, OpenAPI)")
         void shouldGenerateAllArtifacts() {
             // Given
             DomainMetadata metadata = DomainMetadata.builder("Product", "com.shop.domain")
@@ -222,13 +293,14 @@ class KernelGeneratorStrategyTest {
             List<GeneratedFile> files = strategy.generate(metadata);
 
             // Then
-            assertThat(files).hasSize(6);
+            assertThat(files).hasSize(7);
             assertThat(files).extracting(GeneratedFile::artifactType)
                     .containsExactlyInAnyOrder(
                             ArtifactType.CONTROLLER,
                             ArtifactType.SERVICE,
                             ArtifactType.REPOSITORY,
                             ArtifactType.EVENT,
+                            ArtifactType.EVENT_HANDLER,
                             ArtifactType.CONFIGURATION,
                             ArtifactType.OPENAPI_SPEC
                     );
