@@ -40,20 +40,15 @@ class KernelCodegenE2ETest {
         private final KernelGeneratorStrategy strategy = new KernelGeneratorStrategy();
 
         @Test
-        @DisplayName("Should generate at minimum Handler, Service, Repository, Migration artifacts")
+        @DisplayName("Should generate exactly the SPI-aligned subset (Service, Repository, Migration, OpenAPI)")
         void shouldGenerateCoreArtifacts() {
             List<GeneratedFile> files = strategy.generate(orderMetadata);
             assertThat(files).extracting(GeneratedFile::artifactType)
-                    .contains(ArtifactType.CONTROLLER, ArtifactType.SERVICE, ArtifactType.REPOSITORY, ArtifactType.CONFIGURATION);
-        }
-
-        @Test
-        @DisplayName("Handler should use Kernel Http3ServerExchange")
-        void handlerShouldUseKernelRuntime() {
-            List<GeneratedFile> files = strategy.generate(orderMetadata);
-            String handler = files.stream().filter(f -> f.artifactType() == ArtifactType.CONTROLLER)
-                    .findFirst().orElseThrow().content();
-            assertThat(handler).contains("Http3ServerExchange", "handleGetAll", "handleCreate");
+                    .containsExactlyInAnyOrder(
+                            ArtifactType.SERVICE,
+                            ArtifactType.REPOSITORY,
+                            ArtifactType.CONFIGURATION,
+                            ArtifactType.OPENAPI_SPEC);
         }
 
         @Test

@@ -1,12 +1,9 @@
 package eu.exeris.e2e.codegen;
 
 import eu.exeris.e2e.codegen.compile.InMemoryJavaCompiler;
-import eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
-import eu.exeris.sdk.sourcemodel.ast.SagaMetadata;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
-import eu.exeris.tooling.codegen.java.kernel.KernelApplicationGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelGeneratorStrategy;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -19,10 +16,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Compile-test gate: feeds a representative {@link DomainMetadata} through the
  * Kernel generator strategy and runs {@code javac} over the union of generated
- * sources + the source domain entity, against the kernel SPI stubs sitting on
- * the test classpath. Substring assertions in {@link KernelCodegenE2ETest}
- * cannot catch broken imports or referenced symbols that no longer exist —
- * this test does.
+ * sources + the source domain entity. Substring assertions in
+ * {@link KernelCodegenE2ETest} cannot catch broken imports or referenced symbols
+ * that no longer exist — this test does.
+ *
+ * <p>The strategy currently registers the SPI-aligned subset only: Service,
+ * Repository, Flyway, OpenAPI. Generated Java therefore has no
+ * {@code eu.exeris.kernel.*} imports; nothing on the kernel stub classpath is
+ * required.
  */
 @Tag("e2e")
 @Tag("codegen")
@@ -34,7 +35,7 @@ class KernelCodegenCompileTest {
     private static final String ENTITY_NAME = "Order";
 
     @Test
-    @DisplayName("Generated kernel artifacts compile against kernel SPI stubs")
+    @DisplayName("Generated kernel artifacts compile (SPI-aligned subset)")
     void generatedArtifactsCompile() {
         DomainMetadata metadata = DomainMetadata.builder(ENTITY_NAME, DOMAIN_PACKAGE)
                 .path("/orders")
@@ -58,34 +59,14 @@ class KernelCodegenCompileTest {
                                 .build(),
                         FieldMetadata.builder("tags", "List<java.util.UUID>")
                                 .build()))
-                .events(List.of(
-                        DomainEventMetadata.withTopic("OrderCreated", "orders.created"),
-                        DomainEventMetadata.simple("OrderUpdated")))
-                .sagaMetadata(SagaMetadata.builder("OrderSaga")
-                        .description("Order placement saga")
-                        .timeout("PT45M")
-                        .maxRetries(5)
-                        .build())
                 .build();
 
         List<GeneratedFile> generated = new KernelGeneratorStrategy().generate(metadata);
-
-        // Phase 4e: also feed the application-infrastructure files (Application,
-        // CompositionRoot, RouterConfig) so their references into the strategy
-        // output are exercised.
-        String basePackage = DOMAIN_PACKAGE.replace(".domain", "");
-        List<GeneratedFile> appFiles = new KernelApplicationGenerator()
-                .generateAll(List.of(metadata), basePackage);
 
         InMemoryJavaCompiler compiler = new InMemoryJavaCompiler()
                 .addSource(DOMAIN_PACKAGE + "." + ENTITY_NAME, sourceEntity());
 
         for (GeneratedFile file : generated) {
-            if ("java".equals(file.extension())) {
-                compiler.addSource(file.packageName() + "." + file.className(), file.content());
-            }
-        }
-        for (GeneratedFile file : appFiles) {
             if ("java".equals(file.extension())) {
                 compiler.addSource(file.packageName() + "." + file.className(), file.content());
             }

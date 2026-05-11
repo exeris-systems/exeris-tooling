@@ -7,7 +7,39 @@ import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import java.util.List;
 
 /**
- * Kernel Generator Strategy - orchestrates all Kernel-specific generators.
+ * Kernel Generator Strategy — Open-Core SPI/CORE-aligned generators.
+ *
+ * <h2>Registered set (active)</h2>
+ * <p>Active set covers artifacts whose emitted code does not reference Kernel
+ * API surface today, so it is aligned with Open-Core
+ * {@code exeris-kernel-spi} / {@code exeris-kernel-core} by being decoupled:
+ * <ul>
+ *   <li>{@link KernelServiceGenerator} — POJO domain services</li>
+ *   <li>{@link KernelRepositoryGenerator} — plain-JDBC repositories</li>
+ *   <li>{@link KernelFlywayGenerator} — SQL migrations</li>
+ *   <li>{@link KernelOpenApiGenerator} — OpenAPI 3.1 YAML</li>
+ * </ul>
+ *
+ * <h2>Unregistered (pending migration to Open-Core SPI/CORE)</h2>
+ * <p>The following generators are kept in tree but <b>not</b> registered.
+ * Each one was originally authored against an emission surface that does not
+ * match the names/paths exposed by Open-Core SPI/CORE today. The required
+ * abstractions exist in Open-Core — the generators just need rewriting
+ * against the real SPI/CORE types. Per-generator migration target:
+ * <ul>
+ *   <li>{@link KernelHandlerGenerator} → {@code spi.http.{HttpHandler, HttpExchange, HttpMethod, HttpResponse, HttpStatus, HttpHeader}} + {@code core.http.routing.HttpRouter}</li>
+ *   <li>{@link KernelClientGenerator} → SPI HTTP/transport client (TBD against the actually exposed client SPI; align with the working benchmark app)</li>
+ *   <li>{@link KernelEventGenerator} → {@code spi.events.{EventDescriptor, EventPayload, EventEngine, EventTypeSpec}} + {@code spi.persistence.EventStore}</li>
+ *   <li>{@link KernelEventHandlerGenerator} → consumes the same SPI events surface as above</li>
+ *   <li>{@link KernelGraphSyncGenerator} → {@code spi.graph.{GraphEngine, GraphSession}} + {@code spi.graph.model.{GraphEdgeDescriptor, GraphTraversal}}</li>
+ *   <li>{@link KernelSagaGenerator} → {@code spi.flow.FlowEngine} + {@code spi.flow.model.{FlowContext, FlowDefinition, FlowExecutionPlan, FlowOutcome, FlowSnapshot, FlowSnapshotStore, FlowState, FlowStepAction}}</li>
+ *   <li>{@link KernelApplicationGenerator} → {@code core.bootstrap.KernelBootstrap} + {@code spi.bootstrap.BootstrapSelector} + {@code spi.context.KernelProviders} + {@code core.http.routing.HttpRouter}</li>
+ * </ul>
+ *
+ * <p>Re-register each one only after its emitted code resolves against
+ * {@code exeris-kernel-spi} / {@code exeris-kernel-core}. See the working
+ * community benchmark app in {@code exeris-benchmarks/targets/exeris-community-app}
+ * for the canonical SPI/CORE wiring shape.
  */
 public class KernelGeneratorStrategy {
 
@@ -16,23 +48,10 @@ public class KernelGeneratorStrategy {
     public KernelGeneratorStrategy() {
         this.registry = new GeneratorRegistry();
 
-        // Core CRUD generators
-        registry.register(new KernelHandlerGenerator());
         registry.register(new KernelServiceGenerator());
         registry.register(new KernelRepositoryGenerator());
         registry.register(new KernelFlywayGenerator());
-        registry.register(new KernelClientGenerator());     // Service-to-service client generator
-        registry.register(new KernelOpenApiGenerator());    // OpenAPI 3.1 spec generator
-
-        // Event-driven generators
-        registry.register(new KernelEventGenerator());      // Domain events + publisher
-        registry.register(new KernelEventHandlerGenerator()); // Event handlers + saga triggers
-
-        // Graph integration generators
-        registry.register(new KernelGraphSyncGenerator());  // Graph sync service
-
-        // Saga orchestration generators
-        registry.register(new KernelSagaGenerator());       // Saga definition + executor
+        registry.register(new KernelOpenApiGenerator());
     }
 
     public List<GeneratedFile> generate(DomainMetadata metadata) {
@@ -41,4 +60,3 @@ public class KernelGeneratorStrategy {
 
     public GeneratorRegistry getRegistry() { return registry; }
 }
-

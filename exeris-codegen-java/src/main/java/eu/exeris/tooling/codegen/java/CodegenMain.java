@@ -22,16 +22,16 @@ import java.util.stream.Stream;
 /**
  * Main entry point for Exeris Java Code Generator.
  * <p>
- * Generates complete application from domain metadata:
+ * Generates the SPI-aligned subset of artifacts from domain metadata:
  * <ul>
- *   <li>Application.java - Entry point</li>
- *   <li>CompositionRoot.java - Manual DI wiring</li>
- *   <li>RouterConfig.java - HTTP routes</li>
- *   <li>*Repository.java - Data access for each entity</li>
- *   <li>*Service.java - Business logic for each entity</li>
- *   <li>*Handler.java - HTTP handlers for each entity</li>
+ *   <li>{@code *Service.java} — POJO domain services for each entity</li>
+ *   <li>{@code *Repository.java} — plain-JDBC repositories for each entity</li>
  *   <li>Flyway SQL migrations</li>
+ *   <li>OpenAPI 3.1 YAML specs</li>
  * </ul>
+ * <p>HTTP-layer, event, saga, graph-sync, and application-infrastructure
+ * generators are parked — see {@link eu.exeris.tooling.codegen.java.kernel.KernelGeneratorStrategy}
+ * for the parked set and the Kernel SPI surface each one is gated on.
  *
  * <h2>Usage:</h2>
  * <pre>
@@ -118,11 +118,12 @@ public final class CodegenMain {
             int filesGenerated = 0;
 
             // ---------------------------------------------------------------
-            // 1. Per-entity code (Repository, Service, Handler, etc.)
+            // Per-entity code (active SPI-aligned generators only — see
+            // KernelGeneratorStrategy for the parked roster and migration
+            // targets for the rest)
             // ---------------------------------------------------------------
             LOG.log(Level.INFO, "Generating per-entity code");
 
-            // Use KernelGeneratorStrategy which registers all generators
             KernelGeneratorStrategy strategy = new KernelGeneratorStrategy();
             GeneratorRegistry registry = strategy.getRegistry();
 
@@ -139,19 +140,6 @@ public final class CodegenMain {
                         filesGenerated++;
                     }
                 }
-            }
-
-            // ---------------------------------------------------------------
-            // 2. Application infrastructure (Application, CompositionRoot, Router)
-            // ---------------------------------------------------------------
-            LOG.log(Level.INFO, "Generating application infrastructure");
-            KernelApplicationGenerator appGen = new KernelApplicationGenerator();
-            List<GeneratedFile> appFiles = appGen.generateAll(domains, basePackage);
-
-            for (GeneratedFile file : appFiles) {
-                writeFile(writer, file);
-                LOG.log(Level.DEBUG, () -> "wrote " + file.className());
-                filesGenerated++;
             }
 
             LOG.log(Level.INFO, "Code generation complete: files=" + filesGenerated
