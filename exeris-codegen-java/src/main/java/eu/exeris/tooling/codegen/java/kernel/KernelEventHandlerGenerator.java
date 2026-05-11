@@ -125,7 +125,7 @@ public class KernelEventHandlerGenerator implements KernelArtifactGenerator {
                 .addStatement("this.eventEngine = eventEngine")
                 .build());
 
-        subscriber.addMethod(buildSubscribe(entity, metadata));
+        subscriber.addMethod(buildSubscribe(metadata));
         subscriber.addMethod(buildUnsubscribe());
 
         for (DomainEventMetadata event : metadata.events()) {
@@ -144,15 +144,24 @@ public class KernelEventHandlerGenerator implements KernelArtifactGenerator {
                 .build();
     }
 
-    private MethodSpec buildSubscribe(String entity, DomainMetadata metadata) {
+    private MethodSpec buildSubscribe(DomainMetadata metadata) {
         MethodSpec.Builder method = MethodSpec.methodBuilder("subscribe")
                 .addModifiers(Modifier.PUBLIC)
                 .returns(TypeName.VOID)
                 .addJavadoc("Subscribes every declared {@code handle<EventName>} method to\n")
                 .addJavadoc("the event bus and tracks the returned {@link $T}s so they can\n", SUBSCRIPTION_TOKEN)
-                .addJavadoc("be released by {@link #unsubscribe()}.\n");
+                .addJavadoc("be released by {@link #unsubscribe()}.\n")
+                .addJavadoc("<p>Fails fast on double-subscribe: calling this method twice\n")
+                .addJavadoc("without an intervening {@link #unsubscribe()} throws\n")
+                .addJavadoc("{@link IllegalStateException}, because each new bus\n")
+                .addJavadoc("subscription duplicates downstream event delivery (the SPI\n")
+                .addJavadoc("dispatches once per subscriber).\n")
+                .beginControlFlow("if (!subscriptions.isEmpty())")
+                .addStatement("throw new $T($S)", ClassName.get("java.lang", "IllegalStateException"),
+                        "Already subscribed — call unsubscribe() before subscribing again")
+                .endControlFlow();
         for (DomainEventMetadata event : metadata.events()) {
-            String name = eventName(event, entity);
+            String name = eventName(event, metadata.entityName());
             String constantName = toConstantCase(name);
             String handlerMethod = "handle" + name;
             method.addStatement("subscriptions.add(eventEngine.bus().subscribe($L, this::$L))",
@@ -166,6 +175,9 @@ public class KernelEventHandlerGenerator implements KernelArtifactGenerator {
                 .addModifiers(Modifier.PUBLIC)
                 .returns(TypeName.VOID)
                 .addJavadoc("Releases every subscription registered by {@link #subscribe()}.\n")
+                .addJavadoc("Idempotent: calling this when not currently subscribed is a no-op,\n")
+                .addJavadoc("symmetric with the strict double-subscribe guard in\n")
+                .addJavadoc("{@link #subscribe()}.\n")
                 .beginControlFlow("for ($T token : subscriptions)", SUBSCRIPTION_TOKEN)
                 .addStatement("eventEngine.bus().unsubscribe(token)")
                 .endControlFlow()

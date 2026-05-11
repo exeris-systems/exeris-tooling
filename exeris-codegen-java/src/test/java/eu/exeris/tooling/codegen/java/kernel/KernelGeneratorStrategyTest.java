@@ -232,11 +232,14 @@ class KernelGeneratorStrategyTest {
                     .contains("import eu.exeris.kernel.spi.events.EventPayload")
                     .contains("import eu.exeris.kernel.spi.events.SubscriptionToken")
                     .contains("public class OrderEventSubscriber")
-                    .contains("String ORDER_CREATED_EVENT = \"OrderCreatedEvent\"")
-                    .contains("String ORDER_SHIPPED_EVENT = \"OrderShippedEvent\"")
+                    .contains("private static final String ORDER_CREATED_EVENT = \"OrderCreatedEvent\"")
+                    .contains("private static final String ORDER_SHIPPED_EVENT = \"OrderShippedEvent\"")
+                    .doesNotContain("public static final String ORDER_CREATED_EVENT")
                     .contains("public OrderEventSubscriber(EventEngine eventEngine)")
                     .contains("public void subscribe()")
                     .contains("public void unsubscribe()")
+                    .contains("if (!subscriptions.isEmpty())")
+                    .contains("throw new IllegalStateException(\"Already subscribed")
                     .contains("subscriptions.add(eventEngine.bus().subscribe(ORDER_CREATED_EVENT, this::handleOrderCreatedEvent))")
                     .contains("subscriptions.add(eventEngine.bus().subscribe(ORDER_SHIPPED_EVENT, this::handleOrderShippedEvent))")
                     .contains("protected void handleOrderCreatedEvent(EventDescriptor descriptor, EventPayload payload)")
@@ -277,7 +280,7 @@ class KernelGeneratorStrategyTest {
     class FullGenerationTests {
 
         @Test
-        @DisplayName("Should generate the seven SPI-aligned artifacts when events are declared (Handler, Service, Repository, Event, EventHandler, Flyway, OpenAPI)")
+        @DisplayName("Should generate the seven SPI-aligned artifacts when events are declared (Controller, Service, Repository, Event, EventHandler, Flyway, OpenAPI)")
         void shouldGenerateAllArtifacts() {
             // Given
             DomainMetadata metadata = DomainMetadata.builder("Product", "com.shop.domain")
