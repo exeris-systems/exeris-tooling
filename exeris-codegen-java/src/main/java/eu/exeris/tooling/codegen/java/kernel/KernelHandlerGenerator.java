@@ -18,8 +18,11 @@ import javax.lang.model.element.Modifier;
 /**
  * Kernel Handler Generator.
  * <p>
- * Generates HTTP handlers for Exeris Kernel runtime (HTTP/3).
- * Handlers receive requests from Http3ServerExchange and delegate to services.
+ * Generates HTTP handlers for the Exeris Kernel runtime. Handlers receive
+ * requests from {@code Http3ServerExchange} and delegate to services. The
+ * underlying transport (H1/H2/H3) is an internal detail of the Kernel
+ * runtime and tier-dependent — Community runs over H1/H2, the H3 path is
+ * Enterprise-only.
  *
  * @implNote Emission is JavaPoet-based (ADR-015). Output style is owned by
  * JavaPoet's pretty-printer; substring assertions in the E2E suite still hold,
