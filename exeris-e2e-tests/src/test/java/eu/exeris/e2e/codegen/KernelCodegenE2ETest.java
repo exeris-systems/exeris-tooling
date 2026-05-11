@@ -2,6 +2,7 @@ package eu.exeris.e2e.codegen;
 
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
+import eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.tooling.codegen.java.kernel.KernelGeneratorStrategy;
 import org.junit.jupiter.api.*;
@@ -26,6 +27,7 @@ class KernelCodegenE2ETest {
                 .description("Sales order entity")
                 .tenantScoped(true)
                 .audited(true)
+                .events(List.of(DomainEventMetadata.simple("OrderCreated")))
                 .build();
 
         productMetadata = DomainMetadata.builder("Product", "com.shop.domain")
@@ -40,7 +42,7 @@ class KernelCodegenE2ETest {
         private final KernelGeneratorStrategy strategy = new KernelGeneratorStrategy();
 
         @Test
-        @DisplayName("Should generate exactly the SPI-aligned subset (Handler, Service, Repository, Migration, OpenAPI)")
+        @DisplayName("Should generate exactly the SPI-aligned subset (Handler, Service, Repository, Event, Migration, OpenAPI)")
         void shouldGenerateCoreArtifacts() {
             List<GeneratedFile> files = strategy.generate(orderMetadata);
             assertThat(files).extracting(GeneratedFile::artifactType)
@@ -48,6 +50,7 @@ class KernelCodegenE2ETest {
                             ArtifactType.CONTROLLER,
                             ArtifactType.SERVICE,
                             ArtifactType.REPOSITORY,
+                            ArtifactType.EVENT,
                             ArtifactType.CONFIGURATION,
                             ArtifactType.OPENAPI_SPEC);
         }
@@ -64,6 +67,21 @@ class KernelCodegenE2ETest {
                     .contains("eu.exeris.kernel.spi.memory.LoanedBuffer")
                     .contains("handleGetAll(HttpExchange exchange)")
                     .contains("handleCreate(HttpExchange exchange)");
+        }
+
+        @Test
+        @DisplayName("EventPublisher emits against Open-Core SPI EventEngine")
+        void eventPublisherShouldUseSpiEventEngine() {
+            List<GeneratedFile> files = strategy.generate(orderMetadata);
+            String publisher = files.stream().filter(f -> f.artifactType() == ArtifactType.EVENT)
+                    .findFirst().orElseThrow().content();
+            assertThat(publisher)
+                    .contains("eu.exeris.kernel.spi.events.EventEngine")
+                    .contains("eu.exeris.kernel.spi.events.EventDescriptor")
+                    .contains("eu.exeris.kernel.spi.events.EventPayload")
+                    .contains("eu.exeris.kernel.spi.events.EventTypeSpec")
+                    .contains("EventTypeSpec.ofPersistent(\"OrderCreatedEvent\"")
+                    .contains("eventEngine.bus().publish(descriptor, EventPayload.empty())");
         }
 
         @Test

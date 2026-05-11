@@ -1,6 +1,7 @@
 package eu.exeris.e2e.codegen;
 
 import eu.exeris.e2e.codegen.compile.InMemoryJavaCompiler;
+import eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
@@ -21,10 +22,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * that no longer exist — this test does.
  *
  * <p>The strategy currently registers the SPI-aligned subset: Handler,
- * Service, Repository, Flyway, OpenAPI. The Handler imports
- * {@code eu.exeris.kernel.spi.http.*} and {@code eu.exeris.kernel.spi.memory.*};
- * the real {@code exeris-kernel-spi:0.7.0} artifact (plus Jackson 3) is on
- * the test classpath via {@code exeris-tooling-bom}.
+ * Service, Repository, Event, Flyway, OpenAPI. Generated Java imports
+ * {@code eu.exeris.kernel.spi.http.*}, {@code eu.exeris.kernel.spi.memory.*},
+ * and {@code eu.exeris.kernel.spi.events.*}; the real
+ * {@code exeris-kernel-spi:0.7.0} artifact (plus Jackson 3) is on the test
+ * classpath via {@code exeris-tooling-bom}.
  */
 @Tag("e2e")
 @Tag("codegen")
@@ -60,6 +62,9 @@ class KernelCodegenCompileTest {
                                 .build(),
                         FieldMetadata.builder("tags", "List<java.util.UUID>")
                                 .build()))
+                .events(List.of(
+                        DomainEventMetadata.simple("OrderCreated"),
+                        DomainEventMetadata.withTopic("OrderShipped", "orders.shipped")))
                 .build();
 
         List<GeneratedFile> generated = new KernelGeneratorStrategy().generate(metadata);
