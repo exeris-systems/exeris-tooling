@@ -16,9 +16,10 @@ import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import javax.lang.model.element.Modifier;
 
 /**
- * KernelClientGenerator - Generuje klientów HTTP/3 dla komunikacji service-to-service.
+ * Kernel Client Generator.
  *
- * <p>Wygenerowany kod używa {@code ExerisWebClient} z pakietu
+ * <p>Generates HTTP/3 clients for service-to-service communication. The
+ * generated code uses {@code ExerisWebClient} from package
  * {@code eu.exeris.kernel.transport.http3.client}.
  *
  * @implNote Emission is JavaPoet-based (ADR-015).
