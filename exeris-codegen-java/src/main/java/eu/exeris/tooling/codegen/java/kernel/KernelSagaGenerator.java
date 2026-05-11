@@ -1,13 +1,12 @@
 package eu.exeris.tooling.codegen.java.kernel;
 
 import com.palantir.javapoet.ClassName;
-import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.FieldSpec;
 import com.palantir.javapoet.MethodSpec;
-import com.palantir.javapoet.ParameterizedTypeName;
 import com.palantir.javapoet.TypeName;
 import com.palantir.javapoet.TypeSpec;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
+import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
@@ -15,571 +14,303 @@ import eu.exeris.sdk.sourcemodel.ast.SagaMetadata;
 import eu.exeris.sdk.sourcemodel.ast.SagaStepMetadata;
 
 import javax.lang.model.element.Modifier;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
- * Generates saga orchestration classes for Exeris Kernel.
- *
- * <p>For entities annotated with {@code @Saga}, generates:
+ * Kernel Saga Generator.
+ * <p>
+ * Emits a per-entity {@code *SagaFlow} class that wraps the Open-Core SPI
+ * flow framework ({@code eu.exeris.kernel.spi.flow.{FlowEngine,
+ * FlowDefinitionBuilder, FlowExecutionPlan, FlowContext, FlowOutcome}}).
+ * The emitted class is a <b>skeleton</b> — step actions and their
+ * compensations default to logging stubs that return
+ * {@link eu.exeris.kernel.spi.flow.model.FlowOutcome#CONTINUE};
+ * downstream consumers extend the generated class and override the
+ * {@code protected} step methods to supply real business logic.
+ * Canonical wiring shape mirrors the working community benchmark
+ * app's {@code OrderSagaOrchestrator} (under
+ * {@code exeris-benchmarks/targets/exeris-community-app}).
+ * <p>
+ * Emitted skeleton contract:
  * <ul>
- *   <li>Saga definition class (steps, compensation, timeouts)</li>
- *   <li>Saga state class (immutable record for saga state)</li>
- *   <li>Saga executor (registers with SagaEngine)</li>
+ *   <li>{@code public synchronized FlowExecutionPlan initialize()} —
+ *       lazy-builds and compiles the {@link
+ *       eu.exeris.kernel.spi.flow.model.FlowDefinition} via
+ *       {@code flowEngine.plans().newDefinition(NAME).step(...).step(...)
+ *       .transition(...).build()}; idempotent.</li>
+ *   <li>{@code public void schedule(FlowContext ctx)} — invokes
+ *       {@code initialize()} then hands the plan + context to
+ *       {@code flowEngine.scheduler().schedule(...)}.</li>
+ *   <li>One {@code protected FlowOutcome <stepName>(FlowContext)} method
+ *       per declared {@link SagaStepMetadata}, plus one matching
+ *       {@code compensate<StepName>} when the step declares a
+ *       compensation.</li>
  * </ul>
+ * <p>
+ * Transitions are emitted as a strict linear chain in the order steps
+ * appear in {@code SagaMetadata.steps()} ({@code transition(0,
+ * 1).transition(1, 2)...}). The {@link SagaStepMetadata#order()} field
+ * is <b>not</b> consulted — callers wanting non-list ordering must
+ * sort their step list before passing it to the AST. The flow
+ * {@code timeoutDuration} is parsed once from the saga's ISO-8601
+ * timeout string at class-init time via
+ * {@link java.time.Duration#parse(CharSequence)} and pinned to a
+ * {@code static final long TIMEOUT_NANOS}; {@code maxRetries} comes
+ * directly from the metadata.
+ * <p>
+ * The legacy generator's saga DSL (SagaBuilder / SagaEngine / step-name
+ * pattern dispatch / nested {@code State} record) is dropped. The new
+ * skeleton is much smaller; downstream consumers compose real saga
+ * behaviour by subclassing rather than by populating a state record.
  *
- * @implNote Emission is JavaPoet-based (ADR-015). The nested {@code State}
- * record uses {@link TypeSpec#recordBuilder(String)} from Palantir's JavaPoet
- * fork (Square's archived 1.13.0 has no record support).
+ * @implNote Emission is JavaPoet-based (ADR-015).
  *
  * @author Exeris Team
  * @since 0.1.0
- * @see eu.exeris.kernel.flow.SagaEngine
  */
 public class KernelSagaGenerator implements KernelArtifactGenerator {
 
-    private static final ClassName UUID = ClassName.get("java.util", "UUID");
-    private static final ClassName INSTANT = ClassName.get("java.time", "Instant");
-    private static final ClassName DURATION = ClassName.get("java.time", "Duration");
-    private static final ClassName MAP = ClassName.get("java.util", "Map");
-    private static final ClassName OPTIONAL = ClassName.get("java.util", "Optional");
-    private static final ClassName HASH_MAP = ClassName.get("java.util", "HashMap");
     private static final ClassName SLF4J_LOGGER = ClassName.get("org.slf4j", "Logger");
     private static final ClassName SLF4J_LOGGER_FACTORY = ClassName.get("org.slf4j", "LoggerFactory");
-    private static final ClassName OBJECT_MAPPER = ClassName.get("tools.jackson.databind", "ObjectMapper");
-    private static final ClassName JSON_MAPPER = ClassName.get("tools.jackson.databind.json", "JsonMapper");
-    private static final ClassName JSON_NODE = ClassName.get("tools.jackson.databind", "JsonNode");
-    private static final ClassName SAGA_ENGINE = ClassName.get("eu.exeris.kernel.flow", "SagaEngine");
-    private static final ClassName SAGA_BUILDER = ClassName.get("eu.exeris.kernel.flow", "SagaBuilder");
-    private static final ClassName SAGA_SNAPSHOT = ClassName.get("eu.exeris.kernel.flow.model", "SagaSnapshot");
-    private static final ClassName STEP_RESULT = ClassName.get("eu.exeris.kernel.flow.model", "StepResult");
-    private static final ClassName EVENT_STORE = ClassName.get("eu.exeris.kernel.events.store", "EventStore");
+    private static final ClassName DURATION = ClassName.get("java.time", "Duration");
+
+    private static final ClassName FLOW_ENGINE =
+            ClassName.get("eu.exeris.kernel.spi.flow", "FlowEngine");
+    private static final ClassName FLOW_EXECUTION_PLAN =
+            ClassName.get("eu.exeris.kernel.spi.flow.model", "FlowExecutionPlan");
+    private static final ClassName FLOW_DEFINITION_BUILDER =
+            ClassName.get("eu.exeris.kernel.spi.flow", "FlowDefinitionBuilder");
+    private static final ClassName FLOW_CONTEXT =
+            ClassName.get("eu.exeris.kernel.spi.flow.model", "FlowContext");
+    private static final ClassName FLOW_OUTCOME =
+            ClassName.get("eu.exeris.kernel.spi.flow.model", "FlowOutcome");
 
     @Override
     public GeneratedFile generate(DomainMetadata metadata) {
-        if (!metadata.isSaga()) {
+        if (!metadata.isSaga() || metadata.sagaMetadata() == null) {
             return null;
         }
-
         SagaMetadata saga = metadata.sagaMetadata();
+        List<SagaStepMetadata> steps = stepsOrPlaceholder(saga);
+
+        assertDistinctMethodNames(metadata.entityName(), steps);
+
         String packageName = metadata.packageName().replace(".domain", ".saga");
-        String sagaName = saga.name() != null ? saga.name() : metadata.entityName() + "Saga";
-        String className = sagaName;
         String entity = metadata.entityName();
-
-        ClassName entityType = ClassName.get(metadata.packageName(), entity);
-        ClassName repositoryType = ClassName.get(
-                metadata.packageName().replace(".domain", ".repository"), entity + "Repository");
+        String sagaName = saga.name() != null && !saga.name().isBlank()
+                ? saga.name() : entity + "Saga";
+        String className = sagaName.endsWith("Flow") ? sagaName : sagaName + "Flow";
         ClassName selfType = ClassName.get(packageName, className);
-        ClassName stateType = ClassName.get(packageName, className, "State");
 
-        String timeout = saga.timeout() != null ? saga.timeout() : "PT30M";
+        String timeoutIso = saga.timeout() != null && !saga.timeout().isBlank()
+                ? saga.timeout() : "PT30M";
+        int maxRetries = saga.maxRetries() > 0 ? saga.maxRetries() : 3;
 
         TypeSpec.Builder builder = KernelScaffold.publicClass(className)
-                .addJavadoc("Saga orchestration for $L.\n", entity);
-        if (saga.description() != null && !saga.description().isBlank()) {
-            builder.addJavadoc("<p>$L\n", saga.description());
-        }
-        builder.addJavadoc("\n")
-                .addJavadoc("<p>Timeout: $L\n", timeout)
-                .addJavadoc("<p>Max retries: $L\n", saga.maxRetries())
-                .addJavadoc("<p>Compensation: $L\n", saga.compensationStrategy())
-                .addJavadoc("<p>Generated by Exeris Codegen. DO NOT EDIT.\n")
-                .addJavadoc("\n")
-                .addJavadoc("@see $L\n", metadata.fullyQualifiedName())
-                .addJavadoc("@see SagaEngine\n");
-
-        builder.addField(FieldSpec.builder(SLF4J_LOGGER, "LOG",
-                        Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
-                .initializer("$T.getLogger($T.class)", SLF4J_LOGGER_FACTORY, selfType)
-                .build());
-        builder.addField(FieldSpec.builder(String.class, "SAGA_NAME",
-                        Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
-                .initializer("$S", sagaName)
-                .build());
-        builder.addField(FieldSpec.builder(OBJECT_MAPPER, "MAPPER",
-                        Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
-                .initializer("$T.builder().build()", JSON_MAPPER)
-                .build());
-        builder.addField(FieldSpec.builder(DURATION, "TIMEOUT",
-                        Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
-                .initializer("$T.parse($S)", DURATION, timeout)
-                .build());
-
-        builder.addField(FieldSpec.builder(SAGA_ENGINE, "sagaEngine", Modifier.PRIVATE, Modifier.FINAL).build());
-        builder.addField(FieldSpec.builder(EVENT_STORE, "eventStore", Modifier.PRIVATE, Modifier.FINAL).build());
-        builder.addField(FieldSpec.builder(repositoryType, "repository", Modifier.PRIVATE, Modifier.FINAL).build());
+                .addJavadoc("Generated saga skeleton for $L.\n", entity)
+                .addJavadoc("<p>Subclass and override the {@code protected} step methods to\n")
+                .addJavadoc("provide real business logic. The default body for every step\n")
+                .addJavadoc("(action and compensation) logs and returns\n")
+                .addJavadoc("{@link $T#CONTINUE}.\n", FLOW_OUTCOME)
+                .addJavadoc("<p><b>DO NOT EDIT</b> - Regenerate from domain model.\n")
+                .addField(FieldSpec.builder(SLF4J_LOGGER, "LOG",
+                                Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                        .initializer("$T.getLogger($T.class)", SLF4J_LOGGER_FACTORY, selfType)
+                        .build())
+                .addField(FieldSpec.builder(String.class, "DEFINITION_NAME",
+                                Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                        .initializer("$S", sagaName)
+                        .build())
+                .addField(FieldSpec.builder(TypeName.LONG, "TIMEOUT_NANOS",
+                                Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                        .initializer("$T.parse($S).toNanos()", DURATION, timeoutIso)
+                        .build())
+                .addField(FieldSpec.builder(TypeName.INT, "MAX_RETRIES",
+                                Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                        .initializer("$L", maxRetries)
+                        .build())
+                .addField(FieldSpec.builder(FLOW_ENGINE, "flowEngine",
+                        Modifier.PRIVATE, Modifier.FINAL).build())
+                .addField(FieldSpec.builder(FLOW_EXECUTION_PLAN, "plan",
+                        Modifier.PRIVATE, Modifier.VOLATILE).build());
 
         builder.addMethod(MethodSpec.constructorBuilder()
                 .addModifiers(Modifier.PUBLIC)
-                .addParameter(SAGA_ENGINE, "sagaEngine")
-                .addParameter(EVENT_STORE, "eventStore")
-                .addParameter(repositoryType, "repository")
-                .addStatement("this.sagaEngine = sagaEngine")
-                .addStatement("this.eventStore = eventStore")
-                .addStatement("this.repository = repository")
-                .addStatement("registerSaga()")
+                .addParameter(FLOW_ENGINE, "flowEngine")
+                .addStatement("this.flowEngine = flowEngine")
                 .build());
 
-        builder.addType(buildStateRecord(stateType));
-
-        List<SagaStepMetadata> steps = saga.hasSteps() ? saga.steps() : getEntityDefaultSteps(entity);
-
-        builder.addMethod(buildRegisterSagaMethod(saga, steps));
+        builder.addMethod(buildInitialize(steps));
+        builder.addMethod(buildSchedule());
 
         for (SagaStepMetadata step : steps) {
-            builder.addMethod(buildStepHandler(step, entity, entityType));
+            builder.addMethod(buildStepAction(step));
+            if (hasCompensation(step)) {
+                builder.addMethod(buildStepCompensation(step));
+            }
         }
-
-        for (SagaStepMetadata step : steps) {
-            builder.addMethod(buildCompensationHandler(step, entity, entityType));
-        }
-
-        builder.addMethod(buildStartByIdMethod(stateType));
-        builder.addMethod(buildStartByEntityMethod(entity, entityType));
-        builder.addMethod(buildGetStatusMethod());
-
-        builder.addMethod(buildGetContextValueMethod());
-        builder.addMethod(buildGetContextUUIDMethod());
 
         return new GeneratedFile(packageName, className,
                 KernelScaffold.render(packageName, builder.build()), ArtifactType.SAGA);
     }
 
-    private TypeSpec buildStateRecord(ClassName stateType) {
-        MethodSpec.Builder ctor = MethodSpec.constructorBuilder()
-                .addParameter(UUID, "sagaId")
-                .addParameter(UUID, "entityId")
-                .addParameter(UUID, "tenantId")
-                .addParameter(String.class, "currentStep")
-                .addParameter(INSTANT, "startedAt")
-                .addParameter(ParameterizedTypeName.get(MAP,
-                        ClassName.get(String.class), ClassName.get(Object.class)), "stepData");
-
-        MethodSpec initial = MethodSpec.methodBuilder("initial")
-                .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-                .returns(stateType)
-                .addParameter(UUID, "entityId")
-                .addParameter(UUID, "tenantId")
-                .addCode(CodeBlock.builder()
-                        .add("return new $T(\n", stateType)
-                        .add("        $T.randomUUID(),\n", UUID)
-                        .add("        entityId,\n")
-                        .add("        tenantId,\n")
-                        .add("        $S,\n", "start")
-                        .add("        $T.now(),\n", INSTANT)
-                        .add("        $T.of()\n", MAP)
-                        .add(");\n")
-                        .build())
-                .build();
-
-        MethodSpec withStep = MethodSpec.methodBuilder("withStep")
-                .addModifiers(Modifier.PUBLIC)
-                .returns(stateType)
-                .addParameter(String.class, "step")
-                .addStatement("return new $T(sagaId, entityId, tenantId, step, startedAt, stepData)", stateType)
-                .build();
-
-        MethodSpec withData = MethodSpec.methodBuilder("withData")
-                .addModifiers(Modifier.PUBLIC)
-                .returns(stateType)
-                .addParameter(String.class, "key")
-                .addParameter(Object.class, "value")
-                .addStatement("var newData = new $T<>(stepData)", HASH_MAP)
-                .addStatement("newData.put(key, value)")
-                .addStatement("return new $T(sagaId, entityId, tenantId, currentStep, startedAt, $T.copyOf(newData))",
-                        stateType, MAP)
-                .build();
-
-        return TypeSpec.recordBuilder("State")
-                .addModifiers(Modifier.PUBLIC)
-                .addJavadoc("Immutable saga state record.\n")
-                .addJavadoc("<p>Persisted to saga store for recovery.\n")
-                .recordConstructor(ctor.build())
-                .addMethod(initial)
-                .addMethod(withStep)
-                .addMethod(withData)
-                .build();
-    }
-
-    private MethodSpec buildRegisterSagaMethod(SagaMetadata saga, List<SagaStepMetadata> steps) {
-        CodeBlock.Builder body = CodeBlock.builder()
-                .addStatement("LOG.info($S, SAGA_NAME)", "Registering saga: {}")
-                .add("\n")
-                .add("var definition = $T.create(SAGA_NAME)\n", SAGA_BUILDER)
-                .add("        .timeout(TIMEOUT)\n")
-                .add("        .maxRetries($L)\n", saga.maxRetries());
+    private MethodSpec buildInitialize(List<SagaStepMetadata> steps) {
+        MethodSpec.Builder method = MethodSpec.methodBuilder("initialize")
+                .addModifiers(Modifier.PUBLIC, Modifier.SYNCHRONIZED)
+                .returns(FLOW_EXECUTION_PLAN)
+                .addJavadoc("Lazy-builds and compiles the flow definition. Idempotent — repeat\n")
+                .addJavadoc("calls return the cached plan. Always invoked by\n")
+                .addJavadoc("{@link #schedule(eu.exeris.kernel.spi.flow.model.FlowContext)};\n")
+                .addJavadoc("consumers may also call it explicitly at bootstrap to amortise\n")
+                .addJavadoc("compilation.\n")
+                .addJavadoc("@return the compiled {@link $T} for this saga\n", FLOW_EXECUTION_PLAN)
+                .beginControlFlow("if (plan != null)")
+                .addStatement("return plan")
+                .endControlFlow()
+                .addStatement("$T builder = flowEngine.plans().newDefinition(DEFINITION_NAME)",
+                        FLOW_DEFINITION_BUILDER);
 
         for (SagaStepMetadata step : steps) {
             String stepName = step.name();
-            String stepTimeout = step.timeout() != null ? step.timeout() : "PT1M";
-            body.add("        .step($S)\n", stepName)
-                .add("            .action(this::execute$L)\n", capitalize(stepName))
-                .add("            .compensation(this::compensate$L)\n", capitalize(stepName))
-                .add("            .timeout($T.parse($S))\n", DURATION, stepTimeout);
-            if (step.maxRetries() > 0) {
-                body.add("            .retries($L)\n", step.maxRetries());
+            String methodName = toMethodName(stepName);
+            if (hasCompensation(step)) {
+                String compMethodName = "compensate" + capitalize(methodName);
+                method.addStatement("builder.step($S, this::$L, this::$L)",
+                        stepName, methodName, compMethodName);
+            } else {
+                method.addStatement("builder.step($S, this::$L, null)",
+                        stepName, methodName);
             }
-            body.add("        .and()\n");
         }
 
-        body.add("        .build();\n")
-            .add("\n")
-            .addStatement("sagaEngine.register(definition)");
+        for (int i = 0; i < steps.size() - 1; i++) {
+            method.addStatement("builder.transition($L, $L)", i, i + 1);
+        }
 
-        return MethodSpec.methodBuilder("registerSaga")
-                .addJavadoc("Registers saga definition with the engine.\n")
-                .addModifiers(Modifier.PRIVATE)
+        method.addStatement("builder.timeoutDuration(TIMEOUT_NANOS).maxRetries(MAX_RETRIES)")
+                .addStatement("this.plan = flowEngine.plans().compile(builder.build())")
+                .addStatement("return this.plan");
+
+        return method.build();
+    }
+
+    private MethodSpec buildSchedule() {
+        return MethodSpec.methodBuilder("schedule")
+                .addModifiers(Modifier.PUBLIC)
                 .returns(TypeName.VOID)
-                .addCode(body.build())
+                .addParameter(FLOW_CONTEXT, "context")
+                .addJavadoc("Schedules this saga instance on the flow scheduler. Calls\n")
+                .addJavadoc("{@link #initialize()} on first use so the plan is compiled lazily.\n")
+                .addJavadoc("@param context the per-instance flow context (instance UUID,\n")
+                .addJavadoc("       definition name, starting step, state, timeout)\n")
+                .addStatement("flowEngine.scheduler().schedule(initialize(), context)")
                 .build();
     }
 
-    private MethodSpec buildStepHandler(SagaStepMetadata step, String entity, ClassName entityType) {
-        String stepName = step.name();
-        String methodName = "execute" + capitalize(stepName);
-
-        MethodSpec.Builder method = MethodSpec.methodBuilder(methodName)
-                .addJavadoc("Executes step: $L\n", stepName);
-        if (step.description() != null && !step.description().isBlank()) {
-            method.addJavadoc("<p>$L\n", step.description());
-        }
-        method.addModifiers(Modifier.PRIVATE)
-                .returns(STEP_RESULT)
-                .addParameter(SAGA_SNAPSHOT, "snapshot")
-                .addStatement("LOG.debug($S, $S, snapshot.sagaIdMost())",
-                        "Executing step '{}' for saga: {}", stepName)
-                .addCode("\n")
-                .beginControlFlow("try")
-                .addCode(buildStepLogic(stepName, entity, entityType))
-                .addStatement("return $T.CONTINUE", STEP_RESULT)
-                .nextControlFlow("catch ($T e)", Exception.class)
-                .addStatement("LOG.error($S, $S, e)", "Step '{}' failed for saga", stepName)
-                .addStatement("return $T.FAIL", STEP_RESULT)
-                .endControlFlow();
-
-        return method.build();
-    }
-
-    private CodeBlock buildStepLogic(String stepName, String entity, ClassName entityType) {
-        String lowerStep = stepName.toLowerCase();
-        String lowerEntity = entity.toLowerCase();
-
-        if (lowerStep.contains("validate")) {
-            return CodeBlock.builder()
-                    .add("// Extract and validate entity\n")
-                    .addStatement("$T entityId = getContextUUID(snapshot, $S)", UUID, "entityId")
-                    .beginControlFlow("if (entityId == null)")
-                    .addStatement("throw new $T($S)", IllegalArgumentException.class, "Entity ID is required")
-                    .endControlFlow()
-                    .add("\n")
-                    .add("// Verify entity exists\n")
-                    .addStatement("$T<$T> entity = repository.findById(entityId)", OPTIONAL, entityType)
-                    .beginControlFlow("if (entity.isEmpty())")
-                    .addStatement("throw new $T($S + entityId)", IllegalStateException.class, entity + " not found: ")
-                    .endControlFlow()
-                    .addStatement("LOG.info($S, entityId)", "Validated " + lowerEntity + ": {}")
-                    .add("\n")
-                    .build();
-        }
-        if (lowerStep.contains("execute") || lowerStep.contains("logic") || lowerStep.contains("process")) {
-            return CodeBlock.builder()
-                    .add("// Load entity and execute business logic\n")
-                    .addStatement("$T entityId = getContextUUID(snapshot, $S)", UUID, "entityId")
-                    .add("$T entity = repository.findById(entityId)\n", entityType)
-                    .addStatement("        .orElseThrow(() -> new $T($S + entityId))",
-                            IllegalStateException.class, entity + " not found: ")
-                    .add("\n")
-                    .add("// Execute domain-specific business logic\n")
-                    .addStatement("LOG.info($S, entityId)", "Executing business logic for " + lowerEntity + ": {}")
-                    .add("// entity.activate(); // Example: activate the entity\n")
-                    .add("// entity.setStatus(Status.PROCESSING);\n")
-                    .add("\n")
-                    .build();
-        }
-        if (lowerStep.contains("persist") || lowerStep.contains("save")) {
-            return CodeBlock.builder()
-                    .add("// Persist entity changes\n")
-                    .addStatement("$T entityId = getContextUUID(snapshot, $S)", UUID, "entityId")
-                    .add("$T entity = repository.findById(entityId)\n", entityType)
-                    .addStatement("        .orElseThrow(() -> new $T($S + entityId))",
-                            IllegalStateException.class, entity + " not found: ")
-                    .add("\n")
-                    .add("// Save updated entity\n")
-                    .addStatement("repository.save(entity)")
-                    .addStatement("LOG.info($S, entityId)", "Persisted " + lowerEntity + ": {}")
-                    .add("\n")
-                    .build();
-        }
-        if (lowerStep.contains("notify") || lowerStep.contains("email") || lowerStep.contains("welcome")) {
-            return CodeBlock.builder()
-                    .add("// Send completion notification\n")
-                    .addStatement("$T entityId = getContextUUID(snapshot, $S)", UUID, "entityId")
-                    .addStatement("LOG.info($S, entityId)", "Sending notification for " + lowerEntity + ": {}")
-                    .add("\n")
-                    .add("// Notification logic - fire and forget, failures should not rollback saga\n")
-                    .add("// notificationService.sendWelcomeEmail(entityId);\n")
-                    .add("\n")
-                    .build();
-        }
-        if (lowerStep.contains("provision") || lowerStep.contains("schema")) {
-            return CodeBlock.builder()
-                    .add("// Provision resources\n")
-                    .addStatement("$T entityId = getContextUUID(snapshot, $S)", UUID, "entityId")
-                    .addStatement("$T tenantId = getContextUUID(snapshot, $S)", UUID, "tenantId")
-                    .addStatement("LOG.info($S, entityId, tenantId)",
-                            "Provisioning resources for " + lowerEntity + ": {} in tenant: {}")
-                    .add("\n")
-                    .add("// Resource provisioning logic\n")
-                    .add("// schemaService.provision(tenantId);\n")
-                    .add("\n")
-                    .build();
-        }
-        return CodeBlock.builder()
-                .add("// Execute step: $L\n", stepName)
-                .addStatement("$T entityId = getContextUUID(snapshot, $S)", UUID, "entityId")
-                .addStatement("LOG.info($S, entityId)",
-                        "Executing step '" + stepName + "' for " + lowerEntity + ": {}")
-                .add("\n")
+    private MethodSpec buildStepAction(SagaStepMetadata step) {
+        return MethodSpec.methodBuilder(toMethodName(step.name()))
+                .addModifiers(Modifier.PROTECTED)
+                .returns(FLOW_OUTCOME)
+                .addParameter(FLOW_CONTEXT, "context")
+                .addJavadoc("Action for saga step {@code $L}.\n", step.name())
+                .addJavadoc("<p>Default implementation logs and returns {@link $T#CONTINUE};\n", FLOW_OUTCOME)
+                .addJavadoc("override in a subclass to add real business logic.\n")
+                .addStatement("LOG.debug($S, DEFINITION_NAME, $S, context.currentStep())",
+                        "[{}] step '{}' at index {} — override to implement", step.name())
+                .addStatement("return $T.CONTINUE", FLOW_OUTCOME)
                 .build();
     }
 
-    private MethodSpec buildCompensationHandler(SagaStepMetadata step, String entity, ClassName entityType) {
-        String stepName = step.name();
-        String methodName = "compensate" + capitalize(stepName);
-
-        return MethodSpec.methodBuilder(methodName)
-                .addJavadoc("Compensates step: $L\n", stepName)
-                .addJavadoc("<p>Called on saga failure to rollback this step.\n")
-                .addModifiers(Modifier.PRIVATE)
-                .returns(STEP_RESULT)
-                .addParameter(SAGA_SNAPSHOT, "snapshot")
-                .addStatement("LOG.warn($S, $S)", "Compensating step '{}' for saga", stepName)
-                .addCode("\n")
-                .beginControlFlow("try")
-                .addCode(buildCompensationLogic(stepName, entity, entityType))
-                .addStatement("return $T.CONTINUE", STEP_RESULT)
-                .nextControlFlow("catch ($T e)", Exception.class)
-                .addStatement("LOG.error($S, $S, e)", "Compensation '{}' failed", stepName)
-                .addStatement("return $T.FAIL", STEP_RESULT)
-                .endControlFlow()
+    private MethodSpec buildStepCompensation(SagaStepMetadata step) {
+        String compensationName = "compensate" + capitalize(toMethodName(step.name()));
+        return MethodSpec.methodBuilder(compensationName)
+                .addModifiers(Modifier.PROTECTED)
+                .returns(FLOW_OUTCOME)
+                .addParameter(FLOW_CONTEXT, "context")
+                .addJavadoc("Compensation for saga step {@code $L}.\n", step.name())
+                .addJavadoc("<p>Default implementation logs and returns {@link $T#CONTINUE};\n", FLOW_OUTCOME)
+                .addJavadoc("override in a subclass to add real rollback logic.\n")
+                .addStatement("LOG.debug($S, DEFINITION_NAME, $S, context.currentStep())",
+                        "[{}] compensating step '{}' at index {} — override to implement", step.name())
+                .addStatement("return $T.CONTINUE", FLOW_OUTCOME)
                 .build();
     }
 
-    private CodeBlock buildCompensationLogic(String stepName, String entity, ClassName entityType) {
-        String lowerStep = stepName.toLowerCase();
-        String lowerEntity = entity.toLowerCase();
-
-        if (lowerStep.contains("validate")) {
-            return CodeBlock.builder()
-                    .add("// Validation has no side effects - nothing to compensate\n")
-                    .addStatement("$T entityId = getContextUUID(snapshot, $S)", UUID, "entityId")
-                    .addStatement("LOG.info($S, entityId)",
-                            "Validation compensation (no-op) for " + lowerEntity + ": {}")
-                    .add("\n")
-                    .build();
+    private List<SagaStepMetadata> stepsOrPlaceholder(SagaMetadata saga) {
+        if (saga.steps() != null && !saga.steps().isEmpty()) {
+            return saga.steps();
         }
-        if (lowerStep.contains("execute") || lowerStep.contains("logic") || lowerStep.contains("process")) {
-            return CodeBlock.builder()
-                    .add("// Rollback business logic changes\n")
-                    .addStatement("$T entityId = getContextUUID(snapshot, $S)", UUID, "entityId")
-                    .addStatement("$T entity = repository.findById(entityId).orElse(null)", entityType)
-                    .beginControlFlow("if (entity != null)")
-                    .add("// Revert entity to previous state\n")
-                    .add("// entity.setStatus(Status.PENDING);\n")
-                    .addStatement("repository.save(entity)")
-                    .addStatement("LOG.info($S, entityId)",
-                            "Rolled back business logic for " + lowerEntity + ": {}")
-                    .endControlFlow()
-                    .add("\n")
-                    .build();
-        }
-        if (lowerStep.contains("persist") || lowerStep.contains("save")) {
-            return CodeBlock.builder()
-                    .add("// Delete the persisted entity (hard delete on saga failure)\n")
-                    .addStatement("$T entityId = getContextUUID(snapshot, $S)", UUID, "entityId")
-                    .beginControlFlow("if (entityId != null)")
-                    .addStatement("repository.deleteById(entityId)")
-                    .addStatement("LOG.info($S, entityId)",
-                            "Deleted " + lowerEntity + " on compensation: {}")
-                    .endControlFlow()
-                    .add("\n")
-                    .build();
-        }
-        if (lowerStep.contains("notify") || lowerStep.contains("email") || lowerStep.contains("welcome")) {
-            return CodeBlock.builder()
-                    .add("// Notifications cannot be recalled - log compensation event\n")
-                    .addStatement("$T entityId = getContextUUID(snapshot, $S)", UUID, "entityId")
-                    .addStatement("LOG.warn($S, entityId)",
-                            "Notification was sent for " + lowerEntity + ": {} - cannot be undone")
-                    .add("// Optionally publish a compensation event for audit\n")
-                    .add("// eventStore.append(entityId, new NotificationCompensationEvent(entityId));\n")
-                    .add("\n")
-                    .build();
-        }
-        if (lowerStep.contains("provision") || lowerStep.contains("schema")) {
-            return CodeBlock.builder()
-                    .add("// Rollback provisioned resources\n")
-                    .addStatement("$T tenantId = getContextUUID(snapshot, $S)", UUID, "tenantId")
-                    .beginControlFlow("if (tenantId != null)")
-                    .addStatement("LOG.info($S, tenantId)", "Rolling back provisioning for tenant: {}")
-                    .add("// schemaService.deprovision(tenantId);\n")
-                    .endControlFlow()
-                    .add("\n")
-                    .build();
-        }
-        return CodeBlock.builder()
-                .add("// Generic compensation for step: $L\n", stepName)
-                .addStatement("$T entityId = getContextUUID(snapshot, $S)", UUID, "entityId")
-                .addStatement("LOG.info($S, entityId)",
-                        "Compensating step '" + stepName + "' for " + lowerEntity + ": {}")
-                .add("\n")
-                .build();
+        // FlowDefinitionBuilder requires at least one step; if the metadata
+        // declares none, emit a single placeholder so the generated class is
+        // at least compilable and schedulable.
+        return List.of(SagaStepMetadata.simple("process", 0, null));
     }
 
-    private MethodSpec buildStartByIdMethod(ClassName stateType) {
-        TypeName mapStringString = ParameterizedTypeName.get(MAP,
-                ClassName.get(String.class), ClassName.get(String.class));
-        return MethodSpec.methodBuilder("start")
-                .addJavadoc("Starts a new saga instance.\n")
-                .addJavadoc("\n")
-                .addJavadoc("@param entityId the entity ID triggering this saga\n")
-                .addJavadoc("@param tenantId the tenant context\n")
-                .addJavadoc("@return saga execution ID\n")
-                .addModifiers(Modifier.PUBLIC)
-                .returns(UUID)
-                .addParameter(UUID, "entityId")
-                .addParameter(UUID, "tenantId")
-                .addStatement("LOG.info($S, SAGA_NAME, entityId)",
-                        "Starting saga '{}' for entity: {}")
-                .addCode("\n")
-                .addStatement("$T initialState = $T.initial(entityId, tenantId)", stateType, stateType)
-                .addCode("\n")
-                .addCode(CodeBlock.builder()
-                        .add("return sagaEngine.start(\n")
-                        .add("        SAGA_NAME,\n")
-                        .add("        initialState.sagaId(),\n")
-                        .add("        $T.of(\n", MAP)
-                        .add("                $S, entityId.toString(),\n", "entityId")
-                        .add("                $S, tenantId.toString(),\n", "tenantId")
-                        .add("                $S, initialState.startedAt().toString()\n", "startedAt")
-                        .add("        )\n")
-                        .add(");\n")
-                        .build())
-                .build();
-    }
-
-    private MethodSpec buildStartByEntityMethod(String entity, ClassName entityType) {
-        MethodSpec.Builder method = MethodSpec.methodBuilder("start")
-                .addJavadoc("Starts saga from an entity.\n")
-                .addModifiers(Modifier.PUBLIC)
-                .returns(UUID)
-                .addParameter(entityType, "entity");
-        if (entity.equals("Tenant")) {
-            method.addStatement("return start(entity.getId(), entity.getId())");
-        } else {
-            method.addStatement("return start(entity.getId(), entity.getTenantId())");
-        }
-        return method.build();
-    }
-
-    private MethodSpec buildGetStatusMethod() {
-        return MethodSpec.methodBuilder("getStatus")
-                .addJavadoc("Gets saga status.\n")
-                .addJavadoc("\n")
-                .addJavadoc("@param sagaId the saga execution ID\n")
-                .addJavadoc("@return the snapshot, or {@code null} if no saga is registered for the given ID\n")
-                .addModifiers(Modifier.PUBLIC)
-                .returns(SAGA_SNAPSHOT)
-                .addParameter(UUID, "sagaId")
-                .addStatement("return sagaEngine.getSnapshot(sagaId).orElse(null)")
-                .build();
-    }
-
-    private MethodSpec buildGetContextValueMethod() {
-        return MethodSpec.methodBuilder("getContextValue")
-                .addJavadoc("Extracts a string value from the saga context (JSON stored in opaqueState).\n")
-                .addModifiers(Modifier.PRIVATE)
-                .returns(String.class)
-                .addParameter(SAGA_SNAPSHOT, "snapshot")
-                .addParameter(String.class, "key")
-                .addStatement("byte[] opaqueState = snapshot.opaqueState()")
-                .beginControlFlow("if (opaqueState == null || opaqueState.length == 0)")
-                .addStatement("return null")
-                .endControlFlow()
-                .beginControlFlow("try")
-                .addStatement("$T root = MAPPER.readTree(opaqueState)", JSON_NODE)
-                .addStatement("$T node = root.get(key)", JSON_NODE)
-                .addStatement("return node != null && !node.isNull() ? node.asText() : null")
-                .nextControlFlow("catch ($T e)", Exception.class)
-                .addStatement("LOG.warn($S, key, e.getMessage())",
-                        "Failed to parse context value '{}': {}")
-                .addStatement("return null")
-                .endControlFlow()
-                .build();
-    }
-
-    private MethodSpec buildGetContextUUIDMethod() {
-        return MethodSpec.methodBuilder("getContextUUID")
-                .addJavadoc("Extracts a UUID value from the saga context.\n")
-                .addModifiers(Modifier.PRIVATE)
-                .returns(UUID)
-                .addParameter(SAGA_SNAPSHOT, "snapshot")
-                .addParameter(String.class, "key")
-                .addStatement("String value = getContextValue(snapshot, key)")
-                .beginControlFlow("if (value == null || value.isBlank())")
-                .addStatement("return null")
-                .endControlFlow()
-                .beginControlFlow("try")
-                .addStatement("return $T.fromString(value)", UUID)
-                .nextControlFlow("catch ($T e)", IllegalArgumentException.class)
-                .addStatement("LOG.warn($S, key, value)", "Invalid UUID in context '{}': {}")
-                .addStatement("return null")
-                .endControlFlow()
-                .build();
+    private boolean hasCompensation(SagaStepMetadata step) {
+        return step.compensation() != null && !step.compensation().isBlank();
     }
 
     /**
-     * Generates default saga steps for an entity when no @SagaStep methods are defined.
-     *
-     * <p>These are generic template steps that the developer MUST implement.
-     * The steps follow a standard saga pattern:
-     * <ol>
-     *   <li>validate - Validate input and preconditions</li>
-     *   <li>execute - Execute the main business logic</li>
-     *   <li>persist - Persist changes to the database</li>
-     *   <li>notify - Send notifications/events</li>
-     * </ol>
-     *
-     * @param entity the entity name (used in step descriptions)
-     * @return list of default saga steps
+     * Asserts that every emitted method name — the per-step action AND
+     * (where declared) the compensation — is unique across the generated
+     * class. Bare step-name uniqueness is not enough:
+     * <ul>
+     *   <li>Two raw names that normalise to the same Java identifier
+     *       (e.g.\ {@code "my-step"} and {@code "my_step"} both become
+     *       {@code myStep}) would emit two methods with the same
+     *       signature.</li>
+     *   <li>A step literally named {@code "compensate-foo"} (no
+     *       compensation) emits {@code compensateFoo()}; a separate step
+     *       {@code "foo"} <i>with</i> a compensation also emits
+     *       {@code compensateFoo()} — a cross-category clash the
+     *       raw-name check would miss.</li>
+     * </ul>
+     * Both cases produce the same outcome at codegen time: JavaPoet
+     * throws a generic duplicate-method error with no saga context.
+     * Failing fast here gives the caller the actual offending names.
      */
-    private List<SagaStepMetadata> getEntityDefaultSteps(String entity) {
-        return List.of(
-                SagaStepMetadata.builder("validate" + entity, 0)
-                        .description("Validate " + entity + " input and preconditions")
-                        .command("Validate" + entity + "Command")
-                        .compensation("Revert" + entity + "ValidationCommand")
-                        .timeout("PT30S")
-                        .build(),
-                SagaStepMetadata.builder("execute" + entity + "Logic", 1)
-                        .description("Execute main " + entity + " business logic")
-                        .command("Execute" + entity + "Command")
-                        .compensation("Rollback" + entity + "Command")
-                        .timeout("PT2M")
-                        .build(),
-                SagaStepMetadata.builder("persist" + entity, 2)
-                        .description("Persist " + entity + " changes to database")
-                        .command("Persist" + entity + "Command")
-                        .compensation("Delete" + entity + "Command")
-                        .timeout("PT1M")
-                        .build(),
-                SagaStepMetadata.builder("notify" + entity + "Complete", 3)
-                        .description("Send " + entity + " completion notifications")
-                        .command("Notify" + entity + "Command")
-                        .compensation("LogNotificationSkipped")
-                        .timeout("PT30S")
-                        .build()
-        );
+    private void assertDistinctMethodNames(String entity, List<SagaStepMetadata> steps) {
+        List<String> emitted = new ArrayList<>(steps.size() * 2);
+        for (SagaStepMetadata step : steps) {
+            String action = toMethodName(step.name());
+            emitted.add(action);
+            if (hasCompensation(step)) {
+                emitted.add("compensate" + capitalize(action));
+            }
+        }
+        List<String> duplicates = emitted.stream()
+                .collect(Collectors.groupingBy(n -> n, Collectors.counting()))
+                .entrySet().stream()
+                .filter(e -> e.getValue() > 1)
+                .map(Map.Entry::getKey)
+                .sorted()
+                .toList();
+        if (!duplicates.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "Saga step method-name collision on entity '" + entity + "': " + duplicates
+                            + ". Each step (and its compensation) must produce a unique "
+                            + "Java method identifier after name normalisation.");
+        }
+    }
+
+    private String toMethodName(String name) {
+        if (name == null || name.isBlank()) return "step";
+        String[] parts = name.split("[-_]+");
+        StringBuilder sb = new StringBuilder(name.length());
+        boolean first = true;
+        for (String part : parts) {
+            if (part.isEmpty()) continue;
+            if (first) {
+                sb.append(Character.toLowerCase(part.charAt(0))).append(part.substring(1));
+                first = false;
+            } else {
+                sb.append(Character.toUpperCase(part.charAt(0))).append(part.substring(1));
+            }
+        }
+        return sb.length() == 0 ? "step" : sb.toString();
     }
 
     private String capitalize(String s) {

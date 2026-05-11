@@ -6,6 +6,8 @@ import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 import eu.exeris.sdk.sourcemodel.ast.GraphEdgeMetadata;
 import eu.exeris.sdk.sourcemodel.ast.GraphMetadata;
+import eu.exeris.sdk.sourcemodel.ast.SagaMetadata;
+import eu.exeris.sdk.sourcemodel.ast.SagaStepMetadata;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.java.kernel.KernelGeneratorStrategy;
 import org.junit.jupiter.api.DisplayName;
@@ -24,12 +26,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * that no longer exist — this test does.
  *
  * <p>The strategy currently registers the SPI-aligned subset: Handler,
- * Service, Repository, Event, EventHandler, GraphSync, Flyway, OpenAPI.
- * Generated Java imports {@code eu.exeris.kernel.spi.http.*},
+ * Service, Repository, Event, EventHandler, GraphSync, Saga, Flyway,
+ * OpenAPI. Generated Java imports {@code eu.exeris.kernel.spi.http.*},
  * {@code eu.exeris.kernel.spi.memory.*}, {@code eu.exeris.kernel.spi.events.*},
- * and {@code eu.exeris.kernel.spi.graph.*}; the real
- * {@code exeris-kernel-spi:0.7.0} artifact (plus Jackson 3) is on the test
- * classpath via {@code exeris-tooling-bom}.
+ * {@code eu.exeris.kernel.spi.graph.*}, and {@code eu.exeris.kernel.spi.flow.*};
+ * the real {@code exeris-kernel-spi:0.7.0} artifact (plus Jackson 3) is on
+ * the test classpath via {@code exeris-tooling-bom}.
  */
 @Tag("e2e")
 @Tag("codegen")
@@ -71,6 +73,15 @@ class KernelCodegenCompileTest {
                 .graphMetadata(new GraphMetadata("Order", List.of(),
                         List.of(new GraphEdgeMetadata("tenantId", "Tenant", "OWNED_BY")),
                         List.of()))
+                .sagaMetadata(SagaMetadata.builder("OrderFulfillment")
+                        .timeout("PT45M")
+                        .maxRetries(5)
+                        .steps(List.of(
+                                SagaStepMetadata.builder("reserve-inventory", 0)
+                                        .compensation("restoreInventory")
+                                        .build(),
+                                SagaStepMetadata.simple("send-email", 1, null)))
+                        .build())
                 .build();
 
         List<GeneratedFile> generated = new KernelGeneratorStrategy().generate(metadata);
