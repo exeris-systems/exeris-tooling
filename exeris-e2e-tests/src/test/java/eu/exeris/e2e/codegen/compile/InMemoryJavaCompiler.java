@@ -12,15 +12,19 @@ import javax.tools.StandardJavaFileManager;
 import javax.tools.StandardLocation;
 import javax.tools.ToolProvider;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.IOException;
 import java.io.OutputStream;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 
 /**
  * In-memory wrapper around {@link JavaCompiler} so the e2e suite can verify
@@ -46,6 +50,24 @@ public final class InMemoryJavaCompiler {
         DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
         StandardJavaFileManager standardFileManager =
                 compiler.getStandardFileManager(diagnostics, null, StandardCharsets.UTF_8);
+
+        // Forward the surefire-supplied test classpath to javac explicitly.
+        // The default StandardJavaFileManager search path does not always
+        // inherit java.class.path, so kernel SPI + Jackson 3 jars would be
+        // invisible to the compile-gate otherwise.
+        try {
+            String classpath = System.getProperty("java.class.path");
+            if (classpath != null && !classpath.isEmpty()) {
+                List<File> cpEntries = Arrays.stream(classpath.split(File.pathSeparator))
+                        .map(File::new)
+                        .filter(File::exists)
+                        .toList();
+                standardFileManager.setLocation(StandardLocation.CLASS_PATH, cpEntries);
+            }
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to seed compile-test classpath", e);
+        }
+
         ClassCollector fileManager = new ClassCollector(standardFileManager);
 
         List<JavaFileObject> compilationUnits = new ArrayList<>();

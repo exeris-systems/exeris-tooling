@@ -40,15 +40,30 @@ class KernelCodegenE2ETest {
         private final KernelGeneratorStrategy strategy = new KernelGeneratorStrategy();
 
         @Test
-        @DisplayName("Should generate exactly the SPI-aligned subset (Service, Repository, Migration, OpenAPI)")
+        @DisplayName("Should generate exactly the SPI-aligned subset (Handler, Service, Repository, Migration, OpenAPI)")
         void shouldGenerateCoreArtifacts() {
             List<GeneratedFile> files = strategy.generate(orderMetadata);
             assertThat(files).extracting(GeneratedFile::artifactType)
                     .containsExactlyInAnyOrder(
+                            ArtifactType.CONTROLLER,
                             ArtifactType.SERVICE,
                             ArtifactType.REPOSITORY,
                             ArtifactType.CONFIGURATION,
                             ArtifactType.OPENAPI_SPEC);
+        }
+
+        @Test
+        @DisplayName("Handler emits against Open-Core SPI HttpExchange")
+        void handlerShouldUseSpiHttpExchange() {
+            List<GeneratedFile> files = strategy.generate(orderMetadata);
+            String handler = files.stream().filter(f -> f.artifactType() == ArtifactType.CONTROLLER)
+                    .findFirst().orElseThrow().content();
+            assertThat(handler)
+                    .contains("eu.exeris.kernel.spi.http.HttpExchange")
+                    .contains("eu.exeris.kernel.spi.http.HttpStatus")
+                    .contains("eu.exeris.kernel.spi.memory.LoanedBuffer")
+                    .contains("handleGetAll(HttpExchange exchange)")
+                    .contains("handleCreate(HttpExchange exchange)");
         }
 
         @Test

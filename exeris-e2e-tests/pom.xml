@@ -39,6 +39,25 @@
             <artifactId>exeris-codegen-java</artifactId>
         </dependency>
 
+        <!-- Real Open-Core Kernel SPI on the test classpath: the codegen
+             compile-test verifies emitted code resolves against actual
+             exeris-kernel-spi types instead of legacy local stubs. -->
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-kernel-spi</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Jackson 3 (tools.jackson) on the test classpath: the codegen-
+             emitted Handler parses request bodies via tools.jackson.databind
+             (matching the canonical community-app pattern). Version managed
+             via exeris-tooling-bom (jackson3.version). -->
+        <dependency>
+            <groupId>tools.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <scope>test</scope>
+        </dependency>
+
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
