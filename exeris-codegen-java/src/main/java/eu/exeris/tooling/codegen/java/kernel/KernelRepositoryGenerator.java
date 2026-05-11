@@ -26,7 +26,7 @@ import java.util.Set;
  * Exeris Kernel runtime. Branches on metadata flags (tenantScoped, audited,
  * softDelete, versioned) to extend SELECT/INSERT/UPDATE/DELETE shape.
  *
- * <p>Phase 4 of ADR-015: emission is JavaPoet-based.
+ * @implNote Emission is JavaPoet-based (ADR-015).
  *
  * @author Exeris Team
  * @since 0.1.0

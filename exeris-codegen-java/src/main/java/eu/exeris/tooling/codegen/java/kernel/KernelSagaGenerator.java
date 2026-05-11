@@ -27,8 +27,9 @@ import java.util.List;
  *   <li>Saga executor (registers with SagaEngine)</li>
  * </ul>
  *
- * <p>Phase 4d of ADR-015: emission is JavaPoet-based via Palantir's fork
- * (the nested {@code State} record requires {@link TypeSpec#recordBuilder(String)}).
+ * @implNote Emission is JavaPoet-based (ADR-015). The nested {@code State}
+ * record uses {@link TypeSpec#recordBuilder(String)} from Palantir's JavaPoet
+ * fork (Square's archived 1.13.0 has no record support).
  *
  * @author Exeris Team
  * @since 0.1.0

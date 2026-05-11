@@ -21,7 +21,7 @@ import javax.lang.model.element.Modifier;
  * repository, optionally publishing domain events on lifecycle changes
  * when {@link DomainMetadata#hasEvents()} is true.
  *
- * <p>Phase 4 of ADR-015: emission is JavaPoet-based.
+ * @implNote Emission is JavaPoet-based (ADR-015).
  *
  * @author Exeris Team
  * @since 0.1.0
