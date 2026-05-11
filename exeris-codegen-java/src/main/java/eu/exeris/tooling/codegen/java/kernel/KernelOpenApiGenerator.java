@@ -8,15 +8,16 @@ import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import java.io.IOException;
 
 /**
- * KernelOpenApiGenerator - Adapter dla OpenApiGenerator zgodny z KernelArtifactGenerator.
+ * Kernel OpenAPI Generator.
  *
- * <p>Generuje specyfikację OpenAPI 3.1 dla każdej domeny.
- * Wynikowy plik YAML może być:
+ * <p>Adapter for {@link OpenApiGenerator} that conforms to the
+ * {@link KernelArtifactGenerator} contract. Generates an OpenAPI 3.1
+ * specification per domain. The resulting YAML file can be:
  * <ul>
- *   <li>Serwowany przez Kernel jako `/api/docs/openapi.yaml`</li>
- *   <li>Używany przez Swagger UI</li>
- *   <li>Importowany do Postman/Insomnia</li>
- *   <li>Używany do generowania klientów w innych językach</li>
+ *   <li>served by the Kernel as {@code /api/docs/openapi.yaml}</li>
+ *   <li>consumed by Swagger UI</li>
+ *   <li>imported into Postman / Insomnia</li>
+ *   <li>used to generate clients in other languages</li>
  * </ul>
  *
  * @see OpenApiGenerator
@@ -37,13 +38,12 @@ public class KernelOpenApiGenerator implements KernelArtifactGenerator {
         try {
             String yamlContent = openApiGenerator.generateYaml(metadata);
 
-            // Zwracamy jako GeneratedFile z rozszerzeniem .yaml
             return new GeneratedFile(
                 packageName,
                 fileName,
                 yamlContent,
                 ArtifactType.OPENAPI_SPEC,
-                "yaml"  // Rozszerzenie pliku
+                "yaml"
             );
         } catch (IOException e) {
             throw new RuntimeException("Failed to generate OpenAPI spec for " + metadata.entityName(), e);
