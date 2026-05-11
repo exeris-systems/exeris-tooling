@@ -21,7 +21,7 @@ import java.util.List;
  * <ul>
  *   <li>{@code Application.java} - Entry point with Kernel bootstrap</li>
  *   <li>{@code CompositionRoot.java} - Manual DI wiring of all components</li>
- *   <li>{@code RouterConfig.java} - HTTP/3 route registration</li>
+ *   <li>{@code RouterConfig.java} - HTTP route registration</li>
  * </ul>
  *
  * @implNote Emission is JavaPoet-based (ADR-015).
@@ -145,8 +145,8 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .addStatement("LOG.info($S)", "🔧 Creating Composition Root...")
                 .addStatement("$T root = $T.create(kernel)", compositionRootType, compositionRootType)
                 .add("\n")
-                .add("// 5. Configure HTTP/3 Router (Generated routes)\n")
-                .addStatement("LOG.info($S)", "🌐 Configuring HTTP/3 routes...")
+                .add("// 5. Configure HTTP Router (Generated routes)\n")
+                .addStatement("LOG.info($S)", "🌐 Configuring HTTP routes...")
                 .addStatement("$T router = $T.configure(root)", HTTP3_ROUTER, routerConfigType)
                 .addStatement("kernel.getTransportBootstrap().setHttp3Router(router)")
                 .add("\n")
@@ -481,7 +481,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
 
         TypeSpec.Builder type = KernelScaffold.publicClass(className)
                 .addModifiers(Modifier.FINAL)
-                .addJavadoc("Generated HTTP/3 Router Configuration.\n")
+                .addJavadoc("Generated Router Configuration.\n")
                 .addJavadoc("<p>Registers routes for $L domain(s).\n", domains.size())
                 .addJavadoc("<p><b>DO NOT EDIT</b> - Regenerate from domain models.\n")
                 .addField(FieldSpec.builder(SLF4J_LOGGER, "LOG",

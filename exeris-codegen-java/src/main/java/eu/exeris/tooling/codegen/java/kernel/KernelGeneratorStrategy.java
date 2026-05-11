@@ -21,7 +21,7 @@ public class KernelGeneratorStrategy {
         registry.register(new KernelServiceGenerator());
         registry.register(new KernelRepositoryGenerator());
         registry.register(new KernelFlywayGenerator());
-        registry.register(new KernelClientGenerator());     // HTTP/3 client generator
+        registry.register(new KernelClientGenerator());     // Service-to-service client generator
         registry.register(new KernelOpenApiGenerator());    // OpenAPI 3.1 spec generator
 
         // Event-driven generators

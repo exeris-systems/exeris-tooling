@@ -26,7 +26,7 @@ import java.util.stream.Stream;
  * <ul>
  *   <li>Application.java - Entry point</li>
  *   <li>CompositionRoot.java - Manual DI wiring</li>
- *   <li>RouterConfig.java - HTTP/3 routes</li>
+ *   <li>RouterConfig.java - HTTP routes</li>
  *   <li>*Repository.java - Data access for each entity</li>
  *   <li>*Service.java - Business logic for each entity</li>
  *   <li>*Handler.java - HTTP handlers for each entity</li>
