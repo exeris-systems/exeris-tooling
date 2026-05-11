@@ -17,6 +17,7 @@ import java.util.List;
  *   <li>{@link KernelServiceGenerator} — POJO domain services (no Kernel API surface)</li>
  *   <li>{@link KernelRepositoryGenerator} — plain-JDBC repositories (no Kernel API surface)</li>
  *   <li>{@link KernelEventGenerator} — domain-event publisher against {@code spi.events.{EventEngine, EventDescriptor, EventPayload, EventTypeSpec}}</li>
+ *   <li>{@link KernelEventHandlerGenerator} — domain-event subscriber against {@code spi.events.{EventBus, EventHandler, SubscriptionToken}}</li>
  *   <li>{@link KernelFlywayGenerator} — SQL migrations</li>
  *   <li>{@link KernelOpenApiGenerator} — OpenAPI 3.1 YAML</li>
  * </ul>
@@ -29,7 +30,6 @@ import java.util.List;
  * against the real SPI/CORE types. Per-generator migration target:
  * <ul>
  *   <li>{@link KernelClientGenerator} → SPI HTTP/transport client (TBD against the actually exposed client SPI; align with the working benchmark app)</li>
- *   <li>{@link KernelEventHandlerGenerator} → consumes the same SPI events surface emitted by {@link KernelEventGenerator}</li>
  *   <li>{@link KernelGraphSyncGenerator} → {@code spi.graph.{GraphEngine, GraphSession}} + {@code spi.graph.model.{GraphEdgeDescriptor, GraphTraversal}}</li>
  *   <li>{@link KernelSagaGenerator} → {@code spi.flow.FlowEngine} + {@code spi.flow.model.{FlowContext, FlowDefinition, FlowExecutionPlan, FlowOutcome, FlowSnapshot, FlowSnapshotStore, FlowState, FlowStepAction}}</li>
  *   <li>{@link KernelApplicationGenerator} → {@code core.bootstrap.KernelBootstrap} + {@code spi.bootstrap.BootstrapSelector} + {@code spi.context.KernelProviders} + {@code core.http.routing.HttpRouter}</li>
@@ -51,6 +51,7 @@ public class KernelGeneratorStrategy {
         registry.register(new KernelServiceGenerator());
         registry.register(new KernelRepositoryGenerator());
         registry.register(new KernelEventGenerator());
+        registry.register(new KernelEventHandlerGenerator());
         registry.register(new KernelFlywayGenerator());
         registry.register(new KernelOpenApiGenerator());
     }
