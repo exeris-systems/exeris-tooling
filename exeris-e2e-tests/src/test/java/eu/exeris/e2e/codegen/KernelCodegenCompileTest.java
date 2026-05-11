@@ -26,12 +26,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * that no longer exist — this test does.
  *
  * <p>The strategy currently registers the SPI-aligned subset: Handler,
- * Service, Repository, Event, EventHandler, GraphSync, Flyway, OpenAPI.
- * Generated Java imports {@code eu.exeris.kernel.spi.http.*},
+ * Service, Repository, Event, EventHandler, GraphSync, Saga, Flyway,
+ * OpenAPI. Generated Java imports {@code eu.exeris.kernel.spi.http.*},
  * {@code eu.exeris.kernel.spi.memory.*}, {@code eu.exeris.kernel.spi.events.*},
- * and {@code eu.exeris.kernel.spi.graph.*}; the real
- * {@code exeris-kernel-spi:0.7.0} artifact (plus Jackson 3) is on the test
- * classpath via {@code exeris-tooling-bom}.
+ * {@code eu.exeris.kernel.spi.graph.*}, and {@code eu.exeris.kernel.spi.flow.*};
+ * the real {@code exeris-kernel-spi:0.7.0} artifact (plus Jackson 3) is on
+ * the test classpath via {@code exeris-tooling-bom}.
  */
 @Tag("e2e")
 @Tag("codegen")

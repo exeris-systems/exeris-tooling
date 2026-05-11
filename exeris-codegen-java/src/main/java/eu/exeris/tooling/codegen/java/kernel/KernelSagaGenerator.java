@@ -14,6 +14,7 @@ import eu.exeris.sdk.sourcemodel.ast.SagaMetadata;
 import eu.exeris.sdk.sourcemodel.ast.SagaStepMetadata;
 
 import javax.lang.model.element.Modifier;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -49,9 +50,13 @@ import java.util.stream.Collectors;
  *       compensation.</li>
  * </ul>
  * <p>
- * Transitions are emitted as a strict linear chain ({@code transition(0,
- * 1).transition(1, 2)...}). The flow {@code timeoutDuration} is parsed
- * once from the saga's ISO-8601 timeout string at class-init time via
+ * Transitions are emitted as a strict linear chain in the order steps
+ * appear in {@code SagaMetadata.steps()} ({@code transition(0,
+ * 1).transition(1, 2)...}). The {@link SagaStepMetadata#order()} field
+ * is <b>not</b> consulted — callers wanting non-list ordering must
+ * sort their step list before passing it to the AST. The flow
+ * {@code timeoutDuration} is parsed once from the saga's ISO-8601
+ * timeout string at class-init time via
  * {@link java.time.Duration#parse(CharSequence)} and pinned to a
  * {@code static final long TIMEOUT_NANOS}; {@code maxRetries} comes
  * directly from the metadata.
@@ -91,7 +96,7 @@ public class KernelSagaGenerator implements KernelArtifactGenerator {
         SagaMetadata saga = metadata.sagaMetadata();
         List<SagaStepMetadata> steps = stepsOrPlaceholder(saga);
 
-        assertDistinctStepNames(metadata.entityName(), steps);
+        assertDistinctMethodNames(metadata.entityName(), steps);
 
         String packageName = metadata.packageName().replace(".domain", ".saga");
         String entity = metadata.entityName();
@@ -248,9 +253,35 @@ public class KernelSagaGenerator implements KernelArtifactGenerator {
         return step.compensation() != null && !step.compensation().isBlank();
     }
 
-    private void assertDistinctStepNames(String entity, List<SagaStepMetadata> steps) {
-        List<String> duplicates = steps.stream()
-                .map(SagaStepMetadata::name)
+    /**
+     * Asserts that every emitted method name — the per-step action AND
+     * (where declared) the compensation — is unique across the generated
+     * class. Bare step-name uniqueness is not enough:
+     * <ul>
+     *   <li>Two raw names that normalise to the same Java identifier
+     *       (e.g.\ {@code "my-step"} and {@code "my_step"} both become
+     *       {@code myStep}) would emit two methods with the same
+     *       signature.</li>
+     *   <li>A step literally named {@code "compensate-foo"} (no
+     *       compensation) emits {@code compensateFoo()}; a separate step
+     *       {@code "foo"} <i>with</i> a compensation also emits
+     *       {@code compensateFoo()} — a cross-category clash the
+     *       raw-name check would miss.</li>
+     * </ul>
+     * Both cases produce the same outcome at codegen time: JavaPoet
+     * throws a generic duplicate-method error with no saga context.
+     * Failing fast here gives the caller the actual offending names.
+     */
+    private void assertDistinctMethodNames(String entity, List<SagaStepMetadata> steps) {
+        List<String> emitted = new ArrayList<>(steps.size() * 2);
+        for (SagaStepMetadata step : steps) {
+            String action = toMethodName(step.name());
+            emitted.add(action);
+            if (hasCompensation(step)) {
+                emitted.add("compensate" + capitalize(action));
+            }
+        }
+        List<String> duplicates = emitted.stream()
                 .collect(Collectors.groupingBy(n -> n, Collectors.counting()))
                 .entrySet().stream()
                 .filter(e -> e.getValue() > 1)
@@ -259,8 +290,9 @@ public class KernelSagaGenerator implements KernelArtifactGenerator {
                 .toList();
         if (!duplicates.isEmpty()) {
             throw new IllegalArgumentException(
-                    "Duplicate saga step names on entity '" + entity + "': " + duplicates
-                            + ". Each @SagaStep must declare a unique name.");
+                    "Saga step method-name collision on entity '" + entity + "': " + duplicates
+                            + ". Each step (and its compensation) must produce a unique "
+                            + "Java method identifier after name normalisation.");
         }
     }
 

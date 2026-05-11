@@ -441,20 +441,45 @@ class KernelGeneratorStrategyTest {
         }
 
         @Test
-        @DisplayName("Should reject duplicate saga step names")
-        void shouldRejectDuplicateStepNames() {
+        @DisplayName("Should reject step names that normalise to the same Java method identifier")
+        void shouldRejectNormalisedStepNameCollision() {
+            // "my-step" and "my_step" both normalise to camelCase "myStep";
+            // a raw-name check would miss this. The guard runs on the
+            // emitted method names, so it catches the collision.
             DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
                     .sagaMetadata(SagaMetadata.builder("OrderSaga")
                             .steps(List.of(
-                                    SagaStepMetadata.simple("validate", 0, null),
-                                    SagaStepMetadata.simple("validate", 1, null)))
+                                    SagaStepMetadata.simple("my-step", 0, null),
+                                    SagaStepMetadata.simple("my_step", 1, null)))
                             .build())
                     .build();
 
             assertThatThrownBy(() -> strategy.generate(metadata))
                     .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessageContaining("Duplicate saga step names")
-                    .hasMessageContaining("validate");
+                    .hasMessageContaining("Saga step method-name collision")
+                    .hasMessageContaining("myStep");
+        }
+
+        @Test
+        @DisplayName("Should reject action-vs-compensation method-name collision across steps")
+        void shouldRejectActionVsCompensationCollision() {
+            // Step "compensate-foo" emits action method `compensateFoo()`.
+            // Step "foo" + compensation also emits a compensation method
+            // `compensateFoo()`. The guard catches the cross-category clash.
+            DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                    .sagaMetadata(SagaMetadata.builder("OrderSaga")
+                            .steps(List.of(
+                                    SagaStepMetadata.simple("compensate-foo", 0, null),
+                                    SagaStepMetadata.builder("foo", 1)
+                                            .compensation("rollback")
+                                            .build()))
+                            .build())
+                    .build();
+
+            assertThatThrownBy(() -> strategy.generate(metadata))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("Saga step method-name collision")
+                    .hasMessageContaining("compensateFoo");
         }
     }
 
