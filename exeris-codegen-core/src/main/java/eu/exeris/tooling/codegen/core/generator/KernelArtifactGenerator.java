@@ -23,8 +23,16 @@ public interface KernelArtifactGenerator {
     /**
      * Generate code for the given domain metadata.
      *
+     * <p>Implementations may return {@code null} as a sentinel to signal
+     * that the generator does not apply to the given metadata (e.g.\
+     * {@code KernelEventGenerator} returns {@code null} when the domain
+     * declares no events). {@link GeneratorRegistry#generateAll} filters
+     * these out; the single-generator {@link GeneratorRegistry#generate}
+     * helper returns an empty {@link java.util.Optional} for the same.
+     *
      * @param metadata the domain metadata to generate from
-     * @return generated file containing code
+     * @return generated file containing code, or {@code null} if this
+     *         generator does not apply to {@code metadata}
      */
     GeneratedFile generate(DomainMetadata metadata);
 

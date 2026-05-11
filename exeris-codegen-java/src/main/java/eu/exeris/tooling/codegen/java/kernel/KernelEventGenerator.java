@@ -1,36 +1,65 @@
 package eu.exeris.tooling.codegen.java.kernel;
 
 import com.palantir.javapoet.ClassName;
-import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.FieldSpec;
 import com.palantir.javapoet.MethodSpec;
-import com.palantir.javapoet.ParameterSpec;
-import com.palantir.javapoet.ParameterizedTypeName;
 import com.palantir.javapoet.TypeName;
 import com.palantir.javapoet.TypeSpec;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
+import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
 import eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
-import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 
 import javax.lang.model.element.Modifier;
-import java.util.List;
-import java.util.stream.Collectors;
 
 /**
- * Generates domain event classes and event publisher for Exeris Kernel.
- *
- * <p>For each {@code @DomainEvent} annotation on the domain entity, generates:
+ * Kernel Event Generator.
+ * <p>
+ * Emits a per-entity {@code *EventPublisher} class that publishes domain
+ * events through the Open-Core {@code eu.exeris.kernel.spi.events.EventEngine}
+ * bus. Shape mirrors the canonical community benchmark app's
+ * {@code DomainEventPublisher} pattern.
+ * <p>
+ * Emitted publisher contract:
  * <ul>
- *   <li>Event record class (immutable, serializable)</li>
- *   <li>Event publisher (integrates with kernel events module)</li>
+ *   <li>One {@code static final EventTypeSpec} constant per
+ *       {@link DomainEventMetadata}. Each spec is constructed via
+ *       {@code EventTypeSpec.ofPersistent(name, ordinal)} so the
+ *       descriptor carries {@code FLAG_PERSISTENT} and the SPI persists
+ *       the event through the transactional outbox transparently.</li>
+ *   <li>The ordinal is derived from {@code hashCode(entityName + "." + eventName)}
+ *       masked to 31 bits — stable across regenerations, deterministic.
+ *       Note that {@code EventRegistry} is a global per-engine namespace,
+ *       so cross-entity collisions are possible (two different
+ *       {@code entityName + eventName} keys can hash to the same 31-bit
+ *       value, and the SPI registry will reject the second registration
+ *       with {@code EventRegistryException}). Downstream consumers that
+ *       need explicit ordinal allocation can wrap the generated
+ *       publisher or extend {@code DomainEventMetadata} to carry an
+ *       explicit ordinal.</li>
+ *   <li>Constructor takes an {@code EventEngine}, registers every spec
+ *       with {@code eventEngine.registry()}. Per the SPI contract
+ *       {@code register(EventTypeSpec)} is idempotent for identical
+ *       specs — no defensive {@code catch} is needed; any exception
+ *       (e.g.\ {@code EventRegistryException} on conflicting
+ *       re-registration with different settings) propagates so the
+ *       caller sees the misconfiguration immediately.</li>
+ *   <li>One {@code publish<EventName>(UUID streamId)} method per event:
+ *       builds an {@code EventDescriptor} via {@code EventDescriptor.of(...)}
+ *       carrying a fresh event UUID, the aggregate stream UUID, the
+ *       registered ordinal, the spec flags, and the current epoch
+ *       milliseconds; then calls {@code eventEngine.bus().publish(descriptor,
+ *       EventPayload.empty())}.</li>
  * </ul>
+ * <p>
+ * Payloads default to {@link eu.exeris.kernel.spi.events.EventPayload#empty()}.
+ * Routing happens entirely through the Valhalla-ready {@code EventDescriptor};
+ * downstream consumers that need to ship payload bytes can extend the
+ * generated publisher.
  *
- * @implNote Emission is JavaPoet-based (ADR-015). The event records use
- * {@link TypeSpec#recordBuilder(String)} from Palantir's JavaPoet fork
- * (Square's archived 1.13.0 has no record support).
+ * @implNote Emission is JavaPoet-based (ADR-015).
  *
  * @author Exeris Team
  * @since 0.1.0
@@ -38,17 +67,17 @@ import java.util.stream.Collectors;
 public class KernelEventGenerator implements KernelArtifactGenerator {
 
     private static final ClassName UUID = ClassName.get("java.util", "UUID");
-    private static final ClassName INSTANT = ClassName.get("java.time", "Instant");
-    private static final ClassName HASH_MAP = ClassName.get("java.util", "HashMap");
-    private static final ClassName MAP = ClassName.get("java.util", "Map");
-    private static final ClassName LIST = ClassName.get("java.util", "List");
     private static final ClassName SLF4J_LOGGER = ClassName.get("org.slf4j", "Logger");
     private static final ClassName SLF4J_LOGGER_FACTORY = ClassName.get("org.slf4j", "LoggerFactory");
-    private static final ClassName DOMAIN_EVENT = ClassName.get("eu.exeris.kernel.events.store", "DomainEvent");
-    private static final ClassName EVENT_STORE = ClassName.get("eu.exeris.kernel.events.store", "EventStore");
-    private static final ClassName OUTBOX_SIGNAL = ClassName.get("eu.exeris.kernel.events.outbox", "OutboxSignal");
-    private static final ClassName SECURITY_CONTEXT = ClassName.get("eu.exeris.kernel.security.context", "SecurityContext");
-    private static final ClassName TENANT_CONTEXT = ClassName.get("eu.exeris.kernel.security.context", "TenantContext");
+
+    private static final ClassName EVENT_ENGINE =
+            ClassName.get("eu.exeris.kernel.spi.events", "EventEngine");
+    private static final ClassName EVENT_DESCRIPTOR =
+            ClassName.get("eu.exeris.kernel.spi.events", "EventDescriptor");
+    private static final ClassName EVENT_PAYLOAD =
+            ClassName.get("eu.exeris.kernel.spi.events", "EventPayload");
+    private static final ClassName EVENT_TYPE_SPEC =
+            ClassName.get("eu.exeris.kernel.spi.events", "EventTypeSpec");
 
     @Override
     public GeneratedFile generate(DomainMetadata metadata) {
@@ -57,222 +86,144 @@ public class KernelEventGenerator implements KernelArtifactGenerator {
         }
 
         String packageName = metadata.packageName().replace(".domain", ".event");
-        String className = metadata.entityName() + "Events";
         String entity = metadata.entityName();
-        ClassName entityType = ClassName.get(metadata.packageName(), entity);
+        String className = entity + "EventPublisher";
         ClassName selfType = ClassName.get(packageName, className);
 
-        TypeSpec.Builder builder = KernelScaffold.publicClass(className)
+        // Guard against duplicate event names after normalisation. Without
+        // this, two DomainEventMetadata entries that resolve to the same
+        // <EntityName>Event would emit two static final EventTypeSpec
+        // fields with the same constant name, and the generated class
+        // would fail to compile. They would also hash to the same ordinal
+        // and the second SPI registration would fail at runtime — masking
+        // what is, fundamentally, a domain-model error.
+        long distinctNames = metadata.events().stream()
+                .map(e -> eventName(e, entity))
+                .distinct()
+                .count();
+        if (distinctNames != metadata.events().size()) {
+            throw new IllegalArgumentException(
+                    "Duplicate event names after normalisation for entity '"
+                            + entity + "'. Each @DomainEvent must produce a unique "
+                            + "<Name>Event identifier.");
+        }
+
+        TypeSpec.Builder publisher = KernelScaffold.publicClass(className)
                 .addModifiers(Modifier.FINAL)
-                .addJavadoc("Domain events and publisher for $L.\n", entity)
-                .addJavadoc("<p>Generated by Exeris Codegen. DO NOT EDIT.\n")
-                .addJavadoc("\n")
-                .addJavadoc("@see $L\n", metadata.fullyQualifiedName())
+                .addJavadoc("Generated domain-event publisher for $L.\n", entity)
+                .addJavadoc("<p>Publishes events through the Open-Core SPI\n")
+                .addJavadoc("{@link $T} bus. Each event type is registered with the\n", EVENT_ENGINE)
+                .addJavadoc("engine's {@code registry()} at construction; descriptors\n")
+                .addJavadoc("carry {@code FLAG_PERSISTENT} so the SPI persists them via\n")
+                .addJavadoc("the transactional outbox transparently.\n")
+                .addJavadoc("<p><b>DO NOT EDIT</b> - Regenerate from domain model.\n")
                 .addField(FieldSpec.builder(SLF4J_LOGGER, "LOG",
                                 Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
                         .initializer("$T.getLogger($T.class)", SLF4J_LOGGER_FACTORY, selfType)
                         .build());
 
-        List<FieldMetadata> payloadFields = getPayloadFields(metadata);
-
         for (DomainEventMetadata event : metadata.events()) {
-            builder.addType(buildEventRecord(event, metadata, entityType, payloadFields));
+            publisher.addField(buildEventTypeSpec(entity, event));
         }
 
-        builder.addType(buildPublisher(metadata, entityType));
+        publisher.addField(FieldSpec.builder(EVENT_ENGINE, "eventEngine",
+                        Modifier.PRIVATE, Modifier.FINAL).build());
 
-        return new GeneratedFile(packageName, className,
-                KernelScaffold.render(packageName, builder.build()), ArtifactType.EVENT);
-    }
-
-    private TypeSpec buildEventRecord(DomainEventMetadata event, DomainMetadata metadata,
-                                       ClassName entityType, List<FieldMetadata> payloadFields) {
-        String eventName = getEventName(event, metadata);
-
-        MethodSpec.Builder ctor = MethodSpec.constructorBuilder()
-                .addParameter(UUID, "eventId")
-                .addParameter(INSTANT, "occurredAt")
-                .addParameter(UUID, "aggregateId");
-        for (FieldMetadata field : payloadFields) {
-            if (skipPayloadField(field, metadata)) continue;
-            ctor.addParameter(toTypeName(field.type()), field.name());
-        }
-
-        ClassName selfRecordType = ClassName.bestGuess(eventName);
-        MethodSpec.Builder factory = MethodSpec.methodBuilder("from")
-                .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-                .returns(selfRecordType)
-                .addParameter(entityType, "entity");
-        CodeBlock.Builder factoryBody = CodeBlock.builder()
-                .add("return new $T(\n", selfRecordType)
-                .indent().indent()
-                .add("$T.randomUUID(),\n", UUID)
-                .add("$T.now(),\n", INSTANT)
-                .add("entity.getId()");
-        for (FieldMetadata field : payloadFields) {
-            if (skipPayloadField(field, metadata)) continue;
-            factoryBody.add(",\n").add("entity.$L()", "get" + capitalize(field.name()));
-        }
-        factoryBody.add("\n").unindent().unindent().add(");\n");
-        factory.addCode(factoryBody.build());
-
-        MethodSpec aggregateType = MethodSpec.methodBuilder("aggregateType")
+        publisher.addMethod(MethodSpec.constructorBuilder()
                 .addModifiers(Modifier.PUBLIC)
-                .returns(String.class)
-                .addStatement("return $S", metadata.entityName())
-                .build();
-
-        MethodSpec eventType = MethodSpec.methodBuilder("eventType")
-                .addModifiers(Modifier.PUBLIC)
-                .returns(String.class)
-                .addStatement("return $S", eventName)
-                .build();
-
-        TypeSpec.Builder record = TypeSpec.recordBuilder(eventName)
-                .addModifiers(Modifier.PUBLIC)
-                .recordConstructor(ctor.build())
-                .addMethod(factory.build())
-                .addMethod(aggregateType)
-                .addMethod(eventType);
-
-        if (event.description() != null && !event.description().isBlank()) {
-            record.addJavadoc("$L\n", event.description());
-        } else {
-            record.addJavadoc("Domain event: $L\n", eventName);
-        }
-        if (event.topic() != null && !event.topic().isBlank()) {
-            record.addJavadoc("<p>Topic: {@code $L}\n", event.topic());
-        }
-
-        return record.build();
-    }
-
-    private TypeSpec buildPublisher(DomainMetadata metadata, ClassName entityType) {
-        String entity = metadata.entityName();
-
-        TypeSpec.Builder publisher = TypeSpec.classBuilder("Publisher")
-                .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-                .addJavadoc("Publisher for $L domain events.\n", entity)
-                .addJavadoc("<p>Uses transactional outbox pattern for reliable delivery.\n")
-                .addField(FieldSpec.builder(EVENT_STORE, "eventStore", Modifier.PRIVATE, Modifier.FINAL).build())
-                .addField(FieldSpec.builder(OUTBOX_SIGNAL, "outboxSignal", Modifier.PRIVATE, Modifier.FINAL).build())
-                .addMethod(MethodSpec.constructorBuilder()
-                        .addModifiers(Modifier.PUBLIC)
-                        .addParameter(EVENT_STORE, "eventStore")
-                        .addParameter(OUTBOX_SIGNAL, "outboxSignal")
-                        .addStatement("this.eventStore = eventStore")
-                        .addStatement("this.outboxSignal = outboxSignal")
-                        .build());
+                .addParameter(EVENT_ENGINE, "eventEngine")
+                .addStatement("this.eventEngine = eventEngine")
+                .addStatement("registerEventTypes()")
+                .build());
 
         for (DomainEventMetadata event : metadata.events()) {
             publisher.addMethod(buildPublishMethod(event, metadata));
         }
 
-        publisher.addMethod(buildPublishCreatedShortcut(entity, entityType));
-        return publisher.build();
+        publisher.addMethod(buildRegisterEventTypes(metadata));
+
+        return new GeneratedFile(packageName, className,
+                KernelScaffold.render(packageName, publisher.build()), ArtifactType.EVENT);
+    }
+
+    private FieldSpec buildEventTypeSpec(String entity, DomainEventMetadata event) {
+        String eventName = eventName(event, entity);
+        int ordinal = (entity + "." + eventName).hashCode() & 0x7FFFFFFF;
+        String constantName = toConstantCase(eventName);
+        return FieldSpec.builder(EVENT_TYPE_SPEC, constantName,
+                        Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                .initializer("$T.ofPersistent($S, $L)", EVENT_TYPE_SPEC, eventName, ordinal)
+                .build();
     }
 
     private MethodSpec buildPublishMethod(DomainEventMetadata event, DomainMetadata metadata) {
-        String eventName = getEventName(event, metadata);
-        String methodName = "publish" + eventName.replace("Event", "");
-        ClassName eventClass = ClassName.bestGuess(eventName);
-        TypeName mapStringObject = ParameterizedTypeName.get(MAP, ClassName.get(String.class), ClassName.get(Object.class));
-        TypeName listOfDomainEvent = ParameterizedTypeName.get(LIST, DOMAIN_EVENT);
+        String eventName = eventName(event, metadata.entityName());
+        String constantName = toConstantCase(eventName);
+        String methodName = "publish" + eventName;
 
-        return MethodSpec.methodBuilder(methodName)
-                .addJavadoc("Publishes $L to the event store.\n", eventName)
+        MethodSpec.Builder method = MethodSpec.methodBuilder(methodName)
                 .addModifiers(Modifier.PUBLIC)
                 .returns(TypeName.VOID)
-                .addParameter(eventClass, "event")
-                .addStatement("LOG.debug($S, event.eventType(), event.aggregateId())",
-                        "Publishing {}: aggregateId={}")
-                .addStatement("$T ctx = $T.currentTenant()", TENANT_CONTEXT, SECURITY_CONTEXT)
-                .addStatement("$T tenantId = ctx != null ? ctx.tenantId() : null", UUID)
-                .addStatement("$T payload = new $T<>()", mapStringObject, HASH_MAP)
-                .addStatement("payload.put($S, event.eventType())", "eventType")
-                .addStatement("payload.put($S, event.aggregateId().toString())", "aggregateId")
-                .addStatement("payload.put($S, event.occurredAt().toString())", "occurredAt")
-                .addStatement("long currentVersion = eventStore.getStreamVersion(event.aggregateId(), tenantId)")
-                .addCode(CodeBlock.builder()
-                        .add("var domainEvent = $T.builder()\n", DOMAIN_EVENT)
-                        .add("        .eventId(event.eventId())\n")
-                        .add("        .streamId(event.aggregateId())\n")
-                        .add("        .aggregateType(event.aggregateType())\n")
-                        .add("        .aggregateId(event.aggregateId())\n")
-                        .add("        .eventType(event.eventType())\n")
-                        .add("        .payload(payload)\n")
-                        .add("        .tenantId(tenantId)\n")
-                        .add("        .occurredAt(event.occurredAt())\n")
-                        .add("        .build();\n")
-                        .build())
-                .addStatement("eventStore.append(event.aggregateId(), currentVersion, $T.of(domainEvent))", LIST)
-                .addStatement("outboxSignal.signalNewData()")
-                .build();
-    }
-
-    private MethodSpec buildPublishCreatedShortcut(String entity, ClassName entityType) {
-        // Mirrors legacy emission: assumes a `<Entity>CreatedEvent` exists.
-        // If the entity has no Created event, the resulting reference is a known
-        // pre-existing latent bug — preserved here for byte-equivalence.
-        ClassName createdEventClass = ClassName.bestGuess(entity + "CreatedEvent");
-        return MethodSpec.methodBuilder("publishCreated")
-                .addJavadoc("Publishes a created event for the entity.\n")
-                .addModifiers(Modifier.PUBLIC)
-                .returns(TypeName.VOID)
-                .addParameter(ParameterSpec.builder(entityType, "entity").build())
-                .addStatement("publish$LCreated($T.from(entity))", entity, createdEventClass)
-                .build();
-    }
-
-    private List<FieldMetadata> getPayloadFields(DomainMetadata metadata) {
-        if (metadata.fields() == null) {
-            return List.of();
+                .addParameter(UUID, "streamId")
+                .addJavadoc("Publishes a {@code $L} event for the given aggregate stream.\n", eventName)
+                .addJavadoc("@param streamId aggregate (entity) UUID — encoded into the descriptor's stream-id pair\n");
+        if (event.topic() != null && !event.topic().isBlank()) {
+            method.addJavadoc("<p>Originally tagged with topic {@code $L} in the source\n", event.topic());
+            method.addJavadoc("domain model; topic routing is not part of the Open-Core SPI\n");
+            method.addJavadoc("event descriptor and is preserved here only for reference.\n");
         }
-        return metadata.fields().stream()
-                .filter(f -> !isSystemField(f.name()))
-                .filter(f -> f.searchable() || f.required())
-                .limit(8)
-                .collect(Collectors.toList());
+
+        method.addStatement("$T eventUuid = $T.randomUUID()", UUID, UUID)
+                .addStatement("$T descriptor = $T.of(\n"
+                                + "        eventUuid.getMostSignificantBits(),\n"
+                                + "        eventUuid.getLeastSignificantBits(),\n"
+                                + "        streamId.getMostSignificantBits(),\n"
+                                + "        streamId.getLeastSignificantBits(),\n"
+                                + "        $L.ordinal(),\n"
+                                + "        $L.toDescriptorFlags(),\n"
+                                + "        $T.currentTimeMillis())",
+                        EVENT_DESCRIPTOR, EVENT_DESCRIPTOR, constantName, constantName,
+                        ClassName.get("java.lang", "System"))
+                .addStatement("eventEngine.bus().publish(descriptor, $T.empty())", EVENT_PAYLOAD)
+                .addStatement("LOG.debug($S, eventUuid, streamId)",
+                        "Published " + eventName + ": eventId={} streamId={}");
+
+        return method.build();
     }
 
-    private boolean skipPayloadField(FieldMetadata field, DomainMetadata metadata) {
-        return field.name().equals("tenantId") && metadata.entityName().equals("Tenant");
-    }
-
-    private boolean isSystemField(String name) {
-        return name.equals("id") || name.equals("createdAt") || name.equals("updatedAt")
-                || name.equals("createdBy") || name.equals("updatedBy") || name.equals("version")
-                || name.equals("deletedAt") || name.equals("deletedBy");
-    }
-
-    private String getEventName(DomainEventMetadata event, DomainMetadata metadata) {
-        String eventName = event.name();
-        if (eventName == null || eventName.isBlank()) {
-            eventName = metadata.entityName() + "Event";
+    private MethodSpec buildRegisterEventTypes(DomainMetadata metadata) {
+        MethodSpec.Builder method = MethodSpec.methodBuilder("registerEventTypes")
+                .addModifiers(Modifier.PRIVATE)
+                .addJavadoc("Registers every declared event-type spec with the engine's\n")
+                .addJavadoc("registry. {@link $T#register(EventTypeSpec)} is idempotent for\n",
+                        ClassName.get("eu.exeris.kernel.spi.events", "EventRegistry"))
+                .addJavadoc("identical specs (SPI contract), so concurrent publisher\n")
+                .addJavadoc("instantiation is safe and no defensive catch is needed.\n");
+        for (DomainEventMetadata event : metadata.events()) {
+            String constantName = toConstantCase(eventName(event, metadata.entityName()));
+            method.addStatement("eventEngine.registry().register($L)", constantName);
         }
-        if (!eventName.endsWith("Event")) {
-            eventName = eventName + "Event";
+        return method.build();
+    }
+
+    private String eventName(DomainEventMetadata event, String entityName) {
+        String raw = event.name();
+        if (raw == null || raw.isBlank()) {
+            return entityName + "Event";
         }
-        return eventName;
+        return raw.endsWith("Event") ? raw : raw + "Event";
     }
 
-    private TypeName toTypeName(String type) {
-        if (type == null) return ClassName.get(Object.class);
-        return switch (type.toLowerCase()) {
-            case "string" -> ClassName.get(String.class);
-            case "uuid" -> UUID;
-            case "int", "integer" -> ClassName.get(Integer.class);
-            case "long" -> ClassName.get(Long.class);
-            case "boolean" -> ClassName.get(Boolean.class);
-            case "instant", "datetime", "timestamp" -> INSTANT;
-            case "bigdecimal", "decimal" -> ClassName.get("java.math", "BigDecimal");
-            default -> ClassName.bestGuess(type);
-        };
-    }
-
-    private String capitalize(String s) {
-        if (s == null || s.isEmpty()) return s;
-        return Character.toUpperCase(s.charAt(0)) + s.substring(1);
+    private String toConstantCase(String camelCase) {
+        StringBuilder sb = new StringBuilder(camelCase.length() + 4);
+        for (int i = 0; i < camelCase.length(); i++) {
+            char c = camelCase.charAt(i);
+            if (Character.isUpperCase(c) && i > 0) {
+                sb.append('_');
+            }
+            sb.append(Character.toUpperCase(c));
+        }
+        return sb.toString();
     }
 
     @Override
