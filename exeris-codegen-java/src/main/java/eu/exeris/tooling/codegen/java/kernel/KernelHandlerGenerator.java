@@ -20,7 +20,7 @@ import javax.lang.model.element.Modifier;
  * <p>
  * Generates HTTP handlers for Exeris Kernel runtime (HTTP/3).
  * Handlers receive requests from Http3ServerExchange and delegate to services.
- * <p>
+ *
  * @implNote Emission is JavaPoet-based (ADR-015). Output style is owned by
  * JavaPoet's pretty-printer; substring assertions in the E2E suite still hold,
  * compile-gate verifies semantics.

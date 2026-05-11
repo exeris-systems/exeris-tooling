@@ -258,7 +258,7 @@ Backing out the swap is a `git revert` of the migration PR. No on-disk artifact,
 | 4e | `KernelApplicationGenerator` | PR #26 | Three-file emitter: Application + CompositionRoot + RouterConfig. |
 | 5 | `KernelFlywayGenerator` | PR #27 | Text blocks + `String.join`; golden-snapshot test (`KernelFlywayGeneratorTest`) pins byte-equivalent SQL. |
 | 6 | `KernelOpenApiGenerator` | (no work) | Already used Swagger model objects + Jackson YAMLMapper — no `StringBuilder` to migrate. |
-| 7 | [`MIGRATION-0.x-to-1.0.md`](../MIGRATION-0.x-to-1.0.md) | This commit | Documents the one-time output-style diff for downstream consumers. |
+| 7 | [`MIGRATION-0.x-to-1.0.md`](../MIGRATION-0.x-to-1.0.md) | PR #28 | Documents the one-time output-style diff for downstream consumers. |
 
 ### Validation outcome
 
