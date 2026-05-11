@@ -496,6 +496,39 @@ class KernelGeneratorStrategyTest {
         }
 
         @Test
+        @DisplayName("generateAll with an empty domain list still emits both files (no entity wiring, no routes)")
+        void shouldEmitBothFilesForEmptyDomainList() {
+            KernelApplicationGenerator gen = new KernelApplicationGenerator();
+            List<GeneratedFile> files = gen.generateAll(List.of(), "com.example.foundation");
+            assertThat(files).hasSize(2);
+
+            String lifecycle = files.stream()
+                    .filter(f -> "RuntimeLifecycle".equals(f.className()))
+                    .findFirst().orElseThrow().content();
+            // No per-entity wiring (no Repository/Service/Handler lines).
+            assertThat(lifecycle)
+                    .doesNotContain("Repository(dataSource)")
+                    .doesNotContain("Service(")
+                    .doesNotContain("Handler(")
+                    .doesNotContain("routerBuilder.route")
+                    .contains("HttpRouter.Builder routerBuilder = HttpRouter.builder()")
+                    .contains("HttpRouter router = routerBuilder.build()")
+                    .contains("Application bootstrap complete: {} entities wired");
+        }
+
+        @Test
+        @DisplayName("generateAll rejects domain packages that do not end with '.domain'")
+        void shouldRejectNonDomainPackageSuffix() {
+            KernelApplicationGenerator gen = new KernelApplicationGenerator();
+            DomainMetadata bad = DomainMetadata.builder("Order", "com.example.order").build();
+
+            assertThatThrownBy(() -> gen.generateAll(List.of(bad), "com.example.foundation"))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("com.example.order")
+                    .hasMessageContaining(".domain");
+        }
+
+        @Test
         @DisplayName("generateAll emits Application + RuntimeLifecycle against Open-Core SPI")
         void shouldGenerateApplicationAndLifecycle() {
             KernelApplicationGenerator gen = new KernelApplicationGenerator();
@@ -521,12 +554,17 @@ class KernelGeneratorStrategyTest {
                     .contains("import eu.exeris.kernel.spi.bootstrap.BootstrapSelector")
                     .contains("import eu.exeris.kernel.spi.http.HttpHandler")
                     .contains("import eu.exeris.kernel.spi.http.HttpKernelProviders")
+                    .contains("import eu.exeris.kernel.spi.http.HttpStatus")
                     .contains("public class Application")
-                    .contains("public static void main(String[] args) throws Exception")
+                    .contains("public static void main(String[] args)")
+                    .doesNotContain("public static void main(String[] args) throws Exception")
                     .contains("new Application().run()")
                     .contains("KernelBootstrap.builder()")
-                    .contains("BootstrapSelector.forNames(SUBSYSTEMS.split")
+                    .contains("BootstrapSelector.forNames(subsystems().split")
+                    .doesNotContain("SUBSYSTEMS.split")
+                    .contains("protected String subsystems()")
                     .contains(".boot(() -> new RuntimeLifecycle(handlerSlot, dataSource()).run())")
+                    .contains("exchange.respond(HttpStatus.SERVICE_UNAVAILABLE)")
                     .contains("protected DataSource dataSource()")
                     .contains("throw new UnsupportedOperationException");
 

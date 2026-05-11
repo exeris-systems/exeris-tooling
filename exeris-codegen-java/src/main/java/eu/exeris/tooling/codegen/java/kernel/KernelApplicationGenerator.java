@@ -79,6 +79,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
 
     private static final ClassName ATOMIC_REFERENCE =
             ClassName.get("java.util.concurrent.atomic", "AtomicReference");
+    private static final ClassName HTTP_STATUS = ClassName.get("eu.exeris.kernel.spi.http", "HttpStatus");
     private static final ClassName COUNT_DOWN_LATCH =
             ClassName.get("java.util.concurrent", "CountDownLatch");
     private static final ClassName DATA_SOURCE = ClassName.get("javax.sql", "DataSource");
@@ -134,30 +135,36 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
                 .returns(TypeName.VOID)
                 .addParameter(String[].class, "args")
-                .addException(Exception.class)
                 .addStatement("new $T().run()", selfType)
                 .build();
 
         MethodSpec runMethod = MethodSpec.methodBuilder("run")
                 .addModifiers(Modifier.PUBLIC)
                 .returns(TypeName.VOID)
-                .addException(Exception.class)
                 .addJavadoc("Application entry point. Boots the Kernel under a forwarding\n")
                 .addJavadoc("HTTP handler bound via {@link $T} and hands control to\n", SCOPED_VALUE)
                 .addJavadoc("{@link $T}.\n", lifecycleType)
+                .addJavadoc("<p>While {@link $T#run()} is still composing the per-entity\n", lifecycleType)
+                .addJavadoc("wiring (between bootstrap completion and the moment the\n")
+                .addJavadoc("handler slot is set), inbound requests respond\n")
+                .addJavadoc("{@link $T#SERVICE_UNAVAILABLE} rather than being silently dropped.\n", HTTP_STATUS)
                 .addStatement("$T handlerSlot = new $T<>()", atomicHttpHandler, ATOMIC_REFERENCE)
                 .addStatement("$T forwardingHandler = exchange -> {\n"
                                 + "    $T h = handlerSlot.get();\n"
-                                + "    if (h != null) h.handle(exchange);\n"
+                                + "    if (h != null) {\n"
+                                + "        h.handle(exchange);\n"
+                                + "    } else {\n"
+                                + "        exchange.respond($T.SERVICE_UNAVAILABLE);\n"
+                                + "    }\n"
                                 + "}",
-                        HTTP_HANDLER, HTTP_HANDLER)
+                        HTTP_HANDLER, HTTP_HANDLER, HTTP_STATUS)
                 .beginControlFlow("try")
                 .addCode(CodeBlock.builder()
                         .add("$T.where($T.HTTP_SERVER_HANDLER, forwardingHandler).call(() -> {\n",
                                 SCOPED_VALUE, HTTP_KERNEL_PROVIDERS)
                         .indent()
                         .add("$T.builder()\n", KERNEL_BOOTSTRAP)
-                        .add("    .selector($T.forNames(SUBSYSTEMS.split($S)))\n", BOOTSTRAP_SELECTOR, ",")
+                        .add("    .selector($T.forNames(subsystems().split($S)))\n", BOOTSTRAP_SELECTOR, ",")
                         .add("    .build()\n")
                         .add("    .boot(() -> new $T(handlerSlot, dataSource()).run());\n", lifecycleType)
                         .add("return null;\n")
@@ -169,6 +176,20 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .nextControlFlow("catch (Exception e)")
                 .addStatement("throw new $T($S, e)", RUNTIME_EXCEPTION, "Bootstrap failed")
                 .endControlFlow()
+                .build();
+
+        MethodSpec subsystemsMethod = MethodSpec.methodBuilder("subsystems")
+                .addModifiers(Modifier.PROTECTED)
+                .returns(String.class)
+                .addJavadoc("Comma-separated Kernel subsystem list passed to\n")
+                .addJavadoc("{@link $T#forNames(String...)}. Default is the canonical\n", BOOTSTRAP_SELECTOR)
+                .addJavadoc("Open-Core selector.\n")
+                .addJavadoc("<p>Subclass {@code Application} and override this method to\n")
+                .addJavadoc("add/remove subsystems — e.g.\\ to drop {@code graph} when the\n")
+                .addJavadoc("project has no graph projections. (It must be an instance\n")
+                .addJavadoc("method, not a {@code static final} field, otherwise javac\n")
+                .addJavadoc("inlines the constant and the override has no effect.)\n")
+                .addStatement("return $S", SUBSYSTEMS)
                 .build();
 
         MethodSpec dataSourceMethod = MethodSpec.methodBuilder("dataSource")
@@ -191,15 +212,17 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .addJavadoc("({@code http,persistence,graph,flow,events,crypto}) and hands the\n")
                 .addJavadoc("composed Handler/Service/Repository/Router stack off to\n")
                 .addJavadoc("{@link $T#run()}.\n", lifecycleType)
-                .addJavadoc("<p>Subclass to override {@link #dataSource()}, the subsystem list,\n")
-                .addJavadoc("or the bootstrap selector.\n")
+                .addJavadoc("<p>Subclass to override {@link #dataSource()} or\n")
+                .addJavadoc("{@link #subsystems()}.\n")
+                .addJavadoc("<p>Runtime classpath requirements (in addition to\n")
+                .addJavadoc("{@code exeris-kernel-spi} / {@code -core}): {@code org.slf4j:slf4j-api}\n")
+                .addJavadoc("(used by the generated repositories/services/handlers) and a\n")
+                .addJavadoc("{@code javax.sql.DataSource} implementation supplied via\n")
+                .addJavadoc("{@link #dataSource()} (e.g.\\ HikariCP).\n")
                 .addJavadoc("<p><b>DO NOT EDIT</b> - Regenerate from domain models.\n")
-                .addField(FieldSpec.builder(String.class, "SUBSYSTEMS",
-                                Modifier.PROTECTED, Modifier.STATIC, Modifier.FINAL)
-                        .initializer("$S", SUBSYSTEMS)
-                        .build())
                 .addMethod(mainMethod)
                 .addMethod(runMethod)
+                .addMethod(subsystemsMethod)
                 .addMethod(dataSourceMethod)
                 .build();
 
@@ -254,6 +277,18 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
             String entity = domain.entityName();
             String entityLower = lowerFirst(entity);
             String domainPkg = domain.packageName();
+            if (!domainPkg.endsWith(".domain")) {
+                throw new IllegalArgumentException(
+                        "Domain package '" + domainPkg + "' for entity '" + entity
+                                + "' does not end with '.domain'. The Application "
+                                + "generator derives the .repository/.service/.handler "
+                                + "package paths by replacing the '.domain' suffix; "
+                                + "without it the per-entity wiring would resolve "
+                                + "Repository/Service/Handler to the wrong location. "
+                                + "Either rename the domain package to end with "
+                                + "'.domain' or extend DomainMetadata to carry explicit "
+                                + "infrastructure package paths.");
+            }
             String repoPkg = domainPkg.replace(".domain", ".repository");
             String servicePkg = domainPkg.replace(".domain", ".service");
             String handlerPkg = domainPkg.replace(".domain", ".handler");
