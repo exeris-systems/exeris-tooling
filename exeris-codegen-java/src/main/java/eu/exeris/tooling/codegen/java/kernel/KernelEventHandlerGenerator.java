@@ -9,6 +9,7 @@ import com.palantir.javapoet.TypeSpec;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
+import eu.exeris.tooling.codegen.java.support.KernelEventSupport;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
 import eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
@@ -61,12 +62,9 @@ public class KernelEventHandlerGenerator implements KernelArtifactGenerator {
     private static final ClassName SLF4J_LOGGER = ClassName.get("org.slf4j", "Logger");
     private static final ClassName SLF4J_LOGGER_FACTORY = ClassName.get("org.slf4j", "LoggerFactory");
 
-    private static final ClassName EVENT_ENGINE =
-            ClassName.get("eu.exeris.kernel.spi.events", "EventEngine");
-    private static final ClassName EVENT_DESCRIPTOR =
-            ClassName.get("eu.exeris.kernel.spi.events", "EventDescriptor");
-    private static final ClassName EVENT_PAYLOAD =
-            ClassName.get("eu.exeris.kernel.spi.events", "EventPayload");
+    private static final ClassName EVENT_ENGINE = KernelEventSupport.EVENT_ENGINE;
+    private static final ClassName EVENT_DESCRIPTOR = KernelEventSupport.EVENT_DESCRIPTOR;
+    private static final ClassName EVENT_PAYLOAD = KernelEventSupport.EVENT_PAYLOAD;
     private static final ClassName SUBSCRIPTION_TOKEN =
             ClassName.get("eu.exeris.kernel.spi.events", "SubscriptionToken");
 
@@ -76,19 +74,9 @@ public class KernelEventHandlerGenerator implements KernelArtifactGenerator {
             return null;
         }
 
+        KernelEventSupport.assertDistinctEventNames(metadata);
+
         String entity = metadata.entityName();
-
-        long distinctNames = metadata.events().stream()
-                .map(e -> eventName(e, entity))
-                .distinct()
-                .count();
-        if (distinctNames != metadata.events().size()) {
-            throw new IllegalArgumentException(
-                    "Duplicate event names after normalisation for entity '"
-                            + entity + "'. Each @DomainEvent must produce a unique "
-                            + "<Name>Event identifier.");
-        }
-
         String packageName = metadata.packageName().replace(".domain", ".event");
         String className = entity + "EventSubscriber";
         ClassName selfType = ClassName.get(packageName, className);
@@ -137,8 +125,8 @@ public class KernelEventHandlerGenerator implements KernelArtifactGenerator {
     }
 
     private FieldSpec buildEventNameConstant(String entity, DomainEventMetadata event) {
-        String name = eventName(event, entity);
-        return FieldSpec.builder(String.class, toConstantCase(name),
+        String name = KernelEventSupport.eventName(event, entity);
+        return FieldSpec.builder(String.class, KernelEventSupport.toConstantCase(name),
                         Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
                 .initializer("$S", name)
                 .build();
@@ -161,8 +149,8 @@ public class KernelEventHandlerGenerator implements KernelArtifactGenerator {
                         "Already subscribed — call unsubscribe() before subscribing again")
                 .endControlFlow();
         for (DomainEventMetadata event : metadata.events()) {
-            String name = eventName(event, metadata.entityName());
-            String constantName = toConstantCase(name);
+            String name = KernelEventSupport.eventName(event, metadata.entityName());
+            String constantName = KernelEventSupport.toConstantCase(name);
             String handlerMethod = "handle" + name;
             method.addStatement("subscriptions.add(eventEngine.bus().subscribe($L, this::$L))",
                     constantName, handlerMethod);
@@ -186,7 +174,7 @@ public class KernelEventHandlerGenerator implements KernelArtifactGenerator {
     }
 
     private MethodSpec buildHandler(String entity, DomainEventMetadata event) {
-        String name = eventName(event, entity);
+        String name = KernelEventSupport.eventName(event, entity);
         return MethodSpec.methodBuilder("handle" + name)
                 .addModifiers(Modifier.PROTECTED)
                 .returns(TypeName.VOID)
@@ -204,26 +192,6 @@ public class KernelEventHandlerGenerator implements KernelArtifactGenerator {
                         "Received " + name + ": eventId={} streamId={}")
                 .endControlFlow()
                 .build();
-    }
-
-    private String eventName(DomainEventMetadata event, String entityName) {
-        String raw = event.name();
-        if (raw == null || raw.isBlank()) {
-            return entityName + "Event";
-        }
-        return raw.endsWith("Event") ? raw : raw + "Event";
-    }
-
-    private String toConstantCase(String camelCase) {
-        StringBuilder sb = new StringBuilder(camelCase.length() + 4);
-        for (int i = 0; i < camelCase.length(); i++) {
-            char c = camelCase.charAt(i);
-            if (Character.isUpperCase(c) && i > 0) {
-                sb.append('_');
-            }
-            sb.append(Character.toUpperCase(c));
-        }
-        return sb.toString();
     }
 
     @Override

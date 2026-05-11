@@ -8,6 +8,7 @@ import com.palantir.javapoet.TypeSpec;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
+import eu.exeris.tooling.codegen.java.support.KernelEventSupport;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
 import eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
@@ -70,12 +71,9 @@ public class KernelEventGenerator implements KernelArtifactGenerator {
     private static final ClassName SLF4J_LOGGER = ClassName.get("org.slf4j", "Logger");
     private static final ClassName SLF4J_LOGGER_FACTORY = ClassName.get("org.slf4j", "LoggerFactory");
 
-    private static final ClassName EVENT_ENGINE =
-            ClassName.get("eu.exeris.kernel.spi.events", "EventEngine");
-    private static final ClassName EVENT_DESCRIPTOR =
-            ClassName.get("eu.exeris.kernel.spi.events", "EventDescriptor");
-    private static final ClassName EVENT_PAYLOAD =
-            ClassName.get("eu.exeris.kernel.spi.events", "EventPayload");
+    private static final ClassName EVENT_ENGINE = KernelEventSupport.EVENT_ENGINE;
+    private static final ClassName EVENT_DESCRIPTOR = KernelEventSupport.EVENT_DESCRIPTOR;
+    private static final ClassName EVENT_PAYLOAD = KernelEventSupport.EVENT_PAYLOAD;
     private static final ClassName EVENT_TYPE_SPEC =
             ClassName.get("eu.exeris.kernel.spi.events", "EventTypeSpec");
 
@@ -90,23 +88,7 @@ public class KernelEventGenerator implements KernelArtifactGenerator {
         String className = entity + "EventPublisher";
         ClassName selfType = ClassName.get(packageName, className);
 
-        // Guard against duplicate event names after normalisation. Without
-        // this, two DomainEventMetadata entries that resolve to the same
-        // <EntityName>Event would emit two static final EventTypeSpec
-        // fields with the same constant name, and the generated class
-        // would fail to compile. They would also hash to the same ordinal
-        // and the second SPI registration would fail at runtime — masking
-        // what is, fundamentally, a domain-model error.
-        long distinctNames = metadata.events().stream()
-                .map(e -> eventName(e, entity))
-                .distinct()
-                .count();
-        if (distinctNames != metadata.events().size()) {
-            throw new IllegalArgumentException(
-                    "Duplicate event names after normalisation for entity '"
-                            + entity + "'. Each @DomainEvent must produce a unique "
-                            + "<Name>Event identifier.");
-        }
+        KernelEventSupport.assertDistinctEventNames(metadata);
 
         TypeSpec.Builder publisher = KernelScaffold.publicClass(className)
                 .addModifiers(Modifier.FINAL)
@@ -147,9 +129,9 @@ public class KernelEventGenerator implements KernelArtifactGenerator {
     }
 
     private FieldSpec buildEventTypeSpec(String entity, DomainEventMetadata event) {
-        String eventName = eventName(event, entity);
+        String eventName = KernelEventSupport.eventName(event, entity);
         int ordinal = (entity + "." + eventName).hashCode() & 0x7FFFFFFF;
-        String constantName = toConstantCase(eventName);
+        String constantName = KernelEventSupport.toConstantCase(eventName);
         return FieldSpec.builder(EVENT_TYPE_SPEC, constantName,
                         Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
                 .initializer("$T.ofPersistent($S, $L)", EVENT_TYPE_SPEC, eventName, ordinal)
@@ -157,8 +139,8 @@ public class KernelEventGenerator implements KernelArtifactGenerator {
     }
 
     private MethodSpec buildPublishMethod(DomainEventMetadata event, DomainMetadata metadata) {
-        String eventName = eventName(event, metadata.entityName());
-        String constantName = toConstantCase(eventName);
+        String eventName = KernelEventSupport.eventName(event, metadata.entityName());
+        String constantName = KernelEventSupport.toConstantCase(eventName);
         String methodName = "publish" + eventName;
 
         MethodSpec.Builder method = MethodSpec.methodBuilder(methodName)
@@ -200,30 +182,11 @@ public class KernelEventGenerator implements KernelArtifactGenerator {
                 .addJavadoc("identical specs (SPI contract), so concurrent publisher\n")
                 .addJavadoc("instantiation is safe and no defensive catch is needed.\n");
         for (DomainEventMetadata event : metadata.events()) {
-            String constantName = toConstantCase(eventName(event, metadata.entityName()));
+            String constantName = KernelEventSupport.toConstantCase(
+                    KernelEventSupport.eventName(event, metadata.entityName()));
             method.addStatement("eventEngine.registry().register($L)", constantName);
         }
         return method.build();
-    }
-
-    private String eventName(DomainEventMetadata event, String entityName) {
-        String raw = event.name();
-        if (raw == null || raw.isBlank()) {
-            return entityName + "Event";
-        }
-        return raw.endsWith("Event") ? raw : raw + "Event";
-    }
-
-    private String toConstantCase(String camelCase) {
-        StringBuilder sb = new StringBuilder(camelCase.length() + 4);
-        for (int i = 0; i < camelCase.length(); i++) {
-            char c = camelCase.charAt(i);
-            if (Character.isUpperCase(c) && i > 0) {
-                sb.append('_');
-            }
-            sb.append(Character.toUpperCase(c));
-        }
-        return sb.toString();
     }
 
     @Override
