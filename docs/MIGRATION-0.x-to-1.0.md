@@ -8,7 +8,7 @@ This document describes one-time differences downstream consumers will see when 
 
 ## Why the diff exists
 
-The Kernel generator suite (12 `Kernel*Generator` classes in `exeris-codegen-java`) used to emit all output by hand via `StringBuilder.append(...)`. ADR-015 migrated:
+The Kernel generator suite (11 `Kernel*Generator` classes in `exeris-codegen-java`) used to emit all output by hand via `StringBuilder.append(...)`. ADR-015 migrated:
 
 - the 9 Java-emitting generators to **JavaPoet** (Palantir's fork, `com.palantir.javapoet:javapoet:0.15.0`)
 - `KernelFlywayGenerator` to **Java text blocks + `String.join`** for SQL emission
