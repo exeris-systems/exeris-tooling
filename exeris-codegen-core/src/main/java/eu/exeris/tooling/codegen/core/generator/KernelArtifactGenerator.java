@@ -71,11 +71,12 @@ public interface KernelArtifactGenerator {
         REPOSITORY,
         SERVICE,
         CONTROLLER,
-        CLIENT,          // HTTP/3 client for service-to-service communication
-        EVENT,           // Domain event classes and publisher
-        EVENT_HANDLER,
-        GRAPH_SYNC,      // Graph synchronization service
-        SAGA,            // Saga definition and executor
+        CLIENT,          // service-to-service client for HTTP-layer communication
+        EVENT,           // domain-event publisher (eu.exeris.kernel.spi.events.*)
+        EVENT_HANDLER,   // domain-event subscriber (eu.exeris.kernel.spi.events.EventBus)
+        GRAPH_SYNC,      // graph-sync projection (eu.exeris.kernel.spi.graph.*)
+        SAGA,            // saga skeleton (eu.exeris.kernel.spi.flow.*)
+        APPLICATION,     // application bootstrap (Application + RuntimeLifecycle)
         CONFIGURATION,
         OPENAPI_SPEC     // OpenAPI 3.1 specification (YAML)
     }

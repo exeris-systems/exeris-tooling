@@ -48,6 +48,14 @@
             <scope>test</scope>
         </dependency>
 
+        <!-- Open-Core Kernel CORE — KernelBootstrap + HttpRouter for the
+             Application/RuntimeLifecycle compile gate. -->
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-kernel-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+
         <!-- Jackson 3 (tools.jackson) on the test classpath: the codegen-
              emitted Handler parses request bodies via tools.jackson.databind
              (matching the canonical community-app pattern). Version managed

@@ -4,25 +4,69 @@ import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.FieldSpec;
 import com.palantir.javapoet.MethodSpec;
+import com.palantir.javapoet.ParameterizedTypeName;
 import com.palantir.javapoet.TypeName;
 import com.palantir.javapoet.TypeSpec;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
+import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 
 import javax.lang.model.element.Modifier;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Generates complete Kernel application infrastructure from domain metadata.
+ * Kernel Application Generator.
  * <p>
- * Produces:
+ * Emits the application bootstrap skeleton: an {@code Application}
+ * entry point that drives {@link
+ * eu.exeris.kernel.core.bootstrap.KernelBootstrap} and a
+ * {@code RuntimeLifecycle} that composes the per-entity Repository →
+ * Service → Handler chain and registers HTTP routes. Canonical wiring
+ * shape mirrors the working community benchmark app's
+ * {@code ExerisCommunityApplication} + {@code CommunityBenchmarkRuntimeLifecycle}
+ * pair (under {@code exeris-benchmarks/targets/exeris-community-app}).
+ * <p>
+ * Unlike the per-entity generators in {@link KernelGeneratorStrategy},
+ * this generator emits <b>once per project</b> against the full domain
+ * list. {@link #generate(DomainMetadata)} therefore returns {@code null}
+ * — the real entry point is
+ * {@link #generateAll(List, String)}, invoked by {@code CodegenMain}
+ * after the per-entity strategy loop completes.
+ * <p>
+ * Emitted files (in the project base package):
  * <ul>
- *   <li>{@code Application.java} - Entry point with Kernel bootstrap</li>
- *   <li>{@code CompositionRoot.java} - Manual DI wiring of all components</li>
- *   <li>{@code RouterConfig.java} - HTTP route registration</li>
+ *   <li>{@code Application.java} — {@code main()} entry. Builds a
+ *       forwarding {@link eu.exeris.kernel.spi.http.HttpHandler},
+ *       binds it via {@code ScopedValue.where(HTTP_SERVER_HANDLER)},
+ *       and drives {@code KernelBootstrap.builder().selector(
+ *       BootstrapSelector.forNames(SUBSYSTEMS)).build().boot(() -> new
+ *       RuntimeLifecycle(handlerSlot, dataSource()).run())}. The
+ *       {@code dataSource()} method is {@code protected} so consumers
+ *       can subclass and provide a configured {@link javax.sql.DataSource}.</li>
+ *   <li>{@code RuntimeLifecycle.java} — Pulls the {@code PersistenceEngine}
+ *       and {@code HttpServerEngine} from {@code KernelProviders},
+ *       instantiates each declared entity's {@code *Repository},
+ *       {@code *Service}, and {@code *Handler}, builds an
+ *       {@link eu.exeris.kernel.core.http.routing.HttpRouter} with the
+ *       five canonical CRUD routes per entity (GET-all / GET-by-id /
+ *       POST-create / PUT-update / DELETE), sets the forwarding handler
+ *       slot, and parks on a {@link java.util.concurrent.CountDownLatch}
+ *       until the JVM shuts down.</li>
  * </ul>
+ * <p>
+ * Repository wiring caveat: the codegen-emitted {@code *Repository}
+ * classes (from {@link KernelRepositoryGenerator}) currently use raw
+ * JDBC against {@link javax.sql.DataSource}. The Open-Core SPI's
+ * canonical persistence path is {@code TransactionalExecutor} +
+ * {@code PersistenceEngine}, which the Repository generator has not yet
+ * been migrated to. The emitted {@code Application.dataSource()}
+ * override-point gives consumers a clean place to supply a DataSource
+ * (HikariCP / PGSimpleDataSource / etc.) without changing the generated
+ * code; the Repository → TransactionalExecutor migration is a separate
+ * future PR.
  *
  * @implNote Emission is JavaPoet-based (ADR-015).
  *
@@ -31,549 +75,281 @@ import java.util.List;
  */
 public class KernelApplicationGenerator implements KernelArtifactGenerator {
 
+    private static final String SUBSYSTEMS = "http,persistence,graph,flow,events,crypto";
+
+    private static final ClassName ATOMIC_REFERENCE =
+            ClassName.get("java.util.concurrent.atomic", "AtomicReference");
+    private static final ClassName HTTP_STATUS = ClassName.get("eu.exeris.kernel.spi.http", "HttpStatus");
+    private static final ClassName COUNT_DOWN_LATCH =
+            ClassName.get("java.util.concurrent", "CountDownLatch");
+    private static final ClassName DATA_SOURCE = ClassName.get("javax.sql", "DataSource");
+    private static final ClassName SCOPED_VALUE = ClassName.get("java.lang", "ScopedValue");
+    private static final ClassName RUNTIME = ClassName.get("java.lang", "Runtime");
+    private static final ClassName THREAD = ClassName.get("java.lang", "Thread");
+    private static final ClassName RUNTIME_EXCEPTION = ClassName.get("java.lang", "RuntimeException");
     private static final ClassName SLF4J_LOGGER = ClassName.get("org.slf4j", "Logger");
     private static final ClassName SLF4J_LOGGER_FACTORY = ClassName.get("org.slf4j", "LoggerFactory");
-    private static final ClassName KERNEL_BOOTSTRAP = ClassName.get("eu.exeris.kernel.bootstrap", "KernelBootstrap");
-    private static final ClassName KERNEL_PROFILE = ClassName.get("eu.exeris.kernel.config", "KernelProfile");
-    private static final ClassName KERNEL_CONTEXT = ClassName.get("eu.exeris.kernel.security.context", "KernelContext");
-    private static final ClassName CARRIER_CONFIG = ClassName.get("eu.exeris.kernel.transport.carrier", "CarrierConfig");
-    private static final ClassName HTTP3_ROUTER = ClassName.get("eu.exeris.kernel.transport.http3.server", "Http3Router");
-    private static final ClassName PATH = ClassName.get("java.nio.file", "Path");
-    private static final ClassName COUNT_DOWN_LATCH = ClassName.get("java.util.concurrent", "CountDownLatch");
-    private static final ClassName DATASOURCE = ClassName.get("javax.sql", "DataSource");
-    private static final ClassName EVENT_STORE = ClassName.get("eu.exeris.kernel.events.store", "EventStore");
-    private static final ClassName OUTBOX_SIGNAL = ClassName.get("eu.exeris.kernel.events.outbox", "OutboxSignal");
-    private static final ClassName SAGA_ENGINE = ClassName.get("eu.exeris.kernel.flow", "SagaEngine");
-    private static final ClassName GRAPH_SERVICE = ClassName.get("eu.exeris.kernel.graph", "GraphService");
 
-    /**
-     * Single-domain entry point — required by {@link KernelArtifactGenerator}
-     * and invoked by the strategy registry. Returns {@code Application.java}
-     * only. {@code CompositionRoot} and {@code RouterConfig} need cross-domain
-     * wiring and are emitted exclusively via
-     * {@link #generateAll(List, String)}.
-     */
+    private static final ClassName KERNEL_BOOTSTRAP =
+            ClassName.get("eu.exeris.kernel.core.bootstrap", "KernelBootstrap");
+    private static final ClassName BOOTSTRAP_SELECTOR =
+            ClassName.get("eu.exeris.kernel.spi.bootstrap", "BootstrapSelector");
+    private static final ClassName HTTP_HANDLER =
+            ClassName.get("eu.exeris.kernel.spi.http", "HttpHandler");
+    private static final ClassName HTTP_KERNEL_PROVIDERS =
+            ClassName.get("eu.exeris.kernel.spi.http", "HttpKernelProviders");
+    private static final ClassName HTTP_METHOD =
+            ClassName.get("eu.exeris.kernel.spi.http", "HttpMethod");
+    private static final ClassName HTTP_ROUTER =
+            ClassName.get("eu.exeris.kernel.core.http.routing", "HttpRouter");
+
     @Override
     public GeneratedFile generate(DomainMetadata metadata) {
-        String basePackage = metadata.packageName().replace(".domain", "");
-        return generateApplication(List.of(metadata), basePackage);
+        // Application emission is project-wide, not per-entity. Real
+        // entry point is generateAll(...).
+        return null;
     }
 
     /**
-     * Generates complete application infrastructure from all domain metadata.
-     * This is the main method for full application generation.
+     * Emits the two-file bootstrap skeleton for the project. Invoked by
+     * {@code CodegenMain} after the per-entity strategy loop.
+     *
+     * @param domains the full set of domain metadata records in the project; never {@code null}
+     * @param basePackage the project base package (e.g.\ {@code "com.example.foundation"});
+     *                    {@code Application} and {@code RuntimeLifecycle} are emitted here
+     * @return the two emitted files; always {@code [Application, RuntimeLifecycle]}
      */
     public List<GeneratedFile> generateAll(List<DomainMetadata> domains, String basePackage) {
-        return List.of(
-                generateApplication(domains, basePackage),
-                generateCompositionRoot(domains, basePackage),
-                generateRouterConfig(domains, basePackage)
-        );
+        List<GeneratedFile> files = new ArrayList<>(2);
+        files.add(buildApplication(basePackage));
+        files.add(buildRuntimeLifecycle(domains, basePackage));
+        return files;
     }
 
-    private GeneratedFile generateApplication(List<DomainMetadata> domains, String basePackage) {
-        String className = "Application";
-        ClassName selfType = ClassName.get(basePackage, className);
-        ClassName compositionRootType = ClassName.get(basePackage, "CompositionRoot");
-        ClassName routerConfigType = ClassName.get(basePackage, "RouterConfig");
-        ClassName failurePolicyType = KERNEL_CONTEXT.nestedClass("FailurePolicy");
+    private GeneratedFile buildApplication(String basePackage) {
+        ClassName selfType = ClassName.get(basePackage, "Application");
+        ClassName lifecycleType = ClassName.get(basePackage, "RuntimeLifecycle");
+        TypeName atomicHttpHandler = ParameterizedTypeName.get(ATOMIC_REFERENCE, HTTP_HANDLER);
 
-        TypeSpec.Builder type = KernelScaffold.publicClass(className)
-                .addModifiers(Modifier.FINAL)
-                .addJavadoc("Generated Exeris Kernel Application Entry Point.\n")
-                .addJavadoc("<p>Generated from domain entities:\n");
-        for (DomainMetadata domain : domains) {
-            type.addJavadoc("<li>{@link $L.$L}</li>\n", domain.packageName(), domain.entityName());
-        }
-        type.addJavadoc("\n")
-                .addJavadoc("<p><b>DO NOT EDIT</b> - Regenerate from domain models.\n")
-                .addField(FieldSpec.builder(SLF4J_LOGGER, "LOG",
-                                Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
-                        .initializer("$T.getLogger($T.class)", SLF4J_LOGGER_FACTORY, selfType)
-                        .build())
-                .addField(FieldSpec.builder(COUNT_DOWN_LATCH, "SHUTDOWN_LATCH",
-                                Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
-                        .initializer("new $T(1)", COUNT_DOWN_LATCH)
-                        .build());
-
-        String banner = "═══════════════════════════════════════════════════════════════════";
-
-        CodeBlock.Builder body = CodeBlock.builder()
-                .addStatement("LOG.info($S)", banner)
-                .addStatement("LOG.info($S)", "  Exeris Foundation - Generated Application")
-                .addStatement("LOG.info($S)", "  Domains: " + domains.size())
-                .addStatement("LOG.info($S)", banner)
-                .add("\n")
-                .beginControlFlow("try")
-                .add("// 1. Load configuration from environment\n")
-                .addStatement("$T profile = parseProfile($T.getenv().getOrDefault($S, $S))",
-                        KERNEL_PROFILE, System.class, "EXERIS_PROFILE", "DEV")
-                .addStatement("int port = $T.parseInt($T.getenv().getOrDefault($S, $S))",
-                        Integer.class, System.class, "EXERIS_PORT", "8443")
-                .addStatement("String configPath = $T.getenv().getOrDefault($S, $S)",
-                        System.class, "EXERIS_CONFIG_PATH", "config")
-                .addStatement("String certPath = $T.getenv().getOrDefault($S, $S)",
-                        System.class, "TLS_CERT_PATH", "config/tls/server.crt")
-                .addStatement("String keyPath = $T.getenv().getOrDefault($S, $S)",
-                        System.class, "TLS_KEY_PATH", "config/tls/server.key")
-                .add("\n")
-                .addStatement("LOG.info($S, profile, port)", "📦 Configuration: profile={}, port={}")
-                .add("\n")
-                .add("// 2. Build Kernel context\n")
-                .add("$T context = $T.builder()\n", KERNEL_CONTEXT, KERNEL_CONTEXT)
-                .add("        .profile(profile)\n")
-                .add("        .failurePolicy($T.FAIL_FAST)\n", failurePolicyType)
-                .add("        .configPath($T.of(configPath))\n", PATH)
-                .add("        .build();\n")
-                .add("\n")
-                .add("$T carrierConfig = $T.builder()\n", CARRIER_CONFIG, CARRIER_CONFIG)
-                .add("        .port(port)\n")
-                .add("        .certPath(certPath)\n")
-                .add("        .keyPath(keyPath)\n")
-                .add("        .build();\n")
-                .add("\n")
-                .add("// 3. Bootstrap Kernel\n")
-                .add("$T kernel = $T.builder()\n", KERNEL_BOOTSTRAP, KERNEL_BOOTSTRAP)
-                .add("        .context(context)\n")
-                .add("        .transportConfig(carrierConfig)\n")
-                .add("        .build();\n")
-                .add("\n")
-                .addStatement("LOG.info($S)", "🚀 Initializing Kernel subsystems...")
-                .addStatement("kernel.initialize()")
-                .add("\n")
-                .add("// 4. Create Composition Root (Generated DI wiring)\n")
-                .addStatement("LOG.info($S)", "🔧 Creating Composition Root...")
-                .addStatement("$T root = $T.create(kernel)", compositionRootType, compositionRootType)
-                .add("\n")
-                .add("// 5. Configure HTTP Router (Generated routes)\n")
-                .addStatement("LOG.info($S)", "🌐 Configuring HTTP routes...")
-                .addStatement("$T router = $T.configure(root)", HTTP3_ROUTER, routerConfigType)
-                .addStatement("kernel.getTransportBootstrap().setHttp3Router(router)")
-                .add("\n")
-                .add("// 6. Start Kernel\n")
-                .addStatement("LOG.info($S)", "🎯 Starting Kernel...")
-                .addStatement("kernel.start()")
-                .add("\n")
-                .addStatement("LOG.info($S)", banner)
-                .addStatement("LOG.info($S, port)", "  ✅ Application RUNNING on port {}")
-                .addStatement("LOG.info($S, port)", "  📍 API: https://localhost:{}/api/v1")
-                .addStatement("LOG.info($S)", banner)
-                .add("\n")
-                .add("// 7. Shutdown hook\n")
-                .add("$T.getRuntime().addShutdownHook(new $T(() -> {\n", Runtime.class, Thread.class)
-                .add("    LOG.info($S);\n", "🛑 Shutting down...")
-                .add("    try { kernel.shutdown(); } catch ($T e) { LOG.error($S, e); }\n",
-                        Exception.class, "Shutdown error")
-                .add("    SHUTDOWN_LATCH.countDown();\n")
-                .add("}));\n")
-                .add("\n")
-                .addStatement("SHUTDOWN_LATCH.await()")
-                .nextControlFlow("catch ($T e)", Exception.class)
-                .addStatement("LOG.error($S, e)", "❌ Fatal error")
-                .addStatement("$T.exit(1)", System.class)
-                .endControlFlow();
-
-        type.addMethod(MethodSpec.methodBuilder("main")
+        MethodSpec mainMethod = MethodSpec.methodBuilder("main")
                 .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
                 .returns(TypeName.VOID)
                 .addParameter(String[].class, "args")
-                .addCode(body.build())
-                .build());
-
-        type.addMethod(MethodSpec.methodBuilder("parseProfile")
-                .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
-                .returns(KERNEL_PROFILE)
-                .addParameter(String.class, "value")
-                .addCode("try { return $T.valueOf(value.toUpperCase()); }\n", KERNEL_PROFILE)
-                .addCode("catch ($T e) { return $T.DEV; }\n", Exception.class, KERNEL_PROFILE)
-                .build());
-
-        return new GeneratedFile(basePackage, className,
-                KernelScaffold.render(basePackage, type.build()), ArtifactType.CONFIGURATION);
-    }
-
-    private GeneratedFile generateCompositionRoot(List<DomainMetadata> domains, String basePackage) {
-        String className = "CompositionRoot";
-        ClassName selfType = ClassName.get(basePackage, className);
-
-        boolean hasEvents = domains.stream().anyMatch(DomainMetadata::hasEvents);
-        boolean hasSagas = domains.stream().anyMatch(DomainMetadata::isSaga);
-        boolean hasGraph = domains.stream().anyMatch(DomainMetadata::hasGraphMetadata);
-
-        TypeSpec.Builder type = KernelScaffold.publicClass(className)
-                .addModifiers(Modifier.FINAL)
-                .addJavadoc("Generated Composition Root - Manual DI wiring.\n")
-                .addJavadoc("<p>Wires all generated components for $L domain(s).\n", domains.size());
-        if (hasEvents) type.addJavadoc("<p>Includes: Event Store, Event Publishers\n");
-        if (hasSagas) type.addJavadoc("<p>Includes: Saga Engine, Saga Orchestrators\n");
-        if (hasGraph) type.addJavadoc("<p>Includes: Graph Synchronization\n");
-        type.addJavadoc("<p><b>DO NOT EDIT</b> - Regenerate from domain models.\n");
-
-        type.addField(FieldSpec.builder(SLF4J_LOGGER, "LOG",
-                        Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
-                .initializer("$T.getLogger($T.class)", SLF4J_LOGGER_FACTORY, selfType)
-                .build());
-
-        // Infrastructure fields
-        type.addField(FieldSpec.builder(DATASOURCE, "dataSource", Modifier.PRIVATE, Modifier.FINAL).build());
-        if (hasEvents) {
-            type.addField(FieldSpec.builder(EVENT_STORE, "eventStore", Modifier.PRIVATE, Modifier.FINAL).build());
-            type.addField(FieldSpec.builder(OUTBOX_SIGNAL, "outboxSignal", Modifier.PRIVATE, Modifier.FINAL).build());
-        }
-        if (hasSagas) {
-            type.addField(FieldSpec.builder(SAGA_ENGINE, "sagaEngine", Modifier.PRIVATE, Modifier.FINAL).build());
-        }
-        if (hasGraph) {
-            type.addField(FieldSpec.builder(GRAPH_SERVICE, "graphService", Modifier.PRIVATE, Modifier.FINAL).build());
-        }
-
-        // Per-domain fields
-        for (DomainMetadata domain : domains) {
-            DomainNames d = DomainNames.from(domain);
-            type.addField(FieldSpec.builder(
-                    ClassName.get(d.domainBase() + ".repository", d.name() + "Repository"),
-                    d.lower() + "Repository", Modifier.PRIVATE, Modifier.FINAL).build());
-        }
-        for (DomainMetadata domain : domains) {
-            DomainNames d = DomainNames.from(domain);
-            type.addField(FieldSpec.builder(
-                    ClassName.get(d.domainBase() + ".service", d.name() + "Service"),
-                    d.lower() + "Service", Modifier.PRIVATE, Modifier.FINAL).build());
-        }
-        for (DomainMetadata domain : domains) {
-            DomainNames d = DomainNames.from(domain);
-            type.addField(FieldSpec.builder(
-                    ClassName.get(d.domainBase() + ".handler", d.name() + "Handler"),
-                    d.lower() + "Handler", Modifier.PRIVATE, Modifier.FINAL).build());
-        }
-        if (hasEvents) {
-            for (DomainMetadata domain : domains) {
-                if (!domain.hasEvents()) continue;
-                DomainNames d = DomainNames.from(domain);
-                ClassName publisherType = ClassName.get(d.domainBase() + ".event", d.name() + "Events", "Publisher");
-                type.addField(FieldSpec.builder(publisherType,
-                        d.lower() + "EventPublisher", Modifier.PRIVATE, Modifier.FINAL).build());
-            }
-        }
-        if (hasSagas) {
-            for (DomainMetadata domain : domains) {
-                if (!domain.isSaga()) continue;
-                DomainNames d = DomainNames.from(domain);
-                type.addField(FieldSpec.builder(
-                        ClassName.get(d.domainBase() + ".saga", sagaTypeName(domain)),
-                        d.lower() + "Saga", Modifier.PRIVATE, Modifier.FINAL).build());
-            }
-            for (DomainMetadata domain : domains) {
-                if (!(domain.hasEvents() && domain.isSaga())) continue;
-                DomainNames d = DomainNames.from(domain);
-                type.addField(FieldSpec.builder(
-                        ClassName.get(d.domainBase() + ".event", d.name() + "EventHandler"),
-                        d.lower() + "EventHandler", Modifier.PRIVATE, Modifier.FINAL).build());
-            }
-        }
-        if (hasGraph) {
-            for (DomainMetadata domain : domains) {
-                if (!domain.hasGraphMetadata()) continue;
-                DomainNames d = DomainNames.from(domain);
-                type.addField(FieldSpec.builder(
-                        ClassName.get(d.domainBase() + ".graph", d.name() + "GraphSync"),
-                        d.lower() + "GraphSync", Modifier.PRIVATE, Modifier.FINAL).build());
-            }
-        }
-
-        // Constructor
-        type.addMethod(buildCompositionRootConstructor(domains, hasEvents, hasSagas, hasGraph));
-
-        // Factory
-        type.addMethod(MethodSpec.methodBuilder("create")
-                .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-                .returns(selfType)
-                .addParameter(KERNEL_BOOTSTRAP, "kernel")
-                .addStatement("return new $T(kernel)", selfType)
-                .build());
-
-        // Getters
-        if (hasEvents) {
-            type.addMethod(simpleGetter(EVENT_STORE, "eventStore"));
-        }
-        if (hasSagas) {
-            type.addMethod(simpleGetter(SAGA_ENGINE, "sagaEngine"));
-        }
-        if (hasGraph) {
-            type.addMethod(simpleGetter(GRAPH_SERVICE, "graphService"));
-        }
-        for (DomainMetadata domain : domains) {
-            DomainNames d = DomainNames.from(domain);
-            type.addMethod(simpleGetter(
-                    ClassName.get(d.domainBase() + ".handler", d.name() + "Handler"),
-                    d.lower() + "Handler"));
-        }
-        for (DomainMetadata domain : domains) {
-            DomainNames d = DomainNames.from(domain);
-            type.addMethod(simpleGetter(
-                    ClassName.get(d.domainBase() + ".service", d.name() + "Service"),
-                    d.lower() + "Service"));
-        }
-        if (hasEvents) {
-            for (DomainMetadata domain : domains) {
-                if (!domain.hasEvents()) continue;
-                DomainNames d = DomainNames.from(domain);
-                type.addMethod(simpleGetter(
-                        ClassName.get(d.domainBase() + ".event", d.name() + "Events", "Publisher"),
-                        d.lower() + "EventPublisher"));
-            }
-        }
-        if (hasSagas) {
-            for (DomainMetadata domain : domains) {
-                if (!domain.isSaga()) continue;
-                DomainNames d = DomainNames.from(domain);
-                type.addMethod(simpleGetter(
-                        ClassName.get(d.domainBase() + ".saga", sagaTypeName(domain)),
-                        d.lower() + "Saga"));
-            }
-            for (DomainMetadata domain : domains) {
-                if (!(domain.hasEvents() && domain.isSaga())) continue;
-                DomainNames d = DomainNames.from(domain);
-                type.addMethod(simpleGetter(
-                        ClassName.get(d.domainBase() + ".event", d.name() + "EventHandler"),
-                        d.lower() + "EventHandler"));
-            }
-        }
-        if (hasGraph) {
-            for (DomainMetadata domain : domains) {
-                if (!domain.hasGraphMetadata()) continue;
-                DomainNames d = DomainNames.from(domain);
-                type.addMethod(simpleGetter(
-                        ClassName.get(d.domainBase() + ".graph", d.name() + "GraphSync"),
-                        d.lower() + "GraphSync"));
-            }
-        }
-
-        return new GeneratedFile(basePackage, className,
-                KernelScaffold.render(basePackage, type.build()), ArtifactType.CONFIGURATION);
-    }
-
-    private MethodSpec buildCompositionRootConstructor(List<DomainMetadata> domains,
-                                                       boolean hasEvents,
-                                                       boolean hasSagas,
-                                                       boolean hasGraph) {
-        CodeBlock.Builder body = CodeBlock.builder()
-                .addStatement("LOG.info($S)", "🔧 Wiring generated components...")
-                .add("\n")
-                .add("// DataSource\n")
-                .addStatement("var persistenceBootstrap = kernel.getPersistenceBootstrap()")
-                .addStatement("this.dataSource = persistenceBootstrap != null ? persistenceBootstrap.getDataSource() : null")
-                .beginControlFlow("if (dataSource == null)")
-                .addStatement("LOG.warn($S)", "⚠️ DataSource is null - degraded mode")
-                .endControlFlow()
-                .add("\n");
-
-        if (hasEvents) {
-            body.add("// Event Infrastructure\n")
-                    .addStatement("var eventsBootstrap = kernel.getEventsBootstrap()")
-                    .addStatement("this.eventStore = eventsBootstrap != null ? eventsBootstrap.getEventStore() : null")
-                    .addStatement("this.outboxSignal = eventsBootstrap != null ? eventsBootstrap.getOutboxSignal() : null")
-                    .addStatement("LOG.info($S)", "✅ Event Infrastructure wired")
-                    .add("\n");
-        }
-        if (hasSagas) {
-            body.add("// Saga Infrastructure\n")
-                    .addStatement("var flowBootstrap = kernel.getFlowBootstrap()")
-                    .addStatement("this.sagaEngine = flowBootstrap != null ? flowBootstrap.getSagaEngine() : null")
-                    .addStatement("LOG.info($S)", "✅ Saga Engine wired")
-                    .add("\n");
-        }
-        if (hasGraph) {
-            body.add("// Graph Infrastructure\n")
-                    .addStatement("var graphBootstrap = kernel.getGraphBootstrap()")
-                    .addStatement("this.graphService = graphBootstrap != null ? graphBootstrap.getGraphService() : null")
-                    .addStatement("LOG.info($S)", "✅ Graph Service wired")
-                    .add("\n");
-        }
-
-        body.add("// Repositories\n");
-        for (DomainMetadata domain : domains) {
-            DomainNames d = DomainNames.from(domain);
-            ClassName repoType = ClassName.get(d.domainBase() + ".repository", d.name() + "Repository");
-            body.addStatement("this.$LRepository = new $T(dataSource)", d.lower(), repoType);
-        }
-        body.addStatement("LOG.info($S)", "✅ Repositories wired").add("\n");
-
-        if (hasEvents) {
-            body.add("// Event Publishers\n");
-            for (DomainMetadata domain : domains) {
-                if (!domain.hasEvents()) continue;
-                DomainNames d = DomainNames.from(domain);
-                ClassName publisherType = ClassName.get(d.domainBase() + ".event", d.name() + "Events", "Publisher");
-                body.addStatement("this.$LEventPublisher = new $T(eventStore, outboxSignal)",
-                        d.lower(), publisherType);
-            }
-            body.addStatement("LOG.info($S)", "✅ Event Publishers wired").add("\n");
-        }
-
-        body.add("// Services\n");
-        for (DomainMetadata domain : domains) {
-            DomainNames d = DomainNames.from(domain);
-            ClassName serviceType = ClassName.get(d.domainBase() + ".service", d.name() + "Service");
-            if (domain.hasEvents()) {
-                body.addStatement("this.$LService = new $T($LRepository, $LEventPublisher)",
-                        d.lower(), serviceType, d.lower(), d.lower());
-            } else {
-                body.addStatement("this.$LService = new $T($LRepository)", d.lower(), serviceType, d.lower());
-            }
-        }
-        body.addStatement("LOG.info($S)", "✅ Services wired").add("\n");
-
-        body.add("// Handlers\n");
-        for (DomainMetadata domain : domains) {
-            DomainNames d = DomainNames.from(domain);
-            ClassName handlerType = ClassName.get(d.domainBase() + ".handler", d.name() + "Handler");
-            body.addStatement("this.$LHandler = new $T($LService)", d.lower(), handlerType, d.lower());
-        }
-        body.addStatement("LOG.info($S)", "✅ Handlers wired").add("\n");
-
-        if (hasSagas) {
-            body.add("// Sagas\n");
-            for (DomainMetadata domain : domains) {
-                if (!domain.isSaga()) continue;
-                DomainNames d = DomainNames.from(domain);
-                ClassName sagaType = ClassName.get(d.domainBase() + ".saga", sagaTypeName(domain));
-                body.addStatement("this.$LSaga = new $T(sagaEngine, eventStore, $LRepository)",
-                        d.lower(), sagaType, d.lower());
-            }
-            body.addStatement("LOG.info($S)", "✅ Sagas wired").add("\n");
-
-            body.add("// Event Handlers (saga triggers)\n");
-            for (DomainMetadata domain : domains) {
-                if (!(domain.hasEvents() && domain.isSaga())) continue;
-                DomainNames d = DomainNames.from(domain);
-                ClassName handlerType = ClassName.get(d.domainBase() + ".event", d.name() + "EventHandler");
-                body.addStatement("this.$LEventHandler = new $T($LSaga, eventStore)",
-                        d.lower(), handlerType, d.lower());
-            }
-            body.addStatement("LOG.info($S)", "✅ Event Handlers wired").add("\n");
-        }
-
-        if (hasGraph) {
-            body.add("// Graph Sync\n");
-            for (DomainMetadata domain : domains) {
-                if (!domain.hasGraphMetadata()) continue;
-                DomainNames d = DomainNames.from(domain);
-                ClassName syncType = ClassName.get(d.domainBase() + ".graph", d.name() + "GraphSync");
-                body.addStatement("this.$LGraphSync = new $T(graphService)", d.lower(), syncType);
-            }
-            body.addStatement("LOG.info($S)", "✅ Graph Sync wired").add("\n");
-        }
-
-        body.addStatement("LOG.info($S)", "🎯 Composition Root complete: " + domains.size() + " domain(s)");
-
-        return MethodSpec.constructorBuilder()
-                .addModifiers(Modifier.PRIVATE)
-                .addParameter(KERNEL_BOOTSTRAP, "kernel")
-                .addCode(body.build())
+                .addStatement("new $T().run()", selfType)
                 .build();
+
+        MethodSpec runMethod = MethodSpec.methodBuilder("run")
+                .addModifiers(Modifier.PUBLIC)
+                .returns(TypeName.VOID)
+                .addJavadoc("Application entry point. Boots the Kernel under a forwarding\n")
+                .addJavadoc("HTTP handler bound via {@link $T} and hands control to\n", SCOPED_VALUE)
+                .addJavadoc("{@link $T}.\n", lifecycleType)
+                .addJavadoc("<p>While {@link $T#run()} is still composing the per-entity\n", lifecycleType)
+                .addJavadoc("wiring (between bootstrap completion and the moment the\n")
+                .addJavadoc("handler slot is set), inbound requests respond\n")
+                .addJavadoc("{@link $T#SERVICE_UNAVAILABLE} rather than being silently dropped.\n", HTTP_STATUS)
+                .addStatement("$T handlerSlot = new $T<>()", atomicHttpHandler, ATOMIC_REFERENCE)
+                .addStatement("$T forwardingHandler = exchange -> {\n"
+                                + "    $T h = handlerSlot.get();\n"
+                                + "    if (h != null) {\n"
+                                + "        h.handle(exchange);\n"
+                                + "    } else {\n"
+                                + "        exchange.respond($T.SERVICE_UNAVAILABLE);\n"
+                                + "    }\n"
+                                + "}",
+                        HTTP_HANDLER, HTTP_HANDLER, HTTP_STATUS)
+                .beginControlFlow("try")
+                .addCode(CodeBlock.builder()
+                        .add("$T.where($T.HTTP_SERVER_HANDLER, forwardingHandler).call(() -> {\n",
+                                SCOPED_VALUE, HTTP_KERNEL_PROVIDERS)
+                        .indent()
+                        .add("$T.builder()\n", KERNEL_BOOTSTRAP)
+                        .add("    .selector($T.forNames(subsystems().split($S)))\n", BOOTSTRAP_SELECTOR, ",")
+                        .add("    .build()\n")
+                        .add("    .boot(() -> new $T(handlerSlot, dataSource()).run());\n", lifecycleType)
+                        .add("return null;\n")
+                        .unindent()
+                        .addStatement("})")
+                        .build())
+                .nextControlFlow("catch ($T e)", RUNTIME_EXCEPTION)
+                .addStatement("throw e")
+                .nextControlFlow("catch (Exception e)")
+                .addStatement("throw new $T($S, e)", RUNTIME_EXCEPTION, "Bootstrap failed")
+                .endControlFlow()
+                .build();
+
+        MethodSpec subsystemsMethod = MethodSpec.methodBuilder("subsystems")
+                .addModifiers(Modifier.PROTECTED)
+                .returns(String.class)
+                .addJavadoc("Comma-separated Kernel subsystem list passed to\n")
+                .addJavadoc("{@link $T#forNames(String...)}. Default is the canonical\n", BOOTSTRAP_SELECTOR)
+                .addJavadoc("Open-Core selector.\n")
+                .addJavadoc("<p>Subclass {@code Application} and override this method to\n")
+                .addJavadoc("add/remove subsystems — e.g.\\ to drop {@code graph} when the\n")
+                .addJavadoc("project has no graph projections. (It must be an instance\n")
+                .addJavadoc("method, not a {@code static final} field, otherwise javac\n")
+                .addJavadoc("inlines the constant and the override has no effect.)\n")
+                .addStatement("return $S", SUBSYSTEMS)
+                .build();
+
+        MethodSpec dataSourceMethod = MethodSpec.methodBuilder("dataSource")
+                .addModifiers(Modifier.PROTECTED)
+                .returns(DATA_SOURCE)
+                .addJavadoc("Provides the JDBC {@link $T} the generated repositories use.\n", DATA_SOURCE)
+                .addJavadoc("<p>The default body throws — consumers <b>must</b> subclass\n")
+                .addJavadoc("{@code Application} and override this method to plug in a\n")
+                .addJavadoc("real pool (HikariCP, PGSimpleDataSource, …). The Repository\n")
+                .addJavadoc("generator currently emits raw-JDBC repositories; migration to\n")
+                .addJavadoc("the SPI's {@code TransactionalExecutor} is a separate future PR.\n")
+                .addStatement("throw new $T($S)",
+                        ClassName.get("java.lang", "UnsupportedOperationException"),
+                        "Override Application.dataSource() to provide a configured javax.sql.DataSource")
+                .build();
+
+        TypeSpec applicationType = KernelScaffold.publicClass("Application")
+                .addJavadoc("Generated application entry point.\n")
+                .addJavadoc("<p>Drives {@link $T} with the canonical SPI subsystem set\n", KERNEL_BOOTSTRAP)
+                .addJavadoc("({@code http,persistence,graph,flow,events,crypto}) and hands the\n")
+                .addJavadoc("composed Handler/Service/Repository/Router stack off to\n")
+                .addJavadoc("{@link $T#run()}.\n", lifecycleType)
+                .addJavadoc("<p>Subclass to override {@link #dataSource()} or\n")
+                .addJavadoc("{@link #subsystems()}.\n")
+                .addJavadoc("<p>Runtime classpath requirements (in addition to\n")
+                .addJavadoc("{@code exeris-kernel-spi} / {@code -core}): {@code org.slf4j:slf4j-api}\n")
+                .addJavadoc("(used by the generated repositories/services/handlers) and a\n")
+                .addJavadoc("{@code javax.sql.DataSource} implementation supplied via\n")
+                .addJavadoc("{@link #dataSource()} (e.g.\\ HikariCP).\n")
+                .addJavadoc("<p><b>DO NOT EDIT</b> - Regenerate from domain models.\n")
+                .addMethod(mainMethod)
+                .addMethod(runMethod)
+                .addMethod(subsystemsMethod)
+                .addMethod(dataSourceMethod)
+                .build();
+
+        return new GeneratedFile(basePackage, "Application",
+                KernelScaffold.render(basePackage, applicationType), ArtifactType.APPLICATION);
     }
 
-    private GeneratedFile generateRouterConfig(List<DomainMetadata> domains, String basePackage) {
-        String className = "RouterConfig";
-        ClassName selfType = ClassName.get(basePackage, className);
-        ClassName compositionRootType = ClassName.get(basePackage, "CompositionRoot");
+    private GeneratedFile buildRuntimeLifecycle(List<DomainMetadata> domains, String basePackage) {
+        ClassName selfType = ClassName.get(basePackage, "RuntimeLifecycle");
+        TypeName atomicHttpHandler = ParameterizedTypeName.get(ATOMIC_REFERENCE, HTTP_HANDLER);
 
-        TypeSpec.Builder type = KernelScaffold.publicClass(className)
+        TypeSpec.Builder type = KernelScaffold.publicClass("RuntimeLifecycle")
                 .addModifiers(Modifier.FINAL)
-                .addJavadoc("Generated Router Configuration.\n")
-                .addJavadoc("<p>Registers routes for $L domain(s).\n", domains.size())
+                .addJavadoc("Generated runtime-lifecycle wiring.\n")
+                .addJavadoc("<p>Composes per-entity Repository → Service → Handler chains,\n")
+                .addJavadoc("builds an {@link $T} with the canonical CRUD routes per\n", HTTP_ROUTER)
+                .addJavadoc("entity, sets the forwarding handler slot, and parks the JVM\n")
+                .addJavadoc("on a shutdown latch.\n")
                 .addJavadoc("<p><b>DO NOT EDIT</b> - Regenerate from domain models.\n")
                 .addField(FieldSpec.builder(SLF4J_LOGGER, "LOG",
                                 Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
                         .initializer("$T.getLogger($T.class)", SLF4J_LOGGER_FACTORY, selfType)
                         .build())
-                .addMethod(MethodSpec.constructorBuilder().addModifiers(Modifier.PRIVATE).build());
+                .addField(FieldSpec.builder(atomicHttpHandler, "handlerSlot",
+                        Modifier.PRIVATE, Modifier.FINAL).build())
+                .addField(FieldSpec.builder(DATA_SOURCE, "dataSource",
+                        Modifier.PRIVATE, Modifier.FINAL).build());
 
-        CodeBlock.Builder body = CodeBlock.builder()
-                .addStatement("$T router = new $T()", HTTP3_ROUTER, HTTP3_ROUTER)
-                .add("\n")
-                .add("// Health check\n")
-                .add("router.register($S, $S, exchange -> {\n", "GET", "/health")
-                .add("    exchange.response().sendHeaders(200, null);\n")
-                .add("    exchange.response().sendText($S);\n", "{\"status\":\"UP\"}")
-                .add("});\n")
-                .add("\n")
-                .add("// API info\n")
-                .add("router.register($S, $S, exchange -> {\n", "GET", "/api/v1")
-                .add("    exchange.response().sendHeaders(200, null);\n")
-                .add("    exchange.response().sendText($S);\n",
-                        "{\"name\":\"Exeris Foundation API\",\"version\":\"v1\",\"domains\":" + domains.size() + "}")
-                .add("});\n")
-                .add("\n");
-
-        for (DomainMetadata domain : domains) {
-            DomainNames d = DomainNames.from(domain);
-            String path = (domain.effectivePath() != null && !domain.effectivePath().isEmpty())
-                    ? domain.effectivePath()
-                    : "/" + toKebabCase(d.name()) + "s";
-            String apiPath = "/api/v1" + path;
-            String apiPathStar = apiPath + "/*";
-
-            body.add("// ═══ $L routes ═══\n", d.name())
-                    .addStatement("router.register($S, $S, root.$LHandler()::handleGetAll)", "GET", apiPath, d.lower())
-                    .addStatement("router.register($S, $S, root.$LHandler()::handleGetById)", "GET", apiPathStar, d.lower())
-                    .addStatement("router.register($S, $S, root.$LHandler()::handleCreate)", "POST", apiPath, d.lower())
-                    .addStatement("router.register($S, $S, root.$LHandler()::handleUpdate)", "PUT", apiPathStar, d.lower())
-                    .addStatement("router.register($S, $S, root.$LHandler()::handleDelete)", "DELETE", apiPathStar, d.lower())
-                    .addStatement("LOG.info($S)", "📍 Registered: CRUD " + apiPath)
-                    .add("\n");
-        }
-
-        body.addStatement("return router");
-
-        type.addMethod(MethodSpec.methodBuilder("configure")
-                .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-                .returns(HTTP3_ROUTER)
-                .addParameter(compositionRootType, "root")
-                .addCode(body.build())
+        type.addMethod(MethodSpec.constructorBuilder()
+                .addModifiers(Modifier.PUBLIC)
+                .addParameter(atomicHttpHandler, "handlerSlot")
+                .addParameter(DATA_SOURCE, "dataSource")
+                .addStatement("this.handlerSlot = handlerSlot")
+                .addStatement("this.dataSource = dataSource")
                 .build());
 
-        return new GeneratedFile(basePackage, className,
-                KernelScaffold.render(basePackage, type.build()), ArtifactType.CONFIGURATION);
+        type.addMethod(buildRunMethod(domains, basePackage));
+
+        return new GeneratedFile(basePackage, "RuntimeLifecycle",
+                KernelScaffold.render(basePackage, type.build()), ArtifactType.APPLICATION);
     }
 
-    private MethodSpec simpleGetter(TypeName returnType, String fieldName) {
-        return MethodSpec.methodBuilder(fieldName)
+    private MethodSpec buildRunMethod(List<DomainMetadata> domains, String basePackage) {
+        MethodSpec.Builder method = MethodSpec.methodBuilder("run")
                 .addModifiers(Modifier.PUBLIC)
-                .returns(returnType)
-                .addStatement("return $L", fieldName)
-                .build();
-    }
+                .returns(TypeName.VOID)
+                .addJavadoc("Composes the application, sets the forwarding HTTP handler,\n")
+                .addJavadoc("and parks on a shutdown latch until the JVM exits.\n");
 
-    private static String sagaTypeName(DomainMetadata domain) {
-        String configured = domain.sagaMetadata() != null ? domain.sagaMetadata().name() : null;
-        return configured != null ? configured : domain.entityName() + "Saga";
-    }
+        // Per-entity wiring: Repository → Service → Handler
+        for (DomainMetadata domain : domains) {
+            String entity = domain.entityName();
+            String entityLower = lowerFirst(entity);
+            String domainPkg = domain.packageName();
+            if (!domainPkg.endsWith(".domain")) {
+                throw new IllegalArgumentException(
+                        "Domain package '" + domainPkg + "' for entity '" + entity
+                                + "' does not end with '.domain'. The Application "
+                                + "generator derives the .repository/.service/.handler "
+                                + "package paths by replacing the '.domain' suffix; "
+                                + "without it the per-entity wiring would resolve "
+                                + "Repository/Service/Handler to the wrong location. "
+                                + "Either rename the domain package to end with "
+                                + "'.domain' or extend DomainMetadata to carry explicit "
+                                + "infrastructure package paths.");
+            }
+            String repoPkg = domainPkg.replace(".domain", ".repository");
+            String servicePkg = domainPkg.replace(".domain", ".service");
+            String handlerPkg = domainPkg.replace(".domain", ".handler");
 
-    private static String toLowerFirst(String s) {
-        return s.isEmpty() ? s : Character.toLowerCase(s.charAt(0)) + s.substring(1);
-    }
+            ClassName repoType = ClassName.get(repoPkg, entity + "Repository");
+            ClassName serviceType = ClassName.get(servicePkg, entity + "Service");
+            ClassName handlerType = ClassName.get(handlerPkg, entity + "Handler");
 
-    private static String toKebabCase(String camelCase) {
-        return camelCase.replaceAll("([a-z])([A-Z])", "$1-$2").toLowerCase();
-    }
-
-    /**
-     * Triple of derived names used by every per-domain field/wiring/getter
-     * loop. Centralized so SonarQube doesn't flag the same three lines across
-     * a dozen call sites.
-     */
-    private record DomainNames(String name, String lower, String domainBase) {
-        static DomainNames from(DomainMetadata domain) {
-            String name = domain.entityName();
-            return new DomainNames(name, toLowerFirst(name),
-                    domain.packageName().replace(".domain", ""));
+            method.addStatement("$T $LRepository = new $T(dataSource)",
+                    repoType, entityLower, repoType);
+            method.addStatement("$T $LService = new $T($LRepository)",
+                    serviceType, entityLower, serviceType, entityLower);
+            method.addStatement("$T $LHandler = new $T($LService)",
+                    handlerType, entityLower, handlerType, entityLower);
         }
+
+        // Router build
+        method.addStatement("$T.Builder routerBuilder = $T.builder()", HTTP_ROUTER, HTTP_ROUTER);
+        for (DomainMetadata domain : domains) {
+            String entity = domain.entityName();
+            String entityLower = lowerFirst(entity);
+            String basePath = domain.effectivePath() != null
+                    ? domain.effectivePath()
+                    : "/" + entityLower + "s";
+            method.addStatement("routerBuilder.route($T.GET, $S, $LHandler::handleGetAll)",
+                    HTTP_METHOD, basePath, entityLower);
+            method.addStatement("routerBuilder.route($T.GET, $S, $LHandler::handleGetById)",
+                    HTTP_METHOD, basePath + "/{id}", entityLower);
+            method.addStatement("routerBuilder.route($T.POST, $S, $LHandler::handleCreate)",
+                    HTTP_METHOD, basePath, entityLower);
+            method.addStatement("routerBuilder.route($T.PUT, $S, $LHandler::handleUpdate)",
+                    HTTP_METHOD, basePath + "/{id}", entityLower);
+            method.addStatement("routerBuilder.route($T.DELETE, $S, $LHandler::handleDelete)",
+                    HTTP_METHOD, basePath + "/{id}", entityLower);
+        }
+        method.addStatement("$T router = routerBuilder.build()", HTTP_ROUTER);
+        method.addStatement("handlerSlot.set(router::handle)");
+        method.addStatement("LOG.info($S, $L)",
+                "Application bootstrap complete: {} entities wired", domains.size());
+
+        // Shutdown latch
+        method.addStatement("$T shutdownLatch = new $T($L)",
+                        COUNT_DOWN_LATCH, COUNT_DOWN_LATCH, 1)
+                .addStatement("$T.getRuntime().addShutdownHook(new $T(shutdownLatch::countDown, $S))",
+                        RUNTIME, THREAD, "exeris-shutdown")
+                .beginControlFlow("try")
+                .addStatement("shutdownLatch.await()")
+                .nextControlFlow("catch (InterruptedException e)")
+                .addStatement("$T.currentThread().interrupt()", THREAD)
+                .endControlFlow();
+
+        return method.build();
+    }
+
+    private String lowerFirst(String s) {
+        if (s == null || s.isEmpty()) return s;
+        return Character.toLowerCase(s.charAt(0)) + s.substring(1);
     }
 
     @Override
     public ArtifactType artifactType() {
-        return ArtifactType.CONFIGURATION;
+        return ArtifactType.APPLICATION;
     }
 }

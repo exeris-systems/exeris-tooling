@@ -56,6 +56,15 @@
                 <version>${exeris.kernel.version}</version>
             </dependency>
 
+            <!-- Exeris Kernel Open-Core CORE — required by the Application
+                 emission compile-test for core.bootstrap.KernelBootstrap and
+                 core.http.routing.HttpRouter. -->
+            <dependency>
+                <groupId>eu.exeris</groupId>
+                <artifactId>exeris-kernel-core</artifactId>
+                <version>${exeris.kernel.version}</version>
+            </dependency>
+
             <!-- Internal tooling modules -->
             <dependency>
                 <groupId>eu.exeris.tooling</groupId>
