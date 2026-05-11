@@ -9,6 +9,7 @@ import eu.exeris.sdk.sourcemodel.ast.GraphMetadata;
 import eu.exeris.sdk.sourcemodel.ast.SagaMetadata;
 import eu.exeris.sdk.sourcemodel.ast.SagaStepMetadata;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
+import eu.exeris.tooling.codegen.java.kernel.KernelApplicationGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelGeneratorStrategy;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -86,10 +87,23 @@ class KernelCodegenCompileTest {
 
         List<GeneratedFile> generated = new KernelGeneratorStrategy().generate(metadata);
 
+        // Application + RuntimeLifecycle are project-wide; not in the
+        // strategy. Run the Application generator separately so the
+        // compile-gate verifies the full bootstrap stack resolves
+        // against the real exeris-kernel-spi and -core artifacts.
+        String basePackage = DOMAIN_PACKAGE.replace(".domain", "");
+        List<GeneratedFile> applicationFiles =
+                new KernelApplicationGenerator().generateAll(List.of(metadata), basePackage);
+
         InMemoryJavaCompiler compiler = new InMemoryJavaCompiler()
                 .addSource(DOMAIN_PACKAGE + "." + ENTITY_NAME, sourceEntity());
 
         for (GeneratedFile file : generated) {
+            if ("java".equals(file.extension())) {
+                compiler.addSource(file.packageName() + "." + file.className(), file.content());
+            }
+        }
+        for (GeneratedFile file : applicationFiles) {
             if ("java".equals(file.extension())) {
                 compiler.addSource(file.packageName() + "." + file.className(), file.content());
             }

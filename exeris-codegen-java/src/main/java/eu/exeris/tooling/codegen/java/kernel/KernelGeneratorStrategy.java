@@ -32,8 +32,16 @@ import java.util.List;
  * against the real SPI/CORE types. Per-generator migration target:
  * <ul>
  *   <li>{@link KernelClientGenerator} → SPI HTTP/transport client (TBD against the actually exposed client SPI; align with the working benchmark app)</li>
- *   <li>{@link KernelApplicationGenerator} → {@code core.bootstrap.KernelBootstrap} + {@code spi.bootstrap.BootstrapSelector} + {@code spi.context.KernelProviders} + {@code core.http.routing.HttpRouter}</li>
  * </ul>
+ *
+ * <h2>Project-wide (invoked separately by {@code CodegenMain})</h2>
+ * <p>{@link KernelApplicationGenerator} is <b>not</b> part of the
+ * per-entity strategy — it emits two project-wide files
+ * ({@code Application.java} + {@code RuntimeLifecycle.java}) and
+ * therefore needs the full domain list, not a single
+ * {@link DomainMetadata}. {@code CodegenMain} invokes it explicitly
+ * after the per-entity loop via
+ * {@link KernelApplicationGenerator#generateAll(java.util.List, String)}.
  *
  * <p>Re-register each one only after its emitted code resolves against
  * {@code exeris-kernel-spi} / {@code exeris-kernel-core}. See the working

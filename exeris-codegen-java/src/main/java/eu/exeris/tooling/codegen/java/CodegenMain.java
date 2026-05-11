@@ -22,16 +22,30 @@ import java.util.stream.Stream;
 /**
  * Main entry point for Exeris Java Code Generator.
  * <p>
- * Generates the SPI-aligned subset of artifacts from domain metadata:
+ * Generates the SPI-aligned set of artifacts from domain metadata. The
+ * per-entity pass is driven by {@link
+ * eu.exeris.tooling.codegen.java.kernel.KernelGeneratorStrategy} and
+ * emits:
  * <ul>
- *   <li>{@code *Service.java} — POJO domain services for each entity</li>
- *   <li>{@code *Repository.java} — plain-JDBC repositories for each entity</li>
+ *   <li>{@code *Handler.java} — HTTP handlers against the SPI {@code HttpExchange}</li>
+ *   <li>{@code *Service.java} — POJO domain services</li>
+ *   <li>{@code *Repository.java} — plain-JDBC repositories</li>
+ *   <li>{@code *EventPublisher.java} / {@code *EventSubscriber.java} — domain events on the SPI event bus</li>
+ *   <li>{@code *GraphSync.java} — graph-sync projection (when {@code @Graph} is declared)</li>
+ *   <li>{@code *SagaFlow.java} — saga skeleton on the SPI flow framework (when {@code @Saga} is declared)</li>
  *   <li>Flyway SQL migrations</li>
  *   <li>OpenAPI 3.1 YAML specs</li>
  * </ul>
- * <p>HTTP-layer, event, saga, graph-sync, and application-infrastructure
- * generators are parked — see {@link eu.exeris.tooling.codegen.java.kernel.KernelGeneratorStrategy}
- * for the parked set and the Kernel SPI surface each one is gated on.
+ * <p>After the per-entity loop, the project-wide bootstrap pair is
+ * emitted by {@link eu.exeris.tooling.codegen.java.kernel.KernelApplicationGenerator}:
+ * <ul>
+ *   <li>{@code Application.java} — {@code KernelBootstrap} entry point with a
+ *       {@code dataSource()} override hook</li>
+ *   <li>{@code RuntimeLifecycle.java} — composes Repository → Service → Handler
+ *       chains, builds the {@code HttpRouter}, parks on a shutdown latch</li>
+ * </ul>
+ * <p>The only generator still parked is {@code KernelClientGenerator}
+ * (service-to-service client; awaits canonical client SPI shape).
  *
  * <h2>Usage:</h2>
  * <pre>
@@ -140,6 +154,21 @@ public final class CodegenMain {
                         filesGenerated++;
                     }
                 }
+            }
+
+            // ---------------------------------------------------------------
+            // Application bootstrap (one-shot, project-wide — Application
+            // and RuntimeLifecycle wired against Open-Core SPI). Not part
+            // of the per-entity strategy loop because it composes across
+            // the full domain list.
+            // ---------------------------------------------------------------
+            LOG.log(Level.INFO, "Generating application bootstrap");
+            KernelApplicationGenerator appGen = new KernelApplicationGenerator();
+            for (GeneratedFile file : appGen.generateAll(domains, basePackage)) {
+                writeFile(writer, file);
+                LOG.log(Level.DEBUG, () -> "wrote " + file.className()
+                        + " (" + appGen.artifactType() + ")");
+                filesGenerated++;
             }
 
             LOG.log(Level.INFO, "Code generation complete: files=" + filesGenerated
