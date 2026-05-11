@@ -10,12 +10,12 @@ import java.util.List;
  * Kernel Generator Strategy — Open-Core SPI/CORE-aligned generators.
  *
  * <h2>Registered set (active)</h2>
- * <p>Active set covers artifacts whose emitted code does not reference Kernel
- * API surface today, so it is aligned with Open-Core
- * {@code exeris-kernel-spi} / {@code exeris-kernel-core} by being decoupled:
+ * <p>Active set covers artifacts aligned with Open-Core
+ * {@code exeris-kernel-spi} / {@code exeris-kernel-core}:
  * <ul>
- *   <li>{@link KernelServiceGenerator} — POJO domain services</li>
- *   <li>{@link KernelRepositoryGenerator} — plain-JDBC repositories</li>
+ *   <li>{@link KernelHandlerGenerator} — HTTP handlers against {@code spi.http.HttpExchange} / {@code HttpStatus} / {@code spi.memory.LoanedBuffer}</li>
+ *   <li>{@link KernelServiceGenerator} — POJO domain services (no Kernel API surface)</li>
+ *   <li>{@link KernelRepositoryGenerator} — plain-JDBC repositories (no Kernel API surface)</li>
  *   <li>{@link KernelFlywayGenerator} — SQL migrations</li>
  *   <li>{@link KernelOpenApiGenerator} — OpenAPI 3.1 YAML</li>
  * </ul>
@@ -27,7 +27,6 @@ import java.util.List;
  * abstractions exist in Open-Core — the generators just need rewriting
  * against the real SPI/CORE types. Per-generator migration target:
  * <ul>
- *   <li>{@link KernelHandlerGenerator} → {@code spi.http.{HttpHandler, HttpExchange, HttpMethod, HttpResponse, HttpStatus, HttpHeader}} + {@code core.http.routing.HttpRouter}</li>
  *   <li>{@link KernelClientGenerator} → SPI HTTP/transport client (TBD against the actually exposed client SPI; align with the working benchmark app)</li>
  *   <li>{@link KernelEventGenerator} → {@code spi.events.{EventDescriptor, EventPayload, EventEngine, EventTypeSpec}} + {@code spi.persistence.EventStore}</li>
  *   <li>{@link KernelEventHandlerGenerator} → consumes the same SPI events surface as above</li>
@@ -48,6 +47,7 @@ public class KernelGeneratorStrategy {
     public KernelGeneratorStrategy() {
         this.registry = new GeneratorRegistry();
 
+        registry.register(new KernelHandlerGenerator());
         registry.register(new KernelServiceGenerator());
         registry.register(new KernelRepositoryGenerator());
         registry.register(new KernelFlywayGenerator());

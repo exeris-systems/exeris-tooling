@@ -26,6 +26,47 @@ class KernelGeneratorStrategyTest {
     }
 
     @Nested
+    @DisplayName("Handler Generation")
+    class HandlerGenerationTests {
+
+        @Test
+        @DisplayName("Should generate Handler emitting against Open-Core SPI HttpExchange")
+        void shouldGenerateHandler() {
+            DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                    .path("/orders")
+                    .build();
+
+            List<GeneratedFile> files = strategy.generate(metadata);
+
+            GeneratedFile handler = files.stream()
+                    .filter(f -> f.artifactType() == ArtifactType.CONTROLLER)
+                    .findFirst()
+                    .orElseThrow();
+
+            assertThat(handler.className()).isEqualTo("OrderHandler");
+            assertThat(handler.packageName()).isEqualTo("com.example.handler");
+            assertThat(handler.content())
+                    .contains("public class OrderHandler")
+                    .contains("import eu.exeris.kernel.spi.http.HttpExchange")
+                    .contains("import eu.exeris.kernel.spi.http.HttpStatus")
+                    .contains("import eu.exeris.kernel.spi.memory.LoanedBuffer")
+                    .contains("import tools.jackson.databind.ObjectMapper")
+                    .contains("OrderService service")
+                    .contains("handleGetAll(HttpExchange exchange)")
+                    .contains("handleGetById(HttpExchange exchange)")
+                    .contains("handleCreate(HttpExchange exchange)")
+                    .contains("handleUpdate(HttpExchange exchange)")
+                    .contains("handleDelete(HttpExchange exchange)")
+                    .contains("exchange.respond(HttpStatus.OK")
+                    .contains("HttpStatus.CREATED")
+                    .contains("HttpStatus.NO_CONTENT")
+                    .contains("HttpStatus.BAD_REQUEST")
+                    .contains("HttpStatus.NOT_FOUND")
+                    .contains("HttpStatus.INTERNAL_SERVER_ERROR");
+        }
+    }
+
+    @Nested
     @DisplayName("Service Generation")
     class ServiceGenerationTests {
 
@@ -94,7 +135,7 @@ class KernelGeneratorStrategyTest {
     class FullGenerationTests {
 
         @Test
-        @DisplayName("Should generate the four SPI-aligned artifacts (Service, Repository, Flyway, OpenAPI)")
+        @DisplayName("Should generate the five SPI-aligned artifacts (Handler, Service, Repository, Flyway, OpenAPI)")
         void shouldGenerateAllArtifacts() {
             // Given
             DomainMetadata metadata = DomainMetadata.builder("Product", "com.shop.domain")
@@ -106,9 +147,10 @@ class KernelGeneratorStrategyTest {
             List<GeneratedFile> files = strategy.generate(metadata);
 
             // Then
-            assertThat(files).hasSize(4);
+            assertThat(files).hasSize(5);
             assertThat(files).extracting(GeneratedFile::artifactType)
                     .containsExactlyInAnyOrder(
+                            ArtifactType.CONTROLLER,
                             ArtifactType.SERVICE,
                             ArtifactType.REPOSITORY,
                             ArtifactType.CONFIGURATION,

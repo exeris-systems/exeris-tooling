@@ -17,10 +17,12 @@
 
     <properties>
         <exeris.sdk.version>0.1.0-SNAPSHOT</exeris.sdk.version>
+        <exeris.kernel.version>0.7.0</exeris.kernel.version>
 
         <auto-service.version>1.1.1</auto-service.version>
         <palantir.javapoet.version>0.15.0</palantir.javapoet.version>
         <jackson.version>2.18.2</jackson.version>
+        <jackson3.version>3.0.4</jackson3.version>
         <swagger-parser.version>2.1.22</swagger-parser.version>
 
         <junit.version>5.11.4</junit.version>
@@ -42,6 +44,16 @@
                 <groupId>eu.exeris</groupId>
                 <artifactId>exeris-sdk-source-model</artifactId>
                 <version>${exeris.sdk.version}</version>
+            </dependency>
+
+            <!-- Exeris Kernel Open-Core SPI — required by the codegen
+                 compile-test to verify emitted code resolves against real
+                 SPI types (HttpExchange, HttpStatus, LoanedBuffer, etc.)
+                 instead of local stubs. -->
+            <dependency>
+                <groupId>eu.exeris</groupId>
+                <artifactId>exeris-kernel-spi</artifactId>
+                <version>${exeris.kernel.version}</version>
             </dependency>
 
             <!-- Internal tooling modules -->
@@ -87,6 +99,16 @@
                 <groupId>com.fasterxml.jackson.datatype</groupId>
                 <artifactId>jackson-datatype-jsr310</artifactId>
                 <version>${jackson.version}</version>
+            </dependency>
+
+            <!-- Jackson 3 (tools.jackson) — test-scoped: codegen compile-test
+                 verifies emitted handlers' tools.jackson.* references resolve
+                 against the same Jackson 3 line the Open-Core kernel runtime
+                 uses. Not pulled by production tooling modules. -->
+            <dependency>
+                <groupId>tools.jackson.core</groupId>
+                <artifactId>jackson-databind</artifactId>
+                <version>${jackson3.version}</version>
             </dependency>
             <dependency>
                 <groupId>com.fasterxml.jackson.dataformat</groupId>
