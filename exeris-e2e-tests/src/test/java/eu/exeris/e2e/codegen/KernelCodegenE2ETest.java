@@ -42,7 +42,7 @@ class KernelCodegenE2ETest {
         private final KernelGeneratorStrategy strategy = new KernelGeneratorStrategy();
 
         @Test
-        @DisplayName("Should generate exactly the SPI-aligned subset (Handler, Service, Repository, Event, Migration, OpenAPI)")
+        @DisplayName("Should generate exactly the SPI-aligned subset (Handler, Service, Repository, Event when declared, Migration, OpenAPI)")
         void shouldGenerateCoreArtifacts() {
             List<GeneratedFile> files = strategy.generate(orderMetadata);
             assertThat(files).extracting(GeneratedFile::artifactType)

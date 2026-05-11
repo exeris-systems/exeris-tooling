@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Tests for Kernel Generator Strategy - Exeris Kernel (Pure Java) backend.
@@ -167,7 +168,9 @@ class KernelGeneratorStrategyTest {
                     .contains("publishOrderCreatedEvent(UUID streamId)")
                     .contains("publishOrderShippedEvent(UUID streamId)")
                     .contains("eventEngine.bus().publish(descriptor, EventPayload.empty())")
-                    .contains("private void register(EventTypeSpec spec)");
+                    .contains("private void registerEventTypes()")
+                    .contains("eventEngine.registry().register(ORDER_CREATED_EVENT)")
+                    .contains("eventEngine.registry().register(ORDER_SHIPPED_EVENT)");
         }
 
         @Test
@@ -180,6 +183,24 @@ class KernelGeneratorStrategyTest {
 
             assertThat(files).extracting(GeneratedFile::artifactType)
                     .doesNotContain(ArtifactType.EVENT);
+        }
+
+        @Test
+        @DisplayName("Should reject duplicate event names after normalisation")
+        void shouldRejectDuplicateNormalisedEventNames() {
+            // Both entries normalise to "OrderEvent": a null name on entity Order
+            // becomes "<entity>Event", and an explicit "Order" also gets the Event
+            // suffix → same constant name + same hash ordinal → duplicate field
+            // in the generated class and a guaranteed registry conflict at runtime.
+            DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                    .events(List.of(
+                            DomainEventMetadata.simple(null),
+                            DomainEventMetadata.simple("Order")))
+                    .build();
+
+            assertThatThrownBy(() -> strategy.generate(metadata))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("Duplicate event names after normalisation");
         }
     }
 

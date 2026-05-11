@@ -30,16 +30,22 @@ import javax.lang.model.element.Modifier;
  *       descriptor carries {@code FLAG_PERSISTENT} and the SPI persists
  *       the event through the transactional outbox transparently.</li>
  *   <li>The ordinal is derived from {@code hashCode(entityName + "." + eventName)}
- *       masked to 31 bits — stable across regenerations, deterministic, and
- *       isolated per domain. Hash collisions are possible but unlikely at
- *       the scale of one project's event catalogue; downstream consumers
- *       that need explicit ordinal allocation can wrap the generated
+ *       masked to 31 bits — stable across regenerations, deterministic.
+ *       Note that {@code EventRegistry} is a global per-engine namespace,
+ *       so cross-entity collisions are possible (two different
+ *       {@code entityName + eventName} keys can hash to the same 31-bit
+ *       value, and the SPI registry will reject the second registration
+ *       with {@code EventRegistryException}). Downstream consumers that
+ *       need explicit ordinal allocation can wrap the generated
  *       publisher or extend {@code DomainEventMetadata} to carry an
  *       explicit ordinal.</li>
  *   <li>Constructor takes an {@code EventEngine}, registers every spec
- *       with {@code eventEngine.registry()} (swallows the
- *       already-registered exception, matching the community-app pattern
- *       under concurrent-publisher conditions).</li>
+ *       with {@code eventEngine.registry()}. Per the SPI contract
+ *       {@code register(EventTypeSpec)} is idempotent for identical
+ *       specs — no defensive {@code catch} is needed; any exception
+ *       (e.g.\ {@code EventRegistryException} on conflicting
+ *       re-registration with different settings) propagates so the
+ *       caller sees the misconfiguration immediately.</li>
  *   <li>One {@code publish<EventName>(UUID streamId)} method per event:
  *       builds an {@code EventDescriptor} via {@code EventDescriptor.of(...)}
  *       carrying a fresh event UUID, the aggregate stream UUID, the
@@ -63,8 +69,6 @@ public class KernelEventGenerator implements KernelArtifactGenerator {
     private static final ClassName UUID = ClassName.get("java.util", "UUID");
     private static final ClassName SLF4J_LOGGER = ClassName.get("org.slf4j", "Logger");
     private static final ClassName SLF4J_LOGGER_FACTORY = ClassName.get("org.slf4j", "LoggerFactory");
-    private static final ClassName RUNTIME_EXCEPTION =
-            ClassName.get("java.lang", "RuntimeException");
 
     private static final ClassName EVENT_ENGINE =
             ClassName.get("eu.exeris.kernel.spi.events", "EventEngine");
@@ -85,6 +89,24 @@ public class KernelEventGenerator implements KernelArtifactGenerator {
         String entity = metadata.entityName();
         String className = entity + "EventPublisher";
         ClassName selfType = ClassName.get(packageName, className);
+
+        // Guard against duplicate event names after normalisation. Without
+        // this, two DomainEventMetadata entries that resolve to the same
+        // <EntityName>Event would emit two static final EventTypeSpec
+        // fields with the same constant name, and the generated class
+        // would fail to compile. They would also hash to the same ordinal
+        // and the second SPI registration would fail at runtime — masking
+        // what is, fundamentally, a domain-model error.
+        long distinctNames = metadata.events().stream()
+                .map(e -> eventName(e, entity))
+                .distinct()
+                .count();
+        if (distinctNames != metadata.events().size()) {
+            throw new IllegalArgumentException(
+                    "Duplicate event names after normalisation for entity '"
+                            + entity + "'. Each @DomainEvent must produce a unique "
+                            + "<Name>Event identifier.");
+        }
 
         TypeSpec.Builder publisher = KernelScaffold.publicClass(className)
                 .addModifiers(Modifier.FINAL)
@@ -119,7 +141,6 @@ public class KernelEventGenerator implements KernelArtifactGenerator {
         }
 
         publisher.addMethod(buildRegisterEventTypes(metadata));
-        publisher.addMethod(buildRegister());
 
         return new GeneratedFile(packageName, className,
                 KernelScaffold.render(packageName, publisher.build()), ArtifactType.EVENT);
@@ -127,7 +148,7 @@ public class KernelEventGenerator implements KernelArtifactGenerator {
 
     private FieldSpec buildEventTypeSpec(String entity, DomainEventMetadata event) {
         String eventName = eventName(event, entity);
-        int ordinal = (entity + "." + eventName) .hashCode() & 0x7FFFFFFF;
+        int ordinal = (entity + "." + eventName).hashCode() & 0x7FFFFFFF;
         String constantName = toConstantCase(eventName);
         return FieldSpec.builder(EVENT_TYPE_SPEC, constantName,
                         Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
@@ -172,27 +193,17 @@ public class KernelEventGenerator implements KernelArtifactGenerator {
 
     private MethodSpec buildRegisterEventTypes(DomainMetadata metadata) {
         MethodSpec.Builder method = MethodSpec.methodBuilder("registerEventTypes")
-                .addModifiers(Modifier.PRIVATE);
+                .addModifiers(Modifier.PRIVATE)
+                .addJavadoc("Registers every declared event-type spec with the engine's\n")
+                .addJavadoc("registry. {@link $T#register(EventTypeSpec)} is idempotent for\n",
+                        ClassName.get("eu.exeris.kernel.spi.events", "EventRegistry"))
+                .addJavadoc("identical specs (SPI contract), so concurrent publisher\n")
+                .addJavadoc("instantiation is safe and no defensive catch is needed.\n");
         for (DomainEventMetadata event : metadata.events()) {
             String constantName = toConstantCase(eventName(event, metadata.entityName()));
-            method.addStatement("register($L)", constantName);
+            method.addStatement("eventEngine.registry().register($L)", constantName);
         }
         return method.build();
-    }
-
-    private MethodSpec buildRegister() {
-        return MethodSpec.methodBuilder("register")
-                .addModifiers(Modifier.PRIVATE)
-                .addParameter(EVENT_TYPE_SPEC, "spec")
-                .addJavadoc("Registers a single event-type spec with the engine's registry,\n")
-                .addJavadoc("swallowing the already-registered exception so that concurrent\n")
-                .addJavadoc("publisher instantiations remain safe.\n")
-                .beginControlFlow("try")
-                .addStatement("eventEngine.registry().register(spec)")
-                .nextControlFlow("catch ($T e)", RUNTIME_EXCEPTION)
-                .addComment("Already registered by another publisher instance — idempotent by design.")
-                .endControlFlow()
-                .build();
     }
 
     private String eventName(DomainEventMetadata event, String entityName) {
