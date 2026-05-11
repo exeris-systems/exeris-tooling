@@ -6,6 +6,7 @@ import eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.GraphEdgeMetadata;
 import eu.exeris.sdk.sourcemodel.ast.GraphMetadata;
+import eu.exeris.sdk.sourcemodel.ast.SagaMetadata;
 import eu.exeris.tooling.codegen.java.kernel.KernelGeneratorStrategy;
 import org.junit.jupiter.api.*;
 
@@ -31,6 +32,7 @@ class KernelCodegenE2ETest {
                 .audited(true)
                 .events(List.of(DomainEventMetadata.simple("OrderCreated")))
                 .graphMetadata(GraphMetadata.simple("Order"))
+                .sagaMetadata(SagaMetadata.simple("OrderSaga"))
                 .build();
 
         productMetadata = DomainMetadata.builder("Product", "com.shop.domain")
@@ -45,7 +47,7 @@ class KernelCodegenE2ETest {
         private final KernelGeneratorStrategy strategy = new KernelGeneratorStrategy();
 
         @Test
-        @DisplayName("Should generate exactly the SPI-aligned subset (Controller, Service, Repository, Event + EventHandler + GraphSync when declared, Migration, OpenAPI)")
+        @DisplayName("Should generate exactly the SPI-aligned subset (Controller, Service, Repository, Event + EventHandler + GraphSync + Saga when declared, Migration, OpenAPI)")
         void shouldGenerateCoreArtifacts() {
             List<GeneratedFile> files = strategy.generate(orderMetadata);
             assertThat(files).extracting(GeneratedFile::artifactType)
@@ -56,6 +58,7 @@ class KernelCodegenE2ETest {
                             ArtifactType.EVENT,
                             ArtifactType.EVENT_HANDLER,
                             ArtifactType.GRAPH_SYNC,
+                            ArtifactType.SAGA,
                             ArtifactType.CONFIGURATION,
                             ArtifactType.OPENAPI_SPEC);
         }
@@ -110,6 +113,25 @@ class KernelCodegenE2ETest {
                     .contains("GraphEdgeDescriptor.create(\"Order\", \"OWNED_BY\", \"User\")")
                     .contains("session.upsertNode(NODE_LABEL, entity.getId(), null)")
                     .contains("session.upsertEdge(OWNER_ID_EDGE, entity.getId(), entity.getOwnerId(), 1.0, null)");
+        }
+
+        @Test
+        @DisplayName("SagaFlow emits against Open-Core SPI FlowEngine + flow model")
+        void sagaShouldUseSpiFlowEngine() {
+            List<GeneratedFile> files = strategy.generate(orderMetadata);
+            String sagaFlow = files.stream().filter(f -> f.artifactType() == ArtifactType.SAGA)
+                    .findFirst().orElseThrow().content();
+            assertThat(sagaFlow)
+                    .contains("eu.exeris.kernel.spi.flow.FlowEngine")
+                    .contains("eu.exeris.kernel.spi.flow.FlowDefinitionBuilder")
+                    .contains("eu.exeris.kernel.spi.flow.model.FlowContext")
+                    .contains("eu.exeris.kernel.spi.flow.model.FlowExecutionPlan")
+                    .contains("eu.exeris.kernel.spi.flow.model.FlowOutcome")
+                    .contains("public synchronized FlowExecutionPlan initialize()")
+                    .contains("flowEngine.plans().newDefinition(DEFINITION_NAME)")
+                    .contains("flowEngine.plans().compile(builder.build())")
+                    .contains("flowEngine.scheduler().schedule(initialize(), context)")
+                    .contains("return FlowOutcome.CONTINUE");
         }
 
         @Test

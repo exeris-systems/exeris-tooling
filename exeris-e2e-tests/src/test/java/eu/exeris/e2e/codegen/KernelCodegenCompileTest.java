@@ -6,6 +6,8 @@ import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 import eu.exeris.sdk.sourcemodel.ast.GraphEdgeMetadata;
 import eu.exeris.sdk.sourcemodel.ast.GraphMetadata;
+import eu.exeris.sdk.sourcemodel.ast.SagaMetadata;
+import eu.exeris.sdk.sourcemodel.ast.SagaStepMetadata;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.java.kernel.KernelGeneratorStrategy;
 import org.junit.jupiter.api.DisplayName;
@@ -71,6 +73,15 @@ class KernelCodegenCompileTest {
                 .graphMetadata(new GraphMetadata("Order", List.of(),
                         List.of(new GraphEdgeMetadata("tenantId", "Tenant", "OWNED_BY")),
                         List.of()))
+                .sagaMetadata(SagaMetadata.builder("OrderFulfillment")
+                        .timeout("PT45M")
+                        .maxRetries(5)
+                        .steps(List.of(
+                                SagaStepMetadata.builder("reserve-inventory", 0)
+                                        .compensation("restoreInventory")
+                                        .build(),
+                                SagaStepMetadata.simple("send-email", 1, null)))
+                        .build())
                 .build();
 
         List<GeneratedFile> generated = new KernelGeneratorStrategy().generate(metadata);
