@@ -26,40 +26,6 @@ class KernelGeneratorStrategyTest {
     }
 
     @Nested
-    @DisplayName("Handler Generation")
-    class HandlerGenerationTests {
-
-        @Test
-        @DisplayName("Should generate Handler for domain entity")
-        void shouldGenerateHandler() {
-            // Given
-            DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
-                    .path("/orders")
-                    .build();
-
-            // When
-            List<GeneratedFile> files = strategy.generate(metadata);
-
-            // Then
-            GeneratedFile handler = files.stream()
-                    .filter(f -> f.artifactType() == ArtifactType.CONTROLLER)
-                    .findFirst()
-                    .orElseThrow();
-
-            assertThat(handler.className()).isEqualTo("OrderHandler");
-            assertThat(handler.packageName()).isEqualTo("com.example.handler");
-            assertThat(handler.content())
-                    .contains("public class OrderHandler")
-                    .contains("OrderService service")
-                    .contains("handleGetAll")
-                    .contains("handleGetById")
-                    .contains("handleCreate")
-                    .contains("handleUpdate")
-                    .contains("handleDelete");
-        }
-    }
-
-    @Nested
     @DisplayName("Service Generation")
     class ServiceGenerationTests {
 
@@ -128,7 +94,7 @@ class KernelGeneratorStrategyTest {
     class FullGenerationTests {
 
         @Test
-        @DisplayName("Should generate all six artifacts (Handler, Service, Repository, Flyway, Client, OpenAPI)")
+        @DisplayName("Should generate the four SPI-aligned artifacts (Service, Repository, Flyway, OpenAPI)")
         void shouldGenerateAllArtifacts() {
             // Given
             DomainMetadata metadata = DomainMetadata.builder("Product", "com.shop.domain")
@@ -140,14 +106,12 @@ class KernelGeneratorStrategyTest {
             List<GeneratedFile> files = strategy.generate(metadata);
 
             // Then
-            assertThat(files).hasSize(6);
+            assertThat(files).hasSize(4);
             assertThat(files).extracting(GeneratedFile::artifactType)
                     .containsExactlyInAnyOrder(
-                            ArtifactType.CONTROLLER,
                             ArtifactType.SERVICE,
                             ArtifactType.REPOSITORY,
                             ArtifactType.CONFIGURATION,
-                            ArtifactType.CLIENT,
                             ArtifactType.OPENAPI_SPEC
                     );
         }

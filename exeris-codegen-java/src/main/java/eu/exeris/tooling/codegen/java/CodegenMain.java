@@ -22,16 +22,16 @@ import java.util.stream.Stream;
 /**
  * Main entry point for Exeris Java Code Generator.
  * <p>
- * Generates complete application from domain metadata:
+ * Generates the SPI-aligned subset of artifacts from domain metadata:
  * <ul>
- *   <li>Application.java - Entry point</li>
- *   <li>CompositionRoot.java - Manual DI wiring</li>
- *   <li>RouterConfig.java - HTTP routes</li>
- *   <li>*Repository.java - Data access for each entity</li>
- *   <li>*Service.java - Business logic for each entity</li>
- *   <li>*Handler.java - HTTP handlers for each entity</li>
+ *   <li>{@code *Service.java} — POJO domain services for each entity</li>
+ *   <li>{@code *Repository.java} — plain-JDBC repositories for each entity</li>
  *   <li>Flyway SQL migrations</li>
+ *   <li>OpenAPI 3.1 YAML specs</li>
  * </ul>
+ * <p>HTTP-layer, event, saga, graph-sync, and application-infrastructure
+ * generators are parked — see {@link eu.exeris.tooling.codegen.java.kernel.KernelGeneratorStrategy}
+ * for the parked set and the Kernel SPI surface each one is gated on.
  *
  * <h2>Usage:</h2>
  * <pre>
