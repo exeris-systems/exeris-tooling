@@ -20,10 +20,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@link KernelCodegenE2ETest} cannot catch broken imports or referenced symbols
  * that no longer exist — this test does.
  *
- * <p>The strategy currently registers the SPI-aligned subset only: Service,
- * Repository, Flyway, OpenAPI. Generated Java therefore has no
- * {@code eu.exeris.kernel.*} imports; nothing on the kernel stub classpath is
- * required.
+ * <p>The strategy currently registers the SPI-aligned subset: Handler,
+ * Service, Repository, Flyway, OpenAPI. The Handler imports
+ * {@code eu.exeris.kernel.spi.http.*} and {@code eu.exeris.kernel.spi.memory.*};
+ * the real {@code exeris-kernel-spi:0.7.0} artifact (plus Jackson 3) is on
+ * the test classpath via {@code exeris-tooling-bom}.
  */
 @Tag("e2e")
 @Tag("codegen")

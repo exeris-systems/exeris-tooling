@@ -32,9 +32,11 @@ import javax.lang.model.element.Modifier;
  * via {@link eu.exeris.kernel.spi.http.HttpExchange#respond(eu.exeris.kernel.spi.http.HttpStatus, Object)};
  * the handler does not run its own response writer.
  * <p>
- * Request bodies are parsed via Jackson 3 ({@code tools.jackson.*}) against
- * the {@code LoanedBuffer}'s {@code MemorySegment}; a small private
- * {@code SegmentInputStream} adapts the segment to {@link java.io.InputStream}.
+ * Request bodies are parsed via Jackson 3 ({@code tools.jackson.*}): the
+ * {@code LoanedBuffer}'s {@code MemorySegment} is copied into a heap
+ * {@code byte[]} (size-bounded by {@code Integer.MAX_VALUE}), decoded as
+ * UTF-8, then passed to {@code ObjectMapper.readValue(String, Class)} —
+ * portable across Jackson 3.0.x overloads.
  *
  * @implNote Emission is JavaPoet-based (ADR-015). Output style is owned by
  * JavaPoet's pretty-printer; substring assertions in the E2E suite still hold,
