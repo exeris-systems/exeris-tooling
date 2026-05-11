@@ -4,6 +4,8 @@ import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.Artifact
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
+import eu.exeris.sdk.sourcemodel.ast.GraphEdgeMetadata;
+import eu.exeris.sdk.sourcemodel.ast.GraphMetadata;
 import eu.exeris.tooling.codegen.java.kernel.KernelGeneratorStrategy;
 import org.junit.jupiter.api.*;
 
@@ -28,6 +30,7 @@ class KernelCodegenE2ETest {
                 .tenantScoped(true)
                 .audited(true)
                 .events(List.of(DomainEventMetadata.simple("OrderCreated")))
+                .graphMetadata(GraphMetadata.simple("Order"))
                 .build();
 
         productMetadata = DomainMetadata.builder("Product", "com.shop.domain")
@@ -42,7 +45,7 @@ class KernelCodegenE2ETest {
         private final KernelGeneratorStrategy strategy = new KernelGeneratorStrategy();
 
         @Test
-        @DisplayName("Should generate exactly the SPI-aligned subset (Controller, Service, Repository, Event + EventHandler when declared, Migration, OpenAPI)")
+        @DisplayName("Should generate exactly the SPI-aligned subset (Controller, Service, Repository, Event + EventHandler + GraphSync when declared, Migration, OpenAPI)")
         void shouldGenerateCoreArtifacts() {
             List<GeneratedFile> files = strategy.generate(orderMetadata);
             assertThat(files).extracting(GeneratedFile::artifactType)
@@ -52,6 +55,7 @@ class KernelCodegenE2ETest {
                             ArtifactType.REPOSITORY,
                             ArtifactType.EVENT,
                             ArtifactType.EVENT_HANDLER,
+                            ArtifactType.GRAPH_SYNC,
                             ArtifactType.CONFIGURATION,
                             ArtifactType.OPENAPI_SPEC);
         }
@@ -83,6 +87,29 @@ class KernelCodegenE2ETest {
                     .contains("eu.exeris.kernel.spi.events.EventTypeSpec")
                     .contains("EventTypeSpec.ofPersistent(\"OrderCreatedEvent\"")
                     .contains("eventEngine.bus().publish(descriptor, EventPayload.empty())");
+        }
+
+        @Test
+        @DisplayName("GraphSync emits against Open-Core SPI GraphEngine + GraphSession")
+        void graphSyncShouldUseSpiGraphEngine() {
+            DomainMetadata withEdges = DomainMetadata.builder("Order", "com.example.domain")
+                    .path("/orders")
+                    .graphMetadata(new GraphMetadata("Order", List.of(),
+                            List.of(new GraphEdgeMetadata("ownerId", "User", "OWNED_BY")),
+                            List.of()))
+                    .build();
+            List<GeneratedFile> files = strategy.generate(withEdges);
+            String graphSync = files.stream().filter(f -> f.artifactType() == ArtifactType.GRAPH_SYNC)
+                    .findFirst().orElseThrow().content();
+            assertThat(graphSync)
+                    .contains("eu.exeris.kernel.spi.graph.GraphEngine")
+                    .contains("eu.exeris.kernel.spi.graph.GraphSession")
+                    .contains("eu.exeris.kernel.spi.graph.model.GraphNodeDescriptor")
+                    .contains("eu.exeris.kernel.spi.graph.model.GraphEdgeDescriptor")
+                    .contains("GraphNodeDescriptor.create(\"Order\", \"orders\")")
+                    .contains("GraphEdgeDescriptor.create(\"Order\", \"OWNED_BY\", \"User\")")
+                    .contains("session.upsertNode(NODE_LABEL, entity.getId(), null)")
+                    .contains("session.upsertEdge(OWNER_ID_EDGE, entity.getId(), entity.getOwnerId(), 1.0, null)");
         }
 
         @Test

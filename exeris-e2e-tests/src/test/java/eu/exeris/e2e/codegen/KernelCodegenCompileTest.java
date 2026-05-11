@@ -4,6 +4,8 @@ import eu.exeris.e2e.codegen.compile.InMemoryJavaCompiler;
 import eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
+import eu.exeris.sdk.sourcemodel.ast.GraphEdgeMetadata;
+import eu.exeris.sdk.sourcemodel.ast.GraphMetadata;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.java.kernel.KernelGeneratorStrategy;
 import org.junit.jupiter.api.DisplayName;
@@ -65,6 +67,9 @@ class KernelCodegenCompileTest {
                 .events(List.of(
                         DomainEventMetadata.simple("OrderCreated"),
                         DomainEventMetadata.withTopic("OrderShipped", "orders.shipped")))
+                .graphMetadata(new GraphMetadata("Order", List.of(),
+                        List.of(new GraphEdgeMetadata("tenantId", "Tenant", "OWNED_BY")),
+                        List.of()))
                 .build();
 
         List<GeneratedFile> generated = new KernelGeneratorStrategy().generate(metadata);
