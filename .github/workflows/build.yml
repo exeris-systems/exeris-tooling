@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  packages: read
 
 jobs:
   build:
@@ -37,6 +38,9 @@ jobs:
           distribution: temurin
           java-version: ${{ matrix.java }}
           cache: maven
+          server-id: github-exeris-kernel
+          server-username: GITHUB_ACTOR
+          server-password: GITHUB_TOKEN
 
       - name: Install exeris-sdk to local Maven repo
         working-directory: exeris-sdk
@@ -45,3 +49,6 @@ jobs:
       - name: mvn -B verify (exeris-tooling)
         working-directory: exeris-tooling
         run: mvn -B -ntp verify
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

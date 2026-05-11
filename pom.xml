@@ -65,6 +65,25 @@
         </repository>
     </distributionManagement>
 
+    <!-- Open-Core Kernel artifacts (exeris-kernel-spi etc.) are published to
+         GitHub Packages, not Maven Central. The repository declaration here
+         lets the codegen compile-test resolve eu.exeris:exeris-kernel-spi at
+         build time. Auth is provided per-environment via ~/.m2/settings.xml
+         or the CI workflow's actions/setup-java server-id binding. -->
+    <repositories>
+        <repository>
+            <id>github-exeris-kernel</id>
+            <name>Exeris Kernel — GitHub Packages</name>
+            <url>https://maven.pkg.github.com/exeris-systems/exeris-kernel</url>
+            <releases>
+                <enabled>true</enabled>
+            </releases>
+            <snapshots>
+                <enabled>true</enabled>
+            </snapshots>
+        </repository>
+    </repositories>
+
     <modules>
         <module>exeris-tooling-bom</module>
         <module>exeris-tooling-parent</module>
