@@ -203,6 +203,10 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         String softDeleteFilter = ctx.metadata().softDelete() ? " WHERE deleted = false" : "";
         String sql = "SELECT " + selectCols + " FROM " + ctx.table() + softDeleteFilter;
 
+        // Combined try-with-resources for stmt + executeQuery() is safe here
+        // because findAll has no parameter binds — never copy this shape into
+        // a method that needs bindXxx(...) calls between prepare() and
+        // executeQuery(); use the nested form findById uses instead.
         return MethodSpec.methodBuilder("findAll")
                 .addModifiers(Modifier.PUBLIC)
                 .returns(listOfEntity)
@@ -231,6 +235,13 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                 .addModifiers(Modifier.PUBLIC)
                 .returns(ctx.entityType())
                 .addParameter(ctx.entityType(), "entity")
+                .addJavadoc("Inserts {@code entity}. <b>Mutates the input:</b> a missing\n")
+                .addJavadoc("{@code id} is filled with a random UUID");
+        if (ctx.metadata().audited()) {
+            save.addJavadoc(", and {@code createdAt} /\n")
+                .addJavadoc("{@code updatedAt} are stamped with {@code Instant.now()}");
+        }
+        save.addJavadoc(" before the INSERT.\n")
                 .addStatement("if (entity.getId() == null) entity.setId($T.randomUUID())", UUID_TYPE);
         if (ctx.metadata().audited()) {
             save.addStatement("$T now = $T.now()", INSTANT, INSTANT);
@@ -259,7 +270,12 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                 .filter(c -> !"id".equals(c.sqlName()))
                 .toList();
         String setClause = String.join(", ", updatable.stream().map(c -> c.sqlName() + " = ?").toList());
-        String sql = "UPDATE " + ctx.table() + " SET " + setClause + " WHERE id = ?";
+        boolean versioned = ctx.metadata().versioned();
+        String whereClause = versioned ? " WHERE id = ? AND version = ?" : " WHERE id = ?";
+        String sql = "UPDATE " + ctx.table() + " SET " + setClause + whereClause;
+        String notFoundMessage = versioned
+                ? ctx.entity() + " not found or stale version: "
+                : ctx.entity() + " not found: ";
 
         MethodSpec.Builder update = MethodSpec.methodBuilder("update")
                 .addModifiers(Modifier.PUBLIC)
@@ -269,13 +285,21 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         if (ctx.metadata().audited()) {
             update.addStatement("entity.setUpdatedAt($T.now())", INSTANT);
         }
+        if (versioned) {
+            update.addJavadoc("Optimistic-lock update. The caller-supplied {@code entity.version}\n");
+            update.addJavadoc("is the <i>expected</i> row version; this method increments it before\n");
+            update.addJavadoc("writing and rejects the update if no row matches the expected\n");
+            update.addJavadoc("version (stale read).\n");
+            update.addStatement("long expectedVersion = entity.getVersion()");
+            update.addStatement("entity.setVersion(expectedVersion + 1L)");
+        }
         update.addStatement("String sql = $S", sql);
         update.addStatement("long[] rowsAffected = {0L}");
 
         CodeBlock.Builder body = CodeBlock.builder()
                 .beginControlFlow("executor.executeManaged(conn -> ")
                 .beginControlFlow("try ($T stmt = conn.prepare(sql))", PERSISTENCE_STATEMENT);
-        emitUpdateBinds(body, ctx, updatable);
+        emitUpdateBinds(body, ctx, updatable, versioned);
         body.addStatement("rowsAffected[0] = stmt.executeUpdate()");
         body.endControlFlow();
         body.endControlFlow(")");
@@ -283,7 +307,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         update.addCode(body.build());
         update.beginControlFlow("if (rowsAffected[0] == 0L)")
                 .addStatement("throw new $T($S + id)",
-                        RuntimeException.class, ctx.entity() + " not found: ")
+                        RuntimeException.class, notFoundMessage)
                 .endControlFlow();
         update.addStatement("entity.setId(id)");
         update.addStatement("LOG.info($S, id)", "Updated " + ctx.entity() + ": {}");
@@ -292,8 +316,11 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     }
 
     private MethodSpec buildDeleteById(Context ctx) {
+        // Soft delete excludes already-tombstoned rows so a double-delete
+        // raises "not found" — consistent with the findById/findAll filter
+        // and with the hard-delete branch's behaviour.
         String sql = ctx.metadata().softDelete()
-                ? "UPDATE " + ctx.table() + " SET deleted = true WHERE id = ?"
+                ? "UPDATE " + ctx.table() + " SET deleted = true WHERE id = ? AND deleted = false"
                 : "DELETE FROM " + ctx.table() + " WHERE id = ?";
 
         CodeBlock.Builder body = CodeBlock.builder()
@@ -345,12 +372,12 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
 
         int idx = 0;
         for (Column col : ctx.columns()) {
-            emitReadCol(map, col, idx++);
+            emitReadCol(map, col, idx++, ctx);
         }
         return map.addStatement("return entity").build();
     }
 
-    private void emitReadCol(MethodSpec.Builder map, Column col, int idx) {
+    private void emitReadCol(MethodSpec.Builder map, Column col, int idx, Context ctx) {
         switch (col.kind()) {
             case TENANT_ID -> map.addStatement("entity.setTenantId(row.getUuid($L))", idx);
             // SPI 0.7.0 has no getInstant — round-trip via ISO-8601 String.
@@ -362,11 +389,11 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                     idx, INSTANT));
             case DELETED -> map.addStatement("entity.setDeleted(row.getBoolean($L))", idx);
             case VERSION -> map.addStatement("entity.setVersion(row.getLong($L))", idx);
-            case DOMAIN -> emitReadDomain(map, col, idx);
+            case DOMAIN -> emitReadDomain(map, col, idx, ctx);
         }
     }
 
-    private void emitReadDomain(MethodSpec.Builder map, Column col, int idx) {
+    private void emitReadDomain(MethodSpec.Builder map, Column col, int idx, Context ctx) {
         String setter = "id".equals(col.javaName()) ? "entity.setId" : "entity.set" + capitalize(col.javaName());
         String type = col.javaType();
 
@@ -404,8 +431,13 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                     idx, setter));
         } else {
             // Enum or other — read as string, valueOf on the entity-typed enum.
-            map.addCode(CodeBlock.of("{ String v = row.getString($L); if (v != null) $L($L.valueOf(v)); }\n",
-                    idx, setter, type));
+            // Use $T (not $L) so JavaPoet emits the import; fall back to the
+            // entity's domain package when the field type is given unqualified.
+            ClassName enumClass = type.contains(".")
+                    ? ClassName.bestGuess(type)
+                    : ClassName.get(ctx.metadata().packageName(), type);
+            map.addCode(CodeBlock.of("{ String v = row.getString($L); if (v != null) $L($T.valueOf(v)); }\n",
+                    idx, setter, enumClass));
         }
     }
 
@@ -416,22 +448,31 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         }
     }
 
-    private void emitUpdateBinds(CodeBlock.Builder body, Context ctx, List<Column> updatable) {
+    private void emitUpdateBinds(CodeBlock.Builder body, Context ctx, List<Column> updatable, boolean versioned) {
         int idx = 0;
         for (Column col : updatable) {
             emitBindCol(body, col, idx++, "entity");
         }
-        // id bind is last — terminates the WHERE clause.
-        body.addStatement("stmt.bindUuid($L, id)", idx);
+        // id bind terminates WHERE clause; for versioned entities, the
+        // expectedVersion bind enforces the optimistic-lock guard.
+        body.addStatement("stmt.bindUuid($L, id)", idx++);
+        if (versioned) {
+            body.addStatement("stmt.bindLong($L, expectedVersion)", idx);
+        }
     }
 
     private void emitBindCol(CodeBlock.Builder body, Column col, int idx, String src) {
         switch (col.kind()) {
             case TENANT_ID -> body.addStatement("stmt.bindUuid($L, $L.getTenantId())", idx, src);
-            // SPI 0.7.0 has no bindInstant — round-trip via ISO-8601 String. Audited
-            // timestamps are non-null by construction (set in save() before bind).
-            case CREATED_AT -> body.addStatement("stmt.bindString($L, $L.getCreatedAt().toString())", idx, src);
-            case UPDATED_AT -> body.addStatement("stmt.bindString($L, $L.getUpdatedAt().toString())", idx, src);
+            // SPI 0.7.0 has no bindInstant — round-trip via ISO-8601 String. Null-
+            // guarded because update() is also bound to caller-supplied entities
+            // where createdAt may legitimately be null (e.g.\ partial update DTO).
+            case CREATED_AT -> body.addStatement(
+                    "stmt.bindString($L, $L.getCreatedAt() == null ? null : $L.getCreatedAt().toString())",
+                    idx, src, src);
+            case UPDATED_AT -> body.addStatement(
+                    "stmt.bindString($L, $L.getUpdatedAt() == null ? null : $L.getUpdatedAt().toString())",
+                    idx, src, src);
             case DELETED -> body.addStatement("stmt.bindBoolean($L, $L.isDeleted())", idx, src);
             case VERSION -> body.addStatement("stmt.bindLong($L, $L.getVersion())", idx, src);
             case DOMAIN -> emitBindDomain(body, col, idx, src);

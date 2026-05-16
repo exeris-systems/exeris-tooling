@@ -218,8 +218,39 @@ class KernelGeneratorStrategyTest {
             assertThat(repo.content())
                     .contains("AND deleted = false")
                     .contains("WHERE deleted = false")
-                    .contains("UPDATE orders SET deleted = true WHERE id = ?")
+                    // deleteById excludes tombstoned rows so double-delete raises
+                    // "not found" — consistent with the findById/findAll filter.
+                    .contains("UPDATE orders SET deleted = true WHERE id = ? AND deleted = false")
                     .doesNotContain("DELETE FROM orders");
+        }
+
+        @Test
+        @DisplayName("Versioned entities emit optimistic-lock UPDATE with WHERE id = ? AND version = ?")
+        void shouldEmitOptimisticLockForVersionedEntities() {
+            DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                    .versioned(true)
+                    .fields(List.of(FieldMetadata.builder("orderNumber", "String").build()))
+                    .build();
+
+            GeneratedFile repo = strategy.generate(metadata).stream()
+                    .filter(f -> f.artifactType() == ArtifactType.REPOSITORY)
+                    .findFirst().orElseThrow();
+
+            assertThat(repo.content())
+                    // Column is part of layout — both SELECT and SET-clause.
+                    .contains("SELECT id, order_number, version FROM orders")
+                    .contains("UPDATE orders SET order_number = ?, version = ? WHERE id = ? AND version = ?")
+                    // Auto-increment: capture expected, then increment on the entity
+                    // so the SET version = ? bind gets the new value.
+                    .contains("long expectedVersion = entity.getVersion()")
+                    .contains("entity.setVersion(expectedVersion + 1L)")
+                    // Bind layout: [0]=order_number, [1]=version (new), [2]=id,
+                    // [3]=expectedVersion (the optimistic-lock guard).
+                    .contains("stmt.bindLong(1, entity.getVersion())")
+                    .contains("stmt.bindUuid(2, id)")
+                    .contains("stmt.bindLong(3, expectedVersion)")
+                    // Distinct error message for stale-version case.
+                    .contains("Order not found or stale version: ");
         }
     }
 
