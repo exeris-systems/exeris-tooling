@@ -27,7 +27,8 @@ class EntitySchemaGeneratorTest {
     @DisplayName("Constructor rejects null metadata")
     void constructorRejectsNullMetadata() {
         assertThatThrownBy(() -> new EntitySchemaGenerator(null))
-                .isInstanceOf(NullPointerException.class);
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("metadata cannot be null");
     }
 
     @Test

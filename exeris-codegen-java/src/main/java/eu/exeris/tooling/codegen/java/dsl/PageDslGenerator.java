@@ -21,7 +21,7 @@ public final class PageDslGenerator {
     private final ObjectMapper mapper;
 
     public PageDslGenerator(DomainMetadata metadata) {
-        this.metadata = Objects.requireNonNull(metadata);
+        this.metadata = Objects.requireNonNull(metadata, "metadata cannot be null");
         this.mapper = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
     }
 

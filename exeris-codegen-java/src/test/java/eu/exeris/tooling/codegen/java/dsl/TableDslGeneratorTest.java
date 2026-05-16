@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.stream.StreamSupport;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @DisplayName("TableDslGenerator")
 class TableDslGeneratorTest {
@@ -23,6 +24,14 @@ class TableDslGeneratorTest {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     @TempDir Path tempDir;
+
+    @Test
+    @DisplayName("Constructor rejects null metadata")
+    void constructorRejectsNullMetadata() {
+        assertThatThrownBy(() -> new TableDslGenerator(null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("metadata cannot be null");
+    }
 
     @Test
     @DisplayName("Table skeleton: $type / entity / title / apiPath / pagination / sorting")
@@ -178,6 +187,37 @@ class TableDslGeneratorTest {
         assertThat(filters.get(3).get("type").asText()).isEqualTo("number-range");
         assertThat(filters.get(4).get("type").asText()).isEqualTo("select");
         assertThat(filters.get(5).get("type").asText()).isEqualTo("text");
+    }
+
+    @Test
+    @DisplayName("Filters: every numeric Java type (primitive + boxed) maps to \"number-range\"")
+    void filterTypeMappingFullNumericMatrix() throws IOException {
+        // Regression: double and float were missing from mapToFilterType's
+        // numeric branch and silently fell through to "text", breaking the
+        // range-filter contract. Asserting on every numeric variant locks
+        // the full mapping.
+        DomainMetadata meta = DomainMetadata.builder("Order", "com.example.domain")
+                .fields(List.of(
+                        FieldMetadata.builder("a", "int").filterable(true).build(),
+                        FieldMetadata.builder("b", "Integer").filterable(true).build(),
+                        FieldMetadata.builder("c", "long").filterable(true).build(),
+                        FieldMetadata.builder("d", "Long").filterable(true).build(),
+                        FieldMetadata.builder("e", "double").filterable(true).build(),
+                        FieldMetadata.builder("f", "Double").filterable(true).build(),
+                        FieldMetadata.builder("g", "float").filterable(true).build(),
+                        FieldMetadata.builder("h", "Float").filterable(true).build(),
+                        FieldMetadata.builder("i", "BigDecimal").filterable(true).build()))
+                .build();
+
+        JsonNode filters = MAPPER.readTree(new TableDslGenerator(meta).generate())
+                .get("filters");
+
+        assertThat(filters).hasSize(9);
+        for (int i = 0; i < 9; i++) {
+            assertThat(filters.get(i).get("type").asText())
+                    .as("field index %d", i)
+                    .isEqualTo("number-range");
+        }
     }
 
     @Test

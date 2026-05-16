@@ -14,6 +14,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @DisplayName("PageDslGenerator")
 class PageDslGeneratorTest {
@@ -21,6 +22,14 @@ class PageDslGeneratorTest {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     @TempDir Path tempDir;
+
+    @Test
+    @DisplayName("Constructor rejects null metadata")
+    void constructorRejectsNullMetadata() {
+        assertThatThrownBy(() -> new PageDslGenerator(null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("metadata cannot be null");
+    }
 
     @Test
     @DisplayName("generateListPage emits the list-layout page with breadcrumbs and table $ref")
@@ -33,7 +42,11 @@ class PageDslGeneratorTest {
 
         assertThat(page.get("$type").asText()).isEqualTo("page");
         assertThat(page.get("id").asText()).isEqualTo("order-list");
-        assertThat(page.get("title").asText()).isEqualTo("Orders"); // derived from pluralName()
+        // Title comes from DomainMetadata.pluralName(), which is derived
+        // from entityName ("Order" → "Orders"). pluralName() never returns
+        // null in the current DomainMetadata contract, so the !=null
+        // fallback branch in buildListPage is unreachable from this API.
+        assertThat(page.get("title").asText()).isEqualTo("Orders");
         assertThat(page.get("entity").asText()).isEqualTo("Order");
         assertThat(page.get("layout").asText()).isEqualTo("list");
 
@@ -144,6 +157,20 @@ class PageDslGeneratorTest {
                 .isEqualTo("/orders/{id}/actions/approve-order");
         assertThat(actions.get(3).get("endpoint").asText())
                 .isEqualTo("/orders/{id}/actions/request-refund");
+    }
+
+    @Test
+    @DisplayName("List-page title follows DomainMetadata.pluralName() for non-regular pluralisations (y→ies, sibilant→es)")
+    void listPageTitleFollowsPluralName() throws IOException {
+        // Category → Categories (y → ies branch), Branch → Branches (sh → es).
+        DomainMetadata category = DomainMetadata.builder("Category", "com.example.domain").build();
+        DomainMetadata branch = DomainMetadata.builder("Branch", "com.example.domain").build();
+
+        JsonNode categoryPage = MAPPER.readTree(new PageDslGenerator(category).generateListPage());
+        JsonNode branchPage = MAPPER.readTree(new PageDslGenerator(branch).generateListPage());
+
+        assertThat(categoryPage.get("title").asText()).isEqualTo("Categories");
+        assertThat(branchPage.get("title").asText()).isEqualTo("Branches");
     }
 
     @Test
