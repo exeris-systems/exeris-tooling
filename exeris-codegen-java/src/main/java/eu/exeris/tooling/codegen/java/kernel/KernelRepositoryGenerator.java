@@ -18,6 +18,7 @@ import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Kernel Repository Generator.
@@ -55,18 +56,20 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     private static final ClassName LIST_TYPE = ClassName.get("java.util", "List");
     private static final ClassName ARRAY_LIST = ClassName.get("java.util", "ArrayList");
     private static final ClassName INSTANT = ClassName.get("java.time", "Instant");
+    private static final ClassName LOCAL_DATE = ClassName.get("java.time", "LocalDate");
     private static final ClassName BIG_DECIMAL = ClassName.get("java.math", "BigDecimal");
     private static final ClassName SLF4J_LOGGER = ClassName.get("org.slf4j", "Logger");
     private static final ClassName SLF4J_LOGGER_FACTORY = ClassName.get("org.slf4j", "LoggerFactory");
 
+    private static final String SPI_PERSISTENCE_PKG = "eu.exeris.kernel.spi.persistence";
     private static final ClassName TRANSACTIONAL_EXECUTOR =
-            ClassName.get("eu.exeris.kernel.spi.persistence", "TransactionalExecutor");
+            ClassName.get(SPI_PERSISTENCE_PKG, "TransactionalExecutor");
     private static final ClassName PERSISTENCE_STATEMENT =
-            ClassName.get("eu.exeris.kernel.spi.persistence", "PersistenceStatement");
+            ClassName.get(SPI_PERSISTENCE_PKG, "PersistenceStatement");
     private static final ClassName QUERY_RESULT =
-            ClassName.get("eu.exeris.kernel.spi.persistence", "QueryResult");
+            ClassName.get(SPI_PERSISTENCE_PKG, "QueryResult");
     private static final ClassName ROW_CURSOR =
-            ClassName.get("eu.exeris.kernel.spi.persistence", "RowCursor");
+            ClassName.get(SPI_PERSISTENCE_PKG, "RowCursor");
 
     private static final ClassName OBJECT_MAPPER =
             ClassName.get("tools.jackson.databind", "ObjectMapper");
@@ -74,6 +77,47 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
             ClassName.get("tools.jackson.core", "JacksonException");
     private static final ClassName TYPE_REFERENCE =
             ClassName.get("tools.jackson.core.type", "TypeReference");
+
+    // Format-string / code-fragment literals — consolidated so SonarQube
+    // S1192 stays quiet and so the SQL shape can evolve in one place.
+    private static final String LIST_PREFIX = "List<";
+    private static final String ENTITY_SRC = "entity";
+    private static final String WHERE_ID_CLAUSE = " WHERE id = ?";
+    private static final String SQL_VAR_STMT = "String sql = $S";
+    private static final String EXECUTE_MANAGED_LAMBDA = "executor.executeManaged(conn -> ";
+    private static final String TRY_PREPARE_STMT = "try ($T stmt = conn.prepare(sql))";
+    private static final String RETURN_ENTITY_STMT = "return entity";
+    private static final String BIND_STRING_NULL_GUARDED =
+            "stmt.bindString($L, $L == null ? null : $L.toString())";
+
+    // Type-name variants accepted in FieldMetadata.type() — consolidated
+    // here so the emit-side switch is a single dispatch on DomainTypeKind
+    // instead of a chain of equality probes.
+    private static final Set<String> UUID_TYPES = Set.of("UUID", "java.util.UUID");
+    private static final Set<String> STRING_TYPES = Set.of("String", "java.lang.String");
+    private static final Set<String> LONG_TYPES = Set.of("Long", "long", "java.lang.Long");
+    private static final Set<String> INT_TYPES = Set.of("Integer", "int", "java.lang.Integer");
+    private static final Set<String> BOOL_TYPES = Set.of("Boolean", "boolean", "java.lang.Boolean");
+    private static final Set<String> DOUBLE_TYPES = Set.of("Double", "double", "java.lang.Double");
+    private static final Set<String> BIG_DECIMAL_TYPES = Set.of("BigDecimal", "java.math.BigDecimal");
+
+    private enum DomainTypeKind {
+        LIST, UUID, STRING, LONG, INT, BOOL, DOUBLE, BIG_DECIMAL, INSTANT_LIKE, LOCAL_DATE, ENUM_LIKE
+    }
+
+    private static DomainTypeKind classifyDomainType(String type) {
+        if (type.startsWith(LIST_PREFIX)) return DomainTypeKind.LIST;
+        if (UUID_TYPES.contains(type)) return DomainTypeKind.UUID;
+        if (STRING_TYPES.contains(type)) return DomainTypeKind.STRING;
+        if (LONG_TYPES.contains(type)) return DomainTypeKind.LONG;
+        if (INT_TYPES.contains(type)) return DomainTypeKind.INT;
+        if (BOOL_TYPES.contains(type)) return DomainTypeKind.BOOL;
+        if (DOUBLE_TYPES.contains(type)) return DomainTypeKind.DOUBLE;
+        if (BIG_DECIMAL_TYPES.contains(type)) return DomainTypeKind.BIG_DECIMAL;
+        if (type.contains("Instant") || type.contains("LocalDateTime")) return DomainTypeKind.INSTANT_LIKE;
+        if (type.contains("LocalDate")) return DomainTypeKind.LOCAL_DATE;
+        return DomainTypeKind.ENUM_LIKE;
+    }
 
     @Override
     public GeneratedFile generate(DomainMetadata metadata) {
@@ -83,7 +127,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         String className = entity + "Repository";
         String table = toSnakeCase(entity) + "s";
         List<FieldMetadata> fields = metadata.fields();
-        boolean hasListField = fields.stream().anyMatch(f -> f.type().startsWith("List<"));
+        boolean hasListField = fields.stream().anyMatch(f -> f.type().startsWith(LIST_PREFIX));
 
         ClassName entityType = ClassName.get(metadata.packageName(), entity);
         ClassName selfType = ClassName.get(packageName, className);
@@ -179,21 +223,22 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     private MethodSpec buildFindById(Context ctx, TypeName optionalOfEntity) {
         String selectCols = String.join(", ", ctx.columns().stream().map(Column::sqlName).toList());
         String softDeleteFilter = ctx.metadata().softDelete() ? " AND deleted = false" : "";
-        String sql = "SELECT " + selectCols + " FROM " + ctx.table() + " WHERE id = ?" + softDeleteFilter;
+        String sql = "SELECT " + selectCols + " FROM " + ctx.table() + WHERE_ID_CLAUSE + softDeleteFilter;
 
         return MethodSpec.methodBuilder("findById")
                 .addModifiers(Modifier.PUBLIC)
                 .returns(optionalOfEntity)
                 .addParameter(UUID_TYPE, "id")
-                .addStatement("String sql = $S", sql)
-                .addStatement("return executor.query(conn -> {\n"
-                        + "    try ($T stmt = conn.prepare(sql)) {\n"
-                        + "        stmt.bindUuid(0, id);\n"
-                        + "        try ($T qr = stmt.executeQuery()) {\n"
-                        + "            return qr.next() ? $T.of(mapRow(qr.row())) : $T.empty();\n"
-                        + "        }\n"
-                        + "    }\n"
-                        + "})",
+                .addStatement(SQL_VAR_STMT, sql)
+                .addStatement("""
+                        return executor.query(conn -> {
+                            try ($T stmt = conn.prepare(sql)) {
+                                stmt.bindUuid(0, id);
+                                try ($T qr = stmt.executeQuery()) {
+                                    return qr.next() ? $T.of(mapRow(qr.row())) : $T.empty();
+                                }
+                            }
+                        })""",
                         PERSISTENCE_STATEMENT, QUERY_RESULT, OPTIONAL, OPTIONAL)
                 .build();
     }
@@ -210,17 +255,18 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         return MethodSpec.methodBuilder("findAll")
                 .addModifiers(Modifier.PUBLIC)
                 .returns(listOfEntity)
-                .addStatement("String sql = $S", sql)
-                .addStatement("return executor.query(conn -> {\n"
-                        + "    try ($T stmt = conn.prepare(sql);\n"
-                        + "         $T qr = stmt.executeQuery()) {\n"
-                        + "        $T<$T> result = new $T<>();\n"
-                        + "        while (qr.next()) {\n"
-                        + "            result.add(mapRow(qr.row()));\n"
-                        + "        }\n"
-                        + "        return result;\n"
-                        + "    }\n"
-                        + "})",
+                .addStatement(SQL_VAR_STMT, sql)
+                .addStatement("""
+                        return executor.query(conn -> {
+                            try ($T stmt = conn.prepare(sql);
+                                 $T qr = stmt.executeQuery()) {
+                                $T<$T> result = new $T<>();
+                                while (qr.next()) {
+                                    result.add(mapRow(qr.row()));
+                                }
+                                return result;
+                            }
+                        })""",
                         PERSISTENCE_STATEMENT, QUERY_RESULT,
                         LIST_TYPE, ctx.entityType(), ARRAY_LIST)
                 .build();
@@ -248,11 +294,11 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
             save.addStatement("entity.setCreatedAt(now)");
             save.addStatement("entity.setUpdatedAt(now)");
         }
-        save.addStatement("String sql = $S", sql);
+        save.addStatement(SQL_VAR_STMT, sql);
 
         CodeBlock.Builder body = CodeBlock.builder()
-                .beginControlFlow("executor.executeManaged(conn -> ")
-                .beginControlFlow("try ($T stmt = conn.prepare(sql))", PERSISTENCE_STATEMENT);
+                .beginControlFlow(EXECUTE_MANAGED_LAMBDA)
+                .beginControlFlow(TRY_PREPARE_STMT, PERSISTENCE_STATEMENT);
         emitInsertBinds(body, ctx);
         body.addStatement("stmt.executeUpdate()");
         body.endControlFlow();
@@ -260,7 +306,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
 
         save.addCode(body.build());
         save.addStatement("LOG.info($S, entity.getId())", "Created " + ctx.entity() + ": {}");
-        save.addStatement("return entity");
+        save.addStatement(RETURN_ENTITY_STMT);
         return save.build();
     }
 
@@ -271,7 +317,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                 .toList();
         String setClause = String.join(", ", updatable.stream().map(c -> c.sqlName() + " = ?").toList());
         boolean versioned = ctx.metadata().versioned();
-        String whereClause = versioned ? " WHERE id = ? AND version = ?" : " WHERE id = ?";
+        String whereClause = versioned ? WHERE_ID_CLAUSE + " AND version = ?" : WHERE_ID_CLAUSE;
         String sql = "UPDATE " + ctx.table() + " SET " + setClause + whereClause;
         String notFoundMessage = versioned
                 ? ctx.entity() + " not found or stale version: "
@@ -293,13 +339,13 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
             update.addStatement("long expectedVersion = entity.getVersion()");
             update.addStatement("entity.setVersion(expectedVersion + 1L)");
         }
-        update.addStatement("String sql = $S", sql);
+        update.addStatement(SQL_VAR_STMT, sql);
         update.addStatement("long[] rowsAffected = {0L}");
 
         CodeBlock.Builder body = CodeBlock.builder()
-                .beginControlFlow("executor.executeManaged(conn -> ")
-                .beginControlFlow("try ($T stmt = conn.prepare(sql))", PERSISTENCE_STATEMENT);
-        emitUpdateBinds(body, ctx, updatable, versioned);
+                .beginControlFlow(EXECUTE_MANAGED_LAMBDA)
+                .beginControlFlow(TRY_PREPARE_STMT, PERSISTENCE_STATEMENT);
+        emitUpdateBinds(body, updatable, versioned);
         body.addStatement("rowsAffected[0] = stmt.executeUpdate()");
         body.endControlFlow();
         body.endControlFlow(")");
@@ -311,7 +357,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                 .endControlFlow();
         update.addStatement("entity.setId(id)");
         update.addStatement("LOG.info($S, id)", "Updated " + ctx.entity() + ": {}");
-        update.addStatement("return entity");
+        update.addStatement(RETURN_ENTITY_STMT);
         return update.build();
     }
 
@@ -320,13 +366,13 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         // raises "not found" — consistent with the findById/findAll filter
         // and with the hard-delete branch's behaviour.
         String sql = ctx.metadata().softDelete()
-                ? "UPDATE " + ctx.table() + " SET deleted = true WHERE id = ? AND deleted = false"
-                : "DELETE FROM " + ctx.table() + " WHERE id = ?";
+                ? "UPDATE " + ctx.table() + " SET deleted = true" + WHERE_ID_CLAUSE + " AND deleted = false"
+                : "DELETE FROM " + ctx.table() + WHERE_ID_CLAUSE;
 
         CodeBlock.Builder body = CodeBlock.builder()
-                .addStatement("String sql = $S", sql)
-                .beginControlFlow("executor.executeManaged(conn -> ")
-                .beginControlFlow("try ($T stmt = conn.prepare(sql))", PERSISTENCE_STATEMENT)
+                .addStatement(SQL_VAR_STMT, sql)
+                .beginControlFlow(EXECUTE_MANAGED_LAMBDA)
+                .beginControlFlow(TRY_PREPARE_STMT, PERSISTENCE_STATEMENT)
                 .addStatement("rowsAffected[0] = stmt.bindUuid(0, id).executeUpdate()")
                 .endControlFlow()
                 .endControlFlow(")");
@@ -352,13 +398,14 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         return MethodSpec.methodBuilder("count")
                 .addModifiers(Modifier.PUBLIC)
                 .returns(TypeName.LONG)
-                .addStatement("String sql = $S", sql)
-                .addStatement("return executor.query(conn -> {\n"
-                        + "    try ($T stmt = conn.prepare(sql);\n"
-                        + "         $T qr = stmt.executeQuery()) {\n"
-                        + "        return qr.next() ? qr.row().getLong(0) : 0L;\n"
-                        + "    }\n"
-                        + "})",
+                .addStatement(SQL_VAR_STMT, sql)
+                .addStatement("""
+                        return executor.query(conn -> {
+                            try ($T stmt = conn.prepare(sql);
+                                 $T qr = stmt.executeQuery()) {
+                                return qr.next() ? qr.row().getLong(0) : 0L;
+                            }
+                        })""",
                         PERSISTENCE_STATEMENT, QUERY_RESULT)
                 .build();
     }
@@ -396,62 +443,58 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     private void emitReadDomain(MethodSpec.Builder map, Column col, int idx, Context ctx) {
         String setter = "id".equals(col.javaName()) ? "entity.setId" : "entity.set" + capitalize(col.javaName());
         String type = col.javaType();
-
-        if (type.startsWith("List<")) {
-            String genericType = type.substring(5, type.length() - 1);
-            ClassName elementType = ClassName.bestGuess(genericType);
-            map.addCode(CodeBlock.of(
-                    "{ String v = row.getString($L); if (v != null) $L(parseList(v, new $T<$T<$T>>() {})); }\n",
-                    idx, setter, TYPE_REFERENCE, LIST_TYPE, elementType));
-        } else if ("UUID".equals(type) || "java.util.UUID".equals(type)) {
-            map.addStatement("$L(row.getUuid($L))", setter, idx);
-        } else if ("String".equals(type) || "java.lang.String".equals(type)) {
-            map.addStatement("$L(row.getString($L))", setter, idx);
-        } else if ("Long".equals(type) || "long".equals(type) || "java.lang.Long".equals(type)) {
-            map.addStatement("$L(row.getLong($L))", setter, idx);
-        } else if ("Integer".equals(type) || "int".equals(type) || "java.lang.Integer".equals(type)) {
-            map.addStatement("$L(row.getInt($L))", setter, idx);
-        } else if ("Boolean".equals(type) || "boolean".equals(type) || "java.lang.Boolean".equals(type)) {
-            map.addStatement("$L(row.getBoolean($L))", setter, idx);
-        } else if ("Double".equals(type) || "double".equals(type) || "java.lang.Double".equals(type)) {
-            map.addStatement("$L(row.getDouble($L))", setter, idx);
-        } else if ("BigDecimal".equals(type) || "java.math.BigDecimal".equals(type)) {
-            // No bindBigDecimal in SPI — round-trip via String.
-            map.addCode(CodeBlock.of("{ String v = row.getString($L); if (v != null) $L(new $T(v)); }\n",
+        switch (classifyDomainType(type)) {
+            case LIST -> emitReadList(map, type, setter, idx);
+            case UUID -> map.addStatement("$L(row.getUuid($L))", setter, idx);
+            case STRING -> map.addStatement("$L(row.getString($L))", setter, idx);
+            case LONG -> map.addStatement("$L(row.getLong($L))", setter, idx);
+            case INT -> map.addStatement("$L(row.getInt($L))", setter, idx);
+            case BOOL -> map.addStatement("$L(row.getBoolean($L))", setter, idx);
+            case DOUBLE -> map.addStatement("$L(row.getDouble($L))", setter, idx);
+            case BIG_DECIMAL -> map.addCode(CodeBlock.of(
+                    // No bindBigDecimal in SPI — round-trip via String.
+                    "{ String v = row.getString($L); if (v != null) $L(new $T(v)); }\n",
                     idx, setter, BIG_DECIMAL));
-        } else if (type.contains("Instant") || type.contains("LocalDateTime")) {
-            // SPI 0.7.0 has no getInstant — round-trip via ISO-8601 String.
-            map.addCode(CodeBlock.of(
+            case INSTANT_LIKE -> map.addCode(CodeBlock.of(
+                    // SPI 0.7.0 has no getInstant — round-trip via ISO-8601 String.
                     "{ String v = row.getString($L); if (v != null) $L($T.parse(v)); }\n",
                     idx, setter, INSTANT));
-        } else if (type.contains("LocalDate")) {
-            // No bindLocalDate in SPI — round-trip via String (ISO-8601).
-            map.addCode(CodeBlock.of(
-                    "{ String v = row.getString($L); if (v != null) $L(java.time.LocalDate.parse(v)); }\n",
-                    idx, setter));
-        } else {
-            // Enum or other — read as string, valueOf on the entity-typed enum.
-            // Use $T (not $L) so JavaPoet emits the import; fall back to the
-            // entity's domain package when the field type is given unqualified.
-            ClassName enumClass = type.contains(".")
-                    ? ClassName.bestGuess(type)
-                    : ClassName.get(ctx.metadata().packageName(), type);
-            map.addCode(CodeBlock.of("{ String v = row.getString($L); if (v != null) $L($T.valueOf(v)); }\n",
-                    idx, setter, enumClass));
+            case LOCAL_DATE -> map.addCode(CodeBlock.of(
+                    "{ String v = row.getString($L); if (v != null) $L($T.parse(v)); }\n",
+                    idx, setter, LOCAL_DATE));
+            case ENUM_LIKE -> emitReadEnumLike(map, type, setter, idx, ctx);
         }
+    }
+
+    private void emitReadList(MethodSpec.Builder map, String type, String setter, int idx) {
+        String genericType = type.substring(LIST_PREFIX.length(), type.length() - 1);
+        ClassName elementType = ClassName.bestGuess(genericType);
+        map.addCode(CodeBlock.of(
+                "{ String v = row.getString($L); if (v != null) $L(parseList(v, new $T<$T<$T>>() {})); }\n",
+                idx, setter, TYPE_REFERENCE, LIST_TYPE, elementType));
+    }
+
+    private void emitReadEnumLike(MethodSpec.Builder map, String type, String setter, int idx, Context ctx) {
+        // Use $T (not $L) so JavaPoet emits the import; fall back to the
+        // entity's domain package when the field type is given unqualified.
+        ClassName enumClass = type.contains(".")
+                ? ClassName.bestGuess(type)
+                : ClassName.get(ctx.metadata().packageName(), type);
+        map.addCode(CodeBlock.of("{ String v = row.getString($L); if (v != null) $L($T.valueOf(v)); }\n",
+                idx, setter, enumClass));
     }
 
     private void emitInsertBinds(CodeBlock.Builder body, Context ctx) {
         int idx = 0;
         for (Column col : ctx.columns()) {
-            emitBindCol(body, col, idx++, "entity");
+            emitBindCol(body, col, idx++, ENTITY_SRC);
         }
     }
 
-    private void emitUpdateBinds(CodeBlock.Builder body, Context ctx, List<Column> updatable, boolean versioned) {
+    private void emitUpdateBinds(CodeBlock.Builder body, List<Column> updatable, boolean versioned) {
         int idx = 0;
         for (Column col : updatable) {
-            emitBindCol(body, col, idx++, "entity");
+            emitBindCol(body, col, idx++, ENTITY_SRC);
         }
         // id bind terminates WHERE clause; for versioned entities, the
         // expectedVersion bind enforces the optimistic-lock guard.
@@ -482,36 +525,22 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     private void emitBindDomain(CodeBlock.Builder body, Column col, int idx, String src) {
         String getter = "id".equals(col.javaName()) ? src + ".getId()" : src + ".get" + capitalize(col.javaName()) + "()";
         String type = col.javaType();
-
-        if (type.startsWith("List<")) {
-            body.addStatement("stmt.bindString($L, toJson($L))", idx, getter);
-        } else if ("UUID".equals(type) || "java.util.UUID".equals(type)) {
-            body.addStatement("stmt.bindUuid($L, $L)", idx, getter);
-        } else if ("String".equals(type) || "java.lang.String".equals(type)) {
-            body.addStatement("stmt.bindString($L, $L)", idx, getter);
-        } else if ("Long".equals(type) || "long".equals(type) || "java.lang.Long".equals(type)) {
-            body.addStatement("stmt.bindLong($L, $L)", idx, getter);
-        } else if ("Integer".equals(type) || "int".equals(type) || "java.lang.Integer".equals(type)) {
-            body.addStatement("stmt.bindInt($L, $L)", idx, getter);
-        } else if ("Boolean".equals(type) || "boolean".equals(type) || "java.lang.Boolean".equals(type)) {
-            body.addStatement("stmt.bindBoolean($L, $L)", idx, getter);
-        } else if ("Double".equals(type) || "double".equals(type) || "java.lang.Double".equals(type)) {
-            body.addStatement("stmt.bindDouble($L, $L)", idx, getter);
-        } else if ("BigDecimal".equals(type) || "java.math.BigDecimal".equals(type)) {
+        switch (classifyDomainType(type)) {
+            case LIST -> body.addStatement("stmt.bindString($L, toJson($L))", idx, getter);
+            case UUID -> body.addStatement("stmt.bindUuid($L, $L)", idx, getter);
+            case STRING -> body.addStatement("stmt.bindString($L, $L)", idx, getter);
+            case LONG -> body.addStatement("stmt.bindLong($L, $L)", idx, getter);
+            case INT -> body.addStatement("stmt.bindInt($L, $L)", idx, getter);
+            case BOOL -> body.addStatement("stmt.bindBoolean($L, $L)", idx, getter);
+            case DOUBLE -> body.addStatement("stmt.bindDouble($L, $L)", idx, getter);
             // SPI has no bindBigDecimal — encode as plain string.
-            body.addStatement("stmt.bindString($L, $L == null ? null : $L.toPlainString())",
+            case BIG_DECIMAL -> body.addStatement(
+                    "stmt.bindString($L, $L == null ? null : $L.toPlainString())",
                     idx, getter, getter);
-        } else if (type.contains("Instant") || type.contains("LocalDateTime")) {
-            // SPI 0.7.0 has no bindInstant — round-trip via ISO-8601 String.
-            body.addStatement("stmt.bindString($L, $L == null ? null : $L.toString())",
-                    idx, getter, getter);
-        } else if (type.contains("LocalDate")) {
-            body.addStatement("stmt.bindString($L, $L == null ? null : $L.toString())",
-                    idx, getter, getter);
-        } else {
-            // Enum or other — bind as string via toString().
-            body.addStatement("stmt.bindString($L, $L == null ? null : $L.toString())",
-                    idx, getter, getter);
+            // SPI 0.7.0 has no bindInstant / bindLocalDate / enum binds —
+            // round-trip via String.toString(); null-guarded.
+            case INSTANT_LIKE, LOCAL_DATE, ENUM_LIKE ->
+                    body.addStatement(BIND_STRING_NULL_GUARDED, idx, getter, getter);
         }
     }
 

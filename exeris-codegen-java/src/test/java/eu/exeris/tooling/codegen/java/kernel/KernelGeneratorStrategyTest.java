@@ -303,7 +303,8 @@ class KernelGeneratorStrategyTest {
 
             List<GeneratedFile> files = strategy.generate(metadata);
 
-            assertThat(files).extracting(GeneratedFile::artifactType)
+            assertThat(files).isNotEmpty()
+                    .extracting(GeneratedFile::artifactType)
                     .doesNotContain(ArtifactType.EVENT);
         }
 
@@ -378,7 +379,8 @@ class KernelGeneratorStrategyTest {
 
             List<GeneratedFile> files = strategy.generate(metadata);
 
-            assertThat(files).extracting(GeneratedFile::artifactType)
+            assertThat(files).isNotEmpty()
+                    .extracting(GeneratedFile::artifactType)
                     .doesNotContain(ArtifactType.EVENT_HANDLER);
         }
 
@@ -453,7 +455,8 @@ class KernelGeneratorStrategyTest {
 
             List<GeneratedFile> files = strategy.generate(metadata);
 
-            assertThat(files).extracting(GeneratedFile::artifactType)
+            assertThat(files).isNotEmpty()
+                    .extracting(GeneratedFile::artifactType)
                     .doesNotContain(ArtifactType.GRAPH_SYNC);
         }
 
@@ -537,7 +540,8 @@ class KernelGeneratorStrategyTest {
 
             List<GeneratedFile> files = strategy.generate(metadata);
 
-            assertThat(files).extracting(GeneratedFile::artifactType)
+            assertThat(files).isNotEmpty()
+                    .extracting(GeneratedFile::artifactType)
                     .doesNotContain(ArtifactType.SAGA);
         }
 
@@ -639,8 +643,9 @@ class KernelGeneratorStrategyTest {
         void shouldRejectNonDomainPackageSuffix() {
             KernelApplicationGenerator gen = new KernelApplicationGenerator();
             DomainMetadata bad = DomainMetadata.builder("Order", "com.example.order").build();
+            List<DomainMetadata> domains = List.of(bad);
 
-            assertThatThrownBy(() -> gen.generateAll(List.of(bad), "com.example.foundation"))
+            assertThatThrownBy(() -> gen.generateAll(domains, "com.example.foundation"))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("com.example.order")
                     .hasMessageContaining(".domain");

@@ -69,6 +69,7 @@ import java.util.List;
 public class KernelApplicationGenerator implements KernelArtifactGenerator {
 
     private static final String SUBSYSTEMS = "http,persistence,graph,flow,events,crypto";
+    private static final String TX_EXECUTOR_NAME = "transactionalExecutor";
 
     private static final ClassName ATOMIC_REFERENCE =
             ClassName.get("java.util.concurrent.atomic", "AtomicReference");
@@ -190,7 +191,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .addStatement("return $S", SUBSYSTEMS)
                 .build();
 
-        MethodSpec transactionalExecutorMethod = MethodSpec.methodBuilder("transactionalExecutor")
+        MethodSpec transactionalExecutorMethod = MethodSpec.methodBuilder(TX_EXECUTOR_NAME)
                 .addModifiers(Modifier.PROTECTED)
                 .returns(TRANSACTIONAL_EXECUTOR)
                 .addJavadoc("Provides the {@link $T} the generated repositories use.\n", TRANSACTIONAL_EXECUTOR)
@@ -249,15 +250,15 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                         .build())
                 .addField(FieldSpec.builder(atomicHttpHandler, "handlerSlot",
                         Modifier.PRIVATE, Modifier.FINAL).build())
-                .addField(FieldSpec.builder(TRANSACTIONAL_EXECUTOR, "transactionalExecutor",
+                .addField(FieldSpec.builder(TRANSACTIONAL_EXECUTOR, TX_EXECUTOR_NAME,
                         Modifier.PRIVATE, Modifier.FINAL).build());
 
         type.addMethod(MethodSpec.constructorBuilder()
                 .addModifiers(Modifier.PUBLIC)
                 .addParameter(atomicHttpHandler, "handlerSlot")
-                .addParameter(TRANSACTIONAL_EXECUTOR, "transactionalExecutor")
+                .addParameter(TRANSACTIONAL_EXECUTOR, TX_EXECUTOR_NAME)
                 .addStatement("this.handlerSlot = handlerSlot")
-                .addStatement("this.transactionalExecutor = transactionalExecutor")
+                .addStatement("this.$L = $L", TX_EXECUTOR_NAME, TX_EXECUTOR_NAME)
                 .build());
 
         type.addMethod(buildRunMethod(domains, basePackage));
