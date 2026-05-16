@@ -182,11 +182,16 @@ class FormDslGeneratorBranchTest {
                 .build();
 
         Map<String, String> components = collectComponents(meta);
-        // No assertion on exact strings (those vary per case in the switch)
-        // — just that every value emits a non-blank, kebab-case-looking
-        // string, so the dispatch is exercised.
+        // Each value must emit a non-blank, kebab-case-looking string so
+        // the dispatch is exercised end-to-end.
         assertThat(components.values()).allSatisfy(s ->
                 assertThat(s).isNotBlank().doesNotContainPattern("\\s"));
+        // Plus every ComponentType (sans AUTO) maps to a DISTINCT
+        // string — catches a merge-conflict regression where two enums
+        // accidentally alias the same output (e.g.\ CHECKBOX and TOGGLE
+        // both emitting "checkbox").
+        assertThat(components.values()).doesNotHaveDuplicates();
+        assertThat(components.values()).hasSize(testable.size());
     }
 
     @Test

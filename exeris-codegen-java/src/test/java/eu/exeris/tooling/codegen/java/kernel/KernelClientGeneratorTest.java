@@ -66,12 +66,18 @@ class KernelClientGeneratorTest {
     @Test
     @DisplayName("generate emits /api/v1 base when path() is unset (Builder default is empty string, not null)")
     void generateWithoutExplicitPath() {
-        // DomainMetadata.Builder defaults path to "" (not null), so the
-        // null-fallback "/" + kebab + "s" branch in
-        // KernelClientGenerator#buildApiPath is unreachable via the
-        // public Builder API. With an empty path the emitted base is
-        // just "/api/<version>" — assert the actual production behaviour
-        // rather than the dead-code fallback.
+        // KernelClientGenerator#buildApiPath guards on `metadata.path() != null`
+        // and falls back to "/" + kebab + "s" when null. The fallback is
+        // unreachable through DomainMetadata.Builder TODAY because the
+        // Builder defaults `path` to "" (not null) — see DomainMetadata.java
+        // Builder block. If the SDK ever changes that default to null,
+        // the production fallback becomes live and this test's
+        // .doesNotContain("/payment-orders") will FAIL — that failure
+        // signals an SDK-level invariant flip, not a regression in the
+        // generator. Either:
+        //   * SDK keeps "" as default → this test stays correct;
+        //   * SDK switches to null → update KernelClientGenerator to also
+        //     guard on isEmpty() and re-pin the expected emit here.
         DomainMetadata metadata = DomainMetadata.builder("PaymentOrder", "com.example.domain")
                 .build();
 

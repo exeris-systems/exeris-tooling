@@ -32,15 +32,18 @@ class OpenApiComponentsBuilderTest {
     }
 
     @Test
-    @DisplayName("Entity schema description falls back to \"<Entity> entity\" when description is unset")
-    void entitySchemaDescriptionFallback() {
+    @DisplayName("Entity schema: empty Builder-default description is kept verbatim (no \"<Entity> entity\" fallback fires)")
+    void entitySchemaDescriptionKeptEmpty() {
+        // Contrast with OpenApiTagsBuilder, which guards description on
+        // both null AND isBlank(). OpenApiComponentsBuilder.buildEntitySchema
+        // only checks != null, and DomainMetadata.Builder defaults
+        // description to "" (not null), so the empty string is kept
+        // verbatim and the "<Entity> entity" fallback never fires here.
         DomainMetadata meta = DomainMetadata.builder("Order", "com.example.domain").build();
 
         Schema<?> entitySchema = OpenApiComponentsBuilder.buildComponents(meta)
                 .getSchemas().get("Order");
 
-        // DomainMetadata.Builder defaults description to "" (not null),
-        // so the != null branch fires and the empty description is kept.
         assertThat(entitySchema.getDescription()).isEmpty();
     }
 
