@@ -22,7 +22,7 @@ public final class TableDslGenerator {
     private final ObjectMapper mapper;
 
     public TableDslGenerator(DomainMetadata metadata) {
-        this.metadata = Objects.requireNonNull(metadata);
+        this.metadata = Objects.requireNonNull(metadata, "metadata cannot be null");
         this.mapper = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
     }
 
@@ -111,7 +111,15 @@ public final class TableDslGenerator {
         if (type.contains("boolean") || type.contains("Boolean")) return "boolean";
         if (type.contains("LocalDate") && !type.contains("DateTime")) return "date-range";
         if (type.contains("DateTime") || type.contains("Instant")) return "datetime-range";
-        if (type.contains("int") || type.contains("Integer") || type.contains("long") || type.contains("Long") || type.contains("BigDecimal")) return "number-range";
+        // Numeric range — covers every primitive + boxed numeric Java type
+        // we map elsewhere as "number" in DslTypeMapper. double / float
+        // were previously absent and silently fell through to "text",
+        // breaking the range-filter contract.
+        if (type.contains("int") || type.contains("Integer")
+                || type.contains("long") || type.contains("Long")
+                || type.contains("double") || type.contains("Double")
+                || type.contains("float") || type.contains("Float")
+                || type.contains("BigDecimal")) return "number-range";
         if (field.isEnum()) return "select";
         return "text";
     }
