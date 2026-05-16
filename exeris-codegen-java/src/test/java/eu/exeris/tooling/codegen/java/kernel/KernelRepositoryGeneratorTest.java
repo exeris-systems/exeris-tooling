@@ -143,6 +143,112 @@ class KernelRepositoryGeneratorTest {
     }
 
     @Test
+    @DisplayName("Tenant-scoped + audited entity: tenant_id / created_at / updated_at columns appear in SELECT and bind chain")
+    void shouldEmitTenantAndAuditedColumns() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .tenantScoped(true)
+                .audited(true)
+                .fields(List.of(FieldMetadata.builder("orderNumber", "String").build()))
+                .build();
+
+        GeneratedFile repo = strategy.generate(metadata).stream()
+                .filter(f -> f.artifactType() == ArtifactType.REPOSITORY)
+                .findFirst().orElseThrow();
+
+        assertThat(repo.content())
+                // Column layout: id + domain field + tenant_id + created_at + updated_at.
+                .contains("SELECT id, order_number, tenant_id, created_at, updated_at FROM orders WHERE id = ?")
+                .contains("INSERT INTO orders (id, order_number, tenant_id, created_at, updated_at)")
+                // save() stamps Instant.now() onto both audited timestamps before binding.
+                .contains("Instant now = Instant.now()")
+                .contains("entity.setCreatedAt(now)")
+                .contains("entity.setUpdatedAt(now)")
+                // update() stamps only updatedAt automatically; createdAt is null-guarded.
+                .contains("entity.setUpdatedAt(Instant.now())")
+                // tenant_id binds via bindUuid; audited timestamps via null-guarded String round-trip
+                // (SPI 0.7.0 has no bindInstant — see KernelRepositoryGenerator emitBindCol).
+                .contains("stmt.bindUuid(2, entity.getTenantId())")
+                .contains("stmt.bindString(3, entity.getCreatedAt() == null ? null : entity.getCreatedAt().toString())")
+                .contains("stmt.bindString(4, entity.getUpdatedAt() == null ? null : entity.getUpdatedAt().toString())")
+                // mapRow reads them back via the parallel Instant.parse / row.getUuid path.
+                .contains("entity.setTenantId(row.getUuid(2))")
+                .contains("entity.setCreatedAt(Instant.parse(v))")
+                .contains("entity.setUpdatedAt(Instant.parse(v))");
+    }
+
+    @Test
+    @DisplayName("Full feature flag matrix: tenantScoped + audited + softDelete + versioned all wire together")
+    void shouldHandleFullFeatureMatrix() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .tenantScoped(true).audited(true).softDelete(true).versioned(true)
+                .fields(List.of(FieldMetadata.builder("orderNumber", "String").build()))
+                .build();
+
+        GeneratedFile repo = strategy.generate(metadata).stream()
+                .filter(f -> f.artifactType() == ArtifactType.REPOSITORY)
+                .findFirst().orElseThrow();
+
+        assertThat(repo.content())
+                // Full SELECT lists every system column in stable order.
+                .contains("SELECT id, order_number, tenant_id, created_at, updated_at, deleted, version FROM orders")
+                // Soft-delete filter combines with versioned WHERE.
+                .contains("WHERE id = ? AND deleted = false")
+                // Soft-delete UPDATE excludes already-tombstoned rows.
+                .contains("UPDATE orders SET deleted = true WHERE id = ? AND deleted = false")
+                // findAll filter:
+                .contains("FROM orders WHERE deleted = false")
+                // count filter:
+                .contains("SELECT COUNT(*) FROM orders WHERE deleted = false")
+                // Optimistic-lock UPDATE adds AND version = ? on top of the audited SET clause.
+                .contains("AND version = ?")
+                .contains("long expectedVersion = entity.getVersion()")
+                .contains("entity.setVersion(expectedVersion + 1L)")
+                // The "not found or stale version" error message is used when versioned.
+                .contains("Order not found or stale version: ");
+    }
+
+    @Test
+    @DisplayName("Type matrix: Long / Integer / Boolean / Double / Instant / LocalDate / enum-like all bind + read correctly")
+    void shouldCoverEveryDomainTypeKind() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .fields(List.of(
+                        FieldMetadata.builder("longId", "Long").build(),
+                        FieldMetadata.builder("count", "Integer").build(),
+                        FieldMetadata.builder("active", "Boolean").build(),
+                        FieldMetadata.builder("ratio", "Double").build(),
+                        FieldMetadata.builder("placedAt", "Instant").build(),
+                        FieldMetadata.builder("placedOn", "LocalDate").build(),
+                        FieldMetadata.builder("status", "com.example.OrderStatus").build()))
+                .build();
+
+        GeneratedFile repo = strategy.generate(metadata).stream()
+                .filter(f -> f.artifactType() == ArtifactType.REPOSITORY)
+                .findFirst().orElseThrow();
+
+        String src = repo.content();
+        // Read side — one accessor per type-kind.
+        assertThat(src)
+                .contains("entity.setLongId(row.getLong(")
+                .contains("entity.setCount(row.getInt(")
+                .contains("entity.setActive(row.getBoolean(")
+                .contains("entity.setRatio(row.getDouble(")
+                .contains("entity.setPlacedAt(Instant.parse(v))")
+                .contains("entity.setPlacedOn(LocalDate.parse(v))")
+                .contains("entity.setStatus(OrderStatus.valueOf(v))")
+                // Bind side — one binder per type-kind (with null guard for nullable types).
+                .contains("stmt.bindLong(")
+                .contains("stmt.bindInt(")
+                .contains("stmt.bindBoolean(")
+                .contains("stmt.bindDouble(")
+                // Enum-like + Instant + LocalDate share the null-guarded toString binder.
+                .contains("entity.getStatus() == null ? null : entity.getStatus().toString()")
+                .contains("entity.getPlacedAt() == null ? null : entity.getPlacedAt().toString()")
+                .contains("entity.getPlacedOn() == null ? null : entity.getPlacedOn().toString()")
+                // Enum import — JavaPoet emits the ClassName for ENUM_LIKE.
+                .contains("import com.example.OrderStatus");
+    }
+
+    @Test
     @DisplayName("Versioned entities emit optimistic-lock UPDATE with WHERE id = ? AND version = ?")
     void shouldEmitOptimisticLockForVersionedEntities() {
         DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
