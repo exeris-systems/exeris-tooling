@@ -31,8 +31,11 @@
     <build>
         <pluginManagement>
             <plugins>
-                <!-- JaCoCo plugin version pinned via BOM property (jacoco.version);
-                     active configuration applied below in <plugins>. -->
+                <!-- JaCoCo plugin version pinned via the root POM property
+                     ${jacoco.version} (not a BOM-managed dependency — plugin
+                     coordinates live on the build chain, not on
+                     dependencyManagement). Active configuration applied
+                     below in <plugins>. -->
                 <plugin>
                     <groupId>org.jacoco</groupId>
                     <artifactId>jacoco-maven-plugin</artifactId>
@@ -53,7 +56,17 @@
                  NOT enabled in this PR — coverage is measured but not
                  enforced. Target line/branch coverage is ~85%; the gate
                  will be flipped on in a follow-up PR once subsequent
-                 work brings every reportable module up to the threshold. -->
+                 work brings every reportable module up to the threshold.
+
+                 Note on cross-module coverage: exeris-e2e-tests has no
+                 src/main/java, so report is skipped there ("missing
+                 classes directory") — but the agent still runs and an
+                 exec file is captured at target/jacoco.exec. Coverage of
+                 codegen-java classes exercised by e2e-tests therefore
+                 lives in that exec file and is NOT folded into
+                 exeris-codegen-java's report by default. A follow-up
+                 PR will wire jacoco:report-aggregate (or merge) for the
+                 full per-module + cross-module picture. -->
             <plugin>
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>

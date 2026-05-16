@@ -106,7 +106,10 @@
              resolve ${jacoco.version}. BOM-imported properties do NOT
              propagate to <build><pluginManagement>, so this lives here
              rather than in exeris-tooling-bom. Target line/branch coverage
-             ~85% — check goal is wired but not enforced in this PR. -->
+             ~85% — the check goal (threshold gate) is intentionally NOT
+             wired in this PR; this PR is measurement-only. The gate flips
+             on in a follow-up once each reportable module is at or above
+             the threshold. -->
         <jacoco.version>0.8.14</jacoco.version>
     </properties>
 
