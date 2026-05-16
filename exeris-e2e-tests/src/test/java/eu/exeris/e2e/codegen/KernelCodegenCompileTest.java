@@ -67,6 +67,12 @@ class KernelCodegenCompileTest {
                                 .required(true)
                                 .build(),
                         FieldMetadata.builder("tags", "List<java.util.UUID>")
+                                .build(),
+                        // Enum field: exercises the Repository generator's
+                        // fall-through emit path. Must be FQCN so JavaPoet
+                        // can inject the matching import.
+                        FieldMetadata.builder("status",
+                                        DOMAIN_PACKAGE + ".OrderStatus")
                                 .build()))
                 .events(List.of(
                         DomainEventMetadata.simple("OrderCreated"),
@@ -96,7 +102,8 @@ class KernelCodegenCompileTest {
                 new KernelApplicationGenerator().generateAll(List.of(metadata), basePackage);
 
         InMemoryJavaCompiler compiler = new InMemoryJavaCompiler()
-                .addSource(DOMAIN_PACKAGE + "." + ENTITY_NAME, sourceEntity());
+                .addSource(DOMAIN_PACKAGE + "." + ENTITY_NAME, sourceEntity())
+                .addSource(DOMAIN_PACKAGE + ".OrderStatus", sourceStatusEnum());
 
         for (GeneratedFile file : generated) {
             if ("java".equals(file.extension())) {
@@ -131,6 +138,7 @@ class KernelCodegenCompileTest {
                     private String customerName;
                     private BigDecimal amount;
                     private List<UUID> tags;
+                    private OrderStatus status;
                     private UUID tenantId;
                     private Instant createdAt;
                     private Instant updatedAt;
@@ -151,6 +159,9 @@ class KernelCodegenCompileTest {
                     public List<UUID> getTags() { return tags; }
                     public void setTags(List<UUID> tags) { this.tags = tags; }
 
+                    public OrderStatus getStatus() { return status; }
+                    public void setStatus(OrderStatus status) { this.status = status; }
+
                     public UUID getTenantId() { return tenantId; }
                     public void setTenantId(UUID tenantId) { this.tenantId = tenantId; }
 
@@ -164,5 +175,15 @@ class KernelCodegenCompileTest {
                     public void setDeleted(boolean deleted) { this.deleted = deleted; }
                 }
                 """.formatted(DOMAIN_PACKAGE, ENTITY_NAME);
+    }
+
+    private static String sourceStatusEnum() {
+        return """
+                package %s;
+
+                public enum OrderStatus {
+                    PENDING, CONFIRMED, SHIPPED, CANCELLED;
+                }
+                """.formatted(DOMAIN_PACKAGE);
     }
 }

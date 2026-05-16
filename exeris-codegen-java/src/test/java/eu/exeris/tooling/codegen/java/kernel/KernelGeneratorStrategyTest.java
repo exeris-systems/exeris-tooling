@@ -4,6 +4,7 @@ import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.Artifact
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
+import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 import eu.exeris.sdk.sourcemodel.ast.GraphEdgeMetadata;
 import eu.exeris.sdk.sourcemodel.ast.GraphMetadata;
 import eu.exeris.sdk.sourcemodel.ast.SagaMetadata;
@@ -108,10 +109,13 @@ class KernelGeneratorStrategyTest {
     class RepositoryGenerationTests {
 
         @Test
-        @DisplayName("Should generate Repository class with JDBC")
+        @DisplayName("Should generate Repository wired against Open-Core SPI TransactionalExecutor")
         void shouldGenerateRepository() {
             // Given
             DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                    .fields(List.of(
+                            FieldMetadata.builder("orderNumber", "String").build(),
+                            FieldMetadata.builder("amount", "BigDecimal").build()))
                     .build();
 
             // When
@@ -127,12 +131,126 @@ class KernelGeneratorStrategyTest {
             assertThat(repo.packageName()).isEqualTo("com.example.repository");
             assertThat(repo.content())
                     .contains("public class OrderRepository")
-                    .contains("DataSource")
+                    .contains("import eu.exeris.kernel.spi.persistence.TransactionalExecutor")
+                    .contains("import eu.exeris.kernel.spi.persistence.PersistenceStatement")
+                    .contains("import eu.exeris.kernel.spi.persistence.QueryResult")
+                    .contains("import eu.exeris.kernel.spi.persistence.RowCursor")
+                    .contains("private final TransactionalExecutor executor")
+                    .contains("public OrderRepository(TransactionalExecutor executor)")
                     .contains("findById")
                     .contains("findAll")
                     .contains("save")
                     .contains("deleteById")
-                    .contains("count");
+                    .contains("count")
+                    .contains("executor.query(conn ->")
+                    .contains("executor.executeManaged(conn ->")
+                    .contains("conn.prepare(sql)")
+                    .contains("stmt.bindUuid(0, id)")
+                    .contains("row.getUuid(")
+                    .contains("row.getString(")
+                    // Explicit column list — RowCursor is index-only.
+                    .contains("SELECT id, order_number, amount FROM orders WHERE id = ?")
+                    .contains("INSERT INTO orders (id, order_number, amount) VALUES (?, ?, ?)")
+                    .doesNotContain("SELECT * FROM")
+                    // No JDBC residue.
+                    .doesNotContain("import java.sql.")
+                    .doesNotContain("import javax.sql")
+                    .doesNotContain("private final DataSource")
+                    .doesNotContain("dataSource.getConnection()")
+                    // BigDecimal binds via String (no bindBigDecimal in SPI).
+                    .contains("toPlainString()")
+                    .contains("new BigDecimal(v)");
+        }
+
+        @Test
+        @DisplayName("Should emit JSON helpers (Jackson 3) when entity has List<X> fields")
+        void shouldEmitJsonHelpersForListFields() {
+            DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                    .fields(List.of(FieldMetadata.builder("tags", "List<java.util.UUID>").build()))
+                    .build();
+
+            GeneratedFile repo = strategy.generate(metadata).stream()
+                    .filter(f -> f.artifactType() == ArtifactType.REPOSITORY)
+                    .findFirst().orElseThrow();
+
+            assertThat(repo.content())
+                    .contains("import tools.jackson.databind.ObjectMapper")
+                    .contains("import tools.jackson.core.JacksonException")
+                    .contains("import tools.jackson.core.type.TypeReference")
+                    .contains("private static final ObjectMapper MAPPER = new ObjectMapper()")
+                    .contains("private static <T> List<T> parseList")
+                    .contains("private static String toJson")
+                    // No Jackson 2 leakage.
+                    .doesNotContain("com.fasterxml.jackson");
+        }
+
+        @Test
+        @DisplayName("Repository without List<X> fields skips Jackson helpers")
+        void shouldSkipJsonHelpersWithoutListFields() {
+            DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                    .fields(List.of(FieldMetadata.builder("orderNumber", "String").build()))
+                    .build();
+
+            GeneratedFile repo = strategy.generate(metadata).stream()
+                    .filter(f -> f.artifactType() == ArtifactType.REPOSITORY)
+                    .findFirst().orElseThrow();
+
+            assertThat(repo.content())
+                    .doesNotContain("tools.jackson")
+                    .doesNotContain("ObjectMapper")
+                    .doesNotContain("TypeReference")
+                    .doesNotContain("parseList")
+                    .doesNotContain("toJson");
+        }
+
+        @Test
+        @DisplayName("Soft-delete domains filter by deleted = false on reads and use UPDATE for deletes")
+        void shouldHandleSoftDelete() {
+            DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                    .softDelete(true)
+                    .fields(List.of(FieldMetadata.builder("orderNumber", "String").build()))
+                    .build();
+
+            GeneratedFile repo = strategy.generate(metadata).stream()
+                    .filter(f -> f.artifactType() == ArtifactType.REPOSITORY)
+                    .findFirst().orElseThrow();
+
+            assertThat(repo.content())
+                    .contains("AND deleted = false")
+                    .contains("WHERE deleted = false")
+                    // deleteById excludes tombstoned rows so double-delete raises
+                    // "not found" — consistent with the findById/findAll filter.
+                    .contains("UPDATE orders SET deleted = true WHERE id = ? AND deleted = false")
+                    .doesNotContain("DELETE FROM orders");
+        }
+
+        @Test
+        @DisplayName("Versioned entities emit optimistic-lock UPDATE with WHERE id = ? AND version = ?")
+        void shouldEmitOptimisticLockForVersionedEntities() {
+            DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                    .versioned(true)
+                    .fields(List.of(FieldMetadata.builder("orderNumber", "String").build()))
+                    .build();
+
+            GeneratedFile repo = strategy.generate(metadata).stream()
+                    .filter(f -> f.artifactType() == ArtifactType.REPOSITORY)
+                    .findFirst().orElseThrow();
+
+            assertThat(repo.content())
+                    // Column is part of layout — both SELECT and SET-clause.
+                    .contains("SELECT id, order_number, version FROM orders")
+                    .contains("UPDATE orders SET order_number = ?, version = ? WHERE id = ? AND version = ?")
+                    // Auto-increment: capture expected, then increment on the entity
+                    // so the SET version = ? bind gets the new value.
+                    .contains("long expectedVersion = entity.getVersion()")
+                    .contains("entity.setVersion(expectedVersion + 1L)")
+                    // Bind layout: [0]=order_number, [1]=version (new), [2]=id,
+                    // [3]=expectedVersion (the optimistic-lock guard).
+                    .contains("stmt.bindLong(1, entity.getVersion())")
+                    .contains("stmt.bindUuid(2, id)")
+                    .contains("stmt.bindLong(3, expectedVersion)")
+                    // Distinct error message for stale-version case.
+                    .contains("Order not found or stale version: ");
         }
     }
 
@@ -185,7 +303,8 @@ class KernelGeneratorStrategyTest {
 
             List<GeneratedFile> files = strategy.generate(metadata);
 
-            assertThat(files).extracting(GeneratedFile::artifactType)
+            assertThat(files).isNotEmpty()
+                    .extracting(GeneratedFile::artifactType)
                     .doesNotContain(ArtifactType.EVENT);
         }
 
@@ -260,7 +379,8 @@ class KernelGeneratorStrategyTest {
 
             List<GeneratedFile> files = strategy.generate(metadata);
 
-            assertThat(files).extracting(GeneratedFile::artifactType)
+            assertThat(files).isNotEmpty()
+                    .extracting(GeneratedFile::artifactType)
                     .doesNotContain(ArtifactType.EVENT_HANDLER);
         }
 
@@ -335,7 +455,8 @@ class KernelGeneratorStrategyTest {
 
             List<GeneratedFile> files = strategy.generate(metadata);
 
-            assertThat(files).extracting(GeneratedFile::artifactType)
+            assertThat(files).isNotEmpty()
+                    .extracting(GeneratedFile::artifactType)
                     .doesNotContain(ArtifactType.GRAPH_SYNC);
         }
 
@@ -419,7 +540,8 @@ class KernelGeneratorStrategyTest {
 
             List<GeneratedFile> files = strategy.generate(metadata);
 
-            assertThat(files).extracting(GeneratedFile::artifactType)
+            assertThat(files).isNotEmpty()
+                    .extracting(GeneratedFile::artifactType)
                     .doesNotContain(ArtifactType.SAGA);
         }
 
@@ -507,7 +629,7 @@ class KernelGeneratorStrategyTest {
                     .findFirst().orElseThrow().content();
             // No per-entity wiring (no Repository/Service/Handler lines).
             assertThat(lifecycle)
-                    .doesNotContain("Repository(dataSource)")
+                    .doesNotContain("Repository(transactionalExecutor)")
                     .doesNotContain("Service(")
                     .doesNotContain("Handler(")
                     .doesNotContain("routerBuilder.route")
@@ -521,8 +643,9 @@ class KernelGeneratorStrategyTest {
         void shouldRejectNonDomainPackageSuffix() {
             KernelApplicationGenerator gen = new KernelApplicationGenerator();
             DomainMetadata bad = DomainMetadata.builder("Order", "com.example.order").build();
+            List<DomainMetadata> domains = List.of(bad);
 
-            assertThatThrownBy(() -> gen.generateAll(List.of(bad), "com.example.foundation"))
+            assertThatThrownBy(() -> gen.generateAll(domains, "com.example.foundation"))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("com.example.order")
                     .hasMessageContaining(".domain");
@@ -551,10 +674,13 @@ class KernelGeneratorStrategyTest {
             assertThat(application.packageName()).isEqualTo("com.example.foundation");
             assertThat(application.content())
                     .contains("import eu.exeris.kernel.core.bootstrap.KernelBootstrap")
+                    .contains("import eu.exeris.kernel.core.persistence.TransactionOrchestrator")
                     .contains("import eu.exeris.kernel.spi.bootstrap.BootstrapSelector")
+                    .contains("import eu.exeris.kernel.spi.context.KernelProviders")
                     .contains("import eu.exeris.kernel.spi.http.HttpHandler")
                     .contains("import eu.exeris.kernel.spi.http.HttpKernelProviders")
                     .contains("import eu.exeris.kernel.spi.http.HttpStatus")
+                    .contains("import eu.exeris.kernel.spi.persistence.TransactionalExecutor")
                     .contains("public class Application")
                     .contains("public static void main(String[] args)")
                     .doesNotContain("public static void main(String[] args) throws Exception")
@@ -563,27 +689,32 @@ class KernelGeneratorStrategyTest {
                     .contains("BootstrapSelector.forNames(subsystems().split")
                     .doesNotContain("SUBSYSTEMS.split")
                     .contains("protected String subsystems()")
-                    .contains(".boot(() -> new RuntimeLifecycle(handlerSlot, dataSource()).run())")
+                    .contains(".boot(() -> new RuntimeLifecycle(handlerSlot, transactionalExecutor()).run())")
                     .contains("exchange.respond(HttpStatus.SERVICE_UNAVAILABLE)")
-                    .contains("protected DataSource dataSource()")
-                    .contains("throw new UnsupportedOperationException");
+                    .contains("protected TransactionalExecutor transactionalExecutor()")
+                    .contains("return new TransactionOrchestrator(KernelProviders.persistenceEngine())")
+                    .doesNotContain("import javax.sql")
+                    .doesNotContain("protected DataSource dataSource()");
 
             assertThat(lifecycle.packageName()).isEqualTo("com.example.foundation");
             assertThat(lifecycle.content())
                     .contains("import eu.exeris.kernel.core.http.routing.HttpRouter")
                     .contains("import eu.exeris.kernel.spi.http.HttpMethod")
+                    .contains("import eu.exeris.kernel.spi.persistence.TransactionalExecutor")
                     .contains("public final class RuntimeLifecycle")
-                    .contains("OrderRepository orderRepository = new OrderRepository(dataSource)")
+                    .contains("OrderRepository orderRepository = new OrderRepository(transactionalExecutor)")
                     .contains("OrderService orderService = new OrderService(orderRepository)")
                     .contains("OrderHandler orderHandler = new OrderHandler(orderService)")
-                    .contains("ProductRepository productRepository = new ProductRepository(dataSource)")
+                    .contains("ProductRepository productRepository = new ProductRepository(transactionalExecutor)")
                     .contains("HttpRouter.Builder routerBuilder = HttpRouter.builder()")
                     .contains("routerBuilder.route(HttpMethod.GET, \"/orders\", orderHandler::handleGetAll)")
                     .contains("routerBuilder.route(HttpMethod.POST, \"/orders\", orderHandler::handleCreate)")
                     .contains("routerBuilder.route(HttpMethod.PUT, \"/orders/{id}\", orderHandler::handleUpdate)")
                     .contains("handlerSlot.set(router::handle)")
                     .contains("CountDownLatch shutdownLatch = new CountDownLatch(1)")
-                    .contains("Runtime.getRuntime().addShutdownHook");
+                    .contains("Runtime.getRuntime().addShutdownHook")
+                    .doesNotContain("import javax.sql")
+                    .doesNotContain("private final DataSource");
         }
     }
 

@@ -42,31 +42,24 @@ import java.util.List;
  *       forwarding {@link eu.exeris.kernel.spi.http.HttpHandler},
  *       binds it via {@code ScopedValue.where(HTTP_SERVER_HANDLER)},
  *       and drives {@code KernelBootstrap.builder().selector(
- *       BootstrapSelector.forNames(SUBSYSTEMS)).build().boot(() -> new
- *       RuntimeLifecycle(handlerSlot, dataSource()).run())}. The
- *       {@code dataSource()} method is {@code protected} so consumers
- *       can subclass and provide a configured {@link javax.sql.DataSource}.</li>
- *   <li>{@code RuntimeLifecycle.java} — Pulls the {@code PersistenceEngine}
- *       and {@code HttpServerEngine} from {@code KernelProviders},
- *       instantiates each declared entity's {@code *Repository},
- *       {@code *Service}, and {@code *Handler}, builds an
+ *       BootstrapSelector.forNames(subsystems())).build().boot(() -> new
+ *       RuntimeLifecycle(handlerSlot, transactionalExecutor()).run())}.
+ *       The {@code transactionalExecutor()} method is {@code protected}
+ *       so consumers can subclass and substitute a custom
+ *       {@link eu.exeris.kernel.spi.persistence.TransactionalExecutor}; the
+ *       default body composes {@code new TransactionOrchestrator(
+ *       KernelProviders.persistenceEngine())} once the kernel has bound
+ *       the {@code PERSISTENCE_ENGINE} {@link java.lang.ScopedValue}.</li>
+ *   <li>{@code RuntimeLifecycle.java} — Receives the bound
+ *       {@code TransactionalExecutor}, instantiates each declared
+ *       entity's {@code *Repository}, {@code *Service}, and
+ *       {@code *Handler}, builds an
  *       {@link eu.exeris.kernel.core.http.routing.HttpRouter} with the
  *       five canonical CRUD routes per entity (GET-all / GET-by-id /
  *       POST-create / PUT-update / DELETE), sets the forwarding handler
  *       slot, and parks on a {@link java.util.concurrent.CountDownLatch}
  *       until the JVM shuts down.</li>
  * </ul>
- * <p>
- * Repository wiring caveat: the codegen-emitted {@code *Repository}
- * classes (from {@link KernelRepositoryGenerator}) currently use raw
- * JDBC against {@link javax.sql.DataSource}. The Open-Core SPI's
- * canonical persistence path is {@code TransactionalExecutor} +
- * {@code PersistenceEngine}, which the Repository generator has not yet
- * been migrated to. The emitted {@code Application.dataSource()}
- * override-point gives consumers a clean place to supply a DataSource
- * (HikariCP / PGSimpleDataSource / etc.) without changing the generated
- * code; the Repository → TransactionalExecutor migration is a separate
- * future PR.
  *
  * @implNote Emission is JavaPoet-based (ADR-015).
  *
@@ -76,13 +69,13 @@ import java.util.List;
 public class KernelApplicationGenerator implements KernelArtifactGenerator {
 
     private static final String SUBSYSTEMS = "http,persistence,graph,flow,events,crypto";
+    private static final String TX_EXECUTOR_NAME = "transactionalExecutor";
 
     private static final ClassName ATOMIC_REFERENCE =
             ClassName.get("java.util.concurrent.atomic", "AtomicReference");
     private static final ClassName HTTP_STATUS = ClassName.get("eu.exeris.kernel.spi.http", "HttpStatus");
     private static final ClassName COUNT_DOWN_LATCH =
             ClassName.get("java.util.concurrent", "CountDownLatch");
-    private static final ClassName DATA_SOURCE = ClassName.get("javax.sql", "DataSource");
     private static final ClassName SCOPED_VALUE = ClassName.get("java.lang", "ScopedValue");
     private static final ClassName RUNTIME = ClassName.get("java.lang", "Runtime");
     private static final ClassName THREAD = ClassName.get("java.lang", "Thread");
@@ -102,6 +95,12 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
             ClassName.get("eu.exeris.kernel.spi.http", "HttpMethod");
     private static final ClassName HTTP_ROUTER =
             ClassName.get("eu.exeris.kernel.core.http.routing", "HttpRouter");
+    private static final ClassName KERNEL_PROVIDERS =
+            ClassName.get("eu.exeris.kernel.spi.context", "KernelProviders");
+    private static final ClassName TRANSACTIONAL_EXECUTOR =
+            ClassName.get("eu.exeris.kernel.spi.persistence", "TransactionalExecutor");
+    private static final ClassName TRANSACTION_ORCHESTRATOR =
+            ClassName.get("eu.exeris.kernel.core.persistence", "TransactionOrchestrator");
 
     @Override
     public GeneratedFile generate(DomainMetadata metadata) {
@@ -166,7 +165,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                         .add("$T.builder()\n", KERNEL_BOOTSTRAP)
                         .add("    .selector($T.forNames(subsystems().split($S)))\n", BOOTSTRAP_SELECTOR, ",")
                         .add("    .build()\n")
-                        .add("    .boot(() -> new $T(handlerSlot, dataSource()).run());\n", lifecycleType)
+                        .add("    .boot(() -> new $T(handlerSlot, transactionalExecutor()).run());\n", lifecycleType)
                         .add("return null;\n")
                         .unindent()
                         .addStatement("})")
@@ -192,18 +191,20 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .addStatement("return $S", SUBSYSTEMS)
                 .build();
 
-        MethodSpec dataSourceMethod = MethodSpec.methodBuilder("dataSource")
+        MethodSpec transactionalExecutorMethod = MethodSpec.methodBuilder(TX_EXECUTOR_NAME)
                 .addModifiers(Modifier.PROTECTED)
-                .returns(DATA_SOURCE)
-                .addJavadoc("Provides the JDBC {@link $T} the generated repositories use.\n", DATA_SOURCE)
-                .addJavadoc("<p>The default body throws — consumers <b>must</b> subclass\n")
-                .addJavadoc("{@code Application} and override this method to plug in a\n")
-                .addJavadoc("real pool (HikariCP, PGSimpleDataSource, …). The Repository\n")
-                .addJavadoc("generator currently emits raw-JDBC repositories; migration to\n")
-                .addJavadoc("the SPI's {@code TransactionalExecutor} is a separate future PR.\n")
-                .addStatement("throw new $T($S)",
-                        ClassName.get("java.lang", "UnsupportedOperationException"),
-                        "Override Application.dataSource() to provide a configured javax.sql.DataSource")
+                .returns(TRANSACTIONAL_EXECUTOR)
+                .addJavadoc("Provides the {@link $T} the generated repositories use.\n", TRANSACTIONAL_EXECUTOR)
+                .addJavadoc("<p>The default composes\n")
+                .addJavadoc("{@code new TransactionOrchestrator(KernelProviders.persistenceEngine())},\n")
+                .addJavadoc("which only resolves correctly once the kernel has booted and the\n")
+                .addJavadoc("{@code PERSISTENCE_ENGINE} {@link $T} has been bound — i.e.\\ inside\n", SCOPED_VALUE)
+                .addJavadoc("the {@code KernelBootstrap.boot(...)} callback (where this method\n")
+                .addJavadoc("is invoked).\n")
+                .addJavadoc("<p>Subclass {@code Application} and override this method to plug in\n")
+                .addJavadoc("a custom executor (test harness, alternative pool, etc.).\n")
+                .addStatement("return new $T($T.persistenceEngine())",
+                        TRANSACTION_ORCHESTRATOR, KERNEL_PROVIDERS)
                 .build();
 
         TypeSpec applicationType = KernelScaffold.publicClass("Application")
@@ -212,18 +213,19 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .addJavadoc("({@code http,persistence,graph,flow,events,crypto}) and hands the\n")
                 .addJavadoc("composed Handler/Service/Repository/Router stack off to\n")
                 .addJavadoc("{@link $T#run()}.\n", lifecycleType)
-                .addJavadoc("<p>Subclass to override {@link #dataSource()} or\n")
+                .addJavadoc("<p>Subclass to override {@link #transactionalExecutor()} or\n")
                 .addJavadoc("{@link #subsystems()}.\n")
                 .addJavadoc("<p>Runtime classpath requirements (in addition to\n")
                 .addJavadoc("{@code exeris-kernel-spi} / {@code -core}): {@code org.slf4j:slf4j-api}\n")
-                .addJavadoc("(used by the generated repositories/services/handlers) and a\n")
-                .addJavadoc("{@code javax.sql.DataSource} implementation supplied via\n")
-                .addJavadoc("{@link #dataSource()} (e.g.\\ HikariCP).\n")
+                .addJavadoc("(used by the generated repositories/services/handlers) plus a\n")
+                .addJavadoc("kernel persistence provider on the classpath (Community driver\n")
+                .addJavadoc("with a configured PostgreSQL DataSource — bound by the kernel\n")
+                .addJavadoc("bootstrap, not by this generated code).\n")
                 .addJavadoc("<p><b>DO NOT EDIT</b> - Regenerate from domain models.\n")
                 .addMethod(mainMethod)
                 .addMethod(runMethod)
                 .addMethod(subsystemsMethod)
-                .addMethod(dataSourceMethod)
+                .addMethod(transactionalExecutorMethod)
                 .build();
 
         return new GeneratedFile(basePackage, "Application",
@@ -248,15 +250,15 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                         .build())
                 .addField(FieldSpec.builder(atomicHttpHandler, "handlerSlot",
                         Modifier.PRIVATE, Modifier.FINAL).build())
-                .addField(FieldSpec.builder(DATA_SOURCE, "dataSource",
+                .addField(FieldSpec.builder(TRANSACTIONAL_EXECUTOR, TX_EXECUTOR_NAME,
                         Modifier.PRIVATE, Modifier.FINAL).build());
 
         type.addMethod(MethodSpec.constructorBuilder()
                 .addModifiers(Modifier.PUBLIC)
                 .addParameter(atomicHttpHandler, "handlerSlot")
-                .addParameter(DATA_SOURCE, "dataSource")
+                .addParameter(TRANSACTIONAL_EXECUTOR, TX_EXECUTOR_NAME)
                 .addStatement("this.handlerSlot = handlerSlot")
-                .addStatement("this.dataSource = dataSource")
+                .addStatement("this.$L = $L", TX_EXECUTOR_NAME, TX_EXECUTOR_NAME)
                 .build());
 
         type.addMethod(buildRunMethod(domains, basePackage));
@@ -297,7 +299,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
             ClassName serviceType = ClassName.get(servicePkg, entity + "Service");
             ClassName handlerType = ClassName.get(handlerPkg, entity + "Handler");
 
-            method.addStatement("$T $LRepository = new $T(dataSource)",
+            method.addStatement("$T $LRepository = new $T(transactionalExecutor)",
                     repoType, entityLower, repoType);
             method.addStatement("$T $LService = new $T($LRepository)",
                     serviceType, entityLower, serviceType, entityLower);
