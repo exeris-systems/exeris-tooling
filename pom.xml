@@ -106,11 +106,12 @@
              resolve ${jacoco.version}. BOM-imported properties do NOT
              propagate to <build><pluginManagement>, so this lives here
              rather than in exeris-tooling-bom. The check goal (threshold
-             gate) is now wired in exeris-tooling-parent and enforces
+             gate) is wired in exeris-tooling-parent and enforces
              85% line + 85% branch coverage on each reportable module
-             (haltOnFailure=true); the gate currently skips on
-             exeris-processor pending a follow-up coverage push there.
-             See exeris-tooling-parent/pom.xml for the active config. -->
+             (haltOnFailure=true). exeris-processor overrides this with
+             a per-module 85% line + 80% branch rule — the relaxed branch
+             reflects unreachable defensive null guards at the javac
+             boundary; see exeris-processor/pom.xml for the rationale. -->
         <jacoco.version>0.8.14</jacoco.version>
     </properties>
 

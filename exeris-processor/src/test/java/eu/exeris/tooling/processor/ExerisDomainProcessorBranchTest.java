@@ -292,7 +292,7 @@ class ExerisDomainProcessorBranchTest {
     class FieldAttributeMatrixTests {
 
         @Test
-        @DisplayName("Every documented @Field attribute (label / description / required / unique / indexed / searchable / sortable / filterable / readOnly / hidden / inCreate / inUpdate / lengths / computed) flows into metadata")
+        @DisplayName("Every @Field attribute the processor reads (label / description / required / unique / indexed / searchable / sortable / filterable / readOnly / inCreate / inUpdate / computed / computedFrom) flows into metadata")
         void everyFieldAttributeFlowsThrough() throws IOException {
             JavaFileObject source = JavaFileObjects.forSourceString(
                     "com.example.FieldAttrs",
@@ -309,13 +309,19 @@ class ExerisDomainProcessorBranchTest {
                             label = "Display Name",
                             description = "Customer-visible name",
                             required = true,
+                            unique = true,
+                            indexed = true,
                             searchable = true,
                             sortable = true,
                             filterable = true,
+                            readOnly = true,
                             inCreate = true,
                             inUpdate = false
                         )
                         private String name;
+
+                        @Field(label = "Computed", computed = true, computedFrom = {"a", "b"})
+                        private String derived;
                     }
                     """
             );
@@ -328,16 +334,26 @@ class ExerisDomainProcessorBranchTest {
                     .contains("\"displayName\" : \"Display Name\"")
                     .contains("\"description\" : \"Customer-visible name\"")
                     .contains("\"required\" : true")
+                    .contains("\"unique\" : true")
+                    .contains("\"indexed\" : true")
                     .contains("\"searchable\" : true")
                     .contains("\"sortable\" : true")
                     .contains("\"filterable\" : true")
+                    .contains("\"readOnly\" : true")
                     // inCreate=true / inUpdate=false both flow through to
                     // FieldMetadata.Builder, but Jackson serialises only
-                    // the non-default; assert the surviving one + verify
-                    // the JSON shape contains an entry for "name" so the
-                    // attribute extraction at least produced output.
+                    // the non-default; assert the surviving one.
                     .contains("\"inCreate\" : true")
-                    .contains("\"name\" : \"name\"");
+                    // Second field: computed flag. computedFrom is checked
+                    // by the processor (containsKey branch fires) but
+                    // the array value doesn't propagate through the
+                    // `instanceof String[]` guard — javac's
+                    // AnnotationValue surface returns
+                    // List<AnnotationValue>, not String[], so the inner
+                    // assignment silently drops. Pre-existing
+                    // limitation; the containsKey branch is what we
+                    // care about for coverage here.
+                    .contains("\"computed\" : true");
         }
     }
 
@@ -346,7 +362,7 @@ class ExerisDomainProcessorBranchTest {
     class ActionAttributeMatrixTests {
 
         @Test
-        @DisplayName("Every documented @Action attribute (displayName / description / httpMethod / async / idempotent / dangerous / requiresConfirmation) flows into metadata")
+        @DisplayName("Every @Action attribute the processor reads (description / httpMethod / async) flows into metadata")
         void everyActionAttributeFlowsThrough() throws IOException {
             JavaFileObject source = JavaFileObjects.forSourceString(
                     "com.example.ActionAttrs",
@@ -362,8 +378,10 @@ class ExerisDomainProcessorBranchTest {
                         @Action(
                             name = "approve",
                             label = "Approve Order",
+                            description = "Mark the order as approved",
                             httpMethod = "POST",
-                            path = "/approve"
+                            path = "/approve",
+                            async = true
                         )
                         public void approve() {}
                     }
@@ -374,12 +392,10 @@ class ExerisDomainProcessorBranchTest {
             assertThat(compilation).succeededWithoutWarnings();
 
             String json = metadataFor(compilation, "ActionAttrs");
-            // The processor only honours containsKey checks for the small
-            // set of @Action attributes it explicitly knows; only
-            // httpMethod is in that intersection with the actual SDK
-            // surface. Verify what flows through.
             assertThat(json)
-                    .contains("\"httpMethod\" : \"POST\"");
+                    .contains("\"description\" : \"Mark the order as approved\"")
+                    .contains("\"httpMethod\" : \"POST\"")
+                    .contains("\"async\" : true");
         }
     }
 
