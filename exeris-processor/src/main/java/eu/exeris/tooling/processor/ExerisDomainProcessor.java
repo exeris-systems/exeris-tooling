@@ -397,10 +397,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             builder.searchConfig((String) values.get("searchConfig"));
         }
 
-        // Database
-        if (values.containsKey("tableName")) {
-            builder.tableName((String) values.get("tableName"));
-        }
+        // @ExerisDomain has no tableName attribute (see exeris-sdk-
+        // annotations) — the previous containsKey("tableName") check
+        // was unreachable and was removed in PR #45.
     }
 
     private List<FieldMetadata> extractFieldsMetadata(TypeElement element) {
@@ -451,30 +450,23 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         FieldMetadata.Builder builder = FieldMetadata.builder(name, type);
         Map<String, Object> values = extractAnnotationValues(annotation);
 
-        if (values.containsKey("columnName")) builder.columnName((String) values.get("columnName"));
+        // @Field attribute surface (see exeris-sdk-annotations @Field):
+        // label, description, required, searchable, filterable, sortable,
+        // inList, inDetail, inCreate, inUpdate, order. Attributes that
+        // were checked here previously but don't exist on @Field
+        // (columnName, unique, indexed, readOnly, hidden, minLength,
+        // maxLength, computed, computedFrom) were removed in PR #45 —
+        // they were unreachable containsKey checks polluting branch
+        // coverage. If a future @Field gains any of them, add the
+        // check back together with a test fixture that exercises it.
         if (values.containsKey("label")) builder.displayName((String) values.get("label"));
         if (values.containsKey("description")) builder.description((String) values.get("description"));
         if (values.containsKey("required")) builder.required((Boolean) values.get("required"));
-        if (values.containsKey("unique")) builder.unique((Boolean) values.get("unique"));
-        if (values.containsKey("indexed")) builder.indexed((Boolean) values.get("indexed"));
         if (values.containsKey("searchable")) builder.searchable((Boolean) values.get("searchable"));
         if (values.containsKey("sortable")) builder.sortable((Boolean) values.get("sortable"));
         if (values.containsKey("filterable")) builder.filterable((Boolean) values.get("filterable"));
-        if (values.containsKey("readOnly")) builder.readOnly((Boolean) values.get("readOnly"));
-        if (values.containsKey("hidden")) builder.hidden((Boolean) values.get("hidden"));
         if (values.containsKey("inCreate")) builder.inCreate((Boolean) values.get("inCreate"));
         if (values.containsKey("inUpdate")) builder.inUpdate((Boolean) values.get("inUpdate"));
-        if (values.containsKey("minLength")) builder.minLength(getInt(values, "minLength", 0));
-        if (values.containsKey("maxLength")) builder.maxLength(getInt(values, "maxLength", 0));
-
-        // Handle computed fields
-        if (values.containsKey("computed")) builder.computed((Boolean) values.get("computed"));
-        if (values.containsKey("computedFrom")) {
-            Object computedFromValue = values.get("computedFrom");
-            if (computedFromValue instanceof String[] array) {
-                builder.computedFrom(java.util.Arrays.asList(array));
-            }
-        }
 
         // Check for validation annotation
         AnnotationMirror validationAnnotation = findAnnotation(field, "eu.exeris.sdk.annotation.Validation");
@@ -590,13 +582,15 @@ public class ExerisDomainProcessor extends AbstractProcessor {
 
         ActionMetadata.Builder builder = ActionMetadata.builder(name);
 
-        if (values.containsKey("displayName")) builder.displayName((String) values.get("displayName"));
-        if (values.containsKey("description")) builder.description((String) values.get("description"));
+        // @Action attribute surface (see exeris-sdk-annotations @Action):
+        // name, label, httpMethod, path, roles, permissions, bulk,
+        // visibleWhen, confirm, successMessage, errorMessage.
+        // Attributes that were checked here previously but don't exist
+        // on @Action (displayName, description, async, idempotent,
+        // dangerous, requiresConfirmation) were removed in PR #45 —
+        // they were unreachable containsKey checks. Add them back
+        // alongside test fixtures if @Action ever gains them.
         if (values.containsKey("httpMethod")) builder.httpMethod((String) values.get("httpMethod"));
-        if (values.containsKey("async")) builder.async((Boolean) values.get("async"));
-        if (values.containsKey("idempotent")) builder.idempotent((Boolean) values.get("idempotent"));
-        if (values.containsKey("dangerous")) builder.dangerous((Boolean) values.get("dangerous"));
-        if (values.containsKey("requiresConfirmation")) builder.requiresConfirmation((Boolean) values.get("requiresConfirmation"));
 
         // Extract parameters
         List<ActionParamMetadata> params = new ArrayList<>();
