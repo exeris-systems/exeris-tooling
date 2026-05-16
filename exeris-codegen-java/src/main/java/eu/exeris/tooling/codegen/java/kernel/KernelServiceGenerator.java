@@ -18,8 +18,12 @@ import javax.lang.model.element.Modifier;
  * Kernel Service Generator.
  *
  * <p>Generates a CRUD service class delegating to the corresponding
- * repository, optionally publishing domain events on lifecycle changes
- * when {@link DomainMetadata#hasEvents()} is true.
+ * {@code *Repository}. Pure POJO — no direct Kernel API surface and no
+ * cross-cutting concerns. Domain-event publishing on lifecycle changes
+ * is intentionally out of scope; the {@code *EventPublisher} emitted by
+ * {@link KernelEventGenerator} owns that responsibility and is wired
+ * separately by the application bootstrap (saga / event-handler /
+ * direct callers).
  *
  * @implNote Emission is JavaPoet-based (ADR-015).
  *

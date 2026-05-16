@@ -29,7 +29,7 @@ import java.util.stream.Stream;
  * <ul>
  *   <li>{@code *Handler.java} — HTTP handlers against the SPI {@code HttpExchange}</li>
  *   <li>{@code *Service.java} — POJO domain services</li>
- *   <li>{@code *Repository.java} — plain-JDBC repositories</li>
+ *   <li>{@code *Repository.java} — repositories against {@code spi.persistence.TransactionalExecutor}</li>
  *   <li>{@code *EventPublisher.java} / {@code *EventSubscriber.java} — domain events on the SPI event bus</li>
  *   <li>{@code *GraphSync.java} — graph-sync projection (when {@code @Graph} is declared)</li>
  *   <li>{@code *SagaFlow.java} — saga skeleton on the SPI flow framework (when {@code @Saga} is declared)</li>
@@ -40,7 +40,7 @@ import java.util.stream.Stream;
  * emitted by {@link eu.exeris.tooling.codegen.java.kernel.KernelApplicationGenerator}:
  * <ul>
  *   <li>{@code Application.java} — {@code KernelBootstrap} entry point with a
- *       {@code dataSource()} override hook</li>
+ *       {@code transactionalExecutor()} override hook</li>
  *   <li>{@code RuntimeLifecycle.java} — composes Repository → Service → Handler
  *       chains, builds the {@code HttpRouter}, parks on a shutdown latch</li>
  * </ul>
