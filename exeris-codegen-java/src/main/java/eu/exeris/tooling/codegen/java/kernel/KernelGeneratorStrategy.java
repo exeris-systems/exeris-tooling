@@ -14,8 +14,8 @@ import java.util.List;
  * {@code exeris-kernel-spi} / {@code exeris-kernel-core}:
  * <ul>
  *   <li>{@link KernelHandlerGenerator} — HTTP handlers against {@code spi.http.HttpExchange} / {@code HttpStatus} / {@code spi.memory.LoanedBuffer}</li>
- *   <li>{@link KernelServiceGenerator} — POJO domain services (no Kernel API surface)</li>
- *   <li>{@link KernelRepositoryGenerator} — plain-JDBC repositories (no Kernel API surface)</li>
+ *   <li>{@link KernelServiceGenerator} — POJO domain services (delegates to {@code *Repository}; no direct Kernel API surface)</li>
+ *   <li>{@link KernelRepositoryGenerator} — repositories against {@code spi.persistence.{TransactionalExecutor, PersistenceStatement, QueryResult, RowCursor}}</li>
  *   <li>{@link KernelEventGenerator} — domain-event publisher against {@code spi.events.{EventEngine, EventDescriptor, EventPayload, EventTypeSpec}}</li>
  *   <li>{@link KernelEventHandlerGenerator} — domain-event subscriber against {@code spi.events.{EventBus, EventHandler, SubscriptionToken}}</li>
  *   <li>{@link KernelGraphSyncGenerator} — graph-sync projection against {@code spi.graph.{GraphEngine, GraphSession}} + {@code spi.graph.model.{GraphNodeDescriptor, GraphEdgeDescriptor}}</li>
