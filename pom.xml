@@ -100,6 +100,14 @@
         <maven.compiler.source>26</maven.compiler.source>
         <maven.compiler.target>26</maven.compiler.target>
         <maven.compiler.release>26</maven.compiler.release>
+
+        <!-- JaCoCo plugin version (build-plugin, not a dependency) — kept in
+             the root POM so exeris-tooling-parent's pluginManagement can
+             resolve ${jacoco.version}. BOM-imported properties do NOT
+             propagate to <build><pluginManagement>, so this lives here
+             rather than in exeris-tooling-bom. Target line/branch coverage
+             ~85% — check goal is wired but not enforced in this PR. -->
+        <jacoco.version>0.8.14</jacoco.version>
     </properties>
 
     <build>

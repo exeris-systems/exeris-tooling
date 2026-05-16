@@ -29,10 +29,49 @@
     </dependencyManagement>
 
     <build>
+        <pluginManagement>
+            <plugins>
+                <!-- JaCoCo plugin version pinned via BOM property (jacoco.version);
+                     active configuration applied below in <plugins>. -->
+                <plugin>
+                    <groupId>org.jacoco</groupId>
+                    <artifactId>jacoco-maven-plugin</artifactId>
+                    <version>${jacoco.version}</version>
+                </plugin>
+            </plugins>
+        </pluginManagement>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
+            </plugin>
+
+            <!-- Coverage: prepare-agent attaches the JaCoCo runtime agent so
+                 surefire-driven JUnit runs are instrumented; report emits
+                 HTML + XML + CSV under target/site/jacoco of each module.
+                 The check goal (coverage threshold gate) is deliberately
+                 NOT enabled in this PR — coverage is measured but not
+                 enforced. Target line/branch coverage is ~85%; the gate
+                 will be flipped on in a follow-up PR once subsequent
+                 work brings every reportable module up to the threshold. -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>prepare-agent</id>
+                        <goals>
+                            <goal>prepare-agent</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>report</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>
