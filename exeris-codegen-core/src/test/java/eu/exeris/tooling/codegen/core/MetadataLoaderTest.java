@@ -16,8 +16,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @DisplayName("MetadataLoader")
 class MetadataLoaderTest {
 
-    /** Lightweight payload — Jackson 2 deserialises by no-arg ctor + setters. */
-    public static final class SampleMeta {
+    /** Lightweight payload — Jackson 2 deserialises by no-arg ctor + setters.
+     *  Package-private: Jackson reaches the no-arg constructor via reflection
+     *  (setAccessible(true)), so wider visibility isn't required. */
+    static final class SampleMeta {
         private String name;
         private int value;
         public String getName() { return name; }

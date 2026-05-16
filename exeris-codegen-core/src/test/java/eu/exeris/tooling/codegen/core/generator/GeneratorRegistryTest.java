@@ -158,6 +158,19 @@ class GeneratorRegistryTest {
     }
 
     @Test
+    @DisplayName("generate(metadata, artifactType) returns empty when the matching supporting generator emits null")
+    void generateSingleNullReturn() {
+        // Generator is registered for SERVICE and supports() the metadata,
+        // but generate() returns null (the sentinel for "does not apply").
+        // The Optional.map chain in GeneratorRegistry#generate maps that
+        // null to an empty Optional — verifying the contract on the
+        // single-dispatch path mirrors the null filtering on generateAll.
+        registry.register(StubGenerator.returningNull(ArtifactType.SERVICE));
+
+        assertThat(registry.generate(metadata, ArtifactType.SERVICE)).isEmpty();
+    }
+
+    @Test
     @DisplayName("clear() drops all registered generators")
     void clearResetsRegistry() {
         registry.registerAll(

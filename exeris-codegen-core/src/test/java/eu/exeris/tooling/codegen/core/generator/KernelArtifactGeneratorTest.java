@@ -83,9 +83,12 @@ class KernelArtifactGeneratorTest {
     @Test
     @DisplayName("ArtifactType covers the full SPI-aligned artifact set")
     void artifactTypeEnumValues() {
-        // Lock the public-API enum surface — any addition/removal/rename is
-        // a contract break that must be acknowledged in this test.
-        assertThat(ArtifactType.values()).containsExactly(
+        // Lock the value <i>set</i>, not the declaration order — any
+        // addition/removal/rename is a contract break (per-generator
+        // artifactType() return + per-type registry lookup both key
+        // off these constants), but reordering for grouping or
+        // alphabetisation should NOT fail CI.
+        assertThat(ArtifactType.values()).containsExactlyInAnyOrder(
                 ArtifactType.REPOSITORY,
                 ArtifactType.SERVICE,
                 ArtifactType.CONTROLLER,
