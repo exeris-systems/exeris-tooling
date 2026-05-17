@@ -35,12 +35,15 @@ export default defineConfig({
       //    contract — per-file thresholds pin the actual
       //    well-tested files against silent erosion.
       //
-      // src/config.ts + src/generators/angular/{app-structure-gen,
-      // landing-gen, index}.ts are NOT in the per-file map yet
-      // (stages 4d / 4e pending). They show up in the global
-      // denominator and DO contribute to the aggregate falling
-      // below 85% if their uncovered LOC grows — so the global
-      // gate disciplines them too.
+      // Stage 4d added: src/config.ts + src/generators/angular/
+      // {app-structure-gen, index}.ts now have per-file gates below.
+      // src/generators/angular/landing-gen.ts is still NOT in the
+      // per-file map (stage 4e pending — it has pre-existing tsc
+      // errors + a FieldMetadata-model misalignment that need a
+      // fix-then-cover PR before it can join the gate). It still
+      // shows up in the global denominator and DOES contribute to
+      // the aggregate falling below 85% if its uncovered LOC grows
+      // — the global gate disciplines it.
       thresholds: {
         lines: 85,
         functions: 85,
@@ -127,6 +130,48 @@ export default defineConfig({
           lines: 85,
           functions: 85,
           branches: 85,
+          statements: 85,
+        },
+        // Stage 4d: config loader + angular barrel + app-structure
+        // orchestrator. config.ts and app-structure-gen.ts are
+        // covered directly; angular/index.ts is a re-export barrel
+        // with no runtime branches — the barrel spec pins the
+        // public-export contract only.
+        'src/config.ts': {
+          lines: 85,
+          functions: 85,
+          branches: 85,
+          statements: 85,
+        },
+        'src/generators/angular/index.ts': {
+          lines: 85,
+          functions: 85,
+          branches: 85,
+          statements: 85,
+        },
+        // app-structure-gen branches relaxed to 80%, matching the
+        // event-gen precedent. The residual ~20% branch gap is
+        // composed entirely of structurally unreachable defensive
+        // fallbacks at the orchestrator seams:
+        //   - `Array.isArray(typesFiles)` else — generateTypes is
+        //     typed to always return an array (file ? [file] : []).
+        //   - `if (schemaFile)` / `if (enumsFile)` else — the two
+        //     local placeholder generators always return a truthy
+        //     {content: string}.
+        //   - `config.apiBasePath || clientConfig.baseUrl || '/api'`
+        //     final '/api' fallback — every registered strategy in
+        //     backend-strategy.ts sets baseUrl='/api', so the second
+        //     `||` never trips.
+        //   - `clientConfig.apiVersion ?? 'v1'` fallback — every
+        //     strategy sets apiVersion='v1'.
+        // Each of those would need either a TS-bypassing fake or a
+        // strategy mutation to exercise; both would test the shim,
+        // not the orchestrator. The test file documents this in the
+        // hidden-domain block.
+        'src/generators/angular/app-structure-gen.ts': {
+          lines: 85,
+          functions: 85,
+          branches: 80,
           statements: 85,
         },
       },
