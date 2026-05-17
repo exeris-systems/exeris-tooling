@@ -1,11 +1,11 @@
-package eu.exeris.kernel.community.http.client;
+package eu.exeris.kernel.transport.http3.client;
 
 /**
- * Test stub for the kernel community HTTP web client used by generated
- * {@code *Client} artifacts. Methods return {@code null} / no-op; only the
- * signatures matter for the compile-test gate.
+ * Test stub for the kernel HTTP/3 web client used by generated {@code *Client}
+ * artifacts. Methods return {@code null} / no-op; only the signatures matter
+ * for the compile-test gate.
  */
-public class CommunityWebClient {
+public class ExerisWebClient {
 
     public <T> T get(String path, Class<T> type) {
         return null;
