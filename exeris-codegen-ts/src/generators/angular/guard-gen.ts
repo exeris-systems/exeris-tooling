@@ -198,9 +198,13 @@ export class AuthService {
   }
 }
 
-export function generateGuard(metadata: DomainMetadata, config: GeneratorConfig): GeneratedFile {
+export function generateGuard(metadata: DomainMetadata, config: GeneratorConfig): GeneratedFile | null {
+  // Returns null when the domain is internalApi.hidden — matches the
+  // sibling generateForm convenience's `| null` contract. The previous
+  // `!` non-null assertion silently crashed on hidden domains; widening
+  // the return type at the source forces callers to handle the skip.
   const generator = new GuardGenerator();
   const context: GeneratorContext = { config, backend: config.backend ?? 'KERNEL', allDomains: [metadata], enums: [] };
-  return generator.generate(metadata, context)!;
+  return generator.generate(metadata, context);
 }
 

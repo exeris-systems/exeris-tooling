@@ -164,7 +164,15 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(``);
 
     for (const enumType of enumTypes) {
-      lines.push(`  private readonly ${enumType.toLowerCase()}DisplayNames = ${enumType}DisplayNames;`);
+      // Per-enum DisplayNames map exposed as a class field for the
+      // formatValue() switch. Identifier mirrors the enum name with
+      // the FIRST char lowercased only (camelCase) — using a full
+      // .toLowerCase() here would produce `orderstatusDisplayNames`
+      // for OrderStatus, breaking the casing convention and making
+      // multi-cap enums (e.g. OAuthClient → oauthclientDisplayNames)
+      // unreadable. Lower-first preserves all subsequent capitals.
+      const fieldName = enumType.charAt(0).toLowerCase() + enumType.slice(1) + 'DisplayNames';
+      lines.push(`  private readonly ${fieldName} = ${enumType}DisplayNames;`);
     }
     if (enumTypes.length > 0) lines.push(``);
 
@@ -193,7 +201,7 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`  private getEnumDisplayName(enumType: string, value: string): string {`);
     lines.push(`    switch (enumType) {`);
     for (const enumType of enumTypes) {
-      lines.push(`      case '${enumType}': return this.${enumType.toLowerCase()}DisplayNames[value as keyof typeof this.${enumType.toLowerCase()}DisplayNames] ?? value;`);
+      lines.push(`      case '${enumType}': return this.${enumType.charAt(0).toLowerCase() + enumType.slice(1)}DisplayNames[value as keyof typeof this.${enumType.charAt(0).toLowerCase() + enumType.slice(1)}DisplayNames] ?? value;`);
     }
     lines.push(`      default: return value;`);
     lines.push(`    }`);
