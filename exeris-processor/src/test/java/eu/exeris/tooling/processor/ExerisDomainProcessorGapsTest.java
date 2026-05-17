@@ -310,6 +310,188 @@ class ExerisDomainProcessorGapsTest {
         }
     }
 
+    // ---------- bugfix round-trips (computedFrom + @EventSourced SDK alignment) ----------
+
+    /**
+     * Two pre-existing data-loss bugs flagged in #45's review and fixed
+     * in this PR. Both were caused by drift between the SDK annotation
+     * surface and the processor's read-side assumptions:
+     *
+     * <ul>
+     *   <li>{@code @Field.computedFrom} array values were silently dropped
+     *       because the call site used {@code instanceof String[]} on a
+     *       javac-surfaced {@code List<AnnotationValue>}. Now flattened at
+     *       {@code extractAnnotationValues}.</li>
+     *   <li>{@code @EventSourced.streamPrefix} / {@code .snapshotThreshold}
+     *       were silently ignored because the processor read
+     *       {@code aggregateType} / {@code snapshotEvery} (the SDK
+     *       metadata-model field names, which are NOT attributes on the
+     *       annotation). Fixed by translating annotation→model at the
+     *       extract seam.</li>
+     * </ul>
+     */
+    @Nested
+    @DisplayName("Bugfix round-trips: @Field.computedFrom + @EventSourced SDK alignment")
+    class BugfixRoundTripTests {
+
+        @Test
+        @DisplayName("@Field(computed = true, computedFrom = {\"a\",\"b\"}) → computedFrom propagates verbatim as a JSON array")
+        void computedFromArrayPropagates() throws IOException {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.HasComputed",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Field;
+
+                    @ExerisDomain(module = "sales", path = "/has-computed")
+                    public class HasComputed {
+                        @Field(label = "First Name")
+                        private String firstName;
+
+                        @Field(label = "Last Name")
+                        private String lastName;
+
+                        @Field(label = "Full Name", computed = true, computedFrom = {"firstName", "lastName"})
+                        private String fullName;
+                    }
+                    """
+            );
+
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).succeeded();
+
+            String json = metadataFor(compilation, "HasComputed");
+            assertThat(json)
+                    .contains("\"computed\" : true")
+                    .contains("\"computedFrom\" : [ \"firstName\", \"lastName\" ]");
+        }
+
+        @Test
+        @DisplayName("@Field(computedFrom = {}) → empty list is emitted (or omitted) but doesn't crash")
+        void emptyComputedFromList() throws IOException {
+            // The empty-array case verifies that the new
+            // extractAnnotationValues flatten step handles an empty
+            // List<AnnotationValue> cleanly (stream.toList() returns an
+            // empty list, the call site puts an empty list on the builder).
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.EmptyComputed",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Field;
+
+                    @ExerisDomain(module = "sales", path = "/empty-computed")
+                    public class EmptyComputed {
+                        @Field(label = "Derived", computed = true, computedFrom = {})
+                        private String derived;
+                    }
+                    """
+            );
+
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).succeeded();
+            // computed=true still propagates; computedFrom omitted from JSON
+            // when empty (NON_NULL serialisation on the SDK metadata
+            // record's empty-list default).
+            String json = metadataFor(compilation, "EmptyComputed");
+            assertThat(json).contains("\"computed\" : true");
+        }
+
+        @Test
+        @DisplayName("@EventSourced(streamPrefix = \"Billing\", snapshotThreshold = 25) → aggregateType=Billing, snapshotEvery=25")
+        void eventSourcedUserValuesPropagate() throws IOException {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.BillingAggregate",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.EventSourced;
+
+                    @ExerisDomain(module = "billing", path = "/billing")
+                    @EventSourced(streamPrefix = "Billing", snapshotThreshold = 25)
+                    public class BillingAggregate {}
+                    """
+            );
+
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).succeeded();
+
+            String json = metadataFor(compilation, "BillingAggregate");
+            // Both translations land: user's streamPrefix overrides the
+            // class-name fallback for aggregateType, and the user-supplied
+            // snapshotThreshold overrides the SDK default of 50.
+            assertThat(json)
+                    .contains("\"aggregateType\" : \"Billing\"")
+                    .contains("\"snapshotEvery\" : 25");
+        }
+
+        @Test
+        @DisplayName("@EventSourced(streamPrefix = \"\") explicit empty → aggregateType falls back to class name (same as omitting the attribute)")
+        void eventSourcedExplicitEmptyStreamPrefixAlsoDefaultsToClassName() throws IOException {
+            // Pins the contract that an explicit empty streamPrefix is
+            // treated the same as omitting it — both paths short-circuit
+            // through the `streamPrefix.isEmpty()` guard. Reviewer-suggested
+            // companion to eventSourcedEmptyStreamPrefixDefaultsToClassName
+            // which covers the bare-@EventSourced (containsKey=false) path.
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.ExplicitEmptyPrefix",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.EventSourced;
+
+                    @ExerisDomain(module = "sales", path = "/explicit-empty")
+                    @EventSourced(streamPrefix = "")
+                    public class ExplicitEmptyPrefix {}
+                    """
+            );
+
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).succeeded();
+
+            String json = metadataFor(compilation, "ExplicitEmptyPrefix");
+            // containsKey("streamPrefix") = true (user wrote it), value
+            // is "", isEmpty() → class-name fallback fires.
+            assertThat(json)
+                    .contains("\"aggregateType\" : \"ExplicitEmptyPrefix\"")
+                    .contains("\"snapshotEvery\" : 50");
+        }
+
+        @Test
+        @DisplayName("@EventSourced with no streamPrefix → aggregateType falls back to the entity class name (per SDK Javadoc)")
+        void eventSourcedEmptyStreamPrefixDefaultsToClassName() throws IOException {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.OrderAggregate",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.EventSourced;
+
+                    @ExerisDomain(module = "sales", path = "/orders")
+                    @EventSourced
+                    public class OrderAggregate {}
+                    """
+            );
+
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).succeeded();
+
+            String json = metadataFor(compilation, "OrderAggregate");
+            // streamPrefix not written by user → falls back to
+            // element.getSimpleName(); snapshotThreshold not written by
+            // user → SDK default 50.
+            assertThat(json)
+                    .contains("\"aggregateType\" : \"OrderAggregate\"")
+                    .contains("\"snapshotEvery\" : 50");
+        }
+    }
+
     // ---------- helpers (mirrors the existing test classes' pattern) ----------
 
     private static Compilation compileWithProcessor(JavaFileObject... sources) {
