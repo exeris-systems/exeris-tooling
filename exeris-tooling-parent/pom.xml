@@ -73,10 +73,12 @@
                  PR will wire jacoco:report-aggregate (or merge) for the
                  full per-module + cross-module picture.
 
-                 Note on exeris-processor: currently below threshold
-                 (77.3% L / 62.0% B); its child pom overrides this
-                 execution with <skip>true</skip> until a follow-up PR
-                 brings ExerisDomainProcessor coverage up. -->
+                 Note on exeris-processor: its child pom overrides the
+                 inherited check rule with a per-module 85% line + 80%
+                 branch threshold. The relaxed branch rule reflects
+                 unreachable defensive null guards at the javac
+                 boundary; see exeris-processor/pom.xml for the in-pom
+                 rationale. Coverage now sits at 92.2% L / 82.9% B. -->
             <plugin>
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
