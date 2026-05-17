@@ -353,7 +353,7 @@ describe('generateAppStructure — hidden-domain handling', () => {
     expect(fileAt(files, 'src/app/schemas/order.schema.ts')).toBeDefined();
   });
 
-  it('barrel does NOT re-export ANY artifact for a hidden domain (would otherwise be a dead import path)', () => {
+  it('barrel + nav sidebar + routes ALL skip hidden domains (would otherwise be dead import paths / broken router links)', () => {
     const files = generateAppStructure(
       [
         domain({ entityName: 'Order' }),
@@ -363,17 +363,20 @@ describe('generateAppStructure — hidden-domain handling', () => {
       cfg(),
     );
     const barrel = fileAt(files, 'src/app/index.ts')!;
-    // The non-hidden Order surface is fully present.
+    const comp = fileAt(files, 'src/app/app.component.ts')!;
+    const routes = fileAt(files, 'src/app/app.routes.ts')!;
+
+    // Barrel — non-hidden Order is fully exported; hidden
+    // InternalLedger is fully absent (types / schema / service /
+    // components). Schema for hidden domains is still emitted to
+    // disk by the orchestrator's per-domain loop (deliberate
+    // asymmetry covered in the test above), but the barrel still
+    // excludes it so the public API surface honours `hidden`.
     expect(barrel.content).toContain("from './types/order.types';");
     expect(barrel.content).toContain("from './schemas/order.schema';");
     expect(barrel.content).toContain("from './services/order.service';");
     expect(barrel.content).toContain("from './components/order-form.component';");
     expect(barrel.content).toContain("from './components/order-list.component';");
-    // The hidden InternalLedger surface is FULLY skipped — types,
-    // schema, service AND components. Even the schema (which the
-    // orchestrator emits to disk for hidden domains) is excluded
-    // from the barrel so the public API surface never includes
-    // anything tagged hidden.
     expect(barrel.content).not.toContain('internal-ledger.types');
     expect(barrel.content).not.toContain('internal-ledger.schema');
     expect(barrel.content).not.toContain('internal-ledger.service');
@@ -385,18 +388,52 @@ describe('generateAppStructure — hidden-domain handling', () => {
     // — the de-duplication counter walks the FILTERED list now.
     const matches = barrel.content.match(/PageRequest/g) ?? [];
     expect(matches).toHaveLength(1);
+
+    // Sidebar nav — Order link is present; InternalLedger has NO
+    // router-link emitted (would otherwise point at a route whose
+    // loadComponent target was never written to disk → runtime
+    // crash on first click).
+    expect(comp.content).toContain('routerLink="/orders"');
+    expect(comp.content).not.toContain('routerLink="/internal-ledgers"');
+    expect(comp.content).not.toContain('InternalLedger');
+
+    // Routes — Order's list/new/:id triple is present;
+    // InternalLedger has NO route entry (path or loadComponent).
+    expect(routes.content).toContain("path: 'orders'");
+    expect(routes.content).toContain('OrderListComponent');
+    expect(routes.content).not.toContain("path: 'internal-ledgers'");
+    expect(routes.content).not.toContain('InternalLedgerListComponent');
+    expect(routes.content).not.toContain('InternalLedgerFormComponent');
+    expect(routes.content).not.toContain('internal-ledger-list.component');
+    expect(routes.content).not.toContain('internal-ledger-form.component');
   });
 
-  it('barrel with ONLY hidden domains emits the section headers + enums re-export but no per-entity exports', () => {
+  it('ALL-hidden domain set: barrel + nav + routes degrade to the empty-domain shape (no per-entity emit, no broken redirect)', () => {
     const files = generateAppStructure(
       [domain({ entityName: 'InternalLedger', internalApi: { hidden: true, readOnly: false, internal: false } })],
       [],
       cfg(),
     );
     const barrel = fileAt(files, 'src/app/index.ts')!;
+    const comp = fileAt(files, 'src/app/app.component.ts')!;
+    const routes = fileAt(files, 'src/app/app.routes.ts')!;
+
+    // Barrel: same shape as the empty-domains case — enums + section
+    // headers, no per-entity exports.
     expect(barrel.content).toContain("export * from './types/enums';");
     expect(barrel.content).toContain('// Services (export service classes and pagination types)');
     expect(barrel.content).not.toContain('PageRequest');
     expect(barrel.content).not.toContain('InternalLedger');
+
+    // Nav: no sidebar links at all.
+    expect(comp.content).not.toContain('routerLink="/');
+    expect(comp.content).not.toContain('InternalLedger');
+
+    // Routes: redirectTo degrades to '' (no first-visible-domain
+    // default), and no list/new/:id triple is emitted. Equivalent
+    // to passing [] to generateAppStructure.
+    expect(routes.content).toContain("redirectTo: ''");
+    expect(routes.content).not.toContain('internal-ledger');
+    expect(routes.content).not.toContain('InternalLedger');
   });
 });
