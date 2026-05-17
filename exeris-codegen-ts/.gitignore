@@ -1,0 +1,10 @@
+# Build / install
+node_modules/
+dist/
+
+# Vitest / v8 coverage output (regenerated on every test run)
+coverage/
+
+# Editor / OS
+.DS_Store
+*.log

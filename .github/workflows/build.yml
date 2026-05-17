@@ -52,3 +52,32 @@ jobs:
         env:
           GITHUB_ACTOR: ${{ github.actor }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # exeris-codegen-ts is the TypeScript / Angular emitter sibling of
+  # exeris-codegen-java. It is NOT a Maven module — vitest drives its
+  # tests + coverage. Lives in a parallel job so the JVM matrix and
+  # Node matrix can evolve independently; both jobs are required by
+  # branch protection (once the TS gate is added to the required-checks
+  # list — currently still warming up while coverage build-out is in
+  # progress).
+  ts-coverage:
+    name: vitest run --coverage (exeris-codegen-ts)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exeris-tooling
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: exeris-codegen-ts/package-lock.json
+
+      - name: npm ci (exeris-codegen-ts)
+        working-directory: exeris-codegen-ts
+        run: npm ci
+
+      - name: vitest run --coverage (exeris-codegen-ts)
+        working-directory: exeris-codegen-ts
+        run: npm run test:coverage
