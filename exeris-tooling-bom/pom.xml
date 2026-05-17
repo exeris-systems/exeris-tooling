@@ -26,7 +26,14 @@
         <swagger-parser.version>2.1.22</swagger-parser.version>
 
         <junit.version>5.11.4</junit.version>
-        <assertj.version>3.27.3</assertj.version>
+        <!-- 3.27.7 closes GHSA-rqfh-9r24-8c9r — XXE in isXmlEqualTo when
+             parsing untrusted XML. We do not use isXmlEqualTo anywhere
+             in the test suite (`grep -r isXmlEqualTo` → zero hits), so
+             the vulnerability is structurally non-exploitable here; the
+             bump is purely to close the Dependabot alert and keep the
+             dep line on a patched version. Patch-level bump (3.27.3 →
+             3.27.7), no API change. -->
+        <assertj.version>3.27.7</assertj.version>
         <compile-testing.version>0.21.0</compile-testing.version>
         <json-schema-validator.version>1.5.4</json-schema-validator.version>
         <approvaltests.version>24.16.0</approvaltests.version>

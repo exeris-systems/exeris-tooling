@@ -26,8 +26,15 @@ export class LandingPageGenerator implements CodeGenerator {
         // Dla uproszczenia demo - zaszywamy wartości z 'defaultValue'
         const properties = entity.fields.map(f => {
             const val = f.properties['defaultValue'] || '';
-            // Escape quotes and newlines
-            const safeVal = String.raw`${val}`.replaceAll('"', '\"').replaceAll('\n', '\\n');
+            // Escape characters that would break out of the surrounding
+            // double-quoted TS string literal we emit on the next line.
+            // The earlier `'\"'` replacement was a no-op (CodeQL
+            // js/identity-replacement, GHSA-tracked alert #1): inside a
+            // single-quoted JS string `'\"'` is just `'"'`, so
+            // `.replaceAll('"', '\"')` replaced `"` with itself. The fix
+            // uses `'\\"'` (= 2-char sequence `\"`), which is the actual
+            // escape that survives into the emitted TS source.
+            const safeVal = String(val).replaceAll('"', '\\"').replaceAll('\n', '\\n');
             return `  ${f.name} = "${safeVal}";`;
         }).join('\n');
         const content = `
