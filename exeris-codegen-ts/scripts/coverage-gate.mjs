@@ -16,6 +16,12 @@
 
 import { spawnSync } from 'node:child_process';
 
+// Note on buffering: spawnSync captures the full subprocess output into
+// memory, governed by maxBuffer (default 1 MB). Today's 115-test report
+// is ~10 KB so this is fine, but the full src/generators/angular/ pass
+// will grow it. If output starts hitting the cap, switch to a streaming
+// `spawn` + line-buffer that pipes stdout/stderr through while watching
+// for the ERROR: Coverage marker — or raise maxBuffer to 16 MB.
 const result = spawnSync(
   'npx',
   ['vitest', 'run', '--coverage', ...process.argv.slice(2)],
@@ -35,4 +41,7 @@ if (thresholdViolated) {
   process.exit(1);
 }
 
-process.exit(result.status ?? 0);
+// status is null when the child was killed by a signal (OOM, SIGTERM
+// from the runner, etc). Treat that as a failure — otherwise CI would
+// go green on a half-run vitest, masking genuine outages.
+process.exit(result.status ?? (result.signal ? 1 : 0));

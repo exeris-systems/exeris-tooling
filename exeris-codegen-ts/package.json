@@ -31,14 +31,15 @@
     "node": ">=18.0.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.57.0",
     "@types/node": "^25.0.9",
+    "@vitest/coverage-v8": "^4.1.6",
     "rimraf": "^6.1.2",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "vitest": "^4.0.17"
   },
   "dependencies": {
-    "@playwright/test": "^1.57.0",
     "commander": "^13.0.0",
     "handlebars": "^4.7.8",
     "picocolors": "^1.1.0",

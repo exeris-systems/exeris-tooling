@@ -458,6 +458,23 @@ describe('registerAllGenerators + createDefaultRegistry (wiring)', () => {
     }
   });
 
+  it('DETAIL artifact type has TWO generators registered (DetailGenerator + LandingPageGenerator)', async () => {
+    // The 12-generator production set covers 11 distinct artifact types
+    // because both DetailGenerator and LandingPageGenerator declare
+    // artifactType = 'DETAIL'. Pinning this invariant means a future
+    // accidental double-registration of any OTHER generator (which would
+    // also push count to 12 but on a different type) would be caught
+    // by this assertion failing to find exactly 2 generators under
+    // DETAIL.
+    const reg = await createDefaultRegistry();
+    const detailGens = reg.getByArtifactType('DETAIL');
+
+    expect(detailGens).toHaveLength(2);
+    expect(detailGens.map(g => g.name).sort()).toEqual(
+      ['DetailGenerator', 'LandingPageGenerator'].sort(),
+    );
+  });
+
   it('the module-level defaultRegistry singleton exposes a count getter and is mutation-safe via clear/register', () => {
     // Avoids leaking state into other tests — we don't mutate it, just
     // verify the singleton is the expected shape.
