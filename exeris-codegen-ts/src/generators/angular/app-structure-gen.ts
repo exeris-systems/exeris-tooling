@@ -71,11 +71,23 @@ export function generateAppStructure(
   files.push({ path: `${envRoot}/environment.ts`, content: generateEnvironmentFile({ production: true, apiUrl, apiVersion }), overwritable: false });
   files.push({ path: `${envRoot}/environment.development.ts`, content: generateEnvironmentFile({ production: false, apiUrl, apiVersion }), overwritable: true });
 
+  // Hidden-domain filter lives at the orchestrator level — every
+  // public-surface emitter (sidebar nav, route list, barrel
+  // re-exports) takes the filtered list so they never reference an
+  // entity whose form/list/service/types components are never
+  // written to disk by the per-domain loop below. The per-domain
+  // loop itself keeps the unfiltered list so the schema-for-hidden
+  // emit (deliberate asymmetry — see hidden-domain spec block)
+  // stays in place. Filtering once here, rather than re-doing it
+  // inside each downstream function, means the hidden-domain policy
+  // lives in exactly one spot.
+  const visibleDomains = domains.filter((d) => !d.internalApi?.hidden);
+
   // Pliki główne aplikacji do src/app
   files.push({ path: `${appRoot}/app.config.ts`, content: generateAppConfig(), overwritable: false });
-  files.push({ path: `${appRoot}/app.component.ts`, content: generateAppComponent(domains), overwritable: false });
-  files.push({ path: `${appRoot}/app.routes.ts`, content: generateAppRoutes(domains), overwritable: false });
-  files.push({ path: `${appRoot}/index.ts`, content: generateBarrelExport(domains, enums), overwritable: true });
+  files.push({ path: `${appRoot}/app.component.ts`, content: generateAppComponent(visibleDomains), overwritable: false });
+  files.push({ path: `${appRoot}/app.routes.ts`, content: generateAppRoutes(visibleDomains), overwritable: false });
+  files.push({ path: `${appRoot}/index.ts`, content: generateBarrelExport(visibleDomains, enums), overwritable: true });
 
   // Komponenty, serwisy, typy, schemas do src/app
   for (const domain of domains) {
@@ -265,18 +277,12 @@ export const routes: Routes = [
 `;
 }
 
-function generateBarrelExport(domains: DomainMetadata[], enums: EnumMetadata[]): string {
-  // Mirror the hidden-domain skip applied in generateAppStructure's
-  // per-entity loop: form / list / service / types all early-return
-  // null for internalApi.hidden=true, so emitting barrel entries for
-  // them produces dead import paths and the consuming Angular app
-  // fails tsc. Schema files DO emit for hidden domains today (the
-  // local generateSchema placeholder doesn't check hidden) — but
-  // schemas are an internal validation surface and re-exporting
-  // them through the public barrel for a domain marked hidden
-  // contradicts the intent of the hidden flag, so we filter them
-  // out here as well.
-  const visibleDomains = domains.filter((d) => !d.internalApi?.hidden);
+function generateBarrelExport(visibleDomains: DomainMetadata[], enums: EnumMetadata[]): string {
+  // Caller (generateAppStructure) is responsible for filtering out
+  // hidden domains — see the `visibleDomains` comment at the call
+  // site. This function trusts its input and iterates everything
+  // it's given. Sole caller in tree; if a second caller ever shows
+  // up, document the contract or reintroduce the filter here.
 
   const exports: string[] = [
     "// Generated barrel export",
