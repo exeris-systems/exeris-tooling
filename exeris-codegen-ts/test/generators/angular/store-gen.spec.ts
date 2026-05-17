@@ -325,27 +325,46 @@ describe('StoreGenerator action surface', () => {
 describe('StoreGenerator systemFields.idField alias propagation', () => {
   const gen = new StoreGenerator();
 
-  it('default idField "id" used in sortField init + entity lookup-by-id + selection match + reset', () => {
+  it('default idField "id" used in ALL 9 ${idField} substitution sites across the emitted store', () => {
     const content = gen.generate(domain({ entityName: 'Order' }), CTX)!.content;
 
-    expect(content).toContain("private readonly _sortField = signal<string>('id');");
-    expect(content).toContain('entities.map(e => e.id === id ? entity : e)');
-    expect(content).toContain('entities.filter(e => e.id !== id)');
-    expect(content).toContain('this._entities().find(e => e.id === id)');
-    expect(content).toContain("this._sortField.set('id');");
+    // 9 substitution sites in store-gen.ts:
+    expect(content).toContain("private readonly _sortField = signal<string>('id');");        // 1 — _sortField init
+    expect(content).toContain('entities.map(e => e.id === id ? entity : e)');                  // 2 — loadById map
+    expect(content).toContain('entities.map(e => e.id === id ? { ...e, ...data }');           // 3 — update optimistic map
+    expect(content).toContain('entities.map(e => e.id === id ? updated : e)');                // 4 — update server-replace map
+    expect(content).toContain('entities.filter(e => e.id !== id)');                            // 5 — delete optimistic filter
+    expect(content).toContain('this._entities().find(e => e.id === id)');                      // 6 — select find
+    expect(content).toContain("this._sortField.set('id');");                                   // 7 — reset re-init
+    // selected-match checks fire in BOTH update AND delete (sites 8 + 9).
+    expect((content.match(/this\._selected\(\)\?\.id === id/g) ?? []).length).toBe(2);
   });
 
-  it('custom systemFields.idField overrides all reference sites uniformly', () => {
+  it('custom systemFields.idField overrides ALL 9 substitution sites uniformly (matches the default-idField parity)', () => {
+    // Reviewer of #57 flagged that the previous version of this test
+    // checked 5 of 9 sites — the 4 missed sites were in update()
+    // (optimistic + server-replace mapping + selected-match check)
+    // and in delete()'s selected-match check. A future edit forgetting
+    // to substitute `${idField}` at any of those would have passed the
+    // old test. All 9 are now explicitly pinned for parity with the
+    // default-idField sibling test above.
     const content = gen.generate(domain({
       entityName: 'Order',
       systemFields: { idField: 'uuid' },
     }), CTX)!.content;
 
-    expect(content).toContain("private readonly _sortField = signal<string>('uuid');");
-    expect(content).toContain('entities.map(e => e.uuid === id ? entity : e)');
-    expect(content).toContain('entities.filter(e => e.uuid !== id)');
-    expect(content).toContain('this._entities().find(e => e.uuid === id)');
-    expect(content).toContain("this._sortField.set('uuid');");
+    expect(content).toContain("private readonly _sortField = signal<string>('uuid');");      // 1
+    expect(content).toContain('entities.map(e => e.uuid === id ? entity : e)');                // 2 — loadById
+    expect(content).toContain('entities.map(e => e.uuid === id ? { ...e, ...data }');         // 3 — update optimistic
+    expect(content).toContain('entities.map(e => e.uuid === id ? updated : e)');              // 4 — update server-replace
+    expect(content).toContain('entities.filter(e => e.uuid !== id)');                          // 5 — delete optimistic
+    expect(content).toContain('this._entities().find(e => e.uuid === id)');                    // 6 — select find
+    expect(content).toContain("this._sortField.set('uuid');");                                 // 7 — reset re-init
+    expect((content.match(/this\._selected\(\)\?\.uuid === id/g) ?? []).length).toBe(2);       // 8 + 9 — selected match in update + delete
+    // Negative: zero 'id' references at these sites (proves the
+    // substitution was complete, not partial).
+    expect(content).not.toContain('this._selected()?.id === id');
+    expect(content).not.toContain('entities.filter(e => e.id !== id)');
   });
 });
 
@@ -373,6 +392,27 @@ describe('StoreGenerator softDelete branch', () => {
     expect(content).not.toContain('async restore(');
     expect(content).not.toContain('this.service.softDelete(');
     expect(content).not.toContain('this.service.restore(');
+  });
+
+  it('softDelete + custom idField: archive method substitutes idField at BOTH its sites (filter + selected-match)', () => {
+    // The softDelete branch in generateSoftDeleteMethods has its own
+    // two ${idField} substitution sites that the default-idField
+    // softDelete test above doesn't exercise. This combination test
+    // catches a regression where archive() forgets the idField
+    // substitution while the rest of the store correctly uses the
+    // alias (e.g. by hardcoding 'id' inside the soft-delete branch
+    // template).
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      softDelete: true,
+      systemFields: { idField: 'uuid' },
+    }), CTX)!.content;
+
+    expect(content).toContain('async archive(id: string): Promise<void>');
+    expect(content).toContain('entities.filter(e => e.uuid !== id)');
+    expect(content).toContain('this._selected()?.uuid === id');
+    // Negative: no leaked 'id' substitution at the soft-delete sites.
+    expect(content).not.toContain('entities.filter(e => e.id !== id)');
   });
 });
 
