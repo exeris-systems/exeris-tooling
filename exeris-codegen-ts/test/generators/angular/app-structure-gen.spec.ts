@@ -1,0 +1,332 @@
+/**
+ * Coverage for src/generators/angular/app-structure-gen.ts —
+ * generateAppStructure emits the full Angular app skeleton:
+ *   * static configs (package.json, angular.json, tsconfig{.app}.json,
+ *     tailwind.config.js, .postcssrc.json, proxy.conf.json)
+ *   * src/{styles.css, index.html, favicon.ico, main.ts}
+ *   * src/environments/{environment.ts, environment.development.ts}
+ *   * src/app/{app.config.ts, app.component.ts, app.routes.ts, index.ts}
+ *   * per-domain: form / list / service / types / schemas (delegated)
+ *   * src/app/types/enums.ts (always emitted, even with empty enums —
+ *     the local placeholder generateEnums returns a truthy
+ *     {content: ''} which the orchestrator does NOT filter out)
+ *
+ * Branch points pinned:
+ *   - Domain-loop body: hidden-domain skip for form/list/service/types
+ *     (sub-generators return null on internalApi.hidden); schema still
+ *     emits (local placeholder always returns content).
+ *   - Pluraliser for nav labels: entityName ends in 's' → no extra 's';
+ *     otherwise + 's'. (Path/route plurals always use kebab + 's'.)
+ *   - getEntityIcon: each known entity name → its emoji; unknown →
+ *     default '📁'.
+ *   - generateAppRoutes: empty domains → redirectTo: ''; non-empty →
+ *     first domain's kebab + 's'.
+ *   - generateBarrelExport: Page/PageRequest exported ONLY ONCE
+ *     (from the first domain's service), other domains export bare
+ *     {Service, Filter}.
+ *   - resolveApiSettings: apiBasePath wins when truthy; falls back to
+ *     strategy.getClientConfig().baseUrl when empty/missing; apiVersion
+ *     always comes from the strategy.
+ *
+ * Conventions:
+ *   - Domains/fields are built through Zod parse so we lean on the
+ *     same defaults the production loader applies (matches the
+ *     pattern used by saga-gen.spec / form-gen.spec).
+ *   - We do not pin the exact emitted-source contents of the
+ *     downstream sub-generators — those have dedicated specs. We
+ *     pin only that this orchestrator wires their output into the
+ *     right paths with the right overwritable flags.
+ */
+
+import { describe, expect, it } from 'vitest';
+import { generateAppStructure } from '../../../src/generators/angular/app-structure-gen.js';
+import { DEFAULT_CONFIG } from '../../../src/config.js';
+import {
+  DomainMetadataSchema,
+  type DomainMetadata,
+} from '../../../src/models/domain-model.js';
+import type { GeneratorConfig } from '../../../src/config.js';
+
+interface EnumLike {
+  name: string;
+  qualifiedName: string;
+}
+
+function domain(overrides: Partial<DomainMetadata> & { entityName: string }): DomainMetadata {
+  return DomainMetadataSchema.parse({ packageName: 'com.shop', ...overrides });
+}
+
+function fileAt(files: Array<{ path: string; content: string }>, path: string) {
+  return files.find((f) => f.path === path);
+}
+
+const cfg = (overrides: Partial<GeneratorConfig> = {}): GeneratorConfig => ({
+  ...DEFAULT_CONFIG,
+  ...overrides,
+});
+
+// ---------- static-file emission (independent of domains) ----------
+
+describe('generateAppStructure — static skeleton', () => {
+  const files = generateAppStructure([], [], cfg());
+
+  it.each([
+    ['./package.json', false],
+    ['./angular.json', false],
+    ['./tsconfig.json', false],
+    ['./tsconfig.app.json', false],
+    ['./tailwind.config.js', true],
+    ['./.postcssrc.json', true],
+    ['./proxy.conf.json', true],
+    ['src/styles.css', true],
+    ['src/index.html', true],
+    ['src/favicon.ico', true],
+    ['src/main.ts', false],
+    ['src/environments/environment.ts', false],
+    ['src/environments/environment.development.ts', true],
+    ['src/app/app.config.ts', false],
+    ['src/app/app.component.ts', false],
+    ['src/app/app.routes.ts', false],
+    ['src/app/index.ts', true],
+    ['src/app/types/enums.ts', true],
+  ] as const)('emits %s with overwritable=%s', (path, overwritable) => {
+    const f = files.find((x) => x.path === path);
+    expect(f, `missing ${path}`).toBeDefined();
+    expect(f!.overwritable).toBe(overwritable);
+  });
+
+  it('production environment.ts has production:true; development has production:false', () => {
+    const prod = fileAt(files, 'src/environments/environment.ts')!;
+    const dev = fileAt(files, 'src/environments/environment.development.ts')!;
+    expect(prod.content).toContain('production: true');
+    expect(dev.content).toContain('production: false');
+  });
+
+  it('main.ts bootstraps AppComponent with appConfig', () => {
+    const main = fileAt(files, 'src/main.ts')!;
+    expect(main.content).toContain('bootstrapApplication(AppComponent, appConfig)');
+  });
+
+  it('app.config.ts uses Zoneless + provideRouter + withFetch', () => {
+    const c = fileAt(files, 'src/app/app.config.ts')!;
+    expect(c.content).toContain('provideZonelessChangeDetection()');
+    expect(c.content).toContain('provideRouter(routes, withComponentInputBinding())');
+    expect(c.content).toContain('provideHttpClient(withFetch())');
+  });
+
+  it('emits an enums.ts placeholder even when no enums are passed', () => {
+    // Pins the orchestrator quirk that the local generateEnums returns
+    // {content: ''} (truthy object), so the `if (enumsFile)` gate does
+    // NOT filter the empty case. If we ever switch to skipping it,
+    // update this test AND the orchestrator together.
+    const enums = fileAt(files, 'src/app/types/enums.ts')!;
+    expect(enums.content).toBe('');
+  });
+});
+
+// ---------- routes / barrel: empty domain set ----------
+
+describe('generateAppStructure — empty domain set', () => {
+  const files = generateAppStructure([], [], cfg());
+
+  it('app.routes.ts emits a redirectTo:"" route (no first-domain default)', () => {
+    const routes = fileAt(files, 'src/app/app.routes.ts')!;
+    expect(routes.content).toContain("redirectTo: ''");
+    expect(routes.content).toContain("pathMatch: 'full'");
+  });
+
+  it('app.component.ts header still renders without any nav links', () => {
+    const comp = fileAt(files, 'src/app/app.component.ts')!;
+    expect(comp.content).toContain('🚀 Exeris Foundation');
+    expect(comp.content).not.toContain('routerLink="/');
+  });
+
+  it('index.ts barrel still emits enums + section headers, no service exports', () => {
+    const barrel = fileAt(files, 'src/app/index.ts')!;
+    expect(barrel.content).toContain("export * from './types/enums';");
+    expect(barrel.content).toContain('// Services (export service classes and pagination types)');
+    expect(barrel.content).not.toContain('PageRequest');
+  });
+
+  it('emits NO per-domain component/service/schema/types files', () => {
+    const componentFiles = files.filter((f) => f.path.startsWith('src/app/components/'));
+    const serviceFiles = files.filter((f) => f.path.startsWith('src/app/services/'));
+    const schemaFiles = files.filter((f) => f.path.startsWith('src/app/schemas/'));
+    // src/app/types/ has enums.ts; per-domain *.types.ts files would
+    // also live there — filter them out.
+    const typeFiles = files.filter(
+      (f) => f.path.startsWith('src/app/types/') && f.path !== 'src/app/types/enums.ts',
+    );
+    expect(componentFiles).toHaveLength(0);
+    expect(serviceFiles).toHaveLength(0);
+    expect(schemaFiles).toHaveLength(0);
+    expect(typeFiles).toHaveLength(0);
+  });
+});
+
+// ---------- routes / barrel: multi-domain ----------
+
+describe('generateAppStructure — multi-domain wiring', () => {
+  const domains = [
+    domain({ entityName: 'Order' }),
+    domain({ entityName: 'Product' }),
+  ];
+  const enums: EnumLike[] = [{ name: 'Status', qualifiedName: 'com.shop.Status' }];
+  const files = generateAppStructure(domains, enums, cfg());
+
+  it('app.routes.ts redirects to the FIRST domain (kebab + plural "s")', () => {
+    const routes = fileAt(files, 'src/app/app.routes.ts')!;
+    expect(routes.content).toContain("redirectTo: 'orders'");
+  });
+
+  it('app.routes.ts emits list / new / :id routes for each domain', () => {
+    const routes = fileAt(files, 'src/app/app.routes.ts')!;
+    expect(routes.content).toContain("path: 'orders'");
+    expect(routes.content).toContain("path: 'orders/new'");
+    expect(routes.content).toContain("path: 'orders/:id'");
+    expect(routes.content).toContain('OrderListComponent');
+    expect(routes.content).toContain('OrderFormComponent');
+    expect(routes.content).toContain("path: 'products'");
+    expect(routes.content).toContain('ProductListComponent');
+  });
+
+  it('app.component.ts sidebar emits a router link per domain', () => {
+    const comp = fileAt(files, 'src/app/app.component.ts')!;
+    expect(comp.content).toContain('routerLink="/orders"');
+    expect(comp.content).toContain('routerLink="/products"');
+  });
+
+  it('emits each per-domain artifact under the right directory', () => {
+    expect(fileAt(files, 'src/app/components/order-form.component.ts')).toBeDefined();
+    expect(fileAt(files, 'src/app/components/order-list.component.ts')).toBeDefined();
+    expect(fileAt(files, 'src/app/services/order.service.ts')).toBeDefined();
+    expect(fileAt(files, 'src/app/types/order.types.ts')).toBeDefined();
+    expect(fileAt(files, 'src/app/schemas/order.schema.ts')).toBeDefined();
+    expect(fileAt(files, 'src/app/components/product-form.component.ts')).toBeDefined();
+    expect(fileAt(files, 'src/app/schemas/product.schema.ts')).toBeDefined();
+  });
+
+  it('schema placeholder emits a Zod object skeleton named after the entity', () => {
+    const schema = fileAt(files, 'src/app/schemas/order.schema.ts')!;
+    expect(schema.content).toContain("import { z } from 'zod';");
+    expect(schema.content).toContain('export const OrderSchema = z.object({');
+  });
+
+  it('enums.ts placeholder declares one enum block per supplied EnumMetadata', () => {
+    const enumsFile = fileAt(files, 'src/app/types/enums.ts')!;
+    expect(enumsFile.content).toContain('export enum Status {');
+  });
+
+  it('barrel exports Page+PageRequest ONLY from the first domain service', () => {
+    const barrel = fileAt(files, 'src/app/index.ts')!;
+    expect(barrel.content).toContain(
+      "export { OrderService, OrderFilter, Page, PageRequest } from './services/order.service';",
+    );
+    expect(barrel.content).toContain(
+      "export { ProductService, ProductFilter } from './services/product.service';",
+    );
+    // Belt-and-braces: PageRequest must appear exactly once in the
+    // barrel; if a future change starts re-exporting it from every
+    // service, we'd hit a TS2308 (duplicate export) in consumers.
+    const matches = barrel.content.match(/PageRequest/g) ?? [];
+    expect(matches).toHaveLength(1);
+  });
+});
+
+// ---------- nav label pluralisation + entity-icon table ----------
+
+describe('generateAppStructure — nav label pluralisation', () => {
+  it('does NOT append a second "s" to entity names already ending in "s"', () => {
+    const files = generateAppStructure([domain({ entityName: 'News' })], [], cfg());
+    const comp = fileAt(files, 'src/app/app.component.ts')!;
+    // The label is "News" (no second "s") but the route stays kebab+s
+    // because that path-pluralisation is independent of the label.
+    expect(comp.content).toContain('News\n            </a>');
+    expect(comp.content).not.toContain('Newss');
+    const routes = fileAt(files, 'src/app/app.routes.ts')!;
+    expect(routes.content).toContain("path: 'newss'");
+  });
+
+  it('appends "s" to entity names not already plural', () => {
+    const files = generateAppStructure([domain({ entityName: 'Order' })], [], cfg());
+    const comp = fileAt(files, 'src/app/app.component.ts')!;
+    expect(comp.content).toContain('Orders\n            </a>');
+  });
+});
+
+describe('generateAppStructure — getEntityIcon lookup', () => {
+  // The icon table is private to the module; we exercise it through
+  // generateAppStructure rather than exporting it. One assertion per
+  // known key + one for the default fallback.
+  it.each([
+    ['Tenant', '🏢'],
+    ['User', '👥'],
+    ['Product', '📦'],
+    ['Order', '📋'],
+    ['Customer', '👤'],
+    ['Invoice', '📄'],
+    ['Payment', '💳'],
+  ] as const)('uses %s → %s', (entityName, icon) => {
+    const files = generateAppStructure([domain({ entityName })], [], cfg());
+    const comp = fileAt(files, 'src/app/app.component.ts')!;
+    expect(comp.content).toContain(icon);
+  });
+
+  it('falls back to 📁 for entity names not in the lookup table', () => {
+    const files = generateAppStructure([domain({ entityName: 'Widget' })], [], cfg());
+    const comp = fileAt(files, 'src/app/app.component.ts')!;
+    expect(comp.content).toContain('📁');
+  });
+});
+
+// ---------- resolveApiSettings branches ----------
+
+describe('generateAppStructure — resolveApiSettings', () => {
+  it('honours config.apiBasePath when set (truthy branch)', () => {
+    const files = generateAppStructure([], [], cfg({ apiBasePath: '/custom-base' }));
+    const env = fileAt(files, 'src/environments/environment.ts')!;
+    expect(env.content).toContain("apiUrl: '/custom-base'");
+  });
+
+  it('falls back to strategy.getClientConfig().baseUrl when apiBasePath is empty', () => {
+    // KERNEL strategy baseUrl = '/api'.
+    const files = generateAppStructure([], [], cfg({ apiBasePath: '' }));
+    const env = fileAt(files, 'src/environments/environment.ts')!;
+    expect(env.content).toContain("apiUrl: '/api'");
+  });
+
+  it('always pulls apiVersion from the strategy (KERNEL → "v1")', () => {
+    const files = generateAppStructure([], [], cfg());
+    const env = fileAt(files, 'src/environments/environment.ts')!;
+    expect(env.content).toContain("apiVersion: 'v1'");
+  });
+
+  it('SPRING backend also lands on /api + v1 (sanity check across strategies)', () => {
+    const files = generateAppStructure([], [], cfg({ backend: 'SPRING', apiBasePath: '' }));
+    const env = fileAt(files, 'src/environments/environment.ts')!;
+    expect(env.content).toContain("apiUrl: '/api'");
+    expect(env.content).toContain("apiVersion: 'v1'");
+  });
+});
+
+// ---------- hidden-domain skip-skip ----------
+
+describe('generateAppStructure — hidden-domain handling', () => {
+  it('skips form / list / service / types for internalApi.hidden domains but still emits the schema placeholder', () => {
+    const files = generateAppStructure(
+      [domain({ entityName: 'Order', internalApi: { hidden: true, readOnly: false, internal: false } })],
+      [],
+      cfg(),
+    );
+    expect(fileAt(files, 'src/app/components/order-form.component.ts')).toBeUndefined();
+    expect(fileAt(files, 'src/app/components/order-list.component.ts')).toBeUndefined();
+    expect(fileAt(files, 'src/app/services/order.service.ts')).toBeUndefined();
+    expect(fileAt(files, 'src/app/types/order.types.ts')).toBeUndefined();
+    // The local generateSchema placeholder doesn't check hidden — it
+    // always emits. That asymmetry is intentional today (schemas are
+    // used by callers that pass hidden=true intentionally to get a
+    // validation shape without the UI surface); pin it so a future
+    // change to also hide schemas surfaces in tests, not in surprise.
+    expect(fileAt(files, 'src/app/schemas/order.schema.ts')).toBeDefined();
+  });
+});
