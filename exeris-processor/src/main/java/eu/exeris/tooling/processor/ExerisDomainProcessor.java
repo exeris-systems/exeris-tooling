@@ -474,9 +474,19 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         // Computed fields (only computed + computedFrom on @Field).
         if (values.containsKey("computed")) builder.computed((Boolean) values.get("computed"));
         if (values.containsKey("computedFrom")) {
+            // extractAnnotationValues unwraps array attributes from
+            // List<AnnotationValue> to List<Object>; for String[] each
+            // element is already a String, so the cast below is safe.
+            // (Previously this site used `instanceof String[]` which never
+            // matched the javac-surfaced List form — silently dropping
+            // every user-supplied computedFrom value.)
             Object computedFromValue = values.get("computedFrom");
-            if (computedFromValue instanceof String[] array) {
-                builder.computedFrom(java.util.Arrays.asList(array));
+            if (computedFromValue instanceof List<?> list) {
+                List<String> strings = list.stream()
+                        .filter(String.class::isInstance)
+                        .map(String.class::cast)
+                        .toList();
+                builder.computedFrom(strings);
             }
         }
 
@@ -807,12 +817,27 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         if (esAnnotation == null) return null;
 
         Map<String, Object> values = extractAnnotationValues(esAnnotation);
-        String aggregateType = values.containsKey("aggregateType")
-                ? (String) values.get("aggregateType")
-                : element.getSimpleName().toString();
+
+        // Translate from SDK annotation attribute names (streamPrefix /
+        // snapshotThreshold — the user-visible surface on @EventSourced)
+        // to SDK metadata-model field names (aggregateType / snapshotEvery
+        // — the internal AST shape). The two are deliberately misaligned
+        // on the SDK side; the processor owns the translation. Previously
+        // this method read aggregateType / snapshotEvery directly from the
+        // values map — neither of which is a real attribute on the
+        // annotation, so every user value was silently dropped and replaced
+        // with the class-name fallback / hardcoded default.
+        String streamPrefix = values.containsKey("streamPrefix")
+                ? (String) values.get("streamPrefix")
+                : "";
+        String aggregateType = streamPrefix.isEmpty()
+                ? element.getSimpleName().toString()
+                : streamPrefix;
 
         return EventSourcedMetadata.builder(aggregateType)
-                .snapshotEvery(getInt(values, "snapshotEvery", 100))
+                // SDK @EventSourced.snapshotThreshold default is 50; preserve
+                // that as our fallback when the attribute is omitted.
+                .snapshotEvery(getInt(values, "snapshotThreshold", 50))
                 .build();
     }
 
@@ -908,6 +933,20 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                 : annotation.getElementValues().entrySet()) {
             String key = entry.getKey().getSimpleName().toString();
             Object value = entry.getValue().getValue();
+            // Array-typed annotation attributes (String[], Class[], nested
+            // @Annotation[]) come back from javac as List<? extends
+            // AnnotationValue> — every element is BOXED in an AnnotationValue
+            // wrapper. Unwrap once here so call sites can cast the elements
+            // to their concrete types (String, TypeMirror, AnnotationMirror)
+            // directly. Previously each call site that needed the array form
+            // either had to unwrap manually or, worse, used `instanceof
+            // String[]` and silently dropped the value when the cast failed
+            // (the @Field.computedFrom bug fixed alongside this change).
+            if (value instanceof List<?> rawList) {
+                value = rawList.stream()
+                        .map(v -> v instanceof AnnotationValue av ? av.getValue() : v)
+                        .toList();
+            }
             values.put(key, value);
         }
 

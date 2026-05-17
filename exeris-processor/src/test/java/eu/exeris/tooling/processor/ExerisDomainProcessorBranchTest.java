@@ -344,16 +344,13 @@ class ExerisDomainProcessorBranchTest {
                     // FieldMetadata.Builder, but Jackson serialises only
                     // the non-default; assert the surviving one.
                     .contains("\"inCreate\" : true")
-                    // Second field: computed flag. computedFrom is checked
-                    // by the processor (containsKey branch fires) but
-                    // the array value doesn't propagate through the
-                    // `instanceof String[]` guard — javac's
-                    // AnnotationValue surface returns
-                    // List<AnnotationValue>, not String[], so the inner
-                    // assignment silently drops. Pre-existing
-                    // limitation; the containsKey branch is what we
-                    // care about for coverage here.
-                    .contains("\"computed\" : true");
+                    // Second field: computed flag + computedFrom array. As of
+                    // the extractAnnotationValues array-flattening fix,
+                    // List<AnnotationValue> is unwrapped before reaching
+                    // the call site, so the user-supplied {"a","b"} list
+                    // actually propagates into the emitted metadata.
+                    .contains("\"computed\" : true")
+                    .contains("\"computedFrom\" : [ \"a\", \"b\" ]");
         }
     }
 
@@ -524,7 +521,7 @@ class ExerisDomainProcessorBranchTest {
         }
 
         @Test
-        @DisplayName("@EventSourced(streamPrefix = …) flows through (snapshotEvery omitted → default 100)")
+        @DisplayName("@EventSourced(streamPrefix = …) flows into aggregateType; snapshotThreshold omitted → SDK default 50")
         void eventSourcedDefaults() throws IOException {
             JavaFileObject source = JavaFileObjects.forSourceString(
                     "com.example.ESOnly",
@@ -544,9 +541,15 @@ class ExerisDomainProcessorBranchTest {
             assertThat(compilation).succeededWithoutWarnings();
 
             String json = metadataFor(compilation, "ESOnly");
+            // The processor translates the SDK annotation surface
+            // (streamPrefix / snapshotThreshold) into the SDK metadata
+            // model field names (aggregateType / snapshotEvery). User
+            // value "ESOnly" survives the translation; snapshot fallback
+            // is 50 to match @EventSourced.snapshotThreshold's default.
             assertThat(json)
-                    .contains("\"eventSourced\"")
-                    .contains("\"enabled\" : true");
+                    .contains("\"enabled\" : true")
+                    .contains("\"aggregateType\" : \"ESOnly\"")
+                    .contains("\"snapshotEvery\" : 50");
         }
     }
 
