@@ -92,6 +92,12 @@
         <module>exeris-codegen-core</module>
         <module>exeris-codegen-java</module>
         <module>exeris-e2e-tests</module>
+
+        <!-- Last on purpose: report-aggregate runs in verify and reads
+             jacoco.exec from each dependency's target/ — every measured
+             module must already have produced its exec by the time this
+             module builds. -->
+        <module>exeris-coverage-aggregate</module>
     </modules>
 
     <properties>

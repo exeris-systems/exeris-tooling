@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>eu.exeris.tooling</groupId>
+        <artifactId>exeris-tooling-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+        <relativePath>../exeris-tooling-parent</relativePath>
+    </parent>
+
+    <artifactId>exeris-coverage-aggregate</artifactId>
+    <packaging>pom</packaging>
+
+    <name>Exeris Tooling :: Coverage Aggregate</name>
+    <description>
+        Aggregate JaCoCo coverage report folding exec data from every
+        measured Tooling module — including exeris-e2e-tests, which has
+        no src/main/java but produces a target/jacoco.exec that contains
+        coverage for codegen-core / codegen-java classes invoked through
+        the end-to-end compile-test path. The per-module reports under
+        each module's target/site/jacoco/ are local-test-only and do
+        NOT include this cross-module coverage; this module's
+        target/site/jacoco-aggregate/ is the unified picture.
+
+        Reporting-only — no source code, no test code, no merge gate.
+        Per-module gates in exeris-tooling-parent remain the enforcement
+        layer (catching regressions when a module is tested in
+        isolation). The aggregate exists for visibility into the true
+        coverage achieved across the whole reactor.
+    </description>
+
+    <properties>
+        <!-- Reporting-only module: never install to local ~/.m2 cache and
+             never deploy to the Sonatype Central repo inherited from the
+             root POM's <distributionManagement>. The published POM would
+             otherwise be a hollow report carrying four compile-scope
+             dependencies on internal tooling modules — confusing for any
+             downstream consumer that imports it by accident. No CI
+             workflow currently runs `mvn deploy`, so this is a latent
+             guard against the moment one is wired without remembering
+             to enumerate publishable modules explicitly. -->
+        <maven.install.skip>true</maven.install.skip>
+        <maven.deploy.skip>true</maven.deploy.skip>
+    </properties>
+
+    <!-- Build last so every measured module's jacoco.exec has been
+         produced by the time report-aggregate runs. The root POM lists
+         this module after exeris-e2e-tests to enforce that ordering.
+
+         Dependencies use <scope>provided</scope> to signal "needed only
+         for the report-aggregate dependency walk, never a runtime or
+         transitive consumer dep". Functionally equivalent to compile
+         scope for report-aggregate's reactor traversal, but the
+         intent — "this is not a real dependency edge" — is explicit. -->
+    <dependencies>
+        <!-- Modules contributing classes + exec data. report-aggregate
+             walks the dependency closure and folds in exec files from
+             every reactor project it finds, so we list the four
+             modules that have a jacoco.exec we care about. -->
+        <dependency>
+            <groupId>eu.exeris.tooling</groupId>
+            <artifactId>exeris-processor</artifactId>
+            <version>${project.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>eu.exeris.tooling</groupId>
+            <artifactId>exeris-codegen-core</artifactId>
+            <version>${project.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>eu.exeris.tooling</groupId>
+            <artifactId>exeris-codegen-java</artifactId>
+            <version>${project.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <!-- e2e-tests has packaging=jar but no src/main/java, so it
+             contributes no classes — only its jacoco.exec, which holds
+             coverage for codegen-* classes hit through the e2e compile
+             test. Listing it as a dependency is how report-aggregate
+             discovers that exec file. -->
+        <dependency>
+            <groupId>eu.exeris.tooling</groupId>
+            <artifactId>exeris-e2e-tests</artifactId>
+            <version>${project.version}</version>
+            <scope>provided</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!-- Override the inherited JaCoCo executions: this module has
+                 no classes of its own, so prepare-agent / report / check
+                 would either no-op or fail looking for a missing classes
+                 directory. We skip all three and bind a single
+                 report-aggregate execution instead.
+
+                 The aggregate has NO check gate — per-module gates in
+                 the parent POM stay authoritative for regression
+                 protection. The aggregate is informational only. -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>prepare-agent</id>
+                        <configuration>
+                            <skip>true</skip>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>report</id>
+                        <configuration>
+                            <skip>true</skip>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>check</id>
+                        <configuration>
+                            <skip>true</skip>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>report-aggregate</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>report-aggregate</goal>
+                        </goals>
+                        <configuration>
+                            <title>Exeris Tooling — Aggregate Coverage</title>
+                            <footer>Aggregated from per-module jacoco.exec (incl. exeris-e2e-tests)</footer>
+                            <outputDirectory>${project.build.directory}/site/jacoco-aggregate</outputDirectory>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>
