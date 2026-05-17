@@ -36,6 +36,18 @@ function field(overrides: Partial<FieldMetadata> & { name: string; type: string 
   return FieldMetadataSchema.parse(overrides);
 }
 
+/**
+ * Shorthand for a hidden domain — both per-domain `generate()` and
+ * cross-domain `generateAggregate()` filter out internalApi.hidden,
+ * and the literal appears in multiple tests.
+ */
+function hiddenDomain(entityName: string): DomainMetadata {
+  return domain({
+    entityName,
+    internalApi: { hidden: true, readOnly: false, internal: false },
+  });
+}
+
 // ---------- CodeGenerator contract ----------
 
 describe('TypeGenerator — CodeGenerator metadata', () => {
@@ -65,7 +77,7 @@ describe('TypeGenerator.generate — per-domain interface emission', () => {
 
   it('returns null for an internalApi.hidden domain', () => {
     expect(gen.generate(
-      domain({ entityName: 'Audit', internalApi: { hidden: true, readOnly: false, internal: false } }),
+      hiddenDomain('Audit'),
       CTX,
     )).toBeNull();
   });
@@ -143,6 +155,45 @@ describe('TypeGenerator.generate — per-domain interface emission', () => {
     expect(createSlice).not.toContain('active?:');
     expect(createSlice).not.toContain('parentTenantId?:');
     expect(createSlice).not.toContain('auditTrail?:');
+  });
+
+  it('KNOWN DIVERGENCE: Filter interface ignores field.enumType, uses DslMapper.mapType(field.type) — inconsistent with QueryBuilderGenerator', () => {
+    // TypeGenerator.generateInterface builds the Filter interface by
+    // calling DslMapper.mapType(field.type).tsType for every
+    // filterable field. It does NOT consult field.enumType.
+    // QueryBuilderGenerator.getFilterType DOES consult field.enumType
+    // first. Result: for a filterable field with
+    //   type: 'String', enumType: 'OrderStatus', filterable: true
+    // the Filter interface emits `status?: string` while the
+    // QueryParams (from query-builder-gen) emits `status?: OrderStatus`.
+    // The two surfaces disagree on the same field's filter type.
+    //
+    // This test PINS the current TypeGenerator behaviour so a
+    // future fix that makes Filter enum-aware will fail here and
+    // surface the intentional change; meanwhile downstream
+    // consumers know to prefer QueryBuilder for enum-typed filter
+    // params. Flagged for follow-up production decision (the
+    // reviewer of #54 suggested an issue; tracking inline in the
+    // test until that decision lands).
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      fields: [field({
+        name: 'status',
+        type: 'String',
+        enumType: 'com.shop.OrderStatus',
+        filterable: true,
+      })],
+    }), CTX)!.content;
+
+    expect(content).toContain('export interface OrderFilter {');
+    // CURRENT (divergent) behaviour: Filter uses the type-derived
+    // mapping, NOT the enum simple name.
+    expect(content).toContain('status?: string;');
+    // If/when this test starts failing, decide: (a) make
+    // generateInterface enum-aware (call collectEnumTypes-style
+    // resolution on filterable fields too) and update QueryBuilder
+    // to match, OR (b) explicitly document the divergence as
+    // intentional and split the assertion to expect 'OrderStatus'.
   });
 
   it('Filter type is emitted ONLY when at least one field is filterable; absent otherwise', () => {
@@ -322,7 +373,7 @@ describe('TypeGenerator.generateAggregate — schemas + barrels', () => {
     const ctx = createGeneratorContext({ generateZod: true });
     const files = gen.generateAggregate([
       domain({ entityName: 'Order' }),
-      domain({ entityName: 'Audit', internalApi: { hidden: true, readOnly: false, internal: false } }),
+      hiddenDomain('Audit'),
     ], ctx);
 
     expect(files.find(f => f.path === 'schemas/audit.schema.ts')).toBeUndefined();
@@ -503,14 +554,17 @@ describe('generateTypes — top-level convenience function', () => {
 
   it('returns an EMPTY array for an internalApi.hidden domain', () => {
     const files = generateTypes(
-      domain({ entityName: 'Audit', internalApi: { hidden: true, readOnly: false, internal: false } }),
+      hiddenDomain('Audit'),
       CTX.config,
     );
     expect(files).toEqual([]);
   });
 
-  it('falls back to KERNEL backend when config.backend is undefined', () => {
+  it('falls back to KERNEL backend when config.backend is undefined (still emits the per-domain file)', () => {
     const partialConfig = { ...CTX.config, backend: undefined as unknown as GeneratorContext['backend'] };
-    expect(() => generateTypes(domain({ entityName: 'Order' }), partialConfig)).not.toThrow();
+    const files = generateTypes(domain({ entityName: 'Order' }), partialConfig);
+    expect(files).toHaveLength(1);
+    expect(files[0].path).toBe('types/order.types.ts');
+    expect(files[0].content).toContain('export interface Order {');
   });
 });

@@ -35,6 +35,14 @@ function field(overrides: Partial<FieldMetadata> & { name: string; type: string 
   return FieldMetadataSchema.parse(overrides);
 }
 
+/** Shorthand for an internalApi.hidden domain (filtered out by both generate + generateAggregate). */
+function hiddenDomain(entityName: string): DomainMetadata {
+  return domain({
+    entityName,
+    internalApi: { hidden: true, readOnly: false, internal: false },
+  });
+}
+
 // ---------- CodeGenerator contract ----------
 
 describe('QueryBuilderGenerator — CodeGenerator metadata', () => {
@@ -64,7 +72,7 @@ describe('QueryBuilderGenerator.generate — per-domain', () => {
 
   it('returns null for an internalApi.hidden domain', () => {
     const file = gen.generate(
-      domain({ entityName: 'Audit', internalApi: { hidden: true, readOnly: false, internal: false } }),
+      hiddenDomain('Audit'),
       CTX,
     );
     expect(file).toBeNull();
@@ -210,7 +218,7 @@ describe('QueryBuilderGenerator.generateAggregate — barrel export', () => {
   it('hidden domains are filtered out of the barrel', () => {
     const files = gen.generateAggregate([
       domain({ entityName: 'Order' }),
-      domain({ entityName: 'Audit', internalApi: { hidden: true, readOnly: false, internal: false } }),
+      hiddenDomain('Audit'),
     ], CTX);
 
     expect(files[0].content).toContain("./order.query");
@@ -235,8 +243,10 @@ describe('generateQueryBuilder — top-level convenience function', () => {
     expect(file.content).toContain('export class OrderQueryBuilder');
   });
 
-  it('falls back to KERNEL backend when config.backend is undefined', () => {
+  it('falls back to KERNEL backend when config.backend is undefined (still emits the per-domain file)', () => {
     const partialConfig = { ...CTX.config, backend: undefined as unknown as GeneratorContext['backend'] };
-    expect(() => generateQueryBuilder(domain({ entityName: 'Order' }), partialConfig)).not.toThrow();
+    const file = generateQueryBuilder(domain({ entityName: 'Order' }), partialConfig);
+    expect(file.path).toBe('queries/order.query.ts');
+    expect(file.content).toContain('export class OrderQueryBuilder');
   });
 });

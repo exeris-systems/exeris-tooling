@@ -155,15 +155,22 @@ describe('EnumGenerator.generateAggregate — placeholder vs populated', () => {
     expect(sliceBefore).not.toMatch(/\/\*\*[\s\S]*?\*\/\s*$/);
   });
 
-  it('values array missing (undefined) → enum block still emits with empty body', () => {
-    // The "values = []" destructuring default keeps the loop safe.
+  it('values array literally undefined → destructuring default `values = []` keeps the loop safe', () => {
+    // The fullEnum() helper injects `values: []` by default, so to
+    // actually exercise the production destructuring default we have
+    // to construct an enum metadata object with `values` explicitly
+    // unset. The `as unknown as FullEnumMetadata` cast lets us pass
+    // a structurally-malformed fixture to verify the runtime
+    // tolerates it.
     const ctx = createGeneratorContext({}, [], [
-      fullEnum({ name: 'Empty' }) as FullEnumMetadata,
+      { name: 'Empty', qualifiedName: 'app.Empty', packageName: 'app' } as unknown as FullEnumMetadata,
     ]);
 
     const content = gen.generateAggregate([], ctx)[0].content;
     expect(content).toContain('export enum Empty {');
-    expect(content).toContain('}'); // closing brace exists
+    // Empty body — open brace immediately followed by close brace
+    // (possibly with whitespace).
+    expect(content).toMatch(/export enum Empty \{\s*\}/);
   });
 
   it('falls back to humanized name when displayName is missing on a value', () => {
@@ -238,10 +245,17 @@ describe('generateEnums — top-level convenience function', () => {
     expect(file.content).toContain('Placeholder');
   });
 
-  it('falls back to KERNEL backend when config.backend is undefined', () => {
+  it('falls back to KERNEL backend when config.backend is undefined (placeholder path still produces a valid file)', () => {
     // config is a Partial — explicitly unset backend → undefined →
-    // the `?? "KERNEL"` fallback fires.
+    // the `?? "KERNEL"` fallback fires inside generateEnums. The
+    // function has no observable side-effect that exposes the
+    // resolved backend, so we assert on file emission (which
+    // would crash if the inner context construction tripped on the
+    // undefined backend) AND on the canonical placeholder content
+    // shape (proof the call reached the generator).
     const partialConfig = { ...CTX.config, backend: undefined as unknown as GeneratorContext['backend'] };
-    expect(() => generateEnums([], partialConfig)).not.toThrow();
+    const file = generateEnums([], partialConfig);
+    expect(file.path).toBe('types/enums.ts');
+    expect(file.content).toContain('Placeholder');
   });
 });
