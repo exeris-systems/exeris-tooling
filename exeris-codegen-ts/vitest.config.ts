@@ -28,6 +28,12 @@ export default defineConfig({
           branches: 85,
           statements: 85,
         },
+        'src/models/**/*.ts': {
+          lines: 85,
+          functions: 85,
+          branches: 85,
+          statements: 85,
+        },
       },
     },
     snapshotFormat: {

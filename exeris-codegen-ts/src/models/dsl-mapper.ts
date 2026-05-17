@@ -361,6 +361,18 @@ const JAVA_TO_TS_MAP: Record<string, TypeMapping> = {
 
 export class DslMapper {
   /**
+   * Wrap a TypeScript type in parentheses before appending `[]` if it
+   * contains a union (`|`). Without this, an inner type like
+   * `number | null` would interpolate into `number | null[]`, which
+   * TypeScript parses as `number | (null[])` — semantically a union
+   * of a number OR an array-of-nulls. The intent here is always
+   * "an array of <inner>", i.e. `(number | null)[]`.
+   */
+  private static arrayOf(tsType: string): string {
+    return tsType.includes(' | ') ? `(${tsType})[]` : `${tsType}[]`;
+  }
+
+  /**
    * Map a Java type to TypeScript type info.
    */
   static mapType(javaType: string): TypeMapping {
@@ -385,7 +397,7 @@ export class DslMapper {
 
       if (container === 'List' || container === 'Set' || container === 'Collection') {
         return {
-          tsType: `${innerMapping.tsType}[]`,
+          tsType: DslMapper.arrayOf(innerMapping.tsType),
           formControl: 'textarea',
           inputType: 'text',
           zodType: `z.array(${innerMapping.zodType})`,
@@ -422,7 +434,7 @@ export class DslMapper {
       const elementType = javaType.slice(0, -2);
       const elementMapping = this.mapType(elementType);
       return {
-        tsType: `${elementMapping.tsType}[]`,
+        tsType: DslMapper.arrayOf(elementMapping.tsType),
         formControl: 'textarea',
         inputType: 'text',
         zodType: `z.array(${elementMapping.zodType})`,
@@ -452,7 +464,18 @@ export class DslMapper {
     const typeMapping = this.mapType(field.type);
     const validations: string[] = [];
 
-    // Build Zod validations
+    // Build Zod validations.
+    //
+    // Note on the asymmetric guards: minLength/maxLength use a TRUTHY
+    // check (skips 0 + undefined), while min/max use `!== undefined`
+    // (only skips undefined). Both are deliberate:
+    //   - minLength=0 / maxLength=0 are semantically equivalent to
+    //     omitting the constraint ("no minimum required" / "no maximum
+    //     allowed"). Emitting `.min(0)` would be redundant noise on
+    //     every form schema.
+    //   - min=0 / max=0 are real numeric bounds ("value must be ≥ 0" /
+    //     "value must be ≤ 0"). Skipping them would silently drop a
+    //     user-supplied constraint.
     if (field.required) validations.push('.min(1)');
     if (field.minLength) validations.push(`.min(${field.minLength})`);
     if (field.maxLength) validations.push(`.max(${field.maxLength})`);
