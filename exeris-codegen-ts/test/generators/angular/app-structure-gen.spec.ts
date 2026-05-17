@@ -236,15 +236,24 @@ describe('generateAppStructure — multi-domain wiring', () => {
 // ---------- nav label pluralisation + entity-icon table ----------
 
 describe('generateAppStructure — nav label pluralisation', () => {
-  it('does NOT append a second "s" to entity names already ending in "s"', () => {
+  it('does NOT append a second "s" to entity names already ending in "s" (label AND route AND sidebar link)', () => {
     const files = generateAppStructure([domain({ entityName: 'News' })], [], cfg());
     const comp = fileAt(files, 'src/app/app.component.ts')!;
-    // The label is "News" (no second "s") but the route stays kebab+s
-    // because that path-pluralisation is independent of the label.
+    const routes = fileAt(files, 'src/app/app.routes.ts')!;
+    // Label stays bare.
     expect(comp.content).toContain('News\n            </a>');
     expect(comp.content).not.toContain('Newss');
-    const routes = fileAt(files, 'src/app/app.routes.ts')!;
-    expect(routes.content).toContain("path: 'newss'");
+    // Route path uses routePlural → no double-s.
+    expect(routes.content).toContain("path: 'news'");
+    expect(routes.content).toContain("path: 'news/new'");
+    expect(routes.content).toContain("path: 'news/:id'");
+    expect(routes.content).not.toContain('newss');
+    // Sidebar router-link target stays in sync with the route path.
+    expect(comp.content).toContain('routerLink="/news"');
+    expect(comp.content).not.toContain('routerLink="/newss"');
+    // And the default redirect for the first domain follows the
+    // same plural rule.
+    expect(routes.content).toContain("redirectTo: 'news'");
   });
 
   it('appends "s" to entity names not already plural', () => {
@@ -323,10 +332,58 @@ describe('generateAppStructure — hidden-domain handling', () => {
     expect(fileAt(files, 'src/app/services/order.service.ts')).toBeUndefined();
     expect(fileAt(files, 'src/app/types/order.types.ts')).toBeUndefined();
     // The local generateSchema placeholder doesn't check hidden — it
-    // always emits. That asymmetry is intentional today (schemas are
-    // used by callers that pass hidden=true intentionally to get a
-    // validation shape without the UI surface); pin it so a future
-    // change to also hide schemas surfaces in tests, not in surprise.
+    // always emits the file. The asymmetry is intentional today
+    // (schemas are used by callers that pass hidden=true intentionally
+    // to get a validation shape without the UI surface); pin it so a
+    // future change to also hide schemas surfaces in tests, not in
+    // surprise.
     expect(fileAt(files, 'src/app/schemas/order.schema.ts')).toBeDefined();
+  });
+
+  it('barrel does NOT re-export ANY artifact for a hidden domain (would otherwise be a dead import path)', () => {
+    const files = generateAppStructure(
+      [
+        domain({ entityName: 'Order' }),
+        domain({ entityName: 'InternalLedger', internalApi: { hidden: true, readOnly: false, internal: false } }),
+      ],
+      [],
+      cfg(),
+    );
+    const barrel = fileAt(files, 'src/app/index.ts')!;
+    // The non-hidden Order surface is fully present.
+    expect(barrel.content).toContain("from './types/order.types';");
+    expect(barrel.content).toContain("from './schemas/order.schema';");
+    expect(barrel.content).toContain("from './services/order.service';");
+    expect(barrel.content).toContain("from './components/order-form.component';");
+    expect(barrel.content).toContain("from './components/order-list.component';");
+    // The hidden InternalLedger surface is FULLY skipped — types,
+    // schema, service AND components. Even the schema (which the
+    // orchestrator emits to disk for hidden domains) is excluded
+    // from the barrel so the public API surface never includes
+    // anything tagged hidden.
+    expect(barrel.content).not.toContain('internal-ledger.types');
+    expect(barrel.content).not.toContain('internal-ledger.schema');
+    expect(barrel.content).not.toContain('internal-ledger.service');
+    expect(barrel.content).not.toContain('internal-ledger-form');
+    expect(barrel.content).not.toContain('internal-ledger-list');
+    expect(barrel.content).not.toContain('InternalLedger');
+    // Belt-and-braces: with one visible domain remaining,
+    // Page+PageRequest still re-exports exactly once (from Order)
+    // — the de-duplication counter walks the FILTERED list now.
+    const matches = barrel.content.match(/PageRequest/g) ?? [];
+    expect(matches).toHaveLength(1);
+  });
+
+  it('barrel with ONLY hidden domains emits the section headers + enums re-export but no per-entity exports', () => {
+    const files = generateAppStructure(
+      [domain({ entityName: 'InternalLedger', internalApi: { hidden: true, readOnly: false, internal: false } })],
+      [],
+      cfg(),
+    );
+    const barrel = fileAt(files, 'src/app/index.ts')!;
+    expect(barrel.content).toContain("export * from './types/enums';");
+    expect(barrel.content).toContain('// Services (export service classes and pagination types)');
+    expect(barrel.content).not.toContain('PageRequest');
+    expect(barrel.content).not.toContain('InternalLedger');
   });
 });
