@@ -75,6 +75,13 @@ export default defineConfig({
           branches: 85,
           statements: 85,
         },
+        // Stage 4c-1: state surface — Signal Store.
+        'src/generators/angular/store-gen.ts': {
+          lines: 85,
+          functions: 85,
+          branches: 85,
+          statements: 85,
+        },
       },
     },
     snapshotFormat: {
