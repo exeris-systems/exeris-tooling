@@ -62,6 +62,19 @@ export default defineConfig({
           branches: 85,
           statements: 85,
         },
+        // Stage 4b: CRUD-core pair.
+        'src/generators/angular/service-gen.ts': {
+          lines: 85,
+          functions: 85,
+          branches: 85,
+          statements: 85,
+        },
+        'src/generators/angular/list-gen.ts': {
+          lines: 85,
+          functions: 85,
+          branches: 85,
+          statements: 85,
+        },
       },
     },
     snapshotFormat: {
