@@ -55,13 +55,10 @@
                  check enforces the 85% line + branch threshold and halts
                  the build on violation.
 
-                 Excludes (plugin-level — apply to instrumentation, report,
-                 AND check):
-                 * CodegenMain — CLI entry point. Pulled out of measurement
-                   because a thin main() wrapper around the codegen pipeline
-                   is exercised end-to-end by integration runs, not by unit
-                   tests; including it pulls codegen-java's branch coverage
-                   below 85% without reflecting actual untested logic.
+                 No plugin-level excludes. The earlier CodegenMain.class
+                 exclude was dropped after the CLI shell was split into
+                 CliArgs + CodegenPipeline + a one-line main(); the
+                 split surface is fully unit-tested.
 
                  Note on cross-module coverage: exeris-e2e-tests has no
                  src/main/java, so report is skipped there ("missing
@@ -78,15 +75,10 @@
                  branch threshold. The relaxed branch rule reflects
                  unreachable defensive null guards at the javac
                  boundary; see exeris-processor/pom.xml for the in-pom
-                 rationale. Coverage now sits at 92.2% L / 82.9% B. -->
+                 rationale. -->
             <plugin>
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
-                <configuration>
-                    <excludes>
-                        <exclude>**/CodegenMain.class</exclude>
-                    </excludes>
-                </configuration>
                 <executions>
                     <execution>
                         <id>prepare-agent</id>
