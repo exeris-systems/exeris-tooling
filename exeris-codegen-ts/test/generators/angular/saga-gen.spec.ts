@@ -47,6 +47,12 @@ describe('SagaGenerator — CodeGenerator metadata', () => {
   });
 
   it('does NOT implement generateAggregate (no barrel file emitted)', () => {
+    // Prototype-level check — distinguishes "method missing from
+    // the class" from "method set to undefined on the instance".
+    // The latter would pass a plain toBeUndefined() but
+    // semantically isn't the same contract.
+    expect(SagaGenerator.prototype).not.toHaveProperty('generateAggregate');
+    // Belt-and-braces: instance accessor also undefined.
     expect(gen.generateAggregate).toBeUndefined();
   });
 });

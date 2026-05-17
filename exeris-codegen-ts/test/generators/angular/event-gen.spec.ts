@@ -130,16 +130,27 @@ describe('EventHandlerGenerator emitted content — per-domain handler', () => {
     expect(created).toContain("export type OrderEventType = 'Created' | 'Updated';");
   });
 
-  it('emits Payload + Event interfaces per event, plus a <Entity>Event union type', () => {
+  it('emits ENTITY-PREFIXED Payload + Event interfaces per event, plus a <Entity>Event union type', () => {
+    // Both Payload and Event interfaces are entity-prefixed
+    // (Order + Created → OrderCreatedPayload, OrderCreatedEvent),
+    // matching every reference site (Subject<…>, dispatchEvent
+    // cast, announce* parameter, the <Entity>Event union members).
+    // Previous versions of this generator declared the interfaces
+    // unprefixed (CreatedEvent / CreatedPayload) while references
+    // were entity-prefixed — a real production bug that made every
+    // generated event-handler file fail tsc --noEmit.
     const content = eventsContentFor(['Created', 'Updated']);
 
-    expect(content).toContain('export interface CreatedPayload {');
-    expect(content).toContain('export interface CreatedEvent {');
+    expect(content).toContain('export interface OrderCreatedPayload {');
+    expect(content).toContain('export interface OrderCreatedEvent {');
     expect(content).toContain("type: 'Created';");
-    expect(content).toContain('export interface UpdatedEvent {');
+    expect(content).toContain('export interface OrderUpdatedEvent {');
     expect(content).toContain('export type OrderEvent =');
     expect(content).toContain('| OrderCreatedEvent');
     expect(content).toContain('| OrderUpdatedEvent');
+    // Negative: NO unprefixed interface declarations leaked through.
+    expect(content).not.toContain('export interface CreatedEvent {');
+    expect(content).not.toContain('export interface CreatedPayload {');
   });
 
   it('payload interfaces with empty fields list get the "// No additional payload fields" sentinel', () => {
@@ -175,10 +186,15 @@ describe('EventHandlerGenerator emitted content — per-domain handler', () => {
   });
 
   it('emits one private Subject + matching public Observable per event (camelCase event name)', () => {
-    const content = eventsContentFor(['OrderCreated']);
+    // Plain event name 'Created' (not 'OrderCreated') keeps this
+    // test focused on the Subject naming convention without
+    // conflating the entity-prefix from generateEventInterfaces.
+    // The Subject type uses the ENTITY-PREFIXED interface
+    // (OrderCreatedEvent) emitted by generateEventInterfaces.
+    const content = eventsContentFor(['Created']);
 
-    expect(content).toContain('private readonly _orderCreated = new Subject<OrderOrderCreatedEvent>();');
-    expect(content).toContain('readonly orderCreated$ = this._orderCreated.asObservable();');
+    expect(content).toContain('private readonly _created = new Subject<OrderCreatedEvent>();');
+    expect(content).toContain('readonly created$ = this._created.asObservable();');
   });
 
   it('emits state signals: _eventCount / _lastEvent / _recentEvents + maxRecentEvents = 50', () => {
@@ -289,21 +305,28 @@ describe('EventHandlerGenerator announcement-priority heuristic', () => {
     // The private toPascalCase helper uses /[-_](.)/g — the capture
     // group + .toUpperCase() callback only runs when the input has at
     // least one dash or underscore. Default PascalCase event names
-    // (Created / OrderPlaced) never trigger it. This test fires the
+    // (Created / Updated) never trigger it. This test fires the
     // branch via snake_case and kebab-case event names, lifting
     // event-gen.ts branch coverage above the 85% gate.
+    //
+    // Entity name 'Tenant' (not 'Order') disambiguates the
+    // entity-prefix from the toPascalCase output — otherwise a snake
+    // event named 'order_was_placed' PascalCases to 'OrderWasPlaced'
+    // and the entity prefix produces 'OrderOrderWasPlacedEvent',
+    // which is confusing to read.
     const snakeCase = gen.generate(domain({
-      entityName: 'Order',
-      events: [{ name: 'order_was_placed', fields: [] }],
+      entityName: 'Tenant',
+      events: [{ name: 'was_placed', fields: [] }],
     }), CTX)!.content;
-    // The snake-case input gets PascalCased into the interface name.
-    expect(snakeCase).toContain('export interface OrderWasPlacedEvent {');
+    // 'was_placed' → 'WasPlaced' (toPascalCase callback fires twice:
+    //  once on '_p' → 'P', once at the start for capitalisation).
+    expect(snakeCase).toContain('export interface TenantWasPlacedEvent {');
 
     const kebabCase = gen.generate(domain({
-      entityName: 'Order',
-      events: [{ name: 'order-was-shipped', fields: [] }],
+      entityName: 'Tenant',
+      events: [{ name: 'was-shipped', fields: [] }],
     }), CTX)!.content;
-    expect(kebabCase).toContain('export interface OrderWasShippedEvent {');
+    expect(kebabCase).toContain('export interface TenantWasShippedEvent {');
   });
 });
 
@@ -416,9 +439,13 @@ describe('EventHandlerGenerator.generateAggregate — central event-bus service'
     expect(content).toContain('this.reconnectAttempt = 0;');
   });
 
-  it('event names from multiple domains de-dupe across the bus emission (filtered via .filter unique-by-index)', () => {
-    // Two domains share an event name 'Created' → must appear in
-    // the aggregate's allEventTypes list only once.
+  it('event names from multiple domains de-dupe across the bus emission (filter unique-by-index)', () => {
+    // Two domains share event name 'Created'. The
+    // generateEventBusService internals build allEventTypes via
+    //   .filter((v, i, a) => a.indexOf(v) === i)
+    // — classic unique-by-index — so 'Created' must appear in the
+    // bus's internal event-type tracking exactly ONCE despite
+    // being declared on two domains.
     const content = gen.generateAggregate([
       domain({
         entityName: 'Order',
@@ -430,11 +457,16 @@ describe('EventHandlerGenerator.generateAggregate — central event-bus service'
       }),
     ], CTX)[0].content;
 
-    // The bus file uses event names internally for documentation only;
-    // sanity check the unique-by-index .filter is exercised (no crash
-    // and all 3 unique types accounted for via parseable content).
-    expect(content.length).toBeGreaterThan(0);
+    // Sanity baseline: the bus file emitted.
     expect(content).toContain('export class EventBusService');
+
+    // Enforceable dedup assertion: the literal 'Created' (in
+    // quotes — matches both the allEventTypes list and any
+    // referenced internal documentation strings) appears at most
+    // ONCE in the bus emission. A failing dedup would produce 2
+    // duplicate entries.
+    const createdQuotedMatches = (content.match(/'Created'/g) ?? []).length;
+    expect(createdQuotedMatches).toBeLessThanOrEqual(1);
   });
 });
 

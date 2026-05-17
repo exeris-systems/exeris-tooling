@@ -84,16 +84,15 @@ export default defineConfig({
         },
         // Stage 4c-2: side-effects surface — Event Handler + Saga
         // State Machine. event-gen gets a relaxed 80% branch
-        // threshold (matches the Java-side processor convention from
-        // #50): the residual ~17% branch gap on event-gen is composed
-        // entirely of `||` defensive fallbacks (`events || []` at the
-        // generateEventInterfaces seam, `events.map(...).join('\n') ||
-        // '  | never'` for the union-type fallback) against shapes
-        // the Zod DomainEventMetadataSchema can't produce — every
-        // optional field is auto-defaulted by the schema so the
-        // fallbacks are structurally unreachable through the public
-        // API. Documented inline rather than papered over with
-        // synthetic fixtures.
+        // threshold: the residual ~17% branch gap is composed
+        // entirely of `||` defensive fallbacks against shapes the
+        // Zod DomainEventMetadataSchema can't produce. The schema
+        // auto-defaults `fields: []` and `tags: []`, so
+        // `event.fields || []` at the generateEventInterfaces seam
+        // and `events.map(...).join('\n') || '  | never'` at the
+        // union-type fallback are structurally unreachable through
+        // the public Zod-validated API. Documented inline rather
+        // than papered over with synthetic fixtures.
         'src/generators/angular/event-gen.ts': {
           lines: 85,
           functions: 85,
