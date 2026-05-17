@@ -377,18 +377,21 @@ class FormDslGeneratorGapsTest {
         assertThat(responsive.get("xl").asInt()).isEqualTo(2);
     }
 
-    // ---------- humanize null / empty / lowercase-only inputs ----------
+    // ---------- humanize loop-body branches ----------
 
     @Test
-    @DisplayName("humanize: null field display name → label falls back through humanize which short-circuits null/empty")
-    void humanizeNullAndEmptyShortCircuit() throws IOException {
-        // Build a domain whose field has no displayName so the label call
-        // routes through humanize. The fieldName itself is non-empty here
-        // (FieldMetadata.builder doesn't accept empty names), so to hit
-        // humanize's null/empty short-circuits we exercise them directly
-        // via reflection-free indirection: call the same code path with
-        // an all-lowercase fieldName, then verify the no-uppercase-loop
-        // path emits an unchanged label sans inserted spaces.
+    @DisplayName("humanize: loop body — uppercase chars get a leading space; all-lowercase input has none")
+    void humanizeLoopBodyBranches() throws IOException {
+        // humanize's null/empty short-circuits at lines 442-443 are
+        // STRUCTURALLY UNREACHABLE through this code path: the only call
+        // site is buildFormField passing field.name(), and FieldMetadata's
+        // builder rejects null/empty names. What is exercisable — and
+        // matters for catching a regression in the per-character loop
+        // body — is the isUpperCase branch:
+        //   * all-lowercase input never enters the if branch (label is
+        //     first-char-upper + rest verbatim, no inserted spaces).
+        //   * camelCase input enters the branch on every uppercase char
+        //     (label has a space before each uppercase letter).
         DomainMetadata meta = DomainMetadata.builder("Order", "com.example.domain")
                 .fields(List.of(
                         FieldMetadata.builder("active", "boolean").build(),       // all lowercase
@@ -401,10 +404,7 @@ class FormDslGeneratorGapsTest {
         rows.forEach(row -> row.get("fields").forEach(field ->
                 labels.put(field.get("name").asText(), field.get("label").asText())));
 
-        // All-lowercase: first char upper, no internal spaces (loop body never
-        // hits the Character.isUpperCase branch).
         assertThat(labels.get("active")).isEqualTo("Active");
-        // camelCase: space inserted before each uppercase letter.
         assertThat(labels.get("orderNumber")).isEqualTo("Order Number");
     }
 
