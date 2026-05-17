@@ -21,7 +21,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { DslMapper } from '../../src/models/dsl-mapper.js';
-import type { FieldMetadata } from '../../src/models/domain-model.js';
+import { FieldMetadataSchema, type FieldMetadata } from '../../src/models/domain-model.js';
 
 // ---------- mapType: direct lookup hits ----------
 
@@ -170,9 +170,13 @@ describe('DslMapper.mapType — generic parsing', () => {
     expect(m.zodType).toBe('z.array(z.string().uuid())');
   });
 
-  it('Collection<Integer> → (number | null)[]', () => {
+  it('Collection<Integer> → (number | null)[] — union arms wrapped in parens before []', () => {
+    // Without paren-wrapping, the emitted string `number | null[]`
+    // would parse as `number | (null[])` (a number OR an array of
+    // nulls), not `(number | null)[]` (an array of nullable numbers).
+    // The arrayOf helper in dsl-mapper now wraps unions explicitly.
     const m = DslMapper.mapType('Collection<Integer>');
-    expect(m.tsType).toBe('number | null[]');
+    expect(m.tsType).toBe('(number | null)[]');
   });
 
   it('Map<String, Integer> → Record<string, number | null>', () => {
@@ -217,8 +221,8 @@ describe('DslMapper.mapType — array notation (X[])', () => {
     expect(m.formControl).toBe('textarea');
   });
 
-  it('Integer[] → (number | null)[] (element-mapping applied)', () => {
-    expect(DslMapper.mapType('Integer[]').tsType).toBe('number | null[]');
+  it('Integer[] → (number | null)[] — union arms wrapped in parens (same fix as the generic-array path)', () => {
+    expect(DslMapper.mapType('Integer[]').tsType).toBe('(number | null)[]');
   });
 });
 
@@ -242,26 +246,15 @@ describe('DslMapper.mapType — custom-entity fallback', () => {
 
 // ---------- mapField: validation builder + format / length overrides ----------
 
+/**
+ * Build a FieldMetadata fixture by routing through FieldMetadataSchema.parse
+ * — that way every documented default comes from the same Zod source of
+ * truth as production code. A future change to a schema default
+ * automatically flows into these mapField tests instead of silently
+ * drifting from the source.
+ */
 function field(overrides: Partial<FieldMetadata>): FieldMetadata {
-  return {
-    name: 'someField',
-    type: 'String',
-    required: false,
-    unique: false,
-    indexed: false,
-    searchable: false,
-    sortable: false,
-    filterable: false,
-    audited: false,
-    readOnly: false,
-    hidden: false,
-    inList: true,
-    inDetail: true,
-    inCreate: true,
-    inUpdate: true,
-    computed: false,
-    ...overrides,
-  };
+  return FieldMetadataSchema.parse({ name: 'someField', type: 'String', ...overrides });
 }
 
 describe('DslMapper.mapField — validation builder', () => {
@@ -297,6 +290,29 @@ describe('DslMapper.mapField — validation builder', () => {
 
   it('no validation hints → emits an empty validations array', () => {
     expect(DslMapper.mapField(field({})).validations).toEqual([]);
+  });
+
+  it('minLength=0 / maxLength=0 are TREATED AS OMITTED (truthy guard skips zero)', () => {
+    // Pins the deliberate-asymmetry-with-comment in dsl-mapper.ts:
+    // minLength=0 / maxLength=0 are semantically the same as omitting
+    // the constraint, so the truthy check drops them. A regression that
+    // flipped these to `!== undefined` (like the numeric min/max guards)
+    // would start emitting `.min(0)` / `.max(0)` noise on every form
+    // schema with zero-bounded text fields, and would fail this test.
+    expect(DslMapper.mapField(field({ minLength: 0 })).validations).toEqual([]);
+    expect(DslMapper.mapField(field({ maxLength: 0 })).validations).toEqual([]);
+  });
+
+  it('min=0 / max=0 ARE preserved (`!== undefined` guard, not truthy) — numeric bounds are real constraints at zero', () => {
+    // Sibling pin for the OTHER half of the asymmetry: min=0 means
+    // "values must be ≥ 0" and is a meaningful Zod validation. If a
+    // future change flipped these to a truthy check (matching
+    // minLength/maxLength), zero-bounded numeric constraints would
+    // silently disappear.
+    const minOnly = DslMapper.mapField(field({ type: 'int', min: 0 }));
+    expect(minOnly.validations).toContain('.min(0)');
+    const maxOnly = DslMapper.mapField(field({ type: 'int', max: 0 }));
+    expect(maxOnly.validations).toContain('.max(0)');
   });
 });
 

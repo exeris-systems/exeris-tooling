@@ -54,7 +54,7 @@ describe('ValidationMetadataSchema', () => {
   });
 
   it('rejects wrong-typed values (e.g. pattern as number)', () => {
-    expect(() => ValidationMetadataSchema.parse({ pattern: 123 })).toThrow();
+    expect(() => ValidationMetadataSchema.parse({ pattern: 123 })).toThrow(z.ZodError);
   });
 });
 
@@ -90,7 +90,7 @@ describe('FieldMetadataSchema', () => {
   });
 
   it('rejects when required name field is missing', () => {
-    expect(() => FieldMetadataSchema.parse({ type: 'String' })).toThrow();
+    expect(() => FieldMetadataSchema.parse({ type: 'String' })).toThrow(z.ZodError);
   });
 });
 
@@ -176,7 +176,7 @@ describe('RelationshipMetadataSchema', () => {
   it('rejects an unknown type value (only ONE_TO_ONE / ONE_TO_MANY / MANY_TO_ONE / MANY_TO_MANY)', () => {
     expect(() => RelationshipMetadataSchema.parse({
       name: 'x', targetEntity: 'Y', type: 'BOGUS',
-    })).toThrow();
+    })).toThrow(z.ZodError);
   });
 
   it('accepts every documented relationship type', () => {
@@ -252,7 +252,7 @@ describe('SagaStepMetadataSchema + SagaMetadataSchema', () => {
   it('SagaMetadata rejects unknown compensationStrategy values', () => {
     expect(() => SagaMetadataSchema.parse({
       name: 'X', compensationStrategy: 'INVALID',
-    })).toThrow();
+    })).toThrow(z.ZodError);
   });
 
   it('SagaMetadata accepts each compensationStrategy + compensationOrder enum value', () => {
@@ -288,7 +288,7 @@ describe('EventSourcedMetadataSchema', () => {
   });
 
   it('rejects when aggregateType is missing', () => {
-    expect(() => EventSourcedMetadataSchema.parse({})).toThrow();
+    expect(() => EventSourcedMetadataSchema.parse({})).toThrow(z.ZodError);
   });
 });
 
@@ -362,9 +362,9 @@ describe('DomainMetadataSchema — top-level entity record', () => {
   });
 
   it('rejects when required entityName + packageName are missing', () => {
-    expect(() => DomainMetadataSchema.parse({})).toThrow();
-    expect(() => DomainMetadataSchema.parse({ entityName: 'Order' })).toThrow();
-    expect(() => DomainMetadataSchema.parse({ packageName: 'com.shop' })).toThrow();
+    expect(() => DomainMetadataSchema.parse({})).toThrow(z.ZodError);
+    expect(() => DomainMetadataSchema.parse({ entityName: 'Order' })).toThrow(z.ZodError);
+    expect(() => DomainMetadataSchema.parse({ packageName: 'com.shop' })).toThrow(z.ZodError);
   });
 });
 
