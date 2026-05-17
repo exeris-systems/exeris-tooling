@@ -2,11 +2,33 @@ import type { GeneratedFile, CodeGenerator, ArtifactType, GeneratorContext } fro
 import type { BackendType } from '../../core/backend-strategy.js';
 import type { DomainMetadata, FieldMetadata } from '../../models/domain-model.js';
 
+/** Single source of truth for the hardcoded entity name this
+ *  generator binds to — used by both generate() and
+ *  generateAggregate() so a future rename of the marketing entity
+ *  is a one-line change. */
+const PITCH_DECK_ENTITY = 'ExerisPitchDeck';
+
+/** Minimal HTML escape for values interpolated into the emitted
+ *  template (h3 text + alt=""). Domain metadata is developer-
+ *  authored, so the practical blast radius of unescaped output is
+ *  contained, but a `displayName` containing `"` would otherwise
+ *  break the alt attribute and `<` / `>` would inject markup into
+ *  the rendered template. Escapes the standard five HTML special
+ *  characters; leaves everything else untouched. */
+function escapeHtml(value: string): string {
+    return value
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+}
+
 /**
  * Landing-page generator — emits a single Angular component + template
  * pair for the marketing "ExerisPitchDeck" entity. Short-circuits to
  * `null` for every other entity (the generator is keyed off the exact
- * `entityName === 'ExerisPitchDeck'` literal).
+ * `entityName === PITCH_DECK_ENTITY` literal).
  *
  * Registered alongside DetailGenerator under the DETAIL artifact type
  * — both are intentionally active at the same time; see the registry
@@ -27,12 +49,12 @@ export class LandingPageGenerator implements CodeGenerator {
     readonly priority = 20;
 
     generate(domain: DomainMetadata, _context: GeneratorContext): GeneratedFile | null {
-        if (domain.entityName !== 'ExerisPitchDeck') return null;
+        if (domain.entityName !== PITCH_DECK_ENTITY) return null;
         return this.generateComponent(domain);
     }
 
     generateAggregate(domains: DomainMetadata[], _context: GeneratorContext): GeneratedFile[] {
-        const deckEntity = domains.find((e) => e.entityName === 'ExerisPitchDeck');
+        const deckEntity = domains.find((e) => e.entityName === PITCH_DECK_ENTITY);
         if (!deckEntity) return [];
         return [this.generateTemplate(deckEntity)];
     }
@@ -114,9 +136,13 @@ ${properties}
         // surfaced by FieldMetadata) and fall back to the bare field
         // name when displayName is unset. The earlier shape called
         // `f.label`, which doesn't exist on FieldMetadata and emitted
-        // literal "undefined" into the rendered HTML.
+        // literal "undefined" into the rendered HTML. The label is
+        // interpolated into BOTH an h3 text body and an alt=""
+        // attribute, so it goes through escapeHtml — a displayName
+        // containing `"` would otherwise break the alt syntax, and
+        // `<` / `>` would inject markup into the rendered template.
         const evidenceHtml = imageFields.map((f: FieldMetadata) => {
-            const label = f.displayName ?? f.name;
+            const label = escapeHtml(f.displayName ?? f.name);
             return `
             <div class="evidence-item">
                 <h3>${label}</h3>

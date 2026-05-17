@@ -246,6 +246,49 @@ describe('LandingPageGenerator.generateAggregate — template emission', () => {
     expect(tpl.content).not.toContain('undefined');
   });
 
+  it('HTML-escapes the evidence label in BOTH the h3 body and the alt attribute', () => {
+    // Pin the escapeHtml hop on a displayName containing every HTML
+    // special character at once. Without escaping, the `"` would
+    // terminate the alt attribute early and the `<script>` fragment
+    // would inject live markup into the rendered template.
+    const [tpl] = gen.generateAggregate(
+      [domain({
+        entityName: 'ExerisPitchDeck',
+        fields: [field({
+          name: 'crashShot',
+          type: 'IMAGE_URL',
+          displayName: `<script>alert("xss")</script> & 'foo'`,
+        })],
+      })],
+      CTX,
+    );
+    const escaped = '&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt; &amp; &#39;foo&#39;';
+    expect(tpl.content).toContain(`<h3>${escaped}</h3>`);
+    expect(tpl.content).toContain(`alt="${escaped}"`);
+    // Belt-and-braces: the raw script tag MUST NOT survive into
+    // the emitted template, otherwise the consuming Angular app
+    // would render it as live DOM (or AOT-compile it as part of
+    // the static template, which is worse).
+    expect(tpl.content).not.toContain('<script>');
+    expect(tpl.content).not.toContain('alert("xss")');
+  });
+
+  it('does NOT mangle a label that contains no HTML special characters (idempotency control)', () => {
+    const [tpl] = gen.generateAggregate(
+      [domain({
+        entityName: 'ExerisPitchDeck',
+        fields: [field({
+          name: 'crashShot',
+          type: 'IMAGE_URL',
+          displayName: 'Crash Evidence 2026',
+        })],
+      })],
+      CTX,
+    );
+    expect(tpl.content).toContain('<h3>Crash Evidence 2026</h3>');
+    expect(tpl.content).toContain('alt="Crash Evidence 2026"');
+  });
+
   it('emits the static section scaffold (header / EMPIRICAL EVIDENCE / NEXT STEPS) even with zero IMAGE_URL fields', () => {
     const [tpl] = gen.generateAggregate(
       [domain({ entityName: 'ExerisPitchDeck' })],
