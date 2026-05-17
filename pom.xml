@@ -111,7 +111,10 @@
              (haltOnFailure=true). exeris-processor overrides this with
              a per-module 85% line + 80% branch rule — the relaxed branch
              reflects unreachable defensive null guards at the javac
-             boundary; see exeris-processor/pom.xml for the rationale. -->
+             boundary; see exeris-processor/pom.xml for the rationale.
+             No plugin-level excludes: the earlier CodegenMain.class
+             exclude was retired once the CLI shell was split into
+             CliArgs + CodegenPipeline + a one-line main(). -->
         <jacoco.version>0.8.14</jacoco.version>
     </properties>
 
