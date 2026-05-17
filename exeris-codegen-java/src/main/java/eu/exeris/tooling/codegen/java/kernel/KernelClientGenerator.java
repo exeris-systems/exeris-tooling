@@ -19,13 +19,13 @@ import javax.lang.model.element.Modifier;
  * Kernel Client Generator.
  *
  * <p>Generates clients for service-to-service communication. The generated
- * code uses {@code ExerisWebClient}; the underlying transport (H1/H2/H3) is
+ * code uses {@code CommunityWebClient}; the underlying transport (H1/H2/H3) is
  * an internal detail of the Kernel runtime and tier-dependent — Community
  * runs over H1/H2, the H3 path is Enterprise-only.
  *
  * @implNote Emission is JavaPoet-based (ADR-015).
  *
- * @see eu.exeris.kernel.transport.http3.client.ExerisWebClient
+ * @see eu.exeris.kernel.community.http.client.CommunityWebClient
  *
  * @author Exeris Team
  * @since 0.1.0
@@ -33,9 +33,9 @@ import javax.lang.model.element.Modifier;
 public class KernelClientGenerator implements KernelArtifactGenerator {
 
     private static final ClassName WEB_CLIENT =
-            ClassName.get("eu.exeris.kernel.transport.http3.client", "ExerisWebClient");
+            ClassName.get("eu.exeris.kernel.community.http.client", "CommunityWebClient");
     private static final ClassName WEB_CLIENT_EXCEPTION =
-            ClassName.get("eu.exeris.kernel.transport.http3.client", "ExerisWebClient", "WebClientException");
+            ClassName.get("eu.exeris.kernel.community.http.client", "CommunityWebClient", "WebClientException");
     private static final ClassName UUID = ClassName.get("java.util", "UUID");
     private static final ClassName OPTIONAL = ClassName.get("java.util", "Optional");
     private static final ClassName LIST = ClassName.get("java.util", "List");
