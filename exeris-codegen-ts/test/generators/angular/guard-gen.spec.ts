@@ -211,15 +211,24 @@ describe('generateGuard — top-level convenience function', () => {
   it('routes through GuardGenerator and returns the per-domain file', () => {
     const file = generateGuard(domain({ entityName: 'Order' }), CTX.config);
 
-    expect(file.path).toBe('guards/order.guard.ts');
-    expect(file.content).toContain('export const canViewOrder');
+    expect(file).not.toBeNull();
+    expect(file!.path).toBe('guards/order.guard.ts');
+    expect(file!.content).toContain('export const canViewOrder');
+  });
+
+  it('returns null for a hidden domain (signature widened to `| null` to match generateForm)', () => {
+    // The previous signature used `!` which would have crashed
+    // here at runtime — the new `| null` contract makes the
+    // skip explicit and forces callers to handle it.
+    expect(generateGuard(hiddenDomain('Audit'), CTX.config)).toBeNull();
   });
 
   it('falls back to KERNEL backend when config.backend is undefined (still emits per-domain file)', () => {
     const partialConfig = { ...CTX.config, backend: undefined as unknown as GeneratorContext['backend'] };
     const file = generateGuard(domain({ entityName: 'Order' }), partialConfig);
 
-    expect(file.path).toBe('guards/order.guard.ts');
-    expect(file.content).toContain('export const canViewOrder');
+    expect(file).not.toBeNull();
+    expect(file!.path).toBe('guards/order.guard.ts');
+    expect(file!.content).toContain('export const canViewOrder');
   });
 });

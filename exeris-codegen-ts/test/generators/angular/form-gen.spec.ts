@@ -197,6 +197,40 @@ describe('FormGenerator field filtering for createFields', () => {
     expect(content).toContain('data-testid="field-name"');
   });
 
+  it('lifecycle ∩ system overlap fields (createdAt / updatedAt / version / deleted) are excluded EXACTLY ONCE — no double-filter side effects', () => {
+    // These four field names appear in BOTH isLifecycleField and
+    // isSystemField sets in form-gen.ts:61-67. A future refactor that
+    // changed the filter chain semantics (e.g., switched from .filter
+    // to .filter().filter and forgot to chain correctly) could
+    // accidentally drop them twice — or, worse, only filter them once
+    // and leak the duplicate-filter source-of-truth. This test pins
+    // the current behaviour: overlap fields are excluded ONCE,
+    // sibling non-overlapping fields are preserved.
+    const content = gen.generate(domain({
+      entityName: 'Thing',
+      fields: [
+        field({ name: 'createdAt', type: 'java.time.Instant' }), // overlap
+        field({ name: 'updatedAt', type: 'java.time.Instant' }), // overlap
+        field({ name: 'version', type: 'java.lang.Long' }),       // overlap
+        field({ name: 'deleted', type: 'java.lang.Boolean' }),    // overlap
+        field({ name: 'name', type: 'String' }),                  // visible
+      ],
+    }), CTX)!.content;
+
+    for (const overlap of ['createdAt', 'updatedAt', 'version', 'deleted']) {
+      // Each overlap field appears exactly zero times in the form
+      // (no data-testid, no label, no FormBuilder entry).
+      expect(content).not.toContain(`data-testid="field-${overlap}"`);
+      // The FormBuilder block doesn't even reference the field name as
+      // a key — guards against a silent partial filter that leaves
+      // some occurrences behind.
+      expect(content).not.toMatch(new RegExp(`^\\s*${overlap}: \\[`, 'm'));
+    }
+    // Sibling visible field survives.
+    expect(content).toContain('data-testid="field-name"');
+    expect(content).toMatch(/^\s*name: \[/m);
+  });
+
   it('excludes hidden=true and readOnly=true fields', () => {
     const content = gen.generate(domain({
       entityName: 'Thing',

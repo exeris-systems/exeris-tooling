@@ -297,13 +297,38 @@ describe('DetailGenerator enum collection + import line', () => {
     expect(content).not.toContain("from '../types/enums'");
   });
 
-  it('per-enum private DisplayNames field is registered on the class for each collected enum', () => {
+  it('per-enum private DisplayNames field uses camelCase (first-char lowered, rest preserved) — NOT all-lowercase', () => {
+    // The earlier source did `enumType.toLowerCase()` which produced
+    // identifiers like `orderstatusDisplayNames` for OrderStatus.
+    // After the casing fix, the first char is lowered but subsequent
+    // capitals survive: orderStatus, oAuthClient, etc.
+    const single = gen.generate(domain({
+      entityName: 'Order',
+      fields: [field({ name: 'status', type: 'OrderStatus' })],
+    }), CTX)!.content;
+    expect(single).toContain('private readonly orderStatusDisplayNames = OrderStatusDisplayNames;');
+    expect(single).not.toContain('orderstatusDisplayNames');
+
+    // Multi-cap enum name preserves its internal capitals.
+    const multiCap = gen.generate(domain({
+      entityName: 'Thing',
+      fields: [field({ name: 'client', type: 'String', enumType: 'OAuthClient' })],
+    }), CTX)!.content;
+    expect(multiCap).toContain('private readonly oAuthClientDisplayNames = OAuthClientDisplayNames;');
+    expect(multiCap).not.toContain('oauthclientDisplayNames');
+  });
+
+  it('getEnumDisplayName switch dispatch references the same camelCase field name', () => {
+    // The switch body at the bottom of the generated class reads
+    // `this.<fieldName>[value]`. It must use the SAME camelCase
+    // identifier the class field was declared under — otherwise
+    // the lookup is undefined at runtime.
     const content = gen.generate(domain({
       entityName: 'Order',
       fields: [field({ name: 'status', type: 'OrderStatus' })],
     }), CTX)!.content;
 
-    expect(content).toContain('private readonly orderstatusDisplayNames = OrderStatusDisplayNames;');
+    expect(content).toContain('this.orderStatusDisplayNames[value as keyof typeof this.orderStatusDisplayNames]');
   });
 });
 
