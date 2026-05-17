@@ -456,12 +456,19 @@ export class ${pascalSagaName}StateMachine {
 
       this._steps.set(updatedSteps);
 
-      // Update current step index
+      // Update current step index. Capture the PREVIOUS index BEFORE
+      // the set so the step-change announcement below compares
+      // against the actual previous state. The earlier version
+      // compared the new index against this._currentStepIndex()
+      // AFTER calling .set() on it — which always returned the
+      // just-set value, making the !== check trivially false and
+      // silently dropping every step-running announcement.
+      const prevIdx = this._currentStepIndex();
       const runningIdx = updatedSteps.findIndex(s => s.status === 'RUNNING');
       this._currentStepIndex.set(runningIdx);
 
       // Announce step changes
-      if (runningIdx >= 0 && runningIdx !== this._currentStepIndex()) {
+      if (runningIdx >= 0 && runningIdx !== prevIdx) {
         const step = updatedSteps[runningIdx];
         this.announce(
           $localize\`:@@saga.step.running:Running step: \${step.label}\`,

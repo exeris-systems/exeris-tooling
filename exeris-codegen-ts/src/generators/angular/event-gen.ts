@@ -66,7 +66,7 @@ export class EventHandlerGenerator implements CodeGenerator {
     const camel = DslMapper.toCamelCase(entityName);
 
     const eventTypes = events.map(e => `'${e.name}'`).join(' | ');
-    const eventInterfaces = this.generateEventInterfaces(events);
+    const eventInterfaces = this.generateEventInterfaces(events, entityName);
     const eventHandlers = this.generateEventHandlers(events, entityName);
 
     return `/**
@@ -250,7 +250,14 @@ ${events.map(e => `      case '${e.name}':
 `;
   }
 
-  private generateEventInterfaces(events: DomainEventMetadata[]): string {
+  private generateEventInterfaces(events: DomainEventMetadata[], entityName: string): string {
+    // The Payload + Event interfaces MUST be entity-prefixed —
+    // every other code-emission site in this generator
+    // (Subject<…>, dispatchEvent cast, announce* parameter, the
+    // <Entity>Event union members) uses the
+    // ${entityName}${pascalName}Event form. Without the prefix,
+    // generated TypeScript references undeclared identifiers and
+    // fails tsc --noEmit on every event-handler file.
     return events.map(event => {
       const pascalName = this.toPascalCase(event.name);
       const fields = event.fields || [];
@@ -259,11 +266,11 @@ ${events.map(e => `      case '${e.name}':
         .map(f => `    ${f.name}: ${DslMapper.mapType(f.type).tsType};`)
         .join('\n');
 
-      return `export interface ${pascalName}Payload {
+      return `export interface ${entityName}${pascalName}Payload {
 ${payloadFields || '    // No additional payload fields'}
 }
 
-export interface ${pascalName}Event {
+export interface ${entityName}${pascalName}Event {
   type: '${event.name}';
   id: string;
   aggregateId: string;
@@ -271,7 +278,7 @@ export interface ${pascalName}Event {
   occurredAt: Date;
   userId?: string;
   correlationId?: string;
-  payload: ${pascalName}Payload;
+  payload: ${entityName}${pascalName}Payload;
 }`;
     }).join('\n\n');
   }
@@ -283,7 +290,7 @@ export interface ${pascalName}Event {
         return {
           ...baseEvent,
           type: '${event.name}' as const,
-          payload: event.payload as ${pascalName}Payload,
+          payload: event.payload as ${entityName}${pascalName}Payload,
         };`;
     }).join('\n');
   }
