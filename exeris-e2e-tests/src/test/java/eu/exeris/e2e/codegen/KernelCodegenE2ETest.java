@@ -47,7 +47,7 @@ class KernelCodegenE2ETest {
         private final KernelGeneratorStrategy strategy = new KernelGeneratorStrategy();
 
         @Test
-        @DisplayName("Should generate exactly the SPI-aligned subset (Controller, Service, Repository, Event + EventHandler + GraphSync + Saga when declared, Migration, OpenAPI)")
+        @DisplayName("Should generate exactly the SPI-aligned subset (Controller, Service, Repository, Event + EventHandler + GraphSync + Saga when declared, Migration, OpenAPI, Client)")
         void shouldGenerateCoreArtifacts() {
             List<GeneratedFile> files = strategy.generate(orderMetadata);
             assertThat(files).extracting(GeneratedFile::artifactType)
@@ -60,7 +60,15 @@ class KernelCodegenE2ETest {
                             ArtifactType.GRAPH_SYNC,
                             ArtifactType.SAGA,
                             ArtifactType.CONFIGURATION,
-                            ArtifactType.OPENAPI_SPEC);
+                            ArtifactType.OPENAPI_SPEC,
+                            // CLIENT added when KernelClientGenerator was
+                            // unparked against the 0.8.0-SNAPSHOT
+                            // CommunityWebClient SPI. The CommunityWebClient
+                            // stub at exeris-e2e-tests/src/test/java/eu/
+                            // exeris/kernel/community/http/client/ is the
+                            // compile-test classpath shim the generated
+                            // client code resolves against.
+                            ArtifactType.CLIENT);
         }
 
         @Test

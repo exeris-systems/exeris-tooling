@@ -36,7 +36,7 @@ class KernelGeneratorStrategyTest {
     }
 
     @Test
-    @DisplayName("Should generate the nine SPI-aligned artifacts when events + graph + saga are declared (Controller, Service, Repository, Event, EventHandler, GraphSync, Saga, Flyway, OpenAPI)")
+    @DisplayName("Should generate the ten SPI-aligned artifacts when events + graph + saga are declared (Controller, Service, Repository, Event, EventHandler, GraphSync, Saga, Flyway, OpenAPI, Client)")
     void shouldGenerateAllArtifacts() {
         DomainMetadata metadata = DomainMetadata.builder("Product", "com.shop.domain")
                 .module("catalog")
@@ -48,7 +48,10 @@ class KernelGeneratorStrategyTest {
 
         List<GeneratedFile> files = strategy.generate(metadata);
 
-        assertThat(files).hasSize(9);
+        // CLIENT artifact added by KernelClientGenerator unparking
+        // (this PR). Strategy now emits 10 artifacts per feature-
+        // complete domain instead of the previous 9.
+        assertThat(files).hasSize(10);
         assertThat(files).extracting(GeneratedFile::artifactType)
                 .containsExactlyInAnyOrder(
                         ArtifactType.CONTROLLER,
@@ -59,7 +62,8 @@ class KernelGeneratorStrategyTest {
                         ArtifactType.GRAPH_SYNC,
                         ArtifactType.SAGA,
                         ArtifactType.CONFIGURATION,
-                        ArtifactType.OPENAPI_SPEC
+                        ArtifactType.OPENAPI_SPEC,
+                        ArtifactType.CLIENT
                 );
     }
 }

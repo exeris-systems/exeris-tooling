@@ -9,29 +9,24 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Smoke tests for {@link KernelClientGenerator}.
+ * Per-emission tests for {@link KernelClientGenerator}.
  *
- * <p>This generator is <b>parked</b> — it is intentionally NOT registered
- * by {@link KernelGeneratorStrategy} because the canonical service-to-
- * service client SPI shape has not yet landed in {@code exeris-kernel}.
- * That makes a full per-emission contract test premature: every shape
- * detail (constructor signature, transport-API method names, exception
- * types) will change when the SPI is rewired against the real client
- * surface, and the e2e compile-gate that pins the rest of the strategy's
- * generators deliberately excludes this one.
+ * <p>Since {@code exeris-kernel 0.8.0-SNAPSHOT} the canonical service-
+ * to-service client SPI is stable — names settled, no further SPI
+ * changes expected — and the generator was un-parked into
+ * {@link KernelGeneratorStrategy}'s registered set. Emitted code now
+ * targets {@code eu.exeris.kernel.community.http.client.CommunityWebClient}
+ * (community module; H3 stays Enterprise-only per ADR-016). The e2e
+ * compile-gate at {@code exeris-e2e-tests} now includes CLIENT in the
+ * required artifact set and compiles the emitted source against the
+ * {@code CommunityWebClient} stub on the test classpath.
  *
- * <p>What we lock here is therefore minimal:
- * <ul>
- *   <li>The generator can be instantiated and {@code generate()} returns
- *       a non-null {@link GeneratedFile} with the right artifact type
- *       and package/class naming derived from the domain metadata.</li>
- *   <li>The {@code apiPath} build path is exercised on both the
- *       explicit-{@code path()} branch and the kebab-case fallback.</li>
- * </ul>
- *
- * <p>A richer contract test moves in alongside the SPI client rewrite.
+ * <p>This test pins the shape of every emitted method (constructor,
+ * findById, findAll, paged findAll, create, update, delete) plus the
+ * apiPath assembly (explicit-path / Builder-default / apiVersion
+ * override) so a future refactor surfaces any contract drift loudly.
  */
-@DisplayName("KernelClientGenerator (parked)")
+@DisplayName("KernelClientGenerator")
 class KernelClientGeneratorTest {
 
     private final KernelClientGenerator generator = new KernelClientGenerator();
@@ -99,5 +94,127 @@ class KernelClientGeneratorTest {
         GeneratedFile file = generator.generate(metadata);
 
         assertThat(file.content()).contains("\"/api/v2/orders\"");
+    }
+
+    // ---------- emitted-method contract (un-parked: SPI now stable) ----------
+
+    @Test
+    @DisplayName("Imports the CommunityWebClient FQN from the community.http.client package (NOT the old transport.http3.client)")
+    void importsCommunityWebClient() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .build();
+
+        String content = generator.generate(metadata).content();
+
+        // Three-tier placement: H1/H2 transport lives in the community
+        // module; H3 client stays Enterprise-only per ADR-016.
+        assertThat(content)
+                .contains("import eu.exeris.kernel.community.http.client.CommunityWebClient;")
+                .doesNotContain("eu.exeris.kernel.transport.http3.client");
+    }
+
+    @Test
+    @DisplayName("Constructor takes a CommunityWebClient parameter and stores it as a private final field")
+    void constructorShape() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .build();
+
+        String content = generator.generate(metadata).content();
+
+        assertThat(content)
+                .contains("private final CommunityWebClient client;")
+                .contains("public OrderClient(CommunityWebClient client)")
+                .contains("this.client = client;");
+    }
+
+    @Test
+    @DisplayName("findById returns Optional<Entity>, uses the WebClientException.isNotFound() arm for empty, rethrows otherwise")
+    void findByIdShape() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .build();
+
+        String content = generator.generate(metadata).content();
+
+        assertThat(content)
+                .contains("public Optional<Order> findById(UUID id)")
+                .contains("Optional.ofNullable(client.get(BASE_PATH +")
+                // 404 → Optional.empty(); any other error → rethrow.
+                .contains("catch (CommunityWebClient.WebClientException e)")
+                .contains("if (e.isNotFound())")
+                .contains("return Optional.empty();")
+                .contains("throw e;");
+    }
+
+    @Test
+    @DisplayName("Both findAll overloads (paged + unpaged) emit; paged uses ?page=X&size=Y query string")
+    void findAllOverloads() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .build();
+
+        String content = generator.generate(metadata).content();
+
+        // Unpaged
+        assertThat(content)
+                .contains("public List<Order> findAll()")
+                .contains("client.get(BASE_PATH, List.class)");
+
+        // Paged
+        assertThat(content)
+                .contains("public List<Order> findAll(int page, int size)")
+                .contains("\"?page=\"")
+                .contains("\"&size=\"");
+
+        // Both findAll variants carry @SuppressWarnings("unchecked")
+        // because List.class is raw — exactly 2 occurrences (one per
+        // overload), not 1 (would miss an overload) or 3 (would mean
+        // a leaked extra).
+        long uncheckedCount = content.lines()
+                .filter(line -> line.contains("@SuppressWarnings(\"unchecked\")"))
+                .count();
+        assertThat(uncheckedCount).isEqualTo(2L);
+    }
+
+    @Test
+    @DisplayName("create / update / delete emit POST / PATCH / DELETE with the expected param + return shapes")
+    void mutationMethodShapes() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .build();
+
+        String content = generator.generate(metadata).content();
+
+        // create(Order entity) → POST
+        assertThat(content)
+                .contains("public Order create(Order entity)")
+                .contains("return client.post(BASE_PATH, entity, Order.class);");
+
+        // update(UUID id, Order entity) → PATCH
+        assertThat(content)
+                .contains("public Order update(UUID id, Order entity)")
+                .contains("return client.patch(BASE_PATH + \"/\" + id, entity, Order.class);");
+
+        // delete(UUID id) → DELETE with Void.class
+        assertThat(content)
+                .contains("public void delete(UUID id)")
+                .contains("client.delete(BASE_PATH + \"/\" + id, Void.class);");
+    }
+
+    @Test
+    @DisplayName("Package of the emitted client is <domainPackage>.replace(\".domain\", \".client\") — placed alongside service / repository")
+    void packageNamingConvention() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.shop.module.domain")
+                .path("/orders")
+                .build();
+
+        GeneratedFile file = generator.generate(metadata);
+
+        // .domain → .client substitution; siblings (service /
+        // repository) use the same convention so the generated tree
+        // is symmetric.
+        assertThat(file.packageName()).isEqualTo("com.shop.module.client");
     }
 }

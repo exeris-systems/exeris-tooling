@@ -22,16 +22,7 @@ import java.util.List;
  *   <li>{@link KernelSagaGenerator} — saga skeleton against {@code spi.flow.{FlowEngine, FlowDefinitionBuilder}} + {@code spi.flow.model.{FlowExecutionPlan, FlowContext, FlowOutcome}}</li>
  *   <li>{@link KernelFlywayGenerator} — SQL migrations</li>
  *   <li>{@link KernelOpenApiGenerator} — OpenAPI 3.1 YAML</li>
- * </ul>
- *
- * <h2>Unregistered (pending migration to Open-Core SPI/CORE)</h2>
- * <p>The following generators are kept in tree but <b>not</b> registered.
- * Each one was originally authored against an emission surface that does not
- * match the names/paths exposed by Open-Core SPI/CORE today. The required
- * abstractions exist in Open-Core — the generators just need rewriting
- * against the real SPI/CORE types. Per-generator migration target:
- * <ul>
- *   <li>{@link KernelClientGenerator} → SPI HTTP/transport client (TBD against the actually exposed client SPI; align with the working benchmark app)</li>
+ *   <li>{@link KernelClientGenerator} — service-to-service clients against {@code eu.exeris.kernel.community.http.client.CommunityWebClient} (kernel 0.8.0-SNAPSHOT). Three-tier placement note: H1/H2 transport is in the community module; H3 is Enterprise-only per ADR-016. Generated client code is transport-neutral — the {@code CommunityWebClient} surface abstracts over the underlying HTTP version.</li>
  * </ul>
  *
  * <h2>Project-wide (invoked separately by {@code CodegenMain})</h2>
@@ -43,10 +34,10 @@ import java.util.List;
  * after the per-entity loop via
  * {@link KernelApplicationGenerator#generateAll(java.util.List, String)}.
  *
- * <p>Re-register each one only after its emitted code resolves against
- * {@code exeris-kernel-spi} / {@code exeris-kernel-core}. See the working
- * community benchmark app in {@code exeris-benchmarks/targets/exeris-community-app}
- * for the canonical SPI/CORE wiring shape.
+ * <p>See the working community benchmark app in
+ * {@code exeris-benchmarks/targets/exeris-community-app} for the
+ * canonical SPI/CORE wiring shape that every registered generator's
+ * emitted code targets.
  */
 public class KernelGeneratorStrategy {
 
@@ -64,6 +55,7 @@ public class KernelGeneratorStrategy {
         registry.register(new KernelSagaGenerator());
         registry.register(new KernelFlywayGenerator());
         registry.register(new KernelOpenApiGenerator());
+        registry.register(new KernelClientGenerator());
     }
 
     public List<GeneratedFile> generate(DomainMetadata metadata) {
