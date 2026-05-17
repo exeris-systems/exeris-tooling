@@ -24,14 +24,37 @@ import java.util.List;
  *   <li>{@link KernelOpenApiGenerator} — OpenAPI 3.1 YAML</li>
  * </ul>
  *
- * <h2>Unregistered (pending migration to Open-Core SPI/CORE)</h2>
+ * <h2>Unregistered (parked — requires upstream OR in-generator design work)</h2>
  * <p>The following generators are kept in tree but <b>not</b> registered.
  * Each one was originally authored against an emission surface that does not
- * match the names/paths exposed by Open-Core SPI/CORE today. The required
- * abstractions exist in Open-Core — the generators just need rewriting
- * against the real SPI/CORE types. Per-generator migration target:
+ * match what Open-Core SPI/CORE exposes today.
  * <ul>
- *   <li>{@link KernelClientGenerator} → SPI HTTP/transport client (TBD against the actually exposed client SPI; align with the working benchmark app)</li>
+ *   <li>{@link KernelClientGenerator} — the kernel 0.8.0-SNAPSHOT SPI for
+ *       service-to-service HTTP is
+ *       {@code eu.exeris.kernel.spi.http.HttpClientEngine.send(HttpRequest)
+ *       → HttpResponse}. Both {@code HttpRequest} and {@code HttpResponse}
+ *       are records with a raw {@code LoanedBuffer} body — i.e. the SPI is
+ *       send-bytes/receive-bytes, not entity-typed. The current generator
+ *       template targets a higher-level {@code .get(path, T.class) /
+ *       .post(path, body, T.class)} surface that DOES NOT EXIST in the
+ *       0.8.0-SNAPSHOT SPI; {@code CommunityHttpClientEngine} is only the
+ *       community-tier IMPLEMENTATION of {@code HttpClientEngine}, not a
+ *       new abstraction to bind to. Unparking is blocked on either:
+ *       <ol>
+ *         <li>a higher-level convenience SPI shipping upstream (an
+ *             interface with {@code get/post/patch/delete} that takes a
+ *             {@code Class<T>} for decoding), OR</li>
+ *         <li>a designed-in-this-repo {@code HttpEntityCodec<T>}
+ *             collaborator that the generated client takes as a
+ *             constructor arg + uses to encode body → LoanedBuffer
+ *             and decode response.body() → T, plus a URL-templating
+ *             helper for query params.</li>
+ *       </ol>
+ *       Either path is a real design exercise, not a rename. A prior
+ *       attempt at unparking (PR #60) was reverted because it assumed
+ *       a {@code CommunityWebClient} class existed and was the binding
+ *       target — neither is true. See PR #60 thread for the full
+ *       diagnostic trail.</li>
  * </ul>
  *
  * <h2>Project-wide (invoked separately by {@code CodegenMain})</h2>

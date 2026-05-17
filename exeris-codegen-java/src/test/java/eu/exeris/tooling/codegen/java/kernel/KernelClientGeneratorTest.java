@@ -12,13 +12,21 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Smoke tests for {@link KernelClientGenerator}.
  *
  * <p>This generator is <b>parked</b> — it is intentionally NOT registered
- * by {@link KernelGeneratorStrategy} because the canonical service-to-
- * service client SPI shape has not yet landed in {@code exeris-kernel}.
- * That makes a full per-emission contract test premature: every shape
- * detail (constructor signature, transport-API method names, exception
- * types) will change when the SPI is rewired against the real client
- * surface, and the e2e compile-gate that pins the rest of the strategy's
- * generators deliberately excludes this one.
+ * by {@link KernelGeneratorStrategy}. The current emission template
+ * targets a higher-level {@code .get(path, T.class)} / {@code .post(path,
+ * body, T.class)} client surface that does not exist in the kernel
+ * 0.8.0-SNAPSHOT SPI. What actually ships there is
+ * {@code HttpClientEngine.send(HttpRequest) → HttpResponse} — both records
+ * with raw {@code LoanedBuffer} bodies. The entity-decoding / URL-
+ * templating / body-encoding / status-mapping bits that the template
+ * assumes are not provided by any SPI type today.
+ *
+ * <p>Unparking is blocked on either a higher-level convenience SPI
+ * shipping upstream OR a designed {@code HttpEntityCodec<T>} collaborator
+ * in this repo. See {@link KernelGeneratorStrategy}'s parked-section
+ * Javadoc for the full rationale and the PR #60 thread for the
+ * diagnostic trail that revealed the {@code CommunityWebClient}-binding
+ * assumption was wrong.
  *
  * <p>What we lock here is therefore minimal:
  * <ul>
@@ -29,7 +37,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       explicit-{@code path()} branch and the kebab-case fallback.</li>
  * </ul>
  *
- * <p>A richer contract test moves in alongside the SPI client rewrite.
+ * <p>A richer contract test moves in alongside the SPI client rewrite,
+ * when whichever of the two unblocking paths above is taken.
  */
 @DisplayName("KernelClientGenerator (parked)")
 class KernelClientGeneratorTest {
