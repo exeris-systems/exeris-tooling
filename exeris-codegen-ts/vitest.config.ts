@@ -14,14 +14,38 @@ export default defineConfig({
       // no executable code.
       exclude: ['src/index.ts', 'src/**/*.d.ts'],
 
-      // Per-file 85% gate, ratcheted. Each PR that brings a new
-      // src/ area to >=85% adds the matching glob here. The global
-      // floor stays at 0% while remaining areas (src/models,
-      // src/generators) are still being built out — preventing
-      // "fail forever" while the project bootstraps full coverage.
-      // Once every src/ file has tests, the per-file entries can
-      // collapse into a single global threshold of 85%.
+      // Two-layer gate, as of stages 4c-2 + this PR:
+      //
+      // 1. GLOBAL 85% threshold (lines/functions/branches/statements)
+      //    on the whole instrumented surface. Catches REGRESSIONS at
+      //    the aggregate level — if anyone adds a new src/ file
+      //    without tests, or removes coverage from an existing one
+      //    big enough to drag the aggregate below 85%, the build
+      //    fails. As of stage 4c-2 the actual aggregate sits at
+      //    ~92 L / ~90 B / ~85 F / ~92 S, so all four floors are
+      //    above 85% with healthy margin.
+      //
+      // 2. PER-FILE 85% thresholds on every file that has tests
+      //    today. Protects specific paths from LOCAL regressions
+      //    even when the aggregate is high enough to absorb them
+      //    (e.g. dropping store-gen from 100% to 60% wouldn't dent
+      //    the aggregate below 85% but absolutely should fail the
+      //    build). The per-file entries are kept rather than
+      //    collapsed because the global gate is a floor, not a
+      //    contract — per-file thresholds pin the actual
+      //    well-tested files against silent erosion.
+      //
+      // src/config.ts + src/generators/angular/{app-structure-gen,
+      // landing-gen, index}.ts are NOT in the per-file map yet
+      // (stages 4d / 4e pending). They show up in the global
+      // denominator and DO contribute to the aggregate falling
+      // below 85% if their uncovered LOC grows — so the global
+      // gate disciplines them too.
       thresholds: {
+        lines: 85,
+        functions: 85,
+        branches: 85,
+        statements: 85,
         'src/core/**/*.ts': {
           lines: 85,
           functions: 85,
