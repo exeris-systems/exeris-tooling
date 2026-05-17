@@ -40,6 +40,28 @@ export default defineConfig({
           branches: 85,
           statements: 85,
         },
+        // Stage 4a: foundational angular generators covered per-file
+        // (not directory-wide yet — landing-gen.ts has pre-existing
+        // tsc errors + model-misalignment bugs that need a fix-then-
+        // test PR before it can join the gate).
+        'src/generators/angular/guard-gen.ts': {
+          lines: 85,
+          functions: 85,
+          branches: 85,
+          statements: 85,
+        },
+        'src/generators/angular/detail-gen.ts': {
+          lines: 85,
+          functions: 85,
+          branches: 85,
+          statements: 85,
+        },
+        'src/generators/angular/form-gen.ts': {
+          lines: 85,
+          functions: 85,
+          branches: 85,
+          statements: 85,
+        },
       },
     },
     snapshotFormat: {
