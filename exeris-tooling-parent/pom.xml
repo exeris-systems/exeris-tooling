@@ -64,11 +64,14 @@
                  src/main/java, so report is skipped there ("missing
                  classes directory") — but the agent still runs and an
                  exec file is captured at target/jacoco.exec. Coverage of
-                 codegen-java classes exercised by e2e-tests therefore
-                 lives in that exec file and is NOT folded into
-                 exeris-codegen-java's report by default. A follow-up
-                 PR will wire jacoco:report-aggregate (or merge) for the
-                 full per-module + cross-module picture.
+                 codegen-java classes exercised by e2e-tests does NOT
+                 fold into exeris-codegen-java's per-module report;
+                 the exeris-coverage-aggregate module owns that fold,
+                 emitting a combined report at
+                 exeris-coverage-aggregate/target/site/jacoco-aggregate/.
+                 The per-module gates here remain authoritative (regression
+                 protection when a module is tested in isolation); the
+                 aggregate is informational only and has no check rule.
 
                  Note on exeris-processor: its child pom overrides the
                  inherited check rule with a per-module 85% line + 80%
