@@ -430,6 +430,39 @@ class ExerisDomainProcessorGapsTest {
         }
 
         @Test
+        @DisplayName("@EventSourced(streamPrefix = \"\") explicit empty → aggregateType falls back to class name (same as omitting the attribute)")
+        void eventSourcedExplicitEmptyStreamPrefixAlsoDefaultsToClassName() throws IOException {
+            // Pins the contract that an explicit empty streamPrefix is
+            // treated the same as omitting it — both paths short-circuit
+            // through the `streamPrefix.isEmpty()` guard. Reviewer-suggested
+            // companion to eventSourcedEmptyStreamPrefixDefaultsToClassName
+            // which covers the bare-@EventSourced (containsKey=false) path.
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.ExplicitEmptyPrefix",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.EventSourced;
+
+                    @ExerisDomain(module = "sales", path = "/explicit-empty")
+                    @EventSourced(streamPrefix = "")
+                    public class ExplicitEmptyPrefix {}
+                    """
+            );
+
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).succeeded();
+
+            String json = metadataFor(compilation, "ExplicitEmptyPrefix");
+            // containsKey("streamPrefix") = true (user wrote it), value
+            // is "", isEmpty() → class-name fallback fires.
+            assertThat(json)
+                    .contains("\"aggregateType\" : \"ExplicitEmptyPrefix\"")
+                    .contains("\"snapshotEvery\" : 50");
+        }
+
+        @Test
         @DisplayName("@EventSourced with no streamPrefix → aggregateType falls back to the entity class name (per SDK Javadoc)")
         void eventSourcedEmptyStreamPrefixDefaultsToClassName() throws IOException {
             JavaFileObject source = JavaFileObjects.forSourceString(
