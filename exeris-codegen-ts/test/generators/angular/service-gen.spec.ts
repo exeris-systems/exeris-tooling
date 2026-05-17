@@ -284,7 +284,12 @@ describe('ServiceGenerator custom actions emission', () => {
     expect(content).toContain('this.http.post<void>');
   });
 
-  it('action with no params yet hasParams=true → empty body object {}', () => {
+  it('action with empty params: [] (hasParams=false) → empty body object {} (not undefined or null)', () => {
+    // The source computes hasParams = action.params && action.params.length > 0.
+    // An empty params: [] makes hasParams=false, hitting the
+    // `hasParams ? '{ a, b }' : '{}'` else-arm. This test pins the
+    // empty-body shape; the non-empty-params shape is covered by the
+    // sibling "non-GET action" test above.
     const content = gen.generate(domain({
       entityName: 'Order',
       actions: [{ name: 'ping', httpMethod: 'POST', path: '/ping', params: [] }],

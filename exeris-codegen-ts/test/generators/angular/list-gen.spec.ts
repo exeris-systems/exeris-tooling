@@ -292,11 +292,14 @@ describe('ListGenerator per-column rendering matrix', () => {
     // LocalDateTime / OffsetDateTime / ZonedDateTime — all route
     // through the mediumDate (date-only) format despite carrying time
     // components. Pre-existing source behaviour; pinned here.
-    ['Instant',         'mediumDate', "Instant doesn't contain 'Date', falls to medium-datetime arm"],
-    ['LocalDate',       'mediumDate', 'pure date type → mediumDate'],
-    ['LocalDateTime',   'mediumDate', "QUIRK: contains 'Date' substring → first arm wins, time component lost"],
-    ['OffsetDateTime',  'mediumDate', "QUIRK: same as LocalDateTime"],
-    ['ZonedDateTime',   'mediumDate', "QUIRK: same as LocalDateTime"],
+    // Each row's second column is the EXPECTED emitted pipe pattern
+    // for that type — Instant is the only multi-component temporal
+    // that escapes the QUIRK because its name doesn't contain "Date".
+    ['Instant',        'medium',     "Instant doesn't contain 'Date' → reaches the medium-datetime arm"],
+    ['LocalDate',      'mediumDate', 'pure date type → mediumDate'],
+    ['LocalDateTime',  'mediumDate', "QUIRK: contains 'Date' substring → first arm wins, time component lost"],
+    ['OffsetDateTime', 'mediumDate', 'QUIRK: same as LocalDateTime'],
+    ['ZonedDateTime',  'mediumDate', 'QUIRK: same as LocalDateTime'],
   ])('temporal type %s → date pipe with %s pattern (%s)', (fieldType, expectedPattern) => {
     const content = gen.generate(domain({
       entityName: 'Thing',
@@ -304,10 +307,7 @@ describe('ListGenerator per-column rendering matrix', () => {
       fields: [field({ name: 'at', type: fieldType })],
     }), CTX)!.content;
 
-    // For Instant the expected is actually 'medium' (no Date substring).
-    // For everything else the QUIRK forces mediumDate.
-    const actualExpected = fieldType === 'Instant' ? 'medium' : 'mediumDate';
-    expect(content).toContain(`{{ item.at | date:'${actualExpected}' }}`);
+    expect(content).toContain(`{{ item.at | date:'${expectedPattern}' }}`);
   });
 
   it('explicit format=datetime on a non-Date-substring type DOES route through the datetime arm', () => {
