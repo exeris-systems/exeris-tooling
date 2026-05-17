@@ -15,8 +15,13 @@
  *   - Domain-loop body: hidden-domain skip for form/list/service/types
  *     (sub-generators return null on internalApi.hidden); schema still
  *     emits (local placeholder always returns content).
- *   - Pluraliser for nav labels: entityName ends in 's' → no extra 's';
- *     otherwise + 's'. (Path/route plurals always use kebab + 's'.)
+ *   - Pluraliser (two seams): nav label / browser-tab title go
+ *     through labelPlural(entityName) (camelcase + `endsWith('s')`
+ *     guard); URL paths + sidebar router-link target go through
+ *     routePlural(entityName) (kebab-cased, same guard). Both
+ *     seams must suppress the trailing 's' for entities already
+ *     ending in 's' (e.g. `News`) so we don't get `Newss`
+ *     in the tab title or `/newss` in the URL.
  *   - getEntityIcon: each known entity name → its emoji; unknown →
  *     default '📁'.
  *   - generateAppRoutes: empty domains → redirectTo: ''; non-empty →
@@ -236,7 +241,7 @@ describe('generateAppStructure — multi-domain wiring', () => {
 // ---------- nav label pluralisation + entity-icon table ----------
 
 describe('generateAppStructure — nav label pluralisation', () => {
-  it('does NOT append a second "s" to entity names already ending in "s" (label AND route AND sidebar link)', () => {
+  it('does NOT append a second "s" to entity names already ending in "s" (label AND route AND sidebar link AND list-page tab title)', () => {
     const files = generateAppStructure([domain({ entityName: 'News' })], [], cfg());
     const comp = fileAt(files, 'src/app/app.component.ts')!;
     const routes = fileAt(files, 'src/app/app.routes.ts')!;
@@ -254,6 +259,14 @@ describe('generateAppStructure — nav label pluralisation', () => {
     // And the default redirect for the first domain follows the
     // same plural rule.
     expect(routes.content).toContain("redirectTo: 'news'");
+    // The list-page browser-tab title also uses labelPlural — the
+    // /new and /:id titles use the bare singular "News" and stay
+    // unaffected, but the list page would otherwise render
+    // "Newss - Exeris Foundation" in the tab + history.
+    expect(routes.content).toContain("title: 'News - Exeris Foundation'");
+    expect(routes.content).toContain("title: 'New News - Exeris Foundation'");
+    expect(routes.content).toContain("title: 'Edit News - Exeris Foundation'");
+    expect(routes.content).not.toContain('Newss');
   });
 
   it('appends "s" to entity names not already plural', () => {
