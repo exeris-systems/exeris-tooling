@@ -1,31 +1,67 @@
-import { BackendGenerator, GeneratedFile } from '../../core/backend-strategy';
-import { CodegenContext } from '../../core/index';
-import { DomainEntity } from '../../models/domain-model';
-import type { CodeGenerator, ArtifactType, GeneratorContext } from '../../core/generator-registry';
+import type { GeneratedFile, CodeGenerator, ArtifactType, GeneratorContext } from '../../core/generator-registry.js';
+import type { BackendType } from '../../core/backend-strategy.js';
+import type { DomainMetadata, FieldMetadata } from '../../models/domain-model.js';
 
+/** Single source of truth for the hardcoded entity name this
+ *  generator binds to — used by both generate() and
+ *  generateAggregate() so a future rename of the marketing entity
+ *  is a one-line change. */
+const PITCH_DECK_ENTITY = 'ExerisPitchDeck';
+
+/** Minimal HTML escape for values interpolated into the emitted
+ *  template (h3 text + alt=""). Domain metadata is developer-
+ *  authored, so the practical blast radius of unescaped output is
+ *  contained, but a `displayName` containing `"` would otherwise
+ *  break the alt attribute and `<` / `>` would inject markup into
+ *  the rendered template. Escapes the standard five HTML special
+ *  characters; leaves everything else untouched. */
+function escapeHtml(value: string): string {
+    return value
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+}
+
+/**
+ * Landing-page generator — emits a single Angular component + template
+ * pair for the marketing "ExerisPitchDeck" entity. Short-circuits to
+ * `null` for every other entity (the generator is keyed off the exact
+ * `entityName === PITCH_DECK_ENTITY` literal).
+ *
+ * Registered alongside DetailGenerator under the DETAIL artifact type
+ * — both are intentionally active at the same time; see the registry
+ * spec ("DETAIL artifact type has TWO generators registered").
+ *
+ * The earlier shape of this file imported `BackendGenerator`,
+ * `CodegenContext` and `DomainEntity` — none of which exist in the
+ * current SDK / core surface. They were pre-existing tsc errors that
+ * stage 4d kept out of the per-file coverage gate; stage 4e (this PR)
+ * realigns the imports against the actual exports and the current
+ * `FieldMetadata` Zod schema (flat `defaultValue` / `displayName`,
+ * not a `properties: Record<string, unknown>` bag and no `label`).
+ */
 export class LandingPageGenerator implements CodeGenerator {
     readonly name = 'LandingPageGenerator';
     readonly artifactType: ArtifactType = 'DETAIL';
-    readonly supportedBackends = [];
+    readonly supportedBackends: BackendType[] = [];
     readonly priority = 20;
 
-    generate(domain: any, context: GeneratorContext): GeneratedFile | null {
-        // Szukamy tylko encji ExerisPitchDeck
-        if (domain.entityName !== 'ExerisPitchDeck') return null;
+    generate(domain: DomainMetadata, _context: GeneratorContext): GeneratedFile | null {
+        if (domain.entityName !== PITCH_DECK_ENTITY) return null;
         return this.generateComponent(domain);
     }
 
-    generateAggregate(domains: any[], context: GeneratorContext): GeneratedFile[] {
-        const deckEntity = domains.find(e => e.entityName === 'ExerisPitchDeck');
+    generateAggregate(domains: DomainMetadata[], _context: GeneratorContext): GeneratedFile[] {
+        const deckEntity = domains.find((e) => e.entityName === PITCH_DECK_ENTITY);
         if (!deckEntity) return [];
         return [this.generateTemplate(deckEntity)];
     }
 
-    private generateComponent(entity: DomainEntity): GeneratedFile {
-        // Generujemy komponent Angulara, który ma te dane "zaszyte" lub pobiera je z serwisu
-        // Dla uproszczenia demo - zaszywamy wartości z 'defaultValue'
-        const properties = entity.fields.map(f => {
-            const val = f.properties['defaultValue'] || '';
+    private generateComponent(entity: DomainMetadata): GeneratedFile {
+        const properties = entity.fields.map((f: FieldMetadata) => {
+            const val = f.defaultValue ?? '';
             // Escape characters that would break out of the surrounding
             // double-quoted TS string literal we emit on the next line.
             // The earlier `'\"'` replacement was a no-op (CodeQL
@@ -86,23 +122,39 @@ ${properties}
         };
     }
 
-    private generateTemplate(entity: DomainEntity): GeneratedFile {
-        // Rozdzielamy pola tekstowe od obrazkowych
-        const textFields = entity.fields.filter(f => f.type !== 'IMAGE_URL');
-        const imageFields = entity.fields.filter(f => f.type === 'IMAGE_URL');
+    private generateTemplate(entity: DomainMetadata): GeneratedFile {
+        // Split text fields from image-URL fields. The text bucket is
+        // computed but not currently rendered in the emitted HTML —
+        // it's a hook for future text-section work and intentionally
+        // kept around so adding text rendering doesn't require
+        // re-introducing the filter.
+        const _textFields = entity.fields.filter((f: FieldMetadata) => f.type !== 'IMAGE_URL');
+        const imageFields = entity.fields.filter((f: FieldMetadata) => f.type === 'IMAGE_URL');
 
-        // Generujemy sekcję "Evidence Gallery" dynamicznie
-        const evidenceHtml = imageFields.map(f => `
+        // Evidence Gallery — one terminal-window card per IMAGE_URL
+        // field. We prefer `displayName` (the human-readable label
+        // surfaced by FieldMetadata) and fall back to the bare field
+        // name when displayName is unset. The earlier shape called
+        // `f.label`, which doesn't exist on FieldMetadata and emitted
+        // literal "undefined" into the rendered HTML. The label is
+        // interpolated into BOTH an h3 text body and an alt=""
+        // attribute, so it goes through escapeHtml — a displayName
+        // containing `"` would otherwise break the alt syntax, and
+        // `<` / `>` would inject markup into the rendered template.
+        const evidenceHtml = imageFields.map((f: FieldMetadata) => {
+            const label = escapeHtml(f.displayName ?? f.name);
+            return `
             <div class="evidence-item">
-                <h3>${f.label}</h3>
+                <h3>${label}</h3>
                 <div class="terminal-window">
                     <div class="terminal-header">
                         <span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span>
                     </div>
-                    <img src="{{ ${f.name} }}" alt="${f.label}" class="evidence-img" />
+                    <img src="{{ ${f.name} }}" alt="${label}" class="evidence-img" />
                 </div>
             </div>
-        `).join('\n');
+        `;
+        }).join('\n');
 
         const content = `
 <div class="container">

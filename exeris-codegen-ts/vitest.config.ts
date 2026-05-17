@@ -35,15 +35,14 @@ export default defineConfig({
       //    contract — per-file thresholds pin the actual
       //    well-tested files against silent erosion.
       //
-      // Stage 4d added: src/config.ts + src/generators/angular/
-      // {app-structure-gen, index}.ts now have per-file gates below.
-      // src/generators/angular/landing-gen.ts is still NOT in the
-      // per-file map (stage 4e pending — it has pre-existing tsc
-      // errors + a FieldMetadata-model misalignment that need a
-      // fix-then-cover PR before it can join the gate). It still
-      // shows up in the global denominator and DOES contribute to
-      // the aggregate falling below 85% if its uncovered LOC grows
-      // — the global gate disciplines it.
+      // Stages 4d-4e: every file under src/ now has both a global
+      // floor (the four top-level entries) AND a per-file gate
+      // below. landing-gen.ts joined the map in stage 4e once its
+      // pre-existing tsc errors + FieldMetadata-model misalignment
+      // were closed (see PR thread). The per-file map is now
+      // contract-level — adding a new src/ file without a
+      // matching gate entry is the intentional next-action signal,
+      // not the test runner silently picking up the looser global.
       thresholds: {
         lines: 85,
         functions: 85,
@@ -127,6 +126,16 @@ export default defineConfig({
           statements: 85,
         },
         'src/generators/angular/saga-gen.ts': {
+          lines: 85,
+          functions: 85,
+          branches: 85,
+          statements: 85,
+        },
+        // Stage 4e: marketing landing-page generator (hardcoded
+        // ExerisPitchDeck entity emit). Joined the gate once its
+        // pre-existing tsc errors + FieldMetadata model
+        // misalignment were closed.
+        'src/generators/angular/landing-gen.ts': {
           lines: 85,
           functions: 85,
           branches: 85,
