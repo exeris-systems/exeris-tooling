@@ -54,7 +54,10 @@ import java.util.List;
  *       attempt at unparking (PR #60) was reverted because it assumed
  *       a {@code CommunityWebClient} class existed and was the binding
  *       target — neither is true. See PR #60 thread for the full
- *       diagnostic trail.</li>
+ *       diagnostic trail. ADR-034 has since landed the tier-neutral
+ *       {@code KernelWebClient} facade in
+ *       {@code eu.exeris.kernel.core.http.client}, which is the
+ *       binding target for any future unparking work.</li>
  * </ul>
  *
  * <h2>Project-wide (invoked separately by {@code CodegenMain})</h2>

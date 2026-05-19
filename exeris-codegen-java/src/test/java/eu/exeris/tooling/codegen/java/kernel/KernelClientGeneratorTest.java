@@ -23,10 +23,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>Unparking is blocked on either a higher-level convenience SPI
  * shipping upstream OR a designed {@code HttpEntityCodec<T>} collaborator
- * in this repo. See {@link KernelGeneratorStrategy}'s parked-section
- * Javadoc for the full rationale and the PR #60 thread for the
- * diagnostic trail that revealed the {@code CommunityWebClient}-binding
- * assumption was wrong.
+ * in this repo. ADR-034 landed the tier-neutral {@code KernelWebClient}
+ * facade in {@code eu.exeris.kernel.core.http.client} (kernel-side); the
+ * generator now targets that FQN. See {@link KernelGeneratorStrategy}'s
+ * parked-section Javadoc for the full rationale and the PR #60 thread
+ * for the original diagnostic trail that revealed the
+ * {@code CommunityWebClient}-binding assumption was wrong.
  *
  * <p>What we lock here is therefore minimal:
  * <ul>
