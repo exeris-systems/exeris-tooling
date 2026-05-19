@@ -72,6 +72,14 @@ class KernelClientGeneratorTest {
                 .contains("\"/api/v1/orders\"")
                 .contains("public class OrderClient")
                 .contains("public OrderClient(");
+        // Pin the ADR-034 binding target. The generator targets the
+        // tier-neutral KernelWebClient facade (not the legacy
+        // ExerisWebClient under transport.http3.client). JavaPoet emits
+        // this as an import; a regression on either constant in
+        // KernelClientGenerator surfaces here.
+        assertThat(file.content())
+                .contains("import eu.exeris.kernel.core.http.client.KernelWebClient;")
+                .doesNotContain("eu.exeris.kernel.transport.http3.client");
     }
 
     @Test
