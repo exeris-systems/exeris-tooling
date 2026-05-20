@@ -23,10 +23,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>Unparking is blocked on either a higher-level convenience SPI
  * shipping upstream OR a designed {@code HttpEntityCodec<T>} collaborator
- * in this repo. See {@link KernelGeneratorStrategy}'s parked-section
- * Javadoc for the full rationale and the PR #60 thread for the
- * diagnostic trail that revealed the {@code CommunityWebClient}-binding
- * assumption was wrong.
+ * in this repo. ADR-034 landed the tier-neutral {@code KernelWebClient}
+ * facade in {@code eu.exeris.kernel.core.http.client} (kernel-side); the
+ * generator now targets that FQN. See {@link KernelGeneratorStrategy}'s
+ * parked-section Javadoc for the full rationale and the PR #60 thread
+ * for the original diagnostic trail that revealed the
+ * {@code CommunityWebClient}-binding assumption was wrong.
  *
  * <p>What we lock here is therefore minimal:
  * <ul>
@@ -70,6 +72,14 @@ class KernelClientGeneratorTest {
                 .contains("\"/api/v1/orders\"")
                 .contains("public class OrderClient")
                 .contains("public OrderClient(");
+        // Pin the ADR-034 binding target. The generator targets the
+        // tier-neutral KernelWebClient facade (not the legacy
+        // ExerisWebClient under transport.http3.client). JavaPoet emits
+        // this as an import; a regression on either constant in
+        // KernelClientGenerator surfaces here.
+        assertThat(file.content())
+                .contains("import eu.exeris.kernel.core.http.client.KernelWebClient;")
+                .doesNotContain("eu.exeris.kernel.transport.http3.client");
     }
 
     @Test

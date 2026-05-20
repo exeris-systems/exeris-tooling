@@ -19,13 +19,21 @@ import javax.lang.model.element.Modifier;
  * Kernel Client Generator.
  *
  * <p>Generates clients for service-to-service communication. The generated
- * code uses {@code ExerisWebClient}; the underlying transport (H1/H2/H3) is
+ * code uses {@code KernelWebClient}; the underlying transport (H1/H2/H3) is
  * an internal detail of the Kernel runtime and tier-dependent — Community
  * runs over H1/H2, the H3 path is Enterprise-only.
  *
+ * <p>FQN target updated per ADR-034 (Client-Side Body Codec SPI +
+ * {@code KernelWebClient} facade), which supersedes ADR-026. The facade
+ * lives in {@code eu.exeris.kernel.core.http.client} — tier-neutral by
+ * design so generated application source never encodes Community /
+ * Enterprise tier identity.
+ *
  * @implNote Emission is JavaPoet-based (ADR-015).
  *
- * @see eu.exeris.kernel.transport.http3.client.ExerisWebClient
+ * @see "docs/adr/ADR-034.link.md — link stub; kernel-side
+ *      authoritative copy in exeris-kernel/docs/adr/. Target symbol:
+ *      KernelWebClient (eu.exeris.kernel.core.http.client)."
  *
  * @author Exeris Team
  * @since 0.1.0
@@ -33,9 +41,9 @@ import javax.lang.model.element.Modifier;
 public class KernelClientGenerator implements KernelArtifactGenerator {
 
     private static final ClassName WEB_CLIENT =
-            ClassName.get("eu.exeris.kernel.transport.http3.client", "ExerisWebClient");
+            ClassName.get("eu.exeris.kernel.core.http.client", "KernelWebClient");
     private static final ClassName WEB_CLIENT_EXCEPTION =
-            ClassName.get("eu.exeris.kernel.transport.http3.client", "ExerisWebClient", "WebClientException");
+            ClassName.get("eu.exeris.kernel.core.http.client", "KernelWebClient", "WebClientException");
     private static final ClassName UUID = ClassName.get("java.util", "UUID");
     private static final ClassName OPTIONAL = ClassName.get("java.util", "Optional");
     private static final ClassName LIST = ClassName.get("java.util", "List");

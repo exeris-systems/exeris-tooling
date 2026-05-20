@@ -1,11 +1,16 @@
-package eu.exeris.kernel.transport.http3.client;
+package eu.exeris.kernel.core.http.client;
 
 /**
- * Test stub for the kernel HTTP/3 web client used by generated {@code *Client}
- * artifacts. Methods return {@code null} / no-op; only the signatures matter
- * for the compile-test gate.
+ * Test stub for the kernel HTTP web client facade used by generated
+ * {@code *Client} artifacts. Methods return {@code null} / no-op; only the
+ * signatures matter for the compile-test gate.
+ *
+ * <p>Mirrors the kernel-side facade introduced by ADR-034 (Client-Side
+ * Body Codec SPI + {@code KernelWebClient} facade). This module does not
+ * depend on the real kernel artifact, so the stub stands in at the same
+ * FQN that {@code KernelClientGenerator} emits.
  */
-public class ExerisWebClient {
+public class KernelWebClient {
 
     public <T> T get(String path, Class<T> type) {
         return null;

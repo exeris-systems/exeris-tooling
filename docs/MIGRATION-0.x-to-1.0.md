@@ -85,7 +85,39 @@ If your repository commits generated sources, add the regen as its own commit so
 
 ---
 
+## ADR-034 — `KernelWebClient` facade rename
+
+> **Out-of-band:** this is a runtime FQN change in the kernel side (broader scope than ADR-015's output-formatting story). It is noted here because the lockstep update on the tooling side lives in this repo (`KernelClientGenerator`'s `WEB_CLIENT` / `WEB_CLIENT_EXCEPTION` constants — see [ADR-034 link stub](adr/ADR-034.link.md)).
+
+Effective at the ADR-034 kernel landing (kernel-side PRs A and B), the tier-neutral HTTP client facade moves:
+
+| Surface | Before | After |
+|---|---|---|
+| Class | `ExerisWebClient` | `KernelWebClient` |
+| Package | `eu.exeris.kernel.transport.http3.client` | `eu.exeris.kernel.core.http.client` |
+| Nested exception | `ExerisWebClient.WebClientException` | `KernelWebClient.WebClientException` |
+
+The facade is **tier-neutral by design** — the name no longer encodes a Community / Enterprise (or H1 / H2 / H3 transport) decision, which is now an internal Kernel-runtime detail. ADR-034 supersedes ADR-026.
+
+### Who is affected
+
+- **Manually-written HTTP clients in downstream user code** that imported the old FQN: update the import to `eu.exeris.kernel.core.http.client.KernelWebClient` (and `KernelWebClient.WebClientException` for the nested exception). No method signatures change.
+- **Generated `*Client.java`** under `src/main/generated/java/…`: `KernelClientGenerator` is **parked** in this `exeris-tooling` train — no released artifact emits client code yet. When the generator unparks (blocked on a higher-level convenience SPI OR an `HttpEntityCodec<T>` collaborator — see `KernelGeneratorStrategy` parked-section Javadoc), the emitted FQN is already correct for ADR-034.
+- **Bypass callers** that drive `HttpClientEngine.send(HttpRequest) → HttpResponse` directly: no migration needed (the SPI surface is unchanged; ADR-034 §Alternatives A documents why the typed API does not live on the engine SPI itself).
+
+### What does NOT change in this train
+
+| Surface | Status |
+|---|---|
+| `HttpClientEngine` SPI (`send(HttpRequest) → HttpResponse`) | Unchanged |
+| `HttpRequest` / `HttpResponse` records (incl. `LoanedBuffer` body) | Unchanged |
+| Generator registration (`KernelClientGenerator` still parked) | Unchanged |
+| Generated SQL / OpenAPI / Angular / TypeScript | Unaffected |
+
+---
+
 ## Reference
 
 - [ADR-015 — Codegen emission strategy](adr/ADR-015-codegen-emission-strategy.md)
 - ADR-015 Amendment 1 — switch to Palantir's JavaPoet fork (same document)
+- [ADR-034 link stub — `KernelWebClient` facade rename](adr/ADR-034.link.md) (authoritative copy kernel-side)
