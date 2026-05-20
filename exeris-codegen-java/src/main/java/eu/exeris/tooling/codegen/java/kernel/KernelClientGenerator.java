@@ -31,9 +31,9 @@ import javax.lang.model.element.Modifier;
  *
  * @implNote Emission is JavaPoet-based (ADR-015).
  *
- * @see <a href="../../../../../../../../docs/adr/ADR-034.link.md">ADR-034 (link stub)</a>
- *      — kernel-side authoritative copy in {@code exeris-kernel/docs/adr/}.
- *      Target symbol: {@code KernelWebClient (eu.exeris.kernel.core.http.client)}.
+ * @see "docs/adr/ADR-034.link.md — link stub; kernel-side
+ *      authoritative copy in exeris-kernel/docs/adr/. Target symbol:
+ *      KernelWebClient (eu.exeris.kernel.core.http.client)."
  *
  * @author Exeris Team
  * @since 0.1.0
