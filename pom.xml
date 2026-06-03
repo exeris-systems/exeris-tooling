@@ -91,6 +91,7 @@
         <module>exeris-processor</module>
         <module>exeris-codegen-core</module>
         <module>exeris-codegen-java</module>
+        <module>exeris-codegen-maven-plugin</module>
         <module>exeris-e2e-tests</module>
 
         <!-- Last on purpose: report-aggregate runs in verify and reads
@@ -122,6 +123,16 @@
              exclude was retired once the CLI shell was split into
              CliArgs + CodegenPipeline + a one-line main(). -->
         <jacoco.version>0.8.14</jacoco.version>
+
+        <!-- Maven plugin development (exeris-codegen-maven-plugin, 0.3.0):
+             plugin-api/core are provided-scope, plugin-tools provide the
+             @Mojo annotation set + descriptor generator. Build-chain
+             coordinates, kept here alongside ${jacoco.version}. -->
+        <maven.api.version>3.9.9</maven.api.version>
+        <maven-plugin-tools.version>3.13.1</maven-plugin-tools.version>
+        <!-- ASM override for the plugin descriptor scanner — plugin-tools 3.13.1
+             bundles a pre-Java-26 ASM that cannot read class major version 70. -->
+        <asm.version>9.9.1</asm.version>
     </properties>
 
     <build>

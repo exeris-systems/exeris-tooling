@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>eu.exeris.tooling</groupId>
+        <artifactId>exeris-tooling-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+        <relativePath>../exeris-tooling-parent</relativePath>
+    </parent>
+
+    <artifactId>exeris-codegen-maven-plugin</artifactId>
+    <packaging>maven-plugin</packaging>
+    <name>Exeris Tooling :: Codegen Maven Plugin</name>
+    <description>
+        Canonical build-time invocation point for the Exeris codegen pipeline.
+        `exeris:generate` runs the kernel-target generators against the
+        processor-emitted DomainMetadata and writes sources into
+        src/main/generated/java (L1). `exeris:detach` promotes that output into
+        src/main/java and stops regeneration (L2 detachment). A thin Maven shell
+        over CodegenPipeline — no emission logic lives here.
+    </description>
+
+    <prerequisites>
+        <maven>3.9.0</maven>
+    </prerequisites>
+
+    <dependencies>
+        <!-- The pipeline this plugin wraps. Emission lives entirely here. -->
+        <dependency>
+            <groupId>eu.exeris.tooling</groupId>
+            <artifactId>exeris-codegen-java</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <!-- Maven plugin contract — provided by the running Maven, never bundled. -->
+        <dependency>
+            <groupId>org.apache.maven</groupId>
+            <artifactId>maven-plugin-api</artifactId>
+            <version>${maven.api.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.maven</groupId>
+            <artifactId>maven-core</artifactId>
+            <version>${maven.api.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.maven.plugin-tools</groupId>
+            <artifactId>maven-plugin-annotations</artifactId>
+            <version>${maven-plugin-tools.version}</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- Test -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-plugin-plugin</artifactId>
+                <version>${maven-plugin-tools.version}</version>
+                <!-- The descriptor scanner (maven-plugin-tools-annotations) reads
+                     project + dependency bytecode via ASM. The version bundled in
+                     plugin-tools 3.13.1 predates Java 26 (class major 70) and aborts
+                     with "Unsupported class file major version 70" on the codegen-java
+                     dependency. Override ASM to 9.9.x, which supports Java 26. -->
+                <dependencies>
+                    <dependency>
+                        <groupId>org.ow2.asm</groupId>
+                        <artifactId>asm</artifactId>
+                        <version>${asm.version}</version>
+                    </dependency>
+                    <dependency>
+                        <groupId>org.ow2.asm</groupId>
+                        <artifactId>asm-commons</artifactId>
+                        <version>${asm.version}</version>
+                    </dependency>
+                    <dependency>
+                        <groupId>org.ow2.asm</groupId>
+                        <artifactId>asm-tree</artifactId>
+                        <version>${asm.version}</version>
+                    </dependency>
+                    <dependency>
+                        <groupId>org.ow2.asm</groupId>
+                        <artifactId>asm-analysis</artifactId>
+                        <version>${asm.version}</version>
+                    </dependency>
+                </dependencies>
+                <configuration>
+                    <goalPrefix>exeris</goalPrefix>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>default-descriptor</id>
+                        <phase>process-classes</phase>
+                        <goals>
+                            <goal>descriptor</goal>
+                        </goals>
+                    </execution>
+                    <!-- No helpmojo: the generated HelpMojo class is never exercised
+                         by tests and would breach the inherited 85% JaCoCo gate
+                         (the repo keeps a no-coverage-excludes policy). -->
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>
