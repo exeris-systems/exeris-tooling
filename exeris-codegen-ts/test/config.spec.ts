@@ -76,14 +76,21 @@ describe('GeneratorConfigSchema', () => {
     expect(() => GeneratorConfigSchema.parse({ backend: 'RAILS' })).toThrow();
   });
 
-  it('round-trips an overridden value', () => {
+  it('rejects the removed non-kernel backends (kernel-target-only)', () => {
+    // Spring/Quarkus/Micronaut/Vanilla strategies were removed; the schema
+    // must now reject them so config cannot reintroduce a second target.
+    expect(() => GeneratorConfigSchema.parse({ backend: 'SPRING' })).toThrow();
+    expect(() => GeneratorConfigSchema.parse({ backend: 'VANILLA' })).toThrow();
+  });
+
+  it('round-trips overridden values', () => {
     const parsed = GeneratorConfigSchema.parse({
-      backend: 'SPRING',
+      backend: 'KERNEL',
       framework: 'angular',
       apiBasePath: '/v2/api',
       templatesDir: 'custom/tpl',
     });
-    expect(parsed.backend).toBe('SPRING');
+    expect(parsed.backend).toBe('KERNEL');
     expect(parsed.apiBasePath).toBe('/v2/api');
     expect(parsed.templatesDir).toBe('custom/tpl');
   });
@@ -149,9 +156,9 @@ describe('findConfigFile', () => {
 describe('loadConfigFile', () => {
   it('reads + JSON.parses a config file', () => {
     const cfgPath = join(tempRoot, 'exeris-codegen.json');
-    writeFileSync(cfgPath, JSON.stringify({ backend: 'SPRING', apiBasePath: '/svc' }), 'utf-8');
+    writeFileSync(cfgPath, JSON.stringify({ backend: 'KERNEL', apiBasePath: '/svc' }), 'utf-8');
     const loaded = loadConfigFile(cfgPath);
-    expect(loaded).toEqual({ backend: 'SPRING', apiBasePath: '/svc' });
+    expect(loaded).toEqual({ backend: 'KERNEL', apiBasePath: '/svc' });
   });
 
   it('throws on malformed JSON (caller is responsible for surfacing)', () => {
@@ -172,25 +179,25 @@ describe('loadConfig', () => {
   it('layers file values OVER defaults', () => {
     writeFileSync(
       join(tempRoot, 'exeris-codegen.json'),
-      JSON.stringify({ backend: 'QUARKUS', apiBasePath: '/q' }),
+      JSON.stringify({ framework: 'react', apiBasePath: '/q' }),
       'utf-8',
     );
     process.chdir(tempRoot);
     const cfg = loadConfig();
-    expect(cfg.backend).toBe('QUARKUS');
+    expect(cfg.framework).toBe('react');
     expect(cfg.apiBasePath).toBe('/q');
-    expect(cfg.framework).toBe('angular'); // default preserved
+    expect(cfg.backend).toBe('KERNEL'); // default preserved
   });
 
   it('layers CLI overrides OVER file values (last-write-wins)', () => {
     writeFileSync(
       join(tempRoot, 'exeris-codegen.json'),
-      JSON.stringify({ backend: 'QUARKUS', apiBasePath: '/from-file' }),
+      JSON.stringify({ framework: 'react', apiBasePath: '/from-file' }),
       'utf-8',
     );
     process.chdir(tempRoot);
     const cfg = loadConfig({ apiBasePath: '/from-override' });
-    expect(cfg.backend).toBe('QUARKUS'); // from file
+    expect(cfg.framework).toBe('react'); // from file
     expect(cfg.apiBasePath).toBe('/from-override'); // override wins
   });
 

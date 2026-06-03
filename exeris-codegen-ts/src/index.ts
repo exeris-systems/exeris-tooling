@@ -60,7 +60,7 @@ program
   .option('--api-base <path>', 'API base path', '/api')
   .option('--framework <name>', 'Target framework (angular, react, vue)', 'angular')
   .option('--styling <name>', 'Style system (tailwind, material, bootstrap, none)', 'tailwind')
-  .option('--backend <name>', 'Backend strategy (KERNEL, SPRING, QUARKUS, MICRONAUT, VANILLA)', 'KERNEL')
+  .option('--backend <name>', 'Backend target (KERNEL — the only supported target)', 'KERNEL')
   .option('--no-zod', 'Skip Zod schema generation')
   .option('--no-services', 'Skip service generation')
   .option('--no-forms', 'Skip form component generation')
@@ -79,7 +79,7 @@ program
         apiBasePath: options.apiBase as string | undefined,
         framework: options.framework as 'angular' | 'react' | 'vue' | undefined,
         styling: options.styling as 'tailwind' | 'material' | 'bootstrap' | 'none' | undefined,
-        backend: options.backend as 'KERNEL' | 'SPRING' | 'QUARKUS' | 'MICRONAUT' | 'VANILLA' | undefined,
+        backend: options.backend as 'KERNEL' | undefined,
         generateZod: options.zod !== false,
         generateServices: options.services !== false,
         generateForms: options.forms !== false,

@@ -23,7 +23,7 @@ import { DslMapper } from '../../models/dsl-mapper.js';
 export class EventHandlerGenerator implements CodeGenerator {
   readonly name = 'EventHandlerGenerator';
   readonly artifactType = 'EVENT' as const;
-  readonly supportedBackends: BackendType[] = ['KERNEL', 'SPRING', 'QUARKUS', 'MICRONAUT'];
+  readonly supportedBackends: BackendType[] = ['KERNEL'];
 
   generate(domain: DomainMetadata, context: GeneratorContext): GeneratedFile | null {
     // Only generate for domains with events
