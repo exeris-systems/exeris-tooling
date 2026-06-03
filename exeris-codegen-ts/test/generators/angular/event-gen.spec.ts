@@ -5,8 +5,8 @@
  * with SSE wiring + reconnect-with-exponential-backoff.
  *
  * Unique-to-event-gen contracts pinned:
- *   - supportedBackends excludes VANILLA (only KERNEL/SPRING/QUARKUS/
- *     MICRONAUT — others register for all backends)
+ *   - supportedBackends is the single kernel target (['KERNEL']); siblings
+ *     leave it [] meaning "all" — now equivalent under kernel-target-only
  *   - generate() returns null when domain has NO events (NOT on
  *     internalApi.hidden — events check fires first)
  *   - generateAggregate() returns empty array when no domain has
@@ -46,9 +46,8 @@ describe('EventHandlerGenerator — CodeGenerator metadata', () => {
     expect(gen.priority).toBeUndefined();
   });
 
-  it('supportedBackends EXCLUDES VANILLA (unlike sibling angular generators that target all backends)', () => {
-    expect(gen.supportedBackends).toEqual(['KERNEL', 'SPRING', 'QUARKUS', 'MICRONAUT']);
-    expect(gen.supportedBackends).not.toContain('VANILLA');
+  it('supportedBackends pins the single kernel target', () => {
+    expect(gen.supportedBackends).toEqual(['KERNEL']);
   });
 });
 
@@ -488,13 +487,13 @@ describe('generateEventHandler — top-level convenience function', () => {
     expect(generateEventHandler(domain({ entityName: 'Order' }), CTX.config)).toBeNull();
   });
 
-  it('hardcodes backend "KERNEL" inside the convenience context (does NOT read config.backend)', () => {
-    // Unlike sibling form/service/guard/list which read config.backend
-    // with KERNEL fallback, generateEventHandler ignores config.backend
-    // entirely.
+  it('hardcodes backend "KERNEL" inside the convenience context', () => {
+    // generateEventHandler builds its context with backend 'KERNEL' directly
+    // rather than threading config.backend. Under kernel-target-only there is
+    // only one valid backend, so this just confirms the convenience path emits.
     const file = generateEventHandler(
       domain({ entityName: 'Order', events: [{ name: 'Created', fields: [] }] }),
-      { ...CTX.config, backend: 'SPRING' },
+      { ...CTX.config, backend: 'KERNEL' },
     );
 
     expect(file).not.toBeNull();

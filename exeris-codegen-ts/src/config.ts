@@ -65,8 +65,8 @@ export const GeneratorConfigSchema = z.object({
   /** API base path for generated services */
   apiBasePath: z.string().default('/api'),
 
-  /** Backend strategy */
-  backend: z.enum(['KERNEL', 'SPRING', 'QUARKUS', 'MICRONAUT', 'VANILLA']).default('KERNEL'),
+  /** Backend strategy — kernel-target-only (single supported target) */
+  backend: z.enum(['KERNEL']).default('KERNEL'),
 
   /** Whether to overwrite existing files */
   overwrite: z.boolean().default(false),
