@@ -23,9 +23,9 @@
         over CodegenPipeline — no emission logic lives here.
     </description>
 
-    <prerequisites>
-        <maven>3.9.0</maven>
-    </prerequisites>
+    <!-- Minimum Maven is implied by the provided maven-core 3.9.9. <prerequisites>
+         is ignored by Maven 3+ (emits a build warning); a requireMavenVersion
+         enforcer rule is the 1.0.0 home for a hard floor. -->
 
     <dependencies>
         <!-- The pipeline this plugin wraps. Emission lives entirely here. -->

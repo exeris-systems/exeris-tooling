@@ -17,9 +17,16 @@ import java.nio.file.Path;
  * processor-emitted {@code DomainMetadata} and writes sources into
  * {@code src/main/generated/java} (L1).
  *
- * <p>Bound to {@code generate-sources} so a normal {@code mvn compile} produces
- * the generated tree and (by default) registers it as a compile source root, so
- * the output participates in the same reactor build.
+ * <p>Bound to {@code generate-sources}. The annotation processor emits
+ * {@code DomainMetadata} during {@code compile}, which runs <em>after</em>
+ * {@code generate-sources} — so first use is a <b>two-pass build</b>: run
+ * {@code mvn compile} once so the processor writes
+ * {@code target/classes/exeris-metadata/*.json}, after which every subsequent
+ * {@code mvn compile} picks that metadata up and generates sources. (In the
+ * steady state the generated tree is committed under {@code src/main/generated/},
+ * per the L1/L2 detachment story, so the compile source root carries content
+ * even on a from-scratch checkout.) A run that finds no metadata logs a warning
+ * and writes nothing — it is not an error.
  *
  * <p>This mojo is a thin Maven shell: all emission lives in
  * {@link CodegenPipeline} (in {@code exeris-codegen-java}). The
@@ -87,6 +94,10 @@ public class GenerateMojo extends AbstractMojo {
                     "Code generation failed (metadataDir=" + metadataDir + ")", e);
         }
 
+        // Registered unconditionally (not gated on a generated-file count): the
+        // committed generated tree from prior runs must be on the compile path
+        // even when THIS run wrote nothing (no new metadata, or steady-state
+        // regen of unchanged sources). An absent/empty root is harmless to Maven.
         if (addCompileSourceRoot && project != null) {
             project.addCompileSourceRoot(outputDir.getAbsolutePath());
             getLog().debug("Registered compile source root: " + outputDir);
