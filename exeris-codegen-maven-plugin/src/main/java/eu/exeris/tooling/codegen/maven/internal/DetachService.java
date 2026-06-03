@@ -1,4 +1,4 @@
-package eu.exeris.tooling.codegen.maven;
+package eu.exeris.tooling.codegen.maven.internal;
 
 import java.io.IOException;
 import java.nio.file.Files;
