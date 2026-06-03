@@ -195,17 +195,14 @@ public class KernelClientGenerator implements KernelArtifactGenerator {
     }
 
     private String buildApiPath(DomainMetadata metadata) {
-        String entityName = metadata.entityName();
-        String kebabName = toKebabCase(entityName);
-
         String apiVersion = metadata.apiVersion() != null ? metadata.apiVersion() : "v1";
-        String path = metadata.path() != null ? metadata.path() : "/" + kebabName + "s";
-
-        return "/api/" + apiVersion + path;
-    }
-
-    private String toKebabCase(String str) {
-        return str.replaceAll("([a-z])([A-Z])", "$1-$2").toLowerCase();
+        // effectivePath() is the SDK-canonical derivation shared by every other
+        // generator (OpenAPI, Application, DSL): explicit path, else "/" + kebab + "s".
+        // Reusing it fixes the previously-dead fallback (the Builder defaults path to
+        // "", so a hand-rolled `path() != null` guard never fired and a path-less
+        // entity emitted a useless /api/<ver> root client) and keeps the client's base
+        // path consistent with the rest of the generator suite.
+        return "/api/" + apiVersion + metadata.effectivePath();
     }
 
     @Override
