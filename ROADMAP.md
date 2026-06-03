@@ -33,11 +33,11 @@ This file tracks scope per milestone. Items marked `[ ]` are open; `[x]` shipped
 
 > Goal: `mvn exeris:generate` and `mvn exeris:detach` are first-class build steps in user apps.
 
-- [ ] `exeris-codegen-maven-plugin` module
-- [ ] `exeris:generate` — runs the codegen pipeline against current source set, writes to `src/main/generated/`
-- [ ] `exeris:detach` — promotes generated code to `src/main/java/`, removes it from `.gitignore`, drops the codegen invocation (L2 detachment level)
-- [ ] `exeris:reattach` — inverse; re-enables on-demand regen
-- [ ] Plugin uses Jackson 3 from day 1 (no `compile-testing` blocker — see SDK roadmap)
+- [x] `exeris-codegen-maven-plugin` module — `maven-plugin` packaging, reactor-wired; a thin Maven shell over `CodegenPipeline` (no emission logic). ASM override (9.9.x) on `maven-plugin-plugin` so the descriptor scanner reads Java 26 (class major 70) bytecode
+- [x] `exeris:generate` — bound to `generate-sources`; runs the pipeline against the processor-emitted `DomainMetadata` and writes to `src/main/generated/java`, registering it as a compile source root (`skip` / `addCompileSourceRoot` toggles)
+- [x] `exeris:detach` — promotes generated code to `src/main/java/`, prunes the emptied tree, strips the `.gitignore` entry (L2). Idempotent; never overwrites an owned file (conflicts reported, `failOnConflict` opt-in). Logic in a testable `DetachService`
+- [ ] `exeris:reattach` — inverse; re-enables on-demand regen. **Blocked on SDK 0.3.0** source-model round-trip (must re-derive `DomainMetadata` from owned `.java` to know what to regenerate)
+- [x] Plugin wraps the pipeline directly (Jackson 3 stays inside `codegen-java`; no `compile-testing` on the plugin classpath)
 
 ## 0.4.0 — codegen quality refactor
 
