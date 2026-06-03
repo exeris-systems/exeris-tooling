@@ -59,7 +59,27 @@ The first regen against ADR-015-migrated tooling will produce a one-time large d
 
 `KernelFlywayGenerator` was migrated to text blocks **with byte-equivalence preservation as an explicit requirement**. The golden-snapshot test (`KernelFlywayGeneratorTest`) pins this — for any of the eight metadata-flag combinations the tests cover, the SQL output is bit-for-bit identical to what 0.x emitted.
 
-If you see SQL diffs, please open an issue — that is a regression, not the expected migration shape.
+If you see SQL diffs in the migration **body**, please open an issue — that is a regression, not the expected migration shape.
+
+### Flyway migration filenames are now deterministic (one-time rename)
+
+The Flyway migration **filename** changed from a wall-clock version
+(`V<System.currentTimeMillis()>__create_<table>.sql`) to a deterministic one
+(`V<tier><fqn-hash>__create_<table>.sql`) so regeneration is byte-identical
+(hard-constraint #3). Tenant-scoped tables tier above unscoped ones, so the
+`tenants` table is always created before tables that `REFERENCES tenants(id)` —
+the `tenants` table is pinned to tier 1 regardless of its flags, so the ordering
+holds even if a `Tenant` entity is mistakenly marked tenant-scoped. (The
+within-tier discriminator is a 1,000,000-bucket FQN hash; at well under ~1,000
+entities per tier a collision is negligible, and would surface as a loud Flyway
+"more than one migration with version N" — rename a colliding class if it ever
+happens.)
+
+**One-time action for apps that committed generated migrations:** the first
+regen against this train writes the new deterministic filename and leaves the
+old timestamped file orphaned. Delete the old `V<digits>__create_*.sql` files in
+the same commit — otherwise Flyway sees two migrations for the same table. The
+SQL *content* is unchanged, so this is a rename, not a schema change.
 
 ---
 
@@ -71,7 +91,7 @@ If you see SQL diffs, please open an issue — that is a regression, not the exp
 | `DomainMetadata` AST (input to generators) | Unchanged |
 | Annotation processor (`exeris-processor`) output | Unchanged |
 | Runtime SPIs (`KernelBootstrap`, `EventStore`, `SagaEngine`, `Http3Router`) | Unchanged |
-| Generated SQL migrations | Byte-equivalent |
+| Generated SQL migration **body** | Byte-equivalent (the **filename** is now deterministic — see above) |
 | Generated OpenAPI YAML | Byte-equivalent (`KernelOpenApiGenerator` already used Swagger model objects + Jackson YAMLMapper — no migration needed) |
 | Generated TypeScript / Angular (`exeris-codegen-ts`) | Out of scope for ADR-015 |
 

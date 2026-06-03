@@ -49,7 +49,9 @@ class KernelFlywayGeneratorTest {
         assertThat(file.artifactType()).isEqualTo(ArtifactType.CONFIGURATION);
         assertThat(file.extension()).isEqualTo("sql");
         assertThat(file.packageName()).isEqualTo("db/migration");
-        assertThat(file.className()).matches("V\\d+__create_orders");
+        // Deterministic version (no wall-clock): tier 2 (tenant-scoped) + stable
+        // FQN hash. Exact filename is pinned — a regression on the scheme shows here.
+        assertThat(file.className()).isEqualTo("V2483095__create_orders");
         assertThat(file.content()).isEqualTo("""
                 -- Flyway migration: Create Order table
                 -- Generated from @ExerisDomain: eu.exeris.app.domain.Order
@@ -97,7 +99,8 @@ class KernelFlywayGeneratorTest {
 
         GeneratedFile file = generator.generate(metadata);
 
-        assertThat(file.className()).matches("V\\d+__create_tags");
+        // Tier 1 (not tenant-scoped) → sorts before any tenant-scoped table.
+        assertThat(file.className()).isEqualTo("V1024931__create_tags");
         // Trailing whitespace: the StringBuilder baseline emits `);\n\n` after
         // CREATE TABLE plus a `\n` from the (empty) indexes block — three
         // newlines after the closing `);`. Preserve that.
@@ -112,5 +115,56 @@ class KernelFlywayGeneratorTest {
 
 
                 """);
+    }
+
+    @Test
+    @DisplayName("Migration filename is deterministic — repeated generation is identical (no wall-clock)")
+    void filenameIsDeterministic() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "eu.exeris.app.domain")
+                .tenantScoped(true)
+                .fields(List.of(FieldMetadata.builder("orderNumber", "String").build()))
+                .build();
+
+        String first = generator.generate(metadata).className();
+        String second = generator.generate(metadata).className();
+
+        assertThat(first).isEqualTo(second);
+        // No epoch-millis timestamp (13+ digits) — guards against regressing to System.currentTimeMillis().
+        assertThat(first).doesNotMatch(".*\\d{13,}.*");
+    }
+
+    @Test
+    @DisplayName("Tenant-scoped tables version above unscoped ones, so the referenced tenants table is created first")
+    void tenantScopedSortsAfterReferencedTable() {
+        DomainMetadata scoped = DomainMetadata.builder("Order", "eu.exeris.app.domain")
+                .tenantScoped(true)
+                .fields(List.of(FieldMetadata.builder("x", "String").build()))
+                .build();
+        DomainMetadata tenants = DomainMetadata.builder("Tenant", "eu.exeris.app.domain")
+                .fields(List.of(FieldMetadata.builder("name", "String").build()))
+                .build();
+
+        long scopedVersion = versionNumber(generator.generate(scoped).className());
+        long tenantsVersion = versionNumber(generator.generate(tenants).className());
+
+        assertThat(tenantsVersion).isLessThan(scopedVersion);
+    }
+
+    @Test
+    @DisplayName("The tenants table stays tier 1 even if its entity is (mistakenly) marked tenant-scoped")
+    void tenantsTablePinnedToTierOne() {
+        DomainMetadata tenants = DomainMetadata.builder("Tenant", "eu.exeris.app.domain")
+                .tenantScoped(true) // user error: the FK target must still be created first
+                .fields(List.of(FieldMetadata.builder("name", "String").build()))
+                .build();
+
+        long version = versionNumber(generator.generate(tenants).className());
+
+        assertThat(version).isLessThan(2_000_000L); // tier 1
+    }
+
+    /** Extracts the numeric version from a {@code "V<n>__create_x"} filename. */
+    private static long versionNumber(String className) {
+        return Long.parseLong(className.substring(1, className.indexOf("__")));
     }
 }
