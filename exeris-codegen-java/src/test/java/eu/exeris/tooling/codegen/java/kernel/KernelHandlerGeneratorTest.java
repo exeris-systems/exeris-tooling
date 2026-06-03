@@ -49,7 +49,6 @@ class KernelHandlerGeneratorTest {
                 .contains("import eu.exeris.kernel.spi.http.HttpExchange")
                 .contains("import eu.exeris.kernel.spi.http.HttpStatus")
                 .contains("import eu.exeris.kernel.spi.memory.LoanedBuffer")
-                .contains("import tools.jackson.databind.ObjectMapper")
                 .contains("OrderService service")
                 .contains("handleGetAll(HttpExchange exchange)")
                 .contains("handleGetById(HttpExchange exchange)")
@@ -62,5 +61,38 @@ class KernelHandlerGeneratorTest {
                 .contains("HttpStatus.BAD_REQUEST")
                 .contains("HttpStatus.NOT_FOUND")
                 .contains("HttpStatus.INTERNAL_SERVER_ERROR");
+    }
+
+    @Test
+    @DisplayName("Request body decode resolves the ADR-036 SPI registry, not an inline Jackson MAPPER")
+    void shouldDecodeRequestBodyViaRequestBodyDecoderSpi() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .build();
+
+        GeneratedFile handler = strategy.generate(metadata).stream()
+                .filter(f -> f.artifactType() == ArtifactType.CONTROLLER)
+                .findFirst()
+                .orElseThrow();
+
+        assertThat(handler.content())
+                // ADR-036: request body decode resolves through the SPI registry …
+                .contains("import eu.exeris.kernel.spi.http.HttpRequestBodyDecoder")
+                .contains("import eu.exeris.kernel.spi.http.HttpRequestBodyDecoderRegistry")
+                .contains("import eu.exeris.kernel.spi.http.HttpRequestDecodingContext")
+                .contains("import eu.exeris.kernel.spi.http.HttpKernelProviders")
+                .contains("import eu.exeris.kernel.spi.context.KernelProviders")
+                .contains("httpRequestBodyDecoderRegistry()")
+                .contains("registry.resolve(type, contentType)")
+                .contains("decoder.decode(body, type, context)")
+                .contains("firstHeader(\"content-type\")")
+                // … and the decoder consumes the LoanedBuffer directly — no byte[]/String round-trip.
+                .doesNotContain("new String(")
+                .doesNotContain("MemorySegment.copy");
+        // The Wall: no concrete Jackson type may be baked into generated application source.
+        assertThat(handler.content())
+                .doesNotContain("tools.jackson")
+                .doesNotContain("ObjectMapper")
+                .doesNotContain("MAPPER");
     }
 }
