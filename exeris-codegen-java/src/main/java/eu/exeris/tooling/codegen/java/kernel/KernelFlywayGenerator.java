@@ -51,7 +51,7 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
     @Override
     public GeneratedFile generate(DomainMetadata metadata) {
         String tableName = toSnakeCase(metadata.entityName()) + "s";
-        String version = "V" + System.currentTimeMillis() + "__create_" + tableName;
+        String version = migrationVersion(metadata) + "__create_" + tableName;
 
         String header = """
                 -- Flyway migration: Create %s table
@@ -69,6 +69,20 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
 
         String sql = header + createTable + indexes + rls;
         return new GeneratedFile("db/migration", version, sql, ArtifactType.CONFIGURATION, "sql");
+    }
+
+    /**
+     * Deterministic Flyway version — no wall-clock (hard-constraint #3): same
+     * {@code DomainMetadata} → same filename. Tenant-scoped tables (which emit a
+     * {@code REFERENCES tenants(id)} FK) tier above unscoped ones so the
+     * {@code tenants} table is always created first; within a tier the order is a
+     * stable hash of the fully-qualified name. The tenant FK is the only
+     * cross-table reference this generator emits, so a two-tier scheme suffices.
+     */
+    private static String migrationVersion(DomainMetadata metadata) {
+        long tier = metadata.tenantScoped() ? 2L : 1L;
+        long discriminator = Math.floorMod(metadata.fullyQualifiedName().hashCode(), 1_000_000);
+        return "V" + (tier * 1_000_000L + discriminator);
     }
 
     private List<String> buildColumns(DomainMetadata metadata) {
