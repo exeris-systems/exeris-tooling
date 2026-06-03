@@ -81,13 +81,9 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
 
         for (FieldMetadata field : metadata.fields()) {
             if (isSystemField(field.name())) continue;
-            StringBuilder col = new StringBuilder("    ")
-                    .append(toSnakeCase(field.name()))
-                    .append(' ')
-                    .append(mapJavaTypeToSql(field.type()));
-            if (field.required()) col.append(" NOT NULL");
-            if (field.unique()) col.append(" UNIQUE");
-            columns.add(col.toString());
+            columns.add("    " + toSnakeCase(field.name()) + " " + mapJavaTypeToSql(field.type())
+                    + (field.required() ? " NOT NULL" : "")
+                    + (field.unique() ? " UNIQUE" : ""));
         }
 
         if (metadata.audited()) {
