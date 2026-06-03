@@ -532,14 +532,13 @@ describe('generateStore — top-level convenience function (unique THROW-on-hidd
       .toThrow(/Failed to generate store for Audit/);
   });
 
-  it('hardcodes backend = "KERNEL" inside the convenience context (does NOT read from config)', () => {
-    // The other angular convenience functions read config.backend with
-    // a KERNEL fallback; generateStore IGNORES config.backend entirely
-    // and always passes 'KERNEL' to the GeneratorContext. Test that the
-    // call succeeds regardless of what backend the caller passes.
+  it('hardcodes backend = "KERNEL" inside the convenience context', () => {
+    // generateStore always passes 'KERNEL' to the GeneratorContext rather
+    // than threading config.backend. Under kernel-target-only there is only
+    // one valid backend; this confirms the convenience path emits.
     const file = generateStore(
       domain({ entityName: 'Order' }),
-      { ...CTX.config, backend: 'SPRING' },
+      { ...CTX.config, backend: 'KERNEL' },
     );
     expect(file.path).toBe('stores/order.store.ts');
   });

@@ -490,13 +490,13 @@ describe('generateSaga — top-level convenience function', () => {
     expect(generateSaga(domain({ entityName: 'Order' }), CTX.config)).toBeNull();
   });
 
-  it('hardcodes backend "KERNEL" inside the convenience context (does NOT read config.backend)', () => {
+  it('hardcodes backend "KERNEL" inside the convenience context', () => {
     const file = generateSaga(
       domain({
         entityName: 'Order',
         sagaMetadata: { name: 'OrderSaga', steps: [] },
       }),
-      { ...CTX.config, backend: 'SPRING' },
+      { ...CTX.config, backend: 'KERNEL' },
     );
 
     expect(file).not.toBeNull();

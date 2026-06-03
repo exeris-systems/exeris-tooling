@@ -25,6 +25,7 @@ import {
   type GeneratedFile,
   type GeneratorContext,
 } from '../../src/core/generator-registry.js';
+import type { BackendType } from '../../src/core/backend-strategy.js';
 import type { DomainMetadata } from '../../src/models/domain-model.js';
 
 // ---------- fixtures ----------
@@ -65,7 +66,11 @@ function makeFile(path: string, artifactType: ArtifactType, overwritable = true)
 }
 
 const CTX_KERNEL: GeneratorContext = createGeneratorContext({ backend: 'KERNEL' });
-const CTX_SPRING: GeneratorContext = createGeneratorContext({ backend: 'SPRING' });
+
+// A backend value other than the single supported 'KERNEL' — only reachable by
+// bypassing the type (e.g. a stale serialized config). Used to exercise the
+// negative branch of the registry's supportedBackends filter.
+const NON_KERNEL = 'LEGACY' as unknown as BackendType;
 
 // ---------- register / count / clear ----------
 
@@ -121,17 +126,23 @@ describe('GeneratorRegistry.getGenerators — backend filter + priority sort', (
     reg.register(g);
 
     expect(reg.getGenerators('KERNEL')).toEqual([g]);
-    expect(reg.getGenerators('SPRING')).toEqual([g]);
-    expect(reg.getGenerators('VANILLA')).toEqual([g]);
+  });
+
+  it('returns generators whose supportedBackends explicitly lists KERNEL', () => {
+    const reg = new GeneratorRegistry();
+    const g = makeGenerator({ name: 'kernel-only', artifactType: 'TYPE', supportedBackends: ['KERNEL'] });
+    reg.register(g);
+
+    expect(reg.getGenerators('KERNEL')).toEqual([g]);
   });
 
   it('filters out generators whose supportedBackends does not include the requested backend', () => {
     const reg = new GeneratorRegistry();
     reg.register(makeGenerator({ name: 'kernel-only', artifactType: 'TYPE', supportedBackends: ['KERNEL'] }));
-    reg.register(makeGenerator({ name: 'spring-only', artifactType: 'SERVICE', supportedBackends: ['SPRING'] }));
+    reg.register(makeGenerator({ name: 'legacy-only', artifactType: 'SERVICE', supportedBackends: [NON_KERNEL] }));
 
+    // Only the KERNEL generator survives the filter for a KERNEL request.
     expect(reg.getGenerators('KERNEL').map(g => g.name)).toEqual(['kernel-only']);
-    expect(reg.getGenerators('SPRING').map(g => g.name)).toEqual(['spring-only']);
   });
 
   it('sorts generators by priority ascending (lower runs first); default priority is 10', () => {
@@ -219,13 +230,13 @@ describe('GeneratorRegistry.generateForDomain', () => {
   it('does not run generators that fail the backend filter', () => {
     const reg = new GeneratorRegistry();
     reg.register(makeGenerator({
-      name: 'spring-only',
+      name: 'legacy-only',
       artifactType: 'TYPE',
-      supportedBackends: ['SPRING'],
+      supportedBackends: [NON_KERNEL],
       generateReturns: makeFile('would-fire.ts', 'TYPE'),
     }));
 
-    // Backend = KERNEL → spring-only must not even be invoked, so no file emitted.
+    // Backend = KERNEL → legacy-only must not even be invoked, so no file emitted.
     expect(reg.generateForDomain(FAKE_DOMAIN, CTX_KERNEL)).toEqual([]);
   });
 });
@@ -317,7 +328,7 @@ describe('createGeneratorContext — default-fill behaviour', () => {
 
   it('explicit overrides win over defaults; backend prop mirrors config.backend', () => {
     const ctx = createGeneratorContext({
-      backend: 'SPRING',
+      backend: 'KERNEL',
       framework: 'react',
       styling: 'material',
       apiBasePath: '/v2/api',
@@ -326,8 +337,8 @@ describe('createGeneratorContext — default-fill behaviour', () => {
       verbose: true,
     });
 
-    expect(ctx.config.backend).toBe('SPRING');
-    expect(ctx.backend).toBe('SPRING');
+    expect(ctx.config.backend).toBe('KERNEL');
+    expect(ctx.backend).toBe('KERNEL');
     expect(ctx.config.framework).toBe('react');
     expect(ctx.config.styling).toBe('material');
     expect(ctx.config.apiBasePath).toBe('/v2/api');
