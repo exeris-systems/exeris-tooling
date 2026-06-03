@@ -9,40 +9,33 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Smoke tests for {@link KernelClientGenerator}.
+ * Contract tests for {@link KernelClientGenerator}.
  *
- * <p>This generator is <b>parked</b> — it is intentionally NOT registered
- * by {@link KernelGeneratorStrategy}. The current emission template
- * targets a higher-level {@code .get(path, T.class)} / {@code .post(path,
- * body, T.class)} client surface that does not exist in the kernel
- * 0.8.0-SNAPSHOT SPI. What actually ships there is
- * {@code HttpClientEngine.send(HttpRequest) → HttpResponse} — both records
- * with raw {@code LoanedBuffer} bodies. The entity-decoding / URL-
- * templating / body-encoding / status-mapping bits that the template
- * assumes are not provided by any SPI type today.
+ * <p>This generator is <b>registered</b> by {@link KernelGeneratorStrategy}.
+ * It emits a typed service-to-service HTTP client that binds against the
+ * tier-neutral {@code KernelWebClient} facade in
+ * {@code eu.exeris.kernel.core.http.client} (ADR-034). The facade exposes the
+ * entity-typed convenience verbs the generator targets
+ * ({@code get/post/patch/delete(path, [body,] Class<T>)}), so no tooling-side
+ * {@code HttpEntityCodec} collaborator is required — see the
+ * {@link KernelGeneratorStrategy} Javadoc for the unpark rationale.
  *
- * <p>Unparking is blocked on either a higher-level convenience SPI
- * shipping upstream OR a designed {@code HttpEntityCodec<T>} collaborator
- * in this repo. ADR-034 landed the tier-neutral {@code KernelWebClient}
- * facade in {@code eu.exeris.kernel.core.http.client} (kernel-side); the
- * generator now targets that FQN. See {@link KernelGeneratorStrategy}'s
- * parked-section Javadoc for the full rationale and the PR #60 thread
- * for the original diagnostic trail that revealed the
- * {@code CommunityWebClient}-binding assumption was wrong.
- *
- * <p>What we lock here is therefore minimal:
+ * <p>What we lock here:
  * <ul>
- *   <li>The generator can be instantiated and {@code generate()} returns
- *       a non-null {@link GeneratedFile} with the right artifact type
- *       and package/class naming derived from the domain metadata.</li>
- *   <li>The {@code apiPath} build path is exercised on both the
- *       explicit-{@code path()} branch and the kebab-case fallback.</li>
+ *   <li>artifact type {@code CLIENT}, package/class naming, and the
+ *       {@code apiPath} build (explicit-{@code path()} branch + apiVersion
+ *       override);</li>
+ *   <li>the emitted CRUD verb surface ({@code client.get/post/patch/delete})
+ *       and the {@code 404 → Optional.empty()} mapping via
+ *       {@code WebClientException.isNotFound()};</li>
+ *   <li>the ADR-034 binding target FQN (regression pin).</li>
  * </ul>
  *
- * <p>A richer contract test moves in alongside the SPI client rewrite,
- * when whichever of the two unblocking paths above is taken.
+ * <p>The compile gate ({@code KernelCodegenCompileTest}) additionally proves
+ * the emitted client {@code javac}-compiles against the {@code KernelWebClient}
+ * surface; this class pins the emission shape.
  */
-@DisplayName("KernelClientGenerator (parked)")
+@DisplayName("KernelClientGenerator")
 class KernelClientGeneratorTest {
 
     private final KernelClientGenerator generator = new KernelClientGenerator();
@@ -118,5 +111,39 @@ class KernelClientGeneratorTest {
         GeneratedFile file = generator.generate(metadata);
 
         assertThat(file.content()).contains("\"/api/v2/orders\"");
+    }
+
+    @Test
+    @DisplayName("emits the KernelWebClient CRUD verb surface (get/post/patch/delete) with typed Class<T> args")
+    void generateEmitsTypedVerbSurface() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .build();
+
+        GeneratedFile file = generator.generate(metadata);
+
+        assertThat(file.content())
+                .contains("client.get(BASE_PATH + \"/\" + id, Order.class)")
+                .contains("client.post(BASE_PATH, entity, Order.class)")
+                .contains("client.patch(BASE_PATH + \"/\" + id, entity, Order.class)")
+                .contains("client.delete(BASE_PATH + \"/\" + id, Void.class)");
+    }
+
+    @Test
+    @DisplayName("findById maps a 404 to Optional.empty() via WebClientException.isNotFound()")
+    void generateMapsNotFoundToEmpty() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .build();
+
+        GeneratedFile file = generator.generate(metadata);
+
+        // The findById body wraps the typed GET in a try/catch that converts a
+        // 404 into Optional.empty() and rethrows any other WebClientException.
+        assertThat(file.content())
+                .contains("Optional.ofNullable(client.get(BASE_PATH + \"/\" + id, Order.class))")
+                .contains("catch (KernelWebClient.WebClientException e)")
+                .contains("if (e.isNotFound())")
+                .contains("return Optional.empty()");
     }
 }

@@ -26,13 +26,16 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@link KernelCodegenE2ETest} cannot catch broken imports or referenced symbols
  * that no longer exist — this test does.
  *
- * <p>The strategy currently registers the SPI-aligned subset: Handler,
- * Service, Repository, Event, EventHandler, GraphSync, Saga, Flyway,
- * OpenAPI. Generated Java imports {@code eu.exeris.kernel.spi.http.*},
+ * <p>The strategy registers: Handler, Service, Repository, Event,
+ * EventHandler, GraphSync, Saga, Flyway, OpenAPI, Client. Generated Java
+ * imports {@code eu.exeris.kernel.spi.http.*},
  * {@code eu.exeris.kernel.spi.memory.*}, {@code eu.exeris.kernel.spi.events.*},
  * {@code eu.exeris.kernel.spi.graph.*}, and {@code eu.exeris.kernel.spi.flow.*};
  * the real {@code exeris-kernel-spi:0.7.0} artifact (plus Jackson 3) is on
- * the test classpath via {@code exeris-tooling-bom}.
+ * the test classpath via {@code exeris-tooling-bom}. The emitted {@code *Client}
+ * binds the tier-neutral {@code eu.exeris.kernel.core.http.client.KernelWebClient}
+ * facade (ADR-034), stood in at that FQN by a test stub in this module so the
+ * gate compiles without pulling kernel-core.
  */
 @Tag("e2e")
 @Tag("codegen")
@@ -44,7 +47,7 @@ class KernelCodegenCompileTest {
     private static final String ENTITY_NAME = "Order";
 
     @Test
-    @DisplayName("Generated kernel artifacts compile (SPI-aligned subset)")
+    @DisplayName("Generated kernel artifacts compile (full registered set incl. Client)")
     void generatedArtifactsCompile() {
         DomainMetadata metadata = DomainMetadata.builder(ENTITY_NAME, DOMAIN_PACKAGE)
                 .path("/orders")
