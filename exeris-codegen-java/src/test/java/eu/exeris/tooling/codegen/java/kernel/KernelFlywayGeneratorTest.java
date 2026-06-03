@@ -150,6 +150,19 @@ class KernelFlywayGeneratorTest {
         assertThat(tenantsVersion).isLessThan(scopedVersion);
     }
 
+    @Test
+    @DisplayName("The tenants table stays tier 1 even if its entity is (mistakenly) marked tenant-scoped")
+    void tenantsTablePinnedToTierOne() {
+        DomainMetadata tenants = DomainMetadata.builder("Tenant", "eu.exeris.app.domain")
+                .tenantScoped(true) // user error: the FK target must still be created first
+                .fields(List.of(FieldMetadata.builder("name", "String").build()))
+                .build();
+
+        long version = versionNumber(generator.generate(tenants).className());
+
+        assertThat(version).isLessThan(2_000_000L); // tier 1
+    }
+
     /** Extracts the numeric version from a {@code "V<n>__create_x"} filename. */
     private static long versionNumber(String className) {
         return Long.parseLong(className.substring(1, className.indexOf("__")));

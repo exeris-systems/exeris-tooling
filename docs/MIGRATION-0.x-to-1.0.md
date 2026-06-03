@@ -67,7 +67,13 @@ The Flyway migration **filename** changed from a wall-clock version
 (`V<System.currentTimeMillis()>__create_<table>.sql`) to a deterministic one
 (`V<tier><fqn-hash>__create_<table>.sql`) so regeneration is byte-identical
 (hard-constraint #3). Tenant-scoped tables tier above unscoped ones, so the
-`tenants` table is always created before tables that `REFERENCES tenants(id)`.
+`tenants` table is always created before tables that `REFERENCES tenants(id)` —
+the `tenants` table is pinned to tier 1 regardless of its flags, so the ordering
+holds even if a `Tenant` entity is mistakenly marked tenant-scoped. (The
+within-tier discriminator is a 1,000,000-bucket FQN hash; at well under ~1,000
+entities per tier a collision is negligible, and would surface as a loud Flyway
+"more than one migration with version N" — rename a colliding class if it ever
+happens.)
 
 **One-time action for apps that committed generated migrations:** the first
 regen against this train writes the new deterministic filename and leaves the

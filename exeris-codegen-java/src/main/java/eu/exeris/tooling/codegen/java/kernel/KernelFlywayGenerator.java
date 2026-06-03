@@ -51,7 +51,7 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
     @Override
     public GeneratedFile generate(DomainMetadata metadata) {
         String tableName = toSnakeCase(metadata.entityName()) + "s";
-        String version = migrationVersion(metadata) + "__create_" + tableName;
+        String version = migrationVersion(metadata, tableName) + "__create_" + tableName;
 
         String header = """
                 -- Flyway migration: Create %s table
@@ -74,13 +74,21 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
     /**
      * Deterministic Flyway version — no wall-clock (hard-constraint #3): same
      * {@code DomainMetadata} → same filename. Tenant-scoped tables (which emit a
-     * {@code REFERENCES tenants(id)} FK) tier above unscoped ones so the
-     * {@code tenants} table is always created first; within a tier the order is a
-     * stable hash of the fully-qualified name. The tenant FK is the only
-     * cross-table reference this generator emits, so a two-tier scheme suffices.
+     * {@code REFERENCES tenants(id)} FK) tier above unscoped ones so the referenced
+     * table is created first; within a tier the order is a stable FQN hash. The
+     * tenant FK is the only cross-table reference this generator emits, so a
+     * two-tier scheme suffices. The {@code tenants} table itself is pinned to tier 1
+     * regardless of its flags, so the guarantee holds even if a {@code Tenant}
+     * entity is (mistakenly) marked tenant-scoped.
+     *
+     * <p><b>Collision:</b> the discriminator space is 1,000,000 per tier. For
+     * realistic models (far fewer than ~1,000 entities per tier) collisions are
+     * negligible; if two FQNs ever collide, Flyway fails loudly with "Found more
+     * than one migration with version N" — rename one of the colliding Java classes.
      */
-    private static String migrationVersion(DomainMetadata metadata) {
-        long tier = metadata.tenantScoped() ? 2L : 1L;
+    private static String migrationVersion(DomainMetadata metadata, String tableName) {
+        boolean scoped = metadata.tenantScoped() && !"tenants".equals(tableName);
+        long tier = scoped ? 2L : 1L;
         long discriminator = Math.floorMod(metadata.fullyQualifiedName().hashCode(), 1_000_000);
         return "V" + (tier * 1_000_000L + discriminator);
     }
