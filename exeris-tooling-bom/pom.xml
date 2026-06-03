@@ -17,7 +17,7 @@
 
     <properties>
         <exeris.sdk.version>0.1.0-SNAPSHOT</exeris.sdk.version>
-        <exeris.kernel.version>0.7.0</exeris.kernel.version>
+        <exeris.kernel.version>0.8.0</exeris.kernel.version>
 
         <auto-service.version>1.1.1</auto-service.version>
         <palantir.javapoet.version>0.15.0</palantir.javapoet.version>
@@ -118,9 +118,13 @@
             </dependency>
 
             <!-- Jackson 3 (tools.jackson) — test-scoped: codegen compile-test
-                 verifies emitted handlers' tools.jackson.* references resolve
-                 against the same Jackson 3 line the Open-Core kernel runtime
-                 uses. Not pulled by production tooling modules. -->
+                 verifies emitted repositories' tools.jackson.* references
+                 (List<X> JSON-column persistence via ObjectMapper / TypeReference,
+                 see KernelRepositoryGenerator) resolve against the same Jackson 3
+                 line the Open-Core kernel runtime uses. Handlers no longer
+                 reference it — ADR-036 moved request-body decode to the
+                 HttpRequestBodyDecoder SPI. Not pulled by production tooling
+                 modules. -->
             <dependency>
                 <groupId>tools.jackson.core</groupId>
                 <artifactId>jackson-databind</artifactId>
