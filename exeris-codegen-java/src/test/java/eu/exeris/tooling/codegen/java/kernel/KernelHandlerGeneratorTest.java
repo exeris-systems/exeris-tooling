@@ -86,7 +86,11 @@ class KernelHandlerGeneratorTest {
                 .contains("registry.resolve(type, contentType)")
                 .contains("decoder.decode(body, type, context)")
                 .contains("firstHeader(\"content-type\")")
-                // … and the decoder consumes the LoanedBuffer directly — no byte[]/String round-trip.
+                // … hands the decoder the LoanedBuffer + a fresh decoding context …
+                .contains("exchange.request().hasBody()")
+                .contains("new HttpRequestDecodingContext(")
+                .contains("KernelProviders.MEMORY_ALLOCATOR.get()")
+                // … and consumes the LoanedBuffer directly — no byte[]/String round-trip.
                 .doesNotContain("new String(")
                 .doesNotContain("MemorySegment.copy");
         // The Wall: no concrete Jackson type may be baked into generated application source.
@@ -94,5 +98,38 @@ class KernelHandlerGeneratorTest {
                 .doesNotContain("tools.jackson")
                 .doesNotContain("ObjectMapper")
                 .doesNotContain("MAPPER");
+    }
+
+    @Test
+    @DisplayName("parseBody guards resolve/decode in one try; 5xx (IllegalState) re-thrown, only decode failures map to 400 (ADR-036 §2)")
+    void shouldPreserveStatusMappingAcrossResolveAndDecode() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .build();
+
+        String handler = strategy.generate(metadata).stream()
+                .filter(f -> f.artifactType() == ArtifactType.CONTROLLER)
+                .findFirst()
+                .orElseThrow()
+                .content();
+
+        // Blocker fix: registry.resolve + context construction + decode are all inside
+        // the same try, so a resolve-time RuntimeException cannot escape parseBody
+        // unmapped. The IllegalStateException catch re-throws unchanged so the
+        // intentional 5xx mappings (unbound registry / unregistered decoder) are NOT
+        // downgraded to 400; everything else becomes a 400 IllegalArgumentException.
+        assertThat(handler)
+                .contains("catch (IllegalStateException e)")
+                .contains("throw e;")
+                .contains("catch (RuntimeException e)")
+                .contains("throw new IllegalArgumentException(\"Invalid request body\", e)")
+                // resolve sits ABOVE the IllegalState re-throw, i.e. inside the guarded try
+                .containsSubsequence(
+                        "registry.resolve(type, contentType)",
+                        "catch (IllegalStateException e)",
+                        "throw e;",
+                        "catch (RuntimeException e)");
+        // null content-type renders a friendly token in the unresolved-decoder message.
+        assertThat(handler).contains("contentType != null ? contentType : \"(absent)\"");
     }
 }

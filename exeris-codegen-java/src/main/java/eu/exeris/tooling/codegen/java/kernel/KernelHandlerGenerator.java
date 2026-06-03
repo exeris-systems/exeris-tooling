@@ -272,16 +272,26 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                 .addJavadoc("{@link eu.exeris.kernel.spi.http.HttpRequest} contract, the body is owned by\n")
                 .addJavadoc("the transport/codec and released when the exchange ends — neither this\n")
                 .addJavadoc("method nor the decoder closes it.\n")
-                .addJavadoc("<p>Status mapping is the handler's concern, not the SPI's: a decode\n")
-                .addJavadoc("failure surfaces as {@link IllegalArgumentException} (the call sites map it\n")
-                .addJavadoc("to {@code 400 BAD_REQUEST}); an unregistered decoder surfaces as\n")
-                .addJavadoc("{@link IllegalStateException} (a server-side configuration error).\n")
+                .addJavadoc("<p>Status mapping is the handler's concern, not the SPI's (ADR-036 §2):\n")
+                .addJavadoc("a decode failure — or any failure resolving/constructing the decode —\n")
+                .addJavadoc("surfaces as {@link IllegalArgumentException} (the call sites map it to\n")
+                .addJavadoc("{@code 400 BAD_REQUEST}); an unbound registry or unregistered decoder\n")
+                .addJavadoc("surfaces as {@link IllegalStateException} (a server-side configuration\n")
+                .addJavadoc("error → {@code 5xx}) and is re-thrown unchanged, never downgraded to 400.\n")
                 .beginControlFlow("if (!exchange.request().hasBody())")
                 .addStatement("throw new $T($S)", ILLEGAL_ARGUMENT_EXCEPTION, "Missing body")
                 .endControlFlow()
                 .addStatement("$T body = exchange.request().body()", LOANED_BUFFER)
                 .addStatement("String contentType = exchange.request().firstHeader($S).orElse(null)",
                         "content-type")
+                // Decoder resolution, context construction, and decode all run inside
+                // one try so a RuntimeException from ANY of them (e.g. registry.resolve
+                // on a hostile content-type, or the allocator) maps to BAD_REQUEST at
+                // the call site rather than escaping parseBody unhandled. The
+                // IllegalStateException catch re-throws unchanged so the intentional
+                // 5xx mappings (unbound registry, unregistered decoder) survive per
+                // ADR-036 §2 — they must NOT be downgraded to 400.
+                .beginControlFlow("try")
                 .addStatement("$T registry = $T.httpRequestBodyDecoderRegistry()\n"
                                 + ".orElseThrow(() -> new $T($S))",
                         HTTP_REQUEST_BODY_DECODER_REGISTRY, HTTP_KERNEL_PROVIDERS,
@@ -289,16 +299,17 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                         "No HttpRequestBodyDecoderRegistry is bound; cannot decode the request body")
                 .addStatement("$T decoder = registry.resolve(type, contentType)", HTTP_REQUEST_BODY_DECODER)
                 .beginControlFlow("if (decoder == null)")
-                .addStatement("throw new $T($S + type.getName() + $S + contentType)",
+                .addStatement("throw new $T($S + type.getName() + $S + (contentType != null ? contentType : $S))",
                         ILLEGAL_STATE_EXCEPTION,
-                        "No request body decoder registered for target type ", " and content-type ")
+                        "No request body decoder registered for target type ", " and content-type ", "(absent)")
                 .endControlFlow()
                 .addStatement("$T context = new $T(exchange.request().method(), "
                                 + "exchange.request().path(), exchange.request().headers(), "
                                 + "$T.MEMORY_ALLOCATOR.get())",
                         HTTP_REQUEST_DECODING_CONTEXT, HTTP_REQUEST_DECODING_CONTEXT, KERNEL_PROVIDERS)
-                .beginControlFlow("try")
                 .addStatement("return ($T) decoder.decode(body, type, context)", tVar)
+                .nextControlFlow("catch ($T e)", ILLEGAL_STATE_EXCEPTION)
+                .addStatement("throw e")
                 .nextControlFlow("catch ($T e)", RUNTIME_EXCEPTION)
                 .addStatement("throw new $T($S, e)", ILLEGAL_ARGUMENT_EXCEPTION, "Invalid request body")
                 .endControlFlow()
