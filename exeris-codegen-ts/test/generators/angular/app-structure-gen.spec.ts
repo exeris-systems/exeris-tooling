@@ -322,13 +322,6 @@ describe('generateAppStructure — resolveApiSettings', () => {
     const env = fileAt(files, 'src/environments/environment.ts')!;
     expect(env.content).toContain("apiVersion: 'v1'");
   });
-
-  it('SPRING backend also lands on /api + v1 (sanity check across strategies)', () => {
-    const files = generateAppStructure([], [], cfg({ backend: 'SPRING', apiBasePath: '' }));
-    const env = fileAt(files, 'src/environments/environment.ts')!;
-    expect(env.content).toContain("apiUrl: '/api'");
-    expect(env.content).toContain("apiVersion: 'v1'");
-  });
 });
 
 // ---------- hidden-domain skip-skip ----------

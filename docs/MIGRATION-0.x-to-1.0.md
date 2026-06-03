@@ -116,6 +116,43 @@ The facade is **tier-neutral by design** — the name no longer encodes a Commun
 
 ---
 
+## `exeris-codegen-ts` — single-target collapse (kernel-only)
+
+The TypeScript emitter dropped the residual multi-backend abstraction so it
+matches the Java side's single-target story (hard-constraint #1: Exeris kernel
+only). This narrows the package's published surface (`exeris-codegen-ts`
+re-exports `./core/backend-strategy` via `src/core/index.ts`).
+
+**Breaking (pre-1.0, semver-permitted at 0.x):**
+
+| Removed / narrowed export | Change |
+|---|---|
+| `BackendType` | Narrowed from `'KERNEL' \| 'SPRING' \| 'QUARKUS' \| 'MICRONAUT' \| 'VANILLA'` to `'KERNEL'` |
+| `SpringStrategy` | Class removed |
+| `QuarkusStrategy` | Class removed |
+| `MicronautStrategy` | Class removed |
+| `VanillaStrategy` | Class removed |
+
+**Who is affected**
+
+- **Config files / scripts** that set `"backend": "SPRING"` (or another
+  non-kernel value) in `exeris-codegen.json`, or pass `--backend SPRING` on the
+  CLI: the zod config parse now **throws** on the next run
+  (`Invalid enum value. Expected 'KERNEL', received 'SPRING'`) rather than
+  silently ignoring it. Remove the `backend` key (the default is `'KERNEL'`) or
+  set it explicitly to `'KERNEL'`.
+- **Code importing the removed strategy classes / non-kernel `BackendType`
+  members** from `@exeris/codegen-ts`: drop the import — only `KernelStrategy`
+  remains, and it is auto-registered.
+
+**What does NOT change**
+
+The `BackendStrategy` interface, the strategy registry, and the
+`backend` / `supportedBackends` plumbing remain (now single-valued); generated
+Angular/TypeScript output is byte-identical for the kernel target.
+
+---
+
 ## Reference
 
 - [ADR-015 — Codegen emission strategy](adr/ADR-015-codegen-emission-strategy.md)
