@@ -81,13 +81,13 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
 
         for (FieldMetadata field : metadata.fields()) {
             if (isSystemField(field.name())) continue;
-            StringBuilder col = new StringBuilder("    ")
-                    .append(toSnakeCase(field.name()))
-                    .append(' ')
-                    .append(mapJavaTypeToSql(field.type()));
-            if (field.required()) col.append(" NOT NULL");
-            if (field.unique()) col.append(" UNIQUE");
-            columns.add(col.toString());
+            // Plain concatenation (not StringBuilder) keeps this in step with the
+            // literal columns.add("…") rows above/below and removes the last
+            // StringBuilder from the SQL emission path (ADR-015 0.4.0). Byte-output
+            // is unchanged — pinned by KernelFlywayGeneratorTest's golden snapshots.
+            columns.add("    " + toSnakeCase(field.name()) + " " + mapJavaTypeToSql(field.type())
+                    + (field.required() ? " NOT NULL" : "")
+                    + (field.unique() ? " UNIQUE" : ""));
         }
 
         if (metadata.audited()) {
