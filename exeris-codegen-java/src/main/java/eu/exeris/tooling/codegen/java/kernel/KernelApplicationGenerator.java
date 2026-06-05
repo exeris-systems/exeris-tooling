@@ -312,9 +312,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
         for (DomainMetadata domain : domains) {
             String entity = domain.entityName();
             String entityLower = lowerFirst(entity);
-            String basePath = domain.effectivePath() != null
-                    ? domain.effectivePath()
-                    : "/" + entityLower + "s";
+            String basePath = domain.effectivePath();
             method.addStatement("routerBuilder.route($T.GET, $S, $LHandler::handleGetAll)",
                     HTTP_METHOD, basePath, entityLower);
             method.addStatement("routerBuilder.route($T.GET, $S, $LHandler::handleGetById)",
