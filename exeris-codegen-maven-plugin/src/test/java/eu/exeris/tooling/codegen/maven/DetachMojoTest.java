@@ -2,6 +2,8 @@ package eu.exeris.tooling.codegen.maven;
 
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
+import eu.exeris.tooling.codegen.maven.internal.DetachResult;
+import eu.exeris.tooling.codegen.maven.internal.DetachService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;

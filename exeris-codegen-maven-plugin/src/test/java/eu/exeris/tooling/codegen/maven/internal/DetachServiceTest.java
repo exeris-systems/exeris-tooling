@@ -1,4 +1,4 @@
-package eu.exeris.tooling.codegen.maven;
+package eu.exeris.tooling.codegen.maven.internal;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

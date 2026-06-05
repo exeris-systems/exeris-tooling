@@ -1,4 +1,4 @@
-package eu.exeris.tooling.codegen.maven;
+package eu.exeris.tooling.codegen.maven.internal;
 
 import java.nio.file.Path;
 import java.util.List;
