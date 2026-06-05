@@ -126,115 +126,95 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
     }
 
     private MethodSpec buildHandleGetAll(String entityLower, TypeName listOfEntity) {
-        return MethodSpec.methodBuilder("handleGetAll")
-                .addModifiers(Modifier.PUBLIC)
-                .addParameter(HTTP_EXCHANGE, "exchange")
+        MethodSpec.Builder method = crudHandler("handleGetAll")
                 .beginControlFlow("try")
                 .addStatement("$T entities = service.findAll()", listOfEntity)
-                .addStatement("exchange.respond($T.OK, entities)", HTTP_STATUS)
-                .nextControlFlow("catch ($T e)", RUNTIME_EXCEPTION)
-                .addStatement("LOG.error($S, e)", "Failed to get all " + entityLower + "s")
-                .addStatement("exchange.respond($T.INTERNAL_SERVER_ERROR)", HTTP_STATUS)
-                .endControlFlow()
-                .build();
+                .addStatement("exchange.respond($T.OK, entities)", HTTP_STATUS);
+        return appendServerErrorCatch(method, "Failed to get all " + entityLower + "s").build();
     }
 
     private MethodSpec buildHandleGetById(String entityLower, TypeName optionalOfEntity) {
-        return MethodSpec.methodBuilder("handleGetById")
-                .addModifiers(Modifier.PUBLIC)
-                .addParameter(HTTP_EXCHANGE, "exchange")
-                .addStatement("String idStr = extractPathId(exchange)")
-                .addStatement("$T id", UUID)
-                .beginControlFlow("try")
-                .addStatement("id = $T.fromString(idStr)", UUID)
-                .nextControlFlow("catch ($T e)", ILLEGAL_ARGUMENT_EXCEPTION)
-                .addStatement("exchange.respond($T.BAD_REQUEST)", HTTP_STATUS)
-                .addStatement("return")
-                .endControlFlow()
-                .beginControlFlow("try")
+        MethodSpec.Builder method = crudHandler("handleGetById");
+        appendPathIdGuard(method);
+        method.beginControlFlow("try")
                 .addStatement("$T result = service.findById(id)", optionalOfEntity)
                 .beginControlFlow("if (result.isPresent())")
                 .addStatement("exchange.respond($T.OK, result.get())", HTTP_STATUS)
                 .nextControlFlow("else")
                 .addStatement("exchange.respond($T.NOT_FOUND)", HTTP_STATUS)
-                .endControlFlow()
-                .nextControlFlow("catch ($T e)", RUNTIME_EXCEPTION)
-                .addStatement("LOG.error($S, e)", "Failed to get " + entityLower)
-                .addStatement("exchange.respond($T.INTERNAL_SERVER_ERROR)", HTTP_STATUS)
-                .endControlFlow()
-                .build();
+                .endControlFlow();
+        return appendServerErrorCatch(method, "Failed to get " + entityLower).build();
     }
 
     private MethodSpec buildHandleCreate(String entityLower, ClassName entityType) {
-        return MethodSpec.methodBuilder("handleCreate")
-                .addModifiers(Modifier.PUBLIC)
-                .addParameter(HTTP_EXCHANGE, "exchange")
-                .addStatement("$T entity", entityType)
-                .beginControlFlow("try")
-                .addStatement("entity = parseBody(exchange, $T.class)", entityType)
-                .nextControlFlow("catch ($T e)", ILLEGAL_ARGUMENT_EXCEPTION)
-                .addStatement("exchange.respond($T.BAD_REQUEST)", HTTP_STATUS)
-                .addStatement("return")
-                .endControlFlow()
-                .beginControlFlow("try")
+        MethodSpec.Builder method = crudHandler("handleCreate");
+        appendBodyParseGuard(method, entityType);
+        method.beginControlFlow("try")
                 .addStatement("$T saved = service.save(entity)", entityType)
-                .addStatement("exchange.respond($T.CREATED, saved)", HTTP_STATUS)
-                .nextControlFlow("catch ($T e)", RUNTIME_EXCEPTION)
-                .addStatement("LOG.error($S, e)", "Failed to create " + entityLower)
-                .addStatement("exchange.respond($T.INTERNAL_SERVER_ERROR)", HTTP_STATUS)
-                .endControlFlow()
-                .build();
+                .addStatement("exchange.respond($T.CREATED, saved)", HTTP_STATUS);
+        return appendServerErrorCatch(method, "Failed to create " + entityLower).build();
     }
 
     private MethodSpec buildHandleUpdate(String entityLower, ClassName entityType) {
-        return MethodSpec.methodBuilder("handleUpdate")
+        MethodSpec.Builder method = crudHandler("handleUpdate");
+        appendPathIdGuard(method);
+        appendBodyParseGuard(method, entityType);
+        method.beginControlFlow("try")
+                .addStatement("$T updated = service.update(id, entity)", entityType)
+                .addStatement("exchange.respond($T.OK, updated)", HTTP_STATUS);
+        return appendServerErrorCatch(method, "Failed to update " + entityLower).build();
+    }
+
+    private MethodSpec buildHandleDelete(String entityLower) {
+        MethodSpec.Builder method = crudHandler("handleDelete");
+        appendPathIdGuard(method);
+        method.beginControlFlow("try")
+                .addStatement("service.delete(id)")
+                .addStatement("exchange.respond($T.NO_CONTENT)", HTTP_STATUS);
+        return appendServerErrorCatch(method, "Failed to delete " + entityLower).build();
+    }
+
+    /** A {@code public void handle*(HttpExchange exchange)} skeleton — the shared
+     *  signature of every CRUD handler. */
+    private static MethodSpec.Builder crudHandler(String name) {
+        return MethodSpec.methodBuilder(name)
                 .addModifiers(Modifier.PUBLIC)
-                .addParameter(HTTP_EXCHANGE, "exchange")
-                .addStatement("String idStr = extractPathId(exchange)")
+                .addParameter(HTTP_EXCHANGE, "exchange");
+    }
+
+    /** Emits the shared "parse {@code id} from the path or 400" guard: declares a
+     *  {@code UUID id} and parses it, responding {@code BAD_REQUEST} and returning
+     *  on a malformed value. Leaves {@code id} in scope for the caller. */
+    private static void appendPathIdGuard(MethodSpec.Builder method) {
+        method.addStatement("String idStr = extractPathId(exchange)")
                 .addStatement("$T id", UUID)
                 .beginControlFlow("try")
                 .addStatement("id = $T.fromString(idStr)", UUID)
                 .nextControlFlow("catch ($T e)", ILLEGAL_ARGUMENT_EXCEPTION)
                 .addStatement("exchange.respond($T.BAD_REQUEST)", HTTP_STATUS)
                 .addStatement("return")
-                .endControlFlow()
-                .addStatement("$T entity", entityType)
+                .endControlFlow();
+    }
+
+    /** Emits the shared "decode the request body into {@code entity} or 400" guard.
+     *  Leaves {@code entity} in scope for the caller. */
+    private static void appendBodyParseGuard(MethodSpec.Builder method, ClassName entityType) {
+        method.addStatement("$T entity", entityType)
                 .beginControlFlow("try")
                 .addStatement("entity = parseBody(exchange, $T.class)", entityType)
                 .nextControlFlow("catch ($T e)", ILLEGAL_ARGUMENT_EXCEPTION)
                 .addStatement("exchange.respond($T.BAD_REQUEST)", HTTP_STATUS)
                 .addStatement("return")
-                .endControlFlow()
-                .beginControlFlow("try")
-                .addStatement("$T updated = service.update(id, entity)", entityType)
-                .addStatement("exchange.respond($T.OK, updated)", HTTP_STATUS)
-                .nextControlFlow("catch ($T e)", RUNTIME_EXCEPTION)
-                .addStatement("LOG.error($S, e)", "Failed to update " + entityLower)
-                .addStatement("exchange.respond($T.INTERNAL_SERVER_ERROR)", HTTP_STATUS)
-                .endControlFlow()
-                .build();
+                .endControlFlow();
     }
 
-    private MethodSpec buildHandleDelete(String entityLower) {
-        return MethodSpec.methodBuilder("handleDelete")
-                .addModifiers(Modifier.PUBLIC)
-                .addParameter(HTTP_EXCHANGE, "exchange")
-                .addStatement("String idStr = extractPathId(exchange)")
-                .addStatement("$T id", UUID)
-                .beginControlFlow("try")
-                .addStatement("id = $T.fromString(idStr)", UUID)
-                .nextControlFlow("catch ($T e)", ILLEGAL_ARGUMENT_EXCEPTION)
-                .addStatement("exchange.respond($T.BAD_REQUEST)", HTTP_STATUS)
-                .addStatement("return")
-                .endControlFlow()
-                .beginControlFlow("try")
-                .addStatement("service.delete(id)")
-                .addStatement("exchange.respond($T.NO_CONTENT)", HTTP_STATUS)
-                .nextControlFlow("catch ($T e)", RUNTIME_EXCEPTION)
-                .addStatement("LOG.error($S, e)", "Failed to delete " + entityLower)
+    /** Emits the shared "catch RuntimeException → log + 500" tail that closes the
+     *  service-call {@code try} block of every CRUD handler. */
+    private static MethodSpec.Builder appendServerErrorCatch(MethodSpec.Builder method, String failMessage) {
+        return method.nextControlFlow("catch ($T e)", RUNTIME_EXCEPTION)
+                .addStatement("LOG.error($S, e)", failMessage)
                 .addStatement("exchange.respond($T.INTERNAL_SERVER_ERROR)", HTTP_STATUS)
-                .endControlFlow()
-                .build();
+                .endControlFlow();
     }
 
     private MethodSpec buildExtractPathId() {
