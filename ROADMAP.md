@@ -75,7 +75,9 @@ This file tracks scope per milestone. Items marked `[ ]` are open; `[x]` shipped
 
 > High-severity backlog items **T1** (action 404s), **T8** (O(n) finders), and **T10**
 > (server-side validation) — plus **T2**, **T7**, **T9** — are also targeted at this
-> milestone. See the **Codegen completeness backlog** section below.
+> milestone. The **UI fidelity & theming** cluster (**U1–U5**, led by U1 ui-kit wiring +
+> U2 universal lists) is the codegen-ts heart of this milestone. See the **Codegen
+> completeness backlog** section below.
 
 ## 0.7.0–0.9.0 — feedback-driven cleanups
 
@@ -222,7 +224,8 @@ This file tracks scope per milestone. Items marked `[ ]` are open; `[x]` shipped
       emit; the difference is computable.
       *Update:* an opt-in `-Aexeris.strict` (or a generation report) that warns, per entity, when a
       metadata attribute is set but consumed by no generator — turning silent no-ops into actionable
-      `javac` diagnostics. Highest-leverage trust fix for the annotation surface.
+      `javac` diagnostics. Highest-leverage trust fix for the annotation surface. The `@UI` surface is
+      a prime offender — see **U4** (UI fidelity end-to-end) in the **UI fidelity & theming** cluster.
 
 - [ ] **T13 — Generation must own its output tree (prune orphans).** Codegen *writes* per-entity files
       but never *deletes* them: removing or re-homing an entity leaves its stale
@@ -241,7 +244,8 @@ This file tracks scope per milestone. Items marked `[ ]` are open; `[x]` shipped
       build as emitted (hence Medium, same class as **T13**). Separately, `redirectTo` (first entity
       alphabetically) and a hardcoded app title are baked in.
       *Update:* emit per-entity files under `src/app/...` to match the app shell; make the default route
-      + app title configurable (CLI flag / config).
+      + app title configurable (CLI flag / config). Extended by **U5** (configurable detail/branding)
+      in the **UI fidelity & theming** cluster below.
 
 ### Low severity
 
@@ -250,6 +254,54 @@ This file tracks scope per milestone. Items marked `[ ]` are open; `[x]` shipped
       by luck.
       *Update:* an irregular-plural map, or honour the existing `DomainMetadata.tableName` (Java) and an
       analogous route/`pluralLabel` override (TS) in both emitters.
+
+### UI fidelity & theming (`exeris-codegen-ts`)
+
+Three layers diverge: the SDK *declares* a rich UI contract, the pipeline *carries* only a thin
+slice of it, and the tokenized ui-kit theme is *not wired* into the generated app. This is a
+fidelity/wiring gap — kin to **T11** (set-but-unconsumed) and **T7** (frontend seams) — **not** an
+SDK gap.
+
+- **SDK (declaration) — rich.** `@UI` with 21 control types (`TEXT_AREA`, `SELECT`, `DATE_PICKER`,
+  `AUTOCOMPLETE`, `SLIDER`, `TOGGLE`, `RICH_TEXT`, `FILE_UPLOAD`, `COLOR`, …), `@UIGroup`
+  (sections, columns), `@Tab`, `@NavMenu` (badge/role/icons), `@Relationship`
+  (`displayField`/`displayTemplate` → picker), plus per-field `format`, `gridSpan`, `width`,
+  `placeholder`, `helpText`, `dataType` (currency/percent/url…). All declarable today.
+- **Pipeline (processor → JSON → emitter) — carries only a shallow, entity-level slice.** The TS
+  `UIMetadataSchema` (`domain-model.ts`) models exactly `icon/color/listColumns/searchFields/
+  filterFields/formLayout` — and is `.optional()`, so when the processor emits no `uiMetadata` the
+  whole block is absent. Decisive: there is **no per-field UI surface** on the TS side —
+  `componentType` / `@UIGroup` / `@Tab` / `gridSpan` / `fieldOverrides` are modelled nowhere
+  (`grep componentType src/` = 0). So even if the processor emitted the rich attributes, the TS
+  Zod schema would drop them on deserialization.
+- **ui-kit (theme) — tokenized but unwired.** `exeris-sdk/exeris-sdk-ui-kit` has a real token
+  system — `tailwind.preset.js` exporting `exerisPreset`, `--exeris-primary` (+ spacing/radius/
+  shadow), `.exeris-btn`/`.exeris-card`/`.exeris-table`, dark mode, re-skin by overriding CSS vars.
+  But the generated app doesn't use it: the emitted `tailwind.config.js` ships the default
+  (`theme.extend:{}`, `plugins:[]`, **no `exerisPreset`**), `styles.css` hardcodes
+  `bg-gray-100 text-gray-900`, and component templates hardcode `bg-indigo-600`/`text-gray-900`
+  (~32 occurrences). So a re-skin means editing generated code — which the next regen overwrites
+  (against the committed-L1 model, hard-constraint #6).
+
+Proposals, highest return-on-effort first:
+
+| # | Proposal | Where the fix lives | Effort | Target |
+|---|---|---|:---:|---|
+| U1 | **Wire ui-kit into the generated app** — `presets: [exerisPreset]` in the emitted `tailwind.config.js`, import the ui-kit `index.css`, and emit semantic classes (`.exeris-btn-primary`) instead of hardcoded `bg-indigo-600`/`text-gray-900` | codegen-ts (ui-kit is ready) | small | 0.6.0 |
+| U2 | **Universal lists** — column types from metadata (enum→badge w/ `@UI.color`, number→`format`+align, bool→icon, date, FK→link/`displayField`, currency/percent from `dataType`); wire sort to headers (logic exists, only the `(click)` is missing); real filters for `filterable` fields (string/enum/date-range — today only bool + 2 fields); configurable `pageSize`; row actions | codegen-ts (+ processor emits `format`/`dataType`/`sortable`/`filterable`) | medium | 0.6.0 |
+| U3 | **Forms from metadata, not the Java type** — read `@UI.componentType` (textarea/select/date/slider/toggle/rich-text/file/color), `@UIGroup`→sections, `@Tab`→tabs, `gridSpan`→multi-column, `placeholder`/`helpText`, `@Relationship`→autocomplete picker (today a UUID FK = `type="text"`); fix type mapping (`long→number`, `UUID→picker`) | codegen-ts (+ processor + TS schema) | med–large | 0.6.0 |
+| U4 | **Fidelity end-to-end** — processor emits the full `uiMetadata` / per-field `UIFieldMetadata`, the TS Zod schema models it, and strict-mode (**T11**) warns when a `@UI` attribute is declared but dropped | processor + codegen-ts | medium | 0.6.0 (with T11) |
+| U5 | **Configurable detail / branding** — sections/tabs in the detail view, related-entity panels; app name/titles/icons from metadata (today a hardcoded `"Exeris Foundation"` + an emoji-by-entity-name map) | codegen-ts | small–med | 0.6.0 (extends **T7**) |
+| U6 | **New view shapes** — dashboard/cards/kanban/calendar from `@Projection`, charts from `@Graph` (deferred), master-detail, inline-edit, bulk-actions | SDK (light) + codegen-ts | large | 0.7.0–0.9.0 |
+| U7 | **Live-view** (e.g. a battle preview) — a round stream pushed to the client | kernel (**K2**) + codegen-ts | large | blocked on kernel **K2** |
+| U8 | **Genuinely missing in the SDK** — custom-component registration (plugin), per-role field visibility (RLS-aware), i18n labels, icon-set abstraction | SDK + codegen-ts | large | SDK-led |
+
+> **Recommendation:** highest return for least motion is **U1** (wire ui-kit) + **U2** (universal
+> lists) — the theme already exists tokenized, and lists already know more than they show
+> (sort/filter are half-there). Together: re-skin the whole UI via one set of CSS tokens without
+> touching generated code, and get lists with real column types — inventing nothing in the SDK.
+> **U7 is the only item that genuinely blocks on the kernel (K2)**, not the generator; U6/U8 have
+> SDK halves owned in `exeris-sdk`.
 
 ### Build & DX — tooling-owned halves
 
