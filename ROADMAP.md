@@ -73,6 +73,10 @@ This file tracks scope per milestone. Items marked `[ ]` are open; `[x]` shipped
 - [ ] CI: separate npm-build job
 - [ ] Round-trip tests against generated Angular workspace (compiles + `ng build` green)
 
+> High-severity backlog items **T1** (action 404s), **T8** (O(n) finders), and **T10**
+> (server-side validation) — plus **T2**, **T7**, **T9** — are also targeted at this
+> milestone. See the **Codegen completeness backlog** section below.
+
 ## 0.7.0–0.9.0 — feedback-driven cleanups
 
 - [ ] Generator output adjustments based on real budgetHQ + IDP-cap consumer feedback
@@ -116,8 +120,8 @@ This file tracks scope per milestone. Items marked `[ ]` are open; `[x]` shipped
 | T9  | Generated schema has no inter-entity foreign keys — zero referential integrity | Medium | 0.6.0 |
 | T11 | No fidelity/strict mode — annotation attributes set but consumed by no generator fail silently | Medium | 0.5.x |
 | T13 | Codegen emits per-entity output but never prunes it — a removed/renamed entity breaks the build | Medium | 0.5.x |
+| T7  | TS app-structure seams — per-entity path vs `app.routes` import mismatch breaks the build; hardcoded title/redirect | Medium | 0.6.0 |
 | T6  | Naive English pluralization (`colony → colonys`) in SQL tables + Angular routes | Low | 0.5.x |
-| T7  | TS app-structure seams — per-entity path vs `app.routes` import mismatch; hardcoded title/redirect | Low–Med | 0.6.0 |
 
 ### High severity
 
@@ -178,8 +182,10 @@ This file tracks scope per milestone. Items marked `[ ]` are open; `[x]` shipped
       existing `*Generator` / scaffold structure + determinism + parity rules:
       Java — `Kernel*TestGenerator` per entity (repository CRUD round-trip, handler request/response
       shape, service delegation; saga step-wiring for `@Saga` entities; reuse the kernel TCK patterns).
-      TS — `*.service.spec.ts` (HTTP) + `*.schema.spec.ts` (Zod) under Vitest. Output stays
-      deterministic and committed alongside the code it covers.
+      TS — `*.service.spec.ts` (HTTP) + `*.schema.spec.ts` (Zod) under the generated workspace's
+      `ng test` runner (the emitted Angular 21 `package.json` uses `"test": "ng test"` — **not** the
+      Vitest the `exeris-codegen-ts` package itself runs). Output stays deterministic and committed
+      alongside the code it covers.
 
 - [ ] **T3 — Use `@Action(name=…)` as action identity.** `extractActionMetadata` sets
       `name = method.getSimpleName()` and ignores the (required) `name` attribute, so a
@@ -229,6 +235,14 @@ This file tracks scope per milestone. Items marked `[ ]` are open; `[x]` shipped
       orphan is a real, reviewable diff. (Note: distinct from the `exeris:detach` prune in **0.3.0**,
       which prunes the *emptied* source tree, not the *generate* mojo's per-entity output.)
 
+- [ ] **T7 — TS app-structure seams (`exeris-codegen-ts`).** Per-entity components emit to
+      `<out>/components/…`, but generated `app.routes.ts` imports `./components/…` relative to
+      `<out>/src/app/`, so the routes don't resolve without a move — the generated workspace does not
+      build as emitted (hence Medium, same class as **T13**). Separately, `redirectTo` (first entity
+      alphabetically) and a hardcoded app title are baked in.
+      *Update:* emit per-entity files under `src/app/...` to match the app shell; make the default route
+      + app title configurable (CLI flag / config).
+
 ### Low severity
 
 - [ ] **T6 — Real pluralization (or honour overrides).** `colony → colonys` in both
@@ -236,13 +250,6 @@ This file tracks scope per milestone. Items marked `[ ]` are open; `[x]` shipped
       by luck.
       *Update:* an irregular-plural map, or honour the existing `DomainMetadata.tableName` (Java) and an
       analogous route/`pluralLabel` override (TS) in both emitters.
-
-- [ ] **T7 — TS app-structure seams (`exeris-codegen-ts`).** Per-entity components emit to
-      `<out>/components/…`, but generated `app.routes.ts` imports `./components/…` relative to
-      `<out>/src/app/`, so routes don't resolve without a move; `redirectTo` (first entity
-      alphabetically) and a hardcoded app title are baked in.
-      *Update:* emit per-entity files under `src/app/...` to match the app shell; make the default route
-      + app title configurable (CLI flag / config).
 
 ### Build & DX — tooling-owned halves
 
