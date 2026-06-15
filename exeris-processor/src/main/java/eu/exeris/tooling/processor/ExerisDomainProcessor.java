@@ -10,6 +10,7 @@ import javax.annotation.processing.*;
 import javax.lang.model.SourceVersion;
 import javax.lang.model.element.*;
 import javax.lang.model.type.DeclaredType;
+import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 import javax.tools.Diagnostic;
 import javax.tools.FileObject;
@@ -671,8 +672,17 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     }
 
     private ActionMetadata extractActionMetadata(ExecutableElement method, AnnotationMirror annotation) {
-        String name = method.getSimpleName().toString();
         Map<String, Object> values = extractAnnotationValues(annotation);
+
+        // T3: action identity is the @Action(name=…) attribute (required on the SDK
+        // annotation, so always present), NOT the method name. Reading the method
+        // name made a @Action(name="approve") on a bean-setter-shaped method (e.g.
+        // void setFormation(Formation)) collide with the generated setter. Fall back
+        // to the method name only defensively, if a blank name ever reaches here.
+        String declaredName = getString(values, "name", null);
+        String name = (declaredName != null && !declaredName.isBlank())
+                ? declaredName
+                : method.getSimpleName().toString();
 
         ActionMetadata.Builder builder = ActionMetadata.builder(name);
 
@@ -810,7 +820,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             if (relAnnotation != null) {
                 Map<String, Object> values = extractAnnotationValues(relAnnotation);
                 String name = field.getSimpleName().toString();
-                String targetEntity = extractTargetEntityFromType(field.asType());
+                String targetEntity = resolveTargetEntity(values, field);
 
                 RelationshipMetadata.Builder builder = RelationshipMetadata.builder(name, targetEntity);
 
@@ -828,6 +838,25 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         }
 
         return relationships;
+    }
+
+    /**
+     * T4: prefer the explicit {@code @Relationship(targetEntity = Foo.class)} over the
+     * field's Java type. The attribute is required on the SDK annotation, so it is
+     * normally present as a {@link TypeMirror}; reading the field type instead made the
+     * annotation only work on entity-typed fields and recorded {@code UUID} as the
+     * target for the explicit-UUID-FK style ({@code @Relationship UUID ownerId}). Fall
+     * back to the field type only when the attribute is absent or {@code void.class}.
+     */
+    private String resolveTargetEntity(Map<String, Object> values, VariableElement field) {
+        Object declared = values.get("targetEntity");
+        if (declared instanceof TypeMirror tm && tm.getKind() != TypeKind.VOID) {
+            if (tm instanceof DeclaredType dt) {
+                return dt.asElement().getSimpleName().toString();
+            }
+            return tm.toString();
+        }
+        return extractTargetEntityFromType(field.asType());
     }
 
     private String extractTargetEntityFromType(TypeMirror type) {

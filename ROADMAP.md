@@ -189,19 +189,21 @@ This file tracks scope per milestone. Items marked `[ ]` are open; `[x]` shipped
       Vitest the `exeris-codegen-ts` package itself runs). Output stays deterministic and committed
       alongside the code it covers.
 
-- [ ] **T3 — Use `@Action(name=…)` as action identity.** `extractActionMetadata` sets
-      `name = method.getSimpleName()` and ignores the (required) `name` attribute, so a
+- [x] **T3 — Use `@Action(name=…)` as action identity.** `extractActionMetadata` set
+      `name = method.getSimpleName()` and ignored the (required) `name` attribute, so a
       `@Action(name="…")` on a bean-setter-shaped method (e.g. `void setFormation(Formation)`)
-      collides with the generated setter (`method … is already defined`).
-      *Update:* prefer `@Action(name=…)` when present so method names can avoid accessor collisions.
+      collided with the generated setter (`method … is already defined`).
+      *Done (0.5.x):* `extractActionMetadata` now prefers `@Action(name=…)` (required, always
+      present), falling back to the method name only defensively for a blank value.
       Pairs with **S3** (SDK-side: the attribute is otherwise inert).
 
-- [ ] **T4 — Honour `@Relationship.targetEntity`.** `extractRelationshipsMetadata` calls
-      `extractTargetEntityFromType(field.asType())` and never reads `targetEntity`, so a
-      `@Relationship private UUID ownerId` records its target as `UUID` — the annotation only works on
+- [x] **T4 — Honour `@Relationship.targetEntity`.** `extractRelationshipsMetadata` called
+      `extractTargetEntityFromType(field.asType())` and never read `targetEntity`, so a
+      `@Relationship private UUID ownerId` recorded its target as `UUID` — the annotation only worked on
       entity-typed fields, a poor fit for the explicit-UUID-FK style.
-      *Update:* prefer explicit `targetEntity` when set; fall back to field type only when it is
-      `void.class`. Pairs with **S2** and feeds **T9**'s relationship graph.
+      *Done (0.5.x):* a new `resolveTargetEntity` prefers the explicit `targetEntity` (required;
+      a `TypeMirror`), falling back to the field type only when it is absent or `void.class`.
+      Pairs with **S2** and feeds **T9**'s relationship graph.
 
 - [x] **T5 — Honour system-field override attributes in the repository (+ Flyway) generators.**
       `KernelRepositoryGenerator` hard-coded `getTenantId()/getCreatedAt()/getUpdatedAt()/

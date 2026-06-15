@@ -251,6 +251,63 @@ class ExerisDomainProcessorTest {
         }
 
         @Test
+        @DisplayName("T4: @Relationship.targetEntity wins over the field's Java type")
+        void shouldHonourExplicitTargetEntityOverFieldType() throws IOException {
+            JavaFileObject customer = JavaFileObjects.forSourceString(
+                    "com.example.Customer",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Field;
+
+                    @ExerisDomain(module = "billing", path = "/customers")
+                    public class Customer {
+                        @Field(label = "Name")
+                        private String name;
+                    }
+                    """
+            );
+            JavaFileObject order = JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Relationship;
+                    import java.util.UUID;
+
+                    @ExerisDomain(module = "sales", path = "/orders")
+                    public class Order {
+
+                        // Explicit-UUID-FK style: the field type is UUID, but the
+                        // relationship targets Customer — targetEntity must win.
+                        @Relationship(targetEntity = Customer.class, displayField = "name")
+                        private UUID customerId;
+                    }
+                    """
+            );
+
+            Compilation compilation = compileWithProcessor(customer, order);
+            assertThat(compilation).succeededWithoutWarnings();
+
+            Optional<JavaFileObject> metadataFile = compilation.generatedFile(
+                    StandardLocation.CLASS_OUTPUT,
+                    "exeris-metadata/Order.json"
+            );
+            assertThat(metadataFile).isPresent();
+
+            String metadata = readContent(metadataFile.get());
+            // targetEntity resolves to the explicit Customer.class, not the UUID field
+            // type. (The customerId field itself is legitimately UUID-typed — we assert
+            // only that the relationship *target* is not derived from it.)
+            assertThat(metadata)
+                    .contains("\"targetEntity\" : \"Customer\"")
+                    .doesNotContain("\"targetEntity\" : \"UUID\"")
+                    .doesNotContain("\"targetEntity\" : \"java.util.UUID\"");
+        }
+
+        @Test
         @DisplayName("Should extract @Graph and @GraphEdge metadata")
         void shouldExtractGraphEdgeMetadata() throws IOException {
             JavaFileObject source = JavaFileObjects.forSourceString(
@@ -444,6 +501,43 @@ class ExerisDomainProcessorTest {
                     .contains("\"entityName\" : \"Order\"")
                     .contains("\"actions\"")
                     .contains("\"module\" : \"sales\"");
+        }
+
+        @Test
+        @DisplayName("T3: action identity is @Action(name=…), not the method name")
+        void shouldUseActionNameAttributeOverMethodName() throws IOException {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Squad",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Action;
+
+                    @ExerisDomain(module = "tactics", path = "/squads")
+                    public class Squad {
+
+                        // Bean-setter-shaped method: its simple name would collide with
+                        // the generated setter — the action must be identified by `name`.
+                        @Action(name = "assign-formation", label = "Assign Formation", path = "/{id}/assign-formation")
+                        public void setFormation(String formation) {}
+                    }
+                    """
+            );
+
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).succeededWithoutWarnings();
+
+            Optional<JavaFileObject> metadataFile = compilation.generatedFile(
+                    StandardLocation.CLASS_OUTPUT,
+                    "exeris-metadata/Squad.json"
+            );
+            assertThat(metadataFile).isPresent();
+
+            String metadata = readContent(metadataFile.get());
+            assertThat(metadata)
+                    .contains("\"name\" : \"assign-formation\"")
+                    .doesNotContain("setFormation");
         }
     }
 
