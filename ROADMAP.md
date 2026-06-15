@@ -73,9 +73,9 @@ This file tracks scope per milestone. Items marked `[ ]` are open; `[x]` shipped
 - [ ] CI: separate npm-build job
 - [ ] Round-trip tests against generated Angular workspace (compiles + `ng build` green)
 
-> High-severity backlog items **T1** (action 404s), **T8** (O(n) finders), and **T10**
-> (server-side validation) — plus **T2**, **T7**, **T9** — are also targeted at this
-> milestone. The **UI fidelity & theming** cluster (**U1–U5**, led by U1 ui-kit wiring +
+> High-severity backlog items **T1** (action 404s), **T8** (O(n) finders), **T10**
+> (server-side validation), and **T12** (cross-app mesh contract) — plus **T2**, **T7**,
+> **T9** — are also targeted at this milestone. The **UI fidelity & theming** cluster (**U1–U5**, led by U1 ui-kit wiring +
 > U2 universal lists) is the codegen-ts heart of this milestone. See the **Codegen
 > completeness backlog** section below.
 
