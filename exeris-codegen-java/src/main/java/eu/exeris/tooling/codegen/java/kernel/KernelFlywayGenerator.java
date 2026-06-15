@@ -5,6 +5,7 @@ import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.Artifact
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
+import eu.exeris.sdk.sourcemodel.ast.SystemFieldsMetadata;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -36,21 +37,23 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
             "version"
     );
 
-    // Substituted with the table name via String.formatted. Safe because the
-    // table name is a snake-cased Java identifier (no `%` possible); never
-    // pass arbitrary external input through this template.
+    // Substituted via String.formatted: %1$s = table name, %2$s = tenant
+    // column. Safe because both are snake-cased Java identifiers (no `%`
+    // possible); never pass arbitrary external input through this template.
+    // The tenant column is parameterised so a tenantIdField override (T5) keeps
+    // the RLS predicate aligned with the actual column.
     private static final String RLS_TEMPLATE = """
             -- Row Level Security for tenant isolation
             ALTER TABLE %1$s ENABLE ROW LEVEL SECURITY;
 
             CREATE POLICY %1$s_tenant_policy ON %1$s
-                USING (tenant_id = current_setting('app.tenant_id', true)::uuid)
-                WITH CHECK (tenant_id = current_setting('app.tenant_id', true)::uuid);
+                USING (%2$s = current_setting('app.tenant_id', true)::uuid)
+                WITH CHECK (%2$s = current_setting('app.tenant_id', true)::uuid);
             """;
 
     @Override
     public GeneratedFile generate(DomainMetadata metadata) {
-        String tableName = toSnakeCase(metadata.entityName()) + "s";
+        String tableName = KernelTableNaming.effectiveTable(metadata);
         String version = migrationVersion(metadata, tableName) + "__create_" + tableName;
 
         String header = """
@@ -65,7 +68,8 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
 
         String indexes = String.join("", buildIndexes(metadata, tableName)) + "\n";
 
-        String rls = metadata.tenantScoped() ? RLS_TEMPLATE.formatted(tableName) : "";
+        String rls = metadata.tenantScoped()
+                ? RLS_TEMPLATE.formatted(tableName, tenantColumn(metadata)) : "";
 
         String sql = header + createTable + indexes + rls;
         return new GeneratedFile("db/migration", version, sql, ArtifactType.CONFIGURATION, "sql");
@@ -98,41 +102,76 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
         columns.add("    id UUID PRIMARY KEY DEFAULT gen_random_uuid()");
 
         if (metadata.tenantScoped()) {
-            columns.add("    tenant_id UUID NOT NULL REFERENCES tenants(id)");
+            columns.add("    " + tenantColumn(metadata) + " UUID NOT NULL REFERENCES tenants(id)");
         }
 
         for (FieldMetadata field : metadata.fields()) {
-            if (isSystemField(field.name())) continue;
+            if (isSystemField(metadata, field.name())) continue;
             columns.add("    " + toSnakeCase(field.name()) + " " + mapJavaTypeToSql(field.type())
                     + (field.required() ? " NOT NULL" : "")
                     + (field.unique() ? " UNIQUE" : ""));
         }
 
         if (metadata.audited()) {
-            columns.add("    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP");
-            columns.add("    created_by VARCHAR(255)");
-            columns.add("    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP");
-            columns.add("    updated_by VARCHAR(255)");
+            columns.add("    " + sysCol(metadata, "createdAt") + " TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP");
+            columns.add("    " + sysCol(metadata, "createdBy") + " VARCHAR(255)");
+            columns.add("    " + sysCol(metadata, "updatedAt") + " TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP");
+            columns.add("    " + sysCol(metadata, "updatedBy") + " VARCHAR(255)");
         }
         if (metadata.softDelete()) {
-            columns.add("    deleted BOOLEAN DEFAULT FALSE");
-            columns.add("    deleted_at TIMESTAMPTZ");
-            columns.add("    deleted_by VARCHAR(255)");
+            columns.add("    " + sysCol(metadata, "deleted") + " BOOLEAN DEFAULT FALSE");
+            columns.add("    " + sysCol(metadata, "deletedAt") + " TIMESTAMPTZ");
+            columns.add("    " + sysCol(metadata, "deletedBy") + " VARCHAR(255)");
         }
         if (metadata.versioned()) {
-            columns.add("    version BIGINT DEFAULT 0");
+            columns.add("    " + sysCol(metadata, "version") + " BIGINT DEFAULT 0");
         }
         return columns;
+    }
+
+    /** Snake-cased SQL name of the tenant column (honours tenantIdField, T5). */
+    private String tenantColumn(DomainMetadata metadata) {
+        return sysCol(metadata, "tenantId");
+    }
+
+    /**
+     * Resolves the SQL column name for a system field. {@code logical} is the
+     * default java name (tenantId / createdAt / createdBy / updatedAt /
+     * updatedBy / deleted / deletedAt / deletedBy / version); any
+     * {@code @ExerisDomain} override (T5) is applied before snake-casing.
+     * Default case is byte-identical to the previous hardcoded SQL names
+     * (the audit-by, soft-delete-timestamp and soft-deleted-by columns default
+     * to {@code created_by}/{@code updated_by}/{@code deleted_at}/{@code deleted_by}).
+     */
+    private String sysCol(DomainMetadata metadata, String logical) {
+        SystemFieldsMetadata sf = metadata.systemFields();
+        String javaName = switch (logical) {
+            case "tenantId" -> resolve(sf == null ? null : sf.tenantIdField(), "tenantId");
+            case "createdAt" -> resolve(sf == null ? null : sf.createdAtField(), "createdAt");
+            case "createdBy" -> resolve(sf == null ? null : sf.createdByField(), "createdBy");
+            case "updatedAt" -> resolve(sf == null ? null : sf.updatedAtField(), "updatedAt");
+            case "updatedBy" -> resolve(sf == null ? null : sf.updatedByField(), "updatedBy");
+            case "deleted" -> resolve(sf == null ? null : sf.softDeleteField(), "deleted");
+            case "deletedAt" -> resolve(sf == null ? null : sf.softDeleteTimestampField(), "deletedAt");
+            case "deletedBy" -> resolve(sf == null ? null : sf.softDeletedByField(), "deletedBy");
+            case "version" -> resolve(sf == null ? null : sf.versionField(), "version");
+            default -> throw new AssertionError("unknown system-field logical name: " + logical);
+        };
+        return toSnakeCase(javaName);
+    }
+
+    private static String resolve(String override, String fallback) {
+        return (override != null && !override.isBlank()) ? override : fallback;
     }
 
     private List<String> buildIndexes(DomainMetadata metadata, String tableName) {
         List<String> indexes = new ArrayList<>();
         if (metadata.tenantScoped()) {
             indexes.add("CREATE INDEX IF NOT EXISTS idx_" + tableName + "_tenant ON "
-                    + tableName + "(tenant_id);\n");
+                    + tableName + "(" + tenantColumn(metadata) + ");\n");
         }
         for (FieldMetadata field : metadata.fields()) {
-            if (isSystemField(field.name())) continue;
+            if (isSystemField(metadata, field.name())) continue;
             if (field.searchable() || field.unique()) {
                 String col = toSnakeCase(field.name());
                 indexes.add("CREATE INDEX IF NOT EXISTS idx_" + tableName + "_" + col + " ON "
@@ -142,8 +181,25 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
         return indexes;
     }
 
-    private boolean isSystemField(String fieldName) {
-        return SYSTEM_FIELDS.contains(fieldName) || SYSTEM_FIELDS.contains(toSnakeCase(fieldName));
+    /** Logical names of every system column {@link #sysCol} can resolve (T5). */
+    private static final List<String> SYSTEM_LOGICAL_NAMES = List.of(
+            "tenantId", "createdAt", "createdBy", "updatedAt", "updatedBy",
+            "deleted", "deletedAt", "deletedBy", "version");
+
+    private boolean isSystemField(DomainMetadata metadata, String fieldName) {
+        if (SYSTEM_FIELDS.contains(fieldName) || SYSTEM_FIELDS.contains(toSnakeCase(fieldName))) {
+            return true;
+        }
+        // Override-aware (T5): a renamed system field (e.g. tenantIdField="orgId")
+        // is not in the static SYSTEM_FIELDS set, but must still be treated as a
+        // system column so it is not re-emitted as a domain column / index.
+        String snake = toSnakeCase(fieldName);
+        for (String logical : SYSTEM_LOGICAL_NAMES) {
+            if (sysCol(metadata, logical).equals(snake)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private String toSnakeCase(String camelCase) {
