@@ -14,6 +14,7 @@ import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
+import eu.exeris.sdk.sourcemodel.ast.SystemFieldsMetadata;
 
 import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
@@ -125,7 +126,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         String packageName = basePackage + ".repository";
         String entity = metadata.entityName();
         String className = entity + "Repository";
-        String table = toSnakeCase(entity) + "s";
+        String table = KernelTableNaming.effectiveTable(metadata);
         List<FieldMetadata> fields = metadata.fields();
         boolean hasListField = fields.stream().anyMatch(f -> f.type().startsWith(LIST_PREFIX));
 
@@ -134,11 +135,16 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         TypeName optionalOfEntity = ParameterizedTypeName.get(OPTIONAL, entityType);
         TypeName listOfEntity = ParameterizedTypeName.get(LIST_TYPE, entityType);
 
+        // Effective system-field java names (T5 overrides; defaults when no
+        // @ExerisDomain override was written). For the default case these are
+        // byte-identical to the previously hardcoded literals.
+        SystemFieldNames sys = resolveSystemFieldNames(metadata);
+
         // Stable column layout — both SELECT clauses and mapRow consume it
         // in the same order, so column indices line up by construction.
-        List<Column> columns = buildColumnLayout(fields, metadata);
+        List<Column> columns = buildColumnLayout(fields, metadata, sys);
 
-        Context ctx = new Context(entity, entityType, fields, columns, metadata, table);
+        Context ctx = new Context(entity, entityType, fields, columns, metadata, table, sys);
 
         TypeSpec.Builder repo = KernelScaffold.publicClass(className)
                 .addJavadoc("Generated Repository for $L.\n", entity)
@@ -196,33 +202,59 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
 
     /** Carrier for repeated build-time state — keeps signatures readable. */
     private record Context(String entity, ClassName entityType, List<FieldMetadata> fields,
-                           List<Column> columns, DomainMetadata metadata, String table) {}
+                           List<Column> columns, DomainMetadata metadata, String table,
+                           SystemFieldNames sys) {}
 
-    private List<Column> buildColumnLayout(List<FieldMetadata> fields, DomainMetadata metadata) {
+    /**
+     * Effective java field names for the system fields the repository emits
+     * (T5). Resolved from {@link DomainMetadata#systemFields()} when present,
+     * else the canonical defaults. Defaults are deliberately the same literals
+     * the generator hardcoded before T5, so default-case output is unchanged.
+     */
+    private record SystemFieldNames(String tenantId, String createdAt, String updatedAt,
+                                    String deleted, String version) {}
+
+    private SystemFieldNames resolveSystemFieldNames(DomainMetadata metadata) {
+        SystemFieldsMetadata sf = metadata.systemFields();
+        return new SystemFieldNames(
+                resolve(sf == null ? null : sf.tenantIdField(), "tenantId"),
+                resolve(sf == null ? null : sf.createdAtField(), "createdAt"),
+                resolve(sf == null ? null : sf.updatedAtField(), "updatedAt"),
+                resolve(sf == null ? null : sf.softDeleteField(), "deleted"),
+                resolve(sf == null ? null : sf.versionField(), "version"));
+    }
+
+    private static String resolve(String override, String fallback) {
+        return (override != null && !override.isBlank()) ? override : fallback;
+    }
+
+    private List<Column> buildColumnLayout(List<FieldMetadata> fields, DomainMetadata metadata,
+                                           SystemFieldNames sys) {
         List<Column> cols = new ArrayList<>();
         cols.add(new Column("id", "id", "UUID", ColumnKind.DOMAIN));
         for (FieldMetadata field : fields) {
             cols.add(new Column(toSnakeCase(field.name()), field.name(), field.type(), ColumnKind.DOMAIN));
         }
         if (metadata.tenantScoped()) {
-            cols.add(new Column("tenant_id", "tenantId", "UUID", ColumnKind.TENANT_ID));
+            cols.add(new Column(toSnakeCase(sys.tenantId()), sys.tenantId(), "UUID", ColumnKind.TENANT_ID));
         }
         if (metadata.audited()) {
-            cols.add(new Column("created_at", "createdAt", "Instant", ColumnKind.CREATED_AT));
-            cols.add(new Column("updated_at", "updatedAt", "Instant", ColumnKind.UPDATED_AT));
+            cols.add(new Column(toSnakeCase(sys.createdAt()), sys.createdAt(), "Instant", ColumnKind.CREATED_AT));
+            cols.add(new Column(toSnakeCase(sys.updatedAt()), sys.updatedAt(), "Instant", ColumnKind.UPDATED_AT));
         }
         if (metadata.softDelete()) {
-            cols.add(new Column("deleted", "deleted", "boolean", ColumnKind.DELETED));
+            cols.add(new Column(toSnakeCase(sys.deleted()), sys.deleted(), "boolean", ColumnKind.DELETED));
         }
         if (metadata.versioned()) {
-            cols.add(new Column("version", "version", "Long", ColumnKind.VERSION));
+            cols.add(new Column(toSnakeCase(sys.version()), sys.version(), "Long", ColumnKind.VERSION));
         }
         return cols;
     }
 
     private MethodSpec buildFindById(Context ctx, TypeName optionalOfEntity) {
         String selectCols = String.join(", ", ctx.columns().stream().map(Column::sqlName).toList());
-        String softDeleteFilter = ctx.metadata().softDelete() ? " AND deleted = false" : "";
+        String softDeleteFilter = ctx.metadata().softDelete()
+                ? " AND " + toSnakeCase(ctx.sys().deleted()) + " = false" : "";
         String sql = "SELECT " + selectCols + " FROM " + ctx.table() + WHERE_ID_CLAUSE + softDeleteFilter;
 
         return MethodSpec.methodBuilder("findById")
@@ -245,7 +277,8 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
 
     private MethodSpec buildFindAll(Context ctx, TypeName listOfEntity) {
         String selectCols = String.join(", ", ctx.columns().stream().map(Column::sqlName).toList());
-        String softDeleteFilter = ctx.metadata().softDelete() ? " WHERE deleted = false" : "";
+        String softDeleteFilter = ctx.metadata().softDelete()
+                ? " WHERE " + toSnakeCase(ctx.sys().deleted()) + " = false" : "";
         String sql = "SELECT " + selectCols + " FROM " + ctx.table() + softDeleteFilter;
 
         // Combined try-with-resources for stmt + executeQuery() is safe here
@@ -291,8 +324,8 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                 .addStatement("if (entity.getId() == null) entity.setId($T.randomUUID())", UUID_TYPE);
         if (ctx.metadata().audited()) {
             save.addStatement("$T now = $T.now()", INSTANT, INSTANT);
-            save.addStatement("entity.setCreatedAt(now)");
-            save.addStatement("entity.setUpdatedAt(now)");
+            save.addStatement("entity.set$L(now)", capitalize(ctx.sys().createdAt()));
+            save.addStatement("entity.set$L(now)", capitalize(ctx.sys().updatedAt()));
         }
         save.addStatement(SQL_VAR_STMT, sql);
 
@@ -317,7 +350,8 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                 .toList();
         String setClause = String.join(", ", updatable.stream().map(c -> c.sqlName() + " = ?").toList());
         boolean versioned = ctx.metadata().versioned();
-        String whereClause = versioned ? WHERE_ID_CLAUSE + " AND version = ?" : WHERE_ID_CLAUSE;
+        String whereClause = versioned
+                ? WHERE_ID_CLAUSE + " AND " + toSnakeCase(ctx.sys().version()) + " = ?" : WHERE_ID_CLAUSE;
         String sql = "UPDATE " + ctx.table() + " SET " + setClause + whereClause;
         String notFoundMessage = versioned
                 ? ctx.entity() + " not found or stale version: "
@@ -329,15 +363,15 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                 .addParameter(UUID_TYPE, "id")
                 .addParameter(ctx.entityType(), "entity");
         if (ctx.metadata().audited()) {
-            update.addStatement("entity.setUpdatedAt($T.now())", INSTANT);
+            update.addStatement("entity.set$L($T.now())", capitalize(ctx.sys().updatedAt()), INSTANT);
         }
         if (versioned) {
             update.addJavadoc("Optimistic-lock update. The caller-supplied {@code entity.version}\n");
             update.addJavadoc("is the <i>expected</i> row version; this method increments it before\n");
             update.addJavadoc("writing and rejects the update if no row matches the expected\n");
             update.addJavadoc("version (stale read).\n");
-            update.addStatement("long expectedVersion = entity.getVersion()");
-            update.addStatement("entity.setVersion(expectedVersion + 1L)");
+            update.addStatement("long expectedVersion = entity.get$L()", capitalize(ctx.sys().version()));
+            update.addStatement("entity.set$L(expectedVersion + 1L)", capitalize(ctx.sys().version()));
         }
         update.addStatement(SQL_VAR_STMT, sql);
         update.addStatement("long[] rowsAffected = {0L}");
@@ -365,8 +399,10 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         // Soft delete excludes already-tombstoned rows so a double-delete
         // raises "not found" — consistent with the findById/findAll filter
         // and with the hard-delete branch's behaviour.
+        String deletedCol = toSnakeCase(ctx.sys().deleted());
         String sql = ctx.metadata().softDelete()
-                ? "UPDATE " + ctx.table() + " SET deleted = true" + WHERE_ID_CLAUSE + " AND deleted = false"
+                ? "UPDATE " + ctx.table() + " SET " + deletedCol + " = true" + WHERE_ID_CLAUSE
+                        + " AND " + deletedCol + " = false"
                 : "DELETE FROM " + ctx.table() + WHERE_ID_CLAUSE;
 
         CodeBlock.Builder body = CodeBlock.builder()
@@ -392,7 +428,8 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     }
 
     private MethodSpec buildCount(Context ctx) {
-        String filter = ctx.metadata().softDelete() ? " WHERE deleted = false" : "";
+        String filter = ctx.metadata().softDelete()
+                ? " WHERE " + toSnakeCase(ctx.sys().deleted()) + " = false" : "";
         String sql = "SELECT COUNT(*) FROM " + ctx.table() + filter;
 
         return MethodSpec.methodBuilder("count")
@@ -425,17 +462,15 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     }
 
     private void emitReadCol(MethodSpec.Builder map, Column col, int idx, Context ctx) {
+        String setter = "entity.set" + capitalize(col.javaName());
         switch (col.kind()) {
-            case TENANT_ID -> map.addStatement("entity.setTenantId(row.getUuid($L))", idx);
+            case TENANT_ID -> map.addStatement("$L(row.getUuid($L))", setter, idx);
             // SPI 0.7.0 has no getInstant — round-trip via ISO-8601 String.
-            case CREATED_AT -> map.addCode(CodeBlock.of(
-                    "{ String v = row.getString($L); if (v != null) entity.setCreatedAt($T.parse(v)); }\n",
-                    idx, INSTANT));
-            case UPDATED_AT -> map.addCode(CodeBlock.of(
-                    "{ String v = row.getString($L); if (v != null) entity.setUpdatedAt($T.parse(v)); }\n",
-                    idx, INSTANT));
-            case DELETED -> map.addStatement("entity.setDeleted(row.getBoolean($L))", idx);
-            case VERSION -> map.addStatement("entity.setVersion(row.getLong($L))", idx);
+            case CREATED_AT, UPDATED_AT -> map.addCode(CodeBlock.of(
+                    "{ String v = row.getString($L); if (v != null) $L($T.parse(v)); }\n",
+                    idx, setter, INSTANT));
+            case DELETED -> map.addStatement("$L(row.getBoolean($L))", setter, idx);
+            case VERSION -> map.addStatement("$L(row.getLong($L))", setter, idx);
             case DOMAIN -> emitReadDomain(map, col, idx, ctx);
         }
     }
@@ -505,19 +540,18 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     }
 
     private void emitBindCol(CodeBlock.Builder body, Column col, int idx, String src) {
+        String cap = capitalize(col.javaName());
         switch (col.kind()) {
-            case TENANT_ID -> body.addStatement("stmt.bindUuid($L, $L.getTenantId())", idx, src);
+            case TENANT_ID -> body.addStatement("stmt.bindUuid($L, $L.get$L())", idx, src, cap);
             // SPI 0.7.0 has no bindInstant — round-trip via ISO-8601 String. Null-
             // guarded because update() is also bound to caller-supplied entities
             // where createdAt may legitimately be null (e.g.\ partial update DTO).
-            case CREATED_AT -> body.addStatement(
-                    "stmt.bindString($L, $L.getCreatedAt() == null ? null : $L.getCreatedAt().toString())",
-                    idx, src, src);
-            case UPDATED_AT -> body.addStatement(
-                    "stmt.bindString($L, $L.getUpdatedAt() == null ? null : $L.getUpdatedAt().toString())",
-                    idx, src, src);
-            case DELETED -> body.addStatement("stmt.bindBoolean($L, $L.isDeleted())", idx, src);
-            case VERSION -> body.addStatement("stmt.bindLong($L, $L.getVersion())", idx, src);
+            case CREATED_AT, UPDATED_AT -> body.addStatement(
+                    "stmt.bindString($L, $L.get$L() == null ? null : $L.get$L().toString())",
+                    idx, src, cap, src, cap);
+            // boolean accessor is `is<Name>()` per the SDK getter convention.
+            case DELETED -> body.addStatement("stmt.bindBoolean($L, $L.is$L())", idx, src, cap);
+            case VERSION -> body.addStatement("stmt.bindLong($L, $L.get$L())", idx, src, cap);
             case DOMAIN -> emitBindDomain(body, col, idx, src);
         }
     }

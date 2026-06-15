@@ -5,6 +5,7 @@ import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.Artifact
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
+import eu.exeris.sdk.sourcemodel.ast.SystemFieldsMetadata;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -36,21 +37,23 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
             "version"
     );
 
-    // Substituted with the table name via String.formatted. Safe because the
-    // table name is a snake-cased Java identifier (no `%` possible); never
-    // pass arbitrary external input through this template.
+    // Substituted via String.formatted: %1$s = table name, %2$s = tenant
+    // column. Safe because both are snake-cased Java identifiers (no `%`
+    // possible); never pass arbitrary external input through this template.
+    // The tenant column is parameterised so a tenantIdField override (T5) keeps
+    // the RLS predicate aligned with the actual column.
     private static final String RLS_TEMPLATE = """
             -- Row Level Security for tenant isolation
             ALTER TABLE %1$s ENABLE ROW LEVEL SECURITY;
 
             CREATE POLICY %1$s_tenant_policy ON %1$s
-                USING (tenant_id = current_setting('app.tenant_id', true)::uuid)
-                WITH CHECK (tenant_id = current_setting('app.tenant_id', true)::uuid);
+                USING (%2$s = current_setting('app.tenant_id', true)::uuid)
+                WITH CHECK (%2$s = current_setting('app.tenant_id', true)::uuid);
             """;
 
     @Override
     public GeneratedFile generate(DomainMetadata metadata) {
-        String tableName = toSnakeCase(metadata.entityName()) + "s";
+        String tableName = KernelTableNaming.effectiveTable(metadata);
         String version = migrationVersion(metadata, tableName) + "__create_" + tableName;
 
         String header = """
@@ -65,7 +68,8 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
 
         String indexes = String.join("", buildIndexes(metadata, tableName)) + "\n";
 
-        String rls = metadata.tenantScoped() ? RLS_TEMPLATE.formatted(tableName) : "";
+        String rls = metadata.tenantScoped()
+                ? RLS_TEMPLATE.formatted(tableName, tenantColumn(metadata)) : "";
 
         String sql = header + createTable + indexes + rls;
         return new GeneratedFile("db/migration", version, sql, ArtifactType.CONFIGURATION, "sql");
@@ -98,7 +102,7 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
         columns.add("    id UUID PRIMARY KEY DEFAULT gen_random_uuid()");
 
         if (metadata.tenantScoped()) {
-            columns.add("    tenant_id UUID NOT NULL REFERENCES tenants(id)");
+            columns.add("    " + tenantColumn(metadata) + " UUID NOT NULL REFERENCES tenants(id)");
         }
 
         for (FieldMetadata field : metadata.fields()) {
@@ -109,27 +113,55 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
         }
 
         if (metadata.audited()) {
-            columns.add("    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP");
+            columns.add("    " + sysCol(metadata, "createdAt") + " TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP");
             columns.add("    created_by VARCHAR(255)");
-            columns.add("    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP");
+            columns.add("    " + sysCol(metadata, "updatedAt") + " TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP");
             columns.add("    updated_by VARCHAR(255)");
         }
         if (metadata.softDelete()) {
-            columns.add("    deleted BOOLEAN DEFAULT FALSE");
+            columns.add("    " + sysCol(metadata, "deleted") + " BOOLEAN DEFAULT FALSE");
             columns.add("    deleted_at TIMESTAMPTZ");
             columns.add("    deleted_by VARCHAR(255)");
         }
         if (metadata.versioned()) {
-            columns.add("    version BIGINT DEFAULT 0");
+            columns.add("    " + sysCol(metadata, "version") + " BIGINT DEFAULT 0");
         }
         return columns;
+    }
+
+    /** Snake-cased SQL name of the tenant column (honours tenantIdField, T5). */
+    private String tenantColumn(DomainMetadata metadata) {
+        return sysCol(metadata, "tenantId");
+    }
+
+    /**
+     * Resolves the SQL column name for a system field. {@code logical} is the
+     * default java name (tenantId / createdAt / updatedAt / deleted / version);
+     * any {@code @ExerisDomain} override (T5) is applied before snake-casing.
+     * Default case is byte-identical to the previous hardcoded SQL names.
+     */
+    private String sysCol(DomainMetadata metadata, String logical) {
+        SystemFieldsMetadata sf = metadata.systemFields();
+        String javaName = switch (logical) {
+            case "tenantId" -> resolve(sf == null ? null : sf.tenantIdField(), "tenantId");
+            case "createdAt" -> resolve(sf == null ? null : sf.createdAtField(), "createdAt");
+            case "updatedAt" -> resolve(sf == null ? null : sf.updatedAtField(), "updatedAt");
+            case "deleted" -> resolve(sf == null ? null : sf.softDeleteField(), "deleted");
+            case "version" -> resolve(sf == null ? null : sf.versionField(), "version");
+            default -> logical;
+        };
+        return toSnakeCase(javaName);
+    }
+
+    private static String resolve(String override, String fallback) {
+        return (override != null && !override.isBlank()) ? override : fallback;
     }
 
     private List<String> buildIndexes(DomainMetadata metadata, String tableName) {
         List<String> indexes = new ArrayList<>();
         if (metadata.tenantScoped()) {
             indexes.add("CREATE INDEX IF NOT EXISTS idx_" + tableName + "_tenant ON "
-                    + tableName + "(tenant_id);\n");
+                    + tableName + "(" + tenantColumn(metadata) + ");\n");
         }
         for (FieldMetadata field : metadata.fields()) {
             if (isSystemField(field.name())) continue;

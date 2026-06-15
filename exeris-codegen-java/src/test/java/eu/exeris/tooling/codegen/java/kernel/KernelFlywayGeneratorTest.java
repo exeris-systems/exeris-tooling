@@ -4,6 +4,7 @@ import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
+import eu.exeris.sdk.sourcemodel.ast.SystemFieldsMetadata;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -161,6 +162,54 @@ class KernelFlywayGeneratorTest {
         long version = versionNumber(generator.generate(tenants).className());
 
         assertThat(version).isLessThan(2_000_000L); // tier 1
+    }
+
+    @Test
+    @DisplayName("System-field overrides (T5): tenant/audit/soft-delete/version columns + RLS follow overridden names")
+    void systemFieldOverridesFixture() {
+        SystemFieldsMetadata sf = new SystemFieldsMetadata(
+                "id", "createdAt", "createdBy",
+                "modifiedAt", "updatedBy", "orgId",
+                "rev", "deleted", null, null);
+
+        DomainMetadata metadata = DomainMetadata.builder("Order", "eu.exeris.app.domain")
+                .tenantScoped(true).audited(true).softDelete(true).versioned(true)
+                .systemFields(sf)
+                .fields(List.of(FieldMetadata.builder("orderNumber", "String").build()))
+                .build();
+
+        String sql = generator.generate(metadata).content();
+        assertThat(sql)
+                .contains("    org_id UUID NOT NULL REFERENCES tenants(id)")
+                .contains("    modified_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP")
+                .contains("    rev BIGINT DEFAULT 0")
+                // createdAt / deleted left at defaults.
+                .contains("    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP")
+                .contains("    deleted BOOLEAN DEFAULT FALSE")
+                // tenant index + RLS predicate use the overridden tenant column.
+                .contains("CREATE INDEX IF NOT EXISTS idx_orders_tenant ON orders(org_id);")
+                .contains("USING (org_id = current_setting('app.tenant_id', true)::uuid)")
+                .contains("WITH CHECK (org_id = current_setting('app.tenant_id', true)::uuid)")
+                // The default tenant_id *column* must NOT leak (the 'app.tenant_id'
+                // GUC key is unrelated and legitimately retains the name).
+                .doesNotContain("tenant_id UUID")
+                .doesNotContain("(tenant_id ")
+                .doesNotContain("(tenant_id)");
+    }
+
+    @Test
+    @DisplayName("Table-name override (T6): CREATE TABLE + filename honour the explicit tableName")
+    void tableNameOverrideFixture() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "eu.exeris.app.domain")
+                .tableName("legacy_orders")
+                .fields(List.of(FieldMetadata.builder("orderNumber", "String").build()))
+                .build();
+
+        GeneratedFile file = generator.generate(metadata);
+        assertThat(file.className()).endsWith("__create_legacy_orders");
+        assertThat(file.content())
+                .contains("CREATE TABLE IF NOT EXISTS legacy_orders (")
+                .doesNotContain("CREATE TABLE IF NOT EXISTS orders (");
     }
 
     /** Extracts the numeric version from a {@code "V<n>__create_x"} filename. */

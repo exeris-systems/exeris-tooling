@@ -866,6 +866,97 @@ class ExerisDomainProcessorTest {
         }
     }
 
+    @Nested
+    @DisplayName("System-field overrides (T5)")
+    class SystemFieldOverrideTests {
+
+        @Test
+        @DisplayName("Explicit overrides reach the JSON under systemFields")
+        void shouldEmitSystemFieldsWhenOverridden() throws IOException {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+
+                    @ExerisDomain(module = "sales", path = "/orders",
+                            updatedAtField = "modifiedAt", tenantIdField = "orgId")
+                    public class Order {
+                        private String name;
+                    }
+                    """
+            );
+
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).succeededWithoutWarnings();
+
+            Optional<JavaFileObject> metadataFile = compilation.generatedFile(
+                    StandardLocation.CLASS_OUTPUT, "exeris-metadata/Order.json");
+            assertThat(metadataFile).isPresent();
+
+            String metadata = readContent(metadataFile.get());
+            assertThat(metadata)
+                    .contains("\"systemFields\"")
+                    .contains("\"updatedAtField\" : \"modifiedAt\"")
+                    .contains("\"tenantIdField\" : \"orgId\"")
+                    // Unset components fall back to the canonical defaults so the
+                    // record is internally complete.
+                    .contains("\"createdAtField\" : \"createdAt\"")
+                    .contains("\"versionField\" : \"version\"");
+        }
+
+        @Test
+        @DisplayName("No overrides → systemFields is absent (determinism / default-case)")
+        void shouldOmitSystemFieldsWhenNoOverride() throws IOException {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+
+                    @ExerisDomain(module = "sales", path = "/orders")
+                    public class Order {
+                        private String name;
+                    }
+                    """
+            );
+
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).succeededWithoutWarnings();
+
+            String metadata = readContent(compilation.generatedFile(
+                    StandardLocation.CLASS_OUTPUT, "exeris-metadata/Order.json").orElseThrow());
+            assertThat(metadata).doesNotContain("\"systemFields\"");
+        }
+
+        @Test
+        @DisplayName("primaryKeyField = \"id\" alone does not trigger systemFields (it is the annotation default)")
+        void shouldNotTriggerOnDefaultPrimaryKey() throws IOException {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+
+                    @ExerisDomain(module = "sales", path = "/orders", primaryKeyField = "id")
+                    public class Order {
+                        private String name;
+                    }
+                    """
+            );
+
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).succeededWithoutWarnings();
+
+            String metadata = readContent(compilation.generatedFile(
+                    StandardLocation.CLASS_OUTPUT, "exeris-metadata/Order.json").orElseThrow());
+            assertThat(metadata).doesNotContain("\"systemFields\"");
+        }
+    }
+
     // Helper methods
 
     private Compilation compileWithProcessor(JavaFileObject... sources) {

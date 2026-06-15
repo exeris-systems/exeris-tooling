@@ -400,6 +400,78 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         // @ExerisDomain has no tableName attribute (see exeris-sdk-
         // annotations) — the previous containsKey("tableName") check
         // was unreachable and was removed in PR #45.
+
+        // System-field overrides (T5). Only build a SystemFieldsMetadata when
+        // the user explicitly wrote at least one override attribute; otherwise
+        // leave systemFields null so the default-case JSON is byte-identical
+        // to pre-T5 output (determinism invariant).
+        SystemFieldsMetadata systemFields = extractSystemFieldsOverrides(values);
+        if (systemFields != null) {
+            builder.systemFields(systemFields);
+        }
+    }
+
+    /**
+     * Builds a {@link SystemFieldsMetadata} from explicitly-written
+     * {@code @ExerisDomain} override attributes. Returns {@code null} when no
+     * relevant override was set, so the metadata record stays absent and the
+     * emitted JSON is unchanged for the default case.
+     *
+     * <p>Unset components are filled from {@link SystemFieldsMetadata#defaults()}
+     * so the record is internally complete. {@code primaryKeyField} defaults to
+     * {@code "id"} (annotation default) and is included for completeness, but
+     * generators leave the primary key as the literal {@code "id"} (out of T5
+     * scope).
+     */
+    private SystemFieldsMetadata extractSystemFieldsOverrides(Map<String, Object> values) {
+        SystemFieldsMetadata d = SystemFieldsMetadata.defaults();
+
+        // The annotation default for primaryKeyField is "id"; everything else
+        // is "". A blank value is treated as "not overridden".
+        String primaryKeyField = nonBlankOr(getString(values, "primaryKeyField", null), d.primaryKeyField());
+        String tenantIdField = nonBlankOr(getString(values, "tenantIdField", null), d.tenantIdField());
+        String softDeleteField = nonBlankOr(getString(values, "softDeleteField", null), d.softDeleteField());
+        String softDeleteTimestampField = nonBlankOr(getString(values, "softDeleteTimestampField", null), d.softDeleteTimestampField());
+        String softDeletedByField = nonBlankOr(getString(values, "softDeletedByField", null), d.softDeletedByField());
+        String versionField = nonBlankOr(getString(values, "versionField", null), d.versionField());
+        String createdAtField = nonBlankOr(getString(values, "createdAtField", null), d.createdAtField());
+        String createdByField = nonBlankOr(getString(values, "createdByField", null), d.createdByField());
+        String updatedAtField = nonBlankOr(getString(values, "updatedAtField", null), d.updatedAtField());
+        String updatedByField = nonBlankOr(getString(values, "updatedByField", null), d.updatedByField());
+
+        // Did the user explicitly override anything (other than the implicit
+        // primaryKeyField="id" annotation default)? primaryKeyField counts only
+        // if it was written AND differs from the default "id".
+        boolean anyOverride =
+                isExplicitNonBlank(values, "tenantIdField")
+                || isExplicitNonBlank(values, "softDeleteField")
+                || isExplicitNonBlank(values, "softDeleteTimestampField")
+                || isExplicitNonBlank(values, "softDeletedByField")
+                || isExplicitNonBlank(values, "versionField")
+                || isExplicitNonBlank(values, "createdAtField")
+                || isExplicitNonBlank(values, "createdByField")
+                || isExplicitNonBlank(values, "updatedAtField")
+                || isExplicitNonBlank(values, "updatedByField")
+                || (isExplicitNonBlank(values, "primaryKeyField")
+                        && !"id".equals(getString(values, "primaryKeyField", "id")));
+
+        if (!anyOverride) {
+            return null;
+        }
+
+        return new SystemFieldsMetadata(
+                primaryKeyField, createdAtField, createdByField,
+                updatedAtField, updatedByField, tenantIdField,
+                versionField, softDeleteField, softDeleteTimestampField, softDeletedByField);
+    }
+
+    private static String nonBlankOr(String value, String fallback) {
+        return (value != null && !value.isBlank()) ? value : fallback;
+    }
+
+    private static boolean isExplicitNonBlank(Map<String, Object> values, String key) {
+        Object v = values.get(key);
+        return v instanceof String s && !s.isBlank();
     }
 
     private List<FieldMetadata> extractFieldsMetadata(TypeElement element) {

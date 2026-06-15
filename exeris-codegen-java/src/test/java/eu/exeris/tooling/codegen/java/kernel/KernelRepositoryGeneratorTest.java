@@ -4,6 +4,7 @@ import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.Artifact
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
+import eu.exeris.sdk.sourcemodel.ast.SystemFieldsMetadata;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -275,5 +276,67 @@ class KernelRepositoryGeneratorTest {
                 .contains("stmt.bindLong(3, expectedVersion)")
                 // Distinct error message for stale-version case.
                 .contains("Order not found or stale version: ");
+    }
+
+    @Test
+    @DisplayName("System-field overrides (T5): columns + accessors follow the overridden java names")
+    void shouldHonourSystemFieldOverrides() {
+        // tenantId→orgId, updatedAt→modifiedAt, version→rev; createdAt/deleted
+        // left at defaults to prove per-field resolution.
+        SystemFieldsMetadata sf = new SystemFieldsMetadata(
+                "id", "createdAt", "createdBy",
+                "modifiedAt", "updatedBy", "orgId",
+                "rev", "deleted", null, null);
+
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .tenantScoped(true).audited(true).softDelete(true).versioned(true)
+                .systemFields(sf)
+                .fields(List.of(FieldMetadata.builder("orderNumber", "String").build()))
+                .build();
+
+        GeneratedFile repo = strategy.generate(metadata).stream()
+                .filter(f -> f.artifactType() == ArtifactType.REPOSITORY)
+                .findFirst().orElseThrow();
+
+        String src = repo.content();
+        assertThat(src)
+                // Column layout uses snake-cased overridden names.
+                .contains("SELECT id, order_number, org_id, created_at, modified_at, deleted, rev FROM orders")
+                // Soft-delete filter still uses the (default) deleted column.
+                .contains("WHERE id = ? AND deleted = false")
+                // Optimistic-lock WHERE uses the overridden version column.
+                .contains("AND rev = ?")
+                // Accessors derive from the overridden java names.
+                .contains("entity.getOrgId()")
+                .contains("entity.setOrgId(row.getUuid(")
+                .contains("entity.setModifiedAt(now)")
+                .contains("entity.setModifiedAt(Instant.parse(v))")
+                .contains("entity.getModifiedAt() == null ? null : entity.getModifiedAt().toString()")
+                .contains("long expectedVersion = entity.getRev()")
+                .contains("entity.setRev(expectedVersion + 1L)")
+                .contains("entity.setRev(row.getLong(")
+                // Old hardcoded names must NOT appear for the overridden fields.
+                .doesNotContain("entity.getTenantId()")
+                .doesNotContain("entity.getVersion()")
+                .doesNotContain("entity.setUpdatedAt(");
+    }
+
+    @Test
+    @DisplayName("Table-name override (T6): TABLE field + emitted SQL use the explicit tableName")
+    void shouldHonourTableNameOverride() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .tableName("legacy_orders")
+                .fields(List.of(FieldMetadata.builder("orderNumber", "String").build()))
+                .build();
+
+        GeneratedFile repo = strategy.generate(metadata).stream()
+                .filter(f -> f.artifactType() == ArtifactType.REPOSITORY)
+                .findFirst().orElseThrow();
+
+        assertThat(repo.content())
+                .contains("private static final String TABLE = \"legacy_orders\"")
+                .contains("SELECT id, order_number FROM legacy_orders WHERE id = ?")
+                .contains("INSERT INTO legacy_orders (id, order_number) VALUES (?, ?)")
+                .doesNotContain("FROM orders");
     }
 }

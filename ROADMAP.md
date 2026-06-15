@@ -203,12 +203,15 @@ This file tracks scope per milestone. Items marked `[ ]` are open; `[x]` shipped
       *Update:* prefer explicit `targetEntity` when set; fall back to field type only when it is
       `void.class`. Pairs with **S2** and feeds **T9**'s relationship graph.
 
-- [ ] **T5 — Honour system-field override attributes in the repository (+ Flyway) generators.**
-      `KernelRepositoryGenerator` hard-codes `getTenantId()/getCreatedAt()/getUpdatedAt()/
-      getVersion()`, so renaming or omitting any of those fields fails compile
+- [x] **T5 — Honour system-field override attributes in the repository (+ Flyway) generators.**
+      `KernelRepositoryGenerator` hard-coded `getTenantId()/getCreatedAt()/getUpdatedAt()/
+      getVersion()`, so renaming or omitting any of those fields failed compile
       (`cannot find symbol method getUpdatedAt()`).
-      *Update:* derive accessor names from the `*Field` overrides in `DomainMetadata`. Pairs with
-      **S1** (alternative is dropping the attributes SDK-side).
+      *Done (0.5.x):* the processor now extracts `SystemFieldsMetadata` from the `@ExerisDomain`
+      `*Field` overrides (only when explicitly set — default-case JSON unchanged). The repository
+      derives column/accessor names (`get/set/is`+`<Field>`, snake-cased columns) from those names,
+      and Flyway derives the matching SQL columns + RLS predicate. Default case is byte-identical
+      (`tenantId`→`tenant_id`/`getTenantId`, …) so determinism holds. Pairs with **S1**.
 
 - [ ] **T9 — Cross-entity relationship pass → `FOREIGN KEY` constraints.** Each entity's Flyway is
       generated in isolation; the only `REFERENCES` emitted are the tenant FKs. An `owner_id` column is
@@ -249,11 +252,18 @@ This file tracks scope per milestone. Items marked `[ ]` are open; `[x]` shipped
 
 ### Low severity
 
-- [ ] **T6 — Real pluralization (or honour overrides).** `colony → colonys` in both
+- [~] **T6 — Real pluralization (or honour overrides).** `colony → colonys` in both
       `V*__create_colonys.sql` and the Angular route `path: 'colonys'`; `construction_order` works only
       by luck.
-      *Update:* an irregular-plural map, or honour the existing `DomainMetadata.tableName` (Java) and an
-      analogous route/`pluralLabel` override (TS) in both emitters.
+      *Java half — done (0.5.x):* a shared `KernelTableNaming.effectiveTable` honours the
+      `DomainMetadata.tableName` override and is the single source for the repository `TABLE`, the
+      Flyway `CREATE TABLE`, and the migration filename (previously each generator pluralised
+      independently — they could drift). Default case is unchanged (`toSnakeCase(name)+"s"`); real
+      irregular pluralisation (`colony→colonies`) lives in the SDK `DomainMetadata.pluralName()` and
+      is SDK-side.
+      *TS half — deferred to **T7**:* the Angular route/label pluralisation lives in the
+      app-structure generator T7 is already reworking, and there is no serialized route override on
+      the TS side yet, so the TS half rides with that 0.6.0 change.
 
 ### UI fidelity & theming (`exeris-codegen-ts`)
 
