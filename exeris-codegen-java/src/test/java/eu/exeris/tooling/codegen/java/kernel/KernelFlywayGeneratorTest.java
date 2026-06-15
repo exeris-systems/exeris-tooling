@@ -198,6 +198,33 @@ class KernelFlywayGeneratorTest {
     }
 
     @Test
+    @DisplayName("System-field overrides (T5): audit-by / soft-delete-timestamp / soft-deleted-by columns follow overrides")
+    void systemFieldOverridesAuxiliaryColumnsFixture() {
+        SystemFieldsMetadata sf = new SystemFieldsMetadata(
+                "id", "createdAt", "authorId",
+                "updatedAt", "editorId", "tenantId",
+                "version", "deleted", "removedAt", "removedBy");
+
+        DomainMetadata metadata = DomainMetadata.builder("Order", "eu.exeris.app.domain")
+                .audited(true).softDelete(true)
+                .systemFields(sf)
+                .fields(List.of(FieldMetadata.builder("orderNumber", "String").build()))
+                .build();
+
+        String sql = generator.generate(metadata).content();
+        assertThat(sql)
+                .contains("    author_id VARCHAR(255)")
+                .contains("    editor_id VARCHAR(255)")
+                .contains("    removed_at TIMESTAMPTZ")
+                .contains("    removed_by VARCHAR(255)")
+                // the default audit-by / soft-delete-aux column names must not leak
+                .doesNotContain("created_by VARCHAR(255)")
+                .doesNotContain("updated_by VARCHAR(255)")
+                .doesNotContain("deleted_at TIMESTAMPTZ")
+                .doesNotContain("deleted_by VARCHAR(255)");
+    }
+
+    @Test
     @DisplayName("Table-name override (T6): CREATE TABLE + filename honour the explicit tableName")
     void tableNameOverrideFixture() {
         DomainMetadata metadata = DomainMetadata.builder("Order", "eu.exeris.app.domain")
@@ -210,6 +237,21 @@ class KernelFlywayGeneratorTest {
         assertThat(file.content())
                 .contains("CREATE TABLE IF NOT EXISTS legacy_orders (")
                 .doesNotContain("CREATE TABLE IF NOT EXISTS orders (");
+    }
+
+    @Test
+    @DisplayName("Table-name override (T6): a mixed-case override is lower-cased for cross-engine safety")
+    void tableNameOverrideIsLowerCased() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "eu.exeris.app.domain")
+                .tableName("MyOrders")
+                .fields(List.of(FieldMetadata.builder("orderNumber", "String").build()))
+                .build();
+
+        GeneratedFile file = generator.generate(metadata);
+        assertThat(file.className()).endsWith("__create_myorders");
+        assertThat(file.content())
+                .contains("CREATE TABLE IF NOT EXISTS myorders (")
+                .doesNotContain("MyOrders");
     }
 
     /** Extracts the numeric version from a {@code "V<n>__create_x"} filename. */
