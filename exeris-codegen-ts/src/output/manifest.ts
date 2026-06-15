@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync, unlinkSync, rmdirSync } from 'node:fs';
-import { join, dirname, resolve } from 'node:path';
+import { join, dirname, resolve, sep } from 'node:path';
 
 /**
  * Name of the per-output-tree manifest file (mirrors the Java
@@ -24,9 +24,10 @@ const MANIFEST_HEADER = '# Exeris Tooling generated-output manifest - DO NOT EDI
  *   skipped-because-unchanged), forward-slash normalised
  * @returns the number of orphaned files deleted
  */
-export function pruneAndWriteManifest(outputPath: string, producedPaths: string[]): number {
+export function pruneOrphansAndWriteManifest(outputPath: string, producedPaths: string[]): number {
   const manifestPath = join(outputPath, MANIFEST_NAME);
   const produced = new Set(producedPaths.map((p) => p.replace(/\\/g, '/')));
+  const root = resolve(outputPath);
 
   let previous: string[] = [];
   if (existsSync(manifestPath)) {
@@ -40,7 +41,10 @@ export function pruneAndWriteManifest(outputPath: string, producedPaths: string[
   const touchedDirs = new Set<string>();
   for (const rel of previous) {
     if (produced.has(rel) || rel === MANIFEST_NAME) continue;
-    const full = join(outputPath, rel);
+    const full = resolve(join(outputPath, rel));
+    // Defence in depth (mirrors the Java OutputWriter): a tampered/corrupted
+    // manifest with `..` segments must never delete outside the output tree.
+    if (full !== root && !full.startsWith(root + sep)) continue;
     if (existsSync(full) && statSync(full).isFile()) {
       unlinkSync(full);
       pruned++;
@@ -49,7 +53,6 @@ export function pruneAndWriteManifest(outputPath: string, producedPaths: string[
   }
 
   // Prune now-empty directories upward, stopping at the output root.
-  const root = resolve(outputPath);
   for (const start of touchedDirs) {
     let dir = resolve(start);
     while (dir.startsWith(root) && dir !== root && existsSync(dir) && readdirSync(dir).length === 0) {

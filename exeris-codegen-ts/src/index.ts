@@ -18,7 +18,7 @@ import { Command } from 'commander';
 import pc from 'picocolors';
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { join, dirname, basename, resolve } from 'node:path';
-import { pruneAndWriteManifest } from './output/manifest.js';
+import { pruneOrphansAndWriteManifest } from './output/manifest.js';
 import { loadConfig, type GeneratorConfig, DEFAULT_CONFIG } from './config.js';
 import { parseDomainMetadata, parseExerisMetadata, type DomainMetadata } from './models/domain-model.js';
 import { generateService } from './generators/angular/service-gen.js';
@@ -290,7 +290,7 @@ async function runGenerate(config: GeneratorConfig): Promise<void> {
     // emitted that this run no longer produces (e.g. a removed/re-homed entity),
     // then persist the manifest of this run's intended output set.
     const producedPaths = generatedFiles.map((f) => f.path.replace(/\\/g, '/'));
-    const pruned = pruneAndWriteManifest(outputPath, producedPaths);
+    const pruned = pruneOrphansAndWriteManifest(outputPath, producedPaths);
 
     console.log(pc.dim('─'.repeat(50)));
     console.log(pc.green('Generated:'), written, 'file(s)');

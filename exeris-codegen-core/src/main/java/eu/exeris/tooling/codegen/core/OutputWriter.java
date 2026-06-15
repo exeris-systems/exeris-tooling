@@ -172,8 +172,12 @@ public final class OutputWriter {
         return pruned;
     }
 
-    /** Relative paths written during this run (forward-slash, sorted). */
-    public Set<String> writtenPaths() {
+    /**
+     * Relative paths written during this run (forward-slash, sorted).
+     * Package-private — test-visibility only; not part of the public API surface
+     * before the 1.0.0 freeze.
+     */
+    Set<String> writtenPaths() {
         return new TreeSet<>(writtenPaths);
     }
 
@@ -214,7 +218,7 @@ public final class OutputWriter {
         for (Path start : dirs) {
             Path dir = start;
             while (dir != null && !dir.equals(outputDir) && dir.startsWith(outputDir) && isEmptyDir(dir)) {
-                Files.delete(dir);
+                Files.deleteIfExists(dir);
                 dir = dir.getParent();
             }
         }

@@ -167,6 +167,28 @@ class OutputWriterTest {
     }
 
     @Test
+    @DisplayName("A run that writes nothing prunes the entire previous tree (all entities removed)")
+    void emptyRunPrunesEverything() throws IOException {
+        // Run 1: one entity.
+        OutputWriter run1 = new OutputWriter(tempDir, false);
+        run1.writeJavaSource("com.example.repo", "OrderRepository", "class OrderRepository {}", "src");
+        run1.writeResource("db/migration/V1__create_orders.sql", "CREATE TABLE orders ();\n");
+        run1.pruneOrphansAndWriteManifest();
+
+        // Run 2: every @ExerisDomain was removed → nothing is written this run.
+        OutputWriter run2 = new OutputWriter(tempDir, false);
+        int pruned = run2.pruneOrphansAndWriteManifest();
+
+        assertThat(pruned).isEqualTo(2);
+        assertThat(Files.exists(tempDir.resolve("com/example/repo/OrderRepository.java"))).isFalse();
+        assertThat(Files.exists(tempDir.resolve("com/example/repo"))).isFalse();
+        assertThat(Files.exists(tempDir.resolve("db/migration/V1__create_orders.sql"))).isFalse();
+        // manifest survives, now header-only
+        assertThat(Files.readAllLines(tempDir.resolve(OutputWriter.MANIFEST_NAME)))
+                .containsExactly("# Exeris Tooling generated-output manifest - DO NOT EDIT MANUALLY");
+    }
+
+    @Test
     @DisplayName("The manifest file is deterministic regardless of write order")
     void manifestDeterministicAcrossWriteOrder() throws IOException {
         Path dirA = tempDir.resolve("a");

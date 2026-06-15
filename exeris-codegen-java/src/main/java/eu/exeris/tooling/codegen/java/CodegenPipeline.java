@@ -90,6 +90,18 @@ public final class CodegenPipeline {
         if (domains.isEmpty()) {
             LOG.log(Level.WARNING, "No domain metadata found in " + metadataDir
                     + " — make sure @ExerisDomain-annotated classes are compiled first");
+            // T13: "no entities" is itself a valid output state (every @ExerisDomain
+            // was removed). If a *previous* run owned this tree (a manifest is
+            // present), this run must own it too — prune every previously-emitted
+            // file rather than leaving a stale, un-compilable tree. A directory
+            // with no prior manifest is left untouched (nothing was ever generated
+            // here to clean up).
+            if (Files.exists(outputDir.resolve(OutputWriter.MANIFEST_NAME))) {
+                int pruned = new OutputWriter(outputDir).pruneOrphansAndWriteManifest();
+                if (pruned > 0) {
+                    LOG.log(Level.INFO, "Pruned " + pruned + " orphaned generated file(s)");
+                }
+            }
             return 0;
         }
 
