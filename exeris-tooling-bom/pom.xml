@@ -16,7 +16,7 @@
     <description>Bill of materials for tooling modules and third-party deps.</description>
 
     <properties>
-        <exeris.sdk.version>0.5.0-SNAPSHOT</exeris.sdk.version>
+        <exeris.sdk.version>0.6.0-SNAPSHOT</exeris.sdk.version>
         <exeris.kernel.version>0.8.1</exeris.kernel.version>
 
         <auto-service.version>1.1.1</auto-service.version>
