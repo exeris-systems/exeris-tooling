@@ -232,16 +232,22 @@ This file tracks scope per milestone. Items marked `[ ]` are open; `[x]` shipped
       `javac` diagnostics. Highest-leverage trust fix for the annotation surface. The `@UI` surface is
       a prime offender — see **U4** (UI fidelity end-to-end) in the **UI fidelity & theming** cluster.
 
-- [ ] **T13 — Generation must own its output tree (prune orphans).** Codegen *writes* per-entity files
-      but never *deletes* them: removing or re-homing an entity leaves its stale
+- [x] **T13 — Generation must own its output tree (prune orphans).** Codegen *wrote* per-entity files
+      but never *deleted* them: removing or re-homing an entity left its stale
       `Repository/Handler/Service/Client` + OpenAPI/Flyway referencing the deleted type
       (`cannot find symbol: class …`) until removed by hand. Worse, the *app-wide* files
       (`RuntimeLifecycle`, `Application`) **are** regenerated and drop the entity, leaving the tree
       internally inconsistent and un-compilable. Renaming/re-homing an entity is a normal refactor.
-      *Update:* track what was emitted last run (a manifest, or a "clean the managed tree" step) and
-      delete files whose entity no longer exists. Pairs with the committed-L1 model (**D3**) — a stale
-      orphan is a real, reviewable diff. (Note: distinct from the `exeris:detach` prune in **0.3.0**,
-      which prunes the *emptied* source tree, not the *generate* mojo's per-entity output.)
+      *Done (0.5.x):* each run records the relative path of every file it writes; a manifest
+      (`.exeris-codegen-manifest`) under the output root persists that set. The next run deletes any
+      path that was in the previous manifest but is not re-emitted (the orphan), prunes the now-empty
+      directories, and rewrites the (sorted, deterministic) manifest. Only previously-emitted files
+      are ever deleted — a user-authored file is never in the manifest, so it is never touched.
+      Implemented in both emitters: Java `OutputWriter.pruneOrphansAndWriteManifest()` (wired into
+      `CodegenPipeline`) and TS `src/output/manifest.ts` (wired into the CLI). Pairs with the
+      committed-L1 model (**D3**) — a stale orphan removal is a real, reviewable diff. (Distinct from
+      the `exeris:detach` prune in **0.3.0**, which prunes the *emptied* source tree, not the
+      *generate* mojo's per-entity output.)
 
 - [ ] **T7 — TS app-structure seams (`exeris-codegen-ts`).** Per-entity components emit to
       `<out>/components/…`, but generated `app.routes.ts` imports `./components/…` relative to
