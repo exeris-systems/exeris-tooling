@@ -76,6 +76,26 @@ describe('pruneOrphansAndWriteManifest (T13 — output-tree ownership)', () => {
     expect(existsSync(join(out, 'a.ts'))).toBe(true);
   });
 
+  it('an empty produced set prunes the entire previous tree (all entities removed)', () => {
+    emit('services/order.service.ts');
+    emit('components/order-list.component.ts');
+    pruneOrphansAndWriteManifest(out, [
+      'services/order.service.ts',
+      'components/order-list.component.ts',
+    ]);
+
+    // Run 2: every @ExerisDomain removed → nothing produced.
+    const pruned = pruneOrphansAndWriteManifest(out, []);
+
+    expect(pruned).toBe(2);
+    expect(existsSync(join(out, 'services/order.service.ts'))).toBe(false);
+    expect(existsSync(join(out, 'components/order-list.component.ts'))).toBe(false);
+    // manifest survives, header-only
+    expect(readFileSync(join(out, MANIFEST_NAME), 'utf-8')).toBe(
+      '# Exeris Tooling generated-output manifest - DO NOT EDIT MANUALLY\n',
+    );
+  });
+
   it('never deletes outside the output tree, even with a tampered manifest', () => {
     // A sentinel file outside the output root that a `..` traversal would hit.
     const outside = mkdtempSync(join(tmpdir(), 'exeris-outside-'));

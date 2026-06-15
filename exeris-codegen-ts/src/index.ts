@@ -18,7 +18,7 @@ import { Command } from 'commander';
 import pc from 'picocolors';
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { join, dirname, basename, resolve } from 'node:path';
-import { pruneOrphansAndWriteManifest } from './output/manifest.js';
+import { pruneOrphansAndWriteManifest, MANIFEST_NAME } from './output/manifest.js';
 import { loadConfig, type GeneratorConfig, DEFAULT_CONFIG } from './config.js';
 import { parseDomainMetadata, parseExerisMetadata, type DomainMetadata } from './models/domain-model.js';
 import { generateService } from './generators/angular/service-gen.js';
@@ -147,6 +147,15 @@ async function runGenerate(config: GeneratorConfig): Promise<void> {
   if (metadataFiles.length === 0) {
     console.error(pc.yellow('No metadata files found in'), inputPath);
     console.log(pc.dim('Make sure to run Maven compile first to generate metadata.'));
+    // T13 (parity with the Java pipeline): "no entities" is a valid output
+    // state — every @ExerisDomain was removed. If a previous run owned this
+    // tree (a manifest is present), this run must own it too and prune the
+    // orphans rather than leaving a stale tree behind. A never-generated dir
+    // (no manifest) is left untouched. Skipped under --dry-run (no mutation).
+    if (!config.dryRun && existsSync(join(outputPath, MANIFEST_NAME))) {
+      const pruned = pruneOrphansAndWriteManifest(outputPath, []);
+      if (pruned > 0) console.log(pc.yellow('Pruned:'), pruned, 'orphaned file(s)');
+    }
     return;
   }
 
