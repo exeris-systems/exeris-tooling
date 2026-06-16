@@ -259,9 +259,11 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         for (FieldMetadata field : fields) {
             String sqlName = toSnakeCase(field.name());
             // skip a duplicate of the PK / an earlier field, or a shadow of a system column
-            if (!seen.add(sqlName) || systemCols.contains(sqlName)) {
+            // (membership check before mutating `seen`, so the guard has no side effect)
+            if (seen.contains(sqlName) || systemCols.contains(sqlName)) {
                 continue;
             }
+            seen.add(sqlName);
             cols.add(new Column(sqlName, field.name(), field.type(), ColumnKind.DOMAIN));
         }
         if (metadata.tenantScoped()) {

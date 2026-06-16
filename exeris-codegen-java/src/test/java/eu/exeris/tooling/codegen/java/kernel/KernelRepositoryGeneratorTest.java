@@ -361,7 +361,7 @@ class KernelRepositoryGeneratorTest {
     }
 
     @Test
-    @DisplayName("T14: domain fields shadowing active system columns are de-duped")
+    @DisplayName("T14: domain fields shadowing active audited/versioned columns are de-duped")
     void shouldNotDuplicateSystemColumns() {
         DomainMetadata metadata = DomainMetadata.builder("Account", "com.example.domain")
                 .audited(true)
@@ -381,6 +381,28 @@ class KernelRepositoryGeneratorTest {
                 .contains("INSERT INTO accounts (id, name, created_at, updated_at, version) VALUES (?, ?, ?, ?, ?)")
                 .doesNotContain("version, version")
                 .doesNotContain("created_at, created_at");
+    }
+
+    @Test
+    @DisplayName("T14: domain fields shadowing tenantId / soft-delete columns are de-duped")
+    void shouldNotDuplicateTenantAndSoftDeleteColumns() {
+        DomainMetadata metadata = DomainMetadata.builder("Account", "com.example.domain")
+                .tenantScoped(true)
+                .softDelete(true)
+                .fields(List.of(
+                        FieldMetadata.builder("name", "String").build(),
+                        FieldMetadata.builder("tenantId", "UUID").build(),    // shadows system tenant_id
+                        FieldMetadata.builder("deleted", "boolean").build())) // shadows system deleted
+                .build();
+
+        GeneratedFile repo = strategy.generate(metadata).stream()
+                .filter(f -> f.artifactType() == ArtifactType.REPOSITORY)
+                .findFirst().orElseThrow();
+
+        assertThat(repo.content())
+                .contains("INSERT INTO accounts (id, name, tenant_id, deleted) VALUES (?, ?, ?, ?)")
+                .doesNotContain("tenant_id, tenant_id")
+                .doesNotContain("deleted, deleted");
     }
 
     @Test
