@@ -961,6 +961,240 @@ class ExerisDomainProcessorTest {
     }
 
     @Nested
+    @DisplayName("Processor minors — -Aexeris.strict inert-attribute audit (T11)")
+    class StrictModeInertAttributeTests {
+
+        private long inertWarnings(Compilation compilation) {
+            return compilation.warnings().stream()
+                    .filter(d -> d.getMessage(null) != null
+                            && d.getMessage(null).contains("no code generator consumes it"))
+                    .count();
+        }
+
+        private boolean hasInertWarningFor(Compilation compilation, String attribute) {
+            return compilation.warnings().stream()
+                    .anyMatch(d -> d.getMessage(null) != null
+                            && d.getMessage(null).contains("no code generator consumes it")
+                            && d.getMessage(null).contains(attribute));
+        }
+
+        @Test
+        @DisplayName("Default build stays quiet even when an inert attribute is set")
+        void defaultBuildDoesNotWarnOnInertAttribute() {
+            Compilation compilation = javac()
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(fieldWithInertDataType());
+
+            assertThat(compilation).succeeded();
+            assertThat(inertWarnings(compilation))
+                    .as("inert-attribute warnings with strict unset")
+                    .isZero();
+        }
+
+        @Test
+        @DisplayName("-Aexeris.strict warns on @Field.dataType (dropped at the processor)")
+        void strictWarnsOnInertFieldDataType() {
+            Compilation compilation = javac()
+                    .withOptions("-Aexeris.strict=true")
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(fieldWithInertDataType());
+
+            assertThat(compilation).succeeded();
+            assertThat(hasInertWarningFor(compilation, "@Field.dataType"))
+                    .as("warning naming @Field.dataType")
+                    .isTrue();
+            assertThat(inertWarnings(compilation))
+                    .as("exactly one inert warning (only dataType is inert here)")
+                    .isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("-Aexeris.strict warns on @ActionParam.description and .required")
+        void strictWarnsOnInertActionParamAttributes() {
+            Compilation compilation = javac()
+                    .withOptions("-Aexeris.strict=true")
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(actionParamWithInertAttributes());
+
+            assertThat(compilation).succeeded();
+            assertThat(hasInertWarningFor(compilation, "@ActionParam.description")).isTrue();
+            assertThat(hasInertWarningFor(compilation, "@ActionParam.required")).isTrue();
+            assertThat(inertWarnings(compilation))
+                    .as("exactly two inert warnings (description + required)")
+                    .isEqualTo(2);
+        }
+
+        @Test
+        @DisplayName("-Aexeris.strict warns on @ActionParam.required even when set to false")
+        void strictWarnsOnActionParamRequiredFalse() {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Action;
+                    import eu.exeris.sdk.annotation.ActionParam;
+
+                    @ExerisDomain(module = "core", path = "/orders")
+                    public class Order {
+                        @Action(name = "approve", label = "Approve", path = "/{id}/approve")
+                        public void approve(
+                                @ActionParam(label = "Reason", required = false) String reason) {
+                        }
+                    }
+                    """
+            );
+
+            Compilation compilation = javac()
+                    .withOptions("-Aexeris.strict=true")
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(source);
+
+            assertThat(compilation).succeeded();
+            // A deliberate opt-out (required = false) is still inert — the explicit
+            // write is what matters, not the value. Only `required` is set here.
+            assertThat(hasInertWarningFor(compilation, "@ActionParam.required")).isTrue();
+            assertThat(inertWarnings(compilation))
+                    .as("exactly one inert warning (only required is set)")
+                    .isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("-Aexeris.strict warns on @EventSourced (no generator consumes it yet)")
+        void strictWarnsOnInertEventSourcedAnnotation() {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Account",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.EventSourced;
+
+                    @ExerisDomain(module = "core", path = "/accounts")
+                    @EventSourced
+                    public class Account {
+                        private String name;
+                    }
+                    """
+            );
+
+            Compilation compilation = javac()
+                    .withOptions("-Aexeris.strict=true")
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(source);
+
+            assertThat(compilation).succeeded();
+            assertThat(hasInertWarningFor(compilation, "@EventSourced"))
+                    .as("warning naming @EventSourced")
+                    .isTrue();
+            assertThat(inertWarnings(compilation))
+                    .as("exactly one inert warning (reported once per entity, not per attribute)")
+                    .isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("Default build stays quiet even when @EventSourced is set")
+        void defaultBuildDoesNotWarnOnEventSourced() {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Account",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.EventSourced;
+
+                    @ExerisDomain(module = "core", path = "/accounts")
+                    @EventSourced
+                    public class Account {
+                        private String name;
+                    }
+                    """
+            );
+
+            Compilation compilation = javac()
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(source);
+
+            assertThat(compilation).succeeded();
+            assertThat(inertWarnings(compilation))
+                    .as("inert warnings with strict unset")
+                    .isZero();
+        }
+
+        @Test
+        @DisplayName("-Aexeris.strict is quiet when no inert attribute is set")
+        void strictIsQuietWithoutInertAttributes() {
+            JavaFileObject clean = JavaFileObjects.forSourceString(
+                    "com.example.Widget",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Field;
+
+                    @ExerisDomain(module = "core", path = "/widgets")
+                    public class Widget {
+                        @Field(label = "Name")
+                        private String name;
+                    }
+                    """
+            );
+
+            Compilation compilation = javac()
+                    .withOptions("-Aexeris.strict=true")
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(clean);
+
+            assertThat(compilation).succeeded();
+            assertThat(inertWarnings(compilation))
+                    .as("inert-attribute warnings when nothing inert is set")
+                    .isZero();
+        }
+
+        private JavaFileObject fieldWithInertDataType() {
+            return JavaFileObjects.forSourceString(
+                    "com.example.Widget",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Field;
+
+                    @ExerisDomain(module = "core", path = "/widgets")
+                    public class Widget {
+                        @Field(label = "Name", dataType = "text")
+                        private String name;
+                    }
+                    """
+            );
+        }
+
+        private JavaFileObject actionParamWithInertAttributes() {
+            return JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Action;
+                    import eu.exeris.sdk.annotation.ActionParam;
+
+                    @ExerisDomain(module = "core", path = "/orders")
+                    public class Order {
+                        @Action(name = "approve", label = "Approve", path = "/{id}/approve")
+                        public void approve(
+                                @ActionParam(label = "Reason",
+                                        description = "Why this order is approved",
+                                        required = true) String reason) {
+                        }
+                    }
+                    """
+            );
+        }
+    }
+
+    @Nested
     @DisplayName("System-field overrides (T5)")
     class SystemFieldOverrideTests {
 

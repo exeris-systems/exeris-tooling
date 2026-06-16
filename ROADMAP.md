@@ -222,15 +222,34 @@ This file tracks scope per milestone. Items marked `[ ]` are open; `[x]` shipped
       *Update:* a cross-entity pass (from `@Relationship` and/or convention-named `*Id` FKs) emitting
       `FOREIGN KEY` constraints + `ON DELETE` policy in Flyway, feeding join-aware finders (**T8**).
 
-- [ ] **T11 — Strict mode / generation report for inert annotation attributes.** The systemic root
+- [~] **T11 — Strict mode / generation report for inert annotation attributes.** The systemic root
       behind T1/T3/T4/T5 (and S1–S5): an attribute set from the rich annotation Javadoc silently does
       nothing because no generator consumes it; the only way to learn it's inert is to read
       processor/generator source. The processor knows what it read; the generators know what they
       emit; the difference is computable.
-      *Update:* an opt-in `-Aexeris.strict` (or a generation report) that warns, per entity, when a
-      metadata attribute is set but consumed by no generator — turning silent no-ops into actionable
-      `javac` diagnostics. Highest-leverage trust fix for the annotation surface. The `@UI` surface is
-      a prime offender — see **U4** (UI fidelity end-to-end) in the **UI fidelity & theming** cluster.
+      *Done (0.5.x):* an opt-in `-Aexeris.strict=true` processor flag (parallel to `-Aexeris.verbose`)
+      emits a `javac` WARNING whenever an author sets an annotation attribute — or applies a whole
+      annotation — that no generator consumes, turning silent no-ops into actionable diagnostics. This is
+      well-defined because **every SDK annotation is `@Retention(SOURCE)`**: it is erased by the compiler
+      and absent from bytecode, so the kernel runtime / SPI / Core *cannot* read any of them — the
+      build-time pipeline is the only possible consumer, and an unconsumed attribute has literally zero
+      effect (no runtime escape hatch). Two hand-maintained, conservative registries in
+      `ExerisDomainProcessor`:
+      - `INERT_ATTRIBUTES` (per-attribute): each entry verified (a) to be a real annotation attribute
+        (not merely an AST record accessor with no matching element — e.g. `RelationshipMetadata.valueField()`
+        has no `@Relationship.valueField`) and (b) unconsumed by **both** Java and TS emitters (consumption
+        is their union). Seeded with `@Field.dataType`, `@ActionParam.description`, `@ActionParam.required`.
+      - `INERT_ANNOTATIONS` (whole-annotation, reported once per entity): seeded with `@EventSourced` —
+        the processor extracts `EventSourcedMetadata` into the JSON but **no generator emits it yet** (a
+        build gap: the event-sourcing generator is unbuilt). `@Saga` and `@Graph` are NOT here — their
+        generators (`KernelSagaGenerator`, `KernelGraphSyncGenerator`) do consume them.
+
+      Default builds stay quiet (flag opt-in). When the event-sourcing generator lands, delete the
+      `@EventSourced` registry entry in the same change.
+      *Deferred:* broadening the registry to the `@UI` surface (a prime offender) rides with **U4** (UI
+      fidelity end-to-end) in the **UI fidelity & theming** cluster — it needs the processor to emit the
+      full `uiMetadata` first, otherwise the warning would fire on attributes that are dropped upstream
+      rather than merely unconsumed.
 
 - [x] **T13 — Generation must own its output tree (prune orphans).** Codegen *wrote* per-entity files
       but never *deleted* them: removing or re-homing an entity left its stale
@@ -320,6 +339,44 @@ Proposals, highest return-on-effort first:
 > touching generated code, and get lists with real column types — inventing nothing in the SDK.
 > **U7 is the only item that genuinely blocks on the kernel (K2)**, not the generator; U6/U8 have
 > SDK halves owned in `exeris-sdk`.
+
+### Events & event sourcing
+
+> Grounded in a kernel-side audit (2026-06-16). The open-core kernel already ships a **mature
+> transactional-outbox pipeline** with **two swappable broker backends behind one Core port**
+> (`OutboxBrokerPort`; impls `KafkaEventBrokerPort` + `CommunityEventBusOutboxBrokerPort`, **both
+> open-core** in `exeris-kernel`, selected at bootstrap). The "Kafka vs internal" choice the founder
+> recalls is real, but it is a **kernel bootstrap concern, already swappable** — not something codegen
+> branches on.
+
+- [~] **EV1 — `@DomainEvent` payload realization (publisher exists, ships empty events).**
+      `KernelEventGenerator` already emits a per-entity `*EventPublisher` whose
+      `publish<Event>(UUID streamId)` calls `eventEngine.bus().publish(descriptor, …)` with
+      `FLAG_PERSISTENT`, so events flow through the kernel's transactional outbox transparently.
+      **Swappability is already solved and must stay codegen-invisible:** generated code binds to the
+      backend-agnostic EventEngine SPI and **never names Kafka** — the broker is chosen below the SPI at
+      bootstrap. A Kafka-specific (or RabbitMQ-specific) generator would violate single-target discipline
+      (hard-constraint #1); do **not** add one.
+      *Realizable gap (→ 1.0.0):* the payload is hardcoded `EventPayload.empty()`, so generated events
+      carry **no data**. Emit field-projection into the payload, honouring
+      `@DomainEvent.includeFields/excludeFields/includeComputed/sensitiveFields`. The many knobs with no
+      kernel counterpart (topic, partitionKey, schema/Avro, headers, exchange/routingKey, retention) stay
+      inert — `-Aexeris.strict` (**T11**) is the right surface to flag them, once each is verified
+      per-attribute against the union of Java+TS emitters.
+
+- [ ] **EV2 — `@EventSourced` aggregate generator — BLOCKED on a kernel SPI.** No generator emits
+      event-sourced aggregates today; **T11 strict mode surfaces `@EventSourced` as inert** (extracted
+      into the JSON, consumed by nobody — and SOURCE-retained, so no runtime reader either). The blocker
+      is upstream: the kernel has **no aggregate-event-store SPI** (no append-with-expected-version /
+      load-from-stream / snapshot store). The intended seam — `EventStreamAppender` / `EventStreamReader`
+      (`exeris-kernel-spi`, `@since 0.7.0`) — exists as interfaces but has **zero implementations and zero
+      binding sites**, and `@EventSourced`'s referenced `EventSourcedAggregate` base class has no kernel
+      counterpart. Codegen cannot emit working append/load/snapshot calls until the kernel binds these.
+      *Sequencing for 1.0.0:* (1) kernel implements + binds the aggregate-event-store SPI; (2) an RFC/ADR
+      fixes the codegen target shape (touches the processor↔generator contract and the kernel-target
+      surface → ADR-triggering per this repo's CLAUDE.md); (3) build `KernelEventSourcedGenerator` and
+      **delete the `@EventSourced` entry from `INERT_ANNOTATIONS`** in the processor in the same change.
+      Until (1), the strict-mode warning is the honest signal.
 
 ### Build & DX — tooling-owned halves
 

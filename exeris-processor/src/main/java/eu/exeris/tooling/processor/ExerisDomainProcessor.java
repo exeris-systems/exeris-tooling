@@ -38,7 +38,7 @@ import java.util.*;
         "eu.exeris.sdk.annotation.Saga"
 })
 @SupportedSourceVersion(SourceVersion.RELEASE_26)
-@SupportedOptions(ExerisDomainProcessor.OPTION_VERBOSE)
+@SupportedOptions({ExerisDomainProcessor.OPTION_VERBOSE, ExerisDomainProcessor.OPTION_STRICT})
 @SuppressWarnings({
         "PMD.TooManyMethods",
         "PMD.CouplingBetweenObjects"
@@ -59,13 +59,105 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      */
     public static final String OPTION_VERBOSE = "exeris.verbose";
 
+    /**
+     * Annotation processor option that opts in to a build-time completeness
+     * audit: a per-attribute WARNING whenever the author sets an annotation
+     * attribute that <em>no</em> code generator consumes (see
+     * {@link #INERT_ATTRIBUTES}). Off by default so ordinary builds stay quiet;
+     * pass {@code -Aexeris.strict=true} to {@code javac} (or
+     * {@code <compilerArg>-Aexeris.strict=true</compilerArg>} in the Maven
+     * compiler plugin) to enable it.
+     */
+    public static final String OPTION_STRICT = "exeris.strict";
+
     /** Diagnostic prefix prepended to every NOTE/WARNING/ERROR this processor emits. */
     private static final String DIAG_PREFIX = "[Exeris] ";
+
+    /**
+     * An annotation attribute the author can set but that <em>no</em> code
+     * generator — neither {@code exeris-codegen-java} nor
+     * {@code exeris-codegen-ts} — currently reads, so setting it has no effect
+     * on emitted output.
+     *
+     * @param annotation the SDK annotation's simple name (e.g. {@code "Field"})
+     * @param attribute  the attribute (annotation element) name
+     * @param note       why it is inert today — surfaced verbatim in the warning
+     */
+    private record InertAttribute(String annotation, String attribute, String note) {}
+
+    /**
+     * A type-level SDK annotation the processor extracts into metadata but that
+     * <em>no</em> generator consumes — so applying it has no effect on emitted
+     * output. Distinct from {@link InertAttribute}: here the <em>whole</em>
+     * annotation is inert (a missing-generator gap), so strict mode reports it
+     * once per entity rather than per attribute.
+     *
+     * @param fqn     the annotation's fully-qualified name (for mirror lookup)
+     * @param display the simple name shown in the warning
+     * @param note    why it is inert today — surfaced verbatim in the warning
+     */
+    private record InertAnnotation(String fqn, String display, String note) {}
+
+    /**
+     * Why these registries exist: every SDK annotation is
+     * {@code @Retention(SOURCE)}, so it is erased by the compiler and is absent
+     * from bytecode — the kernel runtime / SPI / Core <em>cannot</em> read any
+     * of them. The build-time pipeline (this processor + the generators) is the
+     * <em>only</em> possible consumer. An attribute or annotation that reaches
+     * no generator therefore has literally zero effect; there is no runtime
+     * escape hatch. That is exactly what strict mode surfaces.
+     *
+     * <p>Hand-maintained registry of annotation <em>attributes</em> that reach no
+     * generator. Deliberately conservative. Every entry satisfies two checks:
+     * (1) the attribute is actually declared on the named SDK annotation
+     * (otherwise the author cannot write it — it would be a {@code javac} error,
+     * not a silent no-op), and (2) no generator reads the corresponding metadata,
+     * verified against <em>both</em> emitter code bases. Consumption is the union
+     * of the Java and TS emitters — an attribute read by only one side is NOT
+     * inert and must not appear here.
+     *
+     * <p>NB: an AST record component (e.g. {@code RelationshipMetadata.valueField()})
+     * is NOT an annotation attribute — several such accessors exist with no
+     * matching annotation element, and they are deliberately absent here.
+     *
+     * <p>When a generator starts consuming one of these, DELETE its entry in the
+     * same change — a stale entry produces a false "no effect" warning on an
+     * attribute that now matters. Surfaced only under {@code -Aexeris.strict}.
+     */
+    private static final List<InertAttribute> INERT_ATTRIBUTES = List.of(
+            new InertAttribute("Field", "dataType",
+                    "the column/property type is derived from the Java field type; "
+                            + "the dataType override is dropped at the processor"),
+            new InertAttribute("ActionParam", "description",
+                    "the value reaches ActionParamMetadata in the JSON, but no emitter renders "
+                            + "it — action-parameter generation reads only the parameter name and type"),
+            new InertAttribute("ActionParam", "required",
+                    "the value reaches ActionParamMetadata in the JSON, but no emitter renders "
+                            + "it — action-parameter generation reads only the parameter name and type"));
+
+    /**
+     * Hand-maintained registry of whole type-level annotations that are extracted
+     * into {@code DomainMetadata} but consumed by no generator. Same discipline as
+     * {@link #INERT_ATTRIBUTES}: an entry means the annotation does nothing today
+     * because the emitting generator does not exist yet (a build gap, not a
+     * runtime contract — SOURCE retention precludes a runtime consumer).
+     *
+     * <p>{@code @Saga} and {@code @Graph} are deliberately <em>absent</em>: their
+     * generators ({@code KernelSagaGenerator}, {@code KernelGraphSyncGenerator})
+     * do consume them. When the event-sourcing generator lands, DELETE the
+     * {@code @EventSourced} entry in the same change.
+     */
+    private static final List<InertAnnotation> INERT_ANNOTATIONS = List.of(
+            new InertAnnotation("eu.exeris.sdk.annotation.EventSourced", "EventSourced",
+                    "event-sourcing emission is not yet implemented (blocked on a kernel "
+                            + "aggregate-event-store SPI), so the extracted EventSourcedMetadata "
+                            + "reaches no generator (see ROADMAP EV2)"));
 
     private ObjectMapper objectMapper;
     private Messager messager;
     private Filer filer;
     private boolean verbose;
+    private boolean strict;
 
     /** Collected enums from all processed entities */
     private final Set<TypeElement> discoveredEnums = new HashSet<>();
@@ -85,6 +177,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         this.objectMapper = createObjectMapper();
         this.verbose = Boolean.parseBoolean(
                 processingEnv.getOptions().getOrDefault(OPTION_VERBOSE, "false"));
+        this.strict = Boolean.parseBoolean(
+                processingEnv.getOptions().getOrDefault(OPTION_STRICT, "false"));
     }
 
     @Override
@@ -323,6 +417,10 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             builder.internalApi(internalApi);
         }
 
+        // T11: under -Aexeris.strict, flag type-level annotations that are
+        // extracted above but consumed by no generator (e.g. @EventSourced).
+        warnInertAnnotations(element);
+
         return builder.build();
     }
 
@@ -522,6 +620,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
 
         FieldMetadata.Builder builder = FieldMetadata.builder(name, type);
         Map<String, Object> values = extractAnnotationValues(annotation);
+        warnInertAttributes("Field", values, field, annotation);
 
         // @Field attribute surface (see exeris-sdk-annotations Field.java).
         // Each check below is verified live against the SDK declaration
@@ -714,6 +813,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         String name = param.getSimpleName().toString();
         String type = param.asType().toString();
         Map<String, Object> values = extractAnnotationValues(annotation);
+        warnInertAttributes("ActionParam", values, param, annotation);
 
         // Default `required = true` mirrors @ActionParam.required's annotation
         // default (verified against exeris-sdk-annotations:ActionParam).
@@ -1016,6 +1116,62 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         return InternalApiMetadata.builder()
                 .internal(true)
                 .build();
+    }
+
+    /**
+     * Under {@code -Aexeris.strict}, emits a WARNING for every attribute the
+     * author set explicitly on {@code annotationSimpleName} that no generator
+     * consumes (per {@link #INERT_ATTRIBUTES}). No-op unless strict mode is on.
+     *
+     * <p>{@code values} must be the explicit-only map from
+     * {@link #extractAnnotationValues} — defaults are absent there, so a warning
+     * fires only for attributes the author actually wrote, never for an
+     * annotation default the author never touched. {@code mirror} is the
+     * annotation mirror the values came from, so the diagnostic anchors on the
+     * annotation itself (IDE click-through) rather than the enclosing element.
+     */
+    private void warnInertAttributes(String annotationSimpleName,
+                                     Map<String, Object> values,
+                                     Element element,
+                                     AnnotationMirror mirror) {
+        if (!strict) {
+            return;
+        }
+        // Linear scan over a tiny, ordered List — deterministic and allocation-free.
+        for (InertAttribute inert : INERT_ATTRIBUTES) {
+            if (inert.annotation().equals(annotationSimpleName)
+                    && values.containsKey(inert.attribute())) {
+                messager.printMessage(
+                        Diagnostic.Kind.WARNING,
+                        DIAG_PREFIX + "@" + annotationSimpleName + "." + inert.attribute()
+                                + " is set but no code generator consumes it — "
+                                + inert.note() + ". (reported because -Aexeris.strict is enabled)",
+                        element, mirror);
+            }
+        }
+    }
+
+    /**
+     * Under {@code -Aexeris.strict}, emits a WARNING for every whole annotation
+     * on {@code element} that no generator consumes (per {@link #INERT_ANNOTATIONS}).
+     * No-op unless strict mode is on. Reported once per entity, not per attribute;
+     * the diagnostic anchors on the offending annotation mirror.
+     */
+    private void warnInertAnnotations(TypeElement element) {
+        if (!strict) {
+            return;
+        }
+        for (InertAnnotation inert : INERT_ANNOTATIONS) {
+            AnnotationMirror mirror = findAnnotation(element, inert.fqn());
+            if (mirror != null) {
+                messager.printMessage(
+                        Diagnostic.Kind.WARNING,
+                        DIAG_PREFIX + "@" + inert.display()
+                                + " is set but no code generator consumes it — "
+                                + inert.note() + ". (reported because -Aexeris.strict is enabled)",
+                        element, mirror);
+            }
+        }
     }
 
     private AnnotationMirror findAnnotation(Element element, String annotationFqn) {
