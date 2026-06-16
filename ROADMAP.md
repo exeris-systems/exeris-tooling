@@ -340,6 +340,44 @@ Proposals, highest return-on-effort first:
 > **U7 is the only item that genuinely blocks on the kernel (K2)**, not the generator; U6/U8 have
 > SDK halves owned in `exeris-sdk`.
 
+### Events & event sourcing
+
+> Grounded in a kernel-side audit (2026-06-16). The open-core kernel already ships a **mature
+> transactional-outbox pipeline** with **two swappable broker backends behind one Core port**
+> (`OutboxBrokerPort`; impls `KafkaEventBrokerPort` + `CommunityEventBusOutboxBrokerPort`, **both
+> open-core** in `exeris-kernel`, selected at bootstrap). The "Kafka vs internal" choice the founder
+> recalls is real, but it is a **kernel bootstrap concern, already swappable** — not something codegen
+> branches on.
+
+- [~] **EV1 — `@DomainEvent` payload realization (publisher exists, ships empty events).**
+      `KernelEventGenerator` already emits a per-entity `*EventPublisher` whose
+      `publish<Event>(UUID streamId)` calls `eventEngine.bus().publish(descriptor, …)` with
+      `FLAG_PERSISTENT`, so events flow through the kernel's transactional outbox transparently.
+      **Swappability is already solved and must stay codegen-invisible:** generated code binds to the
+      backend-agnostic EventEngine SPI and **never names Kafka** — the broker is chosen below the SPI at
+      bootstrap. A Kafka-specific (or RabbitMQ-specific) generator would violate single-target discipline
+      (hard-constraint #1); do **not** add one.
+      *Realizable gap (→ 1.0.0):* the payload is hardcoded `EventPayload.empty()`, so generated events
+      carry **no data**. Emit field-projection into the payload, honouring
+      `@DomainEvent.includeFields/excludeFields/includeComputed/sensitiveFields`. The many knobs with no
+      kernel counterpart (topic, partitionKey, schema/Avro, headers, exchange/routingKey, retention) stay
+      inert — `-Aexeris.strict` (**T11**) is the right surface to flag them, once each is verified
+      per-attribute against the union of Java+TS emitters.
+
+- [ ] **EV2 — `@EventSourced` aggregate generator — BLOCKED on a kernel SPI.** No generator emits
+      event-sourced aggregates today; **T11 strict mode surfaces `@EventSourced` as inert** (extracted
+      into the JSON, consumed by nobody — and SOURCE-retained, so no runtime reader either). The blocker
+      is upstream: the kernel has **no aggregate-event-store SPI** (no append-with-expected-version /
+      load-from-stream / snapshot store). The intended seam — `EventStreamAppender` / `EventStreamReader`
+      (`exeris-kernel-spi`, `@since 0.7.0`) — exists as interfaces but has **zero implementations and zero
+      binding sites**, and `@EventSourced`'s referenced `EventSourcedAggregate` base class has no kernel
+      counterpart. Codegen cannot emit working append/load/snapshot calls until the kernel binds these.
+      *Sequencing for 1.0.0:* (1) kernel implements + binds the aggregate-event-store SPI; (2) an RFC/ADR
+      fixes the codegen target shape (touches the processor↔generator contract and the kernel-target
+      surface → ADR-triggering per this repo's CLAUDE.md); (3) build `KernelEventSourcedGenerator` and
+      **delete the `@EventSourced` entry from `INERT_ANNOTATIONS`** in the processor in the same change.
+      Until (1), the strict-mode warning is the honest signal.
+
 ### Build & DX — tooling-owned halves
 
 > The full D1–D3 findings are DX-tracked; the parts with a tooling fix are captured here.
