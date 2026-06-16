@@ -1246,6 +1246,60 @@ class ExerisDomainProcessorTest {
             assertThat(dm.entityName()).isEqualTo("Order");
             assertThat(dm.module()).isEqualTo("sales");
         }
+
+        @Test
+        @DisplayName("Degraded path (no source text) stamps schemaVersion only, omits sourceDigest")
+        void degradedPathOmitsDigest() throws IOException {
+            DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                    .module("sales").path("/orders").build();
+
+            // source == null simulates an environment without the javac Tree API
+            var node = ExerisDomainProcessor.buildMetadataNode(mapper, metadata, null);
+            String json = mapper.writeValueAsString(node);
+
+            // sourceDigest is omitted (not an explicit JSON null), schemaVersion still stamped
+            assertThat(node.has("sourceDigest")).isFalse();
+            BaselineTrust trust = mapper.readValue(json, BaselineTrust.class);
+            assertThat(trust.sourceDigest()).isNull();
+            assertThat(trust.schemaVersion()).isEqualTo(SchemaVersion.CURRENT);
+            // still a valid DomainMetadata baseline
+            assertThat(mapper.readValue(json, DomainMetadata.class).entityName()).isEqualTo("Order");
+        }
+
+        @Test
+        @DisplayName("A standalone @Saga entity is also stamped with baseline-trust fields")
+        void sagaEntityAlsoStamped() throws IOException {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.OrderSaga",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.Saga;
+                    import eu.exeris.sdk.annotation.SagaStep;
+
+                    @Saga(name = "OrderSaga", timeout = "PT30M", maxRetries = 3)
+                    public class OrderSaga {
+                        @SagaStep(order = 1, name = "validate", service = "order-service",
+                                command = "ValidateCommand", compensation = "CancelCommand")
+                        public void step1() {}
+                    }
+                    """
+            );
+
+            Compilation compilation = javac()
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(source);
+
+            assertThat(compilation).succeeded();
+            Optional<JavaFileObject> file = compilation.generatedFile(
+                    StandardLocation.CLASS_OUTPUT, "exeris-metadata/OrderSaga.json");
+            assertThat(file).isPresent();
+            String json = readContent(file.get());
+
+            BaselineTrust trust = mapper.readValue(json, BaselineTrust.class);
+            assertThat(trust.schemaVersion()).isEqualTo(SchemaVersion.CURRENT);
+            assertThat(trust.sourceDigest()).isNotBlank();
+        }
     }
 
     @Nested

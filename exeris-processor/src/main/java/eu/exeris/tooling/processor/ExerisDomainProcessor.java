@@ -504,7 +504,10 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                     .sagaMetadata(sagaMetadata)
                     .build();
 
-            writeMetadata(sagaName, metadata);
+            // A standalone @Saga still emits a DomainMetadata JSON, so stamp the
+            // ADR-042 baseline-trust fields here too — same treatment as @ExerisDomain,
+            // so no exeris-metadata/*.json is left without a trust stamp.
+            writeDomainMetadataWithTrust(sagaName, metadata, element);
             note("Generated saga metadata for: " + sagaName);
         } catch (Exception e) {
             reportProcessingFailure(element, "Failed to process saga", e);
@@ -1406,11 +1409,30 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      */
     private void writeDomainMetadataWithTrust(String entityName, DomainMetadata metadata,
                                               TypeElement element) throws IOException {
-        ObjectNode node = objectMapper.valueToTree(metadata);
-        String source = sourceTextOf(element);
+        writeMetadata(entityName, buildMetadataNode(objectMapper, metadata, sourceTextOf(element)));
+    }
+
+    /**
+     * Builds the entity JSON tree with the two ADR-042 baseline-trust sibling fields.
+     * Package-private + static so the degraded path (null {@code source} → no
+     * {@code sourceDigest}) is unit-testable without a real javac.
+     *
+     * <p>Fields are stamped individually by their {@link BaselineTrust} contract names
+     * (no cast of {@code valueToTree} to {@code ObjectNode}; a future serializer change
+     * can't blow up the user's build with a {@code ClassCastException}). {@code schemaVersion}
+     * is read off {@link BaselineTrust#current} (an SDK method) rather than referenced as
+     * the {@code SchemaVersion.CURRENT} compile-time constant, so the processor never inlines
+     * a stale value. A {@code null} digest is omitted (not written as JSON {@code null}),
+     * independent of any {@code @JsonInclude} on the SDK type.
+     */
+    static ObjectNode buildMetadataNode(ObjectMapper mapper, DomainMetadata metadata, String source) {
+        ObjectNode node = mapper.valueToTree(metadata);
         BaselineTrust trust = BaselineTrust.current(source != null ? SourceDigest.of(source) : null);
-        node.setAll((ObjectNode) objectMapper.valueToTree(trust));
-        writeMetadata(entityName, node);
+        node.put("schemaVersion", trust.schemaVersion());
+        if (trust.sourceDigest() != null) {
+            node.put("sourceDigest", trust.sourceDigest());
+        }
+        return node;
     }
 
     /**
