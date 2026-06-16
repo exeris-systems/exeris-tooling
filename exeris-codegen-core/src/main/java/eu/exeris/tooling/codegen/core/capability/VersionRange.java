@@ -68,7 +68,12 @@ public final class VersionRange {
         String inner = s.substring(1, s.length() - 1);
         int comma = inner.indexOf(',');
         if (comma < 0) {
-            // [1.5] => exactly 1.5
+            // [1.5] => exactly 1.5. An exclusive single-value form (1.5), [1.5), (1.5]
+            // denotes the empty set — reject it rather than silently treating it as exact.
+            if (!lowInc || !upInc) {
+                throw new IllegalArgumentException(
+                        "Malformed version range (exclusive single value denotes the empty set): " + spec);
+            }
             String v = inner.trim();
             if (v.isEmpty()) {
                 throw new IllegalArgumentException("Malformed version range (empty single value): " + spec);

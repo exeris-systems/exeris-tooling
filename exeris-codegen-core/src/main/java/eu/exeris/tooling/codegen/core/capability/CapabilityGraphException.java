@@ -12,7 +12,8 @@ import java.util.List;
  */
 public final class CapabilityGraphException extends RuntimeException {
 
-    private final transient List<String> problems;
+    /** Immutable + serializable (JDK {@code List.copyOf}); kept on serialization so {@link #problems()} survives. */
+    private final List<String> problems;
 
     public CapabilityGraphException(List<String> problems) {
         super("Capability graph could not be resolved:\n  - " + String.join("\n  - ", problems));

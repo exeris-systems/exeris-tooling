@@ -1,6 +1,8 @@
 package eu.exeris.tooling.codegen.maven;
 
+import eu.exeris.tooling.codegen.core.capability.CapabilityGraphException;
 import org.apache.maven.plugin.MojoExecutionException;
+import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.project.MavenProject;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -87,5 +89,22 @@ class GenerateMojoTest {
                 .isInstanceOf(MojoExecutionException.class)
                 .hasMessageContaining("Code generation failed")
                 .hasRootCauseMessage("disk full");
+    }
+
+    @Test
+    @DisplayName("surfaces a CapabilityGraphException as MojoFailureException (user error, not plugin bug)")
+    void surfacesCapabilityFailure(@TempDir Path tmp) {
+        GenerateMojo mojo = mojo(tmp, new ArrayList<>());
+        mojo.pipeline = (m, o, b) -> {
+            throw new CapabilityGraphException(List.of(
+                    "module com.app.Checkout @Requires service com.api.PaymentApi but no @CapabilityModule provides it"));
+        };
+
+        assertThatThrownBy(mojo::execute)
+                .isInstanceOf(MojoFailureException.class)
+                .hasMessageContaining("com.api.PaymentApi");
+        // failure occurs before the compile source root is registered
+        assertThat(mojo.project.getCompileSourceRoots())
+                .doesNotContain(mojo.outputDir.getAbsolutePath());
     }
 }

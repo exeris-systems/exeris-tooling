@@ -77,4 +77,15 @@ class VersionRangeTest {
         assertThatThrownBy(() -> VersionRange.parse("[1.0,2.0"))
                 .isInstanceOf(IllegalArgumentException.class);
     }
+
+    @Test
+    @DisplayName("an exclusive single-value form (1.5) is rejected (empty set, not silent exact)")
+    void exclusiveSingleValueRejected() {
+        assertThatThrownBy(() -> VersionRange.parse("(1.5)"))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> VersionRange.parse("[1.5)"))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> VersionRange.parse("(1.5]"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
 }

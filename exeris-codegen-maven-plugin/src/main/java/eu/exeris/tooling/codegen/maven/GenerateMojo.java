@@ -1,8 +1,10 @@
 package eu.exeris.tooling.codegen.maven;
 
+import eu.exeris.tooling.codegen.core.capability.CapabilityGraphException;
 import eu.exeris.tooling.codegen.java.CodegenPipeline;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
+import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.plugins.annotations.LifecyclePhase;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
@@ -79,7 +81,7 @@ public class GenerateMojo extends AbstractMojo {
     PipelineRunner pipeline = CodegenPipeline.createDefault()::run;
 
     @Override
-    public void execute() throws MojoExecutionException {
+    public void execute() throws MojoExecutionException, MojoFailureException {
         if (skip) {
             getLog().info("exeris:generate skipped (exeris.codegen.skip=true)");
             return;
@@ -89,6 +91,11 @@ public class GenerateMojo extends AbstractMojo {
             getLog().info("Generating kernel-target sources: metadata="
                     + metadataDir + " → output=" + outputDir);
             pipeline.run(metadataDir.toPath(), outputDir.toPath(), basePackage);
+        } catch (CapabilityGraphException e) {
+            // A user-side composition error (unsatisfied @Requires / version
+            // mismatch / cycle), not a plugin bug — surface the actionable
+            // message as a build FAILURE, not an "unexpected error".
+            throw new MojoFailureException(e.getMessage(), e);
         } catch (IOException e) {
             throw new MojoExecutionException(
                     "Code generation failed (metadataDir=" + metadataDir + ")", e);
