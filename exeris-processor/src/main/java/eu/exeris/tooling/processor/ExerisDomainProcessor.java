@@ -129,9 +129,11 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                     "the column/property type is derived from the Java field type; "
                             + "the dataType override is dropped at the processor"),
             new InertAttribute("ActionParam", "description",
-                    "action-parameter generation reads only the parameter name and type"),
+                    "the value reaches ActionParamMetadata in the JSON, but no emitter renders "
+                            + "it — action-parameter generation reads only the parameter name and type"),
             new InertAttribute("ActionParam", "required",
-                    "action-parameter generation reads only the parameter name and type"));
+                    "the value reaches ActionParamMetadata in the JSON, but no emitter renders "
+                            + "it — action-parameter generation reads only the parameter name and type"));
 
     /**
      * Hand-maintained registry of whole type-level annotations that are extracted
@@ -617,7 +619,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
 
         FieldMetadata.Builder builder = FieldMetadata.builder(name, type);
         Map<String, Object> values = extractAnnotationValues(annotation);
-        warnInertAttributes("Field", values, field);
+        warnInertAttributes("Field", values, field, annotation);
 
         // @Field attribute surface (see exeris-sdk-annotations Field.java).
         // Each check below is verified live against the SDK declaration
@@ -810,7 +812,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         String name = param.getSimpleName().toString();
         String type = param.asType().toString();
         Map<String, Object> values = extractAnnotationValues(annotation);
-        warnInertAttributes("ActionParam", values, param);
+        warnInertAttributes("ActionParam", values, param, annotation);
 
         // Default `required = true` mirrors @ActionParam.required's annotation
         // default (verified against exeris-sdk-annotations:ActionParam).
@@ -1123,11 +1125,14 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      * <p>{@code values} must be the explicit-only map from
      * {@link #extractAnnotationValues} — defaults are absent there, so a warning
      * fires only for attributes the author actually wrote, never for an
-     * annotation default the author never touched.
+     * annotation default the author never touched. {@code mirror} is the
+     * annotation mirror the values came from, so the diagnostic anchors on the
+     * annotation itself (IDE click-through) rather than the enclosing element.
      */
     private void warnInertAttributes(String annotationSimpleName,
                                      Map<String, Object> values,
-                                     Element element) {
+                                     Element element,
+                                     AnnotationMirror mirror) {
         if (!strict) {
             return;
         }
@@ -1140,7 +1145,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                         DIAG_PREFIX + "@" + annotationSimpleName + "." + inert.attribute()
                                 + " is set but no code generator consumes it — "
                                 + inert.note() + ". (reported because -Aexeris.strict is enabled)",
-                        element);
+                        element, mirror);
             }
         }
     }
@@ -1148,20 +1153,22 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     /**
      * Under {@code -Aexeris.strict}, emits a WARNING for every whole annotation
      * on {@code element} that no generator consumes (per {@link #INERT_ANNOTATIONS}).
-     * No-op unless strict mode is on. Reported once per entity, not per attribute.
+     * No-op unless strict mode is on. Reported once per entity, not per attribute;
+     * the diagnostic anchors on the offending annotation mirror.
      */
     private void warnInertAnnotations(TypeElement element) {
         if (!strict) {
             return;
         }
         for (InertAnnotation inert : INERT_ANNOTATIONS) {
-            if (findAnnotation(element, inert.fqn()) != null) {
+            AnnotationMirror mirror = findAnnotation(element, inert.fqn());
+            if (mirror != null) {
                 messager.printMessage(
                         Diagnostic.Kind.WARNING,
                         DIAG_PREFIX + "@" + inert.display()
                                 + " is set but no code generator consumes it — "
                                 + inert.note() + ". (reported because -Aexeris.strict is enabled)",
-                        element);
+                        element, mirror);
             }
         }
     }

@@ -1003,6 +1003,9 @@ class ExerisDomainProcessorTest {
             assertThat(hasInertWarningFor(compilation, "@Field.dataType"))
                     .as("warning naming @Field.dataType")
                     .isTrue();
+            assertThat(inertWarnings(compilation))
+                    .as("exactly one inert warning (only dataType is inert here)")
+                    .isEqualTo(1);
         }
 
         @Test
@@ -1016,6 +1019,45 @@ class ExerisDomainProcessorTest {
             assertThat(compilation).succeeded();
             assertThat(hasInertWarningFor(compilation, "@ActionParam.description")).isTrue();
             assertThat(hasInertWarningFor(compilation, "@ActionParam.required")).isTrue();
+            assertThat(inertWarnings(compilation))
+                    .as("exactly two inert warnings (description + required)")
+                    .isEqualTo(2);
+        }
+
+        @Test
+        @DisplayName("-Aexeris.strict warns on @ActionParam.required even when set to false")
+        void strictWarnsOnActionParamRequiredFalse() {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Action;
+                    import eu.exeris.sdk.annotation.ActionParam;
+
+                    @ExerisDomain(module = "core", path = "/orders")
+                    public class Order {
+                        @Action(name = "approve", label = "Approve", path = "/{id}/approve")
+                        public void approve(
+                                @ActionParam(label = "Reason", required = false) String reason) {
+                        }
+                    }
+                    """
+            );
+
+            Compilation compilation = javac()
+                    .withOptions("-Aexeris.strict=true")
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(source);
+
+            assertThat(compilation).succeeded();
+            // A deliberate opt-out (required = false) is still inert — the explicit
+            // write is what matters, not the value. Only `required` is set here.
+            assertThat(hasInertWarningFor(compilation, "@ActionParam.required")).isTrue();
+            assertThat(inertWarnings(compilation))
+                    .as("exactly one inert warning (only required is set)")
+                    .isEqualTo(1);
         }
 
         @Test
@@ -1046,6 +1088,9 @@ class ExerisDomainProcessorTest {
             assertThat(hasInertWarningFor(compilation, "@EventSourced"))
                     .as("warning naming @EventSourced")
                     .isTrue();
+            assertThat(inertWarnings(compilation))
+                    .as("exactly one inert warning (reported once per entity, not per attribute)")
+                    .isEqualTo(1);
         }
 
         @Test
