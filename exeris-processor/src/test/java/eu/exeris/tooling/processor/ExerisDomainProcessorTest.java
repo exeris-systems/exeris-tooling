@@ -1,8 +1,13 @@
 package eu.exeris.tooling.processor;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.testing.compile.Compilation;
+import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
+import eu.exeris.sdk.sourcemodel.mutation.BaselineTrust;
+import eu.exeris.sdk.sourcemodel.mutation.SchemaVersion;
+import eu.exeris.sdk.sourcemodel.mutation.SourceDigest;
 import com.google.testing.compile.JavaFileObjects;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -1191,6 +1196,55 @@ class ExerisDomainProcessorTest {
                     }
                     """
             );
+        }
+    }
+
+    @Nested
+    @DisplayName("ADR-042 baseline trust (T16) — sourceDigest + schemaVersion siblings")
+    class BaselineTrustTests {
+
+        private final ObjectMapper mapper = new ObjectMapper()
+                .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
+
+        @Test
+        @DisplayName("Domain JSON stamps sourceDigest + current schemaVersion as siblings of DomainMetadata")
+        void stampsBaselineTrustSiblings() throws IOException {
+            String source = """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Field;
+
+                    @ExerisDomain(module = "sales", path = "/orders")
+                    public class Order {
+                        @Field(label = "Number")
+                        private String number;
+                    }
+                    """;
+
+            Compilation compilation = javac()
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(JavaFileObjects.forSourceString("com.example.Order", source));
+
+            assertThat(compilation).succeeded();
+            Optional<JavaFileObject> file = compilation.generatedFile(
+                    StandardLocation.CLASS_OUTPUT, "exeris-metadata/Order.json");
+            assertThat(file).isPresent();
+            String json = readContent(file.get());
+
+            // Two reads of one file: BaselineTrust picks up just the trust fields…
+            BaselineTrust trust = mapper.readValue(json, BaselineTrust.class);
+            assertThat(trust.schemaVersion()).isEqualTo(SchemaVersion.CURRENT);
+            assertThat(trust.sourceDigest()).isNotBlank();
+            // …and equals SourceDigest.of over the SAME source text the -io reader will recompute
+            assertThat(trust.sourceDigest()).isEqualTo(SourceDigest.of(source));
+            // checkBaselineTrust's gate is exactly this — schema is current ⇒ trusted
+            assertThat(SchemaVersion.isCurrent(trust.schemaVersion())).isTrue();
+
+            // …while a DomainMetadata read of the SAME file ignores the trust fields
+            DomainMetadata dm = mapper.readValue(json, DomainMetadata.class);
+            assertThat(dm.entityName()).isEqualTo("Order");
+            assertThat(dm.module()).isEqualTo("sales");
         }
     }
 

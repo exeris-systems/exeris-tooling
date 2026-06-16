@@ -154,15 +154,21 @@ This file tracks scope per milestone. Items marked `[ ]` are open; `[x]` shipped
       (0.5.x, PR #86):* primitive `boolean` binds via `isX()` (matching the system `DELETED` column);
       `Boolean` wrappers keep `getX()`. Surfaced by the Empire trial; previously uncovered.
 
-- [ ] **T16 — ADR-042 baseline-trust fields (`sourceDigest` + `schemaVersion`).** Codegen does not emit
+- [x] **T16 — ADR-042 baseline-trust fields (`sourceDigest` + `schemaVersion`).** Codegen did not emit
       the two fields ADR-042 obligation #5 requires into `exeris-metadata/<entity>.json`, so the `-io`
-      conflict reader cannot validate its baseline (always `NO_BASELINE`). The processor owns this JSON;
-      `DomainMetadata` (SDK) lacks the fields, but SDK `mutation.SchemaVersion.CURRENT` +
-      `NoBaselineCause.SCHEMA_VERSION_SKEW` already exist. *Plan (PR-G, 0.5.x):* processor emits
-      `schemaVersion` (from the SDK constant) + `sourceDigest` (a normalized-source content hash). The
-      digest algorithm is a **cross-repo contract** — the `-io` reader must recompute it identically;
-      pin its definition (what "normalized source" means) before implementing, or every baseline reads
-      stale. Tracked as ADR-042 slice 3.
+      conflict reader could not validate its baseline (always `NO_BASELINE`). *Done (0.5.x, PR-G):* the
+      processor stamps both as siblings of the serialized `DomainMetadata` in the same JSON object —
+      `sourceDigest` = SDK `SourceDigest.of` over the entity's raw source-file text (read via the javac
+      Compiler Tree API; the identical input the `-io` reader recomputes, so the concurrency token agrees
+      byte-for-byte), `schemaVersion` = SDK `SchemaVersion.CURRENT`. A `DomainMetadata` read ignores the
+      two (unknown-field tolerant); a `BaselineTrust` read of the same file picks up just them. The digest
+      contract was the gating decision — resolved by **exeris-sdk** owning `SourceDigest.of` (textual
+      normalize: LF + trailing-whitespace strip), so both sides compute it identically. Off-javac
+      environments degrade to a `schemaVersion`-only stamp. The metadata JSON is a build intermediate
+      (not committed) → no committed churn from the source-dependent digest.
+      *Still open (separate, cross-repo):* coordinated population of `@Field.dataType` (B5) + the new
+      `@UI` i18n keys / `customComponent` into metadata, matched by the `-io` reader for parity; and the
+      ADR-037/038 `.link.md` stubs.
 
 - [ ] **T1 — Serve custom actions, or gate them out (restore Java/TS parity).** `@Action` methods
       reach the OpenAPI spec and the Angular service, but the generated `RuntimeLifecycle` wires
