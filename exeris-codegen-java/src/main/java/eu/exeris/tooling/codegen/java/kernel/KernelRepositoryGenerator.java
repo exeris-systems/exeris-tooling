@@ -18,6 +18,7 @@ import eu.exeris.sdk.sourcemodel.ast.SystemFieldsMetadata;
 
 import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -231,9 +232,37 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     private List<Column> buildColumnLayout(List<FieldMetadata> fields, DomainMetadata metadata,
                                            SystemFieldNames sys) {
         List<Column> cols = new ArrayList<>();
+        // T14: de-dupe by SQL column name. The processor emits EVERY instance field,
+        // including ones that shadow the primary key or a system column (e.g. an
+        // explicit `id`, or a declared `version`/`createdAt` on an audited/versioned
+        // entity). Without this, buildColumnLayout emitted the same column twice —
+        // an invalid SELECT/INSERT and a double bind. System semantics win: a domain
+        // field whose column collides with the PK or an active system column is dropped.
+        Set<String> seen = new HashSet<>();
+        Set<String> systemCols = new HashSet<>();
+        if (metadata.tenantScoped()) {
+            systemCols.add(toSnakeCase(sys.tenantId()));
+        }
+        if (metadata.audited()) {
+            systemCols.add(toSnakeCase(sys.createdAt()));
+            systemCols.add(toSnakeCase(sys.updatedAt()));
+        }
+        if (metadata.softDelete()) {
+            systemCols.add(toSnakeCase(sys.deleted()));
+        }
+        if (metadata.versioned()) {
+            systemCols.add(toSnakeCase(sys.version()));
+        }
+
         cols.add(new Column("id", "id", "UUID", ColumnKind.DOMAIN));
+        seen.add("id");
         for (FieldMetadata field : fields) {
-            cols.add(new Column(toSnakeCase(field.name()), field.name(), field.type(), ColumnKind.DOMAIN));
+            String sqlName = toSnakeCase(field.name());
+            // skip a duplicate of the PK / an earlier field, or a shadow of a system column
+            if (!seen.add(sqlName) || systemCols.contains(sqlName)) {
+                continue;
+            }
+            cols.add(new Column(sqlName, field.name(), field.type(), ColumnKind.DOMAIN));
         }
         if (metadata.tenantScoped()) {
             cols.add(new Column(toSnakeCase(sys.tenantId()), sys.tenantId(), "UUID", ColumnKind.TENANT_ID));
@@ -557,7 +586,13 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     }
 
     private void emitBindDomain(CodeBlock.Builder body, Column col, int idx, String src) {
-        String getter = "id".equals(col.javaName()) ? src + ".getId()" : src + ".get" + capitalize(col.javaName()) + "()";
+        // T15: a primitive `boolean` field's JavaBean accessor is `isX()`, not `getX()`
+        // (matching the system DELETED column above and the entity the repository binds
+        // against). `Boolean` wrappers keep `getX()` per the Lombok/JavaBean convention.
+        String prefix = "boolean".equals(col.javaType()) ? "is" : "get";
+        String getter = "id".equals(col.javaName())
+                ? src + ".getId()"
+                : src + "." + prefix + capitalize(col.javaName()) + "()";
         String type = col.javaType();
         switch (classifyDomainType(type)) {
             case LIST -> body.addStatement("stmt.bindString($L, toJson($L))", idx, getter);
