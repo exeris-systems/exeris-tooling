@@ -222,15 +222,24 @@ This file tracks scope per milestone. Items marked `[ ]` are open; `[x]` shipped
       *Update:* a cross-entity pass (from `@Relationship` and/or convention-named `*Id` FKs) emitting
       `FOREIGN KEY` constraints + `ON DELETE` policy in Flyway, feeding join-aware finders (**T8**).
 
-- [ ] **T11 — Strict mode / generation report for inert annotation attributes.** The systemic root
+- [~] **T11 — Strict mode / generation report for inert annotation attributes.** The systemic root
       behind T1/T3/T4/T5 (and S1–S5): an attribute set from the rich annotation Javadoc silently does
       nothing because no generator consumes it; the only way to learn it's inert is to read
       processor/generator source. The processor knows what it read; the generators know what they
       emit; the difference is computable.
-      *Update:* an opt-in `-Aexeris.strict` (or a generation report) that warns, per entity, when a
-      metadata attribute is set but consumed by no generator — turning silent no-ops into actionable
-      `javac` diagnostics. Highest-leverage trust fix for the annotation surface. The `@UI` surface is
-      a prime offender — see **U4** (UI fidelity end-to-end) in the **UI fidelity & theming** cluster.
+      *Done (0.5.x):* an opt-in `-Aexeris.strict=true` processor flag (parallel to `-Aexeris.verbose`)
+      emits a per-attribute `javac` WARNING whenever an author sets an annotation attribute that no
+      generator consumes — turning silent no-ops into actionable diagnostics. Backed by a hand-maintained,
+      deliberately conservative `INERT_ATTRIBUTES` registry in `ExerisDomainProcessor`: each entry is
+      verified (a) to be a real annotation attribute (not merely an AST record accessor with no matching
+      element) and (b) unconsumed by **both** the Java and TS emitters (consumption is their union).
+      Seeded with `@Field.dataType`, `@ActionParam.description`, `@ActionParam.required`. Runtime-target
+      annotations (`@EventSourced`/`@Saga`/`@Graph`) are intentionally excluded — the kernel runtime, not
+      codegen, consumes them. Default builds stay quiet (flag opt-in).
+      *Deferred:* broadening the registry to the `@UI` surface (a prime offender) rides with **U4** (UI
+      fidelity end-to-end) in the **UI fidelity & theming** cluster — it needs the processor to emit the
+      full `uiMetadata` first, otherwise the warning would fire on attributes that are dropped upstream
+      rather than merely unconsumed.
 
 - [x] **T13 — Generation must own its output tree (prune orphans).** Codegen *wrote* per-entity files
       but never *deleted* them: removing or re-homing an entity left its stale

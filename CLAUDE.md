@@ -99,6 +99,8 @@ JDK 26 is required (the processor processes Java 26 preview sources). Maven 3.9+
 
 `-Aexeris.verbose` (added 0.2.0) controls per-entity processor chatter. Use it locally; leave default-quiet in CI.
 
+`-Aexeris.strict` (added 0.5.x, T11) opts into a completeness audit: a per-attribute `javac` WARNING when an annotation attribute is set but no generator consumes it. Backed by the conservative `INERT_ATTRIBUTES` registry in `ExerisDomainProcessor` — when a generator starts consuming one of those attributes, delete its registry entry in the same change (a stale entry produces a false "no effect" warning).
+
 ## Documentation precedence
 
 When sources disagree, the source-of-truth order is:
