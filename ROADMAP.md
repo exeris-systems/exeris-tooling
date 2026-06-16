@@ -140,6 +140,30 @@ This file tracks scope per milestone. Items marked `[ ]` are open; `[x]` shipped
 
 ### High severity
 
+- [x] **T14 — Repository column de-dupe.** `KernelRepositoryGenerator.buildColumnLayout` emitted a
+      hardcoded `id` PK + *every* instance field + the system columns with no de-dupe, so an entity
+      that declares its own `id` (or a `version`/`createdAt`/… field on a versioned/audited entity)
+      produced the column twice — an invalid `SELECT`/`INSERT` and a double bind. *Done (0.5.x, PR #86):*
+      de-dupe by SQL column name; the PK + active system columns are reserved and a shadowing domain
+      field is dropped (system semantics win). No-collision entities stay byte-identical. Surfaced by
+      the Empire trial; previously uncovered by any test.
+
+- [x] **T15 — Boolean bind accessor.** `emitBindDomain` hardcoded `get` for every domain field, so a
+      primitive `boolean onVacation` bound via `getOnVacation()` — absent on the entity
+      (JavaBean/Lombok emit `isOnVacation()`), breaking the generated repository's compile. *Done
+      (0.5.x, PR #86):* primitive `boolean` binds via `isX()` (matching the system `DELETED` column);
+      `Boolean` wrappers keep `getX()`. Surfaced by the Empire trial; previously uncovered.
+
+- [ ] **T16 — ADR-042 baseline-trust fields (`sourceDigest` + `schemaVersion`).** Codegen does not emit
+      the two fields ADR-042 obligation #5 requires into `exeris-metadata/<entity>.json`, so the `-io`
+      conflict reader cannot validate its baseline (always `NO_BASELINE`). The processor owns this JSON;
+      `DomainMetadata` (SDK) lacks the fields, but SDK `mutation.SchemaVersion.CURRENT` +
+      `NoBaselineCause.SCHEMA_VERSION_SKEW` already exist. *Plan (PR-G, 0.5.x):* processor emits
+      `schemaVersion` (from the SDK constant) + `sourceDigest` (a normalized-source content hash). The
+      digest algorithm is a **cross-repo contract** — the `-io` reader must recompute it identically;
+      pin its definition (what "normalized source" means) before implementing, or every baseline reads
+      stale. Tracked as ADR-042 slice 3.
+
 - [ ] **T1 — Serve custom actions, or gate them out (restore Java/TS parity).** `@Action` methods
       reach the OpenAPI spec and the Angular service, but the generated `RuntimeLifecycle` wires
       **CRUD only** (entities × 5) — no route or handler method for any action, so a generated
