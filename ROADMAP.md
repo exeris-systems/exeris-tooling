@@ -228,14 +228,24 @@ This file tracks scope per milestone. Items marked `[ ]` are open; `[x]` shipped
       processor/generator source. The processor knows what it read; the generators know what they
       emit; the difference is computable.
       *Done (0.5.x):* an opt-in `-Aexeris.strict=true` processor flag (parallel to `-Aexeris.verbose`)
-      emits a per-attribute `javac` WARNING whenever an author sets an annotation attribute that no
-      generator consumes — turning silent no-ops into actionable diagnostics. Backed by a hand-maintained,
-      deliberately conservative `INERT_ATTRIBUTES` registry in `ExerisDomainProcessor`: each entry is
-      verified (a) to be a real annotation attribute (not merely an AST record accessor with no matching
-      element) and (b) unconsumed by **both** the Java and TS emitters (consumption is their union).
-      Seeded with `@Field.dataType`, `@ActionParam.description`, `@ActionParam.required`. Runtime-target
-      annotations (`@EventSourced`/`@Saga`/`@Graph`) are intentionally excluded — the kernel runtime, not
-      codegen, consumes them. Default builds stay quiet (flag opt-in).
+      emits a `javac` WARNING whenever an author sets an annotation attribute — or applies a whole
+      annotation — that no generator consumes, turning silent no-ops into actionable diagnostics. This is
+      well-defined because **every SDK annotation is `@Retention(SOURCE)`**: it is erased by the compiler
+      and absent from bytecode, so the kernel runtime / SPI / Core *cannot* read any of them — the
+      build-time pipeline is the only possible consumer, and an unconsumed attribute has literally zero
+      effect (no runtime escape hatch). Two hand-maintained, conservative registries in
+      `ExerisDomainProcessor`:
+      - `INERT_ATTRIBUTES` (per-attribute): each entry verified (a) to be a real annotation attribute
+        (not merely an AST record accessor with no matching element — e.g. `RelationshipMetadata.valueField()`
+        has no `@Relationship.valueField`) and (b) unconsumed by **both** Java and TS emitters (consumption
+        is their union). Seeded with `@Field.dataType`, `@ActionParam.description`, `@ActionParam.required`.
+      - `INERT_ANNOTATIONS` (whole-annotation, reported once per entity): seeded with `@EventSourced` —
+        the processor extracts `EventSourcedMetadata` into the JSON but **no generator emits it yet** (a
+        build gap: the event-sourcing generator is unbuilt). `@Saga` and `@Graph` are NOT here — their
+        generators (`KernelSagaGenerator`, `KernelGraphSyncGenerator`) do consume them.
+
+      Default builds stay quiet (flag opt-in). When the event-sourcing generator lands, delete the
+      `@EventSourced` registry entry in the same change.
       *Deferred:* broadening the registry to the `@UI` surface (a prime offender) rides with **U4** (UI
       fidelity end-to-end) in the **UI fidelity & theming** cluster — it needs the processor to emit the
       full `uiMetadata` first, otherwise the warning would fire on attributes that are dropped upstream

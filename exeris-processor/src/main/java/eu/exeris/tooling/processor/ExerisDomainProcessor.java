@@ -86,18 +86,35 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     private record InertAttribute(String annotation, String attribute, String note) {}
 
     /**
-     * Hand-maintained registry of annotation attributes that reach no generator.
+     * A type-level SDK annotation the processor extracts into metadata but that
+     * <em>no</em> generator consumes — so applying it has no effect on emitted
+     * output. Distinct from {@link InertAttribute}: here the <em>whole</em>
+     * annotation is inert (a missing-generator gap), so strict mode reports it
+     * once per entity rather than per attribute.
      *
-     * <p>Deliberately conservative. Every entry satisfies two checks: (1) the
-     * attribute is actually declared on the named SDK annotation (otherwise the
-     * author cannot write it — it would be a {@code javac} error, not a silent
-     * no-op), and (2) no generator reads the corresponding metadata, verified
-     * against <em>both</em> emitter code bases. Consumption is the union of the
-     * Java and TS emitters — an attribute read by only one side is NOT inert and
-     * must not appear here. Runtime-target annotations (e.g. {@code @EventSourced},
-     * {@code @Saga}, {@code @Graph}) are intentionally excluded: the kernel
-     * runtime, not codegen, is their consumer, so a "no generator reads this"
-     * warning would mislead.
+     * @param fqn     the annotation's fully-qualified name (for mirror lookup)
+     * @param display the simple name shown in the warning
+     * @param note    why it is inert today — surfaced verbatim in the warning
+     */
+    private record InertAnnotation(String fqn, String display, String note) {}
+
+    /**
+     * Why these registries exist: every SDK annotation is
+     * {@code @Retention(SOURCE)}, so it is erased by the compiler and is absent
+     * from bytecode — the kernel runtime / SPI / Core <em>cannot</em> read any
+     * of them. The build-time pipeline (this processor + the generators) is the
+     * <em>only</em> possible consumer. An attribute or annotation that reaches
+     * no generator therefore has literally zero effect; there is no runtime
+     * escape hatch. That is exactly what strict mode surfaces.
+     *
+     * <p>Hand-maintained registry of annotation <em>attributes</em> that reach no
+     * generator. Deliberately conservative. Every entry satisfies two checks:
+     * (1) the attribute is actually declared on the named SDK annotation
+     * (otherwise the author cannot write it — it would be a {@code javac} error,
+     * not a silent no-op), and (2) no generator reads the corresponding metadata,
+     * verified against <em>both</em> emitter code bases. Consumption is the union
+     * of the Java and TS emitters — an attribute read by only one side is NOT
+     * inert and must not appear here.
      *
      * <p>NB: an AST record component (e.g. {@code RelationshipMetadata.valueField()})
      * is NOT an annotation attribute — several such accessors exist with no
@@ -115,6 +132,23 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                     "action-parameter generation reads only the parameter name and type"),
             new InertAttribute("ActionParam", "required",
                     "action-parameter generation reads only the parameter name and type"));
+
+    /**
+     * Hand-maintained registry of whole type-level annotations that are extracted
+     * into {@code DomainMetadata} but consumed by no generator. Same discipline as
+     * {@link #INERT_ATTRIBUTES}: an entry means the annotation does nothing today
+     * because the emitting generator does not exist yet (a build gap, not a
+     * runtime contract — SOURCE retention precludes a runtime consumer).
+     *
+     * <p>{@code @Saga} and {@code @Graph} are deliberately <em>absent</em>: their
+     * generators ({@code KernelSagaGenerator}, {@code KernelGraphSyncGenerator})
+     * do consume them. When the event-sourcing generator lands, DELETE the
+     * {@code @EventSourced} entry in the same change.
+     */
+    private static final List<InertAnnotation> INERT_ANNOTATIONS = List.of(
+            new InertAnnotation("eu.exeris.sdk.annotation.EventSourced", "EventSourced",
+                    "event-sourcing emission is not yet implemented, so the extracted "
+                            + "EventSourcedMetadata reaches no generator (see ROADMAP T11)"));
 
     private ObjectMapper objectMapper;
     private Messager messager;
@@ -379,6 +413,10 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         if (internalApi != null) {
             builder.internalApi(internalApi);
         }
+
+        // T11: under -Aexeris.strict, flag type-level annotations that are
+        // extracted above but consumed by no generator (e.g. @EventSourced).
+        warnInertAnnotations(element);
 
         return builder.build();
     }
@@ -1100,6 +1138,27 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                 messager.printMessage(
                         Diagnostic.Kind.WARNING,
                         DIAG_PREFIX + "@" + annotationSimpleName + "." + inert.attribute()
+                                + " is set but no code generator consumes it — "
+                                + inert.note() + ". (reported because -Aexeris.strict is enabled)",
+                        element);
+            }
+        }
+    }
+
+    /**
+     * Under {@code -Aexeris.strict}, emits a WARNING for every whole annotation
+     * on {@code element} that no generator consumes (per {@link #INERT_ANNOTATIONS}).
+     * No-op unless strict mode is on. Reported once per entity, not per attribute.
+     */
+    private void warnInertAnnotations(TypeElement element) {
+        if (!strict) {
+            return;
+        }
+        for (InertAnnotation inert : INERT_ANNOTATIONS) {
+            if (findAnnotation(element, inert.fqn()) != null) {
+                messager.printMessage(
+                        Diagnostic.Kind.WARNING,
+                        DIAG_PREFIX + "@" + inert.display()
                                 + " is set but no code generator consumes it — "
                                 + inert.note() + ". (reported because -Aexeris.strict is enabled)",
                         element);

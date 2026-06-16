@@ -1019,6 +1019,65 @@ class ExerisDomainProcessorTest {
         }
 
         @Test
+        @DisplayName("-Aexeris.strict warns on @EventSourced (no generator consumes it yet)")
+        void strictWarnsOnInertEventSourcedAnnotation() {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Account",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.EventSourced;
+
+                    @ExerisDomain(module = "core", path = "/accounts")
+                    @EventSourced
+                    public class Account {
+                        private String name;
+                    }
+                    """
+            );
+
+            Compilation compilation = javac()
+                    .withOptions("-Aexeris.strict=true")
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(source);
+
+            assertThat(compilation).succeeded();
+            assertThat(hasInertWarningFor(compilation, "@EventSourced"))
+                    .as("warning naming @EventSourced")
+                    .isTrue();
+        }
+
+        @Test
+        @DisplayName("Default build stays quiet even when @EventSourced is set")
+        void defaultBuildDoesNotWarnOnEventSourced() {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Account",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.EventSourced;
+
+                    @ExerisDomain(module = "core", path = "/accounts")
+                    @EventSourced
+                    public class Account {
+                        private String name;
+                    }
+                    """
+            );
+
+            Compilation compilation = javac()
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(source);
+
+            assertThat(compilation).succeeded();
+            assertThat(inertWarnings(compilation))
+                    .as("inert warnings with strict unset")
+                    .isZero();
+        }
+
+        @Test
         @DisplayName("-Aexeris.strict is quiet when no inert attribute is set")
         void strictIsQuietWithoutInertAttributes() {
             JavaFileObject clean = JavaFileObjects.forSourceString(
