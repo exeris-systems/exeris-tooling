@@ -2,9 +2,13 @@ package eu.exeris.tooling.processor;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.google.auto.service.AutoService;
+import com.sun.source.util.Trees;
 import eu.exeris.sdk.sourcemodel.ast.*;
+import eu.exeris.sdk.sourcemodel.mutation.BaselineTrust;
+import eu.exeris.sdk.sourcemodel.mutation.SourceDigest;
 
 import javax.annotation.processing.*;
 import javax.lang.model.SourceVersion;
@@ -173,6 +177,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     private ObjectMapper objectMapper;
     private Messager messager;
     private Filer filer;
+    /** javac Compiler Tree API, used to read entity source text for the ADR-042 digest; null off javac. */
+    private Trees trees;
     private boolean verbose;
     private boolean strict;
 
@@ -192,6 +198,14 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         this.messager = processingEnv.getMessager();
         this.filer = processingEnv.getFiler();
         this.objectMapper = createObjectMapper();
+        // Compiler Tree API gives the entity's raw source text for the ADR-042
+        // sourceDigest. Absent off a real javac (e.g. some IDE/incremental envs) —
+        // degrade gracefully to a schemaVersion-only stamp rather than failing.
+        try {
+            this.trees = Trees.instance(processingEnv);
+        } catch (IllegalArgumentException notJavac) {
+            this.trees = null;
+        }
         this.verbose = Boolean.parseBoolean(
                 processingEnv.getOptions().getOrDefault(OPTION_VERBOSE, "false"));
         this.strict = Boolean.parseBoolean(
@@ -466,8 +480,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             // Build full metadata using DomainMetadata model
             DomainMetadata metadata = buildFullDomainMetadata(element, entityName, packageName);
 
-            // Write JSON metadata file
-            writeMetadata(entityName, metadata);
+            // Write JSON metadata file + ADR-042 baseline-trust sibling fields
+            writeDomainMetadataWithTrust(entityName, metadata, element);
 
             note("Generated metadata for: " + entityName);
         } catch (Exception e) {
@@ -490,7 +504,10 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                     .sagaMetadata(sagaMetadata)
                     .build();
 
-            writeMetadata(sagaName, metadata);
+            // A standalone @Saga still emits a DomainMetadata JSON, so stamp the
+            // ADR-042 baseline-trust fields here too — same treatment as @ExerisDomain,
+            // so no exeris-metadata/*.json is left without a trust stamp.
+            writeDomainMetadataWithTrust(sagaName, metadata, element);
             note("Generated saga metadata for: " + sagaName);
         } catch (Exception e) {
             reportProcessingFailure(element, "Failed to process saga", e);
@@ -1375,6 +1392,69 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     private static int getInt(Map<String, Object> values, String key, int fallback) {
         Object v = values.get(key);
         return v instanceof Number n ? n.intValue() : fallback;
+    }
+
+    /**
+     * Writes {@code exeris-metadata/<entity>.json} with the two ADR-042 baseline-trust
+     * sibling fields ({@code sourceDigest} + {@code schemaVersion}) stamped alongside
+     * the serialized {@link DomainMetadata} in the same JSON object — not a wrapper, so
+     * a plain {@code DomainMetadata} read still works (it ignores unknown fields) and a
+     * {@link BaselineTrust} read of the same file picks up just these two.
+     *
+     * <p>{@code sourceDigest} is {@link SourceDigest#of} over the entity's raw source
+     * file text — the identical input the {@code -io} layer recomputes against, so the
+     * concurrency token agrees byte-for-byte. When the source text is unavailable (no
+     * javac Tree API), the digest is {@code null} (NON_NULL-omitted) and only
+     * {@code schemaVersion} is stamped.
+     */
+    private void writeDomainMetadataWithTrust(String entityName, DomainMetadata metadata,
+                                              TypeElement element) throws IOException {
+        writeMetadata(entityName, buildMetadataNode(objectMapper, metadata, sourceTextOf(element)));
+    }
+
+    /**
+     * Builds the entity JSON tree with the two ADR-042 baseline-trust sibling fields.
+     * Package-private + static so the degraded path (null {@code source} → no
+     * {@code sourceDigest}) is unit-testable without a real javac.
+     *
+     * <p>Fields are stamped individually by their {@link BaselineTrust} contract names
+     * (no cast of {@code valueToTree} to {@code ObjectNode}; a future serializer change
+     * can't blow up the user's build with a {@code ClassCastException}). {@code schemaVersion}
+     * is read off {@link BaselineTrust#current} (an SDK method) rather than referenced as
+     * the {@code SchemaVersion.CURRENT} compile-time constant, so the processor never inlines
+     * a stale value. A {@code null} digest is omitted (not written as JSON {@code null}),
+     * independent of any {@code @JsonInclude} on the SDK type.
+     */
+    static ObjectNode buildMetadataNode(ObjectMapper mapper, DomainMetadata metadata, String source) {
+        ObjectNode node = mapper.valueToTree(metadata);
+        BaselineTrust trust = BaselineTrust.current(source != null ? SourceDigest.of(source) : null);
+        node.put("schemaVersion", trust.schemaVersion());
+        if (trust.sourceDigest() != null) {
+            node.put("sourceDigest", trust.sourceDigest());
+        }
+        return node;
+    }
+
+    /**
+     * The entity's raw source-file text via the javac Compiler Tree API, or {@code null}
+     * when unavailable. {@link SourceDigest#of} normalizes (line endings / trailing
+     * whitespace), so the raw text is the correct input — do not pre-normalize here.
+     */
+    private String sourceTextOf(TypeElement element) {
+        if (trees == null) {
+            return null;
+        }
+        try {
+            var path = trees.getPath(element);
+            if (path == null) {
+                return null;
+            }
+            CharSequence content = path.getCompilationUnit().getSourceFile().getCharContent(true);
+            return content == null ? null : content.toString();
+        } catch (IOException | RuntimeException e) {
+            note("could not read source for ADR-042 digest (" + element.getSimpleName() + "): " + e);
+            return null;
+        }
     }
 
     private void writeMetadata(String entityName, Object metadata) throws IOException {
