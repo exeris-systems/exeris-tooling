@@ -539,13 +539,15 @@ class FormDslGeneratorGapsTest {
     private static UIFieldMetadata uiOverrideWithAutocomplete(String fieldName, AutocompleteConfig ac) {
         return new UIFieldMetadata(
                 fieldName, ComponentType.AUTOCOMPLETE, 0, 0, true, true, true,
-                null, null, null, null, null, null, ac, null);
+                null, null, null, null, null, null, ac, null,
+                null, null, null);
     }
 
     private static UIFieldMetadata uiOverrideWithSelect(String fieldName, SelectConfig sc) {
         return new UIFieldMetadata(
                 fieldName, ComponentType.SELECT, 0, 0, true, true, true,
-                null, null, null, null, null, null, null, sc);
+                null, null, null, null, null, null, null, sc,
+                null, null, null);
     }
 
     /** Build a Domain with a single field that carries the supplied UI override, and emit the form. */

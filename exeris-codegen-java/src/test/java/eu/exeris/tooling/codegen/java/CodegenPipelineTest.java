@@ -1,7 +1,12 @@
 package eu.exeris.tooling.codegen.java;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import eu.exeris.sdk.sourcemodel.ast.CapabilityModuleMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
+import eu.exeris.sdk.sourcemodel.ast.ProvidesMetadata;
+import eu.exeris.sdk.sourcemodel.ast.RequiresMetadata;
+import eu.exeris.tooling.codegen.core.capability.CapabilityGraphException;
+import eu.exeris.tooling.codegen.core.capability.CapabilityModuleDescriptor;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.core.generator.GeneratorRegistry;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
@@ -380,6 +385,108 @@ class CodegenPipelineTest {
 
             // Null-returning generator emits 0; bootstrap pair emits 2.
             assertThat(filesGenerated).isEqualTo(2);
+        }
+    }
+
+    @Nested
+    @DisplayName("capability manifest (PR-E)")
+    class CapabilityManifest {
+
+        private void writeCapabilityJson(String name, CapabilityModuleDescriptor descriptor) throws IOException {
+            mapper.writeValue(metadataDir.resolve("capability_" + name + ".json").toFile(), descriptor);
+        }
+
+        private CapabilityModuleDescriptor desc(String qName,
+                                                List<ProvidesMetadata> provides,
+                                                List<RequiresMetadata> requires) {
+            String simple = qName.substring(qName.lastIndexOf('.') + 1);
+            String pkg = qName.substring(0, qName.lastIndexOf('.'));
+            return new CapabilityModuleDescriptor(simple, pkg, qName,
+                    CapabilityModuleMetadata.builder().provides(provides).requires(requires).build());
+        }
+
+        @Test
+        @DisplayName("capabilities-only project (no @ExerisDomain) still emits cap-manifest.json")
+        void capabilitiesOnlyEmitsManifest() throws IOException {
+            writeCapabilityJson("Billing",
+                    desc("com.app.Billing", List.of(ProvidesMetadata.of("com.api.PaymentApi", "1.0")), List.of()));
+            writeCapabilityJson("Checkout",
+                    desc("com.app.Checkout", List.of(),
+                            List.of(RequiresMetadata.of("com.api.PaymentApi", "[1.0,2.0)"))));
+
+            int filesGenerated = pipeline.run(metadataDir, outputDir, "com.app");
+
+            assertThat(filesGenerated).isEqualTo(1);
+            Path manifest = outputDir.resolve("cap-manifest.json");
+            assertThat(manifest).exists();
+            String json = Files.readString(manifest);
+            assertThat(json)
+                    .contains("com.app.Billing")
+                    .contains("com.app.Checkout")
+                    .contains("\"satisfied\" : true")
+                    .contains("\"initOrder\"");
+            // no domain bootstrap when there are no entities
+            assertThat(outputDir.resolve("com/app/Application.java")).doesNotExist();
+        }
+
+        @Test
+        @DisplayName("domains + capabilities both emit (bootstrap pair + manifest)")
+        void domainsAndCapabilities() throws IOException {
+            writeDomainJson("Product.json", productDomain());
+            writeCapabilityJson("Billing",
+                    desc("com.app.Billing", List.of(ProvidesMetadata.of("com.api.PaymentApi")), List.of()));
+
+            pipeline.run(metadataDir, outputDir, "com.shop");
+
+            assertThat(outputDir.resolve("com/shop/Application.java")).exists();
+            assertThat(outputDir.resolve("cap-manifest.json")).exists();
+        }
+
+        @Test
+        @DisplayName("an unsatisfied required capability fails the run")
+        void unsatisfiedFailsRun() throws IOException {
+            writeCapabilityJson("Checkout",
+                    desc("com.app.Checkout", List.of(),
+                            List.of(RequiresMetadata.of("com.api.PaymentApi"))));
+
+            assertThatThrownBy(() -> pipeline.run(metadataDir, outputDir, "com.app"))
+                    .isInstanceOf(CapabilityGraphException.class)
+                    .hasMessageContaining("com.api.PaymentApi");
+            // build failed before writing a manifest
+            assertThat(outputDir.resolve("cap-manifest.json")).doesNotExist();
+        }
+
+        @Test
+        @DisplayName("cap-manifest.json is byte-identical regardless of load order (deterministic)")
+        void manifestDeterministic(@TempDir Path outputB) throws IOException {
+            writeCapabilityJson("Billing",
+                    desc("com.app.Billing", List.of(ProvidesMetadata.of("com.api.PaymentApi", "1.0")), List.of()));
+            writeCapabilityJson("Checkout",
+                    desc("com.app.Checkout", List.of(),
+                            List.of(RequiresMetadata.of("com.api.PaymentApi", "[1.0,2.0)"))));
+
+            pipeline.run(metadataDir, outputDir, "com.app");
+            pipeline.run(metadataDir, outputB, "com.app");
+
+            assertThat(Files.readString(outputB.resolve("cap-manifest.json")))
+                    .isEqualTo(Files.readString(outputDir.resolve("cap-manifest.json")));
+        }
+
+        @Test
+        @DisplayName("loadCapabilities ignores enum_/domain JSON and reads only capability_*")
+        void loadCapabilitiesFilters() throws IOException {
+            writeDomainJson("Product.json", productDomain());
+            writeCapabilityJson("Billing",
+                    desc("com.app.Billing", List.of(ProvidesMetadata.of("com.api.PaymentApi")), List.of()));
+
+            List<CapabilityModuleDescriptor> caps = pipeline.loadCapabilities(metadataDir);
+
+            assertThat(caps).singleElement()
+                    .satisfies(c -> assertThat(c.qualifiedName()).isEqualTo("com.app.Billing"));
+            // and the domain loader excludes the capability file
+            assertThat(pipeline.loadMetadata(metadataDir))
+                    .singleElement()
+                    .satisfies(d -> assertThat(d.entityName()).isEqualTo("Product"));
         }
     }
 

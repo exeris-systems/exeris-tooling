@@ -1,10 +1,14 @@
 package eu.exeris.tooling.codegen.java;
 
+import com.fasterxml.jackson.core.util.DefaultIndenter;
+import com.fasterxml.jackson.core.util.DefaultPrettyPrinter;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.tooling.codegen.core.OutputWriter;
+import eu.exeris.tooling.codegen.core.capability.CapabilityGraph;
+import eu.exeris.tooling.codegen.core.capability.CapabilityModuleDescriptor;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.core.generator.GeneratorRegistry;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
@@ -75,6 +79,12 @@ public final class CodegenPipeline {
      * @param outputDir           target for generated sources (created if absent)
      * @param explicitBasePackage caller-supplied base package, or {@code null}
      *                            to auto-detect from the first domain
+     * @throws IOException if metadata or output cannot be read/written
+     * @throws eu.exeris.tooling.codegen.core.capability.CapabilityGraphException
+     *         (unchecked) if the capability graph cannot be resolved — an
+     *         unsatisfied non-optional {@code @Requires}, version mismatch, or
+     *         dependency cycle. Callers that wrap {@code run} should catch it
+     *         alongside {@link IOException}.
      */
     public int run(Path metadataDir, Path outputDir, String explicitBasePackage) throws IOException {
         Objects.requireNonNull(metadataDir, "metadataDir");
@@ -86,16 +96,17 @@ public final class CodegenPipeline {
         LOG.log(Level.INFO, "base-package=" + (explicitBasePackage != null ? explicitBasePackage : "(auto-detect)"));
 
         List<DomainMetadata> domains = loadMetadata(metadataDir);
+        List<CapabilityModuleDescriptor> capabilities = loadCapabilities(metadataDir);
 
-        if (domains.isEmpty()) {
-            LOG.log(Level.WARNING, "No domain metadata found in " + metadataDir
-                    + " — make sure @ExerisDomain-annotated classes are compiled first");
-            // T13: "no entities" is itself a valid output state (every @ExerisDomain
-            // was removed). If a *previous* run owned this tree (a manifest is
-            // present), this run must own it too — prune every previously-emitted
-            // file rather than leaving a stale, un-compilable tree. A directory
-            // with no prior manifest is left untouched (nothing was ever generated
-            // here to clean up).
+        if (domains.isEmpty() && capabilities.isEmpty()) {
+            LOG.log(Level.WARNING, "No domain or capability metadata found in " + metadataDir
+                    + " — make sure @ExerisDomain / @CapabilityModule-annotated classes are compiled first");
+            // T13: "nothing to generate" is itself a valid output state (every
+            // @ExerisDomain / @CapabilityModule was removed). If a *previous* run
+            // owned this tree (a manifest is present), this run must own it too —
+            // prune every previously-emitted file rather than leaving a stale,
+            // un-compilable tree. A directory with no prior manifest is left
+            // untouched (nothing was ever generated here to clean up).
             if (Files.exists(outputDir.resolve(OutputWriter.MANIFEST_NAME))) {
                 int pruned = new OutputWriter(outputDir).pruneOrphansAndWriteManifest();
                 if (pruned > 0) {
@@ -105,47 +116,52 @@ public final class CodegenPipeline {
             return 0;
         }
 
-        LOG.log(Level.INFO, "Found " + domains.size() + " domain(s)");
-        for (DomainMetadata domain : domains) {
-            int fieldCount = domain.fields() != null ? domain.fields().size() : 0;
-            LOG.log(Level.DEBUG, () -> "domain=" + domain.entityName()
-                    + " path=" + domain.effectivePath()
-                    + " package=" + domain.packageName()
-                    + " fields=" + fieldCount);
-        }
-
-        String basePackage = explicitBasePackage;
-        if (basePackage == null) {
-            basePackage = domains.get(0).packageName().replace(".domain", "");
-            LOG.log(Level.INFO, "Auto-detected base-package=" + basePackage);
-        }
-
         Files.createDirectories(outputDir);
         OutputWriter writer = new OutputWriter(outputDir);
-
         int filesGenerated = 0;
 
-        LOG.log(Level.INFO, "Generating per-entity code");
-        List<KernelArtifactGenerator> generators = registry.getGenerators();
-        for (DomainMetadata domain : domains) {
-            LOG.log(Level.DEBUG, () -> "generating entity=" + domain.entityName());
-            for (KernelArtifactGenerator generator : generators) {
-                GeneratedFile file = generator.generate(domain);
-                if (file != null) {
-                    writeFile(writer, file);
-                    LOG.log(Level.DEBUG, () -> "wrote " + file.className()
-                            + " (" + generator.artifactType() + ")");
-                    filesGenerated++;
+        if (!domains.isEmpty()) {
+            LOG.log(Level.INFO, "Found " + domains.size() + " domain(s)");
+            for (DomainMetadata domain : domains) {
+                int fieldCount = domain.fields() != null ? domain.fields().size() : 0;
+                LOG.log(Level.DEBUG, () -> "domain=" + domain.entityName()
+                        + " path=" + domain.effectivePath()
+                        + " package=" + domain.packageName()
+                        + " fields=" + fieldCount);
+            }
+
+            String basePackage = explicitBasePackage;
+            if (basePackage == null) {
+                basePackage = domains.get(0).packageName().replace(".domain", "");
+                LOG.log(Level.INFO, "Auto-detected base-package=" + basePackage);
+            }
+
+            LOG.log(Level.INFO, "Generating per-entity code");
+            List<KernelArtifactGenerator> generators = registry.getGenerators();
+            for (DomainMetadata domain : domains) {
+                LOG.log(Level.DEBUG, () -> "generating entity=" + domain.entityName());
+                for (KernelArtifactGenerator generator : generators) {
+                    GeneratedFile file = generator.generate(domain);
+                    if (file != null) {
+                        writeFile(writer, file);
+                        LOG.log(Level.DEBUG, () -> "wrote " + file.className()
+                                + " (" + generator.artifactType() + ")");
+                        filesGenerated++;
+                    }
                 }
+            }
+
+            LOG.log(Level.INFO, "Generating application bootstrap");
+            for (GeneratedFile file : applicationGenerator.generateAll(domains, basePackage)) {
+                writeFile(writer, file);
+                LOG.log(Level.DEBUG, () -> "wrote " + file.className()
+                        + " (" + applicationGenerator.artifactType() + ")");
+                filesGenerated++;
             }
         }
 
-        LOG.log(Level.INFO, "Generating application bootstrap");
-        for (GeneratedFile file : applicationGenerator.generateAll(domains, basePackage)) {
-            writeFile(writer, file);
-            LOG.log(Level.DEBUG, () -> "wrote " + file.className()
-                    + " (" + applicationGenerator.artifactType() + ")");
-            filesGenerated++;
+        if (!capabilities.isEmpty()) {
+            filesGenerated += emitCapabilityManifest(capabilities, writer);
         }
 
         // T13: generation owns its output tree — delete files a previous run
@@ -172,6 +188,7 @@ public final class CodegenPipeline {
             List<Path> jsonFiles = files
                     .filter(p -> p.toString().endsWith(".json"))
                     .filter(p -> !p.getFileName().toString().startsWith("enum_"))
+                    .filter(p -> !p.getFileName().toString().startsWith("capability_"))
                     .toList();
 
             for (Path jsonFile : jsonFiles) {
@@ -183,6 +200,69 @@ public final class CodegenPipeline {
         }
 
         return result;
+    }
+
+    /**
+     * Loads {@code capability_*.json} into capability descriptors. Capabilities are
+     * app-wide (parallel to, never nested in, {@link DomainMetadata}); the load is
+     * order-independent — {@link CapabilityGraph#build} sorts deterministically.
+     */
+    List<CapabilityModuleDescriptor> loadCapabilities(Path metadataDir) throws IOException {
+        List<CapabilityModuleDescriptor> result = new ArrayList<>();
+
+        if (!Files.exists(metadataDir)) {
+            return result;
+        }
+
+        try (Stream<Path> files = Files.list(metadataDir)) {
+            List<Path> jsonFiles = files
+                    .filter(p -> p.toString().endsWith(".json"))
+                    .filter(p -> p.getFileName().toString().startsWith("capability_"))
+                    .toList();
+
+            for (Path jsonFile : jsonFiles) {
+                CapabilityModuleDescriptor descriptor =
+                        mapper.readValue(jsonFile.toFile(), CapabilityModuleDescriptor.class);
+                if (descriptor.qualifiedName() != null && !descriptor.qualifiedName().isBlank()) {
+                    result.add(descriptor);
+                }
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * Resolves + validates the capability graph (failing the build via
+     * {@link eu.exeris.tooling.codegen.core.capability.CapabilityGraphException} on an
+     * unsatisfied non-optional requirement, version mismatch, or cycle) and writes the
+     * deterministic {@code cap-manifest.json} at the output root — the build-time,
+     * platform-side capability registry (input for the mesh contract, T12).
+     *
+     * <p>Runs after domain emission, so a graph failure here leaves any domain files
+     * from this run on disk with orphan-pruning un-run (the {@code @throws} aborts
+     * before {@link OutputWriter#pruneOrphansAndWriteManifest()}). That is standard
+     * fail-fast behaviour — the next successful build prunes correctly.
+     *
+     * @return the number of files written (always 1)
+     */
+    private int emitCapabilityManifest(List<CapabilityModuleDescriptor> capabilities,
+                                       OutputWriter writer) throws IOException {
+        LOG.log(Level.INFO, "Resolving capability graph (" + capabilities.size() + " module(s))");
+        CapabilityGraph graph = CapabilityGraph.build(capabilities);
+        for (String warning : graph.warnings()) {
+            LOG.log(Level.WARNING, "capability: " + warning);
+        }
+
+        DefaultPrettyPrinter printer = new DefaultPrettyPrinter();
+        DefaultIndenter indenter = new DefaultIndenter("  ", "\n");
+        printer.indentObjectsWith(indenter);
+        printer.indentArraysWith(indenter);
+        String json = mapper.writer(printer).writeValueAsString(graph) + "\n";
+
+        writer.writeResource("cap-manifest.json", json);
+        LOG.log(Level.INFO, "Wrote cap-manifest.json (init order: " + graph.initOrder() + ")");
+        return 1;
     }
 
     private static void writeFile(OutputWriter writer, GeneratedFile file) throws IOException {

@@ -262,6 +262,12 @@ public final class FormDslGenerator {
         // Explicit override takes priority
         if (uiOverride != null && uiOverride.componentType() != null
                 && uiOverride.componentType() != UIMetadata.ComponentType.AUTO) {
+            // CUSTOM (SDK B4 escape hatch) names an app-supplied control via
+            // customComponent(); emit that name, falling back to "custom".
+            if (uiOverride.componentType() == UIMetadata.ComponentType.CUSTOM) {
+                String custom = uiOverride.customComponent();
+                return (custom != null && !custom.isBlank()) ? custom : "custom";
+            }
             return componentTypeToString(uiOverride.componentType());
         }
 
@@ -336,6 +342,7 @@ public final class FormDslGenerator {
             case URL -> "url-input";
             case CURRENCY -> "currency-input";
             case HIDDEN -> "hidden";
+            case CUSTOM -> "custom";
             default -> "text-input";
         };
     }

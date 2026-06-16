@@ -35,7 +35,8 @@ import java.util.*;
 @AutoService(Processor.class)
 @SupportedAnnotationTypes({
         "eu.exeris.sdk.annotation.ExerisDomain",
-        "eu.exeris.sdk.annotation.Saga"
+        "eu.exeris.sdk.annotation.Saga",
+        "eu.exeris.sdk.annotation.capability.CapabilityModule"
 })
 @SupportedSourceVersion(SourceVersion.RELEASE_26)
 @SupportedOptions({ExerisDomainProcessor.OPTION_VERBOSE, ExerisDomainProcessor.OPTION_STRICT})
@@ -97,6 +98,22 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      * @param note    why it is inert today — surfaced verbatim in the warning
      */
     private record InertAnnotation(String fqn, String display, String note) {}
+
+    /**
+     * JSON wire shape for one {@code @CapabilityModule} class. The SDK's
+     * {@link CapabilityModuleMetadata} carries no module identity (it has only
+     * provides/requires/lifecycleOwner), so the processor wraps it with the
+     * module's own name/package/FQN before write-out. Capabilities are app-wide,
+     * not per-entity, so this is a separate JSON family ({@code capability_*.json})
+     * parallel to — never nested inside — {@code DomainMetadata}. The
+     * codegen-core read model ({@code CapabilityModuleDescriptor}) mirrors these
+     * field names structurally (the processor and generators live in different
+     * modules and share only the SDK source-model contract).
+     */
+    private record CapabilityModuleJson(String name,
+                                        String packageName,
+                                        String qualifiedName,
+                                        CapabilityModuleMetadata module) {}
 
     /**
      * Why these registries exist: every SDK annotation is
@@ -194,6 +211,10 @@ public class ExerisDomainProcessor extends AbstractProcessor {
 
         // Process standalone @Saga annotated classes
         processSagaAnnotations(roundEnv);
+
+        // Process @CapabilityModule annotated classes (parallel JSON, not part of
+        // DomainMetadata — capabilities are app-wide, not per-entity)
+        processCapabilityModuleAnnotations(roundEnv);
 
         return true;
     }
@@ -318,6 +339,120 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         return element.getAnnotationMirrors().stream()
                 .anyMatch(am -> processingEnv.getTypeUtils()
                         .isSameType(am.getAnnotationType(), annotationType.asType()));
+    }
+
+    private void processCapabilityModuleAnnotations(RoundEnvironment roundEnv) {
+        TypeElement capabilityModuleType = processingEnv.getElementUtils()
+                .getTypeElement("eu.exeris.sdk.annotation.capability.CapabilityModule");
+
+        if (capabilityModuleType == null) {
+            return;
+        }
+
+        for (Element element : roundEnv.getElementsAnnotatedWith(capabilityModuleType)) {
+            if (element.getKind() != ElementKind.CLASS && element.getKind() != ElementKind.INTERFACE) {
+                error(element, "@CapabilityModule can only be applied to a type");
+                continue;
+            }
+            processCapabilityModule((TypeElement) element);
+        }
+    }
+
+    private void processCapabilityModule(TypeElement element) {
+        String name = element.getSimpleName().toString();
+        String packageName = getPackageName(element);
+        String qualifiedName = element.getQualifiedName().toString();
+
+        note("Processing capability module: " + qualifiedName);
+
+        try {
+            CapabilityModuleMetadata module = buildCapabilityModuleMetadata(element);
+            writeMetadata("capability_" + name,
+                    new CapabilityModuleJson(name, packageName, qualifiedName, module));
+            note("Generated capability metadata for: " + name);
+        } catch (Exception e) {
+            reportProcessingFailure(element, "Failed to process capability module", e);
+        }
+    }
+
+    private CapabilityModuleMetadata buildCapabilityModuleMetadata(TypeElement element) {
+        List<ProvidesMetadata> provides = new ArrayList<>();
+        List<RequiresMetadata> requires = new ArrayList<>();
+
+        for (AnnotationMirror am : element.getAnnotationMirrors()) {
+            String type = am.getAnnotationType().toString();
+            switch (type) {
+                case "eu.exeris.sdk.annotation.capability.Provides" ->
+                        provides.add(extractProvides(am));
+                case "eu.exeris.sdk.annotation.capability.Provides.List" ->
+                        forEachContained(am, contained -> provides.add(extractProvides(contained)));
+                case "eu.exeris.sdk.annotation.capability.Requires" ->
+                        requires.add(extractRequires(am));
+                case "eu.exeris.sdk.annotation.capability.Requires.List" ->
+                        forEachContained(am, contained -> requires.add(extractRequires(contained)));
+                default -> { /* not a capability declaration */ }
+            }
+        }
+
+        // @CapabilityLifecycle is @Target(TYPE); when present on the module class
+        // itself, the module owns its own lifecycle. (A separate lifecycle-owner
+        // class would need an SDK-side identity attribute, which does not exist.)
+        String lifecycleOwner =
+                findAnnotation(element, "eu.exeris.sdk.annotation.capability.CapabilityLifecycle") != null
+                        ? element.getQualifiedName().toString()
+                        : null;
+
+        return CapabilityModuleMetadata.builder()
+                .provides(List.copyOf(provides))
+                .requires(List.copyOf(requires))
+                .lifecycleOwner(lifecycleOwner)
+                .build();
+    }
+
+    /** Iterates the {@code value} array of a {@code @Provides.List}/{@code @Requires.List} container. */
+    private void forEachContained(AnnotationMirror container, java.util.function.Consumer<AnnotationMirror> action) {
+        Object value = extractAnnotationValues(container).get("value");
+        if (value instanceof List<?> entries) {
+            for (Object entry : entries) {
+                if (entry instanceof AnnotationMirror contained) {
+                    action.accept(contained);
+                }
+            }
+        }
+    }
+
+    private ProvidesMetadata extractProvides(AnnotationMirror annotation) {
+        Map<String, Object> values = extractAnnotationValues(annotation);
+        String service = serviceFqn(values.get("service"));
+        String version = getString(values, "version", null);
+        return new ProvidesMetadata(service, blankToNull(version));
+    }
+
+    private RequiresMetadata extractRequires(AnnotationMirror annotation) {
+        Map<String, Object> values = extractAnnotationValues(annotation);
+        String service = serviceFqn(values.get("service"));
+        String versionRange = getString(values, "versionRange", null);
+        boolean optional = getBoolean(values, "optional", false);
+        return new RequiresMetadata(service, blankToNull(versionRange), optional);
+    }
+
+    /**
+     * Resolves a {@code Class<?>} annotation attribute (a {@link TypeMirror}) to
+     * the service interface's fully-qualified name. {@code @Provides}/{@code @Requires}
+     * reference services by class literal, so a provider and a requirer of the
+     * same interface yield the identical FQN — the key the capability graph
+     * matches on.
+     */
+    private String serviceFqn(Object serviceValue) {
+        if (serviceValue instanceof TypeMirror tm && tm instanceof DeclaredType dt) {
+            return ((TypeElement) dt.asElement()).getQualifiedName().toString();
+        }
+        // void.class / unresolved — surface the raw form rather than dropping it.
+        return serviceValue != null ? serviceValue.toString() : null;
+    }
+
+    private static String blankToNull(String s) {
+        return (s == null || s.isBlank()) ? null : s;
     }
 
     private void processDomainEntity(TypeElement element) {
