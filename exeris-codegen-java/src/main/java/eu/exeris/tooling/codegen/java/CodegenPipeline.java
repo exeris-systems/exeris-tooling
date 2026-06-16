@@ -79,6 +79,12 @@ public final class CodegenPipeline {
      * @param outputDir           target for generated sources (created if absent)
      * @param explicitBasePackage caller-supplied base package, or {@code null}
      *                            to auto-detect from the first domain
+     * @throws IOException if metadata or output cannot be read/written
+     * @throws eu.exeris.tooling.codegen.core.capability.CapabilityGraphException
+     *         (unchecked) if the capability graph cannot be resolved — an
+     *         unsatisfied non-optional {@code @Requires}, version mismatch, or
+     *         dependency cycle. Callers that wrap {@code run} should catch it
+     *         alongside {@link IOException}.
      */
     public int run(Path metadataDir, Path outputDir, String explicitBasePackage) throws IOException {
         Objects.requireNonNull(metadataDir, "metadataDir");
@@ -232,6 +238,11 @@ public final class CodegenPipeline {
      * unsatisfied non-optional requirement, version mismatch, or cycle) and writes the
      * deterministic {@code cap-manifest.json} at the output root — the build-time,
      * platform-side capability registry (input for the mesh contract, T12).
+     *
+     * <p>Runs after domain emission, so a graph failure here leaves any domain files
+     * from this run on disk with orphan-pruning un-run (the {@code @throws} aborts
+     * before {@link OutputWriter#pruneOrphansAndWriteManifest()}). That is standard
+     * fail-fast behaviour — the next successful build prunes correctly.
      *
      * @return the number of files written (always 1)
      */

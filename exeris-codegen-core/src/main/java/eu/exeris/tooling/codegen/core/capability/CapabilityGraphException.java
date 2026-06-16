@@ -12,7 +12,9 @@ import java.util.List;
  */
 public final class CapabilityGraphException extends RuntimeException {
 
-    /** Immutable + serializable (JDK {@code List.copyOf}); kept on serialization so {@link #problems()} survives. */
+    // Non-transient so problems() is retained if this exception is ever serialized.
+    // RuntimeException is Serializable; the List.copyOf instance is serializable on
+    // the JDK in practice — this class declares no formal Serializable contract.
     private final List<String> problems;
 
     public CapabilityGraphException(List<String> problems) {

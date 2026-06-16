@@ -39,7 +39,12 @@ public record CapabilityGraph(
         List<String> warnings
 ) {
 
-    /** Manifest schema version — bump on any breaking shape change. */
+    /**
+     * Manifest schema version. Any breaking shape change to the serialized manifest —
+     * a new/removed/renamed record component on {@link CapabilityGraph} or
+     * {@link Resolution}, or a changed field meaning — must bump this and ship a
+     * migration note for {@code cap-manifest.json} consumers (e.g. the T12 registry).
+     */
     public static final int SCHEMA_VERSION = 1;
 
     /**
