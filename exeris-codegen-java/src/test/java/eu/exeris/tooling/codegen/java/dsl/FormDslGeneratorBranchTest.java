@@ -37,19 +37,22 @@ class FormDslGeneratorBranchTest {
     private static UIMetadata.UIFieldMetadata override(String fieldName, ComponentType type) {
         return new UIMetadata.UIFieldMetadata(
                 fieldName, type, 0, 0, true, true, true,
-                null, null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null,
+                null, null, null);
     }
 
     private static UIMetadata.UIFieldMetadata override(String fieldName, ComponentType type, int gridSpan) {
         return new UIMetadata.UIFieldMetadata(
                 fieldName, type, gridSpan, 0, true, true, true,
-                null, null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null,
+                null, null, null);
     }
 
     private static UIMetadata.UIFieldMetadata override(String fieldName, String placeholder, String helpText, String cssClass) {
         return new UIMetadata.UIFieldMetadata(
                 fieldName, ComponentType.AUTO, 0, 0, true, true, true,
-                placeholder, helpText, null, null, cssClass, null, null, null);
+                placeholder, helpText, null, null, cssClass, null, null, null,
+                null, null, null);
     }
 
     @Test

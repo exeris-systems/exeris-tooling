@@ -104,7 +104,8 @@ class FormDslGeneratorTest {
                 fieldName, UIMetadata.ComponentType.AUTO, gridSpan, displayOrder,
                 true, true, true, // displayInList, displayInDetail, editableInForm
                 placeholder, helpText, null, null, null, null, // format, width, cssClass, mask
-                null, null // autocomplete, select
+                null, null, // autocomplete, select
+                null, null, null // customComponent, placeholderKey, helpTextKey
         );
     }
 
