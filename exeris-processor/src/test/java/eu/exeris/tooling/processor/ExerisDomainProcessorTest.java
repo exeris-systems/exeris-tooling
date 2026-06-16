@@ -1195,6 +1195,96 @@ class ExerisDomainProcessorTest {
     }
 
     @Nested
+    @DisplayName("Capability modules (PR-E) — capability_*.json extraction")
+    class CapabilityModuleTests {
+
+        @Test
+        @DisplayName("@CapabilityModule with single @Provides/@Requires emits capability JSON")
+        void shouldExtractSingleProvidesAndRequires() throws IOException {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.BillingModule",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.capability.CapabilityModule;
+                    import eu.exeris.sdk.annotation.capability.CapabilityLifecycle;
+                    import eu.exeris.sdk.annotation.capability.Provides;
+                    import eu.exeris.sdk.annotation.capability.Requires;
+
+                    interface PaymentApi {}
+                    interface LedgerApi {}
+
+                    @CapabilityModule
+                    @CapabilityLifecycle
+                    @Provides(service = PaymentApi.class, version = "1.2.0")
+                    @Requires(service = LedgerApi.class, versionRange = "[1.0,2.0)")
+                    public class BillingModule {}
+                    """
+            );
+
+            Compilation compilation = javac()
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(source);
+
+            assertThat(compilation).succeeded();
+            Optional<JavaFileObject> file = compilation.generatedFile(
+                    StandardLocation.CLASS_OUTPUT, "exeris-metadata/capability_BillingModule.json");
+            assertThat(file).isPresent();
+
+            String json = readContent(file.get());
+            assertThat(json)
+                    .contains("\"name\" : \"BillingModule\"")
+                    .contains("\"qualifiedName\" : \"com.example.BillingModule\"")
+                    .contains("com.example.PaymentApi")
+                    .contains("\"version\" : \"1.2.0\"")
+                    .contains("com.example.LedgerApi")
+                    .contains("[1.0,2.0)")
+                    // @CapabilityLifecycle present on the module -> it owns its lifecycle
+                    .contains("\"lifecycleOwner\" : \"com.example.BillingModule\"");
+        }
+
+        @Test
+        @DisplayName("repeatable @Provides (container form) are all captured")
+        void shouldExtractRepeatableProvides() throws IOException {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.MultiModule",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.capability.CapabilityModule;
+                    import eu.exeris.sdk.annotation.capability.Provides;
+
+                    interface AlphaApi {}
+                    interface BetaApi {}
+
+                    @CapabilityModule
+                    @Provides(service = AlphaApi.class, version = "1.0")
+                    @Provides(service = BetaApi.class)
+                    public class MultiModule {}
+                    """
+            );
+
+            Compilation compilation = javac()
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(source);
+
+            assertThat(compilation).succeeded();
+            Optional<JavaFileObject> file = compilation.generatedFile(
+                    StandardLocation.CLASS_OUTPUT, "exeris-metadata/capability_MultiModule.json");
+            assertThat(file).isPresent();
+
+            String json = readContent(file.get());
+            assertThat(json)
+                    .contains("com.example.AlphaApi")
+                    .contains("com.example.BetaApi");
+            // BetaApi has no version -> NON_NULL omits the version field (no "version" : "")
+            assertThat(json).doesNotContain("\"version\" : \"\"");
+            // no @CapabilityLifecycle -> lifecycleOwner omitted (NON_NULL)
+            assertThat(json).doesNotContain("lifecycleOwner");
+        }
+    }
+
+    @Nested
     @DisplayName("System-field overrides (T5)")
     class SystemFieldOverrideTests {
 

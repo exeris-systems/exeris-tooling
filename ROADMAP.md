@@ -53,17 +53,30 @@ This file tracks scope per milestone. Items marked `[ ]` are open; `[x]` shipped
 
 ## 0.5.0 — `@Capability`-aware codegen
 
-> Goal: capability annotations (from SDK 0.4.0) drive additional generation paths.
+> Goal: capability annotations (`@CapabilityModule`/`@Provides`/`@Requires`/`@CapabilityLifecycle`,
+> SDK capability package) drive build-time composition validation + a platform registry artifact.
 
-- [ ] `KernelCapabilityClientGenerator` — emits typed clients for capability ports
-- [ ] `KernelCapabilityHandlerGenerator` — wires capability event handlers
-- [ ] OpenAPI spec aggregation for capability-exposed APIs
+- [x] Processor extracts `@CapabilityModule` (+ repeatable `@Provides`/`@Requires`, `@CapabilityLifecycle`)
+      into `capability_*.json` — app-wide, parallel to `DomainMetadata`, never nested in it. (Resolves
+      **S5**, the SDK-side "extracted by no processor pass" gap.)
+- [x] `CapabilityGraph` (codegen-core) resolves the `@Requires`→`@Provides` graph with Maven-style
+      version-range matching (`VersionRange`), **fails the build** on an unsatisfied non-optional
+      requirement / version mismatch / dependency cycle, and **warns** on an unsatisfied optional.
+- [x] Deterministic `cap-manifest.json` emitted at the output root — the platform-side capability
+      registry (input for the cross-app mesh contract, **T12**). T13-tracked like every emitted file.
 
-> This milestone's capability surface is the input the mesh story (**T12**) needs —
-> `@Provides`/`@Requires`/`@CapabilityModule` are currently extracted by no processor
-> pass and consumed by no generator (**S5**, SDK-side). Wiring the capability graph here
-> is prerequisite (1) of T12's contract-registry. See the **Codegen completeness backlog
-> → T12** below.
+> **Capabilities are a PLATFORM concern, not a kernel one.** `@Provides`/`@Requires` model composition /
+> SKU / mesh, and every SDK annotation is `@Retention(SOURCE)` (erased from bytecode), so the kernel —
+> the runtime substrate — neither sees nor *should* see the platform registry; the dependency direction
+> is platform → kernel, never the reverse. The earlier "capability port clients / event-handler wiring"
+> framing is **dropped**: it had no SDK AST backing and would have made the kernel aware of the platform
+> registry (a Wall inversion). If a *runtime* module-composition story ever materialises (assembling
+> active modules per SKU/deployment), it is **host-runtime** (`exeris-spring-runtime`) work consuming
+> this manifest — never a kernel SPI, and never a second backend here (hard-constraint #1). This is the
+> key distinction from `@EventSourced` (**EV2**), which genuinely *is* runtime and so genuinely needs a
+> kernel SPI.
+>
+> This satisfies prerequisite (1) of **T12**'s contract-registry. See **Codegen completeness backlog → T12**.
 
 ## 0.6.0 — codegen-ts hardening
 
