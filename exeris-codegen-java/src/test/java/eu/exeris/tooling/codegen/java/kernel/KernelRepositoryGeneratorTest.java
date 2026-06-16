@@ -339,4 +339,88 @@ class KernelRepositoryGeneratorTest {
                 .contains("INSERT INTO legacy_orders (id, order_number) VALUES (?, ?)")
                 .doesNotContain("FROM orders");
     }
+
+    @Test
+    @DisplayName("T14: a declared `id` field does not produce a duplicate id column")
+    void shouldNotDuplicateDeclaredIdColumn() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .fields(List.of(
+                        FieldMetadata.builder("id", "UUID").build(),
+                        FieldMetadata.builder("orderNumber", "String").build()))
+                .build();
+
+        GeneratedFile repo = strategy.generate(metadata).stream()
+                .filter(f -> f.artifactType() == ArtifactType.REPOSITORY)
+                .findFirst().orElseThrow();
+
+        // PK `id` wins; the shadowing domain field is dropped — single id column.
+        assertThat(repo.content())
+                .contains("INSERT INTO orders (id, order_number) VALUES (?, ?)")
+                .contains("SELECT id, order_number FROM orders WHERE id = ?")
+                .doesNotContain("id, id");
+    }
+
+    @Test
+    @DisplayName("T14: domain fields shadowing active audited/versioned columns are de-duped")
+    void shouldNotDuplicateSystemColumns() {
+        DomainMetadata metadata = DomainMetadata.builder("Account", "com.example.domain")
+                .audited(true)
+                .versioned(true)
+                .fields(List.of(
+                        FieldMetadata.builder("name", "String").build(),
+                        FieldMetadata.builder("version", "Long").build(),       // shadows system version
+                        FieldMetadata.builder("createdAt", "Instant").build())) // shadows system created_at
+                .build();
+
+        GeneratedFile repo = strategy.generate(metadata).stream()
+                .filter(f -> f.artifactType() == ArtifactType.REPOSITORY)
+                .findFirst().orElseThrow();
+
+        // system semantics win: each system column appears exactly once
+        assertThat(repo.content())
+                .contains("INSERT INTO accounts (id, name, created_at, updated_at, version) VALUES (?, ?, ?, ?, ?)")
+                .doesNotContain("version, version")
+                .doesNotContain("created_at, created_at");
+    }
+
+    @Test
+    @DisplayName("T14: domain fields shadowing tenantId / soft-delete columns are de-duped")
+    void shouldNotDuplicateTenantAndSoftDeleteColumns() {
+        DomainMetadata metadata = DomainMetadata.builder("Account", "com.example.domain")
+                .tenantScoped(true)
+                .softDelete(true)
+                .fields(List.of(
+                        FieldMetadata.builder("name", "String").build(),
+                        FieldMetadata.builder("tenantId", "UUID").build(),    // shadows system tenant_id
+                        FieldMetadata.builder("deleted", "boolean").build())) // shadows system deleted
+                .build();
+
+        GeneratedFile repo = strategy.generate(metadata).stream()
+                .filter(f -> f.artifactType() == ArtifactType.REPOSITORY)
+                .findFirst().orElseThrow();
+
+        assertThat(repo.content())
+                .contains("INSERT INTO accounts (id, name, tenant_id, deleted) VALUES (?, ?, ?, ?)")
+                .doesNotContain("tenant_id, tenant_id")
+                .doesNotContain("deleted, deleted");
+    }
+
+    @Test
+    @DisplayName("T15: a primitive boolean binds via isX(), a Boolean wrapper via getX()")
+    void shouldUseIsAccessorForPrimitiveBoolean() {
+        DomainMetadata metadata = DomainMetadata.builder("Employee", "com.example.domain")
+                .fields(List.of(
+                        FieldMetadata.builder("onVacation", "boolean").build(),
+                        FieldMetadata.builder("active", "Boolean").build()))
+                .build();
+
+        GeneratedFile repo = strategy.generate(metadata).stream()
+                .filter(f -> f.artifactType() == ArtifactType.REPOSITORY)
+                .findFirst().orElseThrow();
+
+        assertThat(repo.content())
+                .contains("entity.isOnVacation()")        // primitive boolean -> is
+                .doesNotContain("entity.getOnVacation()")
+                .contains("entity.getActive()");          // Boolean wrapper -> get
+    }
 }
