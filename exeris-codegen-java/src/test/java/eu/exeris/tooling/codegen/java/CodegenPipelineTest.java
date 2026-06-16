@@ -166,6 +166,25 @@ class CodegenPipelineTest {
 
             assertThat(filesGenerated).isZero();
         }
+
+        @Test
+        @DisplayName("all entities removed (empty metadata, prior manifest) → prunes the previous tree (T13)")
+        void allEntitiesRemovedPrunesPreviousTree() throws IOException {
+            // Simulate a previous generation: a stale file plus the manifest that owns it.
+            Path stale = outputDir.resolve("com/shop/repository/OrderRepository.java");
+            Files.createDirectories(stale.getParent());
+            Files.writeString(stale, "class OrderRepository {}");
+            Files.writeString(outputDir.resolve(".exeris-codegen-manifest"),
+                    "# Exeris Tooling generated-output manifest - DO NOT EDIT MANUALLY\n"
+                            + "com/shop/repository/OrderRepository.java\n");
+
+            // This run has no entities at all.
+            int filesGenerated = pipeline.run(metadataDir, outputDir, "com.shop");
+
+            assertThat(filesGenerated).isZero();
+            assertThat(stale).doesNotExist();
+            assertThat(outputDir.resolve("com/shop/repository")).doesNotExist();
+        }
     }
 
     @Nested

@@ -4,7 +4,12 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Objects;
+import java.util.Set;
+import java.util.TreeSet;
 
 /**
  * Utility for writing generated code to files.
@@ -14,12 +19,35 @@ import java.util.Objects;
  *   <li>Directory creation</li>
  *   <li>Package-to-path conversion</li>
  *   <li>File headers with generation metadata</li>
+ *   <li>Output-tree ownership: tracks every file it writes and, on
+ *       {@link #pruneOrphansAndWriteManifest()}, deletes files emitted by a
+ *       previous run that this run no longer produces (T13)</li>
  * </ul>
+ *
+ * <h2>Generation owns its output tree (T13)</h2>
+ * Each run records the relative path of every file it writes. A manifest
+ * ({@value #MANIFEST_NAME}) under the output directory persists that set across
+ * runs. On the next run, any path that was in the previous manifest but is not
+ * re-emitted is an <em>orphan</em> (the entity was removed or re-homed) and is
+ * deleted, then now-empty directories are pruned. Only files this tool emitted
+ * before are ever deleted — a user-authored file never appears in the manifest,
+ * so it is never touched. The manifest is sorted, so its content is
+ * deterministic for the same set of generated files (hard-constraint #3).
  *
  * @author Exeris Team
  * @since 0.1.0
  */
 public final class OutputWriter {
+
+    /**
+     * Name of the per-output-tree manifest file. Records the relative paths this
+     * tool emitted, so the next run can prune orphans. Committed alongside the
+     * generated tree (L1) — a stale orphan removal is a reviewable diff (D3).
+     */
+    public static final String MANIFEST_NAME = ".exeris-codegen-manifest";
+
+    private static final String MANIFEST_HEADER =
+            "# Exeris Tooling generated-output manifest - DO NOT EDIT MANUALLY";
 
     private static final String GENERATED_HEADER = """
             /*
@@ -30,6 +58,9 @@ public final class OutputWriter {
 
     private final Path outputDir;
     private final boolean addHeader;
+
+    /** Relative paths (forward-slash) written during this run, in write order. */
+    private final Set<String> writtenPaths = new LinkedHashSet<>();
 
     /**
      * Creates a new OutputWriter.
@@ -73,6 +104,7 @@ public final class OutputWriter {
                 : source;
 
         Files.writeString(targetFile, content, StandardCharsets.UTF_8);
+        track(targetFile);
     }
 
     /**
@@ -86,6 +118,7 @@ public final class OutputWriter {
         Path targetFile = outputDir.resolve(relativePath);
         Files.createDirectories(targetFile.getParent());
         Files.writeString(targetFile, content, StandardCharsets.UTF_8);
+        track(targetFile);
     }
 
     /**
@@ -99,6 +132,105 @@ public final class OutputWriter {
         Path targetFile = outputDir.resolve(relativePath);
         Files.createDirectories(targetFile.getParent());
         Files.write(targetFile, content);
+        track(targetFile);
+    }
+
+    /**
+     * Deletes files this tool emitted on a previous run that the current run did
+     * not re-emit (orphans), prunes any directories left empty by that removal,
+     * and writes the manifest of the current run's files (T13).
+     *
+     * <p>Safe by construction: only paths listed in the previous manifest are
+     * eligible for deletion, so user-authored files (never in the manifest) are
+     * never removed. Call once, after all files for a run have been written.
+     *
+     * @return the number of orphaned files deleted
+     * @throws IOException if reading the old manifest or writing the new one fails
+     */
+    public int pruneOrphansAndWriteManifest() throws IOException {
+        Set<String> previous = readManifest();
+        int pruned = 0;
+        Set<Path> touchedDirs = new LinkedHashSet<>();
+
+        for (String rel : previous) {
+            if (writtenPaths.contains(rel) || MANIFEST_NAME.equals(rel)) {
+                continue;
+            }
+            Path orphan = outputDir.resolve(rel).normalize();
+            // Defence in depth: never delete outside the output tree.
+            if (!orphan.startsWith(outputDir)) {
+                continue;
+            }
+            if (Files.deleteIfExists(orphan)) {
+                pruned++;
+                touchedDirs.add(orphan.getParent());
+            }
+        }
+
+        pruneEmptyDirs(touchedDirs);
+        writeManifest();
+        return pruned;
+    }
+
+    /**
+     * Relative paths written during this run (forward-slash, sorted).
+     * Package-private — test-visibility only; not part of the public API surface
+     * before the 1.0.0 freeze.
+     */
+    Set<String> writtenPaths() {
+        return new TreeSet<>(writtenPaths);
+    }
+
+    private void track(Path targetFile) {
+        writtenPaths.add(relativize(targetFile));
+    }
+
+    private String relativize(Path targetFile) {
+        return outputDir.relativize(targetFile.normalize()).toString().replace('\\', '/');
+    }
+
+    private Set<String> readManifest() throws IOException {
+        Path manifest = outputDir.resolve(MANIFEST_NAME);
+        if (!Files.exists(manifest)) {
+            return Set.of();
+        }
+        Set<String> paths = new LinkedHashSet<>();
+        for (String line : Files.readAllLines(manifest, StandardCharsets.UTF_8)) {
+            String trimmed = line.strip();
+            if (!trimmed.isEmpty() && !trimmed.startsWith("#")) {
+                paths.add(trimmed);
+            }
+        }
+        return paths;
+    }
+
+    private void writeManifest() throws IOException {
+        List<String> lines = new ArrayList<>();
+        lines.add(MANIFEST_HEADER);
+        lines.addAll(new TreeSet<>(writtenPaths));
+        Files.createDirectories(outputDir);
+        Files.writeString(outputDir.resolve(MANIFEST_NAME),
+                String.join("\n", lines) + "\n", StandardCharsets.UTF_8);
+    }
+
+    /** Deletes the given directories (and their now-empty parents) up to, but not including, the output dir. */
+    private void pruneEmptyDirs(Set<Path> dirs) throws IOException {
+        for (Path start : dirs) {
+            Path dir = start;
+            while (dir != null && !dir.equals(outputDir) && dir.startsWith(outputDir) && isEmptyDir(dir)) {
+                Files.deleteIfExists(dir);
+                dir = dir.getParent();
+            }
+        }
+    }
+
+    private static boolean isEmptyDir(Path dir) throws IOException {
+        if (!Files.isDirectory(dir)) {
+            return false;
+        }
+        try (var entries = Files.list(dir)) {
+            return entries.findAny().isEmpty();
+        }
     }
 
     /**
@@ -125,4 +257,3 @@ public final class OutputWriter {
         return addHeader;
     }
 }
-

@@ -98,4 +98,113 @@ class OutputWriterTest {
         Path file = tempDir.resolve("bin/payload.dat");
         assertThat(Files.readAllBytes(file)).containsExactly(payload);
     }
+
+    // --- T13: output-tree ownership (manifest + orphan pruning) ---
+
+    @Test
+    @DisplayName("pruneOrphansAndWriteManifest writes a sorted manifest of this run's files")
+    void writesSortedManifest() throws IOException {
+        OutputWriter writer = new OutputWriter(tempDir, false);
+        writer.writeJavaSource("com.example.repo", "OrderRepository", "class OrderRepository {}", "src");
+        writer.writeResource("db/migration/V1__create_orders.sql", "CREATE TABLE orders ();\n");
+
+        int pruned = writer.pruneOrphansAndWriteManifest();
+
+        assertThat(pruned).isZero();
+        Path manifest = tempDir.resolve(OutputWriter.MANIFEST_NAME);
+        assertThat(Files.exists(manifest)).isTrue();
+        assertThat(Files.readAllLines(manifest))
+                .containsExactly(
+                        "# Exeris Tooling generated-output manifest - DO NOT EDIT MANUALLY",
+                        "com/example/repo/OrderRepository.java",
+                        "db/migration/V1__create_orders.sql");
+    }
+
+    @Test
+    @DisplayName("A file emitted last run but not this run is pruned, and its empty dirs are removed")
+    void prunesOrphanAndEmptyDirs() throws IOException {
+        // Run 1: two entities.
+        OutputWriter run1 = new OutputWriter(tempDir, false);
+        run1.writeJavaSource("com.example.repo", "OrderRepository", "class OrderRepository {}", "src");
+        run1.writeJavaSource("com.example.gone", "ColonyRepository", "class ColonyRepository {}", "src");
+        run1.pruneOrphansAndWriteManifest();
+
+        Path orphan = tempDir.resolve("com/example/gone/ColonyRepository.java");
+        assertThat(Files.exists(orphan)).isTrue();
+
+        // Run 2: the "Colony" entity is gone.
+        OutputWriter run2 = new OutputWriter(tempDir, false);
+        run2.writeJavaSource("com.example.repo", "OrderRepository", "class OrderRepository {}", "src");
+        int pruned = run2.pruneOrphansAndWriteManifest();
+
+        assertThat(pruned).isEqualTo(1);
+        assertThat(Files.exists(orphan)).isFalse();
+        // the now-empty package dir is pruned too
+        assertThat(Files.exists(tempDir.resolve("com/example/gone"))).isFalse();
+        // the surviving file is untouched
+        assertThat(Files.exists(tempDir.resolve("com/example/repo/OrderRepository.java"))).isTrue();
+    }
+
+    @Test
+    @DisplayName("A user-authored file (never in the manifest) is never pruned")
+    void neverPrunesUntrackedUserFiles() throws IOException {
+        // Run 1 emits one generated file.
+        OutputWriter run1 = new OutputWriter(tempDir, false);
+        run1.writeJavaSource("com.example.repo", "OrderRepository", "class OrderRepository {}", "src");
+        run1.pruneOrphansAndWriteManifest();
+
+        // A human adds a hand-written file into the same tree.
+        Path userFile = tempDir.resolve("com/example/repo/MyHelper.java");
+        Files.writeString(userFile, "class MyHelper {}");
+
+        // Run 2 re-emits the same generated file.
+        OutputWriter run2 = new OutputWriter(tempDir, false);
+        run2.writeJavaSource("com.example.repo", "OrderRepository", "class OrderRepository {}", "src");
+        int pruned = run2.pruneOrphansAndWriteManifest();
+
+        assertThat(pruned).isZero();
+        assertThat(Files.exists(userFile)).isTrue();
+    }
+
+    @Test
+    @DisplayName("A run that writes nothing prunes the entire previous tree (all entities removed)")
+    void emptyRunPrunesEverything() throws IOException {
+        // Run 1: one entity.
+        OutputWriter run1 = new OutputWriter(tempDir, false);
+        run1.writeJavaSource("com.example.repo", "OrderRepository", "class OrderRepository {}", "src");
+        run1.writeResource("db/migration/V1__create_orders.sql", "CREATE TABLE orders ();\n");
+        run1.pruneOrphansAndWriteManifest();
+
+        // Run 2: every @ExerisDomain was removed → nothing is written this run.
+        OutputWriter run2 = new OutputWriter(tempDir, false);
+        int pruned = run2.pruneOrphansAndWriteManifest();
+
+        assertThat(pruned).isEqualTo(2);
+        assertThat(Files.exists(tempDir.resolve("com/example/repo/OrderRepository.java"))).isFalse();
+        assertThat(Files.exists(tempDir.resolve("com/example/repo"))).isFalse();
+        assertThat(Files.exists(tempDir.resolve("db/migration/V1__create_orders.sql"))).isFalse();
+        // manifest survives, now header-only
+        assertThat(Files.readAllLines(tempDir.resolve(OutputWriter.MANIFEST_NAME)))
+                .containsExactly("# Exeris Tooling generated-output manifest - DO NOT EDIT MANUALLY");
+    }
+
+    @Test
+    @DisplayName("The manifest file is deterministic regardless of write order")
+    void manifestDeterministicAcrossWriteOrder() throws IOException {
+        Path dirA = tempDir.resolve("a");
+        Path dirB = tempDir.resolve("b");
+
+        OutputWriter a = new OutputWriter(dirA, false);
+        a.writeResource("z/last.txt", "x");
+        a.writeResource("a/first.txt", "x");
+        a.pruneOrphansAndWriteManifest();
+
+        OutputWriter b = new OutputWriter(dirB, false);
+        b.writeResource("a/first.txt", "x");
+        b.writeResource("z/last.txt", "x");
+        b.pruneOrphansAndWriteManifest();
+
+        assertThat(Files.readString(dirA.resolve(OutputWriter.MANIFEST_NAME)))
+                .isEqualTo(Files.readString(dirB.resolve(OutputWriter.MANIFEST_NAME)));
+    }
 }

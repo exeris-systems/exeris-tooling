@@ -90,6 +90,18 @@ public final class CodegenPipeline {
         if (domains.isEmpty()) {
             LOG.log(Level.WARNING, "No domain metadata found in " + metadataDir
                     + " — make sure @ExerisDomain-annotated classes are compiled first");
+            // T13: "no entities" is itself a valid output state (every @ExerisDomain
+            // was removed). If a *previous* run owned this tree (a manifest is
+            // present), this run must own it too — prune every previously-emitted
+            // file rather than leaving a stale, un-compilable tree. A directory
+            // with no prior manifest is left untouched (nothing was ever generated
+            // here to clean up).
+            if (Files.exists(outputDir.resolve(OutputWriter.MANIFEST_NAME))) {
+                int pruned = new OutputWriter(outputDir).pruneOrphansAndWriteManifest();
+                if (pruned > 0) {
+                    LOG.log(Level.INFO, "Pruned " + pruned + " orphaned generated file(s)");
+                }
+            }
             return 0;
         }
 
@@ -136,8 +148,16 @@ public final class CodegenPipeline {
             filesGenerated++;
         }
 
+        // T13: generation owns its output tree — delete files a previous run
+        // emitted that this run no longer produces (e.g. a removed/re-homed
+        // entity), then persist the manifest of this run's files.
+        int pruned = writer.pruneOrphansAndWriteManifest();
+        if (pruned > 0) {
+            LOG.log(Level.INFO, "Pruned " + pruned + " orphaned generated file(s)");
+        }
+
         LOG.log(Level.INFO, "Code generation complete: files=" + filesGenerated
-                + " output=" + outputDir);
+                + " pruned=" + pruned + " output=" + outputDir);
         return filesGenerated;
     }
 
