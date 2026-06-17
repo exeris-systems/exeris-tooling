@@ -65,6 +65,11 @@ This file tracks scope per milestone. Items marked `[ ]` are open; `[x]` shipped
 - [x] Deterministic `cap-manifest.json` emitted at the output root — the platform-side capability
       registry (input for the cross-app mesh contract, **T12**). T13-tracked like every emitted file.
 
+> **Adopting this pass downstream surfaced its next limits** (backlog): the validator is closed-world
+> per app, so a legitimate cross-service `@Requires` hard-fails the build (**T17**, the capability-axis
+> twin of T12), and the `generate-sources`-before-`compile` ordering makes the pass deadlock on stale
+> metadata and lets `mvn clean` + the T13 pruner wipe the committed L1 tree (**T18**).
+
 > **Capabilities are a PLATFORM concern, not a kernel one.** `@Provides`/`@Requires` model composition /
 > SKU / mesh, and every SDK annotation is `@Retention(SOURCE)` (erased from bytecode), so the kernel —
 > the runtime substrate — neither sees nor *should* see the platform registry; the dependency direction
@@ -87,8 +92,9 @@ This file tracks scope per milestone. Items marked `[ ]` are open; `[x]` shipped
 - [ ] Round-trip tests against generated Angular workspace (compiles + `ng build` green)
 
 > High-severity backlog items **T1** (action 404s), **T8** (O(n) finders), **T10**
-> (server-side validation), and **T12** (cross-app mesh contract) — plus **T2**, **T7**,
-> **T9** — are also targeted at this milestone. The **UI fidelity & theming** cluster (**U1–U5**, led by U1 ui-kit wiring +
+> (server-side validation), **T12** (cross-app mesh contract), and **T17** (cross-service
+> capability resolution) — plus **T2**, **T7**, **T9**, **T18**, **T19** — are also
+> targeted at this milestone. The **UI fidelity & theming** cluster (**U1–U5**, led by U1 ui-kit wiring +
 > U2 universal lists) is the codegen-ts heart of this milestone. See the **Codegen
 > completeness backlog** section below.
 
@@ -128,6 +134,7 @@ This file tracks scope per milestone. Items marked `[ ]` are open; `[x]` shipped
 | T8  | No generated finders/indexes for FK + `filterable` fields → O(n) `findAll().filter()` everywhere | **High** | 0.6.0 |
 | T10 | `@Validation` enforced client-side (Zod) but dropped server-side (handler/service/DB) | **High** | 0.6.0 |
 | T12 | N generated apps can't form a mesh — client is own-app/relative-host, saga step is local, no cross-app contract | **High** | 0.5.0 → 0.6.0 |
+| T17 | Capability-graph validation is closed-world per app — a legitimate cross-service `@Requires` hard-fails the build | **High** | 0.6.0 |
 | T2  | Zero tests generated for the generated surface | Medium | 0.6.0 |
 | T3  | Action identity = method name, not `@Action(name=…)` → bean-setter collisions | Medium | 0.5.x |
 | T4  | `@Relationship` target derived from field Java type, not `targetEntity` | Medium | 0.5.x |
@@ -135,6 +142,8 @@ This file tracks scope per milestone. Items marked `[ ]` are open; `[x]` shipped
 | T9  | Generated schema has no inter-entity foreign keys — zero referential integrity | Medium | 0.6.0 |
 | T11 | No fidelity/strict mode — annotation attributes set but consumed by no generator fail silently | Medium | 0.5.x |
 | T13 | Codegen emits per-entity output but never prunes it — a removed/renamed entity breaks the build | Medium | 0.5.x |
+| T18 | Capability validation × two-pass build deadlock; `mvn clean` + T13 prune wipes the committed L1 tree | Medium | 0.6.0 |
+| T19 | Repository binds `Instant` as ISO string but DDL declares `TIMESTAMPTZ` — round-trip latent-broken on real Postgres | Medium | 0.6.0 |
 | T7  | TS app-structure seams — per-entity path vs `app.routes` import mismatch breaks the build; hardcoded title/redirect | Medium | 0.6.0 |
 | T6  | Naive English pluralization (`colony → colonys`) in SQL tables + Angular routes | Low | 0.5.x |
 
@@ -146,13 +155,13 @@ This file tracks scope per milestone. Items marked `[ ]` are open; `[x]` shipped
       produced the column twice — an invalid `SELECT`/`INSERT` and a double bind. *Done (0.5.x, PR #86):*
       de-dupe by SQL column name; the PK + active system columns are reserved and a shadowing domain
       field is dropped (system semantics win). No-collision entities stay byte-identical. Surfaced by
-      the Empire trial; previously uncovered by any test.
+      a larger multi-aggregate trial; previously uncovered by any test.
 
 - [x] **T15 — Boolean bind accessor.** `emitBindDomain` hardcoded `get` for every domain field, so a
       primitive `boolean onVacation` bound via `getOnVacation()` — absent on the entity
       (JavaBean/Lombok emit `isOnVacation()`), breaking the generated repository's compile. *Done
       (0.5.x, PR #86):* primitive `boolean` binds via `isX()` (matching the system `DELETED` column);
-      `Boolean` wrappers keep `getX()`. Surfaced by the Empire trial; previously uncovered.
+      `Boolean` wrappers keep `getX()`. Surfaced by the same multi-aggregate trial; previously uncovered.
 
 - [x] **T16 — ADR-042 baseline-trust fields (`sourceDigest` + `schemaVersion`).** Codegen did not emit
       the two fields ADR-042 obligation #5 requires into `exeris-metadata/<entity>.json`, so the `-io`
@@ -219,6 +228,21 @@ This file tracks scope per milestone. Items marked `[ ]` are open; `[x]` shipped
       OpenAPI in its own base package with no tooling change. The missing piece is strictly the
       *cross-app* edge: importing another app's contract and turning a saga `service`/`command` into
       a remote dispatch instead of a local no-op.
+
+- [ ] **T17 — Make capability resolution mesh-aware (the capability-axis twin of T12).** The **0.5.0**
+      capability pass resolves `@Requires`→`@Provides` within a *single app's* closed world, so the one
+      legitimate cross-service edge — a consumer app's `@Requires(SomeService)` satisfied by a *peer*
+      app's `@Provides(SomeService)` — looks unprovided and **hard-fails the build**
+      (`no @CapabilityModule provides it`). The provider lives in a *different* generated app. This is
+      the same closed-world-per-app limitation that breaks generated saga dispatch (**T12**), seen on
+      the capability axis. Surfaced by a multi-service trial; worked around by marking the edge
+      `@Requires(… optional = true)` so the validator warns (`optional → skipped`) instead of failing —
+      but that misrepresents a hard cross-service requirement as optional.
+      *Update:* feed the resolver a **union of the per-service `cap-manifest.json`s** (the artifact the
+      0.5.0 pass already emits is the natural carrier), or let `@Requires` declare an external/
+      mesh-provided provider, so a cross-service edge resolves against the *other* service's `@Provides`
+      instead of failing. Pairs with **T12** (the contract registry that union feeds) — same input,
+      same milestone.
 
 ### Medium severity
 
@@ -310,6 +334,43 @@ This file tracks scope per milestone. Items marked `[ ]` are open; `[x]` shipped
       committed-L1 model (**D3**) — a stale orphan removal is a real, reviewable diff. (Distinct from
       the `exeris:detach` prune in **0.3.0**, which prunes the *emptied* source tree, not the
       *generate* mojo's per-entity output.)
+
+- [ ] **T18 — Two-pass build hazards from the capability pass (deadlock + clean-wipes-L1).** Adopting
+      the **0.5.0** capability pass surfaced two coupled interactions with the `generate-sources`-before-
+      `compile` ordering (**D2**) on L1-committed-output repos:
+      (a) **Validation deadlock.** Graph validation runs in `generate-sources`, *before* the `compile`
+      phase where the processor (re)emits `capability_*.json`. So a *stale* capability metadata file is
+      validated first and **hard-fails before the processor can refresh it** — an edit to a `@Requires`
+      (e.g. adding `optional=true`) can't take effect because the build dies on the old metadata; the
+      only way through is a manual `rm` of the stale `capability_*.json`. (The domain two-pass merely
+      emits stale *code*; the capability two-pass *aborts* — worse.)
+      (b) **`clean` + T13 prune wipes the committed tree.** After `mvn clean`, the metadata dir is empty
+      at `generate-sources` time, so codegen emits zero files and the **T13 orphan-pruner** deletes the
+      entire prior `.exeris-codegen-manifest` set — i.e. the committed `src/main/generated` tree —
+      leaving hand-written subclasses uncompilable. A plain `mvn clean compile` is no longer safe here.
+      *Update:* (a) capability validation must tolerate/refresh its own input within one build, or run
+      *after* the processor (it already depends on processor output) — a phase-ordering fix or a
+      "no metadata yet → skip, don't fail" guard; (b) the T13 pruner must distinguish "no inputs this
+      run" (a clean two-pass first build) from "entity genuinely deleted" — gate pruning on a non-empty
+      generation. Both want a documented safe-build recipe (don't `clean` then `compile` in one shot),
+      or an `exeris:bootstrap` mojo that seeds metadata first.
+
+- [ ] **T19 — Repository binds `Instant` as an ISO string against a `TIMESTAMPTZ` column (latent).**
+      The generated `*Repository` writes timestamps with `bindString(…, instant.toString())` and reads
+      them back with `getString(…)` + `Instant.parse(…)`, but the generated Flyway DDL declares those
+      columns (`created_at`/`updated_at` + any `Instant` `@Field`) as `TIMESTAMPTZ`. On a `VARCHAR` the
+      string round-trips, but on the **real Postgres DDL** the read does `getString` on a `TIMESTAMPTZ`,
+      which returns Postgres timestamp text (`2026-06-16 00:00:00+00`) that `Instant.parse` (expecting
+      `…T…Z`) rejects — the round-trip is latent-broken on the very database the DDL targets. Same class
+      as **T14**: hidden because the generated repositories are *compiled but never executed* (the unit
+      suite uses hand-written in-memory stores). Surfaced downstream by the first integration harness to
+      run a generated repository against a real DB (H2 via a kernel-SPI→JDBC double) — which is exactly
+      the generated-repo-against-a-DB coverage **T2** would add.
+      *Update:* bind/read timestamps via a to-be-added typed `bindInstant`/`getInstant` on the
+      persistence SPI against
+      the `TIMESTAMPTZ` column, not `bindString`/`getString`+`Instant.parse`. A generated-SQL-against-a-DB
+      round-trip in the e2e suite (pairs with **T2**) is what catches this class — the codegen e2e
+      currently asserts only on emitted *text*.
 
 - [ ] **T7 — TS app-structure seams (`exeris-codegen-ts`).** Per-entity components emit to
       `<out>/components/…`, but generated `app.routes.ts` imports `./components/…` relative to
