@@ -229,73 +229,59 @@ describe('ServiceGenerator softDelete branch', () => {
 describe('ServiceGenerator custom actions emission', () => {
   const gen = new ServiceGenerator();
 
-  it('GET action emits http.get without a body argument', () => {
+  // T1: actions are served server-side at POST {base}/{id}/actions/{kebab(name)}
+  // (matching the OpenAPI path + the generated kernel route); the server responds
+  // with the updated aggregate. So every action method takes the entity id and
+  // returns Observable<Entity>, always via POST.
+  it('no-param action → POST {id}/actions/{name}, takes id, returns the entity', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
-      actions: [{ name: 'summary', httpMethod: 'GET', path: '/summary', params: [], returnType: 'String' }],
+      actions: [{ name: 'cancel', params: [] }],
     }), CTX)!.content;
 
-    expect(content).toContain('summary(): Observable<string>');
-    expect(content).toContain('this.http.get<string>');
-    expect(content).not.toMatch(/summary[\s\S]*\}\)/); // no body object literal
+    expect(content).toContain('cancel(id: string): Observable<Order>');
+    expect(content).toContain('this.http.post<Order>(`${this.baseUrl}/${id}/actions/cancel`, {})');
   });
 
-  it('non-GET action emits http.<lowercased-method> with body params object', () => {
+  it('params action → id + typed params, body params object', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
       actions: [{
         name: 'approve',
-        httpMethod: 'POST',
-        path: '/approve',
         params: [{ name: 'reason', type: 'String', required: true }],
-        returnType: 'Boolean',
       }],
     }), CTX)!.content;
 
-    expect(content).toContain('approve(reason: string): Observable<boolean | null>');
-    expect(content).toContain('this.http.post<boolean | null>');
-    expect(content).toContain('{ reason }');
+    expect(content).toContain('approve(id: string, reason: string): Observable<Order>');
+    expect(content).toContain('this.http.post<Order>(`${this.baseUrl}/${id}/actions/approve`, { reason })');
   });
 
-  it('action with no returnType falls back to Observable<void>', () => {
+  it('camelCase action name → kebab-cased URL segment, camelCase method name', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
-      actions: [{ name: 'fire', httpMethod: 'POST', path: '/fire', params: [] }],
+      actions: [{ name: 'markUrgent', params: [] }],
     }), CTX)!.content;
 
-    expect(content).toContain('fire(): Observable<void>');
+    expect(content).toContain('markUrgent(id: string): Observable<Order>');
+    expect(content).toContain('/${id}/actions/mark-urgent');
   });
 
   it('action with no description uses "Execute <name> action" fallback in the JSDoc', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
-      actions: [{ name: 'approve', path: '/approve', params: [] }],
+      actions: [{ name: 'approve', params: [] }],
     }), CTX)!.content;
 
     expect(content).toContain('/** Execute approve action */');
   });
 
-  it('action with no httpMethod defaults to POST', () => {
+  it('empty params: [] (hasParams=false) → empty body object {} (not undefined or null)', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
-      actions: [{ name: 'go', params: [] }],
+      actions: [{ name: 'ping', params: [] }],
     }), CTX)!.content;
 
-    expect(content).toContain('this.http.post<void>');
-  });
-
-  it('action with empty params: [] (hasParams=false) → empty body object {} (not undefined or null)', () => {
-    // The source computes hasParams = action.params && action.params.length > 0.
-    // An empty params: [] makes hasParams=false, hitting the
-    // `hasParams ? '{ a, b }' : '{}'` else-arm. This test pins the
-    // empty-body shape; the non-empty-params shape is covered by the
-    // sibling "non-GET action" test above.
-    const content = gen.generate(domain({
-      entityName: 'Order',
-      actions: [{ name: 'ping', httpMethod: 'POST', path: '/ping', params: [] }],
-    }), CTX)!.content;
-
-    expect(content).toMatch(/this\.http\.post<void>[^,]+,\s*\{\}\)/);
+    expect(content).toMatch(/this\.http\.post<Order>[^,]+,\s*\{\}\)/);
   });
 
   it('actions[] absent (default) → no action methods emitted', () => {

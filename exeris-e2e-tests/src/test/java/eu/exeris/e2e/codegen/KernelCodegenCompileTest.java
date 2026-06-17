@@ -1,6 +1,8 @@
 package eu.exeris.e2e.codegen;
 
 import eu.exeris.e2e.codegen.compile.InMemoryJavaCompiler;
+import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
+import eu.exeris.sdk.sourcemodel.ast.ActionParamMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
@@ -78,6 +80,18 @@ class KernelCodegenCompileTest {
                         FieldMetadata.builder("status",
                                         DOMAIN_PACKAGE + ".OrderStatus")
                                 .build()))
+                // T1: actions exercise the server-side dispatch generator end-to-end:
+                // a no-arg action, a params action (→ generated request record decoded
+                // via the codec SPI), and one whose @Action(name) differs from the JVM
+                // method (methodName drives the invocation, name drives the route/URL).
+                .actions(List.of(
+                        ActionMetadata.builder("cancel").methodName("cancel").build(),
+                        ActionMetadata.builder("applyDiscount").methodName("applyDiscount")
+                                .params(List.of(
+                                        ActionParamMetadata.required("percent", "java.math.BigDecimal"),
+                                        ActionParamMetadata.required("reason", "java.lang.String")))
+                                .build(),
+                        ActionMetadata.builder("markUrgent").methodName("flagUrgent").build()))
                 .events(List.of(
                         DomainEventMetadata.simple("OrderCreated"),
                         DomainEventMetadata.withTopic("OrderShipped", "orders.shipped")))
@@ -177,6 +191,13 @@ class KernelCodegenCompileTest {
 
                     public boolean isDeleted() { return deleted; }
                     public void setDeleted(boolean deleted) { this.deleted = deleted; }
+
+                    // @Action methods — invoked by the generated action handlers (T1).
+                    public void cancel() { this.status = OrderStatus.CANCELLED; }
+                    public void applyDiscount(BigDecimal percent, String reason) {
+                        if (percent != null) { this.amount = this.amount.subtract(percent); }
+                    }
+                    public void flagUrgent() { /* @Action(name="markUrgent") */ }
                 }
                 """.formatted(DOMAIN_PACKAGE, ENTITY_NAME);
     }

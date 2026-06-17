@@ -11,6 +11,7 @@ import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
+import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 
 import javax.lang.model.element.Modifier;
@@ -323,6 +324,15 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                     HTTP_METHOD, basePath + "/{id}", entityLower);
             method.addStatement("routerBuilder.route($T.DELETE, $S, $LHandler::handleDelete)",
                     HTTP_METHOD, basePath + "/{id}", entityLower);
+            // T1: one route per @Action, matching the OpenAPI path byte-for-byte
+            // ({basePath}/{id}/actions/{kebab(name)}, POST — OpenAPI emits POST for
+            // every action). The handler method name mirrors KernelHandlerGenerator's
+            // "handle" + pascal(name).
+            for (ActionMetadata action : domain.actions()) {
+                method.addStatement("routerBuilder.route($T.POST, $S, $LHandler::$L)",
+                        HTTP_METHOD, basePath + "/{id}/actions/" + toKebab(action.name()),
+                        entityLower, "handle" + pascal(action.name()));
+            }
         }
         method.addStatement("$T router = routerBuilder.build()", HTTP_ROUTER);
         method.addStatement("handlerSlot.set(router::handle)");
@@ -346,6 +356,26 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
     private String lowerFirst(String s) {
         if (s == null || s.isEmpty()) return s;
         return Character.toLowerCase(s.charAt(0)) + s.substring(1);
+    }
+
+    /** Action URL segment — must match {@code OpenApiPathsBuilder.toKebab} byte-for-byte
+     *  so the served route equals the advertised OpenAPI path (T1 parity). */
+    private static String toKebab(String input) {
+        return input.replaceAll("([a-z])([A-Z])", "$1-$2").toLowerCase(java.util.Locale.ROOT);
+    }
+
+    /** Handler-method fragment — must match {@code KernelHandlerGenerator.pascal} so the
+     *  route's method reference resolves to the generated {@code handle<X>}. */
+    private static String pascal(String name) {
+        StringBuilder sb = new StringBuilder(name.length());
+        boolean upper = true;
+        for (int i = 0; i < name.length(); i++) {
+            char c = name.charAt(i);
+            if (!Character.isLetterOrDigit(c)) { upper = true; continue; }
+            sb.append(upper ? Character.toUpperCase(c) : c);
+            upper = false;
+        }
+        return sb.toString();
     }
 
     @Override

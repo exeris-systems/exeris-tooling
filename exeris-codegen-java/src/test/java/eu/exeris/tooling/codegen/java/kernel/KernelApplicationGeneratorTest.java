@@ -1,6 +1,7 @@
 package eu.exeris.tooling.codegen.java.kernel;
 
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
+import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -128,5 +129,27 @@ class KernelApplicationGeneratorTest {
                 .contains("Runtime.getRuntime().addShutdownHook")
                 .doesNotContain("import javax.sql")
                 .doesNotContain("private final DataSource");
+    }
+
+    @Test
+    @DisplayName("T1: registers a POST {base}/{id}/actions/{kebab(name)} route per @Action")
+    void shouldRegisterActionRoutes() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        DomainMetadata order = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .actions(List.of(
+                        ActionMetadata.builder("cancel").methodName("cancel").build(),
+                        // camelCase identity → kebab URL segment; handler method PascalCased
+                        ActionMetadata.builder("markUrgent").methodName("flagUrgent").build()))
+                .build();
+
+        GeneratedFile lifecycle = gen.generateAll(List.of(order), "com.example.foundation")
+                .stream().filter(f -> "RuntimeLifecycle".equals(f.className()))
+                .findFirst().orElseThrow();
+
+        assertThat(lifecycle.content())
+                // path matches OpenApiPathsBuilder byte-for-byte; verb is POST (as OpenAPI emits)
+                .contains("routerBuilder.route(HttpMethod.POST, \"/orders/{id}/actions/cancel\", orderHandler::handleCancel)")
+                .contains("routerBuilder.route(HttpMethod.POST, \"/orders/{id}/actions/mark-urgent\", orderHandler::handleMarkUrgent)");
     }
 }
