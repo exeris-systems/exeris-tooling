@@ -92,8 +92,9 @@ This file tracks scope per milestone. Items marked `[ ]` are open; `[x]` shipped
 - [ ] Round-trip tests against generated Angular workspace (compiles + `ng build` green)
 
 > High-severity backlog items **T1** (action 404s), **T8** (O(n) finders), **T10**
-> (server-side validation), and **T12** (cross-app mesh contract) — plus **T2**, **T7**,
-> **T9** — are also targeted at this milestone. The **UI fidelity & theming** cluster (**U1–U5**, led by U1 ui-kit wiring +
+> (server-side validation), **T12** (cross-app mesh contract), and **T17** (cross-service
+> capability resolution) — plus **T2**, **T7**, **T9**, **T18**, **T19** — are also
+> targeted at this milestone. The **UI fidelity & theming** cluster (**U1–U5**, led by U1 ui-kit wiring +
 > U2 universal lists) is the codegen-ts heart of this milestone. See the **Codegen
 > completeness backlog** section below.
 
@@ -230,8 +231,8 @@ This file tracks scope per milestone. Items marked `[ ]` are open; `[x]` shipped
 
 - [ ] **T17 — Make capability resolution mesh-aware (the capability-axis twin of T12).** The **0.5.0**
       capability pass resolves `@Requires`→`@Provides` within a *single app's* closed world, so the one
-      legitimate cross-service edge — `player-app`'s `@Requires(UniverseClient)` satisfied by
-      `galaxy-service`'s `@Provides(UniverseClient)` — looks unprovided and **hard-fails the build**
+      legitimate cross-service edge — a consumer app's `@Requires(SomeService)` satisfied by a *peer*
+      app's `@Provides(SomeService)` — looks unprovided and **hard-fails the build**
       (`no @CapabilityModule provides it`). The provider lives in a *different* generated app. This is
       the same closed-world-per-app limitation that breaks generated saga dispatch (**T12**), seen on
       the capability axis. Surfaced by a multi-service trial; worked around by marking the edge
@@ -365,7 +366,8 @@ This file tracks scope per milestone. Items marked `[ ]` are open; `[x]` shipped
       suite uses hand-written in-memory stores). Surfaced downstream by the first integration harness to
       run a generated repository against a real DB (H2 via a kernel-SPI→JDBC double) — which is exactly
       the generated-repo-against-a-DB coverage **T2** would add.
-      *Update:* bind/read timestamps via the persistence SPI's typed `bindInstant`/`getInstant` against
+      *Update:* bind/read timestamps via a to-be-added typed `bindInstant`/`getInstant` on the
+      persistence SPI against
       the `TIMESTAMPTZ` column, not `bindString`/`getString`+`Instant.parse`. A generated-SQL-against-a-DB
       round-trip in the e2e suite (pairs with **T2**) is what catches this class — the codegen e2e
       currently asserts only on emitted *text*.
