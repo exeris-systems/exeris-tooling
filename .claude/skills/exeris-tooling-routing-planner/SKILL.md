@@ -1,12 +1,18 @@
 ---
 name: exeris-tooling-routing-planner
-description: Router/Planner skill for exeris-tooling. Produces primary agent, required secondary handoffs, execution order, validation gates, and minimal next action for a build-time pipeline task.
+description: After triage (see exeris-tooling-task-classifier), use to turn a classified exeris-tooling task into an execution plan — primary agent, ordered secondary handoffs, validation gates tied to the risk surface, and the minimal next action. Invoke when a build-time task spans modules or needs an explicit agent sequence and gate list before implementation starts.
 ---
 
 # Exeris Tooling Routing Planner
 
 ## Purpose
 Given a classified task (see `exeris-tooling-task-classifier`), produce a minimal, risk-aware execution order across `exeris-tooling-{router,architect,implementer,codegen-verification,docs-adr}`.
+
+## When to Use
+- Right after `exeris-tooling-task-classifier`, to convert the classification into an actionable plan.
+- When a task spans modules or the Java↔TS build boundary and the agent sequence is non-trivial.
+- When you need the must-pass validation gates named up front (compile-gate, e2e, npm test, determinism re-run).
+- Skip for trivial single-agent tasks where the plan is one obvious step.
 
 ## Output Contract
 Return:
