@@ -378,8 +378,10 @@ describe('StoreGenerator softDelete branch', () => {
 
     expect(content).toContain('async archive(id: string): Promise<void> {');
     expect(content).toContain('async restore(id: string): Promise<Order> {');
-    expect(content).toContain('await this.service.softDelete(id);');
-    expect(content).toContain('await this.service.restore(id);');
+    // B3: service returns Observable — await must go through firstValueFrom to resolve the value.
+    expect(content).toContain('await firstValueFrom(this.service.softDelete(id));');
+    expect(content).toContain('await firstValueFrom(this.service.restore(id));');
+    expect(content).toContain("import { firstValueFrom } from 'rxjs';");
     // archive removes from list; restore prepends.
     expect(content).toContain('entities.filter(e => e.id !== id)');
     expect(content).toContain('[restored, ...entities]');
@@ -391,6 +393,9 @@ describe('StoreGenerator softDelete branch', () => {
     expect(content).not.toContain('async archive(');
     expect(content).not.toContain('async restore(');
     expect(content).not.toContain('this.service.softDelete(');
+    // firstValueFrom is unconditional (findAll/create/update/delete go through it) —
+    // guard it on the non-softDelete path so it can't drift inside the soft-delete block.
+    expect(content).toContain("import { firstValueFrom } from 'rxjs';");
     expect(content).not.toContain('this.service.restore(');
   });
 

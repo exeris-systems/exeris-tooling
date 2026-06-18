@@ -1,7 +1,7 @@
 /**
  * Coverage for src/generators/angular/detail-gen.ts — DetailGenerator
  * emits an Angular 21 standalone component with Signal-based state +
- * the `resource()` API for data fetching. Exercises:
+ * the `rxResource()` API for data fetching. Exercises:
  *   - getSystemFieldNames merge (default set + idField alias + every
  *     optional systemFields.* propagation)
  *   - getDisplayType matrix (enum / boolean / date / datetime / number /
@@ -80,7 +80,7 @@ describe('DetailGenerator.generate — emit path + hidden-skip', () => {
 describe('DetailGenerator emitted content — structural markers', () => {
   const gen = new DetailGenerator();
 
-  it('imports Component / signals / resource / RouterModule + the entity Service + the entity type', () => {
+  it('imports Component / signals / rxResource / RouterModule + the entity Service + the entity type', () => {
     const content = gen.generate(domain({ entityName: 'Order' }), CTX)!.content;
 
     expect(content).toContain("import {");
@@ -88,8 +88,9 @@ describe('DetailGenerator emitted content — structural markers', () => {
     expect(content).toContain('signal,');
     expect(content).toContain('computed,');
     expect(content).toContain('input,');
-    expect(content).toContain('resource,');
     expect(content).toContain("from '@angular/core';");
+    // B3: rxResource comes from rxjs-interop, not the core barrel.
+    expect(content).toContain("import { rxResource } from '@angular/core/rxjs-interop';");
     expect(content).toContain("import { OrderService } from '../services/order.service';");
     expect(content).toContain("import type { Order } from '../types/order.types';");
   });
@@ -107,8 +108,11 @@ describe('DetailGenerator emitted content — structural markers', () => {
 
     expect(content).toContain('export class OrderDetailComponent {');
     expect(content).toContain('readonly id = input.required<string>();');
-    expect(content).toContain('private readonly entityResource = resource({');
-    expect(content).toContain('loader: ({ request }) => this.service.findById(request)');
+    // B3: rxResource (stable v22) bridges the Observable-returning service — v22 keys are
+    // `params`/`stream`, not `request`/`loader` (the import is asserted in the imports test).
+    expect(content).toContain('private readonly entityResource = rxResource({');
+    expect(content).toContain('params: () => this.id()');
+    expect(content).toContain('stream: ({ params }) => this.service.findById(params)');
     expect(content).toContain('readonly entity = computed');
     expect(content).toContain('readonly isLoading = computed');
     expect(content).toContain('readonly error = computed');

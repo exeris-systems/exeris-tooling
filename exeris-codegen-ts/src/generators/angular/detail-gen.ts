@@ -3,7 +3,7 @@
  *
  * Generates Angular 22+ detail view components with:
  * - Signal-based state management
- * - Resource API for data fetching
+ * - rxResource (RxJS-interop Resource) for data fetching
  * - Loading/error states
  * - Full a11y support
  * - i18n-ready strings
@@ -65,8 +65,8 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`  signal,`);
     lines.push(`  computed,`);
     lines.push(`  input,`);
-    lines.push(`  resource,`);
     lines.push(`} from '@angular/core';`);
+    lines.push(`import { rxResource } from '@angular/core/rxjs-interop';`);
     lines.push(`import { CommonModule, DatePipe } from '@angular/common';`);
     lines.push(`import { RouterModule, Router } from '@angular/router';`);
     lines.push(`import { ${entityName}Service } from '../services/${kebab}.service';`);
@@ -150,9 +150,9 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`  readonly id = input.required<string>();`);
     lines.push(`  readonly displayFields = DISPLAY_FIELDS;`);
     lines.push(``);
-    lines.push(`  private readonly entityResource = resource({`);
-    lines.push(`    request: () => this.id(),`);
-    lines.push(`    loader: ({ request }) => this.service.findById(request),`);
+    lines.push(`  private readonly entityResource = rxResource({`);
+    lines.push(`    params: () => this.id(),`);
+    lines.push(`    stream: ({ params }) => this.service.findById(params),`);
     lines.push(`  });`);
     lines.push(``);
     lines.push(`  readonly entity = computed(() => this.entityResource.value() ?? null);`);
