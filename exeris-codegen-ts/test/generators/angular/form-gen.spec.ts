@@ -1,6 +1,6 @@
 /**
  * Coverage for src/generators/angular/form-gen.ts — FormGenerator emits
- * an Angular 21 standalone form component with FormBuilder + Validators +
+ * an Angular 22 standalone form component with FormBuilder + Validators +
  * Signals. Exercises:
  *   - isLifecycleField / isSystemField skip filter
  *   - inCreate=false / hidden=true / readOnly=true / computed exclusion
@@ -266,6 +266,21 @@ describe('FormGenerator field rendering', () => {
     // Per-enum class-level properties.
     expect(content).toContain('readonly OrderStatusValues = Object.values(OrderStatus);');
     expect(content).toContain('readonly OrderStatusDisplayNames = OrderStatusDisplayNames;');
+  });
+
+  it('FQN enumType (the real processor shape) is simplified — never emits a dotted identifier (T20)', () => {
+    // The processor records enumType as a fully-qualified name; an FQN can't be a TS
+    // identifier or import binding. Regression for the form-gen bug that emitted
+    // `import { com.shop.OrderStatus }` + `readonly com.shop.OrderStatusValues`.
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      fields: [field({ name: 'status', type: 'com.shop.OrderStatus', enumType: 'com.shop.OrderStatus' })],
+    }), CTX)!.content;
+
+    expect(content).toContain("import { OrderStatus, OrderStatusDisplayNames } from '../types/enums';");
+    expect(content).toContain('readonly OrderStatusValues = Object.values(OrderStatus);');
+    expect(content).toContain('@for (value of OrderStatusValues; track value)');
+    expect(content).not.toContain('com.shop.OrderStatus');
   });
 
   it('FQCN field type (containing dot, not java.*) is auto-detected as enum (simple name extracted)', () => {
