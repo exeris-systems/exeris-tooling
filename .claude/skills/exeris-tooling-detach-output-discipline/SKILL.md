@@ -15,9 +15,8 @@ downstream user apps that edit, diff, and own the generated tree.
 ## When to Use
 - Any change to `OutputWriter` or the filesystem write path.
 - Any change to the codegen Maven plugin `generate` / `detach` mojos.
-- Any change to the generated-output pruning logic (tracked under T13) or anything that
-  decides which committed files get removed (esp. interactions with `mvn clean` wiping
-  the L1 tree).
+- Any change to the generated-output pruning logic, or anything that decides which
+  committed files get removed (esp. interactions with `mvn clean` wiping the L1 tree).
 - Any proposal whose premise is "the output is always regenerated so X is safe".
 - Any change to provenance/manifest emission tied to the reattach (edit-safety) story.
 
