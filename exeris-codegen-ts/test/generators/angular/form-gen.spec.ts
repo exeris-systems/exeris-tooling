@@ -1,6 +1,6 @@
 /**
  * Coverage for src/generators/angular/form-gen.ts — FormGenerator emits
- * an Angular 21 standalone form component with FormBuilder + Validators +
+ * an Angular 22 standalone form component with FormBuilder + Validators +
  * Signals. Exercises:
  *   - isLifecycleField / isSystemField skip filter
  *   - inCreate=false / hidden=true / readOnly=true / computed exclusion

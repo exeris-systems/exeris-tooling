@@ -56,9 +56,9 @@ jobs:
   # exeris-codegen-ts is the TypeScript / Angular emitter sibling of
   # exeris-codegen-java. It is NOT a Maven module — vitest drives its
   # tests + coverage. Lives in a parallel job so the JVM matrix and
-  # Node matrix can evolve independently. Both jobs ("mvn verify (JDK 26)"
-  # and "vitest run --coverage (exeris-codegen-ts)") are in the
-  # required-status-checks list on branch protection for main.
+  # Node matrix can evolve independently. The gating jobs ("mvn verify (JDK 26)",
+  # "vitest run --coverage (exeris-codegen-ts)", and "ng build (generated sample
+  # app)") are in the required-status-checks list on branch protection for main.
   ts-coverage:
     name: vitest run --coverage (exeris-codegen-ts)
     runs-on: ubuntu-latest
@@ -95,6 +95,7 @@ jobs:
   fe-app-build:
     name: ng build (generated sample app)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout exeris-tooling
         uses: actions/checkout@v4
