@@ -75,14 +75,14 @@ export class FormGenerator implements CodeGenerator {
     };
 
     const getEnumTypeFromField = (field: FieldMetadata): string | null => {
-      if (field.enumType) return field.enumType;
-      // Extract enum name from FQCN (e.g., "eu.exeris.foundation.domain.TenantPlan" -> "TenantPlan")
-      const type = field.type;
-      if (isEnumField(field)) {
-        const parts = type.split('.');
-        return parts[parts.length - 1];
-      }
-      return null;
+      // Always the SIMPLE enum name — the FQN (e.g. "com.shop.OrderStatus") is what
+      // the metadata carries, but it can't be a TS identifier or an import binding,
+      // so strip the package (mirrors type-gen / service-gen). (T20: form-gen used
+      // the FQN verbatim → "import { com.shop.OrderStatus }" + "com.shop.OrderStatusValues".)
+      const raw = field.enumType ?? (isEnumField(field) ? field.type : null);
+      if (!raw) return null;
+      const parts = raw.split('.');
+      return parts[parts.length - 1];
     };
 
     const entityName = domain.entityName;

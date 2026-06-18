@@ -81,11 +81,43 @@ jobs:
         working-directory: exeris-codegen-ts
         run: npm run test:coverage
 
-      # T20 FE build gate: generate a sample app and type-check its data layer
-      # (enums + types + Zod schemas — the files that import only `zod`). Catches the
-      # enum/schema cross-reference breakage that "the generated frontend doesn't
-      # compile" means, without an Angular install. The full `ng build` over a
-      # generated app (components/services need @angular/*) is a heavier follow-up job.
+      # T20 FE build gate (fast, Angular-free): generate a sample app and type-check
+      # its data layer (enums + types + Zod schemas — the files that import only
+      # `zod`). Catches the enum/schema cross-reference breakage cheaply on every run.
+      # The full component/template build is the separate fe-app-build job below.
       - name: verify generated frontend (tsc --noEmit, data layer)
         working-directory: exeris-codegen-ts
         run: npm run verify:generated
+
+  # Full FE build gate: generate a complete sample app and `ng build` it — the catch
+  # for component/service/template breakage (the layer that needs @angular/*), the FE
+  # analog of KernelCodegenCompileTest. Heavier (installs Angular), so a separate job.
+  fe-app-build:
+    name: ng build (generated sample app)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exeris-tooling
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: exeris-codegen-ts/package-lock.json
+
+      - name: npm ci + build (exeris-codegen-ts)
+        working-directory: exeris-codegen-ts
+        run: |
+          npm ci
+          npm run build
+
+      - name: Generate sample Angular app
+        working-directory: exeris-codegen-ts
+        run: node scripts/gen-sample-app.mjs "$RUNNER_TEMP/fe-sample"
+
+      - name: npm install + ng build (generated app)
+        working-directory: ${{ runner.temp }}/fe-sample
+        run: |
+          npm install --no-audit --no-fund
+          npx ng build --configuration development
