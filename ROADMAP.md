@@ -89,12 +89,20 @@ This file tracks scope per milestone. Items marked `[ ]` are open; `[x]` shipped
 
 - [ ] Add `exeris-codegen-ts` to a top-level orchestration target (Makefile or `frontend-maven-plugin`)
 - [ ] CI: separate npm-build job
-- [ ] Round-trip tests against generated Angular workspace (compiles + `ng build` green)
+- [~] **Angular v22 migration** (emitted scaffold + idioms; scope T-C, phased A→B→C). **Done:**
+      Phase A compat bump — `@angular/* ^22`, TS `~6`, drop `withFetch()` (#95); Phase B1 scaffold cleanup —
+      drop `@angular/platform-browser-dynamic`, Node-22 floor, `@angular/build` builder (#96); Phase B3
+      data-fetch fix — `rxResource` in detail, `firstValueFrom` in store (#98). **Pending:** Phase C
+      (Reactive Forms → Signal Forms, ADR-worthy → flag-gated WebMCP); small tidy (`@Service`, `?.` audit).
+      `debounced()` rejected (experimental). Gated by the `ng build` round-trip above.
+- [ ] Round-trip tests against generated Angular workspace (compiles + `ng build` / `tsc --noEmit` green)
+      — the FE analog of `KernelCodegenCompileTest`; **this is the catch for T20** (the generated frontend
+      currently doesn't build) and guards the Phase C reshape just as it would have caught T20
 
-> High-severity backlog items **T1** (action 404s), **T8** (O(n) finders), **T10**
-> (server-side validation), **T12** (cross-app mesh contract), and **T17** (cross-service
-> capability resolution) — plus **T2**, **T7**, **T9**, **T18**, **T19** — are also
-> targeted at this milestone. The **UI fidelity & theming** cluster (**U1–U5**, led by U1 ui-kit wiring +
+> High-severity backlog items **T8** (O(n) finders), **T10** (server-side validation),
+> **T12** (cross-app mesh contract), **T17** (cross-service capability resolution), and
+> **T20** (generated frontend doesn't build) — plus **T2**, **T7**, **T9**, **T18**, **T19** — are also
+> targeted at this milestone. (**T1** action-serving shipped in 0.6.0, PR #92.) The **UI fidelity & theming** cluster (**U1–U5**, led by U1 ui-kit wiring +
 > U2 universal lists) is the codegen-ts heart of this milestone. See the **Codegen
 > completeness backlog** section below.
 
@@ -130,7 +138,8 @@ This file tracks scope per milestone. Items marked `[ ]` are open; `[x]` shipped
 
 | # | Finding | Severity | Recommended target |
 |---|---|:---:|---|
-| T1  | `@Action` endpoints advertised (OpenAPI + Angular) but no kernel route serves them — 404 | **High** | 0.6.0 |
+| T1  | `@Action` endpoints advertised (OpenAPI + Angular) but no kernel route serves them — 404 | **High** | ✅ 0.6.0 (#92) |
+| T20 | Generated Angular frontend doesn't compile (`npm run build` fails) — two parallel TS emission paths; the `src/app` sourceRoot ships an empty enum stub that shadows the real `types/enums.ts`, so enum-typed code fails (TS2304/2305) | **High** (latent) | 0.6.0 |
 | T8  | No generated finders/indexes for FK + `filterable` fields → O(n) `findAll().filter()` everywhere | **High** | 0.6.0 |
 | T10 | `@Validation` enforced client-side (Zod) but dropped server-side (handler/service/DB) | **High** | 0.6.0 |
 | T12 | N generated apps can't form a mesh — client is own-app/relative-host, saga step is local, no cross-app contract | **High** | 0.5.0 → 0.6.0 |
@@ -179,15 +188,42 @@ This file tracks scope per milestone. Items marked `[ ]` are open; `[x]` shipped
       `@UI` i18n keys / `customComponent` into metadata, matched by the `-io` reader for parity; and the
       ADR-037/038 `.link.md` stubs.
 
-- [ ] **T1 — Serve custom actions, or gate them out (restore Java/TS parity).** `@Action` methods
-      reach the OpenAPI spec and the Angular service, but the generated `RuntimeLifecycle` wires
-      **CRUD only** (entities × 5) — no route or handler method for any action, so a generated
-      frontend `POST`s endpoints the generated backend answers with 404. Two emitters disagree across
-      the one metadata contract.
-      *Update:* add an action-dispatch path to `KernelHandlerGenerator` + matching routes in
-      `KernelApplicationGenerator`'s `RuntimeLifecycle`, **or** gate actions out of the OpenAPI/TS
-      emitters until the server side exists. Either way restore parity (emitter-parity skill should
-      catch this). Pairs with **T3** (action identity) and the command-surface gap noted under T12.
+- [x] **T1 — Serve custom actions (Java/TS parity restored).** `@Action` methods reached the OpenAPI
+      spec and the Angular service, but the generated `RuntimeLifecycle` wired **CRUD only** — no route
+      or handler for any action, so a generated frontend `POST`ed endpoints the backend answered with 404.
+      *Done (0.6.0, PR #92):* full Entity-First dispatch — `KernelHandlerGenerator` emits a
+      `handle<Action>(HttpExchange)` per action (extract id → decode `@ActionParam` body via the ADR-036
+      codec SPI → invoke the real entity method via `ActionMetadata.effectiveMethodName()` → persist →
+      respond with the updated aggregate), and `KernelApplicationGenerator` registers
+      `POST {base}/{id}/actions/{kebab(name)}` routes; the TS service posts the same path; a shared
+      `NameCasing` (PR #92 review) keeps the route segment and handler-method name in sync. Required the
+      SDK `ActionMetadata.methodName` (exeris-sdk#58) so the action identity (`@Action(name)`, **T3**) and
+      the JVM method can diverge. *v1 limits (tracked):* non-void return not surfaced; `@Action(httpMethod)`
+      not yet honoured (POST everywhere); domain exceptions map to 500.
+
+- [ ] **T20 — Generated Angular frontend doesn't compile (`npm run build` fails).** The FE analog of
+      **T14**: the generated frontend is L1-committed but the codegen e2e never *builds* it (it asserts
+      emitted *text* only, as the Java side did before `KernelCodegenCompileTest`), so the breakage stayed
+      latent. **Root cause: `exeris-codegen-ts` runs two parallel, conflicting emission paths in `main()`.**
+      The CLI loop writes correct artefacts to `<out>/{components,services,types}` — a *real* `types/enums.ts`
+      with values + `DisplayNames` + Zod (`index.ts:329`) — while `generateAppStructure` **also** writes a
+      duplicate tree under `<out>/src/app/{components,services,types,schemas}` (`index.ts:260`,
+      `app-structure-gen.ts:92-113`), and that `src/app` copy ships an **empty enum stub**
+      (`export enum X { // TODO … }`, `app-structure-gen.ts:646`). Since `src/app` is the Angular
+      `sourceRoot`, the build resolves enums to the stub → enum-typed fields and action-method signatures
+      reference absent members → **TS2304/TS2305**. The metadata *does* carry enum constants
+      (`ExerisDomainProcessor.java:254`) and the CLI path emits them fully — so this is **not** "enum
+      extraction unimplemented"; it is the duplicate `src/app` path **shadowing** the real output with a
+      stub, plus the full `EnumGenerator` (`api/enum-gen.ts`) left unwired. (The service *does* emit
+      `import … from '../types/enums'` (`service-gen.ts:182`) — it just resolves to the stub.)
+      *Update (exeris-codegen-ts):* collapse to **one** emission path — make the `src/app` (sourceRoot)
+      tree the canonical output of the real per-entity generators (drop the duplicate top-level loop, or
+      vice-versa), and delete the `app-structure-gen` enum stub in favour of the real `generateEnumTypes` /
+      `EnumGenerator`. Unifying the path fixes the enum-stub and the import-resolves-to-stub symptoms
+      together. **The catch is the 0.6.0 "generated workspace compiles + `ng build` green" gate** — a
+      `tsc --noEmit`/`ng build` over a generated sample, the FE analog of `KernelCodegenCompileTest`.
+      (FE orphan-pruning — the other suspected FE-twin — is **already done**: the **T13** manifest pruner
+      runs on the TS CLI path, `index.ts:302`.) Surfaced by a larger multi-entity, multi-service frontend trial.
 
 - [ ] **T8 — Generate finders + FK/`filterable` indexes.** Repositories expose only
       `findById/findAll/save/update/deleteById/count`; every cross-aggregate lookup forces a
@@ -372,14 +408,15 @@ This file tracks scope per milestone. Items marked `[ ]` are open; `[x]` shipped
       round-trip in the e2e suite (pairs with **T2**) is what catches this class — the codegen e2e
       currently asserts only on emitted *text*.
 
-- [ ] **T7 — TS app-structure seams (`exeris-codegen-ts`).** Per-entity components emit to
-      `<out>/components/…`, but generated `app.routes.ts` imports `./components/…` relative to
-      `<out>/src/app/`, so the routes don't resolve without a move — the generated workspace does not
-      build as emitted (hence Medium, same class as **T13**). Separately, `redirectTo` (first entity
-      alphabetically) and a hardcoded app title are baked in.
-      *Update:* emit per-entity files under `src/app/...` to match the app shell; make the default route
-      + app title configurable (CLI flag / config). Extended by **U5** (configurable detail/branding)
-      in the **UI fidelity & theming** cluster below.
+- [~] **T7 — TS app-structure seams (`exeris-codegen-ts`).** *Route resolution — done:* per-entity files
+      now emit under `src/app/{components,services,types}` and `app.routes.ts` imports `./components/…`
+      consistently (`app-structure-gen.ts:92-104,257`), so the route-import mismatch no longer breaks the
+      build. *Still open:* the app title is hardcoded (`'… - Exeris Foundation'`, `app-structure-gen.ts:257`)
+      and the default `redirectTo` (first entity alphabetically) is not metadata-driven; and this same
+      `generateAppStructure` path is half of the **T20#4** duplicate emission.
+      *Update:* make the default route + app title configurable (CLI flag / config); collapse the duplicate
+      tree together with **T20**. Extended by **U5** (configurable detail/branding) in the **UI fidelity &
+      theming** cluster below.
 
 ### Low severity
 
