@@ -141,6 +141,8 @@ describe('generateAppStructure — static skeleton', () => {
     // v22 floor is Node 22 (Active LTS), not 24.
     expect(pkg.content).toContain('"node": ">=22.0.0"');
     expect(pkg.content).not.toContain('>=24.0.0');
+    // @types/node tracks the Node floor — must not regress to ^24.
+    expect(pkg.content).toContain('"@types/node": "^22.0.0"');
     // esbuild @angular/build builder (ng-new default since v19), not the devkit wrapper.
     expect(pkg.content).toContain('"@angular/build": "^22.0.0"');
     expect(pkg.content).not.toContain('@angular-devkit/build-angular');
