@@ -6,7 +6,10 @@ generators consume it → emit handlers, services, repositories, OpenAPI specs,
 sagas. 1.0.0 GA means: **the codegen output is stable**, the Maven plugin API
 is stable, and downstream user apps can pin to it with semver guarantees.
 
-This file tracks scope per milestone. Items marked `[ ]` are open; `[x]` shipped.
+This file tracks scope per milestone. Items marked `[ ]` are open; `[x]` shipped;
+`[~]` partial / in-progress. In the backlog table below, a ✅ in the target column marks an
+item already shipped (its full status lives in the per-item detail entry); the table is a
+cross-reference index, so it retains shipped items alongside open ones.
 
 ---
 
@@ -205,13 +208,13 @@ This file tracks scope per milestone. Items marked `[ ]` are open; `[x]` shipped
       **T14**: the generated frontend is L1-committed but the codegen e2e never *builds* it (it asserts
       emitted *text* only, as the Java side did before `KernelCodegenCompileTest`), so the breakage stayed
       latent. **Root cause: `exeris-codegen-ts` runs two parallel, conflicting emission paths in `main()`.**
-      The CLI loop writes correct artefacts to `<out>/{components,services,types}` — a *real* `types/enums.ts`
-      with values + `DisplayNames` + Zod (`index.ts:329`) — while `generateAppStructure` **also** writes a
-      duplicate tree under `<out>/src/app/{components,services,types,schemas}` (`index.ts:260`,
-      `app-structure-gen.ts:92-113`), and that `src/app` copy ships an **empty enum stub**
+      The CLI loop writes a *real* `types/enums.ts` (values + `DisplayNames` + Zod, `index.ts:329`) plus
+      type/barrel artefacts at `<out>/`, while `generateAppStructure` emits the full per-entity tree the
+      app actually **builds from** under `<out>/src/app/{components,services,types,schemas}` (`index.ts:260`,
+      `app-structure-gen.ts:92-113`) — and *its* `types/enums.ts` is an **empty stub**
       (`export enum X { // TODO … }`, `app-structure-gen.ts:646`). Since `src/app` is the Angular
-      `sourceRoot`, the build resolves enums to the stub → enum-typed fields and action-method signatures
-      reference absent members → **TS2304/TS2305**. The metadata *does* carry enum constants
+      `sourceRoot`, the build never sees the real top-level `enums.ts`; it resolves enum-typed fields and
+      action-method signatures to the stub's absent members → **TS2304/TS2305**. The metadata *does* carry enum constants
       (`ExerisDomainProcessor.java:254`) and the CLI path emits them fully — so this is **not** "enum
       extraction unimplemented"; it is the duplicate `src/app` path **shadowing** the real output with a
       stub, plus the full `EnumGenerator` (`api/enum-gen.ts`) left unwired. (The service *does* emit
@@ -413,7 +416,7 @@ This file tracks scope per milestone. Items marked `[ ]` are open; `[x]` shipped
       consistently (`app-structure-gen.ts:92-104,257`), so the route-import mismatch no longer breaks the
       build. *Still open:* the app title is hardcoded (`'… - Exeris Foundation'`, `app-structure-gen.ts:257`)
       and the default `redirectTo` (first entity alphabetically) is not metadata-driven; and this same
-      `generateAppStructure` path is half of the **T20#4** duplicate emission.
+      `generateAppStructure` path is half of **T20**'s duplicate emission.
       *Update:* make the default route + app title configurable (CLI flag / config); collapse the duplicate
       tree together with **T20**. Extended by **U5** (configurable detail/branding) in the **UI fidelity &
       theming** cluster below.
