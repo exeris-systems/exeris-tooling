@@ -29,7 +29,7 @@ export const GeneratorConfigSchema = z.object({
   /** Style system */
   styling: z.enum(['tailwind', 'material', 'bootstrap', 'none']).default('tailwind'),
 
-  /** Generate standalone components (Angular 21+) */
+  /** Generate standalone components (Angular 22+) */
   standalone: z.boolean().default(true),
 
   /** Use Angular Signals */

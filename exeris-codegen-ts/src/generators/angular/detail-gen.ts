@@ -1,7 +1,7 @@
 /**
  * Angular Detail View Generator
  *
- * Generates Angular 21+ detail view components with:
+ * Generates Angular 22+ detail view components with:
  * - Signal-based state management
  * - Resource API for data fetching
  * - Loading/error states
