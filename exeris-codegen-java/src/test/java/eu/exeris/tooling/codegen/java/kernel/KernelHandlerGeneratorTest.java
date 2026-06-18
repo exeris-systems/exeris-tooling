@@ -5,6 +5,7 @@ import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
 import eu.exeris.sdk.sourcemodel.ast.ActionParamMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
+import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -189,5 +190,57 @@ class KernelHandlerGeneratorTest {
                 .contains("String reason")
                 .contains("parseBody(exchange, ApplyDiscountRequest.class)")
                 .contains("entity.applyDiscount(request.percent(), request.reason())");
+    }
+
+    @Test
+    @DisplayName("T10: enforces @Validation server-side in create/update — 400 before persist, parity with the client Zod schema")
+    void shouldEnforceValidationServerSide() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .fields(List.of(
+                        FieldMetadata.builder("orderNumber", "String")
+                                .required(true).minLength(3).maxLength(20).pattern("[A-Z0-9-]+").build(),
+                        FieldMetadata.builder("amount", "BigDecimal")
+                                .required(true).min(0L).max(1000L).build(),
+                        FieldMetadata.builder("quantity", "int")
+                                .min(1L).build()))
+                .build();
+
+        String handler = strategy.generate(metadata).stream()
+                .filter(f -> f.artifactType() == ArtifactType.CONTROLLER)
+                .findFirst().orElseThrow().content();
+
+        assertThat(handler)
+                // required → not-null on a reference type
+                .contains("if (entity.getOrderNumber() == null)")
+                // String length + pattern (null-guarded)
+                .contains("entity.getOrderNumber().length() < 3")
+                .contains("entity.getOrderNumber().length() > 20")
+                .contains("!entity.getOrderNumber().matches(\"[A-Z0-9-]+\")")
+                // BigDecimal min/max via compareTo
+                .contains("entity.getAmount().compareTo(BigDecimal.valueOf(0L)) < 0")
+                .contains("entity.getAmount().compareTo(BigDecimal.valueOf(1000L)) > 0")
+                // primitive numeric compares directly (no null guard)
+                .contains("entity.getQuantity() < 1L")
+                // rejects with 400, and the guard sits before the service call (create path)
+                .contains("exchange.respond(HttpStatus.BAD_REQUEST)")
+                .containsSubsequence(
+                        "if (entity.getOrderNumber() == null)",
+                        "service.save(entity)");
+    }
+
+    @Test
+    @DisplayName("T10: a primitive required field emits no null-check (a primitive can't be null)")
+    void shouldNotNullCheckPrimitiveRequired() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .fields(List.of(FieldMetadata.builder("quantity", "int").required(true).build()))
+                .build();
+
+        String handler = strategy.generate(metadata).stream()
+                .filter(f -> f.artifactType() == ArtifactType.CONTROLLER)
+                .findFirst().orElseThrow().content();
+
+        assertThat(handler).doesNotContain("entity.getQuantity() == null");
     }
 }

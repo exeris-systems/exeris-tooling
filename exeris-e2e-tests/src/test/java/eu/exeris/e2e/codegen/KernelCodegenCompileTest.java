@@ -60,17 +60,27 @@ class KernelCodegenCompileTest {
                 .audited(true)
                 .softDelete(true)
                 .fields(List.of(
+                        // T10: validation rules exercise the handler's server-side
+                        // validation guard across every emitted shape — required
+                        // null-check, String minLength/maxLength/pattern, and numeric
+                        // (BigDecimal) min/max — so the generated checks must compile
+                        // against the real getters.
                         FieldMetadata.builder("orderNumber", "String")
                                 .required(true)
                                 .unique(true)
                                 .searchable(true)
+                                .minLength(3)
+                                .pattern("[A-Z0-9-]+")
                                 .build(),
                         FieldMetadata.builder("customerName", "String")
                                 .required(true)
                                 .searchable(true)
+                                .maxLength(120)
                                 .build(),
                         FieldMetadata.builder("amount", "BigDecimal")
                                 .required(true)
+                                .min(0L)
+                                .max(1000000L)
                                 .build(),
                         FieldMetadata.builder("tags", "List<java.util.UUID>")
                                 .build(),

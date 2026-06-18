@@ -17,8 +17,10 @@ import eu.exeris.tooling.codegen.java.support.NameCasing;
 import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
 import eu.exeris.sdk.sourcemodel.ast.ActionParamMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
+import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 
 import javax.lang.model.element.Modifier;
+import java.util.List;
 
 /**
  * Kernel Handler Generator.
@@ -77,6 +79,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
     private static final ClassName UUID = ClassName.get("java.util", "UUID");
     private static final ClassName OPTIONAL = ClassName.get("java.util", "Optional");
     private static final ClassName LIST = ClassName.get("java.util", "List");
+    private static final ClassName BIG_DECIMAL = ClassName.get("java.math", "BigDecimal");
     private static final ClassName ILLEGAL_ARGUMENT_EXCEPTION =
             ClassName.get("java.lang", "IllegalArgumentException");
     private static final ClassName RUNTIME_EXCEPTION =
@@ -118,8 +121,8 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                         .build())
                 .addMethod(buildHandleGetAll(entityLower, listOfEntity))
                 .addMethod(buildHandleGetById(entityLower, optionalOfEntity))
-                .addMethod(buildHandleCreate(entityLower, entityType))
-                .addMethod(buildHandleUpdate(entityLower, entityType))
+                .addMethod(buildHandleCreate(entityLower, entityType, metadata.fields()))
+                .addMethod(buildHandleUpdate(entityLower, entityType, metadata.fields()))
                 .addMethod(buildHandleDelete(entityLower));
 
         // T1: serve @Action methods. Each action gets a handler that loads the
@@ -170,19 +173,21 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         return appendServerErrorCatch(method, "Failed to get " + entityLower).build();
     }
 
-    private MethodSpec buildHandleCreate(String entityLower, ClassName entityType) {
+    private MethodSpec buildHandleCreate(String entityLower, ClassName entityType, List<FieldMetadata> fields) {
         MethodSpec.Builder method = crudHandler("handleCreate");
         appendBodyParseGuard(method, entityType);
+        appendValidationGuard(method, fields);
         method.beginControlFlow("try")
                 .addStatement("$T saved = service.save(entity)", entityType)
                 .addStatement("exchange.respond($T.CREATED, saved)", HTTP_STATUS);
         return appendServerErrorCatch(method, "Failed to create " + entityLower).build();
     }
 
-    private MethodSpec buildHandleUpdate(String entityLower, ClassName entityType) {
+    private MethodSpec buildHandleUpdate(String entityLower, ClassName entityType, List<FieldMetadata> fields) {
         MethodSpec.Builder method = crudHandler("handleUpdate");
         appendPathIdGuard(method);
         appendBodyParseGuard(method, entityType);
+        appendValidationGuard(method, fields);
         method.beginControlFlow("try")
                 .addStatement("$T updated = service.update(id, entity)", entityType)
                 .addStatement("exchange.respond($T.OK, updated)", HTTP_STATUS);
@@ -357,6 +362,102 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                 .addStatement("exchange.respond($T.BAD_REQUEST)", HTTP_STATUS)
                 .addStatement("return")
                 .endControlFlow();
+    }
+
+    /** T10 — server-side {@code @Validation}. After the body decodes into {@code entity},
+     *  reject with 400 (before persisting) if a field violates a metadata rule, restoring
+     *  parity with the client Zod schema, which enforces the same rules. Only rules that
+     *  are type-safe to emit are checked: {@code required} → not-null on reference types;
+     *  {@code minLength}/{@code maxLength}/{@code pattern} on String; {@code min}/{@code max}
+     *  on numeric (BigDecimal via {@code compareTo}, other numerics via operators).
+     *  Anything else is skipped (no check emitted). */
+    private static void appendValidationGuard(MethodSpec.Builder method, List<FieldMetadata> fields) {
+        for (FieldMetadata f : fields) {
+            String getter = "entity.get" + NameCasing.pascal(f.name()) + "()";
+
+            if (f.required() && !isPrimitive(f.type())) {
+                reject400(method, getter + " == null");
+            }
+            if (isStringType(f.type())) {
+                if (f.minLength() != null) {
+                    reject400(method, getter + " != null && " + getter + ".length() < " + f.minLength());
+                }
+                if (f.maxLength() != null) {
+                    reject400(method, getter + " != null && " + getter + ".length() > " + f.maxLength());
+                }
+                if (f.pattern() != null) {
+                    method.beginControlFlow("if ($L != null && !$L.matches($S))", getter, getter, f.pattern())
+                            .addStatement("exchange.respond($T.BAD_REQUEST)", HTTP_STATUS)
+                            .addStatement("return")
+                            .endControlFlow();
+                }
+            }
+            if (f.min() != null) {
+                appendNumericBound(method, f.type(), getter, "<", f.min());
+            }
+            if (f.max() != null) {
+                appendNumericBound(method, f.type(), getter, ">", f.max());
+            }
+        }
+    }
+
+    private static void reject400(MethodSpec.Builder method, String condition) {
+        method.beginControlFlow("if ($L)", condition)
+                .addStatement("exchange.respond($T.BAD_REQUEST)", HTTP_STATUS)
+                .addStatement("return")
+                .endControlFlow();
+    }
+
+    /** Numeric bound check; {@code op} is {@code "<"} for min, {@code ">"} for max.
+     *  BigDecimal compares via {@code compareTo}; primitives compare directly; boxed
+     *  numerics get a null guard; non-numeric field types emit nothing. */
+    private static void appendNumericBound(MethodSpec.Builder method, String type, String getter, String op, long bound) {
+        if (isBigDecimal(type)) {
+            method.beginControlFlow("if ($L != null && $L.compareTo($T.valueOf($L)) $L 0)",
+                            getter, getter, BIG_DECIMAL, bound + "L", op)
+                    .addStatement("exchange.respond($T.BAD_REQUEST)", HTTP_STATUS)
+                    .addStatement("return")
+                    .endControlFlow();
+        } else if (isPrimitiveNumeric(type)) {
+            reject400(method, getter + " " + op + " " + bound + "L");
+        } else if (isBoxedNumeric(type)) {
+            reject400(method, getter + " != null && " + getter + " " + op + " " + bound + "L");
+        }
+        // else: not a numeric field — skip.
+    }
+
+    private static String simpleTypeName(String type) {
+        int dot = type.lastIndexOf('.');
+        return dot >= 0 ? type.substring(dot + 1) : type;
+    }
+
+    private static boolean isPrimitive(String type) {
+        return switch (type) {
+            case "int", "long", "short", "byte", "boolean", "char", "float", "double" -> true;
+            default -> false;
+        };
+    }
+
+    private static boolean isStringType(String type) {
+        return "String".equals(simpleTypeName(type));
+    }
+
+    private static boolean isBigDecimal(String type) {
+        return "BigDecimal".equals(simpleTypeName(type));
+    }
+
+    private static boolean isPrimitiveNumeric(String type) {
+        return switch (type) {
+            case "int", "long", "short", "byte", "float", "double" -> true;
+            default -> false;
+        };
+    }
+
+    private static boolean isBoxedNumeric(String type) {
+        return switch (simpleTypeName(type)) {
+            case "Integer", "Long", "Short", "Byte", "Float", "Double" -> true;
+            default -> false;
+        };
     }
 
     /** Emits the shared "catch RuntimeException → log + 500" tail that closes the
