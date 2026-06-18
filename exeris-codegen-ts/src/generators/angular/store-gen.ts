@@ -78,6 +78,7 @@ import {
   DestroyRef,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { firstValueFrom } from 'rxjs';
 import { ${entityName}Service } from '../services/${kebab}.service';
 import type { ${entityName}, ${entityName}Create, ${entityName}Update, Page, PageRequest } from '../types/${kebab}.types';
 
@@ -270,7 +271,7 @@ export class ${entityName}Store {
         direction: this._sortDirection(),
       };
 
-      const response = await this.service.findAll(pageRequest, this._filter());
+      const response = await firstValueFrom(this.service.findAll(pageRequest, this._filter()));
       
       this._entities.set(response.content);
       this._totalElements.set(response.totalElements);
@@ -291,7 +292,7 @@ export class ${entityName}Store {
     this._error.set(null);
 
     try {
-      const entity = await this.service.findById(id);
+      const entity = await firstValueFrom(this.service.findById(id));
       this._selected.set(entity);
       
       // Update in list if present
@@ -317,7 +318,7 @@ export class ${entityName}Store {
     this._error.set(null);
 
     try {
-      const created = await this.service.create(data);
+      const created = await firstValueFrom(this.service.create(data));
       
       // Add to list (at beginning for latest-first sort)
       this._entities.update(entities => [created, ...entities]);
@@ -347,7 +348,7 @@ export class ${entityName}Store {
     );
 
     try {
-      const updated = await this.service.update(id, data);
+      const updated = await firstValueFrom(this.service.update(id, data));
       
       // Replace with server response
       this._entities.update(entities =>
@@ -381,7 +382,7 @@ export class ${entityName}Store {
     this._entities.update(entities => entities.filter(e => e.${idField} !== id));
 
     try {
-      await this.service.delete(id);
+      await firstValueFrom(this.service.delete(id));
       this._totalElements.update(n => Math.max(0, n - 1));
       
       if (this._selected()?.${idField} === id) {
@@ -624,7 +625,7 @@ ${this.generateSearchableFieldAccess(searchableFields)}
     this._error.set(null);
 
     try {
-      await this.service.softDelete(id);
+      await firstValueFrom(this.service.softDelete(id));
       
       // Remove from list (or mark as deleted depending on UI needs)
       this._entities.update(entities => entities.filter(e => e.${idField} !== id));
@@ -649,7 +650,7 @@ ${this.generateSearchableFieldAccess(searchableFields)}
     this._error.set(null);
 
     try {
-      const restored = await this.service.restore(id);
+      const restored = await firstValueFrom(this.service.restore(id));
       
       // Add back to list
       this._entities.update(entities => [restored, ...entities]);
