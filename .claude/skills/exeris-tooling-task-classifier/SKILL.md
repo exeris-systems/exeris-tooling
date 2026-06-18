@@ -1,6 +1,6 @@
 ---
 name: exeris-tooling-task-classifier
-description: Router/Planner triage skill for exeris-tooling. Classifies task type, scope, severity, and recommends primary agent based on primary risk against the build-time pipeline contract.
+description: Use FIRST, before starting any exeris-tooling build-time change, to triage it — classifies task type (processor / codegen-java / codegen-ts / e2e / docs), scope, severity, and primary risk against the pipeline contract, then recommends the primary agent. Invoke whenever a request lands in exeris-tooling and the owning module or risk surface is not yet obvious. Chain into exeris-tooling-routing-planner for the execution plan.
 ---
 
 # Exeris Tooling Task Classifier
@@ -9,6 +9,12 @@ description: Router/Planner triage skill for exeris-tooling. Classifies task typ
 Classify incoming work before execution starts.
 
 This is a triage skill: it does not implement changes. It identifies task class, scope, and likely ownership across the build-time pipeline (processor / codegen-core / codegen-java / codegen-ts / e2e).
+
+## When to Use
+- A request lands in `exeris-tooling` and the owning module or primary risk is not yet obvious.
+- Before delegating to any specialist agent, to confirm the right primary.
+- When scope might cross modules or the Java↔TS build boundary and you need that surfaced early.
+- Skip when the task is a one-line, single-file edit with an obvious owner — triage overhead is not worth it.
 
 ## Output Contract
 Return exactly:

@@ -13,12 +13,18 @@ and works as the operating context for AI assistants on the build-time pipeline
   - `exeris-tooling-implementer.md` — concrete code changes in processor / codegen-core / codegen-java / codegen-ts
   - `exeris-tooling-codegen-verification.md` — determinism, parity, compile-gate, e2e snapshot evidence
   - `exeris-tooling-docs-adr.md` — ADR-015 and downstream-doc drift control
-- `commands/` — slash commands invocable as `/<command-name>`:
+- `commands/` — slash commands invocable as `/<command-name>`. These are **thin shims**:
+  each delegates to the same-named review skill on `$ARGUMENTS` so the rules live in one
+  place (the skill), not duplicated here. They exist for explicit, user-typed invocation:
   - `codegen-determinism-check.md`, `processor-purity.md`, `emitter-parity.md`, `kernel-target-discipline.md`
-- `skills/` — invocable skills (`/<skill-name>`):
-  - `exeris-tooling-task-classifier`, `exeris-tooling-routing-planner`
-  - `exeris-tooling-codegen-determinism-review`, `exeris-tooling-emitter-parity-review`
-  - `exeris-tooling-processor-discipline-review`, `exeris-tooling-kernel-target-discipline`
+- `skills/` — invocable skills (`/<skill-name>`, also auto-triggered by `description`):
+  - Routing: `exeris-tooling-task-classifier` → `exeris-tooling-routing-planner` (triage → plan)
+  - Pipeline-contract reviews: `exeris-tooling-codegen-determinism-review`,
+    `exeris-tooling-emitter-parity-review`, `exeris-tooling-processor-discipline-review`,
+    `exeris-tooling-kernel-target-discipline`
+  - `exeris-tooling-strict-audit-review` — `-Aexeris.strict` INERT_* registry hygiene
+  - `exeris-tooling-adr-shape-gate` — Research/RFC/ADR shape + registry reservation
+  - `exeris-tooling-detach-output-discipline` — committed-L1 / detach lifecycle (hard-constraint #6)
 
 ## Doctrine — single source
 
