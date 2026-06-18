@@ -25,11 +25,11 @@ jobs:
         with:
           path: exeris-tooling
 
-      - name: Checkout exeris-sdk (0.7.0-SNAPSHOT dep — methodName for T1; re-pin to a release tag before cutting tooling)
+      - name: Checkout exeris-sdk (pinned to released v0.7.0 — provides ActionMetadata.methodName for T1)
         uses: actions/checkout@v4
         with:
           repository: exeris-systems/exeris-sdk
-          ref: main
+          ref: v0.7.0
           path: exeris-sdk
 
       - name: Set up JDK ${{ matrix.java }}
