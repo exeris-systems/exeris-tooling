@@ -109,8 +109,7 @@ describe('DetailGenerator emitted content — structural markers', () => {
     expect(content).toContain('export class OrderDetailComponent {');
     expect(content).toContain('readonly id = input.required<string>();');
     // B3: rxResource (stable v22) bridges the Observable-returning service — v22 keys are
-    // `params`/`stream`, not `request`/`loader`, and it imports from @angular/core/rxjs-interop.
-    expect(content).toContain("import { rxResource } from '@angular/core/rxjs-interop';");
+    // `params`/`stream`, not `request`/`loader` (the import is asserted in the imports test).
     expect(content).toContain('private readonly entityResource = rxResource({');
     expect(content).toContain('params: () => this.id()');
     expect(content).toContain('stream: ({ params }) => this.service.findById(params)');

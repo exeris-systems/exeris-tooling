@@ -393,6 +393,9 @@ describe('StoreGenerator softDelete branch', () => {
     expect(content).not.toContain('async archive(');
     expect(content).not.toContain('async restore(');
     expect(content).not.toContain('this.service.softDelete(');
+    // firstValueFrom is unconditional (findAll/create/update/delete go through it) —
+    // guard it on the non-softDelete path so it can't drift inside the soft-delete block.
+    expect(content).toContain("import { firstValueFrom } from 'rxjs';");
     expect(content).not.toContain('this.service.restore(');
   });
 
