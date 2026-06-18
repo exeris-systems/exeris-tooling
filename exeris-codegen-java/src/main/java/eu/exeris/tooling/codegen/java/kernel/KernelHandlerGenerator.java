@@ -214,7 +214,11 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
      *  method surfaces as 500 via {@link #appendServerErrorCatch}, not a 4xx — the handler
      *  cannot tell a domain rejection (e.g. "already cancelled") apart from an
      *  infrastructure failure. The generated method carries a Javadoc note to that effect
-     *  so downstream readers know why domain exceptions are not mapped to 4xx yet. */
+     *  so downstream readers know why domain exceptions are not mapped to 4xx yet.
+     *
+     *  <p>The field-level {@code @Validation} guard (T10) is intentionally NOT applied here:
+     *  an action decodes its own {@code @ActionParam} record and invokes an entity method,
+     *  it does not accept the field-shaped create/update body those rules describe. */
     private MethodSpec buildActionHandler(ActionMetadata action, ClassName entityType,
                                           TypeName optionalOfEntity, ClassName selfType,
                                           String entityLower) {
@@ -373,32 +377,46 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
      *  Anything else is skipped (no check emitted). */
     private static void appendValidationGuard(MethodSpec.Builder method, List<FieldMetadata> fields) {
         for (FieldMetadata f : fields) {
-            String getter = "entity.get" + NameCasing.pascal(f.name()) + "()";
-
-            if (f.required() && !isPrimitive(f.type())) {
-                reject400(method, getter + " == null");
+            boolean nullCheck = f.required() && !isPrimitive(f.type());
+            boolean strChecks = isStringType(f.type())
+                    && (f.minLength() != null || f.maxLength() != null || f.pattern() != null);
+            boolean numChecks = (f.min() != null || f.max() != null) && isNumeric(f.type());
+            if (!nullCheck && !strChecks && !numChecks) {
+                continue;
             }
-            if (isStringType(f.type())) {
+
+            // Read the value once into a local (avoids re-invoking the getter per check).
+            String v = f.name();
+            method.addStatement("var $L = entity.get$L()", v, NameCasing.pascal(f.name()));
+
+            if (nullCheck) {
+                reject400(method, v + " == null");
+            }
+            if (strChecks) {
                 if (f.minLength() != null) {
-                    reject400(method, getter + " != null && " + getter + ".length() < " + f.minLength());
+                    reject400(method, v + " != null && " + v + ".length() < " + f.minLength());
                 }
                 if (f.maxLength() != null) {
-                    reject400(method, getter + " != null && " + getter + ".length() > " + f.maxLength());
+                    reject400(method, v + " != null && " + v + ".length() > " + f.maxLength());
                 }
                 if (f.pattern() != null) {
-                    method.beginControlFlow("if ($L != null && !$L.matches($S))", getter, getter, f.pattern())
+                    method.beginControlFlow("if ($L != null && !$L.matches($S))", v, v, f.pattern())
                             .addStatement("exchange.respond($T.BAD_REQUEST)", HTTP_STATUS)
                             .addStatement("return")
                             .endControlFlow();
                 }
             }
-            if (f.min() != null) {
-                appendNumericBound(method, f.type(), getter, "<", f.min());
+            if (numChecks && f.min() != null) {
+                appendNumericBound(method, f.type(), v, "<", f.min());
             }
-            if (f.max() != null) {
-                appendNumericBound(method, f.type(), getter, ">", f.max());
+            if (numChecks && f.max() != null) {
+                appendNumericBound(method, f.type(), v, ">", f.max());
             }
         }
+    }
+
+    private static boolean isNumeric(String type) {
+        return isBigDecimal(type) || isPrimitiveNumeric(type) || isBoxedNumeric(type);
     }
 
     private static void reject400(MethodSpec.Builder method, String condition) {
@@ -411,17 +429,17 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
     /** Numeric bound check; {@code op} is {@code "<"} for min, {@code ">"} for max.
      *  BigDecimal compares via {@code compareTo}; primitives compare directly; boxed
      *  numerics get a null guard; non-numeric field types emit nothing. */
-    private static void appendNumericBound(MethodSpec.Builder method, String type, String getter, String op, long bound) {
+    private static void appendNumericBound(MethodSpec.Builder method, String type, String expr, String op, long bound) {
         if (isBigDecimal(type)) {
             method.beginControlFlow("if ($L != null && $L.compareTo($T.valueOf($L)) $L 0)",
-                            getter, getter, BIG_DECIMAL, bound + "L", op)
+                            expr, expr, BIG_DECIMAL, bound + "L", op)
                     .addStatement("exchange.respond($T.BAD_REQUEST)", HTTP_STATUS)
                     .addStatement("return")
                     .endControlFlow();
         } else if (isPrimitiveNumeric(type)) {
-            reject400(method, getter + " " + op + " " + bound + "L");
+            reject400(method, expr + " " + op + " " + bound + "L");
         } else if (isBoxedNumeric(type)) {
-            reject400(method, getter + " != null && " + getter + " " + op + " " + bound + "L");
+            reject400(method, expr + " != null && " + expr + " " + op + " " + bound + "L");
         }
         // else: not a numeric field — skip.
     }

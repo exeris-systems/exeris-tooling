@@ -202,6 +202,8 @@ class KernelHandlerGeneratorTest {
                                 .required(true).minLength(3).maxLength(20).pattern("[A-Z0-9-]+").build(),
                         FieldMetadata.builder("amount", "BigDecimal")
                                 .required(true).min(0L).max(1000L).build(),
+                        FieldMetadata.builder("weight", "Long")
+                                .min(1L).build(),
                         FieldMetadata.builder("quantity", "int")
                                 .min(1L).build()))
                 .build();
@@ -211,22 +213,30 @@ class KernelHandlerGeneratorTest {
                 .findFirst().orElseThrow().content();
 
         assertThat(handler)
+                // value read once into a local, then checked
+                .contains("var orderNumber = entity.getOrderNumber()")
                 // required → not-null on a reference type
-                .contains("if (entity.getOrderNumber() == null)")
+                .contains("if (orderNumber == null)")
                 // String length + pattern (null-guarded)
-                .contains("entity.getOrderNumber().length() < 3")
-                .contains("entity.getOrderNumber().length() > 20")
-                .contains("!entity.getOrderNumber().matches(\"[A-Z0-9-]+\")")
+                .contains("orderNumber != null && orderNumber.length() < 3")
+                .contains("orderNumber != null && orderNumber.length() > 20")
+                .contains("!orderNumber.matches(\"[A-Z0-9-]+\")")
                 // BigDecimal min/max via compareTo
-                .contains("entity.getAmount().compareTo(BigDecimal.valueOf(0L)) < 0")
-                .contains("entity.getAmount().compareTo(BigDecimal.valueOf(1000L)) > 0")
-                // primitive numeric compares directly (no null guard)
-                .contains("entity.getQuantity() < 1L")
-                // rejects with 400, and the guard sits before the service call (create path)
+                .contains("amount.compareTo(BigDecimal.valueOf(0L)) < 0")
+                .contains("amount.compareTo(BigDecimal.valueOf(1000L)) > 0")
+                // boxed numeric → null-guarded direct comparison
+                .contains("weight != null && weight < 1L")
+                // primitive numeric → direct comparison, no null guard
+                .contains("quantity < 1L")
+                .doesNotContain("quantity != null")
+                // rejects with 400, and the guard precedes BOTH service calls
+                // (create AND update each emit it before persisting)
                 .contains("exchange.respond(HttpStatus.BAD_REQUEST)")
                 .containsSubsequence(
-                        "if (entity.getOrderNumber() == null)",
-                        "service.save(entity)");
+                        "var orderNumber = entity.getOrderNumber()",
+                        "service.save(entity)",
+                        "var orderNumber = entity.getOrderNumber()",
+                        "service.update(id, entity)");
     }
 
     @Test
@@ -241,6 +251,10 @@ class KernelHandlerGeneratorTest {
                 .filter(f -> f.artifactType() == ArtifactType.CONTROLLER)
                 .findFirst().orElseThrow().content();
 
-        assertThat(handler).doesNotContain("entity.getQuantity() == null");
+        // A primitive field with only `required` has no emittable check, so no
+        // local read and no null comparison are generated for it at all.
+        assertThat(handler)
+                .doesNotContain("quantity == null")
+                .doesNotContain("var quantity = entity.getQuantity()");
     }
 }
