@@ -13,6 +13,7 @@ import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
+import eu.exeris.tooling.codegen.java.support.NameCasing;
 import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
 import eu.exeris.sdk.sourcemodel.ast.ActionParamMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
@@ -202,11 +203,19 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
      *  aggregate (404 if absent), invoke the actual entity method
      *  ({@link ActionMetadata#effectiveMethodName()}), persist, and respond with the
      *  updated aggregate. The action method's return value (if any) is invoked as a
-     *  statement and not surfaced in v1 — the response carries the updated state. */
+     *  statement and not surfaced in v1 — the response carries the updated state.
+     *
+     *  <p>v1 limitation (tracked, T1 follow-up): a domain exception thrown by the entity
+     *  method surfaces as 500 via {@link #appendServerErrorCatch}, not a 4xx — the handler
+     *  cannot tell a domain rejection (e.g. "already cancelled") apart from an
+     *  infrastructure failure. The generated method carries a Javadoc note to that effect
+     *  so downstream readers know why domain exceptions are not mapped to 4xx yet. */
     private MethodSpec buildActionHandler(ActionMetadata action, ClassName entityType,
                                           TypeName optionalOfEntity, ClassName selfType,
                                           String entityLower) {
-        MethodSpec.Builder method = crudHandler("handle" + pascal(action.name()));
+        MethodSpec.Builder method = crudHandler("handle" + NameCasing.pascal(action.name()));
+        method.addJavadoc("Serves the {@code $L} action. NOTE (v1): a domain exception from "
+                + "the entity method surfaces as 500, not 4xx.\n", action.name());
 
         // id from {basePath}/{id}/actions/{name}
         method.addStatement("String idStr = extractActionPathId(exchange)")
@@ -282,31 +291,18 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                 .addStatement("path = path.substring(0, q)")
                 .endControlFlow()
                 .addStatement("int actionsIdx = path.indexOf($S)", "/actions/")
-                .beginControlFlow("if (actionsIdx >= 0)")
-                .addStatement("path = path.substring(0, actionsIdx)")
+                .beginControlFlow("if (actionsIdx < 0)")
+                .addComment("not an action path — no id to extract (yields 400 on parse)")
+                .addStatement("return $S", "")
                 .endControlFlow()
+                .addStatement("path = path.substring(0, actionsIdx)")
                 .addStatement("int lastSlash = path.lastIndexOf('/')")
                 .addStatement("return lastSlash >= 0 ? path.substring(lastSlash + 1) : path")
                 .build();
     }
 
     private static String actionRequestName(ActionMetadata action) {
-        return pascal(action.name()) + "Request";
-    }
-
-    /** Deterministic PascalCase of an action identity (camelCase, kebab, or snake) →
-     *  a Java identifier fragment for {@code handle<X>} / {@code <X>Request}. The Java
-     *  handler-method name; the URL still uses the kebab action name. */
-    private static String pascal(String name) {
-        StringBuilder sb = new StringBuilder(name.length());
-        boolean upper = true;
-        for (int i = 0; i < name.length(); i++) {
-            char c = name.charAt(i);
-            if (!Character.isLetterOrDigit(c)) { upper = true; continue; }
-            sb.append(upper ? Character.toUpperCase(c) : c);
-            upper = false;
-        }
-        return sb.toString();
+        return NameCasing.pascal(action.name()) + "Request";
     }
 
     /** Maps a processor-recorded param type (a FQN from {@code TypeMirror.toString()},

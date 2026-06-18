@@ -536,6 +536,11 @@ export class DslMapper {
 
   /**
    * Convert entity name to kebab-case for file names.
+   *
+   * ASCII-only by design: mirrors the Java `NameCasing.kebab` (which uses
+   * `Locale.ROOT`). For the identifiers this codegen emits (entity / action names),
+   * the default `toLowerCase()` and `Locale.ROOT` agree, so the URL segment produced
+   * here matches the kernel route + OpenAPI path byte-for-byte.
    */
   static toKebabCase(name: string): string {
     return name
@@ -544,10 +549,42 @@ export class DslMapper {
   }
 
   /**
-   * Convert entity name to camelCase.
+   * Convert entity name to camelCase. Lower-cases the first character only — assumes
+   * already-camelCase/PascalCase input (entity names). For an arbitrary action identity
+   * that may be kebab/snake, use {@link toMethodName} instead.
    */
   static toCamelCase(name: string): string {
     return name.charAt(0).toLowerCase() + name.slice(1);
+  }
+
+  /**
+   * Normalise an action identity (camelCase, kebab-case, or snake_case) into a valid
+   * camelCase JS method name — the TS-side mirror of the Java `NameCasing.pascal` with a
+   * lower-cased first character (`mark-urgent` | `mark_urgent` | `markUrgent` →
+   * `markUrgent`). Drops non-alphanumeric separators and upper-cases the following letter,
+   * so a non-camelCase `@Action(name=...)` never emits invalid JS like `mark-urgent(...)`.
+   * ASCII-only, locale-independent.
+   */
+  static toMethodName(name: string): string {
+    let out = '';
+    let upper = false;
+    let first = true;
+    for (const ch of name) {
+      if (!/[a-zA-Z0-9]/.test(ch)) {
+        upper = true;
+        continue;
+      }
+      if (first) {
+        out += ch.toLowerCase();
+        first = false;
+      } else if (upper) {
+        out += ch.toUpperCase();
+      } else {
+        out += ch;
+      }
+      upper = false;
+    }
+    return out;
   }
 
   /**

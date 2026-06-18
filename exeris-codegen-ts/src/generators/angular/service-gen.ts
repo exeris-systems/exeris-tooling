@@ -118,6 +118,9 @@ export class ServiceGenerator implements CodeGenerator {
     const actions = (metadata.actions ?? []).map((action) => ({
       name: action.name,
       description: action.description ?? `Execute ${action.name} action`,
+      // methodName: valid camelCase JS identifier (kebab/snake action names would
+      // otherwise emit invalid syntax); kebabName: the URL segment, matching the kernel route.
+      methodName: DslMapper.toMethodName(action.name),
       kebabName: DslMapper.toKebabCase(action.name),
       hasParams: action.params && action.params.length > 0,
       params: (action.params ?? []).map((p) => ({
@@ -131,8 +134,6 @@ export class ServiceGenerator implements CodeGenerator {
     // Generate service content inline (without template file for reliability)
     return this.renderService({
       entityName,
-      displayName: metadata.displayName ?? entityName,
-      pluralName: metadata.pluralName ?? `${entityName}s`,
       apiPath,
       apiBasePath: context.config.apiBasePath,
       generateZod: context.config.generateZod,
@@ -154,7 +155,7 @@ export class ServiceGenerator implements CodeGenerator {
       softDelete: boolean;
       fields: Array<{ name: string; tsType: string; zodType: string; required: boolean }>;
       filterableFields: Array<{ name: string; filterType: string }>;
-      actions: Array<{ name: string; description: string; kebabName: string; hasParams: boolean; params: Array<{ name: string; tsType: string }> }>;
+      actions: Array<{ name: string; description: string; methodName: string; kebabName: string; hasParams: boolean; params: Array<{ name: string; tsType: string }> }>;
       systemFields: string[];
       enumTypes: string[];
     };
@@ -285,7 +286,7 @@ export class ServiceGenerator implements CodeGenerator {
       const bodyParams = action.hasParams
         ? `{ ${action.params.map(p => p.name).join(', ')} }`
         : '{}';
-      lines.push(`  ${action.name}(id: string${paramsStr}): Observable<${entityName}> {`);
+      lines.push(`  ${action.methodName}(id: string${paramsStr}): Observable<${entityName}> {`);
       lines.push(`    return this.http.post<${entityName}>(\`\${this.baseUrl}/\${id}/actions/${action.kebabName}\`, ${bodyParams});`);
       lines.push(`  }`);
     }

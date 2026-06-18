@@ -2,6 +2,7 @@ package eu.exeris.tooling.codegen.java.openapi;
 
 import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
+import eu.exeris.tooling.codegen.java.support.NameCasing;
 import io.swagger.v3.oas.models.Operation;
 import io.swagger.v3.oas.models.PathItem;
 import io.swagger.v3.oas.models.Paths;
@@ -10,7 +11,6 @@ import io.swagger.v3.oas.models.responses.ApiResponse;
 import io.swagger.v3.oas.models.responses.ApiResponses;
 
 import java.util.List;
-import java.util.Locale;
 
 /**
  * Builds OpenAPI paths from domain metadata.
@@ -39,7 +39,7 @@ public final class OpenApiPathsBuilder {
 
         if (metadata.hasActions()) {
             for (ActionMetadata action : metadata.actions()) {
-                String actionPath = basePath + "/{id}/actions/" + toKebab(action.name());
+                String actionPath = basePath + "/{id}/actions/" + NameCasing.kebab(action.name());
                 PathItem actionPathItem = new PathItem();
                 actionPathItem.setPost(buildActionOperation(entityName, action));
                 paths.addPathItem(actionPath, actionPathItem);
@@ -130,8 +130,5 @@ public final class OpenApiPathsBuilder {
         return responses;
     }
 
-    private static String toKebab(String input) {
-        return input.replaceAll("([a-z])([A-Z])", "$1-$2").toLowerCase(Locale.ROOT);
-    }
 }
 

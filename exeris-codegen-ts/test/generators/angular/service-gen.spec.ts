@@ -266,6 +266,20 @@ describe('ServiceGenerator custom actions emission', () => {
     expect(content).toContain('/${id}/actions/mark-urgent');
   });
 
+  it('non-camelCase action name (kebab) → valid camelCase method, kebab URL segment unchanged', () => {
+    // PR #92 review: action.name was emitted verbatim as the method name, so a
+    // @Action(name="mark-urgent") produced invalid JS `mark-urgent(...)`. The method
+    // name now normalises via DslMapper.toMethodName; the URL segment stays kebab.
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      actions: [{ name: 'mark-urgent', params: [] }],
+    }), CTX)!.content;
+
+    expect(content).toContain('markUrgent(id: string): Observable<Order>');
+    expect(content).not.toContain('mark-urgent(id: string)');
+    expect(content).toContain('/${id}/actions/mark-urgent');
+  });
+
   it('action with no description uses "Execute <name> action" fallback in the JSDoc', () => {
     const content = gen.generate(domain({
       entityName: 'Order',

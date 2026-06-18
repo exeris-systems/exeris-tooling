@@ -2,6 +2,7 @@ package eu.exeris.tooling.codegen.java.dsl;
 
 import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
+import eu.exeris.tooling.codegen.java.support.NameCasing;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 
@@ -93,7 +94,7 @@ public final class PageDslGenerator {
                 a.put("type", action.dangerous() ? "danger" : "secondary");
                 a.put("action", "api");
                 a.put("method", action.httpMethod());
-                a.put("endpoint", metadata.effectivePath() + "/{id}/actions/" + toKebab(action.name()));
+                a.put("endpoint", metadata.effectivePath() + "/{id}/actions/" + NameCasing.kebab(action.name()));
                 if (action.requiresConfirmation()) a.put("confirm", true);
                 actions.add(a);
             }
@@ -101,7 +102,4 @@ public final class PageDslGenerator {
         return actions;
     }
 
-    private String toKebab(String input) {
-        return input.replaceAll("([a-z])([A-Z])", "$1-$2").toLowerCase(Locale.ROOT);
-    }
 }
