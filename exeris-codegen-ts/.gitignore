@@ -5,6 +5,9 @@ dist/
 # Vitest / v8 coverage output (regenerated on every test run)
 coverage/
 
+# T20 FE build gate scratch dir (verify:generated; cleaned up after each run)
+.verify-tmp/
+
 # Editor / OS
 .DS_Store
 *.log

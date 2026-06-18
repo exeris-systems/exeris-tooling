@@ -180,11 +180,15 @@ export class TypeGenerator implements CodeGenerator {
     lines.push(`});`);
     lines.push(``);
 
-    // Create schema (without system fields)
-    const systemFields = this.getSystemFieldNames(metadata);
+    // Create schema (without system fields). Only omit system fields that are
+    // actually keys of the schema above — `z.omit()` rejects absent keys at the
+    // type level (TS2322: `true` not assignable to `never`), so omitting a system
+    // field the entity doesn't declare breaks the generated schema's compile (T20).
+    const presentFields = new Set(metadata.fields.map((f) => f.name));
+    const omitKeys = this.getSystemFieldNames(metadata).filter((sf) => presentFields.has(sf));
 
     lines.push(`export const ${interfaceName}CreateSchema = ${interfaceName}Schema.omit({`);
-    for (const sf of systemFields) {
+    for (const sf of omitKeys) {
       lines.push(`  ${sf}: true,`);
     }
     lines.push(`});`);

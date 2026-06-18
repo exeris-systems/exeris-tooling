@@ -18,10 +18,6 @@ import type { DomainMetadata } from '../../models/domain-model.js';
 import type { GeneratorConfig } from '../../config.js';
 import { DslMapper } from '../../models/dsl-mapper.js';
 import { getStrategy } from '../../core/backend-strategy.js';
-import { generateForm } from './form-gen.js';
-import { generateList } from './list-gen.js';
-import { generateService } from './service-gen.js';
-import { generateTypes } from '../api/type-gen.js';
 
 export interface GeneratedFile {
   path: string;
@@ -40,18 +36,14 @@ export function generateAppStructure(
   config: GeneratorConfig
 ): GeneratedFile[] {
   const files: GeneratedFile[] = [];
-  // Główne katalogi
+  // Output roots
   const outputRoot = '.';
   const srcRoot = 'src';
   const appRoot = 'src/app';
   const envRoot = 'src/environments';
-  const schemasRoot = `${appRoot}/schemas`;
-  const componentsRoot = `${appRoot}/components`;
-  const servicesRoot = `${appRoot}/services`;
-  const typesRoot = `${appRoot}/types`;
   const { apiUrl, apiVersion } = resolveApiSettings(config);
 
-  // Pliki konfiguracyjne do głównego katalogu
+  // Config files at the project root
   files.push({ path: `${outputRoot}/package.json`, content: generatePackageJson(), overwritable: false });
   files.push({ path: `${outputRoot}/angular.json`, content: generateAngularJson(), overwritable: false });
   files.push({ path: `${outputRoot}/tsconfig.json`, content: generateTsConfig(), overwritable: false });
@@ -60,57 +52,34 @@ export function generateAppStructure(
   files.push({ path: `${outputRoot}/.postcssrc.json`, content: generatePostcssConfig(), overwritable: true });
   files.push({ path: `${outputRoot}/proxy.conf.json`, content: generateProxyConfig(), overwritable: true });
 
-  // Pliki statyczne do src
+  // Static files under src/
   files.push({ path: `${srcRoot}/styles.css`, content: generateStylesCss(), overwritable: true });
   files.push({ path: `${srcRoot}/index.html`, content: generateIndexHtml(), overwritable: true });
   files.push({ path: `${srcRoot}/favicon.ico`, content: generateFavicon(), overwritable: true });
-  // main.ts do src/
+  // main.ts under src/
   files.push({ path: `${srcRoot}/main.ts`, content: generateMainTs(), overwritable: false });
 
-  // Pliki środowiskowe do src/environments
+  // Environment files under src/environments
   files.push({ path: `${envRoot}/environment.ts`, content: generateEnvironmentFile({ production: true, apiUrl, apiVersion }), overwritable: false });
   files.push({ path: `${envRoot}/environment.development.ts`, content: generateEnvironmentFile({ production: false, apiUrl, apiVersion }), overwritable: true });
 
-  // Hidden-domain filter lives at the orchestrator level — every
-  // public-surface emitter (sidebar nav, route list, barrel
-  // re-exports) takes the filtered list so they never reference an
-  // entity whose form/list/service/types components are never
-  // written to disk by the per-domain loop below. The per-domain
-  // loop itself keeps the unfiltered list so the schema-for-hidden
-  // emit (deliberate asymmetry — see hidden-domain spec block)
-  // stays in place. Filtering once here, rather than re-doing it
-  // inside each downstream function, means the hidden-domain policy
-  // lives in exactly one spot.
+  // Public-surface emitters (sidebar nav, route list, barrel re-exports) take the
+  // visible list so they never reference an entity whose per-entity files the
+  // orchestrator skips for hidden domains. Filtering once here keeps the
+  // hidden-domain policy in one spot.
   const visibleDomains = domains.filter((d) => !d.internalApi?.hidden);
 
-  // Pliki główne aplikacji do src/app
+  // App shell under src/app
   files.push({ path: `${appRoot}/app.config.ts`, content: generateAppConfig(), overwritable: false });
   files.push({ path: `${appRoot}/app.component.ts`, content: generateAppComponent(visibleDomains), overwritable: false });
   files.push({ path: `${appRoot}/app.routes.ts`, content: generateAppRoutes(visibleDomains), overwritable: false });
   files.push({ path: `${appRoot}/index.ts`, content: generateBarrelExport(visibleDomains, enums), overwritable: true });
 
-  // Komponenty, serwisy, typy, schemas do src/app
-  for (const domain of domains) {
-    const kebab = DslMapper.toKebabCase(domain.entityName);
-    const formFile = generateForm(domain, config);
-    if (formFile) files.push({ path: `${componentsRoot}/${kebab}-form.component.ts`, content: formFile.content, overwritable: true });
-    const listFile = generateList(domain, config);
-    if (listFile) files.push({ path: `${componentsRoot}/${kebab}-list.component.ts`, content: listFile.content, overwritable: true });
-    const serviceFile = generateService(domain, config);
-    if (serviceFile) files.push({ path: `${servicesRoot}/${kebab}.service.ts`, content: serviceFile.content, overwritable: true });
-    const typesFiles = generateTypes(domain, config);
-    if (Array.isArray(typesFiles)) {
-      for (const tf of typesFiles) {
-        files.push({ path: `${typesRoot}/${kebab}.types.ts`, content: tf.content, overwritable: true });
-      }
-    }
-    // Dodaj schemas
-    const schemaFile = generateSchema(domain, config); // zakładamy, że taka funkcja istnieje
-    if (schemaFile) files.push({ path: `${schemasRoot}/${kebab}.schema.ts`, content: schemaFile.content, overwritable: true });
-  }
-  // enums.ts do src/app/types
-  const enumsFile = generateEnums(enums, config); // zakładamy, że taka funkcja istnieje
-  if (enumsFile) files.push({ path: `${typesRoot}/enums.ts`, content: enumsFile.content, overwritable: true });
+  // T20: per-entity components/services/types/schemas and enums are emitted by the
+  // CLI orchestrator under src/app/ (the real generators), NOT here — this function
+  // now emits the scaffold only, so there is exactly one src/app tree and no stub
+  // shadowing the real enums/schemas. The app shell above (routes/component/barrel)
+  // references those src/app files by their relative paths, which resolve.
 
   return files;
 }
@@ -628,23 +597,4 @@ function resolveApiSettings(config: GeneratorConfig): { apiUrl: string; apiVersi
     apiUrl: config.apiBasePath || clientConfig.baseUrl || '/api',
     apiVersion: clientConfig.apiVersion ?? 'v1',
   };
-}
-
-// Minimalna implementacja generateSchema
-function generateSchema(domain: DomainMetadata, config: GeneratorConfig): { content: string } {
-  // Prosty Zod schema placeholder (do rozbudowy)
-  const name = domain.entityName;
-  return {
-    content: `import { z } from 'zod';\n\nexport const ${name}Schema = z.object({\n  // TODO: wygeneruj pola\n});\n`
-  };
-}
-
-// Minimalna implementacja generateEnums
-function generateEnums(enums: EnumMetadata[], config: GeneratorConfig): { content: string } {
-  // Prosty enum placeholder (do rozbudowy)
-  let content = '';
-  for (const en of enums) {
-    content += `export enum ${en.name} {\n  // TODO: wartości\n}\n`;
-  }
-  return { content };
 }
