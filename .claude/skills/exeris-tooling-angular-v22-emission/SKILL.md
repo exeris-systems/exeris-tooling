@@ -9,8 +9,9 @@ description: Angular v22 emission discipline for exeris-codegen-ts. Use whenever
 Keep what `exeris-codegen-ts` **emits** aligned with the Angular v22 canon while the phased
 migration is in flight. This skill is self-contained — the operative canon (phase gate +
 emit/stop quick-reference below) lives here. The fuller rationale and verified v22 facts live in
-the working RFC `RFC-2026-06-18 Angular v22 Migration of the TS Emitter` (a local draft until
-accepted; once accepted it becomes the authoritative ADR). Treat this skill as the procedure that
+the working RFC at `docs/rfc/RFC-2026-06-18 Angular v22 Migration of the TS Emitter.md` (an
+intentionally untracked local draft until accepted — same treatment as the reattach RFC; once
+accepted it becomes the authoritative ADR, which a fresh checkout will have). Treat this skill as the procedure that
 applies the canon and the boundary that catches drift; defer to the ADR if/when it lands.
 
 The emitter package itself is Angular-agnostic (emits strings); the migration surface is the
@@ -24,10 +25,13 @@ per-shape generators.
 - Reviewing a PR that changes emitted Angular idioms.
 
 ## Phase gate (which changes belong to which PR)
-- **Phase A — compat bump (urgent, ~1 PR, no shape change):** scaffold pins `@angular/* ^21→^22`,
-  `typescript ~5.9→~6`, Node engine 20→22; **drop `withFetch()`** (fetch is default in v22).
+- **Phase A — compat bump (urgent, ~1 PR, no component/form shape change):** scaffold pins
+  `@angular/* ^21→^22`, `typescript ~5.9→~6` (v22 *requires* TS 6 and drops 5.9), Node engine 20→22;
+  **drop `withFetch()`** (fetch is default in v22). This still diffs `app.config.ts` providers +
+  `package.json` pins — "no shape change" means no component/form shape change, not a zero-diff PR.
 - **Phase B — idiom modernisation (additive):** `debounced()` over manual RxJS `debounceTime`;
-  `httpResource()` / `rxResource()` in services (today return `Observable`); optional `@Service`;
+  `httpResource()` / `rxResource()` in services (today return `Observable`); optional `@Service`
+  (genuinely new in v22 — first-class sugar over `@Injectable({providedIn:'root'})`, not an Exeris construct);
   drop now-redundant explicit `OnPush` (v22 default); audit emitted template `?.` (now `undefined`, not `null`).
 - **Phase C — reshape (ADR-worthy):** `form-gen.ts` Reactive Forms → **Signal Forms** (real emitted-shape
   change → needs its own ADR + emitter-parity note); then **WebMCP** (`provideExperimentalWebMcpForms()`
@@ -56,8 +60,8 @@ reshape into the version bump).
 - **Parity (strong-default #4):** `form`/`list`/`detail` reshapes and the WebMCP shape are **TS-only** —
   state this explicitly in the PR. Defer to `exeris-tooling-emitter-parity-review`.
 - **No experimental-by-default:** WebMCP and any Angular *experimental* API ship behind a config flag, off.
-- **Single source:** if the v22 idiom canon shifts, update the RFC (and the resulting ADR), then this skill —
-  not the reverse.
+- **Single source:** if the v22 idiom canon shifts, update the RFC
+  (`docs/rfc/RFC-2026-06-18 …`, and the resulting ADR), then this skill — not the reverse.
 
 ## Output Template
 1. **Files touched** (which `*-gen.ts` / scaffold)
