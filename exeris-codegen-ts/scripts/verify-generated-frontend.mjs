@@ -48,47 +48,60 @@ const enums = [{
   ],
 }];
 
-const files = buildGeneratedFiles([domain], enums, DEFAULT_CONFIG);
+const tscBin = join(pkgRoot, 'node_modules', 'typescript', 'bin', 'tsc');
 
-// The dependency-light data layer: types + schemas + the enum module.
-const dataLayer = files.filter(
-  (f) => f.path.startsWith('src/app/types/') || f.path.startsWith('src/app/schemas/'),
-);
-if (dataLayer.length === 0) {
-  console.error('verify:generated — no data-layer files emitted; orchestrator changed?');
-  process.exit(1);
-}
+/** Generate a fixture app, write its data layer to a temp dir, and `tsc --noEmit`.
+ *  The data layer (types + schemas + the enum module) imports only `zod` + itself,
+ *  so it type-checks without an Angular install. */
+function check(label, domains, fixtureEnums) {
+  const files = buildGeneratedFiles(domains, fixtureEnums, DEFAULT_CONFIG);
+  const dataLayer = files.filter(
+    (f) => f.path.startsWith('src/app/types/') || f.path.startsWith('src/app/schemas/'),
+  );
+  if (dataLayer.length === 0) {
+    console.error(`verify:generated [${label}] — no data-layer files emitted; orchestrator changed?`);
+    process.exit(1);
+  }
 
-const tmp = join(pkgRoot, '.verify-tmp');
-rmSync(tmp, { recursive: true, force: true });
-for (const f of dataLayer) {
-  const full = join(tmp, f.path);
-  mkdirSync(dirname(full), { recursive: true });
-  writeFileSync(full, f.content);
-}
-writeFileSync(join(tmp, 'tsconfig.json'), JSON.stringify({
-  compilerOptions: {
-    target: 'ES2022',
-    module: 'ESNext',
-    moduleResolution: 'bundler',
-    strict: true,
-    noEmit: true,
-    skipLibCheck: true,
-    types: [],
-  },
-  include: ['src/app/types/**/*.ts', 'src/app/schemas/**/*.ts'],
-}, null, 2));
-
-console.log(`verify:generated — type-checking ${dataLayer.length} data-layer file(s)…`);
-try {
-  execSync(`node ${join(pkgRoot, 'node_modules', 'typescript', 'bin', 'tsc')} -p ${join(tmp, 'tsconfig.json')}`, {
-    cwd: pkgRoot,
-    stdio: 'inherit',
-  });
-} catch {
-  console.error('\n✗ Generated frontend data layer does NOT type-check (T20 regression).');
+  const tmp = join(pkgRoot, '.verify-tmp', label);
   rmSync(tmp, { recursive: true, force: true });
-  process.exit(1);
+  for (const f of dataLayer) {
+    const full = join(tmp, f.path);
+    mkdirSync(dirname(full), { recursive: true });
+    writeFileSync(full, f.content);
+  }
+  writeFileSync(join(tmp, 'tsconfig.json'), JSON.stringify({
+    compilerOptions: {
+      target: 'ES2022',
+      module: 'ESNext',
+      moduleResolution: 'bundler',
+      strict: true,
+      noEmit: true,
+      skipLibCheck: true,
+      types: [],
+    },
+    include: ['src/app/types/**/*.ts', 'src/app/schemas/**/*.ts'],
+  }, null, 2));
+
+  console.log(`verify:generated [${label}] — type-checking ${dataLayer.length} data-layer file(s)…`);
+  try {
+    execSync(`node ${tscBin} -p ${join(tmp, 'tsconfig.json')}`, {
+      cwd: pkgRoot,
+      stdio: 'inherit',
+      timeout: 60_000,
+    });
+  } catch {
+    console.error(`\n✗ [${label}] generated frontend data layer does NOT type-check (T20 regression).`);
+    rmSync(join(pkgRoot, '.verify-tmp'), { recursive: true, force: true });
+    process.exit(1);
+  }
+  rmSync(tmp, { recursive: true, force: true });
 }
-rmSync(tmp, { recursive: true, force: true });
-console.log('✓ Generated frontend data layer type-checks (enums + types + schemas resolve).');
+
+// (1) entity with an enum-typed field; (2) zero-enum project — the empty enum module
+// + barrels re-exporting ./enums must still resolve (dangling re-export = TS2307).
+check('with-enums', [domain], enums);
+check('zero-enums', [DomainMetadataSchema.parse({ packageName: 'com.shop', entityName: 'Plain', fields: [{ name: 'id', type: 'java.util.UUID' }, { name: 'name', type: 'String' }] })], []);
+
+rmSync(join(pkgRoot, '.verify-tmp'), { recursive: true, force: true });
+console.log('✓ Generated frontend data layer type-checks (with-enums + zero-enums).');

@@ -30,7 +30,7 @@ const BATTLE_STATUS: EnumMetadataForGen = {
 
 describe('generateEnumTypes', () => {
   it('emits real members — const value + literal-union type + DisplayNames + Zod (never the empty-enum stub)', () => {
-    const c = generateEnumTypes([BATTLE_STATUS]);
+    const c = generateEnumTypes([BATTLE_STATUS], true);
     expect(c).toContain("import { z } from 'zod';");
     expect(c).toContain('export const BattleStatus = {');
     expect(c).toContain("ACTIVE: 'ACTIVE',");
@@ -41,6 +41,20 @@ describe('generateEnumTypes', () => {
     // The T20 stub forms must never reappear.
     expect(c).not.toContain('// TODO');
     expect(c).not.toContain('export enum BattleStatus');
+  });
+
+  it('zero enums → a valid empty module (export {};) with NO dangling zod import — barrels re-exporting ./enums must still resolve', () => {
+    const c = generateEnumTypes([], true);
+    expect(c).toContain('export {};');
+    expect(c).not.toContain("import { z } from 'zod';");
+    expect(c).not.toContain('export const');
+  });
+
+  it('includeZod=false suppresses the Zod schema + import (a --no-zod build)', () => {
+    const c = generateEnumTypes([BATTLE_STATUS], false);
+    expect(c).toContain('export const BattleStatus = {');
+    expect(c).not.toContain("import { z } from 'zod';");
+    expect(c).not.toContain('BattleStatusSchema');
   });
 });
 

@@ -21,7 +21,7 @@ import { join, dirname, basename, resolve } from 'node:path';
 import { pruneOrphansAndWriteManifest, MANIFEST_NAME } from './output/manifest.js';
 import { loadConfig, type GeneratorConfig, DEFAULT_CONFIG } from './config.js';
 import { parseDomainMetadata, parseExerisMetadata, type DomainMetadata } from './models/domain-model.js';
-import { buildGeneratedFiles } from './orchestrator.js';
+import { buildGeneratedFiles, type EnumMetadataForGen } from './orchestrator.js';
 
 // Import new generators (v0.3.0)
 import { getStrategy } from './core/backend-strategy.js';
@@ -156,22 +156,14 @@ async function runGenerate(config: GeneratorConfig): Promise<void> {
   const enumFiles = metadataFiles.filter(f => basename(f).startsWith('enum_'));
   const domainFiles = metadataFiles.filter(f => !basename(f).startsWith('enum_'));
 
-  // Load and parse enum metadata
-  interface EnumMetadata {
-    name: string;
-    qualifiedName: string;
-    packageName: string;
-    description?: string;
-    values: Array<{ name: string; displayName: string; ordinal: number; description?: string }>;
-  }
-
-  const enums: EnumMetadata[] = [];
+  // Load and parse enum metadata (the wire shape is owned by orchestrator.ts).
+  const enums: EnumMetadataForGen[] = [];
   for (const file of enumFiles) {
     if (config.verbose) {
       console.log(pc.dim('  Loading enum:'), basename(file));
     }
     const content = readFileSync(file, 'utf-8');
-    const json = JSON.parse(content) as EnumMetadata;
+    const json = JSON.parse(content) as EnumMetadataForGen;
     enums.push(json);
   }
 
