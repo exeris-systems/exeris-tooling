@@ -102,12 +102,23 @@ cross-reference index, so it retains shipped items alongside open ones.
       — the FE analog of `KernelCodegenCompileTest`; **this is the catch for T20** (the generated frontend
       currently doesn't build) and guards the Phase C reshape just as it would have caught T20
 
-> High-severity backlog items **T8** (O(n) finders), **T10** (server-side validation),
-> **T12** (cross-app mesh contract), **T17** (cross-service capability resolution), and
-> **T20** (generated frontend doesn't build) — plus **T2**, **T7**, **T9**, **T18**, **T19** — are also
-> targeted at this milestone. (**T1** action-serving shipped in 0.6.0, PR #92.) The **UI fidelity & theming** cluster (**U1–U5**, led by U1 ui-kit wiring +
-> U2 universal lists) is the codegen-ts heart of this milestone. See the **Codegen
-> completeness backlog** section below.
+### 0.6.0 scope (agreed) — "codegen-ts on par with Java + parity/correctness debts closed + a gate that keeps it honest"
+
+**Shipped:** **T1** action-serving (#92) · Angular v22 Phase A/B1/B3 (#95/#96/#98) · SDK pinned to released 0.7.0 (#100).
+
+**In this cut:**
+- **T20 + FE build gate** — fix the duplicate-emission/enum-stub *and* add the `ng build`/`tsc --noEmit` round-trip (the FE analog of `KernelCodegenCompileTest`; the permanent catch). One PR.
+- **T7** remainder — configurable title/redirect; collapse the duplicate tree (rides with T20).
+- **T10** — server-side `@Validation` (handler/service + `CHECK`), the other High parity break.
+- **T8** — generate finders + FK/`filterable` indexes (kills O(n) `findAll().filter()`).
+- **T2 (FE slice)** — emit `*.service.spec.ts` + `*.schema.spec.ts` into the generated app, run by the FE gate. (Full Java `Kernel*TestGenerator` → 0.7.0.)
+- **U1** — wire the ui-kit (`exerisPreset`, semantic classes) into the emitted app.
+- **T18** — build-safety: guard the T13 pruner on empty input + the capability-pass phase ordering.
+- **D1** — `requireJavaVersion` enforcer + README up-front.
+
+**Deferred to 0.7.0+:** **T12 + T17** (the cross-app mesh epic), **T9** (FK-constraint relationship graph), **T19** (typed `Instant` bind — gated on a kernel persistence-SPI change), the full **T2** Java test-emitter, and the **U2–U5** UI-depth cluster (U2 universal lists is the lead 0.7.0 item). EV1/EV2 per their own section.
+
+See the **Codegen completeness backlog** below for per-item detail.
 
 ## 0.7.0–0.9.0 — feedback-driven cleanups
 
@@ -145,17 +156,17 @@ cross-reference index, so it retains shipped items alongside open ones.
 | T20 | Generated Angular frontend doesn't compile (`npm run build` fails) — two parallel TS emission paths; the `src/app` sourceRoot ships an empty enum stub that shadows the real `types/enums.ts`, so enum-typed code fails (TS2304/2305) | **High** (latent) | 0.6.0 |
 | T8  | No generated finders/indexes for FK + `filterable` fields → O(n) `findAll().filter()` everywhere | **High** | 0.6.0 |
 | T10 | `@Validation` enforced client-side (Zod) but dropped server-side (handler/service/DB) | **High** | 0.6.0 |
-| T12 | N generated apps can't form a mesh — client is own-app/relative-host, saga step is local, no cross-app contract | **High** | 0.5.0 → 0.6.0 |
-| T17 | Capability-graph validation is closed-world per app — a legitimate cross-service `@Requires` hard-fails the build | **High** | 0.6.0 |
-| T2  | Zero tests generated for the generated surface | Medium | 0.6.0 |
+| T12 | N generated apps can't form a mesh — client is own-app/relative-host, saga step is local, no cross-app contract | **High** | 0.7.0 |
+| T17 | Capability-graph validation is closed-world per app — a legitimate cross-service `@Requires` hard-fails the build | **High** | 0.7.0 |
+| T2  | Zero tests generated for the generated surface | Medium | 0.6.0 (FE slice) / 0.7.0 (Java) |
 | T3  | Action identity = method name, not `@Action(name=…)` → bean-setter collisions | Medium | 0.5.x |
 | T4  | `@Relationship` target derived from field Java type, not `targetEntity` | Medium | 0.5.x |
 | T5  | System-field overrides (`tenantIdField`, …) ignored by the repository generator | Medium | 0.5.x |
-| T9  | Generated schema has no inter-entity foreign keys — zero referential integrity | Medium | 0.6.0 |
+| T9  | Generated schema has no inter-entity foreign keys — zero referential integrity | Medium | 0.7.0 |
 | T11 | No fidelity/strict mode — annotation attributes set but consumed by no generator fail silently | Medium | 0.5.x |
 | T13 | Codegen emits per-entity output but never prunes it — a removed/renamed entity breaks the build | Medium | 0.5.x |
 | T18 | Capability validation × two-pass build deadlock; `mvn clean` + T13 prune wipes the committed L1 tree | Medium | 0.6.0 |
-| T19 | Repository binds `Instant` as ISO string but DDL declares `TIMESTAMPTZ` — round-trip latent-broken on real Postgres | Medium | 0.6.0 |
+| T19 | Repository binds `Instant` as ISO string but DDL declares `TIMESTAMPTZ` — round-trip latent-broken on real Postgres | Medium | 0.7.0 |
 | T7  | TS app-structure seams — per-entity path vs `app.routes` import mismatch breaks the build; hardcoded title/redirect | Medium | 0.6.0 |
 | T6  | Naive English pluralization (`colony → colonys`) in SQL tables + Angular routes | Low | 0.5.x |
 
