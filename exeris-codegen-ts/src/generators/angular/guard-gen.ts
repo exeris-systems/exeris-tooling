@@ -1,7 +1,7 @@
 /**
  * Angular Route Guard Generator
  *
- * Generates Angular 21+ functional route guards with:
+ * Generates Angular 22+ functional route guards with:
  * - Permission-based access control
  * - Role-based access control
  * - Authentication checks

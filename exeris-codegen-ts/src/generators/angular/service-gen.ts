@@ -1,6 +1,6 @@
 /**
  * Angular Service Generator
- * Generates Angular 21+ services from domain metadata.
+ * Generates Angular 22+ services from domain metadata.
  *
  * @author Exeris Team
  * @since 0.2.0

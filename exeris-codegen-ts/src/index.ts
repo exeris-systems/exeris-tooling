@@ -3,7 +3,7 @@
 /**
  * Exeris TypeScript Code Generator CLI
  *
- * Generates Angular 21+ frontend code from Exeris domain metadata.
+ * Generates Angular 22+ frontend code from Exeris domain metadata.
  *
  * Usage:
  *   exeris-gen generate --input <path> --output <path>
@@ -45,7 +45,7 @@ const program = new Command();
 
 program
   .name('exeris-gen')
-  .description('Exeris Frontend Code Generator for Angular 21+')
+  .description('Exeris Frontend Code Generator for Angular 22+')
   .version(VERSION);
 
 // ============================================================================

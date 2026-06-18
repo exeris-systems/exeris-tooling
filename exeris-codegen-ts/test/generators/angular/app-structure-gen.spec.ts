@@ -112,11 +112,25 @@ describe('generateAppStructure — static skeleton', () => {
     expect(main.content).toContain('bootstrapApplication(AppComponent, appConfig)');
   });
 
-  it('app.config.ts uses Zoneless + provideRouter + withFetch', () => {
+  it('app.config.ts uses Zoneless + provideRouter; v22 drops withFetch() (fetch is default)', () => {
     const c = fileAt(files, 'src/app/app.config.ts')!;
     expect(c.content).toContain('provideZonelessChangeDetection()');
     expect(c.content).toContain('provideRouter(routes, withComponentInputBinding())');
-    expect(c.content).toContain('provideHttpClient(withFetch())');
+    // Phase A: fetch is the default HttpClient transport in v22 — withFetch() is gone.
+    expect(c.content).toContain('provideHttpClient()');
+    expect(c.content).not.toContain('withFetch');
+  });
+
+  it('package.json pins the Angular v22 toolchain (Phase A compat bump)', () => {
+    const pkg = fileAt(files, './package.json')!;
+    // @angular/* and devkit/cli/compiler-cli all on ^22; no lingering ^21 pin.
+    expect(pkg.content).toContain('"@angular/core": "^22.0.0"');
+    expect(pkg.content).toContain('"@angular/cli": "^22.0.0"');
+    expect(pkg.content).toContain('"@angular/compiler-cli": "^22.0.0"');
+    expect(pkg.content).not.toContain('^21.0.0');
+    // v22 requires TypeScript 6 (>=6.0 <6.1) and drops 5.9.
+    expect(pkg.content).toContain('"typescript": "~6.0.0"');
+    expect(pkg.content).not.toContain('~5.9');
   });
 
   it('emits an enums.ts placeholder even when no enums are passed', () => {
