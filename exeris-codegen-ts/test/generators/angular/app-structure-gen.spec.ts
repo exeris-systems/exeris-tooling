@@ -93,7 +93,6 @@ describe('generateAppStructure — static skeleton', () => {
     ['src/app/app.component.ts', false],
     ['src/app/app.routes.ts', false],
     ['src/app/index.ts', true],
-    ['src/app/types/enums.ts', true],
   ] as const)('emits %s with overwritable=%s', (path, overwritable) => {
     const f = files.find((x) => x.path === path);
     expect(f, `missing ${path}`).toBeDefined();
@@ -151,13 +150,8 @@ describe('generateAppStructure — static skeleton', () => {
     expect(ng.content).not.toContain('@angular-devkit/build-angular');
   });
 
-  it('emits an enums.ts placeholder even when no enums are passed', () => {
-    // Pins the orchestrator quirk that the local generateEnums returns
-    // {content: ''} (truthy object), so the `if (enumsFile)` gate does
-    // NOT filter the empty case. If we ever switch to skipping it,
-    // update this test AND the orchestrator together.
-    const enums = fileAt(files, 'src/app/types/enums.ts')!;
-    expect(enums.content).toBe('');
+  it('emits NO enum module (T20: the orchestrator owns src/app/types/enums.ts, not the scaffold)', () => {
+    expect(fileAt(files, 'src/app/types/enums.ts')).toBeUndefined();
   });
 });
 
@@ -233,25 +227,11 @@ describe('generateAppStructure — multi-domain wiring', () => {
     expect(comp.content).toContain('routerLink="/products"');
   });
 
-  it('emits each per-domain artifact under the right directory', () => {
-    expect(fileAt(files, 'src/app/components/order-form.component.ts')).toBeDefined();
-    expect(fileAt(files, 'src/app/components/order-list.component.ts')).toBeDefined();
-    expect(fileAt(files, 'src/app/services/order.service.ts')).toBeDefined();
-    expect(fileAt(files, 'src/app/types/order.types.ts')).toBeDefined();
-    expect(fileAt(files, 'src/app/schemas/order.schema.ts')).toBeDefined();
-    expect(fileAt(files, 'src/app/components/product-form.component.ts')).toBeDefined();
-    expect(fileAt(files, 'src/app/schemas/product.schema.ts')).toBeDefined();
-  });
-
-  it('schema placeholder emits a Zod object skeleton named after the entity', () => {
-    const schema = fileAt(files, 'src/app/schemas/order.schema.ts')!;
-    expect(schema.content).toContain("import { z } from 'zod';");
-    expect(schema.content).toContain('export const OrderSchema = z.object({');
-  });
-
-  it('enums.ts placeholder declares one enum block per supplied EnumMetadata', () => {
-    const enumsFile = fileAt(files, 'src/app/types/enums.ts')!;
-    expect(enumsFile.content).toContain('export enum Status {');
+  it('T20: scaffold-only — emits NO per-domain components/services/types/schemas or enum module, even with domains + enums (the orchestrator owns the src/app tree)', () => {
+    expect(files.filter((f) => f.path.startsWith('src/app/components/'))).toHaveLength(0);
+    expect(files.filter((f) => f.path.startsWith('src/app/services/'))).toHaveLength(0);
+    expect(files.filter((f) => f.path.startsWith('src/app/schemas/'))).toHaveLength(0);
+    expect(files.filter((f) => f.path.startsWith('src/app/types/'))).toHaveLength(0);
   });
 
   it('barrel exports Page+PageRequest ONLY from the first domain service', () => {
@@ -359,23 +339,20 @@ describe('generateAppStructure — resolveApiSettings', () => {
 // ---------- hidden-domain skip-skip ----------
 
 describe('generateAppStructure — hidden-domain handling', () => {
-  it('skips form / list / service / types for internalApi.hidden domains but still emits the schema placeholder', () => {
+  it('scaffold-only: emits no per-domain components/services/types/schemas (the orchestrator owns those + skips hidden domains)', () => {
     const files = generateAppStructure(
       [domain({ entityName: 'Order', internalApi: { hidden: true, readOnly: false, internal: false } })],
       [],
       cfg(),
     );
+    // T20: generateAppStructure no longer emits any per-entity artefact — neither
+    // for visible nor hidden domains. The per-entity tree (and the hidden-domain
+    // skip) lives in the orchestrator's buildGeneratedFiles, covered in orchestrator.spec.
     expect(fileAt(files, 'src/app/components/order-form.component.ts')).toBeUndefined();
     expect(fileAt(files, 'src/app/components/order-list.component.ts')).toBeUndefined();
     expect(fileAt(files, 'src/app/services/order.service.ts')).toBeUndefined();
     expect(fileAt(files, 'src/app/types/order.types.ts')).toBeUndefined();
-    // The local generateSchema placeholder doesn't check hidden — it
-    // always emits the file. The asymmetry is intentional today
-    // (schemas are used by callers that pass hidden=true intentionally
-    // to get a validation shape without the UI surface); pin it so a
-    // future change to also hide schemas surfaces in tests, not in
-    // surprise.
-    expect(fileAt(files, 'src/app/schemas/order.schema.ts')).toBeDefined();
+    expect(fileAt(files, 'src/app/schemas/order.schema.ts')).toBeUndefined();
   });
 
   it('barrel + nav sidebar + routes ALL skip hidden domains (would otherwise be dead import paths / broken router links)', () => {
@@ -391,12 +368,11 @@ describe('generateAppStructure — hidden-domain handling', () => {
     const comp = fileAt(files, 'src/app/app.component.ts')!;
     const routes = fileAt(files, 'src/app/app.routes.ts')!;
 
-    // Barrel — non-hidden Order is fully exported; hidden
-    // InternalLedger is fully absent (types / schema / service /
-    // components). Schema for hidden domains is still emitted to
-    // disk by the orchestrator's per-domain loop (deliberate
-    // asymmetry covered in the test above), but the barrel still
-    // excludes it so the public API surface honours `hidden`.
+    // Barrel — non-hidden Order is fully exported (types / schema /
+    // service / components); hidden InternalLedger is fully absent.
+    // The barrel re-exports the src/app tree the orchestrator emits;
+    // it honours `hidden` so the public API surface never points at
+    // an entity whose files were never written.
     expect(barrel.content).toContain("from './types/order.types';");
     expect(barrel.content).toContain("from './schemas/order.schema';");
     expect(barrel.content).toContain("from './services/order.service';");

@@ -496,16 +496,35 @@ describe('TypeGenerator system-field resolution (exercised via .omit set in the 
   const gen = new TypeGenerator();
   const ctx = createGeneratorContext({ generateZod: true });
 
-  it('with NO systemFields metadata → default set is { id, version, createdAt, updatedAt }', () => {
+  it('default system fields present on the entity → all omitted from CreateSchema', () => {
     const files = gen.generateAggregate([domain({
       entityName: 'Thing',
-      fields: [field({ name: 'id', type: 'UUID' })],
+      fields: [
+        field({ name: 'id', type: 'UUID' }),
+        field({ name: 'version', type: 'long' }),
+        field({ name: 'createdAt', type: 'Instant' }),
+        field({ name: 'updatedAt', type: 'Instant' }),
+      ],
     })], ctx);
     const schema = files.find(f => f.path === 'schemas/thing.schema.ts')!.content;
 
     for (const sf of ['id: true', 'version: true', 'createdAt: true', 'updatedAt: true']) {
       expect(schema).toContain(sf);
     }
+  });
+
+  it('a system field the entity does NOT declare is NOT omitted (z.omit rejects absent keys → T20 compile break)', () => {
+    const files = gen.generateAggregate([domain({
+      entityName: 'Thing',
+      fields: [field({ name: 'id', type: 'UUID' })],
+    })], ctx);
+    const schema = files.find(f => f.path === 'schemas/thing.schema.ts')!.content;
+
+    expect(schema).toContain('id: true');
+    // version/createdAt/updatedAt are not fields of Thing → must not appear in .omit()
+    expect(schema).not.toContain('version: true');
+    expect(schema).not.toContain('createdAt: true');
+    expect(schema).not.toContain('updatedAt: true');
   });
 
   it('explicit systemFields.idField !== "id" adds the alias alongside "id"', () => {
@@ -520,7 +539,7 @@ describe('TypeGenerator system-field resolution (exercised via .omit set in the 
     expect(schema).toContain('uuid: true');
   });
 
-  it('every optional systemFields.* aliases (createdAtField, updatedAtField, createdByField, updatedByField, tenantIdField, deletedAtField, versionField) flows into the omit set when set', () => {
+  it('every optional systemFields.* alias, when declared as a field, flows into the omit set', () => {
     const files = gen.generateAggregate([domain({
       entityName: 'Thing',
       systemFields: {
@@ -533,6 +552,18 @@ describe('TypeGenerator system-field resolution (exercised via .omit set in the 
         tenantIdField: 'tid',
         deletedAtField: 'dt',
       },
+      // The aliases must be present on the entity to be omittable (z.omit rejects
+      // absent keys); a real audited/tenant entity declares them.
+      fields: [
+        field({ name: 'id', type: 'UUID' }),
+        field({ name: 'rev', type: 'long' }),
+        field({ name: 'ct', type: 'Instant' }),
+        field({ name: 'ut', type: 'Instant' }),
+        field({ name: 'cb', type: 'String' }),
+        field({ name: 'ub', type: 'String' }),
+        field({ name: 'tid', type: 'UUID' }),
+        field({ name: 'dt', type: 'Instant' }),
+      ],
     })], ctx);
     const schema = files.find(f => f.path === 'schemas/thing.schema.ts')!.content;
 

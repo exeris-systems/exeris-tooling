@@ -80,3 +80,12 @@ jobs:
       - name: vitest run --coverage (exeris-codegen-ts)
         working-directory: exeris-codegen-ts
         run: npm run test:coverage
+
+      # T20 FE build gate: generate a sample app and type-check its data layer
+      # (enums + types + Zod schemas — the files that import only `zod`). Catches the
+      # enum/schema cross-reference breakage that "the generated frontend doesn't
+      # compile" means, without an Angular install. The full `ng build` over a
+      # generated app (components/services need @angular/*) is a heavier follow-up job.
+      - name: verify generated frontend (tsc --noEmit, data layer)
+        working-directory: exeris-codegen-ts
+        run: npm run verify:generated
