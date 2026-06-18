@@ -337,7 +337,7 @@ function generatePackageJson(): string {
   "description": "Exeris Foundation - Generated Angular Frontend",
   "type": "module",
   "engines": {
-    "node": ">=24.0.0"
+    "node": ">=22.0.0"
   },
   "scripts": {
     "ng": "ng",
@@ -356,18 +356,17 @@ function generatePackageJson(): string {
     "@angular/core": "^22.0.0",
     "@angular/forms": "^22.0.0",
     "@angular/platform-browser": "^22.0.0",
-    "@angular/platform-browser-dynamic": "^22.0.0",
     "@angular/router": "^22.0.0",
     "rxjs": "~7.8.1",
     "tslib": "^2.8.1",
     "zod": "^3.24.0"
   },
   "devDependencies": {
-    "@angular-devkit/build-angular": "^22.0.0",
+    "@angular/build": "^22.0.0",
     "@angular/cli": "^22.0.0",
     "@angular/compiler-cli": "^22.0.0",
     "@tailwindcss/postcss": "^4.0.0",
-    "@types/node": "^24.0.0",
+    "@types/node": "^22.0.0",
     "postcss": "^8.5.0",
     "tailwindcss": "^4.0.0",
     "typescript": "~6.0.0"
@@ -396,7 +395,7 @@ function generateAngularJson(): string {
       "prefix": "app",
       "architect": {
         "build": {
-          "builder": "@angular-devkit/build-angular:application",
+          "builder": "@angular/build:application",
           "options": {
             "outputPath": "dist/exeris-foundation-frontend",
             "index": "src/index.html",
@@ -430,7 +429,7 @@ function generateAngularJson(): string {
           "defaultConfiguration": "production"
         },
         "serve": {
-          "builder": "@angular-devkit/build-angular:dev-server",
+          "builder": "@angular/build:dev-server",
           "configurations": {
             "production": { "buildTarget": "exeris-foundation-frontend:build:production" },
             "development": { "buildTarget": "exeris-foundation-frontend:build:development" }

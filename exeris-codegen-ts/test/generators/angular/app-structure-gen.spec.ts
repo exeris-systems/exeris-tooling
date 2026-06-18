@@ -133,6 +133,22 @@ describe('generateAppStructure — static skeleton', () => {
     expect(pkg.content).not.toContain('~5.9');
   });
 
+  it('Phase B scaffold cleanup: no platform-browser-dynamic, Node floor 22, @angular/build builder', () => {
+    const pkg = fileAt(files, './package.json')!;
+    const ng = fileAt(files, './angular.json')!;
+    // bootstrapApplication() scaffold — platformBrowserDynamic is never used.
+    expect(pkg.content).not.toContain('@angular/platform-browser-dynamic');
+    // v22 floor is Node 22 (Active LTS), not 24.
+    expect(pkg.content).toContain('"node": ">=22.0.0"');
+    expect(pkg.content).not.toContain('>=24.0.0');
+    // esbuild @angular/build builder (ng-new default since v19), not the devkit wrapper.
+    expect(pkg.content).toContain('"@angular/build": "^22.0.0"');
+    expect(pkg.content).not.toContain('@angular-devkit/build-angular');
+    expect(ng.content).toContain('"@angular/build:application"');
+    expect(ng.content).toContain('"@angular/build:dev-server"');
+    expect(ng.content).not.toContain('@angular-devkit/build-angular');
+  });
+
   it('emits an enums.ts placeholder even when no enums are passed', () => {
     // Pins the orchestrator quirk that the local generateEnums returns
     // {content: ''} (truthy object), so the `if (enumsFile)` gate does
