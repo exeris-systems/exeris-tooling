@@ -540,9 +540,12 @@ class ExerisDomainProcessorTest {
             assertThat(metadataFile).isPresent();
 
             String metadata = readContent(metadataFile.get());
+            // The action IDENTITY is @Action(name), never the method name (T3); but the
+            // JVM method name is recorded separately as methodName so the T1 server-side
+            // dispatch can invoke the actual aggregate method.
             assertThat(metadata)
                     .contains("\"name\" : \"assign-formation\"")
-                    .doesNotContain("setFormation");
+                    .contains("\"methodName\" : \"setFormation\"");
         }
     }
 

@@ -112,17 +112,21 @@ export class ServiceGenerator implements CodeGenerator {
         };
       });
 
+    // T1: actions are served at POST {base}/{id}/actions/{kebab(name)} (matches the
+    // OpenAPI path + the kernel route), and the server responds with the updated
+    // aggregate — so the client method takes the entity id and returns the entity.
     const actions = (metadata.actions ?? []).map((action) => ({
       name: action.name,
       description: action.description ?? `Execute ${action.name} action`,
-      httpMethod: action.httpMethod ?? 'POST',
-      path: action.path ?? `/${action.name}`,
+      // methodName: valid camelCase JS identifier (kebab/snake action names would
+      // otherwise emit invalid syntax); kebabName: the URL segment, matching the kernel route.
+      methodName: DslMapper.toMethodName(action.name),
+      kebabName: DslMapper.toKebabCase(action.name),
       hasParams: action.params && action.params.length > 0,
       params: (action.params ?? []).map((p) => ({
         name: p.name,
         tsType: DslMapper.mapType(p.type).tsType,
       })),
-      returnType: action.returnType ? DslMapper.mapType(action.returnType).tsType : 'void',
     }));
 
     const systemFields = this.getSystemFields(metadata);
@@ -130,8 +134,6 @@ export class ServiceGenerator implements CodeGenerator {
     // Generate service content inline (without template file for reliability)
     return this.renderService({
       entityName,
-      displayName: metadata.displayName ?? entityName,
-      pluralName: metadata.pluralName ?? `${entityName}s`,
       apiPath,
       apiBasePath: context.config.apiBasePath,
       generateZod: context.config.generateZod,
@@ -153,7 +155,7 @@ export class ServiceGenerator implements CodeGenerator {
       softDelete: boolean;
       fields: Array<{ name: string; tsType: string; zodType: string; required: boolean }>;
       filterableFields: Array<{ name: string; filterType: string }>;
-      actions: Array<{ name: string; description: string; httpMethod: string; path: string; hasParams: boolean; params: Array<{ name: string; tsType: string }>; returnType: string }>;
+      actions: Array<{ name: string; description: string; methodName: string; kebabName: string; hasParams: boolean; params: Array<{ name: string; tsType: string }> }>;
       systemFields: string[];
       enumTypes: string[];
     };
@@ -273,18 +275,19 @@ export class ServiceGenerator implements CodeGenerator {
       lines.push(`  }`);
     }
 
-    // Custom actions
+    // Custom actions (T1) — POST {baseUrl}/{id}/actions/{kebab(name)}, returns the
+    // updated aggregate (the server responds with the persisted entity).
     for (const action of actions) {
       lines.push(``);
       lines.push(`  /** ${action.description} */`);
-      const paramsStr = action.hasParams ? action.params.map(p => `${p.name}: ${p.tsType}`).join(', ') : '';
-      lines.push(`  ${action.name}(${paramsStr}): Observable<${action.returnType}> {`);
-      const bodyParams = action.hasParams ? `{ ${action.params.map(p => p.name).join(', ')} }` : '{}';
-      if (action.httpMethod === 'GET') {
-        lines.push(`    return this.http.get<${action.returnType}>(\`\${this.baseUrl}${action.path}\`);`);
-      } else {
-        lines.push(`    return this.http.${action.httpMethod.toLowerCase()}<${action.returnType}>(\`\${this.baseUrl}${action.path}\`, ${bodyParams});`);
-      }
+      const paramsStr = action.hasParams
+        ? ', ' + action.params.map(p => `${p.name}: ${p.tsType}`).join(', ')
+        : '';
+      const bodyParams = action.hasParams
+        ? `{ ${action.params.map(p => p.name).join(', ')} }`
+        : '{}';
+      lines.push(`  ${action.methodName}(id: string${paramsStr}): Observable<${entityName}> {`);
+      lines.push(`    return this.http.post<${entityName}>(\`\${this.baseUrl}/\${id}/actions/${action.kebabName}\`, ${bodyParams});`);
       lines.push(`  }`);
     }
 

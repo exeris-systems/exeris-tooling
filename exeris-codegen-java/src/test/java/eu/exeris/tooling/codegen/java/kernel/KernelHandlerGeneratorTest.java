@@ -2,6 +2,8 @@ package eu.exeris.tooling.codegen.java.kernel;
 
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
+import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
+import eu.exeris.sdk.sourcemodel.ast.ActionParamMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -131,5 +133,61 @@ class KernelHandlerGeneratorTest {
                         "catch (RuntimeException e)");
         // null content-type renders a friendly token in the unresolved-decoder message.
         assertThat(handler).contains("contentType != null ? contentType : \"(absent)\"");
+    }
+
+    @Test
+    @DisplayName("T1: serves @Action — loads aggregate, invokes the entity method, responds with updated entity")
+    void shouldGenerateActionHandlers() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .actions(List.of(
+                        ActionMetadata.builder("cancel").methodName("cancel").build(),
+                        // action identity (name) differs from the JVM method — the
+                        // handler must invoke the methodName, not the name.
+                        ActionMetadata.builder("markUrgent").methodName("flagUrgent").build()))
+                .build();
+
+        String handler = strategy.generate(metadata).stream()
+                .filter(f -> f.artifactType() == ArtifactType.CONTROLLER)
+                .findFirst().orElseThrow().content();
+
+        assertThat(handler)
+                .contains("void handleCancel(HttpExchange exchange)")
+                .contains("extractActionPathId(exchange)")
+                .contains("service.findById(id)")
+                .contains("exchange.respond(HttpStatus.NOT_FOUND)")
+                .contains("entity.cancel()")
+                .contains("service.update(id, entity)")
+                .contains("exchange.respond(HttpStatus.OK, updated)")
+                // id is extracted via the action-aware helper (segment before /actions/)
+                .contains("\"/actions/\"")
+                // name != method: handler name follows the action identity, invocation the method
+                .contains("void handleMarkUrgent(HttpExchange exchange)")
+                .contains("entity.flagUrgent()");
+    }
+
+    @Test
+    @DisplayName("T1: @Action with @ActionParams decodes a generated request record and passes the args")
+    void shouldGenerateActionHandlerWithParams() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .actions(List.of(
+                        ActionMetadata.builder("applyDiscount").methodName("applyDiscount")
+                                .params(List.of(
+                                        ActionParamMetadata.required("percent", "java.math.BigDecimal"),
+                                        ActionParamMetadata.required("reason", "java.lang.String")))
+                                .build()))
+                .build();
+
+        String handler = strategy.generate(metadata).stream()
+                .filter(f -> f.artifactType() == ArtifactType.CONTROLLER)
+                .findFirst().orElseThrow().content();
+
+        assertThat(handler)
+                .contains("record ApplyDiscountRequest(")
+                .contains("BigDecimal percent")
+                .contains("String reason")
+                .contains("parseBody(exchange, ApplyDiscountRequest.class)")
+                .contains("entity.applyDiscount(request.percent(), request.reason())");
     }
 }

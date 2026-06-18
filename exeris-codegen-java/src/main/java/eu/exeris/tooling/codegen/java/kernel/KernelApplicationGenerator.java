@@ -11,6 +11,8 @@ import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
+import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
+import eu.exeris.tooling.codegen.java.support.NameCasing;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 
 import javax.lang.model.element.Modifier;
@@ -323,6 +325,15 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                     HTTP_METHOD, basePath + "/{id}", entityLower);
             method.addStatement("routerBuilder.route($T.DELETE, $S, $LHandler::handleDelete)",
                     HTTP_METHOD, basePath + "/{id}", entityLower);
+            // T1: one route per @Action, matching the OpenAPI path byte-for-byte
+            // ({basePath}/{id}/actions/{kebab(name)}, POST — OpenAPI emits POST for
+            // every action). The handler method name mirrors KernelHandlerGenerator's
+            // "handle" + pascal(name).
+            for (ActionMetadata action : domain.actions()) {
+                method.addStatement("routerBuilder.route($T.POST, $S, $LHandler::$L)",
+                        HTTP_METHOD, basePath + "/{id}/actions/" + NameCasing.kebab(action.name()),
+                        entityLower, "handle" + NameCasing.pascal(action.name()));
+            }
         }
         method.addStatement("$T router = routerBuilder.build()", HTTP_ROUTER);
         method.addStatement("handlerSlot.set(router::handle)");

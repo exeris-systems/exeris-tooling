@@ -935,7 +935,12 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                 ? declaredName
                 : method.getSimpleName().toString();
 
-        ActionMetadata.Builder builder = ActionMetadata.builder(name);
+        ActionMetadata.Builder builder = ActionMetadata.builder(name)
+                // T1: carry the real JVM method name so the handler generator can emit a
+                // server-side dispatch that invokes the actual aggregate method. Distinct
+                // from `name` (the @Action(name=…) identity), which T3 decoupled and may
+                // differ (e.g. renamed to dodge a bean-accessor collision).
+                .methodName(method.getSimpleName().toString());
 
         // @Action attribute surface (see exeris-sdk-annotations Action.java).
         // Each check below is verified live against the SDK declaration

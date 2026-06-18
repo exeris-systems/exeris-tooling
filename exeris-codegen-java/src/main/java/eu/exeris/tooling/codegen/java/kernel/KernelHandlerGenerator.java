@@ -4,6 +4,7 @@ import com.palantir.javapoet.AnnotationSpec;
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.FieldSpec;
 import com.palantir.javapoet.MethodSpec;
+import com.palantir.javapoet.ParameterSpec;
 import com.palantir.javapoet.ParameterizedTypeName;
 import com.palantir.javapoet.TypeName;
 import com.palantir.javapoet.TypeSpec;
@@ -12,6 +13,9 @@ import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
+import eu.exeris.tooling.codegen.java.support.NameCasing;
+import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
+import eu.exeris.sdk.sourcemodel.ast.ActionParamMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 
 import javax.lang.model.element.Modifier;
@@ -93,7 +97,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         TypeName listOfEntity = ParameterizedTypeName.get(LIST, entityType);
         TypeName optionalOfEntity = ParameterizedTypeName.get(OPTIONAL, entityType);
 
-        TypeSpec handler = KernelScaffold.publicClass(className)
+        TypeSpec.Builder handlerBuilder = KernelScaffold.publicClass(className)
                 .addJavadoc("Generated HTTP Handler for $L.\n", entity)
                 .addJavadoc("<p>Source: {@link $T}\n", entityType)
                 .addJavadoc("<p>Path: $L\n", metadata.effectivePath())
@@ -116,10 +120,30 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                 .addMethod(buildHandleGetById(entityLower, optionalOfEntity))
                 .addMethod(buildHandleCreate(entityLower, entityType))
                 .addMethod(buildHandleUpdate(entityLower, entityType))
-                .addMethod(buildHandleDelete(entityLower))
-                .addMethod(buildExtractPathId())
-                .addMethod(buildParseBody())
-                .build();
+                .addMethod(buildHandleDelete(entityLower));
+
+        // T1: serve @Action methods. Each action gets a handler that loads the
+        // aggregate, decodes its @ActionParam body (when any), invokes the actual
+        // entity method (effectiveMethodName), persists, and responds with the
+        // updated aggregate. Routed by KernelApplicationGenerator at
+        // {basePath}/{id}/actions/{kebab(name)}.
+        if (metadata.hasActions()) {
+            for (ActionMetadata action : metadata.actions()) {
+                if (action.hasParams()) {
+                    handlerBuilder.addType(buildActionRequestRecord(action));
+                }
+                handlerBuilder.addMethod(
+                        buildActionHandler(action, entityType, optionalOfEntity, selfType, entityLower));
+            }
+        }
+
+        handlerBuilder.addMethod(buildExtractPathId());
+        if (metadata.hasActions()) {
+            handlerBuilder.addMethod(buildExtractActionPathId());
+        }
+        handlerBuilder.addMethod(buildParseBody());
+
+        TypeSpec handler = handlerBuilder.build();
 
         return new GeneratedFile(packageName, className,
                 KernelScaffold.render(packageName, handler), ArtifactType.CONTROLLER);
@@ -172,6 +196,133 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                 .addStatement("service.delete(id)")
                 .addStatement("exchange.respond($T.NO_CONTENT)", HTTP_STATUS);
         return appendServerErrorCatch(method, "Failed to delete " + entityLower).build();
+    }
+
+    /** Emits the per-action handler: parse {@code id} from the action path, decode the
+     *  {@code @ActionParam} body (when any) into the action request record, load the
+     *  aggregate (404 if absent), invoke the actual entity method
+     *  ({@link ActionMetadata#effectiveMethodName()}), persist, and respond with the
+     *  updated aggregate. The action method's return value (if any) is invoked as a
+     *  statement and not surfaced in v1 — the response carries the updated state.
+     *
+     *  <p>v1 limitation (tracked, T1 follow-up): a domain exception thrown by the entity
+     *  method surfaces as 500 via {@link #appendServerErrorCatch}, not a 4xx — the handler
+     *  cannot tell a domain rejection (e.g. "already cancelled") apart from an
+     *  infrastructure failure. The generated method carries a Javadoc note to that effect
+     *  so downstream readers know why domain exceptions are not mapped to 4xx yet. */
+    private MethodSpec buildActionHandler(ActionMetadata action, ClassName entityType,
+                                          TypeName optionalOfEntity, ClassName selfType,
+                                          String entityLower) {
+        MethodSpec.Builder method = crudHandler("handle" + NameCasing.pascal(action.name()));
+        method.addJavadoc("Serves the {@code $L} action. NOTE (v1): a domain exception from "
+                + "the entity method surfaces as 500, not 4xx.\n", action.name());
+
+        // id from {basePath}/{id}/actions/{name}
+        method.addStatement("String idStr = extractActionPathId(exchange)")
+                .addStatement("$T id", UUID)
+                .beginControlFlow("try")
+                .addStatement("id = $T.fromString(idStr)", UUID)
+                .nextControlFlow("catch ($T e)", ILLEGAL_ARGUMENT_EXCEPTION)
+                .addStatement("exchange.respond($T.BAD_REQUEST)", HTTP_STATUS)
+                .addStatement("return")
+                .endControlFlow();
+
+        if (action.hasParams()) {
+            ClassName requestType = selfType.nestedClass(actionRequestName(action));
+            method.addStatement("$T request", requestType)
+                    .beginControlFlow("try")
+                    .addStatement("request = parseBody(exchange, $T.class)", requestType)
+                    .nextControlFlow("catch ($T e)", ILLEGAL_ARGUMENT_EXCEPTION)
+                    .addStatement("exchange.respond($T.BAD_REQUEST)", HTTP_STATUS)
+                    .addStatement("return")
+                    .endControlFlow();
+        }
+
+        method.beginControlFlow("try")
+                .addStatement("$T found = service.findById(id)", optionalOfEntity)
+                .beginControlFlow("if (found.isEmpty())")
+                .addStatement("exchange.respond($T.NOT_FOUND)", HTTP_STATUS)
+                .addStatement("return")
+                .endControlFlow()
+                .addStatement("$T entity = found.get()", entityType);
+
+        if (action.hasParams()) {
+            String args = action.params().stream()
+                    .map(p -> "request." + p.name() + "()")
+                    .collect(java.util.stream.Collectors.joining(", "));
+            method.addStatement("entity.$L($L)", action.effectiveMethodName(), args);
+        } else {
+            method.addStatement("entity.$L()", action.effectiveMethodName());
+        }
+
+        method.addStatement("$T updated = service.update(id, entity)", entityType)
+                .addStatement("exchange.respond($T.OK, updated)", HTTP_STATUS);
+        return appendServerErrorCatch(method,
+                "Failed to execute action " + action.name() + " on " + entityLower).build();
+    }
+
+    /** Emits the per-action request record (canonical constructor = {@code @ActionParam}
+     *  components, in declaration order). Decoded by {@code parseBody} via the ADR-036
+     *  codec SPI, exactly like the CRUD body. */
+    private TypeSpec buildActionRequestRecord(ActionMetadata action) {
+        MethodSpec.Builder canonical = MethodSpec.constructorBuilder().addModifiers(Modifier.PUBLIC);
+        for (ActionParamMetadata p : action.params()) {
+            canonical.addParameter(ParameterSpec.builder(typeNameOf(p.type()), p.name()).build());
+        }
+        return TypeSpec.recordBuilder(actionRequestName(action))
+                .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+                .addJavadoc("Request body for the {@code $L} action.\n", action.name())
+                .recordConstructor(canonical.build())
+                .build();
+    }
+
+    /** Extracts the entity {@code id} from an action path
+     *  {@code {basePath}/{id}/actions/{name}} — the segment immediately before
+     *  {@code /actions/} (distinct from {@link #buildExtractPathId}, which takes the
+     *  last segment and would return the action name here). */
+    private MethodSpec buildExtractActionPathId() {
+        return MethodSpec.methodBuilder("extractActionPathId")
+                .addModifiers(Modifier.PRIVATE)
+                .returns(String.class)
+                .addParameter(HTTP_EXCHANGE, "exchange")
+                .addStatement("String path = exchange.request().path()")
+                .addStatement("int q = path.indexOf('?')")
+                .beginControlFlow("if (q >= 0)")
+                .addStatement("path = path.substring(0, q)")
+                .endControlFlow()
+                .addStatement("int actionsIdx = path.indexOf($S)", "/actions/")
+                .beginControlFlow("if (actionsIdx < 0)")
+                .addComment("not an action path — no id to extract (yields 400 on parse)")
+                .addStatement("return $S", "")
+                .endControlFlow()
+                .addStatement("path = path.substring(0, actionsIdx)")
+                .addStatement("int lastSlash = path.lastIndexOf('/')")
+                .addStatement("return lastSlash >= 0 ? path.substring(lastSlash + 1) : path")
+                .build();
+    }
+
+    private static String actionRequestName(ActionMetadata action) {
+        return NameCasing.pascal(action.name()) + "Request";
+    }
+
+    /** Maps a processor-recorded param type (a FQN from {@code TypeMirror.toString()},
+     *  or a primitive keyword) to a JavaPoet {@link TypeName}. Parameterized types fall
+     *  back to their raw type (the body decoder binds structurally). */
+    private static TypeName typeNameOf(String type) {
+        return switch (type) {
+            case "boolean" -> TypeName.BOOLEAN;
+            case "byte" -> TypeName.BYTE;
+            case "short" -> TypeName.SHORT;
+            case "int" -> TypeName.INT;
+            case "long" -> TypeName.LONG;
+            case "char" -> TypeName.CHAR;
+            case "float" -> TypeName.FLOAT;
+            case "double" -> TypeName.DOUBLE;
+            default -> {
+                int lt = type.indexOf('<');
+                yield ClassName.bestGuess(lt >= 0 ? type.substring(0, lt) : type);
+            }
+        };
     }
 
     /** A {@code public void handle*(HttpExchange exchange)} skeleton — the shared

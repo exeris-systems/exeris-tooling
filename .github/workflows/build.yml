@@ -25,11 +25,11 @@ jobs:
         with:
           path: exeris-tooling
 
-      - name: Checkout exeris-sdk (pinned release — installed locally before self-build)
+      - name: Checkout exeris-sdk (0.7.0-SNAPSHOT dep — methodName for T1; re-pin to a release tag before cutting tooling)
         uses: actions/checkout@v4
         with:
           repository: exeris-systems/exeris-sdk
-          ref: v0.6.0
+          ref: main
           path: exeris-sdk
 
       - name: Set up JDK ${{ matrix.java }}
