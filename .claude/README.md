@@ -25,6 +25,7 @@ and works as the operating context for AI assistants on the build-time pipeline
   - `exeris-tooling-strict-audit-review` — `-Aexeris.strict` INERT_* registry hygiene
   - `exeris-tooling-adr-shape-gate` — Research/RFC/ADR shape + registry reservation
   - `exeris-tooling-detach-output-discipline` — committed-L1 / detach lifecycle (hard-constraint #6)
+  - `exeris-tooling-angular-v22-emission` — keeps emitted Angular idioms on the v22 canon; gates the phased A→B→C migration
 
 ## Doctrine — single source
 
