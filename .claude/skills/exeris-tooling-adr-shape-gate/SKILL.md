@@ -37,7 +37,8 @@ CLAUDE.md, `exeris-docs/templates/`):
    `~/exeris-systems/exeris-docs/adr-index.md` FIRST, then write content. Single numbering
    namespace, chronological by decision date. Tooling ADRs live in `docs/adr/`; cross-repo
    ADRs leave a `docs/adr/ADR-NNN.link.md` stub in each affected repo.
-6. **Visibility (ADR-020)** — tag `public` or `enterprise-private`. `public-staged` is
+6. **Visibility** — tag `public` or `enterprise-private` per the visibility taxonomy
+   (ADR-020, indexed in `~/exeris-systems/exeris-docs/adr-index.md`). `public-staged` is
    deprecated; do not use it.
 7. **Business vs tech** — legal/IP/financial/procurement decisions do NOT enter the public
    tech registry; they live in the private business registry and are referred to

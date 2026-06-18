@@ -30,9 +30,9 @@ audit it backs.
   *re-adding*.
 - An SDK annotation attribute is added/removed/renamed (the audit's input surface shifts).
 - Any direct edit to `INERT_ATTRIBUTES` or `INERT_ANNOTATIONS`.
-- Active context: **T1 (serve @Action)** makes the processor + handler/application
-  emitters consume new action surface — verify no `@ActionParam` / action attribute
-  silently became consumed while its entry lingers.
+- A generator starts consuming a new action surface (e.g. a `methodName` or an
+  `@ActionParam` attribute) — confirm no matching `INERT_*` entry survives the same
+  change while its attribute is now rendered.
 
 ## Required Inputs
 - The diff for the generator/processor change.

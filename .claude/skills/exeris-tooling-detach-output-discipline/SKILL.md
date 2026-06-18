@@ -1,6 +1,6 @@
 ---
 name: exeris-tooling-detach-output-discipline
-description: Generated-output lifecycle discipline for exeris-tooling. Use whenever a change touches how code is emitted to or pruned from src/main/generated, proposes "always regenerate" semantics, or affects the L1-committed / L2-detach story (OutputWriter, the codegen Maven plugin generate/detach mojos, the T13 pruner, mvn clean interactions). Guards hard-constraint #6.
+description: Generated-output lifecycle discipline for exeris-tooling. Use whenever a change touches how code is emitted to or pruned from src/main/generated, proposes "always regenerate" semantics, or affects the L1-committed / L2-detach story (OutputWriter, the codegen Maven plugin generate/detach mojos, the generated-output pruner, mvn clean interactions). Guards hard-constraint #6.
 ---
 
 # Exeris Tooling Detach-Output Discipline
@@ -15,8 +15,9 @@ downstream user apps that edit, diff, and own the generated tree.
 ## When to Use
 - Any change to `OutputWriter` or the filesystem write path.
 - Any change to the codegen Maven plugin `generate` / `detach` mojos.
-- Any change to the T13 pruning logic or anything that decides which committed files
-  get removed (esp. interactions with `mvn clean` wiping the L1 tree).
+- Any change to the generated-output pruning logic (tracked under T13) or anything that
+  decides which committed files get removed (esp. interactions with `mvn clean` wiping
+  the L1 tree).
 - Any proposal whose premise is "the output is always regenerated so X is safe".
 - Any change to provenance/manifest emission tied to the reattach (edit-safety) story.
 
@@ -33,8 +34,8 @@ downstream user apps that edit, diff, and own the generated tree.
    (or tracked via the generation manifest), never user-authored or detached files.
    Confirm the deletion set is bounded by provenance, not by directory glob.
 3. **`mvn clean` interaction** — verify the `generate-sources`-before-`compile` ordering
-   and `mvn clean` cannot deadlock on stale metadata or wipe committed L1 without intent
-   (the T18 failure mode). Name the guard.
+   and `mvn clean` cannot deadlock on stale metadata, nor silently wipe the committed L1
+   tree without intent. Name the guard.
 4. **Detach/reattach respect** — edit-safety is via detach-time provenance manifest, not
    regenerate-and-compare (see the reattach RFC). Don't introduce a
    regenerate-and-overwrite path that bypasses the manifest.
