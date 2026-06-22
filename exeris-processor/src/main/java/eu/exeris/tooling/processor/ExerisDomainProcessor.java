@@ -820,6 +820,11 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             Map<String, Object> validationValues = extractAnnotationValues(validationAnnotation);
             if (validationValues.containsKey("min")) builder.min(((Number) validationValues.get("min")).longValue());
             if (validationValues.containsKey("max")) builder.max(((Number) validationValues.get("max")).longValue());
+            // Only explicitly-set attributes appear in the values map (annotation
+            // defaults are excluded), so reading minLength/maxLength here does NOT
+            // flood every @Validation field with the 0 / Integer.MAX_VALUE defaults.
+            if (validationValues.containsKey("minLength")) builder.minLength(((Number) validationValues.get("minLength")).intValue());
+            if (validationValues.containsKey("maxLength")) builder.maxLength(((Number) validationValues.get("maxLength")).intValue());
             if (validationValues.containsKey("pattern")) builder.pattern((String) validationValues.get("pattern"));
 
             applyDeprecatedValidationFallbacks(field, values, validationValues, builder);
