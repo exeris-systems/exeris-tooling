@@ -303,10 +303,13 @@ class ExerisDomainProcessorGapsTest {
             // metadata (proves the @Validation annotation was actually
             // picked up; if it weren't, applyDeprecatedValidationFallbacks
             // would never be called and the branch wouldn't fire either).
-            // Note: @Validation.minLength / .maxLength are NOT read by the
-            // processor today — that's a known gap, not in scope here.
+            // minLength/maxLength are now read too (T10 — the server-side
+            // handler validation guard consumes them).
             String json = metadataFor(compilation, "Item");
-            assertThat(json).contains("\"pattern\" : \"^[A-Z]+$\"");
+            assertThat(json)
+                    .contains("\"pattern\" : \"^[A-Z]+$\"")
+                    .contains("\"minLength\" : 3")
+                    .contains("\"maxLength\" : 20");
         }
     }
 
