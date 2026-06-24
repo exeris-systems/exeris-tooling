@@ -2,11 +2,11 @@
 
 | Field             | Value                                                                                                                                  |
 |:------------------|:--------------------------------------------------------------------------------------------------------------------------------------|
-| **Status**        | **DRAFT**                                                                                                                              |
+| **Status**        | **ACCEPTED** (resolved by ADR-044, 2026-06-24)                                                                                        |
 | **Author(s)**     | arkstack-dev                                                                                                                           |
 | **Date Opened**   | 2026-06-22                                                                                                                             |
-| **Date Closed**   | —                                                                                                                                      |
-| **Target ADR(s)** | TBD — one tooling ADR fixing the stream-emitter shape (processor↔generator contract + Java/TS parity); reserve in `exeris-docs/adr-index.md` once ACCEPTED. Cross-repo `.link.md` for ADR-043 already landed (`docs/adr/ADR-043.link.md`). |
+| **Date Closed**   | 2026-06-24                                                                                                                             |
+| **Target ADR(s)** | [ADR-044](../adr/ADR-044-tooling-sse-stream-emitter-shape.md) — fixes the stream-emitter shape (two drivers, named-event `addEventListener` client, domain-event-bus producer seam). Cross-repo `.link.md` for ADR-043 landed (`docs/adr/ADR-043.link.md`). |
 | **Affected Repos**| `exeris-tooling` (processor + `exeris-codegen-java` + `exeris-codegen-ts`); `exeris-sdk` (per-action driver dependency); `exeris-kernel` (ADR-043, owns the SPI) |
 | **Reviewers**     | —                                                                                                                                      |
 
@@ -85,12 +85,12 @@ Rationale: 1a+2c+3b+4a is the **largest slice that is unblocked, deterministic, 
 
 ## Open questions for review
 
-Slice 1 settled the determinism-bounded ones with conservative defaults (recorded here so the follow-up ADR can ratify or revise them); the auth question stays genuinely open.
+All resolved — the determinism-bounded ones by ADR-044 (which ratifies the Slice-1 shape) and the auth one by ADR-040. Retained here as the historical record of how each was closed.
 
-1. **[Slice-1 default]** Keep-alive interval = fixed `15_000L` ms over a finite iteration count (deterministic constant, no wall-clock, no heap queue). Confirm the interval and whether the live producer (EV1) should drop the synthetic keep-alive once real events flow.
-2. **[RESOLVED — ADR-040]** Auth on the held-open stream is **not an emitter concern**. ADR-040 (Identity Provider SPI, PROPOSED 2026-06-24) makes credential→`PrincipalContext` a kernel-edge dispatch (`SecurityProvider.authenticate(LoanedBuffer)` → `IdentityProvider`), run *before* the handler. A `streamRoute(...)` crosses the same edge as the respond-once `route(...)`, so the generated stream handler inherits edge authentication + `PrincipalContext`/`StorageContext` identically — the emitter generates nothing auth-specific beyond `streamRoute`, exactly as for CRUD routes. The earlier `EventSource`-has-no-custom-headers worry is moot: the kernel reads the credential from the request edge regardless of transport, and the Slice-1 TS client already sets `withCredentials: true`, so the cookie credential reaches the edge. The one genuinely streaming-specific residue — **mid-stream JWT expiry** on a held-open connection (ADR-043 obligation 6, fail-closed) — is **kernel-side** (whether `HttpStreamEngine` re-validates / fail-closed-closes past `VerifiedClaims.expiresAt()`), at the ADR-043×ADR-040 intersection, **not** tooling-emitter scope. Does not block Slice 1.
-3. **[Slice-1 default]** Collection-level **3b** (`GET {base}/stream`) shipped; per-instance **3a** is an additive follow-up — confirm we don't want 3a in the first cut.
-4. **[Slice-1 default]** Native `EventSource` **4a** shipped for the GET route; RxJS **4b** is reserved for Slice 2's POST-open + headers. Confirm 4a for entity-level live-view despite the v22 emitter's RxJS-heavy idiom.
+1. **[RESOLVED — ADR-044]** Keep-alive interval = fixed `15_000L` ms over a finite iteration count (deterministic constant, no wall-clock, no heap queue). ADR-044 obligation 4 fixes the *contract* (compile-time constant, never a wall-clock read); the specific `15_000L` / 4-iteration values are an **implementation detail, not a contract constant** — the EV1 seam replaces the loop entirely, so the live producer drops the synthetic keep-alive once real events flow.
+2. **[RESOLVED — ADR-040]** Auth on the held-open stream is **not an emitter concern**. ADR-040 (Identity Provider SPI, ACCEPTED — kernel v0.10 cycle) makes credential→`PrincipalContext` a kernel-edge dispatch (`SecurityProvider.authenticate(LoanedBuffer)` → `IdentityProvider`), run *before* the handler. A `streamRoute(...)` crosses the same edge as the respond-once `route(...)`, so the generated stream handler inherits edge authentication + `PrincipalContext`/`StorageContext` identically — the emitter generates nothing auth-specific beyond `streamRoute`, exactly as for CRUD routes. The earlier `EventSource`-has-no-custom-headers worry is moot: the kernel reads the credential from the request edge regardless of transport, and the Slice-1 TS client already sets `withCredentials: true`, so the cookie credential reaches the edge. The one genuinely streaming-specific residue — **mid-stream JWT expiry** on a held-open connection (ADR-043 obligation 6, fail-closed) — is **kernel-side** (whether `HttpStreamEngine` re-validates / fail-closed-closes past `VerifiedClaims.expiresAt()`), at the ADR-043×ADR-040 intersection, **not** tooling-emitter scope. Does not block Slice 1.
+3. **[RESOLVED — ADR-044]** Collection-level **3b** (`GET {base}/stream`) shipped (ADR-044 obligation 1); per-instance **3a** is an additive follow-up, not a first-cut requirement.
+4. **[RESOLVED — ADR-044]** Native `EventSource` **4a** shipped for the GET route (ADR-044 obligations 1–2); RxJS **4b** is reserved for Slice 2's POST-open + headers.
 
 ## Next action
 
