@@ -485,15 +485,16 @@ Proposals, highest return-on-effort first:
 | U4 | **Fidelity end-to-end** — processor emits the full `uiMetadata` / per-field `UIFieldMetadata`, the TS Zod schema models it, and strict-mode (**T11**) warns when a `@UI` attribute is declared but dropped | processor + codegen-ts | medium | 0.6.0 (with T11) |
 | U5 | **Configurable detail / branding** — sections/tabs in the detail view, related-entity panels; app name/titles/icons from metadata (today a hardcoded `"Exeris Foundation"` + an emoji-by-entity-name map) | codegen-ts | small–med | 0.6.0 (extends **T7**) |
 | U6 | **New view shapes** — dashboard/cards/kanban/calendar from `@Projection`, charts from `@Graph` (deferred), master-detail, inline-edit, bulk-actions | SDK (light) + codegen-ts | large | 0.7.0–0.9.0 |
-| U7 | **Live-view** (e.g. a battle preview) — a round stream pushed to the client | kernel (**K2**) + codegen-ts | large | blocked on kernel **K2** |
+| U7 | **Live-view** (e.g. a battle preview) — a round stream pushed to the client. Transport SHIPPED (ADR-043/044 — Slice 1 #104 + Slice 2 #106: `HttpStreamHandler` + `streamRoute` + `EventSource`/RxJS clients); the generated producer is a keep-alive scaffold until the **EV1-stream** pass binds the `@DomainEvent` bus | ~~kernel (K2, done)~~ → codegen-java/-ts (**EV1-stream**) | large | scaffold shipped 0.6.0; real feed with **EV1** |
 | U8 | **Genuinely missing in the SDK** — custom-component registration (plugin), per-role field visibility (RLS-aware), i18n labels, icon-set abstraction | SDK + codegen-ts | large | SDK-led |
 
 > **Recommendation:** highest return for least motion is **U1** (wire ui-kit) + **U2** (universal
 > lists) — the theme already exists tokenized, and lists already know more than they show
 > (sort/filter are half-there). Together: re-skin the whole UI via one set of CSS tokens without
 > touching generated code, and get lists with real column types — inventing nothing in the SDK.
-> **U7 is the only item that genuinely blocks on the kernel (K2)**, not the generator; U6/U8 have
-> SDK halves owned in `exeris-sdk`.
+> **U7's kernel blocker (K2) is now cleared** — the SSE transport landed (kernel 0.10, ADR-043) and the
+> emitter ships it (Slice 1 #104 + Slice 2 #106); what remains is generator-side, the **EV1-stream**
+> producer pass (see Events & event sourcing). U6/U8 have SDK halves owned in `exeris-sdk`.
 
 ### Events & event sourcing
 
@@ -518,6 +519,23 @@ Proposals, highest return-on-effort first:
       kernel counterpart (topic, partitionKey, schema/Avro, headers, exchange/routingKey, retention) stay
       inert — `-Aexeris.strict` (**T11**) is the right surface to flag them, once each is verified
       per-attribute against the union of Java+TS emitters.
+
+- [~] **EV1-stream — replace the SSE keep-alive scaffold with a real `@DomainEvent` → `StreamEvent`
+      projection.** ADR-043/044 Slice 1 (entity-level `@ExerisDomain(realTimeApi)`, #104) and Slice 2
+      (per-action `@Action(streaming)`, #106) ship the streaming **transport** end-to-end — the kernel
+      `HttpStreamHandler` + `streamRoute` (Java) and the `EventSource` / RxJS-over-fetch clients (TS) — but
+      the generated `handle(...)` body is a **deterministic keep-alive scaffold**. ADR-044 obligation 3
+      names the `@DomainEvent` bus as the producer seam. *Realizable gap (→ with EV1):* emit a long-lived
+      subscription to this entity's `@DomainEvent` stream that projects each event into
+      `StreamEvent.of(eventType, json)` — reusing the **EV1** field-projection above for the `json` payload
+      — and delete the keep-alive loop. The Slice-2 dedup put that loop behind **one** seam,
+      `KernelStreamScaffold.keepAliveScaffold(...)`, so it is the sole replacement site for *both* drivers;
+      and the TS clients already parse NAMED SSE frames, so named domain events flow with **no client
+      reshape** the moment the producer emits them (strong-default #4 parity holds for free). **Interim,
+      today:** the downstream fills the seam by subclassing the generated handler — proven in the Stellar
+      dog-food (`EraLiveStream extends GalacticEraStreamHandler`, projecting `EraTurned` into a real
+      `text/event-stream`). Gated on EV1 payload realization (above); pairs with `@Projection` as the
+      natural event→DTO shape. **Closes U7.**
 
 - [ ] **EV2 — `@EventSourced` aggregate generator — BLOCKED on a kernel SPI.** No generator emits
       event-sourced aggregates today; **T11 strict mode surfaces `@EventSourced` as inert** (extracted
