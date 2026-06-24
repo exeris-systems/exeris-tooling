@@ -15,6 +15,7 @@ import java.util.List;
  * <ul>
  *   <li>{@link KernelHandlerGenerator} — HTTP handlers against {@code spi.http.HttpExchange} / {@code HttpStatus} / {@code spi.memory.LoanedBuffer}</li>
  *   <li>{@link KernelStreamHandlerGenerator} — SSE live-view stream handlers against {@code spi.http.{HttpStreamHandler, HttpStreamExchange, StreamEvent}} (only for {@code @ExerisDomain(realTimeApi)} entities; ADR-043 Slice 1)</li>
+ *   <li>{@link KernelActionStreamHandlerGenerator} — per-action SSE stream handlers against the same streaming SPI (one per {@code @Action(streaming=true)}; ADR-044 Slice 2)</li>
  *   <li>{@link KernelServiceGenerator} — POJO domain services (delegates to {@code *Repository}; no direct Kernel API surface)</li>
  *   <li>{@link KernelRepositoryGenerator} — repositories against {@code spi.persistence.{TransactionalExecutor, PersistenceStatement, QueryResult, RowCursor}}</li>
  *   <li>{@link KernelEventGenerator} — domain-event publisher against {@code spi.events.{EventEngine, EventDescriptor, EventPayload, EventTypeSpec}}</li>
@@ -61,6 +62,7 @@ public class KernelGeneratorStrategy {
 
         registry.register(new KernelHandlerGenerator());
         registry.register(new KernelStreamHandlerGenerator());
+        registry.register(new KernelActionStreamHandlerGenerator());
         registry.register(new KernelServiceGenerator());
         registry.register(new KernelRepositoryGenerator());
         registry.register(new KernelEventGenerator());

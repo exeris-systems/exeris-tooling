@@ -141,12 +141,17 @@ public final class CodegenPipeline {
             for (DomainMetadata domain : domains) {
                 LOG.log(Level.DEBUG, () -> "generating entity=" + domain.entityName());
                 for (KernelArtifactGenerator generator : generators) {
-                    GeneratedFile file = generator.generate(domain);
-                    if (file != null) {
-                        writeFile(writer, file);
-                        LOG.log(Level.DEBUG, () -> "wrote " + file.className()
-                                + " (" + generator.artifactType() + ")");
-                        filesGenerated++;
+                    // generateMultiple(...) emits N files where the driver is a
+                    // metadata collection (e.g. one stream handler per
+                    // @Action(streaming); ADR-044 Slice 2); its default wraps the
+                    // single generate(...) result for every other generator.
+                    for (GeneratedFile file : generator.generateMultiple(domain)) {
+                        if (file != null) {
+                            writeFile(writer, file);
+                            LOG.log(Level.DEBUG, () -> "wrote " + file.className()
+                                    + " (" + generator.artifactType() + ")");
+                            filesGenerated++;
+                        }
                     }
                 }
             }

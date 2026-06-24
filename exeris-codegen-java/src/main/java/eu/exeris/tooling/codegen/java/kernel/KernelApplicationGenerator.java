@@ -315,6 +315,19 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 method.addStatement("$T $LStreamHandler = new $T()",
                         streamHandlerType, entityLower, streamHandlerType);
             }
+            // ADR-044 Slice 2: instantiate one per-action SSE stream handler per
+            // @Action(streaming) action (no-arg, like the Slice-1 handler). Emitted
+            // by KernelActionStreamHandlerGenerator into the same .handler package,
+            // named <Entity><ActionPascal>StreamHandler.
+            for (ActionMetadata action : domain.actions()) {
+                if (action.streaming()) {
+                    String actionPascal = NameCasing.pascal(action.name());
+                    ClassName actionStreamHandlerType =
+                            ClassName.get(handlerPkg, entity + actionPascal + "StreamHandler");
+                    method.addStatement("$T $L$LStreamHandler = new $T()",
+                            actionStreamHandlerType, entityLower, actionPascal, actionStreamHandlerType);
+                }
+            }
         }
 
         // Router build
@@ -337,10 +350,22 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
             // ({basePath}/{id}/actions/{kebab(name)}, POST — OpenAPI emits POST for
             // every action). The handler method name mirrors KernelHandlerGenerator's
             // "handle" + pascal(name).
+            //
+            // ADR-044 Slice 2 (axis 3c): a @Action(streaming) action is registered at
+            // the SAME path but via the router's typed streamRoute(POST, ...) — the
+            // request opens the stream (resolves to an HttpStreamExchange, never an
+            // HttpExchange). A streaming action gets the streamRoute ONLY, not the
+            // respond-once route(...) too.
             for (ActionMetadata action : domain.actions()) {
-                method.addStatement("routerBuilder.route($T.POST, $S, $LHandler::$L)",
-                        HTTP_METHOD, basePath + "/{id}/actions/" + NameCasing.kebab(action.name()),
-                        entityLower, "handle" + NameCasing.pascal(action.name()));
+                String actionPath = basePath + "/{id}/actions/" + NameCasing.kebab(action.name());
+                String actionPascal = NameCasing.pascal(action.name());
+                if (action.streaming()) {
+                    method.addStatement("routerBuilder.streamRoute($T.POST, $S, $L$LStreamHandler::handle)",
+                            HTTP_METHOD, actionPath, entityLower, actionPascal);
+                } else {
+                    method.addStatement("routerBuilder.route($T.POST, $S, $LHandler::$L)",
+                            HTTP_METHOD, actionPath, entityLower, "handle" + actionPascal);
+                }
             }
             // ADR-043 Slice 1: collection-level SSE live-view route. Uses the
             // router's typed streamRoute(...), distinct from route(...) — a
@@ -352,7 +377,15 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
             }
         }
         method.addStatement("$T router = routerBuilder.build()", HTTP_ROUTER);
-        method.addStatement("handlerSlot.set(router::handle)");
+        // Publish the HttpRouter INSTANCE, not a `router::handle` method-ref.
+        // The kernel stream dispatcher resolves a streaming route only when the
+        // bound handler IS an HttpRouter (`handler instanceof HttpRouter` →
+        // router.resolveStream(...)); a method-ref lambda erases that type, so
+        // every generated streamRoute(...) registration (Slice 1 entity-level +
+        // Slice 2 per-action) would silently fall back to respond-once / 404 on
+        // a real boot. HttpRouter implements HttpHandler, so the forwarding
+        // slot's respond-once dispatch is byte-for-byte identical either way.
+        method.addStatement("handlerSlot.set(router)");
         method.addStatement("LOG.info($S, $L)",
                 "Application bootstrap complete: {} entities wired", domains.size());
 

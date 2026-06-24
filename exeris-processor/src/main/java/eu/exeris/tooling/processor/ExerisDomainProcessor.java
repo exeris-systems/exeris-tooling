@@ -958,6 +958,21 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         if (values.containsKey("httpMethod")) builder.httpMethod((String) values.get("httpMethod"));
         if (values.containsKey("async")) builder.async((Boolean) values.get("async"));
 
+        // ADR-044 Slice 2: the per-action streaming driver. @Action(streaming=true)
+        // (boolean, default false) + @Action(streamEventType=…) (String, default "")
+        // are verified live against exeris-sdk-annotations Action.java, like the
+        // attributes above. They drive KernelActionStreamHandlerGenerator (one
+        // HttpStreamHandler per streaming action) + the Application generator's
+        // streamRoute(POST, {base}/{id}/actions/{kebab}, …) registration, and the
+        // TS RxJS streaming-action client.
+        if (values.containsKey("streaming")) builder.streaming((Boolean) values.get("streaming"));
+        if (values.containsKey("streamEventType")) builder.streamEventType((String) values.get("streamEventType"));
+        // NOTE: @Action(realTimeUpdates) is deliberately NOT extracted here. It is a
+        // separate "subscribe-to-progress" affordance (response shape vs. progress
+        // channel) with no generator consumer in Slice 2 — extracting it would only
+        // create an inert ActionMetadata attribute. Out of Slice-2 scope; add the
+        // extraction in the same change that introduces its consumer.
+
         // Extract parameters
         List<ActionParamMetadata> params = new ArrayList<>();
         for (VariableElement param : method.getParameters()) {

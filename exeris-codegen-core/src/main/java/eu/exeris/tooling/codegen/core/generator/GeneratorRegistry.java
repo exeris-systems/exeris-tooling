@@ -59,7 +59,11 @@ public class GeneratorRegistry {
     public List<GeneratedFile> generateAll(DomainMetadata metadata) {
         return getGenerators().stream()
                 .filter(g -> g.supports(metadata))
-                .map(g -> g.generate(metadata))
+                // generateMultiple(...) lets a single generator emit N files
+                // (e.g. one stream handler per @Action(streaming); ADR-044
+                // Slice 2). The default wraps the single generate(...) result,
+                // so single-file generators are unaffected.
+                .flatMap(g -> g.generateMultiple(metadata).stream())
                 .filter(Objects::nonNull)
                 .collect(Collectors.toList());
     }

@@ -37,7 +37,7 @@ export type ArtifactType =
   | 'SCHEMA'       // Zod validation schema
   | 'SERVICE'      // API service
   | 'CLIENT'       // HTTP client
-  | 'STREAM'       // SSE live-view EventSource client (parity with kernel HttpStreamHandler, ADR-043 Slice 1)
+  | 'STREAM'       // SSE stream clients (parity with kernel HttpStreamHandler): entity-level EventSource live-view (ADR-043 Slice 1) + per-action RxJS-over-fetch (ADR-044 Slice 2)
   | 'STORE'        // Signal store
   | 'FORM'         // Form component
   | 'LIST'         // List component
@@ -335,6 +335,7 @@ export async function registerAllGenerators(registry: GeneratorRegistry = defaul
     { EnumGenerator },
     { ServiceGenerator },
     { StreamClientGenerator },
+    { ActionStreamClientGenerator },
     { StoreGenerator },
     { FormGenerator },
     { ListGenerator },
@@ -349,6 +350,7 @@ export async function registerAllGenerators(registry: GeneratorRegistry = defaul
     import('../generators/api/enum-gen.js'),
     import('../generators/angular/service-gen.js'),
     import('../generators/angular/stream-client-gen.js'),
+    import('../generators/angular/action-stream-client-gen.js'),
     import('../generators/angular/store-gen.js'),
     import('../generators/angular/form-gen.js'),
     import('../generators/angular/list-gen.js'),
@@ -365,6 +367,7 @@ export async function registerAllGenerators(registry: GeneratorRegistry = defaul
     .register(new TypeGenerator())
     .register(new ServiceGenerator())
     .register(new StreamClientGenerator())
+    .register(new ActionStreamClientGenerator())
     .register(new StoreGenerator())
     .register(new FormGenerator())
     .register(new ListGenerator())

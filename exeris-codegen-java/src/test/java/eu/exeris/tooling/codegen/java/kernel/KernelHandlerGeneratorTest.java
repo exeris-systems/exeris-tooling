@@ -193,6 +193,50 @@ class KernelHandlerGeneratorTest {
     }
 
     @Test
+    @DisplayName("ADR-044 Slice 2: a @Action(streaming) action gets NO respond-once handle<Action> "
+            + "(served by the per-action stream handler via streamRoute); non-streaming siblings still do")
+    void shouldNotEmitRespondOnceHandlerForStreamingAction() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .actions(List.of(
+                        ActionMetadata.builder("cancel").methodName("cancel").build(),
+                        ActionMetadata.builder("trackShipment").methodName("trackShipment")
+                                .streaming(true).streamEventType("ShipmentMoved").build()))
+                .build();
+
+        String handler = strategy.generate(metadata).stream()
+                .filter(f -> f.artifactType() == ArtifactType.CONTROLLER)
+                .findFirst().orElseThrow().content();
+
+        assertThat(handler)
+                // non-streaming action keeps its respond-once handler + the shared helper
+                .contains("void handleCancel(HttpExchange exchange)")
+                .contains("extractActionPathId(exchange)")
+                // streaming action is served by the stream handler, not a dead respond-once method
+                .doesNotContain("handleTrackShipment");
+    }
+
+    @Test
+    @DisplayName("ADR-044 Slice 2: an entity whose ONLY action streams emits neither a respond-once "
+            + "action handler nor the now-unused extractActionPathId helper")
+    void shouldOmitActionHelperWhenAllActionsStream() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .actions(List.of(
+                        ActionMetadata.builder("trackShipment").methodName("trackShipment")
+                                .streaming(true).streamEventType("ShipmentMoved").build()))
+                .build();
+
+        String handler = strategy.generate(metadata).stream()
+                .filter(f -> f.artifactType() == ArtifactType.CONTROLLER)
+                .findFirst().orElseThrow().content();
+
+        assertThat(handler)
+                .doesNotContain("handleTrackShipment")
+                .doesNotContain("extractActionPathId");
+    }
+
+    @Test
     @DisplayName("T10: enforces @Validation server-side in create/update — 400 before persist, parity with the client Zod schema")
     void shouldEnforceValidationServerSide() {
         DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")

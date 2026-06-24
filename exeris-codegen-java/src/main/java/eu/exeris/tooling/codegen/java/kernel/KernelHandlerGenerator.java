@@ -130,8 +130,18 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         // entity method (effectiveMethodName), persists, and responds with the
         // updated aggregate. Routed by KernelApplicationGenerator at
         // {basePath}/{id}/actions/{kebab(name)}.
+        //
+        // ADR-044 Slice 2: a @Action(streaming) action is NOT served here. It is
+        // emitted as a kernel HttpStreamHandler by KernelActionStreamHandlerGenerator
+        // and bound to a streamRoute(...), so a respond-once handle<Action> method
+        // for it would be dead (unrouted) code — skip it.
+        boolean hasRespondOnceAction = false;
         if (metadata.hasActions()) {
             for (ActionMetadata action : metadata.actions()) {
+                if (action.streaming()) {
+                    continue;
+                }
+                hasRespondOnceAction = true;
                 if (action.hasParams()) {
                     handlerBuilder.addType(buildActionRequestRecord(action));
                 }
@@ -141,7 +151,9 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         }
 
         handlerBuilder.addMethod(buildExtractPathId());
-        if (metadata.hasActions()) {
+        // extractActionPathId is only referenced by respond-once action handlers; an
+        // entity whose only actions stream would otherwise carry it unused.
+        if (hasRespondOnceAction) {
             handlerBuilder.addMethod(buildExtractActionPathId());
         }
         handlerBuilder.addMethod(buildParseBody());

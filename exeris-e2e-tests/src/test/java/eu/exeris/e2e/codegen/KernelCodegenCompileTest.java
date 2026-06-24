@@ -109,7 +109,18 @@ class KernelCodegenCompileTest {
                                         ActionParamMetadata.required("percent", "java.math.BigDecimal"),
                                         ActionParamMetadata.required("reason", "java.lang.String")))
                                 .build(),
-                        ActionMetadata.builder("markUrgent").methodName("flagUrgent").build()))
+                        ActionMetadata.builder("markUrgent").methodName("flagUrgent").build(),
+                        // ADR-044 Slice 2: a @Action(streaming=true, streamEventType=…)
+                        // action drives KernelActionStreamHandlerGenerator
+                        // (OrderTrackShipmentStreamHandler) + the Application
+                        // generator's streamRoute(POST, "/orders/{id}/actions/
+                        // track-shipment", ...) registration, so the gate javac-
+                        // compiles the per-action SSE handler against the real
+                        // kernel 0.10 streaming SPI.
+                        ActionMetadata.builder("trackShipment").methodName("trackShipment")
+                                .streaming(true)
+                                .streamEventType("ShipmentMoved")
+                                .build()))
                 .events(List.of(
                         DomainEventMetadata.simple("OrderCreated"),
                         DomainEventMetadata.withTopic("OrderShipped", "orders.shipped")))
@@ -216,6 +227,10 @@ class KernelCodegenCompileTest {
                         if (percent != null) { this.amount = this.amount.subtract(percent); }
                     }
                     public void flagUrgent() { /* @Action(name="markUrgent") */ }
+                    // @Action(streaming=true) — served by the per-action stream
+                    // handler via streamRoute; the handler generator emits NO
+                    // respond-once handle method for it (ADR-044 Slice 2).
+                    public void trackShipment() { /* ADR-044 Slice 2 streaming action */ }
                 }
                 """.formatted(DOMAIN_PACKAGE, ENTITY_NAME);
     }

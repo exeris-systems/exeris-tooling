@@ -25,11 +25,19 @@ jobs:
         with:
           path: exeris-tooling
 
-      - name: Checkout exeris-sdk (pinned to released v0.7.0 — provides ActionMetadata.methodName for T1)
+      # CI builds the SDK from source and `mvn install`s it (NOT GitHub Packages),
+      # so this ref decides which SDK version lands in the local repo. The BOM now
+      # pins exeris.sdk.version=0.8.0-SNAPSHOT for the per-action streaming fields
+      # (ActionMetadata.streaming / streamEventType, ADR-044 Slice 2) — released
+      # v0.7.0 does NOT carry them. SDK main is at 0.8.0-SNAPSHOT and carries the
+      # streaming fields (merged #67), so we track main. RELEASE GATE: re-pin to
+      # the v0.8.0 tag (and drop the BOM SNAPSHOT) before cutting tooling 0.6.0
+      # (no-SNAPSHOT-deps-at-release).
+      - name: Checkout exeris-sdk (main, 0.8.0-SNAPSHOT — provides ActionMetadata streaming fields for ADR-044 Slice 2)
         uses: actions/checkout@v4
         with:
           repository: exeris-systems/exeris-sdk
-          ref: v0.7.0
+          ref: main
           path: exeris-sdk
 
       - name: Set up JDK ${{ matrix.java }}
