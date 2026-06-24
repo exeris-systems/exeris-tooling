@@ -185,7 +185,7 @@ public class KernelActionStreamHandlerGenerator implements KernelArtifactGenerat
                 .build();
 
         return new GeneratedFile(packageName, className,
-                KernelScaffold.render(packageName, streamHandler), ArtifactType.STREAM_HANDLER);
+                KernelScaffold.render(packageName, streamHandler), ArtifactType.ACTION_STREAM_HANDLER);
     }
 
     private MethodSpec buildHandleMethod(String entity, ActionMetadata action, String eventName) {
@@ -237,6 +237,9 @@ public class KernelActionStreamHandlerGenerator implements KernelArtifactGenerat
 
     @Override
     public ArtifactType artifactType() {
-        return ArtifactType.STREAM_HANDLER;
+        // Distinct from KernelStreamHandlerGenerator's STREAM_HANDLER (Slice 1) so
+        // the per-type registry lookup resolves THIS generator unambiguously — both
+        // emit HttpStreamHandler subtypes, but they are different drivers.
+        return ArtifactType.ACTION_STREAM_HANDLER;
     }
 }

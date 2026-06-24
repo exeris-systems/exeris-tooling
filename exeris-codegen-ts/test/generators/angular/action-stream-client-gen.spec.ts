@@ -159,26 +159,86 @@ describe('ActionStreamClientGenerator — determinism', () => {
   });
 });
 
-// ---------- generateAggregate — barrel ----------
+// ---------- shared StreamFrame (no per-entity re-declaration) ----------
 
-describe('ActionStreamClientGenerator.generateAggregate — barrel', () => {
+describe('ActionStreamClientGenerator — StreamFrame is shared, not per-entity', () => {
   const gen = new ActionStreamClientGenerator();
 
-  it('barrels only entities with streaming actions', () => {
+  it('per-entity files IMPORT StreamFrame and do NOT re-declare/export it (TS2308 guard)', () => {
+    const content = gen.generate(domain({ entityName: 'Order', actions: [streamingAction] }), CTX)!.content;
+
+    expect(content).toContain("import type { StreamFrame } from './stream-types';");
+    // The interface must live in stream-types.ts only — re-declaring it per
+    // entity is exactly what makes the barrel's `export *` ambiguous.
+    expect(content).not.toContain('export interface StreamFrame');
+  });
+});
+
+// ---------- generateAggregate — shared types + barrel ----------
+
+describe('ActionStreamClientGenerator.generateAggregate — stream-types + barrel', () => {
+  const gen = new ActionStreamClientGenerator();
+
+  it('emits a single shared stream-types.ts plus the barrel', () => {
     const files = gen.generateAggregate([
       domain({ entityName: 'Order', actions: [streamingAction] }),
       domain({ entityName: 'Invoice', actions: [plainAction] }),
     ], CTX);
 
-    expect(files).toHaveLength(1);
-    expect(files[0].path).toBe('services/action-streams.index.ts');
-    expect(files[0].content).toContain("export * from './order.action-streams';");
-    expect(files[0].content).not.toContain('invoice.action-streams');
+    expect(files.map(f => f.path)).toEqual([
+      'services/stream-types.ts',
+      'services/action-streams.index.ts',
+    ]);
+
+    const types = files.find(f => f.path === 'services/stream-types.ts')!;
+    expect(types.content).toContain('export interface StreamFrame {');
+
+    const barrel = files.find(f => f.path === 'services/action-streams.index.ts')!;
+    expect(barrel.content).toContain("export * from './stream-types';");
+    expect(barrel.content).toContain("export * from './order.action-streams';");
+    expect(barrel.content).not.toContain('invoice.action-streams');
+  });
+
+  it('barrel re-exports StreamFrame EXACTLY once across N streaming entities (TS2308 regression)', () => {
+    const files = gen.generateAggregate([
+      domain({ entityName: 'Order', actions: [streamingAction] }),
+      domain({ entityName: 'Shipment', actions: [{ name: 'track', streaming: true }] }),
+    ], CTX);
+
+    const barrel = files.find(f => f.path === 'services/action-streams.index.ts')!;
+    // Both per-entity files are barrelled, but StreamFrame is sourced once from
+    // stream-types — so `export *` cannot double-export it.
+    expect(barrel.content).toContain("export * from './order.action-streams';");
+    expect(barrel.content).toContain("export * from './shipment.action-streams';");
+    expect(barrel.content.match(/export \* from '\.\/stream-types';/g)).toHaveLength(1);
+
+    // Exactly one declaration of StreamFrame exists in the whole emission.
+    const perEntity = [
+      gen.generate(domain({ entityName: 'Order', actions: [streamingAction] }), CTX)!.content,
+      gen.generate(domain({ entityName: 'Shipment', actions: [{ name: 'track', streaming: true }] }), CTX)!.content,
+    ];
+    for (const c of perEntity) {
+      expect(c).not.toContain('export interface StreamFrame');
+    }
   });
 
   it('emits nothing when no entity has a streaming action', () => {
     const files = gen.generateAggregate([domain({ entityName: 'Order', actions: [plainAction] })], CTX);
     expect(files).toHaveLength(0);
+  });
+});
+
+// ---------- Observable contract: complete() on abort ----------
+
+describe('ActionStreamClientGenerator — abort completes the Observable', () => {
+  const gen = new ActionStreamClientGenerator();
+
+  it('calls subscriber.complete() (not error) when the fetch is aborted on unsubscribe', () => {
+    const content = gen.generate(domain({ entityName: 'Order', actions: [streamingAction] }), CTX)!.content;
+
+    // Clean teardown: aborted → complete(); only a real failure → error().
+    expect(content).toContain('if (controller.signal.aborted) {');
+    expect(content).toContain('subscriber.complete();');
   });
 });
 

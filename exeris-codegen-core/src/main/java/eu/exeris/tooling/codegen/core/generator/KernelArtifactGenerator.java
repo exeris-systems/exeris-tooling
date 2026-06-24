@@ -96,7 +96,8 @@ public interface KernelArtifactGenerator {
         REPOSITORY,
         SERVICE,
         CONTROLLER,
-        STREAM_HANDLER,  // SSE server-push handler (eu.exeris.kernel.spi.http.HttpStreamHandler): entity-level @ExerisDomain(realTimeApi) (ADR-043 Slice 1) + per-action @Action(streaming) (ADR-044 Slice 2)
+        STREAM_HANDLER,         // entity-level SSE live-view handler (eu.exeris.kernel.spi.http.HttpStreamHandler) — @ExerisDomain(realTimeApi) (ADR-043 Slice 1)
+        ACTION_STREAM_HANDLER,  // per-action SSE stream handler (eu.exeris.kernel.spi.http.HttpStreamHandler) — @Action(streaming) (ADR-044 Slice 2); distinct from STREAM_HANDLER so the per-type registry lookup is unambiguous
         CLIENT,          // service-to-service client for HTTP-layer communication
         EVENT,           // domain-event publisher (eu.exeris.kernel.spi.events.*)
         EVENT_HANDLER,   // domain-event subscriber (eu.exeris.kernel.spi.events.EventBus)

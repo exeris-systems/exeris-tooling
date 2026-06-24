@@ -53,7 +53,7 @@ class KernelActionStreamHandlerGeneratorTest {
         assertThat(files).extracting(GeneratedFile::className)
                 .containsExactly("OrderTrackShipmentStreamHandler", "OrderWatchPriceStreamHandler");
         assertThat(files).allSatisfy(f -> {
-            assertThat(f.artifactType()).isEqualTo(ArtifactType.STREAM_HANDLER);
+            assertThat(f.artifactType()).isEqualTo(ArtifactType.ACTION_STREAM_HANDLER);
             assertThat(f.packageName()).isEqualTo("com.example.handler");
             assertThat("java").isEqualTo(f.extension());
         });

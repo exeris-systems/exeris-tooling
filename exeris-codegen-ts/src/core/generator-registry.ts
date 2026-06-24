@@ -37,7 +37,7 @@ export type ArtifactType =
   | 'SCHEMA'       // Zod validation schema
   | 'SERVICE'      // API service
   | 'CLIENT'       // HTTP client
-  | 'STREAM'       // SSE live-view EventSource client (parity with kernel HttpStreamHandler, ADR-043 Slice 1)
+  | 'STREAM'       // SSE stream clients (parity with kernel HttpStreamHandler): entity-level EventSource live-view (ADR-043 Slice 1) + per-action RxJS-over-fetch (ADR-044 Slice 2)
   | 'STORE'        // Signal store
   | 'FORM'         // Form component
   | 'LIST'         // List component
