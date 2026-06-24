@@ -9,6 +9,7 @@ import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
+import eu.exeris.tooling.codegen.java.support.KernelStreamScaffold;
 import eu.exeris.tooling.codegen.java.support.NameCasing;
 import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
@@ -78,29 +79,12 @@ import java.util.List;
  */
 public class KernelActionStreamHandlerGenerator implements KernelArtifactGenerator {
 
-    private static final ClassName HTTP_STREAM_HANDLER =
-            ClassName.get("eu.exeris.kernel.spi.http", "HttpStreamHandler");
-    private static final ClassName HTTP_STREAM_EXCHANGE =
-            ClassName.get("eu.exeris.kernel.spi.http", "HttpStreamExchange");
-    private static final ClassName STREAM_EVENT =
-            ClassName.get("eu.exeris.kernel.spi.http", "StreamEvent");
-    private static final ClassName THREAD = ClassName.get("java.lang", "Thread");
-    private static final ClassName SLF4J_LOGGER = ClassName.get("org.slf4j", "Logger");
-    private static final ClassName SLF4J_LOGGER_FACTORY = ClassName.get("org.slf4j", "LoggerFactory");
-
-    /**
-     * Deterministic keep-alive cadence. A compile-time CONSTANT — never a
-     * wall-clock read — so the same {@link DomainMetadata} yields byte-identical
-     * output (hard constraint #3). Mirrors {@link KernelStreamHandlerGenerator}.
-     */
-    private static final long KEEPALIVE_INTERVAL_MILLIS = 15_000L;
-
-    /**
-     * Bounded keep-alive iteration count for the scaffold loop. Deterministic
-     * and finite so the generated handler terminates cleanly (calls
-     * {@code close()}) until the EV1 producer seam replaces the loop.
-     */
-    private static final int KEEPALIVE_ITERATIONS = 4;
+    // Shared kernel-streaming SPI ClassNames + the deterministic keep-alive
+    // scaffold (constants, fields, loop) live in KernelStreamScaffold so the
+    // Slice 1 and Slice 2 stream generators don't copy-paste them.
+    private static final ClassName HTTP_STREAM_HANDLER = KernelStreamScaffold.HTTP_STREAM_HANDLER;
+    private static final ClassName HTTP_STREAM_EXCHANGE = KernelStreamScaffold.HTTP_STREAM_EXCHANGE;
+    private static final ClassName STREAM_EVENT = KernelStreamScaffold.STREAM_EVENT;
 
     @Override
     public boolean supports(DomainMetadata metadata) {
@@ -160,23 +144,14 @@ public class KernelActionStreamHandlerGenerator implements KernelArtifactGenerat
                 .addJavadoc("event {@code $L}.\n", eventName)
                 .addJavadoc("<p>Slice 2 scaffold: emits a deterministic keep-alive then closes.\n")
                 .addJavadoc("Closes after $L keep-alives (~$Ls); the EV1 seam replaces the loop\n",
-                        KEEPALIVE_ITERATIONS,
-                        (KEEPALIVE_ITERATIONS * KEEPALIVE_INTERVAL_MILLIS) / 1000)
+                        KernelStreamScaffold.KEEPALIVE_ITERATIONS,
+                        KernelStreamScaffold.keepAliveWindowSeconds())
                 .addJavadoc("with a long-lived {@code @DomainEvent} subscription projecting each\n")
                 .addJavadoc("event into a {@link $T}.\n", STREAM_EVENT)
                 .addJavadoc("<p><b>DO NOT EDIT</b> - Regenerate from domain model.\n")
-                .addField(FieldSpec.builder(SLF4J_LOGGER, "LOG",
-                                Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
-                        .initializer("$T.getLogger($T.class)", SLF4J_LOGGER_FACTORY, selfType)
-                        .build())
-                .addField(FieldSpec.builder(TypeName.LONG, "KEEPALIVE_INTERVAL_MILLIS",
-                                Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
-                        .initializer("$LL", KEEPALIVE_INTERVAL_MILLIS)
-                        .build())
-                .addField(FieldSpec.builder(TypeName.INT, "KEEPALIVE_ITERATIONS",
-                                Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
-                        .initializer("$L", KEEPALIVE_ITERATIONS)
-                        .build())
+                .addFields(KernelStreamScaffold.commonFields(selfType))
+                // Per-action extra: the named SSE event this handler emits (the
+                // @Action.streamEventType, or the action name) — Slice-2 only.
                 .addField(FieldSpec.builder(ClassName.get(String.class), "STREAM_EVENT_TYPE",
                                 Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
                         .initializer("$S", eventName)
@@ -203,26 +178,14 @@ public class KernelActionStreamHandlerGenerator implements KernelArtifactGenerat
                 .addJavadoc("caught and swallowed. Back-pressure parks the virtual thread inside\n")
                 .addJavadoc("{@code emit}; this handler never buffers to a heap queue.\n")
                 .addStatement("LOG.debug($S)", "Opening " + entity + "." + action.name() + " action stream")
-                .addComment("TODO: bind domain-event bus producer (EV1) — subscribe to this")
-                .addComment("entity's @DomainEvent stream and project each event into a")
-                .addComment("StreamEvent.of(STREAM_EVENT_TYPE, json). Until EV1 payloads are rich,")
-                .addComment("the scaffold below emits a deterministic, finite keep-alive so the")
-                .addComment("handler compiles and runs end-to-end. Replace the loop, keep the")
-                .addComment("emit/close contract (let StreamClosedException propagate).")
-                .beginControlFlow("for (int i = 0; i < KEEPALIVE_ITERATIONS; i++)")
-                .addComment("Named keep-alive heartbeat (deterministic name, empty data). The")
-                .addComment("RxJS client parses named SSE frames, so it can dispatch the EV1")
-                .addComment("named event (STREAM_EVENT_TYPE = \"" + eventName + "\") once the seam lands.")
-                .addStatement("exchange.emit($T.of($S, $S))",
-                        STREAM_EVENT, "keep-alive", "")
-                .beginControlFlow("try")
-                .addStatement("$T.sleep(KEEPALIVE_INTERVAL_MILLIS)", THREAD)
-                .nextControlFlow("catch ($T e)", InterruptedException.class)
-                .addStatement("$T.currentThread().interrupt()", THREAD)
-                .addStatement("break")
-                .endControlFlow()
-                .endControlFlow()
-                .addStatement("exchange.close()")
+                // Shared deterministic keep-alive scaffold (EV1 seam + loop + close).
+                // Slice-2 heartbeat note: the RxJS-over-fetch client parses NAMED SSE
+                // frames, so it will dispatch the EV1 named event (STREAM_EVENT_TYPE)
+                // once the seam replaces this loop.
+                .addCode(KernelStreamScaffold.keepAliveScaffold(List.of(
+                        "Named keep-alive heartbeat (deterministic name, empty data). The",
+                        "RxJS client parses named SSE frames, so it can dispatch the EV1",
+                        "named event (STREAM_EVENT_TYPE = \"" + eventName + "\") once the seam lands.")))
                 .build();
     }
 
