@@ -92,6 +92,15 @@ describe('StreamClientGenerator.generate — route parity with the kernel handle
     const content = gen.generate(domain({ entityName: 'Order', realTimeApi: true }), CTX)!.content;
     expect(content).not.toContain('text/event-stream');
   });
+
+  it('documents the native-EventSource named-event limitation (onmessage = unnamed only)', () => {
+    // Honesty pin: onmessage drops named SSE frames (the scaffold's keep-alive,
+    // and future EV1 domain events). The emitted code must say so, so readers
+    // know named events need addEventListener(type, ...) — tracked for Slice 2/EV1.
+    const content = gen.generate(domain({ entityName: 'Order', realTimeApi: true }), CTX)!.content;
+    expect(content).toContain('onmessage fires only for unnamed SSE events');
+    expect(content).toContain('addEventListener');
+  });
 });
 
 // ---------- determinism ----------

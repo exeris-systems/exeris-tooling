@@ -16,10 +16,15 @@
  * connection on unsubscribe. It is deterministic: no timestamps / UUIDs / random
  * — same {@code DomainMetadata} yields byte-identical output (hard-constraint #3).
  *
- * Like the Java scaffold, this is forward-compatible with the EV1 producer: when
- * the server emits real {@code StreamEvent}s (named events + JSON data), the
- * client already delivers {@code MessageEvent} (with {@code .data} / {@code .type}),
- * so no client reshape is needed.
+ * Named-event limitation (native EventSource): {@code onmessage} fires ONLY for
+ * unnamed SSE frames ({@code event:} absent or {@code event: message}). The Java
+ * scaffold emits a NAMED {@code keep-alive} heartbeat, which the browser
+ * therefore ignores — correct for a heartbeat the client need not process. But
+ * when the EV1 producer emits real, NAMED domain events ({@code event:
+ * OrderCreated}, …), this client must grow a per-event-name
+ * {@code addEventListener(type, …)} (or the server must emit unnamed frames).
+ * That named-event adapter is tracked for Slice 2 / EV1; the route + service
+ * shape stay unchanged, so it is an additive follow-up, not a reshape.
  *
  * @author Exeris Team
  * @since 0.6.0
@@ -128,13 +133,18 @@ export class StreamClientGenerator implements CodeGenerator {
     lines.push(`  private readonly streamUrl = '${streamUrl}';`);
     lines.push(``);
     lines.push(`  /**`);
-    lines.push(`   * Opens the ${entityName} live-view SSE stream and surfaces each`);
-    lines.push(`   * server-sent message as a MessageEvent. The EventSource is closed`);
-    lines.push(`   * automatically when the subscription is torn down.`);
+    lines.push(`   * Opens the ${entityName} live-view SSE stream and surfaces each UNNAMED`);
+    lines.push(`   * server-sent message (event: absent or event: message) as a MessageEvent.`);
+    lines.push(`   * Named SSE events — the scaffold's 'keep-alive' heartbeat, and future EV1`);
+    lines.push(`   * domain events — are NOT delivered by onmessage; they require`);
+    lines.push(`   * addEventListener(type, ...) (tracked for Slice 2/EV1). The EventSource is`);
+    lines.push(`   * closed automatically when the subscription is torn down.`);
     lines.push(`   */`);
     lines.push(`  stream(): Observable<MessageEvent> {`);
     lines.push(`    return new Observable<MessageEvent>((subscriber) => {`);
     lines.push(`      const source = new EventSource(this.streamUrl, { withCredentials: true });`);
+    lines.push(`      // NOTE: onmessage fires only for unnamed SSE events; named domain`);
+    lines.push(`      // events (event: X) require addEventListener(X, ...) — Slice 2/EV1.`);
     lines.push(`      source.onmessage = (event) => subscriber.next(event);`);
     lines.push(`      source.onerror = (error) => subscriber.error(error);`);
     lines.push(`      return () => source.close();`);

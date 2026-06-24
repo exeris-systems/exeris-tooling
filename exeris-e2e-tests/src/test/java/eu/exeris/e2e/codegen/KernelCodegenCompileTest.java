@@ -29,12 +29,14 @@ import static org.assertj.core.api.Assertions.assertThat;
  * that no longer exist — this test does.
  *
  * <p>The strategy registers: Handler, Service, Repository, Event,
- * EventHandler, GraphSync, Saga, Flyway, OpenAPI, Client. Generated Java
- * imports {@code eu.exeris.kernel.spi.http.*},
+ * EventHandler, GraphSync, Saga, Flyway, OpenAPI, Client, StreamHandler. Generated
+ * Java imports {@code eu.exeris.kernel.spi.http.*},
  * {@code eu.exeris.kernel.spi.memory.*}, {@code eu.exeris.kernel.spi.events.*},
- * {@code eu.exeris.kernel.spi.graph.*}, {@code eu.exeris.kernel.spi.flow.*}, and
- * (ADR-036) {@code spi.http.HttpRequestBodyDecoder*} / {@code HttpRequestDecodingContext};
- * the real {@code exeris-kernel-spi:0.8.0} artifact (plus Jackson 3) is on
+ * {@code eu.exeris.kernel.spi.graph.*}, {@code eu.exeris.kernel.spi.flow.*},
+ * (ADR-036) {@code spi.http.HttpRequestBodyDecoder*} / {@code HttpRequestDecodingContext},
+ * and (ADR-043) the streaming SPI {@code spi.http.HttpStreamHandler} /
+ * {@code HttpStreamExchange} / {@code StreamEvent}; the real
+ * {@code exeris-kernel-spi:0.10.0-SNAPSHOT} artifact (plus Jackson 3) is on
  * the test classpath via {@code exeris-tooling-bom}. The emitted {@code *Client}
  * binds the tier-neutral {@code eu.exeris.kernel.core.http.client.KernelWebClient}
  * facade (ADR-034), stood in at that FQN by a test stub in this module so the

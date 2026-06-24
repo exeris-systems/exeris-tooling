@@ -94,4 +94,16 @@ Slice 1 settled the determinism-bounded ones with conservative defaults (recorde
 
 ## Next action
 
-Slice 1 has **landed** behind the two gates above (`feat/0.6.0-streaming-slice1-realtimeapi` → PR against `main`), under this DRAFT per the founder's go-ahead (2026-06-22). On **ACCEPT**: reserve the tooling ADR number in `exeris-docs/adr-index.md` and author the emitter-shape ADR (it fixes the now-shipped Slice-1 shape as the contract and scopes Slice 2). Slice 2 (per-action) is now tooling-only — the SDK `ActionMetadata` blocker cleared (2026-06-24); sequence it after the ADR lands.
+Slice 1 has **landed** behind the two gates above (`feat/0.6.0-streaming-slice1-realtimeapi` → PR #104 against `main`), under this DRAFT per the founder's go-ahead (2026-06-22). On **ACCEPT**: reserve the tooling ADR number in `exeris-docs/adr-index.md` and author the emitter-shape ADR (it fixes the now-shipped Slice-1 shape as the contract and scopes Slice 2). Slice 2 (per-action) is now tooling-only — the SDK `ActionMetadata` blocker cleared (2026-06-24); sequence it after the ADR lands.
+
+### Review follow-ups (PR #104)
+
+Addressed in PR #104:
+- **Named-event honesty** — native `EventSource.onmessage` receives only *unnamed* SSE frames; the scaffold's named `keep-alive` (and future EV1 named domain events) are dropped. The generated JSDoc/Javadoc on both sides now state this, an emitted `// NOTE` points at `addEventListener(type, …)`, and a spec assertion pins it. The **named-event adapter** (per-event-name listeners once EV1 emits named domain events) is the tracked Slice-2/EV1 work.
+- **Scaffold reconnect cadence** — the generated handler Javadoc now notes it closes after ~60s (`KEEPALIVE_ITERATIONS × KEEPALIVE_INTERVAL_MILLIS`), so a browser `EventSource` auto-reconnects on that cadence until the EV1 seam replaces the loop.
+- **Stale compile-gate Javadoc** — refreshed to the `0.10.0-SNAPSHOT` pin + the `StreamHandler` generator + the ADR-043 streaming SPI imports.
+
+Tracked, not in PR #104:
+- **Release gate — published-BOM SNAPSHOT.** `exeris-tooling-bom` pins kernel `0.10.0-SNAPSHOT`; a published BOM must not carry a `-SNAPSHOT` coordinate. Resolve to the released kernel `0.10.0` before tooling `0.6.0` ships (per the ecosystem "no SNAPSHOT deps at release" rule — release kernel first, pin final, then cut).
+- **Follow-up — `generateStreams` config flag.** Every other artifact category has a project-level opt-out (`generateServices`/`generateForms`/…); `STREAM` has only the entity-level `realTimeApi` gate. Add the flag for pattern consistency (non-blocking).
+- **Follow-up — cross-cutting route-derivation parity test.** The TS `streamUrl()` re-derives the route independently of the Java `effectivePath()`; add an e2e parity test over path-override + `apiVersion`-prefix combinations to protect Slice-2 refactors (non-blocking).

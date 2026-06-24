@@ -38,7 +38,10 @@ import javax.lang.model.element.Modifier;
  * fixed-iteration keep-alive loop with a <b>constant</b> interval
  * ({@code KEEPALIVE_INTERVAL_MILLIS}, no wall-clock / timestamp / random — hard
  * constraint #3) so the handler compiles and runs end-to-end before EV1 domain
- * event payloads are rich, then calls {@code close()}. The real producer is a
+ * event payloads are rich, then calls {@code close()}. With the current constants
+ * it closes after {@code KEEPALIVE_ITERATIONS * KEEPALIVE_INTERVAL_MILLIS} (~60s),
+ * so a browser {@code EventSource} auto-reconnects on that cadence until the EV1
+ * seam replaces the loop with a long-lived subscription. The real producer is a
  * clearly-marked seam ({@code // TODO: bind domain-event bus producer (EV1)})
  * to project the entity's {@code @DomainEvent}s into {@code StreamEvent}s; that
  * lands without reshaping the route or the TS client.
@@ -122,6 +125,10 @@ public class KernelStreamHandlerGenerator implements KernelArtifactGenerator {
                         HTTP_STREAM_HANDLER, streamPath)
                 .addJavadoc("via the router's {@code streamRoute(...)} (collection-level live view).\n")
                 .addJavadoc("<p>Slice 1 scaffold: emits a deterministic keep-alive then closes.\n")
+                .addJavadoc("Closes after $L keep-alives (~$Ls); a browser EventSource auto-reconnects\n",
+                        KEEPALIVE_ITERATIONS,
+                        (KEEPALIVE_ITERATIONS * KEEPALIVE_INTERVAL_MILLIS) / 1000)
+                .addJavadoc("on that cadence until the EV1 seam replaces the loop.\n")
                 .addJavadoc("The real producer (projecting this entity's {@code @DomainEvent}s into\n")
                 .addJavadoc("{@link $T}s) is the EV1 seam in {@link #handle($T)}.\n",
                         STREAM_EVENT, HTTP_STREAM_EXCHANGE)
@@ -166,7 +173,10 @@ public class KernelStreamHandlerGenerator implements KernelArtifactGenerator {
                 .addComment("handler compiles and runs end-to-end. Replace the loop, keep the")
                 .addComment("emit/close contract (let StreamClosedException propagate).")
                 .beginControlFlow("for (int i = 0; i < KEEPALIVE_ITERATIONS; i++)")
-                .addComment("Comment-only keep-alive frame: no data payload, deterministic name.")
+                .addComment("Named keep-alive heartbeat (deterministic name, empty data). The")
+                .addComment("browser EventSource.onmessage ignores named events — fine for a")
+                .addComment("heartbeat the client need not process; EV1 named domain events are")
+                .addComment("instead delivered via per-name addEventListener on the TS client.")
                 .addStatement("exchange.emit($T.of($S, $S))",
                         STREAM_EVENT, "keep-alive", "")
                 .beginControlFlow("try")
