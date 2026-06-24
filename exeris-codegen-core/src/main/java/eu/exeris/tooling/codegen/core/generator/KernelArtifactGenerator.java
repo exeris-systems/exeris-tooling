@@ -71,6 +71,7 @@ public interface KernelArtifactGenerator {
         REPOSITORY,
         SERVICE,
         CONTROLLER,
+        STREAM_HANDLER,  // SSE server-push handler (eu.exeris.kernel.spi.http.HttpStreamHandler), entity-level @ExerisDomain(realTimeApi)
         CLIENT,          // service-to-service client for HTTP-layer communication
         EVENT,           // domain-event publisher (eu.exeris.kernel.spi.events.*)
         EVENT_HANDLER,   // domain-event subscriber (eu.exeris.kernel.spi.events.EventBus)

@@ -307,6 +307,14 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                     serviceType, entityLower, serviceType, entityLower);
             method.addStatement("$T $LHandler = new $T($LService)",
                     handlerType, entityLower, handlerType, entityLower);
+            // ADR-043 Slice 1: instantiate the per-entity SSE live-view stream
+            // handler when @ExerisDomain(realTimeApi). Emitted by
+            // KernelStreamHandlerGenerator into the same .handler package.
+            if (domain.realTimeApi()) {
+                ClassName streamHandlerType = ClassName.get(handlerPkg, entity + "StreamHandler");
+                method.addStatement("$T $LStreamHandler = new $T()",
+                        streamHandlerType, entityLower, streamHandlerType);
+            }
         }
 
         // Router build
@@ -333,6 +341,14 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 method.addStatement("routerBuilder.route($T.POST, $S, $LHandler::$L)",
                         HTTP_METHOD, basePath + "/{id}/actions/" + NameCasing.kebab(action.name()),
                         entityLower, "handle" + NameCasing.pascal(action.name()));
+            }
+            // ADR-043 Slice 1: collection-level SSE live-view route. Uses the
+            // router's typed streamRoute(...), distinct from route(...) — a
+            // streaming route resolves to an HttpStreamExchange, never an
+            // HttpExchange. GET {base}/stream, no custom headers (TS EventSource).
+            if (domain.realTimeApi()) {
+                method.addStatement("routerBuilder.streamRoute($T.GET, $S, $LStreamHandler::handle)",
+                        HTTP_METHOD, basePath + "/stream", entityLower);
             }
         }
         method.addStatement("$T router = routerBuilder.build()", HTTP_ROUTER);

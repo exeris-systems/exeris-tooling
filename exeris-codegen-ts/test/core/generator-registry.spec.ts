@@ -447,30 +447,31 @@ describe('registerAllGenerators + createDefaultRegistry (wiring)', () => {
   // production set is supposed to provide should be present on the
   // resulting registry. Individual generator output is tested separately.
 
-  it('registerAllGenerators(reg) registers the production set (12 generators)', async () => {
+  it('registerAllGenerators(reg) registers the production set (13 generators)', async () => {
     const reg = new GeneratorRegistry();
     await registerAllGenerators(reg);
 
-    expect(reg.count).toBe(12);
+    // 13: the prior 12 + StreamClientGenerator (STREAM, ADR-043 Slice 1).
+    expect(reg.count).toBe(13);
   });
 
   it('createDefaultRegistry returns a registry with the production set already populated', async () => {
     const reg = await createDefaultRegistry();
 
-    expect(reg.count).toBe(12);
+    expect(reg.count).toBe(13);
     expect(reg).toBeInstanceOf(GeneratorRegistry);
   });
 
-  it('the production set covers TYPE, ENUM, SERVICE, STORE, FORM, LIST, DETAIL, SAGA, EVENT, GUARD, QUERY_BUILDER', async () => {
+  it('the production set covers TYPE, ENUM, SERVICE, STREAM, STORE, FORM, LIST, DETAIL, SAGA, EVENT, GUARD, QUERY_BUILDER', async () => {
     const reg = await createDefaultRegistry();
 
-    for (const t of ['TYPE', 'ENUM', 'SERVICE', 'STORE', 'FORM', 'LIST', 'DETAIL', 'SAGA', 'EVENT', 'GUARD', 'QUERY_BUILDER'] as const) {
+    for (const t of ['TYPE', 'ENUM', 'SERVICE', 'STREAM', 'STORE', 'FORM', 'LIST', 'DETAIL', 'SAGA', 'EVENT', 'GUARD', 'QUERY_BUILDER'] as const) {
       expect(reg.hasGenerator(t)).toBe(true);
     }
   });
 
   it('DETAIL artifact type has TWO generators registered (DetailGenerator + LandingPageGenerator)', async () => {
-    // The 12-generator production set covers 11 distinct artifact types
+    // The 13-generator production set covers 12 distinct artifact types
     // because both DetailGenerator and LandingPageGenerator declare
     // artifactType = 'DETAIL'. Pinning this invariant means a future
     // accidental double-registration of any OTHER generator (which would
