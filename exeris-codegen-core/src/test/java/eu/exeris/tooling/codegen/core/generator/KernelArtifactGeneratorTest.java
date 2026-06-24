@@ -92,6 +92,7 @@ class KernelArtifactGeneratorTest {
                 ArtifactType.REPOSITORY,
                 ArtifactType.SERVICE,
                 ArtifactType.CONTROLLER,
+                ArtifactType.STREAM_HANDLER,
                 ArtifactType.CLIENT,
                 ArtifactType.EVENT,
                 ArtifactType.EVENT_HANDLER,

@@ -7,6 +7,7 @@
 
 // Core generators
 export { generateService } from './service-gen.js';
+export { generateStreamClient, StreamClientGenerator } from './stream-client-gen.js';
 export { generateForm } from './form-gen.js';
 export { generateList } from './list-gen.js';
 export { generateStore, StoreGenerator } from './store-gen.js';

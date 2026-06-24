@@ -59,6 +59,12 @@ class KernelCodegenCompileTest {
                 .tenantScoped(true)
                 .audited(true)
                 .softDelete(true)
+                // ADR-043 Slice 1: drives KernelStreamHandlerGenerator + the
+                // Application generator's streamRoute(GET, "/orders/stream", ...)
+                // registration, so the gate compiles the SSE handler against the
+                // real kernel 0.10 streaming SPI (HttpStreamHandler /
+                // HttpStreamExchange / StreamEvent).
+                .realTimeApi(true)
                 .fields(List.of(
                         FieldMetadata.builder("orderNumber", "String")
                                 .required(true)
