@@ -335,6 +335,7 @@ export async function registerAllGenerators(registry: GeneratorRegistry = defaul
     { EnumGenerator },
     { ServiceGenerator },
     { StreamClientGenerator },
+    { ActionStreamClientGenerator },
     { StoreGenerator },
     { FormGenerator },
     { ListGenerator },
@@ -349,6 +350,7 @@ export async function registerAllGenerators(registry: GeneratorRegistry = defaul
     import('../generators/api/enum-gen.js'),
     import('../generators/angular/service-gen.js'),
     import('../generators/angular/stream-client-gen.js'),
+    import('../generators/angular/action-stream-client-gen.js'),
     import('../generators/angular/store-gen.js'),
     import('../generators/angular/form-gen.js'),
     import('../generators/angular/list-gen.js'),
@@ -365,6 +367,7 @@ export async function registerAllGenerators(registry: GeneratorRegistry = defaul
     .register(new TypeGenerator())
     .register(new ServiceGenerator())
     .register(new StreamClientGenerator())
+    .register(new ActionStreamClientGenerator())
     .register(new StoreGenerator())
     .register(new FormGenerator())
     .register(new ListGenerator())

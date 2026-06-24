@@ -97,6 +97,14 @@ export const ActionMetadataSchema = z.object({
   async: z.boolean().default(false),
   requiresAuth: z.boolean().default(true),
   permissions: z.array(z.string()).default([]),
+  // ADR-044 Slice 2: per-action SSE streaming. The AST twin of
+  // @Action(streaming=true) / @Action(streamEventType=…). When streaming is
+  // true, the Java side emits an HttpStreamHandler bound via streamRoute(POST,
+  // {base}/{id}/actions/{kebab}, …) and the TS side emits the RxJS
+  // streaming-action client (parity, strong-default #4). streamEventType is the
+  // named SSE event: carried on each frame (obligation 2).
+  streaming: z.boolean().default(false),
+  streamEventType: z.string().optional(),
 });
 
 export type ActionMetadata = z.infer<typeof ActionMetadataSchema>;

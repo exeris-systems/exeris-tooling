@@ -447,18 +447,19 @@ describe('registerAllGenerators + createDefaultRegistry (wiring)', () => {
   // production set is supposed to provide should be present on the
   // resulting registry. Individual generator output is tested separately.
 
-  it('registerAllGenerators(reg) registers the production set (13 generators)', async () => {
+  it('registerAllGenerators(reg) registers the production set (14 generators)', async () => {
     const reg = new GeneratorRegistry();
     await registerAllGenerators(reg);
 
-    // 13: the prior 12 + StreamClientGenerator (STREAM, ADR-043 Slice 1).
-    expect(reg.count).toBe(13);
+    // 14: 12 base + StreamClientGenerator (STREAM, ADR-043 Slice 1)
+    // + ActionStreamClientGenerator (STREAM, ADR-044 Slice 2).
+    expect(reg.count).toBe(14);
   });
 
   it('createDefaultRegistry returns a registry with the production set already populated', async () => {
     const reg = await createDefaultRegistry();
 
-    expect(reg.count).toBe(13);
+    expect(reg.count).toBe(14);
     expect(reg).toBeInstanceOf(GeneratorRegistry);
   });
 
@@ -471,19 +472,28 @@ describe('registerAllGenerators + createDefaultRegistry (wiring)', () => {
   });
 
   it('DETAIL artifact type has TWO generators registered (DetailGenerator + LandingPageGenerator)', async () => {
-    // The 13-generator production set covers 12 distinct artifact types
-    // because both DetailGenerator and LandingPageGenerator declare
-    // artifactType = 'DETAIL'. Pinning this invariant means a future
-    // accidental double-registration of any OTHER generator (which would
-    // also push count to 12 but on a different type) would be caught
-    // by this assertion failing to find exactly 2 generators under
-    // DETAIL.
+    // The 14-generator production set covers 12 distinct artifact types:
+    // DetailGenerator + LandingPageGenerator both declare 'DETAIL', and
+    // StreamClientGenerator (Slice 1) + ActionStreamClientGenerator (Slice 2)
+    // both declare 'STREAM'. Pinning these invariants means a future
+    // accidental double-registration of any OTHER generator would be caught
+    // by these assertions failing to find exactly the expected generators.
     const reg = await createDefaultRegistry();
     const detailGens = reg.getByArtifactType('DETAIL');
 
     expect(detailGens).toHaveLength(2);
     expect(detailGens.map(g => g.name).sort()).toEqual(
       ['DetailGenerator', 'LandingPageGenerator'].sort(),
+    );
+  });
+
+  it('STREAM artifact type has TWO generators registered (StreamClientGenerator + ActionStreamClientGenerator)', async () => {
+    const reg = await createDefaultRegistry();
+    const streamGens = reg.getByArtifactType('STREAM');
+
+    expect(streamGens).toHaveLength(2);
+    expect(streamGens.map(g => g.name).sort()).toEqual(
+      ['ActionStreamClientGenerator', 'StreamClientGenerator'].sort(),
     );
   });
 

@@ -124,7 +124,11 @@ class KernelApplicationGeneratorTest {
                 .contains("routerBuilder.route(HttpMethod.GET, \"/orders\", orderHandler::handleGetAll)")
                 .contains("routerBuilder.route(HttpMethod.POST, \"/orders\", orderHandler::handleCreate)")
                 .contains("routerBuilder.route(HttpMethod.PUT, \"/orders/{id}\", orderHandler::handleUpdate)")
-                .contains("handlerSlot.set(router::handle)")
+                // T23: the HttpRouter INSTANCE is published (not a router::handle
+                // lambda) so the kernel stream dispatcher's `instanceof HttpRouter`
+                // sees it and streamRoute(...) registrations resolve on a real boot.
+                .contains("handlerSlot.set(router)")
+                .doesNotContain("handlerSlot.set(router::handle)")
                 .contains("CountDownLatch shutdownLatch = new CountDownLatch(1)")
                 .contains("Runtime.getRuntime().addShutdownHook")
                 .doesNotContain("import javax.sql")
@@ -151,5 +155,41 @@ class KernelApplicationGeneratorTest {
                 // path matches OpenApiPathsBuilder byte-for-byte; verb is POST (as OpenAPI emits)
                 .contains("routerBuilder.route(HttpMethod.POST, \"/orders/{id}/actions/cancel\", orderHandler::handleCancel)")
                 .contains("routerBuilder.route(HttpMethod.POST, \"/orders/{id}/actions/mark-urgent\", orderHandler::handleMarkUrgent)");
+    }
+
+    @Test
+    @DisplayName("ADR-044 Slice 2: a @Action(streaming) action registers streamRoute(POST, …/actions/…) ONLY, "
+            + "instantiates the per-action stream handler, and does not also emit a respond-once route")
+    void shouldRegisterStreamingActionAsStreamRoute() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        DomainMetadata order = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .actions(List.of(
+                        ActionMetadata.builder("cancel").methodName("cancel").build(),
+                        ActionMetadata.builder("trackShipment").methodName("trackShipment")
+                                .streaming(true)
+                                .streamEventType("ShipmentMoved")
+                                .build()))
+                .build();
+
+        GeneratedFile lifecycle = gen.generateAll(List.of(order), "com.example.foundation")
+                .stream().filter(f -> "RuntimeLifecycle".equals(f.className()))
+                .findFirst().orElseThrow();
+
+        String content = lifecycle.content();
+        assertThat(content)
+                // per-action stream handler instantiated no-arg
+                .contains("OrderTrackShipmentStreamHandler orderTrackShipmentStreamHandler = "
+                        + "new OrderTrackShipmentStreamHandler()")
+                // registered via the typed streamRoute(...), POST, at the action path
+                .contains("routerBuilder.streamRoute(HttpMethod.POST, "
+                        + "\"/orders/{id}/actions/track-shipment\", orderTrackShipmentStreamHandler::handle)")
+                // non-streaming action keeps its respond-once route
+                .contains("routerBuilder.route(HttpMethod.POST, \"/orders/{id}/actions/cancel\", "
+                        + "orderHandler::handleCancel)");
+        // the streaming action does NOT also get a respond-once route(...)
+        assertThat(content)
+                .doesNotContain("routerBuilder.route(HttpMethod.POST, "
+                        + "\"/orders/{id}/actions/track-shipment\"");
     }
 }

@@ -2,6 +2,8 @@ package eu.exeris.tooling.codegen.core.generator;
 
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 
+import java.util.List;
+
 /**
  * Base interface for all kernel-target code generators.
  * <p>
@@ -35,6 +37,29 @@ public interface KernelArtifactGenerator {
      *         generator does not apply to {@code metadata}
      */
     GeneratedFile generate(DomainMetadata metadata);
+
+    /**
+     * Generate <em>zero or more</em> files for the given domain metadata.
+     *
+     * <p>The default delegates to {@link #generate(DomainMetadata)}: a
+     * {@code null} sentinel yields an empty list, a non-{@code null} result a
+     * singleton. Generators whose driver is a <em>collection</em> within the
+     * metadata (e.g.\ ADR-044 Slice 2: one {@code HttpStreamHandler} per
+     * {@code @Action(streaming)} action) override this to emit one file per
+     * element. Both the {@link GeneratorRegistry#generateAll} dispatch and the
+     * build-time pipeline iterate this method, so a multi-file generator does
+     * not need a bespoke call site.
+     *
+     * <p>Output ordering must be deterministic — iterate the source collection
+     * in its declared order (hard constraint #3).
+     *
+     * @param metadata the domain metadata to generate from
+     * @return the emitted files; never {@code null}, possibly empty
+     */
+    default List<GeneratedFile> generateMultiple(DomainMetadata metadata) {
+        GeneratedFile file = generate(metadata);
+        return file == null ? List.of() : List.of(file);
+    }
 
     /**
      * The type of artifact this generator produces.
@@ -71,7 +96,7 @@ public interface KernelArtifactGenerator {
         REPOSITORY,
         SERVICE,
         CONTROLLER,
-        STREAM_HANDLER,  // SSE server-push handler (eu.exeris.kernel.spi.http.HttpStreamHandler), entity-level @ExerisDomain(realTimeApi)
+        STREAM_HANDLER,  // SSE server-push handler (eu.exeris.kernel.spi.http.HttpStreamHandler): entity-level @ExerisDomain(realTimeApi) (ADR-043 Slice 1) + per-action @Action(streaming) (ADR-044 Slice 2)
         CLIENT,          // service-to-service client for HTTP-layer communication
         EVENT,           // domain-event publisher (eu.exeris.kernel.spi.events.*)
         EVENT_HANDLER,   // domain-event subscriber (eu.exeris.kernel.spi.events.EventBus)
