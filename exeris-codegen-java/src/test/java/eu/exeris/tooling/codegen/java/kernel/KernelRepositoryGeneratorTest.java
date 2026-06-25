@@ -166,15 +166,16 @@ class KernelRepositoryGeneratorTest {
                 .contains("entity.setUpdatedAt(now)")
                 // update() stamps only updatedAt automatically; createdAt is null-guarded.
                 .contains("entity.setUpdatedAt(Instant.now())")
-                // tenant_id binds via bindUuid; audited timestamps via null-guarded String round-trip
-                // (SPI 0.7.0 has no bindInstant — see KernelRepositoryGenerator emitBindCol).
+                // tenant_id binds via bindUuid; audited timestamps via native bindInstant,
+                // null-guarded with bindNull (T19 — kernel 0.10 SPI; TIMESTAMPTZ ↔ Instant
+                // through the driver, no ISO-String round-trip).
                 .contains("stmt.bindUuid(2, entity.getTenantId())")
-                .contains("stmt.bindString(3, entity.getCreatedAt() == null ? null : entity.getCreatedAt().toString())")
-                .contains("stmt.bindString(4, entity.getUpdatedAt() == null ? null : entity.getUpdatedAt().toString())")
-                // mapRow reads them back via the parallel Instant.parse / row.getUuid path.
+                .contains("if (entity.getCreatedAt() == null) stmt.bindNull(3); else stmt.bindInstant(3, entity.getCreatedAt());")
+                .contains("if (entity.getUpdatedAt() == null) stmt.bindNull(4); else stmt.bindInstant(4, entity.getUpdatedAt());")
+                // mapRow reads them back natively via row.getInstant.
                 .contains("entity.setTenantId(row.getUuid(2))")
-                .contains("entity.setCreatedAt(Instant.parse(v))")
-                .contains("entity.setUpdatedAt(Instant.parse(v))");
+                .contains("entity.setCreatedAt(row.getInstant(3))")
+                .contains("entity.setUpdatedAt(row.getInstant(4))");
     }
 
     @Test
@@ -233,7 +234,8 @@ class KernelRepositoryGeneratorTest {
                 .contains("entity.setCount(row.getInt(")
                 .contains("entity.setActive(row.getBoolean(")
                 .contains("entity.setRatio(row.getDouble(")
-                .contains("entity.setPlacedAt(Instant.parse(v))")
+                // T19: Instant reads natively; LocalDate still String-parses.
+                .contains("entity.setPlacedAt(row.getInstant(")
                 .contains("entity.setPlacedOn(LocalDate.parse(v))")
                 .contains("entity.setStatus(OrderStatus.valueOf(v))")
                 // Bind side — one binder per type-kind (with null guard for nullable types).
@@ -241,9 +243,11 @@ class KernelRepositoryGeneratorTest {
                 .contains("stmt.bindInt(")
                 .contains("stmt.bindBoolean(")
                 .contains("stmt.bindDouble(")
-                // Enum-like + Instant + LocalDate share the null-guarded toString binder.
+                // Enum-like + LocalDate share the null-guarded toString binder; Instant
+                // binds natively via bindInstant, null-guarded with bindNull (T19).
                 .contains("entity.getStatus() == null ? null : entity.getStatus().toString()")
-                .contains("entity.getPlacedAt() == null ? null : entity.getPlacedAt().toString()")
+                .contains("if (entity.getPlacedAt() == null) stmt.bindNull(")
+                .contains(", entity.getPlacedAt());")
                 .contains("entity.getPlacedOn() == null ? null : entity.getPlacedOn().toString()")
                 // Enum import — JavaPoet emits the ClassName for ENUM_LIKE.
                 .contains("import com.example.OrderStatus");
@@ -310,8 +314,10 @@ class KernelRepositoryGeneratorTest {
                 .contains("entity.getOrgId()")
                 .contains("entity.setOrgId(row.getUuid(")
                 .contains("entity.setModifiedAt(now)")
-                .contains("entity.setModifiedAt(Instant.parse(v))")
-                .contains("entity.getModifiedAt() == null ? null : entity.getModifiedAt().toString()")
+                // T19: native getInstant/bindInstant for the (overridden) updatedAt column.
+                .contains("entity.setModifiedAt(row.getInstant(")
+                .contains("if (entity.getModifiedAt() == null) stmt.bindNull(")
+                .contains(", entity.getModifiedAt());")
                 .contains("long expectedVersion = entity.getRev()")
                 .contains("entity.setRev(expectedVersion + 1L)")
                 .contains("entity.setRev(row.getLong(")
