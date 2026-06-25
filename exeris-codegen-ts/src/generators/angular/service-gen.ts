@@ -26,6 +26,7 @@ const KNOWN_JAVA_TYPES = new Set([
   'Long', 'java.lang.Long', 'long',
   'Double', 'java.lang.Double', 'double',
   'Float', 'java.lang.Float', 'float',
+  'Short', 'java.lang.Short', 'short',
   'Boolean', 'java.lang.Boolean', 'boolean',
   'BigDecimal', 'java.math.BigDecimal',
   'BigInteger', 'java.math.BigInteger',

@@ -58,20 +58,22 @@ export class FormGenerator implements CodeGenerator {
       return 'text';
     };
 
-    // T20c: which create fields are numeric. Reactive-form controls are seeded
-    // with '' (string), so getRawValue() is statically string-typed even though
-    // <input type="number"> yields a number at runtime — casting that straight to
-    // a numeric *Create/*Update DTO field is TS2352 (string→number). We coerce
-    // these fields explicitly on submit so the payload is both type-correct and
-    // semantically a number.
+    // T20c: which create fields carry a numeric DTO type. Reactive-form controls
+    // are seeded with '' (string), so getRawValue() is statically string-typed
+    // even though <input type="number"> yields a number at runtime — casting that
+    // straight to a numeric *Create/*Update DTO field is TS2352 (string→number).
+    // We coerce these fields explicitly on submit so the payload is both
+    // type-correct and semantically a number.
+    //
+    // The predicate MUST mirror the DTO type emitted by type-gen, i.e.
+    // DslMapper's tsType — NOT a hand-rolled java-type list. BigDecimal/BigInteger
+    // deliberately map to `string` (precision preservation, rendered as a text
+    // input), so coercing them to Number() would BOTH lose precision AND reintroduce
+    // a TS2352 (number→string DTO). Keying off ts? === 'number' keeps coercion in
+    // lock-step with whatever DslMapper decides is a JS number.
     const isNumericField = (field: FieldMetadata): boolean => {
-      const type = field.type;
-      return type === 'java.lang.Integer' || type === 'java.lang.Long'
-        || type === 'java.lang.Double' || type === 'java.lang.Float'
-        || type === 'java.lang.Short' || type === 'java.math.BigDecimal'
-        || type === 'java.math.BigInteger'
-        || type === 'int' || type === 'long' || type === 'double'
-        || type === 'float' || type === 'short';
+      const ts = DslMapper.mapType(field.type).tsType;
+      return ts === 'number' || ts === 'number | null';
     };
 
     const isLifecycleField = (name: string): boolean => {
