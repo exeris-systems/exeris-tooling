@@ -496,10 +496,12 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         String setter = "entity.set" + capitalize(col.javaName());
         switch (col.kind()) {
             case TENANT_ID -> map.addStatement("$L(row.getUuid($L))", setter, idx);
-            // SPI 0.7.0 has no getInstant — round-trip via ISO-8601 String.
-            case CREATED_AT, UPDATED_AT -> map.addCode(CodeBlock.of(
-                    "{ String v = row.getString($L); if (v != null) $L($T.parse(v)); }\n",
-                    idx, setter, INSTANT));
+            // T19: read the timestamp natively. The kernel 0.10 SPI added
+            // RowCursor.getInstant (returning null for a SQL NULL column), so the
+            // TIMESTAMPTZ column round-trips as an Instant through the driver — no
+            // brittle getString + Instant.parse, which broke on Postgres's non-ISO
+            // text rendering of timestamptz.
+            case CREATED_AT, UPDATED_AT -> map.addStatement("$L(row.getInstant($L))", setter, idx);
             case DELETED -> map.addStatement("$L(row.getBoolean($L))", setter, idx);
             case VERSION -> map.addStatement("$L(row.getLong($L))", setter, idx);
             case DOMAIN -> emitReadDomain(map, col, idx, ctx);
@@ -521,10 +523,10 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                     // No bindBigDecimal in SPI — round-trip via String.
                     "{ String v = row.getString($L); if (v != null) $L(new $T(v)); }\n",
                     idx, setter, BIG_DECIMAL));
-            case INSTANT_LIKE -> map.addCode(CodeBlock.of(
-                    // SPI 0.7.0 has no getInstant — round-trip via ISO-8601 String.
-                    "{ String v = row.getString($L); if (v != null) $L($T.parse(v)); }\n",
-                    idx, setter, INSTANT));
+            // T19: native getInstant (kernel 0.10 SPI) — TIMESTAMPTZ ↔ Instant via
+            // the driver, replacing the getString + Instant.parse round-trip that
+            // failed on Postgres's non-ISO timestamptz text rendering.
+            case INSTANT_LIKE -> map.addStatement("$L(row.getInstant($L))", setter, idx);
             case LOCAL_DATE -> map.addCode(CodeBlock.of(
                     "{ String v = row.getString($L); if (v != null) $L($T.parse(v)); }\n",
                     idx, setter, LOCAL_DATE));
@@ -574,12 +576,14 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         String cap = capitalize(col.javaName());
         switch (col.kind()) {
             case TENANT_ID -> body.addStatement("stmt.bindUuid($L, $L.get$L())", idx, src, cap);
-            // SPI 0.7.0 has no bindInstant — round-trip via ISO-8601 String. Null-
-            // guarded because update() is also bound to caller-supplied entities
-            // where createdAt may legitimately be null (e.g.\ partial update DTO).
-            case CREATED_AT, UPDATED_AT -> body.addStatement(
-                    "stmt.bindString($L, $L.get$L() == null ? null : $L.get$L().toString())",
-                    idx, src, cap, src, cap);
+            // T19: bind the timestamp natively (kernel 0.10 SPI bindInstant), so the
+            // TIMESTAMPTZ column round-trips via the driver instead of an ISO-8601
+            // String. Null-guarded via bindNull because update() is also bound to
+            // caller-supplied entities where createdAt may legitimately be null
+            // (e.g. a partial update DTO).
+            case CREATED_AT, UPDATED_AT -> body.add(
+                    "if ($L.get$L() == null) stmt.bindNull($L); else stmt.bindInstant($L, $L.get$L());\n",
+                    src, cap, idx, idx, src, cap);
             // boolean accessor is `is<Name>()` per the SDK getter convention.
             case DELETED -> body.addStatement("stmt.bindBoolean($L, $L.is$L())", idx, src, cap);
             case VERSION -> body.addStatement("stmt.bindLong($L, $L.get$L())", idx, src, cap);
@@ -608,9 +612,14 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
             case BIG_DECIMAL -> body.addStatement(
                     "stmt.bindString($L, $L == null ? null : $L.toPlainString())",
                     idx, getter, getter);
-            // SPI 0.7.0 has no bindInstant / bindLocalDate / enum binds —
-            // round-trip via String.toString(); null-guarded.
-            case INSTANT_LIKE, LOCAL_DATE, ENUM_LIKE ->
+            // T19: native bindInstant (kernel 0.10 SPI) for TIMESTAMPTZ columns;
+            // null-guarded via bindNull.
+            case INSTANT_LIKE -> body.add(
+                    "if ($L == null) stmt.bindNull($L); else stmt.bindInstant($L, $L);\n",
+                    getter, idx, idx, getter);
+            // SPI has no bindLocalDate / enum binds — round-trip via String.toString();
+            // null-guarded.
+            case LOCAL_DATE, ENUM_LIKE ->
                     body.addStatement(BIND_STRING_NULL_GUARDED, idx, getter, getter);
         }
     }

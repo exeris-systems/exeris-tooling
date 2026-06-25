@@ -131,7 +131,7 @@ cross-reference index, so it retains shipped items alongside open ones.
 - **T18** — build-safety: guard the T13 pruner on empty input + the capability-pass phase ordering.
 - **D1** — `requireJavaVersion` enforcer + README up-front.
 
-**Deferred to 0.7.0+:** **T12 + T17** (the cross-app mesh epic), **T9** (FK-constraint relationship graph), **T19** (typed `Instant` bind — gated on a kernel persistence-SPI change), the full **T2** Java test-emitter, and the **U2–U5** UI-depth cluster (U2 universal lists is the lead 0.7.0 item). EV1/EV2 per their own section.
+**Deferred to 0.7.0+:** **T12 + T17** (the cross-app mesh epic), **T9** (FK-constraint relationship graph), the full **T2** Java test-emitter, and the **U2–U5** UI-depth cluster (U2 universal lists is the lead 0.7.0 item). EV1/EV2 per their own section. (**T19** typed `Instant` bind — done in 0.6.0, the kernel persistence-SPI gate cleared in 0.10.)
 
 See the **Codegen completeness backlog** below for per-item detail.
 
@@ -181,7 +181,7 @@ See the **Codegen completeness backlog** below for per-item detail.
 | T11 | No fidelity/strict mode — annotation attributes set but consumed by no generator fail silently | Medium | 0.5.x |
 | T13 | Codegen emits per-entity output but never prunes it — a removed/renamed entity breaks the build | Medium | 0.5.x |
 | T18 | Capability validation × two-pass build deadlock; `mvn clean` + T13 prune wipes the committed L1 tree | Medium | 0.6.0 |
-| T19 | Repository binds `Instant` as ISO string but DDL declares `TIMESTAMPTZ` — round-trip latent-broken on real Postgres | Medium | 0.7.0 |
+| T19 | Repository binds `Instant` as ISO string but DDL declares `TIMESTAMPTZ` — round-trip latent-broken on real Postgres | Medium | **Done 0.6.0** (native `bindInstant`/`getInstant`, kernel 0.10 SPI) |
 | T7  | TS app-structure seams — per-entity path vs `app.routes` import mismatch breaks the build; hardcoded title/redirect | Medium | 0.6.0 |
 | T6  | Naive English pluralization (`colony → colonys`) in SQL tables + Angular routes | Low | 0.5.x |
 
@@ -420,7 +420,7 @@ See the **Codegen completeness backlog** below for per-item detail.
       generation. Both want a documented safe-build recipe (don't `clean` then `compile` in one shot),
       or an `exeris:bootstrap` mojo that seeds metadata first.
 
-- [ ] **T19 — Repository binds `Instant` as an ISO string against a `TIMESTAMPTZ` column (latent).**
+- [x] **T19 — Repository binds `Instant` as an ISO string against a `TIMESTAMPTZ` column (latent). FIXED (0.6.0).**
       The generated `*Repository` writes timestamps with `bindString(…, instant.toString())` and reads
       them back with `getString(…)` + `Instant.parse(…)`, but the generated Flyway DDL declares those
       columns (`created_at`/`updated_at` + any `Instant` `@Field`) as `TIMESTAMPTZ`. On a `VARCHAR` the
@@ -431,11 +431,15 @@ See the **Codegen completeness backlog** below for per-item detail.
       suite uses hand-written in-memory stores). Surfaced downstream by the first integration harness to
       run a generated repository against a real DB (H2 via a kernel-SPI→JDBC double) — which is exactly
       the generated-repo-against-a-DB coverage **T2** would add.
-      *Update:* bind/read timestamps via a to-be-added typed `bindInstant`/`getInstant` on the
-      persistence SPI against
-      the `TIMESTAMPTZ` column, not `bindString`/`getString`+`Instant.parse`. A generated-SQL-against-a-DB
-      round-trip in the e2e suite (pairs with **T2**) is what catches this class — the codegen e2e
-      currently asserts only on emitted *text*.
+      *Done (0.6.0):* the kernel-SPI gate cleared — kernel 0.10 added `PersistenceStatement.bindInstant` +
+      `RowCursor.getInstant`. The repository generator now binds/reads `Instant` columns (audited
+      `created_at`/`updated_at` + any `Instant` `@Field`) natively (`bindInstant`/`bindNull` write,
+      `getInstant` read), so the `TIMESTAMPTZ` column round-trips through the driver — no ISO-String
+      format mismatch. `LocalDate`/enum columns still String-round-trip (no typed SPI for those).
+      `KernelCodegenCompileTest` compiles the new repo against the real 0.10 SPI (the validated `id` +
+      audited-timestamp columns exercise the path). *Still tracked:* a generated-SQL-against-a-DB
+      round-trip in the e2e suite (pairs with **T2**) — the strongest catch for this class; the codegen
+      e2e still asserts on emitted *text* + compile-only.
 
 - [~] **T7 — TS app-structure seams (`exeris-codegen-ts`).** *Route resolution — done:* per-entity files
       now emit under `src/app/{components,services,types}` and `app.routes.ts` imports `./components/…`
