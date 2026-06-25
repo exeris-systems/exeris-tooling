@@ -424,7 +424,11 @@ class CodegenPipelineTest {
                     .contains("com.app.Billing")
                     .contains("com.app.Checkout")
                     .contains("\"satisfied\" : true")
-                    .contains("\"initOrder\"");
+                    .contains("\"initOrder\"")
+                    // ADR-024 obligation 7: the validation stamp the platform asserts
+                    .contains("\"stamp\"")
+                    .contains("\"validated\" : true")
+                    .contains("\"contentBinding\" : \"sha256:");
             // no domain bootstrap when there are no entities
             assertThat(outputDir.resolve("com/app/Application.java")).doesNotExist();
         }

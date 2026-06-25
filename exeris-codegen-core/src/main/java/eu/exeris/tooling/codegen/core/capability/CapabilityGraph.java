@@ -33,6 +33,7 @@ import java.util.TreeMap;
  */
 public record CapabilityGraph(
         int schemaVersion,
+        CompositionStamp stamp,
         List<CapabilityModuleDescriptor> modules,
         List<Resolution> resolutions,
         List<String> initOrder,
@@ -43,9 +44,13 @@ public record CapabilityGraph(
      * Manifest schema version. Any breaking shape change to the serialized manifest —
      * a new/removed/renamed record component on {@link CapabilityGraph} or
      * {@link Resolution}, or a changed field meaning — must bump this and ship a
-     * migration note for {@code cap-manifest.json} consumers (e.g. the T12 registry).
+     * migration note for {@code cap-manifest.json} consumers (e.g. the T12 registry,
+     * and the platform composition runtime that asserts {@link CompositionStamp}).
+     *
+     * <p>v2 (0.6.0) adds the ADR-024 {@link CompositionStamp} (validated verdict +
+     * composition version + content binding) the platform composition runtime asserts.
      */
-    public static final int SCHEMA_VERSION = 1;
+    public static final int SCHEMA_VERSION = 2;
 
     /**
      * One resolved {@code @Requires} edge.
@@ -69,13 +74,32 @@ public record CapabilityGraph(
     private record Provider(String module, String version) {}
 
     /**
-     * Resolves and validates the graph.
+     * Resolves and validates the graph, stamping it as {@link CompositionStamp#UNVERSIONED}.
+     * Equivalent to {@link #build(List, String)} with no composition version supplied.
      *
      * @param input the capability module descriptors (any order)
-     * @return the resolved, deterministic graph
+     * @return the resolved, deterministic, stamped graph
      * @throws CapabilityGraphException on unsatisfied requirement / version mismatch / cycle
      */
     public static CapabilityGraph build(List<CapabilityModuleDescriptor> input) {
+        return build(input, CompositionStamp.UNVERSIONED);
+    }
+
+    /**
+     * Resolves and validates the graph, then stamps it with the ADR-024
+     * {@link CompositionStamp} (obligation 7). The stamp is computed only on the
+     * validation-success path — an unsatisfied non-optional requirement, version mismatch,
+     * or cycle throws before any stamp is produced, so an emitted manifest is always
+     * {@code validated:true} over a content-bound cap set.
+     *
+     * @param input              the capability module descriptors (any order)
+     * @param compositionVersion the composition release identity (the
+     *                           {@code -Dexeris.composition.version} build seam), or
+     *                           {@code null}/blank for {@link CompositionStamp#UNVERSIONED}
+     * @return the resolved, deterministic, stamped graph
+     * @throws CapabilityGraphException on unsatisfied requirement / version mismatch / cycle
+     */
+    public static CapabilityGraph build(List<CapabilityModuleDescriptor> input, String compositionVersion) {
         List<CapabilityModuleDescriptor> modules = new ArrayList<>(input);
         modules.sort(Comparator.comparing(CapabilityModuleDescriptor::qualifiedName));
 
@@ -149,7 +173,10 @@ public record CapabilityGraph(
         warnings.sort(Comparator.naturalOrder());
         List<String> initOrder = topoOrder(modules, dependsOn);
 
-        return new CapabilityGraph(SCHEMA_VERSION, List.copyOf(modules),
+        // Validation passed (no throw above) → stamp the resolved, sorted cap set.
+        CompositionStamp stamp = CompositionStamp.of(modules, compositionVersion);
+
+        return new CapabilityGraph(SCHEMA_VERSION, stamp, List.copyOf(modules),
                 List.copyOf(resolutions), List.copyOf(initOrder), List.copyOf(warnings));
     }
 
