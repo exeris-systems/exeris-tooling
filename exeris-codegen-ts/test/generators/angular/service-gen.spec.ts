@@ -353,6 +353,54 @@ describe('ServiceGenerator enum-type collection + import line', () => {
     expect(content).not.toContain("from '../types/enums'");
   });
 
+  // T20a: an @Action param can itself be a domain enum. The generated method
+  // references it in the signature, so it must be imported — otherwise the
+  // emitted *.service.ts fails to compile with TS2304 (cannot find name).
+  it('action param whose type is a domain enum is imported (T20a)', () => {
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      fields: [field({ name: 'orderNumber', type: 'String' })],
+      actions: [{
+        name: 'setStatus',
+        params: [{ name: 'status', type: 'com.shop.domain.OrderStatus', required: true }],
+      }],
+    }), CTX)!.content;
+
+    expect(content).toContain("import type { OrderStatus } from '../types/enums';");
+  });
+
+  it('action param enum is deduped against a field enum of the same type (T20a)', () => {
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      fields: [field({ name: 'status', type: 'String', enumType: 'com.shop.OrderStatus' })],
+      actions: [{
+        name: 'setStatus',
+        params: [{ name: 'next', type: 'OrderStatus', required: true }],
+      }],
+    }), CTX)!.content;
+
+    const m = content.match(/import type \{ ([^}]+) \} from '\.\.\/types\/enums';/);
+    expect(m).not.toBeNull();
+    const names = m![1].split(',').map(s => s.trim());
+    expect(names.filter(n => n === 'OrderStatus')).toHaveLength(1);
+  });
+
+  it('non-enum action params (known Java types) add no enum import (T20a)', () => {
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      fields: [field({ name: 'orderNumber', type: 'String' })],
+      actions: [{
+        name: 'applyDiscount',
+        params: [
+          { name: 'percent', type: 'java.math.BigDecimal', required: true },
+          { name: 'reason', type: 'String', required: true },
+        ],
+      }],
+    }), CTX)!.content;
+
+    expect(content).not.toContain("from '../types/enums'");
+  });
+
   it('Multi-field dedup: same enum type referenced twice emits ONE import entry', () => {
     const content = gen.generate(domain({
       entityName: 'Order',

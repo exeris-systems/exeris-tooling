@@ -17,6 +17,31 @@ import type { BackendType } from '../../core/backend-strategy.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+// Java types that map to a built-in TS type and therefore never need an enum
+// import. Hoisted to a module constant so enum detection (run per field AND per
+// action param — T20a) doesn't reallocate the set on every type check.
+const KNOWN_JAVA_TYPES = new Set([
+  'String', 'java.lang.String',
+  'Integer', 'java.lang.Integer', 'int',
+  'Long', 'java.lang.Long', 'long',
+  'Double', 'java.lang.Double', 'double',
+  'Float', 'java.lang.Float', 'float',
+  'Short', 'java.lang.Short', 'short',
+  'Boolean', 'java.lang.Boolean', 'boolean',
+  'BigDecimal', 'java.math.BigDecimal',
+  'BigInteger', 'java.math.BigInteger',
+  'UUID', 'java.util.UUID',
+  'Instant', 'java.time.Instant',
+  'LocalDate', 'java.time.LocalDate',
+  'LocalDateTime', 'java.time.LocalDateTime',
+  'LocalTime', 'java.time.LocalTime',
+  'ZonedDateTime', 'java.time.ZonedDateTime',
+  'Duration', 'java.time.Duration',
+  'Period', 'java.time.Period',
+  'Date', 'java.util.Date',
+  'byte[]', 'Object', 'java.lang.Object',
+]);
+
 // Register Handlebars helpers
 Handlebars.registerHelper('eq', (a, b) => a === b);
 Handlebars.registerHelper('kebabCase', (str: string) => DslMapper.toKebabCase(str));
@@ -89,8 +114,8 @@ export class ServiceGenerator implements CodeGenerator {
     const pathSegment = metadata.path ?? `/${kebabName}s`;
     const apiPath = metadata.apiPath ?? (apiVersion ? `/${apiVersion}${pathSegment}` : pathSegment);
 
-    // Collect enum types for imports
-    const enumTypes = this.collectEnumTypes(metadata.fields);
+    // Collect enum types for imports (fields + action params — T20a)
+    const enumTypes = this.collectEnumTypes(metadata);
 
     const fields = metadata.fields.map((field) => {
       const mapping = DslMapper.mapType(field.type);
@@ -339,65 +364,70 @@ export class ServiceGenerator implements CodeGenerator {
   /**
    * Collects enum type names from fields.
    */
-  private collectEnumTypes(fields: FieldMetadata[]): string[] {
+  private collectEnumTypes(metadata: DomainMetadata): string[] {
     const enumTypes = new Set<string>();
 
-    const knownJavaTypes = new Set([
-      'String', 'java.lang.String',
-      'Integer', 'java.lang.Integer', 'int',
-      'Long', 'java.lang.Long', 'long',
-      'Double', 'java.lang.Double', 'double',
-      'Float', 'java.lang.Float', 'float',
-      'Boolean', 'java.lang.Boolean', 'boolean',
-      'BigDecimal', 'java.math.BigDecimal',
-      'BigInteger', 'java.math.BigInteger',
-      'UUID', 'java.util.UUID',
-      'Instant', 'java.time.Instant',
-      'LocalDate', 'java.time.LocalDate',
-      'LocalDateTime', 'java.time.LocalDateTime',
-      'LocalTime', 'java.time.LocalTime',
-      'ZonedDateTime', 'java.time.ZonedDateTime',
-      'Duration', 'java.time.Duration',
-      'Period', 'java.time.Period',
-      'Date', 'java.util.Date',
-      'byte[]', 'Object', 'java.lang.Object',
-    ]);
-
-    for (const field of fields) {
-      const javaType = field.type;
-
-      if (field.enumType) {
-        const simpleName = field.enumType.includes('.')
-          ? field.enumType.substring(field.enumType.lastIndexOf('.') + 1)
-          : field.enumType;
-        enumTypes.add(simpleName);
-        continue;
+    for (const field of metadata.fields) {
+      const detected = this.detectEnumType(field.type, field.enumType);
+      if (detected) {
+        enumTypes.add(detected);
       }
+    }
 
-      if (knownJavaTypes.has(javaType) || javaType.includes('<') || javaType.endsWith('[]')) {
-        continue;
-      }
-
-      const simpleName = javaType.includes('.')
-        ? javaType.substring(javaType.lastIndexOf('.') + 1)
-        : javaType;
-
-      if (knownJavaTypes.has(simpleName)) {
-        continue;
-      }
-
-      if (/^[A-Z][a-zA-Z0-9]*$/.test(simpleName)) {
-        if (simpleName.endsWith('Role') || simpleName.endsWith('Status') ||
-            simpleName.endsWith('Type') || simpleName.endsWith('Plan') ||
-            simpleName.endsWith('State') || simpleName.endsWith('Level') ||
-            simpleName.endsWith('Kind') || simpleName.endsWith('Mode') ||
-            simpleName.endsWith('Category') || javaType.includes('.domain.')) {
-          enumTypes.add(simpleName);
+    // T20a: an @Action param can itself be a domain enum. The generated service
+    // method references the enum in its signature, so it must be imported too —
+    // otherwise the emitted *.service.ts fails to compile (TS2304). Params carry
+    // no `enumType` hint (ActionParamMetadata lacks it), so detection here relies
+    // on the same name heuristic used for hint-less fields.
+    for (const action of metadata.actions ?? []) {
+      for (const param of action.params ?? []) {
+        const detected = this.detectEnumType(param.type);
+        if (detected) {
+          enumTypes.add(detected);
         }
       }
     }
 
     return [...enumTypes];
+  }
+
+  /**
+   * Decides whether a single Java type denotes a domain enum needing an import,
+   * returning its simple name (or null). When {@code enumHint} is present
+   * (fields carry {@code enumType}) it is authoritative; otherwise a
+   * conservative name heuristic is applied — the only signal available for
+   * action params, which have no enum hint.
+   */
+  private detectEnumType(javaType: string, enumHint?: string): string | null {
+    if (enumHint) {
+      return enumHint.includes('.')
+        ? enumHint.substring(enumHint.lastIndexOf('.') + 1)
+        : enumHint;
+    }
+
+    if (KNOWN_JAVA_TYPES.has(javaType) || javaType.includes('<') || javaType.endsWith('[]')) {
+      return null;
+    }
+
+    const simpleName = javaType.includes('.')
+      ? javaType.substring(javaType.lastIndexOf('.') + 1)
+      : javaType;
+
+    if (KNOWN_JAVA_TYPES.has(simpleName)) {
+      return null;
+    }
+
+    if (/^[A-Z][a-zA-Z0-9]*$/.test(simpleName)) {
+      if (simpleName.endsWith('Role') || simpleName.endsWith('Status') ||
+          simpleName.endsWith('Type') || simpleName.endsWith('Plan') ||
+          simpleName.endsWith('State') || simpleName.endsWith('Level') ||
+          simpleName.endsWith('Kind') || simpleName.endsWith('Mode') ||
+          simpleName.endsWith('Category') || javaType.includes('.domain.')) {
+        return simpleName;
+      }
+    }
+
+    return null;
   }
 }
 
