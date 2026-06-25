@@ -257,30 +257,51 @@ class KernelHandlerGeneratorTest {
                 .findFirst().orElseThrow().content();
 
         assertThat(handler)
-                // value read once into a local, then checked
-                .contains("var orderNumber = entity.getOrderNumber()")
+                // value read once into a prefixed local (T22 — collision-proof), then checked
+                .contains("var valOrderNumber = entity.getOrderNumber()")
                 // required → not-null on a reference type
-                .contains("if (orderNumber == null)")
+                .contains("if (valOrderNumber == null)")
                 // String length + pattern (null-guarded)
-                .contains("orderNumber != null && orderNumber.length() < 3")
-                .contains("orderNumber != null && orderNumber.length() > 20")
-                .contains("!orderNumber.matches(\"[A-Z0-9-]+\")")
+                .contains("valOrderNumber != null && valOrderNumber.length() < 3")
+                .contains("valOrderNumber != null && valOrderNumber.length() > 20")
+                .contains("!valOrderNumber.matches(\"[A-Z0-9-]+\")")
                 // BigDecimal min/max via compareTo
-                .contains("amount.compareTo(BigDecimal.valueOf(0L)) < 0")
-                .contains("amount.compareTo(BigDecimal.valueOf(1000L)) > 0")
+                .contains("valAmount.compareTo(BigDecimal.valueOf(0L)) < 0")
+                .contains("valAmount.compareTo(BigDecimal.valueOf(1000L)) > 0")
                 // boxed numeric → null-guarded direct comparison
-                .contains("weight != null && weight < 1L")
+                .contains("valWeight != null && valWeight < 1L")
                 // primitive numeric → direct comparison, no null guard
-                .contains("quantity < 1L")
-                .doesNotContain("quantity != null")
+                .contains("valQuantity < 1L")
+                .doesNotContain("valQuantity != null")
                 // rejects with 400, and the guard precedes BOTH service calls
                 // (create AND update each emit it before persisting)
                 .contains("exchange.respond(HttpStatus.BAD_REQUEST)")
                 .containsSubsequence(
-                        "var orderNumber = entity.getOrderNumber()",
+                        "var valOrderNumber = entity.getOrderNumber()",
                         "service.save(entity)",
-                        "var orderNumber = entity.getOrderNumber()",
+                        "var valOrderNumber = entity.getOrderNumber()",
                         "service.update(id, entity)");
+    }
+
+    @Test
+    @DisplayName("T22: a validated field whose name collides with a handler-scope var (id) gets a "
+            + "prefixed local — no `var id` clash with handleUpdate's path-id")
+    void shouldPrefixValidationLocalToAvoidPathIdCollision() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                // a validated field literally named `id` — the exact T22 collision
+                .fields(List.of(FieldMetadata.builder("id", "java.util.UUID").required(true).build()))
+                .build();
+
+        String handler = strategy.generate(metadata).stream()
+                .filter(f -> f.artifactType() == ArtifactType.CONTROLLER)
+                .findFirst().orElseThrow().content();
+
+        assertThat(handler)
+                // the validation local is prefixed; the bare `id` stays the path-id only
+                .contains("var valId = entity.getId()")
+                .contains("if (valId == null)")
+                .doesNotContain("var id = entity.getId()");
     }
 
     @Test

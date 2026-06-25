@@ -68,6 +68,15 @@ class KernelCodegenCompileTest {
                 // HttpStreamExchange / StreamEvent).
                 .realTimeApi(true)
                 .fields(List.of(
+                        // T22: a validated field literally named `id`. The handler's
+                        // validation guard reads each validated field into a local; if
+                        // that local were the bare field name it would emit
+                        // `var id = entity.getId()` and clash with handleUpdate's path-id
+                        // `UUID id` — uncompilable. This field makes javac the regression
+                        // guard for the prefixed-local fix.
+                        FieldMetadata.builder("id", "java.util.UUID")
+                                .required(true)
+                                .build(),
                         // T10: validation rules exercise the handler's server-side
                         // validation guard across every emitted shape — required
                         // null-check, String minLength/maxLength/pattern, and numeric

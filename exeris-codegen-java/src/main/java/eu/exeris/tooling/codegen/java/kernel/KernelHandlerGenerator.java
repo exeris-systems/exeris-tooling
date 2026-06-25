@@ -398,8 +398,14 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
             }
 
             // Read the value once into a local (avoids re-invoking the getter per check).
-            String v = f.name();
-            method.addStatement("var $L = entity.get$L()", v, NameCasing.pascal(f.name()));
+            // Prefix the local so it can NEVER collide with a handler-scope variable
+            // (id / idStr / entity / exchange / saved / updated): a field literally
+            // named `id` would otherwise emit `var id = …` and clash with handleUpdate's
+            // path-id `UUID id` — uncompilable (T22). "val" + Pascal is collision-proof
+            // and deterministic.
+            String pascal = NameCasing.pascal(f.name());
+            String v = "val" + pascal;
+            method.addStatement("var $L = entity.get$L()", v, pascal);
 
             if (nullCheck) {
                 reject400(method, v + " == null");
