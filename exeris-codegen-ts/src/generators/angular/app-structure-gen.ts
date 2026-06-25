@@ -110,7 +110,6 @@ function generateAppConfig(): string {
 import { ApplicationConfig, provideZonelessChangeDetection } from '@angular/core';
 import { provideRouter, withComponentInputBinding } from '@angular/router';
 import { provideHttpClient } from '@angular/common/http';
-import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
 
 import { routes } from './app.routes';
 
@@ -121,8 +120,8 @@ export const appConfig: ApplicationConfig = {
     provideRouter(routes, withComponentInputBinding()),
     // v22: fetch is the default HttpClient transport (the old explicit opt-in is now redundant).
     provideHttpClient(),
-    // Lazy-load animation code
-    provideAnimationsAsync(),
+    // Row enter/leave animations are native (animate.enter, Angular 22) — a
+    // compiler feature, so no @angular/animations package or provider is needed.
   ],
 };
 `;
@@ -318,7 +317,6 @@ function generatePackageJson(): string {
   },
   "private": true,
   "dependencies": {
-    "@angular/animations": "^22.0.0",
     "@angular/cdk": "^22.0.0",
     "@angular/common": "^22.0.0",
     "@angular/compiler": "^22.0.0",

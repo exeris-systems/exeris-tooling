@@ -103,25 +103,16 @@ export class ListGenerator implements CodeGenerator {
     lines.push(`import { CommonModule } from '@angular/common';`);
     lines.push(`import { RouterModule } from '@angular/router';`);
     lines.push(`import { FormsModule } from '@angular/forms';`);
-    lines.push(`import { trigger, transition, style, animate, query, stagger } from '@angular/animations';`);
     lines.push(`import { ${entityName}, ${entityName}Service, PageRequest, ${entityName}Filter, Page } from '../services/${kebabName}.service';`);
     lines.push(`import { Subject, debounceTime, distinctUntilChanged } from 'rxjs';`);
     lines.push(`import { takeUntilDestroyed } from '@angular/core/rxjs-interop';`);
     lines.push(``);
 
-    // Animations
-    lines.push(`// Animations`);
-    lines.push(`const listAnimation = trigger('listAnimation', [`);
-    lines.push(`  transition('* => *', [`);
-    lines.push(`    query(':enter', [`);
-    lines.push(`      style({ opacity: 0, transform: 'translateY(-10px)' }),`);
-    lines.push(`      stagger(50, [`);
-    lines.push(`        animate('200ms ease-out', style({ opacity: 1, transform: 'translateY(0)' }))`);
-    lines.push(`      ])`);
-    lines.push(`    ], { optional: true })`);
-    lines.push(`  ])`);
-    lines.push(`]);`);
-    lines.push(``);
+    // Row enter animation is native (animate.enter, Angular 22) — a compiler
+    // feature, not a directive, so it needs no @angular/animations import and no
+    // provider. The class below is applied to each row on insert and removed by
+    // Angular once the keyframe finishes; the per-row stagger is plain CSS
+    // (animation-delay bound to $index in the @for).
 
     // Component
     lines.push(`@Component({`);
@@ -129,7 +120,13 @@ export class ListGenerator implements CodeGenerator {
     lines.push(`  standalone: true,`);
     lines.push(`  imports: [CommonModule, RouterModule, FormsModule],`);
     lines.push(`  changeDetection: ChangeDetectionStrategy.OnPush,`);
-    lines.push(`  animations: [listAnimation],`);
+    lines.push(`  styles: [\``);
+    lines.push(`    .row-enter { animation: row-enter-kf 200ms ease-out both; }`);
+    lines.push(`    @keyframes row-enter-kf {`);
+    lines.push(`      from { opacity: 0; transform: translateY(-10px); }`);
+    lines.push(`      to { opacity: 1; transform: translateY(0); }`);
+    lines.push(`    }`);
+    lines.push(`  \`],`);
     lines.push(`  host: {`);
     lines.push(`    'class': 'block',`);
     lines.push(`  },`);
@@ -264,9 +261,9 @@ export class ListGenerator implements CodeGenerator {
     lines.push(`                  </th>`);
     lines.push(`                </tr>`);
     lines.push(`              </thead>`);
-    lines.push(`              <tbody [@listAnimation]="items().length" class="divide-y divide-gray-200 bg-white dark:divide-gray-700 dark:bg-gray-900">`);
-    lines.push(`                @for (item of items(); track item.${idField}) {`);
-    lines.push(`                  <tr class="hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors" [attr.data-testid]="'row-' + item.${idField}">`);
+    lines.push(`              <tbody class="divide-y divide-gray-200 bg-white dark:divide-gray-700 dark:bg-gray-900">`);
+    lines.push(`                @for (item of items(); track item.${idField}; let i = $index) {`);
+    lines.push(`                  <tr animate.enter="row-enter" [style.animation-delay.ms]="i * 50" class="hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors" [attr.data-testid]="'row-' + item.${idField}">`);
 
     // Data cells
     for (const col of listColumns) {
