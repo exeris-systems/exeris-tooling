@@ -403,8 +403,9 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
             // named `id` would otherwise emit `var id = …` and clash with handleUpdate's
             // path-id `UUID id` — uncompilable (T22). "val" + Pascal is collision-proof
             // and deterministic.
-            String v = "val" + NameCasing.pascal(f.name());
-            method.addStatement("var $L = entity.get$L()", v, NameCasing.pascal(f.name()));
+            String pascal = NameCasing.pascal(f.name());
+            String v = "val" + pascal;
+            method.addStatement("var $L = entity.get$L()", v, pascal);
 
             if (nullCheck) {
                 reject400(method, v + " == null");
