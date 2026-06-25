@@ -137,6 +137,59 @@ describe('FormGenerator emitted content — top-level structure', () => {
   });
 });
 
+// ---------- T20c: numeric coercion on submit ----------
+
+describe('FormGenerator onSubmit numeric coercion (T20c)', () => {
+  const gen = new FormGenerator();
+
+  it('numeric create field is coerced via Number() before the DTO cast', () => {
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      fields: [
+        field({ name: 'orderNumber', type: 'String' }),
+        field({ name: 'amount', type: 'java.math.BigDecimal' }),
+      ],
+    }), CTX)!.content;
+
+    // raw read + spread + per-field numeric coercion
+    expect(content).toContain('const raw = this.form.getRawValue();');
+    expect(content).toContain('...raw,');
+    expect(content).toContain("amount: raw.amount === null || raw.amount === '' ? null : Number(raw.amount),");
+    // String field is NOT coerced
+    expect(content).not.toContain('Number(raw.orderNumber)');
+    // still dispatches with the coerced `data`
+    expect(content).toContain('this.service.create(data as OrderCreate)');
+  });
+
+  it('every numeric java type variant is coerced', () => {
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      fields: [
+        field({ name: 'i', type: 'java.lang.Integer' }),
+        field({ name: 'l', type: 'java.lang.Long' }),
+        field({ name: 'd', type: 'java.lang.Double' }),
+        field({ name: 'f', type: 'java.lang.Float' }),
+        field({ name: 'p', type: 'int' }),
+      ],
+    }), CTX)!.content;
+
+    for (const name of ['i', 'l', 'd', 'f', 'p']) {
+      expect(content).toContain(`${name}: raw.${name} === null || raw.${name} === '' ? null : Number(raw.${name}),`);
+    }
+  });
+
+  it('no numeric create fields → plain getRawValue(), no coercion block', () => {
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      fields: [field({ name: 'orderNumber', type: 'String' })],
+    }), CTX)!.content;
+
+    expect(content).toContain('const data = this.form.getRawValue();');
+    expect(content).not.toContain('Number(raw.');
+    expect(content).not.toContain('const raw = this.form.getRawValue();');
+  });
+});
+
 // ---------- field filtering: lifecycle / system / inCreate / hidden / readOnly / computed ----------
 
 describe('FormGenerator field filtering for createFields', () => {

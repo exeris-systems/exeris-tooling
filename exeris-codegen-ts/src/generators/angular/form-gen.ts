@@ -58,6 +58,22 @@ export class FormGenerator implements CodeGenerator {
       return 'text';
     };
 
+    // T20c: which create fields are numeric. Reactive-form controls are seeded
+    // with '' (string), so getRawValue() is statically string-typed even though
+    // <input type="number"> yields a number at runtime — casting that straight to
+    // a numeric *Create/*Update DTO field is TS2352 (string→number). We coerce
+    // these fields explicitly on submit so the payload is both type-correct and
+    // semantically a number.
+    const isNumericField = (field: FieldMetadata): boolean => {
+      const type = field.type;
+      return type === 'java.lang.Integer' || type === 'java.lang.Long'
+        || type === 'java.lang.Double' || type === 'java.lang.Float'
+        || type === 'java.lang.Short' || type === 'java.math.BigDecimal'
+        || type === 'java.math.BigInteger'
+        || type === 'int' || type === 'long' || type === 'double'
+        || type === 'float' || type === 'short';
+    };
+
     const isLifecycleField = (name: string): boolean => {
       return ['active', 'onboardingStatus', 'onboardingStartedAt', 'onboardingCompletedAt', 'hierarchyLevel', 'parentTenantId', 'createdAt', 'updatedAt', 'deleted', 'version'].includes(name);
     };
@@ -280,7 +296,20 @@ export class FormGenerator implements CodeGenerator {
     lines.push('    this.saving.set(true);');
     lines.push('    this.error.set(null);');
     lines.push('');
-    lines.push('    const data = this.form.getRawValue();');
+    const numericCreateFields = createFields.filter(isNumericField);
+    if (numericCreateFields.length > 0) {
+      // T20c: coerce string-typed numeric controls to numbers so the payload
+      // matches the *Create/*Update DTO (kills the string→number TS2352 cast).
+      lines.push('    const raw = this.form.getRawValue();');
+      lines.push('    const data = {');
+      lines.push('      ...raw,');
+      for (const f of numericCreateFields) {
+        lines.push(`      ${f.name}: raw.${f.name} === null || raw.${f.name} === '' ? null : Number(raw.${f.name}),`);
+      }
+      lines.push('    };');
+    } else {
+      lines.push('    const data = this.form.getRawValue();');
+    }
     lines.push(`    const request$ = this.mode() === 'create' ? this.service.create(data as ${entityName}Create) : this.service.update(String(this.entity()!.${idField}), data as ${entityName}Update);`);
     lines.push('');
     lines.push('    request$.subscribe({');
