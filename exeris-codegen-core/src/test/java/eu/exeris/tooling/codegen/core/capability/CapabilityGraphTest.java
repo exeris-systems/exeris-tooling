@@ -156,5 +156,79 @@ class CapabilityGraphTest {
         assertThat(g1.modules()).isEqualTo(g2.modules());
         assertThat(g1.resolutions()).isEqualTo(g2.resolutions());
         assertThat(g1.initOrder()).isEqualTo(g2.initOrder());
+        // the stamp binding is part of the byte-stable manifest too
+        assertThat(g1.stamp().contentBinding()).isEqualTo(g2.stamp().contentBinding());
+    }
+
+    // ---------- ADR-024 composition validation stamp (obligation 7) ----------
+
+    @Test
+    @DisplayName("a validated graph carries a stamp: validated=true + a content binding")
+    void stampPresentOnSuccess() {
+        CapabilityGraph graph = CapabilityGraph.build(List.of(module("com.app.Mod",
+                List.of(ProvidesMetadata.of("com.api.Svc", "1.0")), List.of())));
+
+        assertThat(graph.stamp()).isNotNull();
+        assertThat(graph.stamp().validated()).isTrue();
+        assertThat(graph.stamp().contentBinding()).startsWith("sha256:");
+        // schemaVersion bumped to 2 when the stamp landed
+        assertThat(graph.schemaVersion()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("the content binding is deterministic (order-independent) and pins the cap set + versions")
+    void contentBindingDeterministicAndVersionSensitive() {
+        CapabilityModuleDescriptor p = module("com.app.Zeta",
+                List.of(ProvidesMetadata.of("com.api.S", "1.0")), List.of());
+        CapabilityModuleDescriptor c = module("com.app.Alpha",
+                List.of(), List.of(RequiresMetadata.of("com.api.S", "[1.0,2.0)")));
+
+        // same cap set, different input order → identical binding
+        String b1 = CapabilityGraph.build(List.of(p, c)).stamp().contentBinding();
+        String b2 = CapabilityGraph.build(List.of(c, p)).stamp().contentBinding();
+        assertThat(b1).isEqualTo(b2);
+
+        // bump a provided version → the binding changes (non-transferable: "this" composition)
+        CapabilityModuleDescriptor pV2 = module("com.app.Zeta",
+                List.of(ProvidesMetadata.of("com.api.S", "1.1")), List.of());
+        String b3 = CapabilityGraph.build(List.of(pV2, c)).stamp().contentBinding();
+        assertThat(b3).isNotEqualTo(b1);
+    }
+
+    @Test
+    @DisplayName("an unversioned @Provides binds as 'service@' — never the literal 'service@null'")
+    void unversionedProvideHasNoNullSuffix() {
+        // ProvidesMetadata.of(service) → version == null (review: the @null-suffix bug)
+        CapabilityGraph graph = CapabilityGraph.build(List.of(module("com.app.Mod",
+                List.of(ProvidesMetadata.of("com.api.Svc")), List.of())));
+
+        // the binding is still well-formed + deterministic, with no "null" leaking in
+        assertThat(graph.stamp().contentBinding()).matches("sha256:[0-9a-f]{64}");
+        String rebuilt = CapabilityGraph.build(List.of(module("com.app.Mod",
+                List.of(ProvidesMetadata.of("com.api.Svc")), List.of())))
+                .stamp().contentBinding();
+        assertThat(rebuilt).isEqualTo(graph.stamp().contentBinding());
+        // an unversioned provide must NOT collide with a literal version "null"
+        String literalNull = CapabilityGraph.build(List.of(module("com.app.Mod",
+                List.of(ProvidesMetadata.of("com.api.Svc", "null")), List.of())))
+                .stamp().contentBinding();
+        assertThat(literalNull).isNotEqualTo(graph.stamp().contentBinding());
+    }
+
+    @Test
+    @DisplayName("composition version: defaults to UNVERSIONED, or passes through the overload")
+    void compositionVersionPassthrough() {
+        CapabilityModuleDescriptor m = module("com.app.Mod",
+                List.of(ProvidesMetadata.of("com.api.Svc", "1.0")), List.of());
+
+        assertThat(CapabilityGraph.build(List.of(m)).stamp().compositionVersion())
+                .isEqualTo(CompositionStamp.UNVERSIONED);
+        assertThat(CapabilityGraph.build(List.of(m), "2.4.1").stamp().compositionVersion())
+                .isEqualTo("2.4.1");
+
+        // the composition version does NOT enter the content binding (it is a separate,
+        // independently-matched field per ADR-024 obligation 7)
+        assertThat(CapabilityGraph.build(List.of(m), "2.4.1").stamp().contentBinding())
+                .isEqualTo(CapabilityGraph.build(List.of(m), "9.9.9").stamp().contentBinding());
     }
 }

@@ -90,6 +90,21 @@ cross-reference index, so it retains shipped items alongside open ones.
 
 > Goal: TS/Angular generator is on equal footing with Java (currently treated as preview-grade).
 
+- [x] **ADR-024 composition validation stamp (obligation 7) — emitted into `cap-manifest.json`.** The
+      0.5.0 cap pass validated the graph (build-fail on unsatisfied `@Requires`/cycle/version) and emitted
+      the manifest, but the *explicit* stamp the platform composition runtime asserts (ADR-024 2026-06-17
+      "Validation Stamp Lifecycle" amendment, obligation 7) was never emitted — validation was only
+      *implicit* ("the build succeeded → a manifest exists"). *Done (0.6.0):* `CompositionStamp(validated,
+      compositionVersion, contentBinding)` stamped onto `CapabilityGraph` on the validation-success path and
+      serialized into `cap-manifest.json` (manifest `schemaVersion` 1→2). `contentBinding` =
+      `sha256:<hex>` over the sorted resolved cap set (modules + provided `service@version`) — the
+      non-transferable "*this* composition is valid" attestation. `compositionVersion` is a build input via
+      `-Dexeris.composition.version` (degrades to `0.0.0`). Deterministic (#3), Wall-safe (kernel stays
+      cap-blind, obligation 9). **Pulled forward from 0.7.0 to unblock Caps/SKU — it is the precondition for
+      a publishable-unit corpus** (the gate the presentation + marketplace RFCs wait on). *Cross-repo pair
+      (handoff issued):* the **platform composition runtime** assertion (obligation 8 — presence +
+      well-formedness + version-match + binding-match, no DAG re-resolution) is the consumer that makes this
+      non-inert; `exeris-platform` owns it. Contract pinned so platform asserts the exact emitted shape.
 - [ ] Add `exeris-codegen-ts` to a top-level orchestration target (Makefile or `frontend-maven-plugin`)
 - [ ] CI: separate npm-build job
 - [~] **Angular v22 migration** (emitted scaffold + idioms; scope T-C, phased A→B→C). **Done:**

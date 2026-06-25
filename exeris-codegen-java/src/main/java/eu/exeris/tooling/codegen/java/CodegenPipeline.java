@@ -9,6 +9,7 @@ import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.tooling.codegen.core.OutputWriter;
 import eu.exeris.tooling.codegen.core.capability.CapabilityGraph;
 import eu.exeris.tooling.codegen.core.capability.CapabilityModuleDescriptor;
+import eu.exeris.tooling.codegen.core.capability.CompositionStamp;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.core.generator.GeneratorRegistry;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
@@ -254,7 +255,13 @@ public final class CodegenPipeline {
     private int emitCapabilityManifest(List<CapabilityModuleDescriptor> capabilities,
                                        OutputWriter writer) throws IOException {
         LOG.log(Level.INFO, "Resolving capability graph (" + capabilities.size() + " module(s))");
-        CapabilityGraph graph = CapabilityGraph.build(capabilities);
+        // ADR-024 obligation 7: stamp the composition with its release identity. The
+        // version is a build input (not derivable from the graph) — the build/plugin sets
+        // -Dexeris.composition.version=${project.version}; absent, it degrades to
+        // CompositionStamp.UNVERSIONED. The content binding is always graph-derived.
+        String compositionVersion = System.getProperty("exeris.composition.version",
+                CompositionStamp.UNVERSIONED);
+        CapabilityGraph graph = CapabilityGraph.build(capabilities, compositionVersion);
         for (String warning : graph.warnings()) {
             LOG.log(Level.WARNING, "capability: " + warning);
         }
