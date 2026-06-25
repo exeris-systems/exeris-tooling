@@ -70,7 +70,10 @@ public record CompositionStamp(
             var body = m.moduleOrEmpty();
             if (body.provides() != null) {
                 body.provides().stream()
-                        .map(p -> p.service() + '@' + p.version())
+                        // version is nullable (unversioned @Provides → null; SDK maps blank → null).
+                        // Normalize null → "" so the canonical form is "service@" for an unversioned
+                        // provide — distinct from a literal version "null" and from "service@1.0".
+                        .map(p -> p.service() + '@' + (p.version() == null ? "" : p.version()))
                         .sorted()
                         .forEach(s -> canonical.append("  provides ").append(s).append('\n'));
             }

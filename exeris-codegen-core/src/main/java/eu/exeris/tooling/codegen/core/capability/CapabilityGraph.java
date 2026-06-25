@@ -10,6 +10,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.TreeMap;
 
@@ -39,6 +40,16 @@ public record CapabilityGraph(
         List<String> initOrder,
         List<String> warnings
 ) {
+
+    /**
+     * Every graph is produced by {@link #build} on the validation-success path, so it is
+     * always stamped. The guard makes that invariant explicit — a {@code null} stamp (e.g.
+     * a stampless v1 manifest deserialized into this record) fails fast at construction
+     * rather than NPE-ing later in {@code stamp().validated()}.
+     */
+    public CapabilityGraph {
+        Objects.requireNonNull(stamp, "stamp");
+    }
 
     /**
      * Manifest schema version. Any breaking shape change to the serialized manifest —

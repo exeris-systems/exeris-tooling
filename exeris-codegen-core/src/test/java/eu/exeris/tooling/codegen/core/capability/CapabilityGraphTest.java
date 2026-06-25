@@ -156,6 +156,8 @@ class CapabilityGraphTest {
         assertThat(g1.modules()).isEqualTo(g2.modules());
         assertThat(g1.resolutions()).isEqualTo(g2.resolutions());
         assertThat(g1.initOrder()).isEqualTo(g2.initOrder());
+        // the stamp binding is part of the byte-stable manifest too
+        assertThat(g1.stamp().contentBinding()).isEqualTo(g2.stamp().contentBinding());
     }
 
     // ---------- ADR-024 composition validation stamp (obligation 7) ----------
@@ -191,6 +193,26 @@ class CapabilityGraphTest {
                 List.of(ProvidesMetadata.of("com.api.S", "1.1")), List.of());
         String b3 = CapabilityGraph.build(List.of(pV2, c)).stamp().contentBinding();
         assertThat(b3).isNotEqualTo(b1);
+    }
+
+    @Test
+    @DisplayName("an unversioned @Provides binds as 'service@' — never the literal 'service@null'")
+    void unversionedProvideHasNoNullSuffix() {
+        // ProvidesMetadata.of(service) → version == null (review: the @null-suffix bug)
+        CapabilityGraph graph = CapabilityGraph.build(List.of(module("com.app.Mod",
+                List.of(ProvidesMetadata.of("com.api.Svc")), List.of())));
+
+        // the binding is still well-formed + deterministic, with no "null" leaking in
+        assertThat(graph.stamp().contentBinding()).matches("sha256:[0-9a-f]{64}");
+        String rebuilt = CapabilityGraph.build(List.of(module("com.app.Mod",
+                List.of(ProvidesMetadata.of("com.api.Svc")), List.of())))
+                .stamp().contentBinding();
+        assertThat(rebuilt).isEqualTo(graph.stamp().contentBinding());
+        // an unversioned provide must NOT collide with a literal version "null"
+        String literalNull = CapabilityGraph.build(List.of(module("com.app.Mod",
+                List.of(ProvidesMetadata.of("com.api.Svc", "null")), List.of())))
+                .stamp().contentBinding();
+        assertThat(literalNull).isNotEqualTo(graph.stamp().contentBinding());
     }
 
     @Test
