@@ -210,7 +210,7 @@ class KernelRepositoryGeneratorTest {
     }
 
     @Test
-    @DisplayName("Type matrix: Long / Integer / Boolean / Double / Instant / LocalDate / enum-like all bind + read correctly")
+    @DisplayName("Type matrix: Long / Integer / Boolean / Double / Instant / LocalDateTime / LocalDate / enum-like all bind + read correctly")
     void shouldCoverEveryDomainTypeKind() {
         DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
                 .fields(List.of(
@@ -219,6 +219,7 @@ class KernelRepositoryGeneratorTest {
                         FieldMetadata.builder("active", "Boolean").build(),
                         FieldMetadata.builder("ratio", "Double").build(),
                         FieldMetadata.builder("placedAt", "Instant").build(),
+                        FieldMetadata.builder("scheduledFor", "LocalDateTime").build(),
                         FieldMetadata.builder("placedOn", "LocalDate").build(),
                         FieldMetadata.builder("status", "com.example.OrderStatus").build()))
                 .build();
@@ -236,6 +237,8 @@ class KernelRepositoryGeneratorTest {
                 .contains("entity.setRatio(row.getDouble(")
                 // T19: Instant reads natively; LocalDate still String-parses.
                 .contains("entity.setPlacedAt(row.getInstant(")
+                // T19b: LocalDateTime bridges through getInstant at the UTC offset.
+                .contains("entity.setScheduledFor(LocalDateTime.ofInstant(v, ZoneOffset.UTC))")
                 .contains("entity.setPlacedOn(LocalDate.parse(v))")
                 .contains("entity.setStatus(OrderStatus.valueOf(v))")
                 // Bind side — one binder per type-kind (with null guard for nullable types).
@@ -248,6 +251,9 @@ class KernelRepositoryGeneratorTest {
                 .contains("entity.getStatus() == null ? null : entity.getStatus().toString()")
                 .contains("if (entity.getPlacedAt() == null) stmt.bindNull(")
                 .contains(", entity.getPlacedAt());")
+                // T19b: LocalDateTime binds natively via bindInstant at the UTC offset.
+                .contains("if (entity.getScheduledFor() == null) stmt.bindNull(")
+                .contains(", entity.getScheduledFor().toInstant(ZoneOffset.UTC));")
                 .contains("entity.getPlacedOn() == null ? null : entity.getPlacedOn().toString()")
                 // Enum import — JavaPoet emits the ClassName for ENUM_LIKE.
                 .contains("import com.example.OrderStatus");

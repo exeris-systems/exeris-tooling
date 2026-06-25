@@ -101,6 +101,13 @@ class KernelCodegenCompileTest {
                                 .build(),
                         FieldMetadata.builder("tags", "List<java.util.UUID>")
                                 .build(),
+                        // T19b: a LocalDateTime field. The Repository generator must
+                        // bridge it through the native getInstant/bindInstant SPI at the
+                        // UTC offset — the kernel has no typed LocalDateTime accessor, so
+                        // emitting row.getInstant() straight into a LocalDateTime setter
+                        // would not compile. This makes javac the regression guard.
+                        FieldMetadata.builder("scheduledFor", "java.time.LocalDateTime")
+                                .build(),
                         // Enum field: exercises the Repository generator's
                         // fall-through emit path. Must be FQCN so JavaPoet
                         // can inject the matching import.
@@ -184,6 +191,7 @@ class KernelCodegenCompileTest {
 
                 import java.math.BigDecimal;
                 import java.time.Instant;
+                import java.time.LocalDateTime;
                 import java.util.List;
                 import java.util.UUID;
 
@@ -194,6 +202,7 @@ class KernelCodegenCompileTest {
                     private String customerName;
                     private BigDecimal amount;
                     private List<UUID> tags;
+                    private LocalDateTime scheduledFor;
                     private OrderStatus status;
                     private UUID tenantId;
                     private Instant createdAt;
@@ -214,6 +223,9 @@ class KernelCodegenCompileTest {
 
                     public List<UUID> getTags() { return tags; }
                     public void setTags(List<UUID> tags) { this.tags = tags; }
+
+                    public LocalDateTime getScheduledFor() { return scheduledFor; }
+                    public void setScheduledFor(LocalDateTime scheduledFor) { this.scheduledFor = scheduledFor; }
 
                     public OrderStatus getStatus() { return status; }
                     public void setStatus(OrderStatus status) { this.status = status; }

@@ -59,6 +59,8 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     private static final ClassName ARRAY_LIST = ClassName.get("java.util", "ArrayList");
     private static final ClassName INSTANT = ClassName.get("java.time", "Instant");
     private static final ClassName LOCAL_DATE = ClassName.get("java.time", "LocalDate");
+    private static final ClassName LOCAL_DATE_TIME = ClassName.get("java.time", "LocalDateTime");
+    private static final ClassName ZONE_OFFSET = ClassName.get("java.time", "ZoneOffset");
     private static final ClassName BIG_DECIMAL = ClassName.get("java.math", "BigDecimal");
     private static final ClassName SLF4J_LOGGER = ClassName.get("org.slf4j", "Logger");
     private static final ClassName SLF4J_LOGGER_FACTORY = ClassName.get("org.slf4j", "LoggerFactory");
@@ -104,7 +106,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     private static final Set<String> BIG_DECIMAL_TYPES = Set.of("BigDecimal", "java.math.BigDecimal");
 
     private enum DomainTypeKind {
-        LIST, UUID, STRING, LONG, INT, BOOL, DOUBLE, BIG_DECIMAL, INSTANT_LIKE, LOCAL_DATE, ENUM_LIKE
+        LIST, UUID, STRING, LONG, INT, BOOL, DOUBLE, BIG_DECIMAL, INSTANT_LIKE, LOCAL_DATE_TIME, LOCAL_DATE, ENUM_LIKE
     }
 
     private static DomainTypeKind classifyDomainType(String type) {
@@ -116,7 +118,9 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         if (BOOL_TYPES.contains(type)) return DomainTypeKind.BOOL;
         if (DOUBLE_TYPES.contains(type)) return DomainTypeKind.DOUBLE;
         if (BIG_DECIMAL_TYPES.contains(type)) return DomainTypeKind.BIG_DECIMAL;
-        if (type.contains("Instant") || type.contains("LocalDateTime")) return DomainTypeKind.INSTANT_LIKE;
+        if (type.contains("Instant")) return DomainTypeKind.INSTANT_LIKE;
+        // Check LocalDateTime before LocalDate ("LocalDateTime".contains("LocalDate")).
+        if (type.contains("LocalDateTime")) return DomainTypeKind.LOCAL_DATE_TIME;
         if (type.contains("LocalDate")) return DomainTypeKind.LOCAL_DATE;
         return DomainTypeKind.ENUM_LIKE;
     }
@@ -527,6 +531,12 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
             // the driver, replacing the getString + Instant.parse round-trip that
             // failed on Postgres's non-ISO timestamptz text rendering.
             case INSTANT_LIKE -> map.addStatement("$L(row.getInstant($L))", setter, idx);
+            // T19b: LocalDateTime has no typed SPI accessor; the column is TIMESTAMPTZ,
+            // so bridge through the native getInstant at the UTC offset (null-guarded —
+            // getInstant returns null for a SQL NULL column).
+            case LOCAL_DATE_TIME -> map.addCode(CodeBlock.of(
+                    "{ $T v = row.getInstant($L); if (v != null) $L($T.ofInstant(v, $T.UTC)); }\n",
+                    INSTANT, idx, setter, LOCAL_DATE_TIME, ZONE_OFFSET));
             case LOCAL_DATE -> map.addCode(CodeBlock.of(
                     "{ String v = row.getString($L); if (v != null) $L($T.parse(v)); }\n",
                     idx, setter, LOCAL_DATE));
@@ -617,6 +627,11 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
             case INSTANT_LIKE -> body.add(
                     "if ($L == null) stmt.bindNull($L); else stmt.bindInstant($L, $L);\n",
                     getter, idx, idx, getter);
+            // T19b: LocalDateTime → TIMESTAMPTZ via the native bindInstant at the UTC
+            // offset (the read side reverses it with ofInstant(..., UTC)); null-guarded.
+            case LOCAL_DATE_TIME -> body.add(
+                    "if ($L == null) stmt.bindNull($L); else stmt.bindInstant($L, $L.toInstant($T.UTC));\n",
+                    getter, idx, idx, getter, ZONE_OFFSET);
             // SPI has no bindLocalDate / enum binds — round-trip via String.toString();
             // null-guarded.
             case LOCAL_DATE, ENUM_LIKE ->
