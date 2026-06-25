@@ -83,7 +83,7 @@ describe('ListGenerator.generate — emit path + hidden-skip', () => {
 describe('ListGenerator emitted content — top-level structure', () => {
   const gen = new ListGenerator();
 
-  it('imports Component / signals + CommonModule + RouterModule + FormsModule + animations + service + rxjs operators', () => {
+  it('imports Component / signals + CommonModule + RouterModule + FormsModule + service + rxjs operators (no @angular/animations)', () => {
     const content = gen.generate(domain({ entityName: 'Order' }), CTX)!.content;
 
     expect(content).toContain("import {");
@@ -94,20 +94,33 @@ describe('ListGenerator emitted content — top-level structure', () => {
     expect(content).toContain("import { CommonModule } from '@angular/common';");
     expect(content).toContain("import { RouterModule } from '@angular/router';");
     expect(content).toContain("import { FormsModule } from '@angular/forms';");
-    expect(content).toContain("import { trigger, transition, style, animate, query, stagger } from '@angular/animations';");
     expect(content).toContain("import { Order, OrderService, PageRequest, OrderFilter, Page } from '../services/order.service';");
     expect(content).toContain("import { Subject, debounceTime, distinctUntilChanged } from 'rxjs';");
     expect(content).toContain("import { takeUntilDestroyed } from '@angular/core/rxjs-interop';");
+    // B4: @angular/animations is deprecated in v22 — row enter is native animate.enter (no import).
+    expect(content).not.toContain("from '@angular/animations'");
   });
 
-  it('emits @Component decorator with app-<kebab>-list selector + OnPush + listAnimation + host class', () => {
+  it('emits @Component decorator with app-<kebab>-list selector + OnPush + row-enter styles + host class (no animations metadata)', () => {
     const content = gen.generate(domain({ entityName: 'OrderLine' }), CTX)!.content;
 
     expect(content).toContain("selector: 'app-order-line-list'");
     expect(content).toContain('standalone: true');
     expect(content).toContain('ChangeDetectionStrategy.OnPush');
-    expect(content).toContain('animations: [listAnimation]');
+    // B4: native animate.enter — keyframes live in component styles, not an animations: [] trigger array.
+    expect(content).not.toContain('animations: [listAnimation]');
+    expect(content).toContain('.row-enter { animation: row-enter-kf 200ms ease-out both; }');
+    expect(content).toContain('@keyframes row-enter-kf {');
     expect(content).toContain("'class': 'block'");
+  });
+
+  // B4: native enter animation wiring on the row (animate.enter + CSS-delay stagger).
+  it('rows use native animate.enter with an $index-driven stagger; tbody drops the trigger binding', () => {
+    const content = gen.generate(domain({ entityName: 'Order' }), CTX)!.content;
+
+    expect(content).toContain('@for (item of items(); track item.id; let i = $index) {');
+    expect(content).toContain('<tr animate.enter="row-enter" [style.animation-delay.ms]="i * 50"');
+    expect(content).not.toContain('[@listAnimation]');
   });
 
   it('ListComponent class declares the documented signal surface (page / size / sort / filter / data / isLoading / error + computed items/totals)', () => {
@@ -374,7 +387,7 @@ describe('ListGenerator systemFields.idField alias propagation', () => {
   it('default idField "id" used in track / data-testid attrs / sortField initial / delete dispatch', () => {
     const content = gen.generate(domain({ entityName: 'Order' }), CTX)!.content;
 
-    expect(content).toContain('@for (item of items(); track item.id)');
+    expect(content).toContain('@for (item of items(); track item.id; let i = $index)');
     expect(content).toContain("'row-' + item.id");
     expect(content).toContain("readonly sortField = signal<string>('id');");
     expect(content).toContain('this.service.delete(String(item.id))');
@@ -386,7 +399,7 @@ describe('ListGenerator systemFields.idField alias propagation', () => {
       systemFields: { idField: 'uuid' },
     }), CTX)!.content;
 
-    expect(content).toContain('@for (item of items(); track item.uuid)');
+    expect(content).toContain('@for (item of items(); track item.uuid; let i = $index)');
     expect(content).toContain("'row-' + item.uuid");
     expect(content).toContain("readonly sortField = signal<string>('uuid');");
     expect(content).toContain('this.service.delete(String(item.uuid))');

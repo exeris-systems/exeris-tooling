@@ -118,6 +118,9 @@ describe('generateAppStructure — static skeleton', () => {
     // Phase A: fetch is the default HttpClient transport in v22 — withFetch() is gone.
     expect(c.content).toContain('provideHttpClient()');
     expect(c.content).not.toContain('withFetch');
+    // B4: native animate.enter needs no animations provider — @angular/animations is dropped.
+    expect(c.content).not.toContain('provideAnimationsAsync');
+    expect(c.content).not.toContain("from '@angular/platform-browser/animations/async'");
   });
 
   it('package.json pins the Angular v22 toolchain (Phase A compat bump)', () => {
@@ -130,6 +133,8 @@ describe('generateAppStructure — static skeleton', () => {
     // v22 requires TypeScript 6 (>=6.0 <6.1) and drops 5.9.
     expect(pkg.content).toContain('"typescript": "~6.0.0"');
     expect(pkg.content).not.toContain('~5.9');
+    // B4: @angular/animations is deprecated in v22 — the dep is dropped (native animate.enter).
+    expect(pkg.content).not.toContain('@angular/animations');
   });
 
   it('Phase B scaffold cleanup: no platform-browser-dynamic, Node floor 22, @angular/build builder', () => {
