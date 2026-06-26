@@ -44,6 +44,13 @@ import java.util.Set;
  *   <li>{@code List<X>} fields are persisted as JSON via Jackson 3
  *       ({@code tools.jackson.databind.ObjectMapper}); {@code BigDecimal}
  *       is bound as String (no {@code bindBigDecimal} in SPI).</li>
+ *   <li>{@code Instant} binds/reads natively via {@code bindInstant} /
+ *       {@code RowCursor.getInstant} (TIMESTAMPTZ). {@code LocalDateTime}
+ *       has no typed SPI accessor, so it is bridged through that native
+ *       {@code Instant} path <b>at {@code ZoneOffset.UTC}</b> — the column is
+ *       TIMESTAMPTZ and the stored value is the UTC-offset instant of the
+ *       wall-clock time, reversed symmetrically on read. Callers must treat
+ *       persisted {@code LocalDateTime} values as UTC.</li>
  * </ul>
  *
  * @implNote Emission is JavaPoet-based (ADR-015).
