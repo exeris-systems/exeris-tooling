@@ -436,6 +436,12 @@ See the **Codegen completeness backlog** below for per-item detail.
       `created_at`/`updated_at` + any `Instant` `@Field`) natively (`bindInstant`/`bindNull` write,
       `getInstant` read), so the `TIMESTAMPTZ` column round-trips through the driver — no ISO-String
       format mismatch. `LocalDate`/enum columns still String-round-trip (no typed SPI for those).
+      *Follow-up — T19b (0.6.0):* `LocalDateTime` was classified `INSTANT_LIKE` too, so after the native
+      switch it emitted `setX(row.getInstant(i))` into a `LocalDateTime` setter — uncompilable (and the
+      pre-T19 `Instant.parse` path had the same mismatch: a latent parity hole, not a T19 regression).
+      The SPI has no typed `LocalDateTime`, so it now bridges through the native `Instant` at the UTC
+      offset (`ofInstant(…, UTC)` read / `toInstant(UTC)` write, null-guarded). The compile-gate gained a
+      `LocalDateTime` field so javac guards it permanently. (PR #115.)
       `KernelCodegenCompileTest` compiles the new repo against the real 0.10 SPI (the validated `id` +
       audited-timestamp columns exercise the path). *Still tracked:* a generated-SQL-against-a-DB
       round-trip in the e2e suite (pairs with **T2**) — the strongest catch for this class; the codegen
