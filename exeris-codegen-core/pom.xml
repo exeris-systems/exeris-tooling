@@ -27,6 +27,14 @@
             <artifactId>exeris-sdk-source-model</artifactId>
         </dependency>
 
+        <!-- The ONE canonical ADR-024 content-binding (obligation 8b). The tooling emits the
+             binding; the SKU-boot runtime asserts it; both delegate to this shared definition
+             instead of each maintaining a byte-verbatim copy. -->
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-sdk-composition-spec</artifactId>
+        </dependency>
+
         <!-- Jackson for metadata loading -->
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>

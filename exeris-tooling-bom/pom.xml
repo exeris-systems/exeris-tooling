@@ -52,6 +52,11 @@
                 <artifactId>exeris-sdk-source-model</artifactId>
                 <version>${exeris.sdk.version}</version>
             </dependency>
+            <dependency>
+                <groupId>eu.exeris</groupId>
+                <artifactId>exeris-sdk-composition-spec</artifactId>
+                <version>${exeris.sdk.version}</version>
+            </dependency>
 
             <!-- Exeris Kernel Open-Core SPI — required by the codegen
                  compile-test to verify emitted code resolves against real

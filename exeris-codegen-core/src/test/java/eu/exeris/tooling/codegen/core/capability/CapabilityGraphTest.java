@@ -196,6 +196,23 @@ class CapabilityGraphTest {
     }
 
     @Test
+    @DisplayName("the emitted binding matches the composition-spec golden vector (cross-module conformance)")
+    void contentBindingMatchesSpecGoldenVector() {
+        // The same fixture the spec's CompositionBindingTest pins. The emitter now delegates to the
+        // shared CompositionBinding, so this also proves the producer→spec adapter maps service and
+        // version onto the right fields — a swapped field would stay deterministic yet miss this hash.
+        CapabilityModuleDescriptor audit = module("com.app.Audit",
+                List.of(ProvidesMetadata.of("com.api.AuditLog", "1.0.0")), List.of());
+        CapabilityModuleDescriptor billing = module("com.app.Billing",
+                List.of(ProvidesMetadata.of("com.api.Invoice", "2.0.0"),
+                        ProvidesMetadata.of("com.api.PaymentApi", "1.2.0")), List.of());
+
+        // input order reversed on purpose — the canonical form sorts by qualified name.
+        assertThat(CapabilityGraph.build(List.of(billing, audit)).stamp().contentBinding())
+                .isEqualTo("sha256:83aae84863de8480b0c1ec943f7d350900a1ff2aab78b4c311684ca2ecc79e96");
+    }
+
+    @Test
     @DisplayName("an unversioned @Provides binds as 'service@' — never the literal 'service@null'")
     void unversionedProvideHasNoNullSuffix() {
         // ProvidesMetadata.of(service) → version == null (review: the @null-suffix bug)
