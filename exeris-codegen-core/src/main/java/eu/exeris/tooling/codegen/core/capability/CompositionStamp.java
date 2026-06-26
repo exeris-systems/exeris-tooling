@@ -1,8 +1,9 @@
 package eu.exeris.tooling.codegen.core.capability;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
+import eu.exeris.sdk.composition.CapManifest;
+import eu.exeris.sdk.composition.CompositionBinding;
+import eu.exeris.sdk.sourcemodel.ast.ProvidesMetadata;
+
 import java.util.List;
 
 /**
@@ -56,43 +57,30 @@ public record CompositionStamp(
     }
 
     /**
-     * Content binding = {@code "sha256:" + hex(SHA-256)} over a canonical, sorted
-     * serialization of the resolved cap set: each module's qualified name plus its provided
-     * {@code service@version} pairs (sorted within the module). Deterministic — same cap set
-     * ⇒ same binding, with no wall-clock or iteration-order leak (hard-constraint #3). Hashes
-     * the cap set ONLY (not {@link #compositionVersion}), per ADR-024 obligation 7: the binding
-     * pins the artefacts, the version is a separate field the platform matches independently.
+     * Content binding = {@code "sha256:" + hex(SHA-256)} over a canonical, sorted serialization of
+     * the resolved cap set. The algorithm is the <b>one</b> canonical definition in
+     * {@link CompositionBinding} (ADR-024 obligation 8b) — emitter and asserter share it instead of
+     * each maintaining a byte-verbatim copy. This method only adapts the tooling's producer records
+     * ({@link CapabilityModuleDescriptor} / {@link ProvidesMetadata}) to the spec's read shape; the
+     * canonical form (sort, separators, the {@code "  provides "} prefix, the {@code null → ""}
+     * unversioned normalization) lives there. Deterministic — same cap set ⇒ same binding, with no
+     * wall-clock or iteration-order leak (hard-constraint #3). Hashes the cap set ONLY (not
+     * {@link #compositionVersion}), per ADR-024 obligation 7.
      */
     static String computeBinding(List<CapabilityModuleDescriptor> sortedModules) {
-        StringBuilder canonical = new StringBuilder();
-        for (CapabilityModuleDescriptor m : sortedModules) {
-            canonical.append(m.qualifiedName()).append('\n');
-            var body = m.moduleOrEmpty();
-            if (body.provides() != null) {
-                body.provides().stream()
-                        // version is nullable (unversioned @Provides → null; SDK maps blank → null).
-                        // Normalize null → "" so the canonical form is "service@" for an unversioned
-                        // provide — distinct from a literal version "null" and from "service@1.0".
-                        .map(p -> p.service() + '@' + (p.version() == null ? "" : p.version()))
-                        .sorted()
-                        .forEach(s -> canonical.append("  provides ").append(s).append('\n'));
-            }
-        }
-        return "sha256:" + sha256Hex(canonical.toString());
+        return CompositionBinding.compute(sortedModules.stream()
+                .map(CompositionStamp::toSpecModule)
+                .toList());
     }
 
-    private static String sha256Hex(String input) {
-        try {
-            byte[] digest = MessageDigest.getInstance("SHA-256")
-                    .digest(input.getBytes(StandardCharsets.UTF_8));
-            StringBuilder hex = new StringBuilder(digest.length * 2);
-            for (byte b : digest) {
-                hex.append(Character.forDigit((b >> 4) & 0xF, 16));
-                hex.append(Character.forDigit(b & 0xF, 16));
-            }
-            return hex.toString();
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 unavailable", e); // never on a conformant JRE
-        }
+    /** Adapt a tooling producer descriptor to the composition-spec read shape for binding. */
+    private static CapManifest.Module toSpecModule(CapabilityModuleDescriptor m) {
+        List<ProvidesMetadata> provides = m.moduleOrEmpty().provides();
+        List<CapManifest.Provided> specProvides = provides == null
+                ? List.of()
+                : provides.stream()
+                        .map(p -> new CapManifest.Provided(p.service(), p.version()))
+                        .toList();
+        return new CapManifest.Module(m.qualifiedName(), new CapManifest.ModuleBody(specProvides));
     }
 }
