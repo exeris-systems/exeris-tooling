@@ -64,7 +64,9 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     private static final ClassName OPTIONAL = ClassName.get("java.util", "Optional");
     private static final ClassName LIST_TYPE = ClassName.get("java.util", "List");
     private static final ClassName ARRAY_LIST = ClassName.get("java.util", "ArrayList");
-    private static final ClassName INSTANT = ClassName.get("java.time", "Instant");
+    /** Simple JVM type name for {@link java.time.Instant}; also the domain-type tag matched in {@link #classifyDomainType}. */
+    private static final String INSTANT_TYPE = "Instant";
+    private static final ClassName INSTANT = ClassName.get("java.time", INSTANT_TYPE);
     private static final ClassName LOCAL_DATE = ClassName.get("java.time", "LocalDate");
     private static final ClassName LOCAL_DATE_TIME = ClassName.get("java.time", "LocalDateTime");
     private static final ClassName ZONE_OFFSET = ClassName.get("java.time", "ZoneOffset");
@@ -125,7 +127,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         if (BOOL_TYPES.contains(type)) return DomainTypeKind.BOOL;
         if (DOUBLE_TYPES.contains(type)) return DomainTypeKind.DOUBLE;
         if (BIG_DECIMAL_TYPES.contains(type)) return DomainTypeKind.BIG_DECIMAL;
-        if (type.contains("Instant")) return DomainTypeKind.INSTANT_LIKE;
+        if (type.contains(INSTANT_TYPE)) return DomainTypeKind.INSTANT_LIKE;
         // Check LocalDateTime before LocalDate ("LocalDateTime".contains("LocalDate")).
         if (type.contains("LocalDateTime")) return DomainTypeKind.LOCAL_DATE_TIME;
         if (type.contains("LocalDate")) return DomainTypeKind.LOCAL_DATE;
@@ -281,8 +283,8 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
             cols.add(new Column(toSnakeCase(sys.tenantId()), sys.tenantId(), "UUID", ColumnKind.TENANT_ID));
         }
         if (metadata.audited()) {
-            cols.add(new Column(toSnakeCase(sys.createdAt()), sys.createdAt(), "Instant", ColumnKind.CREATED_AT));
-            cols.add(new Column(toSnakeCase(sys.updatedAt()), sys.updatedAt(), "Instant", ColumnKind.UPDATED_AT));
+            cols.add(new Column(toSnakeCase(sys.createdAt()), sys.createdAt(), INSTANT_TYPE, ColumnKind.CREATED_AT));
+            cols.add(new Column(toSnakeCase(sys.updatedAt()), sys.updatedAt(), INSTANT_TYPE, ColumnKind.UPDATED_AT));
         }
         if (metadata.softDelete()) {
             cols.add(new Column(toSnakeCase(sys.deleted()), sys.deleted(), "boolean", ColumnKind.DELETED));
