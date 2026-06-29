@@ -25,6 +25,25 @@ export interface GeneratedFile {
   overwritable?: boolean;
 }
 
+// User-supplied appName lands in three emitted contexts; each needs its own
+// escaping so a name like `Foo "Bar"` or `A`B` can't break the generated artefact.
+/** JSON string value (emits its own surrounding quotes). */
+function jsonValue(s: string): string {
+  return JSON.stringify(s);
+}
+/** HTML text content (index.html title). */
+function htmlText(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+/** A TS single-quoted string literal (component `title`, route titles). */
+function tsSingleQuoted(s: string): string {
+  return s.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\r?\n/g, ' ');
+}
+/** HTML text that sits inside an emitted TS backtick template (both layers). */
+function htmlInTemplate(s: string): string {
+  return htmlText(s).replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$\{/g, '\\${');
+}
+
 interface EnumMetadata {
   name: string;
   qualifiedName: string;
@@ -188,7 +207,7 @@ import { CommonModule } from '@angular/common';
         <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
           <div class="flex items-center justify-between">
             <h1 class="text-3xl font-bold tracking-tight text-gray-900 dark:text-white">
-              🚀 ${appName}
+              🚀 ${htmlInTemplate(appName)}
             </h1>
             <span class="text-sm text-gray-500 dark:text-gray-400">v0.1.0</span>
           </div>
@@ -212,7 +231,7 @@ ${navItemsHtml}
   \`,
 })
 export class AppComponent {
-  title = '${appName}';
+  title = '${tsSingleQuoted(appName)}';
 }
 `;
 }
@@ -227,7 +246,7 @@ function generateAppRoutes(domains: DomainMetadata[], appName: string): string {
     // in the tab + history. The /new and /:id titles use the bare
     // singular and are unaffected.
     const titlePlural = labelPlural(domain.entityName);
-    routes.push(`\n  {\n    path: '${plural}',\n    loadComponent: () => import('./components/${kebab}-list.component')\n      .then(m => m.${domain.entityName}ListComponent),\n    title: '${titlePlural} - ${appName}'\n  },\n  {\n    path: '${plural}/new',\n    loadComponent: () => import('./components/${kebab}-form.component')\n      .then(m => m.${domain.entityName}FormComponent),\n    title: 'New ${domain.entityName} - ${appName}'\n  },\n  {\n    path: '${plural}/:id',\n    loadComponent: () => import('./components/${kebab}-form.component')\n      .then(m => m.${domain.entityName}FormComponent),\n    title: 'Edit ${domain.entityName} - ${appName}'\n  },`);
+    routes.push(`\n  {\n    path: '${plural}',\n    loadComponent: () => import('./components/${kebab}-list.component')\n      .then(m => m.${domain.entityName}ListComponent),\n    title: '${titlePlural} - ${tsSingleQuoted(appName)}'\n  },\n  {\n    path: '${plural}/new',\n    loadComponent: () => import('./components/${kebab}-form.component')\n      .then(m => m.${domain.entityName}FormComponent),\n    title: 'New ${domain.entityName} - ${tsSingleQuoted(appName)}'\n  },\n  {\n    path: '${plural}/:id',\n    loadComponent: () => import('./components/${kebab}-form.component')\n      .then(m => m.${domain.entityName}FormComponent),\n    title: 'Edit ${domain.entityName} - ${tsSingleQuoted(appName)}'\n  },`);
   }
 
   const defaultRedirect = domains.length > 0
@@ -306,9 +325,9 @@ function generateBarrelExport(visibleDomains: DomainMetadata[], enums: EnumMetad
 function generatePackageJson(appName: string): string {
   const pkgName = `${DslMapper.toKebabCase(appName.replace(/\s+/g, '-'))}-frontend`;
   return `{
-  "name": "${pkgName}",
+  "name": ${jsonValue(pkgName)},
   "version": "0.1.0",
-  "description": "${appName} - Generated Angular Frontend",
+  "description": ${jsonValue(`${appName} - Generated Angular Frontend`)},
   "type": "module",
   "engines": {
     "node": ">=22.0.0"
@@ -546,7 +565,7 @@ function generateIndexHtml(appName: string): string {
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>${appName}</title>
+  <title>${htmlText(appName)}</title>
   <base href="/">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" type="image/svg+xml" href="favicon.ico">

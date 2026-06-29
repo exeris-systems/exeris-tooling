@@ -287,8 +287,8 @@ export class ListGenerator implements CodeGenerator {
     // Actions
     lines.push(`                    <td class="whitespace-nowrap py-4 pl-3 pr-6 text-right text-sm">`);
     lines.push(`                      <div class="flex justify-end gap-3">`);
-    lines.push(`                        <a [routerLink]="[item.${idField}]" [attr.data-testid]="'action-view-' + item.${idField}" class="text-exeris-primary hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300 font-medium">View</a>`);
-    lines.push(`                        <a [routerLink]="[item.${idField}, 'edit']" [attr.data-testid]="'action-edit-' + item.${idField}" class="text-exeris-primary hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300 font-medium">Edit</a>`);
+    lines.push(`                        <a [routerLink]="[item.${idField}]" [attr.data-testid]="'action-view-' + item.${idField}" class="text-exeris-primary hover:text-exeris-primary-hover dark:text-exeris-primary dark:hover:text-exeris-primary-hover font-medium">View</a>`);
+    lines.push(`                        <a [routerLink]="[item.${idField}, 'edit']" [attr.data-testid]="'action-edit-' + item.${idField}" class="text-exeris-primary hover:text-exeris-primary-hover dark:text-exeris-primary dark:hover:text-exeris-primary-hover font-medium">Edit</a>`);
     lines.push(`                        <button (click)="onDelete(item)" [attr.data-testid]="'action-delete-' + item.${idField}" class="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 font-medium">Delete</button>`);
     lines.push(`                      </div>`);
     lines.push(`                    </td>`);

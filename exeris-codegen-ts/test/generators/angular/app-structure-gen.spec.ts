@@ -247,6 +247,29 @@ describe('generateAppStructure — configurable appName (T7/U5)', () => {
     expect(pkg.content).toContain('"name": "acme-portal-frontend"');
     expect(pkg.content).toContain('"description": "Acme Portal - Generated Angular Frontend"');
   });
+
+  it('escapes a dangerous appName so the emitted package.json stays valid JSON', () => {
+    const evil = 'Foo "Bar" & Co';
+    const files = generateAppStructure([domain({ entityName: 'Order' })], [], cfg({ appName: evil }));
+    const pkg = fileAt(files, './package.json')!;
+    expect(() => JSON.parse(pkg.content)).not.toThrow();
+    expect(JSON.parse(pkg.content).description).toBe(`${evil} - Generated Angular Frontend`);
+  });
+
+  it('escapes appName in the emitted HTML title and TS string literals', () => {
+    const files = generateAppStructure(
+      [domain({ entityName: 'Order' })],
+      [],
+      cfg({ appName: `O'Hara <Labs>` }),
+    );
+    const html = fileAt(files, 'src/index.html')!;
+    const comp = fileAt(files, 'src/app/app.component.ts')!;
+    // HTML text: angle brackets escaped, no raw tag injected into the title.
+    expect(html.content).toContain('&lt;Labs&gt;');
+    expect(html.content).not.toContain('<Labs>');
+    // TS single-quoted component title: the apostrophe is backslash-escaped.
+    expect(comp.content).toContain("title = 'O\\'Hara");
+  });
 });
 
 // ---------- routes / barrel: empty domain set ----------
