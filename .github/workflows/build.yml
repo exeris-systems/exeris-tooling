@@ -56,7 +56,14 @@ jobs:
 
       - name: mvn -B verify (exeris-tooling)
         working-directory: exeris-tooling
-        run: mvn -B -ntp verify
+        # -U forces snapshot re-resolution. setup-java's `cache: maven` restores a
+        # ~/.m2 that can hold a stale exeris-kernel-spi:0.10.0-SNAPSHOT, and Maven's
+        # default daily snapshot policy would not re-fetch it within the day — so a
+        # freshly published kernel snapshot (e.g. #224's HttpExchange.pathParams())
+        # is otherwise missed and the generated-code compile gate fails against the
+        # live SPI. The kernel is the only remote SNAPSHOT dep (the SDK is built from
+        # source above), so this just keeps kernel-spi current each run.
+        run: mvn -B -ntp -U verify
         env:
           GITHUB_ACTOR: ${{ github.actor }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
