@@ -233,6 +233,7 @@ describe('generateAppStructure — configurable appName (T7/U5)', () => {
     const html = fileAt(files, 'src/index.html')!;
     const routes = fileAt(files, 'src/app/app.routes.ts')!;
     const pkg = fileAt(files, './package.json')!;
+    const ng = fileAt(files, './angular.json')!;
     // Logo + Angular component title field.
     expect(comp.content).toContain('🚀 Acme Portal');
     expect(comp.content).toContain("title = 'Acme Portal';");
@@ -246,6 +247,12 @@ describe('generateAppStructure — configurable appName (T7/U5)', () => {
     // package.json name (kebab-cased) + description.
     expect(pkg.content).toContain('"name": "acme-portal-frontend"');
     expect(pkg.content).toContain('"description": "Acme Portal - Generated Angular Frontend"');
+    // angular.json project key + dist path use the SAME slug as package.json.name
+    // (so a CI step locating dist by package.json.name finds dist/<slug>).
+    expect(ng.content).toContain('"acme-portal-frontend": {');
+    expect(ng.content).toContain('"outputPath": "dist/acme-portal-frontend"');
+    expect(ng.content).toContain('"acme-portal-frontend:build:production"');
+    expect(ng.content).not.toContain('exeris-foundation-frontend');
   });
 
   it('escapes a dangerous appName so the emitted package.json stays valid JSON', () => {

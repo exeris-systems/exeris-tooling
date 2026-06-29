@@ -43,6 +43,15 @@ function tsSingleQuoted(s: string): string {
 function htmlInTemplate(s: string): string {
   return htmlText(s).replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$\{/g, '\\${');
 }
+/**
+ * Project slug derived from the app name — the single source of truth for the
+ * package.json `name` and the angular.json project key / dist path, so the two
+ * never disagree (a CI step locating the artefact by `package.json.name` then
+ * always finds `dist/<slug>`).
+ */
+function frontendSlug(appName: string): string {
+  return `${DslMapper.toKebabCase(appName.replace(/\s+/g, '-'))}-frontend`;
+}
 
 interface EnumMetadata {
   name: string;
@@ -65,7 +74,7 @@ export function generateAppStructure(
 
   // Config files at the project root
   files.push({ path: `${outputRoot}/package.json`, content: generatePackageJson(appName), overwritable: false });
-  files.push({ path: `${outputRoot}/angular.json`, content: generateAngularJson(), overwritable: false });
+  files.push({ path: `${outputRoot}/angular.json`, content: generateAngularJson(appName), overwritable: false });
   files.push({ path: `${outputRoot}/tsconfig.json`, content: generateTsConfig(), overwritable: false });
   files.push({ path: `${outputRoot}/tsconfig.app.json`, content: generateTsConfigApp(), overwritable: false });
   files.push({ path: `${outputRoot}/tailwind.config.js`, content: generateTailwindConfig(), overwritable: true });
@@ -323,7 +332,7 @@ function generateBarrelExport(visibleDomains: DomainMetadata[], enums: EnumMetad
 }
 
 function generatePackageJson(appName: string): string {
-  const pkgName = `${DslMapper.toKebabCase(appName.replace(/\s+/g, '-'))}-frontend`;
+  const pkgName = frontendSlug(appName);
   return `{
   "name": ${jsonValue(pkgName)},
   "version": "0.1.0",
@@ -368,13 +377,14 @@ function generatePackageJson(appName: string): string {
 `;
 }
 
-function generateAngularJson(): string {
+function generateAngularJson(appName: string): string {
+  const slug = frontendSlug(appName);
   return `{
   "$schema": "./node_modules/@angular/cli/lib/config/schema.json",
   "version": 1,
   "newProjectRoot": "projects",
   "projects": {
-    "exeris-foundation-frontend": {
+    "${slug}": {
       "projectType": "application",
       "schematics": {
         "@schematics/angular:component": {
@@ -390,7 +400,7 @@ function generateAngularJson(): string {
         "build": {
           "builder": "@angular/build:application",
           "options": {
-            "outputPath": "dist/exeris-foundation-frontend",
+            "outputPath": "dist/${slug}",
             "index": "src/index.html",
             "browser": "src/main.ts",
             "polyfills": [],
@@ -424,8 +434,8 @@ function generateAngularJson(): string {
         "serve": {
           "builder": "@angular/build:dev-server",
           "configurations": {
-            "production": { "buildTarget": "exeris-foundation-frontend:build:production" },
-            "development": { "buildTarget": "exeris-foundation-frontend:build:development" }
+            "production": { "buildTarget": "${slug}:build:production" },
+            "development": { "buildTarget": "${slug}:build:development" }
           },
           "defaultConfiguration": "development"
         }
