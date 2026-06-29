@@ -5,9 +5,12 @@ import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.Artifact
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
+import eu.exeris.sdk.sourcemodel.ast.RelationshipMetadata;
 import eu.exeris.sdk.sourcemodel.ast.SystemFieldsMetadata;
 
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -101,8 +104,12 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
         List<String> columns = new ArrayList<>();
         columns.add("    id UUID PRIMARY KEY DEFAULT gen_random_uuid()");
 
+        Set<String> emittedColumns = new HashSet<>();
+        emittedColumns.add("id");
+
         if (metadata.tenantScoped()) {
             columns.add("    " + tenantColumn(metadata) + " UUID NOT NULL REFERENCES tenants(id)");
+            emittedColumns.add(tenantColumn(metadata));
         }
 
         for (FieldMetadata field : metadata.fields()) {
@@ -110,6 +117,19 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
             columns.add("    " + toSnakeCase(field.name()) + " " + mapJavaTypeToSql(field.type())
                     + (field.required() ? " NOT NULL" : "")
                     + (field.unique() ? " UNIQUE" : ""));
+            emittedColumns.add(toSnakeCase(field.name()));
+        }
+
+        // T8: a plain UUID column for each MANY_TO_ONE FK that is not already a
+        // declared field column (the entity-typed `@Relationship Customer customer`
+        // style has no FieldMetadata, so its `customer_id` column would otherwise
+        // never be created — and the T8 FK index would then target a non-existent
+        // column). No REFERENCES / FK constraint is emitted here: that is T9, held
+        // back as a trailing ALTER migration to avoid the create-order hazard.
+        for (String fkCol : foreignKeyColumns(metadata)) {
+            if (emittedColumns.add(fkCol)) {
+                columns.add("    " + fkCol + " UUID");
+            }
         }
 
         if (metadata.audited()) {
@@ -132,6 +152,25 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
     /** Snake-cased SQL name of the tenant column (honours tenantIdField, T5). */
     private String tenantColumn(DomainMetadata metadata) {
         return sysCol(metadata, "tenantId");
+    }
+
+    /**
+     * T8: the FK columns for every MANY_TO_ONE relationship, sorted by relationship
+     * name for byte-deterministic emission. Each name is normalised so both
+     * relationship styles map to the same column the repository finder filters on:
+     * the entity-typed {@code @Relationship Customer customer} → {@code customer_id}
+     * and the explicit-UUID-FK {@code @Relationship UUID customerId} →
+     * {@code customer_id} (not {@code customer_id_id}).
+     */
+    private List<String> foreignKeyColumns(DomainMetadata metadata) {
+        if (!metadata.hasRelationships()) {
+            return List.of();
+        }
+        return metadata.relationships().stream()
+                .filter(r -> r.type() == RelationshipMetadata.RelationType.MANY_TO_ONE)
+                .sorted(Comparator.comparing(RelationshipMetadata::name))
+                .map(r -> KernelTableNaming.foreignKeyColumn(r.name()))
+                .toList();
     }
 
     /**
@@ -166,16 +205,33 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
 
     private List<String> buildIndexes(DomainMetadata metadata, String tableName) {
         List<String> indexes = new ArrayList<>();
+        Set<String> indexedColumns = new HashSet<>();
         if (metadata.tenantScoped()) {
             indexes.add("CREATE INDEX IF NOT EXISTS idx_" + tableName + "_tenant ON "
                     + tableName + "(" + tenantColumn(metadata) + ");\n");
+            indexedColumns.add(tenantColumn(metadata));
         }
+        // T8: also index filterable fields (joined with the existing searchable /
+        // unique condition so a column that is e.g. both searchable and filterable
+        // still yields a single index). Source order preserved, matching the prior
+        // behaviour for searchable/unique fields.
         for (FieldMetadata field : metadata.fields()) {
             if (isSystemField(metadata, field.name())) continue;
-            if (field.searchable() || field.unique()) {
+            if (field.searchable() || field.unique() || field.filterable()) {
                 String col = toSnakeCase(field.name());
-                indexes.add("CREATE INDEX IF NOT EXISTS idx_" + tableName + "_" + col + " ON "
-                        + tableName + "(" + col + ");\n");
+                if (indexedColumns.add(col)) {
+                    indexes.add("CREATE INDEX IF NOT EXISTS idx_" + tableName + "_" + col + " ON "
+                            + tableName + "(" + col + ");\n");
+                }
+            }
+        }
+        // T8: index each MANY_TO_ONE FK column (sorted by relationship name for
+        // deterministic output). The FK index makes cross-aggregate finder lookups
+        // (findBy<Rel>Id) non-O(n). Index only — the REFERENCES constraint is T9.
+        for (String fkCol : foreignKeyColumns(metadata)) {
+            if (indexedColumns.add(fkCol)) {
+                indexes.add("CREATE INDEX IF NOT EXISTS idx_" + tableName + "_" + fkCol + " ON "
+                        + tableName + "(" + fkCol + ");\n");
             }
         }
         return indexes;

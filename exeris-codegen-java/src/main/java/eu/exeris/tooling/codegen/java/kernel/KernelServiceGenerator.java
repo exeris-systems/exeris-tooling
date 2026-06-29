@@ -11,8 +11,13 @@ import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.Artifact
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
+import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
+import eu.exeris.sdk.sourcemodel.ast.RelationshipMetadata;
 
 import javax.lang.model.element.Modifier;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 
 /**
  * Kernel Service Generator.
@@ -57,14 +62,67 @@ public class KernelServiceGenerator implements KernelArtifactGenerator {
 
         builder.addMethod(buildConstructor(repoType))
                 .addMethod(buildFindById(optionalOfEntity))
-                .addMethod(buildFindAll(listOfEntity))
-                .addMethod(buildSave(entityType))
+                .addMethod(buildFindAll(listOfEntity));
+
+        // T8: delegating finders mirroring the repository surface (parity), in
+        // the same stable sorted order — filterable fields by name, then
+        // MANY_TO_ONE FK finders by relationship name.
+        for (MethodSpec finder : buildFinders(metadata, listOfEntity)) {
+            builder.addMethod(finder);
+        }
+
+        builder.addMethod(buildSave(entityType))
                 .addMethod(buildUpdate(entityType))
                 .addMethod(buildDelete())
                 .addMethod(buildCount());
 
         return new GeneratedFile(packageName, className,
                 KernelScaffold.render(packageName, builder.build()), ArtifactType.SERVICE);
+    }
+
+    /**
+     * T8: delegating finders for filterable fields and MANY_TO_ONE FK columns.
+     * Emitted in the same byte-deterministic order as the repository so the two
+     * surfaces stay aligned: filterable fields sorted by name, then FK finders
+     * sorted by relationship name.
+     */
+    private List<MethodSpec> buildFinders(DomainMetadata metadata, TypeName listOfEntity) {
+        List<MethodSpec> finders = new ArrayList<>();
+
+        metadata.fields().stream()
+                .filter(FieldMetadata::filterable)
+                .sorted(Comparator.comparing(FieldMetadata::name))
+                .forEach(f -> finders.add(buildFindByField(listOfEntity, f)));
+
+        if (metadata.hasRelationships()) {
+            metadata.relationships().stream()
+                    .filter(r -> r.type() == RelationshipMetadata.RelationType.MANY_TO_ONE)
+                    .sorted(Comparator.comparing(RelationshipMetadata::name))
+                    .forEach(r -> finders.add(buildFindByForeignKey(listOfEntity, r)));
+        }
+        return finders;
+    }
+
+    private MethodSpec buildFindByField(TypeName listOfEntity, FieldMetadata field) {
+        String name = "findBy" + capitalize(field.name());
+        return MethodSpec.methodBuilder(name)
+                .addModifiers(Modifier.PUBLIC)
+                .returns(listOfEntity)
+                .addParameter(KernelTypeMapping.typeNameOf(field.type()), field.name())
+                .addStatement("return repository.$L($L)", name, field.name())
+                .build();
+    }
+
+    private MethodSpec buildFindByForeignKey(TypeName listOfEntity, RelationshipMetadata rel) {
+        String base = KernelTableNaming.foreignKeyBase(rel.name());
+        String paramName = base + "Id";
+        String name = "findBy" + capitalize(base) + "Id";
+        return MethodSpec.methodBuilder(name)
+                .addModifiers(Modifier.PUBLIC)
+                .returns(listOfEntity)
+                .addParameter(UUID, paramName)
+                .addStatement("return repository.$L($L)", name, paramName)
+                .build();
     }
 
     private MethodSpec buildConstructor(ClassName repoType) {
@@ -128,6 +186,11 @@ public class KernelServiceGenerator implements KernelArtifactGenerator {
                 .returns(TypeName.LONG)
                 .addStatement("return repository.count()")
                 .build();
+    }
+
+
+    private static String capitalize(String s) {
+        return s.isEmpty() ? s : Character.toUpperCase(s.charAt(0)) + s.substring(1);
     }
 
     @Override
