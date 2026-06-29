@@ -18,15 +18,17 @@
 import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { execSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const pkgRoot = join(here, '..');
 const dist = join(pkgRoot, 'dist');
 
-const { buildGeneratedFiles } = await import(join(dist, 'orchestrator.js'));
-const { DomainMetadataSchema } = await import(join(dist, 'models/domain-model.js'));
-const { DEFAULT_CONFIG } = await import(join(dist, 'config.js'));
+// Dynamic import() needs a file:// URL, not a bare OS path — a bare `d:\…` path
+// throws ERR_UNSUPPORTED_ESM_URL_SCHEME on Windows. pathToFileURL is a no-op-equivalent on POSIX.
+const { buildGeneratedFiles } = await import(pathToFileURL(join(dist, 'orchestrator.js')).href);
+const { DomainMetadataSchema } = await import(pathToFileURL(join(dist, 'models/domain-model.js')).href);
+const { DEFAULT_CONFIG } = await import(pathToFileURL(join(dist, 'config.js')).href);
 
 // Fixture: an entity with an ENUM-typed field, so the generated entity type and Zod
 // schema import the enum module — if that module were the empty stub, this fails.
@@ -85,7 +87,7 @@ function check(label, domains, fixtureEnums) {
 
   console.log(`verify:generated [${label}] — type-checking ${dataLayer.length} data-layer file(s)…`);
   try {
-    execSync(`node ${tscBin} -p ${join(tmp, 'tsconfig.json')}`, {
+    execSync(`node "${tscBin}" -p "${join(tmp, 'tsconfig.json')}"`, {
       cwd: pkgRoot,
       stdio: 'inherit',
       timeout: 60_000,
