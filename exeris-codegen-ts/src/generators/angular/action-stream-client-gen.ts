@@ -34,7 +34,7 @@
  * @since 0.6.0
  */
 
-import { join } from 'node:path';
+import { outPath } from '../../core/paths.js';
 import type { ActionMetadata, DomainMetadata } from '../../models/index.js';
 import { DslMapper } from '../../models/index.js';
 import type { GeneratorConfig } from '../../config.js';
@@ -63,7 +63,7 @@ export class ActionStreamClientGenerator implements CodeGenerator {
 
     const content = this.renderActionStreamClients(domain, streamingActions, context);
     const fileName = `${DslMapper.toKebabCase(domain.entityName)}.action-streams.ts`;
-    const filePath = join('services', fileName);
+    const filePath = outPath('services', fileName);
 
     return {
       path: filePath,

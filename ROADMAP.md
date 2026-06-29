@@ -169,7 +169,7 @@ See the **Codegen completeness backlog** below for per-item detail.
 |---|---|:---:|---|
 | T1  | `@Action` endpoints advertised (OpenAPI + Angular) but no kernel route serves them — 404 | **High** | ✅ 0.6.0 (#92) |
 | T20 | Generated Angular frontend doesn't compile (`npm run build` fails) — two parallel TS emission paths; the `src/app` sourceRoot ships an empty enum stub that shadows the real `types/enums.ts`, so enum-typed code fails (TS2304/2305) | **High** (latent) | 0.6.0 |
-| T8  | No generated finders/indexes for FK + `filterable` fields → O(n) `findAll().filter()` everywhere | **High** | 0.6.0 |
+| T8  | No generated finders/indexes for FK + `filterable` fields → O(n) `findAll().filter()` everywhere | **High** | ✅ 2026-06-28 (finders + FK/filterable indexes; T9 constraints deferred) |
 | T10 | `@Validation` enforced client-side (Zod) but dropped server-side (handler/service/DB) | **High** | 0.6.0 |
 | T12 | N generated apps can't form a mesh — client is own-app/relative-host, saga step is local, no cross-app contract | **High** | 0.7.0 |
 | T17 | Capability-graph validation is closed-world per app — a legitimate cross-service `@Requires` hard-fails the build | **High** | 0.7.0 |
@@ -254,14 +254,28 @@ See the **Codegen completeness backlog** below for per-item detail.
       (FE orphan-pruning — the other suspected FE-twin — is **already done**: the **T13** manifest pruner
       runs on the TS CLI path, `index.ts:302`.) Surfaced by a larger multi-entity, multi-service frontend trial.
 
-- [ ] **T8 — Generate finders + FK/`filterable` indexes.** Repositories expose only
-      `findById/findAll/save/update/deleteById/count`; every cross-aggregate lookup forces a
-      `findAll().stream().filter(...)` — O(n) per call — and FK columns aren't indexed (only
-      `tenant_id` + `searchable` fields get indexes). The intent is already in the annotations
+- [x] **T8 — Generate finders + FK/`filterable` indexes. DONE (2026-06-28).** Repositories exposed only
+      `findById/findAll/save/update/deleteById/count`; every cross-aggregate lookup forced a
+      `findAll().stream().filter(...)` — O(n) per call — and FK columns weren't indexed (only
+      `tenant_id` + `searchable` fields got indexes). The intent was already in the annotations
       (`@Field(filterable=true)`, the FK relationships).
-      *Update:* emit finder methods (e.g. `findByOwnerId`) for FK and `filterable` fields, plus the
-      matching `CREATE INDEX`. Removes most hand-written filter glue; turns table scans into index
-      lookups. Feeds, and feeds off, **T9**'s relationship graph.
+      *Done:* `KernelRepositoryGenerator` emits `findBy<Field>(…)` for every `filterable()` field and
+      `findBy<Rel>Id(UUID)` for every `MANY_TO_ONE` relationship (same kernel-SPI read shape as `findAll`,
+      soft-delete filter, trailing `ORDER BY id` for deterministic row order); `KernelServiceGenerator`
+      delegates them for parity; `KernelFlywayGenerator` emits the FK column + a `CREATE INDEX` per
+      filterable/FK column. The FK-column convention strips a trailing `Id` so both the explicit-UUID-FK
+      style (`UUID customerId` → `customer_id`/`findByCustomerId`) and the entity-typed style
+      (`@Relationship Customer customer`) normalise correctly. Deterministic (sorted by name; generate-twice
+      tests). `KernelCodegenCompileTest` fixture grew a `filterable` field + a `MANY_TO_ONE` relationship so the
+      finders/indexes are javac-compiled against the real kernel SPI — which surfaced and fixed a harness gap:
+      `InMemoryJavaCompiler` now passes `--enable-preview --release 26` (it previously couldn't load the
+      Java-26-preview kernel-spi 0.10 classes). Server-side only — no HTTP/client finder (would need a served
+      route; no TS surface, parity-neutral). **T9 FK *constraints* also ship here** as a single trailing
+      `V3000000__foreign_keys` migration (`KernelApplicationGenerator.generateForeignKeys`, wired in
+      `CodegenPipeline`) — `ALTER TABLE … ADD CONSTRAINT … FOREIGN KEY` per `MANY_TO_ONE` to a generated
+      target, `ON DELETE` policy from cascade, external targets skipped. The trailing-`ALTER` shape avoids the
+      migration-ordering hazard (a `REFERENCES` to a table created in a later migration would fail); it sorts
+      after every `CREATE TABLE` tier. Deterministic (sorted; generate-twice test).
 
 - [ ] **T10 — Emit server-side validation (handler/service) + `CHECK` constraints.**
       `@Validation(min/max/pattern/minLength/…)` flows into the Angular Zod schemas but the generated
@@ -504,7 +518,7 @@ Proposals, highest return-on-effort first:
 
 | # | Proposal | Where the fix lives | Effort | Target |
 |---|---|---|:---:|---|
-| U1 | **Wire ui-kit into the generated app** — `presets: [exerisPreset]` in the emitted `tailwind.config.js`, import the ui-kit `index.css`, and emit semantic classes (`.exeris-btn-primary`) instead of hardcoded `bg-indigo-600`/`text-gray-900` | codegen-ts (ui-kit is ready) | small | 0.6.0 |
+| U1 | **Wire ui-kit into the generated app** — ✅ **DONE 2026-06-28.** Emitted `styles.css` now `@import "@exeris-systems/ui-kit/theme"` (the v4 `@theme` token entry); hardcoded `bg-indigo-600`/`hover:bg-indigo-700` etc. across the emitted templates → `bg-exeris-primary` token utilities (evidence-checked against `theme.css`); `@exeris-systems/ui-kit` added to the emitted `package.json`; `presets:[exerisPreset]` added to the (v4-vestigial) `tailwind.config.js` for v3 consumers; the boilerplate `.btn-primary`/`.input-field` + `bg-gray-100 text-gray-900` body removed. **Finding (B1 twin):** the generated app is Tailwind **v4**, whose ui-kit `@theme` entry ships **tokens only, not the `.exeris-*` component classes** (those are v3 `index.css`), and has **no neutral surface/text token** — so token utilities were used (not component classes) and neutral `gray-*` were left as standard Tailwind (no token to map to). Also added a configurable `appName` (CLI `--app-name`) replacing the hardcoded `'Exeris Foundation'` (closes the **T7/U5** title remainder). The tooling-side fix for Stellar finding **T25**. | codegen-ts (ui-kit is ready) | small | ✅ 2026-06-28 |
 | U2 | **Universal lists** — column types from metadata (enum→badge w/ `@UI.color`, number→`format`+align, bool→icon, date, FK→link/`displayField`, currency/percent from `dataType`); wire sort to headers (logic exists, only the `(click)` is missing); real filters for `filterable` fields (string/enum/date-range — today only bool + 2 fields); configurable `pageSize`; row actions | codegen-ts (+ processor emits `format`/`dataType`/`sortable`/`filterable`) | medium | 0.6.0 |
 | U3 | **Forms from metadata, not the Java type** — read `@UI.componentType` (textarea/select/date/slider/toggle/rich-text/file/color), `@UIGroup`→sections, `@Tab`→tabs, `gridSpan`→multi-column, `placeholder`/`helpText`, `@Relationship`→autocomplete picker (today a UUID FK = `type="text"`); fix type mapping (`long→number`, `UUID→picker`) | codegen-ts (+ processor + TS schema) | med–large | 0.6.0 |
 | U4 | **Fidelity end-to-end** — processor emits the full `uiMetadata` / per-field `UIFieldMetadata`, the TS Zod schema models it, and strict-mode (**T11**) warns when a `@UI` attribute is declared but dropped | processor + codegen-ts | medium | 0.6.0 (with T11) |
@@ -520,6 +534,17 @@ Proposals, highest return-on-effort first:
 > **U7's kernel blocker (K2) is now cleared** — the SSE transport landed (kernel 0.10, ADR-043) and the
 > emitter ships it (Slice 1 #104 + Slice 2 #106); what remains is generator-side, the **EV1-stream**
 > producer pass (see Events & event sourcing). U6/U8 have SDK halves owned in `exeris-sdk`.
+
+### Presentation views (`@View`) — first slice (NEW, 2026-06-28)
+
+> The framework-neutral presentation IR (`@View` / `ViewMetadata`, SDK [RFC-2026-06-25](../../exeris-sdk/docs/rfc/RFC-2026-06-25-presentation-front-model.md), ACCEPTED) shipped **reserved** in the SDK with generation **gated** on (1) the Angular 22 emitter being authored in tooling and (2) a page/composition corpus. This entry **opens condition (1)**.
+
+- [~] **`@View` → Angular 22 signal-first page emitter — first slice DONE (2026-06-28); full emitter gated.**
+      Shape fixed in **[RFC-2026-06-28 — Presentation View Emitter (tooling)](docs/rfc/RFC-2026-06-28-presentation-view-emitter-tooling.md)** (DRAFT, sibling to the SSE emitter RFC-2026-06-22; the RFC the SDK RFC's build gate names).
+      **Processor (DONE):** `ExerisDomainProcessor` extracts `@View` types via the RFC-fixed **class-structure-derived walk** (`@Region` members in declaration order → regions; a region class's `@Block`+`@Bind` members → components; nested block classes → recursive `children`; path-scoped cycle guard) into `view_<Name>.json` — app-wide, parallel to `DomainMetadata`, mirroring the `capability_*.json` precedent. Covered by `ViewExtractionTests`.
+      **codegen-ts (DONE):** a `ViewMetadataSchema` (recursive, mirrors the SDK records), `view_*.json` discovery in `index.ts` (mirrors `enum_*`), and a `ViewGenerator` (`generators/angular/view-gen.ts`) emitting one **standalone, OnPush, signal-first** component per view under `pages/<kebab>.component.ts` + a lazy route. `BlockType`→element mapping (HERO/CARD/GRID/LIST/CONTAINER/RICH_TEXT/NAV/IMAGE/SLOT/CUSTOM/FORM), ui-kit token utilities (U1). Bindings honoured: `STATIC`/`NONE` (authored), `ENTITY` (`inject(<Ref>Service)` + signal read), `ACTION` (click handler stub). Route assembly threads views into `app.routes.ts` (PAGE-first default redirect + sidebar links). Verified end-to-end (real CLI on a `view_*.json` → faithful component).
+      **Inert-honesty:** `@View` is consumed via the Java∪TS union (the codegen-ts ViewGenerator), so it is **not** registered in `INERT_ANNOTATIONS` — the processor extraction + the generator land together (the strict test asserts `@View` is not flagged).
+      **Gated / follow-ups (the full emitter):** **G1** parameterised/relational binding (the corpus's defining "X of the current Y" — currently `expression` is a TODO passthrough) · **G2** `STREAM` source (pairs with ADR-044) · **G3** mesh binding (T12) · **G6** token/theme binding · leaf-field `FORM` emission ([ADR-047 — the `@UI`→`@View` leaf-facet migration](docs/adr/ADR-047-view-leaf-field-facet-and-ui-subsumption.DRAFT.md)) · the `@UI`→`@View` unification. Build of the *full* emitter stays gated on the Headless CMS SKU corpus (RFC condition 2); Stellar's [`view-ir-corpus.md`](../../Stellar-Tactics/docs/view-ir-corpus.md) is the early validating corpus.
 
 ### Events & event sourcing
 

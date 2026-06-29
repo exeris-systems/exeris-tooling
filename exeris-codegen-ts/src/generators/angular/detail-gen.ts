@@ -16,7 +16,7 @@ import type { DomainMetadata, FieldMetadata, CodeGenerator, GeneratedFile, Gener
 import { DslMapper } from '../../models/dsl-mapper.js';
 import type { GeneratorConfig } from '../../config.js';
 import type { BackendType } from '../../core/backend-strategy.js';
-import { join } from 'node:path';
+import { outPath } from '../../core/paths.js';
 
 export class DetailGenerator implements CodeGenerator {
   readonly name = 'DetailGenerator';
@@ -33,7 +33,7 @@ export class DetailGenerator implements CodeGenerator {
     const content = this.generateDetailContent(domain, context);
 
     return {
-      path: join('components', `${kebab}-detail.component.ts`),
+      path: outPath('components', `${kebab}-detail.component.ts`),
       content,
       artifactType: 'DETAIL',
       overwritable: true,
@@ -123,7 +123,7 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`        <header class="mb-8 flex items-center justify-between">`);
     lines.push(`          <h1 id="detail-title" class="text-2xl font-bold text-gray-900 dark:text-white">{{ getTitle() }}</h1>`);
     lines.push(`          <nav class="flex gap-3">`);
-    lines.push(`            <a [routerLink]="['edit']" class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700">Edit</a>`);
+    lines.push(`            <a [routerLink]="['edit']" class="px-4 py-2 text-sm font-medium text-white bg-exeris-primary rounded-md hover:bg-exeris-primary-hover">Edit</a>`);
     lines.push(`            <button (click)="onDelete()" class="px-4 py-2 text-sm font-medium text-red-700 bg-red-100 rounded-md hover:bg-red-200">Delete</button>`);
     lines.push(`          </nav>`);
     lines.push(`        </header>`);

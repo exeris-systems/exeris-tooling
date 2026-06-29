@@ -14,7 +14,7 @@ import type { DomainMetadata, ActionMetadata, CodeGenerator, GeneratedFile, Gene
 import { DslMapper } from '../../models/dsl-mapper.js';
 import type { GeneratorConfig } from '../../config.js';
 import type { BackendType } from '../../core/backend-strategy.js';
-import { join } from 'node:path';
+import { outPath } from '../../core/paths.js';
 
 export class GuardGenerator implements CodeGenerator {
   readonly name = 'GuardGenerator';
@@ -31,7 +31,7 @@ export class GuardGenerator implements CodeGenerator {
     const content = this.generateGuardContent(domain, context);
 
     return {
-      path: join('guards', `${kebab}.guard.ts`),
+      path: outPath('guards', `${kebab}.guard.ts`),
       content,
       artifactType: 'GUARD',
       overwritable: true,

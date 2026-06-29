@@ -14,15 +14,49 @@
  * @since 0.2.0
  */
 
-import type { DomainMetadata } from '../../models/domain-model.js';
+import type { DomainMetadata, ViewMetadata } from '../../models/domain-model.js';
 import type { GeneratorConfig } from '../../config.js';
 import { DslMapper } from '../../models/dsl-mapper.js';
 import { getStrategy } from '../../core/backend-strategy.js';
+import {
+  viewRoutePath,
+  viewRouteConstName,
+  viewRouteImportPath,
+  isPageView,
+} from './view-gen.js';
 
 export interface GeneratedFile {
   path: string;
   content: string;
   overwritable?: boolean;
+}
+
+// User-supplied appName lands in three emitted contexts; each needs its own
+// escaping so a name like `Foo "Bar"` or `A`B` can't break the generated artefact.
+/** JSON string value (emits its own surrounding quotes). */
+function jsonValue(s: string): string {
+  return JSON.stringify(s);
+}
+/** HTML text content (index.html title). */
+function htmlText(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+/** A TS single-quoted string literal (component `title`, route titles). */
+function tsSingleQuoted(s: string): string {
+  return s.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\r?\n/g, ' ');
+}
+/** HTML text that sits inside an emitted TS backtick template (both layers). */
+function htmlInTemplate(s: string): string {
+  return htmlText(s).replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$\{/g, '\\${');
+}
+/**
+ * Project slug derived from the app name — the single source of truth for the
+ * package.json `name` and the angular.json project key / dist path, so the two
+ * never disagree (a CI step locating the artefact by `package.json.name` then
+ * always finds `dist/<slug>`).
+ */
+function frontendSlug(appName: string): string {
+  return `${DslMapper.toKebabCase(appName.replace(/\s+/g, '-'))}-frontend`;
 }
 
 interface EnumMetadata {
@@ -33,7 +67,11 @@ interface EnumMetadata {
 export function generateAppStructure(
   domains: DomainMetadata[],
   enums: EnumMetadata[],
-  config: GeneratorConfig
+  config: GeneratorConfig,
+  // Presentation-IR views (RFC-2026-06-28 §5 route-assembly). Optional + defaults
+  // to none so existing 3-arg callers stay valid AND so a zero-view build emits
+  // app.routes.ts / app.component.ts byte-identical to before this wiring landed.
+  views: ViewMetadata[] = []
 ): GeneratedFile[] {
   const files: GeneratedFile[] = [];
   // Output roots
@@ -42,19 +80,21 @@ export function generateAppStructure(
   const appRoot = 'src/app';
   const envRoot = 'src/environments';
   const { apiUrl, apiVersion } = resolveApiSettings(config);
+  const appName = config.appName;
 
   // Config files at the project root
-  files.push({ path: `${outputRoot}/package.json`, content: generatePackageJson(), overwritable: false });
-  files.push({ path: `${outputRoot}/angular.json`, content: generateAngularJson(), overwritable: false });
+  files.push({ path: `${outputRoot}/package.json`, content: generatePackageJson(appName), overwritable: false });
+  files.push({ path: `${outputRoot}/angular.json`, content: generateAngularJson(appName), overwritable: false });
   files.push({ path: `${outputRoot}/tsconfig.json`, content: generateTsConfig(), overwritable: false });
   files.push({ path: `${outputRoot}/tsconfig.app.json`, content: generateTsConfigApp(), overwritable: false });
   files.push({ path: `${outputRoot}/tailwind.config.js`, content: generateTailwindConfig(), overwritable: true });
   files.push({ path: `${outputRoot}/.postcssrc.json`, content: generatePostcssConfig(), overwritable: true });
   files.push({ path: `${outputRoot}/proxy.conf.json`, content: generateProxyConfig(), overwritable: true });
+  files.push({ path: `${outputRoot}/.npmrc`, content: generateNpmrc(), overwritable: true });
 
   // Static files under src/
   files.push({ path: `${srcRoot}/styles.css`, content: generateStylesCss(), overwritable: true });
-  files.push({ path: `${srcRoot}/index.html`, content: generateIndexHtml(), overwritable: true });
+  files.push({ path: `${srcRoot}/index.html`, content: generateIndexHtml(appName), overwritable: true });
   files.push({ path: `${srcRoot}/favicon.ico`, content: generateFavicon(), overwritable: true });
   // main.ts under src/
   files.push({ path: `${srcRoot}/main.ts`, content: generateMainTs(), overwritable: false });
@@ -69,10 +109,16 @@ export function generateAppStructure(
   // hidden-domain policy in one spot.
   const visibleDomains = domains.filter((d) => !d.internalApi?.hidden);
 
+  // Views are sorted deterministically (by effective route path, then name) so the
+  // emitted route imports/spreads + nav links are order-stable regardless of the
+  // directory-scan order the CLI hands them in. The sort is on a copy — the caller's
+  // array is left untouched.
+  const sortedViews = sortViews(views);
+
   // App shell under src/app
   files.push({ path: `${appRoot}/app.config.ts`, content: generateAppConfig(), overwritable: false });
-  files.push({ path: `${appRoot}/app.component.ts`, content: generateAppComponent(visibleDomains), overwritable: false });
-  files.push({ path: `${appRoot}/app.routes.ts`, content: generateAppRoutes(visibleDomains), overwritable: false });
+  files.push({ path: `${appRoot}/app.component.ts`, content: generateAppComponent(visibleDomains, appName, sortedViews), overwritable: false });
+  files.push({ path: `${appRoot}/app.routes.ts`, content: generateAppRoutes(visibleDomains, appName, sortedViews), overwritable: false });
   files.push({ path: `${appRoot}/index.ts`, content: generateBarrelExport(visibleDomains, enums), overwritable: true });
 
   // T20: per-entity components/services/types/schemas and enums are emitted by the
@@ -142,7 +188,25 @@ function routePlural(entityName: string): string {
   return entityName.endsWith('s') ? kebab : kebab + 's';
 }
 
-function generateAppComponent(domains: DomainMetadata[]): string {
+/**
+ * Deterministic view ordering for the route-assembly seam: primary key is the
+ * effective route path, tiebreak on the view name (locale-independent code-unit
+ * comparison, never the OS locale — hard-constraint #3). Returns a new array;
+ * the input is not mutated.
+ */
+function sortViews(views: ViewMetadata[]): ViewMetadata[] {
+  return [...views].sort((a, b) => {
+    const pa = viewRoutePath(a);
+    const pb = viewRoutePath(b);
+    if (pa < pb) return -1;
+    if (pa > pb) return 1;
+    if (a.name < b.name) return -1;
+    if (a.name > b.name) return 1;
+    return 0;
+  });
+}
+
+function generateAppComponent(domains: DomainMetadata[], appName: string, views: ViewMetadata[] = []): string {
   const navItems = domains.map((d) => {
     const icon = getEntityIcon(d.entityName);
     // Sidebar router-link target must match the path generated by
@@ -151,11 +215,26 @@ function generateAppComponent(domains: DomainMetadata[]): string {
     return { path: routePlural(d.entityName), label: labelPlural(d.entityName), icon };
   });
 
+  // A sidebar link per PAGE view (RFC §5), appended after the entity links so the
+  // emitted HTML shape + join are unchanged when no PAGE view exists (byte-identical
+  // zero-view output). The router-link target is the same effective route path the
+  // view's route file registers; non-PAGE views (SECTION/COMPONENT/FRAGMENT) are
+  // composed elsewhere and get no top-level nav link.
+  for (const v of views) {
+    if (isPageView(v)) {
+      navItems.push({ path: viewRoutePath(v), label: v.title ?? v.name, icon: '🧩' });
+    }
+  }
+
   const navItemsHtml = navItems
     .map(
+      // routerLinkActive uses the exeris-primary-hover token for the active
+      // label colour (indigo-700 in the ui-kit v4 @theme). The indigo-100/900/200
+      // tints have no exeris token in the v4 @theme entry, so they stay as
+      // neutral Tailwind utilities.
       (item) => `
-            <a routerLink="/${item.path}" 
-               routerLinkActive="bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-200"
+            <a routerLink="/${item.path}"
+               routerLinkActive="bg-indigo-100 dark:bg-indigo-900 text-exeris-primary-hover dark:text-indigo-200"
                class="group flex items-center px-2 py-2 text-base font-medium rounded-md text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-700">
               <span class="mr-3 text-xl">${item.icon}</span>
               ${item.label}
@@ -183,7 +262,7 @@ import { CommonModule } from '@angular/common';
         <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
           <div class="flex items-center justify-between">
             <h1 class="text-3xl font-bold tracking-tight text-gray-900 dark:text-white">
-              🚀 Exeris Foundation
+              🚀 ${htmlInTemplate(appName)}
             </h1>
             <span class="text-sm text-gray-500 dark:text-gray-400">v0.1.0</span>
           </div>
@@ -207,41 +286,62 @@ ${navItemsHtml}
   \`,
 })
 export class AppComponent {
-  title = 'Exeris Foundation';
+  title = '${tsSingleQuoted(appName)}';
 }
 `;
 }
 
-function generateAppRoutes(domains: DomainMetadata[]): string {
+function generateAppRoutes(domains: DomainMetadata[], appName: string, views: ViewMetadata[] = []): string {
   const routes: string[] = [];
   for (const domain of domains) {
     const kebab = DslMapper.toKebabCase(domain.entityName);
     const plural = routePlural(domain.entityName);
     // List-page browser-tab title also needs the labelPlural guard
-    // — without it, `News` would render as "Newss - Exeris Foundation"
+    // — without it, `News` would render as "Newss - <appName>"
     // in the tab + history. The /new and /:id titles use the bare
     // singular and are unaffected.
     const titlePlural = labelPlural(domain.entityName);
-    routes.push(`\n  {\n    path: '${plural}',\n    loadComponent: () => import('./components/${kebab}-list.component')\n      .then(m => m.${domain.entityName}ListComponent),\n    title: '${titlePlural} - Exeris Foundation'\n  },\n  {\n    path: '${plural}/new',\n    loadComponent: () => import('./components/${kebab}-form.component')\n      .then(m => m.${domain.entityName}FormComponent),\n    title: 'New ${domain.entityName} - Exeris Foundation'\n  },\n  {\n    path: '${plural}/:id',\n    loadComponent: () => import('./components/${kebab}-form.component')\n      .then(m => m.${domain.entityName}FormComponent),\n    title: 'Edit ${domain.entityName} - Exeris Foundation'\n  },`);
+    routes.push(`\n  {\n    path: '${plural}',\n    loadComponent: () => import('./components/${kebab}-list.component')\n      .then(m => m.${domain.entityName}ListComponent),\n    title: '${titlePlural} - ${tsSingleQuoted(appName)}'\n  },\n  {\n    path: '${plural}/new',\n    loadComponent: () => import('./components/${kebab}-form.component')\n      .then(m => m.${domain.entityName}FormComponent),\n    title: 'New ${domain.entityName} - ${tsSingleQuoted(appName)}'\n  },\n  {\n    path: '${plural}/:id',\n    loadComponent: () => import('./components/${kebab}-form.component')\n      .then(m => m.${domain.entityName}FormComponent),\n    title: 'Edit ${domain.entityName} - ${tsSingleQuoted(appName)}'\n  },`);
   }
 
-  const defaultRedirect = domains.length > 0
-    ? routePlural(domains[0].entityName)
-    : '';
+  // Presentation-IR views (RFC §5): each emits a `pages/<kebab>.route.ts` exporting
+  // a Routes array const. The shell imports each const and spreads it into the
+  // routes array (lazy-load is internal to each view route file, consistent with
+  // the entity routes' loadComponent style). Views land AFTER the entity routes,
+  // in the deterministic order the caller sorted them into.
+  const viewImports = views
+    .map((v) => `import { ${viewRouteConstName(v)} } from '${viewRouteImportPath(v)}';`)
+    .join('\n');
+  const viewSpreads = views.map((v) => `\n  ...${viewRouteConstName(v)},`).join('');
+
+  // The default redirect prefers the FIRST PAGE view when any exists (a generated
+  // standalone front then lands on a @View page out of the box); otherwise it keeps
+  // the existing entity-based default (first visible domain), and falls back to ''
+  // when neither is present. With zero views the entity branch is taken unchanged.
+  const firstPageView = views.find(isPageView);
+  const defaultRedirect = firstPageView
+    ? viewRoutePath(firstPageView)
+    : domains.length > 0
+      ? routePlural(domains[0].entityName)
+      : '';
+
+  // Additive guard (determinism #3): with zero views, NO import line and NO spread
+  // are emitted, so app.routes.ts is byte-identical to the pre-route-assembly output.
+  const importBlock = viewImports ? `\n${viewImports}` : '';
 
   return `/**
  * Application Routes
  * Generated by @exeris/codegen-ts
  */
 
-import { Routes } from '@angular/router';
+import { Routes } from '@angular/router';${importBlock}
 
 export const routes: Routes = [
   {
     path: '',
     redirectTo: '${defaultRedirect}',
     pathMatch: 'full'
-  },${routes.join('')}
+  },${routes.join('')}${viewSpreads}
 ];
 `;
 }
@@ -298,11 +398,12 @@ function generateBarrelExport(visibleDomains: DomainMetadata[], enums: EnumMetad
   return exports.join('\n') + '\n';
 }
 
-function generatePackageJson(): string {
+function generatePackageJson(appName: string): string {
+  const pkgName = frontendSlug(appName);
   return `{
-  "name": "exeris-foundation-frontend",
+  "name": ${jsonValue(pkgName)},
   "version": "0.1.0",
-  "description": "Exeris Foundation - Generated Angular Frontend",
+  "description": ${jsonValue(`${appName} - Generated Angular Frontend`)},
   "type": "module",
   "engines": {
     "node": ">=22.0.0"
@@ -324,6 +425,7 @@ function generatePackageJson(): string {
     "@angular/forms": "^22.0.0",
     "@angular/platform-browser": "^22.0.0",
     "@angular/router": "^22.0.0",
+    "@exeris-systems/ui-kit": "^0.1.0",
     "rxjs": "~7.8.1",
     "tslib": "^2.8.1",
     "zod": "^3.24.0"
@@ -342,13 +444,14 @@ function generatePackageJson(): string {
 `;
 }
 
-function generateAngularJson(): string {
+function generateAngularJson(appName: string): string {
+  const slug = frontendSlug(appName);
   return `{
   "$schema": "./node_modules/@angular/cli/lib/config/schema.json",
   "version": 1,
   "newProjectRoot": "projects",
   "projects": {
-    "exeris-foundation-frontend": {
+    "${slug}": {
       "projectType": "application",
       "schematics": {
         "@schematics/angular:component": {
@@ -364,7 +467,7 @@ function generateAngularJson(): string {
         "build": {
           "builder": "@angular/build:application",
           "options": {
-            "outputPath": "dist/exeris-foundation-frontend",
+            "outputPath": "dist/${slug}",
             "index": "src/index.html",
             "browser": "src/main.ts",
             "polyfills": [],
@@ -398,8 +501,8 @@ function generateAngularJson(): string {
         "serve": {
           "builder": "@angular/build:dev-server",
           "configurations": {
-            "production": { "buildTarget": "exeris-foundation-frontend:build:production" },
-            "development": { "buildTarget": "exeris-foundation-frontend:build:development" }
+            "production": { "buildTarget": "${slug}:build:production" },
+            "development": { "buildTarget": "${slug}:build:development" }
           },
           "defaultConfiguration": "development"
         }
@@ -458,10 +561,16 @@ function generateTsConfigApp(): string {
 }
 
 function generateTailwindConfig(): string {
-  // Tailwind CSS v4 uses CSS-first configuration
-  // This file is optional but provides customization options
+  // Tailwind CSS v4 is CSS-first, so this file is largely vestigial for a v4
+  // build (the tokens come from `@import "@exeris-systems/ui-kit/theme"` in styles.css).
+  // It is kept valid and wires the ui-kit v3 JS preset so a v3-toolchain consumer
+  // ALSO gets the same `exeris-*` token namespace. The preset is the documented
+  // v3 entry point (v4 ignores `presets`); both entries declare identical tokens.
   return `/** @type {import('tailwindcss').Config} */
+import exerisPreset from '@exeris-systems/ui-kit/tailwind.preset.js';
+
 export default {
+  presets: [exerisPreset],
   content: [
     "./src/**/*.{html,ts}",
   ],
@@ -484,39 +593,33 @@ function generatePostcssConfig(): string {
 }
 
 function generateStylesCss(): string {
-  // Tailwind CSS v4 uses @import instead of @tailwind directives
-  return `/* Exeris Foundation - Global Styles */
+  // Tailwind CSS v4 uses @import instead of @tailwind directives.
+  //
+  // The @exeris-systems/ui-kit "theme" entry is the v4 (@theme, CSS-first) token entry:
+  // it declares the `exeris-*` design-token namespace (bg-exeris-primary,
+  // text-exeris-primary-hover, font-exeris, …) so generated components style
+  // against the shared SDK tokens instead of hardcoded boilerplate. (A v3
+  // toolchain consumes the same tokens via the tailwind.preset.js wired in
+  // tailwind.config.js.)
+  //
+  // The v4 @theme entry defines brand/semantic colours + typography tokens only
+  // (no neutral surface/text tokens). The body therefore takes the exeris font
+  // token and relies on Tailwind's preflight neutrals rather than re-introducing
+  // a hardcoded gray theme a product immediately deletes (T25). Components opt
+  // into the exeris colour tokens (bg-exeris-primary, …) directly.
+  return `/* Generated Angular Frontend - Global Styles */
 /* Tailwind CSS v4 */
 @import "tailwindcss";
+@import "@exeris-systems/ui-kit/theme";
 
 /* Custom base styles */
 @layer base {
   html {
     @apply antialiased;
   }
-  
-  body {
-    @apply bg-gray-100 text-gray-900;
-  }
-  
-  /* Dark mode support */
-  .dark body {
-    @apply bg-gray-900 text-gray-100;
-  }
-}
 
-/* Custom component styles */
-@layer components {
-  .btn-primary {
-    @apply rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50;
-  }
-  
-  .btn-secondary {
-    @apply rounded-md bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm border border-gray-300 hover:bg-gray-50;
-  }
-  
-  .input-field {
-    @apply mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm;
+  body {
+    @apply font-exeris;
   }
 }
 `;
@@ -534,12 +637,22 @@ function generateProxyConfig(): string {
 `;
 }
 
-function generateIndexHtml(): string {
+function generateNpmrc(): string {
+  // @exeris-systems/ui-kit is published to GitHub Packages (interim home — it will
+  // move to the public npm registry later). Resolve the @exeris-systems scope from
+  // there. GitHub Packages requires auth even for reads: add a token with
+  // read:packages to your global ~/.npmrc, e.g.
+  //   //npm.pkg.github.com/:_authToken=YOUR_GITHUB_TOKEN
+  return `@exeris-systems:registry=https://npm.pkg.github.com
+`;
+}
+
+function generateIndexHtml(appName: string): string {
   return `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Exeris Foundation</title>
+  <title>${htmlText(appName)}</title>
   <base href="/">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" type="image/svg+xml" href="favicon.ico">

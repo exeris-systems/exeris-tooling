@@ -339,6 +339,153 @@ export const ExerisMetadataSchema = z.object({
 export type ExerisMetadata = z.infer<typeof ExerisMetadataSchema>;
 
 // ============================================================================
+// Presentation IR — @View / @Region / @Block / @Bind (RFC-2026-06-28)
+//
+// The framework-neutral presentation IR the SDK owns (ViewMetadata /
+// RegionMetadata / ComponentNodeMetadata / BindingMetadata + ViewKind /
+// BlockType / BindSource). Mirrors the SDK records' field names + nullability:
+// every string field there normalises blank → null in its compact constructor
+// and the records carry @JsonInclude(NON_NULL), so absent fields are simply
+// missing on the wire — modelled here as `.optional()`. The enums are
+// null-tolerated on the wire (the SDK applies effective* defaults), so each is
+// an optional string union. Recursion (ComponentNodeMetadata.children) goes
+// through z.lazy. The wire shape is the processor's `view_*.json` =
+// ViewJson { name, packageName, qualifiedName, view: ViewMetadata }.
+// ============================================================================
+
+/** ViewKind string union (SDK enum constants; PAGE default applied SDK-side). */
+export const ViewKindSchema = z.enum(['PAGE', 'SECTION', 'COMPONENT', 'FRAGMENT']);
+export type ViewKind = z.infer<typeof ViewKindSchema>;
+
+/** BlockType string union (SDK enum constants; CONTAINER default applied SDK-side). */
+export const BlockTypeSchema = z.enum([
+  'HERO',
+  'LIST',
+  'GRID',
+  'RICH_TEXT',
+  'NAV',
+  'SLOT',
+  'CONTAINER',
+  'CARD',
+  'FORM',
+  'IMAGE',
+  'CUSTOM',
+]);
+export type BlockType = z.infer<typeof BlockTypeSchema>;
+
+/** BindSource string union (SDK enum constants; NONE default applied SDK-side). */
+export const BindSourceSchema = z.enum([
+  'ENTITY',
+  'PROJECTION',
+  'ACTION',
+  'STATIC',
+  'SLOT',
+  'NONE',
+]);
+export type BindSource = z.infer<typeof BindSourceSchema>;
+
+/**
+ * BindingMetadata — the opaque data binding of a presentation node. Discriminator
+ * `source` plus opaque `ref` / `path` / `expression` / `language` strings. A null
+ * `source` on the wire means NONE (the SDK's effectiveSource default).
+ */
+export const BindingMetadataSchema = z.object({
+  source: BindSourceSchema.optional(),
+  ref: z.string().optional(),
+  path: z.string().optional(),
+  expression: z.string().optional(),
+  language: z.string().optional(),
+});
+
+export type BindingMetadata = z.infer<typeof BindingMetadataSchema>;
+
+/**
+ * ComponentNodeMetadata — one node in the composition tree: a typed BlockType
+ * block with an optional binding, opaque `props` JSON, a recursive `children`
+ * list, and an optional `field` render facet (the @UI successor; minimally
+ * modelled in slice 1 as opaque). A null `type` on the wire means CONTAINER (the
+ * SDK's effectiveType default). The recursion is expressed via z.lazy.
+ */
+export const ComponentNodeMetadataSchema: z.ZodType<
+  ComponentNodeMetadata,
+  z.ZodTypeDef,
+  ComponentNodeMetadataInput
+> = z.lazy(() =>
+  z.object({
+    type: BlockTypeSchema.optional(),
+    customType: z.string().optional(),
+    binding: BindingMetadataSchema.optional(),
+    props: z.string().optional(),
+    children: z.array(ComponentNodeMetadataSchema).default([]),
+    // Leaf field-render facet (UIMetadata.UIFieldMetadata). Slice 1 keeps it
+    // opaque — modelled, not yet emitted (RFC §1 / §5 leaf-field-form deferral).
+    field: z.record(z.any()).optional(),
+  }),
+);
+
+/** The parsed (output) shape: `children` is always present (`.default([])`). */
+export interface ComponentNodeMetadata {
+  type?: BlockType;
+  customType?: string;
+  binding?: BindingMetadata;
+  props?: string;
+  children: ComponentNodeMetadata[];
+  field?: Record<string, unknown>;
+}
+
+/** The wire (input) shape: `children` may be absent (the SDK omits empty lists). */
+export interface ComponentNodeMetadataInput {
+  type?: BlockType;
+  customType?: string;
+  binding?: BindingMetadata;
+  props?: string;
+  children?: ComponentNodeMetadataInput[];
+  field?: Record<string, unknown>;
+}
+
+/**
+ * RegionMetadata — a named region / slot holding a list of component nodes. A
+ * blank `slot` is normalised to null SDK-side (the processor derives it from the
+ * member name before write-out, so on the wire it is typically present).
+ */
+export const RegionMetadataSchema = z.object({
+  slot: z.string().optional(),
+  components: z.array(ComponentNodeMetadataSchema).default([]),
+});
+
+export type RegionMetadata = z.infer<typeof RegionMetadataSchema>;
+
+/**
+ * ViewMetadata — the root of the presentation IR. `name` is required and
+ * non-blank; a null `kind` means PAGE (the SDK's effectiveKind default).
+ */
+export const ViewMetadataSchema = z.object({
+  name: z.string(),
+  kind: ViewKindSchema.optional(),
+  route: z.string().optional(),
+  title: z.string().optional(),
+  titleKey: z.string().optional(),
+  layout: z.string().optional(),
+  regions: z.array(RegionMetadataSchema).default([]),
+});
+
+export type ViewMetadata = z.infer<typeof ViewMetadataSchema>;
+
+/**
+ * ViewJson — the processor's `view_*.json` wire shape: the inner ViewMetadata
+ * wrapped with the declaring class's identity (mirrors CapabilityModuleJson).
+ * Parallel to DomainMetadata, never nested.
+ */
+export const ViewJsonSchema = z.object({
+  name: z.string(),
+  packageName: z.string(),
+  qualifiedName: z.string(),
+  view: ViewMetadataSchema,
+});
+
+export type ViewJson = z.infer<typeof ViewJsonSchema>;
+
+// ============================================================================
 // Helper Functions
 // ============================================================================
 
@@ -354,5 +501,16 @@ export function parseDomainMetadata(json: unknown): DomainMetadata {
  */
 export function parseExerisMetadata(json: unknown): ExerisMetadata {
   return ExerisMetadataSchema.parse(json);
+}
+
+/**
+ * Parse a processor `view_*.json` (the ViewJson wrapper) and return the inner
+ * ViewMetadata. The wrapper's `name` is the view's own name (identical to
+ * `view.name` by construction), so the inner record carries the identity the
+ * emitter needs; the package/qualified name are processor bookkeeping the
+ * front-only emitter does not consume in slice 1.
+ */
+export function parseViewJson(json: unknown): ViewMetadata {
+  return ViewJsonSchema.parse(json).view;
 }
 

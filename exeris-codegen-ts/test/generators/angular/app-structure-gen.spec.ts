@@ -48,9 +48,15 @@ import { generateAppStructure } from '../../../src/generators/angular/app-struct
 import { DEFAULT_CONFIG } from '../../../src/config.js';
 import {
   DomainMetadataSchema,
+  ViewMetadataSchema,
   type DomainMetadata,
+  type ViewMetadata,
 } from '../../../src/models/domain-model.js';
 import type { GeneratorConfig } from '../../../src/config.js';
+
+function view(overrides: Partial<ViewMetadata> & { name: string }): ViewMetadata {
+  return ViewMetadataSchema.parse(overrides);
+}
 
 interface EnumLike {
   name: string;
@@ -157,6 +163,131 @@ describe('generateAppStructure — static skeleton', () => {
 
   it('emits NO enum module (T20: the orchestrator owns src/app/types/enums.ts, not the scaffold)', () => {
     expect(fileAt(files, 'src/app/types/enums.ts')).toBeUndefined();
+  });
+});
+
+// ---------- T25: ui-kit token system wiring ----------
+
+describe('generateAppStructure — @exeris-systems/ui-kit token wiring (T25)', () => {
+  const files = generateAppStructure(
+    [domain({ entityName: 'Order' }), domain({ entityName: 'Product' })],
+    [],
+    cfg(),
+  );
+
+  it('styles.css imports Tailwind v4 then the ui-kit v4 @theme token entry, and drops the boilerplate theme', () => {
+    const css = fileAt(files, 'src/styles.css')!;
+    // v4 token wiring: tailwindcss first, then the ui-kit "theme" (v4 @theme) entry.
+    expect(css.content).toContain('@import "tailwindcss";');
+    expect(css.content).toContain('@import "@exeris-systems/ui-kit/theme";');
+    // Boilerplate component classes a product immediately deletes are gone.
+    expect(css.content).not.toContain('.btn-primary');
+    expect(css.content).not.toContain('.btn-secondary');
+    expect(css.content).not.toContain('.input-field');
+    // Hardcoded gray body theme is gone; body uses the exeris font token instead.
+    expect(css.content).not.toContain('bg-gray-100 text-gray-900');
+    expect(css.content).toContain('@apply font-exeris;');
+    // No hardcoded indigo accent left in the global stylesheet.
+    expect(css.content).not.toContain('indigo');
+  });
+
+  it('package.json declares the @exeris-systems/ui-kit dependency (^0.1.0, the current ui-kit version)', () => {
+    const pkg = fileAt(files, './package.json')!;
+    expect(pkg.content).toContain('"@exeris-systems/ui-kit": "^0.1.0"');
+  });
+
+  it('.npmrc points the @exeris-systems scope at GitHub Packages (where ui-kit is published)', () => {
+    const npmrc = fileAt(files, './.npmrc')!;
+    expect(npmrc).toBeDefined();
+    expect(npmrc.content).toContain('@exeris-systems:registry=https://npm.pkg.github.com');
+  });
+
+  it('tailwind.config.js wires the ui-kit v3 preset so a v3 toolchain also gets the tokens', () => {
+    const tw = fileAt(files, './tailwind.config.js')!;
+    expect(tw.content).toContain("import exerisPreset from '@exeris-systems/ui-kit/tailwind.preset.js';");
+    expect(tw.content).toContain('presets: [exerisPreset]');
+  });
+
+  it('no emitted template (scaffold or per-shape) ships the hardcoded bg-indigo-600 accent', () => {
+    // The scaffold's own emitted files must be token-driven, not indigo-hardcoded.
+    for (const f of files) {
+      expect(f.content, `bg-indigo-600 leaked into ${f.path}`).not.toContain('bg-indigo-600');
+    }
+    // The brand button uses the exeris primary token + its hover token.
+    const comp = fileAt(files, 'src/app/app.component.ts')!;
+    expect(comp.content).toContain('text-exeris-primary-hover');
+  });
+});
+
+// ---------- T7/U5: configurable appName ----------
+
+describe('generateAppStructure — configurable appName (T7/U5)', () => {
+  it('defaults to "Exeris Foundation" (logo, index title, route titles, package name)', () => {
+    const files = generateAppStructure([domain({ entityName: 'Order' })], [], cfg());
+    const comp = fileAt(files, 'src/app/app.component.ts')!;
+    const html = fileAt(files, 'src/index.html')!;
+    const routes = fileAt(files, 'src/app/app.routes.ts')!;
+    const pkg = fileAt(files, './package.json')!;
+    expect(comp.content).toContain('🚀 Exeris Foundation');
+    expect(comp.content).toContain("title = 'Exeris Foundation';");
+    expect(html.content).toContain('<title>Exeris Foundation</title>');
+    expect(routes.content).toContain("title: 'Orders - Exeris Foundation'");
+    expect(pkg.content).toContain('"name": "exeris-foundation-frontend"');
+  });
+
+  it('flows a custom appName into the logo, index title, route titles, package name + description', () => {
+    const files = generateAppStructure(
+      [domain({ entityName: 'Order' })],
+      [],
+      cfg({ appName: 'Acme Portal' }),
+    );
+    const comp = fileAt(files, 'src/app/app.component.ts')!;
+    const html = fileAt(files, 'src/index.html')!;
+    const routes = fileAt(files, 'src/app/app.routes.ts')!;
+    const pkg = fileAt(files, './package.json')!;
+    const ng = fileAt(files, './angular.json')!;
+    // Logo + Angular component title field.
+    expect(comp.content).toContain('🚀 Acme Portal');
+    expect(comp.content).toContain("title = 'Acme Portal';");
+    expect(comp.content).not.toContain('Exeris Foundation');
+    // Browser tab + per-route titles.
+    expect(html.content).toContain('<title>Acme Portal</title>');
+    expect(routes.content).toContain("title: 'Orders - Acme Portal'");
+    expect(routes.content).toContain("title: 'New Order - Acme Portal'");
+    expect(routes.content).toContain("title: 'Edit Order - Acme Portal'");
+    expect(routes.content).not.toContain('Exeris Foundation');
+    // package.json name (kebab-cased) + description.
+    expect(pkg.content).toContain('"name": "acme-portal-frontend"');
+    expect(pkg.content).toContain('"description": "Acme Portal - Generated Angular Frontend"');
+    // angular.json project key + dist path use the SAME slug as package.json.name
+    // (so a CI step locating dist by package.json.name finds dist/<slug>).
+    expect(ng.content).toContain('"acme-portal-frontend": {');
+    expect(ng.content).toContain('"outputPath": "dist/acme-portal-frontend"');
+    expect(ng.content).toContain('"acme-portal-frontend:build:production"');
+    expect(ng.content).not.toContain('exeris-foundation-frontend');
+  });
+
+  it('escapes a dangerous appName so the emitted package.json stays valid JSON', () => {
+    const evil = 'Foo "Bar" & Co';
+    const files = generateAppStructure([domain({ entityName: 'Order' })], [], cfg({ appName: evil }));
+    const pkg = fileAt(files, './package.json')!;
+    expect(() => JSON.parse(pkg.content)).not.toThrow();
+    expect(JSON.parse(pkg.content).description).toBe(`${evil} - Generated Angular Frontend`);
+  });
+
+  it('escapes appName in the emitted HTML title and TS string literals', () => {
+    const files = generateAppStructure(
+      [domain({ entityName: 'Order' })],
+      [],
+      cfg({ appName: `O'Hara <Labs>` }),
+    );
+    const html = fileAt(files, 'src/index.html')!;
+    const comp = fileAt(files, 'src/app/app.component.ts')!;
+    // HTML text: angle brackets escaped, no raw tag injected into the title.
+    expect(html.content).toContain('&lt;Labs&gt;');
+    expect(html.content).not.toContain('<Labs>');
+    // TS single-quoted component title: the apostrophe is backslash-escaped.
+    expect(comp.content).toContain("title = 'O\\'Hara");
   });
 });
 
@@ -441,5 +572,134 @@ describe('generateAppStructure — hidden-domain handling', () => {
     expect(routes.content).toContain("redirectTo: ''");
     expect(routes.content).not.toContain('internal-ledger');
     expect(routes.content).not.toContain('InternalLedger');
+  });
+});
+
+// ---------- @View route assembly (RFC-2026-06-28 §5) ----------
+
+describe('generateAppStructure — @View route assembly', () => {
+  it('app.routes.ts imports each view route const + spreads it into the routes array', () => {
+    const files = generateAppStructure(
+      [domain({ entityName: 'Order' })],
+      [],
+      cfg(),
+      [view({ name: 'ProductLanding', kind: 'PAGE', route: '/products', title: 'Products' })],
+    );
+    const routes = fileAt(files, 'src/app/app.routes.ts')!;
+    // Lazy route const is imported from ./pages/<kebab>.route (the file the
+    // ViewGenerator emits) and spread into the routes array.
+    expect(routes.content).toContain(
+      "import { productLandingRoutes } from './pages/product-landing.route';",
+    );
+    expect(routes.content).toContain('...productLandingRoutes,');
+    // Alongside the existing entity routes (not replacing them).
+    expect(routes.content).toContain("path: 'orders'");
+    expect(routes.content).toContain('OrderListComponent');
+  });
+
+  it('default redirect targets the FIRST PAGE view when present (instead of the first entity)', () => {
+    const files = generateAppStructure(
+      [domain({ entityName: 'Order' })],
+      [],
+      cfg(),
+      [view({ name: 'ProductLanding', kind: 'PAGE', route: '/products' })],
+    );
+    const routes = fileAt(files, 'src/app/app.routes.ts')!;
+    // The view route path (leading slash stripped) wins the redirect.
+    expect(routes.content).toContain("redirectTo: 'products'");
+    expect(routes.content).not.toContain("redirectTo: 'orders'");
+  });
+
+  it('keeps the entity-based default redirect when no PAGE view exists (non-PAGE views still route)', () => {
+    const files = generateAppStructure(
+      [domain({ entityName: 'Order' })],
+      [],
+      cfg(),
+      [view({ name: 'SidePanel', kind: 'SECTION', route: '/panel' })],
+    );
+    const routes = fileAt(files, 'src/app/app.routes.ts')!;
+    // SECTION is not a top-level destination → redirect stays on the first entity.
+    expect(routes.content).toContain("redirectTo: 'orders'");
+    // …but the view route is still imported + spread (it is routable on its own).
+    expect(routes.content).toContain("import { sidePanelRoutes } from './pages/side-panel.route';");
+    expect(routes.content).toContain('...sidePanelRoutes,');
+  });
+
+  it('adds a sidebar nav link per PAGE view; non-PAGE views get no top-level link', () => {
+    const files = generateAppStructure(
+      [domain({ entityName: 'Order' })],
+      [],
+      cfg(),
+      [
+        view({ name: 'ProductLanding', kind: 'PAGE', route: '/products', title: 'Products' }),
+        view({ name: 'SidePanel', kind: 'SECTION', route: '/panel' }),
+      ],
+    );
+    const comp = fileAt(files, 'src/app/app.component.ts')!;
+    // PAGE view → a router link at its effective route path, labelled by title.
+    expect(comp.content).toContain('routerLink="/products"');
+    expect(comp.content).toContain('Products');
+    // SECTION view → no top-level nav link.
+    expect(comp.content).not.toContain('routerLink="/panel"');
+  });
+
+  it('sorts views deterministically (by route path, then name) — order-independent of input', () => {
+    const mk = (views: ViewMetadata[]) =>
+      fileAt(generateAppStructure([], [], cfg(), views), 'src/app/app.routes.ts')!.content;
+    const a = view({ name: 'Alpha', kind: 'PAGE', route: '/alpha' });
+    const z = view({ name: 'Zeta', kind: 'PAGE', route: '/zeta' });
+    // Both input orderings yield the same emitted file.
+    expect(mk([a, z])).toBe(mk([z, a]));
+    // …and /alpha is imported before /zeta regardless of input order.
+    const out = mk([z, a]);
+    expect(out.indexOf('alphaRoutes')).toBeLessThan(out.indexOf('zetaRoutes'));
+  });
+
+  it('breaks ties on the view name when two views share a route path', () => {
+    const mk = (views: ViewMetadata[]) =>
+      fileAt(generateAppStructure([], [], cfg(), views), 'src/app/app.routes.ts')!.content;
+    // Same effective route path → the secondary key (view name, code-unit order) decides.
+    const bravo = view({ name: 'Bravo', kind: 'PAGE', route: '/dup' });
+    const alpha = view({ name: 'Alpha', kind: 'PAGE', route: '/dup' });
+    expect(mk([bravo, alpha])).toBe(mk([alpha, bravo]));
+    const out = mk([bravo, alpha]);
+    expect(out.indexOf('alphaRoutes')).toBeLessThan(out.indexOf('bravoRoutes'));
+  });
+
+  it('view route paths strip a leading slash to match the per-view route file', () => {
+    const files = generateAppStructure(
+      [],
+      [],
+      cfg(),
+      [view({ name: 'Dashboard', kind: 'PAGE', route: '/dashboard' })],
+    );
+    const routes = fileAt(files, 'src/app/app.routes.ts')!;
+    expect(routes.content).toContain("redirectTo: 'dashboard'");
+    expect(routes.content).not.toContain("redirectTo: '/dashboard'");
+  });
+
+  it('falls back to the kebab name when a PAGE view declares no route', () => {
+    const files = generateAppStructure(
+      [],
+      [],
+      cfg(),
+      [view({ name: 'HomeScreen', kind: 'PAGE' })],
+    );
+    const routes = fileAt(files, 'src/app/app.routes.ts')!;
+    expect(routes.content).toContain("import { homeScreenRoutes } from './pages/home-screen.route';");
+    expect(routes.content).toContain("redirectTo: 'home-screen'");
+  });
+
+  it('zero views → app.routes.ts AND app.component.ts byte-identical to the 3-arg call (additive guard)', () => {
+    const domains = [domain({ entityName: 'Order' }), domain({ entityName: 'Product' })];
+    const legacy = generateAppStructure(domains, [], cfg());
+    const withEmptyViews = generateAppStructure(domains, [], cfg(), []);
+    for (const path of ['src/app/app.routes.ts', 'src/app/app.component.ts'] as const) {
+      expect(fileAt(withEmptyViews, path)!.content).toBe(fileAt(legacy, path)!.content);
+    }
+    // No view-route artefacts leak into the zero-view output.
+    const routes = fileAt(withEmptyViews, 'src/app/app.routes.ts')!;
+    expect(routes.content).not.toContain('./pages/');
+    expect(routes.content).not.toContain('...');
   });
 });
