@@ -169,6 +169,11 @@ public class KernelStreamHandlerGenerator implements KernelArtifactGenerator {
      */
     private static List<KernelStreamScaffold.StreamEventBinding> eventBindings(
             DomainMetadata metadata, String entity) {
+        // Fail loudly (as the publisher does) if two @DomainEvents normalise to the
+        // same <Name>Event key — this generator runs BEFORE KernelEventGenerator, so
+        // without the guard it would silently emit duplicate bus.subscribe(...) calls
+        // and the bus would deliver every event twice to the stream.
+        KernelEventSupport.assertDistinctEventNames(metadata);
         List<KernelStreamScaffold.StreamEventBinding> bindings = new ArrayList<>();
         for (DomainEventMetadata event : metadata.events()) {
             String subscribeName = KernelEventSupport.eventName(event, entity);

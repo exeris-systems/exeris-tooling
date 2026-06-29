@@ -213,13 +213,16 @@ public final class KernelStreamScaffold {
                 .add("// live-view SSE stream. The bus delivers raw codec-encoded bytes\n")
                 .add("// (ADR-046); on the Community JSON codec those bytes ARE the\n")
                 .add("// data: field, so they pass through without a decode round-trip.\n")
-                .addStatement("$T bus = $T.eventEngine().bus()", EVENT_BUS, KERNEL_PROVIDERS)
+                .add("// bus is acquired INSIDE try so a failed acquisition still runs the\n")
+                .add("// finally teardown (close()); the null guard keeps it self-contained.\n")
+                .addStatement("$T bus = null", EVENT_BUS)
                 .add("// Bounded hand-off: the subscribe callback runs on a bus dispatch\n")
                 .add("// virtual thread, but emit(...) must run on THIS stream's VT (it\n")
                 .add("// parks under back-pressure). The callback offers; this VT drains.\n")
                 .addStatement("$T queue = new $T<>(STREAM_BUFFER_CAPACITY)", queueType, ARRAY_BLOCKING_QUEUE)
                 .addStatement("$T tokens = new $T<>()", tokenListType, ARRAY_LIST)
-                .beginControlFlow("try");
+                .beginControlFlow("try")
+                .addStatement("bus = $T.eventEngine().bus()", KERNEL_PROVIDERS);
 
         for (StreamEventBinding b : bindings) {
             body.add("tokens.add(bus.subscribe($S, (descriptor, payload) -> {\n", b.subscribeName());
@@ -254,10 +257,13 @@ public final class KernelStreamScaffold {
                 .nextControlFlow("catch ($T interrupted)", InterruptedException.class)
                 .addStatement("$T.currentThread().interrupt()", THREAD)
                 .nextControlFlow("finally")
-                .add("// Always drop the subscriptions when the stream unwinds, then\n")
-                .add("// close (idempotent — safe even after a disconnect).\n")
+                .add("// Drop the subscriptions when the stream unwinds, then close\n")
+                .add("// (idempotent — safe even after a disconnect). The null guard\n")
+                .add("// covers a failed bus acquisition above (close() still runs).\n")
+                .beginControlFlow("if (bus != null)")
                 .beginControlFlow("for ($T token : tokens)", SUBSCRIPTION_TOKEN)
                 .addStatement("bus.unsubscribe(token)")
+                .endControlFlow()
                 .endControlFlow()
                 .addStatement("exchange.close()")
                 .endControlFlow()

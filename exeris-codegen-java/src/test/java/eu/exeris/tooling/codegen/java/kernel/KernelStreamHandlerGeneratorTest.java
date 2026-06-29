@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Per-generator test for {@link KernelStreamHandlerGenerator} (ADR-043 Slice 1).
@@ -63,8 +64,11 @@ class KernelStreamHandlerGeneratorTest {
         assertThat(content)
                 .contains("implements HttpStreamHandler")
                 .contains("public void handle(HttpStreamExchange exchange)")
-                // bus reached via the ScopedValue accessor, not a constructed engine
-                .contains("EventBus bus = KernelProviders.eventEngine().bus()")
+                // bus reached via the ScopedValue accessor, not a constructed engine;
+                // acquired inside try so a failed acquisition still runs close()
+                .contains("EventBus bus = null")
+                .contains("bus = KernelProviders.eventEngine().bus()")
+                .contains("if (bus != null)")
                 // bounded hand-off (No-Waste-Compute, ADR-043 obligation 4)
                 .contains("STREAM_BUFFER_CAPACITY = 256")
                 .contains("BlockingQueue<StreamEvent> queue = new ArrayBlockingQueue<>(STREAM_BUFFER_CAPACITY)")
@@ -117,6 +121,20 @@ class KernelStreamHandlerGeneratorTest {
         assertThat(content)
                 .contains("bus.subscribe(\"OrderEvent\", (descriptor, payload) ->")
                 .contains("StreamEvent.of(\"OrderEvent\", data)");
+    }
+
+    @Test
+    @DisplayName("two @DomainEvents normalising to the same <Name>Event key fail at generation")
+    void throwsOnDuplicateNormalisedKeys() {
+        // both normalise to "OrderEvent": "" → <Entity>Event, "Order" → "Order" + "Event".
+        // Without the assertDistinctEventNames guard the producer would emit two
+        // bus.subscribe("OrderEvent", ...) calls and double-deliver every event.
+        DomainMetadata meta = order().events(List.of(
+                DomainEventMetadata.simple(""),
+                DomainEventMetadata.simple("Order"))).build();
+
+        assertThatThrownBy(() -> gen.generate(meta))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
