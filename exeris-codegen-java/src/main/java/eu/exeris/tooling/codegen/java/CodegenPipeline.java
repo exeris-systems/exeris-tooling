@@ -88,6 +88,20 @@ public final class CodegenPipeline {
      *         alongside {@link IOException}.
      */
     public int run(Path metadataDir, Path outputDir, String explicitBasePackage) throws IOException {
+        // Backward-compatible entry: the T18 masked-compile-failure guard is ON
+        // (allowEmpty=false) — empty metadata never silently wipes a committed tree.
+        return run(metadataDir, outputDir, explicitBasePackage, false);
+    }
+
+    /**
+     * @param allowEmpty when {@code true}, a run that loads zero {@code @ExerisDomain}
+     *                   entities is permitted to prune a previously-generated tree —
+     *                   the explicit "I removed every entity" teardown. Default
+     *                   ({@code false}) refuses that prune (T18), since empty metadata
+     *                   is almost always a masked compile failure.
+     */
+    public int run(Path metadataDir, Path outputDir, String explicitBasePackage, boolean allowEmpty)
+            throws IOException {
         Objects.requireNonNull(metadataDir, "metadataDir");
         Objects.requireNonNull(outputDir, "outputDir");
 
@@ -102,17 +116,23 @@ public final class CodegenPipeline {
         if (domains.isEmpty() && capabilities.isEmpty()) {
             LOG.log(Level.WARNING, "No domain or capability metadata found in " + metadataDir
                     + " — make sure @ExerisDomain / @CapabilityModule-annotated classes are compiled first");
-            // T13: "nothing to generate" is itself a valid output state (every
-            // @ExerisDomain / @CapabilityModule was removed). If a *previous* run
-            // owned this tree (a manifest is present), this run must own it too —
-            // prune every previously-emitted file rather than leaving a stale,
-            // un-compilable tree. A directory with no prior manifest is left
-            // untouched (nothing was ever generated here to clean up).
-            if (Files.exists(outputDir.resolve(OutputWriter.MANIFEST_NAME))) {
-                int pruned = new OutputWriter(outputDir).pruneOrphansAndWriteManifest();
-                if (pruned > 0) {
-                    LOG.log(Level.INFO, "Pruned " + pruned + " orphaned generated file(s)");
-                }
+            // T18: empty metadata is overwhelmingly a masked compile failure, not
+            // an intentional teardown. If a *previous* run owns a committed tree,
+            // pruning here would silently wipe it (recoverable only via git
+            // restore). Refuse unless the caller explicitly opts into the
+            // "I removed every @ExerisDomain" teardown. A directory with no prior
+            // manifest is left untouched (nothing was ever generated here).
+            OutputWriter emptyWriter = new OutputWriter(outputDir);
+            int wouldOrphan = emptyWriter.countOrphans();
+            if (wouldOrphan == 0) {
+                return 0;
+            }
+            if (!allowEmpty) {
+                throw new EmptyMetadataException(wouldOrphan, metadataDir, outputDir);
+            }
+            int pruned = emptyWriter.pruneOrphansAndWriteManifest();
+            if (pruned > 0) {
+                LOG.log(Level.INFO, "Pruned " + pruned + " orphaned generated file(s) (allowEmpty)");
             }
             return 0;
         }
@@ -181,6 +201,17 @@ public final class CodegenPipeline {
 
         if (!capabilities.isEmpty()) {
             filesGenerated += emitCapabilityManifest(capabilities, writer);
+        }
+
+        // T18: even with capability metadata present, zero @ExerisDomain entities
+        // while a prior run owns domain-derived files is the masked-compile-failure
+        // signature — the prune below would wipe that committed tree. Refuse unless
+        // the teardown is explicit. (Domains present → a normal prune is correct.)
+        if (domains.isEmpty() && !allowEmpty) {
+            int wouldOrphan = writer.countOrphans();
+            if (wouldOrphan > 0) {
+                throw new EmptyMetadataException(wouldOrphan, metadataDir, outputDir);
+            }
         }
 
         // T13: generation owns its output tree — delete files a previous run

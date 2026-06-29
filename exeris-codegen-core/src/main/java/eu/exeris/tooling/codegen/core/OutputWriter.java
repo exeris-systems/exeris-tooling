@@ -147,6 +147,30 @@ public final class OutputWriter {
      * @return the number of orphaned files deleted
      * @throws IOException if reading the old manifest or writing the new one fails
      */
+    /**
+     * Counts the files a {@link #pruneOrphansAndWriteManifest()} call would
+     * delete right now — the previous-manifest paths this run did not re-emit —
+     * <b>without</b> deleting anything. Backs the T18 masked-compile-failure
+     * guard: a run that would orphan files it generated nothing to replace is
+     * almost always a build that failed before the annotation processor emitted
+     * metadata, not an intentional teardown — wiping the committed tree on that
+     * signal is the data-loss footgun the guard prevents.
+     *
+     * @return the number of orphans the next prune would remove
+     * @throws IOException if reading the previous manifest fails
+     */
+    public int countOrphans() throws IOException {
+        Set<String> previous = readManifest();
+        int orphans = 0;
+        for (String rel : previous) {
+            if (writtenPaths.contains(rel) || MANIFEST_NAME.equals(rel)) {
+                continue;
+            }
+            orphans++;
+        }
+        return orphans;
+    }
+
     public int pruneOrphansAndWriteManifest() throws IOException {
         Set<String> previous = readManifest();
         int pruned = 0;

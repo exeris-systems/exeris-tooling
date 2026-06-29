@@ -173,21 +173,42 @@ class CodegenPipelineTest {
         }
 
         @Test
-        @DisplayName("all entities removed (empty metadata, prior manifest) → prunes the previous tree (T13)")
-        void allEntitiesRemovedPrunesPreviousTree() throws IOException {
+        @DisplayName("T18: empty metadata + prior manifest → REFUSES to wipe (masked-compile-failure guard), tree survives")
+        void emptyMetadataRefusesToWipePriorTree() throws IOException {
             // Simulate a previous generation: a stale file plus the manifest that owns it.
-            Path stale = outputDir.resolve("com/shop/repository/OrderRepository.java");
-            Files.createDirectories(stale.getParent());
-            Files.writeString(stale, "class OrderRepository {}");
+            Path owned = outputDir.resolve("com/shop/repository/OrderRepository.java");
+            Files.createDirectories(owned.getParent());
+            Files.writeString(owned, "class OrderRepository {}");
             Files.writeString(outputDir.resolve(".exeris-codegen-manifest"),
                     "# Exeris Tooling generated-output manifest - DO NOT EDIT MANUALLY\n"
                             + "com/shop/repository/OrderRepository.java\n");
 
-            // This run has no entities at all.
-            int filesGenerated = pipeline.run(metadataDir, outputDir, "com.shop");
+            // This run finds no metadata (a masked compile failure). The default
+            // guard refuses rather than pruning the committed tree.
+            assertThatThrownBy(() -> pipeline.run(metadataDir, outputDir, "com.shop"))
+                    .isInstanceOf(EmptyMetadataException.class)
+                    .hasMessageContaining("Refusing to wipe")
+                    .hasMessageContaining("allowEmpty=true");
+
+            // The committed tree is intact — nothing was deleted.
+            assertThat(owned).exists();
+        }
+
+        @Test
+        @DisplayName("T18: allowEmpty=true honours the explicit teardown — empty metadata prunes the prior tree")
+        void allowEmptyHonoursIntentionalTeardown() throws IOException {
+            Path owned = outputDir.resolve("com/shop/repository/OrderRepository.java");
+            Files.createDirectories(owned.getParent());
+            Files.writeString(owned, "class OrderRepository {}");
+            Files.writeString(outputDir.resolve(".exeris-codegen-manifest"),
+                    "# Exeris Tooling generated-output manifest - DO NOT EDIT MANUALLY\n"
+                            + "com/shop/repository/OrderRepository.java\n");
+
+            // Opted-in teardown: empty metadata is allowed to prune the prior tree.
+            int filesGenerated = pipeline.run(metadataDir, outputDir, "com.shop", true);
 
             assertThat(filesGenerated).isZero();
-            assertThat(stale).doesNotExist();
+            assertThat(owned).doesNotExist();
             assertThat(outputDir.resolve("com/shop/repository")).doesNotExist();
         }
     }
