@@ -164,6 +164,19 @@ public final class CodegenPipeline {
                         + " (" + applicationGenerator.artifactType() + ")");
                 filesGenerated++;
             }
+
+            // T9: one trailing Flyway migration adding every cross-table FOREIGN
+            // KEY constraint, app-wide so each relationship's target table can be
+            // resolved (and external targets skipped). Pinned above every
+            // CREATE TABLE migration so the referenced tables already exist.
+            // null when the project has no in-scope MANY_TO_ONE relationship.
+            GeneratedFile foreignKeys = applicationGenerator.generateForeignKeys(domains);
+            if (foreignKeys != null) {
+                writeFile(writer, foreignKeys);
+                LOG.log(Level.DEBUG, () -> "wrote " + foreignKeys.className()
+                        + " (" + foreignKeys.artifactType() + ")");
+                filesGenerated++;
+            }
         }
 
         if (!capabilities.isEmpty()) {
