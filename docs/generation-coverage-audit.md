@@ -1,6 +1,6 @@
 # Generation-coverage audit — BE/FE/E2E separation, FE-only/CMS lane, and the hand-written → generation roadmap
 
-Audit date: 2026-06-28. Method: 4 parallel readers across `exeris-tooling` / `exeris-sdk` / `Stellar-Tactics` / `exeris-ai-bridge`, then an adversarial verifier that **re-ran the load-bearing claims** (FE-only CLI run, grep-confirmed unconsumed records). Evidence is file:line-anchored in the workflow transcript; this doc is the synthesis + the prioritized roadmap.
+Audit date: 2026-06-28. Method: 4 parallel readers across `exeris-tooling` / `exeris-sdk` / a downstream dog-food app / `exeris-ai-bridge`, then an adversarial verifier that **re-ran the load-bearing claims** (FE-only CLI run, grep-confirmed unconsumed records). Evidence is file:line-anchored in the workflow transcript; this doc is the synthesis + the prioritized roadmap.
 
 ---
 
@@ -24,7 +24,7 @@ The pipeline is split along a single hinge: **one processor → `exeris-metadata
 |---|---|---|
 | **BE-only** | `mvn exeris:generate` → `CodegenPipeline.run(metadataDir, out, basePkg)` — no FE reference anywhere in the Java pipeline | ✅ works standalone |
 | **FE-only** | `exeris-gen generate --input <metadata-dir>` — `findMetadataFiles` needs **only `*.json` in a dir**; never touches Java/Maven/kernel | ✅ works standalone (verified) |
-| **E2E (BE+FE)** | No single cross-toolchain orchestrator in `exeris-tooling`; CI fans out: `mvn verify` ‖ `vitest + verify:generated` ‖ `ng build` of a `gen-sample-app`. *(Stellar's `build.sh` is a combined reactor+test driver for the **showcase**, not the tooling repo.)* | ✅ per-side; not one harness |
+| **E2E (BE+FE)** | No single cross-toolchain orchestrator in `exeris-tooling`; CI fans out: `mvn verify` ‖ `vitest + verify:generated` ‖ `ng build` of a `gen-sample-app`. *(The dog-food app's `build.sh` is a combined reactor+test driver for the **showcase**, not the tooling repo.)* | ✅ per-side; not one harness |
 
 **The one coupling:** metadata JSON is authored *only* by the Java processor (runs inside `javac`). So a *cold* FE run presupposes a prior `mvn compile` — **unless the JSON is hand-/Studio-authored** (the front-only lane, §2). The two toolchains otherwise share nothing but the JSON.
 
@@ -53,9 +53,9 @@ The pipeline is split along a single hinge: **one processor → `exeris-metadata
 | **G1 parameterised/relational binding** ("X of the current Y") | SDK (shape) + tooling | The corpus's defining trait; today only an opaque-`expression` TODO. **Highest-leverage fork.** |
 | **G2 STREAM/live binding** | SDK (`BindSource`) + tooling | Cheap; SSE runtime already landed (ADR-043/044). |
 | **G3 mesh binding** | SDK + tooling | T12; central to multi-service, minor for a single CMS front. |
-| **G6 token/theme binding** | tooling + `exeris-sdk-ui-kit` | The view can't yet *name* its design system / theme variant (the Stellar T25/faction-overlay axis). |
+| **G6 token/theme binding** | tooling + `exeris-sdk-ui-kit` | The view can't yet *name* its design system / theme variant (the dog-food app's T25/faction-overlay axis). |
 | **Studio visual authoring UI** | `exeris-platform` — **ABSENT locally** | Only its `lsp:*` *read* surface is described (via `exeris-ai-bridge`), and that exposes domains/actions only — **no presentation/view/Studio surface**. The authoring UI is a separate, not-present repo. |
-| **Headless CMS SKU corpus** | SDK/SKU roadmap — **ABSENT** (H1-2028) | Gates the *full* emitter (RFC condition 2). Stellar's `view-ir-corpus.md` is the early validating stand-in. |
+| **Headless CMS SKU corpus** | SDK/SKU roadmap — **ABSENT** (H1-2028) | Gates the *full* emitter (RFC condition 2). The dog-food app's view-IR corpus is the early validating stand-in. |
 
 **Bottom line:** FE-only *page generation* is live; a turn-key standalone front needs app-shell assembly (small, tooling) + the binding depth (G1 keystone) + eventually the Studio UI (absent platform repo).
 
@@ -81,7 +81,7 @@ Five of the eight "move-to-generation" levers share **one root**: the processor'
 | `@SagaTransition` + `StepKind` | ⚠️ AST yes, **annotation missing** | ❌ | ❌ | await/dispatch/compensate state-machine bodies | **L–XL** |
 | `@EventSourced` (EV2) | ✅ | ✅ | ❌ (kernel-blocked: no event-store SPI) | event-sourced aggregate (append/load/snapshot) | **XL, blocked** |
 
-### 3c. Stellar hand-written inventory (what to keep vs move)
+### 3c. Dog-food app hand-written inventory (what to keep vs move)
 
 **Keep hand-written — genuine domain logic (~7,500 LOC):** the `*/engine` cores (~1,820 — combat/economy/research/galaxy/faction/commander; pure deterministic rules), `domain/` annotated source (3,050 — the source of truth that *drives* generation), most `app/*` service composition (~2,500), `sim/` harnesses (595), the web `ui/` design system (320 — hand-authored by design, T25/G6).
 
@@ -91,7 +91,7 @@ Five of the eight "move-to-generation" levers share **one root**: the processor'
 |---|--:|---|
 | **Mesh seam** — `UniverseClient` + `InProcess`/`Http` adapters + 15 `*View` records | **~1,230** | **T12** (cross-app contract registry → generated remote dispatch + DTOs + K4 addressing) — *biggest single win* |
 | **app port/adapter/memory triad** | **~1,084** | **T8** finders (done — kills `findAll().filter()`) + generated repository-fake codegen (test fixtures) |
-| **web mocks + string-union enums** | **~750** | **T20** (real TS enums + `*DisplayNames` — already fixed in tooling; Stellar just needs a **frontend regen**) + generated fixtures |
+| **web mocks + string-union enums** | **~750** | **T20** (real TS enums + `*DisplayNames` — already fixed in tooling; the dog-food app just needs a **frontend regen**) + generated fixtures |
 | **delegating saga bodies** (`ShipBuildSaga`/`OutpostBuildSaga`/`BattleResolutionSaga`) | **~210** | `@SagaStep(service,command)` dispatch generation (needs `@SagaTransition`/`StepKind`) |
 | `CommanderApplicationService.onBattleEnded` (XP accrual) | ~15 | **`@EventHandler`** |
 | **web screens** (9 components + shell) | ~2,500 | **`@View`** compositions (first slice landed; G1–G6 gate the rest) |
@@ -103,9 +103,9 @@ Five of the eight "move-to-generation" levers share **one root**: the processor'
 ## 4. Recommended sequence (leverage × effort)
 
 1. **Keystone (do first):** expand the processor entity-build pass to extract the already-shipped AST (`projections`, `eventHandlers`, `rules`, `FieldMetadata.derived`/`dataType`) — stops them serializing empty; unblocks 5 levers' emitters. Pairs with **B5/`@Field.dataType`** (S) and the **U4** UI-fidelity slice.
-2. **Quick wins (S):** `@Field.dataType` formatting (unblocks **U2** universal lists / **U3** forms); **regenerate Stellar's frontend** to pick up the T20 real enums (kills the string-union drift that forced the hand-written `*.model.ts` vocabulary).
+2. **Quick wins (S):** `@Field.dataType` formatting (unblocks **U2** universal lists / **U3** forms); **regenerate the dog-food app's frontend** to pick up the T20 real enums (kills the string-union drift that forced the hand-written `*.model.ts` vocabulary).
 3. **Medium (M):** `@EventHandler` emitter (kills hand-written reactions) · **EV1** `@DomainEvent` payload projection (empty events → field projection) · grown `@Projection` DTO emitter.
 4. **Large (L):** `@View` full emitter — **G1 parameterised binding is the keystone** (unblocks the corpus's defining trait) + app-shell route assembly (turns FE-only into a runnable front) · the U2/U3/U4 FE-fidelity cluster · `@Derived`/`@Rule`.
-5. **XL / cross-repo:** **T12 mesh** (the single biggest Stellar hand-code mass, ~1,230 LOC) · `@SagaTransition` state-machine bodies (needs the net-new annotation) · **EV2** event-sourcing (kernel-blocked — needs the aggregate-event-store SPI first).
+5. **XL / cross-repo:** **T12 mesh** (the single biggest dog-food hand-code mass, ~1,230 LOC) · `@SagaTransition` state-machine bodies (needs the net-new annotation) · **EV2** event-sourcing (kernel-blocked — needs the aggregate-event-store SPI first).
 
 **Net:** the platform is already a clean BE/FE-separable, contract-driven pipeline; FE-only/CMS page generation works today. The largest mechanical reductions are **T12 (mesh)**, the **port/adapter triad (T8 + fakes)**, and the **web vocabulary (T20 regen)** — and most of the behaviour levers are *already half-built in the SDK*, waiting on one processor-extraction expansion + their emitters.

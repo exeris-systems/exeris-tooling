@@ -14,7 +14,7 @@ Per RFC-2026-06-25, **`@UI` is *subsumed* by `@View`/`ViewMetadata`, then deprec
 
 ## The menu (ranked by value-per-effort)
 
-| # | Item | Kernel-free | Tooling-only slice | Obligation (in-mandate) | Effort | Eliminates (Stellar) |
+| # | Item | Kernel-free | Tooling-only slice | Obligation (in-mandate) | Effort | Eliminates (dog-food) |
 |---|---|---|---|---|---|---|
 | 1 | **@View route assembly** | YES | thread `views` into `app-structure-gen` → import+spread per-view routes into `app.routes.ts` | none (1-line parity note) | **S** | hand-written app shell/routes; makes the FE-only CMS front *runnable* |
 | 2 | **T9 FK constraints** | YES | Flyway trailing `ALTER … ADD CONSTRAINT FOREIGN KEY` migration (above create-tier) | none (no -io PR; reuses `RelationshipMetadata`) | **S** | — (referential integrity) |
@@ -30,7 +30,7 @@ Per RFC-2026-06-25, **`@UI` is *subsumed* by `@View`/`ViewMetadata`, then deprec
 | 12 | **L5 — @Derived/@Rule** | YES | SpEL→{Java,SQL} transpiler; `@Rule`→handler guard (reuse T10 seam) / Flyway CHECK; `@Derived`→computed accessor | **RFC→ADR** (transpile + safety) + -io mirror | **XL** | roll-ups/formulas/guards (modest) |
 
 ## Explicitly out (boundary)
-- **EV1 runtime** (kernel event-codec SPI — drafted ADR, founder decision). **L4 rebuild loop** (kernel core). **T12 K4 addressing** (kernel core). **T12 command/event surface** (blocked on T1, separate tooling track). **@View G1/G2/G3/G6 binding depth** (SDK RFC, out of the tooling slice). **L7 @EventSourced** (kernel SPI gap). Stellar `*/engine` cores + genuine orchestration/reaction *bodies* (genuine logic — generators kill the glue, not the rules).
+- **EV1 runtime** (kernel event-codec SPI — drafted ADR, founder decision). **L4 rebuild loop** (kernel core). **T12 K4 addressing** (kernel core). **T12 command/event surface** (blocked on T1, separate tooling track). **@View G1/G2/G3/G6 binding depth** (SDK RFC, out of the tooling slice). **L7 @EventSourced** (kernel SPI gap). The dog-food app's `*/engine` cores + genuine orchestration/reaction *bodies* (genuine logic — generators kill the glue, not the rules).
 
 ## Recommended sequence
 **First move (S, safe-autonomous): `@View route assembly`** — converts the dead-end page generator into a runnable standalone CMS front (the audit's top gap) for the least work; no ADR/SDK/kernel/metadata.

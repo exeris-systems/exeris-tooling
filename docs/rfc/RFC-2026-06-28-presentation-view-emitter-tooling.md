@@ -6,7 +6,7 @@
 | **Author(s)**     | arkstack-dev                                                          |
 | **Date Opened**   | 2026-06-28                                                           |
 | **Date Closed**   | —                                                                    |
-| **Target ADR(s)** | TBD — the "presentation view emitter shape" ADR (sibling to [ADR-044](../adr/ADR-044-tooling-sse-stream-emitter-shape.md)) that ratifies this RFC's recommendation, reserved in `exeris-docs/adr-index.md` on acceptance. The leaf-field-facet follow-up has its own decision: [ADR-047 (DRAFT)](../adr/ADR-047-view-leaf-field-facet-and-ui-subsumption.DRAFT.md). |
+| **Target ADR(s)** | TBD — the "presentation view emitter shape" ADR (sibling to [ADR-044](../adr/ADR-044-tooling-sse-stream-emitter-shape.md)) that ratifies this RFC's recommendation, reserved in `exeris-docs/adr-index.md` on acceptance. The leaf-field-facet follow-up has its own decision: [ADR-047](../adr/ADR-047-view-leaf-field-facet-and-ui-subsumption.md). |
 | **Affected Repos**| `exeris-tooling` (processor extraction → `view_*.json`; the framework-neutral-IR → **Angular 22 signal-first emitter** in `exeris-codegen-ts`); `exeris-sdk` (consumes the IR shape it already owns — no change); `exeris-sdk-ui-kit` (a downstream consumer of the emitted front, not an emitter target owner) |
 | **Reviewers**     | —                                                                    |
 
@@ -18,7 +18,7 @@
 
 ## Context
 
-This RFC opens gate condition (1): it authors the emitter, so the SDK IR ships behind a real consumer rather than inert at family scale. For condition (2) the canonical informing usage is the Headless CMS SKU (H1-2028), which does not exist yet — but a **worked corpus already exists**: [`Stellar-Tactics/docs/view-ir-corpus.md`](https://github.com/exeris-systems/Stellar-Tactics/blob/main/docs/view-ir-corpus.md) maps 8 hand-written game screens onto the IR and enumerates the binding-model gaps (G1–G6). Stellar is a dog-food, not the SKU, so this RFC treats it as the **early validating corpus** for the *first slice* and explicitly defers the binding-model depth (G1–G3, G6) to the SKU corpus, exactly as the SDK RFC intends. The first slice is the smallest end-to-end vertical that proves the pipeline; it is **not** the full emitter.
+This RFC opens gate condition (1): it authors the emitter, so the SDK IR ships behind a real consumer rather than inert at family scale. For condition (2) the canonical informing usage is the Headless CMS SKU (H1-2028), which does not exist yet — but a **worked corpus already exists**: a downstream dog-food app's view-IR corpus maps 8 hand-written screens onto the IR and enumerates the binding-model gaps (G1–G6). That dog-food app is not the SKU, so this RFC treats its corpus as the **early validating corpus** for the *first slice* and explicitly defers the binding-model depth (G1–G3, G6) to the SKU corpus, exactly as the SDK RFC intends. The first slice is the smallest end-to-end vertical that proves the pipeline; it is **not** the full emitter.
 
 Precedent this emitter mirrors, one-for-one:
 - **Capability extraction** (`@CapabilityModule` → `capability_*.json`, PR #85) is the template for a **separate, app-wide metadata artifact parallel to `DomainMetadata`, never nested in it.** `@View` → `view_*.json` is the same move.
@@ -61,16 +61,16 @@ A new `ViewGenerator` (a new `PAGE` `ArtifactType`) emits one **standalone, sign
 - Deterministic: declaration-order regions/blocks, sorted where order is not source-given, no timestamps/hash-iteration leakage. A `view_*.json` round-trip + an emitted-component snapshot pin it; the FE build gate (`verify:generated` / `tsc --noEmit`) compiles the emitted page.
 
 ### 5. Build-gate honesty
-This slice satisfies condition (1) (the emitter is authored) and uses Stellar's corpus as early condition-(2) validation. The **full** emitter (G1–G3/G6, the leaf-field forms, the `@UI` unification) remains gated on the Headless CMS SKU corpus — this RFC ships the *first slice* and the design, not the finished surface.
+This slice satisfies condition (1) (the emitter is authored) and uses the dog-food app's corpus as early condition-(2) validation. The **full** emitter (G1–G3/G6, the leaf-field forms, the `@UI` unification) remains gated on the Headless CMS SKU corpus — this RFC ships the *first slice* and the design, not the finished surface.
 
 ## Open questions / follow-ups
 - **G1 parameterised/relational binding** — the corpus's defining trait ("X of the current Y"); the highest-leverage post-slice fork (`@Bind(via=…, from=PARENT)` shape). Owner: this RFC's successor, gated on the SKU corpus.
 - **G2 `STREAM` binding** — pairs with the SSE emitter (ADR-044); cheap once added to `BindSource` (SDK).
 - **G3 mesh binding** — the T12 cross-service epic meeting the presentation lane.
 - **G6 token/theme binding** — the presentation counterpart of U1/T25; how a view names its design system + theme-variant axis.
-- **`@UI` unification** — generated entity views as default-projected `ViewMetadata` (one presentation model). Owner: SDK roadmap; the tooling-side first step is [ADR-047 (DRAFT)](../adr/ADR-047-view-leaf-field-facet-and-ui-subsumption.DRAFT.md).
-- **Leaf-field form emission** — fuller `UIFieldMetadata`-facet rendering inside `FORM` blocks. The slice-1 emitter deliberately left `ComponentNodeMetadata.field` `null`; populating + emitting it is the subject of [ADR-047 (DRAFT)](../adr/ADR-047-view-leaf-field-facet-and-ui-subsumption.DRAFT.md), Slice 2.
+- **`@UI` unification** — generated entity views as default-projected `ViewMetadata` (one presentation model). Owner: SDK roadmap; the tooling-side first step is [ADR-047](../adr/ADR-047-view-leaf-field-facet-and-ui-subsumption.md).
+- **Leaf-field form emission** — fuller `UIFieldMetadata`-facet rendering inside `FORM` blocks. The slice-1 emitter deliberately left `ComponentNodeMetadata.field` `null`; populating + emitting it is the subject of [ADR-047](../adr/ADR-047-view-leaf-field-facet-and-ui-subsumption.md), Slice 2.
 
 ## Next action
 
-The **first slice has landed** behind the gates above (`feat/view-emitter-slice1` → PR #121, stacked on the ui-kit/appName scaffold PR #120, both off `main`), under this DRAFT per the founder's go-ahead — the same path the SSE RFC-2026-06-22 slice 1 took before ADR-044 ratified it. On **ACCEPT**: reserve the tooling "presentation view emitter shape" ADR number in `exeris-docs/adr-index.md` and author the emitter-shape ADR (sibling to ADR-044) fixing the now-shipped slice-1 shape as the contract and scoping the gated follow-ups (G1–G3/G6, the leaf-field facet via [ADR-047](../adr/ADR-047-view-leaf-field-facet-and-ui-subsumption.DRAFT.md), the `@UI` unification). The full emitter stays gated on the Headless CMS SKU corpus (condition 2).
+The **first slice has landed** behind the gates above (`feat/view-emitter-slice1` → PR #121, stacked on the ui-kit/appName scaffold PR #120, both off `main`), under this DRAFT per the founder's go-ahead — the same path the SSE RFC-2026-06-22 slice 1 took before ADR-044 ratified it. On **ACCEPT**: reserve the tooling "presentation view emitter shape" ADR number in `exeris-docs/adr-index.md` and author the emitter-shape ADR (sibling to ADR-044) fixing the now-shipped slice-1 shape as the contract and scoping the gated follow-ups (G1–G3/G6, the leaf-field facet via [ADR-047](../adr/ADR-047-view-leaf-field-facet-and-ui-subsumption.md), the `@UI` unification). The full emitter stays gated on the Headless CMS SKU corpus (condition 2).
