@@ -1742,6 +1742,81 @@ class ExerisDomainProcessorTest {
 
     // Helper methods
 
+    @Nested
+    @DisplayName("EV1 — @DomainEvent payload-field resolution")
+    class EventPayloadResolutionTests {
+
+        private static final String ORDER = """
+                package com.example;
+
+                import eu.exeris.sdk.annotation.ExerisDomain;
+                import eu.exeris.sdk.annotation.DomainEvent;
+                import eu.exeris.sdk.annotation.DomainEvent.Trigger;
+                import eu.exeris.sdk.annotation.Field;
+
+                @ExerisDomain(module = "sales", path = "/orders")
+                @DomainEvent(name = "OrderCreated", trigger = Trigger.CREATE, topic = "orders.created")
+                @DomainEvent(name = "OrderPicked", trigger = Trigger.ACTION, topic = "orders.picked",
+                        includeFields = {"amount", "orderNumber"}, sensitiveFields = "customerEmail")
+                @DomainEvent(name = "OrderRedacted", trigger = Trigger.UPDATE, topic = "orders.redacted",
+                        excludeFields = {"customerEmail"})
+                public class Order {
+                    @Field(label = "Order Number", required = true) private String orderNumber;
+                    @Field(label = "Amount") private java.math.BigDecimal amount;
+                    @Field(label = "Customer Email") private String customerEmail;
+                    // A field WITHOUT @Field must NOT enter the default payload universe.
+                    private String internalNote;
+                }
+                """;
+
+        private DomainMetadata read() throws IOException {
+            JavaFileObject source = JavaFileObjects.forSourceString("com.example.Order", ORDER);
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).succeeded();
+            Optional<JavaFileObject> metadataFile = compilation.generatedFile(
+                    StandardLocation.CLASS_OUTPUT, "exeris-metadata/Order.json");
+            assertThat(metadataFile).isPresent();
+            return new ObjectMapper()
+                    .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+                    .readValue(readContent(metadataFile.get()), DomainMetadata.class);
+        }
+
+        private eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata event(DomainMetadata dm, String name) {
+            return dm.events().stream()
+                    .filter(e -> name.equals(e.name()))
+                    .findFirst()
+                    .orElseThrow();
+        }
+
+        @Test
+        @DisplayName("No include/exclude → ALL @Field names in declaration order (non-@Field excluded)")
+        void defaultPayloadIsAllFieldNames() throws IOException {
+            DomainMetadata dm = read();
+            // internalNote has no @Field, so it is NOT in the payload universe.
+            assertThat(event(dm, "OrderCreated").payloadFields())
+                    .containsExactly("orderNumber", "amount", "customerEmail");
+            assertThat(event(dm, "OrderCreated").sensitiveFields()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("includeFields non-empty → exactly those names (written order); sensitiveFields verbatim")
+        void includeFieldsRestrictsPayload() throws IOException {
+            DomainMetadata dm = read();
+            assertThat(event(dm, "OrderPicked").payloadFields())
+                    .containsExactly("amount", "orderNumber");
+            assertThat(event(dm, "OrderPicked").sensitiveFields())
+                    .containsExactly("customerEmail");
+        }
+
+        @Test
+        @DisplayName("excludeFields removes a name from the default (all-fields) payload")
+        void excludeFieldsRemovedFromDefault() throws IOException {
+            DomainMetadata dm = read();
+            assertThat(event(dm, "OrderRedacted").payloadFields())
+                    .containsExactly("orderNumber", "amount");
+        }
+    }
+
     private Compilation compileWithProcessor(JavaFileObject... sources) {
         return javac()
                 .withProcessors(new ExerisDomainProcessor())
