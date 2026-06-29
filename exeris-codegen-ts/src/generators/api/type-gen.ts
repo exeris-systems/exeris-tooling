@@ -6,7 +6,7 @@
  * @since 0.2.0
  */
 
-import { join } from 'node:path';
+import { outPath } from '../../core/paths.js';
 import type { DomainMetadata, FieldMetadata } from '../../models/domain-model.js';
 import { DslMapper } from '../../models/dsl-mapper.js';
 import type { GeneratorConfig } from '../../config.js';
@@ -30,7 +30,7 @@ export class TypeGenerator implements CodeGenerator {
     const kebabName = DslMapper.toKebabCase(domain.entityName);
 
     return {
-      path: join('types', `${kebabName}.types.ts`),
+      path: outPath('types', `${kebabName}.types.ts`),
       content,
       artifactType: 'TYPE',
       overwritable: true,
@@ -198,7 +198,7 @@ export class TypeGenerator implements CodeGenerator {
     lines.push(`export const ${interfaceName}UpdateSchema = ${interfaceName}CreateSchema.partial();`);
 
     return {
-      path: join('schemas', `${kebabName}.schema.ts`),
+      path: outPath('schemas', `${kebabName}.schema.ts`),
       content: lines.join('\n'),
       artifactType: 'SCHEMA',
       overwritable: true,
