@@ -230,6 +230,11 @@ function renderNode(node: ComponentNodeMetadata, level: number): string[] {
   }
 
   // --- SLOT: a named ng-content host slot ---
+  // NOTE: <ng-content> only projects when the component is used as a child in a
+  // parent template. A PAGE-kind view is a routed destination (never composed into
+  // a parent), so a SLOT in a PAGE renders nothing — it is meaningful only in the
+  // composable kinds (SECTION/COMPONENT/FRAGMENT). Suppressing it per-kind is a
+  // slice-2 refinement (needs the enclosing view kind threaded into renderNode).
   if (type === 'SLOT') {
     const slotName = node.binding?.ref ? ` select="[slot=${escapeAttr(node.binding.ref)}]"` : '';
     lines.push(`${pad}<ng-content${slotName}></ng-content>`);
@@ -309,6 +314,12 @@ function escapeAttr(value: string): string {
  *  leave braces alone (authored props is trusted literal text) but neutralise tags. */
 function escapeText(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/** Escape a value for an emitted single-quoted TypeScript string literal (route
+ *  path / title in the .route.ts file) — NOT an HTML context, so no entity encoding. */
+function escapeTsStr(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 }
 
 /**
@@ -403,9 +414,9 @@ export function generateViewRoute(view: ViewMetadata, _config: GeneratorConfig):
   lines.push('');
   lines.push(`export const ${viewRouteConstName(view)}: Routes = [`);
   lines.push('  {');
-  lines.push(`    path: '${escapeAttr(path)}',`);
+  lines.push(`    path: '${escapeTsStr(path)}',`);
   lines.push(`    loadComponent: () => import('./${kebab}.component').then((m) => m.${className}),`);
-  lines.push(`    title: '${escapeAttr(title)}',`);
+  lines.push(`    title: '${escapeTsStr(title)}',`);
   lines.push('  },');
   lines.push('];');
   lines.push('');

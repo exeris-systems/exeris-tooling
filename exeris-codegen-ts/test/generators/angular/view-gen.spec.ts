@@ -232,4 +232,13 @@ describe('generateViewRoute — paired lazy route', () => {
     const f = generateViewRoute(view, DEFAULT_CONFIG);
     expect(f.content).toContain("path: 'no-route',");
   });
+
+  it('escapes the title as a TS string literal, not HTML', () => {
+    const view = ViewMetadataSchema.parse({ name: 'Shop', route: '/shop', title: "Tom's Books & More" });
+    const f = generateViewRoute(view, DEFAULT_CONFIG);
+    // The route is a TypeScript file — the title is a single-quoted string literal,
+    // so & stays literal (NOT &amp;) and the apostrophe is backslash-escaped.
+    expect(f.content).toContain("title: 'Tom\\'s Books & More',");
+    expect(f.content).not.toContain('&amp;');
+  });
 });
