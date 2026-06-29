@@ -14,10 +14,12 @@ import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
+import eu.exeris.sdk.sourcemodel.ast.RelationshipMetadata;
 import eu.exeris.sdk.sourcemodel.ast.SystemFieldsMetadata;
 
 import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -193,8 +195,17 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                         .addStatement("this.executor = executor")
                         .build())
                 .addMethod(buildFindById(ctx, optionalOfEntity))
-                .addMethod(buildFindAll(ctx, listOfEntity))
-                .addMethod(buildSave(ctx))
+                .addMethod(buildFindAll(ctx, listOfEntity));
+
+        // T8: cross-aggregate finders for filterable fields and MANY_TO_ONE FK
+        // columns, so callers stop doing O(n) findAll().stream().filter(...).
+        // Emitted in a stable sorted order (filterable fields by name, then FK
+        // finders by relationship name) so the surface is byte-deterministic.
+        for (MethodSpec finder : buildFinders(ctx, listOfEntity)) {
+            repo.addMethod(finder);
+        }
+
+        repo.addMethod(buildSave(ctx))
                 .addMethod(buildUpdate(ctx))
                 .addMethod(buildDeleteById(ctx))
                 .addMethod(buildCount(ctx))
@@ -347,6 +358,161 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                         PERSISTENCE_STATEMENT, QUERY_RESULT,
                         LIST_TYPE, ctx.entityType(), ARRAY_LIST)
                 .build();
+    }
+
+    /**
+     * T8: builds the cross-aggregate finders in a stable, byte-deterministic
+     * order — filterable-field finders first (sorted by field name), then
+     * MANY_TO_ONE FK finders (sorted by relationship name). Each returns
+     * {@code List<Entity>}, applies the same soft-delete filter the CRUD reads
+     * use, and ends with {@code ORDER BY id} so the row order is deterministic.
+     */
+    private List<MethodSpec> buildFinders(Context ctx, TypeName listOfEntity) {
+        List<MethodSpec> finders = new ArrayList<>();
+
+        // Filterable fields → findBy<Field>(<javaType> <field>). Every filterable
+        // field gets a finder (kept in lock-step with KernelServiceGenerator's
+        // delegating finders for parity); the WHERE column always exists — either
+        // as a domain column or, in the rare shadow case, as the system column it
+        // collides with.
+        ctx.fields().stream()
+                .filter(FieldMetadata::filterable)
+                .sorted(Comparator.comparing(FieldMetadata::name))
+                .forEach(f -> finders.add(buildFindByField(ctx, listOfEntity, f)));
+
+        // MANY_TO_ONE relationships → findBy<Rel>Id(UUID <rel>Id).
+        if (ctx.metadata().hasRelationships()) {
+            ctx.metadata().relationships().stream()
+                    .filter(r -> r.type() == RelationshipMetadata.RelationType.MANY_TO_ONE)
+                    .sorted(Comparator.comparing(RelationshipMetadata::name))
+                    .forEach(r -> finders.add(buildFindByForeignKey(ctx, listOfEntity, r)));
+        }
+        return finders;
+    }
+
+    /** Finder over a filterable domain field: {@code findBy<Field>}. */
+    private MethodSpec buildFindByField(Context ctx, TypeName listOfEntity, FieldMetadata field) {
+        String column = toSnakeCase(field.name());
+        return buildFinder(ctx, listOfEntity,
+                "findBy" + capitalize(field.name()), typeNameOf(field.type()),
+                field.type(), field.name(), column);
+    }
+
+    /** Finder over a MANY_TO_ONE FK column: {@code findBy<Rel>Id(UUID ...)}. */
+    private MethodSpec buildFindByForeignKey(Context ctx, TypeName listOfEntity, RelationshipMetadata rel) {
+        String column = foreignKeyColumn(rel.name());
+        String paramName = foreignKeyBase(rel.name()) + "Id";
+        String methodName = "findBy" + capitalize(foreignKeyBase(rel.name())) + "Id";
+        return buildFinder(ctx, listOfEntity, methodName, UUID_TYPE, "UUID", paramName, column);
+    }
+
+    /**
+     * Shared finder body — mirrors {@link #buildFindAll} (read via
+     * {@code executor.query}, accumulate {@code mapRow(qr.row())} into a
+     * {@code List}) but with a single bound {@code WHERE <column> = ?} predicate.
+     * Uses the nested try-with-resources form (a parameter bind sits between
+     * {@code prepare} and {@code executeQuery}). The soft-delete filter and a
+     * trailing {@code ORDER BY id} keep results consistent and deterministic.
+     */
+    private MethodSpec buildFinder(Context ctx, TypeName listOfEntity, String methodName,
+                                   TypeName paramType, String paramTypeName,
+                                   String paramName, String column) {
+        String selectCols = String.join(", ", ctx.columns().stream().map(Column::sqlName).toList());
+        String softDeleteFilter = ctx.metadata().softDelete()
+                ? " AND " + toSnakeCase(ctx.sys().deleted()) + " = false" : "";
+        String sql = "SELECT " + selectCols + " FROM " + ctx.table()
+                + " WHERE " + column + " = ?" + softDeleteFilter + " ORDER BY id";
+
+        return MethodSpec.methodBuilder(methodName)
+                .addModifiers(Modifier.PUBLIC)
+                .returns(listOfEntity)
+                .addParameter(paramType, paramName)
+                .addStatement(SQL_VAR_STMT, sql)
+                .addStatement("""
+                        return executor.query(conn -> {
+                            try ($T stmt = conn.prepare(sql)) {
+                                $L
+                                try ($T qr = stmt.executeQuery()) {
+                                    $T<$T> result = new $T<>();
+                                    while (qr.next()) {
+                                        result.add(mapRow(qr.row()));
+                                    }
+                                    return result;
+                                }
+                            }
+                        })""",
+                        PERSISTENCE_STATEMENT, finderBind(paramTypeName, paramName),
+                        QUERY_RESULT, LIST_TYPE, ctx.entityType(), ARRAY_LIST)
+                .build();
+    }
+
+    /**
+     * Binds the single finder parameter at index 0, dispatching on the
+     * parameter's domain type via the same {@link #classifyDomainType} the CRUD
+     * binds use. Types the SPI has no typed binder for (BigDecimal / LocalDate /
+     * enum / temporal) round-trip via a null-guarded {@code String}, matching
+     * {@link #emitBindDomain}.
+     */
+    private CodeBlock finderBind(String paramTypeName, String paramName) {
+        return switch (classifyDomainType(paramTypeName)) {
+            case UUID -> CodeBlock.of("stmt.bindUuid(0, $L);", paramName);
+            case STRING -> CodeBlock.of("stmt.bindString(0, $L);", paramName);
+            case LONG -> CodeBlock.of("stmt.bindLong(0, $L);", paramName);
+            case INT -> CodeBlock.of("stmt.bindInt(0, $L);", paramName);
+            case BOOL -> CodeBlock.of("stmt.bindBoolean(0, $L);", paramName);
+            case DOUBLE -> CodeBlock.of("stmt.bindDouble(0, $L);", paramName);
+            default -> CodeBlock.of("stmt.bindString(0, $L == null ? null : $L.toString());",
+                    paramName, paramName);
+        };
+    }
+
+    /**
+     * Maps a field type string to a JavaPoet parameter {@link TypeName}. Primitives
+     * map to keyword types; common simple JDK type names are pinned to their fully
+     * qualified {@link ClassName} so JavaPoet emits the matching import (a bare
+     * {@code ClassName.bestGuess("BigDecimal")} would land in the default package
+     * and not import); everything else falls back to {@code bestGuess} on the raw
+     * type (generic arguments dropped — the finder filters on a scalar column).
+     */
+    private static TypeName typeNameOf(String type) {
+        return switch (type) {
+            case "boolean" -> TypeName.BOOLEAN;
+            case "int" -> TypeName.INT;
+            case "long" -> TypeName.LONG;
+            case "double" -> TypeName.DOUBLE;
+            case "BigDecimal" -> BIG_DECIMAL;
+            case "Instant" -> INSTANT;
+            case "LocalDate" -> LOCAL_DATE;
+            case "LocalDateTime" -> LOCAL_DATE_TIME;
+            default -> {
+                int lt = type.indexOf('<');
+                yield ClassName.bestGuess(lt >= 0 ? type.substring(0, lt) : type);
+            }
+        };
+    }
+
+    /**
+     * SQL FK column for a MANY_TO_ONE relationship. Handles both relationship
+     * styles seen in real entities: an entity-typed field
+     * ({@code @Relationship Customer customer} → {@code customer_id}) and the
+     * explicit-UUID-FK style ({@code @Relationship UUID customerId} →
+     * {@code customer_id}, NOT {@code customer_id_id}). Idempotent on a trailing
+     * {@code id} segment.
+     */
+    private String foreignKeyColumn(String relationshipName) {
+        return toSnakeCase(foreignKeyBase(relationshipName)) + "_id";
+    }
+
+    /**
+     * Base name for a FK finder/column, stripping a trailing {@code Id} so the
+     * explicit-UUID-FK style ({@code customerId}) and the entity-typed style
+     * ({@code customer}) both reduce to {@code customer}.
+     */
+    private static String foreignKeyBase(String relationshipName) {
+        if (relationshipName.length() > 2 && relationshipName.endsWith("Id")) {
+            return relationshipName.substring(0, relationshipName.length() - 2);
+        }
+        return relationshipName;
     }
 
     private MethodSpec buildSave(Context ctx) {

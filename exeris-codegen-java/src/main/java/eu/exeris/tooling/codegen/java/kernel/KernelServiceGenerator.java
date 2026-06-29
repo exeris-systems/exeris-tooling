@@ -11,8 +11,13 @@ import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.Artifact
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
+import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
+import eu.exeris.sdk.sourcemodel.ast.RelationshipMetadata;
 
 import javax.lang.model.element.Modifier;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 
 /**
  * Kernel Service Generator.
@@ -35,6 +40,10 @@ public class KernelServiceGenerator implements KernelArtifactGenerator {
     private static final ClassName UUID = ClassName.get("java.util", "UUID");
     private static final ClassName OPTIONAL = ClassName.get("java.util", "Optional");
     private static final ClassName LIST = ClassName.get("java.util", "List");
+    private static final ClassName BIG_DECIMAL = ClassName.get("java.math", "BigDecimal");
+    private static final ClassName INSTANT = ClassName.get("java.time", "Instant");
+    private static final ClassName LOCAL_DATE = ClassName.get("java.time", "LocalDate");
+    private static final ClassName LOCAL_DATE_TIME = ClassName.get("java.time", "LocalDateTime");
 
     @Override
     public GeneratedFile generate(DomainMetadata metadata) {
@@ -57,14 +66,66 @@ public class KernelServiceGenerator implements KernelArtifactGenerator {
 
         builder.addMethod(buildConstructor(repoType))
                 .addMethod(buildFindById(optionalOfEntity))
-                .addMethod(buildFindAll(listOfEntity))
-                .addMethod(buildSave(entityType))
+                .addMethod(buildFindAll(listOfEntity));
+
+        // T8: delegating finders mirroring the repository surface (parity), in
+        // the same stable sorted order — filterable fields by name, then
+        // MANY_TO_ONE FK finders by relationship name.
+        for (MethodSpec finder : buildFinders(metadata, listOfEntity)) {
+            builder.addMethod(finder);
+        }
+
+        builder.addMethod(buildSave(entityType))
                 .addMethod(buildUpdate(entityType))
                 .addMethod(buildDelete())
                 .addMethod(buildCount());
 
         return new GeneratedFile(packageName, className,
                 KernelScaffold.render(packageName, builder.build()), ArtifactType.SERVICE);
+    }
+
+    /**
+     * T8: delegating finders for filterable fields and MANY_TO_ONE FK columns.
+     * Emitted in the same byte-deterministic order as the repository so the two
+     * surfaces stay aligned: filterable fields sorted by name, then FK finders
+     * sorted by relationship name.
+     */
+    private List<MethodSpec> buildFinders(DomainMetadata metadata, TypeName listOfEntity) {
+        List<MethodSpec> finders = new ArrayList<>();
+
+        metadata.fields().stream()
+                .filter(FieldMetadata::filterable)
+                .sorted(Comparator.comparing(FieldMetadata::name))
+                .forEach(f -> finders.add(buildFindByField(listOfEntity, f)));
+
+        if (metadata.hasRelationships()) {
+            metadata.relationships().stream()
+                    .filter(r -> r.type() == RelationshipMetadata.RelationType.MANY_TO_ONE)
+                    .sorted(Comparator.comparing(RelationshipMetadata::name))
+                    .forEach(r -> finders.add(buildFindByForeignKey(listOfEntity, r)));
+        }
+        return finders;
+    }
+
+    private MethodSpec buildFindByField(TypeName listOfEntity, FieldMetadata field) {
+        String name = "findBy" + capitalize(field.name());
+        return MethodSpec.methodBuilder(name)
+                .addModifiers(Modifier.PUBLIC)
+                .returns(listOfEntity)
+                .addParameter(typeNameOf(field.type()), field.name())
+                .addStatement("return repository.$L($L)", name, field.name())
+                .build();
+    }
+
+    private MethodSpec buildFindByForeignKey(TypeName listOfEntity, RelationshipMetadata rel) {
+        String paramName = foreignKeyBase(rel.name()) + "Id";
+        String name = "findBy" + capitalize(foreignKeyBase(rel.name())) + "Id";
+        return MethodSpec.methodBuilder(name)
+                .addModifiers(Modifier.PUBLIC)
+                .returns(listOfEntity)
+                .addParameter(UUID, paramName)
+                .addStatement("return repository.$L($L)", name, paramName)
+                .build();
     }
 
     private MethodSpec buildConstructor(ClassName repoType) {
@@ -128,6 +189,45 @@ public class KernelServiceGenerator implements KernelArtifactGenerator {
                 .returns(TypeName.LONG)
                 .addStatement("return repository.count()")
                 .build();
+    }
+
+    /**
+     * Maps a field type string to a JavaPoet parameter {@link TypeName} — must
+     * stay in lock-step with {@code KernelRepositoryGenerator.typeNameOf} so the
+     * delegating service signature matches the repository method it calls.
+     */
+    private static TypeName typeNameOf(String type) {
+        return switch (type) {
+            case "boolean" -> TypeName.BOOLEAN;
+            case "int" -> TypeName.INT;
+            case "long" -> TypeName.LONG;
+            case "double" -> TypeName.DOUBLE;
+            case "BigDecimal" -> BIG_DECIMAL;
+            case "Instant" -> INSTANT;
+            case "LocalDate" -> LOCAL_DATE;
+            case "LocalDateTime" -> LOCAL_DATE_TIME;
+            default -> {
+                int lt = type.indexOf('<');
+                yield ClassName.bestGuess(lt >= 0 ? type.substring(0, lt) : type);
+            }
+        };
+    }
+
+    /**
+     * Base name for a FK finder, stripping a trailing {@code Id} so the
+     * explicit-UUID-FK style ({@code customerId}) and the entity-typed style
+     * ({@code customer}) both reduce to {@code customer} — identical to
+     * {@code KernelRepositoryGenerator.foreignKeyBase}.
+     */
+    private static String foreignKeyBase(String relationshipName) {
+        if (relationshipName.length() > 2 && relationshipName.endsWith("Id")) {
+            return relationshipName.substring(0, relationshipName.length() - 2);
+        }
+        return relationshipName;
+    }
+
+    private static String capitalize(String s) {
+        return s.isEmpty() ? s : Character.toUpperCase(s.charAt(0)) + s.substring(1);
     }
 
     @Override
