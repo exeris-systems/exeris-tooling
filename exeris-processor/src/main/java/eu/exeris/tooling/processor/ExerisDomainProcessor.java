@@ -40,7 +40,8 @@ import java.util.*;
 @SupportedAnnotationTypes({
         "eu.exeris.sdk.annotation.ExerisDomain",
         "eu.exeris.sdk.annotation.Saga",
-        "eu.exeris.sdk.annotation.capability.CapabilityModule"
+        "eu.exeris.sdk.annotation.capability.CapabilityModule",
+        "eu.exeris.sdk.annotation.View"
 })
 @SupportedSourceVersion(SourceVersion.RELEASE_26)
 @SupportedOptions({ExerisDomainProcessor.OPTION_VERBOSE, ExerisDomainProcessor.OPTION_STRICT})
@@ -120,6 +121,22 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                                         CapabilityModuleMetadata module) {}
 
     /**
+     * JSON wire shape for one {@code @View} class. The SDK's {@link ViewMetadata}
+     * carries the view's own {@code name} but not its package / qualified name, so
+     * — exactly like {@link CapabilityModuleJson} — the processor wraps it with the
+     * declaring class's identity before write-out. Views are app-wide, not
+     * per-entity, so this is a separate JSON family ({@code view_*.json}) parallel
+     * to — never nested inside — {@code DomainMetadata} (RFC-2026-06-28 §2). A
+     * downstream codegen-ts {@code ViewGenerator} will mirror these field names
+     * structurally (processor and generators share only the SDK source-model
+     * contract).
+     */
+    private record ViewJson(String name,
+                            String packageName,
+                            String qualifiedName,
+                            ViewMetadata view) {}
+
+    /**
      * Why these registries exist: every SDK annotation is
      * {@code @Retention(SOURCE)}, so it is erased by the compiler and is absent
      * from bytecode — the kernel runtime / SPI / Core <em>cannot</em> read any
@@ -167,6 +184,13 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      * generators ({@code KernelSagaGenerator}, {@code KernelGraphSyncGenerator})
      * do consume them. When the event-sourcing generator lands, DELETE the
      * {@code @EventSourced} entry in the same change.
+     *
+     * <p>{@code @View} is also <em>absent</em> (RFC-2026-06-28 §4): the codegen-ts
+     * presentation-IR emitter (the {@code view-gen} ViewGenerator) now consumes
+     * {@code view_*.json}, so {@code @View} is no longer inert. Consumption is the
+     * Java∪TS union; an annotation read by the TS emitter is NOT inert even though
+     * no Java generator touches it (views are a front-only facet — there is no Java
+     * emitter counterpart, by construction).
      */
     private static final List<InertAnnotation> INERT_ANNOTATIONS = List.of(
             new InertAnnotation("eu.exeris.sdk.annotation.EventSourced", "EventSourced",
@@ -229,6 +253,10 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         // Process @CapabilityModule annotated classes (parallel JSON, not part of
         // DomainMetadata — capabilities are app-wide, not per-entity)
         processCapabilityModuleAnnotations(roundEnv);
+
+        // Process @View annotated classes (parallel JSON, not part of DomainMetadata
+        // — views are an app-wide, front-only facet; RFC-2026-06-28)
+        processViewAnnotations(roundEnv);
 
         return true;
     }
@@ -467,6 +495,272 @@ public class ExerisDomainProcessor extends AbstractProcessor {
 
     private static String blankToNull(String s) {
         return (s == null || s.isBlank()) ? null : s;
+    }
+
+    // ---------------------------------------------------------------------
+    // @View presentation IR extraction (RFC-2026-06-28).
+    //
+    // Mirrors the @CapabilityModule round: a separate, app-wide JSON family
+    // (view_*.json) parallel to DomainMetadata, never nested in it. The SDK
+    // resolved "class-structure-derived" composition (RFC-2026-06-25); this
+    // processor fixes the exact walk (RFC-2026-06-28 §1):
+    //
+    //   @View class          → ViewMetadata
+    //     member @Region     → RegionMetadata (slot = @Region.slot or field name;
+    //                          source declaration order)
+    //       region field TYPE is a region/block class whose members carry @Block
+    //                          → that region's ComponentNodeMetadata list (decl order)
+    //         @Block member   → ComponentNodeMetadata (type / customType / props
+    //                          passthrough; binding from @Bind on the same member)
+    //           @Block whose TYPE is itself block-shaped → children (recursive),
+    //                          guarded by a visited-set against cycles
+    //         @Bind-only member (no @Block) → a leaf binding node
+    //
+    // Blank annotation strings normalise to null (matching the SDK records'
+    // compact constructors); enums come straight from the annotation. The leaf
+    // field:UIFieldMetadata facet is left null in this slice (modelled by the
+    // record, minimal emission per RFC §1).
+    // ---------------------------------------------------------------------
+
+    private static final String VIEW_FQN = "eu.exeris.sdk.annotation.View";
+    private static final String REGION_FQN = "eu.exeris.sdk.annotation.Region";
+    private static final String BLOCK_FQN = "eu.exeris.sdk.annotation.Block";
+    private static final String BIND_FQN = "eu.exeris.sdk.annotation.Bind";
+
+    private void processViewAnnotations(RoundEnvironment roundEnv) {
+        TypeElement viewAnnotation = processingEnv.getElementUtils().getTypeElement(VIEW_FQN);
+        if (viewAnnotation == null) {
+            return;
+        }
+
+        for (Element element : roundEnv.getElementsAnnotatedWith(viewAnnotation)) {
+            // @View is @Target(TYPE) — a class, record, or interface carrier.
+            if (!(element instanceof TypeElement typeElement)) {
+                error(element, "@View can only be applied to a type");
+                continue;
+            }
+            processView(typeElement);
+        }
+    }
+
+    private void processView(TypeElement element) {
+        String name = element.getSimpleName().toString();
+        String packageName = getPackageName(element);
+        String qualifiedName = element.getQualifiedName().toString();
+
+        note("Processing view: " + qualifiedName);
+
+        try {
+            ViewMetadata view = buildViewMetadata(element);
+            writeMetadata("view_" + name,
+                    new ViewJson(name, packageName, qualifiedName, view));
+
+            // T11 / RFC-2026-06-28 §4: @View is now CONSUMED by the codegen-ts
+            // presentation-IR emitter (view-gen), so it is no longer in
+            // INERT_ANNOTATIONS — a @View-only compilation under -Aexeris.strict
+            // emits no inert warning for @View. The call stays so any *other* inert
+            // annotation on a @View type is still honestly flagged (Java∪TS union).
+            warnInertAnnotations(element);
+
+            note("Generated view metadata for: " + name);
+        } catch (Exception e) {
+            reportProcessingFailure(element, "Failed to process view", e);
+        }
+    }
+
+    /**
+     * Builds the {@link ViewMetadata} for a {@code @View} class by the
+     * class-structure-derived walk (RFC-2026-06-28 §1). The {@code @View}
+     * attributes (name / kind / route / title / titleKey / layout) come straight
+     * off the annotation; the regions are derived from the class's
+     * {@code @Region}-carrying members in source declaration order.
+     */
+    private ViewMetadata buildViewMetadata(TypeElement element) {
+        AnnotationMirror viewAnnotation = findAnnotation(element, VIEW_FQN);
+        Map<String, Object> values = viewAnnotation != null
+                ? extractAnnotationValues(viewAnnotation)
+                : Map.of();
+
+        // name is required on @View; fall back to the simple name defensively.
+        String name = nonBlankOr(getString(values, "name", null),
+                element.getSimpleName().toString());
+
+        ViewMetadata.Builder builder = ViewMetadata.builder(name)
+                .kind(viewKind(values.get("kind")))
+                .route(blankToNull(getString(values, "route", null)))
+                .title(blankToNull(getString(values, "title", null)))
+                .titleKey(blankToNull(getString(values, "titleKey", null)))
+                .layout(blankToNull(getString(values, "layout", null)));
+
+        // A visited-set guards the recursive block walk against cycles in the
+        // class graph (a block class that reaches itself). Seed it with the view
+        // root so a region/block typed as the view itself does not recurse forever.
+        Set<String> visited = new HashSet<>();
+        visited.add(element.getQualifiedName().toString());
+
+        builder.regions(extractRegions(element, visited));
+        return builder.build();
+    }
+
+    /**
+     * The {@code @Region}-carrying members of {@code viewClass}, in source
+     * declaration order, each as a {@link RegionMetadata}. The slot is
+     * {@code @Region.slot} or the member name when blank; the region's components
+     * are walked from the member's declared TYPE (a region/block-shaped class).
+     */
+    private List<RegionMetadata> extractRegions(TypeElement viewClass, Set<String> visited) {
+        List<RegionMetadata> regions = new ArrayList<>();
+        for (Element member : memberFieldsInOrder(viewClass)) {
+            AnnotationMirror region = findAnnotation(member, REGION_FQN);
+            if (region == null) {
+                continue;
+            }
+            Map<String, Object> values = extractAnnotationValues(region);
+            String slot = nonBlankOr(getString(values, "slot", null),
+                    member.getSimpleName().toString());
+
+            TypeElement regionType = declaredTypeElement(member.asType());
+            List<ComponentNodeMetadata> components = regionType != null
+                    ? extractComponents(regionType, visited)
+                    : List.of();
+
+            regions.add(new RegionMetadata(slot, components));
+        }
+        return regions;
+    }
+
+    /**
+     * The {@code @Block} / {@code @Bind}-carrying members of {@code blockClass},
+     * in source declaration order, each as a {@link ComponentNodeMetadata}. A
+     * member carrying {@code @Block} becomes a block node (its {@code type} /
+     * {@code customType} / {@code props} from the annotation, {@code binding} from
+     * an optional {@code @Bind} on the same member); when its declared TYPE is
+     * itself a block-shaped class the walk recurses into {@code children} (cycle
+     * guarded). A member carrying only {@code @Bind} (no {@code @Block}) becomes a
+     * leaf binding node.
+     */
+    private List<ComponentNodeMetadata> extractComponents(TypeElement blockClass, Set<String> visited) {
+        // Cycle guard: if we are already inside this class on the current path,
+        // stop — emit no children rather than recursing forever.
+        if (!visited.add(blockClass.getQualifiedName().toString())) {
+            return List.of();
+        }
+        try {
+            List<ComponentNodeMetadata> components = new ArrayList<>();
+            for (Element member : memberFieldsInOrder(blockClass)) {
+                AnnotationMirror block = findAnnotation(member, BLOCK_FQN);
+                AnnotationMirror bind = findAnnotation(member, BIND_FQN);
+
+                if (block != null) {
+                    components.add(blockNode(member, block, bind, visited));
+                } else if (bind != null) {
+                    // @Bind without @Block → a leaf binding node. No declared
+                    // BlockType, so the record's CONTAINER default applies on read.
+                    components.add(ComponentNodeMetadata.leaf(null, bindingOf(bind)));
+                }
+            }
+            return components;
+        } finally {
+            // Pop the path entry so a sibling region/block of the same type is not
+            // mistaken for a cycle (the guard is path-scoped, not global).
+            visited.remove(blockClass.getQualifiedName().toString());
+        }
+    }
+
+    /**
+     * Builds one {@link ComponentNodeMetadata} from a {@code @Block} member:
+     * {@code type} / {@code customType} / {@code props} from {@code @Block},
+     * {@code binding} from an optional sibling {@code @Bind}, and {@code children}
+     * by recursing into the member's declared TYPE when that type is itself
+     * block-shaped.
+     */
+    private ComponentNodeMetadata blockNode(Element member,
+                                            AnnotationMirror block,
+                                            AnnotationMirror bind,
+                                            Set<String> visited) {
+        Map<String, Object> values = extractAnnotationValues(block);
+        BlockType type = blockType(values.get("type"));
+        String customType = blankToNull(getString(values, "customType", null));
+        String props = blankToNull(getString(values, "props", null));
+        BindingMetadata binding = bind != null ? bindingOf(bind) : null;
+
+        TypeElement memberType = declaredTypeElement(member.asType());
+        List<ComponentNodeMetadata> children = memberType != null
+                ? extractComponents(memberType, visited)
+                : List.of();
+
+        return new ComponentNodeMetadata(type, customType, binding, props, children, null);
+    }
+
+    /** Builds a {@link BindingMetadata} from a {@code @Bind} mirror; blanks → null. */
+    private BindingMetadata bindingOf(AnnotationMirror bind) {
+        Map<String, Object> values = extractAnnotationValues(bind);
+        return new BindingMetadata(
+                bindSource(values.get("source")),
+                blankToNull(getString(values, "ref", null)),
+                blankToNull(getString(values, "path", null)),
+                blankToNull(getString(values, "expression", null)),
+                blankToNull(getString(values, "language", null)));
+    }
+
+    /**
+     * Fields / record-components of {@code type} in source declaration order.
+     * Under javac, {@link Element#getEnclosedElements()} returns members in the
+     * order they appear in the source — the same ordering the field / capability
+     * extraction already relies on — so the emitted regions / blocks are
+     * deterministic (hard-constraint #3) without an explicit sort key.
+     */
+    private List<Element> memberFieldsInOrder(TypeElement type) {
+        List<Element> members = new ArrayList<>();
+        for (Element enclosed : type.getEnclosedElements()) {
+            if (enclosed.getKind() == ElementKind.FIELD
+                    || enclosed.getKind() == ElementKind.RECORD_COMPONENT) {
+                members.add(enclosed);
+            }
+        }
+        return members;
+    }
+
+    /** Resolves a member's declared (class / record / interface) type, or null for primitives / arrays / type vars. */
+    private TypeElement declaredTypeElement(TypeMirror type) {
+        if (type instanceof DeclaredType declaredType
+                && declaredType.asElement() instanceof TypeElement typeElement) {
+            return typeElement;
+        }
+        return null;
+    }
+
+    /** Maps a {@code @View.Kind} enum constant (a {@link VariableElement}) to the AST {@link ViewKind}; null when unset. */
+    private ViewKind viewKind(Object value) {
+        String constant = enumConstantName(value);
+        return constant != null ? ViewKind.valueOf(constant) : null;
+    }
+
+    /** Maps a {@code @Block.BlockType} enum constant to the AST {@link BlockType}; null when unset. */
+    private BlockType blockType(Object value) {
+        String constant = enumConstantName(value);
+        return constant != null ? BlockType.valueOf(constant) : null;
+    }
+
+    /** Maps a {@code @Bind.Source} enum constant to the AST {@link BindSource}; null when unset. */
+    private BindSource bindSource(Object value) {
+        String constant = enumConstantName(value);
+        return constant != null ? BindSource.valueOf(constant) : null;
+    }
+
+    /**
+     * The simple constant name of an enum-typed annotation attribute. javac
+     * surfaces an enum attribute value as a {@link VariableElement} (the enum
+     * constant); its simple name is the constant. The annotation and AST enums
+     * share their constant names by contract (the SDK enums "mirror" the
+     * annotation ones), so the name round-trips through {@code Enum.valueOf}.
+     * Returns null when the attribute was not written (default applies).
+     */
+    private String enumConstantName(Object value) {
+        if (value instanceof VariableElement enumConstant) {
+            return enumConstant.getSimpleName().toString();
+        }
+        return null;
     }
 
     private void processDomainEntity(TypeElement element) {

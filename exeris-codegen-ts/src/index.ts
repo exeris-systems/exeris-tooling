@@ -20,7 +20,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSy
 import { join, dirname, basename, resolve } from 'node:path';
 import { pruneOrphansAndWriteManifest, MANIFEST_NAME } from './output/manifest.js';
 import { loadConfig, type GeneratorConfig, DEFAULT_CONFIG } from './config.js';
-import { parseDomainMetadata, parseExerisMetadata, type DomainMetadata } from './models/domain-model.js';
+import { parseDomainMetadata, parseExerisMetadata, parseViewJson, type DomainMetadata, type ViewMetadata } from './models/domain-model.js';
 import { buildGeneratedFiles, type EnumMetadataForGen } from './orchestrator.js';
 
 // Import new generators (v0.3.0)
@@ -154,9 +154,13 @@ async function runGenerate(config: GeneratorConfig): Promise<void> {
 
   console.log(pc.green('Found'), metadataFiles.length, 'metadata file(s)');
 
-  // Separate enum files from domain files
+  // Separate the parallel JSON families by basename (mirrors the enum_* split):
+  // enum_* (enum modules), view_* (presentation IR), everything else is a domain.
   const enumFiles = metadataFiles.filter(f => basename(f).startsWith('enum_'));
-  const domainFiles = metadataFiles.filter(f => !basename(f).startsWith('enum_'));
+  const viewFiles = metadataFiles.filter(f => basename(f).startsWith('view_'));
+  const domainFiles = metadataFiles.filter(
+    f => !basename(f).startsWith('enum_') && !basename(f).startsWith('view_'),
+  );
 
   // Load and parse enum metadata (the wire shape is owned by orchestrator.ts).
   const enums: EnumMetadataForGen[] = [];
@@ -167,6 +171,18 @@ async function runGenerate(config: GeneratorConfig): Promise<void> {
     const content = readFileSync(file, 'utf-8');
     const json = JSON.parse(content) as EnumMetadataForGen;
     enums.push(json);
+  }
+
+  // Load and parse presentation-IR views (the processor's view_*.json = the
+  // ViewJson wrapper; parseViewJson returns the inner ViewMetadata). Mirrors the
+  // enum_* handling exactly — a separate, app-wide family, never nested in a domain.
+  const views: ViewMetadata[] = [];
+  for (const file of viewFiles) {
+    if (config.verbose) {
+      console.log(pc.dim('  Loading view:'), basename(file));
+    }
+    const content = readFileSync(file, 'utf-8');
+    views.push(parseViewJson(JSON.parse(content)));
   }
 
   // Load and parse domain metadata
@@ -191,12 +207,13 @@ async function runGenerate(config: GeneratorConfig): Promise<void> {
     }
   }
 
-  console.log(pc.green('Loaded'), domains.length, 'domain(s)', '+', enums.length, 'enum(s)');
+  console.log(pc.green('Loaded'), domains.length, 'domain(s)', '+', enums.length, 'enum(s)', '+', views.length, 'view(s)');
 
   // Compose what to write (pure step — see orchestrator.ts). T20: per-entity
   // artefacts + the enum module are emitted by the real generators under src/app
-  // (one tree); generateAppStructure adds the scaffold only.
-  const generatedFiles = buildGeneratedFiles(domains, enums, config);
+  // (one tree); generateAppStructure adds the scaffold only. The presentation-IR
+  // views emit one page component + route each (RFC-2026-06-28).
+  const generatedFiles = buildGeneratedFiles(domains, enums, config, views);
 
   // Write files
   console.log(pc.dim('─'.repeat(50)));

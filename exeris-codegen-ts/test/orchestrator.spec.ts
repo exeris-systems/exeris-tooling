@@ -11,7 +11,11 @@
 
 import { describe, expect, it } from 'vitest';
 import { buildGeneratedFiles, generateEnumTypes, type EnumMetadataForGen } from '../src/orchestrator.js';
-import { DomainMetadataSchema, type DomainMetadata } from '../src/models/domain-model.js';
+import {
+  DomainMetadataSchema,
+  ViewMetadataSchema,
+  type DomainMetadata,
+} from '../src/models/domain-model.js';
 import { DEFAULT_CONFIG } from '../src/config.js';
 
 function domain(overrides: Partial<DomainMetadata> & { entityName: string }): DomainMetadata {
@@ -104,5 +108,54 @@ describe('buildGeneratedFiles — T20: one real tree under src/app', () => {
     );
     expect(withHidden.find((f) => f.path === 'src/app/services/secret.service.ts')).toBeUndefined();
     expect(withHidden.find((f) => f.path === 'src/app/types/secret.types.ts')).toBeUndefined();
+  });
+});
+
+describe('buildGeneratedFiles — presentation IR (@View) flows to src/app/pages', () => {
+  const view = ViewMetadataSchema.parse({
+    name: 'Dashboard',
+    kind: 'PAGE',
+    route: '/dashboard',
+    title: 'Dashboard',
+    regions: [{ slot: 'main', components: [{ type: 'HERO', binding: { source: 'STATIC' }, props: 'Hi' }] }],
+  });
+
+  const files = buildGeneratedFiles([domain({ entityName: 'Order' })], [], DEFAULT_CONFIG, [view]);
+  const at = (p: string) => files.find((f) => f.path === p);
+
+  it('emits the view page component under src/app/pages', () => {
+    const c = at('src/app/pages/dashboard.component.ts');
+    expect(c, 'src/app/pages/dashboard.component.ts missing').toBeDefined();
+    expect(c!.content).toContain('export class DashboardPageComponent {');
+    expect(c!.content).toContain('<section data-region="main">');
+  });
+
+  it('emits the paired route under src/app/pages', () => {
+    const r = at('src/app/pages/dashboard.route.ts');
+    expect(r, 'src/app/pages/dashboard.route.ts missing').toBeDefined();
+    expect(r!.content).toContain('export const dashboardRoutes: Routes = [');
+  });
+
+  it('omits the pages tree entirely when no views are supplied (default arg)', () => {
+    const noViews = buildGeneratedFiles([domain({ entityName: 'Order' })], [], DEFAULT_CONFIG);
+    expect(noViews.some((f) => f.path.startsWith('src/app/pages/'))).toBe(false);
+  });
+
+  it('wires the view route into the app shell — app.routes.ts imports + spreads the page route (RFC §5 route assembly)', () => {
+    const routes = at('src/app/app.routes.ts')!;
+    expect(routes, 'src/app/app.routes.ts missing').toBeDefined();
+    // The per-view route const is imported from ./pages/<kebab>.route and spread
+    // into the routes array — the standalone front can now navigate to the @View page.
+    expect(routes.content).toContain("import { dashboardRoutes } from './pages/dashboard.route';");
+    expect(routes.content).toContain('...dashboardRoutes,');
+    // A PAGE view also wins the default redirect over the first entity.
+    expect(routes.content).toContain("redirectTo: 'dashboard'");
+  });
+
+  it('leaves app.routes.ts free of any pages import when no views are supplied (additive)', () => {
+    const noViews = buildGeneratedFiles([domain({ entityName: 'Order' })], [], DEFAULT_CONFIG);
+    const routes = noViews.find((f) => f.path === 'src/app/app.routes.ts')!;
+    expect(routes.content).not.toContain('./pages/');
+    expect(routes.content).toContain("redirectTo: 'orders'");
   });
 });

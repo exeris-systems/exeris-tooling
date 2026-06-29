@@ -26,6 +26,8 @@ describe('angular barrel exports — function set', () => {
     'generateAppStructure',
     'generateDetail',
     'generateGuard',
+    'generateView',
+    'generateViewRoute',
   ] as const)('re-exports function "%s"', (name) => {
     expect(angular).toHaveProperty(name);
     expect(typeof (angular as unknown as Record<string, unknown>)[name]).toBe('function');

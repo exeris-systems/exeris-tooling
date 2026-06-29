@@ -48,9 +48,15 @@ import { generateAppStructure } from '../../../src/generators/angular/app-struct
 import { DEFAULT_CONFIG } from '../../../src/config.js';
 import {
   DomainMetadataSchema,
+  ViewMetadataSchema,
   type DomainMetadata,
+  type ViewMetadata,
 } from '../../../src/models/domain-model.js';
 import type { GeneratorConfig } from '../../../src/config.js';
+
+function view(overrides: Partial<ViewMetadata> & { name: string }): ViewMetadata {
+  return ViewMetadataSchema.parse(overrides);
+}
 
 interface EnumLike {
   name: string;
@@ -566,5 +572,123 @@ describe('generateAppStructure — hidden-domain handling', () => {
     expect(routes.content).toContain("redirectTo: ''");
     expect(routes.content).not.toContain('internal-ledger');
     expect(routes.content).not.toContain('InternalLedger');
+  });
+});
+
+// ---------- @View route assembly (RFC-2026-06-28 §5) ----------
+
+describe('generateAppStructure — @View route assembly', () => {
+  it('app.routes.ts imports each view route const + spreads it into the routes array', () => {
+    const files = generateAppStructure(
+      [domain({ entityName: 'Order' })],
+      [],
+      cfg(),
+      [view({ name: 'ProductLanding', kind: 'PAGE', route: '/products', title: 'Products' })],
+    );
+    const routes = fileAt(files, 'src/app/app.routes.ts')!;
+    // Lazy route const is imported from ./pages/<kebab>.route (the file the
+    // ViewGenerator emits) and spread into the routes array.
+    expect(routes.content).toContain(
+      "import { productLandingRoutes } from './pages/product-landing.route';",
+    );
+    expect(routes.content).toContain('...productLandingRoutes,');
+    // Alongside the existing entity routes (not replacing them).
+    expect(routes.content).toContain("path: 'orders'");
+    expect(routes.content).toContain('OrderListComponent');
+  });
+
+  it('default redirect targets the FIRST PAGE view when present (instead of the first entity)', () => {
+    const files = generateAppStructure(
+      [domain({ entityName: 'Order' })],
+      [],
+      cfg(),
+      [view({ name: 'ProductLanding', kind: 'PAGE', route: '/products' })],
+    );
+    const routes = fileAt(files, 'src/app/app.routes.ts')!;
+    // The view route path (leading slash stripped) wins the redirect.
+    expect(routes.content).toContain("redirectTo: 'products'");
+    expect(routes.content).not.toContain("redirectTo: 'orders'");
+  });
+
+  it('keeps the entity-based default redirect when no PAGE view exists (non-PAGE views still route)', () => {
+    const files = generateAppStructure(
+      [domain({ entityName: 'Order' })],
+      [],
+      cfg(),
+      [view({ name: 'SidePanel', kind: 'SECTION', route: '/panel' })],
+    );
+    const routes = fileAt(files, 'src/app/app.routes.ts')!;
+    // SECTION is not a top-level destination → redirect stays on the first entity.
+    expect(routes.content).toContain("redirectTo: 'orders'");
+    // …but the view route is still imported + spread (it is routable on its own).
+    expect(routes.content).toContain("import { sidePanelRoutes } from './pages/side-panel.route';");
+    expect(routes.content).toContain('...sidePanelRoutes,');
+  });
+
+  it('adds a sidebar nav link per PAGE view; non-PAGE views get no top-level link', () => {
+    const files = generateAppStructure(
+      [domain({ entityName: 'Order' })],
+      [],
+      cfg(),
+      [
+        view({ name: 'ProductLanding', kind: 'PAGE', route: '/products', title: 'Products' }),
+        view({ name: 'SidePanel', kind: 'SECTION', route: '/panel' }),
+      ],
+    );
+    const comp = fileAt(files, 'src/app/app.component.ts')!;
+    // PAGE view → a router link at its effective route path, labelled by title.
+    expect(comp.content).toContain('routerLink="/products"');
+    expect(comp.content).toContain('Products');
+    // SECTION view → no top-level nav link.
+    expect(comp.content).not.toContain('routerLink="/panel"');
+  });
+
+  it('sorts views deterministically (by route path, then name) — order-independent of input', () => {
+    const mk = (views: ViewMetadata[]) =>
+      fileAt(generateAppStructure([], [], cfg(), views), 'src/app/app.routes.ts')!.content;
+    const a = view({ name: 'Alpha', kind: 'PAGE', route: '/alpha' });
+    const z = view({ name: 'Zeta', kind: 'PAGE', route: '/zeta' });
+    // Both input orderings yield the same emitted file.
+    expect(mk([a, z])).toBe(mk([z, a]));
+    // …and /alpha is imported before /zeta regardless of input order.
+    const out = mk([z, a]);
+    expect(out.indexOf('alphaRoutes')).toBeLessThan(out.indexOf('zetaRoutes'));
+  });
+
+  it('view route paths strip a leading slash to match the per-view route file', () => {
+    const files = generateAppStructure(
+      [],
+      [],
+      cfg(),
+      [view({ name: 'Dashboard', kind: 'PAGE', route: '/dashboard' })],
+    );
+    const routes = fileAt(files, 'src/app/app.routes.ts')!;
+    expect(routes.content).toContain("redirectTo: 'dashboard'");
+    expect(routes.content).not.toContain("redirectTo: '/dashboard'");
+  });
+
+  it('falls back to the kebab name when a PAGE view declares no route', () => {
+    const files = generateAppStructure(
+      [],
+      [],
+      cfg(),
+      [view({ name: 'HomeScreen', kind: 'PAGE' })],
+    );
+    const routes = fileAt(files, 'src/app/app.routes.ts')!;
+    expect(routes.content).toContain("import { homeScreenRoutes } from './pages/home-screen.route';");
+    expect(routes.content).toContain("redirectTo: 'home-screen'");
+  });
+
+  it('zero views → app.routes.ts AND app.component.ts byte-identical to the 3-arg call (additive guard)', () => {
+    const domains = [domain({ entityName: 'Order' }), domain({ entityName: 'Product' })];
+    const legacy = generateAppStructure(domains, [], cfg());
+    const withEmptyViews = generateAppStructure(domains, [], cfg(), []);
+    for (const path of ['src/app/app.routes.ts', 'src/app/app.component.ts'] as const) {
+      expect(fileAt(withEmptyViews, path)!.content).toBe(fileAt(legacy, path)!.content);
+    }
+    // No view-route artefacts leak into the zero-view output.
+    const routes = fileAt(withEmptyViews, 'src/app/app.routes.ts')!;
+    expect(routes.content).not.toContain('./pages/');
+    expect(routes.content).not.toContain('...');
   });
 });

@@ -4,7 +4,14 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.testing.compile.Compilation;
+import eu.exeris.sdk.sourcemodel.ast.BindSource;
+import eu.exeris.sdk.sourcemodel.ast.BindingMetadata;
+import eu.exeris.sdk.sourcemodel.ast.BlockType;
+import eu.exeris.sdk.sourcemodel.ast.ComponentNodeMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
+import eu.exeris.sdk.sourcemodel.ast.RegionMetadata;
+import eu.exeris.sdk.sourcemodel.ast.ViewKind;
+import eu.exeris.sdk.sourcemodel.ast.ViewMetadata;
 import eu.exeris.sdk.sourcemodel.mutation.BaselineTrust;
 import eu.exeris.sdk.sourcemodel.mutation.SchemaVersion;
 import eu.exeris.sdk.sourcemodel.mutation.SourceDigest;
@@ -1392,6 +1399,208 @@ class ExerisDomainProcessorTest {
             assertThat(json).doesNotContain("\"version\" : \"\"");
             // no @CapabilityLifecycle -> lifecycleOwner omitted (NON_NULL)
             assertThat(json).doesNotContain("lifecycleOwner");
+        }
+    }
+
+    @Nested
+    @DisplayName("Presentation views (RFC-2026-06-28) — view_*.json extraction")
+    class ViewExtractionTests {
+
+        // ObjectMapper that tolerates the ViewJson wrapper's name/packageName/
+        // qualifiedName siblings when reading the nested ViewMetadata back out, and
+        // the @JsonInclude(NON_NULL) absence of unset fields.
+        private final ObjectMapper mapper = new ObjectMapper()
+                .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
+
+        /**
+         * The first-slice fixture (RFC-2026-06-28 §1): a PAGE @View with two
+         * regions. The {@code body} region's block class carries two @Block+@Bind
+         * members, one of which is a nested block class (recursion → children).
+         * Bindings exercise both STATIC and ENTITY sources.
+         *
+         * <pre>
+         * ProductLanding (@View PAGE /products)
+         *   ├─ header → HeaderRegion
+         *   │     └─ @Block(HERO)  @Bind(STATIC)         "banner"
+         *   └─ body   → BodyRegion
+         *         ├─ @Block(GRID)  → ProductCard (recurse)
+         *         │     └─ @Block(CARD) @Bind(ENTITY ref=Product path=name)
+         *         └─ @Block(LIST)  @Bind(ENTITY ref=Product path=tags)  "related"
+         * </pre>
+         */
+        private JavaFileObject productLandingFixture() {
+            return JavaFileObjects.forSourceString(
+                    "com.example.view.ProductLanding",
+                    """
+                    package com.example.view;
+
+                    import eu.exeris.sdk.annotation.View;
+                    import eu.exeris.sdk.annotation.Region;
+                    import eu.exeris.sdk.annotation.Block;
+                    import eu.exeris.sdk.annotation.Block.BlockType;
+                    import eu.exeris.sdk.annotation.Bind;
+                    import eu.exeris.sdk.annotation.Bind.Source;
+
+                    @View(name = "ProductLanding", kind = View.Kind.PAGE,
+                          route = "/products", title = "Products")
+                    public final class ProductLanding {
+
+                        // Region order is source declaration order: header, then body.
+                        @Region(slot = "header")
+                        HeaderRegion header;
+
+                        // Blank slot → derived from the member name ("body").
+                        @Region
+                        BodyRegion body;
+
+                        // A region class: its @Block members become the region's nodes.
+                        static final class HeaderRegion {
+                            @Block(type = BlockType.HERO)
+                            @Bind(source = Source.STATIC)
+                            String banner;
+                        }
+
+                        static final class BodyRegion {
+                            // A @Block whose TYPE is itself block-shaped → children (recursion).
+                            @Block(type = BlockType.GRID)
+                            ProductCard grid;
+
+                            // A @Block + @Bind(ENTITY) leaf-ish node (its String type
+                            // has no @Block members, so no children).
+                            @Block(type = BlockType.LIST)
+                            @Bind(source = Source.ENTITY, ref = "Product", path = "tags")
+                            String related;
+                        }
+
+                        static final class ProductCard {
+                            @Block(type = BlockType.CARD)
+                            @Bind(source = Source.ENTITY, ref = "Product", path = "name")
+                            String title;
+                        }
+                    }
+                    """
+            );
+        }
+
+        @Test
+        @DisplayName("@View PAGE emits view_*.json with the wrapper identity")
+        void emitsViewJsonWithIdentity() throws IOException {
+            Compilation compilation = javac()
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(productLandingFixture());
+
+            assertThat(compilation).succeeded();
+            Optional<JavaFileObject> file = compilation.generatedFile(
+                    StandardLocation.CLASS_OUTPUT, "exeris-metadata/view_ProductLanding.json");
+            assertThat(file).isPresent();
+
+            String json = readContent(file.get());
+            assertThat(json)
+                    .contains("\"name\" : \"ProductLanding\"")
+                    .contains("\"packageName\" : \"com.example.view\"")
+                    .contains("\"qualifiedName\" : \"com.example.view.ProductLanding\"");
+        }
+
+        @Test
+        @DisplayName("The emitted JSON deserializes to the expected ViewMetadata tree")
+        void deserializesToExpectedTree() throws IOException {
+            Compilation compilation = javac()
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(productLandingFixture());
+
+            assertThat(compilation).succeeded();
+            String json = readContent(compilation.generatedFile(
+                    StandardLocation.CLASS_OUTPUT,
+                    "exeris-metadata/view_ProductLanding.json").orElseThrow());
+
+            // Read the nested ViewMetadata out of the wrapper (the mapper ignores
+            // the name/packageName/qualifiedName siblings).
+            ViewMetadata view = mapper.readTree(json).get("view") != null
+                    ? mapper.treeToValue(mapper.readTree(json).get("view"), ViewMetadata.class)
+                    : mapper.readValue(json, ViewMetadata.class);
+
+            // --- View root ---
+            assertThat(view.name()).isEqualTo("ProductLanding");
+            assertThat(view.effectiveKind()).isEqualTo(ViewKind.PAGE);
+            assertThat(view.route()).isEqualTo("/products");
+            assertThat(view.title()).isEqualTo("Products");
+
+            // --- Regions in source declaration order: header, then body ---
+            assertThat(view.regions()).hasSize(2);
+            RegionMetadata header = view.regions().get(0);
+            RegionMetadata body = view.regions().get(1);
+            assertThat(header.slot()).isEqualTo("header");
+            // Blank @Region.slot derives the slot from the member name.
+            assertThat(body.slot()).isEqualTo("body");
+
+            // --- header region: a single HERO block bound STATIC ---
+            assertThat(header.components()).hasSize(1);
+            ComponentNodeMetadata hero = header.components().get(0);
+            assertThat(hero.effectiveType()).isEqualTo(BlockType.HERO);
+            assertThat(hero.binding()).isNotNull();
+            assertThat(hero.binding().effectiveSource()).isEqualTo(BindSource.STATIC);
+            assertThat(hero.children()).isEmpty();
+
+            // --- body region: a GRID (with children via recursion) then a LIST leaf ---
+            assertThat(body.components()).hasSize(2);
+            ComponentNodeMetadata grid = body.components().get(0);
+            ComponentNodeMetadata related = body.components().get(1);
+
+            assertThat(grid.effectiveType()).isEqualTo(BlockType.GRID);
+            // The GRID's TYPE is ProductCard → its @Block member is a child node.
+            assertThat(grid.children()).hasSize(1);
+            ComponentNodeMetadata card = grid.children().get(0);
+            assertThat(card.effectiveType()).isEqualTo(BlockType.CARD);
+            BindingMetadata cardBinding = card.binding();
+            assertThat(cardBinding).isNotNull();
+            assertThat(cardBinding.effectiveSource()).isEqualTo(BindSource.ENTITY);
+            assertThat(cardBinding.ref()).isEqualTo("Product");
+            assertThat(cardBinding.path()).isEqualTo("name");
+
+            assertThat(related.effectiveType()).isEqualTo(BlockType.LIST);
+            assertThat(related.children()).isEmpty();
+            BindingMetadata relatedBinding = related.binding();
+            assertThat(relatedBinding).isNotNull();
+            assertThat(relatedBinding.effectiveSource()).isEqualTo(BindSource.ENTITY);
+            assertThat(relatedBinding.ref()).isEqualTo("Product");
+            assertThat(relatedBinding.path()).isEqualTo("tags");
+        }
+
+        @Test
+        @DisplayName("@View is consumed, so -Aexeris.strict emits NO inert warning for it (RFC-2026-06-28 §4)")
+        void strictDoesNotFlagViewAsInert() {
+            // The codegen-ts presentation-IR emitter (view-gen) now consumes
+            // view_*.json, so @View is no longer inert (consumption = Java∪TS
+            // union). Strict mode must therefore stay silent about @View — both
+            // with strict unset (always quiet) and with strict enabled.
+            Compilation quiet = javac()
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(productLandingFixture());
+            assertThat(quiet).succeeded();
+            long quietInert = quiet.warnings().stream()
+                    .filter(d -> d.getMessage(null) != null
+                            && d.getMessage(null).contains("no code generator consumes it"))
+                    .count();
+            assertThat(quietInert)
+                    .as("inert warnings with strict unset")
+                    .isZero();
+
+            // Strict build: a @View-only compilation must produce ZERO inert
+            // warnings naming @View (the INERT_ANNOTATIONS @View entry was removed
+            // in lock-step with wiring the ViewGenerator).
+            Compilation strict = javac()
+                    .withOptions("-Aexeris.strict=true")
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(productLandingFixture());
+            assertThat(strict).succeeded();
+            long viewInert = strict.warnings().stream()
+                    .filter(d -> d.getMessage(null) != null
+                            && d.getMessage(null).contains("no code generator consumes it")
+                            && d.getMessage(null).contains("@View"))
+                    .count();
+            assertThat(viewInert)
+                    .as("strict mode must NOT name @View as inert — it is now consumed by the codegen-ts emitter")
+                    .isZero();
         }
     }
 

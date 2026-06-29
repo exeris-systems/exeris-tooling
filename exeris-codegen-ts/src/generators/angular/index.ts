@@ -20,4 +20,7 @@ export { generateAppStructure } from './app-structure-gen.js';
 export { generateDetail, DetailGenerator } from './detail-gen.js';
 export { generateGuard, GuardGenerator } from './guard-gen.js';
 
+// Presentation IR — @View page emitter (v0.8.0, RFC-2026-06-28)
+export { generateView, generateViewRoute } from './view-gen.js';
+
 export type { GeneratedFile } from './service-gen.js';
