@@ -15,7 +15,7 @@
  * @since 0.6.0
  */
 
-import type { DomainMetadata } from './models/domain-model.js';
+import type { DomainMetadata, ViewMetadata } from './models/domain-model.js';
 import type { GeneratorConfig } from './config.js';
 import { createGeneratorContext } from './core/generator-registry.js';
 import { generateTypes, TypeGenerator } from './generators/api/type-gen.js';
@@ -23,6 +23,7 @@ import { generateService } from './generators/angular/service-gen.js';
 import { generateForm } from './generators/angular/form-gen.js';
 import { generateList } from './generators/angular/list-gen.js';
 import { generateAppStructure } from './generators/angular/app-structure-gen.js';
+import { generateView, generateViewRoute } from './generators/angular/view-gen.js';
 
 /** Minimal output-file shape the writer consumes (path + content). The per-shape
  *  generators return richer objects (artifactType/overwritable); those are structurally
@@ -109,13 +110,20 @@ export function generateEnumTypes(enums: EnumMetadataForGen[], includeZod: boole
 
 /**
  * Compose the full set of files to write from parsed metadata. Per-entity output
- * (types + Zod schemas + services + form/list components) and the enum module are
- * re-rooted under `src/app/` (the Angular sourceRoot); the scaffold is appended as-is.
+ * (types + Zod schemas + services + form/list components), the enum module, and
+ * the per-view page components / routes are re-rooted under `src/app/` (the
+ * Angular sourceRoot); the scaffold is appended as-is.
+ *
+ * `views` is the presentation-IR family (RFC-2026-06-28): each parsed
+ * `view_*.json` ViewMetadata emits one standalone, signal-first page component
+ * (`pages/<kebab>.component.ts`) + its paired lazy route (`pages/<kebab>.route.ts`).
+ * It is optional (defaults to none) so existing 3-arg callers stay valid.
  */
 export function buildGeneratedFiles(
   domains: DomainMetadata[],
   enums: EnumMetadataForGen[],
-  config: GeneratorConfig
+  config: GeneratorConfig,
+  views: ViewMetadata[] = []
 ): OutputFile[] {
   const generatedFiles: OutputFile[] = [];
 
@@ -150,12 +158,22 @@ export function buildGeneratedFiles(
   const ctx = createGeneratorContext(config, domains);
   appTree.push(...new TypeGenerator().generateAggregate(domains, ctx));
 
+  // Presentation IR (@View): one page component + paired route per view, in
+  // declaration order (deterministic — the views arrive in directory-scan order
+  // from index.ts; the per-view output itself is order-stable).
+  for (const view of views) {
+    appTree.push(generateView(view, config));
+    appTree.push(generateViewRoute(view, config));
+  }
+
   for (const file of appTree) {
     generatedFiles.push({ ...file, path: `src/app/${file.path}` });
   }
 
   // Scaffold only — no per-entity files, no enum module (those live in appTree above).
-  generatedFiles.push(...generateAppStructure(domains, enums, config));
+  // `views` is threaded through so the app shell's app.routes.ts imports + spreads
+  // each per-view route export (RFC-2026-06-28 §5 route-assembly).
+  generatedFiles.push(...generateAppStructure(domains, enums, config, views));
 
   return generatedFiles;
 }

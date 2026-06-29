@@ -535,6 +535,17 @@ Proposals, highest return-on-effort first:
 > emitter ships it (Slice 1 #104 + Slice 2 #106); what remains is generator-side, the **EV1-stream**
 > producer pass (see Events & event sourcing). U6/U8 have SDK halves owned in `exeris-sdk`.
 
+### Presentation views (`@View`) — first slice (NEW, 2026-06-28)
+
+> The framework-neutral presentation IR (`@View` / `ViewMetadata`, SDK [RFC-2026-06-25](../../exeris-sdk/docs/rfc/RFC-2026-06-25-presentation-front-model.md), ACCEPTED) shipped **reserved** in the SDK with generation **gated** on (1) the Angular 22 emitter being authored in tooling and (2) a page/composition corpus. This entry **opens condition (1)**.
+
+- [~] **`@View` → Angular 22 signal-first page emitter — first slice DONE (2026-06-28); full emitter gated.**
+      Shape fixed in **[RFC-2026-06-28 — Presentation View Emitter (tooling)](docs/rfc/RFC-2026-06-28-presentation-view-emitter-tooling.md)** (DRAFT, sibling to the SSE emitter RFC-2026-06-22; the RFC the SDK RFC's build gate names).
+      **Processor (DONE):** `ExerisDomainProcessor` extracts `@View` types via the RFC-fixed **class-structure-derived walk** (`@Region` members in declaration order → regions; a region class's `@Block`+`@Bind` members → components; nested block classes → recursive `children`; path-scoped cycle guard) into `view_<Name>.json` — app-wide, parallel to `DomainMetadata`, mirroring the `capability_*.json` precedent. Covered by `ViewExtractionTests`.
+      **codegen-ts (DONE):** a `ViewMetadataSchema` (recursive, mirrors the SDK records), `view_*.json` discovery in `index.ts` (mirrors `enum_*`), and a `ViewGenerator` (`generators/angular/view-gen.ts`) emitting one **standalone, OnPush, signal-first** component per view under `pages/<kebab>.component.ts` + a lazy route. `BlockType`→element mapping (HERO/CARD/GRID/LIST/CONTAINER/RICH_TEXT/NAV/IMAGE/SLOT/CUSTOM/FORM), ui-kit token utilities (U1). Bindings honoured: `STATIC`/`NONE` (authored), `ENTITY` (`inject(<Ref>Service)` + signal read), `ACTION` (click handler stub). Route assembly threads views into `app.routes.ts` (PAGE-first default redirect + sidebar links). Verified end-to-end (real CLI on a `view_*.json` → faithful component).
+      **Inert-honesty:** `@View` is consumed via the Java∪TS union (the codegen-ts ViewGenerator), so it is **not** registered in `INERT_ANNOTATIONS` — the processor extraction + the generator land together (the strict test asserts `@View` is not flagged).
+      **Gated / follow-ups (the full emitter):** **G1** parameterised/relational binding (the corpus's defining "X of the current Y" — currently `expression` is a TODO passthrough) · **G2** `STREAM` source (pairs with ADR-044) · **G3** mesh binding (T12) · **G6** token/theme binding · leaf-field `FORM` emission ([ADR-047 — the `@UI`→`@View` leaf-facet migration](docs/adr/ADR-047-view-leaf-field-facet-and-ui-subsumption.DRAFT.md)) · the `@UI`→`@View` unification. Build of the *full* emitter stays gated on the Headless CMS SKU corpus (RFC condition 2); Stellar's [`view-ir-corpus.md`](../../Stellar-Tactics/docs/view-ir-corpus.md) is the early validating corpus.
+
 ### Events & event sourcing
 
 > Grounded in a kernel-side audit (2026-06-16). The open-core kernel already ships a **mature
