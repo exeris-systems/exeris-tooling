@@ -84,6 +84,8 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
             ClassName.get("java.lang", "IllegalArgumentException");
     private static final ClassName RUNTIME_EXCEPTION =
             ClassName.get("java.lang", "RuntimeException");
+    /** JavaPoet parameter name for the {@code HttpExchange} every handler method takes. */
+    private static final String EXCHANGE_PARAM = "exchange";
 
     @Override
     public GeneratedFile generate(DomainMetadata metadata) {
@@ -317,7 +319,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
     private static MethodSpec.Builder crudHandler(String name) {
         return MethodSpec.methodBuilder(name)
                 .addModifiers(Modifier.PUBLIC)
-                .addParameter(HTTP_EXCHANGE, "exchange");
+                .addParameter(HTTP_EXCHANGE, EXCHANGE_PARAM);
     }
 
     /** Emits the shared "parse {@code id} from the path or 400" guard: declares a
@@ -481,7 +483,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         return MethodSpec.methodBuilder("extractPathId")
                 .addModifiers(Modifier.PRIVATE)
                 .returns(String.class)
-                .addParameter(HTTP_EXCHANGE, "exchange")
+                .addParameter(HTTP_EXCHANGE, EXCHANGE_PARAM)
                 .addStatement("return exchange.pathParams().getOrDefault($S, $S)", "id", "")
                 .build();
     }
@@ -495,7 +497,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                 .addAnnotation(AnnotationSpec.builder(SuppressWarnings.class)
                         .addMember("value", "$S", "unchecked")
                         .build())
-                .addParameter(HTTP_EXCHANGE, "exchange")
+                .addParameter(HTTP_EXCHANGE, EXCHANGE_PARAM)
                 .addParameter(ParameterizedTypeName.get(ClassName.get(Class.class), tVar), "type")
                 .addJavadoc("Decodes the request body into {@code type} via the server-side\n")
                 .addJavadoc("request-body codec SPI (ADR-036).\n")
