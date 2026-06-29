@@ -68,12 +68,13 @@ for (const f of files) {
 }
 console.log(`gen-sample-app — wrote ${files.length} files to ${out}`);
 
-// The emitted package.json pins `@exeris-systems/ui-kit@^0.1.0` — the published coordinate
-// a real generated app installs from a registry. The package is not on the public
-// npm registry yet (it lives in exeris-sdk/exeris-sdk-ui-kit), so for this throwaway
-// CI/local sample we repoint that one dependency at a local checkout via EXERIS_UI_KIT_PATH
-// so `npm install` resolves it. The real generator output is untouched — this only
-// rewrites the sample. Drop this once @exeris-systems/ui-kit publishes to a registry.
+// The emitted package.json pins `@exeris-systems/ui-kit@^0.1.0` — the published
+// coordinate (GitHub Packages), which CI installs with a read:packages token.
+// OPTIONAL local-dev escape hatch: set EXERIS_UI_KIT_PATH to an exeris-sdk-ui-kit
+// checkout to repoint just that one dependency at it (file:), so a dev without a
+// GitHub Packages token can still build the sample. Leaving it unset uses the real
+// registry. Only the throwaway sample is rewritten — the real generator output keeps
+// the `^0.1.0` registry coordinate.
 const uiKitPath = process.env.EXERIS_UI_KIT_PATH;
 if (uiKitPath) {
   const pkgPath = join(out, 'package.json');

@@ -108,16 +108,6 @@ jobs:
       - name: Checkout exeris-tooling
         uses: actions/checkout@v4
 
-      # @exeris/ui-kit is not on a public registry yet — it lives in exeris-sdk.
-      # The generated sample's package.json pins @exeris/ui-kit@^0.1.0; gen-sample-app
-      # repoints it at this checkout (via EXERIS_UI_KIT_PATH) so `npm install` resolves.
-      - name: Checkout exeris-sdk (provides @exeris/ui-kit)
-        uses: actions/checkout@v4
-        with:
-          repository: exeris-systems/exeris-sdk
-          ref: main
-          path: exeris-sdk
-
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -133,12 +123,18 @@ jobs:
 
       - name: Generate sample Angular app
         working-directory: exeris-codegen-ts
-        env:
-          EXERIS_UI_KIT_PATH: ${{ github.workspace }}/exeris-sdk/exeris-sdk-ui-kit
         run: node scripts/gen-sample-app.mjs "$RUNNER_TEMP/fe-sample"
 
+      # @exeris-systems/ui-kit is published to GitHub Packages. The generated app emits
+      # the scoped registry in its .npmrc; append the read token (the workflow's
+      # GITHUB_TOKEN has packages:read; the SDK repo + package are public) so the
+      # sample installs ui-kit exactly as a real consumer does — validating the
+      # published tarball, not a local source checkout.
       - name: npm install + ng build (generated app)
         working-directory: ${{ runner.temp }}/fe-sample
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          echo "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}" >> .npmrc
           npm install --no-audit --no-fund
           npx ng build --configuration development
