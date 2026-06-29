@@ -42,6 +42,26 @@ final class KernelTableNaming {
         return toSnakeCase(metadata.entityName()) + "s";
     }
 
+    /**
+     * Snake-cased SQL column name for a MANY_TO_ONE relationship (T8/T9 convention,
+     * idempotent on a trailing {@code Id}). Both the FK <em>column</em> (T8,
+     * {@link KernelFlywayGenerator}) and the FK <em>constraint</em> (T9,
+     * {@link KernelApplicationGenerator}) derive the column name here so the
+     * {@code ALTER TABLE … FOREIGN KEY (<col>)} always targets the column the
+     * {@code CREATE TABLE} emitted.
+     *
+     * <p>The entity-typed {@code @Relationship Customer customer} → {@code customer_id};
+     * the explicit-UUID-FK {@code @Relationship UUID customerId} → {@code customer_id}
+     * (not {@code customer_id_id}).
+     */
+    static String foreignKeyColumn(String relationshipName) {
+        String base = relationshipName;
+        if (base.length() > 2 && base.endsWith("Id")) {
+            base = base.substring(0, base.length() - 2);
+        }
+        return toSnakeCase(base) + "_id";
+    }
+
     private static String toSnakeCase(String camelCase) {
         return camelCase.replaceAll("([a-z])([A-Z])", "$1_$2").toLowerCase();
     }
