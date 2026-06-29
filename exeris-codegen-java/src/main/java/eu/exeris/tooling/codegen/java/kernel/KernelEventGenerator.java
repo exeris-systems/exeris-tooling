@@ -166,6 +166,12 @@ public class KernelEventGenerator implements KernelArtifactGenerator {
                                 + "        $T.currentTimeMillis())",
                         EVENT_DESCRIPTOR, EVENT_DESCRIPTOR, constantName, constantName,
                         ClassName.get("java.lang", "System"))
+                // EV1: the resolved payload-field metadata now exists on
+                // DomainEventMetadata (event.payloadFields() / sensitiveFields()),
+                // but runtime byte-serialization of the payload stays gated on a
+                // future kernel event-payload codec SPI (see the EV1 codec ADR).
+                // Until that SPI lands the publisher ships an empty payload — DO
+                // NOT change this runtime behaviour from EventPayload.empty().
                 .addStatement("eventEngine.bus().publish(descriptor, $T.empty())", EVENT_PAYLOAD)
                 .addStatement("LOG.debug($S, eventUuid, streamId)",
                         "Published " + eventName + ": eventId={} streamId={}");
