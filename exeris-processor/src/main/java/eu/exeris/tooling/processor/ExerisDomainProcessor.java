@@ -146,9 +146,6 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      * attribute that now matters. Surfaced only under {@code -Aexeris.strict}.
      */
     private static final List<InertAttribute> INERT_ATTRIBUTES = List.of(
-            new InertAttribute("Field", "dataType",
-                    "the column/property type is derived from the Java field type; "
-                            + "the dataType override is dropped at the processor"),
             new InertAttribute("ActionParam", "description",
                     "the value reaches ActionParamMetadata in the JSON, but no emitter renders "
                             + "it — action-parameter generation reads only the parameter name and type"),
@@ -794,6 +791,10 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         if (values.containsKey("readOnly")) builder.readOnly((Boolean) values.get("readOnly"));
         if (values.containsKey("inCreate")) builder.inCreate((Boolean) values.get("inCreate"));
         if (values.containsKey("inUpdate")) builder.inUpdate((Boolean) values.get("inUpdate"));
+        // @Field.dataType — the front-presentation type hint (currency/percent/url/…).
+        // The builder normalizes blank -> null, so an explicit "" default does not
+        // survive on the wire under @JsonInclude(NON_DEFAULT) (determinism-safe).
+        if (values.containsKey("dataType")) builder.dataType((String) values.get("dataType"));
 
         // Computed fields (only computed + computedFrom on @Field).
         if (values.containsKey("computed")) builder.computed((Boolean) values.get("computed"));
