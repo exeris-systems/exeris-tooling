@@ -120,6 +120,11 @@ class KernelCodegenCompileTest {
                         FieldMetadata.builder("status",
                                         DOMAIN_PACKAGE + ".OrderStatus")
                                 .filterable(true)
+                                .build(),
+                        // EV1/B3: a primitive boolean payload field exercises the
+                        // `isX()` accessor in the generated publisher — the gate
+                        // javac-compiles entity.isExpedited() against the entity.
+                        FieldMetadata.builder("expedited", "boolean")
                                 .build()))
                 // T8: a MANY_TO_ONE relationship drives the FK finder
                 // findByCustomerId(UUID) on the Repository + Service — javac is the
@@ -162,7 +167,7 @@ class KernelCodegenCompileTest {
                         // KernelProviders.eventPayloadCodecRegistry(), so the gate javac-
                         // compiles it against the real kernel codec SPI + jdk.jfr.
                         DomainEventMetadata.builder("OrderPlaced")
-                                .payloadFields(List.of("amount", "orderNumber", "customerName"))
+                                .payloadFields(List.of("amount", "orderNumber", "customerName", "expedited"))
                                 .sensitiveFields(List.of("customerName"))
                                 .build()))
                 .graphMetadata(new GraphMetadata("Order", List.of(),
@@ -233,6 +238,7 @@ class KernelCodegenCompileTest {
                     private Instant createdAt;
                     private Instant updatedAt;
                     private boolean deleted;
+                    private boolean expedited;
 
                     public UUID getId() { return id; }
                     public void setId(UUID id) { this.id = id; }
@@ -254,6 +260,9 @@ class KernelCodegenCompileTest {
 
                     public OrderStatus getStatus() { return status; }
                     public void setStatus(OrderStatus status) { this.status = status; }
+
+                    public boolean isExpedited() { return expedited; }
+                    public void setExpedited(boolean expedited) { this.expedited = expedited; }
 
                     public UUID getTenantId() { return tenantId; }
                     public void setTenantId(UUID tenantId) { this.tenantId = tenantId; }

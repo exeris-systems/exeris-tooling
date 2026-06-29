@@ -1358,6 +1358,10 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     private DomainEventMetadata extractSingleEventMetadata(AnnotationMirror eventAnnotation, TypeElement element) {
         Map<String, Object> values = extractAnnotationValues(eventAnnotation);
 
+        // TODO(T11-strict): no warnInertAttributes("DomainEvent", values, ...) call yet,
+        // so -Aexeris.strict cannot audit unconsumed @DomainEvent attributes (the
+        // @Field / @ActionParam paths do). Add one once the consumed-attribute set is
+        // settled (name/topic/description/trigger/includeFields/excludeFields/sensitiveFields).
         String name = values.containsKey("name") ? (String) values.get("name") : null;
         if (name == null || name.isBlank()) {
             // Derive from trigger type
