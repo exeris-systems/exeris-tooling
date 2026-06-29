@@ -29,7 +29,7 @@ The pipeline is split along a single hinge: **one processor → `exeris-metadata
 **The one coupling:** metadata JSON is authored *only* by the Java processor (runs inside `javac`). So a *cold* FE run presupposes a prior `mvn compile` — **unless the JSON is hand-/Studio-authored** (the front-only lane, §2). The two toolchains otherwise share nothing but the JSON.
 
 ### The RFC four-quadrant model → what produces each today
-(SDK [RFC-2026-06-25](../../exeris-sdk/docs/rfc/RFC-2026-06-25-presentation-front-model.md): backend facet × front facet over one JSON.)
+(SDK [RFC-2026-06-25](https://github.com/exeris-systems/exeris-sdk/blob/main/docs/rfc/RFC-2026-06-25-presentation-front-model.md): backend facet × front facet over one JSON.)
 
 | | **front** | **no front** |
 |---|---|---|

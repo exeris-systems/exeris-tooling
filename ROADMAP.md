@@ -113,21 +113,16 @@ cross-reference index, so it retains shipped items alongside open ones.
       data-fetch fix — `rxResource` in detail, `firstValueFrom` in store (#98). **Pending:** Phase C
       (Reactive Forms → Signal Forms, ADR-worthy → flag-gated WebMCP); small tidy (`@Service`, `?.` audit).
       `debounced()` rejected (experimental). Gated by the `ng build` round-trip above.
-- [ ] Round-trip tests against generated Angular workspace (compiles + `ng build` / `tsc --noEmit` green)
-      — the FE analog of `KernelCodegenCompileTest`; **this is the catch for T20** (the generated frontend
-      currently doesn't build) and guards the Phase C reshape just as it would have caught T20
+- [x] Round-trip tests against generated Angular workspace (compiles + `ng build` / `tsc --noEmit` green)
+      — the FE analog of `KernelCodegenCompileTest`; **this was the catch for T20** (the generated frontend
+      wasn't building before #101/#102) and guards the Phase C reshape just as it caught T20. Shipped (#101/#102).
 
 ### 0.6.0 scope (agreed) — "codegen-ts on par with Java + parity/correctness debts closed + a gate that keeps it honest"
 
-**Shipped:** **T1** action-serving (#92) · Angular v22 Phase A/B1/B3 (#95/#96/#98) · SDK pinned to released 0.7.0 (#100).
+**Shipped:** **T1** action-serving (#92) · Angular v22 Phase A/B1/B3 (#95/#96/#98) · SDK pinned to released 0.7.0 (#100) · **T20 + FE build gate** (#101/#102) · **T7** remainder — configurable title/redirect via `--app-name` (#120) · **T10** server-side `@Validation` (#103) · **T8** finders + FK/`filterable` indexes (#118) · **U1** ui-kit wiring (#120).
 
 **In this cut:**
-- **T20 + FE build gate** — fix the duplicate-emission/enum-stub *and* add the `ng build`/`tsc --noEmit` round-trip (the FE analog of `KernelCodegenCompileTest`; the permanent catch). One PR.
-- **T7** remainder — configurable title/redirect; collapse the duplicate tree (rides with T20).
-- **T10** — server-side `@Validation` (handler/service + `CHECK`), the other High parity break.
-- **T8** — generate finders + FK/`filterable` indexes (kills O(n) `findAll().filter()`).
 - **T2 (FE slice)** — emit `*.service.spec.ts` + `*.schema.spec.ts` into the generated app, run by the FE gate. (Full Java `Kernel*TestGenerator` → 0.7.0.)
-- **U1** — wire the ui-kit (`exerisPreset`, semantic classes) into the emitted app.
 - **T18** — build-safety: guard the T13 pruner on empty input + the capability-pass phase ordering.
 - **D1** — `requireJavaVersion` enforcer + README up-front.
 
@@ -230,7 +225,7 @@ See the **Codegen completeness backlog** below for per-item detail.
       the JVM method can diverge. *v1 limits (tracked):* non-void return not surfaced; `@Action(httpMethod)`
       not yet honoured (POST everywhere); domain exceptions map to 500.
 
-- [ ] **T20 — Generated Angular frontend doesn't compile (`npm run build` fails).** The FE analog of
+- [x] **T20 — Generated Angular frontend didn't compile (`npm run build` failed). DONE (0.6.0, #101/#102).** The FE analog of
       **T14**: the generated frontend is L1-committed but the codegen e2e never *builds* it (it asserts
       emitted *text* only, as the Java side did before `KernelCodegenCompileTest`), so the breakage stayed
       latent. **Root cause: `exeris-codegen-ts` runs two parallel, conflicting emission paths in `main()`.**
@@ -245,11 +240,11 @@ See the **Codegen completeness backlog** below for per-item detail.
       extraction unimplemented"; it is the duplicate `src/app` path **shadowing** the real output with a
       stub, plus the full `EnumGenerator` (`api/enum-gen.ts`) left unwired. (The service *does* emit
       `import … from '../types/enums'` (`service-gen.ts:182`) — it just resolves to the stub.)
-      *Update (exeris-codegen-ts):* collapse to **one** emission path — make the `src/app` (sourceRoot)
-      tree the canonical output of the real per-entity generators (drop the duplicate top-level loop, or
-      vice-versa), and delete the `app-structure-gen` enum stub in favour of the real `generateEnumTypes` /
-      `EnumGenerator`. Unifying the path fixes the enum-stub and the import-resolves-to-stub symptoms
-      together. **The catch is the 0.6.0 "generated workspace compiles + `ng build` green" gate** — a
+      *Done (#101/#102):* collapsed to **one** emission path — the `src/app` (sourceRoot)
+      tree is the canonical output of the real per-entity generators, and the `app-structure-gen` enum stub
+      was dropped in favour of the real `generateEnumTypes` / `EnumGenerator`. Unifying the path fixed the
+      enum-stub and the import-resolves-to-stub symptoms together. **The permanent catch is the 0.6.0
+      "generated workspace compiles + `ng build` green" gate** — a
       `tsc --noEmit`/`ng build` over a generated sample, the FE analog of `KernelCodegenCompileTest`.
       (FE orphan-pruning — the other suspected FE-twin — is **already done**: the **T13** manifest pruner
       runs on the TS CLI path, `index.ts:302`.) Surfaced by a larger multi-entity, multi-service frontend trial.
@@ -277,13 +272,14 @@ See the **Codegen completeness backlog** below for per-item detail.
       migration-ordering hazard (a `REFERENCES` to a table created in a later migration would fail); it sorts
       after every `CREATE TABLE` tier. Deterministic (sorted; generate-twice test).
 
-- [ ] **T10 — Emit server-side validation (handler/service) + `CHECK` constraints.**
-      `@Validation(min/max/pattern/minLength/…)` flows into the Angular Zod schemas but the generated
-      server handler/service enforce nothing — a malformed request the UI rejects sails into the
-      backend; the DB gets only `NOT NULL` + `VARCHAR(255)`. Same contract honoured on one emitter,
+- [x] **T10 — Emit server-side validation (handler/service) + `CHECK` constraints. DONE (handler-side) (0.6.0, #103).**
+      `@Validation(min/max/pattern/minLength/…)` flowed into the Angular Zod schemas but the generated
+      server handler/service enforced nothing — a malformed request the UI rejects sailed into the
+      backend; the DB got only `NOT NULL` + `VARCHAR(255)`. Same contract honoured on one emitter,
       silently dropped on the other.
-      *Update:* emit server-side validation from `ValidationMetadata` (reject → map to `400`), and/or
-      `CHECK` constraints in Flyway — restoring Java/TS parity on the validation contract.
+      *Done (#103):* the generated handler now enforces `@Validation` server-side from `ValidationMetadata`
+      (reject → `400`), restoring Java/TS parity on the request-validation contract. The Flyway `CHECK`-constraint
+      (DB-level) half rides a follow-up.
 
 - [ ] **T12 — Cross-app contract registry + generated remote dispatch (the mesh story).** The
       pipeline already emits the *seams* of a distributed system — a typed sync client, async domain

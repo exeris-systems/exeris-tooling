@@ -27,7 +27,7 @@ Not horizontal ("extract all five record families in one pass"). The processor e
 - **Wave 3+ — Deferred.** L4 (after EV1 + placement ADR + engine SPI check), L6 (after SDK `@SagaTransition` RFC), L5 (after expression-eval RFC→ADR), L8 (own corpus-gated track). **Founder review.**
 
 ## ADR/RFC obligations (per tooling/SDK CLAUDE.md triggers)
-- **ADR — L2** new Java-only `*Reactions` generator family + new live metadata family + Java∪TS parity statement.
+- **ADR — L2 (bundled with L4)** — per the Wave-1B finding, the `@EventHandler` consumer is a `@Projection`-reaction / `@Saga`-trigger concern, **not** a standalone `*Reactions` generator family; folded into the L4 projection ADR + the saga path (carries the same `-io` mirror + Java∪TS parity statement). No separate L2 ADR.
 - **RFC(-light) — L3 EV1** AST grow governed by the SDK Jackson wire-format contract review; settles payload format + `sensitiveFields` redaction + publish-overload shape.
 - **ADR — L4** projection placement (entity-list vs `projection_*.json`) + `ProjectionEngine` SPI-vs-core.
 - **SDK RFC — L6** net-new `@SagaTransition` + additive `@SagaStep.kind()`; resolve overlap with `effectiveKind()` (covers INVOKE/COMPENSATE, not AWAIT_*).
