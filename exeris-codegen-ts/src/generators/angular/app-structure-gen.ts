@@ -80,6 +80,7 @@ export function generateAppStructure(
   files.push({ path: `${outputRoot}/tailwind.config.js`, content: generateTailwindConfig(), overwritable: true });
   files.push({ path: `${outputRoot}/.postcssrc.json`, content: generatePostcssConfig(), overwritable: true });
   files.push({ path: `${outputRoot}/proxy.conf.json`, content: generateProxyConfig(), overwritable: true });
+  files.push({ path: `${outputRoot}/.npmrc`, content: generateNpmrc(), overwritable: true });
 
   // Static files under src/
   files.push({ path: `${srcRoot}/styles.css`, content: generateStylesCss(), overwritable: true });
@@ -358,7 +359,7 @@ function generatePackageJson(appName: string): string {
     "@angular/forms": "^22.0.0",
     "@angular/platform-browser": "^22.0.0",
     "@angular/router": "^22.0.0",
-    "@exeris/ui-kit": "^0.1.0",
+    "@exeris-systems/ui-kit": "^0.1.0",
     "rxjs": "~7.8.1",
     "tslib": "^2.8.1",
     "zod": "^3.24.0"
@@ -495,12 +496,12 @@ function generateTsConfigApp(): string {
 
 function generateTailwindConfig(): string {
   // Tailwind CSS v4 is CSS-first, so this file is largely vestigial for a v4
-  // build (the tokens come from `@import "@exeris/ui-kit/theme"` in styles.css).
+  // build (the tokens come from `@import "@exeris-systems/ui-kit/theme"` in styles.css).
   // It is kept valid and wires the ui-kit v3 JS preset so a v3-toolchain consumer
   // ALSO gets the same `exeris-*` token namespace. The preset is the documented
   // v3 entry point (v4 ignores `presets`); both entries declare identical tokens.
   return `/** @type {import('tailwindcss').Config} */
-import exerisPreset from '@exeris/ui-kit/tailwind.preset.js';
+import exerisPreset from '@exeris-systems/ui-kit/tailwind.preset.js';
 
 export default {
   presets: [exerisPreset],
@@ -528,7 +529,7 @@ function generatePostcssConfig(): string {
 function generateStylesCss(): string {
   // Tailwind CSS v4 uses @import instead of @tailwind directives.
   //
-  // The @exeris/ui-kit "theme" entry is the v4 (@theme, CSS-first) token entry:
+  // The @exeris-systems/ui-kit "theme" entry is the v4 (@theme, CSS-first) token entry:
   // it declares the `exeris-*` design-token namespace (bg-exeris-primary,
   // text-exeris-primary-hover, font-exeris, …) so generated components style
   // against the shared SDK tokens instead of hardcoded boilerplate. (A v3
@@ -543,7 +544,7 @@ function generateStylesCss(): string {
   return `/* Generated Angular Frontend - Global Styles */
 /* Tailwind CSS v4 */
 @import "tailwindcss";
-@import "@exeris/ui-kit/theme";
+@import "@exeris-systems/ui-kit/theme";
 
 /* Custom base styles */
 @layer base {
@@ -567,6 +568,16 @@ function generateProxyConfig(): string {
     "logLevel": "debug"
   }
 }
+`;
+}
+
+function generateNpmrc(): string {
+  // @exeris-systems/ui-kit is published to GitHub Packages (interim home — it will
+  // move to the public npm registry later). Resolve the @exeris-systems scope from
+  // there. GitHub Packages requires auth even for reads: add a token with
+  // read:packages to your global ~/.npmrc, e.g.
+  //   //npm.pkg.github.com/:_authToken=YOUR_GITHUB_TOKEN
+  return `@exeris-systems:registry=https://npm.pkg.github.com
 `;
 }
 

@@ -162,7 +162,7 @@ describe('generateAppStructure — static skeleton', () => {
 
 // ---------- T25: ui-kit token system wiring ----------
 
-describe('generateAppStructure — @exeris/ui-kit token wiring (T25)', () => {
+describe('generateAppStructure — @exeris-systems/ui-kit token wiring (T25)', () => {
   const files = generateAppStructure(
     [domain({ entityName: 'Order' }), domain({ entityName: 'Product' })],
     [],
@@ -173,7 +173,7 @@ describe('generateAppStructure — @exeris/ui-kit token wiring (T25)', () => {
     const css = fileAt(files, 'src/styles.css')!;
     // v4 token wiring: tailwindcss first, then the ui-kit "theme" (v4 @theme) entry.
     expect(css.content).toContain('@import "tailwindcss";');
-    expect(css.content).toContain('@import "@exeris/ui-kit/theme";');
+    expect(css.content).toContain('@import "@exeris-systems/ui-kit/theme";');
     // Boilerplate component classes a product immediately deletes are gone.
     expect(css.content).not.toContain('.btn-primary');
     expect(css.content).not.toContain('.btn-secondary');
@@ -185,14 +185,20 @@ describe('generateAppStructure — @exeris/ui-kit token wiring (T25)', () => {
     expect(css.content).not.toContain('indigo');
   });
 
-  it('package.json declares the @exeris/ui-kit dependency (^0.1.0, the current ui-kit version)', () => {
+  it('package.json declares the @exeris-systems/ui-kit dependency (^0.1.0, the current ui-kit version)', () => {
     const pkg = fileAt(files, './package.json')!;
-    expect(pkg.content).toContain('"@exeris/ui-kit": "^0.1.0"');
+    expect(pkg.content).toContain('"@exeris-systems/ui-kit": "^0.1.0"');
+  });
+
+  it('.npmrc points the @exeris-systems scope at GitHub Packages (where ui-kit is published)', () => {
+    const npmrc = fileAt(files, './.npmrc')!;
+    expect(npmrc).toBeDefined();
+    expect(npmrc.content).toContain('@exeris-systems:registry=https://npm.pkg.github.com');
   });
 
   it('tailwind.config.js wires the ui-kit v3 preset so a v3 toolchain also gets the tokens', () => {
     const tw = fileAt(files, './tailwind.config.js')!;
-    expect(tw.content).toContain("import exerisPreset from '@exeris/ui-kit/tailwind.preset.js';");
+    expect(tw.content).toContain("import exerisPreset from '@exeris-systems/ui-kit/tailwind.preset.js';");
     expect(tw.content).toContain('presets: [exerisPreset]');
   });
 
