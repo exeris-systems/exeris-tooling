@@ -58,6 +58,10 @@ class KernelHandlerGeneratorTest {
                 .contains("handleCreate(HttpExchange exchange)")
                 .contains("handleUpdate(HttpExchange exchange)")
                 .contains("handleDelete(HttpExchange exchange)")
+                // kernel 0.10 boot-path (#224): the {id} path var is read from
+                // pathParams(), replacing the raw-path lastIndexOf string surgery
+                .contains("exchange.pathParams().getOrDefault(\"id\", \"\")")
+                .doesNotContain("lastIndexOf")
                 .contains("exchange.respond(HttpStatus.OK")
                 .contains("HttpStatus.CREATED")
                 .contains("HttpStatus.NO_CONTENT")
@@ -154,14 +158,16 @@ class KernelHandlerGeneratorTest {
 
         assertThat(handler)
                 .contains("void handleCancel(HttpExchange exchange)")
-                .contains("extractActionPathId(exchange)")
+                // id via the shared {id} path-template helper (kernel pathParams(), #224)
+                .contains("extractPathId(exchange)")
                 .contains("service.findById(id)")
                 .contains("exchange.respond(HttpStatus.NOT_FOUND)")
                 .contains("entity.cancel()")
                 .contains("service.update(id, entity)")
                 .contains("exchange.respond(HttpStatus.OK, updated)")
-                // id is extracted via the action-aware helper (segment before /actions/)
-                .contains("\"/actions/\"")
+                // no raw-path surgery and no separate action-aware extractor any more
+                .doesNotContain("extractActionPathId")
+                .doesNotContain("\"/actions/\"")
                 // name != method: handler name follows the action identity, invocation the method
                 .contains("void handleMarkUrgent(HttpExchange exchange)")
                 .contains("entity.flagUrgent()");
@@ -211,15 +217,15 @@ class KernelHandlerGeneratorTest {
         assertThat(handler)
                 // non-streaming action keeps its respond-once handler + the shared helper
                 .contains("void handleCancel(HttpExchange exchange)")
-                .contains("extractActionPathId(exchange)")
+                .contains("extractPathId(exchange)")
                 // streaming action is served by the stream handler, not a dead respond-once method
                 .doesNotContain("handleTrackShipment");
     }
 
     @Test
-    @DisplayName("ADR-044 Slice 2: an entity whose ONLY action streams emits neither a respond-once "
-            + "action handler nor the now-unused extractActionPathId helper")
-    void shouldOmitActionHelperWhenAllActionsStream() {
+    @DisplayName("ADR-044 Slice 2: an entity whose ONLY action streams emits no respond-once "
+            + "action handler (but still carries the shared by-id extractPathId helper)")
+    void shouldOmitRespondOnceHandlerWhenAllActionsStream() {
         DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
                 .path("/orders")
                 .actions(List.of(
@@ -233,7 +239,10 @@ class KernelHandlerGeneratorTest {
 
         assertThat(handler)
                 .doesNotContain("handleTrackShipment")
-                .doesNotContain("extractActionPathId");
+                // the action-aware extractor is gone entirely; the by-id CRUD routes
+                // still need the shared {id} helper, so it's always emitted
+                .doesNotContain("extractActionPathId")
+                .contains("extractPathId(exchange)");
     }
 
     @Test
