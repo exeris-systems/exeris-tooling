@@ -82,6 +82,7 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`  label: string;`);
     lines.push(`  type: 'text' | 'number' | 'boolean' | 'date' | 'datetime' | 'enum';`);
     lines.push(`  enumType?: string;`);
+    lines.push(`  dataType?: 'currency' | 'percent' | 'url';`);
     lines.push(`}`);
     lines.push(``);
 
@@ -90,7 +91,13 @@ export class DetailGenerator implements CodeGenerator {
       const mapping = DslMapper.mapField(field);
       const fieldType = this.getDisplayType(field);
       const enumTypeName = this.getEnumTypeName(field);
-      lines.push(`  { name: '${field.name}' as keyof ${entityName}, label: $localize\`:@@${kebab}.field.${field.name}:${mapping.label}\`, type: '${fieldType}'${enumTypeName ? `, enumType: '${enumTypeName}'` : ''} },`);
+      // @Field.dataType — front-presentation hint (Wave 1A, additive). Only the
+      // currency/percent/url facets drive a distinct render; any other value is
+      // ignored and the default formatValue() path applies.
+      const dataType = field.dataType === 'currency' || field.dataType === 'percent' || field.dataType === 'url'
+        ? field.dataType
+        : undefined;
+      lines.push(`  { name: '${field.name}' as keyof ${entityName}, label: $localize\`:@@${kebab}.field.${field.name}:${mapping.label}\`, type: '${fieldType}'${enumTypeName ? `, enumType: '${enumTypeName}'` : ''}${dataType ? `, dataType: '${dataType}'` : ''} },`);
     }
     lines.push(`];`);
     lines.push(``);
@@ -125,7 +132,16 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`            @for (field of displayFields; track field.name) {`);
     lines.push(`              <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">`);
     lines.push(`                <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">{{ field.label }}</dt>`);
-    lines.push(`                <dd class="mt-1 text-sm text-gray-900 dark:text-white sm:mt-0 sm:col-span-2">{{ formatValue(field, entity()) }}</dd>`);
+    lines.push(`                <dd class="mt-1 text-sm text-gray-900 dark:text-white sm:mt-0 sm:col-span-2">`);
+    // @Field.dataType render facets (Wave 1A): currency/percent pipes and url anchor
+    // operate on the raw entity value; every other field falls through to formatValue().
+    lines.push(`                  @switch (field.dataType) {`);
+    lines.push(`                    @case ('currency') { {{ rawValue(field, entity()) | currency }} }`);
+    lines.push(`                    @case ('percent') { {{ rawValue(field, entity()) | percent }} }`);
+    lines.push(`                    @case ('url') { <a [href]="rawValue(field, entity())" class="text-exeris-primary hover:underline">{{ rawValue(field, entity()) }}</a> }`);
+    lines.push(`                    @default { {{ formatValue(field, entity()) }} }`);
+    lines.push(`                  }`);
+    lines.push(`                </dd>`);
     lines.push(`              </div>`);
     lines.push(`            }`);
     lines.push(`          </dl>`);
@@ -181,6 +197,12 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`    const entity = this.entity();`);
     lines.push(`    if (!entity) return '';`);
     lines.push(`    return ${nameField ? `entity.${nameField.name} ?? String(entity.${idField})` : `String(entity.${idField})`};`);
+    lines.push(`  }`);
+    lines.push(``);
+
+    lines.push(`  rawValue(field: FieldDisplay, entity: ${entityName} | null): unknown {`);
+    lines.push(`    if (!entity) return null;`);
+    lines.push(`    return entity[field.name as keyof ${entityName}] ?? null;`);
     lines.push(`  }`);
     lines.push(``);
 

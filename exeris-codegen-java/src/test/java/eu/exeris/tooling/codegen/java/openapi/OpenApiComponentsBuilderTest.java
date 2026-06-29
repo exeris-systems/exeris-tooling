@@ -64,6 +64,26 @@ class OpenApiComponentsBuilderTest {
     }
 
     @Test
+    @DisplayName("Field with @Field.dataType=url gets OpenAPI format: uri; other dataType facets do not (L1)")
+    void dataTypeUrlMapsToFormatUri() {
+        DomainMetadata meta = DomainMetadata.builder("Order", "com.example.domain")
+                .fields(List.of(
+                        FieldMetadata.builder("homepage", "String").dataType("url").build(),
+                        FieldMetadata.builder("amount", "BigDecimal").dataType("currency").build()))
+                .build();
+
+        Schema<?> entitySchema = OpenApiComponentsBuilder.buildComponents(meta)
+                .getSchemas().get("Order");
+
+        // url -> the standard OpenAPI "uri" format (the wire-contract parity hint).
+        Schema<?> homepage = (Schema<?>) entitySchema.getProperties().get("homepage");
+        assertThat(homepage.getFormat()).isEqualTo("uri");
+        // A non-url dataType (currency — an FE-only facet) leaves the format untouched.
+        Schema<?> amount = (Schema<?>) entitySchema.getProperties().get("amount");
+        assertThat(amount.getFormat()).isNotEqualTo("uri");
+    }
+
+    @Test
     @DisplayName("CreateDto: excludes readOnly and \"id\" fields; collects required ones in required[]")
     void createDtoExcludesReadOnlyAndId() {
         DomainMetadata meta = DomainMetadata.builder("Order", "com.example.domain")

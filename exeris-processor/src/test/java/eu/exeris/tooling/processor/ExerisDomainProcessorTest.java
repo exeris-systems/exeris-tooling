@@ -130,6 +130,48 @@ class ExerisDomainProcessorTest {
                     .contains("\"entityName\" : \"Customer\"")
                     .contains("\"packageName\" : \"com.example\"");
         }
+
+        @Test
+        @DisplayName("Should extract @Field.dataType into FieldMetadata.dataType (Wave 1A)")
+        void shouldExtractFieldDataType() throws IOException {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Invoice",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Field;
+
+                    @ExerisDomain(module = "billing", path = "/invoices")
+                    public class Invoice {
+
+                        @Field(label = "Amount", dataType = "currency")
+                        private java.math.BigDecimal amount;
+
+                        @Field(label = "Reference")
+                        private String reference;
+                    }
+                    """
+            );
+
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).succeeded();
+
+            Optional<JavaFileObject> metadataFile = compilation.generatedFile(
+                    StandardLocation.CLASS_OUTPUT, "exeris-metadata/Invoice.json");
+            assertThat(metadataFile).isPresent();
+
+            ObjectMapper mapper = new ObjectMapper()
+                    .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
+            DomainMetadata dm = mapper.readValue(readContent(metadataFile.get()), DomainMetadata.class);
+
+            // The annotated dataType is propagated…
+            assertThat(dm.findField("amount")).get()
+                    .extracting("dataType").isEqualTo("currency");
+            // …and a field without dataType keeps it null (blank -> null in the builder).
+            assertThat(dm.findField("reference")).get()
+                    .extracting("dataType").isNull();
+        }
     }
 
     @Nested
@@ -998,7 +1040,7 @@ class ExerisDomainProcessorTest {
         void defaultBuildDoesNotWarnOnInertAttribute() {
             Compilation compilation = javac()
                     .withProcessors(new ExerisDomainProcessor())
-                    .compile(fieldWithInertDataType());
+                    .compile(actionParamWithInertAttributes());
 
             assertThat(compilation).succeeded();
             assertThat(inertWarnings(compilation))
@@ -1007,20 +1049,23 @@ class ExerisDomainProcessorTest {
         }
 
         @Test
-        @DisplayName("-Aexeris.strict warns on @Field.dataType (dropped at the processor)")
-        void strictWarnsOnInertFieldDataType() {
+        @DisplayName("-Aexeris.strict no longer flags @Field.dataType (it is consumed now — Wave 1A)")
+        void strictDoesNotWarnOnConsumedFieldDataType() {
+            // Wave 1A wired @Field.dataType end-to-end (processor extract + reader
+            // parity + emitters), so its INERT_ATTRIBUTES entry was removed; the
+            // strict audit must NOT flag it as inert any more.
             Compilation compilation = javac()
                     .withOptions("-Aexeris.strict=true")
                     .withProcessors(new ExerisDomainProcessor())
-                    .compile(fieldWithInertDataType());
+                    .compile(fieldWithConsumedDataType());
 
             assertThat(compilation).succeeded();
             assertThat(hasInertWarningFor(compilation, "@Field.dataType"))
-                    .as("warning naming @Field.dataType")
-                    .isTrue();
+                    .as("no inert warning naming @Field.dataType (now consumed)")
+                    .isFalse();
             assertThat(inertWarnings(compilation))
-                    .as("exactly one inert warning (only dataType is inert here)")
-                    .isEqualTo(1);
+                    .as("no inert warnings at all (dataType is the only attribute set)")
+                    .isZero();
         }
 
         @Test
@@ -1167,7 +1212,7 @@ class ExerisDomainProcessorTest {
                     .isZero();
         }
 
-        private JavaFileObject fieldWithInertDataType() {
+        private JavaFileObject fieldWithConsumedDataType() {
             return JavaFileObjects.forSourceString(
                     "com.example.Widget",
                     """

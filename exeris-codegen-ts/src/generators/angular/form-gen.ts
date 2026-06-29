@@ -50,6 +50,12 @@ export class FormGenerator implements CodeGenerator {
     };
 
     const mapInputType = (field: FieldMetadata): string => {
+      // @Field.dataType — front-presentation hint (Wave 1A, additive). For an
+      // editable form control the facet maps to the closest native input type:
+      // url -> type="url"; currency/percent -> a numeric input. The default path
+      // (no dataType, or any other value) is unchanged.
+      if (field.dataType === 'url') return 'url';
+      if (field.dataType === 'currency' || field.dataType === 'percent') return 'number';
       const type = field.type;
       if (type === 'java.lang.Boolean') return 'checkbox';
       if (type === 'java.lang.Integer' || type === 'java.lang.Long' || type === 'java.lang.Double' || type === 'java.lang.Float') return 'number';

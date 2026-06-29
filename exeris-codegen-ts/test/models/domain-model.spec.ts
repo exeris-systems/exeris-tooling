@@ -92,6 +92,13 @@ describe('FieldMetadataSchema', () => {
   it('rejects when required name field is missing', () => {
     expect(() => FieldMetadataSchema.parse({ type: 'String' })).toThrow(z.ZodError);
   });
+
+  it('carries the optional @Field.dataType presentation hint when present (Wave 1A)', () => {
+    expect(FieldMetadataSchema.parse({ name: 'amount', type: 'BigDecimal', dataType: 'currency' }).dataType)
+      .toBe('currency');
+    // additive + optional — absent dataType is undefined, never forced
+    expect(FieldMetadataSchema.parse({ name: 'note', type: 'String' }).dataType).toBeUndefined();
+  });
 });
 
 describe('ActionParamMetadataSchema', () => {
