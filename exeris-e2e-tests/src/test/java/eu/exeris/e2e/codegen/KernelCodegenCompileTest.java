@@ -154,7 +154,17 @@ class KernelCodegenCompileTest {
                                 .build()))
                 .events(List.of(
                         DomainEventMetadata.simple("OrderCreated"),
-                        DomainEventMetadata.withTopic("OrderShipped", "orders.shipped")))
+                        DomainEventMetadata.withTopic("OrderShipped", "orders.shipped"),
+                        // EV1 (ADR-046): an event WITH payloadFields drives the
+                        // codec-resolved publish path — the generated publisher emits a
+                        // redacted <Event>Payload record (customerName is sensitive →
+                        // dropped) and resolves EventPayloadCodec via
+                        // KernelProviders.eventPayloadCodecRegistry(), so the gate javac-
+                        // compiles it against the real kernel codec SPI + jdk.jfr.
+                        DomainEventMetadata.builder("OrderPlaced")
+                                .payloadFields(List.of("amount", "orderNumber", "customerName"))
+                                .sensitiveFields(List.of("customerName"))
+                                .build()))
                 .graphMetadata(new GraphMetadata("Order", List.of(),
                         List.of(new GraphEdgeMetadata("tenantId", "Tenant", "OWNED_BY")),
                         List.of()))
