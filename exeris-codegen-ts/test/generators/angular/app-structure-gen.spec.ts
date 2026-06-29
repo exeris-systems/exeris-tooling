@@ -655,6 +655,17 @@ describe('generateAppStructure — @View route assembly', () => {
     expect(out.indexOf('alphaRoutes')).toBeLessThan(out.indexOf('zetaRoutes'));
   });
 
+  it('breaks ties on the view name when two views share a route path', () => {
+    const mk = (views: ViewMetadata[]) =>
+      fileAt(generateAppStructure([], [], cfg(), views), 'src/app/app.routes.ts')!.content;
+    // Same effective route path → the secondary key (view name, code-unit order) decides.
+    const bravo = view({ name: 'Bravo', kind: 'PAGE', route: '/dup' });
+    const alpha = view({ name: 'Alpha', kind: 'PAGE', route: '/dup' });
+    expect(mk([bravo, alpha])).toBe(mk([alpha, bravo]));
+    const out = mk([bravo, alpha]);
+    expect(out.indexOf('alphaRoutes')).toBeLessThan(out.indexOf('bravoRoutes'));
+  });
+
   it('view route paths strip a leading slash to match the per-view route file', () => {
     const files = generateAppStructure(
       [],
