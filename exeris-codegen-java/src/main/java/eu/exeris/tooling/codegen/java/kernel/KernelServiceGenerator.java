@@ -40,10 +40,6 @@ public class KernelServiceGenerator implements KernelArtifactGenerator {
     private static final ClassName UUID = ClassName.get("java.util", "UUID");
     private static final ClassName OPTIONAL = ClassName.get("java.util", "Optional");
     private static final ClassName LIST = ClassName.get("java.util", "List");
-    private static final ClassName BIG_DECIMAL = ClassName.get("java.math", "BigDecimal");
-    private static final ClassName INSTANT = ClassName.get("java.time", "Instant");
-    private static final ClassName LOCAL_DATE = ClassName.get("java.time", "LocalDate");
-    private static final ClassName LOCAL_DATE_TIME = ClassName.get("java.time", "LocalDateTime");
 
     @Override
     public GeneratedFile generate(DomainMetadata metadata) {
@@ -112,14 +108,15 @@ public class KernelServiceGenerator implements KernelArtifactGenerator {
         return MethodSpec.methodBuilder(name)
                 .addModifiers(Modifier.PUBLIC)
                 .returns(listOfEntity)
-                .addParameter(typeNameOf(field.type()), field.name())
+                .addParameter(KernelTypeMapping.typeNameOf(field.type()), field.name())
                 .addStatement("return repository.$L($L)", name, field.name())
                 .build();
     }
 
     private MethodSpec buildFindByForeignKey(TypeName listOfEntity, RelationshipMetadata rel) {
-        String paramName = foreignKeyBase(rel.name()) + "Id";
-        String name = "findBy" + capitalize(foreignKeyBase(rel.name())) + "Id";
+        String base = KernelTableNaming.foreignKeyBase(rel.name());
+        String paramName = base + "Id";
+        String name = "findBy" + capitalize(base) + "Id";
         return MethodSpec.methodBuilder(name)
                 .addModifiers(Modifier.PUBLIC)
                 .returns(listOfEntity)
@@ -191,40 +188,6 @@ public class KernelServiceGenerator implements KernelArtifactGenerator {
                 .build();
     }
 
-    /**
-     * Maps a field type string to a JavaPoet parameter {@link TypeName} — must
-     * stay in lock-step with {@code KernelRepositoryGenerator.typeNameOf} so the
-     * delegating service signature matches the repository method it calls.
-     */
-    private static TypeName typeNameOf(String type) {
-        return switch (type) {
-            case "boolean" -> TypeName.BOOLEAN;
-            case "int" -> TypeName.INT;
-            case "long" -> TypeName.LONG;
-            case "double" -> TypeName.DOUBLE;
-            case "BigDecimal" -> BIG_DECIMAL;
-            case "Instant" -> INSTANT;
-            case "LocalDate" -> LOCAL_DATE;
-            case "LocalDateTime" -> LOCAL_DATE_TIME;
-            default -> {
-                int lt = type.indexOf('<');
-                yield ClassName.bestGuess(lt >= 0 ? type.substring(0, lt) : type);
-            }
-        };
-    }
-
-    /**
-     * Base name for a FK finder, stripping a trailing {@code Id} so the
-     * explicit-UUID-FK style ({@code customerId}) and the entity-typed style
-     * ({@code customer}) both reduce to {@code customer} — identical to
-     * {@code KernelRepositoryGenerator.foreignKeyBase}.
-     */
-    private static String foreignKeyBase(String relationshipName) {
-        if (relationshipName.length() > 2 && relationshipName.endsWith("Id")) {
-            return relationshipName.substring(0, relationshipName.length() - 2);
-        }
-        return relationshipName;
-    }
 
     private static String capitalize(String s) {
         return s.isEmpty() ? s : Character.toUpperCase(s.charAt(0)) + s.substring(1);

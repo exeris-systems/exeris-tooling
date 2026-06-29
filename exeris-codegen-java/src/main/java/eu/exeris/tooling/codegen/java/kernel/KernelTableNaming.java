@@ -55,11 +55,21 @@ final class KernelTableNaming {
      * (not {@code customer_id_id}).
      */
     static String foreignKeyColumn(String relationshipName) {
-        String base = relationshipName;
-        if (base.length() > 2 && base.endsWith("Id")) {
-            base = base.substring(0, base.length() - 2);
+        return toSnakeCase(foreignKeyBase(relationshipName)) + "_id";
+    }
+
+    /**
+     * Base name for a FK column/finder, stripping a trailing {@code Id} so the
+     * explicit-UUID-FK style ({@code customerId}) and the entity-typed style
+     * ({@code customer}) both reduce to {@code customer}. Idempotent. Drives both
+     * the FK column ({@link #foreignKeyColumn}) and the {@code findBy<Rel>Id}
+     * finder name + parameter name in the repository/service emitters.
+     */
+    static String foreignKeyBase(String relationshipName) {
+        if (relationshipName.length() > 2 && relationshipName.endsWith("Id")) {
+            return relationshipName.substring(0, relationshipName.length() - 2);
         }
-        return toSnakeCase(base) + "_id";
+        return relationshipName;
     }
 
     private static String toSnakeCase(String camelCase) {

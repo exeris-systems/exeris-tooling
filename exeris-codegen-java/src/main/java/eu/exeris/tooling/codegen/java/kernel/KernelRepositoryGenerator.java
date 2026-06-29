@@ -394,15 +394,16 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     private MethodSpec buildFindByField(Context ctx, TypeName listOfEntity, FieldMetadata field) {
         String column = toSnakeCase(field.name());
         return buildFinder(ctx, listOfEntity,
-                "findBy" + capitalize(field.name()), typeNameOf(field.type()),
+                "findBy" + capitalize(field.name()), KernelTypeMapping.typeNameOf(field.type()),
                 field.type(), field.name(), column);
     }
 
     /** Finder over a MANY_TO_ONE FK column: {@code findBy<Rel>Id(UUID ...)}. */
     private MethodSpec buildFindByForeignKey(Context ctx, TypeName listOfEntity, RelationshipMetadata rel) {
-        String column = foreignKeyColumn(rel.name());
-        String paramName = foreignKeyBase(rel.name()) + "Id";
-        String methodName = "findBy" + capitalize(foreignKeyBase(rel.name())) + "Id";
+        String base = KernelTableNaming.foreignKeyBase(rel.name());
+        String column = KernelTableNaming.foreignKeyColumn(rel.name());
+        String paramName = base + "Id";
+        String methodName = "findBy" + capitalize(base) + "Id";
         return buildFinder(ctx, listOfEntity, methodName, UUID_TYPE, "UUID", paramName, column);
     }
 
@@ -466,54 +467,6 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         };
     }
 
-    /**
-     * Maps a field type string to a JavaPoet parameter {@link TypeName}. Primitives
-     * map to keyword types; common simple JDK type names are pinned to their fully
-     * qualified {@link ClassName} so JavaPoet emits the matching import (a bare
-     * {@code ClassName.bestGuess("BigDecimal")} would land in the default package
-     * and not import); everything else falls back to {@code bestGuess} on the raw
-     * type (generic arguments dropped — the finder filters on a scalar column).
-     */
-    private static TypeName typeNameOf(String type) {
-        return switch (type) {
-            case "boolean" -> TypeName.BOOLEAN;
-            case "int" -> TypeName.INT;
-            case "long" -> TypeName.LONG;
-            case "double" -> TypeName.DOUBLE;
-            case "BigDecimal" -> BIG_DECIMAL;
-            case "Instant" -> INSTANT;
-            case "LocalDate" -> LOCAL_DATE;
-            case "LocalDateTime" -> LOCAL_DATE_TIME;
-            default -> {
-                int lt = type.indexOf('<');
-                yield ClassName.bestGuess(lt >= 0 ? type.substring(0, lt) : type);
-            }
-        };
-    }
-
-    /**
-     * SQL FK column for a MANY_TO_ONE relationship. Handles both relationship
-     * styles seen in real entities: an entity-typed field
-     * ({@code @Relationship Customer customer} → {@code customer_id}) and the
-     * explicit-UUID-FK style ({@code @Relationship UUID customerId} →
-     * {@code customer_id}, NOT {@code customer_id_id}). Idempotent on a trailing
-     * {@code id} segment.
-     */
-    private String foreignKeyColumn(String relationshipName) {
-        return toSnakeCase(foreignKeyBase(relationshipName)) + "_id";
-    }
-
-    /**
-     * Base name for a FK finder/column, stripping a trailing {@code Id} so the
-     * explicit-UUID-FK style ({@code customerId}) and the entity-typed style
-     * ({@code customer}) both reduce to {@code customer}.
-     */
-    private static String foreignKeyBase(String relationshipName) {
-        if (relationshipName.length() > 2 && relationshipName.endsWith("Id")) {
-            return relationshipName.substring(0, relationshipName.length() - 2);
-        }
-        return relationshipName;
-    }
 
     private MethodSpec buildSave(Context ctx) {
         String columnsJoined = String.join(", ", ctx.columns().stream().map(Column::sqlName).toList());
