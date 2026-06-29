@@ -52,6 +52,10 @@ export const FieldMetadataSchema = z.object({
   max: z.number().optional(),
   pattern: z.string().optional(),
   format: z.string().optional(),
+  // @Field.dataType — front-presentation type hint (currency / percent / url / …).
+  // Additive (Wave 1A): drives the Angular formatter switch in the list/detail/form
+  // generators; the default render path is unchanged when dataType is absent.
+  dataType: z.string().optional(),
   enumType: z.string().optional(),
   // Formularz / widoki
   inList: z.boolean().default(true),

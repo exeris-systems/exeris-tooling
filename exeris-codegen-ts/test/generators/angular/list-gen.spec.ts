@@ -349,6 +349,56 @@ describe('ListGenerator per-column rendering matrix', () => {
   });
 });
 
+// ---------- @Field.dataType render facets (Wave 1A) ----------
+
+describe('ListGenerator @Field.dataType render facets', () => {
+  const gen = new ListGenerator();
+
+  it("dataType 'currency' renders the | currency pipe", () => {
+    const content = gen.generate(domain({
+      entityName: 'Invoice',
+      uiMetadata: { listColumns: ['amount'] },
+      fields: [field({ name: 'amount', type: 'BigDecimal', dataType: 'currency' })],
+    }), CTX)!.content;
+
+    expect(content).toContain('{{ item.amount | currency }}');
+  });
+
+  it("dataType 'percent' renders the | percent pipe", () => {
+    const content = gen.generate(domain({
+      entityName: 'Stat',
+      uiMetadata: { listColumns: ['rate'] },
+      fields: [field({ name: 'rate', type: 'Double', dataType: 'percent' })],
+    }), CTX)!.content;
+
+    expect(content).toContain('{{ item.rate | percent }}');
+  });
+
+  it("dataType 'url' renders an <a [href]> anchor instead of raw interpolation", () => {
+    const content = gen.generate(domain({
+      entityName: 'Site',
+      uiMetadata: { listColumns: ['homepage'] },
+      fields: [field({ name: 'homepage', type: 'String', dataType: 'url' })],
+    }), CTX)!.content;
+
+    expect(content).toContain('<a [href]="item.homepage"');
+    expect(content).toContain('>{{ item.homepage }}</a>');
+  });
+
+  it('absent dataType keeps the default {{ item.<name> }} path (no pipe / anchor)', () => {
+    const content = gen.generate(domain({
+      entityName: 'Plain',
+      uiMetadata: { listColumns: ['note'] },
+      fields: [field({ name: 'note', type: 'String' })],
+    }), CTX)!.content;
+
+    expect(content).toContain('{{ item.note }}');
+    expect(content).not.toContain('| currency');
+    expect(content).not.toContain('| percent');
+    expect(content).not.toContain('[href]="item.note"');
+  });
+});
+
 // ---------- sortable columns ----------
 
 describe('ListGenerator sortable column markers', () => {

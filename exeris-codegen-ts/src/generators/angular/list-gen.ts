@@ -67,6 +67,7 @@ export class ListGenerator implements CodeGenerator {
           label: mapping.label,
           type: field!.type,
           format: field!.format,
+          dataType: field!.dataType,
           sortable: field!.sortable,
         };
       });
@@ -278,6 +279,12 @@ export class ListGenerator implements CodeGenerator {
         lines.push(`                      {{ item.${col.name} | date:'mediumDate' }}`);
       } else if (col.format === 'datetime' || col.type.includes('DateTime') || col.type.includes('Instant')) {
         lines.push(`                      {{ item.${col.name} | date:'medium' }}`);
+      } else if (col.dataType === 'currency') {
+        lines.push(`                      {{ item.${col.name} | currency }}`);
+      } else if (col.dataType === 'percent') {
+        lines.push(`                      {{ item.${col.name} | percent }}`);
+      } else if (col.dataType === 'url') {
+        lines.push(`                      <a [href]="item.${col.name}" class="text-exeris-primary hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300 underline">{{ item.${col.name} }}</a>`);
       } else {
         lines.push(`                      {{ item.${col.name} }}`);
       }

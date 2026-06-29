@@ -635,3 +635,45 @@ describe('generateForm — top-level convenience function', () => {
     expect(file!.path).toBe('components/order-form.component.ts');
   });
 });
+
+// ---------- @Field.dataType → input type mapping (Wave 1A) ----------
+
+describe('FormGenerator @Field.dataType input-type mapping', () => {
+  const gen = new FormGenerator();
+
+  it("dataType 'url' maps the control to <input type=\"url\">", () => {
+    const content = gen.generate(domain({
+      entityName: 'Site',
+      fields: [field({ name: 'homepage', type: 'String', dataType: 'url' })],
+    }), CTX)!.content;
+
+    expect(content).toContain('id="homepage" data-testid="field-homepage" type="url"');
+  });
+
+  it("dataType 'currency' on a String field maps the control to <input type=\"number\">", () => {
+    const content = gen.generate(domain({
+      entityName: 'Invoice',
+      fields: [field({ name: 'amount', type: 'String', dataType: 'currency' })],
+    }), CTX)!.content;
+
+    expect(content).toContain('id="amount" data-testid="field-amount" type="number"');
+  });
+
+  it("dataType 'percent' on a String field maps the control to <input type=\"number\">", () => {
+    const content = gen.generate(domain({
+      entityName: 'Stat',
+      fields: [field({ name: 'rate', type: 'String', dataType: 'percent' })],
+    }), CTX)!.content;
+
+    expect(content).toContain('id="rate" data-testid="field-rate" type="number"');
+  });
+
+  it('absent dataType keeps the type-derived input (String → text)', () => {
+    const content = gen.generate(domain({
+      entityName: 'Plain',
+      fields: [field({ name: 'note', type: 'String' })],
+    }), CTX)!.content;
+
+    expect(content).toContain('id="note" data-testid="field-note" type="text"');
+  });
+});

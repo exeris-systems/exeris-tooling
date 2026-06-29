@@ -396,3 +396,55 @@ describe('generateDetail — top-level convenience function', () => {
     expect(file.content).toContain('export class OrderDetailComponent');
   });
 });
+
+// ---------- @Field.dataType render facets (Wave 1A) ----------
+
+describe('DetailGenerator @Field.dataType render facets', () => {
+  const gen = new DetailGenerator();
+
+  it("dataType 'currency' tags the FieldDisplay and renders a | currency switch arm", () => {
+    const content = gen.generate(domain({
+      entityName: 'Invoice',
+      fields: [field({ name: 'amount', type: 'BigDecimal', dataType: 'currency' })],
+    }), CTX)!.content;
+
+    expect(content).toContain("dataType: 'currency'");
+    expect(content).toContain("@case ('currency') { {{ rawValue(field, entity()) | currency }} }");
+    expect(content).toContain('rawValue(field: FieldDisplay');
+  });
+
+  it("dataType 'percent' renders a | percent switch arm", () => {
+    const content = gen.generate(domain({
+      entityName: 'Stat',
+      fields: [field({ name: 'rate', type: 'Double', dataType: 'percent' })],
+    }), CTX)!.content;
+
+    expect(content).toContain("dataType: 'percent'");
+    expect(content).toContain("@case ('percent') { {{ rawValue(field, entity()) | percent }} }");
+  });
+
+  it("dataType 'url' renders an <a [href]> switch arm", () => {
+    const content = gen.generate(domain({
+      entityName: 'Site',
+      fields: [field({ name: 'homepage', type: 'String', dataType: 'url' })],
+    }), CTX)!.content;
+
+    expect(content).toContain("dataType: 'url'");
+    expect(content).toContain('<a [href]="rawValue(field, entity())"');
+  });
+
+  it('unknown / absent dataType is not tagged and keeps the formatValue default arm', () => {
+    const content = gen.generate(domain({
+      entityName: 'Thing',
+      fields: [
+        field({ name: 'plain', type: 'String' }),
+        field({ name: 'weird', type: 'String', dataType: 'rainbow' }),
+      ],
+    }), CTX)!.content;
+
+    // Neither field carries a dataType tag in DISPLAY_FIELDS…
+    expect(content).not.toContain("dataType: 'rainbow'");
+    // …and the default switch arm (formatValue) is always present.
+    expect(content).toContain('@default { {{ formatValue(field, entity()) }} }');
+  });
+});
