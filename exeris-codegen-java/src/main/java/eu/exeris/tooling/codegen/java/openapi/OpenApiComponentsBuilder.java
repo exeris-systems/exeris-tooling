@@ -88,6 +88,9 @@ public final class OpenApiComponentsBuilder {
         // @Field.dataType=url is a front-presentation hint with a standard OpenAPI
         // format counterpart ("uri"); apply it as a cheap, additive parity hint
         // (Wave 1A, Java∪TS union). Other dataType values are FE-only facets.
+        // This is deliberately last so the explicit author hint wins over any
+        // type-derived format above — a field is only `dataType=url` when the author
+        // declared it, and "uri" is the intended contract for that field.
         if ("url".equals(field.dataType())) schema.setFormat("uri");
         if (field.description() != null) schema.setDescription(field.description());
         if (field.minLength() != null) schema.setMinLength(field.minLength());
