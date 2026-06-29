@@ -4,6 +4,7 @@ import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.Artifact
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
+import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -64,6 +65,48 @@ class KernelEventGeneratorTest {
                 .contains("private void registerEventTypes()")
                 .contains("eventEngine.registry().register(ORDER_CREATED_EVENT)")
                 .contains("eventEngine.registry().register(ORDER_SHIPPED_EVENT)");
+    }
+
+    @Test
+    @DisplayName("Event with payloadFields emits a redacted record + ADR-046 codec-resolved publish (EV1)")
+    void shouldEmitPayloadRecordAndCodecResolution() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .fields(List.of(
+                        FieldMetadata.builder("total", "BigDecimal").build(),
+                        FieldMetadata.builder("active", "boolean").build(),
+                        FieldMetadata.builder("secret", "String").build()))
+                .events(List.of(
+                        DomainEventMetadata.builder("OrderCreated")
+                                .payloadFields(List.of("total", "active", "secret"))
+                                .sensitiveFields(List.of("secret"))
+                                .build()))
+                .build();
+
+        GeneratedFile publisher = strategy.generate(metadata).stream()
+                .filter(f -> f.artifactType() == ArtifactType.EVENT)
+                .findFirst()
+                .orElseThrow();
+
+        assertThat(publisher.content())
+                // Redacted payload record — `total` + `active` kept, `secret`
+                // (sensitive) dropped: neither its component nor its getter is emitted.
+                .contains("record OrderCreatedEventPayload(BigDecimal total, boolean active)")
+                .doesNotContain("String secret")
+                .doesNotContain("entity.getSecret()")
+                // publish takes the entity and builds the record from its getters;
+                // the boolean field uses the `isX()` accessor (B3), not `getX()`.
+                .contains("publishOrderCreatedEvent(UUID streamId, Order entity)")
+                .contains("new OrderCreatedEventPayload(entity.getTotal(), entity.isActive())")
+                // ADR-046 "site B" — resolve the codec via the provider slot, encode.
+                .contains("KernelProviders.eventPayloadCodecRegistry()")
+                .contains("resolve(payloadType, EventCodecContext.JSON)")
+                .contains("codec.encode(payload, EventCodecContext.json(")
+                // Fallback to empty payload + producer-side codec-resolution JFR.
+                .contains("return EventPayload.empty()")
+                .contains("class CodecUnresolvedEvent extends Event")
+                // The Wall: no driver / Jackson symbol leaks into the generated publisher.
+                .doesNotContain("tools.jackson")
+                .doesNotContain("CommunityJsonEventPayloadCodec");
     }
 
     @Test

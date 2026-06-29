@@ -1335,7 +1335,20 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                 Map<String, Object> values = extractAnnotationValues(eventAnnotation);
                 String eventName = nestedClass.getSimpleName().toString();
                 String topic = values.containsKey("topic") ? (String) values.get("topic") : null;
-                events.add(DomainEventMetadata.withTopic(eventName, topic));
+                String description = values.containsKey("description") ? (String) values.get("description") : null;
+                // EV1: the inner-class event form resolves payload/sensitive fields
+                // against the ENCLOSING entity's @Field list, exactly like the
+                // class-level form (extractSingleEventMetadata) — it must not silently
+                // drop EV1 payloads just because the event is declared as a nested class.
+                List<String> payloadFields = resolvePayloadFields(values, element);
+                List<String> sensitiveFields = getStringArray(values, "sensitiveFields");
+                events.add(DomainEventMetadata.builder(eventName)
+                        .topic(topic)
+                        .description(description)
+                        .aggregateType(element.getSimpleName().toString())
+                        .payloadFields(payloadFields)
+                        .sensitiveFields(sensitiveFields)
+                        .build());
             }
         }
 
@@ -1345,6 +1358,10 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     private DomainEventMetadata extractSingleEventMetadata(AnnotationMirror eventAnnotation, TypeElement element) {
         Map<String, Object> values = extractAnnotationValues(eventAnnotation);
 
+        // TODO(T11-strict): no warnInertAttributes("DomainEvent", values, ...) call yet,
+        // so -Aexeris.strict cannot audit unconsumed @DomainEvent attributes (the
+        // @Field / @ActionParam paths do). Add one once the consumed-attribute set is
+        // settled (name/topic/description/trigger/includeFields/excludeFields/sensitiveFields).
         String name = values.containsKey("name") ? (String) values.get("name") : null;
         if (name == null || name.isBlank()) {
             // Derive from trigger type
@@ -1355,7 +1372,79 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         String topic = values.containsKey("topic") ? (String) values.get("topic") : null;
         String description = values.containsKey("description") ? (String) values.get("description") : null;
 
-        return new DomainEventMetadata(name, topic, description, element.getSimpleName().toString());
+        // EV1: resolve the payload field subset + sensitive fields. Shared semantics
+        // with SourceModelReader.resolvePayloadFields (ADR-042 lock-step).
+        // TODO(EV1): includeComputed / includePreviousValues are intentionally NOT
+        // contributing to payloadFields yet — there is no computed-field source in
+        // the persisted @Field list; revisit when the computed-field surface lands.
+        List<String> payloadFields = resolvePayloadFields(values, element);
+        List<String> sensitiveFields = getStringArray(values, "sensitiveFields");
+
+        return DomainEventMetadata.builder(name)
+                .topic(topic)
+                .description(description)
+                .aggregateType(element.getSimpleName().toString())
+                .payloadFields(payloadFields)
+                .sensitiveFields(sensitiveFields)
+                .build();
+    }
+
+    /**
+     * EV1 payload-field resolution: ({@code @DomainEvent.includeFields} if non-empty,
+     * else ALL of the entity's {@code @Field} names) minus
+     * {@code @DomainEvent.excludeFields}, preserving entity-declaration order
+     * (deterministic). The deterministic mirror of
+     * {@code SourceModelReader.resolvePayloadFields} — keep the two in lock-step
+     * (ADR-042).
+     */
+    private List<String> resolvePayloadFields(Map<String, Object> eventValues, TypeElement element) {
+        List<String> include = getStringArray(eventValues, "includeFields");
+        List<String> base = include.isEmpty() ? entityFieldNames(element) : include;
+        Set<String> exclude = new HashSet<>(getStringArray(eventValues, "excludeFields"));
+        List<String> resolved = new ArrayList<>(base.size());
+        for (String fieldName : base) {
+            if (!exclude.contains(fieldName)) {
+                resolved.add(fieldName);
+            }
+        }
+        return resolved;
+    }
+
+    /**
+     * The entity's {@code @Field}-annotated field names in declaration order — the
+     * universe EV1 payload resolution selects from. Must agree byte-for-byte with
+     * {@code SourceModelReader.entityFieldNames} (ADR-042 lock-step). Fields without
+     * {@code @Field} (and {@code @Relationship} fields) are not payload fields.
+     */
+    private List<String> entityFieldNames(TypeElement element) {
+        List<String> names = new ArrayList<>();
+        for (Element enclosed : element.getEnclosedElements()) {
+            if (enclosed.getKind() != ElementKind.FIELD) {
+                continue;
+            }
+            if (findAnnotation(enclosed, "eu.exeris.sdk.annotation.Field") != null) {
+                names.add(enclosed.getSimpleName().toString());
+            }
+        }
+        return names;
+    }
+
+    /**
+     * A {@code String[]} annotation attribute as an ordered list of its string
+     * elements, or an empty list when absent. {@link #extractAnnotationValues}
+     * unwraps array attributes from {@code List<AnnotationValue>} to
+     * {@code List<Object>}; for {@code String[]} each element is already a
+     * {@code String} (the same unwrap path the {@code @Field.computedFrom} read uses).
+     */
+    private static List<String> getStringArray(Map<String, Object> values, String key) {
+        Object value = values.get(key);
+        if (value instanceof List<?> list) {
+            return list.stream()
+                    .filter(String.class::isInstance)
+                    .map(String.class::cast)
+                    .toList();
+        }
+        return List.of();
     }
 
     /**
