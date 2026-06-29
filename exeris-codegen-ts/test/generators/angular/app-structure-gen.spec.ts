@@ -160,6 +160,95 @@ describe('generateAppStructure — static skeleton', () => {
   });
 });
 
+// ---------- T25: ui-kit token system wiring ----------
+
+describe('generateAppStructure — @exeris/ui-kit token wiring (T25)', () => {
+  const files = generateAppStructure(
+    [domain({ entityName: 'Order' }), domain({ entityName: 'Product' })],
+    [],
+    cfg(),
+  );
+
+  it('styles.css imports Tailwind v4 then the ui-kit v4 @theme token entry, and drops the boilerplate theme', () => {
+    const css = fileAt(files, 'src/styles.css')!;
+    // v4 token wiring: tailwindcss first, then the ui-kit "theme" (v4 @theme) entry.
+    expect(css.content).toContain('@import "tailwindcss";');
+    expect(css.content).toContain('@import "@exeris/ui-kit/theme";');
+    // Boilerplate component classes a product immediately deletes are gone.
+    expect(css.content).not.toContain('.btn-primary');
+    expect(css.content).not.toContain('.btn-secondary');
+    expect(css.content).not.toContain('.input-field');
+    // Hardcoded gray body theme is gone; body uses the exeris font token instead.
+    expect(css.content).not.toContain('bg-gray-100 text-gray-900');
+    expect(css.content).toContain('@apply font-exeris;');
+    // No hardcoded indigo accent left in the global stylesheet.
+    expect(css.content).not.toContain('indigo');
+  });
+
+  it('package.json declares the @exeris/ui-kit dependency (^0.1.0, the current ui-kit version)', () => {
+    const pkg = fileAt(files, './package.json')!;
+    expect(pkg.content).toContain('"@exeris/ui-kit": "^0.1.0"');
+  });
+
+  it('tailwind.config.js wires the ui-kit v3 preset so a v3 toolchain also gets the tokens', () => {
+    const tw = fileAt(files, './tailwind.config.js')!;
+    expect(tw.content).toContain("import exerisPreset from '@exeris/ui-kit/tailwind.preset.js';");
+    expect(tw.content).toContain('presets: [exerisPreset]');
+  });
+
+  it('no emitted template (scaffold or per-shape) ships the hardcoded bg-indigo-600 accent', () => {
+    // The scaffold's own emitted files must be token-driven, not indigo-hardcoded.
+    for (const f of files) {
+      expect(f.content, `bg-indigo-600 leaked into ${f.path}`).not.toContain('bg-indigo-600');
+    }
+    // The brand button uses the exeris primary token + its hover token.
+    const comp = fileAt(files, 'src/app/app.component.ts')!;
+    expect(comp.content).toContain('text-exeris-primary-hover');
+  });
+});
+
+// ---------- T7/U5: configurable appName ----------
+
+describe('generateAppStructure — configurable appName (T7/U5)', () => {
+  it('defaults to "Exeris Foundation" (logo, index title, route titles, package name)', () => {
+    const files = generateAppStructure([domain({ entityName: 'Order' })], [], cfg());
+    const comp = fileAt(files, 'src/app/app.component.ts')!;
+    const html = fileAt(files, 'src/index.html')!;
+    const routes = fileAt(files, 'src/app/app.routes.ts')!;
+    const pkg = fileAt(files, './package.json')!;
+    expect(comp.content).toContain('🚀 Exeris Foundation');
+    expect(comp.content).toContain("title = 'Exeris Foundation';");
+    expect(html.content).toContain('<title>Exeris Foundation</title>');
+    expect(routes.content).toContain("title: 'Orders - Exeris Foundation'");
+    expect(pkg.content).toContain('"name": "exeris-foundation-frontend"');
+  });
+
+  it('flows a custom appName into the logo, index title, route titles, package name + description', () => {
+    const files = generateAppStructure(
+      [domain({ entityName: 'Order' })],
+      [],
+      cfg({ appName: 'Acme Portal' }),
+    );
+    const comp = fileAt(files, 'src/app/app.component.ts')!;
+    const html = fileAt(files, 'src/index.html')!;
+    const routes = fileAt(files, 'src/app/app.routes.ts')!;
+    const pkg = fileAt(files, './package.json')!;
+    // Logo + Angular component title field.
+    expect(comp.content).toContain('🚀 Acme Portal');
+    expect(comp.content).toContain("title = 'Acme Portal';");
+    expect(comp.content).not.toContain('Exeris Foundation');
+    // Browser tab + per-route titles.
+    expect(html.content).toContain('<title>Acme Portal</title>');
+    expect(routes.content).toContain("title: 'Orders - Acme Portal'");
+    expect(routes.content).toContain("title: 'New Order - Acme Portal'");
+    expect(routes.content).toContain("title: 'Edit Order - Acme Portal'");
+    expect(routes.content).not.toContain('Exeris Foundation');
+    // package.json name (kebab-cased) + description.
+    expect(pkg.content).toContain('"name": "acme-portal-frontend"');
+    expect(pkg.content).toContain('"description": "Acme Portal - Generated Angular Frontend"');
+  });
+});
+
 // ---------- routes / barrel: empty domain set ----------
 
 describe('generateAppStructure — empty domain set', () => {

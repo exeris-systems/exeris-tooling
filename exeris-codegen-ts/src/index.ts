@@ -50,6 +50,7 @@ program
   .option('-i, --input <path>', 'Input path for metadata JSON files', 'target/classes/exeris-metadata')
   .option('-o, --output <path>', 'Output directory for generated code', 'src/app/generated')
   .option('--api-base <path>', 'API base path', '/api')
+  .option('--app-name <name>', 'Application name (app title, route titles, package name)', 'Exeris Foundation')
   .option('--framework <name>', 'Target framework (angular, react, vue)', 'angular')
   .option('--styling <name>', 'Style system (tailwind, material, bootstrap, none)', 'tailwind')
   .option('--backend <name>', 'Backend target (KERNEL — the only supported target)', 'KERNEL')
@@ -69,6 +70,7 @@ program
         inputPath: options.input as string | undefined,
         outputPath: options.output as string | undefined,
         apiBasePath: options.apiBase as string | undefined,
+        appName: options.appName as string | undefined,
         framework: options.framework as 'angular' | 'react' | 'vue' | undefined,
         styling: options.styling as 'tailwind' | 'material' | 'bootstrap' | 'none' | undefined,
         backend: options.backend as 'KERNEL' | undefined,

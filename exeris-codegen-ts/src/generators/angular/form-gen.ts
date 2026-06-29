@@ -179,7 +179,7 @@ export class FormGenerator implements CodeGenerator {
         lines.push('        </select>');
       } else if (mapInputType(f) === 'checkbox') {
         lines.push('        <div class="flex items-center gap-2">');
-        lines.push(`          <input id="${f.name}" data-testid="field-${f.name}" type="checkbox" formControlName="${f.name}" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"${disabledBinding}>`);
+        lines.push(`          <input id="${f.name}" data-testid="field-${f.name}" type="checkbox" formControlName="${f.name}" class="h-4 w-4 rounded border-gray-300 text-exeris-primary focus:ring-indigo-500"${disabledBinding}>`);
         lines.push(`          <label for="${f.name}" class="text-sm text-gray-700 dark:text-gray-300">${label} ${requiredMark}</label>`);
         lines.push('        </div>');
       } else {
@@ -215,7 +215,7 @@ export class FormGenerator implements CodeGenerator {
 
     lines.push('      <div class="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">');
     lines.push('        <button type="button" (click)="cancelled.emit()" data-testid="cancel-button" class="rounded-md bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm border border-gray-300 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600">Cancel</button>');
-    lines.push('        <button type="submit" [disabled]="form.invalid || saving()" data-testid="submit-button" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50">');
+    lines.push('        <button type="submit" [disabled]="form.invalid || saving()" data-testid="submit-button" class="rounded-md bg-exeris-primary px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-exeris-primary-hover disabled:opacity-50">');
     lines.push(`          @if (saving()) { Saving... } @else { {{ mode() === 'create' ? 'Create' : 'Update' }} ${entityName} }`);
     lines.push('        </button>');
     lines.push('      </div>');

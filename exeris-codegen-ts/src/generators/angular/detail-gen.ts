@@ -116,7 +116,7 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`        <header class="mb-8 flex items-center justify-between">`);
     lines.push(`          <h1 id="detail-title" class="text-2xl font-bold text-gray-900 dark:text-white">{{ getTitle() }}</h1>`);
     lines.push(`          <nav class="flex gap-3">`);
-    lines.push(`            <a [routerLink]="['edit']" class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700">Edit</a>`);
+    lines.push(`            <a [routerLink]="['edit']" class="px-4 py-2 text-sm font-medium text-white bg-exeris-primary rounded-md hover:bg-exeris-primary-hover">Edit</a>`);
     lines.push(`            <button (click)="onDelete()" class="px-4 py-2 text-sm font-medium text-red-700 bg-red-100 rounded-md hover:bg-red-200">Delete</button>`);
     lines.push(`          </nav>`);
     lines.push(`        </header>`);
