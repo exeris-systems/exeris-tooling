@@ -2,7 +2,7 @@
 
 | Attribute       | Value                                                                                                  |
 |:----------------|:-------------------------------------------------------------------------------------------------------|
-| **Status**      | **ACCEPTED**. Number **047** reserved in `exeris-docs/adr-index.md`; file renames to `ADR-047-view-leaf-field-facet-and-ui-subsumption.md`. |
+| **Status**      | **ACCEPTED**. Number **047** registered in `exeris-docs/adr-index.md` (index status flip PROPOSED → ACCEPTED is a tracked follow-up). |
 | **Deciders**    | Arkadiusz Przychocki                                                                                    |
 | **Date**        | 2026-06-28                                                                                              |
 | **Scope**       | per-repo (`exeris-tooling`); `tooling/codegen`. Mandates a coordinated `exeris-sdk` record rename (`UIFieldMetadata` → `ViewFieldMetadata`) and the removal of `@UI` — see the Decision. |
