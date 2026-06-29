@@ -169,7 +169,7 @@ See the **Codegen completeness backlog** below for per-item detail.
 |---|---|:---:|---|
 | T1  | `@Action` endpoints advertised (OpenAPI + Angular) but no kernel route serves them — 404 | **High** | ✅ 0.6.0 (#92) |
 | T20 | Generated Angular frontend doesn't compile (`npm run build` fails) — two parallel TS emission paths; the `src/app` sourceRoot ships an empty enum stub that shadows the real `types/enums.ts`, so enum-typed code fails (TS2304/2305) | **High** (latent) | 0.6.0 |
-| T8  | No generated finders/indexes for FK + `filterable` fields → O(n) `findAll().filter()` everywhere | **High** | 0.6.0 |
+| T8  | No generated finders/indexes for FK + `filterable` fields → O(n) `findAll().filter()` everywhere | **High** | ✅ 2026-06-28 (finders + FK/filterable indexes; T9 constraints deferred) |
 | T10 | `@Validation` enforced client-side (Zod) but dropped server-side (handler/service/DB) | **High** | 0.6.0 |
 | T12 | N generated apps can't form a mesh — client is own-app/relative-host, saga step is local, no cross-app contract | **High** | 0.7.0 |
 | T17 | Capability-graph validation is closed-world per app — a legitimate cross-service `@Requires` hard-fails the build | **High** | 0.7.0 |
@@ -254,14 +254,28 @@ See the **Codegen completeness backlog** below for per-item detail.
       (FE orphan-pruning — the other suspected FE-twin — is **already done**: the **T13** manifest pruner
       runs on the TS CLI path, `index.ts:302`.) Surfaced by a larger multi-entity, multi-service frontend trial.
 
-- [ ] **T8 — Generate finders + FK/`filterable` indexes.** Repositories expose only
-      `findById/findAll/save/update/deleteById/count`; every cross-aggregate lookup forces a
-      `findAll().stream().filter(...)` — O(n) per call — and FK columns aren't indexed (only
-      `tenant_id` + `searchable` fields get indexes). The intent is already in the annotations
+- [x] **T8 — Generate finders + FK/`filterable` indexes. DONE (2026-06-28).** Repositories exposed only
+      `findById/findAll/save/update/deleteById/count`; every cross-aggregate lookup forced a
+      `findAll().stream().filter(...)` — O(n) per call — and FK columns weren't indexed (only
+      `tenant_id` + `searchable` fields got indexes). The intent was already in the annotations
       (`@Field(filterable=true)`, the FK relationships).
-      *Update:* emit finder methods (e.g. `findByOwnerId`) for FK and `filterable` fields, plus the
-      matching `CREATE INDEX`. Removes most hand-written filter glue; turns table scans into index
-      lookups. Feeds, and feeds off, **T9**'s relationship graph.
+      *Done:* `KernelRepositoryGenerator` emits `findBy<Field>(…)` for every `filterable()` field and
+      `findBy<Rel>Id(UUID)` for every `MANY_TO_ONE` relationship (same kernel-SPI read shape as `findAll`,
+      soft-delete filter, trailing `ORDER BY id` for deterministic row order); `KernelServiceGenerator`
+      delegates them for parity; `KernelFlywayGenerator` emits the FK column + a `CREATE INDEX` per
+      filterable/FK column. The FK-column convention strips a trailing `Id` so both the explicit-UUID-FK
+      style (`UUID customerId` → `customer_id`/`findByCustomerId`) and the entity-typed style
+      (`@Relationship Customer customer`) normalise correctly. Deterministic (sorted by name; generate-twice
+      tests). `KernelCodegenCompileTest` fixture grew a `filterable` field + a `MANY_TO_ONE` relationship so the
+      finders/indexes are javac-compiled against the real kernel SPI — which surfaced and fixed a harness gap:
+      `InMemoryJavaCompiler` now passes `--enable-preview --release 26` (it previously couldn't load the
+      Java-26-preview kernel-spi 0.10 classes). Server-side only — no HTTP/client finder (would need a served
+      route; no TS surface, parity-neutral). **T9 FK *constraints* also ship here** as a single trailing
+      `V3000000__foreign_keys` migration (`KernelApplicationGenerator.generateForeignKeys`, wired in
+      `CodegenPipeline`) — `ALTER TABLE … ADD CONSTRAINT … FOREIGN KEY` per `MANY_TO_ONE` to a generated
+      target, `ON DELETE` policy from cascade, external targets skipped. The trailing-`ALTER` shape avoids the
+      migration-ordering hazard (a `REFERENCES` to a table created in a later migration would fail); it sorts
+      after every `CREATE TABLE` tier. Deterministic (sorted; generate-twice test).
 
 - [ ] **T10 — Emit server-side validation (handler/service) + `CHECK` constraints.**
       `@Validation(min/max/pattern/minLength/…)` flows into the Angular Zod schemas but the generated

@@ -7,8 +7,9 @@
  */
 
 import Handlebars from 'handlebars';
-import { join, dirname } from 'node:path';
+import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { outPath } from '../../core/paths.js';
 import type { DomainMetadata, FieldMetadata } from '../../models/index.js';
 import { DslMapper } from '../../models/index.js';
 import type { GeneratorConfig } from '../../config.js';
@@ -63,7 +64,7 @@ export class ServiceGenerator implements CodeGenerator {
 
     const content = this.generateServiceContent(domain, context);
     const fileName = `${DslMapper.toKebabCase(domain.entityName)}.service.ts`;
-    const filePath = join('services', fileName);
+    const filePath = outPath('services', fileName);
 
     return {
       path: filePath,

@@ -14,10 +14,14 @@ import eu.exeris.tooling.codegen.java.support.KernelScaffold;
 import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
 import eu.exeris.tooling.codegen.java.support.NameCasing;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
+import eu.exeris.sdk.sourcemodel.ast.RelationshipMetadata;
 
 import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Kernel Application Generator.
@@ -125,6 +129,127 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
         files.add(buildApplication(basePackage));
         files.add(buildRuntimeLifecycle(domains, basePackage));
         return files;
+    }
+
+    // Flyway version for the single trailing FK-constraint migration. The
+    // per-entity CREATE TABLE migrations occupy tier 1 (unscoped) and tier 2
+    // (tenant-scoped) — see KernelFlywayGenerator#migrationVersion. This file
+    // is pinned to tier 3 (V3000000) so it sorts strictly AFTER every
+    // CREATE TABLE, guaranteeing every referenced table exists before its
+    // FOREIGN KEY constraint is added (the create-order hazard T8 deferred).
+    private static final String FK_MIGRATION_VERSION = "V3000000__foreign_keys";
+
+    /**
+     * Emits the single trailing Flyway migration that adds every cross-table
+     * {@code FOREIGN KEY} constraint (T9). App-wide, like {@link
+     * #generateAll(List, String)}: it needs the full domain set to resolve each
+     * relationship's target table and to skip references to entities that are
+     * not generated (an external target has no table — referencing it would
+     * make the migration fail).
+     *
+     * <p>Why a single trailing migration rather than inline {@code REFERENCES}
+     * in each {@code CREATE TABLE}: a {@code REFERENCES} to a table created in a
+     * later migration fails. Emitting all constraints in one file pinned above
+     * every {@code CREATE TABLE} (tier 3) sidesteps the ordering hazard — every
+     * table exists by the time this runs.
+     *
+     * <p>For each entity, each {@code MANY_TO_ONE} relationship whose target
+     * entity is in {@code domains} yields:
+     * <pre>
+     * ALTER TABLE &lt;table&gt; ADD CONSTRAINT fk_&lt;table&gt;_&lt;col&gt;
+     *     FOREIGN KEY (&lt;col&gt;) REFERENCES &lt;target_table&gt;(id) ON DELETE &lt;policy&gt;;
+     * </pre>
+     * {@code <col>} uses the same convention as the T8 FK column
+     * ({@link KernelTableNaming#foreignKeyColumn(String)}); {@code <policy>} is
+     * {@code CASCADE} when the relationship cascade is {@code ALL}/{@code REMOVE},
+     * otherwise {@code RESTRICT} (mirroring the kernel's delete semantics — a
+     * non-cascading parent delete is refused while children exist).
+     *
+     * <p>Deterministic (hard-constraint #3): constraints are sorted by
+     * {@code (table, constraint-name)} and the target-table lookup is a
+     * pre-built map, so no {@code HashMap} iteration order leaks into the SQL.
+     * A domain set with no in-scope {@code MANY_TO_ONE} relationship yields no
+     * file ({@code null}) — additive, every per-entity artefact is untouched.
+     *
+     * @param domains the full set of domain metadata records in the project; never {@code null}
+     * @return the FK migration file, or {@code null} when there is nothing to constrain
+     */
+    public GeneratedFile generateForeignKeys(List<DomainMetadata> domains) {
+        // Target-table resolution: entityName → effective SQL table. Only
+        // generated entities are referenceable; an external target is absent
+        // here and therefore skipped below.
+        Map<String, String> tableByEntity = new HashMap<>();
+        for (DomainMetadata domain : domains) {
+            tableByEntity.put(domain.entityName(), KernelTableNaming.effectiveTable(domain));
+        }
+
+        List<ForeignKey> foreignKeys = new ArrayList<>();
+        for (DomainMetadata domain : domains) {
+            if (!domain.hasRelationships()) {
+                continue;
+            }
+            String table = KernelTableNaming.effectiveTable(domain);
+            for (RelationshipMetadata rel : domain.relationships()) {
+                if (rel.type() != RelationshipMetadata.RelationType.MANY_TO_ONE) {
+                    continue;
+                }
+                String targetTable = tableByEntity.get(rel.targetEntity());
+                if (targetTable == null) {
+                    // External / non-generated target — never reference a table
+                    // this build did not create.
+                    continue;
+                }
+                String column = KernelTableNaming.foreignKeyColumn(rel.name());
+                String constraint = "fk_" + table + "_" + column;
+                foreignKeys.add(new ForeignKey(table, constraint, column, targetTable, deletePolicy(rel)));
+            }
+        }
+
+        if (foreignKeys.isEmpty()) {
+            return null;
+        }
+
+        // Sort by table then constraint name — stable, input-order-independent.
+        foreignKeys.sort(Comparator.comparing(ForeignKey::table)
+                .thenComparing(ForeignKey::constraint));
+
+        StringBuilder sql = new StringBuilder("""
+                -- Flyway migration: Foreign-key constraints
+                -- Generated from @ExerisDomain MANY_TO_ONE relationships
+                -- Added after every CREATE TABLE migration so each referenced table exists.
+
+                """);
+        for (ForeignKey fk : foreignKeys) {
+            sql.append("ALTER TABLE ").append(fk.table())
+                    .append(" ADD CONSTRAINT ").append(fk.constraint())
+                    .append(" FOREIGN KEY (").append(fk.column())
+                    .append(") REFERENCES ").append(fk.targetTable())
+                    .append("(id) ON DELETE ").append(fk.deletePolicy())
+                    .append(";\n");
+        }
+
+        return new GeneratedFile("db/migration", FK_MIGRATION_VERSION, sql.toString(),
+                ArtifactType.CONFIGURATION, "sql");
+    }
+
+    /**
+     * Maps a relationship's cascade to an {@code ON DELETE} policy:
+     * {@code CASCADE} when the parent owns the child lifecycle
+     * ({@code ALL}/{@code REMOVE}), {@code RESTRICT} otherwise (the default —
+     * refuse to delete a parent that still has children).
+     */
+    private static String deletePolicy(RelationshipMetadata rel) {
+        RelationshipMetadata.CascadeType cascade = rel.cascade();
+        if (cascade == RelationshipMetadata.CascadeType.ALL
+                || cascade == RelationshipMetadata.CascadeType.REMOVE) {
+            return "CASCADE";
+        }
+        return "RESTRICT";
+    }
+
+    /** One resolved foreign-key constraint, ready to emit. */
+    private record ForeignKey(String table, String constraint, String column,
+                              String targetTable, String deletePolicy) {
     }
 
     private GeneratedFile buildApplication(String basePackage) {
