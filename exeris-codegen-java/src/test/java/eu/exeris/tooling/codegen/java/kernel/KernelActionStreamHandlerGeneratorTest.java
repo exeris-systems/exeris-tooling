@@ -76,8 +76,9 @@ class KernelActionStreamHandlerGeneratorTest {
                 // deterministic keep-alive scaffold (constant, no wall-clock)
                 .contains("KEEPALIVE_INTERVAL_MILLIS = 15000L")
                 .contains("exchange.close()")
-                // EV1 producer seam marker
-                .contains("bind domain-event bus producer (EV1)")
+                // keep-alive fallback marker: the per-action producer awaits the SDK
+                // widening that links a streaming action to its event types (Slice 2)
+                .contains("awaits an SDK widening")
                 // kernel-target discipline: Core owns the wire
                 .doesNotContain("text/event-stream");
     }
