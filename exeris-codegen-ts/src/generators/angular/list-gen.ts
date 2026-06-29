@@ -16,7 +16,7 @@ import { DslMapper } from '../../models/dsl-mapper.js';
 import type { GeneratorConfig } from '../../config.js';
 import type { CodeGenerator, GeneratedFile, GeneratorContext } from '../../core/generator-registry.js';
 import type { BackendType } from '../../core/backend-strategy.js';
-import { join } from 'node:path';
+import { outPath } from '../../core/paths.js';
 
 export { GeneratedFile };
 
@@ -33,7 +33,7 @@ export class ListGenerator implements CodeGenerator {
 
     const content = this.generateListContent(domain, context);
     const fileName = `${DslMapper.toKebabCase(domain.entityName)}-list.component.ts`;
-    const filePath = join('components', fileName);
+    const filePath = outPath('components', fileName);
 
     return {
       path: filePath,

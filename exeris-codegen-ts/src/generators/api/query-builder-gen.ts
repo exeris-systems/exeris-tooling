@@ -16,7 +16,7 @@ import type { DomainMetadata, FieldMetadata, CodeGenerator, GeneratedFile, Gener
 import { DslMapper } from '../../models/dsl-mapper.js';
 import type { GeneratorConfig } from '../../config.js';
 import type { BackendType } from '../../core/backend-strategy.js';
-import { join } from 'node:path';
+import { outPath } from '../../core/paths.js';
 
 export class QueryBuilderGenerator implements CodeGenerator {
   readonly name = 'QueryBuilderGenerator';
@@ -33,7 +33,7 @@ export class QueryBuilderGenerator implements CodeGenerator {
     const content = this.generateQueryBuilderContent(domain, context);
 
     return {
-      path: join('queries', `${kebab}.query.ts`),
+      path: outPath('queries', `${kebab}.query.ts`),
       content,
       artifactType: 'QUERY_BUILDER',
       overwritable: true,
