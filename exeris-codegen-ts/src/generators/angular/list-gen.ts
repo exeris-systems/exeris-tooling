@@ -150,7 +150,7 @@ export class ListGenerator implements CodeGenerator {
     lines.push(`          <a`);
     lines.push(`            routerLink="new"`);
     lines.push(`            data-testid="action-create"`);
-    lines.push(`            class="inline-flex items-center rounded-md bg-indigo-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"`);
+    lines.push(`            class="inline-flex items-center rounded-md bg-exeris-primary px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-exeris-primary-hover transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-exeris-primary"`);
     lines.push(`          >`);
     lines.push(`            <svg class="-ml-0.5 mr-1.5 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">`);
     lines.push(`              <path d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" />`);
@@ -177,7 +177,7 @@ export class ListGenerator implements CodeGenerator {
     lines.push(`            placeholder="Search ${pluralName.toLowerCase()}..."`);
     lines.push(`            aria-label="Search ${pluralName.toLowerCase()}"`);
     lines.push(`            data-testid="search-input"`);
-    lines.push(`            class="block w-full rounded-md border-0 py-2 pl-10 pr-3 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 dark:bg-gray-800 dark:text-white dark:ring-gray-600 sm:text-sm sm:leading-6"`);
+    lines.push(`            class="block w-full rounded-md border-0 py-2 pl-10 pr-3 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-exeris-primary dark:bg-gray-800 dark:text-white dark:ring-gray-600 sm:text-sm sm:leading-6"`);
     lines.push(`          />`);
     lines.push(`        </div>`);
 
@@ -190,7 +190,7 @@ export class ListGenerator implements CodeGenerator {
         lines.push(`          (ngModelChange)="onFilterChange()"`);
         lines.push(`          aria-label="Filter by ${mapping.label}"`);
         lines.push(`          data-testid="filter-${field.name}"`);
-        lines.push(`          class="rounded-md border-0 py-2 pl-3 pr-10 text-gray-900 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-indigo-600 dark:bg-gray-800 dark:text-white dark:ring-gray-600 sm:text-sm"`);
+        lines.push(`          class="rounded-md border-0 py-2 pl-3 pr-10 text-gray-900 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-exeris-primary dark:bg-gray-800 dark:text-white dark:ring-gray-600 sm:text-sm"`);
         lines.push(`        >`);
         lines.push(`          <option value="">All ${mapping.label}</option>`);
         lines.push(`          <option value="true">Yes</option>`);
@@ -227,7 +227,7 @@ export class ListGenerator implements CodeGenerator {
     lines.push(`              </svg>`);
     lines.push(`              <p class="mt-4 text-sm font-medium text-gray-900 dark:text-white">Failed to load ${pluralName.toLowerCase()}</p>`);
     lines.push(`              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ error() }}</p>`);
-    lines.push(`              <button (click)="loadData()" class="mt-4 text-sm font-medium text-indigo-600 hover:text-indigo-500">Try again</button>`);
+    lines.push(`              <button (click)="loadData()" class="mt-4 text-sm font-medium text-exeris-primary hover:text-exeris-primary-hover">Try again</button>`);
     lines.push(`            </div>`);
     lines.push(`          } @else {`);
     lines.push(`            <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700" role="grid" aria-label="${pluralName} table" data-testid="data-table">`);
@@ -287,8 +287,8 @@ export class ListGenerator implements CodeGenerator {
     // Actions
     lines.push(`                    <td class="whitespace-nowrap py-4 pl-3 pr-6 text-right text-sm">`);
     lines.push(`                      <div class="flex justify-end gap-3">`);
-    lines.push(`                        <a [routerLink]="[item.${idField}]" [attr.data-testid]="'action-view-' + item.${idField}" class="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300 font-medium">View</a>`);
-    lines.push(`                        <a [routerLink]="[item.${idField}, 'edit']" [attr.data-testid]="'action-edit-' + item.${idField}" class="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300 font-medium">Edit</a>`);
+    lines.push(`                        <a [routerLink]="[item.${idField}]" [attr.data-testid]="'action-view-' + item.${idField}" class="text-exeris-primary hover:text-exeris-primary-hover dark:text-exeris-primary dark:hover:text-exeris-primary-hover font-medium">View</a>`);
+    lines.push(`                        <a [routerLink]="[item.${idField}, 'edit']" [attr.data-testid]="'action-edit-' + item.${idField}" class="text-exeris-primary hover:text-exeris-primary-hover dark:text-exeris-primary dark:hover:text-exeris-primary-hover font-medium">Edit</a>`);
     lines.push(`                        <button (click)="onDelete(item)" [attr.data-testid]="'action-delete-' + item.${idField}" class="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 font-medium">Delete</button>`);
     lines.push(`                      </div>`);
     lines.push(`                    </td>`);
@@ -302,7 +302,7 @@ export class ListGenerator implements CodeGenerator {
     lines.push(`                      <h3 class="mt-2 text-sm font-medium text-gray-900 dark:text-white">No ${pluralName.toLowerCase()}</h3>`);
     lines.push(`                      <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Get started by creating a new ${displayName.toLowerCase()}.</p>`);
     lines.push(`                      <div class="mt-6">`);
-    lines.push(`                        <a routerLink="new" class="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">`);
+    lines.push(`                        <a routerLink="new" class="inline-flex items-center rounded-md bg-exeris-primary px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-exeris-primary-hover">`);
     lines.push(`                          <svg class="-ml-0.5 mr-1.5 h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" /></svg>`);
     lines.push(`                          New ${displayName}`);
     lines.push(`                        </a>`);

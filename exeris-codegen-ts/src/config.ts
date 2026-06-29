@@ -65,6 +65,11 @@ export const GeneratorConfigSchema = z.object({
   /** API base path for generated services */
   apiBasePath: z.string().default('/api'),
 
+  /** Human-readable application name — drives the emitted app title,
+   *  route titles, sidebar logo text, and scaffold package.json name.
+   *  (T7/U5: was the hardcoded 'Exeris Foundation' in app-structure-gen.) */
+  appName: z.string().default('Exeris Foundation'),
+
   /** Backend strategy — kernel-target-only (single supported target) */
   backend: z.enum(['KERNEL']).default('KERNEL'),
 
@@ -104,6 +109,7 @@ export const DEFAULT_CONFIG: GeneratorConfig = {
   generateSagas: true,
   generateEvents: true,
   apiBasePath: '/api',
+  appName: 'Exeris Foundation',
   backend: 'KERNEL',
   overwrite: false,
   dryRun: false,
