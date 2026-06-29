@@ -16,7 +16,7 @@ import type { DomainMetadata, FieldMetadata, CodeGenerator, GeneratedFile, Gener
 import { DslMapper } from '../../models/dsl-mapper.js';
 import type { GeneratorConfig } from '../../config.js';
 import type { BackendType } from '../../core/backend-strategy.js';
-import { join } from 'node:path';
+import { outPath } from '../../core/paths.js';
 
 export class DetailGenerator implements CodeGenerator {
   readonly name = 'DetailGenerator';
@@ -33,7 +33,7 @@ export class DetailGenerator implements CodeGenerator {
     const content = this.generateDetailContent(domain, context);
 
     return {
-      path: join('components', `${kebab}-detail.component.ts`),
+      path: outPath('components', `${kebab}-detail.component.ts`),
       content,
       artifactType: 'DETAIL',
       overwritable: true,

@@ -4,6 +4,7 @@ import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
+import eu.exeris.sdk.sourcemodel.ast.RelationshipMetadata;
 import eu.exeris.sdk.sourcemodel.ast.SystemFieldsMetadata;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -252,6 +253,101 @@ class KernelFlywayGeneratorTest {
         assertThat(file.content())
                 .contains("CREATE TABLE IF NOT EXISTS myorders (")
                 .doesNotContain("MyOrders");
+    }
+
+    @Test
+    @DisplayName("T8: filterable fields are indexed (joined with searchable/unique — one index per column)")
+    void filterableFieldsAreIndexed() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "eu.exeris.app.domain")
+                .fields(List.of(
+                        // searchable + filterable → still a single index.
+                        FieldMetadata.builder("orderNumber", "String").searchable(true).filterable(true).build(),
+                        FieldMetadata.builder("status", "String").filterable(true).build(),
+                        // neither searchable/unique nor filterable → no index.
+                        FieldMetadata.builder("note", "String").build()))
+                .build();
+
+        String sql = generator.generate(metadata).content();
+        assertThat(sql)
+                .contains("CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);")
+                // searchable+filterable column appears exactly once.
+                .containsOnlyOnce("idx_orders_order_number")
+                .doesNotContain("idx_orders_note");
+    }
+
+    @Test
+    @DisplayName("T8: MANY_TO_ONE relationships get a plain UUID FK column + index (no REFERENCES — that is T9)")
+    void manyToOneRelationshipsGetFkColumnAndIndex() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "eu.exeris.app.domain")
+                .fields(List.of(FieldMetadata.builder("orderNumber", "String").build()))
+                .relationships(List.of(
+                        RelationshipMetadata.builder("customer", "Customer")
+                                .type(RelationshipMetadata.RelationType.MANY_TO_ONE).build(),
+                        RelationshipMetadata.builder("warehouseId", "Warehouse")
+                                .type(RelationshipMetadata.RelationType.MANY_TO_ONE).build(),
+                        // ONE_TO_MANY → no FK column / index on this side.
+                        RelationshipMetadata.builder("items", "OrderItem")
+                                .type(RelationshipMetadata.RelationType.ONE_TO_MANY).build()))
+                .build();
+
+        String sql = generator.generate(metadata).content();
+        assertThat(sql)
+                // FK columns are created so the index targets a real column.
+                .contains("    customer_id UUID")
+                .contains("    warehouse_id UUID")
+                // Explicit-UUID-FK name normalisation: warehouse_id, not warehouse_id_id.
+                .doesNotContain("warehouse_id_id")
+                // FK indexes.
+                .contains("CREATE INDEX IF NOT EXISTS idx_orders_customer_id ON orders(customer_id);")
+                .contains("CREATE INDEX IF NOT EXISTS idx_orders_warehouse_id ON orders(warehouse_id);")
+                // No FK constraint (T9 is out of scope here).
+                .doesNotContain("REFERENCES customers")
+                .doesNotContain("REFERENCES warehouses")
+                // ONE_TO_MANY side emits nothing.
+                .doesNotContain("items");
+    }
+
+    @Test
+    @DisplayName("T8: explicit-UUID-FK relationship does not duplicate the column already declared as a field")
+    void explicitUuidFkDoesNotDuplicateFieldColumn() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "eu.exeris.app.domain")
+                .fields(List.of(
+                        FieldMetadata.builder("orderNumber", "String").build(),
+                        // The FK is ALSO a declared field (explicit-UUID-FK style).
+                        FieldMetadata.builder("customerId", "UUID").build()))
+                .relationships(List.of(
+                        RelationshipMetadata.builder("customerId", "Customer")
+                                .type(RelationshipMetadata.RelationType.MANY_TO_ONE).build()))
+                .build();
+
+        String sql = generator.generate(metadata).content();
+        // The field already produced customer_id — the relationship must not add a second column.
+        assertThat(sql)
+                .containsOnlyOnce("customer_id UUID")
+                .containsOnlyOnce("idx_orders_customer_id");
+    }
+
+    @Test
+    @DisplayName("T8: index emission is deterministic — same metadata yields byte-identical SQL")
+    void indexEmissionIsDeterministic() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "eu.exeris.app.domain")
+                .tenantScoped(true)
+                .fields(List.of(
+                        FieldMetadata.builder("status", "String").filterable(true).build(),
+                        FieldMetadata.builder("amount", "BigDecimal").filterable(true).build()))
+                .relationships(List.of(
+                        RelationshipMetadata.builder("warehouseId", "Warehouse")
+                                .type(RelationshipMetadata.RelationType.MANY_TO_ONE).build(),
+                        RelationshipMetadata.builder("customer", "Customer")
+                                .type(RelationshipMetadata.RelationType.MANY_TO_ONE).build()))
+                .build();
+
+        String first = generator.generate(metadata).content();
+        String second = generator.generate(metadata).content();
+        assertThat(second).isEqualTo(first);
+        // FK indexes are sorted by relationship name (customer before warehouseId).
+        assertThat(first.indexOf("idx_orders_customer_id"))
+                .isLessThan(first.indexOf("idx_orders_warehouse_id"));
     }
 
     /** Extracts the numeric version from a {@code "V<n>__create_x"} filename. */

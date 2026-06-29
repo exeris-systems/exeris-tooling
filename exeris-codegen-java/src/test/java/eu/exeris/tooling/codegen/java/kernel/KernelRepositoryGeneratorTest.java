@@ -4,6 +4,7 @@ import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.Artifact
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
+import eu.exeris.sdk.sourcemodel.ast.RelationshipMetadata;
 import eu.exeris.sdk.sourcemodel.ast.SystemFieldsMetadata;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -434,5 +435,150 @@ class KernelRepositoryGeneratorTest {
                 .contains("entity.isOnVacation()")        // primitive boolean -> is
                 .doesNotContain("entity.getOnVacation()")
                 .contains("entity.getActive()");          // Boolean wrapper -> get
+    }
+
+    @Test
+    @DisplayName("T8: emits findBy<Field> for every filterable field, typed + bound by the field's Java type")
+    void shouldEmitFindersForFilterableFields() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .fields(List.of(
+                        // Not filterable → no finder.
+                        FieldMetadata.builder("orderNumber", "String").searchable(true).build(),
+                        FieldMetadata.builder("status", "com.example.OrderStatus").filterable(true).build(),
+                        FieldMetadata.builder("amount", "BigDecimal").filterable(true).build(),
+                        FieldMetadata.builder("quantity", "int").filterable(true).build(),
+                        FieldMetadata.builder("active", "Boolean").filterable(true).build()))
+                .build();
+
+        GeneratedFile repo = strategy.generate(metadata).stream()
+                .filter(f -> f.artifactType() == ArtifactType.REPOSITORY)
+                .findFirst().orElseThrow();
+
+        String src = repo.content();
+        assertThat(src)
+                // Filterable fields → findBy<Field>, param typed to the field's Java type.
+                .contains("public List<Order> findByStatus(OrderStatus status)")
+                .contains("public List<Order> findByAmount(BigDecimal amount)")
+                .contains("public List<Order> findByQuantity(int quantity)")
+                .contains("public List<Order> findByActive(Boolean active)")
+                // Each filters on its own column, ends with a stable ORDER BY id.
+                .contains("SELECT id, order_number, status, amount, quantity, active FROM orders WHERE status = ? ORDER BY id")
+                .contains("WHERE amount = ? ORDER BY id")
+                .contains("WHERE quantity = ? ORDER BY id")
+                // Binds dispatch on the field type (enum/BigDecimal via null-guarded String; int via bindInt; Boolean via bindBoolean).
+                .contains("stmt.bindString(0, status == null ? null : status.toString())")
+                .contains("stmt.bindString(0, amount == null ? null : amount.toString())")
+                .contains("stmt.bindInt(0, quantity)")
+                .contains("stmt.bindBoolean(0, active)")
+                // Same kernel-SPI read shape as findAll: query + prepare + mapRow into a List.
+                .contains("result.add(mapRow(qr.row()))")
+                // A non-filterable field gets no finder.
+                .doesNotContain("findByOrderNumber");
+    }
+
+    @Test
+    @DisplayName("T8: emits findBy<Rel>Id(UUID) for MANY_TO_ONE relationships only, sorted by name")
+    void shouldEmitFindersForManyToOneRelationships() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .fields(List.of(FieldMetadata.builder("orderNumber", "String").build()))
+                .relationships(List.of(
+                        // Entity-typed FK style: name "customer" → column customer_id, method findByCustomerId.
+                        RelationshipMetadata.builder("customer", "Customer")
+                                .type(RelationshipMetadata.RelationType.MANY_TO_ONE).build(),
+                        // Explicit-UUID-FK style: name "warehouseId" → column warehouse_id (NOT warehouse_id_id),
+                        // method findByWarehouseId.
+                        RelationshipMetadata.builder("warehouseId", "Warehouse")
+                                .type(RelationshipMetadata.RelationType.MANY_TO_ONE).build(),
+                        // Non-MANY_TO_ONE relationships get no finder.
+                        RelationshipMetadata.builder("items", "OrderItem")
+                                .type(RelationshipMetadata.RelationType.ONE_TO_MANY).build()))
+                .build();
+
+        GeneratedFile repo = strategy.generate(metadata).stream()
+                .filter(f -> f.artifactType() == ArtifactType.REPOSITORY)
+                .findFirst().orElseThrow();
+
+        String src = repo.content();
+        assertThat(src)
+                .contains("public List<Order> findByCustomerId(UUID customerId)")
+                .contains("public List<Order> findByWarehouseId(UUID warehouseId)")
+                // FK column normalisation: both styles resolve to <base>_id, not <name>_id.
+                .contains("WHERE customer_id = ? ORDER BY id")
+                .contains("WHERE warehouse_id = ? ORDER BY id")
+                .doesNotContain("warehouse_id_id")
+                // FK params bind via bindUuid.
+                .contains("stmt.bindUuid(0, customerId)")
+                .contains("stmt.bindUuid(0, warehouseId)")
+                // ONE_TO_MANY relationship is excluded.
+                .doesNotContain("findByItems");
+    }
+
+    @Test
+    @DisplayName("T8: finder order is stable — filterable fields (by name) then FK finders (by name)")
+    void shouldEmitFindersInStableSortedOrder() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .fields(List.of(
+                        FieldMetadata.builder("zone", "String").filterable(true).build(),
+                        FieldMetadata.builder("alpha", "String").filterable(true).build()))
+                .relationships(List.of(
+                        RelationshipMetadata.builder("warehouseId", "Warehouse")
+                                .type(RelationshipMetadata.RelationType.MANY_TO_ONE).build(),
+                        RelationshipMetadata.builder("customer", "Customer")
+                                .type(RelationshipMetadata.RelationType.MANY_TO_ONE).build()))
+                .build();
+
+        String src = strategy.generate(metadata).stream()
+                .filter(f -> f.artifactType() == ArtifactType.REPOSITORY)
+                .findFirst().orElseThrow().content();
+
+        // filterable: alpha < zone; FK: customer < warehouseId; filterable block before FK block.
+        assertThat(src.indexOf("findByAlpha")).isLessThan(src.indexOf("findByZone"));
+        assertThat(src.indexOf("findByZone")).isLessThan(src.indexOf("findByCustomerId"));
+        assertThat(src.indexOf("findByCustomerId")).isLessThan(src.indexOf("findByWarehouseId"));
+        // Finders are slotted between findAll and save.
+        assertThat(src.indexOf("findAll")).isLessThan(src.indexOf("findByAlpha"));
+        assertThat(src.indexOf("findByWarehouseId")).isLessThan(src.indexOf("public Order save"));
+    }
+
+    @Test
+    @DisplayName("T8: soft-delete finders include the AND deleted = false filter")
+    void shouldApplySoftDeleteFilterToFinders() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .softDelete(true)
+                .fields(List.of(FieldMetadata.builder("status", "String").filterable(true).build()))
+                .build();
+
+        String src = strategy.generate(metadata).stream()
+                .filter(f -> f.artifactType() == ArtifactType.REPOSITORY)
+                .findFirst().orElseThrow().content();
+
+        assertThat(src).contains("WHERE status = ? AND deleted = false ORDER BY id");
+    }
+
+    @Test
+    @DisplayName("T8: generation is deterministic — same metadata yields byte-identical repository output")
+    void finderGenerationIsDeterministic() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .softDelete(true)
+                .fields(List.of(
+                        FieldMetadata.builder("status", "com.example.OrderStatus").filterable(true).build(),
+                        FieldMetadata.builder("amount", "BigDecimal").filterable(true).build(),
+                        FieldMetadata.builder("quantity", "int").filterable(true).build()))
+                .relationships(List.of(
+                        RelationshipMetadata.builder("warehouseId", "Warehouse")
+                                .type(RelationshipMetadata.RelationType.MANY_TO_ONE).build(),
+                        RelationshipMetadata.builder("customer", "Customer")
+                                .type(RelationshipMetadata.RelationType.MANY_TO_ONE).build()))
+                .build();
+
+        String first = repoContent(metadata);
+        String second = repoContent(metadata);
+        assertThat(second).isEqualTo(first);
+    }
+
+    private String repoContent(DomainMetadata metadata) {
+        return new KernelGeneratorStrategy().generate(metadata).stream()
+                .filter(f -> f.artifactType() == ArtifactType.REPOSITORY)
+                .findFirst().orElseThrow().content();
     }
 }

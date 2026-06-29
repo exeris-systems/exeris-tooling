@@ -1,8 +1,11 @@
 package eu.exeris.tooling.codegen.java.kernel;
 
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
+import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
+import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
+import eu.exeris.sdk.sourcemodel.ast.RelationshipMetadata;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -191,5 +194,165 @@ class KernelApplicationGeneratorTest {
         assertThat(content)
                 .doesNotContain("routerBuilder.route(HttpMethod.POST, "
                         + "\"/orders/{id}/actions/track-shipment\"");
+    }
+
+    @Test
+    @DisplayName("T9: trailing FK migration adds ALTER TABLE … FOREIGN KEY for an in-set MANY_TO_ONE target, "
+            + "skips an external (non-generated) target")
+    void shouldEmitForeignKeyConstraintForGeneratedTargetAndSkipExternal() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        DomainMetadata order = DomainMetadata.builder("Order", "com.example.domain")
+                .relationships(List.of(
+                        // target Customer IS generated → constraint emitted.
+                        RelationshipMetadata.builder("customer", "Customer")
+                                .type(RelationshipMetadata.RelationType.MANY_TO_ONE).build(),
+                        // target Warehouse is NOT in the domain set → skipped.
+                        RelationshipMetadata.builder("warehouseId", "Warehouse")
+                                .type(RelationshipMetadata.RelationType.MANY_TO_ONE).build(),
+                        // ONE_TO_MANY never gets an FK on this side.
+                        RelationshipMetadata.builder("items", "OrderItem")
+                                .type(RelationshipMetadata.RelationType.ONE_TO_MANY).build()))
+                .build();
+        DomainMetadata customer = DomainMetadata.builder("Customer", "com.example.domain").build();
+
+        GeneratedFile fk = gen.generateForeignKeys(List.of(order, customer));
+
+        // It is a Flyway SQL migration, pinned to tier 3 so it sorts after every CREATE TABLE.
+        assertThat(fk).isNotNull();
+        assertThat(fk.artifactType()).isEqualTo(ArtifactType.CONFIGURATION);
+        assertThat(fk.extension()).isEqualTo("sql");
+        assertThat(fk.packageName()).isEqualTo("db/migration");
+        assertThat(fk.className()).isEqualTo("V3000000__foreign_keys");
+
+        assertThat(fk.content())
+                // in-set target → constraint with correct table/col/target/policy.
+                .contains("ALTER TABLE orders ADD CONSTRAINT fk_orders_customer_id "
+                        + "FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE RESTRICT;")
+                // explicit-UUID-FK name normalisation (warehouse_id, not warehouse_id_id) — but skipped anyway.
+                .doesNotContain("warehouse_id_id")
+                // external target Warehouse is skipped — never reference a non-existent table.
+                .doesNotContain("REFERENCES warehouses")
+                .doesNotContain("fk_orders_warehouse_id")
+                // ONE_TO_MANY emits nothing.
+                .doesNotContain("order_item");
+    }
+
+    @Test
+    @DisplayName("T9: ON DELETE policy follows cascade — CASCADE for ALL/REMOVE, RESTRICT otherwise")
+    void shouldChooseDeletePolicyFromCascade() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        DomainMetadata order = DomainMetadata.builder("Order", "com.example.domain")
+                .relationships(List.of(
+                        RelationshipMetadata.builder("customer", "Customer")
+                                .type(RelationshipMetadata.RelationType.MANY_TO_ONE)
+                                .cascade(RelationshipMetadata.CascadeType.ALL).build(),
+                        RelationshipMetadata.builder("invoice", "Invoice")
+                                .type(RelationshipMetadata.RelationType.MANY_TO_ONE)
+                                .cascade(RelationshipMetadata.CascadeType.REMOVE).build(),
+                        RelationshipMetadata.builder("region", "Region")
+                                .type(RelationshipMetadata.RelationType.MANY_TO_ONE)
+                                .cascade(RelationshipMetadata.CascadeType.NONE).build()))
+                .build();
+        DomainMetadata customer = DomainMetadata.builder("Customer", "com.example.domain").build();
+        DomainMetadata invoice = DomainMetadata.builder("Invoice", "com.example.domain").build();
+        DomainMetadata region = DomainMetadata.builder("Region", "com.example.domain").build();
+
+        String sql = gen.generateForeignKeys(List.of(order, customer, invoice, region)).content();
+        assertThat(sql)
+                .contains("fk_orders_customer_id FOREIGN KEY (customer_id) "
+                        + "REFERENCES customers(id) ON DELETE CASCADE;")
+                .contains("fk_orders_invoice_id FOREIGN KEY (invoice_id) "
+                        + "REFERENCES invoices(id) ON DELETE CASCADE;")
+                .contains("fk_orders_region_id FOREIGN KEY (region_id) "
+                        + "REFERENCES regions(id) ON DELETE RESTRICT;");
+    }
+
+    @Test
+    @DisplayName("T9: target table honours the target entity's tableName override (T6)")
+    void shouldResolveTargetTableViaEffectiveTable() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        DomainMetadata order = DomainMetadata.builder("Order", "com.example.domain")
+                .relationships(List.of(
+                        RelationshipMetadata.builder("customer", "Customer")
+                                .type(RelationshipMetadata.RelationType.MANY_TO_ONE).build()))
+                .build();
+        DomainMetadata customer = DomainMetadata.builder("Customer", "com.example.domain")
+                .tableName("legacy_customers").build();
+
+        String sql = gen.generateForeignKeys(List.of(order, customer)).content();
+        assertThat(sql)
+                .contains("REFERENCES legacy_customers(id)")
+                .doesNotContain("REFERENCES customers(id)");
+    }
+
+    @Test
+    @DisplayName("T9: no in-scope MANY_TO_ONE relationship → no FK migration (additive, returns null)")
+    void shouldReturnNullWhenNoForeignKeys() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        DomainMetadata tag = DomainMetadata.builder("Tag", "com.example.domain")
+                .fields(List.of(FieldMetadata.builder("label", "String").build()))
+                .build();
+        // Empty domain set and a relationship-free domain both yield null.
+        assertThat(gen.generateForeignKeys(List.of())).isNull();
+        assertThat(gen.generateForeignKeys(List.of(tag))).isNull();
+    }
+
+    @Test
+    @DisplayName("T9: FK emission is deterministic — sorted by (table, constraint), byte-identical across runs")
+    void foreignKeyEmissionIsDeterministic() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        DomainMetadata order = DomainMetadata.builder("Order", "com.example.domain")
+                .relationships(List.of(
+                        RelationshipMetadata.builder("warehouseId", "Warehouse")
+                                .type(RelationshipMetadata.RelationType.MANY_TO_ONE).build(),
+                        RelationshipMetadata.builder("customer", "Customer")
+                                .type(RelationshipMetadata.RelationType.MANY_TO_ONE).build()))
+                .build();
+        DomainMetadata shipment = DomainMetadata.builder("Shipment", "com.example.domain")
+                .relationships(List.of(
+                        RelationshipMetadata.builder("order", "Order")
+                                .type(RelationshipMetadata.RelationType.MANY_TO_ONE).build()))
+                .build();
+        DomainMetadata customer = DomainMetadata.builder("Customer", "com.example.domain").build();
+        DomainMetadata warehouse = DomainMetadata.builder("Warehouse", "com.example.domain").build();
+        List<DomainMetadata> domains = List.of(order, shipment, customer, warehouse);
+
+        String first = gen.generateForeignKeys(domains).content();
+        String second = gen.generateForeignKeys(domains).content();
+        assertThat(second).isEqualTo(first);
+
+        // Sorted by table first (orders before shipments), then constraint name
+        // (fk_orders_customer_id before fk_orders_warehouse_id).
+        assertThat(first.indexOf("fk_orders_customer_id"))
+                .isLessThan(first.indexOf("fk_orders_warehouse_id"));
+        assertThat(first.indexOf("fk_orders_warehouse_id"))
+                .isLessThan(first.indexOf("fk_shipments_order_id"));
+    }
+
+    @Test
+    @DisplayName("T9: the FK migration version sorts strictly after every CREATE TABLE migration (tiers 1 & 2)")
+    void fkMigrationVersionSortsAfterCreateTables() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        KernelFlywayGenerator flyway = new KernelFlywayGenerator();
+
+        DomainMetadata order = DomainMetadata.builder("Order", "com.example.domain")
+                .tenantScoped(true) // tier 2 create-table
+                .relationships(List.of(
+                        RelationshipMetadata.builder("customer", "Customer")
+                                .type(RelationshipMetadata.RelationType.MANY_TO_ONE).build()))
+                .build();
+        DomainMetadata customer = DomainMetadata.builder("Customer", "com.example.domain").build(); // tier 1
+
+        long fkVersion = versionNumber(gen.generateForeignKeys(List.of(order, customer)).className());
+        long orderCreate = versionNumber(flyway.generate(order).className());
+        long customerCreate = versionNumber(flyway.generate(customer).className());
+
+        assertThat(fkVersion).isGreaterThan(orderCreate);
+        assertThat(fkVersion).isGreaterThan(customerCreate);
+    }
+
+    /** Extracts the numeric version from a {@code "V<n>__…"} migration filename. */
+    private static long versionNumber(String className) {
+        return Long.parseLong(className.substring(1, className.indexOf("__")));
     }
 }
