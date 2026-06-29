@@ -73,10 +73,11 @@ class KernelEventGeneratorTest {
         DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
                 .fields(List.of(
                         FieldMetadata.builder("total", "BigDecimal").build(),
+                        FieldMetadata.builder("active", "boolean").build(),
                         FieldMetadata.builder("secret", "String").build()))
                 .events(List.of(
                         DomainEventMetadata.builder("OrderCreated")
-                                .payloadFields(List.of("total", "secret"))
+                                .payloadFields(List.of("total", "active", "secret"))
                                 .sensitiveFields(List.of("secret"))
                                 .build()))
                 .build();
@@ -87,12 +88,15 @@ class KernelEventGeneratorTest {
                 .orElseThrow();
 
         assertThat(publisher.content())
-                // Redacted payload record — `total` kept, `secret` (sensitive) dropped.
-                .contains("record OrderCreatedEventPayload(BigDecimal total)")
-                .doesNotContain("secret")
-                // publish takes the entity and builds the record from its getters.
+                // Redacted payload record — `total` + `active` kept, `secret`
+                // (sensitive) dropped: neither its component nor its getter is emitted.
+                .contains("record OrderCreatedEventPayload(BigDecimal total, boolean active)")
+                .doesNotContain("String secret")
+                .doesNotContain("entity.getSecret()")
+                // publish takes the entity and builds the record from its getters;
+                // the boolean field uses the `isX()` accessor (B3), not `getX()`.
                 .contains("publishOrderCreatedEvent(UUID streamId, Order entity)")
-                .contains("new OrderCreatedEventPayload(entity.getTotal())")
+                .contains("new OrderCreatedEventPayload(entity.getTotal(), entity.isActive())")
                 // ADR-046 "site B" — resolve the codec via the provider slot, encode.
                 .contains("KernelProviders.eventPayloadCodecRegistry()")
                 .contains("resolve(payloadType, EventCodecContext.JSON)")

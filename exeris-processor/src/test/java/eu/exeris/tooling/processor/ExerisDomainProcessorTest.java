@@ -1760,12 +1760,21 @@ class ExerisDomainProcessorTest {
                         includeFields = {"amount", "orderNumber"}, sensitiveFields = "customerEmail")
                 @DomainEvent(name = "OrderRedacted", trigger = Trigger.UPDATE, topic = "orders.redacted",
                         excludeFields = {"customerEmail"})
+                @DomainEvent(name = "OrderBoth", trigger = Trigger.DELETE, topic = "orders.both",
+                        includeFields = {"amount", "orderNumber", "customerEmail"},
+                        excludeFields = {"customerEmail"})
                 public class Order {
                     @Field(label = "Order Number", required = true) private String orderNumber;
                     @Field(label = "Amount") private java.math.BigDecimal amount;
                     @Field(label = "Customer Email") private String customerEmail;
                     // A field WITHOUT @Field must NOT enter the default payload universe.
                     private String internalNote;
+
+                    // Legacy inner-class event form — must resolve EV1 payload/sensitive
+                    // fields against the enclosing entity, not silently drop them.
+                    @DomainEvent(name = "OrderArchived", trigger = Trigger.DELETE, topic = "orders.archived",
+                            includeFields = {"amount"}, sensitiveFields = "customerEmail")
+                    public static class OrderArchived {}
                 }
                 """;
 
@@ -1814,6 +1823,26 @@ class ExerisDomainProcessorTest {
             DomainMetadata dm = read();
             assertThat(event(dm, "OrderRedacted").payloadFields())
                     .containsExactly("orderNumber", "amount");
+        }
+
+        @Test
+        @DisplayName("includeFields AND excludeFields → exclusion runs on the narrowed include set")
+        void includeAndExcludeBothApplied() throws IOException {
+            DomainMetadata dm = read();
+            // base = include {amount, orderNumber, customerEmail} (written order),
+            // then minus exclude {customerEmail} → [amount, orderNumber].
+            assertThat(event(dm, "OrderBoth").payloadFields())
+                    .containsExactly("amount", "orderNumber");
+        }
+
+        @Test
+        @DisplayName("Legacy inner-class @DomainEvent resolves EV1 payload/sensitive fields (not dropped)")
+        void nestedClassEventResolvesPayload() throws IOException {
+            DomainMetadata dm = read();
+            assertThat(event(dm, "OrderArchived").payloadFields())
+                    .containsExactly("amount");
+            assertThat(event(dm, "OrderArchived").sensitiveFields())
+                    .containsExactly("customerEmail");
         }
     }
 

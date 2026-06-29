@@ -286,7 +286,11 @@ public class KernelEventGenerator implements KernelArtifactGenerator {
             if (i > 0) {
                 args.append(", ");
             }
-            args.append("entity.get").append(capitalize(fields.get(i).name())).append("()");
+            FieldMetadata f = fields.get(i);
+            // Primitive `boolean` getter is `isX()`, everything else `getX()` — the
+            // SDK getter convention the Repository generator already follows.
+            String prefix = "boolean".equals(f.type()) ? "is" : "get";
+            args.append("entity.").append(prefix).append(capitalize(f.name())).append("()");
         }
 
         method.addStatement("$T eventUuid = $T.randomUUID()", UUID, UUID)
@@ -326,6 +330,8 @@ public class KernelEventGenerator implements KernelArtifactGenerator {
                 .addJavadoc("and encodes the payload; empty payload when no codec is configured.\n")
                 .addStatement("$T registry = $T.eventPayloadCodecRegistry()", optionalRegistry, KERNEL_PROVIDERS)
                 .beginControlFlow("if (registry.isEmpty())")
+                .addStatement("LOG.debug($S, payloadType.getName(), eventName)",
+                        "No event-payload codec registry bound for {} ({}); publishing empty payload")
                 .addStatement("return $T.empty()", EVENT_PAYLOAD)
                 .endControlFlow()
                 .addStatement("$T codec = registry.get().resolve(payloadType, $T.JSON)",
@@ -342,6 +348,9 @@ public class KernelEventGenerator implements KernelArtifactGenerator {
                         "No event-payload codec resolved for {} ({}); publishing empty payload")
                 .addStatement("return $T.empty()", EVENT_PAYLOAD)
                 .endControlFlow()
+                // payload is Object on purpose: the codec SPI's encode(Object, ctx)
+                // is generics-free (no type erasure to reason about) — the codec
+                // resolved for payloadType serializes the concrete record at runtime.
                 .addStatement("return codec.encode(payload, $T.json(eventName))", EVENT_CODEC_CONTEXT)
                 .build();
     }

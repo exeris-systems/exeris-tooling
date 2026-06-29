@@ -197,7 +197,9 @@ describe('EventHandlerGenerator emitted content — per-domain handler', () => {
     }), CTX)!.content;
 
     expect(content).toContain('customerEmail: string; // sensitive: redacted before publish');
-    // A non-sensitive field is NOT marked.
+    // A non-sensitive field IS present and is NOT marked (the toContain anchors the
+    // negative lookahead so it can't pass vacuously on field absence).
+    expect(content).toContain('orderId: string;');
     expect(content).toMatch(/orderId: string;(?! \/\/ sensitive)/);
   });
 

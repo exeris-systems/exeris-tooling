@@ -1335,7 +1335,20 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                 Map<String, Object> values = extractAnnotationValues(eventAnnotation);
                 String eventName = nestedClass.getSimpleName().toString();
                 String topic = values.containsKey("topic") ? (String) values.get("topic") : null;
-                events.add(DomainEventMetadata.withTopic(eventName, topic));
+                String description = values.containsKey("description") ? (String) values.get("description") : null;
+                // EV1: the inner-class event form resolves payload/sensitive fields
+                // against the ENCLOSING entity's @Field list, exactly like the
+                // class-level form (extractSingleEventMetadata) — it must not silently
+                // drop EV1 payloads just because the event is declared as a nested class.
+                List<String> payloadFields = resolvePayloadFields(values, element);
+                List<String> sensitiveFields = getStringArray(values, "sensitiveFields");
+                events.add(DomainEventMetadata.builder(eventName)
+                        .topic(topic)
+                        .description(description)
+                        .aggregateType(element.getSimpleName().toString())
+                        .payloadFields(payloadFields)
+                        .sensitiveFields(sensitiveFields)
+                        .build());
             }
         }
 
