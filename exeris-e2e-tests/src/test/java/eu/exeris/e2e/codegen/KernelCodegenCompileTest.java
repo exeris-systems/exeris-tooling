@@ -8,6 +8,7 @@ import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 import eu.exeris.sdk.sourcemodel.ast.GraphEdgeMetadata;
 import eu.exeris.sdk.sourcemodel.ast.GraphMetadata;
+import eu.exeris.sdk.sourcemodel.ast.RelationshipMetadata;
 import eu.exeris.sdk.sourcemodel.ast.SagaMetadata;
 import eu.exeris.sdk.sourcemodel.ast.SagaStepMetadata;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
@@ -111,8 +112,22 @@ class KernelCodegenCompileTest {
                         // Enum field: exercises the Repository generator's
                         // fall-through emit path. Must be FQCN so JavaPoet
                         // can inject the matching import.
+                        //
+                        // T8: marked filterable so the Repository + Service
+                        // generators emit findByStatus(OrderStatus) — compiling the
+                        // enum-typed finder param + the null-guarded String bind
+                        // against the real entity getter and kernel SPI.
                         FieldMetadata.builder("status",
                                         DOMAIN_PACKAGE + ".OrderStatus")
+                                .filterable(true)
+                                .build()))
+                // T8: a MANY_TO_ONE relationship drives the FK finder
+                // findByCustomerId(UUID) on the Repository + Service — javac is the
+                // regression guard for the generated WHERE customer_id = ? lookup +
+                // bindUuid against the kernel persistence SPI.
+                .relationships(List.of(
+                        RelationshipMetadata.builder("customer", "Customer")
+                                .type(RelationshipMetadata.RelationType.MANY_TO_ONE)
                                 .build()))
                 // T1: actions exercise the server-side dispatch generator end-to-end:
                 // a no-arg action, a params action (→ generated request record decoded
