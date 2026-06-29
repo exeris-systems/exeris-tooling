@@ -66,7 +66,7 @@ export class EventHandlerGenerator implements CodeGenerator {
     const camel = DslMapper.toCamelCase(entityName);
 
     const eventTypes = events.map(e => `'${e.name}'`).join(' | ');
-    const eventInterfaces = this.generateEventInterfaces(events, entityName);
+    const eventInterfaces = this.generateEventInterfaces(events, domain);
     const eventHandlers = this.generateEventHandlers(events, entityName);
 
     return `/**
@@ -250,7 +250,16 @@ ${events.map(e => `      case '${e.name}':
 `;
   }
 
-  private generateEventInterfaces(events: DomainEventMetadata[], entityName: string): string {
+  private generateEventInterfaces(events: DomainEventMetadata[], domain: DomainMetadata): string {
+    const entityName = domain.entityName;
+    // EV1 parity fix: the event carries the RESOLVED payload field NAMES
+    // (event.payloadFields, entity-declaration order) — NOT inline FieldMetadata.
+    // Resolve each name's type against domain.fields (the generator has the
+    // domain in scope) so the emitted <Entity><Event>Payload interface is real
+    // and typed. (Previously this read event.fields, which the AST never carries
+    // → every payload interface was empty: a live parity bug.)
+    const fieldByName = new Map(domain.fields.map(f => [f.name, f] as const));
+
     // The Payload + Event interfaces MUST be entity-prefixed —
     // every other code-emission site in this generator
     // (Subject<…>, dispatchEvent cast, announce* parameter, the
@@ -260,10 +269,22 @@ ${events.map(e => `      case '${e.name}':
     // fails tsc --noEmit on every event-handler file.
     return events.map(event => {
       const pascalName = this.toPascalCase(event.name);
-      const fields = event.fields || [];
+      const payloadFieldNames = event.payloadFields ?? [];
+      const sensitive = new Set(event.sensitiveFields ?? []);
 
-      const payloadFields = fields
-        .map(f => `    ${f.name}: ${DslMapper.mapType(f.type).tsType};`)
+      const payloadFields = payloadFieldNames
+        .map(name => {
+          const field = fieldByName.get(name);
+          // A payload name with no matching entity field (e.g. an
+          // include of a system/derived field not in domain.fields)
+          // falls back to `unknown` rather than emitting a dangling
+          // reference — keeps the interface tsc-clean.
+          const tsType = field ? DslMapper.mapType(field.type).tsType : 'unknown';
+          // Sensitive fields are redacted before publish; mark them so
+          // consumers know the value may be masked.
+          const suffix = sensitive.has(name) ? ' // sensitive: redacted before publish' : '';
+          return `    ${name}: ${tsType};${suffix}`;
+        })
         .join('\n');
 
       return `export interface ${entityName}${pascalName}Payload {

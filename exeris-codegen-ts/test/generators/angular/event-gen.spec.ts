@@ -157,20 +157,64 @@ describe('EventHandlerGenerator emitted content — per-domain handler', () => {
     expect(content).toContain('// No additional payload fields');
   });
 
-  it('payload interfaces with fields emit per-field <name>: <tsType> entries (via DslMapper.mapType)', () => {
+  it('payload interfaces resolve payloadFields names against domain.fields → typed <name>: <tsType> entries (via DslMapper.mapType)', () => {
+    // EV1 parity fix: the event carries RESOLVED payload field NAMES
+    // (payloadFields), and the generator resolves each name's TYPE from
+    // domain.fields by name. A non-empty payload interface MUST result.
     const content = gen.generate(domain({
       entityName: 'Order',
+      fields: [
+        { name: 'orderId', type: 'UUID' },
+        { name: 'total', type: 'BigDecimal' },
+        { name: 'customerEmail', type: 'String' },
+      ],
       events: [{
         name: 'Created',
-        fields: [
-          { name: 'orderId', type: 'UUID' },
-          { name: 'total', type: 'BigDecimal' },
-        ],
+        payloadFields: ['orderId', 'total'],
+      }],
+    }), CTX)!.content;
+
+    // Real, typed, NON-EMPTY payload interface (the live-parity-bug assertion).
+    expect(content).toContain('export interface OrderCreatedPayload {');
+    expect(content).toContain('orderId: string;');
+    expect(content).toContain('total: string;');
+    // No-sentinel: the empty-payload comment must NOT be present when fields resolve.
+    expect(content).not.toContain('// No additional payload fields');
+  });
+
+  it('sensitiveFields names are marked redacted in the emitted payload interface', () => {
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      fields: [
+        { name: 'orderId', type: 'UUID' },
+        { name: 'customerEmail', type: 'String' },
+      ],
+      events: [{
+        name: 'Created',
+        payloadFields: ['orderId', 'customerEmail'],
+        sensitiveFields: ['customerEmail'],
+      }],
+    }), CTX)!.content;
+
+    expect(content).toContain('customerEmail: string; // sensitive: redacted before publish');
+    // A non-sensitive field IS present and is NOT marked (the toContain anchors the
+    // negative lookahead so it can't pass vacuously on field absence).
+    expect(content).toContain('orderId: string;');
+    expect(content).toMatch(/orderId: string;(?! \/\/ sensitive)/);
+  });
+
+  it('a payloadFields name with no matching domain.field falls back to unknown (tsc-clean)', () => {
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      fields: [{ name: 'orderId', type: 'UUID' }],
+      events: [{
+        name: 'Created',
+        payloadFields: ['orderId', 'systemDerived'],
       }],
     }), CTX)!.content;
 
     expect(content).toContain('orderId: string;');
-    expect(content).toContain('total: string;');
+    expect(content).toContain('systemDerived: unknown;');
   });
 
   it('emits @Injectable({ providedIn: \'root\' }) <Entity>EventHandler class with eventBus/liveAnnouncer/destroyRef/zone injected', () => {

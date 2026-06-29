@@ -122,6 +122,16 @@ export const DomainEventMetadataSchema = z.object({
   displayName: z.string().optional(),
   description: z.string().optional(),
   payloadType: z.string().optional(),
+  // EV1: the resolved payload field NAMES (entity-declaration order) the processor
+  // and -io reader emit. The generator resolves each name's type against
+  // domain.fields by name (NOT full FieldMetadata copies on the event). sensitiveFields
+  // names are marked in the emitted payload interface. Both are .optional() because the
+  // SDK record carries @JsonInclude(NON_NULL) and absent lists are missing on the wire.
+  payloadFields: z.array(z.string()).optional(),
+  sensitiveFields: z.array(z.string()).optional(),
+  // Legacy/never-populated: the AST never carried inline FieldMetadata on events
+  // (the original parity bug read this). Kept optional for backward-compat; the
+  // generator now reads payloadFields instead.
   fields: z.array(FieldMetadataSchema).default([]),
 });
 
