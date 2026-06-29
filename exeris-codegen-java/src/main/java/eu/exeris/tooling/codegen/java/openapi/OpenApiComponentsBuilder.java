@@ -85,6 +85,10 @@ public final class OpenApiComponentsBuilder {
         schema.setType(TypeMapper.toOpenApiType(field.type()));
         String format = TypeMapper.toOpenApiFormat(field.type());
         if (format != null) schema.setFormat(format);
+        // @Field.dataType=url is a front-presentation hint with a standard OpenAPI
+        // format counterpart ("uri"); apply it as a cheap, additive parity hint
+        // (Wave 1A, Java∪TS union). Other dataType values are FE-only facets.
+        if ("url".equals(field.dataType())) schema.setFormat("uri");
         if (field.description() != null) schema.setDescription(field.description());
         if (field.minLength() != null) schema.setMinLength(field.minLength());
         if (field.maxLength() != null) schema.setMaxLength(field.maxLength());
