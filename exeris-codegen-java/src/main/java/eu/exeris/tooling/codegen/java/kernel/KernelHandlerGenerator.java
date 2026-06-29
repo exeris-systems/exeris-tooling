@@ -84,6 +84,8 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
             ClassName.get("java.lang", "IllegalArgumentException");
     private static final ClassName RUNTIME_EXCEPTION =
             ClassName.get("java.lang", "RuntimeException");
+    /** JavaPoet parameter name for the {@code HttpExchange} every handler method takes. */
+    private static final String EXCHANGE_PARAM = "exchange";
 
     @Override
     public GeneratedFile generate(DomainMetadata metadata) {
@@ -135,13 +137,11 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         // emitted as a kernel HttpStreamHandler by KernelActionStreamHandlerGenerator
         // and bound to a streamRoute(...), so a respond-once handle<Action> method
         // for it would be dead (unrouted) code — skip it.
-        boolean hasRespondOnceAction = false;
         if (metadata.hasActions()) {
             for (ActionMetadata action : metadata.actions()) {
                 if (action.streaming()) {
                     continue;
                 }
-                hasRespondOnceAction = true;
                 if (action.hasParams()) {
                     handlerBuilder.addType(buildActionRequestRecord(action));
                 }
@@ -150,12 +150,11 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
             }
         }
 
+        // Both the by-id CRUD routes and the action routes capture the entity id as
+        // the {id} path-template variable, so a single helper reads it from
+        // exchange.pathParams() (kernel 0.10 boot-path, PR #224) — no raw-path string
+        // surgery, and no separate action-aware extractor.
         handlerBuilder.addMethod(buildExtractPathId());
-        // extractActionPathId is only referenced by respond-once action handlers; an
-        // entity whose only actions stream would otherwise carry it unused.
-        if (hasRespondOnceAction) {
-            handlerBuilder.addMethod(buildExtractActionPathId());
-        }
         handlerBuilder.addMethod(buildParseBody());
 
         TypeSpec handler = handlerBuilder.build();
@@ -238,15 +237,9 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         method.addJavadoc("Serves the {@code $L} action. NOTE (v1): a domain exception from "
                 + "the entity method surfaces as 500, not 4xx.\n", action.name());
 
-        // id from {basePath}/{id}/actions/{name}
-        method.addStatement("String idStr = extractActionPathId(exchange)")
-                .addStatement("$T id", UUID)
-                .beginControlFlow("try")
-                .addStatement("id = $T.fromString(idStr)", UUID)
-                .nextControlFlow("catch ($T e)", ILLEGAL_ARGUMENT_EXCEPTION)
-                .addStatement("exchange.respond($T.BAD_REQUEST)", HTTP_STATUS)
-                .addStatement("return")
-                .endControlFlow();
+        // id from the {id} path-template variable — the same capture as the by-id
+        // CRUD routes; the trailing /actions/{name} segment doesn't change it.
+        appendPathIdGuard(method);
 
         if (action.hasParams()) {
             ClassName requestType = selfType.nestedClass(actionRequestName(action));
@@ -297,31 +290,6 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                 .build();
     }
 
-    /** Extracts the entity {@code id} from an action path
-     *  {@code {basePath}/{id}/actions/{name}} — the segment immediately before
-     *  {@code /actions/} (distinct from {@link #buildExtractPathId}, which takes the
-     *  last segment and would return the action name here). */
-    private MethodSpec buildExtractActionPathId() {
-        return MethodSpec.methodBuilder("extractActionPathId")
-                .addModifiers(Modifier.PRIVATE)
-                .returns(String.class)
-                .addParameter(HTTP_EXCHANGE, "exchange")
-                .addStatement("String path = exchange.request().path()")
-                .addStatement("int q = path.indexOf('?')")
-                .beginControlFlow("if (q >= 0)")
-                .addStatement("path = path.substring(0, q)")
-                .endControlFlow()
-                .addStatement("int actionsIdx = path.indexOf($S)", "/actions/")
-                .beginControlFlow("if (actionsIdx < 0)")
-                .addComment("not an action path — no id to extract (yields 400 on parse)")
-                .addStatement("return $S", "")
-                .endControlFlow()
-                .addStatement("path = path.substring(0, actionsIdx)")
-                .addStatement("int lastSlash = path.lastIndexOf('/')")
-                .addStatement("return lastSlash >= 0 ? path.substring(lastSlash + 1) : path")
-                .build();
-    }
-
     private static String actionRequestName(ActionMetadata action) {
         return NameCasing.pascal(action.name()) + "Request";
     }
@@ -351,7 +319,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
     private static MethodSpec.Builder crudHandler(String name) {
         return MethodSpec.methodBuilder(name)
                 .addModifiers(Modifier.PUBLIC)
-                .addParameter(HTTP_EXCHANGE, "exchange");
+                .addParameter(HTTP_EXCHANGE, EXCHANGE_PARAM);
     }
 
     /** Emits the shared "parse {@code id} from the path or 400" guard: declares a
@@ -505,18 +473,18 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                 .endControlFlow();
     }
 
+    /** Reads the entity {@code id} from the {@code {id}} path-template variable the
+     *  kernel router captures into {@code exchange.pathParams()} (kernel 0.10
+     *  boot-path, PR #224). Falls back to {@code ""} (→ a 400 at {@code UUID.fromString})
+     *  when the variable is absent, so a mis-registered route fails closed rather than
+     *  NPEing. Replaces the prior raw-path {@code lastIndexOf('/')} surgery and the
+     *  separate action-aware extractor. */
     private MethodSpec buildExtractPathId() {
         return MethodSpec.methodBuilder("extractPathId")
                 .addModifiers(Modifier.PRIVATE)
                 .returns(String.class)
-                .addParameter(HTTP_EXCHANGE, "exchange")
-                .addStatement("String path = exchange.request().path()")
-                .addStatement("int q = path.indexOf('?')")
-                .beginControlFlow("if (q >= 0)")
-                .addStatement("path = path.substring(0, q)")
-                .endControlFlow()
-                .addStatement("int lastSlash = path.lastIndexOf('/')")
-                .addStatement("return lastSlash >= 0 ? path.substring(lastSlash + 1) : path")
+                .addParameter(HTTP_EXCHANGE, EXCHANGE_PARAM)
+                .addStatement("return exchange.pathParams().getOrDefault($S, $S)", "id", "")
                 .build();
     }
 
@@ -529,7 +497,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                 .addAnnotation(AnnotationSpec.builder(SuppressWarnings.class)
                         .addMember("value", "$S", "unchecked")
                         .build())
-                .addParameter(HTTP_EXCHANGE, "exchange")
+                .addParameter(HTTP_EXCHANGE, EXCHANGE_PARAM)
                 .addParameter(ParameterizedTypeName.get(ClassName.get(Class.class), tVar), "type")
                 .addJavadoc("Decodes the request body into {@code type} via the server-side\n")
                 .addJavadoc("request-body codec SPI (ADR-036).\n")
