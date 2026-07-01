@@ -58,7 +58,7 @@ A new **contract-registry stage** in `exeris-codegen-core` extends `CapabilityGr
 
 ### 3. Peer remote-client + DTO generator (the kernel-free **client+DTO slice**)
 Per resolved cross-app binding, generalize `KernelClientGenerator` to emit a typed **`<PeerEntity>Client` + shared DTOs against the *peer's* `DomainMetadata`** — the same client shape as intra-app, with two changes:
-- the base host is an **injected addressing seam** — a narrow `PeerAddressResolver { String resolve(String service); }` interface resolved at call time (`addressing.resolve("<service>")`), **not** a relative own-app path and **not** a raw config map. Pinning the *interface* (over a map default) is deliberate: it is the shape K4 runtime discovery drops into unchanged, so the generated client's public API does **not** break when addressing lands — a map default would force a client-signature change at that point. K4-shaped, so the runtime binding drops in without reshaping the generated client;
+- the base host is an **injected addressing seam** — a narrow `PeerAddressResolver { String resolve(String service); }` interface resolved at call time (`addressing.resolve("<service>")`), **not** a relative own-app path and **not** a raw config map. Pinning the *interface* (over a map default) is deliberate: it is the shape K4 runtime discovery drops into unchanged, so the generated client's public API does **not** break when addressing lands — a map default would force a client-signature change at that point;
 - the DTOs are emitted from the **peer's** contract (imported), deduped when multiple consumers import the same peer entity.
 
 **Java∪TS parity (load-bearing):** the peer client is emitted by **both** `exeris-codegen-java` and `exeris-codegen-ts` — a TS app calling a Java service needs the same typed client. This is the parity obligation the SSE/`@View` emitters established.
@@ -70,7 +70,7 @@ Generalize `KernelSagaGenerator` so a `@SagaStep(service, command)` resolved to 
 The mesh is a **platform** concern: the contract registry and addressing live platform-side (platform → kernel, never reverse), and **no mesh type leaks into the kernel**. The generated peer client binds only the tier-neutral `KernelWebClient` facade (ADR-034). The contract-registry artifact follows the `cap-manifest` precedent — deterministic, ADR-042 baseline-trust fields, no timestamps. Per the strict-inert rule (`-Aexeris.strict`), if cross-app `@Requires`/`@SagaStep.service` resolution is extracted in a window before its generator lands, the registry entry is added then removed in lock-step.
 
 ### Slice boundary (build-gate honesty)
-- **Kernel-free, ships now:** the contract registry (open-world resolution, **T17**) + the peer remote-client + DTO generator (the **client+DTO slice**), Java∪TS, with the K4-shaped addressing seam stubbed (config-injected logical name).
+- **Kernel-free, ships now:** the contract registry (open-world resolution, **T17**) + the peer remote-client + DTO generator (the **client+DTO slice**), Java∪TS, with the addressing seam stubbed behind the `PeerAddressResolver` interface (a config-injected logical name until K4 lands).
 - **Gated, named not built:** **K4** runtime addressing (kernel-core); the saga remote-dispatch **body** (T1 command surface + S5); S5 SDK capability inertness.
 
 ## Open questions / follow-ups (technical — gated, not blocking the slice)
