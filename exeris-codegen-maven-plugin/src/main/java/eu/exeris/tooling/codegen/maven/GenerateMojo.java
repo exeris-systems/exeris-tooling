@@ -2,6 +2,7 @@ package eu.exeris.tooling.codegen.maven;
 
 import eu.exeris.tooling.codegen.core.capability.CapabilityGraphException;
 import eu.exeris.tooling.codegen.java.CodegenPipeline;
+import eu.exeris.tooling.codegen.java.EmptyMetadataException;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
@@ -59,6 +60,14 @@ public class GenerateMojo extends AbstractMojo {
     @Parameter(property = "exeris.codegen.skip", defaultValue = "false")
     boolean skip;
 
+    /** Permit a run that loads zero {@code @ExerisDomain} entities to prune a
+     *  previously-generated tree (the explicit "I removed every entity" teardown).
+     *  Default {@code false} refuses that prune (T18): empty metadata is almost
+     *  always a masked compile failure, and pruning on it silently wipes the
+     *  committed generated tree. */
+    @Parameter(property = "exeris.codegen.allowEmpty", defaultValue = "false")
+    boolean allowEmpty;
+
     /** Register {@link #outputDir} as a compile source root so generated code
      *  compiles in the same build. Disable when the output is consumed elsewhere. */
     @Parameter(property = "exeris.addCompileSourceRoot", defaultValue = "true")
@@ -75,7 +84,7 @@ public class GenerateMojo extends AbstractMojo {
      */
     @FunctionalInterface
     interface PipelineRunner {
-        void run(Path metadataDir, Path outputDir, String basePackage) throws IOException;
+        void run(Path metadataDir, Path outputDir, String basePackage, boolean allowEmpty) throws IOException;
     }
 
     PipelineRunner pipeline = CodegenPipeline.createDefault()::run;
@@ -90,11 +99,12 @@ public class GenerateMojo extends AbstractMojo {
         try {
             getLog().info("Generating kernel-target sources: metadata="
                     + metadataDir + " → output=" + outputDir);
-            pipeline.run(metadataDir.toPath(), outputDir.toPath(), basePackage);
-        } catch (CapabilityGraphException e) {
-            // A user-side composition error (unsatisfied @Requires / version
-            // mismatch / cycle), not a plugin bug — surface the actionable
-            // message as a build FAILURE, not an "unexpected error".
+            pipeline.run(metadataDir.toPath(), outputDir.toPath(), basePackage, allowEmpty);
+        } catch (CapabilityGraphException | EmptyMetadataException e) {
+            // A user-side condition (unsatisfied @Requires / version mismatch /
+            // cycle; or empty metadata from a masked compile failure, T18) — not a
+            // plugin bug. Surface the actionable message as a build FAILURE, not an
+            // "unexpected error".
             throw new MojoFailureException(e.getMessage(), e);
         } catch (IOException e) {
             throw new MojoExecutionException(
