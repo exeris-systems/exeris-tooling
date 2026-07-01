@@ -22,6 +22,8 @@ import java.util.Set;
  *   <li>{@code CREATE TABLE} with id + per-domain columns + system columns
  *       (tenant, audit, soft-delete, version) gated by metadata flags</li>
  *   <li>Indexes for {@code searchable}/{@code unique} fields and the tenant FK</li>
+ *   <li>{@code CHECK} constraints mirroring the field-validation the handler
+ *       already enforces at request time (T10, defense in depth)</li>
  *   <li>Row-Level-Security policy for tenant isolation (when {@code tenantScoped})</li>
  * </ul>
  *
@@ -65,8 +67,14 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
 
                 """.formatted(metadata.entityName(), metadata.fullyQualifiedName());
 
+        // T10: CHECK constraints ride inside the CREATE TABLE parens, after the
+        // column list, so the whole table shape lands in one statement (no
+        // trailing ALTER, no create-order hazard).
+        List<String> tableBody = new ArrayList<>(buildColumns(metadata));
+        tableBody.addAll(buildCheckConstraints(metadata, tableName));
+
         String createTable = "CREATE TABLE IF NOT EXISTS " + tableName + " (\n"
-                + String.join(",\n", buildColumns(metadata))
+                + String.join(",\n", tableBody)
                 + "\n);\n\n";
 
         String indexes = String.join("", buildIndexes(metadata, tableName)) + "\n";
@@ -237,6 +245,75 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
         return indexes;
     }
 
+    /**
+     * T10: table-level {@code CHECK} constraints mirroring the request-time
+     * validation the handler already enforces (#103) — defense in depth at the DB
+     * tier, so a row inserted around the handler (bulk load, another service, a
+     * manual {@code psql}) still cannot violate the declared bounds. Emitted in
+     * source-field order for byte-deterministic output (hard-constraint #3), each
+     * with a stable, droppable name ({@code chk_<table>_<col>_<rule>}).
+     *
+     * <p>Only <b>dialect-safe</b> bounds are emitted: numeric {@code min}/{@code max}
+     * and string length {@code minLength}/{@code maxLength} (via {@code char_length}).
+     * {@code @Field(pattern=...)} is deliberately <b>not</b> emitted as a CHECK: the
+     * handler validates it with Java {@link String#matches} (full-match, Java regex
+     * dialect), whereas Postgres {@code ~} is a POSIX <em>partial</em> match — the
+     * two diverge, so a DB CHECK would risk both false rejects (valid rows blocked)
+     * and false accepts. Pattern stays enforced at the handler + client (Zod) edges.
+     */
+    private List<String> buildCheckConstraints(DomainMetadata metadata, String tableName) {
+        List<String> checks = new ArrayList<>();
+        for (FieldMetadata field : metadata.fields()) {
+            if (isSystemField(metadata, field.name())) continue;
+            String col = toSnakeCase(field.name());
+            if (isNumericType(field.type())) {
+                if (field.min() != null) {
+                    checks.add(checkClause(tableName, col, "min", col + " >= " + field.min()));
+                }
+                if (field.max() != null) {
+                    checks.add(checkClause(tableName, col, "max", col + " <= " + field.max()));
+                }
+            }
+            if (isStringType(field.type())) {
+                if (field.minLength() != null) {
+                    checks.add(checkClause(tableName, col, "min_length",
+                            "char_length(" + col + ") >= " + field.minLength()));
+                }
+                if (field.maxLength() != null) {
+                    checks.add(checkClause(tableName, col, "max_length",
+                            "char_length(" + col + ") <= " + field.maxLength()));
+                }
+            }
+        }
+        return checks;
+    }
+
+    private static String checkClause(String tableName, String col, String rule, String predicate) {
+        return "    CONSTRAINT chk_" + tableName + "_" + col + "_" + rule + " CHECK (" + predicate + ")";
+    }
+
+    private static String simpleTypeName(String javaType) {
+        if (javaType == null) return "";
+        return javaType.contains(".") ? javaType.substring(javaType.lastIndexOf('.') + 1) : javaType;
+    }
+
+    private static boolean isStringType(String javaType) {
+        return "String".equals(simpleTypeName(javaType));
+    }
+
+    /** Numeric types a min/max {@code CHECK} is safe to emit for. Must stay in
+     *  lock-step with the numeric cases of {@link #mapJavaTypeToSql}: a type
+     *  accepted here but mapped to a non-numeric SQL column (e.g. {@code VARCHAR})
+     *  would emit {@code CHECK (col >= n)} against text — a migration that fails
+     *  to apply. Mirrors the handler generator's numeric-bound surface. */
+    private static boolean isNumericType(String javaType) {
+        return switch (simpleTypeName(javaType)) {
+            case "BigDecimal", "Long", "long", "Integer", "int",
+                 "Short", "short", "Byte", "byte", "Float", "float", "Double", "double" -> true;
+            default -> false;
+        };
+    }
+
     /** Logical names of every system column {@link #sysCol} can resolve (T5). */
     private static final List<String> SYSTEM_LOGICAL_NAMES = List.of(
             "tenantId", "createdAt", "createdBy", "updatedAt", "updatedBy",
@@ -263,17 +340,15 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
     }
 
     private String mapJavaTypeToSql(String javaType) {
-        if (javaType == null) return "VARCHAR(255)";
-        String simpleType = javaType.contains(".")
-                ? javaType.substring(javaType.lastIndexOf('.') + 1)
-                : javaType;
-
-        return switch (simpleType) {
+        return switch (simpleTypeName(javaType)) {
             case "String" -> "VARCHAR(255)";
             case "UUID" -> "UUID";
             case "Long", "long" -> "BIGINT";
             case "Integer", "int" -> "INTEGER";
+            case "Short", "short", "Byte", "byte" -> "SMALLINT";
             case "BigDecimal" -> "DECIMAL(19,4)";
+            case "Double", "double" -> "DOUBLE PRECISION";
+            case "Float", "float" -> "REAL";
             case "Boolean", "boolean" -> "BOOLEAN";
             case "Instant", "LocalDateTime", "OffsetDateTime", "ZonedDateTime" -> "TIMESTAMPTZ";
             case "LocalDate" -> "DATE";
