@@ -272,14 +272,19 @@ See the **Codegen completeness backlog** below for per-item detail.
       migration-ordering hazard (a `REFERENCES` to a table created in a later migration would fail); it sorts
       after every `CREATE TABLE` tier. Deterministic (sorted; generate-twice test).
 
-- [x] **T10 — Emit server-side validation (handler/service) + `CHECK` constraints. DONE (handler-side) (0.6.0, #103).**
+- [x] **T10 — Emit server-side validation (handler/service) + `CHECK` constraints. DONE (0.6.0, #103 + DB half).**
       `@Validation(min/max/pattern/minLength/…)` flowed into the Angular Zod schemas but the generated
       server handler/service enforced nothing — a malformed request the UI rejects sailed into the
       backend; the DB got only `NOT NULL` + `VARCHAR(255)`. Same contract honoured on one emitter,
       silently dropped on the other.
-      *Done (#103):* the generated handler now enforces `@Validation` server-side from `ValidationMetadata`
-      (reject → `400`), restoring Java/TS parity on the request-validation contract. The Flyway `CHECK`-constraint
-      (DB-level) half rides a follow-up.
+      *Done (#103):* the generated handler enforces `@Validation` server-side from `ValidationMetadata`
+      (reject → `400`), restoring Java/TS parity on the request-validation contract.
+      *Done (DB half):* `KernelFlywayGenerator` now emits named `CHECK` constraints inside the
+      `CREATE TABLE` — numeric `min`/`max` and string `minLength`/`maxLength` (via `char_length`) —
+      as defense in depth for rows inserted around the handler (bulk load, another service, manual
+      `psql`). `pattern` is intentionally **not** a DB `CHECK`: the handler validates it with Java
+      `String.matches` (full-match), whereas Postgres `~` is a POSIX partial match — the dialects
+      diverge, so it stays enforced at the handler + client (Zod) edges only.
 
 - [ ] **T12 — Cross-app contract registry + generated remote dispatch (the mesh story).** The
       pipeline already emits the *seams* of a distributed system — a typed sync client, async domain
