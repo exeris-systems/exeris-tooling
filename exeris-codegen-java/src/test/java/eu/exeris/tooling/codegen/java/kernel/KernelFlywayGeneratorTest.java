@@ -350,6 +350,75 @@ class KernelFlywayGeneratorTest {
                 .isLessThan(first.indexOf("idx_orders_warehouse_id"));
     }
 
+    @Test
+    @DisplayName("T10: numeric min/max and string length bounds emit named CHECK constraints inside CREATE TABLE")
+    void validationBoundsEmitCheckConstraints() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "eu.exeris.app.domain")
+                .fields(List.of(
+                        FieldMetadata.builder("orderNumber", "String")
+                                .minLength(3).maxLength(20).build(),
+                        FieldMetadata.builder("amount", "BigDecimal").min(0L).max(1000L).build(),
+                        FieldMetadata.builder("quantity", "int").min(1L).build()))
+                .build();
+
+        String sql = generator.generate(metadata).content();
+        assertThat(sql)
+                // string length via char_length
+                .contains("CONSTRAINT chk_orders_order_number_min_length CHECK (char_length(order_number) >= 3)")
+                .contains("CONSTRAINT chk_orders_order_number_max_length CHECK (char_length(order_number) <= 20)")
+                // numeric bounds, BigDecimal + primitive alike
+                .contains("CONSTRAINT chk_orders_amount_min CHECK (amount >= 0)")
+                .contains("CONSTRAINT chk_orders_amount_max CHECK (amount <= 1000)")
+                .contains("CONSTRAINT chk_orders_quantity_min CHECK (quantity >= 1)")
+                // constraints ride inside the CREATE TABLE parens (before the closing ');')
+                .contains(",\n    CONSTRAINT chk_orders");
+        // the constraint block sits before the closing paren of CREATE TABLE
+        assertThat(sql.indexOf("CONSTRAINT chk_orders_amount_min"))
+                .isLessThan(sql.indexOf("\n);"));
+    }
+
+    @Test
+    @DisplayName("T10: @Field(pattern) is NOT emitted as a CHECK (Java-vs-Postgres regex dialects diverge)")
+    void patternIsNotEmittedAsCheck() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "eu.exeris.app.domain")
+                .fields(List.of(
+                        FieldMetadata.builder("code", "String").pattern("[A-Z0-9-]+").build()))
+                .build();
+
+        String sql = generator.generate(metadata).content();
+        assertThat(sql)
+                .doesNotContain("CHECK")
+                .doesNotContain("[A-Z0-9-]+")
+                .doesNotContain("~");
+    }
+
+    @Test
+    @DisplayName("T10: a field with no validation bounds emits no CHECK (existing golden output unchanged)")
+    void noBoundsEmitsNoCheck() {
+        DomainMetadata metadata = DomainMetadata.builder("Tag", "eu.exeris.app.domain")
+                .fields(List.of(FieldMetadata.builder("label", "String").build()))
+                .build();
+
+        assertThat(generator.generate(metadata).content()).doesNotContain("CHECK");
+    }
+
+    @Test
+    @DisplayName("T10: CHECK emission is deterministic and follows source-field order")
+    void checkEmissionIsDeterministic() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "eu.exeris.app.domain")
+                .fields(List.of(
+                        FieldMetadata.builder("amount", "BigDecimal").min(0L).build(),
+                        FieldMetadata.builder("quantity", "int").min(1L).build()))
+                .build();
+
+        String first = generator.generate(metadata).content();
+        String second = generator.generate(metadata).content();
+        assertThat(second).isEqualTo(first);
+        // source order: amount before quantity.
+        assertThat(first.indexOf("chk_orders_amount_min"))
+                .isLessThan(first.indexOf("chk_orders_quantity_min"));
+    }
+
     /** Extracts the numeric version from a {@code "V<n>__create_x"} filename. */
     private static long versionNumber(String className) {
         return Long.parseLong(className.substring(1, className.indexOf("__")));
