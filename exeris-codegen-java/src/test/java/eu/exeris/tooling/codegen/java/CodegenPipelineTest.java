@@ -455,6 +455,31 @@ class CodegenPipelineTest {
         }
 
         @Test
+        @DisplayName("T18 (second guard): capabilities present but zero domains + prior domain tree → REFUSES to wipe")
+        void capabilitiesPresentButDomainsVanishedRefusesToWipe() throws IOException {
+            // A prior run generated a domain (OrderRepository) and owns it via the manifest.
+            Path owned = outputDir.resolve("com/app/repository/OrderRepository.java");
+            Files.createDirectories(owned.getParent());
+            Files.writeString(owned, "class OrderRepository {}");
+            Files.writeString(outputDir.resolve(".exeris-codegen-manifest"),
+                    "# Exeris Tooling generated-output manifest - DO NOT EDIT MANUALLY\n"
+                            + "com/app/repository/OrderRepository.java\n");
+
+            // This run finds capabilities but NO @ExerisDomain (masked compile failure
+            // of the domain sources). The second guard refuses rather than letting the
+            // trailing prune wipe the committed domain tree.
+            writeCapabilityJson("Billing",
+                    desc("com.app.Billing", List.of(ProvidesMetadata.of("com.api.PaymentApi", "1.0")), List.of()));
+
+            assertThatThrownBy(() -> pipeline.run(metadataDir, outputDir, "com.app"))
+                    .isInstanceOf(EmptyMetadataException.class)
+                    .hasMessageContaining("Refusing to wipe");
+
+            // The committed domain tree survives.
+            assertThat(owned).exists();
+        }
+
+        @Test
         @DisplayName("domains + capabilities both emit (bootstrap pair + manifest)")
         void domainsAndCapabilities() throws IOException {
             writeDomainJson("Product.json", productDomain());

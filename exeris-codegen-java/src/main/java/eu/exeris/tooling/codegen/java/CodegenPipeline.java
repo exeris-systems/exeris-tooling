@@ -94,11 +94,35 @@ public final class CodegenPipeline {
     }
 
     /**
-     * @param allowEmpty when {@code true}, a run that loads zero {@code @ExerisDomain}
-     *                   entities is permitted to prune a previously-generated tree —
-     *                   the explicit "I removed every entity" teardown. Default
-     *                   ({@code false}) refuses that prune (T18), since empty metadata
-     *                   is almost always a masked compile failure.
+     * Runs the pipeline (primary implementation). Returns the number of files written.
+     *
+     * <p>An empty or non-existent {@code metadataDir}, or a directory that
+     * contains no usable domain JSON, is not an error — the pipeline logs a
+     * warning and returns {@code 0}. Anything actually unable-to-read surfaces
+     * as {@link IOException}.
+     *
+     * @param metadataDir         directory holding processor-emitted JSON
+     * @param outputDir           target for generated sources (created if absent)
+     * @param explicitBasePackage caller-supplied base package, or {@code null}
+     *                            to auto-detect from the first domain
+     * @param allowEmpty          when {@code true}, a run that loads zero
+     *                            {@code @ExerisDomain} entities is permitted to
+     *                            prune a previously-generated tree — the explicit
+     *                            "I removed every entity" teardown. Default
+     *                            ({@code false}) refuses that prune (T18), since
+     *                            empty metadata is almost always a masked compile
+     *                            failure.
+     * @return the number of files written
+     * @throws IOException if metadata or output cannot be read/written
+     * @throws EmptyMetadataException if {@code allowEmpty} is {@code false} and the
+     *         run loads zero domains while a previous run owns a committed tree the
+     *         prune would delete (T18 guard)
+     * @throws eu.exeris.tooling.codegen.core.capability.CapabilityGraphException
+     *         (unchecked) if the capability graph cannot be resolved — an
+     *         unsatisfied non-optional {@code @Requires}, version mismatch, or
+     *         dependency cycle. Callers that wrap {@code run} should catch it
+     *         alongside {@link IOException}.
+     * @since 0.6.0
      */
     public int run(Path metadataDir, Path outputDir, String explicitBasePackage, boolean allowEmpty)
             throws IOException {

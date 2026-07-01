@@ -24,7 +24,11 @@ import java.nio.file.Path;
  */
 public final class EmptyMetadataException extends RuntimeException {
 
-    private final transient int orphanCount;
+    private static final long serialVersionUID = 1L;
+
+    /** Not {@code transient}: this diagnostic count must survive serialization
+     *  (a {@code transient} primitive would deserialize back to {@code 0}). */
+    private final int orphanCount;
 
     public EmptyMetadataException(int orphanCount, Path metadataDir, Path outputDir) {
         super(buildMessage(orphanCount, metadataDir, outputDir));

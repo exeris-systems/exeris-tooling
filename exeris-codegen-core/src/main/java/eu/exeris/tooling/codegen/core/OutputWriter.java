@@ -136,18 +136,6 @@ public final class OutputWriter {
     }
 
     /**
-     * Deletes files this tool emitted on a previous run that the current run did
-     * not re-emit (orphans), prunes any directories left empty by that removal,
-     * and writes the manifest of the current run's files (T13).
-     *
-     * <p>Safe by construction: only paths listed in the previous manifest are
-     * eligible for deletion, so user-authored files (never in the manifest) are
-     * never removed. Call once, after all files for a run have been written.
-     *
-     * @return the number of orphaned files deleted
-     * @throws IOException if reading the old manifest or writing the new one fails
-     */
-    /**
      * Counts the files a {@link #pruneOrphansAndWriteManifest()} call would
      * delete right now — the previous-manifest paths this run did not re-emit —
      * <b>without</b> deleting anything. Backs the T18 masked-compile-failure
@@ -158,6 +146,7 @@ public final class OutputWriter {
      *
      * @return the number of orphans the next prune would remove
      * @throws IOException if reading the previous manifest fails
+     * @since 0.6.0
      */
     public int countOrphans() throws IOException {
         Set<String> previous = readManifest();
@@ -171,6 +160,18 @@ public final class OutputWriter {
         return orphans;
     }
 
+    /**
+     * Deletes files this tool emitted on a previous run that the current run did
+     * not re-emit (orphans), prunes any directories left empty by that removal,
+     * and writes the manifest of the current run's files (T13).
+     *
+     * <p>Safe by construction: only paths listed in the previous manifest are
+     * eligible for deletion, so user-authored files (never in the manifest) are
+     * never removed. Call once, after all files for a run have been written.
+     *
+     * @return the number of orphaned files deleted
+     * @throws IOException if reading the old manifest or writing the new one fails
+     */
     public int pruneOrphansAndWriteManifest() throws IOException {
         Set<String> previous = readManifest();
         int pruned = 0;
