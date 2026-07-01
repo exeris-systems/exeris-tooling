@@ -51,12 +51,14 @@ An app imports a peer's contract through a **configured set of peer contract art
 
 The registry resolves against the **union** of these — a single input that serves *both* the client/DTO (T12) and capability (T17) axes. **Decided: the contract source is the published artifact.** The artifact format and the resolver are designed around the **published** shape — real microservice independence, with cross-build compatibility gated by [ADR-042](../adr/ADR-042.link.md)'s `schemaVersion` / `sourceDigest`. The multi-app reactor is the **degenerate same-build case** that simply drops its `exeris-metadata/*.json` onto the same path; the registry never *assumes* peers share a build. This fixes the artifact format and the build-coupling model: apps are independently built and versioned, and a peer contract is a dependency, not a co-located source.
 
+**Minimum peer `schemaVersion` = 2 (reject, don't degrade).** The registry requires each peer contract at or above the `CompositionStamp` baseline (`schemaVersion` 2, which introduced `validated` / `contentBinding`); a v1 peer is **rejected with an actionable error**, not silently accepted in a degraded mode. Rationale: [ADR-042](../adr/ADR-042.link.md)'s baseline-trust check has nothing to verify against on a pre-stamp v1 contract, and consuming an unvalidated peer contract is exactly the failure the stamp exists to prevent — a soft-degrade path would quietly reintroduce it. Bumping a peer to v2 is a rebuild on the current pipeline, so the requirement is a version floor, not a compatibility break.
+
 ### 2. Cross-app contract registry = open-world resolution (T17)
 A new **contract-registry stage** in `exeris-codegen-core` extends `CapabilityGraph` from closed-world to **open-world**: feed the resolver the **union of peer cap-manifests**, so a `@Requires(S)` / `@SagaStep(service=S)` unprovided locally but provided by a peer resolves to a **remote binding** `(peerApp, service)` instead of hard-failing. The closed-world hard-fail stays for a requirement **no app in the configured mesh** provides. Deterministic (sorted union, stable resolution order); the existing `VersionRange` intersection and `CompositionStamp` discipline carry over. This *is* T17 — same input, same stage as the client/DTO resolution.
 
 ### 3. Peer remote-client + DTO generator (the kernel-free **client+DTO slice**)
 Per resolved cross-app binding, generalize `KernelClientGenerator` to emit a typed **`<PeerEntity>Client` + shared DTOs against the *peer's* `DomainMetadata`** — the same client shape as intra-app, with two changes:
-- the base host is an **injected addressing seam** (a logical service name resolved at call time: `addressing.resolve("<service>")`), **not** a relative own-app path — K4-shaped, so the runtime binding drops in without reshaping the generated client;
+- the base host is an **injected addressing seam** — a narrow `PeerAddressResolver { String resolve(String service); }` interface resolved at call time (`addressing.resolve("<service>")`), **not** a relative own-app path and **not** a raw config map. Pinning the *interface* (over a map default) is deliberate: it is the shape K4 runtime discovery drops into unchanged, so the generated client's public API does **not** break when addressing lands — a map default would force a client-signature change at that point. K4-shaped, so the runtime binding drops in without reshaping the generated client;
 - the DTOs are emitted from the **peer's** contract (imported), deduped when multiple consumers import the same peer entity.
 
 **Java∪TS parity (load-bearing):** the peer client is emitted by **both** `exeris-codegen-java` and `exeris-codegen-ts` — a TS app calling a Java service needs the same typed client. This is the parity obligation the SSE/`@View` emitters established.
@@ -72,8 +74,8 @@ The mesh is a **platform** concern: the contract registry and addressing live pl
 - **Gated, named not built:** **K4** runtime addressing (kernel-core); the saga remote-dispatch **body** (T1 command surface + S5); S5 SDK capability inertness.
 
 ## Open questions / follow-ups (technical — gated, not blocking the slice)
-- **Published-contract artifact format** — the provided-entity `DomainMetadata` in full vs a pruned "contract subset" (only the `@Provides` services + the entities they expose); versioning/compat via ADR-042 `schemaVersion`.
-- **Addressing seam shape** — a config map vs an injected resolver interface; converges with **K4** when the kernel ships logical-name→endpoint discovery (`KernelWebClient` host parameter).
+- **Published-contract artifact format** — the provided-entity `DomainMetadata` in full vs a pruned "contract subset" (only the `@Provides` services + the entities they expose). *Version/compat is decided (§1): ADR-042 `schemaVersion`, floor 2.*
+- **Addressing seam shape** — *decided (§3): a `PeerAddressResolver` interface, not a config map.* Genuinely open only at its **K4 convergence** — the kernel-side logical-name→endpoint discovery that backs the resolver (`KernelWebClient` host parameter).
 - **Saga remote-dispatch body** — the command-dispatch + park-on-`@DomainEvent` mechanics; follow-up slice on the T1 command-surface track.
 - **DTO dedup / sharing** — one shared generated DTO per peer entity across N consumers vs per-consumer copies.
 
