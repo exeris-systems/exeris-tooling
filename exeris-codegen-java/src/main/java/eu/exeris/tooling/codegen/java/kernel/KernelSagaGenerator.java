@@ -52,9 +52,13 @@ import java.util.stream.Collectors;
  * <p>
  * Transitions are emitted as a strict linear chain in the order steps
  * appear in {@code SagaMetadata.steps()} ({@code transition(0,
- * 1).transition(1, 2)...}). The {@link SagaStepMetadata#order()} field
- * is <b>not</b> consulted — callers wanting non-list ordering must
- * sort their step list before passing it to the AST. The flow
+ * 1).transition(1, 2)...}). This generator does not re-read
+ * {@link SagaStepMetadata#order()} because the list is <b>already</b>
+ * {@code order()}-sorted upstream — {@code ExerisDomainProcessor} sorts
+ * {@code @SagaStep} methods by {@code order()} (stable, ties keep source
+ * order) before writing the metadata, so list order <em>is</em> the
+ * {@code order()} order. A caller that hand-builds the AST (e.g. a test)
+ * likewise controls sequence via list position. The flow
  * {@code timeoutDuration} is parsed once from the saga's ISO-8601
  * timeout string at class-init time via
  * {@link java.time.Duration#parse(CharSequence)} and pinned to a
