@@ -520,7 +520,7 @@ Proposals, highest return-on-effort first:
 | U4 | **Fidelity end-to-end** — processor emits the full `uiMetadata` / per-field `UIFieldMetadata`, the TS Zod schema models it, and strict-mode (**T11**) warns when a `@UI` attribute is declared but dropped | processor + codegen-ts | medium | 0.6.0 (with T11) |
 | U5 | **Configurable detail / branding** — sections/tabs in the detail view, related-entity panels; app name/titles/icons from metadata (today a hardcoded `"Exeris Foundation"` + an emoji-by-entity-name map) | codegen-ts | small–med | 0.6.0 (extends **T7**) |
 | U6 | **New view shapes** — dashboard/cards/kanban/calendar from `@Projection`, charts from `@Graph` (deferred), master-detail, inline-edit, bulk-actions | SDK (light) + codegen-ts | large | 0.7.0–0.9.0 |
-| U7 | **Live-view** (e.g. a battle preview) — a round stream pushed to the client. Transport SHIPPED (ADR-043/044 — Slice 1 #104 + Slice 2 #106: `HttpStreamHandler` + `streamRoute` + `EventSource`/RxJS clients); the generated producer is a keep-alive scaffold until the **EV1-stream** pass binds the `@DomainEvent` bus | ~~kernel (K2, done)~~ → codegen-java/-ts (**EV1-stream**) | large | scaffold shipped 0.6.0; real feed with **EV1** |
+| U7 | **Live-view** (e.g. a battle preview) — a round stream pushed to the client. Transport SHIPPED (ADR-043/044 — Slice 1 #104 + Slice 2 #106: `HttpStreamHandler` + `streamRoute` + `EventSource`/RxJS clients); the **entity-level** producer now binds the `@DomainEvent` bus (real feed, #125) — the **per-action** driver stays a keep-alive scaffold (open slice) | ~~kernel (K2, done)~~ → codegen-java/-ts (**EV1-stream**) | large | entity-level feed shipped 0.6.0 (#125); per-action driver still scaffold |
 | U8 | **Genuinely missing in the SDK** — custom-component registration (plugin), per-role field visibility (RLS-aware), i18n labels, icon-set abstraction | SDK + codegen-ts | large | SDK-led |
 
 > **Recommendation:** highest return for least motion is **U1** (wire ui-kit) + **U2** (universal
@@ -579,8 +579,8 @@ Proposals, highest return-on-effort first:
       domain events flow with **no client reshape** (strong-default #4 parity holds for free).
       *Remaining gap:* the **per-action** driver (`KernelActionStreamHandlerGenerator`) still emits
       `KernelStreamScaffold.keepAliveScaffold(...)` — porting it to the same producer seam is the open
-      slice (pairs with **T24**, the per-action GET spectate route). Pairs with `@Projection` as the
-      natural event→DTO shape. **Closes U7** on the entity-level path.
+      slice (pairs with the planned per-action GET **spectate** route — `EventSource` is GET-only).
+      Pairs with `@Projection` as the natural event→DTO shape. **Closes U7** on the entity-level path.
 
 - [ ] **EV2 — `@EventSourced` aggregate generator — BLOCKED on a kernel SPI.** No generator emits
       event-sourced aggregates today; **T11 strict mode surfaces `@EventSourced` as inert** (extracted
