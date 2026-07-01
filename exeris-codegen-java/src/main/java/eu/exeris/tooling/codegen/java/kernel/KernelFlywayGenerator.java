@@ -301,8 +301,11 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
         return "String".equals(simpleTypeName(javaType));
     }
 
-    /** Numeric types a min/max {@code CHECK} is safe to emit for (mirrors the
-     *  handler generator's numeric-bound surface). */
+    /** Numeric types a min/max {@code CHECK} is safe to emit for. Must stay in
+     *  lock-step with the numeric cases of {@link #mapJavaTypeToSql}: a type
+     *  accepted here but mapped to a non-numeric SQL column (e.g. {@code VARCHAR})
+     *  would emit {@code CHECK (col >= n)} against text — a migration that fails
+     *  to apply. Mirrors the handler generator's numeric-bound surface. */
     private static boolean isNumericType(String javaType) {
         return switch (simpleTypeName(javaType)) {
             case "BigDecimal", "Long", "long", "Integer", "int",
@@ -337,17 +340,15 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
     }
 
     private String mapJavaTypeToSql(String javaType) {
-        if (javaType == null) return "VARCHAR(255)";
-        String simpleType = javaType.contains(".")
-                ? javaType.substring(javaType.lastIndexOf('.') + 1)
-                : javaType;
-
-        return switch (simpleType) {
+        return switch (simpleTypeName(javaType)) {
             case "String" -> "VARCHAR(255)";
             case "UUID" -> "UUID";
             case "Long", "long" -> "BIGINT";
             case "Integer", "int" -> "INTEGER";
+            case "Short", "short", "Byte", "byte" -> "SMALLINT";
             case "BigDecimal" -> "DECIMAL(19,4)";
+            case "Double", "double" -> "DOUBLE PRECISION";
+            case "Float", "float" -> "REAL";
             case "Boolean", "boolean" -> "BOOLEAN";
             case "Instant", "LocalDateTime", "OffsetDateTime", "ZonedDateTime" -> "TIMESTAMPTZ";
             case "LocalDate" -> "DATE";

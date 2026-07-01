@@ -378,6 +378,35 @@ class KernelFlywayGeneratorTest {
     }
 
     @Test
+    @DisplayName("T10: Float/Double/Short/Byte fields map to real numeric columns (not VARCHAR) so their CHECK is valid SQL")
+    void widerNumericTypesMapToNumericColumnsWithChecks() {
+        DomainMetadata metadata = DomainMetadata.builder("Reading", "eu.exeris.app.domain")
+                .fields(List.of(
+                        FieldMetadata.builder("weight", "double").min(0L).max(1000L).build(),
+                        FieldMetadata.builder("ratio", "Float").min(0L).build(),
+                        FieldMetadata.builder("level", "short").min(1L).build(),
+                        FieldMetadata.builder("flags", "Byte").max(127L).build()))
+                .build();
+
+        String sql = generator.generate(metadata).content();
+        assertThat(sql)
+                // columns are REAL numeric types — not the VARCHAR(255) default a
+                // CHECK (col >= n) would break against.
+                .contains("    weight DOUBLE PRECISION")
+                .contains("    ratio REAL")
+                .contains("    level SMALLINT")
+                .contains("    flags SMALLINT")
+                .doesNotContain("weight VARCHAR")
+                .doesNotContain("ratio VARCHAR")
+                // CHECKs now target numeric columns → valid SQL.
+                .contains("CONSTRAINT chk_readings_weight_min CHECK (weight >= 0)")
+                .contains("CONSTRAINT chk_readings_weight_max CHECK (weight <= 1000)")
+                .contains("CONSTRAINT chk_readings_ratio_min CHECK (ratio >= 0)")
+                .contains("CONSTRAINT chk_readings_level_min CHECK (level >= 1)")
+                .contains("CONSTRAINT chk_readings_flags_max CHECK (flags <= 127)");
+    }
+
+    @Test
     @DisplayName("T10: @Field(pattern) is NOT emitted as a CHECK (Java-vs-Postgres regex dialects diverge)")
     void patternIsNotEmittedAsCheck() {
         DomainMetadata metadata = DomainMetadata.builder("Order", "eu.exeris.app.domain")
