@@ -56,8 +56,12 @@ class KernelEventGeneratorTest {
                 .contains("public final class OrderEventPublisher")
                 .contains("EventTypeSpec ORDER_CREATED_EVENT")
                 .contains("EventTypeSpec ORDER_SHIPPED_EVENT")
-                .contains("EventTypeSpec.ofPersistent(\"OrderCreatedEvent\"")
-                .contains("EventTypeSpec.ofPersistent(\"OrderShippedEvent\"")
+                // ADR-050: a declared @DomainEvent.topic lands on the per-type spec
+                // via the three-arg factory; an event without a topic keeps the
+                // two-arg form (topic = null → "no override").
+                .contains("EventTypeSpec.ofPersistent(\"OrderShippedEvent\", "
+                        + "1393336469, \"orders.shipped\")")
+                .contains("EventTypeSpec.ofPersistent(\"OrderCreatedEvent\", 1195226144)")
                 .contains("public OrderEventPublisher(EventEngine eventEngine)")
                 .contains("publishOrderCreatedEvent(UUID streamId)")
                 .contains("publishOrderShippedEvent(UUID streamId)")
