@@ -41,11 +41,13 @@ import java.nio.file.Path;
  * (e.g. adding {@code optional=true}) could never take effect: the build died
  * on the stale file it was about to replace. When this project also binds the
  * {@code verify-capabilities} goal of this plugin (the authoritative
- * post-{@code compile} gate), a graph failure here degrades to a WARNING and
- * the fail-closed verdict is delivered by that gate against the metadata the
- * processor emits <em>this</em> build. Without that gate bound, the historical
- * hard-fail at {@code generate-sources} is kept (fail-closed, deadlock and all
- * — bind the gate to escape it).
+ * post-{@code compile} gate) at its default {@code process-classes} phase or
+ * later, a graph failure here degrades to a WARNING and the fail-closed
+ * verdict is delivered by that gate against the metadata the processor emits
+ * <em>this</em> build. Without that gate bound — or with it explicitly rebound
+ * to a phase before {@code process-classes}, where it would itself see stale
+ * input — the historical hard-fail at {@code generate-sources} is kept
+ * (fail-closed, deadlock and all — bind the gate to escape it).
  *
  * <p><b>Safe-build recipe</b> (L1-committed output). Bind both goals:
  * <pre>{@code
@@ -168,10 +170,32 @@ public class GenerateMojo extends AbstractMojo {
     }
 
     /**
+     * Default-lifecycle phases from {@code process-classes} onwards — the phases
+     * at which a bound {@code verify-capabilities} execution is guaranteed to see
+     * the metadata the processor (re)emits during {@code compile}. An execution
+     * explicitly rebound to an earlier phase (or to an unknown/custom phase)
+     * would itself validate stale input, so it does NOT count as the gate.
+     */
+    private static final java.util.Set<String> PHASES_AFTER_COMPILE = java.util.Set.of(
+            "process-classes",
+            "generate-test-sources", "process-test-sources",
+            "generate-test-resources", "process-test-resources",
+            "test-compile", "process-test-classes", "test",
+            "prepare-package", "package",
+            "pre-integration-test", "integration-test", "post-integration-test",
+            "verify", "install", "deploy");
+
+    /**
      * Whether this project's effective build binds the
-     * {@code verify-capabilities} goal of <em>this</em> plugin in an execution
-     * that is not explicitly unbound ({@code <phase>none</phase>}). Conservative
-     * on any missing collaborator: no detectable gate → strict validation.
+     * {@code verify-capabilities} goal of <em>this</em> plugin at a phase that
+     * runs <em>after</em> the {@code compile} phase in which the processor
+     * refreshes {@code capability_*.json} — i.e. whether the fresh-input
+     * hard-fail is genuinely guaranteed later in this build. An execution with
+     * no explicit {@code <phase>} counts (the goal's default is
+     * {@code process-classes}); an execution explicitly rebound earlier than
+     * {@code process-classes}, to {@code none}, or to an unknown phase does not.
+     * Conservative on any missing collaborator: no detectable gate → strict
+     * validation.
      */
     boolean verifyCapabilitiesBound() {
         if (project == null || pluginDescriptor == null) {
@@ -183,8 +207,11 @@ public class GenerateMojo extends AbstractMojo {
                 continue;
             }
             for (PluginExecution execution : plugin.getExecutions()) {
-                if (execution.getGoals().contains(VerifyCapabilitiesMojo.GOAL)
-                        && !"none".equals(execution.getPhase())) {
+                if (!execution.getGoals().contains(VerifyCapabilitiesMojo.GOAL)) {
+                    continue;
+                }
+                String phase = execution.getPhase();
+                if (phase == null || PHASES_AFTER_COMPILE.contains(phase)) {
                     return true;
                 }
             }

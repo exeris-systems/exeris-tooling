@@ -233,4 +233,40 @@ class GenerateMojoTest {
 
         assertThat(calls.get(0).deferCapabilityFailure()).isFalse();
     }
+
+    @Test
+    @DisplayName("verify-capabilities explicitly rebound to a PRE-compile phase → stays strict (the gate would itself see stale metadata)")
+    void earlyPhaseDoesNotDefer(@TempDir Path tmp) throws Exception {
+        List<Call> calls = new ArrayList<>();
+        GenerateMojo mojo = mojo(tmp, calls);
+        bindGoal(mojo, PLUGIN_ARTIFACT_ID, "verify-capabilities", "validate");
+
+        mojo.execute();
+
+        assertThat(calls.get(0).deferCapabilityFailure()).isFalse();
+    }
+
+    @Test
+    @DisplayName("verify-capabilities explicitly rebound to a post-compile phase (verify) → defers")
+    void latePhaseDefers(@TempDir Path tmp) throws Exception {
+        List<Call> calls = new ArrayList<>();
+        GenerateMojo mojo = mojo(tmp, calls);
+        bindGoal(mojo, PLUGIN_ARTIFACT_ID, "verify-capabilities", "verify");
+
+        mojo.execute();
+
+        assertThat(calls.get(0).deferCapabilityFailure()).isTrue();
+    }
+
+    @Test
+    @DisplayName("verify-capabilities on an unknown/custom phase → stays strict (conservative)")
+    void unknownPhaseDoesNotDefer(@TempDir Path tmp) throws Exception {
+        List<Call> calls = new ArrayList<>();
+        GenerateMojo mojo = mojo(tmp, calls);
+        bindGoal(mojo, PLUGIN_ARTIFACT_ID, "verify-capabilities", "some-custom-phase");
+
+        mojo.execute();
+
+        assertThat(calls.get(0).deferCapabilityFailure()).isFalse();
+    }
 }

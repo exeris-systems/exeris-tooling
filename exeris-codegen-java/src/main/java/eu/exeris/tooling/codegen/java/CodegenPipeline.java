@@ -362,6 +362,10 @@ public final class CodegenPipeline {
             return 0;
         }
         LOG.log(Level.INFO, "Validating capability graph (" + capabilities.size() + " module(s))");
+        // 1-arg build (UNVERSIONED) is deliberate: compositionVersion only feeds the
+        // CompositionStamp computed AFTER validation succeeds — the throw path
+        // (unsatisfied @Requires / version mismatch / cycle) is identical, and this
+        // gate discards the graph without emitting a manifest.
         CapabilityGraph graph = CapabilityGraph.build(capabilities);
         for (String warning : graph.warnings()) {
             LOG.log(Level.WARNING, "capability: " + warning);
