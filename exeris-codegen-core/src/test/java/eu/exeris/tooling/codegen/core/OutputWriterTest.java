@@ -188,6 +188,67 @@ class OutputWriterTest {
                 .containsExactly("# Exeris Tooling generated-output manifest - DO NOT EDIT MANUALLY");
     }
 
+    // --- T18(a): preserve — keep a previously-owned file across the prune ---
+
+    @Test
+    @DisplayName("preserve keeps a previously-owned file byte-untouched across the prune and re-records it")
+    void preserveKeepsOwnedFileAcrossPrune() throws IOException {
+        // Run 1 owns cap-manifest.json.
+        OutputWriter run1 = new OutputWriter(tempDir, false);
+        run1.writeResource("cap-manifest.json", "{\"old\":true}\n");
+        run1.pruneOrphansAndWriteManifest();
+
+        // Run 2 cannot re-emit it (deferred capability failure) — it preserves it.
+        OutputWriter run2 = new OutputWriter(tempDir, false);
+        assertThat(run2.preserve("cap-manifest.json")).isTrue();
+        int pruned = run2.pruneOrphansAndWriteManifest();
+
+        assertThat(pruned).isZero();
+        assertThat(Files.readString(tempDir.resolve("cap-manifest.json")))
+                .isEqualTo("{\"old\":true}\n");
+        // still owned: listed in the freshly-written manifest
+        assertThat(Files.readAllLines(tempDir.resolve(OutputWriter.MANIFEST_NAME)))
+                .contains("cap-manifest.json");
+    }
+
+    @Test
+    @DisplayName("preserve refuses a file the previous run does not own (never claims user files)")
+    void preserveRefusesUnownedFile() throws IOException {
+        // A user-authored file exists but was never in any manifest.
+        Files.writeString(tempDir.resolve("cap-manifest.json"), "{\"user\":true}\n");
+
+        OutputWriter writer = new OutputWriter(tempDir, false);
+        assertThat(writer.preserve("cap-manifest.json")).isFalse();
+        writer.pruneOrphansAndWriteManifest();
+
+        // not claimed: absent from the manifest, file untouched
+        assertThat(Files.readAllLines(tempDir.resolve(OutputWriter.MANIFEST_NAME)))
+                .doesNotContain("cap-manifest.json");
+        assertThat(Files.readString(tempDir.resolve("cap-manifest.json")))
+                .isEqualTo("{\"user\":true}\n");
+    }
+
+    @Test
+    @DisplayName("preserve refuses a previously-owned file that no longer exists on disk")
+    void preserveRefusesMissingFile() throws IOException {
+        OutputWriter run1 = new OutputWriter(tempDir, false);
+        run1.writeResource("cap-manifest.json", "{}\n");
+        run1.pruneOrphansAndWriteManifest();
+        Files.delete(tempDir.resolve("cap-manifest.json"));
+
+        OutputWriter run2 = new OutputWriter(tempDir, false);
+        assertThat(run2.preserve("cap-manifest.json")).isFalse();
+    }
+
+    @Test
+    @DisplayName("preserve rejects null relativePath with NullPointerException")
+    void preserveRejectsNull() {
+        OutputWriter writer = new OutputWriter(tempDir, false);
+        assertThatThrownBy(() -> writer.preserve(null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("relativePath");
+    }
+
     @Test
     @DisplayName("The manifest file is deterministic regardless of write order")
     void manifestDeterministicAcrossWriteOrder() throws IOException {

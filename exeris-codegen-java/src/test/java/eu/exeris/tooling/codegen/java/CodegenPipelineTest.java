@@ -65,6 +65,19 @@ class CodegenPipelineTest {
                 .build();
     }
 
+    private void writeCapabilityJson(String name, CapabilityModuleDescriptor descriptor) throws IOException {
+        mapper.writeValue(metadataDir.resolve("capability_" + name + ".json").toFile(), descriptor);
+    }
+
+    private CapabilityModuleDescriptor desc(String qName,
+                                            List<ProvidesMetadata> provides,
+                                            List<RequiresMetadata> requires) {
+        String simple = qName.substring(qName.lastIndexOf('.') + 1);
+        String pkg = qName.substring(0, qName.lastIndexOf('.'));
+        return new CapabilityModuleDescriptor(simple, pkg, qName,
+                CapabilityModuleMetadata.builder().provides(provides).requires(requires).build());
+    }
+
     @Nested
     @DisplayName("happy paths")
     class HappyPaths {
@@ -413,19 +426,6 @@ class CodegenPipelineTest {
     @DisplayName("capability manifest (PR-E)")
     class CapabilityManifest {
 
-        private void writeCapabilityJson(String name, CapabilityModuleDescriptor descriptor) throws IOException {
-            mapper.writeValue(metadataDir.resolve("capability_" + name + ".json").toFile(), descriptor);
-        }
-
-        private CapabilityModuleDescriptor desc(String qName,
-                                                List<ProvidesMetadata> provides,
-                                                List<RequiresMetadata> requires) {
-            String simple = qName.substring(qName.lastIndexOf('.') + 1);
-            String pkg = qName.substring(0, qName.lastIndexOf('.'));
-            return new CapabilityModuleDescriptor(simple, pkg, qName,
-                    CapabilityModuleMetadata.builder().provides(provides).requires(requires).build());
-        }
-
         @Test
         @DisplayName("capabilities-only project (no @ExerisDomain) still emits cap-manifest.json")
         void capabilitiesOnlyEmitsManifest() throws IOException {
@@ -537,6 +537,132 @@ class CodegenPipelineTest {
             assertThat(pipeline.loadMetadata(metadataDir))
                     .singleElement()
                     .satisfies(d -> assertThat(d.entityName()).isEqualTo("Product"));
+        }
+    }
+
+    @Nested
+    @DisplayName("deferred capability validation (T18a)")
+    class DeferredCapabilityValidation {
+
+        /** An unsatisfiable graph: Checkout requires a service nobody provides. */
+        private void writeUnsatisfiableCapability() throws IOException {
+            writeCapabilityJson("Checkout",
+                    desc("com.app.Checkout", List.of(),
+                            List.of(RequiresMetadata.of("com.api.PaymentApi"))));
+        }
+
+        /** Simulates a prior successful run that owns cap-manifest.json. */
+        private void seedPriorCapManifest(String content) throws IOException {
+            Files.writeString(outputDir.resolve("cap-manifest.json"), content);
+            Files.writeString(outputDir.resolve(".exeris-codegen-manifest"),
+                    "# Exeris Tooling generated-output manifest - DO NOT EDIT MANUALLY\n"
+                            + "cap-manifest.json\n");
+        }
+
+        @Test
+        @DisplayName("deferred failure: run completes, the prior cap-manifest.json survives byte-untouched and stays owned")
+        void deferredFailurePreservesPriorManifest() throws IOException {
+            seedPriorCapManifest("{\"stale\":true}\n");
+            writeUnsatisfiableCapability();
+
+            // deferCapabilityFailure=true: the stale-input deadlock path — no throw.
+            int filesGenerated = pipeline.run(metadataDir, outputDir, "com.app", false, true);
+
+            assertThat(filesGenerated).isZero();
+            assertThat(Files.readString(outputDir.resolve("cap-manifest.json")))
+                    .isEqualTo("{\"stale\":true}\n");
+            // still owned by the generated tree (the prune did not orphan it)
+            assertThat(Files.readAllLines(outputDir.resolve(".exeris-codegen-manifest")))
+                    .contains("cap-manifest.json");
+        }
+
+        @Test
+        @DisplayName("deferred failure with no prior cap-manifest.json: run completes, nothing is emitted")
+        void deferredFailureWithoutPriorManifest() throws IOException {
+            writeUnsatisfiableCapability();
+
+            int filesGenerated = pipeline.run(metadataDir, outputDir, "com.app", false, true);
+
+            assertThat(filesGenerated).isZero();
+            assertThat(outputDir.resolve("cap-manifest.json")).doesNotExist();
+        }
+
+        @Test
+        @DisplayName("deferred failure does not block domain emission (the deadlock scenario, domains present)")
+        void deferredFailureStillEmitsDomains() throws IOException {
+            writeDomainJson("Product.json", productDomain());
+            writeUnsatisfiableCapability();
+
+            int filesGenerated = pipeline.run(metadataDir, outputDir, "com.shop", false, true);
+
+            assertThat(filesGenerated).isGreaterThan(0);
+            assertThat(outputDir.resolve("com/shop/Application.java")).exists();
+            assertThat(outputDir.resolve("cap-manifest.json")).doesNotExist();
+        }
+
+        @Test
+        @DisplayName("defer=false keeps the fail-fast abort (5-arg explicit strict)")
+        void strictModeStillAborts() throws IOException {
+            writeUnsatisfiableCapability();
+
+            assertThatThrownBy(() -> pipeline.run(metadataDir, outputDir, "com.app", false, false))
+                    .isInstanceOf(CapabilityGraphException.class)
+                    .hasMessageContaining("com.api.PaymentApi");
+        }
+
+        @Test
+        @DisplayName("a VALID graph in deferred mode emits cap-manifest.json normally (no semantic change)")
+        void validGraphUnaffectedByDeferredMode() throws IOException {
+            writeCapabilityJson("Billing",
+                    desc("com.app.Billing", List.of(ProvidesMetadata.of("com.api.PaymentApi", "1.0")), List.of()));
+
+            int filesGenerated = pipeline.run(metadataDir, outputDir, "com.app", false, true);
+
+            assertThat(filesGenerated).isEqualTo(1);
+            assertThat(outputDir.resolve("cap-manifest.json")).exists();
+        }
+
+        @Test
+        @DisplayName("validateCapabilities: valid graph returns the module count and writes nothing")
+        void validateCapabilitiesValidGraph() throws IOException {
+            writeCapabilityJson("Billing",
+                    desc("com.app.Billing", List.of(ProvidesMetadata.of("com.api.PaymentApi", "1.0")), List.of()));
+            writeCapabilityJson("Checkout",
+                    desc("com.app.Checkout", List.of(),
+                            List.of(RequiresMetadata.of("com.api.PaymentApi", "[1.0,2.0)"))));
+
+            int modules = pipeline.validateCapabilities(metadataDir);
+
+            assertThat(modules).isEqualTo(2);
+            // validation-only: the output tree is untouched
+            try (var stream = Files.list(outputDir)) {
+                assertThat(stream.count()).isZero();
+            }
+        }
+
+        @Test
+        @DisplayName("validateCapabilities: invalid graph throws CapabilityGraphException (the authoritative fresh-input gate)")
+        void validateCapabilitiesInvalidGraph() throws IOException {
+            writeUnsatisfiableCapability();
+
+            assertThatThrownBy(() -> pipeline.validateCapabilities(metadataDir))
+                    .isInstanceOf(CapabilityGraphException.class)
+                    .hasMessageContaining("com.api.PaymentApi");
+        }
+
+        @Test
+        @DisplayName("validateCapabilities: no capability metadata → 0, no exception")
+        void validateCapabilitiesNothingToValidate(@TempDir Path scratch) throws IOException {
+            assertThat(pipeline.validateCapabilities(metadataDir)).isZero();
+            assertThat(pipeline.validateCapabilities(scratch.resolve("does-not-exist"))).isZero();
+        }
+
+        @Test
+        @DisplayName("validateCapabilities rejects null metadataDir")
+        void validateCapabilitiesRejectsNull() {
+            assertThatThrownBy(() -> pipeline.validateCapabilities(null))
+                    .isInstanceOf(NullPointerException.class)
+                    .hasMessageContaining("metadataDir");
         }
     }
 
