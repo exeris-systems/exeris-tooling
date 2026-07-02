@@ -566,8 +566,12 @@ Proposals, highest return-on-effort first:
       (hard-constraint #1); do **not** add one.
       **DONE (#123, [ADR-046](docs/adr/ADR-046.link.md)):** the payload is no longer
       `EventPayload.empty()` — the generator emits **codec-resolved field-projection** into the payload,
-      honouring `@DomainEvent.includeFields/excludeFields/includeComputed/sensitiveFields`. The many knobs
-      with no kernel counterpart (topic, partitionKey, schema/Avro, headers, exchange/routingKey, retention)
+      honouring `@DomainEvent.includeFields/excludeFields/includeComputed/sensitiveFields`.
+      **DONE (topic, [ADR-050](docs/adr/ADR-050.link.md)):** `@DomainEvent.topic` now has a kernel
+      counterpart — the generator lands it on the per-type `EventTypeSpec` via
+      `ofPersistent(name, ordinal, topic)` (binding-agnostic; broker bindings honour it, the in-memory bus
+      treats it as advisory), so it is no longer dropped to a Javadoc-only reference. The remaining knobs
+      with no kernel counterpart (partitionKey, schema/Avro, headers, exchange/routingKey, retention)
       stay inert — `-Aexeris.strict` (**T11**) is the right surface to flag them, once each is verified
       per-attribute against the union of Java+TS emitters.
 

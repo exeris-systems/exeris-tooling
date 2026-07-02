@@ -39,7 +39,13 @@ import javax.lang.model.element.Modifier;
  *       {@link DomainEventMetadata}. Each spec is constructed via
  *       {@code EventTypeSpec.ofPersistent(name, ordinal)} so the
  *       descriptor carries {@code FLAG_PERSISTENT} and the SPI persists
- *       the event through the transactional outbox transparently.</li>
+ *       the event through the transactional outbox transparently. A
+ *       declared {@code @DomainEvent.topic} lands here as the three-arg
+ *       {@code ofPersistent(name, ordinal, topic)} (ADR-050): the
+ *       binding-agnostic routing target rides the per-<em>type</em>
+ *       registration record, not the per-instance {@code EventDescriptor}
+ *       (which stays primitive-only / Valhalla-ready). Broker bindings
+ *       honour it; the in-memory bus treats it as advisory.</li>
  *   <li>The ordinal is derived from {@code hashCode(entityName + "." + eventName)}
  *       masked to 31 bits — stable across regenerations, deterministic.
  *       Note that {@code EventRegistry} is a global per-engine namespace,
@@ -182,10 +188,18 @@ public class KernelEventGenerator implements KernelArtifactGenerator {
         String eventName = KernelEventSupport.eventName(event, entity);
         int ordinal = (entity + "." + eventName).hashCode() & 0x7FFFFFFF;
         String constantName = KernelEventSupport.toConstantCase(eventName);
-        return FieldSpec.builder(EVENT_TYPE_SPEC, constantName,
-                        Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
-                .initializer("$T.ofPersistent($S, $L)", EVENT_TYPE_SPEC, eventName, ordinal)
-                .build();
+        FieldSpec.Builder field = FieldSpec.builder(EVENT_TYPE_SPEC, constantName,
+                Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL);
+        // ADR-050: a declared @DomainEvent.topic lands on the per-type EventTypeSpec
+        // (binding-agnostic routing target), not on the per-instance EventDescriptor.
+        // Absent/blank topic keeps the two-arg factory (topic = null, "no override").
+        if (event.topic() != null && !event.topic().isBlank()) {
+            field.initializer("$T.ofPersistent($S, $L, $S)",
+                    EVENT_TYPE_SPEC, eventName, ordinal, event.topic());
+        } else {
+            field.initializer("$T.ofPersistent($S, $L)", EVENT_TYPE_SPEC, eventName, ordinal);
+        }
+        return field.build();
     }
 
     private MethodSpec buildPublishMethod(DomainEventMetadata event, DomainMetadata metadata) {
@@ -200,9 +214,9 @@ public class KernelEventGenerator implements KernelArtifactGenerator {
                 .addJavadoc("Publishes a {@code $L} event for the given aggregate stream.\n", eventName)
                 .addJavadoc("@param streamId aggregate (entity) UUID — encoded into the descriptor's stream-id pair\n");
         if (event.topic() != null && !event.topic().isBlank()) {
-            method.addJavadoc("<p>Originally tagged with topic {@code $L} in the source\n", event.topic());
-            method.addJavadoc("domain model; topic routing is not part of the Open-Core SPI\n");
-            method.addJavadoc("event descriptor and is preserved here only for reference.\n");
+            method.addJavadoc("<p>Routes on topic {@code $L} (ADR-050) — carried on the\n", event.topic());
+            method.addJavadoc("registered {@code EventTypeSpec}; broker bindings honour it, the\n");
+            method.addJavadoc("in-memory bus treats it as advisory.\n");
         }
 
         method.addStatement("$T eventUuid = $T.randomUUID()", UUID, UUID)
@@ -278,7 +292,8 @@ public class KernelEventGenerator implements KernelArtifactGenerator {
                 .addJavadoc("@param streamId aggregate (entity) UUID — encoded into the descriptor's stream-id pair\n")
                 .addJavadoc("@param entity source of the redacted EV1 payload (payloadFields minus sensitiveFields)\n");
         if (event.topic() != null && !event.topic().isBlank()) {
-            method.addJavadoc("<p>Originally tagged with topic {@code $L} in the source domain model.\n", event.topic());
+            method.addJavadoc("<p>Routes on topic {@code $L} (ADR-050) — carried on the registered\n", event.topic());
+            method.addJavadoc("{@code EventTypeSpec}, honoured by broker bindings, advisory in-memory.\n");
         }
 
         StringBuilder args = new StringBuilder();

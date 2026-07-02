@@ -94,6 +94,26 @@ class KernelCodegenE2ETest {
         }
 
         @Test
+        @DisplayName("ADR-050: a declared @DomainEvent.topic lands on the EventTypeSpec")
+        void eventTopicLandsOnEventTypeSpec() {
+            DomainMetadata withTopic = DomainMetadata.builder("Order", "com.shop.domain")
+                    .path("/orders")
+                    .events(List.of(
+                            DomainEventMetadata.simple("OrderCreated"),
+                            DomainEventMetadata.withTopic("OrderShipped", "orders.shipped")))
+                    .build();
+            String publisher = strategy.generate(withTopic).stream()
+                    .filter(f -> f.artifactType() == ArtifactType.EVENT)
+                    .findFirst().orElseThrow().content();
+            assertThat(publisher)
+                    // Topic-carrying event → three-arg factory, topic as the 3rd arg.
+                    .contains("EventTypeSpec.ofPersistent(\"OrderShippedEvent\", ")
+                    .contains(", \"orders.shipped\")")
+                    // No-topic event stays two-arg (no override).
+                    .contains("EventTypeSpec.ofPersistent(\"OrderCreatedEvent\", 1195226144)");
+        }
+
+        @Test
         @DisplayName("GraphSync emits against Open-Core SPI GraphEngine + GraphSession")
         void graphSyncShouldUseSpiGraphEngine() {
             DomainMetadata withEdges = DomainMetadata.builder("Order", "com.example.domain")
