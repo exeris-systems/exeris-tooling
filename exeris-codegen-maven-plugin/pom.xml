@@ -24,8 +24,11 @@
     </description>
 
     <!-- Minimum Maven is implied by the provided maven-core 3.9.9. <prerequisites>
-         is ignored by Maven 3+ (emits a build warning); a requireMavenVersion
-         enforcer rule is the 1.0.0 home for a hard floor. -->
+         is ignored by Maven 3+ (emits a build warning); the hard floor is the
+         root-POM requireMavenVersion [3.9,) enforcer rule (D1, 0.6.0),
+         inherited by this module. Note that rule guards *building this
+         reactor* — a DOWNSTREAM app running the published plugin on old
+         Maven/JDK still hits the class-v70 plugin-load failure first. -->
 
     <dependencies>
         <!-- The pipeline this plugin wraps. Emission lives entirely here. -->
