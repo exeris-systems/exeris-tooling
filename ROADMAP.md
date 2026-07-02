@@ -86,7 +86,7 @@ cross-reference index, so it retains shipped items alongside open ones.
 >
 > This satisfies prerequisite (1) of **T12**'s contract-registry. See **Codegen completeness backlog → T12**.
 
-## 0.6.0 — codegen-ts hardening
+## 0.6.0 — codegen-ts hardening (shipped 2026-07-02)
 
 > Goal: TS/Angular generator is on equal footing with Java (currently treated as preview-grade).
 
@@ -105,14 +105,20 @@ cross-reference index, so it retains shipped items alongside open ones.
       (handoff issued):* the **platform composition runtime** assertion (obligation 8 — presence +
       well-formedness + version-match + binding-match, no DAG re-resolution) is the consumer that makes this
       non-inert; `exeris-platform` owns it. Contract pinned so platform asserts the exact emitted shape.
-- [ ] Add `exeris-codegen-ts` to a top-level orchestration target (Makefile or `frontend-maven-plugin`)
-- [ ] CI: separate npm-build job
+- [ ] Add `exeris-codegen-ts` to a top-level orchestration target (Makefile or `frontend-maven-plugin`).
+      *Status (0.6.0): DEFERRED → 0.7.0* — CI already orchestrates both toolchains (separate jobs below);
+      a local single-command target is DX polish, not a gate.
+- [x] CI: separate npm-build job — *done during the cycle, checkbox was stale:* `build.yml` runs
+      `ts-coverage` (vitest + data-layer `tsc --noEmit`) and `fe-app-build` (`ng build` of a generated
+      sample app) as separate gating jobs alongside the JVM matrix.
 - [~] **Angular v22 migration** (emitted scaffold + idioms; scope T-C, phased A→B→C). **Done:**
       Phase A compat bump — `@angular/* ^22`, TS `~6`, drop `withFetch()` (#95); Phase B1 scaffold cleanup —
       drop `@angular/platform-browser-dynamic`, Node-22 floor, `@angular/build` builder (#96); Phase B3
       data-fetch fix — `rxResource` in detail, `firstValueFrom` in store (#98). **Pending:** Phase C
       (Reactive Forms → Signal Forms, ADR-worthy → flag-gated WebMCP); small tidy (`@Service`, `?.` audit).
       `debounced()` rejected (experimental). Gated by the `ng build` round-trip above.
+      *Status (0.6.0): Phases A/B1/B3 shipped; Phase C DEFERRED → 0.7.0* (ADR-worthy Signal Forms
+      reshape — reserve the ADR before code, per the shape gate).
 - [x] Round-trip tests against generated Angular workspace (compiles + `ng build` / `tsc --noEmit` green)
       — the FE analog of `KernelCodegenCompileTest`; **this was the catch for T20** (the generated frontend
       wasn't building before #101/#102) and guards the Phase C reshape just as it caught T20. Shipped (#101/#102).
@@ -122,7 +128,9 @@ cross-reference index, so it retains shipped items alongside open ones.
 **Shipped:** **T1** action-serving (#92) · Angular v22 Phase A/B1/B3 (#95/#96/#98) · SDK pinned to released 0.7.0 (#100) · **T20 + FE build gate** (#101/#102) · **T7** remainder — configurable title/redirect via `--app-name` (#120) · **T10** server-side `@Validation` (#103) · **T8** finders + FK/`filterable` indexes (#118) · **U1** ui-kit wiring (#120) · **release pins** — kernel `0.10.0` + SDK `0.8.0`, CI SDK checkout on the `v0.8.0` tag, stale `-U` dropped (#133/#136; SDK 0.8.0 released the same day as kernel 0.10.0, so the planned "bump the SDK pin as the last step" gate collapsed into the same batch — both `eu.exeris` pins are releases, no-SNAPSHOT-deps-at-release satisfied).
 
 **In this cut:**
-- **T2 (FE slice)** — emit `*.service.spec.ts` + `*.schema.spec.ts` into the generated app, run by the FE gate. (Full Java `Kernel*TestGenerator` → 0.7.0.)
+- **T2 (FE slice)** — emit `*.service.spec.ts` + `*.schema.spec.ts` into the generated app, run by the
+  FE gate. *Status (0.6.0): DEFERRED → 0.7.0* (release-cut decision 2026-07-02) — rides with the full
+  Java `Kernel*TestGenerator`, so 0.7.0 delivers the generated-test story in one piece.
 - **T18** — build-safety: guard the T13 pruner on empty input (#129) + the capability-pass phase
   ordering (`exeris:verify-capabilities` fresh-metadata gate + deferred validation at
   `generate-sources`) — **done**, see the backlog entry.
@@ -133,7 +141,7 @@ cross-reference index, so it retains shipped items alongside open ones.
   the same batch — see **Shipped**. The EV1-stream per-action slice is explicitly **not** in
   0.6.0 — see the Events section (kernel stream-route `{id}` gate, v0.11 ask).
 
-**Deferred to 0.7.0+:** **T12 + T17** (the cross-app mesh epic), **T9** (FK-constraint relationship graph), the full **T2** Java test-emitter, and the **U2–U5** UI-depth cluster (U2 universal lists is the lead 0.7.0 item). EV1/EV2 per their own section. (**T19** typed `Instant` bind — done in 0.6.0, the kernel persistence-SPI gate cleared in 0.10.)
+**Deferred to 0.7.0+:** **T12 + T17** (the cross-app mesh epic), **T9** (FK-constraint relationship graph), the full **T2** test-emitter (Java **and** the FE spec slice, per the 2026-07-02 release-cut decision), the **EV1-stream per-action slice** (kernel stream-route `{id}` gate, v0.11 ask), **Angular Phase C** (Signal Forms, ADR-worthy), the codegen-ts **orchestration target**, and the **U2–U5** UI-depth cluster (U2 universal lists is the lead 0.7.0 item). EV1/EV2 per their own section. (**T19** typed `Instant` bind — done in 0.6.0, the kernel persistence-SPI gate cleared in 0.10.)
 
 See the **Codegen completeness backlog** below for per-item detail.
 
@@ -176,7 +184,7 @@ See the **Codegen completeness backlog** below for per-item detail.
 | T10 | `@Validation` enforced client-side (Zod) but dropped server-side (handler/service/DB) | **High** | ✅ 0.6.0 (#103) |
 | T12 | N generated apps can't form a mesh — client is own-app/relative-host, saga step is local, no cross-app contract | **High** | 0.7.0 |
 | T17 | Capability-graph validation is closed-world per app — a legitimate cross-service `@Requires` hard-fails the build | **High** | 0.7.0 |
-| T2  | Zero tests generated for the generated surface | Medium | 0.6.0 (FE slice) / 0.7.0 (Java) |
+| T2  | Zero tests generated for the generated surface | Medium | 0.7.0 (FE spec slice + Java emitter — FE half deferred at the 0.6.0 cut) |
 | T3  | Action identity = method name, not `@Action(name=…)` → bean-setter collisions | Medium | 0.5.x |
 | T4  | `@Relationship` target derived from field Java type, not `targetEntity` | Medium | 0.5.x |
 | T5  | System-field overrides (`tenantIdField`, …) ignored by the repository generator | Medium | 0.5.x |
@@ -185,7 +193,7 @@ See the **Codegen completeness backlog** below for per-item detail.
 | T13 | Codegen emits per-entity output but never prunes it — a removed/renamed entity breaks the build | Medium | 0.5.x |
 | T18 | Capability validation × two-pass build deadlock; `mvn clean` + T13 prune wipes the committed L1 tree | Medium | ✅ 0.6.0 (#129 + `exeris:verify-capabilities` deferred-validation gate) |
 | T19 | Repository binds `Instant` as ISO string but DDL declares `TIMESTAMPTZ` — round-trip latent-broken on real Postgres | Medium | **Done 0.6.0** (native `bindInstant`/`getInstant`, kernel 0.10 SPI) |
-| T7  | TS app-structure seams — per-entity path vs `app.routes` import mismatch breaks the build; hardcoded title/redirect | Medium | 0.6.0 |
+| T7  | TS app-structure seams — per-entity path vs `app.routes` import mismatch breaks the build; hardcoded title/redirect | Medium | ✅ 0.6.0 (routes fix + `--app-name` title/redirect, #120) |
 | T6  | Naive English pluralization (`colony → colonys`) in SQL tables + Angular routes | Low | 0.5.x |
 
 ### High severity
