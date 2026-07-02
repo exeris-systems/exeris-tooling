@@ -26,18 +26,17 @@ jobs:
           path: exeris-tooling
 
       # CI builds the SDK from source and `mvn install`s it (NOT GitHub Packages),
-      # so this ref decides which SDK version lands in the local repo. The BOM now
-      # pins exeris.sdk.version=0.8.0-SNAPSHOT for the per-action streaming fields
-      # (ActionMetadata.streaming / streamEventType, ADR-044 Slice 2) — released
-      # v0.7.0 does NOT carry them. SDK main is at 0.8.0-SNAPSHOT and carries the
-      # streaming fields (merged #67), so we track main. RELEASE GATE: re-pin to
-      # the v0.8.0 tag (and drop the BOM SNAPSHOT) before cutting tooling 0.6.0
-      # (no-SNAPSHOT-deps-at-release).
-      - name: Checkout exeris-sdk (main, 0.8.0-SNAPSHOT — provides ActionMetadata streaming fields for ADR-044 Slice 2)
+      # so this ref decides which SDK version lands in the local repo. The BOM
+      # pins exeris.sdk.version=0.8.0 (released), so we check out the matching
+      # v0.8.0 tag — the release gate the previous "track main" comment named
+      # ("re-pin to the v0.8.0 tag and drop the BOM SNAPSHOT before cutting
+      # tooling 0.6.0") is hereby executed. SDK main has moved on to
+      # 0.9.0-SNAPSHOT and would no longer satisfy the BOM pin.
+      - name: Checkout exeris-sdk (v0.8.0 tag — matches the released BOM pin)
         uses: actions/checkout@v4
         with:
           repository: exeris-systems/exeris-sdk
-          ref: main
+          ref: v0.8.0
           path: exeris-sdk
 
       - name: Set up JDK ${{ matrix.java }}
@@ -56,14 +55,12 @@ jobs:
 
       - name: mvn -B verify (exeris-tooling)
         working-directory: exeris-tooling
-        # -U forces snapshot re-resolution. setup-java's `cache: maven` restores a
-        # ~/.m2 that can hold a stale exeris-kernel-spi:0.10.0-SNAPSHOT, and Maven's
-        # default daily snapshot policy would not re-fetch it within the day — so a
-        # freshly published kernel snapshot (e.g. #224's HttpExchange.pathParams())
-        # is otherwise missed and the generated-code compile gate fails against the
-        # live SPI. The kernel is the only remote SNAPSHOT dep (the SDK is built from
-        # source above), so this just keeps kernel-spi current each run.
-        run: mvn -B -ntp -U verify
+        # No -U: both eu.exeris deps are release-pinned (kernel 0.10.0 from
+        # GitHub Packages, SDK 0.8.0 built from the v0.8.0 tag above) and
+        # releases are immutable, so forced re-resolution buys nothing. -U was
+        # only ever here to keep the then-SNAPSHOT kernel-spi fresh against
+        # setup-java's `cache: maven`; re-add it if a SNAPSHOT dep ever returns.
+        run: mvn -B -ntp verify
         env:
           GITHUB_ACTOR: ${{ github.actor }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
