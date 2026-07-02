@@ -37,7 +37,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * (ADR-036) {@code spi.http.HttpRequestBodyDecoder*} / {@code HttpRequestDecodingContext},
  * and (ADR-043) the streaming SPI {@code spi.http.HttpStreamHandler} /
  * {@code HttpStreamExchange} / {@code StreamEvent}; the real
- * {@code exeris-kernel-spi:0.10.0-SNAPSHOT} artifact (plus Jackson 3) is on
+ * released {@code exeris-kernel-spi:0.10.0} artifact (plus Jackson 3) is on
  * the test classpath via {@code exeris-tooling-bom}. The emitted {@code *Client}
  * binds the tier-neutral {@code eu.exeris.kernel.core.http.client.KernelWebClient}
  * facade (ADR-034), stood in at that FQN by a test stub in this module so the

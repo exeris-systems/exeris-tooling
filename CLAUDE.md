@@ -89,8 +89,8 @@ If a change affects pipeline shape, contract between processor and generators, e
 mvn -s ~/exeris-systems/.github/maven-settings.xml clean install   # full Java reactor (if settings present)
 mvn clean install                                                  # vanilla local build (settings optional)
 mvn -pl exeris-codegen-java -am test                               # one module + deps
-mvn -pl exeris-codegen-java test -Dtest=KernelCodegenCompileTest   # compile-gate (catches removed-symbol regressions)
-mvn -pl exeris-codegen-java test -Dtest=KernelCodegenE2ETest       # substring assertions on emitted output
+mvn -pl exeris-e2e-tests -am test -Dtest=KernelCodegenCompileTest -Dsurefire.failIfNoSpecifiedTests=false   # compile-gate (catches removed-symbol regressions)
+mvn -pl exeris-e2e-tests -am test -Dtest=KernelCodegenE2ETest -Dsurefire.failIfNoSpecifiedTests=false       # substring assertions on emitted output
 
 cd exeris-codegen-ts && npm install && npm test                    # TS side (separate toolchain)
 ```
