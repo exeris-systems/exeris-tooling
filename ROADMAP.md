@@ -119,18 +119,17 @@ cross-reference index, so it retains shipped items alongside open ones.
 
 ### 0.6.0 scope (agreed) — "codegen-ts on par with Java + parity/correctness debts closed + a gate that keeps it honest"
 
-**Shipped:** **T1** action-serving (#92) · Angular v22 Phase A/B1/B3 (#95/#96/#98) · SDK pinned to released 0.7.0 (#100) · **T20 + FE build gate** (#101/#102) · **T7** remainder — configurable title/redirect via `--app-name` (#120) · **T10** server-side `@Validation` (#103) · **T8** finders + FK/`filterable` indexes (#118) · **U1** ui-kit wiring (#120).
+**Shipped:** **T1** action-serving (#92) · Angular v22 Phase A/B1/B3 (#95/#96/#98) · SDK pinned to released 0.7.0 (#100) · **T20 + FE build gate** (#101/#102) · **T7** remainder — configurable title/redirect via `--app-name` (#120) · **T10** server-side `@Validation` (#103) · **T8** finders + FK/`filterable` indexes (#118) · **U1** ui-kit wiring (#120) · **release pins** — kernel `0.10.0` + SDK `0.8.0`, CI SDK checkout on the `v0.8.0` tag, stale `-U` dropped (#133/#136; SDK 0.8.0 released the same day as kernel 0.10.0, so the planned "bump the SDK pin as the last step" gate collapsed into the same batch — both `eu.exeris` pins are releases, no-SNAPSHOT-deps-at-release satisfied).
 
 **In this cut:**
 - **T2 (FE slice)** — emit `*.service.spec.ts` + `*.schema.spec.ts` into the generated app, run by the FE gate. (Full Java `Kernel*TestGenerator` → 0.7.0.)
 - **T18** — build-safety: guard the T13 pruner on empty input + the capability-pass phase ordering.
 - **D1** — `requireJavaVersion` enforcer + README up-front.
-- **Release-cut riders (agreed 2026-07-02, after kernel 0.10.0 released):** pin kernel to released
-  `0.10.0` (#133) · **ADR-045** client-retry composition-root wiring + `ADR-045.link.md` stub ·
-  roadmap truth-fixes post-0.10 (EV2 blocker text, EV1-stream/U7 per-action kernel gate).
-  **Release gate:** the SDK pin (`0.8.0-SNAPSHOT`) bumps to a released SDK 0.8.0 as the **last step**
-  before the 0.6.0 cut. The EV1-stream per-action slice is explicitly **not** in 0.6.0 — see the
-  Events section (kernel stream-route `{id}` gate, v0.11 ask).
+- **Release-cut riders (agreed 2026-07-02, after kernel 0.10.0 released):** **ADR-045** client-retry
+  composition-root wiring + `ADR-045.link.md` stub (#135) · roadmap truth-fixes post-0.10 (EV2
+  blocker text, EV1-stream/U7 per-action kernel gate — this entry). The release pins shipped with
+  the same batch — see **Shipped**. The EV1-stream per-action slice is explicitly **not** in
+  0.6.0 — see the Events section (kernel stream-route `{id}` gate, v0.11 ask).
 
 **Deferred to 0.7.0+:** **T12 + T17** (the cross-app mesh epic), **T9** (FK-constraint relationship graph), the full **T2** Java test-emitter, and the **U2–U5** UI-depth cluster (U2 universal lists is the lead 0.7.0 item). EV1/EV2 per their own section. (**T19** typed `Instant` bind — done in 0.6.0, the kernel persistence-SPI gate cleared in 0.10.)
 
