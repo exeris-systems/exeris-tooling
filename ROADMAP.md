@@ -123,7 +123,9 @@ cross-reference index, so it retains shipped items alongside open ones.
 
 **In this cut:**
 - **T2 (FE slice)** — emit `*.service.spec.ts` + `*.schema.spec.ts` into the generated app, run by the FE gate. (Full Java `Kernel*TestGenerator` → 0.7.0.)
-- **T18** — build-safety: guard the T13 pruner on empty input + the capability-pass phase ordering.
+- **T18** — build-safety: guard the T13 pruner on empty input (#129) + the capability-pass phase
+  ordering (`exeris:verify-capabilities` fresh-metadata gate + deferred validation at
+  `generate-sources`) — **done**, see the backlog entry.
 - **D1** — `requireJavaVersion` enforcer + README up-front. ✅ 0.6.0 (root-POM enforcer at `validate` + README rewrite; detail in Build & DX).
 - **Release-cut riders (agreed 2026-07-02, after kernel 0.10.0 released):** **ADR-045** client-retry
   composition-root wiring + `ADR-045.link.md` stub (#135) · roadmap truth-fixes post-0.10 (EV2
@@ -181,7 +183,7 @@ See the **Codegen completeness backlog** below for per-item detail.
 | T9  | Generated schema has no inter-entity foreign keys — zero referential integrity | Medium | 0.7.0 |
 | T11 | No fidelity/strict mode — annotation attributes set but consumed by no generator fail silently | Medium | 0.5.x |
 | T13 | Codegen emits per-entity output but never prunes it — a removed/renamed entity breaks the build | Medium | 0.5.x |
-| T18 | Capability validation × two-pass build deadlock; `mvn clean` + T13 prune wipes the committed L1 tree | Medium | 0.6.0 |
+| T18 | Capability validation × two-pass build deadlock; `mvn clean` + T13 prune wipes the committed L1 tree | Medium | ✅ 0.6.0 (#129 + `exeris:verify-capabilities` deferred-validation gate) |
 | T19 | Repository binds `Instant` as ISO string but DDL declares `TIMESTAMPTZ` — round-trip latent-broken on real Postgres | Medium | **Done 0.6.0** (native `bindInstant`/`getInstant`, kernel 0.10 SPI) |
 | T7  | TS app-structure seams — per-entity path vs `app.routes` import mismatch breaks the build; hardcoded title/redirect | Medium | 0.6.0 |
 | T6  | Naive English pluralization (`colony → colonys`) in SQL tables + Angular routes | Low | 0.5.x |
@@ -421,7 +423,7 @@ See the **Codegen completeness backlog** below for per-item detail.
       the `exeris:detach` prune in **0.3.0**, which prunes the *emptied* source tree, not the
       *generate* mojo's per-entity output.)
 
-- [ ] **T18 — Two-pass build hazards from the capability pass (deadlock + clean-wipes-L1).** Adopting
+- [x] **T18 — Two-pass build hazards from the capability pass (deadlock + clean-wipes-L1). FIXED (0.6.0).** Adopting
       the **0.5.0** capability pass surfaced two coupled interactions with the `generate-sources`-before-
       `compile` ordering (**D2**) on L1-committed-output repos:
       (a) **Validation deadlock.** Graph validation runs in `generate-sources`, *before* the `compile`
@@ -440,6 +442,20 @@ See the **Codegen completeness backlog** below for per-item detail.
       run" (a clean two-pass first build) from "entity genuinely deleted" — gate pruning on a non-empty
       generation. Both want a documented safe-build recipe (don't `clean` then `compile` in one shot),
       or an `exeris:bootstrap` mojo that seeds metadata first.
+      *Done (0.6.0), both halves.* **(b)** in #129: a run that loads zero `@ExerisDomain` entities while
+      a prior manifest owns files the prune would delete now refuses (`EmptyMetadataException`, actionable
+      message with the metadata-seed recipe `mvn compile -Dexeris.codegen.skip=true`); the genuine
+      teardown opts in via `-Dexeris.codegen.allowEmpty=true`. **(a)** deferred validation + a fresh-input
+      gate: the new `exeris:verify-capabilities` goal (default phase `process-classes`, i.e. right after
+      the `compile` phase in which the processor re-emits `capability_*.json`) re-validates the graph
+      against FRESH metadata and hard-fails on a genuine problem. When — and only when — that gate is
+      bound in the same project, `exeris:generate` degrades a capability-graph failure at
+      `generate-sources` to a WARNING and preserves the prior `cap-manifest.json` (T13 ownership intact,
+      refreshed on the next successful generate — the same freshness contract the domain two-pass has),
+      so the stale-input hard-fail no longer deadlocks the build. Without the gate bound, behaviour is
+      unchanged (fail-closed): leniency exists exactly where the authoritative re-validation is
+      guaranteed. Safe-build recipe documented on `GenerateMojo` (bind both goals; seed metadata after a
+      `clean` before generating).
 
 - [x] **T19 — Repository binds `Instant` as an ISO string against a `TIMESTAMPTZ` column (latent). FIXED (0.6.0).**
       The generated `*Repository` writes timestamps with `bindString(…, instant.toString())` and reads
