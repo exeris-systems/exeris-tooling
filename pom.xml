@@ -140,6 +140,11 @@
             <plugins>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-enforcer-plugin</artifactId>
+                    <version>3.5.0</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-compiler-plugin</artifactId>
                     <version>3.14.1</version>
                     <configuration>
@@ -158,5 +163,40 @@
                 </plugin>
             </plugins>
         </pluginManagement>
+        <plugins>
+            <!-- D1: fail fast, with one clear line, when Maven runs on the wrong
+                 JVM. The reactor builds class v70 (Java 26) artifacts — including
+                 exeris-codegen-maven-plugin, whose classes load into Maven's own
+                 JVM — so on an older JDK the build otherwise dies at plugin load
+                 with an opaque classworlds UnsupportedClassVersionError realm
+                 dump, long before maven.compiler.release matters. Exactly 26
+                 (not 26+): the processor and the e2e in-memory compile gate
+                 compile with preview enabled at release 26, and javac rejects
+                 preview compilation for a non-current release. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>enforce-jdk-and-maven</id>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <requireJavaVersion>
+                                    <version>[26,27)</version>
+                                    <message>exeris-tooling requires Maven to run on JDK 26 (exactly — the processor compiles Java 26 preview sources). Current JVM: ${java.version}.</message>
+                                </requireJavaVersion>
+                                <requireMavenVersion>
+                                    <version>[3.9,)</version>
+                                    <message>exeris-tooling requires Maven 3.9+.</message>
+                                </requireMavenVersion>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
     </build>
 </project>

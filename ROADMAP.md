@@ -124,7 +124,7 @@ cross-reference index, so it retains shipped items alongside open ones.
 **In this cut:**
 - **T2 (FE slice)** — emit `*.service.spec.ts` + `*.schema.spec.ts` into the generated app, run by the FE gate. (Full Java `Kernel*TestGenerator` → 0.7.0.)
 - **T18** — build-safety: guard the T13 pruner on empty input + the capability-pass phase ordering.
-- **D1** — `requireJavaVersion` enforcer + README up-front.
+- **D1** — `requireJavaVersion` enforcer + README up-front. ✅ 0.6.0 (root-POM enforcer at `validate` + README rewrite; detail in Build & DX).
 - **Release-cut riders (agreed 2026-07-02, after kernel 0.10.0 released):** **ADR-045** client-retry
   composition-root wiring + `ADR-045.link.md` stub (#135) · roadmap truth-fixes post-0.10 (EV2
   blocker text, EV1-stream/U7 per-action kernel gate — this entry). The release pins shipped with
@@ -636,12 +636,15 @@ Proposals, highest return-on-effort first:
 
 > The full D1–D3 findings are DX-tracked; the parts with a tooling fix are captured here.
 
-- [ ] **D1 — `requireJavaVersion` enforcer + README up-front.** `exeris-codegen-maven-plugin` classes
-      are class v70 and load into Maven's JVM, so on JDK 21/25 the build dies at *plugin load* with an
-      opaque classworlds `UnsupportedClassVersionError` realm dump — before `maven.compiler.release`
-      matters.
-      *Update:* state "Maven on JDK 26" up front in the tooling README, and add a `requireJavaVersion`
-      enforcer (or Mojo precondition) that fails with one clear line instead of the realm trace.
+- [x] **D1 — `requireJavaVersion` enforcer + README up-front. DONE (0.6.0).** `exeris-codegen-maven-plugin`
+      classes are class v70 and load into Maven's JVM, so on JDK 21/25 the build dies at *plugin load*
+      with an opaque classworlds `UnsupportedClassVersionError` realm dump — before
+      `maven.compiler.release` matters.
+      *Done (0.6.0):* root-POM `maven-enforcer` execution (`requireJavaVersion [26,27)` — exactly 26,
+      preview compilation rejects a non-current release — plus `requireMavenVersion [3.9,)`), failing
+      with one clear line at `validate`; README **Requirements** section moved up-front and rewritten
+      ("Maven on JDK 26 — exactly", Node floors for generator vs generated app, released-pin resolution
+      via GitHub Packages or the `v0.8.0` / 0.10.0 release tags).
 
 - [ ] **D2 — Document the two-pass first build.** The processor writes
       `target/classes/exeris-metadata/*.json` during `compile`, which runs *after* the plugin's
