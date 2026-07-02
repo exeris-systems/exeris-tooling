@@ -119,12 +119,17 @@ cross-reference index, so it retains shipped items alongside open ones.
 
 ### 0.6.0 scope (agreed) — "codegen-ts on par with Java + parity/correctness debts closed + a gate that keeps it honest"
 
-**Shipped:** **T1** action-serving (#92) · Angular v22 Phase A/B1/B3 (#95/#96/#98) · SDK pinned to released 0.7.0 (#100) · **T20 + FE build gate** (#101/#102) · **T7** remainder — configurable title/redirect via `--app-name` (#120) · **T10** server-side `@Validation` (#103) · **T8** finders + FK/`filterable` indexes (#118) · **U1** ui-kit wiring (#120).
+**Shipped:** **T1** action-serving (#92) · Angular v22 Phase A/B1/B3 (#95/#96/#98) · SDK pinned to released 0.7.0 (#100) · **T20 + FE build gate** (#101/#102) · **T7** remainder — configurable title/redirect via `--app-name` (#120) · **T10** server-side `@Validation` (#103) · **T8** finders + FK/`filterable` indexes (#118) · **U1** ui-kit wiring (#120) · **release pins** — kernel `0.10.0` + SDK `0.8.0`, CI SDK checkout on the `v0.8.0` tag, stale `-U` dropped (#133/#136; SDK 0.8.0 released the same day as kernel 0.10.0, so the planned "bump the SDK pin as the last step" gate collapsed into the same batch — both `eu.exeris` pins are releases, no-SNAPSHOT-deps-at-release satisfied).
 
 **In this cut:**
 - **T2 (FE slice)** — emit `*.service.spec.ts` + `*.schema.spec.ts` into the generated app, run by the FE gate. (Full Java `Kernel*TestGenerator` → 0.7.0.)
 - **T18** — build-safety: guard the T13 pruner on empty input + the capability-pass phase ordering.
 - **D1** — `requireJavaVersion` enforcer + README up-front.
+- **Release-cut riders (agreed 2026-07-02, after kernel 0.10.0 released):** **ADR-045** client-retry
+  composition-root wiring + `ADR-045.link.md` stub (#135) · roadmap truth-fixes post-0.10 (EV2
+  blocker text, EV1-stream/U7 per-action kernel gate — this entry). The release pins shipped with
+  the same batch — see **Shipped**. The EV1-stream per-action slice is explicitly **not** in
+  0.6.0 — see the Events section (kernel stream-route `{id}` gate, v0.11 ask).
 
 **Deferred to 0.7.0+:** **T12 + T17** (the cross-app mesh epic), **T9** (FK-constraint relationship graph), the full **T2** Java test-emitter, and the **U2–U5** UI-depth cluster (U2 universal lists is the lead 0.7.0 item). EV1/EV2 per their own section. (**T19** typed `Instant` bind — done in 0.6.0, the kernel persistence-SPI gate cleared in 0.10.)
 
@@ -164,6 +169,7 @@ See the **Codegen completeness backlog** below for per-item detail.
 |---|---|:---:|---|
 | T1  | `@Action` endpoints advertised (OpenAPI + Angular) but no kernel route serves them — 404 | **High** | ✅ 0.6.0 (#92) |
 | T20 | Generated Angular frontend doesn't compile (`npm run build` fails) — two parallel TS emission paths; the `src/app` sourceRoot ships an empty enum stub that shadows the real `types/enums.ts`, so enum-typed code fails (TS2304/2305) | **High** (latent) | ✅ 0.6.0 (#101/#102; FE gate + POSIX-path determinism fix 2026-06-28) |
+| T23 | Stream-route boot-reachability — the generated `RuntimeLifecycle` published a `router::handle` lambda, erasing the `HttpRouter` type the kernel stream dispatcher resolves via `instanceof`, so every generated `streamRoute(...)` silently 404'd / fell back to respond-once on a real boot | **High** (latent) | ✅ 0.6.0 (folded into #106, ADR-044 Slice 2 — `handlerSlot.set(router)`; pinned by `KernelApplicationGeneratorTest`) |
 | T8  | No generated finders/indexes for FK + `filterable` fields → O(n) `findAll().filter()` everywhere | **High** | ✅ 2026-06-28 (finders + FK/filterable indexes; T9 constraints deferred) |
 | T10 | `@Validation` enforced client-side (Zod) but dropped server-side (handler/service/DB) | **High** | ✅ 0.6.0 (#103) |
 | T12 | N generated apps can't form a mesh — client is own-app/relative-host, saga step is local, no cross-app contract | **High** | 0.7.0 |
@@ -525,7 +531,7 @@ Proposals, highest return-on-effort first:
 | U4 | **Fidelity end-to-end** — processor emits the full `uiMetadata` / per-field `UIFieldMetadata`, the TS Zod schema models it, and strict-mode (**T11**) warns when a `@UI` attribute is declared but dropped | processor + codegen-ts | medium | 0.6.0 (with T11) |
 | U5 | **Configurable detail / branding** — sections/tabs in the detail view, related-entity panels; app name/titles/icons from metadata (today a hardcoded `"Exeris Foundation"` + an emoji-by-entity-name map) | codegen-ts | small–med | 0.6.0 (extends **T7**) |
 | U6 | **New view shapes** — dashboard/cards/kanban/calendar from `@Projection`, charts from `@Graph` (deferred), master-detail, inline-edit, bulk-actions | SDK (light) + codegen-ts | large | 0.7.0–0.9.0 |
-| U7 | **Live-view** (e.g. a battle preview) — a round stream pushed to the client. Transport SHIPPED (ADR-043/044 — Slice 1 #104 + Slice 2 #106: `HttpStreamHandler` + `streamRoute` + `EventSource`/RxJS clients); the **entity-level** producer now binds the `@DomainEvent` bus (real feed, #125) — the **per-action** driver stays a keep-alive scaffold (open slice) | ~~kernel (K2, done)~~ → codegen-java/-ts (**EV1-stream**) | large | entity-level feed shipped 0.6.0 (#125); per-action driver still scaffold |
+| U7 | **Live-view** (e.g. a battle preview) — a round stream pushed to the client. Transport SHIPPED (ADR-043/044 — Slice 1 #104 + Slice 2 #106: `HttpStreamHandler` + `streamRoute` + `EventSource`/RxJS clients); the **entity-level** producer now binds the `@DomainEvent` bus (real feed, #125) — the **per-action** driver stays a keep-alive scaffold (open slice) | ~~kernel (K2, done)~~ → codegen-java/-ts (**EV1-stream**) + kernel (stream-route `{id}` templates, v0.11 ask) | large | entity-level feed shipped 0.6.0 (#125); per-action driver still scaffold → 0.7.0 (kernel-gated, see EV1-stream) |
 | U8 | **Genuinely missing in the SDK** — custom-component registration (plugin), per-role field visibility (RLS-aware), i18n labels, icon-set abstraction | SDK + codegen-ts | large | SDK-led |
 
 > **Recommendation:** highest return for least motion is **U1** (wire ui-kit) + **U2** (universal
@@ -533,8 +539,12 @@ Proposals, highest return-on-effort first:
 > (sort/filter are half-there). Together: re-skin the whole UI via one set of CSS tokens without
 > touching generated code, and get lists with real column types — inventing nothing in the SDK.
 > **U7's kernel blocker (K2) is now cleared** — the SSE transport landed (kernel 0.10, ADR-043) and the
-> emitter ships it (Slice 1 #104 + Slice 2 #106); what remains is generator-side, the **EV1-stream**
-> producer pass (see Events & event sourcing). U6/U8 have SDK halves owned in `exeris-sdk`.
+> emitter ships it (Slice 1 #104 + Slice 2 #106); the **entity-level** remainder was generator-side and
+> shipped (#125). The **per-action** path is kernel-gated again (2026-07-02 finding): the kernel
+> stream-route table is exact-path only — no `{id}` template match (W7 #224 covers `route(...)` only) —
+> so the emitted `streamRoute(POST, "<base>/{id}/actions/…")` cannot match a concrete request. Template
+> matching on the stream table is filed as a kernel ask (v0.11 plan); see **EV1-stream** for sequencing.
+> U6/U8 have SDK halves owned in `exeris-sdk`.
 
 ### Presentation views (`@View`) — first slice (NEW, 2026-06-28)
 
@@ -589,21 +599,38 @@ Proposals, highest return-on-effort first:
       *Remaining gap:* the **per-action** driver (`KernelActionStreamHandlerGenerator`) still emits
       `KernelStreamScaffold.keepAliveScaffold(...)` — porting it to the same producer seam is the open
       slice (pairs with the planned per-action GET **spectate** route — `EventSource` is GET-only).
+      **Re-gated on the kernel (2026-07-02):** the kernel stream-route table is exact-path only
+      (`HttpRouter.Builder.streamRoute` documents "exact request path"; W7 #224 added `{id}` template
+      matching to `route(...)` only), so the emitted per-action
+      `streamRoute(POST, "<base>/{id}/actions/<kebab>")` can never match a concrete request — the route
+      404s on a real boot (same defect class as T20/T23: advertised-but-dead). Stream-route template
+      matching is filed as a kernel ask (kernel v0.11 plan); the per-action slice lands in **0.7.0**
+      against the shipped kernel surface, with the GET spectate route shape as an **ADR-044 amendment**
+      (the route shape is an ADR-044 obligation-1 change, not silent drift).
       Pairs with `@Projection` as the natural event→DTO shape. **Closes U7** on the entity-level path.
 
-- [ ] **EV2 — `@EventSourced` aggregate generator — BLOCKED on a kernel SPI.** No generator emits
-      event-sourced aggregates today; **T11 strict mode surfaces `@EventSourced` as inert** (extracted
-      into the JSON, consumed by nobody — and SOURCE-retained, so no runtime reader either). The blocker
-      is upstream: the kernel has **no aggregate-event-store SPI** (no append-with-expected-version /
-      load-from-stream / snapshot store). The intended seam — `EventStreamAppender` / `EventStreamReader`
-      (`exeris-kernel-spi`, `@since 0.7.0`) — exists as interfaces but has **zero implementations and zero
-      binding sites**, and `@EventSourced`'s referenced `EventSourcedAggregate` base class has no kernel
-      counterpart. Codegen cannot emit working append/load/snapshot calls until the kernel binds these.
-      *Sequencing for 1.0.0:* (1) kernel implements + binds the aggregate-event-store SPI; (2) an RFC/ADR
-      fixes the codegen target shape (touches the processor↔generator contract and the kernel-target
-      surface → ADR-triggering per this repo's CLAUDE.md); (3) build `KernelEventSourcedGenerator` and
-      **delete the `@EventSourced` entry from `INERT_ANNOTATIONS`** in the processor in the same change.
-      Until (1), the strict-mode warning is the honest signal.
+- [ ] **EV2 — `@EventSourced` aggregate generator — log substrate delivered (kernel 0.10, ADR-049);
+      aggregate surface still missing.** No generator emits event-sourced aggregates today; **T11 strict
+      mode surfaces `@EventSourced` as inert** (extracted into the JSON, consumed by nobody — and
+      SOURCE-retained, so no runtime reader either).
+      *Delivered by kernel 0.10 (ADR-049):* the log-level seam is real now —
+      `EventStreamAppender.append(streamId, expectedVersion, descriptor, payload)` (fail-closed
+      `EX-EVENT-6008` on version conflict, `ANY_VERSION` opt-out) + `EventStreamReader.replayFromVersion`
+      with contractually ascending replay, **implemented and bound on two Community bindings**
+      (JDBC/Postgres + Kafka, both TCK'd), resolvable via
+      `KernelProviders.eventStreamAppender()/eventStreamReader()`.
+      *Still missing at the aggregate level:* no `EventSourcedAggregate` base class, no snapshot store,
+      no typed read surface (`EventStream` yields raw `EventPayload` bytes; decode-side codec wiring is
+      deferred per ADR-046), and the Kafka binding's OCC is single-writer best-effort (strict OCC =
+      JDBC binding only). Codegen emitted today would have to hand-roll load-fold-rehydrate +
+      snapshotting against raw bytes.
+      *Sequencing for 1.0.0:* (1) ~~kernel implements + binds the aggregate-event-store SPI~~ — **done
+      at the log level (0.10, ADR-049)**; whether the aggregate-level remainder (base class / snapshot
+      store / typed read) is kernel-owned or codegen-emitted is exactly the step-2 question; (2) an
+      RFC/ADR fixes the codegen target shape — **now actionable** (touches the processor↔generator
+      contract and the kernel-target surface → ADR-triggering per this repo's CLAUDE.md); (3) build
+      `KernelEventSourcedGenerator` and **delete the `@EventSourced` entry from `INERT_ANNOTATIONS`**
+      in the processor in the same change. Until (3), the strict-mode warning is the honest signal.
 
 ### Build & DX — tooling-owned halves
 
