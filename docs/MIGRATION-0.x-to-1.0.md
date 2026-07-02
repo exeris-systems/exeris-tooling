@@ -173,6 +173,64 @@ Angular/TypeScript output is byte-identical for the kernel target.
 
 ---
 
+## 0.6.0 train — regeneration and build-behavior deltas
+
+One-time notes for consumers moving from a 0.5.x regen to 0.6.0. As everywhere in this
+document: annotation contracts and `DomainMetadata` are unchanged; these are output and
+build-behavior deltas.
+
+### Dependency floor (hard)
+
+Regenerated code binds kernel-0.10 SPI surfaces (`HttpExchange.pathParams()`,
+`PersistenceStatement.bindInstant` / `RowCursor.getInstant`, the ADR-043 streaming SPI, the
+3-arg `EventTypeSpec.ofPersistent(name, ordinal, topic)`, the ADR-046 codec registry). The
+tooling BOM pins **released `eu.exeris:exeris-kernel-*:0.10.0` and `eu.exeris:exeris-sdk-*:0.8.0`**
+— a downstream app on an older kernel will not compile the regenerated tree.
+
+### Schema deltas in regenerated migrations
+
+- **T8:** FK indexes for every `MANY_TO_ONE` relationship + indexes for `filterable` fields
+  (new `CREATE INDEX` statements), and `findBy<Rel>Id` / `findBy<Field>` finders on the
+  Repository/Service pair.
+- **T10:** `CHECK` constraints derived from `@Validation` bounds land in the DDL.
+- Both appear on first regen as new statements in the deterministic migration files —
+  additive, but review them like any schema change before applying to a live database.
+
+### Build-behavior changes (T18 — two-pass safety)
+
+- `mvn clean compile` on a metadata-less tree **no longer silently wipes** a committed
+  `src/main/generated` tree: the run fails with `EmptyMetadataException` and a recipe.
+  Seed metadata first (`mvn compile -Dexeris.codegen.skip=true`), or opt into a genuine
+  teardown with `-Dexeris.codegen.allowEmpty=true`.
+- New goal **`exeris:verify-capabilities`** (default phase `process-classes`): bind it
+  alongside `exeris:generate` and a capability-graph failure at `generate-sources` (which by
+  construction sees the *previous* build's `capability_*.json`) degrades to a WARNING, with
+  the fail-closed verdict delivered against fresh metadata after `compile`. Unbound, the
+  historical fail-fast behavior is unchanged.
+
+### Regenerated Angular app (v22)
+
+The emitted frontend is Angular v22 (`@angular/build` builder, `rxResource` detail fetch,
+ui-kit token utilities, configurable `--app-name`): **Node 22+** is the floor for building
+the *generated* app (the generator package itself still runs on Node 18+).
+
+### Emitted event publishers
+
+- Payloads are **codec-resolved** (ADR-046) — no longer `EventPayload.empty()`; redaction
+  (`sensitiveFields`) happens before encode; unresolvable codec falls back to the empty
+  payload with a producer-side JFR event.
+- `@DomainEvent.topic` now lands on the per-type `EventTypeSpec` (ADR-050) — broker
+  bindings honour it on publish and subscribe; the in-memory bus treats it as advisory.
+
+### Building the tooling reactor itself
+
+`maven-enforcer` now fails fast unless Maven runs on **exactly JDK 26** (preview
+compilation pins the release) with Maven 3.9+ (D1). This guards contributors building
+*this* repo; downstream apps are unaffected beyond the JDK 26 requirement they already had
+for running the processor/plugin.
+
+---
+
 ## Reference
 
 - [ADR-015 — Codegen emission strategy](adr/ADR-015-codegen-emission-strategy.md)
