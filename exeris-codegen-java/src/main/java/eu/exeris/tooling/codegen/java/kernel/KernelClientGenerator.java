@@ -29,11 +29,22 @@ import javax.lang.model.element.Modifier;
  * design so generated application source never encodes Community /
  * Enterprise tier identity.
  *
+ * <p>Client-side retry (ADR-045) is a composition-root concern: the policy is
+ * constructor-injected into {@code KernelWebClient} like the ADR-032 enricher,
+ * so the emitted per-entity client carries no retry code. The emitted
+ * constructor Javadoc shows the {@code CommunityHttpRetryPolicy} wiring as
+ * documentation only — plain Javadoc text, never an import — so the generated
+ * source stays tier-neutral (The Wall).
+ *
  * @implNote Emission is JavaPoet-based (ADR-015).
  *
  * @see "docs/adr/ADR-034.link.md — link stub; kernel-side
  *      authoritative copy in exeris-kernel/docs/adr/. Target symbol:
  *      KernelWebClient (eu.exeris.kernel.core.http.client)."
+ * @see "docs/adr/ADR-045.link.md — link stub; kernel-side
+ *      authoritative copy in exeris-kernel/docs/adr/. Target symbol:
+ *      HttpRetryPolicy (eu.exeris.kernel.spi.http), wired at the
+ *      composition root, not per entity."
  *
  * @author Exeris Team
  * @since 0.1.0
@@ -92,8 +103,26 @@ public class KernelClientGenerator implements KernelArtifactGenerator {
     }
 
     private MethodSpec buildConstructor(String className) {
+        // ADR-045 composition-root example: retry is opt-in on the shared
+        // KernelWebClient, never per-entity. CommunityHttpRetryPolicy and
+        // HttpRetryPolicy appear as plain Javadoc text (no $T) so no import —
+        // and no tier identity — lands in the compiled surface (The Wall).
         return MethodSpec.constructorBuilder()
                 .addJavadoc("Creates a new $L.\n", className)
+                .addJavadoc("\n")
+                .addJavadoc("<p>Composition-root example (ADR-045): construct one shared\n")
+                .addJavadoc("{@link $T} with a retry policy and every generated client\n", WEB_CLIENT)
+                .addJavadoc("inherits retry semantics — no per-entity retry configuration:\n")
+                .addJavadoc("<pre>{@code\n")
+                .addJavadoc("var webClient = new KernelWebClient(engine, allocator,\n")
+                .addJavadoc("        requestEncoders, responseDecoders,\n")
+                .addJavadoc("        HttpClientRequestEnricher.noop(),\n")
+                .addJavadoc("        new eu.exeris.kernel.community.http.CommunityHttpRetryPolicy());\n")
+                .addJavadoc("var client = new $L(webClient);\n", className)
+                .addJavadoc("}</pre>\n")
+                .addJavadoc("The policy parameter is opt-in — the shorter {@code KernelWebClient}\n")
+                .addJavadoc("constructors delegate to {@code HttpRetryPolicy.none()}, keeping the\n")
+                .addJavadoc("no-implicit-retry default (ADR-026).\n")
                 .addJavadoc("\n")
                 .addJavadoc("@param client the web client (injected from CompositionRoot)\n")
                 .addModifiers(Modifier.PUBLIC)

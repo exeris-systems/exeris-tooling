@@ -28,7 +28,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li>the emitted CRUD verb surface ({@code client.get/post/patch/delete})
  *       and the {@code 404 → Optional.empty()} mapping via
  *       {@code WebClientException.isNotFound()};</li>
- *   <li>the ADR-034 binding target FQN (regression pin).</li>
+ *   <li>the ADR-034 binding target FQN (regression pin);</li>
+ *   <li>the ADR-045 composition-root retry wiring example — Javadoc-only,
+ *       so no {@code eu.exeris.kernel.community.*} import couples the
+ *       compiled surface (The Wall).</li>
  * </ul>
  *
  * <p>The compile gate ({@code KernelCodegenCompileTest}) additionally proves
@@ -118,6 +121,32 @@ class KernelClientGeneratorTest {
                 .contains("client.post(BASE_PATH, entity, Order.class)")
                 .contains("client.patch(BASE_PATH + \"/\" + id, entity, Order.class)")
                 .contains("client.delete(BASE_PATH + \"/\" + id, Void.class)");
+    }
+
+    @Test
+    @DisplayName("ADR-045: constructor Javadoc carries the composition-root retry wiring example — Javadoc-only")
+    void generateEmitsRetryCompositionRootExample() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .build();
+
+        GeneratedFile file = generator.generate(metadata);
+
+        // The ADR-045 obligation is a composition-root *example*, not per-entity
+        // codegen: the emitted constructor Javadoc shows CommunityHttpRetryPolicy
+        // wired into the shared KernelWebClient, with the HttpRetryPolicy.none()
+        // no-implicit-retry default (ADR-026) named as the opt-out.
+        assertThat(file.content())
+                .contains("new eu.exeris.kernel.community.http.CommunityHttpRetryPolicy()")
+                .contains("HttpRetryPolicy.none()")
+                .contains("@param client the web client (injected from CompositionRoot)");
+        // The Wall: comments don't couple the binary. The Community FQN (and the
+        // retry SPI) must appear as Javadoc text only — never as an import, which
+        // would encode tier identity into the compiled surface and break the
+        // compile gate (the stub classpath carries only KernelWebClient).
+        assertThat(file.content())
+                .doesNotContain("import eu.exeris.kernel.community")
+                .doesNotContain("import eu.exeris.kernel.spi.http.HttpRetryPolicy");
     }
 
     @Test
