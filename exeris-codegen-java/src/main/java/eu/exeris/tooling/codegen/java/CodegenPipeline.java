@@ -8,6 +8,7 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.tooling.codegen.core.OutputWriter;
 import eu.exeris.tooling.codegen.core.capability.CapabilityGraph;
+import eu.exeris.tooling.codegen.core.capability.CapabilityGraphException;
 import eu.exeris.tooling.codegen.core.capability.CapabilityModuleDescriptor;
 import eu.exeris.tooling.codegen.core.capability.CompositionStamp;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
@@ -42,6 +43,13 @@ import java.util.stream.Stream;
 public final class CodegenPipeline {
 
     private static final Logger LOG = System.getLogger(CodegenPipeline.class.getName());
+
+    /**
+     * Output-root file name of the capability manifest ({@code cap-manifest.json}) —
+     * emitted by {@link #run}, preserved (not re-emitted) on the T18(a) deferred
+     * capability-failure path. Package-private for test visibility.
+     */
+    static final String CAP_MANIFEST = "cap-manifest.json";
 
     private final GeneratorRegistry registry;
     private final KernelApplicationGenerator applicationGenerator;
@@ -94,6 +102,19 @@ public final class CodegenPipeline {
     }
 
     /**
+     * Runs the pipeline with strict capability validation — a capability-graph
+     * failure aborts the run. See the five-argument
+     * {@link #run(Path, Path, String, boolean, boolean)} for the full contract
+     * and the T18(a) deferred alternative.
+     *
+     * @since 0.6.0
+     */
+    public int run(Path metadataDir, Path outputDir, String explicitBasePackage, boolean allowEmpty)
+            throws IOException {
+        return run(metadataDir, outputDir, explicitBasePackage, allowEmpty, false);
+    }
+
+    /**
      * Runs the pipeline (primary implementation). Returns the number of files written.
      *
      * <p>An empty or non-existent {@code metadataDir}, or a directory that
@@ -112,20 +133,29 @@ public final class CodegenPipeline {
      *                            ({@code false}) refuses that prune (T18), since
      *                            empty metadata is almost always a masked compile
      *                            failure.
+     * @param deferCapabilityFailure when {@code true}, a capability-graph failure
+     *                            does not abort the run: it degrades to a WARNING,
+     *                            the previous {@code cap-manifest.json} (if owned)
+     *                            is preserved, and generation continues (T18(a)).
+     *                            Only sound when the caller guarantees an
+     *                            authoritative re-validation against fresh
+     *                            metadata later in the same build — see
+     *                            {@link #validateCapabilities(Path)}. Default
+     *                            ({@code false}) keeps the fail-fast abort.
      * @return the number of files written
      * @throws IOException if metadata or output cannot be read/written
      * @throws EmptyMetadataException if {@code allowEmpty} is {@code false} and the
      *         run loads zero domains while a previous run owns a committed tree the
      *         prune would delete (T18 guard)
      * @throws eu.exeris.tooling.codegen.core.capability.CapabilityGraphException
-     *         (unchecked) if the capability graph cannot be resolved — an
-     *         unsatisfied non-optional {@code @Requires}, version mismatch, or
-     *         dependency cycle. Callers that wrap {@code run} should catch it
-     *         alongside {@link IOException}.
+     *         (unchecked) if {@code deferCapabilityFailure} is {@code false} and the
+     *         capability graph cannot be resolved — an unsatisfied non-optional
+     *         {@code @Requires}, version mismatch, or dependency cycle. Callers
+     *         that wrap {@code run} should catch it alongside {@link IOException}.
      * @since 0.6.0
      */
-    public int run(Path metadataDir, Path outputDir, String explicitBasePackage, boolean allowEmpty)
-            throws IOException {
+    public int run(Path metadataDir, Path outputDir, String explicitBasePackage, boolean allowEmpty,
+                   boolean deferCapabilityFailure) throws IOException {
         Objects.requireNonNull(metadataDir, "metadataDir");
         Objects.requireNonNull(outputDir, "outputDir");
 
@@ -224,7 +254,7 @@ public final class CodegenPipeline {
         }
 
         if (!capabilities.isEmpty()) {
-            filesGenerated += emitCapabilityManifest(capabilities, writer);
+            filesGenerated += emitCapabilityManifest(capabilities, writer, deferCapabilityFailure);
         }
 
         // T18: even with capability metadata present, zero @ExerisDomain entities
@@ -307,6 +337,39 @@ public final class CodegenPipeline {
     }
 
     /**
+     * Loads {@code capability_*.json} from {@code metadataDir} and resolves +
+     * validates the capability graph <b>without writing anything</b> — the
+     * authoritative T18(a) gate. Bound (via {@code exeris:verify-capabilities})
+     * after the {@code compile} phase, it always sees the metadata the processor
+     * emitted <em>this</em> build, so a failure here is a genuine graph problem,
+     * never the stale-input deadlock the deferred generate-sources pass avoids.
+     * No capability metadata is not an error — there is nothing to validate.
+     *
+     * @param metadataDir directory holding processor-emitted JSON
+     * @return the number of capability modules validated ({@code 0} when there
+     *         is no capability metadata)
+     * @throws IOException if metadata cannot be read
+     * @throws eu.exeris.tooling.codegen.core.capability.CapabilityGraphException
+     *         (unchecked) on an unsatisfied non-optional {@code @Requires},
+     *         version mismatch, or dependency cycle
+     * @since 0.6.0
+     */
+    public int validateCapabilities(Path metadataDir) throws IOException {
+        Objects.requireNonNull(metadataDir, "metadataDir");
+        List<CapabilityModuleDescriptor> capabilities = loadCapabilities(metadataDir);
+        if (capabilities.isEmpty()) {
+            LOG.log(Level.INFO, "No capability metadata in " + metadataDir + " — nothing to validate");
+            return 0;
+        }
+        LOG.log(Level.INFO, "Validating capability graph (" + capabilities.size() + " module(s))");
+        CapabilityGraph graph = CapabilityGraph.build(capabilities);
+        for (String warning : graph.warnings()) {
+            LOG.log(Level.WARNING, "capability: " + warning);
+        }
+        return capabilities.size();
+    }
+
+    /**
      * Resolves + validates the capability graph (failing the build via
      * {@link eu.exeris.tooling.codegen.core.capability.CapabilityGraphException} on an
      * unsatisfied non-optional requirement, version mismatch, or cycle) and writes the
@@ -318,10 +381,17 @@ public final class CodegenPipeline {
      * before {@link OutputWriter#pruneOrphansAndWriteManifest()}). That is standard
      * fail-fast behaviour — the next successful build prunes correctly.
      *
-     * @return the number of files written (always 1)
+     * <p>With {@code deferCapabilityFailure} the abort is replaced: the failure is
+     * logged as a WARNING, the previous {@code cap-manifest.json} (when owned by a
+     * prior run) is preserved so the trailing prune keeps it, and the run continues
+     * — see the T18(a) contract on {@link #run(Path, Path, String, boolean, boolean)}.
+     *
+     * @return the number of files written ({@code 1}, or {@code 0} on the deferred
+     *         failure path)
      */
     private int emitCapabilityManifest(List<CapabilityModuleDescriptor> capabilities,
-                                       OutputWriter writer) throws IOException {
+                                       OutputWriter writer,
+                                       boolean deferCapabilityFailure) throws IOException {
         LOG.log(Level.INFO, "Resolving capability graph (" + capabilities.size() + " module(s))");
         // ADR-024 obligation 7: stamp the composition with its release identity. The
         // version is a build input (not derivable from the graph) — the build/plugin sets
@@ -329,7 +399,30 @@ public final class CodegenPipeline {
         // CompositionStamp.UNVERSIONED. The content binding is always graph-derived.
         String compositionVersion = System.getProperty("exeris.composition.version",
                 CompositionStamp.UNVERSIONED);
-        CapabilityGraph graph = CapabilityGraph.build(capabilities, compositionVersion);
+        CapabilityGraph graph;
+        try {
+            graph = CapabilityGraph.build(capabilities, compositionVersion);
+        } catch (CapabilityGraphException e) {
+            if (!deferCapabilityFailure) {
+                throw e;
+            }
+            // T18(a): at generate-sources the capability metadata on disk is by
+            // construction LAST build's output — the processor only refreshes it
+            // during the upcoming compile phase. Hard-failing here deadlocks the
+            // build on its own stale input (the @Requires edit that fixes the
+            // graph can never take effect). The caller signalled that the
+            // authoritative gate (exeris:verify-capabilities, post-compile)
+            // re-validates FRESH metadata this same build — so degrade to a
+            // WARNING, keep the prior cap-manifest.json in place, and let that
+            // gate deliver the fail-closed verdict.
+            LOG.log(Level.WARNING, "Capability graph invalid on possibly-stale metadata — deferring "
+                    + "to the post-compile verify-capabilities gate: " + e.getMessage());
+            if (writer.preserve(CAP_MANIFEST)) {
+                LOG.log(Level.INFO, "Kept previous " + CAP_MANIFEST
+                        + " (refreshed on the next successful generate)");
+            }
+            return 0;
+        }
         for (String warning : graph.warnings()) {
             LOG.log(Level.WARNING, "capability: " + warning);
         }
@@ -340,8 +433,8 @@ public final class CodegenPipeline {
         printer.indentArraysWith(indenter);
         String json = mapper.writer(printer).writeValueAsString(graph) + "\n";
 
-        writer.writeResource("cap-manifest.json", json);
-        LOG.log(Level.INFO, "Wrote cap-manifest.json (init order: " + graph.initOrder() + ")");
+        writer.writeResource(CAP_MANIFEST, json);
+        LOG.log(Level.INFO, "Wrote " + CAP_MANIFEST + " (init order: " + graph.initOrder() + ")");
         return 1;
     }
 

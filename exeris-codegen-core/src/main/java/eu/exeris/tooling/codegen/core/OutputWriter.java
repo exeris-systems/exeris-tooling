@@ -161,6 +161,38 @@ public final class OutputWriter {
     }
 
     /**
+     * Records a file emitted by a <em>previous</em> run into <b>this</b> run's
+     * manifest without rewriting it, so {@link #pruneOrphansAndWriteManifest()}
+     * keeps it byte-untouched instead of deleting it as an orphan. Only a path
+     * the previous run owns (listed in the prior manifest) that still exists on
+     * disk is preserved — anything else is a no-op, so ownership is never
+     * claimed over a user-authored file or a file that is already gone. Backs
+     * the T18(a) deferred capability validation: on a possibly-stale-metadata
+     * graph failure the pipeline keeps the prior {@code cap-manifest.json} in
+     * place rather than emitting from an unresolvable graph or letting the
+     * prune remove it.
+     *
+     * @param relativePath forward-slash relative path within the output directory
+     * @return {@code true} if the file was preserved (previously owned and present)
+     * @throws IOException if reading the previous manifest fails
+     * @since 0.6.0
+     */
+    public boolean preserve(String relativePath) throws IOException {
+        Objects.requireNonNull(relativePath, "relativePath must not be null");
+        String normalized = relativePath.replace('\\', '/');
+        if (!readManifest().contains(normalized)) {
+            return false;
+        }
+        Path file = outputDir.resolve(normalized).normalize();
+        // Defence in depth: never claim (or later prune) outside the output tree.
+        if (!file.startsWith(outputDir) || !Files.isRegularFile(file)) {
+            return false;
+        }
+        writtenPaths.add(normalized);
+        return true;
+    }
+
+    /**
      * Deletes files this tool emitted on a previous run that the current run did
      * not re-emit (orphans), prunes any directories left empty by that removal,
      * and writes the manifest of the current run's files (T13).
