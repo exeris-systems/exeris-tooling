@@ -37,8 +37,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * (ADR-036) {@code spi.http.HttpRequestBodyDecoder*} / {@code HttpRequestDecodingContext},
  * and (ADR-043) the streaming SPI {@code spi.http.HttpStreamHandler} /
  * {@code HttpStreamExchange} / {@code StreamEvent}; the real
- * released {@code exeris-kernel-spi:0.10.0} artifact (plus Jackson 3) is on
- * the test classpath via {@code exeris-tooling-bom}. The emitted {@code *Client}
+ * released {@code exeris-kernel-spi} artifact (plus Jackson 3) is on the test
+ * classpath via {@code exeris-tooling-bom}, which is the single place the
+ * version is pinned — deliberately not restated here, since a literal copy
+ * goes stale on every kernel bump. The emitted {@code *Client}
  * binds the tier-neutral {@code eu.exeris.kernel.core.http.client.KernelWebClient}
  * facade (ADR-034), stood in at that FQN by a test stub in this module so the
  * gate compiles without pulling kernel-core.

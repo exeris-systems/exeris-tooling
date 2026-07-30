@@ -145,8 +145,61 @@ cross-reference index, so it retains shipped items alongside open ones.
 
 See the **Codegen completeness backlog** below for per-item detail.
 
-## 0.7.0–0.9.0 — feedback-driven cleanups
+## 0.7.0 — gateway-caps enablement (tooling's half of the first SKU)
 
+> Goal: unblock Phase 2 of the 2026-07-21 gateway-caps implementation plan — the first
+> `exeris-caps-*` repository — by closing the tooling-owned remainder of the plan's Phases 0/1.
+>
+> Contract layer: [ADR-024](https://github.com/exeris-systems/exeris-docs/blob/main/adr/ADR-024-capability-composition-model.md)
+> (composition model + the 2026-06-17 stamp-lifecycle and 2026-07-21 boot-conductor-call-site
+> amendments) and [ADR-053](https://github.com/exeris-systems/exeris-docs/blob/main/adr/ADR-053-sku-composition-manifest-format.md)
+> (manifest format = JSON).
+>
+> **The SDK half shipped in 0.9.0** — `CapabilityLifecycleHooks` (new zero-dep
+> `exeris-sdk-composition-lifecycle`) and `CompositionConductor` / `CompositionBootException`
+> (`exeris-sdk-composition-runtime`). Everything still open on the plan's critical path is
+> tooling-owned, which makes this milestone the gate on the whole gateway track.
+
+- [x] **G0 — release-pin bump.** SDK `0.8.0` → `0.9.0`, kernel `0.10.0` → `0.10.2`; CI SDK
+      checkout re-pinned to the `v0.9.0` tag. Prerequisite for G1–G3 (the conductor types must
+      resolve). Carries two riders: the **ADR-054 lockstep** (drop the dead TS
+      `ValidationMetadataSchema` — a never-consumed orphan whose Java counterpart was removed
+      outright in SDK 0.9.0) and the `CapManifest.ModuleBody` adaptation for the trailing
+      `lifecycleOwner` component added in 0.9.0 (binding-invariant — `CompositionBinding`
+      canonicalizes `qualifiedName` + sorted `provides` only).
+- [ ] **G1 — cap-tier Wall guard** (plan P1.3; ADR-024 validation predicate 4). Bytecode import
+      scan over `target/classes` wired into `exeris:verify-capabilities` at `process-classes`.
+      Forbidden: `org.springframework.*`, `io.netty.*`, `reactor.*`, `jakarta.servlet.*`, kernel
+      `*.internal.*`, and sibling-cap internals (the `api`/`internal` visibility rule).
+      **Bytecode, not sources** (founder-ruled 2026-07-29): a source scan sees only the cap's own
+      files and misses a violation pulled in transitively when a dependency changes. ADR-worthy —
+      new validation surface + a new plugin dependency; reserve the number in `adr-index.md` first.
+- [ ] **G2 — SKU bootstrap emitter.** `KernelApplicationGenerator` emits the conductor call site
+      inside `KernelBootstrap.boot(...)`, after `KERNEL READY`, per the shape pinned in
+      `CompositionConductor`'s javadoc. The `@CapabilityLifecycle` → `cap-manifest.json`
+      (`lifecycleOwner`) → conductor chain is already complete on the data side, so the emitter is
+      the last missing link. **Must be conditional on the build actually having a composition** —
+      emitting conductor wiring into a cap-less app is inert wiring.
+- [ ] **G3 — e2e composition proof** (plan P1.4; the plan's Phase-1 **exit gate**). Sample two-cap
+      composition → processor → `verify-capabilities` → kernel boot via
+      `KernelBootstrapHttpEngineFixture` (`exeris-kernel-community-testkit`) → conductor run
+      SKU-style after `KERNEL READY`; assert verbatim `initOrder` and drain semantics. Negative
+      half: a Wall-violating sample must fail the build.
+
+**Not in 0.7.0:** the cross-app mesh epic (T12/T17) — the gateway-caps plan (§2, item 6) explicitly
+defers mesh resolution as unnecessary for a single-node API Gateway MVP. The ADR-053 canonical
+`composition.json` reader is Phase 5 (it ships with the `exeris-sku-api-gateway` scaffold alongside
+the authored-manifest schema in `exeris-sdk-composition-spec`), not this milestone.
+
+The backlog items already targeted at 0.7.0 before the gateway track was folded in — **T2** (the
+full test-emitter, Java + the FE spec slice) and **T9** (FK-constraint referential integrity) —
+still sit in this milestone; G0–G3 lead it because they gate the cap track, not because those two
+were displaced.
+
+## 0.8.0–0.9.0 — feedback-driven cleanups
+
+- [ ] **T12 + T17 — the cross-app contract mesh epic.** Deferred out of 0.7.0 by the gateway-caps
+      plan; ADR-048 is reserved and RFC-2026-06-29 is the design gate that must close first.
 - [ ] Generator output adjustments based on real budgetHQ + IDP-cap consumer feedback
 - [ ] Remaining items from the **Codegen completeness backlog** below — High-severity items
       (T1, T8, T10, T12) are pulled forward into earlier milestones; the rest land here
@@ -182,8 +235,8 @@ See the **Codegen completeness backlog** below for per-item detail.
 | T23 | Stream-route boot-reachability — the generated `RuntimeLifecycle` published a `router::handle` lambda, erasing the `HttpRouter` type the kernel stream dispatcher resolves via `instanceof`, so every generated `streamRoute(...)` silently 404'd / fell back to respond-once on a real boot | **High** (latent) | ✅ 0.6.0 (folded into #106, ADR-044 Slice 2 — `handlerSlot.set(router)`; pinned by `KernelApplicationGeneratorTest`) |
 | T8  | No generated finders/indexes for FK + `filterable` fields → O(n) `findAll().filter()` everywhere | **High** | ✅ 2026-06-28 (finders + FK/filterable indexes; T9 constraints deferred) |
 | T10 | `@Validation` enforced client-side (Zod) but dropped server-side (handler/service/DB) | **High** | ✅ 0.6.0 (#103) |
-| T12 | N generated apps can't form a mesh — client is own-app/relative-host, saga step is local, no cross-app contract | **High** | 0.7.0 |
-| T17 | Capability-graph validation is closed-world per app — a legitimate cross-service `@Requires` hard-fails the build | **High** | 0.7.0 |
+| T12 | N generated apps can't form a mesh — client is own-app/relative-host, saga step is local, no cross-app contract | **High** | 0.8.0 (deferred out of 0.7.0 by the gateway-caps plan) |
+| T17 | Capability-graph validation is closed-world per app — a legitimate cross-service `@Requires` hard-fails the build | **High** | 0.8.0 (deferred out of 0.7.0 by the gateway-caps plan) |
 | T2  | Zero tests generated for the generated surface | Medium | 0.7.0 (FE spec slice + Java emitter — FE half deferred at the 0.6.0 cut) |
 | T3  | Action identity = method name, not `@Action(name=…)` → bean-setter collisions | Medium | 0.5.x |
 | T4  | `@Relationship` target derived from field Java type, not `targetEntity` | Medium | 0.5.x |

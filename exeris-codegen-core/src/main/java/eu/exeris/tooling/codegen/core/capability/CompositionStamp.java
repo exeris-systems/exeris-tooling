@@ -81,6 +81,12 @@ public record CompositionStamp(
                 : provides.stream()
                         .map(p -> new CapManifest.Provided(p.service(), p.version()))
                         .toList();
-        return new CapManifest.Module(m.qualifiedName(), new CapManifest.ModuleBody(specProvides));
+        // lifecycleOwner is a trailing ModuleBody component since SDK 0.9.0 and is NOT hashed by
+        // CompositionBinding (which canonicalizes qualifiedName + sorted provides only), so passing
+        // it through is binding-invariant — existing stamps and manifests are unaffected. It is
+        // carried anyway rather than passed null: this adapter should mirror the producer record
+        // faithfully, so a future binding change cannot silently bind a half-populated module.
+        return new CapManifest.Module(m.qualifiedName(),
+                new CapManifest.ModuleBody(specProvides, m.moduleOrEmpty().lifecycleOwner()));
     }
 }

@@ -19,10 +19,10 @@ migrations, sagas, and corresponding Angular/TypeScript frontend artifacts.
 - Maven 3.9+ (enforced alongside the JDK rule).
 - Node 18+ to build `exeris-codegen-ts`; the **generated** Angular v22 app targets
   Node 22+.
-- Released `eu.exeris:exeris-sdk-*:0.8.0` and `eu.exeris:exeris-kernel-*:0.10.0`
+- Released `eu.exeris:exeris-sdk-*:0.9.0` and `eu.exeris:exeris-kernel-*:0.10.2`
   artifacts on the resolution path: either GitHub Packages credentials, or a local
-  `mvn install` from the matching release tags (`exeris-sdk` at `v0.8.0`,
-  `exeris-kernel` at the 0.10.0 release — repo `main` branches have moved past the
+  `mvn install` from the matching release tags (`exeris-sdk` at `v0.9.0`,
+  `exeris-kernel` at `v0.10.2` — repo `main` branches have moved past the
   pins and will not satisfy them).
 
 ## Pipeline

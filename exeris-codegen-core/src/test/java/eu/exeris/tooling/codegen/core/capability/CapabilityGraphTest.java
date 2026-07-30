@@ -24,6 +24,18 @@ class CapabilityGraphTest {
                 CapabilityModuleMetadata.builder().provides(provides).requires(requires).build());
     }
 
+    /** Same, with a {@code @CapabilityLifecycle} owner attached (SDK 0.9.0's trailing component). */
+    private static CapabilityModuleDescriptor module(String qName,
+                                                     List<ProvidesMetadata> provides,
+                                                     List<RequiresMetadata> requires,
+                                                     String lifecycleOwner) {
+        String simple = qName.substring(qName.lastIndexOf('.') + 1);
+        String pkg = qName.contains(".") ? qName.substring(0, qName.lastIndexOf('.')) : "";
+        return new CapabilityModuleDescriptor(simple, pkg, qName,
+                CapabilityModuleMetadata.builder().provides(provides).requires(requires)
+                        .lifecycleOwner(lifecycleOwner).build());
+    }
+
     @Test
     @DisplayName("a satisfied requirement resolves; provider initialises before requirer")
     void satisfiedResolvesAndOrders() {
@@ -247,5 +259,37 @@ class CapabilityGraphTest {
         // independently-matched field per ADR-024 obligation 7)
         assertThat(CapabilityGraph.build(List.of(m), "2.4.1").stamp().contentBinding())
                 .isEqualTo(CapabilityGraph.build(List.of(m), "9.9.9").stamp().contentBinding());
+    }
+
+    @Test
+    @DisplayName("the @CapabilityLifecycle owner is binding-invariant — it rides the manifest, never the hash")
+    void lifecycleOwnerIsBindingInvariant() {
+        // SDK 0.9.0 added lifecycleOwner as a trailing CapManifest.ModuleBody component, and the
+        // producer adapter (CompositionStamp.toSpecModule) now passes it through. The shared
+        // CompositionBinding canonicalizes qualifiedName + sorted provides ONLY, so attaching or
+        // changing a lifecycle owner must leave the hash put — otherwise adopting 0.9.0 would
+        // false-fail the boot assertion of every already-deployed manifest.
+        //
+        // Reuses the golden fixture from contentBindingMatchesSpecGoldenVector with owners bolted
+        // on: asserting the *unchanged external constant* is what makes this a real invariance
+        // pin. Comparing two locally-computed bindings would pass vacuously, since both would
+        // drift together the day the canonical form starts reading the owner.
+        CapabilityModuleDescriptor audit = module("com.app.Audit",
+                List.of(ProvidesMetadata.of("com.api.AuditLog", "1.0.0")), List.of(),
+                "com.app.AuditLifecycle");
+        CapabilityModuleDescriptor billing = module("com.app.Billing",
+                List.of(ProvidesMetadata.of("com.api.Invoice", "2.0.0"),
+                        ProvidesMetadata.of("com.api.PaymentApi", "1.2.0")), List.of(),
+                "com.app.BillingLifecycle");
+
+        assertThat(CapabilityGraph.build(List.of(billing, audit)).stamp().contentBinding())
+                .isEqualTo("sha256:83aae84863de8480b0c1ec943f7d350900a1ff2aab78b4c311684ca2ecc79e96");
+
+        // ...and an absent owner (no @CapabilityLifecycle) binds to that same constant, so a
+        // composition does not change identity by gaining or losing lifecycle hooks.
+        CapabilityModuleDescriptor auditNoOwner = module("com.app.Audit",
+                List.of(ProvidesMetadata.of("com.api.AuditLog", "1.0.0")), List.of(), null);
+        assertThat(CapabilityGraph.build(List.of(billing, auditNoOwner)).stamp().contentBinding())
+                .isEqualTo("sha256:83aae84863de8480b0c1ec943f7d350900a1ff2aab78b4c311684ca2ecc79e96");
     }
 }

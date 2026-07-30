@@ -78,6 +78,18 @@ class CodegenPipelineTest {
                 CapabilityModuleMetadata.builder().provides(provides).requires(requires).build());
     }
 
+    /** Same, with a {@code @CapabilityLifecycle} owner attached (SDK 0.9.0's trailing component). */
+    private CapabilityModuleDescriptor desc(String qName,
+                                            List<ProvidesMetadata> provides,
+                                            List<RequiresMetadata> requires,
+                                            String lifecycleOwner) {
+        String simple = qName.substring(qName.lastIndexOf('.') + 1);
+        String pkg = qName.substring(0, qName.lastIndexOf('.'));
+        return new CapabilityModuleDescriptor(simple, pkg, qName,
+                CapabilityModuleMetadata.builder().provides(provides).requires(requires)
+                        .lifecycleOwner(lifecycleOwner).build());
+    }
+
     @Nested
     @DisplayName("happy paths")
     class HappyPaths {
@@ -452,6 +464,31 @@ class CodegenPipelineTest {
                     .contains("\"contentBinding\" : \"sha256:");
             // no domain bootstrap when there are no entities
             assertThat(outputDir.resolve("com/app/Application.java")).doesNotExist();
+        }
+
+        @Test
+        @DisplayName("a @CapabilityLifecycle owner round-trips into cap-manifest.json (the conductor's discovery input)")
+        void manifestCarriesLifecycleOwner() throws IOException {
+            // cap-manifest.json is the contract with the SDK 0.9.0 CompositionConductor: it
+            // discovers lifecycle owners by reading this field and instantiating each non-null
+            // FQN. A silent serialization drop would therefore surface as a SKU that boots with
+            // zero lifecycle hooks — no initialize, no drain — rather than as a build failure.
+            // Pinned here because G2 (the emitted SKU bootstrap) is built directly on this field,
+            // and because the manifest is serialized straight off CapabilityGraph, a path
+            // independent of the CompositionStamp→CapManifest adapter used for the binding.
+            writeCapabilityJson("Billing",
+                    desc("com.app.Billing", List.of(ProvidesMetadata.of("com.api.PaymentApi", "1.0")),
+                            List.of(), "com.app.BillingLifecycle"));
+            writeCapabilityJson("Audit",
+                    desc("com.app.Audit", List.of(ProvidesMetadata.of("com.api.AuditLog", "1.0")), List.of()));
+
+            pipeline.run(metadataDir, outputDir, "com.app");
+
+            String json = Files.readString(outputDir.resolve("cap-manifest.json"));
+            assertThat(json).contains("\"lifecycleOwner\" : \"com.app.BillingLifecycle\"");
+            // the hook-less module omits the field entirely (@JsonInclude(NON_NULL) on the SDK
+            // record), so the conductor sees nothing to instantiate rather than a null entry
+            assertThat(json).containsOnlyOnce("\"lifecycleOwner\"");
         }
 
         @Test
