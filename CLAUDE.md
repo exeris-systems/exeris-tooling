@@ -78,6 +78,7 @@ When a kernel SPI change lands in `exeris-kernel`, the corresponding generator u
 Tooling-specific ADRs live in `docs/adr/`. The one currently load-bearing:
 
 - **ADR-015 — Codegen Emission Strategy** (text blocks for text artefacts, JavaPoet for Java, shared scaffold extraction; 0.4.0 implementation target).
+- **ADR-055 — Cap-Tier Wall Guard** (0.7.0): the pipeline reads a **second input class** — compiled bytecode from `target/classes`, not just processor-emitted metadata — to enforce ADR-024 validation predicate 4 in `exeris:verify-capabilities`. Two constraints to respect before touching `CapTierWall`: the scan uses the JDK-standard Class-File API (JEP 484) and must stay dependency-free, and a constant-pool-only walk is **unsound** (it misses types that appear only in descriptors or generic `Signature` attributes), so the five-source extraction union is load-bearing — don't "simplify" it.
 
 The single-numbering namespace is owned at `~/exeris-systems/exeris-docs/adr-index.md` (per top-level `CLAUDE.md`). Reserve numbers there before drafting. Refactor-only changes do NOT get an ADR — they go in PR descriptions / commit history.
 

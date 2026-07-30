@@ -7,6 +7,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.tooling.codegen.core.OutputWriter;
+import eu.exeris.tooling.codegen.core.capability.CapTierWall;
+import eu.exeris.tooling.codegen.core.capability.CapTierWallException;
 import eu.exeris.tooling.codegen.core.capability.CapabilityGraph;
 import eu.exeris.tooling.codegen.core.capability.CapabilityGraphException;
 import eu.exeris.tooling.codegen.core.capability.CapabilityModuleDescriptor;
@@ -25,6 +27,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Stream;
 
 /**
@@ -370,6 +373,72 @@ public final class CodegenPipeline {
         for (String warning : graph.warnings()) {
             LOG.log(Level.WARNING, "capability: " + warning);
         }
+        return capabilities.size();
+    }
+
+    /**
+     * Enforces the cap-tier Wall over this module's <b>compiled</b> classes — ADR-024
+     * validation predicate 4, realized per ADR-055. The companion to
+     * {@link #validateCapabilities(Path)}: that method resolves predicates 1–3 from the
+     * metadata, this one holds the import boundary against the bytecode.
+     *
+     * <p><b>Gated on the module actually being a cap.</b> The scan runs only when this
+     * build emitted capability metadata. Without that gate the guard would fail every
+     * ordinary generated application the moment it touched Spring — but an application is
+     * a Tier 3 SKU consumer, not a Tier 2 cap, and the Wall was never its contract.
+     *
+     * <p>Reads bytecode rather than sources, per the founder ruling of 2026-07-29: a
+     * source scan cannot see a forbidden type that arrives transitively when a dependency
+     * changes. This is also why the check cannot live in the annotation processor — at
+     * processing time no bytecode exists yet, and the processor is barred from loading the
+     * user's classpath at all.
+     *
+     * @param classesDir  the module's compiled-output root ({@code target/classes}); a
+     *                    missing directory is not an error
+     * @param metadataDir directory holding processor-emitted {@code capability_*.json}
+     * @return the number of capability modules whose classes were gated — {@code 0} when
+     *         nothing was gated, i.e. either this module is not a cap or it is a cap with
+     *         no compiled classes to scan. Both log which of the two happened; a caller
+     *         that reports a verdict must not read {@code 0} as "clean"
+     * @throws IOException if metadata cannot be read
+     * @throws eu.exeris.tooling.codegen.core.capability.CapTierWallException (unchecked)
+     *         when any class crosses a forbidden boundary
+     * @since 0.7.0
+     */
+    public int verifyCapTierWall(Path classesDir, Path metadataDir) throws IOException {
+        Objects.requireNonNull(classesDir, "classesDir");
+        Objects.requireNonNull(metadataDir, "metadataDir");
+        // In an exeris:verify-capabilities run this is the second read of the same
+        // capability_*.json set (validateCapabilities did the first). Deliberate: each public
+        // entry point stays self-contained and separately callable, and the files are one small
+        // JSON per cap module. Should a composition ever grow enough for the double parse to
+        // matter, the fix is an overload taking the already-loaded descriptors — not a cached
+        // field, which would make the pipeline's freshness contract depend on call order.
+        List<CapabilityModuleDescriptor> capabilities = loadCapabilities(metadataDir);
+        if (capabilities.isEmpty()) {
+            LOG.log(Level.INFO, "Not a capability module — cap-tier Wall not applicable");
+            return 0;
+        }
+        Set<String> ownCapNames = CapTierWall.ownCapNames(capabilities);
+        LOG.log(Level.INFO, "Enforcing cap-tier Wall over " + classesDir
+                + (ownCapNames.isEmpty() ? "" : " (own cap(s): " + ownCapNames + ")"));
+        CapTierWall.ScanResult result = CapTierWall.scan(classesDir, ownCapNames);
+        if (result.classesScanned() == 0) {
+            // A cap with nothing compiled under classesDir is UNVERIFIED, not clean — the two
+            // are the same verdict seen from outside, so say which one this is. Inside the
+            // normal Maven lifecycle `compile` always populates target/classes before
+            // process-classes, which makes this overwhelmingly a relocated or mis-set
+            // classesDir rather than a cap that legitimately has no code.
+            LOG.log(Level.WARNING, "Cap-tier Wall scanned nothing: no compiled classes under "
+                    + classesDir + " for " + capabilities.size() + " capability module(s) — "
+                    + "ADR-024 predicate 4 is unverified, not satisfied (check classesDir)");
+            return 0;
+        }
+        if (!result.violations().isEmpty()) {
+            throw new CapTierWallException(result.violations());
+        }
+        LOG.log(Level.INFO, "Cap-tier Wall clean (" + capabilities.size() + " module(s), "
+                + result.classesScanned() + " class(es))");
         return capabilities.size();
     }
 

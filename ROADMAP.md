@@ -167,13 +167,20 @@ See the **Codegen completeness backlog** below for per-item detail.
       outright in SDK 0.9.0) and the `CapManifest.ModuleBody` adaptation for the trailing
       `lifecycleOwner` component added in 0.9.0 (binding-invariant — `CompositionBinding`
       canonicalizes `qualifiedName` + sorted `provides` only).
-- [ ] **G1 — cap-tier Wall guard** (plan P1.3; ADR-024 validation predicate 4). Bytecode import
-      scan over `target/classes` wired into `exeris:verify-capabilities` at `process-classes`.
+- [x] **G1 — cap-tier Wall guard** (plan P1.3; ADR-024 validation predicate 4 — the last
+      unimplemented one). Bytecode import scan over `target/classes` wired into
+      `exeris:verify-capabilities` at `process-classes`, gated on the module actually being a cap.
       Forbidden: `org.springframework.*`, `io.netty.*`, `reactor.*`, `jakarta.servlet.*`, kernel
-      `*.internal.*`, and sibling-cap internals (the `api`/`internal` visibility rule).
+      `**.internal.**`, and **sibling**-cap internals (a cap may read its own).
       **Bytecode, not sources** (founder-ruled 2026-07-29): a source scan sees only the cap's own
-      files and misses a violation pulled in transitively when a dependency changes. ADR-worthy —
-      new validation surface + a new plugin dependency; reserve the number in `adr-index.md` first.
+      files and misses a violation pulled in transitively when a dependency changes. Decided in
+      [ADR-055](docs/adr/ADR-055-cap-tier-wall-guard.md), which also records the two findings that
+      shaped it: the scan needs **no new dependency** (JDK-standard Class-File API, JEP 484 — not
+      ASM, since the repo pins JDK exactly `[26,27)`), and a constant-pool walk alone is
+      **unsound** (a `void configure(ApplicationContext)` parameter and a `List<Forbidden>` type
+      argument appear only in a descriptor and a `Signature` attribute respectively), so the
+      extraction surface — pool ∪ descriptors ∪ signatures ∪ annotations — is the load-bearing
+      part rather than the forbidden-prefix list.
 - [ ] **G2 — SKU bootstrap emitter.** `KernelApplicationGenerator` emits the conductor call site
       inside `KernelBootstrap.boot(...)`, after `KERNEL READY`, per the shape pinned in
       `CompositionConductor`'s javadoc. The `@CapabilityLifecycle` → `cap-manifest.json`

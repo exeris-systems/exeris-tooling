@@ -1,5 +1,6 @@
 package eu.exeris.tooling.codegen.maven;
 
+import eu.exeris.tooling.codegen.core.capability.CapTierWallException;
 import eu.exeris.tooling.codegen.core.capability.CapabilityGraphException;
 import eu.exeris.tooling.codegen.java.CodegenPipeline;
 import org.apache.maven.plugin.AbstractMojo;
@@ -11,6 +12,7 @@ import org.apache.maven.plugins.annotations.Parameter;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Path;
 
 /**
@@ -48,9 +50,27 @@ public class VerifyCapabilitiesMojo extends AbstractMojo {
             defaultValue = "${project.build.outputDirectory}/exeris-metadata")
     File metadataDir;
 
+    /**
+     * Compiled-output root scanned by the cap-tier Wall guard (ADR-055). Declared
+     * explicitly rather than derived from {@link #metadataDir}'s parent: the metadata
+     * directory is user-overridable, so deriving one from the other would silently point
+     * the scan somewhere else the moment someone relocates the metadata.
+     */
+    @Parameter(property = "exeris.classesDir", defaultValue = "${project.build.outputDirectory}")
+    File classesDir;
+
     /** Skip the whole codegen pipeline, this gate included. */
     @Parameter(property = "exeris.codegen.skip", defaultValue = "false")
     boolean skip;
+
+    /**
+     * Opt out of the cap-tier Wall guard alone, keeping graph validation. An escape hatch
+     * for a cap that must breach the Wall knowingly during migration — ADR-024 obligation 3
+     * makes disabling it a registry violation surfaced by audit, so it is deliberately loud
+     * (a WARNING every build) and deliberately separate from {@code exeris.codegen.skip}.
+     */
+    @Parameter(property = "exeris.wall.skip", defaultValue = "false")
+    boolean skipWall;
 
     /**
      * Validator seam — a functional indirection over
@@ -63,7 +83,26 @@ public class VerifyCapabilitiesMojo extends AbstractMojo {
         int validate(Path metadataDir) throws IOException;
     }
 
-    CapabilityValidator validator = CodegenPipeline.createDefault()::validateCapabilities;
+    /**
+     * Wall-guard seam, mirroring {@link CapabilityValidator} — same reason: keep the mojo's
+     * control flow (skip toggles, error wrapping) unit-testable without compiled fixtures.
+     */
+    @FunctionalInterface
+    interface WallVerifier {
+        int verify(Path classesDir, Path metadataDir) throws IOException;
+    }
+
+    /**
+     * One pipeline behind both seams below. {@code createDefault()} builds a whole generator
+     * registry + {@code ObjectMapper} graph, and neither entry point this mojo calls carries
+     * state across calls — a second instance would be duplication, not isolation. Per-mojo
+     * (not static) so parallel module builds keep their own, matching {@code threadSafe = true}.
+     */
+    private final CodegenPipeline pipeline = CodegenPipeline.createDefault();
+
+    CapabilityValidator validator = pipeline::validateCapabilities;
+
+    WallVerifier wallVerifier = pipeline::verifyCapTierWall;
 
     @Override
     public void execute() throws MojoExecutionException, MojoFailureException {
@@ -79,6 +118,7 @@ public class VerifyCapabilitiesMojo extends AbstractMojo {
             } else {
                 getLog().info("Capability graph valid (" + modules + " module(s), fresh metadata)");
             }
+            verifyWall(modules);
         } catch (CapabilityGraphException e) {
             // A user-side composition error on FRESH metadata (unsatisfied
             // @Requires / version mismatch / cycle) — the genuine, actionable
@@ -88,6 +128,45 @@ public class VerifyCapabilitiesMojo extends AbstractMojo {
         } catch (IOException e) {
             throw new MojoExecutionException(
                     "Capability verification failed (metadataDir=" + metadataDir + ")", e);
+        }
+    }
+
+    /**
+     * ADR-024 predicate 4. Runs after graph validation so the cheaper, more common failure
+     * (an unsatisfied {@code @Requires}) is reported first; a cap whose graph is broken has
+     * a more urgent problem than its import hygiene.
+     *
+     * @param modules the module count the graph gate just reported — the signal that lets a
+     *                gated-nothing outcome be read correctly: with {@code modules == 0} it
+     *                means "not a cap" (silent, expected), with {@code modules > 0} it means
+     *                a cap whose classes were never found, which is a warning, not a pass
+     */
+    private void verifyWall(int modules) throws MojoExecutionException, MojoFailureException, IOException {
+        if (skipWall) {
+            getLog().warn("Cap-tier Wall guard DISABLED (exeris.wall.skip=true) — "
+                    + "ADR-024 obligation 3 treats this as a registry violation");
+            return;
+        }
+        try {
+            int gated = wallVerifier.verify(classesDir.toPath(), metadataDir.toPath());
+            if (gated > 0) {
+                getLog().info("Cap-tier Wall clean (" + gated + " module(s), " + classesDir + ")");
+            } else if (modules > 0) {
+                // This build IS a cap (the graph gate saw modules on the same metadata) yet the
+                // Wall gated nothing — so nothing was scanned. Reported through Maven's own log
+                // because that is where a user looks; the pipeline logs the same fact via
+                // System.Logger for non-Maven callers.
+                getLog().warn("Cap-tier Wall scanned nothing for " + modules + " capability module(s)"
+                        + " — no compiled classes under " + classesDir
+                        + " (check exeris.classesDir); predicate 4 is unverified, not satisfied");
+            }
+        } catch (CapTierWallException e) {
+            // A cap author's boundary breach — user-side and actionable, so a FAILURE.
+            throw new MojoFailureException(e.getMessage(), e);
+        } catch (UncheckedIOException e) {
+            // An unreadable/corrupt class file is an environment problem, not a Wall verdict.
+            throw new MojoExecutionException(
+                    "Cap-tier Wall scan failed (classesDir=" + classesDir + ")", e);
         }
     }
 }

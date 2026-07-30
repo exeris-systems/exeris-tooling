@@ -5,6 +5,7 @@ import eu.exeris.sdk.sourcemodel.ast.CapabilityModuleMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.ProvidesMetadata;
 import eu.exeris.sdk.sourcemodel.ast.RequiresMetadata;
+import eu.exeris.tooling.codegen.core.capability.CapTierWallException;
 import eu.exeris.tooling.codegen.core.capability.CapabilityGraphException;
 import eu.exeris.tooling.codegen.core.capability.CapabilityModuleDescriptor;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
@@ -20,6 +21,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
+import java.lang.classfile.ClassFile;
+import java.lang.constant.ClassDesc;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -464,6 +467,67 @@ class CodegenPipelineTest {
                     .contains("\"contentBinding\" : \"sha256:");
             // no domain bootstrap when there are no entities
             assertThat(outputDir.resolve("com/app/Application.java")).doesNotExist();
+        }
+
+        @Test
+        @DisplayName("cap-tier Wall: skipped entirely when the module is not a cap (ADR-055 obligation 3)")
+        void wallSkippedForNonCapModule() throws IOException {
+            // The gate that keeps this guard off every ordinary generated application: no
+            // capability metadata means no cap, and the Wall was never an application's
+            // contract. A forbidden class sitting in the output must NOT fail such a build.
+            writeClassWithFieldType("com/app/Plain", "org/springframework/context/ApplicationContext");
+
+            assertThat(pipeline.verifyCapTierWall(outputDir, metadataDir)).isZero();
+        }
+
+        @Test
+        @DisplayName("cap-tier Wall: a cap with nothing compiled gates 0 — unverified, not clean")
+        void wallGatesNothingWhenNoClassesFound() throws IOException {
+            // The second zero-violation state: cap metadata is present, but the scan found no
+            // class file (a relocated or mis-set classesDir — `compile` normally populates it
+            // before process-classes). Reporting the module count here would be indistinguishable
+            // from a genuine pass, so the count is 0 and the caller gets to say "unverified".
+            writeCapabilityJson("Billing",
+                    desc("eu.exeris.caps.billing.BillingModule",
+                            List.of(ProvidesMetadata.of("com.api.PaymentApi", "1.0")), List.of()));
+
+            // exists but empty, and missing outright — both are vacuous, neither is an error
+            assertThat(pipeline.verifyCapTierWall(outputDir, metadataDir)).isZero();
+            assertThat(pipeline.verifyCapTierWall(outputDir.resolve("nope"), metadataDir)).isZero();
+        }
+
+        @Test
+        @DisplayName("cap-tier Wall: a forbidden reference in a real cap module fails (ADR-024 predicate 4)")
+        void wallFailsForCapModule() throws IOException {
+            writeCapabilityJson("Billing",
+                    desc("eu.exeris.caps.billing.BillingModule",
+                            List.of(ProvidesMetadata.of("com.api.PaymentApi", "1.0")), List.of()));
+            writeClassWithFieldType("eu/exeris/caps/billing/internal/Cap",
+                    "org/springframework/context/ApplicationContext");
+
+            assertThatThrownBy(() -> pipeline.verifyCapTierWall(outputDir, metadataDir))
+                    .isInstanceOf(CapTierWallException.class)
+                    .hasMessageContaining("Cap-tier Wall violated")
+                    .hasMessageContaining("eu.exeris.caps.billing.internal.Cap")
+                    .hasMessageContaining("org.springframework.context.ApplicationContext");
+        }
+
+        /**
+         * Writes a minimal class with one field of {@code fieldTypeInternalName}. Hand-built
+         * rather than compiled: these two tests exercise the metadata gate and the throw path,
+         * not the extraction surface — {@code CapTierWallTest} covers that against real javac
+         * output, which is where descriptor-versus-pool fidelity actually matters.
+         */
+        private void writeClassWithFieldType(String internalName, String fieldTypeInternalName)
+                throws IOException {
+            ClassDesc owner = ClassDesc.ofInternalName(internalName);
+            byte[] bytes = ClassFile.of().build(owner, cb -> cb
+                    .withFlags(ClassFile.ACC_PUBLIC)
+                    .withField("dep", ClassDesc.ofInternalName(fieldTypeInternalName),
+                            ClassFile.ACC_PUBLIC));
+            Path target = outputDir.resolve(internalName + ".class");
+            Files.createDirectories(target.getParent());
+            Files.write(target, bytes);
         }
 
         @Test
