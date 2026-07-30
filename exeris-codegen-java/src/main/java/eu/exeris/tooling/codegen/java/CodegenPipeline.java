@@ -13,7 +13,6 @@ import eu.exeris.tooling.codegen.core.capability.CapabilityGraph;
 import eu.exeris.tooling.codegen.core.capability.CapabilityGraphException;
 import eu.exeris.tooling.codegen.core.capability.CapabilityModuleDescriptor;
 import eu.exeris.tooling.codegen.core.capability.CompositionStamp;
-import eu.exeris.tooling.codegen.core.capability.WallViolation;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.core.generator.GeneratorRegistry;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
@@ -420,8 +419,11 @@ public final class CodegenPipeline {
             LOG.log(Level.INFO, "Not a capability module — cap-tier Wall not applicable");
             return 0;
         }
-        int classCount = CapTierWall.countClassFiles(classesDir);
-        if (classCount == 0) {
+        Set<String> ownCapNames = CapTierWall.ownCapNames(capabilities);
+        LOG.log(Level.INFO, "Enforcing cap-tier Wall over " + classesDir
+                + (ownCapNames.isEmpty() ? "" : " (own cap(s): " + ownCapNames + ")"));
+        CapTierWall.ScanResult result = CapTierWall.scan(classesDir, ownCapNames);
+        if (result.classesScanned() == 0) {
             // A cap with nothing compiled under classesDir is UNVERIFIED, not clean — the two
             // are the same verdict seen from outside, so say which one this is. Inside the
             // normal Maven lifecycle `compile` always populates target/classes before
@@ -432,14 +434,11 @@ public final class CodegenPipeline {
                     + "ADR-024 predicate 4 is unverified, not satisfied (check classesDir)");
             return 0;
         }
-        Set<String> ownCapNames = CapTierWall.ownCapNames(capabilities);
-        LOG.log(Level.INFO, "Enforcing cap-tier Wall over " + classCount + " class(es) in " + classesDir
-                + (ownCapNames.isEmpty() ? "" : " (own cap(s): " + ownCapNames + ")"));
-        List<WallViolation> violations = CapTierWall.scan(classesDir, ownCapNames);
-        if (!violations.isEmpty()) {
-            throw new CapTierWallException(violations);
+        if (!result.violations().isEmpty()) {
+            throw new CapTierWallException(result.violations());
         }
-        LOG.log(Level.INFO, "Cap-tier Wall clean (" + capabilities.size() + " module(s))");
+        LOG.log(Level.INFO, "Cap-tier Wall clean (" + capabilities.size() + " module(s), "
+                + result.classesScanned() + " class(es))");
         return capabilities.size();
     }
 

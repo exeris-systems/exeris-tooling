@@ -18,6 +18,7 @@ import java.util.Map;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Cap-tier Wall guard tests (ADR-024 predicate 4 / ADR-055).
@@ -75,13 +76,23 @@ class CapTierWallTest {
             "package eu.exeris.caps.audit.internals; public final class Helper {}");
 
     /**
-     * Compiles {@code sources} plus the shared stubs into {@code dir} and scans the result.
+     * Compiles {@code sources} plus the shared stubs into {@code dir} and returns the scan's
+     * violations — what most tests here assert on.
      *
      * @param ownCapNames the cap names the build owns (see {@link CapTierWall#ownCapNames})
      */
     private static List<WallViolation> compileAndScan(Path dir,
                                                       Set<String> ownCapNames,
                                                       Map<String, String> sources) throws IOException {
+        return CapTierWall.scan(compileFixture(dir, sources), ownCapNames).violations();
+    }
+
+    /**
+     * Compiles {@code sources} plus the shared stubs and returns the scanned classes root — the
+     * half of {@link #compileAndScan} the tests that assert on {@link CapTierWall.ScanResult}
+     * itself (rather than on the violation list) need.
+     */
+    private static Path compileFixture(Path dir, Map<String, String> sources) throws IOException {
         Path src = dir.resolve("src");
         Path stubClasses = dir.resolve("stubs");
         Path classes = dir.resolve("classes");
@@ -95,7 +106,7 @@ class CapTierWallTest {
         compile(stubClasses, null, writeAll(src, STUBS));
         compile(classes, stubClasses, writeAll(src, sources));
 
-        return CapTierWall.scan(classes, ownCapNames);
+        return classes;
     }
 
     private static void compile(Path outputDir, Path classpath, List<String> files) {
@@ -322,19 +333,20 @@ class CapTierWallTest {
         @Test
         @DisplayName("a missing classes directory yields no violations rather than an error")
         void missingDirectoryIsNotAFailure(@TempDir Path dir) {
-            assertThat(CapTierWall.scan(dir.resolve("nope"), Set.of())).isEmpty();
-            assertThat(CapTierWall.scan(null, Set.of())).isEmpty();
+            assertThat(CapTierWall.scan(dir.resolve("nope"), Set.of()).violations()).isEmpty();
+            assertThat(CapTierWall.scan(null, Set.of()).violations()).isEmpty();
         }
 
         @Test
-        @DisplayName("countClassFiles separates a vacuous scan from a clean one")
+        @DisplayName("classesScanned separates a vacuous scan from a clean one")
         void countsScannedClasses(@TempDir Path dir) throws IOException {
             // "No violations" has two causes — a clean cap, and a classesDir the compiler never
-            // wrote to. The verdict cannot tell them apart; the class count is what can.
-            assertThat(CapTierWall.countClassFiles(dir.resolve("nope"))).isZero();
-            assertThat(CapTierWall.countClassFiles(null)).isZero();
+            // wrote to. The verdict cannot tell them apart; the class count is what can, which
+            // is why it rides along in the same ScanResult instead of needing a second call.
+            assertThat(CapTierWall.scan(dir.resolve("nope"), Set.of()).classesScanned()).isZero();
+            assertThat(CapTierWall.scan(null, Set.of()).classesScanned()).isZero();
 
-            List<WallViolation> clean = compileAndScan(dir, Set.of("billing"), Map.of(
+            Path classes = compileFixture(dir, Map.of(
                     "eu/exeris/caps/billing/internal/Cap.java",
                     """
                     package eu.exeris.caps.billing.internal;
@@ -342,10 +354,23 @@ class CapTierWallTest {
                         public eu.exeris.caps.billing.api.InvoiceService invoices;
                     }
                     """));
+            CapTierWall.ScanResult clean = CapTierWall.scan(classes, Set.of("billing"));
 
             // Same empty verdict as the two calls above, opposite meaning.
-            assertThat(clean).isEmpty();
-            assertThat(CapTierWall.countClassFiles(dir.resolve("classes"))).isEqualTo(1);
+            assertThat(clean.violations()).isEmpty();
+            assertThat(clean.classesScanned()).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("the violations list is immutable — callers cannot mutate a verdict")
+        void violationsAreImmutable(@TempDir Path dir) {
+            CapTierWall.ScanResult result = CapTierWall.scan(dir.resolve("nope"), Set.of());
+
+            assertThatThrownBy(() -> result.violations().add(new WallViolation(
+                    "eu.exeris.caps.billing.internal.Cap",
+                    "org.springframework.context.ApplicationContext",
+                    WallViolation.Rule.HOST_RUNTIME)))
+                    .isInstanceOf(UnsupportedOperationException.class);
         }
 
         @Test

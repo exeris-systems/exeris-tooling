@@ -101,50 +101,52 @@ public final class CapTierWall {
     }
 
     /**
-     * Scans every {@code .class} file under {@code classesDir}.
+     * The outcome of a scan: what was read, and what was found.
+     *
+     * <p>The two travel together on purpose. An empty {@link #violations()} list has two
+     * causes — a cap that is genuinely Wall-clean, and a {@code classesDir} the compiler never
+     * wrote to (a relocated or mis-set output root). The verdict alone cannot tell them apart,
+     * and only the second means predicate 4 went <em>unverified</em>. Returning the count
+     * alongside the verdict makes that check impossible to forget; a bare
+     * {@code List<WallViolation>} let a caller read "no violations" as "clean" and be wrong.
+     *
+     * @param classesScanned how many {@code .class} files were read ({@code 0} means the scan
+     *                       was vacuous — nothing was verified)
+     * @param violations     every forbidden reference found, in deterministic order
+     *                       (hard-constraint #3)
+     */
+    public record ScanResult(int classesScanned, List<WallViolation> violations) {
+
+        public ScanResult {
+            violations = List.copyOf(violations);
+        }
+    }
+
+    /**
+     * Scans every {@code .class} file under {@code classesDir}, in one walk.
      *
      * @param classesDir the module's compiled-output root (Maven's {@code target/classes});
-     *                   a missing directory yields no violations rather than an error, so a
-     *                   resources-only or not-yet-compiled module is not a failure —
-     *                   {@link #countClassFiles(Path)} is how a caller tells that vacuous
-     *                   scan apart from a genuinely clean one
+     *                   a missing directory yields an empty result rather than an error, so a
+     *                   resources-only or not-yet-compiled module is not a failure — see
+     *                   {@link ScanResult} for why the caller must not read that as "clean"
      * @param ownCapNames the cap names this build owns, as derived by
      *                    {@link #ownCapNames(List)}. References into
      *                    {@code eu.exeris.caps.<name>.internal.*} are legal for these and
      *                    forbidden for every other name — a cap may use its own internals.
-     * @return violations in deterministic order (hard-constraint #3)
      * @throws UncheckedIOException if a class file exists but cannot be read
      */
-    public static List<WallViolation> scan(Path classesDir, Set<String> ownCapNames) {
+    public static ScanResult scan(Path classesDir, Set<String> ownCapNames) {
         Set<WallViolation> violations = new TreeSet<>();
+        int scanned = 0;
         try {
             for (Path classFile : classFilesUnder(classesDir)) {
                 violations.addAll(scanOne(classFile, ownCapNames));
+                scanned++;
             }
         } catch (IOException e) {
             throw new UncheckedIOException("Cap-tier Wall scan failed under " + classesDir, e);
         }
-        return List.copyOf(violations);
-    }
-
-    /**
-     * How many {@code .class} files a {@link #scan(Path, Set)} of {@code classesDir} would read.
-     *
-     * <p>Exists so a caller can distinguish the two states that produce an identical verdict:
-     * a cap that is genuinely Wall-clean, and a {@code classesDir} the compiler never wrote to
-     * (a relocated or mis-set output root). Both report zero violations; only the second one
-     * means predicate 4 went <em>unverified</em>, and silently calling that "clean" is exactly
-     * the failure mode a guard must not have.
-     *
-     * @param classesDir the module's compiled-output root; {@code null} or missing yields {@code 0}
-     * @throws UncheckedIOException if the tree cannot be walked
-     */
-    public static int countClassFiles(Path classesDir) {
-        try {
-            return classFilesUnder(classesDir).size();
-        } catch (IOException e) {
-            throw new UncheckedIOException("Cap-tier Wall scan failed under " + classesDir, e);
-        }
+        return new ScanResult(scanned, List.copyOf(violations));
     }
 
     /**
