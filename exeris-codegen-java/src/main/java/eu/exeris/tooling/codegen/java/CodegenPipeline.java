@@ -7,10 +7,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.tooling.codegen.core.OutputWriter;
+import eu.exeris.tooling.codegen.core.capability.CapTierWall;
+import eu.exeris.tooling.codegen.core.capability.CapTierWallException;
 import eu.exeris.tooling.codegen.core.capability.CapabilityGraph;
 import eu.exeris.tooling.codegen.core.capability.CapabilityGraphException;
 import eu.exeris.tooling.codegen.core.capability.CapabilityModuleDescriptor;
 import eu.exeris.tooling.codegen.core.capability.CompositionStamp;
+import eu.exeris.tooling.codegen.core.capability.WallViolation;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.core.generator.GeneratorRegistry;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
@@ -25,6 +28,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Stream;
 
 /**
@@ -370,6 +374,52 @@ public final class CodegenPipeline {
         for (String warning : graph.warnings()) {
             LOG.log(Level.WARNING, "capability: " + warning);
         }
+        return capabilities.size();
+    }
+
+    /**
+     * Enforces the cap-tier Wall over this module's <b>compiled</b> classes — ADR-024
+     * validation predicate 4, realized per ADR-055. The companion to
+     * {@link #validateCapabilities(Path)}: that method resolves predicates 1–3 from the
+     * metadata, this one holds the import boundary against the bytecode.
+     *
+     * <p><b>Gated on the module actually being a cap.</b> The scan runs only when this
+     * build emitted capability metadata. Without that gate the guard would fail every
+     * ordinary generated application the moment it touched Spring — but an application is
+     * a Tier 3 SKU consumer, not a Tier 2 cap, and the Wall was never its contract.
+     *
+     * <p>Reads bytecode rather than sources, per the founder ruling of 2026-07-29: a
+     * source scan cannot see a forbidden type that arrives transitively when a dependency
+     * changes. This is also why the check cannot live in the annotation processor — at
+     * processing time no bytecode exists yet, and the processor is barred from loading the
+     * user's classpath at all.
+     *
+     * @param classesDir  the module's compiled-output root ({@code target/classes}); a
+     *                    missing directory is not an error
+     * @param metadataDir directory holding processor-emitted {@code capability_*.json}
+     * @return the number of capability modules whose classes were gated ({@code 0} when
+     *         this module is not a cap, i.e. the scan was skipped)
+     * @throws IOException if metadata cannot be read
+     * @throws eu.exeris.tooling.codegen.core.capability.CapTierWallException (unchecked)
+     *         when any class crosses a forbidden boundary
+     * @since 0.7.0
+     */
+    public int verifyCapTierWall(Path classesDir, Path metadataDir) throws IOException {
+        Objects.requireNonNull(classesDir, "classesDir");
+        Objects.requireNonNull(metadataDir, "metadataDir");
+        List<CapabilityModuleDescriptor> capabilities = loadCapabilities(metadataDir);
+        if (capabilities.isEmpty()) {
+            LOG.log(Level.INFO, "Not a capability module — cap-tier Wall not applicable");
+            return 0;
+        }
+        Set<String> ownCapNames = CapTierWall.ownCapNames(capabilities);
+        LOG.log(Level.INFO, "Enforcing cap-tier Wall over " + classesDir
+                + (ownCapNames.isEmpty() ? "" : " (own cap(s): " + ownCapNames + ")"));
+        List<WallViolation> violations = CapTierWall.scan(classesDir, ownCapNames);
+        if (!violations.isEmpty()) {
+            throw new CapTierWallException(violations);
+        }
+        LOG.log(Level.INFO, "Cap-tier Wall clean (" + capabilities.size() + " module(s))");
         return capabilities.size();
     }
 
