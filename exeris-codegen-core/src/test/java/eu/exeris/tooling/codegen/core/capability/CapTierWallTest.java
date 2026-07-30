@@ -327,6 +327,28 @@ class CapTierWallTest {
         }
 
         @Test
+        @DisplayName("countClassFiles separates a vacuous scan from a clean one")
+        void countsScannedClasses(@TempDir Path dir) throws IOException {
+            // "No violations" has two causes — a clean cap, and a classesDir the compiler never
+            // wrote to. The verdict cannot tell them apart; the class count is what can.
+            assertThat(CapTierWall.countClassFiles(dir.resolve("nope"))).isZero();
+            assertThat(CapTierWall.countClassFiles(null)).isZero();
+
+            List<WallViolation> clean = compileAndScan(dir, Set.of("billing"), Map.of(
+                    "eu/exeris/caps/billing/internal/Cap.java",
+                    """
+                    package eu.exeris.caps.billing.internal;
+                    public class Cap {
+                        public eu.exeris.caps.billing.api.InvoiceService invoices;
+                    }
+                    """));
+
+            // Same empty verdict as the two calls above, opposite meaning.
+            assertThat(clean).isEmpty();
+            assertThat(CapTierWall.countClassFiles(dir.resolve("classes"))).isEqualTo(1);
+        }
+
+        @Test
         @DisplayName("violations are deterministically ordered (hard-constraint #3 covers diagnostics)")
         void deterministicOrder(@TempDir Path dir) throws IOException {
             Map<String, String> sources = Map.of(

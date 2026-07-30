@@ -5,6 +5,8 @@ import eu.exeris.tooling.codegen.core.capability.CapabilityGraphException;
 import eu.exeris.tooling.codegen.core.capability.WallViolation;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
+import org.apache.maven.plugin.logging.Log;
+import org.apache.maven.plugin.logging.SystemStreamLog;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -164,6 +166,48 @@ class VerifyCapabilitiesMojoTest {
                     .isInstanceOf(MojoFailureException.class)
                     .hasMessageContaining("Cap-tier Wall violated")
                     .hasMessageContaining("org.springframework.context.ApplicationContext");
+        }
+
+        @Test
+        @DisplayName("a cap whose classes were never scanned warns — gating nothing is not a pass")
+        void warnsWhenACapWasNotScanned(@TempDir Path tmp) throws Exception {
+            // Graph gate saw 2 modules (so this build IS a cap) but the Wall gated 0 — the
+            // pipeline's signal for "found no compiled classes". Without this branch a mis-set
+            // classesDir is silently indistinguishable from a Wall-clean cap.
+            List<String> warnings = new ArrayList<>();
+            VerifyCapabilitiesMojo mojo = mojo(tmp, new ArrayList<>(), 2);
+            mojo.setLog(recordWarnings(warnings));
+            mojo.wallVerifier = (c, m) -> 0;
+
+            mojo.execute();
+
+            assertThat(warnings).hasSize(1);
+            assertThat(warnings.getFirst())
+                    .contains("scanned nothing")
+                    .contains(mojo.classesDir.toString())
+                    .contains("unverified, not satisfied");
+        }
+
+        @Test
+        @DisplayName("not a cap (0 modules) stays silent — an ordinary app must not be warned at")
+        void noWarningWhenModuleIsNotACap(@TempDir Path tmp) throws Exception {
+            List<String> warnings = new ArrayList<>();
+            VerifyCapabilitiesMojo mojo = mojo(tmp, new ArrayList<>(), 0);
+            mojo.setLog(recordWarnings(warnings));
+            mojo.wallVerifier = (c, m) -> 0;
+
+            mojo.execute();
+
+            assertThat(warnings).isEmpty();
+        }
+
+        private static Log recordWarnings(List<String> sink) {
+            return new SystemStreamLog() {
+                @Override
+                public void warn(CharSequence content) {
+                    sink.add(content.toString());
+                }
+            };
         }
 
         @Test

@@ -92,9 +92,17 @@ public class VerifyCapabilitiesMojo extends AbstractMojo {
         int verify(Path classesDir, Path metadataDir) throws IOException;
     }
 
-    CapabilityValidator validator = CodegenPipeline.createDefault()::validateCapabilities;
+    /**
+     * One pipeline behind both seams below. {@code createDefault()} builds a whole generator
+     * registry + {@code ObjectMapper} graph, and neither entry point this mojo calls carries
+     * state across calls — a second instance would be duplication, not isolation. Per-mojo
+     * (not static) so parallel module builds keep their own, matching {@code threadSafe = true}.
+     */
+    private final CodegenPipeline pipeline = CodegenPipeline.createDefault();
 
-    WallVerifier wallVerifier = CodegenPipeline.createDefault()::verifyCapTierWall;
+    CapabilityValidator validator = pipeline::validateCapabilities;
+
+    WallVerifier wallVerifier = pipeline::verifyCapTierWall;
 
     @Override
     public void execute() throws MojoExecutionException, MojoFailureException {
@@ -110,7 +118,7 @@ public class VerifyCapabilitiesMojo extends AbstractMojo {
             } else {
                 getLog().info("Capability graph valid (" + modules + " module(s), fresh metadata)");
             }
-            verifyWall();
+            verifyWall(modules);
         } catch (CapabilityGraphException e) {
             // A user-side composition error on FRESH metadata (unsatisfied
             // @Requires / version mismatch / cycle) — the genuine, actionable
@@ -127,8 +135,13 @@ public class VerifyCapabilitiesMojo extends AbstractMojo {
      * ADR-024 predicate 4. Runs after graph validation so the cheaper, more common failure
      * (an unsatisfied {@code @Requires}) is reported first; a cap whose graph is broken has
      * a more urgent problem than its import hygiene.
+     *
+     * @param modules the module count the graph gate just reported — the signal that lets a
+     *                gated-nothing outcome be read correctly: with {@code modules == 0} it
+     *                means "not a cap" (silent, expected), with {@code modules > 0} it means
+     *                a cap whose classes were never found, which is a warning, not a pass
      */
-    private void verifyWall() throws MojoExecutionException, MojoFailureException, IOException {
+    private void verifyWall(int modules) throws MojoExecutionException, MojoFailureException, IOException {
         if (skipWall) {
             getLog().warn("Cap-tier Wall guard DISABLED (exeris.wall.skip=true) — "
                     + "ADR-024 obligation 3 treats this as a registry violation");
@@ -138,6 +151,14 @@ public class VerifyCapabilitiesMojo extends AbstractMojo {
             int gated = wallVerifier.verify(classesDir.toPath(), metadataDir.toPath());
             if (gated > 0) {
                 getLog().info("Cap-tier Wall clean (" + gated + " module(s), " + classesDir + ")");
+            } else if (modules > 0) {
+                // This build IS a cap (the graph gate saw modules on the same metadata) yet the
+                // Wall gated nothing — so nothing was scanned. Reported through Maven's own log
+                // because that is where a user looks; the pipeline logs the same fact via
+                // System.Logger for non-Maven callers.
+                getLog().warn("Cap-tier Wall scanned nothing for " + modules + " capability module(s)"
+                        + " — no compiled classes under " + classesDir
+                        + " (check exeris.classesDir); predicate 4 is unverified, not satisfied");
             }
         } catch (CapTierWallException e) {
             // A cap author's boundary breach — user-side and actionable, so a FAILURE.

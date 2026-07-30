@@ -481,6 +481,22 @@ class CodegenPipelineTest {
         }
 
         @Test
+        @DisplayName("cap-tier Wall: a cap with nothing compiled gates 0 — unverified, not clean")
+        void wallGatesNothingWhenNoClassesFound() throws IOException {
+            // The second zero-violation state: cap metadata is present, but the scan found no
+            // class file (a relocated or mis-set classesDir — `compile` normally populates it
+            // before process-classes). Reporting the module count here would be indistinguishable
+            // from a genuine pass, so the count is 0 and the caller gets to say "unverified".
+            writeCapabilityJson("Billing",
+                    desc("eu.exeris.caps.billing.BillingModule",
+                            List.of(ProvidesMetadata.of("com.api.PaymentApi", "1.0")), List.of()));
+
+            // exists but empty, and missing outright — both are vacuous, neither is an error
+            assertThat(pipeline.verifyCapTierWall(outputDir, metadataDir)).isZero();
+            assertThat(pipeline.verifyCapTierWall(outputDir.resolve("nope"), metadataDir)).isZero();
+        }
+
+        @Test
         @DisplayName("cap-tier Wall: a forbidden reference in a real cap module fails (ADR-024 predicate 4)")
         void wallFailsForCapModule() throws IOException {
             writeCapabilityJson("Billing",
