@@ -10,23 +10,6 @@
 import { z } from 'zod';
 
 // ============================================================================
-// Validation Metadata
-// ============================================================================
-
-export const ValidationMetadataSchema = z.object({
-  required: z.boolean().optional(),
-  minLength: z.number().optional(),
-  maxLength: z.number().optional(),
-  min: z.number().optional(),
-  max: z.number().optional(),
-  pattern: z.string().optional(),
-  email: z.boolean().optional(),
-  url: z.boolean().optional(),
-});
-
-export type ValidationMetadata = z.infer<typeof ValidationMetadataSchema>;
-
-// ============================================================================
 // Field Metadata
 // ============================================================================
 

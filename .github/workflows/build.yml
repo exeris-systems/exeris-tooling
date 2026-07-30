@@ -27,16 +27,16 @@ jobs:
 
       # CI builds the SDK from source and `mvn install`s it (NOT GitHub Packages),
       # so this ref decides which SDK version lands in the local repo. The BOM
-      # pins exeris.sdk.version=0.8.0 (released), so we check out the matching
-      # v0.8.0 tag — the release gate the previous "track main" comment named
-      # ("re-pin to the v0.8.0 tag and drop the BOM SNAPSHOT before cutting
-      # tooling 0.6.0") is hereby executed. SDK main has moved on to
-      # 0.9.0-SNAPSHOT and would no longer satisfy the BOM pin.
-      - name: Checkout exeris-sdk (v0.8.0 tag — matches the released BOM pin)
+      # pins exeris.sdk.version=0.9.0 (released), so we check out the matching
+      # v0.9.0 tag. 0.9.0 is what carries the composition surface the 0.7.0
+      # gateway-caps track builds on: exeris-sdk-composition-lifecycle
+      # (CapabilityLifecycleHooks) and the CompositionConductor in
+      # exeris-sdk-composition-runtime.
+      - name: Checkout exeris-sdk (v0.9.0 tag — matches the released BOM pin)
         uses: actions/checkout@v4
         with:
           repository: exeris-systems/exeris-sdk
-          ref: v0.8.0
+          ref: v0.9.0
           path: exeris-sdk
 
       - name: Set up JDK ${{ matrix.java }}
@@ -55,8 +55,8 @@ jobs:
 
       - name: mvn -B verify (exeris-tooling)
         working-directory: exeris-tooling
-        # No -U: both eu.exeris deps are release-pinned (kernel 0.10.0 from
-        # GitHub Packages, SDK 0.8.0 built from the v0.8.0 tag above) and
+        # No -U: both eu.exeris deps are release-pinned (kernel 0.10.2 from
+        # GitHub Packages, SDK 0.9.0 built from the v0.9.0 tag above) and
         # releases are immutable, so forced re-resolution buys nothing. -U was
         # only ever here to keep the then-SNAPSHOT kernel-spi fresh against
         # setup-java's `cache: maven`; re-add it if a SNAPSHOT dep ever returns.

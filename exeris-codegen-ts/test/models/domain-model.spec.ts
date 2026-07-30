@@ -13,7 +13,6 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import {
-  ValidationMetadataSchema,
   FieldMetadataSchema,
   ActionParamMetadataSchema,
   ActionMetadataSchema,
@@ -33,30 +32,6 @@ import {
   parseDomainMetadata,
   parseExerisMetadata,
 } from '../../src/models/domain-model.js';
-
-describe('ValidationMetadataSchema', () => {
-  it('parses an empty object (every field is optional)', () => {
-    expect(ValidationMetadataSchema.parse({})).toEqual({});
-  });
-
-  it('round-trips a fully-populated validation block', () => {
-    const input = {
-      required: true,
-      minLength: 3,
-      maxLength: 20,
-      min: 1,
-      max: 100,
-      pattern: '^[A-Z]+$',
-      email: true,
-      url: false,
-    };
-    expect(ValidationMetadataSchema.parse(input)).toEqual(input);
-  });
-
-  it('rejects wrong-typed values (e.g. pattern as number)', () => {
-    expect(() => ValidationMetadataSchema.parse({ pattern: 123 })).toThrow(z.ZodError);
-  });
-});
 
 describe('FieldMetadataSchema', () => {
   it('fills every documented default when only name+type are supplied', () => {
