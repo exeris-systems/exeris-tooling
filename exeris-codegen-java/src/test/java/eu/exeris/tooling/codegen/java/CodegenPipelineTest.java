@@ -94,6 +94,66 @@ class CodegenPipelineTest {
     }
 
     @Nested
+    @DisplayName("generated tests (T2 / ADR-058)")
+    class GeneratedTests {
+
+        @TempDir
+        Path testOutputDir;
+
+        @Test
+        @DisplayName("emits the shared double once and one test per entity, into the TEST root")
+        void emitsTestsIntoTheTestRoot() throws IOException {
+            writeDomainJson("Product.json", productDomain());
+
+            int written = pipeline.runTests(metadataDir, testOutputDir, "com.shop");
+
+            assertThat(written).isEqualTo(2);
+            assertThat(testOutputDir.resolve("com/shop/testsupport/RecordingHttpExchange.java")).exists();
+            assertThat(testOutputDir.resolve("com/shop/handler/ProductHandlerTest.java")).exists();
+            // The main root is a different tree entirely — runTests must not have touched it.
+            assertThat(outputDir.resolve("com/shop")).doesNotExist();
+        }
+
+        @Test
+        @DisplayName("the test root gets its own T13 manifest, so pruning is scoped to it")
+        void testRootOwnsItsManifest() throws IOException {
+            writeDomainJson("Product.json", productDomain());
+
+            pipeline.runTests(metadataDir, testOutputDir, "com.shop");
+
+            assertThat(testOutputDir.resolve(".exeris-codegen-manifest")).exists();
+        }
+
+        @Test
+        @DisplayName("auto-detects the base package when the caller does not pass one")
+        void autoDetectsBasePackage() throws IOException {
+            writeDomainJson("Product.json", productDomain());
+
+            pipeline.runTests(metadataDir, testOutputDir, null);
+
+            // productDomain() lives in com.shop.domain, so the support package hangs off com.shop.
+            assertThat(testOutputDir.resolve("com/shop/testsupport/RecordingHttpExchange.java")).exists();
+        }
+
+        @Test
+        @DisplayName("zero domains writes nothing and prunes nothing — a committed test tree survives")
+        void zeroDomainsIsANoOp() throws IOException {
+            // Same T18 reasoning as the main tree: empty metadata is overwhelmingly a masked
+            // compile failure, and pruning on it would delete a committed generated-test tree.
+            Path owned = testOutputDir.resolve("com/shop/handler/ProductHandlerTest.java");
+            Files.createDirectories(owned.getParent());
+            Files.writeString(owned, "class ProductHandlerTest {}");
+            Files.writeString(testOutputDir.resolve(".exeris-codegen-manifest"),
+                    "# Exeris Tooling generated-output manifest - DO NOT EDIT MANUALLY\n"
+                            + "com/shop/handler/ProductHandlerTest.java\n");
+
+            assertThat(pipeline.runTests(metadataDir, testOutputDir, "com.shop")).isZero();
+
+            assertThat(owned).exists();
+        }
+    }
+
+    @Nested
     @DisplayName("happy paths")
     class HappyPaths {
 

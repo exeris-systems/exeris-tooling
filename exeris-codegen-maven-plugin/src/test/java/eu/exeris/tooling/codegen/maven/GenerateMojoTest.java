@@ -42,6 +42,10 @@ class GenerateMojoTest {
         mojo.pluginDescriptor.setGroupId(PLUGIN_GROUP_ID);
         mojo.pluginDescriptor.setArtifactId(PLUGIN_ARTIFACT_ID);
         mojo.pipeline = (m, o, b, ae, defer) -> calls.add(new Call(m, o, b, ae, defer));
+        mojo.testOutputDir = tmp.resolve("src/test/generated/java").toFile();
+        // Test emission is stubbed out by default so the existing tests stay about main emission;
+        // the T2 channel's own control flow is exercised in the GeneratedTests nested class.
+        mojo.testPipeline = (m, o, b) -> { };
         return mojo;
     }
 
@@ -268,5 +272,84 @@ class GenerateMojoTest {
         mojo.execute();
 
         assertThat(calls.get(0).deferCapabilityFailure()).isFalse();
+    }
+
+    @org.junit.jupiter.api.Nested
+    @DisplayName("generated tests (T2 / ADR-058)")
+    class GeneratedTests {
+
+        @Test
+        @DisplayName("off by default — opting in is what accepts the JUnit + AssertJ contract")
+        void offByDefault(@TempDir Path tmp) throws Exception {
+            GenerateMojo mojo = mojo(tmp, new ArrayList<>());
+            mojo.testPipeline = (m, o, b) -> {
+                throw new AssertionError("tests must not be generated unless exeris.tests=true");
+            };
+
+            mojo.execute();
+
+            assertThat(mojo.project.getTestCompileSourceRoots())
+                    .doesNotContain(mojo.testOutputDir.getAbsolutePath());
+        }
+
+        @Test
+        @DisplayName("exeris.tests=true emits into the test root and registers it for test-compile")
+        void emitsAndRegistersTheTestRoot(@TempDir Path tmp) throws Exception {
+            List<Path> testCalls = new ArrayList<>();
+            GenerateMojo mojo = mojo(tmp, new ArrayList<>());
+            mojo.generateTests = true;
+            mojo.testPipeline = (m, o, b) -> testCalls.add(o);
+
+            mojo.execute();
+
+            assertThat(testCalls).containsExactly(mojo.testOutputDir.toPath());
+            // addTestCompileSourceRoot, never addCompileSourceRoot: a generated test on the MAIN
+            // path would compile into the application artefact and put JUnit on its runtime path.
+            assertThat(mojo.project.getTestCompileSourceRoots())
+                    .contains(mojo.testOutputDir.getAbsolutePath());
+            assertThat(mojo.project.getCompileSourceRoots())
+                    .doesNotContain(mojo.testOutputDir.getAbsolutePath());
+        }
+
+        @Test
+        @DisplayName("main emission still runs first — tests are generated from the same metadata")
+        void mainEmissionStillRuns(@TempDir Path tmp) throws Exception {
+            List<Call> calls = new ArrayList<>();
+            GenerateMojo mojo = mojo(tmp, calls);
+            mojo.generateTests = true;
+
+            mojo.execute();
+
+            assertThat(calls).hasSize(1);
+            assertThat(calls.getFirst().outputDir()).isEqualTo(mojo.outputDir.toPath());
+        }
+
+        @Test
+        @DisplayName("exeris.codegen.skip short-circuits test emission too")
+        void globalSkipCoversTestEmission(@TempDir Path tmp) throws Exception {
+            GenerateMojo mojo = mojo(tmp, new ArrayList<>());
+            mojo.generateTests = true;
+            mojo.skip = true;
+            mojo.testPipeline = (m, o, b) -> {
+                throw new AssertionError("nothing runs when the whole pipeline is skipped");
+            };
+
+            mojo.execute();
+        }
+
+        @Test
+        @DisplayName("an IO failure during test emission is an execution error, not a build failure")
+        void ioFailureIsAnExecutionError(@TempDir Path tmp) {
+            GenerateMojo mojo = mojo(tmp, new ArrayList<>());
+            mojo.generateTests = true;
+            mojo.testPipeline = (m, o, b) -> {
+                throw new IOException("disk full");
+            };
+
+            assertThatThrownBy(mojo::execute)
+                    .isInstanceOf(MojoExecutionException.class)
+                    .hasMessageContaining("Test generation failed")
+                    .hasRootCauseMessage("disk full");
+        }
     }
 }

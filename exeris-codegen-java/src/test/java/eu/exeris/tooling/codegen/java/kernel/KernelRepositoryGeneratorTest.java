@@ -581,4 +581,25 @@ class KernelRepositoryGeneratorTest {
                 .filter(f -> f.artifactType() == ArtifactType.REPOSITORY)
                 .findFirst().orElseThrow().content();
     }
+
+    @Test
+    @DisplayName("a filterable field named 'id' gets NO finder — findById(UUID) is already the "
+            + "primary-key lookup")
+    void skipsTheFinderThatWouldShadowFindById() {
+        // FieldMetadata.simple(...) — what the processor uses for any field without @Field — sets
+        // filterable(true), so a plain `private UUID id;` on an entity emitted a second
+        // findById(UUID) here and in the service, and the generated tree did not compile.
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .fields(List.of(
+                        FieldMetadata.builder("id", "java.util.UUID").filterable(true).build(),
+                        FieldMetadata.builder("status", "com.example.OrderStatus").filterable(true).build()))
+                .build();
+
+        GeneratedFile repository = strategy.generate(metadata).stream()
+                .filter(f -> f.artifactType() == ArtifactType.REPOSITORY)
+                .findFirst().orElseThrow();
+
+        assertThat(repository.content()).containsOnlyOnce("findById(UUID id)");
+        assertThat(repository.content()).contains("findByStatus(");
+    }
 }

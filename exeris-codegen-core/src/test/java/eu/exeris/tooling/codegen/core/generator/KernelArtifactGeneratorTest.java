@@ -101,7 +101,10 @@ class KernelArtifactGeneratorTest {
                 ArtifactType.SAGA,
                 ArtifactType.APPLICATION,
                 ArtifactType.CONFIGURATION,
-                ArtifactType.OPENAPI_SPEC);
+                ArtifactType.OPENAPI_SPEC,
+                // T2/ADR-058: generated tests are their own artefact kind — they are the only one
+                // that lands in the TEST output root rather than src/main/generated.
+                ArtifactType.TEST);
     }
 
     @Test

@@ -105,7 +105,8 @@ public interface KernelArtifactGenerator {
         SAGA,            // saga skeleton (eu.exeris.kernel.spi.flow.*)
         APPLICATION,     // application bootstrap (Application + RuntimeLifecycle)
         CONFIGURATION,
-        OPENAPI_SPEC     // OpenAPI 3.1 specification (YAML)
+        OPENAPI_SPEC,    // OpenAPI 3.1 specification (YAML)
+        TEST             // generated test for a generated artefact (T2/ADR-058) — lands in the TEST output root, never in src/main
     }
 }
 

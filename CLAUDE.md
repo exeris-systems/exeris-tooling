@@ -80,6 +80,15 @@ Tooling-specific ADRs live in `docs/adr/`. The one currently load-bearing:
 - **ADR-015 — Codegen Emission Strategy** (text blocks for text artefacts, JavaPoet for Java, shared scaffold extraction; 0.4.0 implementation target).
 - **ADR-055 — Cap-Tier Wall Guard** (0.7.0): the pipeline reads a **second input class** — compiled bytecode from `target/classes`, not just processor-emitted metadata — to enforce ADR-024 validation predicate 4 in `exeris:verify-capabilities`. Two constraints to respect before touching `CapTierWall`: the scan uses the JDK-standard Class-File API (JEP 484) and must stay dependency-free, and a constant-pool-only walk is **unsound** (it misses types that appear only in descriptors or generic `Signature` attributes), so the five-source extraction union is load-bearing — don't "simplify" it.
 
+- **ADR-058 — Generated-test emission channel** (0.7.0): generated tests go to a **second output
+  root** (`src/test/generated/java`, own `OutputWriter` + T13 manifest, `addTestCompileSourceRoot`),
+  behind the opt-in `exeris.tests` flag. Two constraints before touching `Kernel*TestGenerator`: the
+  emitted tests may import **only JUnit 5 + AssertJ** (tooling emits no `pom.xml`, so every import
+  is a requirement on the consumer's build — doubles are emitted, never mocked), and the gate
+  **runs** the emitted tests rather than compiling them, so a new test emitter is not proven until
+  `GeneratedTestsE2ETest` executes it. This makes `public` + non-final + assignment-only
+  constructors a contract of generated code: the emitted service stub subclasses it.
+
 The single-numbering namespace is owned at `~/exeris-systems/exeris-docs/adr-index.md` (per top-level `CLAUDE.md`). Reserve numbers there before drafting. Refactor-only changes do NOT get an ADR — they go in PR descriptions / commit history.
 
 If a change affects pipeline shape, contract between processor and generators, emitter parity, or kernel-target discipline → **trigger an ADR**, don't just edit code.

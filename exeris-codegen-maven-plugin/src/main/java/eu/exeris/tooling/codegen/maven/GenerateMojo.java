@@ -99,6 +99,24 @@ public class GenerateMojo extends AbstractMojo {
     @Parameter(property = "exeris.codegen.allowEmpty", defaultValue = "false")
     boolean allowEmpty;
 
+    /**
+     * Emit the generated tests for the generated code (T2, ADR-058). Opt-in, because what those
+     * tests import is a contract on <em>this</em> project's build: tooling emits no {@code pom.xml},
+     * so switching this on means adding <b>JUnit 5 and AssertJ</b> (test scope) — and nothing else;
+     * the doubles are emitted rather than mocked precisely so no third library is imposed.
+     */
+    @Parameter(property = "exeris.tests", defaultValue = "false")
+    boolean generateTests;
+
+    /**
+     * Target root for the generated tests. Separate from {@link #outputDir} on purpose: a test
+     * under the main root would compile into the application artefact and put JUnit on its runtime
+     * classpath. It gets its own T13 manifest, so pruning one tree can never reach the other.
+     */
+    @Parameter(property = "exeris.testOutputDir",
+            defaultValue = "${project.basedir}/src/test/generated/java")
+    File testOutputDir;
+
     /** Register {@link #outputDir} as a compile source root so generated code
      *  compiles in the same build. Disable when the output is consumed elsewhere. */
     @Parameter(property = "exeris.addCompileSourceRoot", defaultValue = "true")
@@ -124,7 +142,21 @@ public class GenerateMojo extends AbstractMojo {
                  boolean deferCapabilityFailure) throws IOException;
     }
 
-    PipelineRunner pipeline = CodegenPipeline.createDefault()::run;
+    /**
+     * Test-emission seam, mirroring {@link PipelineRunner} — same reason: the mojo's control flow
+     * stays unit-testable without running the real generators.
+     */
+    @FunctionalInterface
+    interface TestRunner {
+        void runTests(Path metadataDir, Path testOutputDir, String basePackage) throws IOException;
+    }
+
+    /** One pipeline behind both seams — neither entry point carries state across calls. */
+    private final CodegenPipeline defaultPipeline = CodegenPipeline.createDefault();
+
+    PipelineRunner pipeline = defaultPipeline::run;
+
+    TestRunner testPipeline = defaultPipeline::runTests;
 
     @Override
     public void execute() throws MojoExecutionException, MojoFailureException {
@@ -166,6 +198,33 @@ public class GenerateMojo extends AbstractMojo {
         if (addCompileSourceRoot && project != null) {
             project.addCompileSourceRoot(outputDir.getAbsolutePath());
             getLog().debug("Registered compile source root: " + outputDir);
+        }
+
+        generateTests();
+    }
+
+    /**
+     * T2/ADR-058. Runs after main emission and registers a <em>test</em> compile source root — the
+     * same unconditional-registration reasoning as above: a committed generated-test tree from a
+     * prior run must stay on the test-compile path even when this run wrote nothing.
+     */
+    private void generateTests() throws MojoExecutionException, MojoFailureException {
+        if (!generateTests) {
+            return;
+        }
+        try {
+            getLog().info("Generating tests for the generated surface: metadata="
+                    + metadataDir + " → output=" + testOutputDir);
+            testPipeline.runTests(metadataDir.toPath(), testOutputDir.toPath(), basePackage);
+        } catch (EmptyMetadataException e) {
+            throw new MojoFailureException(e.getMessage(), e);
+        } catch (IOException e) {
+            throw new MojoExecutionException(
+                    "Test generation failed (testOutputDir=" + testOutputDir + ")", e);
+        }
+        if (addCompileSourceRoot && project != null) {
+            project.addTestCompileSourceRoot(testOutputDir.getAbsolutePath());
+            getLog().debug("Registered test compile source root: " + testOutputDir);
         }
     }
 

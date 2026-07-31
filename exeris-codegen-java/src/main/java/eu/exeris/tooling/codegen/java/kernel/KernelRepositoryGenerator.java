@@ -390,6 +390,20 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
      * {@code List<Entity>}, applies the same soft-delete filter the CRUD reads
      * use, and ends with {@code ORDER BY id} so the row order is deterministic.
      */
+    /**
+     * The one field name a {@code findBy<Field>} finder must skip. A filterable field named
+     * {@code id} would emit {@code findById(UUID)}, which every generated repository and service
+     * already declares as the primary-key lookup — {@code method findById(UUID) is already defined}.
+     * It is easy to hit by accident: the processor records a field with no {@code @Field}
+     * annotation via {@code FieldMetadata.simple(...)}, which sets {@code filterable(true)}, so a
+     * plain {@code private UUID id;} on an entity was enough to make the emitted tree uncompilable.
+     * Skipping is right rather than renaming: the built-in lookup already covers exactly this
+     * query, and it returns the {@code Optional} a primary-key lookup should.
+     */
+    static boolean shadowsPrimaryKeyLookup(FieldMetadata field) {
+        return "id".equalsIgnoreCase(field.name());
+    }
+
     private List<MethodSpec> buildFinders(Context ctx, TypeName listOfEntity) {
         List<MethodSpec> finders = new ArrayList<>();
 
@@ -400,6 +414,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         // collides with.
         ctx.fields().stream()
                 .filter(FieldMetadata::filterable)
+                .filter(f -> !shadowsPrimaryKeyLookup(f))
                 .sorted(Comparator.comparing(FieldMetadata::name))
                 .forEach(f -> finders.add(buildFindByField(ctx, listOfEntity, f)));
 

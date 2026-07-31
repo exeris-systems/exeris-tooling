@@ -18,6 +18,8 @@ import eu.exeris.tooling.codegen.core.generator.GeneratorRegistry;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelApplicationGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelGeneratorStrategy;
+import eu.exeris.tooling.codegen.java.kernel.KernelHandlerTestGenerator;
+import eu.exeris.tooling.codegen.java.kernel.KernelTestSupportGenerator;
 
 import java.io.IOException;
 import java.lang.System.Logger;
@@ -57,6 +59,12 @@ public final class CodegenPipeline {
     private final GeneratorRegistry registry;
     private final KernelApplicationGenerator applicationGenerator;
     private final ObjectMapper mapper;
+
+    // T2/ADR-058. Not constructor-injected: the public constructor is the seam tests use to swap
+    // the registry or the mapper, and widening it for two stateless emitters that the test channel
+    // alone drives would break every existing caller for no substitution anyone needs.
+    private final KernelTestSupportGenerator testSupportGenerator = new KernelTestSupportGenerator();
+    private final KernelHandlerTestGenerator handlerTestGenerator = new KernelHandlerTestGenerator();
 
     public CodegenPipeline(GeneratorRegistry registry,
                            KernelApplicationGenerator applicationGenerator,
@@ -345,6 +353,76 @@ public final class CodegenPipeline {
         }
 
         return result;
+    }
+
+    /**
+     * Emits the generated tests for this project's generated code (T2, ADR-058) into a
+     * <b>separate output root</b>, and returns how many files were written.
+     *
+     * <p>A separate entry point rather than a sixth parameter on {@link #run}, and a separate root
+     * rather than a subtree of it, for the same reason: tests belong on the <em>test</em> compile
+     * path. Emitting them under {@code src/main/generated} would compile them into the application
+     * artefact and put JUnit on its runtime classpath. The test root gets its own
+     * {@link OutputWriter} and therefore its own T13 manifest, so pruning a removed entity's test
+     * is scoped to that tree and can never touch main sources.
+     *
+     * <p>Opt-in: nothing calls this unless the consumer asks for it
+     * ({@code -Dexeris.tests=true}). What the emitted tests may import is a contract on the
+     * consumer's build, since tooling emits no {@code pom.xml} — ADR-058 fixes it at
+     * <b>JUnit 5 + AssertJ</b>, which is why the doubles are emitted rather than mocked.
+     *
+     * <p>Zero domains is a no-op that writes nothing and prunes nothing. That is deliberate: the
+     * T18 reasoning applies here too — empty metadata is overwhelmingly a masked compile failure,
+     * and pruning on it would delete a committed test tree. Tests are re-emitted by the next run
+     * that does load domains.
+     *
+     * @param metadataDir         directory holding processor-emitted JSON
+     * @param testOutputDir       target root for generated tests (created if absent); typically
+     *                            {@code src/test/generated/java}
+     * @param explicitBasePackage caller-supplied base package, or {@code null} to auto-detect from
+     *                            the first domain (the shared {@code testsupport} package hangs
+     *                            off it)
+     * @return the number of test files written
+     * @throws IOException if metadata or output cannot be read/written
+     * @since 0.7.0
+     */
+    public int runTests(Path metadataDir, Path testOutputDir, String explicitBasePackage)
+            throws IOException {
+        Objects.requireNonNull(metadataDir, "metadataDir");
+        Objects.requireNonNull(testOutputDir, "testOutputDir");
+
+        List<DomainMetadata> domains = loadMetadata(metadataDir);
+        if (domains.isEmpty()) {
+            LOG.log(Level.INFO, "No domain metadata in " + metadataDir
+                    + " — no tests to generate (existing generated tests left untouched)");
+            return 0;
+        }
+
+        String basePackage = explicitBasePackage;
+        if (basePackage == null) {
+            basePackage = domains.get(0).packageName().replace(".domain", "");
+        }
+
+        Files.createDirectories(testOutputDir);
+        OutputWriter writer = new OutputWriter(testOutputDir);
+        int filesGenerated = 0;
+
+        // Project-wide first: the per-entity tests all import the exchange double from it.
+        writeFile(writer, testSupportGenerator.generate(basePackage));
+        filesGenerated++;
+
+        for (DomainMetadata domain : domains) {
+            writeFile(writer, handlerTestGenerator.generate(domain, basePackage));
+            filesGenerated++;
+        }
+
+        int pruned = writer.pruneOrphansAndWriteManifest();
+        if (pruned > 0) {
+            LOG.log(Level.INFO, "Pruned " + pruned + " orphaned generated test file(s)");
+        }
+        LOG.log(Level.INFO, "Generated tests: files=" + filesGenerated
+                + " pruned=" + pruned + " output=" + testOutputDir);
+        return filesGenerated;
     }
 
     /**

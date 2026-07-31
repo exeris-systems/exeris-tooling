@@ -266,6 +266,16 @@ same change: `cascadeDelete` now emits `ON DELETE CASCADE` (previously every gen
 `RESTRICT` regardless of the annotation). `cascadeUpdate` alone does not change the delete
 policy.
 
+### An entity field named `id` no longer breaks generation
+
+A filterable field named `id` emitted a second `findById(UUID)` on the repository and the service,
+colliding with the built-in primary-key lookup (`method findById(UUID) is already defined`). It was
+easy to hit without meaning to: the processor records a field with no `@Field` annotation via
+`FieldMetadata.simple(...)`, which sets `filterable(true)` — so a plain `private UUID id;` on an
+entity was enough to make the whole generated tree uncompilable. The finder that shadows the
+primary-key lookup is now skipped. Nothing to do on your side; if you had worked around it by
+annotating or renaming the field, that workaround is no longer needed.
+
 ### Entities with collection fields now generate at all
 
 A field whose type is a collection (`List<Tag> tags`) crashed the pipeline with
@@ -273,6 +283,28 @@ A field whose type is a collection (`List<Tag> tags`) crashed the pipeline with
 the short spelling `List<`, while the processor records the type as javac renders it —
 fully qualified, `java.util.List<…>`. Nothing to do on your side; entities that previously
 could not be generated now can.
+
+### Generated tests (opt-in, new)
+
+`exeris:generate` gains `-Dexeris.tests=true`. It is **off by default**, because turning it on adds
+two hard requirements to your build — tooling emits no `pom.xml`, so what the generated tests import
+is a contract on you:
+
+```xml
+<dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><scope>test</scope></dependency>
+<dependency><groupId>org.assertj</groupId><artifactId>assertj-core</artifactId><scope>test</scope></dependency>
+```
+
+…and nothing else: no mocking framework is imposed, because the doubles are emitted rather than
+mocked (ADR-058).
+
+Output goes to a **separate root**, `src/test/generated/java` (`-Dexeris.testOutputDir`), registered
+as a *test* compile source root and carrying its own generated-output manifest — pruning one tree
+can never touch the other. Commit it like the main generated tree.
+
+This slice emits `<Entity>HandlerTest` (the bodyless CRUD routes) plus one shared
+`<basePackage>.testsupport.RecordingHttpExchange`. Nothing is emitted, and nothing changes, unless
+you set the flag.
 
 ### Composed applications drive the boot conductor
 
