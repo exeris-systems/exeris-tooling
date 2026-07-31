@@ -96,6 +96,16 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     // Format-string / code-fragment literals — consolidated so SonarQube
     // S1192 stays quiet and so the SQL shape can evolve in one place.
     private static final String LIST_PREFIX = "List<";
+    /**
+     * The same type spelled the way the processor records it. {@code FieldMetadata.type()} comes
+     * from {@code VariableElement.asType().toString()}, which javac always renders fully
+     * qualified — so a source field declared {@code List<Tag>} arrives as
+     * {@code java.util.List<com.app.domain.Tag>}. Accepting only the short form (which every
+     * hand-built test fixture uses) sent real collection fields down the ENUM_LIKE path, where
+     * {@code ClassName.bestGuess} split the type on its dots and failed with
+     * "not a valid name: List&lt;com" — i.e. any entity with a collection field crashed codegen.
+     */
+    private static final String QUALIFIED_LIST_PREFIX = "java.util.List<";
     private static final String ENTITY_SRC = "entity";
     private static final String WHERE_ID_CLAUSE = " WHERE id = ?";
     private static final String SQL_VAR_STMT = "String sql = $S";
@@ -120,8 +130,21 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         LIST, UUID, STRING, LONG, INT, BOOL, DOUBLE, BIG_DECIMAL, INSTANT_LIKE, LOCAL_DATE_TIME, LOCAL_DATE, ENUM_LIKE
     }
 
+    /**
+     * The element type of a {@code List}-typed field, in either spelling, or {@code null} when
+     * the type is not a list.
+     */
+    private static String listElementType(String type) {
+        for (String prefix : List.of(LIST_PREFIX, QUALIFIED_LIST_PREFIX)) {
+            if (type.startsWith(prefix) && type.endsWith(">")) {
+                return type.substring(prefix.length(), type.length() - 1);
+            }
+        }
+        return null;
+    }
+
     private static DomainTypeKind classifyDomainType(String type) {
-        if (type.startsWith(LIST_PREFIX)) return DomainTypeKind.LIST;
+        if (listElementType(type) != null) return DomainTypeKind.LIST;
         if (UUID_TYPES.contains(type)) return DomainTypeKind.UUID;
         if (STRING_TYPES.contains(type)) return DomainTypeKind.STRING;
         if (LONG_TYPES.contains(type)) return DomainTypeKind.LONG;
@@ -144,7 +167,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         String className = entity + "Repository";
         String table = KernelTableNaming.effectiveTable(metadata);
         List<FieldMetadata> fields = metadata.fields();
-        boolean hasListField = fields.stream().anyMatch(f -> f.type().startsWith(LIST_PREFIX));
+        boolean hasListField = fields.stream().anyMatch(f -> listElementType(f.type()) != null);
 
         ClassName entityType = ClassName.get(metadata.packageName(), entity);
         ClassName selfType = ClassName.get(packageName, className);
@@ -673,8 +696,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     }
 
     private void emitReadList(MethodSpec.Builder map, String type, String setter, int idx) {
-        String genericType = type.substring(LIST_PREFIX.length(), type.length() - 1);
-        ClassName elementType = ClassName.bestGuess(genericType);
+        ClassName elementType = ClassName.bestGuess(listElementType(type));
         map.addCode(CodeBlock.of(
                 "{ String v = row.getString($L); if (v != null) $L(parseList(v, new $T<$T<$T>>() {})); }\n",
                 idx, setter, TYPE_REFERENCE, LIST_TYPE, elementType));

@@ -1485,11 +1485,32 @@ public class ExerisDomainProcessor extends AbstractProcessor {
 
                 RelationshipMetadata.Builder builder = RelationshipMetadata.builder(name, targetEntity);
 
-                if (values.containsKey("type")) {
-                    String typeStr = values.get("type").toString();
-                    try {
-                        builder.type(RelationshipMetadata.RelationType.valueOf(typeStr));
-                    } catch (IllegalArgumentException ignored) {}
+                // The SDK attribute is `relationshipType`; `type` is the AST's name for it
+                // and never existed on the annotation, so this read always missed and every
+                // relationship was recorded with the builder default MANY_TO_ONE. Downstream
+                // that is not cosmetic: KernelFlywayGenerator, KernelRepositoryGenerator,
+                // KernelServiceGenerator and generateForeignKeys all gate on MANY_TO_ONE, so a
+                // ONE_TO_MANY/MANY_TO_MANY side was emitting an FK column, its index, its
+                // FOREIGN KEY constraint and a findBy…Id finder that belong on the other side.
+                String relationType = enumConstantName(values.get("relationshipType"));
+                if (relationType != null) {
+                    // The annotation and AST enums mirror each other's constant names by
+                    // contract (same four), so a mismatch means SDK/tooling version skew and
+                    // must surface as a processing failure, not a silent default.
+                    builder.type(RelationshipMetadata.RelationType.valueOf(relationType));
+                }
+                // @Relationship carries cascade as two booleans; the AST carries a JPA-shaped
+                // enum, and KernelApplicationGenerator#deletePolicy reads ALL/REMOVE as
+                // ON DELETE CASCADE. Without this the FK constraints emitted by T9 were always
+                // RESTRICT and cascadeDelete was a no-op.
+                boolean cascadeDelete = Boolean.TRUE.equals(values.get("cascadeDelete"));
+                boolean cascadeUpdate = Boolean.TRUE.equals(values.get("cascadeUpdate"));
+                if (cascadeDelete || cascadeUpdate) {
+                    builder.cascade(cascadeDelete && cascadeUpdate
+                            ? RelationshipMetadata.CascadeType.ALL
+                            : cascadeDelete
+                                    ? RelationshipMetadata.CascadeType.REMOVE
+                                    : RelationshipMetadata.CascadeType.MERGE);
                 }
                 if (values.containsKey("mappedBy")) builder.mappedBy((String) values.get("mappedBy"));
                 if (values.containsKey("displayField")) builder.displayField((String) values.get("displayField"));
