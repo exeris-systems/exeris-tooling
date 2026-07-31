@@ -77,4 +77,25 @@ class KernelServiceGeneratorTest {
                 .contains("public List<Order> findByCustomerId(UUID customerId)")
                 .contains("return repository.findByCustomerId(customerId)");
     }
+
+    @Test
+    @DisplayName("a filterable field named 'id' gets NO finder — findById(UUID) is already the "
+            + "primary-key lookup")
+    void skipsTheFinderThatWouldShadowFindById() {
+        // The processor records any field without @Field via FieldMetadata.simple(...), which sets
+        // filterable(true) — so a plain `private UUID id;` on an entity used to emit a second
+        // findById(UUID) and the generated tree did not compile at all.
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .fields(List.of(
+                        FieldMetadata.builder("id", "java.util.UUID").filterable(true).build(),
+                        FieldMetadata.builder("status", "com.example.OrderStatus").filterable(true).build()))
+                .build();
+
+        GeneratedFile service = strategy.generate(metadata).stream()
+                .filter(f -> f.artifactType() == ArtifactType.SERVICE)
+                .findFirst().orElseThrow();
+
+        assertThat(service.content()).containsOnlyOnce("findById(UUID id)");
+        assertThat(service.content()).contains("findByStatus(");
+    }
 }

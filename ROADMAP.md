@@ -222,6 +222,31 @@ defers mesh resolution as unnecessary for a single-node API Gateway MVP. The ADR
 `composition.json` reader is Phase 5 (it ships with the `exeris-sku-api-gateway` scaffold alongside
 the authored-manifest schema in `exeris-sdk-composition-spec`), not this milestone.
 
+- [~] **T2 — Generated tests for the generated surface** (slice a shipped). Opt-in
+      (`-Dexeris.tests=true`) emission into a **second output root** `src/test/generated/java`, with
+      its own `OutputWriter` + T13 manifest and registered via `addTestCompileSourceRoot` — a test
+      under the main root would compile into the application artefact and put JUnit on its runtime
+      classpath. Decided in [ADR-058](docs/adr/ADR-058-generated-test-emission-channel.md), which
+      also fixes the half this repo cannot enforce: tooling emits no `pom.xml`, so every import in a
+      generated test is a hard requirement on the consumer's build. The contract is **JUnit 5 +
+      AssertJ and nothing else** — the doubles are emitted (an `HttpExchange` recorder; a service
+      stub that subclasses the generated service) rather than mocked, which in turn makes `public` +
+      non-final + assignment-only constructors a *contract* of generated code rather than an
+      accident. Slice a covers the handler's bodyless routes (`handleGetAll`, `handleGetById`
+      found/absent/malformed-id, `handleDelete`) — the statuses the handler owes the router. The
+      gate **runs** the emitted tests through the JUnit Platform launcher instead of just compiling
+      them; a test emitter whose output is never executed is the inert-output failure mode this repo
+      rejects everywhere else. *Open slices:* body-carrying routes + `@Validation` rejections (need a
+      `LoanedBuffer` double), repository tests (need a fake persistence stack), service delegation,
+      saga step-wiring, and the **FE spec slice** — which must wire `@angular/build:unit-test`
+      (Vitest, founder-ruled 2026-07-31) because the emitted app declares `"test": "ng test"` but
+      ships no runner and no test dependencies, so specs alone would be unrunnable.
+      *Found on the way:* a filterable field named `id` emitted a second `findById(UUID)` on both
+      the repository and the service — uncompilable. Easy to hit by accident, since the processor
+      records any field without `@Field` via `FieldMetadata.simple(...)`, which sets
+      `filterable(true)`: a plain `private UUID id;` was enough. Fixed by skipping the finder that
+      shadows the primary-key lookup.
+
 - [x] **T4-follow-up — `@Relationship(relationshipType = …)` reaches the emitters.** The processor
       read an attribute named `type`, which the SDK annotation does not have (it declares
       `relationshipType`), so every relationship arrived as the builder default `MANY_TO_ONE` — and
@@ -290,7 +315,7 @@ because they gate the cap track, not because T2 was displaced.
 | T10 | `@Validation` enforced client-side (Zod) but dropped server-side (handler/service/DB) | **High** | ✅ 0.6.0 (#103) |
 | T12 | N generated apps can't form a mesh — client is own-app/relative-host, saga step is local, no cross-app contract | **High** | 0.8.0 (deferred out of 0.7.0 by the gateway-caps plan) |
 | T17 | Capability-graph validation is closed-world per app — a legitimate cross-service `@Requires` hard-fails the build | **High** | 0.8.0 (deferred out of 0.7.0 by the gateway-caps plan) |
-| T2  | Zero tests generated for the generated surface | Medium | 0.7.0 (FE spec slice + Java emitter — FE half deferred at the 0.6.0 cut) |
+| T2  | Zero tests generated for the generated surface | Medium | 🔶 0.7.0 slice a (handler bodyless routes, ADR-058); body/repository/service + FE spec slices open |
 | T3  | Action identity = method name, not `@Action(name=…)` → bean-setter collisions | Medium | 0.5.x |
 | T4  | `@Relationship` target derived from field Java type, not `targetEntity` | Medium | 0.5.x |
 | T5  | System-field overrides (`tenantIdField`, …) ignored by the repository generator | Medium | 0.5.x |

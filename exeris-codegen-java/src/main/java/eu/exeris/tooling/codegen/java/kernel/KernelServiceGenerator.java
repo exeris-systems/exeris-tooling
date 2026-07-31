@@ -91,6 +91,10 @@ public class KernelServiceGenerator implements KernelArtifactGenerator {
 
         metadata.fields().stream()
                 .filter(FieldMetadata::filterable)
+                // Same skip as the repository, for the same collision — the two finder surfaces
+                // are emitted in lock-step and a service finder with no repository method behind
+                // it would not compile either.
+                .filter(f -> !KernelRepositoryGenerator.shadowsPrimaryKeyLookup(f))
                 .sorted(Comparator.comparing(FieldMetadata::name))
                 .forEach(f -> finders.add(buildFindByField(listOfEntity, f)));
 
