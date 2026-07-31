@@ -139,6 +139,87 @@ class KernelApplicationGeneratorTest {
     }
 
     @Test
+    @DisplayName("G2: a composed build conducts the composition inside boot(...) — caps ready "
+            + "before the handler slot, drained after the latch")
+    void composedApplicationDrivesTheBootConductor() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        DomainMetadata order = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders").build();
+
+        String application = application(gen.generateAll(List.of(order),
+                "com.example.foundation", true));
+
+        assertThat(application)
+                .contains("import eu.exeris.sdk.composition.runtime.CompositionConductor")
+                // The conductor wraps the lifecycle: start() (initialize + ready for every
+                // cap) precedes RuntimeLifecycle.run(), which is what sets the handler slot,
+                // and close() (drain + terminate) runs after run() returns from its latch —
+                // both still inside boot(...), i.e. after KERNEL READY and before the kernel
+                // stops. That ordering is the whole point of the call site (ADR-024).
+                .contains("try (CompositionConductor conductor = CompositionConductor.from(capManifest()).start())")
+                .contains("new RuntimeLifecycle(handlerSlot, transactionalExecutor()).run();")
+                // ...and NOT the bare, unconducted boot line.
+                .doesNotContain(".boot(() -> new RuntimeLifecycle(handlerSlot, transactionalExecutor()).run())")
+                .contains("protected Path capManifest()")
+                .contains("import java.nio.file.Path")
+                .contains("return Path.of(System.getProperty(\"exeris.capManifest\", \"cap-manifest.json\"))");
+    }
+
+    @Test
+    @DisplayName("G2: no composition → not one conductor symbol is emitted (no inert wiring), "
+            + "and the two-argument overload is that cap-less default")
+    void uncomposedApplicationCarriesNoConductorSymbol() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        List<DomainMetadata> domains = List.of(DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders").build());
+
+        String viaOverload = application(gen.generateAll(domains, "com.example.foundation"));
+        String viaFlag = application(gen.generateAll(domains, "com.example.foundation", false));
+
+        assertThat(viaOverload).isEqualTo(viaFlag);
+        assertThat(viaOverload)
+                .doesNotContain("CompositionConductor")
+                .doesNotContain("capManifest")
+                .doesNotContain("cap-manifest.json")
+                .doesNotContain("java.nio.file.Path")
+                .contains(".boot(() -> new RuntimeLifecycle(handlerSlot, transactionalExecutor()).run())");
+    }
+
+    @Test
+    @DisplayName("G2: composition changes Application only — RuntimeLifecycle is byte-identical")
+    void compositionLeavesTheRuntimeLifecycleUntouched() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        List<DomainMetadata> domains = List.of(DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders").build());
+
+        assertThat(lifecycle(gen.generateAll(domains, "com.example.foundation", true)))
+                .isEqualTo(lifecycle(gen.generateAll(domains, "com.example.foundation", false)));
+    }
+
+    @Test
+    @DisplayName("G2: composed emission is deterministic — byte-identical across runs")
+    void composedEmissionIsDeterministic() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        List<DomainMetadata> domains = List.of(
+                DomainMetadata.builder("Order", "com.example.domain").path("/orders").build(),
+                DomainMetadata.builder("Product", "com.example.domain").path("/products").build());
+
+        assertThat(application(gen.generateAll(domains, "com.example.foundation", true)))
+                .isEqualTo(application(new KernelApplicationGenerator()
+                        .generateAll(domains, "com.example.foundation", true)));
+    }
+
+    private static String application(List<GeneratedFile> files) {
+        return files.stream().filter(f -> "Application".equals(f.className()))
+                .findFirst().orElseThrow().content();
+    }
+
+    private static String lifecycle(List<GeneratedFile> files) {
+        return files.stream().filter(f -> "RuntimeLifecycle".equals(f.className()))
+                .findFirst().orElseThrow().content();
+    }
+
+    @Test
     @DisplayName("T1: registers a POST {base}/{id}/actions/{kebab(name)} route per @Action")
     void shouldRegisterActionRoutes() {
         KernelApplicationGenerator gen = new KernelApplicationGenerator();

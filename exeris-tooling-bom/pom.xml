@@ -57,6 +57,14 @@
                 <artifactId>exeris-sdk-composition-spec</artifactId>
                 <version>${exeris.sdk.version}</version>
             </dependency>
+            <!-- SDK boot conductor — not a codegen dependency (the emitter only
+                 writes its FQN); needed on the e2e compile gate's test classpath
+                 so the G2 composed Application resolves CompositionConductor. -->
+            <dependency>
+                <groupId>eu.exeris</groupId>
+                <artifactId>exeris-sdk-composition-runtime</artifactId>
+                <version>${exeris.sdk.version}</version>
+            </dependency>
 
             <!-- Exeris Kernel Open-Core SPI — required by the codegen
                  compile-test to verify emitted code resolves against real

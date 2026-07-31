@@ -234,8 +234,16 @@ public final class CodegenPipeline {
                 }
             }
 
-            LOG.log(Level.INFO, "Generating application bootstrap");
-            for (GeneratedFile file : applicationGenerator.generateAll(domains, basePackage)) {
+            // G2: a build that carries capability metadata gets the boot-conductor call
+            // site emitted into Application (ADR-024's 2026-07-21 amendment). Driven by the
+            // metadata this run loaded, not by the manifest on disk — the manifest is
+            // written further down (and on the deferred-failure path may be a preserved
+            // older one), so reading it here would make emission depend on the previous
+            // build's output.
+            boolean composed = !capabilities.isEmpty();
+            LOG.log(Level.INFO, "Generating application bootstrap"
+                    + (composed ? " (with the " + capabilities.size() + "-cap boot conductor)" : ""));
+            for (GeneratedFile file : applicationGenerator.generateAll(domains, basePackage, composed)) {
                 writeFile(writer, file);
                 LOG.log(Level.DEBUG, () -> "wrote " + file.className()
                         + " (" + applicationGenerator.artifactType() + ")");

@@ -594,6 +594,33 @@ class CodegenPipelineTest {
         }
 
         @Test
+        @DisplayName("G2: a build with capabilities emits the boot-conductor call site into Application")
+        void capabilitiesDriveTheConductorCallSite() throws IOException {
+            writeDomainJson("Product.json", productDomain());
+            writeCapabilityJson("Billing",
+                    desc("com.app.Billing", List.of(ProvidesMetadata.of("com.api.PaymentApi", "1.0")),
+                            List.of(), "com.app.BillingLifecycle"));
+
+            pipeline.run(metadataDir, outputDir, "com.shop");
+
+            assertThat(Files.readString(outputDir.resolve("com/shop/Application.java")))
+                    .contains("import eu.exeris.sdk.composition.runtime.CompositionConductor")
+                    .contains("CompositionConductor.from(capManifest()).start()");
+        }
+
+        @Test
+        @DisplayName("G2: a build with no capabilities emits no conductor symbol (no inert wiring)")
+        void domainOnlyBuildEmitsNoConductor() throws IOException {
+            writeDomainJson("Product.json", productDomain());
+
+            pipeline.run(metadataDir, outputDir, "com.shop");
+
+            assertThat(Files.readString(outputDir.resolve("com/shop/Application.java")))
+                    .doesNotContain("CompositionConductor")
+                    .doesNotContain("capManifest");
+        }
+
+        @Test
         @DisplayName("an unsatisfied required capability fails the run")
         void unsatisfiedFailsRun() throws IOException {
             writeCapabilityJson("Checkout",
