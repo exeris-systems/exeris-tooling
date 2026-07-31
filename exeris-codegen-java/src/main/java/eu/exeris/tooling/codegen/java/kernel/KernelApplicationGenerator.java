@@ -39,8 +39,9 @@ import java.util.Map;
  * this generator emits <b>once per project</b> against the full domain
  * list. {@link #generate(DomainMetadata)} therefore returns {@code null}
  * — the real entry point is
- * {@link #generateAll(List, String)}, invoked by {@code CodegenMain}
- * after the per-entity strategy loop completes.
+ * {@link #generateAll(List, String, boolean)}, invoked by
+ * {@link eu.exeris.tooling.codegen.java.CodegenPipeline} after the
+ * per-entity strategy loop completes.
  * <p>
  * Emitted files (in the project base package):
  * <ul>
@@ -145,7 +146,8 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
 
     /**
      * Emits the two-file bootstrap skeleton for the project. Invoked by
-     * {@code CodegenMain} after the per-entity strategy loop.
+     * {@link eu.exeris.tooling.codegen.java.CodegenPipeline} after the per-entity
+     * strategy loop.
      *
      * @param domains the full set of domain metadata records in the project; never {@code null}
      * @param basePackage the project base package (e.g.\ {@code "com.example.foundation"});

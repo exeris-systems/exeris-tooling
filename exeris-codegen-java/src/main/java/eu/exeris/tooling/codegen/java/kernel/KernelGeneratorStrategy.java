@@ -40,12 +40,12 @@ import java.util.List;
  * was reverted because it bound to a non-existent {@code CommunityWebClient};
  * ADR-034's tier-neutral facade is the correct binding target.)
  *
- * <h2>Project-wide (invoked separately by {@code CodegenMain})</h2>
+ * <h2>Project-wide (invoked separately by {@code CodegenPipeline})</h2>
  * <p>{@link KernelApplicationGenerator} is <b>not</b> part of the
  * per-entity strategy — it emits two project-wide files
  * ({@code Application.java} + {@code RuntimeLifecycle.java}) and
  * therefore needs the full domain list, not a single
- * {@link DomainMetadata}. {@code CodegenMain} invokes it explicitly
+ * {@link DomainMetadata}. {@code CodegenPipeline} invokes it explicitly
  * after the per-entity loop via
  * {@link KernelApplicationGenerator#generateAll(java.util.List, String)}.
  *
