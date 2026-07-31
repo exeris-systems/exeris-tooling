@@ -231,6 +231,66 @@ for running the processor/plugin.
 
 ---
 
+## 0.7.0 train — regeneration deltas
+
+Same framing as the 0.6.0 section: annotation contracts and `DomainMetadata` are unchanged;
+what changes is what the emitters produce from them.
+
+### Dependency floor (hard)
+
+The BOM moves to released **`eu.exeris:exeris-sdk-*:0.9.0` and `eu.exeris:exeris-kernel-*:0.10.2`**.
+
+### `@Relationship(relationshipType = …)` is honoured — review your schema diff
+
+Until now the processor read an attribute named `type`, which `@Relationship` does not have
+(it declares `relationshipType`), so **every** relationship reached the generators as
+`MANY_TO_ONE`. Since the Flyway, repository, service and FK-constraint emitters all gate on
+`MANY_TO_ONE`, the non-owning side of a relationship was getting artefacts that belong to the
+owning side. After the fix a regenerated tree **loses**, for every relationship declared
+`ONE_TO_MANY` / `MANY_TO_MANY` / `ONE_TO_ONE`:
+
+- the `<rel>_id` column in that entity's `CREATE TABLE`,
+- its `CREATE INDEX`,
+- its `ALTER TABLE … ADD CONSTRAINT … FOREIGN KEY` in `V3000000__foreign_keys`,
+- the `findBy<Rel>Id` finder on the Repository/Service pair.
+
+**This is a removal from generated DDL, so it needs a decision, not just a regen.** Flyway
+validates checksums of migrations that were already applied: if the affected `CREATE TABLE`
+file has been applied to a live database, do **not** silently commit the regenerated version —
+either keep the old file and drop the column with a new hand-written migration, or repair the
+checksum, per your Flyway policy. A database that never ran the old file simply gets the
+correct schema.
+
+`@Relationship(cascadeDelete = …)` / `cascadeUpdate` are extracted for the first time in the
+same change: `cascadeDelete` now emits `ON DELETE CASCADE` (previously every generated FK was
+`RESTRICT` regardless of the annotation). `cascadeUpdate` alone does not change the delete
+policy.
+
+### Entities with collection fields now generate at all
+
+A field whose type is a collection (`List<Tag> tags`) crashed the pipeline with
+`IllegalArgumentException: not a valid name: List<…`. The repository emitter recognised only
+the short spelling `List<`, while the processor records the type as javac renders it —
+fully qualified, `java.util.List<…>`. Nothing to do on your side; entities that previously
+could not be generated now can.
+
+### Composed applications drive the boot conductor
+
+A build that also carries `@CapabilityModule` metadata now emits a `CompositionConductor`
+call site into `Application.run()`, inside the `KernelBootstrap.boot(...)` callback. Two
+consequences for such a build:
+
+- add `eu.exeris:exeris-sdk-composition-runtime` to the app's runtime classpath;
+- make `cap-manifest.json` reachable at runtime. The default is the `exeris.capManifest`
+  system property, falling back to `cap-manifest.json` in the working directory — the build
+  writes the manifest at the codegen output root, which is a *source* root and never on the
+  classpath. Override `protected Path capManifest()` to resolve it any other way.
+
+A build with no capability metadata is unaffected: it emits byte-identically to 0.6.0, down
+to the absent import.
+
+---
+
 ## Reference
 
 - [ADR-015 — Codegen emission strategy](adr/ADR-015-codegen-emission-strategy.md)

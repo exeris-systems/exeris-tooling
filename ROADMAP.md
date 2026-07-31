@@ -222,10 +222,32 @@ defers mesh resolution as unnecessary for a single-node API Gateway MVP. The ADR
 `composition.json` reader is Phase 5 (it ships with the `exeris-sku-api-gateway` scaffold alongside
 the authored-manifest schema in `exeris-sdk-composition-spec`), not this milestone.
 
-The backlog items already targeted at 0.7.0 before the gateway track was folded in — **T2** (the
-full test-emitter, Java + the FE spec slice) and **T9** (FK-constraint referential integrity) —
-still sit in this milestone; G0–G3 lead it because they gate the cap track, not because those two
-were displaced.
+- [x] **T4-follow-up — `@Relationship(relationshipType = …)` reaches the emitters.** The processor
+      read an attribute named `type`, which the SDK annotation does not have (it declares
+      `relationshipType`), so every relationship arrived as the builder default `MANY_TO_ONE` — and
+      because the Flyway, repository, service and FK-constraint emitters all *correctly* gate on
+      `MANY_TO_ONE`, the non-owning side of a relationship was emitting an FK column, its index, its
+      `FOREIGN KEY` constraint and a `findBy<Rel>Id` finder. `cascadeDelete`/`cascadeUpdate` were
+      likewise never extracted, so every generated FK was `RESTRICT` regardless of the annotation.
+      **Why it survived T11 strict mode:** that audit reports attributes which are *extracted but
+      unconsumed*; an attribute the processor never reads at all is invisible to it. Also why the
+      unit suites missed it — the generators are tested against hand-built metadata that sets the
+      type explicitly, and the processor tests asserted only that *a* relationships array exists.
+      The fix ships with an `annotation → emitted SQL` e2e (`RelationshipSqlE2ETest`) that closes
+      that seam, and it found a second, unrelated defect: a field of a collection type crashed the
+      pipeline outright (`not a valid name: List<…`) because the repository emitter accepted only
+      the short spelling `List<` while the processor records javac's fully-qualified
+      `java.util.List<…>`. Schema consequences are written up in
+      [MIGRATION](docs/MIGRATION-0.x-to-1.0.md#070-train--regeneration-deltas) — a regen *removes*
+      DDL, so it needs a Flyway decision, not just a commit.
+
+**T9 was not open in this milestone after all** — FK *constraints* shipped in 0.6.0 alongside T8
+(single trailing `V3000000__foreign_keys` migration; see the T8 entry). The 0.7.0 line and the
+completeness-table row saying otherwise were doc drift, corrected here. What was genuinely missing
+was that the constraints could never see a non-`MANY_TO_ONE` relationship or a cascade — the
+extraction fix above. The remaining backlog item already targeted at 0.7.0 before the gateway track
+was folded in is **T2** (the full test-emitter, Java + the FE spec slice); G0–G3 lead the milestone
+because they gate the cap track, not because T2 was displaced.
 
 ## 0.8.0–0.9.0 — feedback-driven cleanups
 
@@ -272,7 +294,7 @@ were displaced.
 | T3  | Action identity = method name, not `@Action(name=…)` → bean-setter collisions | Medium | 0.5.x |
 | T4  | `@Relationship` target derived from field Java type, not `targetEntity` | Medium | 0.5.x |
 | T5  | System-field overrides (`tenantIdField`, …) ignored by the repository generator | Medium | 0.5.x |
-| T9  | Generated schema has no inter-entity foreign keys — zero referential integrity | Medium | 0.7.0 |
+| T9  | Generated schema has no inter-entity foreign keys — zero referential integrity | Medium | ✅ 0.6.0 (constraints, with T8) + 0.7.0 (`relationshipType`/cascade extraction) |
 | T11 | No fidelity/strict mode — annotation attributes set but consumed by no generator fail silently | Medium | 0.5.x |
 | T13 | Codegen emits per-entity output but never prunes it — a removed/renamed entity breaks the build | Medium | 0.5.x |
 | T18 | Capability validation × two-pass build deadlock; `mvn clean` + T13 prune wipes the committed L1 tree | Medium | ✅ 0.6.0 (#129 + `exeris:verify-capabilities` deferred-validation gate) |
@@ -462,12 +484,17 @@ were displaced.
       and Flyway derives the matching SQL columns + RLS predicate. Default case is byte-identical
       (`tenantId`→`tenant_id`/`getTenantId`, …) so determinism holds. Pairs with **S1**.
 
-- [ ] **T9 — Cross-entity relationship pass → `FOREIGN KEY` constraints.** Each entity's Flyway is
-      generated in isolation; the only `REFERENCES` emitted are the tenant FKs. An `owner_id` column is
-      a bare `UUID NOT NULL` — no referential integrity, no cascade, no cross-entity awareness. Same
-      blind spot as **T4**: the pipeline has no relationship graph.
-      *Update:* a cross-entity pass (from `@Relationship` and/or convention-named `*Id` FKs) emitting
-      `FOREIGN KEY` constraints + `ON DELETE` policy in Flyway, feeding join-aware finders (**T8**).
+- [x] **T9 — Cross-entity relationship pass → `FOREIGN KEY` constraints. DONE (0.6.0 constraints +
+      0.7.0 extraction).** Each entity's Flyway used to be generated in isolation; the only
+      `REFERENCES` emitted were the tenant FKs, so an `owner_id` column was a bare `UUID NOT NULL` —
+      no referential integrity, no cascade, no cross-entity awareness. Same blind spot as **T4**: the
+      pipeline had no relationship graph.
+      *Done (0.6.0, with T8):* a cross-entity pass over `@Relationship` emitting `FOREIGN KEY`
+      constraints + an `ON DELETE` policy as one trailing `V3000000__foreign_keys` migration (which
+      sorts after every `CREATE TABLE`, so no ordering hazard), feeding the join-aware finders.
+      *Done (0.7.0):* the pass could not actually see relationship kind or cascade until the
+      processor read `relationshipType`/`cascadeDelete` — see the T4-follow-up entry in the 0.7.0
+      milestone.
 
 - [~] **T11 — Strict mode / generation report for inert annotation attributes.** The systemic root
       behind T1/T3/T4/T5 (and S1–S5): an attribute set from the rich annotation Javadoc silently does

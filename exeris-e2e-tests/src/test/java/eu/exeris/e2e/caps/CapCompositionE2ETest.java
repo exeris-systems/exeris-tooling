@@ -4,6 +4,7 @@ import eu.exeris.kernel.community.testkit.http.KernelBootstrapHttpEngineFixture;
 import eu.exeris.kernel.spi.http.HttpStatus;
 import eu.exeris.sdk.composition.CapManifest;
 import eu.exeris.sdk.composition.runtime.CompositionConductor;
+import eu.exeris.e2e.codegen.compile.ProcessorCompiler;
 import eu.exeris.tooling.codegen.core.capability.CapTierWallException;
 import eu.exeris.tooling.codegen.java.CodegenPipeline;
 import org.junit.jupiter.api.BeforeAll;
@@ -15,14 +16,11 @@ import org.junit.jupiter.api.io.TempDir;
 import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.json.JsonMapper;
 
-import javax.tools.JavaCompiler;
-import javax.tools.ToolProvider;
 import java.io.IOException;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -88,7 +86,7 @@ class CapCompositionE2ETest {
         metadataDir = classesDir.resolve("exeris-metadata");
         generatedDir = workspace.resolve("src/main/generated/java");
 
-        compileWithProcessor(workspace.resolve("src"), classesDir, null, sampleSku());
+        ProcessorCompiler.compile(workspace.resolve("src"), classesDir, null, sampleSku());
 
         // The processor writes capability_*.json under CLASS_OUTPUT/exeris-metadata — i.e. exactly
         // the (classesDir, metadataDir) pair exeris:verify-capabilities is configured with.
@@ -198,13 +196,13 @@ class CapCompositionE2ETest {
             // The host-runtime type is compiled to a SEPARATE directory used only as -classpath —
             // that is how a real cap sees Spring (a dependency artefact), and it keeps the scanned
             // directory free of classes that would flag their own self-reference.
-            compileWithProcessor(dir.resolve("stubsrc"), stubs, null, Map.of(
+            ProcessorCompiler.compile(dir.resolve("stubsrc"), stubs, null, Map.of(
                     "org/springframework/context/ApplicationContext.java",
                     """
                     package org.springframework.context;
                     public interface ApplicationContext {}
                     """));
-            compileWithProcessor(dir.resolve("src"), classes, stubs, Map.of(
+            ProcessorCompiler.compile(dir.resolve("src"), classes, stubs, Map.of(
                     "eu/exeris/caps/rogue/RogueModule.java",
                     """
                     package eu.exeris.caps.rogue;
@@ -233,13 +231,13 @@ class CapCompositionE2ETest {
         void siblingInternalsReachFailsTheBuild(@TempDir Path dir) throws IOException {
             Path siblings = dir.resolve("siblings");
             Path classes = dir.resolve("classes");
-            compileWithProcessor(dir.resolve("sibsrc"), siblings, null, Map.of(
+            ProcessorCompiler.compile(dir.resolve("sibsrc"), siblings, null, Map.of(
                     "eu/exeris/caps/vault/internal/VaultStore.java",
                     """
                     package eu.exeris.caps.vault.internal;
                     public class VaultStore {}
                     """));
-            compileWithProcessor(dir.resolve("src"), classes, siblings, Map.of(
+            ProcessorCompiler.compile(dir.resolve("src"), classes, siblings, Map.of(
                     "eu/exeris/caps/rogue/RogueModule.java",
                     """
                     package eu.exeris.caps.rogue;
@@ -266,42 +264,6 @@ class CapCompositionE2ETest {
     private static URLClassLoader capClassLoader() throws IOException {
         return new URLClassLoader(new URL[]{classesDir.toUri().toURL()},
                 CapCompositionE2ETest.class.getClassLoader());
-    }
-
-    /**
-     * Writes {@code sources} under {@code srcRoot} and compiles them with the real annotation
-     * processor into {@code outputDir}, so both the class files and {@code exeris-metadata/} are
-     * produced the way a downstream {@code javac} run produces them.
-     *
-     * @param extraClasspath an additional classpath entry (the dependency-artefact stand-in), or
-     *                       {@code null}
-     */
-    private static void compileWithProcessor(Path srcRoot, Path outputDir, Path extraClasspath,
-                                             Map<String, String> sources) throws IOException {
-        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
-        assertThat(compiler).as("a JDK (not a JRE) is required to compile the sample").isNotNull();
-        Files.createDirectories(outputDir);
-
-        String classpath = System.getProperty("java.class.path")
-                + (extraClasspath != null ? java.io.File.pathSeparator + extraClasspath : "");
-        List<String> args = new ArrayList<>(List.of(
-                "-d", outputDir.toString(),
-                "-classpath", classpath,
-                // The processor is named rather than discovered: -processorpath would also pick up
-                // whatever else the test classpath registers, and the sample must be processed by
-                // exactly the processor under test.
-                "-processorpath", System.getProperty("java.class.path"),
-                "-processor", "eu.exeris.tooling.processor.ExerisDomainProcessor",
-                "-nowarn"));
-        for (Map.Entry<String, String> source : sources.entrySet()) {
-            Path file = srcRoot.resolve(source.getKey());
-            Files.createDirectories(file.getParent());
-            Files.writeString(file, source.getValue());
-            args.add(file.toString());
-        }
-
-        assertThat(compiler.run(null, null, null, args.toArray(String[]::new)))
-                .as("sample compilation must succeed").isZero();
     }
 
     /**

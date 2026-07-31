@@ -305,6 +305,99 @@ class ExerisDomainProcessorTest {
         }
 
         @Test
+        @DisplayName("@Relationship.relationshipType reaches the metadata — a ONE_TO_MANY side "
+                + "must not be recorded as MANY_TO_ONE")
+        void shouldExtractRelationshipType() throws IOException {
+            // Regression: the extraction read an attribute named `type`, which the SDK
+            // annotation does not have (it declares `relationshipType`). Every relationship
+            // therefore kept the builder default MANY_TO_ONE, and since the Flyway, repository,
+            // service and FK-constraint emitters all gate on MANY_TO_ONE, the collection side of
+            // a relationship was getting an FK column, an index, a FOREIGN KEY constraint and a
+            // findBy…Id finder that belong to the owning side.
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Relationship;
+                    import eu.exeris.sdk.annotation.Relationship.RelationshipType;
+                    import java.util.List;
+                    import java.util.UUID;
+
+                    @ExerisDomain(module = "sales", path = "/orders")
+                    public class Order {
+
+                        @Relationship(targetEntity = Object.class, displayField = "name",
+                                relationshipType = RelationshipType.ONE_TO_MANY)
+                        private List<Object> items;
+
+                        // No relationshipType written: the annotation default (MANY_TO_ONE) and
+                        // the AST default agree, so the owning side still resolves correctly.
+                        @Relationship(targetEntity = Object.class, displayField = "name")
+                        private UUID customerId;
+                    }
+                    """
+            );
+
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).succeededWithoutWarnings();
+
+            String metadata = readContent(compilation.generatedFile(
+                    StandardLocation.CLASS_OUTPUT, "exeris-metadata/Order.json").orElseThrow());
+            assertThat(metadata)
+                    .contains("\"name\" : \"items\"")
+                    .contains("\"type\" : \"ONE_TO_MANY\"")
+                    .contains("\"name\" : \"customerId\"")
+                    .contains("\"type\" : \"MANY_TO_ONE\"");
+        }
+
+        @Test
+        @DisplayName("@Relationship cascade flags map onto the AST CascadeType the FK emitter reads")
+        void shouldExtractCascadeFlags() throws IOException {
+            // deletePolicy() reads ALL/REMOVE as ON DELETE CASCADE; neither flag was extracted
+            // before, so every generated FOREIGN KEY was RESTRICT regardless of the annotation.
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Relationship;
+                    import java.util.UUID;
+
+                    @ExerisDomain(module = "sales", path = "/orders")
+                    public class Order {
+
+                        @Relationship(targetEntity = Object.class, displayField = "name",
+                                cascadeDelete = true)
+                        private UUID customerId;
+
+                        @Relationship(targetEntity = Object.class, displayField = "name",
+                                cascadeDelete = true, cascadeUpdate = true)
+                        private UUID warehouseId;
+
+                        @Relationship(targetEntity = Object.class, displayField = "name",
+                                cascadeUpdate = true)
+                        private UUID carrierId;
+                    }
+                    """
+            );
+
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).succeededWithoutWarnings();
+
+            String metadata = readContent(compilation.generatedFile(
+                    StandardLocation.CLASS_OUTPUT, "exeris-metadata/Order.json").orElseThrow());
+            assertThat(metadata)
+                    .contains("\"cascade\" : \"REMOVE\"")
+                    .contains("\"cascade\" : \"ALL\"")
+                    // cascadeUpdate alone must NOT become a delete cascade — MERGE is outside
+                    // deletePolicy()'s CASCADE set, so that FK stays RESTRICT.
+                    .contains("\"cascade\" : \"MERGE\"");
+        }
+
+        @Test
         @DisplayName("T4: @Relationship.targetEntity wins over the field's Java type")
         void shouldHonourExplicitTargetEntityOverFieldType() throws IOException {
             JavaFileObject customer = JavaFileObjects.forSourceString(
