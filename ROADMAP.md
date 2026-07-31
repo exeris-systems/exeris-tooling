@@ -181,12 +181,25 @@ See the **Codegen completeness backlog** below for per-item detail.
       argument appear only in a descriptor and a `Signature` attribute respectively), so the
       extraction surface — pool ∪ descriptors ∪ signatures ∪ annotations — is the load-bearing
       part rather than the forbidden-prefix list.
-- [ ] **G2 — SKU bootstrap emitter.** `KernelApplicationGenerator` emits the conductor call site
+- [x] **G2 — SKU bootstrap emitter.** `KernelApplicationGenerator` emits the conductor call site
       inside `KernelBootstrap.boot(...)`, after `KERNEL READY`, per the shape pinned in
       `CompositionConductor`'s javadoc. The `@CapabilityLifecycle` → `cap-manifest.json`
       (`lifecycleOwner`) → conductor chain is already complete on the data side, so the emitter is
-      the last missing link. **Must be conditional on the build actually having a composition** —
-      emitting conductor wiring into a cap-less app is inert wiring.
+      the last missing link. **Conditional on the build actually having a composition** (driven by
+      the `capability_*.json` this run loaded, not by the manifest on disk — that one may be a
+      preserved older file on the T18(a) deferred path): a cap-less build emits byte-identically
+      to every release before 0.7.0, down to the absent import. The call site is a
+      try-with-resources over the *concrete* conductor type — its `close()` declares no checked
+      exception, which is what lets it sit inside `boot(Runnable)` — so cap `initialize`/`ready`
+      complete **before** `RuntimeLifecycle` sets the handler slot (no request is served against a
+      half-initialized composition), and drain/terminate run **after** the shutdown latch releases
+      and before the kernel stops. The compile gate now runs twice, once per bootstrap variant.
+      Runtime manifest location is an overridable `protected Path capManifest()` seam
+      (`exeris.capManifest` system property, default `cap-manifest.json` in the working directory):
+      the build writes the manifest at the codegen output root, which is a *source* root and so
+      never on the runtime classpath. **Packaging it as a deployment artefact stays a SKU-scaffold
+      concern** (Phase 5, alongside the ADR-053 canonical `composition.json` reader) — tooling owns
+      the seam, not the deployment layout.
 - [ ] **G3 — e2e composition proof** (plan P1.4; the plan's Phase-1 **exit gate**). Sample two-cap
       composition → processor → `verify-capabilities` → kernel boot via
       `KernelBootstrapHttpEngineFixture` (`exeris-kernel-community-testkit`) → conductor run

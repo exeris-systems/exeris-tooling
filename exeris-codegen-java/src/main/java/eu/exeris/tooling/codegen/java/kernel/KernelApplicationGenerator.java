@@ -66,6 +66,10 @@ import java.util.Map;
  *       slot, and parks on a {@link java.util.concurrent.CountDownLatch}
  *       until the JVM shuts down.</li>
  * </ul>
+ * <p>When the build also carries a capability composition (G2, 0.7.0), the
+ * {@code Application} boot callback additionally conducts that composition —
+ * see {@link #generateAll(List, String, boolean)}. A build without capabilities
+ * emits exactly what every release before 0.7.0 emitted.
  *
  * @implNote Emission is JavaPoet-based (ADR-015).
  *
@@ -108,11 +112,35 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
     private static final ClassName TRANSACTION_ORCHESTRATOR =
             ClassName.get("eu.exeris.kernel.core.persistence", "TransactionOrchestrator");
 
+    // G2 (ADR-024, 2026-07-21 "Boot Conductor Call Site" amendment): the SKU-side
+    // boot conductor. Emitted ONLY into a build that actually has a composition —
+    // see buildApplication(String, boolean).
+    private static final ClassName COMPOSITION_CONDUCTOR =
+            ClassName.get("eu.exeris.sdk.composition.runtime", "CompositionConductor");
+    private static final ClassName PATH = ClassName.get("java.nio.file", "Path");
+    private static final String CAP_MANIFEST_METHOD = "capManifest";
+    private static final String CAP_MANIFEST_FILE = "cap-manifest.json";
+    private static final String CAP_MANIFEST_PROPERTY = "exeris.capManifest";
+
     @Override
     public GeneratedFile generate(DomainMetadata metadata) {
         // Application emission is project-wide, not per-entity. Real
         // entry point is generateAll(...).
         return null;
+    }
+
+    /**
+     * Emits the two-file bootstrap skeleton for a project with <b>no</b>
+     * composition — equivalent to {@link #generateAll(List, String, boolean)}
+     * with {@code composed=false}.
+     *
+     * @param domains the full set of domain metadata records in the project; never {@code null}
+     * @param basePackage the project base package (e.g.\ {@code "com.example.foundation"});
+     *                    {@code Application} and {@code RuntimeLifecycle} are emitted here
+     * @return the two emitted files; always {@code [Application, RuntimeLifecycle]}
+     */
+    public List<GeneratedFile> generateAll(List<DomainMetadata> domains, String basePackage) {
+        return generateAll(domains, basePackage, false);
     }
 
     /**
@@ -122,11 +150,18 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
      * @param domains the full set of domain metadata records in the project; never {@code null}
      * @param basePackage the project base package (e.g.\ {@code "com.example.foundation"});
      *                    {@code Application} and {@code RuntimeLifecycle} are emitted here
+     * @param composed whether this build has a capability composition (at least one
+     *                 {@code @CapabilityModule}). When {@code true}, {@code Application}
+     *                 drives the SDK boot conductor around the runtime lifecycle; when
+     *                 {@code false} not a single conductor symbol is emitted — see
+     *                 {@link #buildApplication(String, boolean)}
      * @return the two emitted files; always {@code [Application, RuntimeLifecycle]}
+     * @since 0.7.0
      */
-    public List<GeneratedFile> generateAll(List<DomainMetadata> domains, String basePackage) {
+    public List<GeneratedFile> generateAll(List<DomainMetadata> domains, String basePackage,
+                                           boolean composed) {
         List<GeneratedFile> files = new ArrayList<>(2);
-        files.add(buildApplication(basePackage));
+        files.add(buildApplication(basePackage, composed));
         files.add(buildRuntimeLifecycle(domains, basePackage));
         return files;
     }
@@ -252,7 +287,29 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                               String targetTable, String deletePolicy) {
     }
 
-    private GeneratedFile buildApplication(String basePackage) {
+    /**
+     * Emits {@code Application}. With {@code composed}, the {@code KernelBootstrap.boot(...)}
+     * callback additionally drives the SDK {@code CompositionConductor} around the runtime
+     * lifecycle — the call site ADR-024's 2026-07-21 "Boot Conductor Call Site" amendment
+     * pins: inside {@code boot(...)} (so it runs after {@code KERNEL READY}), never as a
+     * kernel {@code Subsystem}, because the kernel stays cap-blind (obligation 9).
+     *
+     * <p>Ordering follows from that placement rather than being a free choice.
+     * {@code start()} runs every cap's {@code initialize} + {@code ready} <em>before</em>
+     * {@link #buildRuntimeLifecycle(List, String) RuntimeLifecycle} sets the handler slot,
+     * so no request is served against a half-initialized composition (until the slot is set
+     * the forwarding handler answers {@code SERVICE_UNAVAILABLE}). On the way out the
+     * try-with-resources closes <em>after</em> {@code run()} returns from its shutdown latch
+     * and <em>before</em> {@code boot(...)} returns — caps drain and terminate in reverse
+     * {@code initOrder}, then the kernel stops. That is the SKU-entrypoint-driven shutdown
+     * the conductor's contract requires.
+     *
+     * <p>Without {@code composed} not one conductor symbol is emitted — no import, no
+     * {@code capManifest()}, no try-with-resources. A cap-less app is a Tier 3 consumer with
+     * nothing to conduct, and emitting a conductor that would boot an empty (or missing)
+     * manifest is inert wiring at best and a boot failure at worst.
+     */
+    private GeneratedFile buildApplication(String basePackage, boolean composed) {
         ClassName selfType = ClassName.get(basePackage, "Application");
         ClassName lifecycleType = ClassName.get(basePackage, "RuntimeLifecycle");
         TypeName atomicHttpHandler = ParameterizedTypeName.get(ATOMIC_REFERENCE, HTTP_HANDLER);
@@ -264,7 +321,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .addStatement("new $T().run()", selfType)
                 .build();
 
-        MethodSpec runMethod = MethodSpec.methodBuilder("run")
+        MethodSpec.Builder run = MethodSpec.methodBuilder("run")
                 .addModifiers(Modifier.PUBLIC)
                 .returns(TypeName.VOID)
                 .addJavadoc("Application entry point. Boots the Kernel under a forwarding\n")
@@ -273,7 +330,15 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .addJavadoc("<p>While {@link $T#run()} is still composing the per-entity\n", lifecycleType)
                 .addJavadoc("wiring (between bootstrap completion and the moment the\n")
                 .addJavadoc("handler slot is set), inbound requests respond\n")
-                .addJavadoc("{@link $T#SERVICE_UNAVAILABLE} rather than being silently dropped.\n", HTTP_STATUS)
+                .addJavadoc("{@link $T#SERVICE_UNAVAILABLE} rather than being silently dropped.\n", HTTP_STATUS);
+        if (composed) {
+            run.addJavadoc("<p>This build has a capability composition, so the boot callback\n")
+                    .addJavadoc("also drives the {@link $T}: every cap is\n", COMPOSITION_CONDUCTOR)
+                    .addJavadoc("initialized and made ready before the handler slot is set, and\n")
+                    .addJavadoc("drained + terminated in reverse {@code initOrder} once the\n")
+                    .addJavadoc("shutdown latch releases — before the kernel itself stops.\n");
+        }
+        MethodSpec runMethod = run
                 .addStatement("$T handlerSlot = new $T<>()", atomicHttpHandler, ATOMIC_REFERENCE)
                 .addStatement("$T forwardingHandler = exchange -> {\n"
                                 + "    $T h = handlerSlot.get();\n"
@@ -285,18 +350,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                                 + "}",
                         HTTP_HANDLER, HTTP_HANDLER, HTTP_STATUS)
                 .beginControlFlow("try")
-                .addCode(CodeBlock.builder()
-                        .add("$T.where($T.HTTP_SERVER_HANDLER, forwardingHandler).call(() -> {\n",
-                                SCOPED_VALUE, HTTP_KERNEL_PROVIDERS)
-                        .indent()
-                        .add("$T.builder()\n", KERNEL_BOOTSTRAP)
-                        .add("    .selector($T.forNames(subsystems().split($S)))\n", BOOTSTRAP_SELECTOR, ",")
-                        .add("    .build()\n")
-                        .add("    .boot(() -> new $T(handlerSlot, transactionalExecutor()).run());\n", lifecycleType)
-                        .add("return null;\n")
-                        .unindent()
-                        .addStatement("})")
-                        .build())
+                .addCode(bootBlock(lifecycleType, composed))
                 .nextControlFlow("catch ($T e)", RUNTIME_EXCEPTION)
                 .addStatement("throw e")
                 .nextControlFlow("catch (Exception e)")
@@ -334,29 +388,101 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                         TRANSACTION_ORCHESTRATOR, KERNEL_PROVIDERS)
                 .build();
 
-        TypeSpec applicationType = KernelScaffold.publicClass("Application")
+        TypeSpec.Builder applicationType = KernelScaffold.publicClass("Application")
                 .addJavadoc("Generated application entry point.\n")
                 .addJavadoc("<p>Drives {@link $T} with the canonical SPI subsystem set\n", KERNEL_BOOTSTRAP)
                 .addJavadoc("({@code http,persistence,graph,flow,events,crypto}) and hands the\n")
                 .addJavadoc("composed Handler/Service/Repository/Router stack off to\n")
-                .addJavadoc("{@link $T#run()}.\n", lifecycleType)
-                .addJavadoc("<p>Subclass to override {@link #transactionalExecutor()} or\n")
-                .addJavadoc("{@link #subsystems()}.\n")
+                .addJavadoc("{@link $T#run()}.\n", lifecycleType);
+        if (composed) {
+            applicationType
+                    .addJavadoc("<p>This application is a composition host: it conducts the\n")
+                    .addJavadoc("capability lifecycle via {@link $T}\n", COMPOSITION_CONDUCTOR)
+                    .addJavadoc("inside the kernel boot callback.\n")
+                    .addJavadoc("<p>Subclass to override {@link #transactionalExecutor()},\n")
+                    .addJavadoc("{@link #subsystems()}, or {@link #$L()}.\n", CAP_MANIFEST_METHOD);
+        } else {
+            applicationType
+                    .addJavadoc("<p>Subclass to override {@link #transactionalExecutor()} or\n")
+                    .addJavadoc("{@link #subsystems()}.\n");
+        }
+        applicationType
                 .addJavadoc("<p>Runtime classpath requirements (in addition to\n")
                 .addJavadoc("{@code exeris-kernel-spi} / {@code -core}): {@code org.slf4j:slf4j-api}\n")
                 .addJavadoc("(used by the generated repositories/services/handlers) plus a\n")
                 .addJavadoc("kernel persistence provider on the classpath (Community driver\n")
                 .addJavadoc("with a configured PostgreSQL DataSource — bound by the kernel\n")
-                .addJavadoc("bootstrap, not by this generated code).\n")
+                .addJavadoc("bootstrap, not by this generated code).\n");
+        if (composed) {
+            applicationType
+                    .addJavadoc("Composition adds {@code eu.exeris:exeris-sdk-composition-runtime}\n")
+                    .addJavadoc("(the boot conductor).\n");
+        }
+        applicationType
                 .addJavadoc("<p><b>DO NOT EDIT</b> - Regenerate from domain models.\n")
                 .addMethod(mainMethod)
                 .addMethod(runMethod)
                 .addMethod(subsystemsMethod)
-                .addMethod(transactionalExecutorMethod)
-                .build();
+                .addMethod(transactionalExecutorMethod);
+        if (composed) {
+            applicationType.addMethod(capManifestMethod());
+        }
 
         return new GeneratedFile(basePackage, "Application",
-                KernelScaffold.render(basePackage, applicationType), ArtifactType.APPLICATION);
+                KernelScaffold.render(basePackage, applicationType.build()), ArtifactType.APPLICATION);
+    }
+
+    /**
+     * The {@code KernelBootstrap.boot(...)} chain. The composed variant wraps the runtime
+     * lifecycle in a try-with-resources over the conductor; the plain variant is byte-for-byte
+     * what every release before 0.7.0 emitted.
+     */
+    private CodeBlock bootBlock(ClassName lifecycleType, boolean composed) {
+        CodeBlock.Builder block = CodeBlock.builder()
+                .add("$T.where($T.HTTP_SERVER_HANDLER, forwardingHandler).call(() -> {\n",
+                        SCOPED_VALUE, HTTP_KERNEL_PROVIDERS)
+                .indent()
+                .add("$T.builder()\n", KERNEL_BOOTSTRAP)
+                .add("    .selector($T.forNames(subsystems().split($S)))\n", BOOTSTRAP_SELECTOR, ",")
+                .add("    .build()\n");
+        if (composed) {
+            // try-with-resources over the CONCRETE conductor type, not AutoCloseable: the
+            // concrete close() declares no checked exception, which is what lets this sit
+            // inside boot(Runnable) without a catch.
+            block.add("    .boot(() -> {\n")
+                    .add("        try ($T conductor = $T.from($L()).start()) {\n",
+                            COMPOSITION_CONDUCTOR, COMPOSITION_CONDUCTOR, CAP_MANIFEST_METHOD)
+                    .add("            new $T(handlerSlot, $L()).run();\n", lifecycleType, TX_EXECUTOR_NAME)
+                    .add("        }\n")
+                    .add("    });\n");
+        } else {
+            block.add("    .boot(() -> new $T(handlerSlot, $L()).run());\n",
+                    lifecycleType, TX_EXECUTOR_NAME);
+        }
+        return block.add("return null;\n")
+                .unindent()
+                .addStatement("})")
+                .build();
+    }
+
+    /** The overridable manifest-location seam, emitted only into a composed application. */
+    private MethodSpec capManifestMethod() {
+        return MethodSpec.methodBuilder(CAP_MANIFEST_METHOD)
+                .addModifiers(Modifier.PROTECTED)
+                .returns(PATH)
+                .addJavadoc("Location of the composition manifest ({@code $L}) the boot\n", CAP_MANIFEST_FILE)
+                .addJavadoc("conductor replays. Read from the {@code $L} system\n", CAP_MANIFEST_PROPERTY)
+                .addJavadoc("property, defaulting to {@code $L} in the process working\n", CAP_MANIFEST_FILE)
+                .addJavadoc("directory.\n")
+                .addJavadoc("<p>The build writes the manifest at the codegen output root, which is\n")
+                .addJavadoc("a <i>source</i> root and therefore not on the runtime classpath — a\n")
+                .addJavadoc("packaged SKU ships the manifest as a deployment artefact and points\n")
+                .addJavadoc("this method (or the property) at it.\n")
+                .addJavadoc("<p>Subclass {@code Application} and override to resolve it any other\n")
+                .addJavadoc("way (a classpath extraction, a config service, a fixed install path).\n")
+                .addStatement("return $T.of($T.getProperty($S, $S))",
+                        PATH, System.class, CAP_MANIFEST_PROPERTY, CAP_MANIFEST_FILE)
+                .build();
     }
 
     private GeneratedFile buildRuntimeLifecycle(List<DomainMetadata> domains, String basePackage) {

@@ -56,6 +56,15 @@
             <scope>test</scope>
         </dependency>
 
+        <!-- SDK boot conductor (G2): the compile gate emits a composed
+             Application whose boot callback drives CompositionConductor —
+             javac needs the real type, not a stub. -->
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-sdk-composition-runtime</artifactId>
+            <scope>test</scope>
+        </dependency>
+
         <!-- Jackson 3 (tools.jackson) on the test classpath: the codegen-
              emitted Handler parses request bodies via tools.jackson.databind
              (matching the canonical community-app pattern). Version managed

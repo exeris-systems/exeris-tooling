@@ -16,7 +16,8 @@ import eu.exeris.tooling.codegen.java.kernel.KernelApplicationGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelGeneratorStrategy;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.List;
 
@@ -44,6 +45,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * binds the tier-neutral {@code eu.exeris.kernel.core.http.client.KernelWebClient}
  * facade (ADR-034), stood in at that FQN by a test stub in this module so the
  * gate compiles without pulling kernel-core.
+ *
+ * <p>Run twice, once per bootstrap variant (G2): {@code composed=false} is the
+ * cap-less application every release before 0.7.0 emitted; {@code composed=true}
+ * adds the SDK boot-conductor call site, compiled against the real
+ * {@code exeris-sdk-composition-runtime} artifact.
  */
 @Tag("e2e")
 @Tag("codegen")
@@ -54,9 +60,11 @@ class KernelCodegenCompileTest {
     private static final String DOMAIN_PACKAGE = "eu.exeris.e2e.compileapp.domain";
     private static final String ENTITY_NAME = "Order";
 
-    @Test
-    @DisplayName("Generated kernel artifacts compile (full registered set incl. Client)")
-    void generatedArtifactsCompile() {
+    @ParameterizedTest(name = "composed={0}")
+    @ValueSource(booleans = {false, true})
+    @DisplayName("Generated kernel artifacts compile (full registered set incl. Client), "
+            + "for both bootstrap variants")
+    void generatedArtifactsCompile(boolean composed) {
         DomainMetadata metadata = DomainMetadata.builder(ENTITY_NAME, DOMAIN_PACKAGE)
                 .path("/orders")
                 .module("sales")
@@ -192,9 +200,14 @@ class KernelCodegenCompileTest {
         // strategy. Run the Application generator separately so the
         // compile-gate verifies the full bootstrap stack resolves
         // against the real exeris-kernel-spi and -core artifacts.
+        // G2: the composed variant emits the boot-conductor call site, so this run also
+        // javac-compiles the try-with-resources against the real
+        // eu.exeris.sdk.composition.runtime.CompositionConductor — including the fact that
+        // its close() declares no checked exception (a boot(Runnable) lambda could not
+        // otherwise hold it).
         String basePackage = DOMAIN_PACKAGE.replace(".domain", "");
-        List<GeneratedFile> applicationFiles =
-                new KernelApplicationGenerator().generateAll(List.of(metadata), basePackage);
+        List<GeneratedFile> applicationFiles = new KernelApplicationGenerator()
+                .generateAll(List.of(metadata), basePackage, composed);
 
         InMemoryJavaCompiler compiler = new InMemoryJavaCompiler()
                 .addSource(DOMAIN_PACKAGE + "." + ENTITY_NAME, sourceEntity())
