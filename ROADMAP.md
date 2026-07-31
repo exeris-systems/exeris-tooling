@@ -200,11 +200,22 @@ See the **Codegen completeness backlog** below for per-item detail.
       never on the runtime classpath. **Packaging it as a deployment artefact stays a SKU-scaffold
       concern** (Phase 5, alongside the ADR-053 canonical `composition.json` reader) — tooling owns
       the seam, not the deployment layout.
-- [ ] **G3 — e2e composition proof** (plan P1.4; the plan's Phase-1 **exit gate**). Sample two-cap
+- [x] **G3 — e2e composition proof** (plan P1.4; the plan's Phase-1 **exit gate**). Sample two-cap
       composition → processor → `verify-capabilities` → kernel boot via
       `KernelBootstrapHttpEngineFixture` (`exeris-kernel-community-testkit`) → conductor run
-      SKU-style after `KERNEL READY`; assert verbatim `initOrder` and drain semantics. Negative
-      half: a Wall-violating sample must fail the build.
+      SKU-style after `KERNEL READY`; asserts verbatim `initOrder` and drain semantics. Negative
+      half: a Wall-violating sample fails the build (host-runtime reach *and* sibling-internal
+      reach). Unlike every other capability test here, it starts from **annotated Java** — real
+      `javac` + `ExerisDomainProcessor`, real class files — so it is the only place two joints are
+      held: (1) the build-time `CompositionStamp` and the SDK's runtime
+      `CompositionStampAssertion` recomputation must agree, and (2) the sample is arranged so the
+      topological order is the **reverse** of the alphabetical one (`vault` provides, `audit`
+      requires), so neither a re-sorting conductor nor a lexicographic emitter can pass by
+      coincidence. The kernel runs the `http` subsystem only (no database, ~0.5 s), and is
+      deliberately never wired to the conductor — ADR-024 obligation 9 keeps it cap-blind. Two
+      build consequences worth knowing: `exeris-e2e-tests` gained the community driver + testkit,
+      and its surefire JVM now runs `--enable-preview` (module-scoped) because this is the first
+      test that *executes* kernel classes rather than only compiling against them.
 
 **Not in 0.7.0:** the cross-app mesh epic (T12/T17) — the gateway-caps plan (§2, item 6) explicitly
 defers mesh resolution as unnecessary for a single-node API Gateway MVP. The ADR-053 canonical

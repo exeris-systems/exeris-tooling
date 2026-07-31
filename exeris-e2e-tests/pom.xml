@@ -21,6 +21,13 @@
         downstream platform/integration-test repos, not here.
     </description>
 
+    <properties>
+        <!-- Declared empty so surefire's @{argLine} below still resolves when JaCoCo's
+             prepare-agent is skipped (-Djacoco.skip=true); with the agent active it is
+             overwritten by prepare-agent and both flags compose. -->
+        <argLine></argLine>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>eu.exeris</groupId>
@@ -37,6 +44,14 @@
         <dependency>
             <groupId>eu.exeris.tooling</groupId>
             <artifactId>exeris-codegen-java</artifactId>
+        </dependency>
+
+        <!-- G3 starts from annotated sources, so the real annotation processor runs
+             inside the test's javac invocation rather than being simulated. -->
+        <dependency>
+            <groupId>eu.exeris.tooling</groupId>
+            <artifactId>exeris-processor</artifactId>
+            <scope>test</scope>
         </dependency>
 
         <!-- Real Open-Core Kernel SPI on the test classpath: the codegen
@@ -65,6 +80,20 @@
             <scope>test</scope>
         </dependency>
 
+        <!-- G3: a real kernel around the conductor run — the community driver supplies the
+             HTTP provider, the testkit fixture boots it on a loopback port (http subsystem
+             only; no database is involved). -->
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-kernel-community</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-kernel-community-testkit</artifactId>
+            <scope>test</scope>
+        </dependency>
+
         <!-- Jackson 3 (tools.jackson) on the test classpath: the codegen-
              emitted Handler parses request bodies via tools.jackson.databind
              (matching the canonical community-app pattern). Version managed
@@ -86,4 +115,21 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <!-- G3 is the first test here that EXECUTES kernel classes rather than just
+                         compiling against them, and the kernel ships preview-tagged class files
+                         (v70.65535). Scoped to this module: the reactor itself still compiles
+                         without preview. -->
+                    <argLine>@{argLine} --enable-preview</argLine>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
 </project>

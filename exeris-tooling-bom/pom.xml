@@ -85,6 +85,19 @@
                 <version>${exeris.kernel.version}</version>
             </dependency>
 
+            <!-- Community driver + its test fixture — the G3 composition e2e boots a
+                 real kernel (http subsystem only) around the conductor run. -->
+            <dependency>
+                <groupId>eu.exeris</groupId>
+                <artifactId>exeris-kernel-community</artifactId>
+                <version>${exeris.kernel.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>eu.exeris</groupId>
+                <artifactId>exeris-kernel-community-testkit</artifactId>
+                <version>${exeris.kernel.version}</version>
+            </dependency>
+
             <!-- Internal tooling modules -->
             <dependency>
                 <groupId>eu.exeris.tooling</groupId>
