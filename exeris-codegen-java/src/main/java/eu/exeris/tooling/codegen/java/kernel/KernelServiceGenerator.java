@@ -108,7 +108,7 @@ public class KernelServiceGenerator implements KernelArtifactGenerator {
     }
 
     private MethodSpec buildFindByField(TypeName listOfEntity, FieldMetadata field) {
-        String name = "findBy" + capitalize(field.name());
+        String name = KernelRepositoryGenerator.fieldFinderName(field.name());
         return MethodSpec.methodBuilder(name)
                 .addModifiers(Modifier.PUBLIC)
                 .returns(listOfEntity)
@@ -120,7 +120,7 @@ public class KernelServiceGenerator implements KernelArtifactGenerator {
     private MethodSpec buildFindByForeignKey(TypeName listOfEntity, RelationshipMetadata rel) {
         String base = KernelTableNaming.foreignKeyBase(rel.name());
         String paramName = base + "Id";
-        String name = "findBy" + capitalize(base) + "Id";
+        String name = KernelRepositoryGenerator.foreignKeyFinderName(rel.name());
         return MethodSpec.methodBuilder(name)
                 .addModifiers(Modifier.PUBLIC)
                 .returns(listOfEntity)
@@ -190,11 +190,6 @@ public class KernelServiceGenerator implements KernelArtifactGenerator {
                 .returns(TypeName.LONG)
                 .addStatement("return repository.count()")
                 .build();
-    }
-
-
-    private static String capitalize(String s) {
-        return s.isEmpty() ? s : Character.toUpperCase(s.charAt(0)) + s.substring(1);
     }
 
     @Override

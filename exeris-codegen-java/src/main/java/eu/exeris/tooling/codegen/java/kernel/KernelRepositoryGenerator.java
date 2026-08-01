@@ -390,18 +390,42 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
      * {@code List<Entity>}, applies the same soft-delete filter the CRUD reads
      * use, and ends with {@code ORDER BY id} so the row order is deterministic.
      */
+    /** The primary-key lookup every generated repository and service already declares. */
+    private static final String PRIMARY_KEY_LOOKUP = "findById";
+
     /**
-     * The one field name a {@code findBy<Field>} finder must skip. A filterable field named
-     * {@code id} would emit {@code findById(UUID)}, which every generated repository and service
-     * already declares as the primary-key lookup — {@code method findById(UUID) is already defined}.
-     * It is easy to hit by accident: the processor records a field with no {@code @Field}
-     * annotation via {@code FieldMetadata.simple(...)}, which sets {@code filterable(true)}, so a
-     * plain {@code private UUID id;} on an entity was enough to make the emitted tree uncompilable.
+     * Finder name a filterable field emits — on the repository and, in lock-step, on the service.
+     * Both call this rather than rebuilding the string, so {@link #shadowsPrimaryKeyLookup} can be
+     * expressed against the name that is actually emitted.
+     */
+    static String fieldFinderName(String fieldName) {
+        return "findBy" + capitalize(fieldName);
+    }
+
+    /** Finder name a {@code MANY_TO_ONE} relationship emits over its FK column. */
+    static String foreignKeyFinderName(String relationshipName) {
+        return "findBy" + capitalize(KernelTableNaming.foreignKeyBase(relationshipName)) + "Id";
+    }
+
+    /**
+     * Whether a filterable field's finder would collide with the built-in primary-key lookup.
+     * A field named {@code id} emits {@code findById(UUID)}, which the repository and service
+     * already declare — {@code method findById(UUID) is already defined}. It is easy to hit by
+     * accident: the processor records a field with no {@code @Field} annotation via
+     * {@code FieldMetadata.simple(...)}, which sets {@code filterable(true)}, so a plain
+     * {@code private UUID id;} on an entity was enough to make the emitted tree uncompilable.
      * Skipping is right rather than renaming: the built-in lookup already covers exactly this
      * query, and it returns the {@code Optional} a primary-key lookup should.
+     *
+     * <p>The test is a comparison of <em>derived names</em>, not of the field name. Neither
+     * shortcut is correct: {@code "id".equals(name)} misses {@code Id}, whose finder is also
+     * {@code findById} because only the first character is capitalized; and
+     * {@code "id".equalsIgnoreCase(name)} over-matches {@code ID} and {@code iD}, whose finder is
+     * {@code findByID} and collides with nothing. Deriving through {@link #fieldFinderName} keeps
+     * the predicate true by construction if the naming scheme ever changes.
      */
     static boolean shadowsPrimaryKeyLookup(FieldMetadata field) {
-        return "id".equalsIgnoreCase(field.name());
+        return PRIMARY_KEY_LOOKUP.equals(fieldFinderName(field.name()));
     }
 
     private List<MethodSpec> buildFinders(Context ctx, TypeName listOfEntity) {
@@ -432,7 +456,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     private MethodSpec buildFindByField(Context ctx, TypeName listOfEntity, FieldMetadata field) {
         String column = toSnakeCase(field.name());
         return buildFinder(ctx, listOfEntity,
-                "findBy" + capitalize(field.name()), KernelTypeMapping.typeNameOf(field.type()),
+                fieldFinderName(field.name()), KernelTypeMapping.typeNameOf(field.type()),
                 field.type(), field.name(), column);
     }
 
@@ -441,7 +465,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         String base = KernelTableNaming.foreignKeyBase(rel.name());
         String column = KernelTableNaming.foreignKeyColumn(rel.name());
         String paramName = base + "Id";
-        String methodName = "findBy" + capitalize(base) + "Id";
+        String methodName = foreignKeyFinderName(rel.name());
         return buildFinder(ctx, listOfEntity, methodName, UUID_TYPE, "UUID", paramName, column);
     }
 
@@ -843,7 +867,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         return camelCase.replaceAll("([a-z])([A-Z])", "$1_$2").toLowerCase();
     }
 
-    private String capitalize(String s) {
+    private static String capitalize(String s) {
         return s.isEmpty() ? s : Character.toUpperCase(s.charAt(0)) + s.substring(1);
     }
 

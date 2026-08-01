@@ -18,13 +18,16 @@ import org.junit.platform.launcher.listeners.TestExecutionSummary;
 import javax.tools.JavaCompiler;
 import javax.tools.ToolProvider;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.CodeSource;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -146,9 +149,14 @@ class GeneratedTestsE2ETest {
     }
 
     /**
-     * Compiles the generated sources against the ADR-058 contract classpath: the kernel SPI (which
-     * the generated main code binds), JUnit and AssertJ, and whatever else this module already
-     * carries. Deliberately the same classpath a consumer would have, not a wider one.
+     * Compiles the generated sources against the ADR-058 contract classpath.
+     *
+     * <p>The classpath is <b>named</b>, not inherited. Handing javac
+     * {@code System.getProperty("java.class.path")} would make the "and nothing else" half of the
+     * contract accidentally true: it holds only for as long as nobody adds a mocking framework to
+     * this module, and the day someone does, an emitter could start importing it and this gate
+     * would stay green. Naming the permitted artefacts one anchor class at a time makes the
+     * contract the thing under test.
      */
     private static void compile(List<String> files, Path outputDir) throws IOException {
         JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
@@ -157,10 +165,7 @@ class GeneratedTestsE2ETest {
 
         List<String> args = new ArrayList<>(List.of(
                 "-d", outputDir.toString(),
-                // The @ExerisDomain entity itself was compiled by the processor run; the
-                // generated code binds it, so its output root joins the contract classpath.
-                "-classpath", System.getProperty("java.class.path")
-                        + java.io.File.pathSeparator + entityClasses,
+                "-classpath", contractClasspath(),
                 // The kernel SPI ships preview-tagged class files; javac refuses to load them
                 // without this, exactly as InMemoryJavaCompiler does for the same reason.
                 "--enable-preview", "--release", "26",
@@ -170,6 +175,46 @@ class GeneratedTestsE2ETest {
         ByteArrayOutputStream diagnostics = new ByteArrayOutputStream();
         int rc = compiler.run(null, null, diagnostics, args.toArray(String[]::new));
         assertThat(rc).as("generated sources must compile:%n%s", diagnostics).isZero();
+    }
+
+    /**
+     * Everything the emitted trees are allowed to see, and nothing more.
+     *
+     * <p>Two groups, for two different reasons. The kernel entries are what the generated
+     * <em>main</em> code targets — a downstream app has them because that is what it runs on. The
+     * JUnit and AssertJ entries are the ADR-058 §2 dependency contract for the generated
+     * <em>tests</em>: turning {@code -Dexeris.tests=true} on must cost a consumer those two
+     * test-scope dependencies and no others, because tooling emits no {@code pom.xml} and so cannot
+     * declare them.
+     */
+    private static String contractClasspath() {
+        List<String> entries = new ArrayList<>(List.of(
+                // What the generated main code binds.
+                codeSourceOf("eu.exeris.kernel.spi.http.HttpExchange"),
+                codeSourceOf("eu.exeris.kernel.core.bootstrap.KernelBootstrap"),
+                // Eight emitters put an slf4j Logger in their output, so generated main code has a
+                // third-party compile dependency no ADR names. It reaches a downstream app only
+                // through the kernel's driver tier (exeris-kernel-community pulls slf4j-api;
+                // neither SPI nor Core does), which is exactly the kind of fact an inherited
+                // classpath hides — this line is what made it visible.
+                codeSourceOf("org.slf4j.Logger"),
+                // What the generated tests may import — ADR-058 §2.
+                codeSourceOf("org.junit.jupiter.api.Test"),
+                codeSourceOf("org.assertj.core.api.Assertions"),
+                // The @ExerisDomain entity the processor compiled; generated code binds it.
+                entityClasses.toString()));
+        return String.join(File.pathSeparator, entries);
+    }
+
+    /** Resolves one permitted artefact to the jar (or classes dir) it was loaded from. */
+    private static String codeSourceOf(String className) {
+        try {
+            CodeSource source = Class.forName(className).getProtectionDomain().getCodeSource();
+            assertThat(source).as("no code source for contract anchor %s", className).isNotNull();
+            return Path.of(source.getLocation().toURI()).toString();
+        } catch (ClassNotFoundException | URISyntaxException e) {
+            throw new IllegalStateException("contract-classpath anchor is missing: " + className, e);
+        }
     }
 
     private static List<String> javaSourcesUnder(Path... roots) throws IOException {
