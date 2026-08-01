@@ -51,9 +51,6 @@ public final class KernelStreamScaffold {
     public static final ClassName STREAM_EVENT =
             ClassName.get("eu.exeris.kernel.spi.http", "StreamEvent");
     public static final ClassName THREAD = ClassName.get("java.lang", "Thread");
-    public static final ClassName SLF4J_LOGGER = ClassName.get("org.slf4j", "Logger");
-    public static final ClassName SLF4J_LOGGER_FACTORY =
-            ClassName.get("org.slf4j", "LoggerFactory");
 
     // --- EV1 producer SPI (ADR-043 stream + ADR-046 codec) ------------------
     /** {@code eu.exeris.kernel.spi.context.KernelProviders} — the ScopedValue
@@ -114,14 +111,10 @@ public final class KernelStreamScaffold {
         return (KEEPALIVE_ITERATIONS * KEEPALIVE_INTERVAL_MILLIS) / 1000;
     }
 
-    /** The {@code LOG} field every stream handler carries. {@code selfType} is the
-     *  generated class's own {@link ClassName} (for the
-     *  {@code LoggerFactory.getLogger(X.class)} init). */
+    /** The {@code LOG} field every stream handler carries — one shape for all generated
+     *  classes, see {@link KernelScaffold#loggerField(ClassName)}. */
     public static FieldSpec loggerField(ClassName selfType) {
-        return FieldSpec.builder(SLF4J_LOGGER, "LOG",
-                        Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
-                .initializer("$T.getLogger($T.class)", SLF4J_LOGGER_FACTORY, selfType)
-                .build();
+        return KernelScaffold.loggerField(selfType);
     }
 
     /**
@@ -234,7 +227,7 @@ public final class KernelStreamScaffold {
                     ClassName.get(String.class), ClassName.get(String.class),
                     VALUE_LAYOUT, STANDARD_CHARSETS);
             body.beginControlFlow("if (!queue.offer($T.of($S, data)))", STREAM_EVENT, b.wireName());
-            body.addStatement("LOG.debug($S)",
+            body.addStatement("LOG.log($T.DEBUG, $S)", KernelScaffold.LOGGER_LEVEL,
                     b.wireName() + " live-view frame dropped (slow consumer)");
             body.endControlFlow();
             body.endControlFlow();
@@ -253,7 +246,7 @@ public final class KernelStreamScaffold {
                 .add("// Normal termination: the peer disconnected or the stream closed.\n")
                 .add("// The engine runs teardown; we stop draining (NOT swallowed\n")
                 .add("// mid-stream — the loop exits and the method returns).\n")
-                .addStatement("LOG.debug($S)", "Live-view stream closed by peer")
+                .addStatement("LOG.log($T.DEBUG, $S)", KernelScaffold.LOGGER_LEVEL, "Live-view stream closed by peer")
                 .nextControlFlow("catch ($T interrupted)", InterruptedException.class)
                 .addStatement("$T.currentThread().interrupt()", THREAD)
                 .nextControlFlow("finally")

@@ -73,8 +73,6 @@ import java.util.stream.Collectors;
  */
 public class KernelSagaGenerator implements KernelArtifactGenerator {
 
-    private static final ClassName SLF4J_LOGGER = ClassName.get("org.slf4j", "Logger");
-    private static final ClassName SLF4J_LOGGER_FACTORY = ClassName.get("org.slf4j", "LoggerFactory");
     private static final ClassName DURATION = ClassName.get("java.time", "Duration");
 
     private static final ClassName FLOW_ENGINE =
@@ -116,10 +114,7 @@ public class KernelSagaGenerator implements KernelArtifactGenerator {
                 .addJavadoc("(action and compensation) logs and returns\n")
                 .addJavadoc("{@link $T#CONTINUE}.\n", FLOW_OUTCOME)
                 .addJavadoc("<p><b>DO NOT EDIT</b> - Regenerate from domain model.\n")
-                .addField(FieldSpec.builder(SLF4J_LOGGER, "LOG",
-                                Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
-                        .initializer("$T.getLogger($T.class)", SLF4J_LOGGER_FACTORY, selfType)
-                        .build())
+                .addField(KernelScaffold.loggerField(selfType))
                 .addField(FieldSpec.builder(String.class, "DEFINITION_NAME",
                                 Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
                         .initializer("$S", sagaName)
@@ -218,8 +213,9 @@ public class KernelSagaGenerator implements KernelArtifactGenerator {
                 .addJavadoc("Action for saga step {@code $L}.\n", step.name())
                 .addJavadoc("<p>Default implementation logs and returns {@link $T#CONTINUE};\n", FLOW_OUTCOME)
                 .addJavadoc("override in a subclass to add real business logic.\n")
-                .addStatement("LOG.debug($S, DEFINITION_NAME, $S, context.currentStep())",
-                        "[{}] step '{}' at index {} — override to implement", step.name())
+                .addStatement("LOG.log($T.DEBUG, $S, DEFINITION_NAME, context.currentStep())",
+                        KernelScaffold.LOGGER_LEVEL, KernelScaffold.escapeQuotes(
+                                "[{0}] step '" + step.name() + "' at index {1} — override to implement"))
                 .addStatement("return $T.CONTINUE", FLOW_OUTCOME)
                 .build();
     }
@@ -233,8 +229,10 @@ public class KernelSagaGenerator implements KernelArtifactGenerator {
                 .addJavadoc("Compensation for saga step {@code $L}.\n", step.name())
                 .addJavadoc("<p>Default implementation logs and returns {@link $T#CONTINUE};\n", FLOW_OUTCOME)
                 .addJavadoc("override in a subclass to add real rollback logic.\n")
-                .addStatement("LOG.debug($S, DEFINITION_NAME, $S, context.currentStep())",
-                        "[{}] compensating step '{}' at index {} — override to implement", step.name())
+                .addStatement("LOG.log($T.DEBUG, $S, DEFINITION_NAME, context.currentStep())",
+                        KernelScaffold.LOGGER_LEVEL, KernelScaffold.escapeQuotes(
+                                "[{0}] compensating step '" + step.name()
+                                        + "' at index {1} — override to implement"))
                 .addStatement("return $T.CONTINUE", FLOW_OUTCOME)
                 .build();
     }

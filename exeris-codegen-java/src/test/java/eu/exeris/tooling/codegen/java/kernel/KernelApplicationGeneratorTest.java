@@ -52,7 +52,9 @@ class KernelApplicationGeneratorTest {
                 .doesNotContain("routerBuilder.route")
                 .contains("HttpRouter.Builder routerBuilder = HttpRouter.builder()")
                 .contains("HttpRouter router = routerBuilder.build()")
-                .contains("Application bootstrap complete: {} entities wired");
+                // The count is known at generation time, so it is baked into the literal rather
+                // than left as a System.Logger parameter.
+                .contains("Application bootstrap complete: 0 entities wired");
     }
 
     @Test

@@ -203,7 +203,7 @@ public class KernelStreamHandlerGenerator implements KernelArtifactGenerator {
                 .addJavadoc("run stream teardown — it is NOT caught and swallowed mid-stream.\n")
                 .addJavadoc("Back-pressure parks the virtual thread inside {@code emit}; the bounded\n")
                 .addJavadoc("hand-off queue drops frames for a slow consumer rather than growing the heap.\n")
-                .addStatement("LOG.debug($S)", "Opening " + entity + " live-view stream")
+                .addStatement("LOG.log($T.DEBUG, $S)", KernelScaffold.LOGGER_LEVEL, "Opening " + entity + " live-view stream")
                 .addCode(KernelStreamScaffold.eventProducerScaffold(bindings))
                 .build();
     }
@@ -221,7 +221,7 @@ public class KernelStreamHandlerGenerator implements KernelArtifactGenerator {
                 .addJavadoc("lets it propagate so the engine can run stream teardown — it is NOT\n")
                 .addJavadoc("caught and swallowed. Back-pressure parks the virtual thread inside\n")
                 .addJavadoc("{@code emit}; this handler never buffers to a heap queue.\n")
-                .addStatement("LOG.debug($S)", "Opening " + entity + " live-view stream")
+                .addStatement("LOG.log($T.DEBUG, $S)", KernelScaffold.LOGGER_LEVEL, "Opening " + entity + " live-view stream")
                 // Shared deterministic keep-alive scaffold (no producer for this
                 // entity). Slice-1 heartbeat note: native EventSource ignores NAMED
                 // frames, so the keep-alive is invisible to onmessage (fine — nothing

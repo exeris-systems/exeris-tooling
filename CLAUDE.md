@@ -89,6 +89,16 @@ Tooling-specific ADRs live in `docs/adr/`. The one currently load-bearing:
   `GeneratedTestsE2ETest` executes it. This makes `public` + non-final + assignment-only
   constructors a contract of generated code: the emitted service stub subclasses it.
 
+- **ADR-060 — Generated code logs through `System.Logger`** (0.7.0): the emitters bind **no logging
+  facade**. `slf4j-api` is not a dependency of `exeris-kernel-spi`/`-core` — it reached an app only
+  through the driver tier — so it was a requirement on the consumer's build that no document
+  carried. Three API differences are load-bearing when touching an emitted log call: placeholders
+  are `{0}`/`{1}` (`MessageFormat`), single quotes in a *parameterised* message must be doubled via
+  `KernelScaffold.escapeQuotes` (a placeholder inside quotes is emitted verbatim and its argument
+  silently dropped), and there is no trailing-`Throwable` convention — concatenate the value and use
+  `log(Level, String, Throwable)`. Enforcement is the ADR-058 gate compiling with **no** slf4j on
+  the classpath at all.
+
 The single-numbering namespace is owned at `~/exeris-systems/exeris-docs/adr-index.md` (per top-level `CLAUDE.md`). Reserve numbers there before drafting. Refactor-only changes do NOT get an ADR — they go in PR descriptions / commit history.
 
 If a change affects pipeline shape, contract between processor and generators, emitter parity, or kernel-target discipline → **trigger an ADR**, don't just edit code.

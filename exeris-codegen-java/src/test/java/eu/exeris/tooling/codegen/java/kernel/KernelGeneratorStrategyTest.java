@@ -63,4 +63,29 @@ class KernelGeneratorStrategyTest {
                         ArtifactType.CLIENT
                 );
     }
+
+    @Test
+    @DisplayName("no emitted artefact binds a logging facade — generated code logs through System.Logger")
+    void bindsNoLoggingFacade() {
+        DomainMetadata metadata = DomainMetadata.builder("Product", "com.shop.domain")
+                .module("catalog")
+                .path("/products")
+                .events(List.of(DomainEventMetadata.simple("ProductCreated")))
+                .graphMetadata(GraphMetadata.simple("Product"))
+                .sagaMetadata(SagaMetadata.simple("ProductSaga"))
+                .build();
+
+        // Tooling emits no pom.xml, so anything generated code imports is a hard requirement on
+        // the consumer's build. slf4j-api is not a dependency of exeris-kernel-spi or -core — it
+        // used to reach an app only through whichever driver tier it happened to pick. The e2e
+        // gate enforces this by compiling without slf4j on the classpath at all; this is the fast
+        // check that says which artefact regressed.
+        for (GeneratedFile file : strategy.generate(metadata)) {
+            assertThat(file.content())
+                    .as("%s (%s) must not bind a logging facade", file.className(), file.artifactType())
+                    .doesNotContain("org.slf4j")
+                    .doesNotContain("org.apache.logging")
+                    .doesNotContain("java.util.logging");
+        }
+    }
 }

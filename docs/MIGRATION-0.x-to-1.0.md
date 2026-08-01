@@ -284,6 +284,30 @@ the short spelling `List<`, while the processor records the type as javac render
 fully qualified, `java.util.List<…>`. Nothing to do on your side; entities that previously
 could not be generated now can.
 
+### Generated code no longer depends on SLF4J
+
+Generated repositories, services, handlers, event publishers, event handlers, graph sync, sagas and
+the application bootstrap logged through `org.slf4j.Logger`. They now log through
+`java.lang.System.Logger` ([ADR-060](adr/ADR-060-generated-code-logging-facade.md)).
+
+**Why it mattered:** `slf4j-api` is not a dependency of `exeris-kernel-spi` or `exeris-kernel-core` —
+it reached an application only through the driver tier (`exeris-kernel-community` pulls it). Since
+tooling emits no `pom.xml`, a consumer on a different driver set could end up with generated code
+that does not compile, against a requirement no document carried.
+
+**What you need to do:**
+
+- If you declared `org.slf4j:slf4j-api` **only** because generated code needed it, you can drop it.
+- If you want these log records in your SLF4J (or Log4j) backend, put a `System.LoggerFinder`
+  provider on the classpath — `org.slf4j:slf4j-jdk-platform-logging` is the SLF4J one. **Without a
+  provider the records go to `java.util.logging` instead**, so a configuration that previously showed
+  them will look silent. This is the only user-visible behaviour change; the messages and their
+  levels are unchanged.
+
+Message *syntax* in the emitted source changes with the facade — `{}` becomes `{0}`, `{1}`, … because
+`System.Logger` formats with `MessageFormat` — but rendered output is the same. Regenerate and commit;
+there is nothing to hand-edit.
+
 ### Generated tests (opt-in, new)
 
 `exeris:generate` gains `-Dexeris.tests=true`. It is **off by default**, because turning it on adds

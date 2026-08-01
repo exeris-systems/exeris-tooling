@@ -177,7 +177,7 @@ public class KernelActionStreamHandlerGenerator implements KernelArtifactGenerat
                 .addJavadoc("lets it propagate so the engine can run stream teardown — it is NOT\n")
                 .addJavadoc("caught and swallowed. Back-pressure parks the virtual thread inside\n")
                 .addJavadoc("{@code emit}; this handler never buffers to a heap queue.\n")
-                .addStatement("LOG.debug($S)", "Opening " + entity + "." + action.name() + " action stream")
+                .addStatement("LOG.log($T.DEBUG, $S)", KernelScaffold.LOGGER_LEVEL, "Opening " + entity + "." + action.name() + " action stream")
                 // Shared deterministic keep-alive scaffold (EV1 seam + loop + close).
                 // Slice-2 heartbeat note: the RxJS-over-fetch client parses NAMED SSE
                 // frames, so it will dispatch the EV1 named event (STREAM_EVENT_TYPE)

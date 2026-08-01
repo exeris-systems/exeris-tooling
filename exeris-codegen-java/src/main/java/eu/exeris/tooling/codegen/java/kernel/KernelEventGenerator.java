@@ -94,8 +94,6 @@ import javax.lang.model.element.Modifier;
 public class KernelEventGenerator implements KernelArtifactGenerator {
 
     private static final ClassName UUID = ClassName.get("java.util", "UUID");
-    private static final ClassName SLF4J_LOGGER = ClassName.get("org.slf4j", "Logger");
-    private static final ClassName SLF4J_LOGGER_FACTORY = ClassName.get("org.slf4j", "LoggerFactory");
 
     private static final ClassName EVENT_ENGINE = KernelEventSupport.EVENT_ENGINE;
     private static final ClassName EVENT_DESCRIPTOR = KernelEventSupport.EVENT_DESCRIPTOR;
@@ -139,10 +137,7 @@ public class KernelEventGenerator implements KernelArtifactGenerator {
                 .addJavadoc("carry {@code FLAG_PERSISTENT} so the SPI persists them via\n")
                 .addJavadoc("the transactional outbox transparently.\n")
                 .addJavadoc("<p><b>DO NOT EDIT</b> - Regenerate from domain model.\n")
-                .addField(FieldSpec.builder(SLF4J_LOGGER, "LOG",
-                                Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
-                        .initializer("$T.getLogger($T.class)", SLF4J_LOGGER_FACTORY, selfType)
-                        .build());
+                .addField(KernelScaffold.loggerField(selfType));
 
         for (DomainEventMetadata event : metadata.events()) {
             publisher.addField(buildEventTypeSpec(entity, event));
@@ -234,8 +229,8 @@ public class KernelEventGenerator implements KernelArtifactGenerator {
                 // empty payload. Events WITH payloadFields take the codec-resolved
                 // path (buildPublishMethodWithPayload, ADR-046).
                 .addStatement("eventEngine.bus().publish(descriptor, $T.empty())", EVENT_PAYLOAD)
-                .addStatement("LOG.debug($S, eventUuid, streamId)",
-                        "Published " + eventName + ": eventId={} streamId={}");
+                .addStatement("LOG.log($T.DEBUG, $S, eventUuid, streamId)", KernelScaffold.LOGGER_LEVEL,
+                        "Published " + eventName + ": eventId={0} streamId={1}");
 
         return method.build();
     }
@@ -322,8 +317,8 @@ public class KernelEventGenerator implements KernelArtifactGenerator {
                 .addStatement("$T payload = new $T(" + args + ")", payloadType, payloadType)
                 .addStatement("eventEngine.bus().publish(descriptor, $L($T.class, payload, $S))",
                         ENCODE_HELPER, payloadType, eventName)
-                .addStatement("LOG.debug($S, eventUuid, streamId)",
-                        "Published " + eventName + ": eventId={} streamId={}");
+                .addStatement("LOG.log($T.DEBUG, $S, eventUuid, streamId)", KernelScaffold.LOGGER_LEVEL,
+                        "Published " + eventName + ": eventId={0} streamId={1}");
         return method.build();
     }
 
@@ -345,8 +340,9 @@ public class KernelEventGenerator implements KernelArtifactGenerator {
                 .addJavadoc("and encodes the payload; empty payload when no codec is configured.\n")
                 .addStatement("$T registry = $T.eventPayloadCodecRegistry()", optionalRegistry, KERNEL_PROVIDERS)
                 .beginControlFlow("if (registry.isEmpty())")
-                .addStatement("LOG.debug($S, payloadType.getName(), eventName)",
-                        "No event-payload codec registry bound for {} ({}); publishing empty payload")
+                .addStatement("LOG.log($T.DEBUG, $S, payloadType.getName(), eventName)",
+                        KernelScaffold.LOGGER_LEVEL,
+                        "No event-payload codec registry bound for {0} ({1}); publishing empty payload")
                 .addStatement("return $T.empty()", EVENT_PAYLOAD)
                 .endControlFlow()
                 .addStatement("$T codec = registry.get().resolve(payloadType, $T.JSON)",
@@ -359,8 +355,9 @@ public class KernelEventGenerator implements KernelArtifactGenerator {
                 .addStatement("jfr.eventType = eventName")
                 .addStatement("jfr.commit()")
                 .endControlFlow()
-                .addStatement("LOG.debug($S, payloadType.getName(), eventName)",
-                        "No event-payload codec resolved for {} ({}); publishing empty payload")
+                .addStatement("LOG.log($T.DEBUG, $S, payloadType.getName(), eventName)",
+                        KernelScaffold.LOGGER_LEVEL,
+                        "No event-payload codec resolved for {0} ({1}); publishing empty payload")
                 .addStatement("return $T.empty()", EVENT_PAYLOAD)
                 .endControlFlow()
                 // payload is Object on purpose: the codec SPI's encode(Object, ctx)
