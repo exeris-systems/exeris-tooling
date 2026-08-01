@@ -138,7 +138,7 @@ class GeneratedTestsE2ETest {
                     .isZero();
             // Guard against a vacuous pass: an emitter that stopped emitting @Test methods would
             // otherwise "succeed" with zero executed tests.
-            assertThat(summary.getTestsSucceededCount()).isEqualTo(5);
+            assertThat(summary.getTestsSucceededCount()).isEqualTo(8);
         }
     }
 

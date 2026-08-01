@@ -14,20 +14,26 @@ import eu.exeris.tooling.codegen.java.support.KernelScaffold;
 import javax.lang.model.element.Modifier;
 
 /**
- * Emits {@code <Entity>HandlerTest} — the generated test for the generated handler
- * (T2 slice a, ADR-058).
+ * Emits {@code <Entity>HandlerTest} — the generated test for the generated handler (T2, ADR-058).
  *
  * <h2>What it covers, and why only that</h2>
- * <p>The three bodyless CRUD routes: {@code handleGetAll}, {@code handleGetById} (found, absent,
- * and malformed-id) and {@code handleDelete}. Each asserts the response <em>status</em>, which is
- * this handler's actual contract with the router — a regeneration that reorders a guard or drops
- * the 404 branch changes a status, and this catches it.
+ * <p>Every route's <em>status</em>, which is this handler's actual contract with the router — a
+ * regeneration that reorders a guard or drops a branch changes a status, and this catches it.
  *
- * <p>{@code handleCreate} / {@code handleUpdate} are deliberately absent from this slice: both read
- * the request body, which arrives as a {@link eu.exeris.kernel.spi.memory.LoanedBuffer}, so testing
- * them needs a heap-backed buffer double on top of the exchange double. That is a bigger emitted
- * surface and it carries the {@code @Validation} rejection paths with it, so it is its own slice
- * rather than a rushed addition to this one.
+ * <p>Slice a: the bodyless routes — {@code handleGetAll}, {@code handleGetById} (found, absent,
+ * malformed id) and {@code handleDelete}.
+ *
+ * <p>Slice b: the guard paths of the body-carrying routes. {@code handleCreate} and
+ * {@code handleUpdate} both reject before reading the body — {@code parseBody} throws on
+ * {@code hasBody() == false} ahead of resolving any decoder, and {@code handleUpdate}'s path-id
+ * guard runs ahead of that again. So these three cases need no request-body double at all, and
+ * each additionally asserts that the service was never reached.
+ *
+ * <p>What is still out: the paths <em>past</em> a successful decode — a decoded entity, hence the
+ * {@code @Validation} rejections. Those need three more emitted doubles bound through the kernel's
+ * {@code ScopedValue} provider slots (a body decoder, a memory allocator, a
+ * {@link eu.exeris.kernel.spi.memory.LoanedBuffer}), which is a question about whether a generated
+ * test may bind kernel providers at all — a decision, not one more test.
  *
  * <h2>The service double</h2>
  * <p>A nested {@code Stub<Entity>Service} subclasses the generated service and overrides the three
@@ -93,9 +99,10 @@ public final class KernelHandlerTestGenerator {
 
         TypeSpec.Builder type = KernelScaffold.publicClass(className)
                 .addJavadoc("Generated tests for {@link $T}.\n", handlerType)
-                .addJavadoc("<p>Covers the bodyless CRUD routes — the status each one owes the\n")
-                .addJavadoc("router. Body-carrying routes ({@code handleCreate} /\n")
-                .addJavadoc("{@code handleUpdate}) and the {@code @Validation} rejection paths are\n")
+                .addJavadoc("<p>Covers the status each route owes the router: the bodyless CRUD\n")
+                .addJavadoc("routes, and the guard paths of {@code handleCreate} /\n")
+                .addJavadoc("{@code handleUpdate} that reject before the body is read. The paths\n")
+                .addJavadoc("past a successful decode — the {@code @Validation} rejections — are\n")
                 .addJavadoc("not covered here; they need a request-body double.\n")
                 .addJavadoc("<p>Requires JUnit 5 and AssertJ on the test classpath, and nothing else.\n")
                 .addJavadoc("<p><b>DO NOT EDIT</b> - Regenerate from domain models.\n");
@@ -105,6 +112,9 @@ public final class KernelHandlerTestGenerator {
         type.addMethod(getByIdAbsentTest(entity, handlerType, exchangeType, stubType, basePath));
         type.addMethod(getByIdMalformedTest(entity, handlerType, exchangeType, stubType, basePath));
         type.addMethod(deleteTest(entity, handlerType, exchangeType, stubType, basePath));
+        type.addMethod(createMissingBodyTest(entity, handlerType, exchangeType, stubType, basePath));
+        type.addMethod(updateMalformedIdTest(entity, handlerType, exchangeType, stubType, basePath));
+        type.addMethod(updateMissingBodyTest(entity, handlerType, exchangeType, stubType, basePath));
         type.addType(stubService(entity, entityType, serviceType, repositoryType, stubType));
 
         return new GeneratedFile(packageName, className,
@@ -184,6 +194,53 @@ public final class KernelHandlerTestGenerator {
                 .build();
     }
 
+    private MethodSpec createMissingBodyTest(String entity, ClassName handlerType, ClassName exchangeType,
+                                             ClassName stubType, String basePath) {
+        return test("handleCreateRespondsBadRequestWhenTheBodyIsMissing")
+                .addJavadoc("A bodyless {@code POST} is rejected by the body guard, before the\n")
+                .addJavadoc("service is consulted — so nothing is persisted on a malformed request.\n")
+                .addStatement("$T service = new $T()", stubType, stubType)
+                .addStatement("$T handler = new $T(service)", handlerType, handlerType)
+                .addStatement("$T exchange = $T.post($S)", exchangeType, exchangeType, basePath)
+                .addStatement("handler.handleCreate(exchange)")
+                .addStatement("$T.assertThat(exchange.status()).isEqualTo($T.BAD_REQUEST)",
+                        ASSERTIONS, HTTP_STATUS)
+                .addStatement("$T.assertThat(service.saved).isNull()", ASSERTIONS)
+                .build();
+    }
+
+    private MethodSpec updateMalformedIdTest(String entity, ClassName handlerType, ClassName exchangeType,
+                                             ClassName stubType, String basePath) {
+        return test("handleUpdateRespondsBadRequestOnAMalformedId")
+                .addJavadoc("The path-id guard runs before the body guard, so a malformed id is\n")
+                .addJavadoc("rejected without the body being looked at at all.\n")
+                .addStatement("$T service = new $T()", stubType, stubType)
+                .addStatement("$T handler = new $T(service)", handlerType, handlerType)
+                .addStatement("$T exchange = $T.put($S).withPathParam($S, $S)",
+                        exchangeType, exchangeType, basePath + "/not-a-uuid", "id", "not-a-uuid")
+                .addStatement("handler.handleUpdate(exchange)")
+                .addStatement("$T.assertThat(exchange.status()).isEqualTo($T.BAD_REQUEST)",
+                        ASSERTIONS, HTTP_STATUS)
+                .addStatement("$T.assertThat(service.updatedId).isNull()", ASSERTIONS)
+                .build();
+    }
+
+    private MethodSpec updateMissingBodyTest(String entity, ClassName handlerType, ClassName exchangeType,
+                                             ClassName stubType, String basePath) {
+        return test("handleUpdateRespondsBadRequestWhenTheBodyIsMissing")
+                .addJavadoc("A well-formed id is not enough: the body guard still rejects, and the\n")
+                .addJavadoc("service is never reached.\n")
+                .addStatement("$T service = new $T()", stubType, stubType)
+                .addStatement("$T handler = new $T(service)", handlerType, handlerType)
+                .addStatement("$T exchange = $T.put($S).withPathParam($S, $S)",
+                        exchangeType, exchangeType, basePath + "/" + FIXED_ID, "id", FIXED_ID)
+                .addStatement("handler.handleUpdate(exchange)")
+                .addStatement("$T.assertThat(exchange.status()).isEqualTo($T.BAD_REQUEST)",
+                        ASSERTIONS, HTTP_STATUS)
+                .addStatement("$T.assertThat(service.updatedId).isNull()", ASSERTIONS)
+                .build();
+    }
+
     /**
      * The nested service double. Fields are package-private and set directly by each test — a
      * generated double has no callers to protect, and accessors would be noise.
@@ -206,6 +263,8 @@ public final class KernelHandlerTestGenerator {
                         .initializer("$T.empty()", OPTIONAL).build())
                 .addField(FieldSpec.builder(UUID, "lookedUp").build())
                 .addField(FieldSpec.builder(UUID, "deleted").build())
+                .addField(FieldSpec.builder(entityType, "saved").build())
+                .addField(FieldSpec.builder(UUID, "updatedId").build())
                 .addMethod(MethodSpec.constructorBuilder()
                         .addStatement("super(($T) null)", repositoryType)
                         .build())
@@ -228,6 +287,25 @@ public final class KernelHandlerTestGenerator {
                         .addModifiers(Modifier.PUBLIC)
                         .addParameter(UUID, "id")
                         .addStatement("this.deleted = id")
+                        .build())
+                // save/update are overridden so a guard that stopped short-circuiting is reported
+                // as a failed assertion on a recorder, not as an NPE from the null repository.
+                .addMethod(MethodSpec.methodBuilder("save")
+                        .addAnnotation(Override.class)
+                        .addModifiers(Modifier.PUBLIC)
+                        .returns(entityType)
+                        .addParameter(entityType, "entity")
+                        .addStatement("this.saved = entity")
+                        .addStatement("return entity")
+                        .build())
+                .addMethod(MethodSpec.methodBuilder("update")
+                        .addAnnotation(Override.class)
+                        .addModifiers(Modifier.PUBLIC)
+                        .returns(entityType)
+                        .addParameter(UUID, "id")
+                        .addParameter(entityType, "entity")
+                        .addStatement("this.updatedId = id")
+                        .addStatement("return entity")
                         .build())
                 .build();
     }
