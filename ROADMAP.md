@@ -222,7 +222,7 @@ defers mesh resolution as unnecessary for a single-node API Gateway MVP. The ADR
 `composition.json` reader is Phase 5 (it ships with the `exeris-sku-api-gateway` scaffold alongside
 the authored-manifest schema in `exeris-sdk-composition-spec`), not this milestone.
 
-- [~] **T2 — Generated tests for the generated surface** (slice a shipped). Opt-in
+- [~] **T2 — Generated tests for the generated surface** (slices a + b shipped). Opt-in
       (`-Dexeris.tests=true`) emission into a **second output root** `src/test/generated/java`, with
       its own `OutputWriter` + T13 manifest and registered via `addTestCompileSourceRoot` — a test
       under the main root would compile into the application artefact and put JUnit on its runtime
@@ -233,12 +233,20 @@ the authored-manifest schema in `exeris-sdk-composition-spec`), not this milesto
       stub that subclasses the generated service) rather than mocked, which in turn makes `public` +
       non-final + assignment-only constructors a *contract* of generated code rather than an
       accident. Slice a covers the handler's bodyless routes (`handleGetAll`, `handleGetById`
-      found/absent/malformed-id, `handleDelete`) — the statuses the handler owes the router. The
+      found/absent/malformed-id, `handleDelete`) — the statuses the handler owes the router. Slice b
+      adds the body-carrying routes' **guard paths**: `handleCreate` and `handleUpdate` both reject
+      before the body is read (`parseBody` throws on `hasBody() == false` ahead of resolving any
+      decoder, and `handleUpdate`'s path-id guard runs ahead of that again), so those three cases
+      need no request-body double at all, and each asserts the service was never reached. The
       gate **runs** the emitted tests through the JUnit Platform launcher instead of just compiling
       them; a test emitter whose output is never executed is the inert-output failure mode this repo
-      rejects everywhere else. *Open slices:* body-carrying routes + `@Validation` rejections (need a
-      `LoanedBuffer` double), repository tests (need a fake persistence stack), service delegation,
-      saga step-wiring, and the **FE spec slice** — which must wire `@angular/build:unit-test`
+      rejects everywhere else. *Open slices:* the paths **past** a successful decode — the
+      `@Validation` rejections — which need a body decoder, a memory allocator and a `LoanedBuffer`
+      bound through the kernel's `ScopedValue` provider slots, i.e. a decision about whether a
+      generated test may bind kernel providers at all (ADR-058 has not taken it; a generator test
+      currently asserts the emitted source names none of them). Then repository tests (need a fake
+      persistence stack), service delegation, saga step-wiring, and the **FE spec slice** — which
+      must wire `@angular/build:unit-test`
       (Vitest, founder-ruled 2026-07-31) because the emitted app declares `"test": "ng test"` but
       ships no runner and no test dependencies, so specs alone would be unrunnable.
       *Found on the way:* a filterable field named `id` emitted a second `findById(UUID)` on both

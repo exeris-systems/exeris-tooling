@@ -92,6 +92,10 @@ public final class KernelTestSupportGenerator {
 
         type.addMethod(factory("get", "GET"));
         type.addMethod(factory("delete", "DELETE"));
+        // POST/PUT with no body. A handler's body guard rejects before anything reads the
+        // LoanedBuffer, so these need no buffer double — see KernelHandlerTestGenerator.
+        type.addMethod(factory("post", "POST"));
+        type.addMethod(factory("put", "PUT"));
 
         type.addMethod(MethodSpec.methodBuilder("withPathParam")
                 .addModifiers(Modifier.PUBLIC)

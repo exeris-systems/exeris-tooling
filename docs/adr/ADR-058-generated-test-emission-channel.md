@@ -99,6 +99,17 @@ mode this repo rejects elsewhere: a wrong expected status would ship silently.
 - Any assertion about the *database*: nothing here starts a persistence engine.
 - The FE spec slice (above).
 
+> **Note (2026-08-01, slice b).** The body-carrying routes split at a line this ADR did not
+> anticipate. Their **guard** paths need nothing new: `parseBody` throws on `hasBody() == false`
+> before it resolves a decoder, and `handleUpdate`'s path-id guard runs earlier still, so
+> `handleCreate`/`handleUpdate` rejections are reachable with the slice-a exchange double alone
+> (they shipped in slice b). What is left is the paths **past** a successful decode — the
+> `@Validation` rejections — and those need a body decoder, a memory allocator and a `LoanedBuffer`
+> bound through the kernel's `ScopedValue` provider slots. Whether a generated test may bind kernel
+> providers is a question §"Any assertion about the database" gestures at but does not answer; it is
+> a decision, not one more test, so nothing binds them yet and a generator test asserts the emitted
+> source names none of them.
+
 ## Engineering protocol
 
 1. Every new generated-test emitter is proven by the run-the-tests gate, not by substring checks.

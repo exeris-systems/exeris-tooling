@@ -302,9 +302,16 @@ Output goes to a **separate root**, `src/test/generated/java` (`-Dexeris.testOut
 as a *test* compile source root and carrying its own generated-output manifest — pruning one tree
 can never touch the other. Commit it like the main generated tree.
 
-This slice emits `<Entity>HandlerTest` (the bodyless CRUD routes) plus one shared
-`<basePackage>.testsupport.RecordingHttpExchange`. Nothing is emitted, and nothing changes, unless
-you set the flag.
+What is emitted so far: `<Entity>HandlerTest` plus one shared
+`<basePackage>.testsupport.RecordingHttpExchange`. The test covers every status the handler owes the
+router on the bodyless CRUD routes, and the guard paths of `handleCreate` / `handleUpdate` — a
+missing body, and a malformed path id — each also asserting the service was never reached. The
+`@Validation` rejection paths are not emitted yet: they require a decoded request body, and
+therefore kernel provider slots a generated test does not currently bind. Nothing is emitted, and
+nothing changes, unless you set the flag.
+
+If you had already turned the flag on, expect the regenerated `<Entity>HandlerTest` to gain three
+test methods and the emitted `RecordingHttpExchange` to gain `post(...)` / `put(...)` factories.
 
 ### Composed applications drive the boot conductor
 

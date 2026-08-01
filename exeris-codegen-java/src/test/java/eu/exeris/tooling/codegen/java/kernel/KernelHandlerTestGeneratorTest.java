@@ -44,11 +44,37 @@ class KernelHandlerTestGeneratorTest {
                 .contains("HttpStatus.BAD_REQUEST")
                 .contains("handler.handleDelete(exchange)")
                 .contains("HttpStatus.NO_CONTENT");
-        // Body-carrying routes are the next slice: they need a LoanedBuffer double. Asserted on
-        // the CALL, not the bare name — the class javadoc names them as explicitly out of scope.
+    }
+
+    @Test
+    @DisplayName("covers the body-carrying routes' guard paths, which reject before the body is read")
+    void coversTheBodyRouteGuards() {
+        String source = new KernelHandlerTestGenerator().generate(ORDER, "com.example").content();
+
         assertThat(source)
-                .doesNotContain("handler.handleCreate(")
-                .doesNotContain("handler.handleUpdate(");
+                .contains("handler.handleCreate(exchange)")
+                .contains("handler.handleUpdate(exchange)")
+                // Bodyless POST/PUT exchanges: parseBody rejects on hasBody() before resolving a
+                // decoder, so no request-body double is needed to reach BAD_REQUEST.
+                .contains("RecordingHttpExchange.post(")
+                .contains("RecordingHttpExchange.put(")
+                // Each guard test proves the short-circuit, not just the status.
+                .contains("assertThat(service.saved).isNull()")
+                .contains("assertThat(service.updatedId).isNull()");
+    }
+
+    @Test
+    @DisplayName("the emitted test binds no kernel provider — that line is the next slice's decision")
+    void bindsNoKernelProviderSlot() {
+        String source = new KernelHandlerTestGenerator().generate(ORDER, "com.example").content();
+
+        // The paths past a successful decode need a body decoder, a memory allocator and a
+        // LoanedBuffer bound through the kernel's ScopedValue slots. Whether a *generated* test may
+        // do that is a decision ADR-058 has not taken, so nothing here may quietly start.
+        assertThat(source)
+                .doesNotContain("ScopedValue")
+                .doesNotContain("KernelProviders")
+                .doesNotContain("LoanedBuffer");
     }
 
     @Test

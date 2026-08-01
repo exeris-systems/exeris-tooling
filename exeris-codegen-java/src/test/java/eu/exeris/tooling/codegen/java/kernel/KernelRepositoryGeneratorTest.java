@@ -374,6 +374,55 @@ class KernelRepositoryGeneratorTest {
     }
 
     @Test
+    @DisplayName("T2: the findById collision is decided on the derived finder name, not the field name")
+    void shouldDecideThePrimaryKeyCollisionOnTheDerivedName() {
+        // Only the first character is capitalized, so `id` and `Id` both derive `findById`
+        // and collide with the built-in primary-key lookup.
+        assertThat(KernelRepositoryGenerator.shadowsPrimaryKeyLookup(
+                FieldMetadata.builder("id", "UUID").filterable(true).build())).isTrue();
+        assertThat(KernelRepositoryGenerator.shadowsPrimaryKeyLookup(
+                FieldMetadata.builder("Id", "UUID").filterable(true).build())).isTrue();
+
+        // `ID` and `iD` derive `findByID`, which collides with nothing — a case-insensitive
+        // test on the field name would drop these finders for no reason.
+        assertThat(KernelRepositoryGenerator.shadowsPrimaryKeyLookup(
+                FieldMetadata.builder("ID", "UUID").filterable(true).build())).isFalse();
+        assertThat(KernelRepositoryGenerator.shadowsPrimaryKeyLookup(
+                FieldMetadata.builder("iD", "UUID").filterable(true).build())).isFalse();
+
+        // Nothing that merely contains "id" is affected.
+        assertThat(KernelRepositoryGenerator.shadowsPrimaryKeyLookup(
+                FieldMetadata.builder("idempotencyKey", "String").filterable(true).build())).isFalse();
+        assertThat(KernelRepositoryGenerator.shadowsPrimaryKeyLookup(
+                FieldMetadata.builder("customerId", "UUID").filterable(true).build())).isFalse();
+    }
+
+    @Test
+    @DisplayName("T2: a filterable field named `Id` emits no second findById; `ID` still gets its finder")
+    void shouldNotEmitDuplicateFindByIdForCapitalisedIdField() {
+        DomainMetadata capitalised = DomainMetadata.builder("Order", "com.example.domain")
+                .fields(List.of(FieldMetadata.builder("Id", "UUID").filterable(true).build()))
+                .build();
+
+        GeneratedFile repo = strategy.generate(capitalised).stream()
+                .filter(f -> f.artifactType() == ArtifactType.REPOSITORY)
+                .findFirst().orElseThrow();
+
+        // Exactly one declaration — the built-in primary-key lookup.
+        assertThat(repo.content().split("Optional<Order> findById\\(", -1)).hasSize(2);
+
+        DomainMetadata upperCase = DomainMetadata.builder("Order", "com.example.domain")
+                .fields(List.of(FieldMetadata.builder("ID", "UUID").filterable(true).build()))
+                .build();
+
+        GeneratedFile upperRepo = strategy.generate(upperCase).stream()
+                .filter(f -> f.artifactType() == ArtifactType.REPOSITORY)
+                .findFirst().orElseThrow();
+
+        assertThat(upperRepo.content()).contains("findByID(");
+    }
+
+    @Test
     @DisplayName("T14: domain fields shadowing active audited/versioned columns are de-duped")
     void shouldNotDuplicateSystemColumns() {
         DomainMetadata metadata = DomainMetadata.builder("Account", "com.example.domain")

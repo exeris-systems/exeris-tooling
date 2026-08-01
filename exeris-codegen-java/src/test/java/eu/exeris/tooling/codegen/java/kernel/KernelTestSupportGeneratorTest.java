@@ -45,7 +45,11 @@ class KernelTestSupportGeneratorTest {
                 .contains("public Object body()")
                 .contains("public RecordingHttpExchange withPathParam(String name, String value)")
                 .contains("public static RecordingHttpExchange get(String path)")
-                .contains("public static RecordingHttpExchange delete(String path)");
+                .contains("public static RecordingHttpExchange delete(String path)")
+                // Bodyless POST/PUT: enough to reach the body-carrying routes' guard paths,
+                // because those reject before anything reads the request body.
+                .contains("public static RecordingHttpExchange post(String path)")
+                .contains("public static RecordingHttpExchange put(String path)");
     }
 
     @Test
