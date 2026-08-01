@@ -213,7 +213,7 @@ public final class KernelHandlerTestGenerator {
                                              ClassName stubType, String basePath) {
         return test("handleUpdateRespondsBadRequestOnAMalformedId")
                 .addJavadoc("The path-id guard runs before the body guard, so a malformed id is\n")
-                .addJavadoc("rejected without the body being looked at at all.\n")
+                .addJavadoc("rejected without the body ever being read.\n")
                 .addStatement("$T service = new $T()", stubType, stubType)
                 .addStatement("$T handler = new $T(service)", handlerType, handlerType)
                 .addStatement("$T exchange = $T.put($S).withPathParam($S, $S)",
