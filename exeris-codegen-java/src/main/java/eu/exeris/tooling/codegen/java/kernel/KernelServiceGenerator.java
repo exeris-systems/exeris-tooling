@@ -11,12 +11,8 @@ import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.Artifact
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
-import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
-import eu.exeris.sdk.sourcemodel.ast.RelationshipMetadata;
 
 import javax.lang.model.element.Modifier;
-import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 
 /**
@@ -82,50 +78,24 @@ public class KernelServiceGenerator implements KernelArtifactGenerator {
 
     /**
      * T8: delegating finders for filterable fields and MANY_TO_ONE FK columns.
-     * Emitted in the same byte-deterministic order as the repository so the two
-     * surfaces stay aligned: filterable fields sorted by name, then FK finders
-     * sorted by relationship name.
+     * Resolved from {@link KernelRepositoryGenerator#finderSpecs} — the same set, in the same
+     * byte-deterministic order, as the repository declares. A service finder with no repository
+     * method behind it would not compile, so the two surfaces are emitted from one source rather
+     * than kept in step by hand.
      */
     private List<MethodSpec> buildFinders(DomainMetadata metadata, TypeName listOfEntity) {
-        List<MethodSpec> finders = new ArrayList<>();
-
-        metadata.fields().stream()
-                .filter(FieldMetadata::filterable)
-                // Same skip as the repository, for the same collision — the two finder surfaces
-                // are emitted in lock-step and a service finder with no repository method behind
-                // it would not compile either.
-                .filter(f -> !KernelRepositoryGenerator.shadowsPrimaryKeyLookup(f))
-                .sorted(Comparator.comparing(FieldMetadata::name))
-                .forEach(f -> finders.add(buildFindByField(listOfEntity, f)));
-
-        if (metadata.hasRelationships()) {
-            metadata.relationships().stream()
-                    .filter(r -> r.type() == RelationshipMetadata.RelationType.MANY_TO_ONE)
-                    .sorted(Comparator.comparing(RelationshipMetadata::name))
-                    .forEach(r -> finders.add(buildFindByForeignKey(listOfEntity, r)));
-        }
-        return finders;
+        return KernelRepositoryGenerator.finderSpecs(metadata).stream()
+                .map(spec -> buildDelegatingFinder(listOfEntity, spec))
+                .toList();
     }
 
-    private MethodSpec buildFindByField(TypeName listOfEntity, FieldMetadata field) {
-        String name = KernelRepositoryGenerator.fieldFinderName(field.name());
-        return MethodSpec.methodBuilder(name)
+    private MethodSpec buildDelegatingFinder(TypeName listOfEntity,
+                                             KernelRepositoryGenerator.FinderSpec spec) {
+        return MethodSpec.methodBuilder(spec.methodName())
                 .addModifiers(Modifier.PUBLIC)
                 .returns(listOfEntity)
-                .addParameter(KernelTypeMapping.typeNameOf(field.type()), field.name())
-                .addStatement("return repository.$L($L)", name, field.name())
-                .build();
-    }
-
-    private MethodSpec buildFindByForeignKey(TypeName listOfEntity, RelationshipMetadata rel) {
-        String base = KernelTableNaming.foreignKeyBase(rel.name());
-        String paramName = base + "Id";
-        String name = KernelRepositoryGenerator.foreignKeyFinderName(rel.name());
-        return MethodSpec.methodBuilder(name)
-                .addModifiers(Modifier.PUBLIC)
-                .returns(listOfEntity)
-                .addParameter(UUID, paramName)
-                .addStatement("return repository.$L($L)", name, paramName)
+                .addParameter(spec.paramType(), spec.paramName())
+                .addStatement("return repository.$L($L)", spec.methodName(), spec.paramName())
                 .build();
     }
 

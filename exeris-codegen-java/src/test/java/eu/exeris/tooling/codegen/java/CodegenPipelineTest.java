@@ -101,15 +101,17 @@ class CodegenPipelineTest {
         Path testOutputDir;
 
         @Test
-        @DisplayName("emits the shared double once and one test per entity, into the TEST root")
+        @DisplayName("emits the shared double once and the per-entity tests, into the TEST root")
         void emitsTestsIntoTheTestRoot() throws IOException {
             writeDomainJson("Product.json", productDomain());
 
             int written = pipeline.runTests(metadataDir, testOutputDir, "com.shop");
 
-            assertThat(written).isEqualTo(2);
+            // The project-wide exchange double, plus the handler and service tests for the one entity.
+            assertThat(written).isEqualTo(3);
             assertThat(testOutputDir.resolve("com/shop/testsupport/RecordingHttpExchange.java")).exists();
             assertThat(testOutputDir.resolve("com/shop/handler/ProductHandlerTest.java")).exists();
+            assertThat(testOutputDir.resolve("com/shop/service/ProductServiceTest.java")).exists();
             // The main root is a different tree entirely — runTests must not have touched it.
             assertThat(outputDir.resolve("com/shop")).doesNotExist();
         }

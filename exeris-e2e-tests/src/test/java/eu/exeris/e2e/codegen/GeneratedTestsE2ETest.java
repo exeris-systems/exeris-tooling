@@ -97,8 +97,10 @@ class GeneratedTestsE2ETest {
         // The whole reason runTests takes a separate output root: a test under src/main/generated
         // would compile into the application artefact and drag JUnit onto its runtime classpath.
         assertThat(generatedTests.resolve("com/shop/handler/OrderHandlerTest.java")).exists();
+        assertThat(generatedTests.resolve("com/shop/service/OrderServiceTest.java")).exists();
         assertThat(generatedTests.resolve("com/shop/testsupport/RecordingHttpExchange.java")).exists();
         assertThat(generatedMain.resolve("com/shop/handler/OrderHandlerTest.java")).doesNotExist();
+        assertThat(generatedMain.resolve("com/shop/service/OrderServiceTest.java")).doesNotExist();
         assertThat(generatedMain.resolve("com/shop/handler/OrderHandler.java")).exists();
     }
 
@@ -118,8 +120,11 @@ class GeneratedTestsE2ETest {
                 GeneratedTestsE2ETest.class.getClassLoader())) {
 
             LauncherDiscoveryRequest request = LauncherDiscoveryRequestBuilder.request()
-                    .selectors(DiscoverySelectors.selectClass(
-                            Class.forName("com.shop.handler.OrderHandlerTest", true, appLoader)))
+                    .selectors(
+                            DiscoverySelectors.selectClass(
+                                    Class.forName("com.shop.handler.OrderHandlerTest", true, appLoader)),
+                            DiscoverySelectors.selectClass(
+                                    Class.forName("com.shop.service.OrderServiceTest", true, appLoader)))
                     .build();
 
             Launcher launcher = LauncherFactory.create();
@@ -137,8 +142,9 @@ class GeneratedTestsE2ETest {
                     .as("generated-test failures:%n%s", render(summary))
                     .isZero();
             // Guard against a vacuous pass: an emitter that stopped emitting @Test methods would
-            // otherwise "succeed" with zero executed tests.
-            assertThat(summary.getTestsSucceededCount()).isEqualTo(8);
+            // otherwise "succeed" with zero executed tests. 8 handler cases + 7 service cases
+            // (six CRUD delegations and the one T8 finder the fixture carries).
+            assertThat(summary.getTestsSucceededCount()).isEqualTo(15);
         }
     }
 
@@ -241,7 +247,10 @@ class GeneratedTestsE2ETest {
 
                     private UUID id;
 
-                    @Field(label = "Order Number", required = true)
+                    // filterable so the entity carries a T8 finder — the generated service test
+                    // emits one delegation case per finder, and that path is only proven if the
+                    // fixture actually has one.
+                    @Field(label = "Order Number", required = true, filterable = true)
                     private String orderNumber;
 
                     public UUID getId() {

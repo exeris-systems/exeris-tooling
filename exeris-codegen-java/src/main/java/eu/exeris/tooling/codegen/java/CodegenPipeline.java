@@ -19,6 +19,7 @@ import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelApplicationGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelGeneratorStrategy;
 import eu.exeris.tooling.codegen.java.kernel.KernelHandlerTestGenerator;
+import eu.exeris.tooling.codegen.java.kernel.KernelServiceTestGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelTestSupportGenerator;
 
 import java.io.IOException;
@@ -65,6 +66,7 @@ public final class CodegenPipeline {
     // alone drives would break every existing caller for no substitution anyone needs.
     private final KernelTestSupportGenerator testSupportGenerator = new KernelTestSupportGenerator();
     private final KernelHandlerTestGenerator handlerTestGenerator = new KernelHandlerTestGenerator();
+    private final KernelServiceTestGenerator serviceTestGenerator = new KernelServiceTestGenerator();
 
     public CodegenPipeline(GeneratorRegistry registry,
                            KernelApplicationGenerator applicationGenerator,
@@ -413,7 +415,8 @@ public final class CodegenPipeline {
 
         for (DomainMetadata domain : domains) {
             writeFile(writer, handlerTestGenerator.generate(domain, basePackage));
-            filesGenerated++;
+            writeFile(writer, serviceTestGenerator.generate(domain));
+            filesGenerated += 2;
         }
 
         int pruned = writer.pruneOrphansAndWriteManifest();

@@ -99,6 +99,18 @@ mode this repo rejects elsewhere: a wrong expected status would ship silently.
 - Any assertion about the *database*: nothing here starts a persistence engine.
 - The FE spec slice (above).
 
+> **Note (2026-08-02, slice c).** Service-delegation tests shipped, and they cost nothing this ADR
+> had reserved for them. The generated repository is `public`, non-final, and its constructor only
+> assigns the `TransactionalExecutor`, so the same emitted-double pattern reaches it: `super(null)`
+> and no persistence engine is involved — the "no database" exclusion above is *why* this slice is
+> cheap, not a reason it was blocked. What the tests pin is the part of a delegation layer that is
+> hand-wired rather than mechanical: the `delete` → `deleteById` rename, that `save`/`update` return
+> the **repository's** result and not their own argument (the repository fills in a generated id
+> before returning, so the wrong one compiles and silently yields a null-id entity), and that each
+> T8 finder reaches the same-named repository finder. Emitting both the service's finders and the
+> double's overrides from one `finderSpecs` source is load-bearing: a double that overrides a method
+> the service never calls is how this test would quietly stop testing anything.
+
 > **Note (2026-08-01, slice b).** The body-carrying routes split at a line this ADR did not
 > anticipate. Their **guard** paths need nothing new: `parseBody` throws on `hasBody() == false`
 > before it resolves a decoder, and `handleUpdate`'s path-id guard runs earlier still, so
