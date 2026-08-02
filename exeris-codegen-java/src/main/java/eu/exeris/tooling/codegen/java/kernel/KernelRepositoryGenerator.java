@@ -423,45 +423,66 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         return PRIMARY_KEY_LOOKUP.equals(fieldFinderName(field.name()));
     }
 
-    private List<MethodSpec> buildFinders(Context ctx, TypeName listOfEntity) {
-        List<MethodSpec> finders = new ArrayList<>();
+    /**
+     * One emitted finder, resolved from the metadata once.
+     *
+     * <p>Three surfaces emit against the same finder set — the repository declares them, the
+     * service delegates to them, and the generated {@code *ServiceTest} (T2/ADR-058) overrides
+     * them on its repository double. Each carrying its own copy of "which fields get a finder, in
+     * what order, with what parameter type" is three places to drift; a service method with no
+     * repository method behind it does not compile, and a double that overrides a method the
+     * service never calls silently tests nothing.
+     *
+     * @param methodName    the emitted method name, e.g. {@code findByOrderNumber}
+     * @param paramType     the JavaPoet parameter type
+     * @param paramTypeName the metadata type string, for the SPI bind dispatch
+     * @param paramName     the emitted parameter name
+     * @param column        the SQL column the predicate filters on (repository-only)
+     */
+    record FinderSpec(String methodName, TypeName paramType, String paramTypeName,
+                      String paramName, String column) {}
 
-        // Filterable fields → findBy<Field>(<javaType> <field>). Every filterable
-        // field gets a finder (kept in lock-step with KernelServiceGenerator's
-        // delegating finders for parity); the WHERE column always exists — either
-        // as a domain column or, in the rare shadow case, as the system column it
-        // collides with.
-        ctx.fields().stream()
+    /**
+     * The finder set for an entity, in the byte-deterministic emission order: filterable fields
+     * sorted by name, then MANY_TO_ONE FK finders sorted by relationship name.
+     *
+     * <p>Every filterable field gets a finder; the WHERE column always exists — either as a domain
+     * column or, in the rare shadow case, as the system column it collides with. The one exclusion
+     * is a field whose finder would shadow the primary-key lookup (see
+     * {@link #shadowsPrimaryKeyLookup}).
+     */
+    static List<FinderSpec> finderSpecs(DomainMetadata metadata) {
+        List<FinderSpec> specs = new ArrayList<>();
+
+        metadata.fields().stream()
                 .filter(FieldMetadata::filterable)
                 .filter(f -> !shadowsPrimaryKeyLookup(f))
                 .sorted(Comparator.comparing(FieldMetadata::name))
-                .forEach(f -> finders.add(buildFindByField(ctx, listOfEntity, f)));
+                .forEach(f -> specs.add(new FinderSpec(
+                        fieldFinderName(f.name()),
+                        KernelTypeMapping.typeNameOf(f.type()),
+                        f.type(),
+                        f.name(),
+                        toSnakeCase(f.name()))));
 
-        // MANY_TO_ONE relationships → findBy<Rel>Id(UUID <rel>Id).
-        if (ctx.metadata().hasRelationships()) {
-            ctx.metadata().relationships().stream()
+        if (metadata.hasRelationships()) {
+            metadata.relationships().stream()
                     .filter(r -> r.type() == RelationshipMetadata.RelationType.MANY_TO_ONE)
                     .sorted(Comparator.comparing(RelationshipMetadata::name))
-                    .forEach(r -> finders.add(buildFindByForeignKey(ctx, listOfEntity, r)));
+                    .forEach(r -> specs.add(new FinderSpec(
+                            foreignKeyFinderName(r.name()),
+                            UUID_TYPE,
+                            "UUID",
+                            KernelTableNaming.foreignKeyBase(r.name()) + "Id",
+                            KernelTableNaming.foreignKeyColumn(r.name()))));
         }
-        return finders;
+        return specs;
     }
 
-    /** Finder over a filterable domain field: {@code findBy<Field>}. */
-    private MethodSpec buildFindByField(Context ctx, TypeName listOfEntity, FieldMetadata field) {
-        String column = toSnakeCase(field.name());
-        return buildFinder(ctx, listOfEntity,
-                fieldFinderName(field.name()), KernelTypeMapping.typeNameOf(field.type()),
-                field.type(), field.name(), column);
-    }
-
-    /** Finder over a MANY_TO_ONE FK column: {@code findBy<Rel>Id(UUID ...)}. */
-    private MethodSpec buildFindByForeignKey(Context ctx, TypeName listOfEntity, RelationshipMetadata rel) {
-        String base = KernelTableNaming.foreignKeyBase(rel.name());
-        String column = KernelTableNaming.foreignKeyColumn(rel.name());
-        String paramName = base + "Id";
-        String methodName = foreignKeyFinderName(rel.name());
-        return buildFinder(ctx, listOfEntity, methodName, UUID_TYPE, "UUID", paramName, column);
+    private List<MethodSpec> buildFinders(Context ctx, TypeName listOfEntity) {
+        return finderSpecs(ctx.metadata()).stream()
+                .map(spec -> buildFinder(ctx, listOfEntity, spec))
+                .toList();
     }
 
     /**
@@ -472,19 +493,17 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
      * {@code prepare} and {@code executeQuery}). The soft-delete filter and a
      * trailing {@code ORDER BY id} keep results consistent and deterministic.
      */
-    private MethodSpec buildFinder(Context ctx, TypeName listOfEntity, String methodName,
-                                   TypeName paramType, String paramTypeName,
-                                   String paramName, String column) {
+    private MethodSpec buildFinder(Context ctx, TypeName listOfEntity, FinderSpec spec) {
         String selectCols = String.join(", ", ctx.columns().stream().map(Column::sqlName).toList());
         String softDeleteFilter = ctx.metadata().softDelete()
                 ? " AND " + toSnakeCase(ctx.sys().deleted()) + " = false" : "";
         String sql = "SELECT " + selectCols + " FROM " + ctx.table()
-                + " WHERE " + column + " = ?" + softDeleteFilter + " ORDER BY id";
+                + " WHERE " + spec.column() + " = ?" + softDeleteFilter + " ORDER BY id";
 
-        return MethodSpec.methodBuilder(methodName)
+        return MethodSpec.methodBuilder(spec.methodName())
                 .addModifiers(Modifier.PUBLIC)
                 .returns(listOfEntity)
-                .addParameter(paramType, paramName)
+                .addParameter(spec.paramType(), spec.paramName())
                 .addStatement(SQL_VAR_STMT, sql)
                 .addStatement("""
                         return executor.query(conn -> {
@@ -499,7 +518,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                                 }
                             }
                         })""",
-                        PERSISTENCE_STATEMENT, finderBind(paramTypeName, paramName),
+                        PERSISTENCE_STATEMENT, finderBind(spec.paramTypeName(), spec.paramName()),
                         QUERY_RESULT, LIST_TYPE, ctx.entityType(), ARRAY_LIST)
                 .build();
     }
@@ -861,7 +880,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                 .build();
     }
 
-    private String toSnakeCase(String camelCase) {
+    private static String toSnakeCase(String camelCase) {
         return camelCase.replaceAll("([a-z])([A-Z])", "$1_$2").toLowerCase();
     }
 

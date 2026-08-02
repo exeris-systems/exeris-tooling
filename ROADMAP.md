@@ -222,7 +222,7 @@ defers mesh resolution as unnecessary for a single-node API Gateway MVP. The ADR
 `composition.json` reader is Phase 5 (it ships with the `exeris-sku-api-gateway` scaffold alongside
 the authored-manifest schema in `exeris-sdk-composition-spec`), not this milestone.
 
-- [~] **T2 — Generated tests for the generated surface** (slices a + b shipped). Opt-in
+- [~] **T2 — Generated tests for the generated surface** (slices a + b + c shipped). Opt-in
       (`-Dexeris.tests=true`) emission into a **second output root** `src/test/generated/java`, with
       its own `OutputWriter` + T13 manifest and registered via `addTestCompileSourceRoot` — a test
       under the main root would compile into the application artefact and put JUnit on its runtime
@@ -237,7 +237,18 @@ the authored-manifest schema in `exeris-sdk-composition-spec`), not this milesto
       adds the body-carrying routes' **guard paths**: `handleCreate` and `handleUpdate` both reject
       before the body is read (`parseBody` throws on `hasBody() == false` ahead of resolving any
       decoder, and `handleUpdate`'s path-id guard runs ahead of that again), so those three cases
-      need no request-body double at all, and each asserts the service was never reached. The
+      need no request-body double at all, and each asserts the service was never reached. Slice c
+      adds `<Entity>ServiceTest` — the delegation contract, which is the whole of what a service
+      owes its callers: which repository method each call reaches (the `delete` → `deleteById`
+      rename included), that `save`/`update` return the **repository's** result and not their own
+      argument (the repository fills in a generated id before returning, so the wrong wiring
+      compiles and hands callers a null-id entity), and one case per T8 finder. It needed no new
+      machinery: the generated repository is `public`, non-final and assignment-only, so the same
+      emitted-double pattern reaches it with `super(null)` and no persistence engine. Its finders
+      and the double's overrides are emitted from one `KernelRepositoryGenerator.finderSpecs`
+      source — three surfaces (repository, service, double) each carrying their own copy of "which
+      finders exist, in what order" is how the double would drift into overriding methods the
+      service never calls, i.e. quietly testing nothing. The
       gate **runs** the emitted tests through the JUnit Platform launcher instead of just compiling
       them; a test emitter whose output is never executed is the inert-output failure mode this repo
       rejects everywhere else. *Open slices:* the paths **past** a successful decode — the
@@ -245,7 +256,7 @@ the authored-manifest schema in `exeris-sdk-composition-spec`), not this milesto
       bound through the kernel's `ScopedValue` provider slots, i.e. a decision about whether a
       generated test may bind kernel providers at all (ADR-058 has not taken it; a generator test
       currently asserts the emitted source names none of them). Then repository tests (need a fake
-      persistence stack), service delegation, saga step-wiring, and the **FE spec slice** — which
+      persistence stack), saga step-wiring, and the **FE spec slice** — which
       must wire `@angular/build:unit-test`
       (Vitest, founder-ruled 2026-07-31) because the emitted app declares `"test": "ng test"` but
       ships no runner and no test dependencies, so specs alone would be unrunnable.
@@ -323,7 +334,7 @@ because they gate the cap track, not because T2 was displaced.
 | T10 | `@Validation` enforced client-side (Zod) but dropped server-side (handler/service/DB) | **High** | ✅ 0.6.0 (#103) |
 | T12 | N generated apps can't form a mesh — client is own-app/relative-host, saga step is local, no cross-app contract | **High** | 0.8.0 (deferred out of 0.7.0 by the gateway-caps plan) |
 | T17 | Capability-graph validation is closed-world per app — a legitimate cross-service `@Requires` hard-fails the build | **High** | 0.8.0 (deferred out of 0.7.0 by the gateway-caps plan) |
-| T2  | Zero tests generated for the generated surface | Medium | 🔶 0.7.0 slice a (handler bodyless routes, ADR-058); body/repository/service + FE spec slices open |
+| T2  | Zero tests generated for the generated surface | Medium | 🔶 0.7.0 slices a–c (handler bodyless routes + body-route guards + service delegation, ADR-058); `@Validation` paths, repository, saga + FE spec slices open |
 | T3  | Action identity = method name, not `@Action(name=…)` → bean-setter collisions | Medium | 0.5.x |
 | T4  | `@Relationship` target derived from field Java type, not `targetEntity` | Medium | 0.5.x |
 | T5  | System-field overrides (`tenantIdField`, …) ignored by the repository generator | Medium | 0.5.x |
@@ -481,7 +492,9 @@ because they gate the cap track, not because T2 was displaced.
 
 ### Medium severity
 
-- [ ] **T2 — Generate tests for the generated surface (opt-in flag).** The pipeline emits handlers,
+- [~] **T2 — Generate tests for the generated surface (opt-in flag).** *In progress (0.7.0) — the
+      current slice status lives in the 0.7.0 milestone entry above; this is the finding as first
+      recorded.* The pipeline emits handlers,
       services, repositories, clients, sagas, events, Flyway, OpenAPI — and **zero tests**. Mirror the
       existing `*Generator` / scaffold structure + determinism + parity rules:
       Java — `Kernel*TestGenerator` per entity (repository CRUD round-trip, handler request/response

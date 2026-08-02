@@ -326,16 +326,26 @@ Output goes to a **separate root**, `src/test/generated/java` (`-Dexeris.testOut
 as a *test* compile source root and carrying its own generated-output manifest — pruning one tree
 can never touch the other. Commit it like the main generated tree.
 
-What is emitted so far: `<Entity>HandlerTest` plus one shared
-`<basePackage>.testsupport.RecordingHttpExchange`. The test covers every status the handler owes the
-router on the bodyless CRUD routes, and the guard paths of `handleCreate` / `handleUpdate` — a
-missing body, and a malformed path id — each also asserting the service was never reached. The
-`@Validation` rejection paths are not emitted yet: they require a decoded request body, and
-therefore kernel provider slots a generated test does not currently bind. Nothing is emitted, and
-nothing changes, unless you set the flag.
+What is emitted so far, per entity: `<Entity>HandlerTest` and `<Entity>ServiceTest`, plus one shared
+`<basePackage>.testsupport.RecordingHttpExchange`.
 
-If you had already turned the flag on, expect the regenerated `<Entity>HandlerTest` to gain three
-test methods and the emitted `RecordingHttpExchange` to gain `post(...)` / `put(...)` factories.
+The handler test covers every status the handler owes the router on the bodyless CRUD routes, and
+the guard paths of `handleCreate` / `handleUpdate` — a missing body, and a malformed path id — each
+also asserting the service was never reached. The `@Validation` rejection paths are not emitted yet:
+they require a decoded request body, and therefore kernel provider slots a generated test does not
+currently bind.
+
+The service test covers the delegation contract: which repository method each call reaches (the
+`delete` → `deleteById` rename included), that `save` / `update` hand back the *repository's* result
+rather than the argument they were given, and one case per T8 finder. Its repository double
+subclasses the generated repository with a null `TransactionalExecutor`, so no database, driver or
+transaction is involved.
+
+Nothing is emitted, and nothing changes, unless you set the flag.
+
+If you had already turned the flag on, expect a new `<Entity>ServiceTest` per entity, the
+regenerated `<Entity>HandlerTest` to gain three test methods, and the emitted
+`RecordingHttpExchange` to gain `post(...)` / `put(...)` factories.
 
 ### Composed applications drive the boot conductor
 
