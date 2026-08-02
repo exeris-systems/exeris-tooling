@@ -105,7 +105,7 @@ class KernelTestSupportGeneratorTest {
         // hide the day one starts.
         assertThat(source)
                 .contains("public MemorySegment getSegment(int column)")
-                .contains("throw new UnsupportedOperationException");
+                .contains("no generated repository reads a column this way");
     }
 
     @Test
@@ -122,6 +122,17 @@ class KernelTestSupportGeneratorTest {
                 .contains("steps.add(name)")
                 .contains("transitions.add(fromStep + \"->\" + toStep)")
                 .contains("public int compiled");
+    }
+
+    @Test
+    @DisplayName("the flow double's unreachable accessor explains ITSELF, not the persistence double")
+    void flowDoubleHasItsOwnUnsupportedMessage() {
+        // The message is only ever read at the moment it fires, so a persistence sentence emitted
+        // on a flow double would misdescribe the one case it exists for.
+        assertThat(new KernelTestSupportGenerator().generateFlow("com.example").content())
+                .contains("public FlowStepDescriptor stepAt(int stepIndex)")
+                .contains("a generated saga reads its steps back off this double's own recording")
+                .doesNotContain("reads a column this way");
     }
 
     @Test

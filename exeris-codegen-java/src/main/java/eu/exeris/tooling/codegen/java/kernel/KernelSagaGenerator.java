@@ -92,7 +92,7 @@ public class KernelSagaGenerator implements KernelArtifactGenerator {
             return null;
         }
         SagaMetadata saga = metadata.sagaMetadata();
-        List<SagaStepMetadata> steps = stepsOrPlaceholder(saga);
+        List<SagaStepMetadata> steps = effectiveSteps(metadata);
 
         assertDistinctMethodNames(metadata.entityName(), steps);
 
@@ -173,7 +173,17 @@ public class KernelSagaGenerator implements KernelArtifactGenerator {
         return declared != null && !declared.isBlank() ? declared : metadata.entityName() + "Saga";
     }
 
-    /** The step list the emitter walks — the declared steps, or the single compilable placeholder. */
+    /**
+     * The step list the emitter walks — the declared steps, or the single compilable placeholder
+     * ({@code FlowDefinitionBuilder} requires at least one step, so an entity that declares none
+     * still has to yield a schedulable class).
+     *
+     * <p>Package-private rather than private because the derivation is a property of the saga
+     * surface, not of one emitter: anything reasoning about how many steps an entity produces has
+     * to agree with this. Today {@link #generate} is the only caller — the generated saga test
+     * deliberately asserts over the steps the flow builder <em>recorded</em> rather than over a
+     * count derived here, which is what keeps that assertion non-circular.
+     */
     static List<SagaStepMetadata> effectiveSteps(DomainMetadata metadata) {
         SagaMetadata saga = metadata.sagaMetadata();
         return (saga.steps() != null && !saga.steps().isEmpty())
@@ -264,15 +274,6 @@ public class KernelSagaGenerator implements KernelArtifactGenerator {
                                         + "' at index {1} — override to implement"))
                 .addStatement("return $T.CONTINUE", FLOW_OUTCOME)
                 .build();
-    }
-
-    // FlowDefinitionBuilder requires at least one step; if the metadata declares none,
-    // effectiveSteps yields a single placeholder so the generated class is at least
-    // compilable and schedulable. Shared with the saga-test emitter so both walk the same list.
-    private List<SagaStepMetadata> stepsOrPlaceholder(SagaMetadata saga) {
-        return (saga.steps() != null && !saga.steps().isEmpty())
-                ? saga.steps()
-                : List.of(SagaStepMetadata.simple("process", 0, null));
     }
 
     private boolean hasCompensation(SagaStepMetadata step) {

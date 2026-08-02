@@ -404,8 +404,9 @@ public final class KernelTestSupportGenerator {
                 .addStatement("return cell(column) == null")
                 .build());
         type.addMethod(returning("isValid", TypeName.BOOLEAN, "true"));
-        type.addMethod(unsupported("getSegment", MEMORY_SEGMENT));
-        type.addMethod(unsupported("getLength", TypeName.INT));
+        String noSuchRead = "no generated repository reads a column this way";
+        type.addMethod(unsupported("getSegment", MEMORY_SEGMENT, "column", noSuchRead));
+        type.addMethod(unsupported("getLength", TypeName.INT, "column", noSuchRead));
 
         return new GeneratedFile(packageName, RECORDING_PERSISTENCE,
                 KernelScaffold.render(packageName, type.build()), ArtifactType.TEST);
@@ -548,7 +549,8 @@ public final class KernelTestSupportGenerator {
         type.addMethod(returning("definitionName", ClassName.get(String.class), "definitionName"));
         type.addMethod(returning("stepCount", TypeName.INT, "steps.size()"));
         type.addMethod(returning("timeoutDurationNanos", TypeName.LONG, "timeoutNanos"));
-        type.addMethod(unsupported("stepAt", FLOW_STEP_DESCRIPTOR));
+        type.addMethod(unsupported("stepAt", FLOW_STEP_DESCRIPTOR, "stepIndex",
+                "a generated saga reads its steps back off this double's own recording"));
 
         // --- FlowContext
         type.addMethod(returning("instanceIdMost", TypeName.LONG, "0L"));
@@ -615,12 +617,18 @@ public final class KernelTestSupportGenerator {
                 .build();
     }
 
-    private static MethodSpec unsupported(String name, TypeName returnType) {
+    /**
+     * An indexed accessor no generated artefact calls. The reason is a parameter, not a constant:
+     * this helper serves doubles for different SPIs, and a persistence message emitted on a flow
+     * double would misdescribe the one case where it is ever read — the failure itself.
+     */
+    private static MethodSpec unsupported(String name, TypeName returnType, String paramName,
+                                          String reason) {
         return override(name)
                 .returns(returnType)
-                .addParameter(TypeName.INT, "column")
+                .addParameter(TypeName.INT, paramName)
                 .addStatement("throw new $T($S)", UnsupportedOperationException.class,
-                        name + " is not recorded — no generated repository reads a column this way")
+                        name + " is not recorded — " + reason)
                 .build();
     }
 
