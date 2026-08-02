@@ -107,11 +107,14 @@ class CodegenPipelineTest {
 
             int written = pipeline.runTests(metadataDir, testOutputDir, "com.shop");
 
-            // The project-wide exchange double, plus the handler and service tests for the one entity.
-            assertThat(written).isEqualTo(3);
+            // Two project-wide doubles, plus the handler, service and repository tests for the
+            // one entity.
+            assertThat(written).isEqualTo(5);
             assertThat(testOutputDir.resolve("com/shop/testsupport/RecordingHttpExchange.java")).exists();
+            assertThat(testOutputDir.resolve("com/shop/testsupport/RecordingPersistence.java")).exists();
             assertThat(testOutputDir.resolve("com/shop/handler/ProductHandlerTest.java")).exists();
             assertThat(testOutputDir.resolve("com/shop/service/ProductServiceTest.java")).exists();
+            assertThat(testOutputDir.resolve("com/shop/repository/ProductRepositoryTest.java")).exists();
             // The main root is a different tree entirely — runTests must not have touched it.
             assertThat(outputDir.resolve("com/shop")).doesNotExist();
         }

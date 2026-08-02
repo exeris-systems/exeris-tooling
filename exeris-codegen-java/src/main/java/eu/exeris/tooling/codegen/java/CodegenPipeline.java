@@ -19,6 +19,7 @@ import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelApplicationGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelGeneratorStrategy;
 import eu.exeris.tooling.codegen.java.kernel.KernelHandlerTestGenerator;
+import eu.exeris.tooling.codegen.java.kernel.KernelRepositoryTestGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelServiceTestGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelTestSupportGenerator;
 
@@ -67,6 +68,7 @@ public final class CodegenPipeline {
     private final KernelTestSupportGenerator testSupportGenerator = new KernelTestSupportGenerator();
     private final KernelHandlerTestGenerator handlerTestGenerator = new KernelHandlerTestGenerator();
     private final KernelServiceTestGenerator serviceTestGenerator = new KernelServiceTestGenerator();
+    private final KernelRepositoryTestGenerator repositoryTestGenerator = new KernelRepositoryTestGenerator();
 
     public CodegenPipeline(GeneratorRegistry registry,
                            KernelApplicationGenerator applicationGenerator,
@@ -409,14 +411,17 @@ public final class CodegenPipeline {
         OutputWriter writer = new OutputWriter(testOutputDir);
         int filesGenerated = 0;
 
-        // Project-wide first: the per-entity tests all import the exchange double from it.
-        writeFile(writer, testSupportGenerator.generate(basePackage));
-        filesGenerated++;
+        // Project-wide first: the per-entity tests import their doubles from it.
+        for (GeneratedFile support : testSupportGenerator.generateAll(basePackage)) {
+            writeFile(writer, support);
+            filesGenerated++;
+        }
 
         for (DomainMetadata domain : domains) {
             writeFile(writer, handlerTestGenerator.generate(domain, basePackage));
             writeFile(writer, serviceTestGenerator.generate(domain));
-            filesGenerated += 2;
+            writeFile(writer, repositoryTestGenerator.generate(domain, basePackage));
+            filesGenerated += 3;
         }
 
         int pruned = writer.pruneOrphansAndWriteManifest();

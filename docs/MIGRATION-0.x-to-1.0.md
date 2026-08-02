@@ -326,8 +326,9 @@ Output goes to a **separate root**, `src/test/generated/java` (`-Dexeris.testOut
 as a *test* compile source root and carrying its own generated-output manifest — pruning one tree
 can never touch the other. Commit it like the main generated tree.
 
-What is emitted so far, per entity: `<Entity>HandlerTest` and `<Entity>ServiceTest`, plus one shared
-`<basePackage>.testsupport.RecordingHttpExchange`.
+What is emitted so far, per entity: `<Entity>HandlerTest`, `<Entity>ServiceTest` and
+`<Entity>RepositoryTest`, plus two shared doubles under `<basePackage>.testsupport` —
+`RecordingHttpExchange` and `RecordingPersistence`.
 
 The handler test covers every status the handler owes the router on the bodyless CRUD routes, and
 the guard paths of `handleCreate` / `handleUpdate` — a missing body, and a malformed path id — each
@@ -341,11 +342,24 @@ rather than the argument they were given, and one case per T8 finder. Its reposi
 subclasses the generated repository with a null `TransactionalExecutor`, so no database, driver or
 transaction is involved.
 
+The repository test covers the one invariant no compile check reaches: that the parameter indices
+the INSERT binds and the column indices `mapRow` reads are the same layout. It proves that by
+saving an entity against `RecordingPersistence`, replaying the recorded binds back as the query
+result, and comparing the loaded entity column for column — plus the id fill-in, the WHERE-clause
+id, an empty result, the two zero-rows-affected rejections, and `count()`. It deliberately asserts
+**no SQL text**: the test and the repository come from the same metadata, so that check could never
+fail. No database or driver is involved.
+
+One consequence worth knowing: for an entity with a collection field, the generated repository test
+initialises the repository class, whose static Jackson mapper is constructed then. That is not a new
+requirement — such an entity's generated *main* code already imports Jackson.
+
 Nothing is emitted, and nothing changes, unless you set the flag.
 
-If you had already turned the flag on, expect a new `<Entity>ServiceTest` per entity, the
-regenerated `<Entity>HandlerTest` to gain three test methods, and the emitted
-`RecordingHttpExchange` to gain `post(...)` / `put(...)` factories.
+If you had already turned the flag on, expect new `<Entity>ServiceTest` and
+`<Entity>RepositoryTest` files per entity, a new `RecordingPersistence` double, the regenerated
+`<Entity>HandlerTest` to gain three test methods, and the emitted `RecordingHttpExchange` to gain
+`post(...)` / `put(...)` factories.
 
 ### Composed applications drive the boot conductor
 
