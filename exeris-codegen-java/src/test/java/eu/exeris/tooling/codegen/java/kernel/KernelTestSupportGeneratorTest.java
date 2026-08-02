@@ -60,7 +60,7 @@ class KernelTestSupportGeneratorTest {
         List<GeneratedFile> files = new KernelTestSupportGenerator().generateAll("com.example");
 
         assertThat(files).extracting(GeneratedFile::className)
-                .containsExactly("RecordingHttpExchange", "RecordingPersistence");
+                .containsExactly("RecordingHttpExchange", "RecordingPersistence", "RecordingFlow");
         assertThat(files).allSatisfy(f ->
                 assertThat(f.packageName()).isEqualTo("com.example.testsupport"));
     }
@@ -106,6 +106,31 @@ class KernelTestSupportGeneratorTest {
         assertThat(source)
                 .contains("public MemorySegment getSegment(int column)")
                 .contains("throw new UnsupportedOperationException");
+    }
+
+    @Test
+    @DisplayName("RecordingFlow plays every flow-SPI role a saga touches, and records both walks")
+    void flowDoubleRecordsStepsAndTransitions() {
+        String source = new KernelTestSupportGenerator().generateFlow("com.example").content();
+
+        assertThat(source)
+                .contains("class RecordingFlow implements FlowEngine,")
+                .contains("FlowDefinitionBuilder,")
+                .contains("FlowExecutionPlan,")
+                .contains("FlowContext {")
+                // Steps and transitions in one object is what lets a test compare the two walks.
+                .contains("steps.add(name)")
+                .contains("transitions.add(fromStep + \"->\" + toStep)")
+                .contains("public int compiled");
+    }
+
+    @Test
+    @DisplayName("the flow double's build() returns null — the recorded calls carry more than it would")
+    void flowDoubleDoesNotFakeTheDefinition() {
+        // Nothing under test reads the FlowDefinition back; what a saga test asserts is what the
+        // builder was told, and the call lists hold that.
+        assertThat(new KernelTestSupportGenerator().generateFlow("com.example").content())
+                .contains("public FlowDefinition build() {\n        return null;");
     }
 
     @Test

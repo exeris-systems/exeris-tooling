@@ -96,12 +96,11 @@ public class KernelSagaGenerator implements KernelArtifactGenerator {
 
         assertDistinctMethodNames(metadata.entityName(), steps);
 
-        String packageName = metadata.packageName().replace(".domain", ".saga");
+        ClassName selfType = sagaFlowType(metadata);
+        String packageName = selfType.packageName();
         String entity = metadata.entityName();
-        String sagaName = saga.name() != null && !saga.name().isBlank()
-                ? saga.name() : entity + "Saga";
-        String className = sagaName.endsWith("Flow") ? sagaName : sagaName + "Flow";
-        ClassName selfType = ClassName.get(packageName, className);
+        String sagaName = definitionName(metadata);
+        String className = selfType.simpleName();
 
         String timeoutIso = saga.timeout() != null && !saga.timeout().isBlank()
                 ? saga.timeout() : "PT30M";
@@ -150,6 +149,36 @@ public class KernelSagaGenerator implements KernelArtifactGenerator {
 
         return new GeneratedFile(packageName, className,
                 KernelScaffold.render(packageName, builder.build()), ArtifactType.SAGA);
+    }
+
+    /**
+     * The emitted flow class for an entity, or {@code null} when the entity declares no saga.
+     *
+     * <p>Shared with the generated {@code *SagaFlowTest} (T2/ADR-058) so the test cannot name a
+     * class the emitter does not produce — the name is derived, not spelled: a {@code @Saga(name)}
+     * that already ends in {@code Flow} is used as-is, anything else gains the suffix.
+     */
+    static ClassName sagaFlowType(DomainMetadata metadata) {
+        if (!metadata.isSaga() || metadata.sagaMetadata() == null) {
+            return null;
+        }
+        String sagaName = definitionName(metadata);
+        return ClassName.get(metadata.packageName().replace(".domain", ".saga"),
+                sagaName.endsWith("Flow") ? sagaName : sagaName + "Flow");
+    }
+
+    /** The {@code DEFINITION_NAME} the emitted flow registers under. */
+    static String definitionName(DomainMetadata metadata) {
+        String declared = metadata.sagaMetadata().name();
+        return declared != null && !declared.isBlank() ? declared : metadata.entityName() + "Saga";
+    }
+
+    /** The step list the emitter walks — the declared steps, or the single compilable placeholder. */
+    static List<SagaStepMetadata> effectiveSteps(DomainMetadata metadata) {
+        SagaMetadata saga = metadata.sagaMetadata();
+        return (saga.steps() != null && !saga.steps().isEmpty())
+                ? saga.steps()
+                : List.of(SagaStepMetadata.simple("process", 0, null));
     }
 
     private MethodSpec buildInitialize(List<SagaStepMetadata> steps) {
@@ -237,14 +266,13 @@ public class KernelSagaGenerator implements KernelArtifactGenerator {
                 .build();
     }
 
+    // FlowDefinitionBuilder requires at least one step; if the metadata declares none,
+    // effectiveSteps yields a single placeholder so the generated class is at least
+    // compilable and schedulable. Shared with the saga-test emitter so both walk the same list.
     private List<SagaStepMetadata> stepsOrPlaceholder(SagaMetadata saga) {
-        if (saga.steps() != null && !saga.steps().isEmpty()) {
-            return saga.steps();
-        }
-        // FlowDefinitionBuilder requires at least one step; if the metadata
-        // declares none, emit a single placeholder so the generated class is
-        // at least compilable and schedulable.
-        return List.of(SagaStepMetadata.simple("process", 0, null));
+        return (saga.steps() != null && !saga.steps().isEmpty())
+                ? saga.steps()
+                : List.of(SagaStepMetadata.simple("process", 0, null));
     }
 
     private boolean hasCompensation(SagaStepMetadata step) {
