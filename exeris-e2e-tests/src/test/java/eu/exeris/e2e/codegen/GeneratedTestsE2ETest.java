@@ -99,6 +99,7 @@ class GeneratedTestsE2ETest {
         assertThat(generatedTests.resolve("com/shop/handler/OrderHandlerTest.java")).exists();
         assertThat(generatedTests.resolve("com/shop/service/OrderServiceTest.java")).exists();
         assertThat(generatedTests.resolve("com/shop/repository/OrderRepositoryTest.java")).exists();
+        assertThat(generatedTests.resolve("com/shop/repository/InvoiceRepositoryTest.java")).exists();
         assertThat(generatedTests.resolve("com/shop/testsupport/RecordingHttpExchange.java")).exists();
         assertThat(generatedTests.resolve("com/shop/testsupport/RecordingPersistence.java")).exists();
         assertThat(generatedMain.resolve("com/shop/handler/OrderHandlerTest.java")).doesNotExist();
@@ -128,7 +129,11 @@ class GeneratedTestsE2ETest {
                             DiscoverySelectors.selectClass(
                                     Class.forName("com.shop.service.OrderServiceTest", true, appLoader)),
                             DiscoverySelectors.selectClass(
-                                    Class.forName("com.shop.repository.OrderRepositoryTest", true, appLoader)))
+                                    Class.forName("com.shop.repository.OrderRepositoryTest", true, appLoader)),
+                            // The system-column entity: its round-trip is the only executed proof
+                            // that the tenant/audit/soft-delete/version bind-read pairs line up.
+                            DiscoverySelectors.selectClass(
+                                    Class.forName("com.shop.repository.InvoiceRepositoryTest", true, appLoader)))
                     .build();
 
             Launcher launcher = LauncherFactory.create();
@@ -148,8 +153,9 @@ class GeneratedTestsE2ETest {
             // Guard against a vacuous pass: an emitter that stopped emitting @Test methods would
             // otherwise "succeed" with zero executed tests. 8 handler cases + 7 service cases
             // (six CRUD delegations and the one T8 finder the fixture carries) + 7 repository
-            // cases (the save/load round-trip and the six paths around it).
-            assertThat(summary.getTestsSucceededCount()).isEqualTo(22);
+            // cases each for Order and Invoice (the save/load round-trip and the six paths around
+            // it) — Invoice being the entity that carries every system column.
+            assertThat(summary.getTestsSucceededCount()).isEqualTo(29);
         }
     }
 
@@ -322,6 +328,108 @@ class GeneratedTestsE2ETest {
 
                     public void setPlacedAt(Instant placedAt) {
                         this.placedAt = placedAt;
+                    }
+                }
+                """);
+        // A second entity carrying every system-column flag. Order covers the domain columns;
+        // this one is the only way the TENANT_ID / CREATED_AT / UPDATED_AT / DELETED / VERSION
+        // bind-read pairs — appended after the domain columns, each with its own accessor rule —
+        // get a compiled, executed round-trip rather than a text-shape unit assertion.
+        sources.put("com/shop/domain/Invoice.java",
+                """
+                package com.shop.domain;
+
+                import eu.exeris.sdk.annotation.ExerisDomain;
+                import eu.exeris.sdk.annotation.Field;
+
+                import java.time.Instant;
+                import java.util.UUID;
+
+                @ExerisDomain(module = "billing", path = "/invoices",
+                        tenantScoped = true, audited = true, softDelete = true, versioned = true)
+                public class Invoice {
+
+                    private UUID id;
+
+                    @Field(label = "Reference", required = true)
+                    private String reference;
+
+                    // The system columns the flags above switch on. Declared here (rather than
+                    // inherited) because the generated repository binds them by accessor, and
+                    // annotated so they stay out of the finder surface.
+                    @Field(label = "Tenant")
+                    private UUID tenantId;
+
+                    @Field(label = "Created At")
+                    private Instant createdAt;
+
+                    @Field(label = "Updated At")
+                    private Instant updatedAt;
+
+                    @Field(label = "Deleted")
+                    private boolean deleted;
+
+                    // Primitive, not Long: the emitter hardcodes this column's type as `Long`
+                    // and binds it by unboxing (`stmt.bindLong(i, entity.getVersion())`), so a
+                    // wrapper-typed version field NPEs on the first save of a fresh entity. Logged
+                    // as finding T26 — it is a defect in the repository emitter, not in this test.
+                    @Field(label = "Version")
+                    private long version;
+
+                    public UUID getId() {
+                        return id;
+                    }
+
+                    public void setId(UUID id) {
+                        this.id = id;
+                    }
+
+                    public String getReference() {
+                        return reference;
+                    }
+
+                    public void setReference(String reference) {
+                        this.reference = reference;
+                    }
+
+                    public UUID getTenantId() {
+                        return tenantId;
+                    }
+
+                    public void setTenantId(UUID tenantId) {
+                        this.tenantId = tenantId;
+                    }
+
+                    public Instant getCreatedAt() {
+                        return createdAt;
+                    }
+
+                    public void setCreatedAt(Instant createdAt) {
+                        this.createdAt = createdAt;
+                    }
+
+                    public Instant getUpdatedAt() {
+                        return updatedAt;
+                    }
+
+                    public void setUpdatedAt(Instant updatedAt) {
+                        this.updatedAt = updatedAt;
+                    }
+
+                    public boolean isDeleted() {
+                        return deleted;
+                    }
+
+                    public void setDeleted(boolean deleted) {
+                        this.deleted = deleted;
+                    }
+
+                    public long getVersion() {
+                        return version;
+                    }
+
+                    public void setVersion(long version) {
+                        this.version = version;
                     }
                 }
                 """);

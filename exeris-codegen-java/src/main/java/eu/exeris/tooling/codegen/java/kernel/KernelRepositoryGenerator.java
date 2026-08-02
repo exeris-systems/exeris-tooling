@@ -741,7 +741,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     }
 
     private void emitReadCol(MethodSpec.Builder map, Column col, int idx, Context ctx) {
-        String setter = "entity.set" + capitalize(col.javaName());
+        String setter = "entity." + setterFor(col);
         switch (col.kind()) {
             case TENANT_ID -> map.addStatement("$L(row.getUuid($L))", setter, idx);
             // T19: read the timestamp natively. The kernel 0.10 SPI added
@@ -757,7 +757,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     }
 
     private void emitReadDomain(MethodSpec.Builder map, Column col, int idx, Context ctx) {
-        String setter = "id".equals(col.javaName()) ? "entity.setId" : "entity.set" + capitalize(col.javaName());
+        String setter = "entity." + setterFor(col);
         String type = col.javaType();
         switch (classifyDomainType(type)) {
             case LIST -> emitReadList(map, type, setter, idx);
@@ -826,32 +826,31 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     }
 
     private void emitBindCol(CodeBlock.Builder body, Column col, int idx, String src) {
-        String cap = capitalize(col.javaName());
+        // The is/get split (DELETED, and a primitive boolean domain field) lives in getterFor and
+        // nowhere else — the generated repository test asserts through the same helper, so a
+        // divergence here would silently make its assertions name an accessor nothing binds.
+        String accessor = getterFor(col);
         switch (col.kind()) {
-            case TENANT_ID -> body.addStatement("stmt.bindUuid($L, $L.get$L())", idx, src, cap);
+            case TENANT_ID -> body.addStatement("stmt.bindUuid($L, $L.$L())", idx, src, accessor);
             // T19: bind the timestamp natively (kernel 0.10 SPI bindInstant), so the
             // TIMESTAMPTZ column round-trips via the driver instead of an ISO-8601
             // String. Null-guarded via bindNull because update() is also bound to
             // caller-supplied entities where createdAt may legitimately be null
             // (e.g. a partial update DTO).
             case CREATED_AT, UPDATED_AT -> body.add(
-                    "if ($L.get$L() == null) stmt.bindNull($L); else stmt.bindInstant($L, $L.get$L());\n",
-                    src, cap, idx, idx, src, cap);
-            // boolean accessor is `is<Name>()` per the SDK getter convention.
-            case DELETED -> body.addStatement("stmt.bindBoolean($L, $L.is$L())", idx, src, cap);
-            case VERSION -> body.addStatement("stmt.bindLong($L, $L.get$L())", idx, src, cap);
+                    "if ($L.$L() == null) stmt.bindNull($L); else stmt.bindInstant($L, $L.$L());\n",
+                    src, accessor, idx, idx, src, accessor);
+            case DELETED -> body.addStatement("stmt.bindBoolean($L, $L.$L())", idx, src, accessor);
+            case VERSION -> body.addStatement("stmt.bindLong($L, $L.$L())", idx, src, accessor);
             case DOMAIN -> emitBindDomain(body, col, idx, src);
         }
     }
 
     private void emitBindDomain(CodeBlock.Builder body, Column col, int idx, String src) {
-        // T15: a primitive `boolean` field's JavaBean accessor is `isX()`, not `getX()`
-        // (matching the system DELETED column above and the entity the repository binds
-        // against). `Boolean` wrappers keep `getX()` per the Lombok/JavaBean convention.
-        String prefix = "boolean".equals(col.javaType()) ? "is" : "get";
-        String getter = "id".equals(col.javaName())
-                ? src + ".getId()"
-                : src + "." + prefix + capitalize(col.javaName()) + "()";
+        // T15 lives in getterFor now: a primitive `boolean` field's JavaBean accessor is `isX()`,
+        // not `getX()` (matching the system DELETED column), while `Boolean` wrappers keep `getX()`
+        // per the Lombok/JavaBean convention.
+        String getter = src + "." + getterFor(col) + "()";
         String type = col.javaType();
         switch (classifyDomainType(type)) {
             case LIST -> body.addStatement("stmt.bindString($L, toJson($L))", idx, getter);

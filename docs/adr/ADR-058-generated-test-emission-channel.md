@@ -133,6 +133,15 @@ mode this repo rejects elsewhere: a wrong expected status would ship silently.
 > This generalises the slice-c lesson: a generated test earns its place only where the emitter has
 > **two paths that must agree**. Where there is one path, the emitted artefact and the emitted test
 > say the same thing twice.
+>
+> The gate runs the round-trip for two fixtures, not one: a plain entity and a second carrying every
+> system-column flag (`tenantScoped` / `audited` / `softDelete` / `versioned`), because those columns
+> are appended after the domain ones and each has its own accessor rule. That second fixture paid for
+> itself on the first run — it surfaced ROADMAP finding **T26**, an NPE in generated *main* code when
+> a versioned entity declares `Long version` rather than `long`. The emitter fix is out of this
+> slice's scope (the column type is a constant, so no null guard is expressible without reading the
+> declared field type), but it is exactly the class of defect this channel exists to find, and it was
+> found by generated code exercising generated code.
 
 > **Note (2026-08-01, slice b).** The body-carrying routes split at a line this ADR did not
 > anticipate. Their **guard** paths need nothing new: `parseBody` throws on `hasBody() == false`

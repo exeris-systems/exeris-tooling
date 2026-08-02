@@ -260,7 +260,9 @@ the authored-manifest schema in `exeris-sdk-composition-spec`), not this milesto
       parameters, `emitReadCol` numbers `mapRow`'s reads — so the central test is a save/load
       **round-trip**, asserting runtime behaviour instead of text. Verified by perturbation:
       shifting `mapRow`'s indices by one makes the generated test fail. Still no database, driver or
-      transaction. The
+      transaction. The gate runs it over two fixtures — a plain entity and one carrying every
+      system-column flag — and that second fixture immediately paid for itself by surfacing **T26**
+      (a versioned entity with a wrapper `Long version` NPEs on its first `save()`). The
       gate **runs** the emitted tests through the JUnit Platform launcher instead of just compiling
       them; a test emitter whose output is never executed is the inert-output failure mode this repo
       rejects everywhere else. *Open slices:* the paths **past** a successful decode — the
@@ -346,6 +348,7 @@ because they gate the cap track, not because T2 was displaced.
 | T10 | `@Validation` enforced client-side (Zod) but dropped server-side (handler/service/DB) | **High** | ✅ 0.6.0 (#103) |
 | T12 | N generated apps can't form a mesh — client is own-app/relative-host, saga step is local, no cross-app contract | **High** | 0.8.0 (deferred out of 0.7.0 by the gateway-caps plan) |
 | T17 | Capability-graph validation is closed-world per app — a legitimate cross-service `@Requires` hard-fails the build | **High** | 0.8.0 (deferred out of 0.7.0 by the gateway-caps plan) |
+| T26 | A `@ExerisDomain(versioned = true)` entity whose `version` field is the **wrapper** `Long` throws NPE on the first `save()` of a fresh entity: `buildColumnLayout` hardcodes the VERSION column's type as `Long` and the emitter binds it by unboxing (`stmt.bindLong(i, entity.getVersion())`), with no null guard — and no guard is possible while the column type is a constant, since a primitive `long version` field cannot be null-compared. `update()` has the same unboxing (`long expected = entity.getVersion()`). Every other nullable system column (`createdAt`/`updatedAt`) *is* guarded, so this is the one gap. Fix is to read the declared field type into the column instead of assuming, which makes it a repository-emitter change rather than a test one | **Medium** (latent; primitive-`long` entities are unaffected) | 0.7.x — found 2026-08-02 by the T2 slice-d system-column fixture, which now pins `long` to stay green |
 | T2  | Zero tests generated for the generated surface | Medium | 🔶 0.7.0 slices a–d (handler bodyless routes + body-route guards + service delegation + repository round-trip, ADR-058); `@Validation` paths, saga + FE spec slices open |
 | T3  | Action identity = method name, not `@Action(name=…)` → bean-setter collisions | Medium | 0.5.x |
 | T4  | `@Relationship` target derived from field Java type, not `targetEntity` | Medium | 0.5.x |
