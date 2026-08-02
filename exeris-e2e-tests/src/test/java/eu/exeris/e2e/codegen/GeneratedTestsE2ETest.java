@@ -98,7 +98,9 @@ class GeneratedTestsE2ETest {
         // would compile into the application artefact and drag JUnit onto its runtime classpath.
         assertThat(generatedTests.resolve("com/shop/handler/OrderHandlerTest.java")).exists();
         assertThat(generatedTests.resolve("com/shop/service/OrderServiceTest.java")).exists();
+        assertThat(generatedTests.resolve("com/shop/repository/OrderRepositoryTest.java")).exists();
         assertThat(generatedTests.resolve("com/shop/testsupport/RecordingHttpExchange.java")).exists();
+        assertThat(generatedTests.resolve("com/shop/testsupport/RecordingPersistence.java")).exists();
         assertThat(generatedMain.resolve("com/shop/handler/OrderHandlerTest.java")).doesNotExist();
         assertThat(generatedMain.resolve("com/shop/service/OrderServiceTest.java")).doesNotExist();
         assertThat(generatedMain.resolve("com/shop/handler/OrderHandler.java")).exists();
@@ -124,7 +126,9 @@ class GeneratedTestsE2ETest {
                             DiscoverySelectors.selectClass(
                                     Class.forName("com.shop.handler.OrderHandlerTest", true, appLoader)),
                             DiscoverySelectors.selectClass(
-                                    Class.forName("com.shop.service.OrderServiceTest", true, appLoader)))
+                                    Class.forName("com.shop.service.OrderServiceTest", true, appLoader)),
+                            DiscoverySelectors.selectClass(
+                                    Class.forName("com.shop.repository.OrderRepositoryTest", true, appLoader)))
                     .build();
 
             Launcher launcher = LauncherFactory.create();
@@ -143,8 +147,9 @@ class GeneratedTestsE2ETest {
                     .isZero();
             // Guard against a vacuous pass: an emitter that stopped emitting @Test methods would
             // otherwise "succeed" with zero executed tests. 8 handler cases + 7 service cases
-            // (six CRUD delegations and the one T8 finder the fixture carries).
-            assertThat(summary.getTestsSucceededCount()).isEqualTo(15);
+            // (six CRUD delegations and the one T8 finder the fixture carries) + 7 repository
+            // cases (the save/load round-trip and the six paths around it).
+            assertThat(summary.getTestsSucceededCount()).isEqualTo(22);
         }
     }
 
@@ -240,6 +245,8 @@ class GeneratedTestsE2ETest {
                 import eu.exeris.sdk.annotation.ExerisDomain;
                 import eu.exeris.sdk.annotation.Field;
 
+                import java.math.BigDecimal;
+                import java.time.Instant;
                 import java.util.UUID;
 
                 @ExerisDomain(module = "sales", path = "/orders")
@@ -252,6 +259,22 @@ class GeneratedTestsE2ETest {
                     // fixture actually has one.
                     @Field(label = "Order Number", required = true, filterable = true)
                     private String orderNumber;
+
+                    // Not filterable (so they add no finder), but each takes a different bind /
+                    // read pair through the repository — an int, a primitive boolean read as
+                    // isExpedited(), a BigDecimal that round-trips through a String, and an
+                    // Instant that binds natively. The generated round-trip covers all of them.
+                    @Field(label = "Quantity")
+                    private int quantity;
+
+                    @Field(label = "Expedited")
+                    private boolean expedited;
+
+                    @Field(label = "Total")
+                    private BigDecimal total;
+
+                    @Field(label = "Placed At")
+                    private Instant placedAt;
 
                     public UUID getId() {
                         return id;
@@ -267,6 +290,38 @@ class GeneratedTestsE2ETest {
 
                     public void setOrderNumber(String orderNumber) {
                         this.orderNumber = orderNumber;
+                    }
+
+                    public int getQuantity() {
+                        return quantity;
+                    }
+
+                    public void setQuantity(int quantity) {
+                        this.quantity = quantity;
+                    }
+
+                    public boolean isExpedited() {
+                        return expedited;
+                    }
+
+                    public void setExpedited(boolean expedited) {
+                        this.expedited = expedited;
+                    }
+
+                    public BigDecimal getTotal() {
+                        return total;
+                    }
+
+                    public void setTotal(BigDecimal total) {
+                        this.total = total;
+                    }
+
+                    public Instant getPlacedAt() {
+                        return placedAt;
+                    }
+
+                    public void setPlacedAt(Instant placedAt) {
+                        this.placedAt = placedAt;
                     }
                 }
                 """);

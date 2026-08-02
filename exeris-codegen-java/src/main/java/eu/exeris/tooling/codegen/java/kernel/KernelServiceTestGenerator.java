@@ -62,14 +62,14 @@ import java.util.List;
 public final class KernelServiceTestGenerator {
 
     /**
-     * Fixed identifiers for the id-carrying calls. Literals rather than {@code UUID.randomUUID()}
-     * for the same reason as the handler test: a random id is still deterministic <em>as text</em>,
-     * but it makes the generated test's own failure output differ run to run for no benefit.
+     * Fixed identifier for the id-carrying calls, and the staged count. Literals rather than
+     * {@code UUID.randomUUID()} for the same reason as the handler test: a random id is still
+     * deterministic <em>as text</em>, but it makes the generated test's own failure output differ
+     * run to run for no benefit. Shared with the other test emitters via {@link KernelTestSamples}.
      */
-    private static final String FIXED_ID = "00000000-0000-4000-8000-000000000001";
+    private static final String FIXED_ID = KernelTestSamples.FIXED_ID;
 
-    /** The count staged on the double — an arbitrary non-zero, so a {@code 0} default cannot pass. */
-    private static final long STAGED_COUNT = 7L;
+    private static final long STAGED_COUNT = KernelTestSamples.SAMPLE_NUMBER;
 
     private static final ClassName TEST = ClassName.get("org.junit.jupiter.api", "Test");
     private static final ClassName ASSERTIONS = ClassName.get("org.assertj.core.api", "Assertions");
@@ -154,7 +154,7 @@ public final class KernelServiceTestGenerator {
      */
     private MethodSpec finderTest(ClassName entityType, ClassName serviceType, ClassName stubType,
                                   FinderSpec finder) {
-        CodeBlock sample = sampleArgument(finder.paramTypeName());
+        CodeBlock sample = KernelTestSamples.of(finder.paramTypeName());
         MethodSpec.Builder test = test(finder.methodName() + "DelegatesToTheRepository")
                 .addStatement("$T repository = new $T()", stubType, stubType)
                 .addStatement("repository.byFinder = $T.of(new $T())", LIST, entityType)
@@ -163,7 +163,7 @@ public final class KernelServiceTestGenerator {
                         ASSERTIONS, finder.methodName(), sample)
                 .addStatement("$T.assertThat(repository.lastFinder).isEqualTo($S)",
                         ASSERTIONS, finder.methodName());
-        if (!isNullLiteral(sample)) {
+        if (!KernelTestSamples.isNull(sample)) {
             test.addStatement("$T.assertThat(repository.lastArgument).isEqualTo($L)",
                     ASSERTIONS, sample);
         }
@@ -219,37 +219,6 @@ public final class KernelServiceTestGenerator {
                 .addStatement("$T service = new $T(repository)", serviceType, serviceType)
                 .addStatement("$T.assertThat(service.count()).isEqualTo($LL)", ASSERTIONS, STAGED_COUNT)
                 .build();
-    }
-
-    /**
-     * A value of the finder's parameter type to pass through.
-     *
-     * <p>Dispatches on the metadata type string, the way {@link KernelTypeMapping} does, rather
-     * than on the resolved {@link TypeName}: an unqualified {@code String} field resolves through
-     * {@code ClassName.bestGuess} to a default-package {@code String} — which compiles, because
-     * the emitted source says {@code String}, but is not equal to {@code ClassName.get(String
-     * .class)}. Matching the string keeps the two dispatches on the same input.
-     *
-     * <p>{@code UUID} and {@code String} — between them nearly every filterable field — and the
-     * numeric/boolean types get a real value, so the pass-through assertion has something to
-     * compare. Every other type ({@code BigDecimal}, a temporal, an enum) gets {@code null}:
-     * synthesizing an instance would mean knowing an enum constant, and the assertion this test
-     * actually rests on is the recorded finder name, not the argument.
-     */
-    private CodeBlock sampleArgument(String paramTypeName) {
-        return switch (paramTypeName) {
-            case "UUID", "java.util.UUID" -> CodeBlock.of("$T.fromString($S)", UUID, FIXED_ID);
-            case "String", "java.lang.String" -> CodeBlock.of("$S", "sample");
-            case "boolean", "Boolean", "java.lang.Boolean" -> CodeBlock.of("true");
-            case "int", "Integer", "java.lang.Integer" -> CodeBlock.of("$L", STAGED_COUNT);
-            case "long", "Long", "java.lang.Long" -> CodeBlock.of("$LL", STAGED_COUNT);
-            case "double", "Double", "java.lang.Double" -> CodeBlock.of("$L.0", STAGED_COUNT);
-            default -> CodeBlock.of("null");
-        };
-    }
-
-    private boolean isNullLiteral(CodeBlock sample) {
-        return "null".equals(sample.toString());
     }
 
     /**

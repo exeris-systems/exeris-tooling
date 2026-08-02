@@ -111,6 +111,29 @@ mode this repo rejects elsewhere: a wrong expected status would ship silently.
 > double's overrides from one `finderSpecs` source is load-bearing: a double that overrides a method
 > the service never calls is how this test would quietly stop testing anything.
 
+> **Note (2026-08-02, slice d).** Repository tests shipped, and the scope line above — "any
+> assertion about the *database*" — turned out to be the wrong place to draw it. Nothing here
+> starts a persistence engine either: a second shared double, `RecordingPersistence`, implements
+> the five persistence-SPI roles a repository walks through (`TransactionalExecutor` →
+> `PersistenceConnection` → `PersistenceStatement` → `QueryResult` → `RowCursor`) **in one class**,
+> because collapsing them is what lets a test replay what the repository *bound* back as what it
+> *reads*.
+>
+> The design ruling worth recording is what these tests **must not** assert: the emitted SQL. The
+> test and the repository are generated from one `DomainMetadata`, so a changed column list changes
+> both — a SQL-text assertion could never fail, and would be a change-detector for a change that
+> cannot happen. What is genuinely at risk is the *alignment* of two independent emitter paths:
+> `emitInsertBinds` numbers the INSERT's parameters, `emitReadCol` numbers `mapRow`'s cursor reads,
+> each with its own counter over the shared column layout. So the central test is a save/load
+> **round-trip**, which asserts runtime behaviour rather than emitted text: an index that drifts on
+> one side lands on a neighbour's value, and a value bound as one type but read as another fails the
+> double's cast. Verified by perturbation — shifting `mapRow`'s indices by one makes the generated
+> test fail, which is the property that distinguishes this from a tautology.
+>
+> This generalises the slice-c lesson: a generated test earns its place only where the emitter has
+> **two paths that must agree**. Where there is one path, the emitted artefact and the emitted test
+> say the same thing twice.
+
 > **Note (2026-08-01, slice b).** The body-carrying routes split at a line this ADR did not
 > anticipate. Their **guard** paths need nothing new: `parseBody` throws on `hasBody() == false`
 > before it resolves a decoder, and `handleUpdate`'s path-id guard runs earlier still, so

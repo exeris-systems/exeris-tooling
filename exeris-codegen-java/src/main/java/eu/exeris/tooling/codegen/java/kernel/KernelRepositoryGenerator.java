@@ -239,12 +239,49 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     }
 
     /** Column descriptor — accessed by both SELECT clause builder and mapRow. */
-    private record Column(String sqlName, String javaName, String javaType, ColumnKind kind) {}
+    record Column(String sqlName, String javaName, String javaType, ColumnKind kind) {}
 
-    private enum ColumnKind { DOMAIN, TENANT_ID, CREATED_AT, UPDATED_AT, DELETED, VERSION }
+    enum ColumnKind { DOMAIN, TENANT_ID, CREATED_AT, UPDATED_AT, DELETED, VERSION }
+
+    /**
+     * The emitted column layout for an entity, in the one order that matters: the INSERT's column
+     * list, the SELECT's column list and {@code mapRow}'s zero-based cursor indices are all this
+     * list walked in sequence, so bind index <em>i</em> and read index <em>i</em> are the same
+     * column by construction.
+     *
+     * <p>Exposed so the generated {@code *RepositoryTest} (T2/ADR-058) can assert that the
+     * construction holds at <em>runtime</em> — it saves an entity, replays the recorded binds back
+     * as the query result, and checks every column survives. Deriving the test's expectations from
+     * the same layout is what makes that non-circular: the test asserts behaviour, not emitted
+     * text, so an off-by-one between {@code emitInsertBinds} and {@code emitReadCol} shows up as a
+     * failed round-trip even though both generators read this list.
+     */
+    static List<Column> columnLayout(DomainMetadata metadata) {
+        return buildColumnLayout(metadata.fields(), metadata, resolveSystemFieldNames(metadata));
+    }
+
+    /**
+     * The JavaBean accessor the emitted repository binds a column through — the {@code is}/{@code
+     * get} split included, since a primitive {@code boolean} field and the soft-delete flag both
+     * read as {@code is<Name>()}. Shared with the repository-test emitter so its assertions cannot
+     * name an accessor the bind path does not use.
+     */
+    static String getterFor(Column col) {
+        if ("id".equals(col.javaName())) {
+            return "getId";
+        }
+        String prefix = col.kind() == ColumnKind.DELETED || "boolean".equals(col.javaType())
+                ? "is" : "get";
+        return prefix + capitalize(col.javaName());
+    }
+
+    /** The matching mutator; {@code id} is {@code setId} regardless of the {@code is}/{@code get} split. */
+    static String setterFor(Column col) {
+        return "id".equals(col.javaName()) ? "setId" : "set" + capitalize(col.javaName());
+    }
 
     /** Carrier for repeated build-time state — keeps signatures readable. */
-    private record Context(String entity, ClassName entityType, List<FieldMetadata> fields,
+    record Context(String entity, ClassName entityType, List<FieldMetadata> fields,
                            List<Column> columns, DomainMetadata metadata, String table,
                            SystemFieldNames sys) {}
 
@@ -254,10 +291,10 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
      * else the canonical defaults. Defaults are deliberately the same literals
      * the generator hardcoded before T5, so default-case output is unchanged.
      */
-    private record SystemFieldNames(String tenantId, String createdAt, String updatedAt,
+    record SystemFieldNames(String tenantId, String createdAt, String updatedAt,
                                     String deleted, String version) {}
 
-    private SystemFieldNames resolveSystemFieldNames(DomainMetadata metadata) {
+    private static SystemFieldNames resolveSystemFieldNames(DomainMetadata metadata) {
         SystemFieldsMetadata sf = metadata.systemFields();
         return new SystemFieldNames(
                 resolve(sf == null ? null : sf.tenantIdField(), "tenantId"),
@@ -271,8 +308,8 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         return (override != null && !override.isBlank()) ? override : fallback;
     }
 
-    private List<Column> buildColumnLayout(List<FieldMetadata> fields, DomainMetadata metadata,
-                                           SystemFieldNames sys) {
+    private static List<Column> buildColumnLayout(List<FieldMetadata> fields, DomainMetadata metadata,
+                                                  SystemFieldNames sys) {
         List<Column> cols = new ArrayList<>();
         // T14: de-dupe by SQL column name. The processor emits EVERY instance field,
         // including ones that shadow the primary key or a system column (e.g. an

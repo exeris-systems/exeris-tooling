@@ -5,6 +5,8 @@ import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.Artifact
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 @DisplayName("KernelTestSupportGenerator")
@@ -53,9 +55,76 @@ class KernelTestSupportGeneratorTest {
     }
 
     @Test
+    @DisplayName("generateAll emits both shared doubles into the same support package")
+    void emitsBothDoubles() {
+        List<GeneratedFile> files = new KernelTestSupportGenerator().generateAll("com.example");
+
+        assertThat(files).extracting(GeneratedFile::className)
+                .containsExactly("RecordingHttpExchange", "RecordingPersistence");
+        assertThat(files).allSatisfy(f ->
+                assertThat(f.packageName()).isEqualTo("com.example.testsupport"));
+    }
+
+    @Test
+    @DisplayName("RecordingPersistence plays every persistence-SPI role a repository walks through")
+    void persistenceDoubleImplementsTheWholeChain() {
+        // The repository chains executor → connection → statement → result → cursor. One object
+        // playing all five is what lets a test replay recorded binds back as a query result.
+        String source = new KernelTestSupportGenerator().generatePersistence("com.example").content();
+
+        assertThat(source)
+                .contains("class RecordingPersistence implements TransactionalExecutor,")
+                .contains("PersistenceConnection,")
+                .contains("PersistenceStatement,")
+                .contains("QueryResult,")
+                .contains("RowCursor {")
+                .contains("public PersistenceStatement prepare(String sql)")
+                .contains("public Map<Integer, Object> recordedRow()");
+    }
+
+    @Test
+    @DisplayName("the double records binds and stages rows, and closing does not erase either")
+    void recordsAndStages() {
+        String source = new KernelTestSupportGenerator().generatePersistence("com.example").content();
+
+        assertThat(source)
+                .contains("binds.put(index, value)")
+                .contains("public Map<Integer, Object> row")
+                .contains("public long rowsAffected = 1L")
+                // close() is inert on purpose: the repository closes statements and results inside
+                // try-with-resources, so a close that reset state would erase the recording.
+                .contains("public void close() {\n    }");
+    }
+
+    @Test
+    @DisplayName("unread cursor accessors throw rather than answer null")
+    void unreadAccessorsThrow() {
+        String source = new KernelTestSupportGenerator().generatePersistence("com.example").content();
+
+        // No emitted repository reads a column as a segment; a double that returned null would
+        // hide the day one starts.
+        assertThat(source)
+                .contains("public MemorySegment getSegment(int column)")
+                .contains("throw new UnsupportedOperationException");
+    }
+
+    @Test
+    @DisplayName("the dependency contract holds: no mocking framework in either double")
+    void bindsNoMockingFramework() {
+        for (GeneratedFile file : new KernelTestSupportGenerator().generateAll("com.example")) {
+            assertThat(file.content())
+                    .doesNotContain("org.mockito")
+                    .doesNotContain("org.easymock");
+            assertThat(file.artifactType()).isEqualTo(ArtifactType.TEST);
+        }
+    }
+
+    @Test
     @DisplayName("emission is deterministic — byte-identical across runs")
     void emissionIsDeterministic() {
-        assertThat(new KernelTestSupportGenerator().generate("com.example").content())
-                .isEqualTo(new KernelTestSupportGenerator().generate("com.example").content());
+        assertThat(new KernelTestSupportGenerator().generateAll("com.example"))
+                .extracting(GeneratedFile::content)
+                .isEqualTo(new KernelTestSupportGenerator().generateAll("com.example").stream()
+                        .map(GeneratedFile::content).toList());
     }
 }
