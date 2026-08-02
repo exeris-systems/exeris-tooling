@@ -13,6 +13,7 @@ import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.Artifact
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
+import static eu.exeris.tooling.codegen.java.support.DataScopeSupport.isTenantPartitioned;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 import eu.exeris.sdk.sourcemodel.ast.RelationshipMetadata;
 import eu.exeris.sdk.sourcemodel.ast.SystemFieldsMetadata;
@@ -338,7 +339,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         // field whose column collides with the PK or an active system column is dropped.
         Set<String> seen = new HashSet<>();
         Set<String> systemCols = new HashSet<>();
-        if (metadata.tenantScoped()) {
+        if (isTenantPartitioned(metadata)) {
             systemCols.add(toSnakeCase(sys.tenantId()));
         }
         if (metadata.audited()) {
@@ -364,7 +365,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
             seen.add(sqlName);
             cols.add(new Column(sqlName, field.name(), field.type(), ColumnKind.DOMAIN));
         }
-        if (metadata.tenantScoped()) {
+        if (isTenantPartitioned(metadata)) {
             cols.add(new Column(toSnakeCase(sys.tenantId()), sys.tenantId(), "UUID", ColumnKind.TENANT_ID));
         }
         if (metadata.audited()) {

@@ -4,6 +4,7 @@ import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
+import static eu.exeris.tooling.codegen.java.support.DataScopeSupport.isTenantPartitioned;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 import eu.exeris.sdk.sourcemodel.ast.RelationshipMetadata;
 import eu.exeris.sdk.sourcemodel.ast.SystemFieldsMetadata;
@@ -24,7 +25,9 @@ import java.util.Set;
  *   <li>Indexes for {@code searchable}/{@code unique} fields and the tenant FK</li>
  *   <li>{@code CHECK} constraints mirroring the field-validation the handler
  *       already enforces at request time (T10, defense in depth)</li>
- *   <li>Row-Level-Security policy for tenant isolation (when {@code tenantScoped})</li>
+ *   <li>Row-Level-Security policy for tenant isolation (when the entity's
+ *       ADR-059 data-scope tier is tenant-partitioned — see
+ *       {@link eu.exeris.tooling.codegen.java.support.DataScopeSupport})</li>
  * </ul>
  *
  * @implNote Emission uses Java text blocks + {@link String#join} over a list
@@ -79,7 +82,7 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
 
         String indexes = String.join("", buildIndexes(metadata, tableName)) + "\n";
 
-        String rls = metadata.tenantScoped()
+        String rls = isTenantPartitioned(metadata)
                 ? RLS_TEMPLATE.formatted(tableName, tenantColumn(metadata)) : "";
 
         String sql = header + createTable + indexes + rls;
@@ -102,7 +105,7 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
      * than one migration with version N" — rename one of the colliding Java classes.
      */
     private static String migrationVersion(DomainMetadata metadata, String tableName) {
-        boolean scoped = metadata.tenantScoped() && !"tenants".equals(tableName);
+        boolean scoped = isTenantPartitioned(metadata) && !"tenants".equals(tableName);
         long tier = scoped ? 2L : 1L;
         long discriminator = Math.floorMod(metadata.fullyQualifiedName().hashCode(), 1_000_000);
         return "V" + (tier * 1_000_000L + discriminator);
@@ -115,7 +118,7 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
         Set<String> emittedColumns = new HashSet<>();
         emittedColumns.add("id");
 
-        if (metadata.tenantScoped()) {
+        if (isTenantPartitioned(metadata)) {
             columns.add("    " + tenantColumn(metadata) + " UUID NOT NULL REFERENCES tenants(id)");
             emittedColumns.add(tenantColumn(metadata));
         }
@@ -214,7 +217,7 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
     private List<String> buildIndexes(DomainMetadata metadata, String tableName) {
         List<String> indexes = new ArrayList<>();
         Set<String> indexedColumns = new HashSet<>();
-        if (metadata.tenantScoped()) {
+        if (isTenantPartitioned(metadata)) {
             indexes.add("CREATE INDEX IF NOT EXISTS idx_" + tableName + "_tenant ON "
                     + tableName + "(" + tenantColumn(metadata) + ");\n");
             indexedColumns.add(tenantColumn(metadata));

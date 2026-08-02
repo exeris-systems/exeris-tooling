@@ -2,6 +2,7 @@ package eu.exeris.tooling.codegen.java.kernel;
 
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
+import eu.exeris.sdk.sourcemodel.ast.DataScope;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 import eu.exeris.sdk.sourcemodel.ast.RelationshipMetadata;
@@ -117,6 +118,70 @@ class KernelFlywayGeneratorTest {
 
 
                 """);
+    }
+
+    @Test
+    @DisplayName("ADR-059: dataScope = TENANT without tenantScoped still emits the tenant column, index and RLS")
+    void dataScopeTenantAloneIsFullyPartitioned() {
+        DomainMetadata metadata = DomainMetadata.builder("Invoice", "eu.exeris.app.domain")
+                .dataScope(DataScope.TENANT)   // and deliberately NOT tenantScoped(true)
+                .fields(List.of(
+                        FieldMetadata.builder("number", "String").build()))
+                .build();
+
+        GeneratedFile file = generator.generate(metadata);
+
+        // The regression this slice exists to prevent: while the generator read
+        // the raw `tenantScoped` boolean, this entity emitted an unpartitioned
+        // table — no tenant column, no index, no policy — for an author who had
+        // declared TENANT in the canonical way. Silent, and only visible in prod.
+        assertThat(file.content())
+                .contains("tenant_id UUID NOT NULL REFERENCES tenants(id)")
+                .contains("ENABLE ROW LEVEL SECURITY");
+        // Tier 2 in the migration version, so it sorts after the tenants table.
+        assertThat(file.className()).startsWith("V2");
+    }
+
+    @Test
+    @DisplayName("ADR-059: UNIVERSE fails closed to the tenant-partitioned shape, never to GLOBAL")
+    void dataScopeUniverseFailsClosed() {
+        DomainMetadata metadata = DomainMetadata.builder("CatalogItem", "eu.exeris.app.domain")
+                .dataScope(DataScope.UNIVERSE)
+                .fields(List.of(
+                        FieldMetadata.builder("sku", "String").build()))
+                .build();
+
+        GeneratedFile file = generator.generate(metadata);
+
+        // UNIVERSE is rows owned by a tenant but readable across tenants. Its
+        // kernel carrier (sharedScopeKey + the read-widen RLS mode) is not
+        // transcribed yet, so what ships is UNIVERSE minus the widening —
+        // strictly narrower than declared. Treating the tier as GLOBAL instead
+        // would drop the owner column and the policy and publish rows the
+        // author scoped to an owner; that is the direction that must not fail.
+        assertThat(file.content())
+                .contains("tenant_id UUID NOT NULL REFERENCES tenants(id)")
+                .contains("ENABLE ROW LEVEL SECURITY");
+        assertThat(file.className()).startsWith("V2");
+    }
+
+    @Test
+    @DisplayName("ADR-059: the tenantScoped fallback is unchanged — pre-0.10.0 sources emit byte-identical SQL")
+    void deprecatedBooleanStillDrivesTheSameOutput() {
+        DomainMetadata viaBoolean = DomainMetadata.builder("Invoice", "eu.exeris.app.domain")
+                .tenantScoped(true)
+                .fields(List.of(FieldMetadata.builder("number", "String").build()))
+                .build();
+        DomainMetadata viaTier = DomainMetadata.builder("Invoice", "eu.exeris.app.domain")
+                .dataScope(DataScope.TENANT)
+                .fields(List.of(FieldMetadata.builder("number", "String").build()))
+                .build();
+
+        // effectiveDataScope() maps the boolean onto exactly the tier it always
+        // meant, so migrating a corpus to `dataScope` produces no SQL churn —
+        // the property that makes the deprecation window safe to sit in.
+        assertThat(generator.generate(viaBoolean).content())
+                .isEqualTo(generator.generate(viaTier).content());
     }
 
     @Test

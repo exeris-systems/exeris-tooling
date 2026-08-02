@@ -692,6 +692,204 @@ class ExerisDomainProcessorTest {
     }
 
     @Nested
+    @DisplayName("1.1.7 ADR-059 data-scope tier (dataScope supersedes tenantScoped)")
+    class DataScopeTests {
+
+        @Test
+        @DisplayName("dataScope alone — extracted, no fallback warning")
+        void canonicalDataScopeNoWarning() throws IOException {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Item",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+
+                    @ExerisDomain(module = "catalog", path = "/items",
+                            dataScope = ExerisDomain.DataScope.TENANT)
+                    public class Item {
+                    }
+                    """
+            );
+
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).succeededWithoutWarnings();
+
+            String metadata = readContent(compilation.generatedFile(
+                    StandardLocation.CLASS_OUTPUT, "exeris-metadata/Item.json").orElseThrow());
+            assertThat(metadata).contains("\"dataScope\" : \"TENANT\"");
+        }
+
+        @Test
+        @DisplayName("UNSPECIFIED is not a tier — absent from the JSON, same as unwritten")
+        void unspecifiedIsAbsentOnTheWire() throws IOException {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Item",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+
+                    @ExerisDomain(module = "catalog", path = "/items",
+                            dataScope = ExerisDomain.DataScope.UNSPECIFIED)
+                    public class Item {
+                    }
+                    """
+            );
+
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).succeededWithoutWarnings();
+
+            // UNSPECIFIED exists only because an annotation attribute cannot
+            // default to null; the AST expresses it as an absent field and has
+            // no such constant. Writing it must not materialise anything, or a
+            // reader would round-trip a tier the author never declared.
+            String metadata = readContent(compilation.generatedFile(
+                    StandardLocation.CLASS_OUTPUT, "exeris-metadata/Item.json").orElseThrow());
+            assertThat(metadata).doesNotContain("dataScope");
+        }
+
+        @Test
+        @DisplayName("tenantScoped alone — read as a fallback, with a deprecation warning")
+        void deprecatedTenantScopedWarnsAndCarriesOver() throws IOException {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Item",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+
+                    @ExerisDomain(module = "catalog", path = "/items", tenantScoped = true)
+                    public class Item {
+                    }
+                    """
+            );
+
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).succeeded();
+            assertThat(compilation)
+                    .hadWarningContaining("@ExerisDomain.tenantScoped is deprecated for removal");
+            assertThat(compilation)
+                    .hadWarningContaining("tenantScoped = true → TENANT");
+
+            // The boolean still reaches the AST — the fallback lives in
+            // DomainMetadata.effectiveDataScope(), so a pre-0.10.0 baseline
+            // reads back with the meaning it always had. No tier is invented.
+            String metadata = readContent(compilation.generatedFile(
+                    StandardLocation.CLASS_OUTPUT, "exeris-metadata/Item.json").orElseThrow());
+            assertThat(metadata).contains("\"tenantScoped\" : true");
+            assertThat(metadata).doesNotContain("dataScope");
+        }
+
+        @Test
+        @DisplayName("Agreeing pair — no warning, both flow through")
+        void agreeingPairIsSilent() throws IOException {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Item",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+
+                    @ExerisDomain(module = "catalog", path = "/items",
+                            dataScope = ExerisDomain.DataScope.TENANT, tenantScoped = true)
+                    public class Item {
+                    }
+                    """
+            );
+
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).succeeded();
+
+            String metadata = readContent(compilation.generatedFile(
+                    StandardLocation.CLASS_OUTPUT, "exeris-metadata/Item.json").orElseThrow());
+            assertThat(metadata)
+                    .contains("\"tenantScoped\" : true")
+                    .contains("\"dataScope\" : \"TENANT\"");
+        }
+
+        @Test
+        @DisplayName("Contradicting pair — build error, not a silent resolution")
+        void contradictingPairIsRejected() {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Item",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+
+                    @ExerisDomain(module = "catalog", path = "/items",
+                            dataScope = ExerisDomain.DataScope.GLOBAL, tenantScoped = true)
+                    public class Item {
+                    }
+                    """
+            );
+
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).failed();
+            assertThat(compilation)
+                    .hadErrorContaining("contradict each other");
+        }
+
+        @Test
+        @DisplayName("UNIVERSE + any tenantScoped contradicts — the boolean cannot express the tier")
+        void universeWithTenantScopedIsRejected() {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Item",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+
+                    @ExerisDomain(module = "catalog", path = "/items",
+                            dataScope = ExerisDomain.DataScope.UNIVERSE, tenantScoped = true)
+                    public class Item {
+                    }
+                    """
+            );
+
+            // The fallback mapping is total (true → TENANT, false → GLOBAL), so
+            // no boolean value agrees with UNIVERSE. Declaring both is always a
+            // contradiction — which is the point of the enum: the third tier is
+            // exactly what the boolean could not say.
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorContaining("contradict each other");
+        }
+
+        @Test
+        @DisplayName("UNIVERSE alone — extracted, warned as reserved, fails closed to the TENANT shape")
+        void universeIsReservedAndWarns() throws IOException {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Item",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+
+                    @ExerisDomain(module = "catalog", path = "/items",
+                            dataScope = ExerisDomain.DataScope.UNIVERSE)
+                    public class Item {
+                    }
+                    """
+            );
+
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).succeeded();
+            assertThat(compilation)
+                    .hadWarningContaining("DataScope.UNIVERSE is reserved");
+            assertThat(compilation)
+                    .hadWarningContaining("without the cross-tenant read-widen");
+
+            // The tier reaches the AST unchanged — "reserved" is about what the
+            // emitters can transcribe, not about dropping the author's intent.
+            String metadata = readContent(compilation.generatedFile(
+                    StandardLocation.CLASS_OUTPUT, "exeris-metadata/Item.json").orElseThrow());
+            assertThat(metadata).contains("\"dataScope\" : \"UNIVERSE\"");
+        }
+    }
+
+    @Nested
     @DisplayName("1.1.6 Deprecated @Validation read-and-warn (SDK 0.2.x → 1.0.0)")
     class DeprecatedValidationFallbackTests {
 

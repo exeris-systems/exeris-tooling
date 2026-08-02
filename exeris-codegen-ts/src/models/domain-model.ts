@@ -292,6 +292,15 @@ export const DomainMetadataSchema = z.object({
   graphqlApi: z.boolean().default(false),
   realTimeApi: z.boolean().default(false),
   internalClient: z.boolean().default(false),
+  // ADR-059: `dataScope` is the canonical data-scope tier; `tenantScoped` is
+  // its deprecated predecessor (removal at SDK 1.0.0). Absent means "no tier
+  // declared" — the AST has no UNSPECIFIED constant, that exists only on the
+  // annotation side — and resolves through the boolean's fallback
+  // (`true → TENANT`, `false → GLOBAL`); `effectiveDataScope` below is the
+  // canonical read, mirroring `DomainMetadata.effectiveDataScope()` on the Java
+  // side. Mirrored here for Java/TS parity even though no TS emitter consumes
+  // the tier yet; a field visible on one side is visible on both.
+  dataScope: z.enum(['GLOBAL', 'TENANT', 'UNIVERSE']).optional(),
   tenantScoped: z.boolean().default(false),
   versioned: z.boolean().default(false),
   fullTextSearch: z.boolean().default(false),
@@ -494,6 +503,23 @@ export function parseDomainMetadata(json: unknown): DomainMetadata {
  */
 export function parseExerisMetadata(json: unknown): ExerisMetadata {
   return ExerisMetadataSchema.parse(json);
+}
+
+/**
+ * The entity's data-scope tier — the canonical read, and the TS twin of
+ * `DomainMetadata.effectiveDataScope()` on the Java side (ADR-059).
+ *
+ * An explicit `dataScope` wins; otherwise the deprecated `tenantScoped` boolean
+ * still decides (`true → TENANT`, `false → GLOBAL`), so metadata written before
+ * SDK 0.10.0 reads back with exactly the meaning it always had. Never returns
+ * undefined. Read this rather than either field: an entity can declare
+ * `dataScope: 'TENANT'` without ever setting `tenantScoped`, and a consumer
+ * reading the raw boolean would silently treat it as unpartitioned.
+ */
+export function effectiveDataScope(
+  metadata: Pick<DomainMetadata, 'dataScope' | 'tenantScoped'>
+): 'GLOBAL' | 'TENANT' | 'UNIVERSE' {
+  return metadata.dataScope ?? (metadata.tenantScoped ? 'TENANT' : 'GLOBAL');
 }
 
 /**

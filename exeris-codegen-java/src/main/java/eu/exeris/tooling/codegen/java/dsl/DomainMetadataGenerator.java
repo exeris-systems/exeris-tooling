@@ -3,6 +3,8 @@ package eu.exeris.tooling.codegen.java.dsl;
 import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
+import static eu.exeris.tooling.codegen.java.support.DataScopeSupport.isTenantPartitioned;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
@@ -64,7 +66,7 @@ public final class DomainMetadataGenerator {
         entity.put("displayName", metadata.entityName());
         entity.put("audited", metadata.audited());
         entity.put("softDelete", metadata.softDelete());
-        entity.put("multiTenant", metadata.tenantScoped());
+        entity.put("multiTenant", isTenantPartitioned(metadata));
         return entity;
     }
 

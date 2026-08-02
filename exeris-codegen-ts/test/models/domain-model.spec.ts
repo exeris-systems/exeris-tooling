@@ -31,6 +31,7 @@ import {
   ExerisMetadataSchema,
   parseDomainMetadata,
   parseExerisMetadata,
+  effectiveDataScope,
 } from '../../src/models/domain-model.js';
 
 describe('FieldMetadataSchema', () => {
@@ -389,5 +390,36 @@ describe('parseDomainMetadata + parseExerisMetadata helpers', () => {
 
   it('parseExerisMetadata throws on non-object input (e.g. an array at root)', () => {
     expect(() => parseExerisMetadata('not an object')).toThrow(z.ZodError);
+  });
+
+  // ADR-059 — the TS twin of DomainMetadata.effectiveDataScope().
+  it('dataScope is optional and accepts every tier', () => {
+    expect(parseDomainMetadata({ entityName: 'Order', packageName: 'com.shop' }).dataScope)
+      .toBeUndefined();
+    for (const tier of ['GLOBAL', 'TENANT', 'UNIVERSE'] as const) {
+      expect(
+        parseDomainMetadata({ entityName: 'Order', packageName: 'com.shop', dataScope: tier })
+          .dataScope
+      ).toBe(tier);
+    }
+  });
+
+  it('dataScope rejects a tier the AST does not model (UNSPECIFIED is annotation-side only)', () => {
+    expect(() =>
+      parseDomainMetadata({ entityName: 'Order', packageName: 'com.shop', dataScope: 'UNSPECIFIED' })
+    ).toThrow(z.ZodError);
+  });
+
+  it('effectiveDataScope prefers an explicit tier over the deprecated boolean', () => {
+    // Not merely a preference: an entity can declare TENANT without ever
+    // setting tenantScoped, and a consumer reading the raw boolean would treat
+    // it as unpartitioned.
+    expect(effectiveDataScope({ dataScope: 'TENANT', tenantScoped: false })).toBe('TENANT');
+    expect(effectiveDataScope({ dataScope: 'UNIVERSE', tenantScoped: false })).toBe('UNIVERSE');
+  });
+
+  it('effectiveDataScope falls back to tenantScoped when no tier is declared', () => {
+    expect(effectiveDataScope({ dataScope: undefined, tenantScoped: true })).toBe('TENANT');
+    expect(effectiveDataScope({ dataScope: undefined, tenantScoped: false })).toBe('GLOBAL');
   });
 });
