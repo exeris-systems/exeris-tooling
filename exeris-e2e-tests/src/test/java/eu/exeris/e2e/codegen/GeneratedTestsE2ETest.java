@@ -369,12 +369,12 @@ class GeneratedTestsE2ETest {
                     @Field(label = "Deleted")
                     private boolean deleted;
 
-                    // Primitive, not Long: the emitter hardcodes this column's type as `Long`
-                    // and binds it by unboxing (`stmt.bindLong(i, entity.getVersion())`), so a
-                    // wrapper-typed version field NPEs on the first save of a fresh entity. Logged
-                    // as finding T26 — it is a defect in the repository emitter, not in this test.
+                    // Deliberately the WRAPPER, not `long`: this is the declaration that used to
+                    // NPE on the first save() of a fresh entity (T26), because the emitter bound
+                    // the version by unboxing. Keeping it boxed here is the regression test — a
+                    // primitive would pass whether or not the fix is present.
                     @Field(label = "Version")
-                    private long version;
+                    private Long version;
 
                     public UUID getId() {
                         return id;
@@ -424,11 +424,11 @@ class GeneratedTestsE2ETest {
                         this.deleted = deleted;
                     }
 
-                    public long getVersion() {
+                    public Long getVersion() {
                         return version;
                     }
 
-                    public void setVersion(long version) {
+                    public void setVersion(Long version) {
                         this.version = version;
                     }
                 }

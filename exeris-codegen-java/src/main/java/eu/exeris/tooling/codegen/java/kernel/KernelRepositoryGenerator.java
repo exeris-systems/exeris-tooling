@@ -73,6 +73,12 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     private static final ClassName LOCAL_DATE_TIME = ClassName.get("java.time", "LocalDateTime");
     private static final ClassName ZONE_OFFSET = ClassName.get("java.time", "ZoneOffset");
     private static final ClassName BIG_DECIMAL = ClassName.get("java.math", "BigDecimal");
+    /**
+     * {@code java.lang.Long} — the boxed read of a version field. Deliberately the wrapper: the
+     * entity may declare {@code version} either way, and a boxed local accepts both (a primitive
+     * autoboxes, a wrapper does not) while a primitive local would NPE on a null wrapper. See T26.
+     */
+    private static final ClassName BOXED_LONG = ClassName.get("java.lang", "Long");
 
     private static final String SPI_PERSISTENCE_PKG = "eu.exeris.kernel.spi.persistence";
     private static final ClassName TRANSACTIONAL_EXECUTOR =
@@ -278,6 +284,19 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     /** The matching mutator; {@code id} is {@code setId} regardless of the {@code is}/{@code get} split. */
     static String setterFor(Column col) {
         return "id".equals(col.javaName()) ? "setId" : "set" + capitalize(col.javaName());
+    }
+
+    /**
+     * The layout column carrying a system kind. Only called under the metadata flag that emits it,
+     * so the column is always present — reaching for a system column the flag did not emit is a
+     * generator bug, not a runtime condition.
+     */
+    private static Column systemColumn(Context ctx, ColumnKind kind) {
+        return ctx.columns().stream()
+                .filter(c -> c.kind() == kind)
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException(
+                        "no " + kind + " column in the layout for " + ctx.entity()));
     }
 
     /** Carrier for repeated build-time state — keeps signatures readable. */
@@ -600,8 +619,8 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                 .addStatement("if (entity.getId() == null) entity.setId($T.randomUUID())", UUID_TYPE);
         if (ctx.metadata().audited()) {
             save.addStatement("$T now = $T.now()", INSTANT, INSTANT);
-            save.addStatement("entity.set$L(now)", capitalize(ctx.sys().createdAt()));
-            save.addStatement("entity.set$L(now)", capitalize(ctx.sys().updatedAt()));
+            save.addStatement("entity.$L(now)", setterFor(systemColumn(ctx, ColumnKind.CREATED_AT)));
+            save.addStatement("entity.$L(now)", setterFor(systemColumn(ctx, ColumnKind.UPDATED_AT)));
         }
         save.addStatement(SQL_VAR_STMT, sql);
 
@@ -640,15 +659,22 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                 .addParameter(UUID_TYPE, "id")
                 .addParameter(ctx.entityType(), "entity");
         if (ctx.metadata().audited()) {
-            update.addStatement("entity.set$L($T.now())", capitalize(ctx.sys().updatedAt()), INSTANT);
+            update.addStatement("entity.$L($T.now())",
+                    setterFor(systemColumn(ctx, ColumnKind.UPDATED_AT)), INSTANT);
         }
         if (versioned) {
             update.addJavadoc("Optimistic-lock update. The caller-supplied {@code entity.version}\n");
             update.addJavadoc("is the <i>expected</i> row version; this method increments it before\n");
             update.addJavadoc("writing and rejects the update if no row matches the expected\n");
             update.addJavadoc("version (stale read).\n");
-            update.addStatement("long expectedVersion = entity.get$L()", capitalize(ctx.sys().version()));
-            update.addStatement("entity.set$L(expectedVersion + 1L)", capitalize(ctx.sys().version()));
+            Column versionColumn = systemColumn(ctx, ColumnKind.VERSION);
+            // T26: read into a boxed local first. The entity may declare `version` as `long` or as
+            // `Long`; assigning straight into a `long` NPEs on a null wrapper, and a null guard is
+            // not expressible on a primitive. Boxing accepts both, and treating a null as 0 makes
+            // a wrapper-typed field behave exactly like the primitive it shadows.
+            update.addStatement("$T currentVersion = entity.$L()", BOXED_LONG, getterFor(versionColumn));
+            update.addStatement("long expectedVersion = currentVersion == null ? 0L : currentVersion");
+            update.addStatement("entity.$L(expectedVersion + 1L)", setterFor(versionColumn));
         }
         update.addStatement(SQL_VAR_STMT, sql);
         update.addStatement("long[] rowsAffected = {0L}");
@@ -841,7 +867,14 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                     "if ($L.$L() == null) stmt.bindNull($L); else stmt.bindInstant($L, $L.$L());\n",
                     src, accessor, idx, idx, src, accessor);
             case DELETED -> body.addStatement("stmt.bindBoolean($L, $L.$L())", idx, src, accessor);
-            case VERSION -> body.addStatement("stmt.bindLong($L, $L.$L())", idx, src, accessor);
+            // T26: same boxing as update()'s expected-version read, for the same reason — a
+            // `Long version` on a freshly constructed entity is null, and bindLong takes a
+            // primitive, so the unboxing threw before the row was ever written.
+            case VERSION -> {
+                String local = col.javaName() + "Value";
+                body.addStatement("$T $L = $L.$L()", BOXED_LONG, local, src, accessor);
+                body.addStatement("stmt.bindLong($L, $L == null ? 0L : $L)", idx, local, local);
+            }
             case DOMAIN -> emitBindDomain(body, col, idx, src);
         }
     }
