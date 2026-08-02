@@ -308,6 +308,17 @@ Message *syntax* in the emitted source changes with the facade — `{}` becomes 
 `System.Logger` formats with `MessageFormat` — but rendered output is the same. Regenerate and commit;
 there is nothing to hand-edit.
 
+### Versioned entities with a `Long` version field no longer fail on first save
+
+If an entity is `@ExerisDomain(versioned = true)` and declares its version field as the **wrapper**
+`Long` rather than the primitive `long`, the previously generated repository threw
+`NullPointerException` on the first `save()` of a freshly constructed entity — the bind unboxed a
+null. `update()` unboxed the same way.
+
+Both now read through a boxed local and default a null to `0`, so a wrapper-typed field behaves
+exactly like the primitive it shadows. Regenerate; there is nothing to hand-edit and no API change.
+Entities that already declared `long` are unaffected in behaviour and in emitted semantics.
+
 ### Generated tests (opt-in, new)
 
 `exeris:generate` gains `-Dexeris.tests=true`. It is **off by default**, because turning it on adds

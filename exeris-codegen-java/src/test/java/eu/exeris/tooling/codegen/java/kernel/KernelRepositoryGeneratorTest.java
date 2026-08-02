@@ -204,7 +204,10 @@ class KernelRepositoryGeneratorTest {
                 .contains("SELECT COUNT(*) FROM orders WHERE deleted = false")
                 // Optimistic-lock UPDATE adds AND version = ? on top of the audited SET clause.
                 .contains("AND version = ?")
-                .contains("long expectedVersion = entity.getVersion()")
+                // T26: the expected version is read into a boxed local and null-defaulted, so a
+                // `Long version` field behaves like the `long` it shadows instead of NPE-ing.
+                .contains("Long currentVersion = entity.getVersion()")
+                .contains("long expectedVersion = currentVersion == null ? 0L : currentVersion")
                 .contains("entity.setVersion(expectedVersion + 1L)")
                 // The "not found or stale version" error message is used when versioned.
                 .contains("Order not found or stale version: ");
@@ -278,11 +281,14 @@ class KernelRepositoryGeneratorTest {
                 .contains("UPDATE orders SET order_number = ?, version = ? WHERE id = ? AND version = ?")
                 // Auto-increment: capture expected, then increment on the entity
                 // so the SET version = ? bind gets the new value.
-                .contains("long expectedVersion = entity.getVersion()")
+                .contains("Long currentVersion = entity.getVersion()")
+                .contains("long expectedVersion = currentVersion == null ? 0L : currentVersion")
                 .contains("entity.setVersion(expectedVersion + 1L)")
                 // Bind layout: [0]=order_number, [1]=version (new), [2]=id,
-                // [3]=expectedVersion (the optimistic-lock guard).
-                .contains("stmt.bindLong(1, entity.getVersion())")
+                // [3]=expectedVersion (the optimistic-lock guard). T26: the version bind reads
+                // through a boxed local too, so bindLong never unboxes a null.
+                .contains("Long versionValue = entity.getVersion()")
+                .contains("stmt.bindLong(1, versionValue == null ? 0L : versionValue)")
                 .contains("stmt.bindUuid(2, id)")
                 .contains("stmt.bindLong(3, expectedVersion)")
                 // Distinct error message for stale-version case.
@@ -325,8 +331,11 @@ class KernelRepositoryGeneratorTest {
                 .contains("entity.setModifiedAt(row.getInstant(")
                 .contains("if (entity.getModifiedAt() == null) stmt.bindNull(")
                 .contains(", entity.getModifiedAt());")
-                .contains("long expectedVersion = entity.getRev()")
+                .contains("Long currentVersion = entity.getRev()")
+                .contains("long expectedVersion = currentVersion == null ? 0L : currentVersion")
                 .contains("entity.setRev(expectedVersion + 1L)")
+                // The boxed local is named after the overridden java field, not the default.
+                .contains("Long revValue = entity.getRev()")
                 .contains("entity.setRev(row.getLong(")
                 // Old hardcoded names must NOT appear for the overridden fields.
                 .doesNotContain("entity.getTenantId()")

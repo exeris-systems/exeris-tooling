@@ -100,9 +100,9 @@ public final class KernelRepositoryTestGenerator {
 
         type.addMethod(roundTripTest(entityType, repositoryType, persistenceType, columns));
         type.addMethod(saveFillsIdTest(entityType, repositoryType, persistenceType));
-        type.addMethod(updateBindsIdTest(entityType, repositoryType, persistenceType, metadata, columns));
+        type.addMethod(updateBindsIdTest(entityType, repositoryType, persistenceType, columns));
         type.addMethod(findByIdEmptyTest(repositoryType, persistenceType));
-        type.addMethod(updateRejectsTest(entityType, repositoryType, persistenceType, metadata));
+        type.addMethod(updateRejectsTest(entityType, repositoryType, persistenceType));
         type.addMethod(deleteRejectsTest(repositoryType, persistenceType));
         type.addMethod(countTest(repositoryType, persistenceType));
 
@@ -167,15 +167,13 @@ public final class KernelRepositoryTestGenerator {
      * one thing a reordering of {@code emitUpdateBinds} would silently break.
      */
     private MethodSpec updateBindsIdTest(ClassName entityType, ClassName repositoryType,
-                                         ClassName persistenceType, DomainMetadata metadata,
-                                         List<Column> columns) {
+                                         ClassName persistenceType, List<Column> columns) {
         // SET list = columns minus id, so the WHERE id lands one slot past its last entry.
         int whereIdIndex = columns.size() - 1;
         MethodSpec.Builder test = test("updateBindsTheIdAfterTheSetList")
                 .addStatement("$T persistence = new $T()", persistenceType, persistenceType)
                 .addStatement("$T repository = new $T(persistence)", repositoryType, repositoryType)
                 .addStatement("$T entity = new $T()", entityType, entityType);
-        stageVersion(test, metadata, columns);
         test.addStatement("$T id = $T.fromString($S)", UUID, UUID, KernelTestSamples.FIXED_ID)
                 .addStatement("repository.update(id, entity)")
                 .addStatement("$T.assertThat(persistence.binds.get($L)).isEqualTo(id)",
@@ -193,7 +191,7 @@ public final class KernelRepositoryTestGenerator {
     }
 
     private MethodSpec updateRejectsTest(ClassName entityType, ClassName repositoryType,
-                                         ClassName persistenceType, DomainMetadata metadata) {
+                                         ClassName persistenceType) {
         MethodSpec.Builder test = test("updateRejectsWhenNoRowMatched")
                 .addJavadoc("Zero rows affected is the row-is-gone (or, on a versioned entity, the\n")
                 .addJavadoc("stale-version) case, and it must not pass for a silent no-op.\n")
@@ -201,9 +199,10 @@ public final class KernelRepositoryTestGenerator {
                 .addStatement("persistence.rowsAffected = 0L")
                 .addStatement("$T repository = new $T(persistence)", repositoryType, repositoryType)
                 .addStatement("$T entity = new $T()", entityType, entityType);
-        stageVersion(test, metadata, KernelRepositoryGenerator.columnLayout(metadata));
         // hasMessageContaining, not isInstanceOf(RuntimeException) alone: an NPE from an unstaged
         // field is also a RuntimeException, and would make this pass without the guard running.
+        // Nothing is staged on the entity on purpose — on a versioned entity that also pins T26,
+        // since update() reads the version off a freshly constructed instance.
         test.addStatement("$T.assertThatThrownBy(() -> repository.update($T.fromString($S), entity))"
                         + ".hasMessageContaining($S)",
                 ASSERTIONS, UUID, KernelTestSamples.FIXED_ID, NOT_FOUND);
@@ -247,21 +246,6 @@ public final class KernelRepositoryTestGenerator {
         }
         CodeBlock sample = KernelTestSamples.of(column.javaType());
         return KernelTestSamples.isNull(sample) ? null : sample;
-    }
-
-    /**
-     * {@code update} reads {@code entity.getVersion()} into a {@code long} on a versioned entity, so
-     * an unstaged {@code Long} would throw a null-unboxing NPE before the code under test runs.
-     */
-    private void stageVersion(MethodSpec.Builder test, DomainMetadata metadata, List<Column> columns) {
-        if (!metadata.versioned()) {
-            return;
-        }
-        columns.stream()
-                .filter(c -> c.kind() == ColumnKind.VERSION)
-                .findFirst()
-                .ifPresent(c -> test.addStatement("entity.$L(0L)",
-                        KernelRepositoryGenerator.setterFor(c)));
     }
 
     private static MethodSpec.Builder test(String name) {
