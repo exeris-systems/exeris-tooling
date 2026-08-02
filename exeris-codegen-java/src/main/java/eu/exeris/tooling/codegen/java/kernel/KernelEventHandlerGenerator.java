@@ -59,8 +59,6 @@ public class KernelEventHandlerGenerator implements KernelArtifactGenerator {
 
     private static final ClassName ARRAY_LIST = ClassName.get("java.util", "ArrayList");
     private static final ClassName LIST = ClassName.get("java.util", "List");
-    private static final ClassName SLF4J_LOGGER = ClassName.get("org.slf4j", "Logger");
-    private static final ClassName SLF4J_LOGGER_FACTORY = ClassName.get("org.slf4j", "LoggerFactory");
 
     private static final ClassName EVENT_ENGINE = KernelEventSupport.EVENT_ENGINE;
     private static final ClassName EVENT_DESCRIPTOR = KernelEventSupport.EVENT_DESCRIPTOR;
@@ -91,10 +89,7 @@ public class KernelEventHandlerGenerator implements KernelArtifactGenerator {
                 .addJavadoc("payload (per the SPI refCount contract). Subclasses override\n")
                 .addJavadoc("the handler methods to add behaviour.\n")
                 .addJavadoc("<p><b>DO NOT EDIT</b> - Regenerate from domain model.\n")
-                .addField(FieldSpec.builder(SLF4J_LOGGER, "LOG",
-                                Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
-                        .initializer("$T.getLogger($T.class)", SLF4J_LOGGER_FACTORY, selfType)
-                        .build());
+                .addField(KernelScaffold.loggerField(selfType));
 
         for (DomainEventMetadata event : metadata.events()) {
             subscriber.addField(buildEventNameConstant(entity, event));
@@ -188,8 +183,9 @@ public class KernelEventHandlerGenerator implements KernelArtifactGenerator {
                 .addJavadoc("@param descriptor routing metadata — stream UUID, ordinal, flags, timestamp\n")
                 .addJavadoc("@param payload    ref-counted event bytes; the handler owns the close\n")
                 .beginControlFlow("try (payload)")
-                .addStatement("LOG.debug($S, descriptor.toEventUuid(), descriptor.toStreamUuid())",
-                        "Received " + name + ": eventId={} streamId={}")
+                .addStatement("LOG.log($T.DEBUG, $S, descriptor.toEventUuid(), descriptor.toStreamUuid())",
+                        KernelScaffold.LOGGER_LEVEL,
+                        "Received " + name + ": eventId={0} streamId={1}")
                 .endControlFlow()
                 .build();
     }

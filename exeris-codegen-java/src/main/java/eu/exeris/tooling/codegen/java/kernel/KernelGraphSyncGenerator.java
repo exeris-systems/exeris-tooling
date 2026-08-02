@@ -68,8 +68,6 @@ import java.util.stream.Collectors;
 public class KernelGraphSyncGenerator implements KernelArtifactGenerator {
 
     private static final ClassName UUID = ClassName.get("java.util", "UUID");
-    private static final ClassName SLF4J_LOGGER = ClassName.get("org.slf4j", "Logger");
-    private static final ClassName SLF4J_LOGGER_FACTORY = ClassName.get("org.slf4j", "LoggerFactory");
     private static final ClassName RUNTIME_EXCEPTION = ClassName.get("java.lang", "RuntimeException");
 
     private static final ClassName GRAPH_ENGINE =
@@ -112,10 +110,7 @@ public class KernelGraphSyncGenerator implements KernelArtifactGenerator {
                 .addJavadoc("graph subsystem via {@link $T}. Node label: {@code $L}.\n",
                         GRAPH_ENGINE, nodeLabel)
                 .addJavadoc("<p><b>DO NOT EDIT</b> - Regenerate from domain model.\n")
-                .addField(FieldSpec.builder(SLF4J_LOGGER, "LOG",
-                                Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
-                        .initializer("$T.getLogger($T.class)", SLF4J_LOGGER_FACTORY, selfType)
-                        .build())
+                .addField(KernelScaffold.loggerField(selfType))
                 .addField(FieldSpec.builder(String.class, "NODE_LABEL",
                                 Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
                         .initializer("$S", nodeLabel)
@@ -184,11 +179,14 @@ public class KernelGraphSyncGenerator implements KernelArtifactGenerator {
         }
 
         return method
-                .addStatement("LOG.debug($S, entity.getId())",
-                        "Synced " + entityType.simpleName() + " to graph: id={}")
+                .addStatement("LOG.log($T.DEBUG, $S, entity.getId())", KernelScaffold.LOGGER_LEVEL,
+                        "Synced " + entityType.simpleName() + " to graph: id={0}")
                 .nextControlFlow("catch ($T e)", RUNTIME_EXCEPTION)
-                .addStatement("LOG.error($S, entity.getId(), e)",
-                        "Failed to sync " + entityType.simpleName() + " to graph: id={}")
+                // System.Logger has no "trailing Throwable" convention: log(Level, String, Object...)
+                // would format the exception as a parameter and drop the stack trace. Concatenating
+                // the id and using log(Level, String, Throwable) keeps both.
+                .addStatement("LOG.log($T.ERROR, $S + entity.getId(), e)", KernelScaffold.LOGGER_LEVEL,
+                        "Failed to sync " + entityType.simpleName() + " to graph: id=")
                 .addStatement("throw e")
                 .endControlFlow()
                 .build();
@@ -206,9 +204,11 @@ public class KernelGraphSyncGenerator implements KernelArtifactGenerator {
                 .addJavadoc("no explicit edge teardown is needed here.\n")
                 .beginControlFlow("try ($T session = graphEngine.openSession())", GRAPH_SESSION)
                 .addStatement("session.deleteNode(NODE_LABEL, entityId)")
-                .addStatement("LOG.debug($S, entityId)", "Deleted node from graph: id={}")
+                .addStatement("LOG.log($T.DEBUG, $S, entityId)", KernelScaffold.LOGGER_LEVEL,
+                        "Deleted node from graph: id={0}")
                 .nextControlFlow("catch ($T e)", RUNTIME_EXCEPTION)
-                .addStatement("LOG.error($S, entityId, e)", "Failed to delete node from graph: id={}")
+                .addStatement("LOG.log($T.ERROR, $S + entityId, e)", KernelScaffold.LOGGER_LEVEL,
+                        "Failed to delete node from graph: id=")
                 .addStatement("throw e")
                 .endControlFlow()
                 .build();

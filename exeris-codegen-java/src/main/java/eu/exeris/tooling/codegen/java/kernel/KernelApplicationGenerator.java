@@ -91,8 +91,6 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
     private static final ClassName RUNTIME = ClassName.get("java.lang", "Runtime");
     private static final ClassName THREAD = ClassName.get("java.lang", "Thread");
     private static final ClassName RUNTIME_EXCEPTION = ClassName.get("java.lang", "RuntimeException");
-    private static final ClassName SLF4J_LOGGER = ClassName.get("org.slf4j", "Logger");
-    private static final ClassName SLF4J_LOGGER_FACTORY = ClassName.get("org.slf4j", "LoggerFactory");
 
     private static final ClassName KERNEL_BOOTSTRAP =
             ClassName.get("eu.exeris.kernel.core.bootstrap", "KernelBootstrap");
@@ -410,11 +408,12 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
         }
         applicationType
                 .addJavadoc("<p>Runtime classpath requirements (in addition to\n")
-                .addJavadoc("{@code exeris-kernel-spi} / {@code -core}): {@code org.slf4j:slf4j-api}\n")
-                .addJavadoc("(used by the generated repositories/services/handlers) plus a\n")
-                .addJavadoc("kernel persistence provider on the classpath (Community driver\n")
-                .addJavadoc("with a configured PostgreSQL DataSource — bound by the kernel\n")
-                .addJavadoc("bootstrap, not by this generated code).\n");
+                .addJavadoc("{@code exeris-kernel-spi} / {@code -core}): a kernel persistence\n")
+                .addJavadoc("provider (Community driver with a configured PostgreSQL DataSource —\n")
+                .addJavadoc("bound by the kernel bootstrap, not by this generated code).\n")
+                .addJavadoc("<p>Generated code logs through {@link System.Logger}, so it adds no\n")
+                .addJavadoc("logging dependency of its own. To route it to a backend, put a\n")
+                .addJavadoc("{@link System.LoggerFinder} provider on the classpath.\n");
         if (composed) {
             applicationType
                     .addJavadoc("Composition adds {@code eu.exeris:exeris-sdk-composition-runtime}\n")
@@ -499,10 +498,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .addJavadoc("entity, sets the forwarding handler slot, and parks the JVM\n")
                 .addJavadoc("on a shutdown latch.\n")
                 .addJavadoc("<p><b>DO NOT EDIT</b> - Regenerate from domain models.\n")
-                .addField(FieldSpec.builder(SLF4J_LOGGER, "LOG",
-                                Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
-                        .initializer("$T.getLogger($T.class)", SLF4J_LOGGER_FACTORY, selfType)
-                        .build())
+                .addField(KernelScaffold.loggerField(selfType))
                 .addField(FieldSpec.builder(atomicHttpHandler, "handlerSlot",
                         Modifier.PRIVATE, Modifier.FINAL).build())
                 .addField(FieldSpec.builder(TRANSACTIONAL_EXECUTOR, TX_EXECUTOR_NAME,
@@ -639,8 +635,10 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
         // a real boot. HttpRouter implements HttpHandler, so the forwarding
         // slot's respond-once dispatch is byte-for-byte identical either way.
         method.addStatement("handlerSlot.set(router)");
-        method.addStatement("LOG.info($S, $L)",
-                "Application bootstrap complete: {} entities wired", domains.size());
+        // The entity count is known at generation time, so it is baked into the literal rather
+        // than passed as a parameter — one fewer MessageFormat call at runtime, same output.
+        method.addStatement("LOG.log($T.INFO, $S)", KernelScaffold.LOGGER_LEVEL,
+                "Application bootstrap complete: " + domains.size() + " entities wired");
 
         // Shutdown latch
         method.addStatement("$T shutdownLatch = new $T($L)",

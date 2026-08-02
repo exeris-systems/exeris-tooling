@@ -73,8 +73,6 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     private static final ClassName LOCAL_DATE_TIME = ClassName.get("java.time", "LocalDateTime");
     private static final ClassName ZONE_OFFSET = ClassName.get("java.time", "ZoneOffset");
     private static final ClassName BIG_DECIMAL = ClassName.get("java.math", "BigDecimal");
-    private static final ClassName SLF4J_LOGGER = ClassName.get("org.slf4j", "Logger");
-    private static final ClassName SLF4J_LOGGER_FACTORY = ClassName.get("org.slf4j", "LoggerFactory");
 
     private static final String SPI_PERSISTENCE_PKG = "eu.exeris.kernel.spi.persistence";
     private static final ClassName TRANSACTIONAL_EXECUTOR =
@@ -194,10 +192,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                 .addJavadoc("{@code executor.executeManaged(...)} with managed transaction\n")
                 .addJavadoc("boundary). No JDBC, no {@code DataSource}.\n")
                 .addJavadoc("<p><b>DO NOT EDIT</b> - Regenerate from domain model.\n")
-                .addField(FieldSpec.builder(SLF4J_LOGGER, "LOG",
-                                Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
-                        .initializer("$T.getLogger($T.class)", SLF4J_LOGGER_FACTORY, selfType)
-                        .build())
+                .addField(KernelScaffold.loggerField(selfType))
                 .addField(FieldSpec.builder(String.class, "TABLE",
                                 Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
                         .initializer("$S", table)
@@ -563,7 +558,8 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         body.endControlFlow(")");
 
         save.addCode(body.build());
-        save.addStatement("LOG.info($S, entity.getId())", "Created " + ctx.entity() + ": {}");
+        save.addStatement("LOG.log($T.INFO, $S, entity.getId())", KernelScaffold.LOGGER_LEVEL,
+                "Created " + ctx.entity() + ": {0}");
         save.addStatement(RETURN_ENTITY_STMT);
         return save.build();
     }
@@ -615,7 +611,8 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                         RuntimeException.class, notFoundMessage)
                 .endControlFlow();
         update.addStatement("entity.setId(id)");
-        update.addStatement("LOG.info($S, id)", "Updated " + ctx.entity() + ": {}");
+        update.addStatement("LOG.log($T.INFO, $S, id)", KernelScaffold.LOGGER_LEVEL,
+                "Updated " + ctx.entity() + ": {0}");
         update.addStatement(RETURN_ENTITY_STMT);
         return update.build();
     }
@@ -648,7 +645,8 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                 .addStatement("throw new $T($S + id)",
                         RuntimeException.class, ctx.entity() + " not found: ")
                 .endControlFlow()
-                .addStatement("LOG.info($S, id)", "Deleted " + ctx.entity() + ": {}")
+                .addStatement("LOG.log($T.INFO, $S, id)", KernelScaffold.LOGGER_LEVEL,
+                        "Deleted " + ctx.entity() + ": {0}")
                 .build();
     }
 

@@ -74,8 +74,6 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
             ClassName.get("eu.exeris.kernel.spi.context", "KernelProviders");
     private static final ClassName ILLEGAL_STATE_EXCEPTION =
             ClassName.get("java.lang", "IllegalStateException");
-    private static final ClassName SLF4J_LOGGER = ClassName.get("org.slf4j", "Logger");
-    private static final ClassName SLF4J_LOGGER_FACTORY = ClassName.get("org.slf4j", "LoggerFactory");
     private static final ClassName UUID = ClassName.get("java.util", "UUID");
     private static final ClassName OPTIONAL = ClassName.get("java.util", "Optional");
     private static final ClassName LIST = ClassName.get("java.util", "List");
@@ -110,10 +108,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                 .addJavadoc("{@link eu.exeris.kernel.spi.http.HttpHandler} functional interface\n")
                 .addJavadoc("and is wired into the router individually.\n")
                 .addJavadoc("<p><b>DO NOT EDIT</b> - Regenerate from domain model.\n")
-                .addField(FieldSpec.builder(SLF4J_LOGGER, "LOG",
-                                Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
-                        .initializer("$T.getLogger($T.class)", SLF4J_LOGGER_FACTORY, selfType)
-                        .build())
+                .addField(KernelScaffold.loggerField(selfType))
                 .addField(FieldSpec.builder(serviceType, "service", Modifier.PRIVATE, Modifier.FINAL)
                         .build())
                 .addMethod(MethodSpec.constructorBuilder()
@@ -468,7 +463,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
      *  service-call {@code try} block of every CRUD handler. */
     private static MethodSpec.Builder appendServerErrorCatch(MethodSpec.Builder method, String failMessage) {
         return method.nextControlFlow("catch ($T e)", RUNTIME_EXCEPTION)
-                .addStatement("LOG.error($S, e)", failMessage)
+                .addStatement("LOG.log($T.ERROR, $S, e)", KernelScaffold.LOGGER_LEVEL, failMessage)
                 .addStatement("exchange.respond($T.INTERNAL_SERVER_ERROR)", HTTP_STATUS)
                 .endControlFlow();
     }

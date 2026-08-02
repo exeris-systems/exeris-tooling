@@ -87,4 +87,79 @@ class KernelScaffoldTest {
                     .withMessageContaining("type");
         }
     }
+
+    @Nested
+    @DisplayName("loggerField")
+    class LoggerFieldTests {
+
+        @Test
+        @DisplayName("emits a System.Logger named after the generated class, not a facade")
+        void emitsSystemLogger() {
+            TypeSpec type = KernelScaffold.publicClass("OrderRepository")
+                    .addField(KernelScaffold.loggerField(
+                            com.palantir.javapoet.ClassName.get("com.shop.repository", "OrderRepository")))
+                    .build();
+
+            assertThat(KernelScaffold.render("com.shop.repository", type))
+                    .contains("private static final System.Logger LOG = "
+                            + "System.getLogger(OrderRepository.class.getName());")
+                    .doesNotContain("org.slf4j");
+        }
+
+        @Test
+        @DisplayName("rejects null selfType")
+        void rejectsNullSelfType() {
+            assertThatNullPointerException()
+                    .isThrownBy(() -> KernelScaffold.loggerField(null))
+                    .withMessageContaining("selfType");
+        }
+    }
+
+    @Nested
+    @DisplayName("escapeQuotes")
+    class EscapeQuotesTests {
+
+        @Test
+        @DisplayName("quotes around a literal survive instead of being eaten")
+        void quotesAroundALiteralSurvive() {
+            String raw = "[{0}] step 'reserveStock' at index {1}";
+
+            // Unescaped, MessageFormat reads the pair as a quoted section and drops both quotes.
+            assertThat(java.text.MessageFormat.format(raw, "OrderSaga", 2))
+                    .isEqualTo("[OrderSaga] step reserveStock at index 2");
+
+            assertThat(java.text.MessageFormat.format(KernelScaffold.escapeQuotes(raw), "OrderSaga", 2))
+                    .isEqualTo("[OrderSaga] step 'reserveStock' at index 2");
+        }
+
+        @Test
+        @DisplayName("a placeholder inside quotes is otherwise swallowed whole")
+        void quotedPlaceholderWouldBeSwallowed() {
+            // The sharp edge, and the reason the saga emitter bakes the step name into the literal
+            // rather than passing it as an argument: a placeholder *inside* a quoted section is
+            // emitted verbatim, so the argument is lost with no error anywhere.
+            String raw = "[{0}] step '{1}' at index {2}";
+
+            assertThat(java.text.MessageFormat.format(raw, "OrderSaga", "reserveStock", 2))
+                    .isEqualTo("[OrderSaga] step {1} at index 2");
+
+            assertThat(java.text.MessageFormat.format(
+                    KernelScaffold.escapeQuotes(raw), "OrderSaga", "reserveStock", 2))
+                    .isEqualTo("[OrderSaga] step 'reserveStock' at index 2");
+        }
+
+        @Test
+        @DisplayName("leaves placeholders alone, so a whole pattern can be passed through")
+        void leavesPlaceholdersAlone() {
+            assertThat(KernelScaffold.escapeQuotes("a {0} b {1}")).isEqualTo("a {0} b {1}");
+        }
+
+        @Test
+        @DisplayName("rejects null pattern")
+        void rejectsNullPattern() {
+            assertThatNullPointerException()
+                    .isThrownBy(() -> KernelScaffold.escapeQuotes(null))
+                    .withMessageContaining("pattern");
+        }
+    }
 }

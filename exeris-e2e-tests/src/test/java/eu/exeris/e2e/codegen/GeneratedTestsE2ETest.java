@@ -192,12 +192,10 @@ class GeneratedTestsE2ETest {
                 // What the generated main code binds.
                 codeSourceOf("eu.exeris.kernel.spi.http.HttpExchange"),
                 codeSourceOf("eu.exeris.kernel.core.bootstrap.KernelBootstrap"),
-                // Eight emitters put an slf4j Logger in their output, so generated main code has a
-                // third-party compile dependency no ADR names. It reaches a downstream app only
-                // through the kernel's driver tier (exeris-kernel-community pulls slf4j-api;
-                // neither SPI nor Core does), which is exactly the kind of fact an inherited
-                // classpath hides — this line is what made it visible.
-                codeSourceOf("org.slf4j.Logger"),
+                // No slf4j anchor, deliberately. Generated code used to bind org.slf4j, which
+                // reaches an app only through the kernel's driver tier; it now logs through
+                // java.lang.System.Logger. Its absence here is the enforcement: if an emitter
+                // reintroduced the facade, these sources would stop compiling.
                 // What the generated tests may import — ADR-058 §2.
                 codeSourceOf("org.junit.jupiter.api.Test"),
                 codeSourceOf("org.assertj.core.api.Assertions"),
