@@ -1000,6 +1000,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         if (declaredScope != null) {
             builder.dataScope(declaredScope);
         }
+        boolean contradicted = false;
         if (values.containsKey("tenantScoped")) {
             boolean tenantScoped = (Boolean) values.get("tenantScoped");
             builder.tenantScoped(tenantScoped);
@@ -1007,9 +1008,13 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                 warnDeprecatedTenantScoped(element, tenantScoped);
             } else if (declaredScope != fallbackTier(tenantScoped)) {
                 errorContradictingDataScope(element, declaredScope, tenantScoped);
+                contradicted = true;
             }
         }
-        if (declaredScope == DataScope.UNIVERSE) {
+        // The reserved-tier warning describes what UNIVERSE emits. A contradicted
+        // declaration never reaches codegen, so saying what it would have emitted
+        // is noise on top of an error the author has to fix first.
+        if (declaredScope == DataScope.UNIVERSE && !contradicted) {
             warnReservedUniverseTier(element);
         }
         if (values.containsKey("softDelete")) {

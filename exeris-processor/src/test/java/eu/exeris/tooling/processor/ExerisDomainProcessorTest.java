@@ -19,6 +19,8 @@ import com.google.testing.compile.JavaFileObjects;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import javax.tools.JavaFileObject;
 import javax.tools.StandardLocation;
@@ -831,9 +833,10 @@ class ExerisDomainProcessorTest {
                     .hadErrorContaining("contradict each other");
         }
 
-        @Test
+        @ParameterizedTest(name = "tenantScoped = {0}")
+        @ValueSource(booleans = {true, false})
         @DisplayName("UNIVERSE + any tenantScoped contradicts — the boolean cannot express the tier")
-        void universeWithTenantScopedIsRejected() {
+        void universeWithTenantScopedIsRejected(boolean tenantScoped) {
             JavaFileObject source = JavaFileObjects.forSourceString(
                     "com.example.Item",
                     """
@@ -842,19 +845,24 @@ class ExerisDomainProcessorTest {
                     import eu.exeris.sdk.annotation.ExerisDomain;
 
                     @ExerisDomain(module = "catalog", path = "/items",
-                            dataScope = ExerisDomain.DataScope.UNIVERSE, tenantScoped = true)
+                            dataScope = ExerisDomain.DataScope.UNIVERSE, tenantScoped = %s)
                     public class Item {
                     }
-                    """
+                    """.formatted(tenantScoped)
             );
 
             // The fallback mapping is total (true → TENANT, false → GLOBAL), so
             // no boolean value agrees with UNIVERSE. Declaring both is always a
             // contradiction — which is the point of the enum: the third tier is
-            // exactly what the boolean could not say.
+            // exactly what the boolean could not say. Both values are exercised
+            // because "any" in the display name is a claim, not a shorthand.
             Compilation compilation = compileWithProcessor(source);
             assertThat(compilation).failed();
             assertThat(compilation).hadErrorContaining("contradict each other");
+            // The reserved-tier warning is suppressed on the error path — a
+            // declaration that never reaches codegen should not also be told
+            // what it would have emitted.
+            assertThat(compilation).hadWarningCount(0);
         }
 
         @Test
