@@ -159,7 +159,7 @@ mode this repo rejects elsewhere: a wrong expected status would ship silently.
 > where both were recorded.
 >
 > With this, T2's Java half is complete: handler, service, repository and saga. What remains is the
-> `@Validation` decision and the FE spec slice.
+> `@Validation` decision (taken in slice f, below) and the FE spec slice.
 
 > **Note (2026-08-01, slice b).** The body-carrying routes split at a line this ADR did not
 > anticipate. Their **guard** paths need nothing new: `parseBody` throws on `hasBody() == false`
@@ -171,6 +171,47 @@ mode this repo rejects elsewhere: a wrong expected status would ship silently.
 > providers is a question §"Any assertion about the database" gestures at but does not answer; it is
 > a decision, not one more test, so nothing binds them yet and a generator test asserts the emitted
 > source names none of them.
+
+> **Note (2026-08-05, slice f) — the provider-binding decision, taken.** A generated test **may**
+> bind kernel `ScopedValue` provider slots with emitted doubles. What it may not require is a
+> *driver* or a *bootstrap*. The line is a dependency line, not a purity line: `HttpKernelProviders`,
+> `KernelProviders` and the SPI interfaces behind them all live in `exeris-kernel-spi`, the artefact
+> the generated **main** code already compiles against — so binding a slot adds nothing to a
+> consumer's build, and §2's contract still reads JUnit 5 + AssertJ. The kernel's own
+> `KernelBootstrapHttpEngineFixture` binds `HTTP_SERVER_HANDLER` exactly this way; what it also does
+> — boot a real engine on a real port — is the half this slice does not take.
+>
+> `@Validation` rejections shipped on that basis, through a fourth shared double,
+> `RecordingRequestBody`, collapsing the four roles `parseBody` resolves past `hasBody()`: the
+> decoder registry, the decoder, the `LoanedBuffer` and the `MemoryAllocator`.
+>
+> **The allocator is the load-bearing detail, and it is easy to miss.**
+> `HttpRequestDecodingContext` is a record with `requireNonNull(allocator)`, and `parseBody` fills
+> that slot from `KernelProviders.MEMORY_ALLOCATOR.get()`. An unbound `ScopedValue` throws inside
+> the `try` that maps everything to `400 BAD_REQUEST` — the *same* status a validation rejection
+> produces. So a suite of reject-only cases would have gone green having never once reached a
+> validation guard. That is why every entity also gets an **accept** case: `201 CREATED` can only
+> come out the far end of a decode that worked. Confirmed by perturbation — dropping the allocator
+> binding leaves every reject case green and fails only the accepts.
+>
+> The same pairing answers the slice-d rule for this surface. A reject case alone is near-circular:
+> the rule and the probe value both come from one `minLength = 3`, so an emitter that wrote `<=`
+> where it meant `<` still rejects a 2-character string. The accept case sits **exactly on** the
+> boundary, so it fails the moment the operator slips — also confirmed by perturbation. Neither half
+> carries the test alone; the pair is the test.
+>
+> Two things are deliberately **not** covered, because a case that passes for the wrong reason is
+> worse than no case. A `pattern` rule has no synthesizable member and no synthesizable near-miss,
+> so a required pattern-constrained field suppresses the entity's validation cases entirely rather
+> than emitting cases another field would answer. And floating-point bounds are skipped: the bound
+> is a `long`, the comparison promotes, and a boundary probe that is only approximately on the
+> boundary tests nothing.
+>
+> The rule set itself moved into `KernelValidationRules`, read by both the handler emitter and the
+> handler-test emitter. Which fields carry a check is the one thing they must not derive separately
+> — disagree there and the generated test covers a different set of guards than the handler emits,
+> green either way. The *comparison* stays unshared on purpose: deriving the operator once and
+> handing it to both would make the pair agree by construction instead of by behaviour.
 
 ## Engineering protocol
 

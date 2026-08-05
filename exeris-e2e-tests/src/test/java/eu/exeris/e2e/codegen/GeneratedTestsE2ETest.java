@@ -102,6 +102,7 @@ class GeneratedTestsE2ETest {
         assertThat(generatedTests.resolve("com/shop/repository/InvoiceRepositoryTest.java")).exists();
         assertThat(generatedTests.resolve("com/shop/testsupport/RecordingHttpExchange.java")).exists();
         assertThat(generatedTests.resolve("com/shop/testsupport/RecordingPersistence.java")).exists();
+        assertThat(generatedTests.resolve("com/shop/testsupport/RecordingRequestBody.java")).exists();
         assertThat(generatedMain.resolve("com/shop/handler/OrderHandlerTest.java")).doesNotExist();
         assertThat(generatedMain.resolve("com/shop/service/OrderServiceTest.java")).doesNotExist();
         assertThat(generatedMain.resolve("com/shop/handler/OrderHandler.java")).exists();
@@ -153,11 +154,15 @@ class GeneratedTestsE2ETest {
                     .as("generated-test failures:%n%s", render(summary))
                     .isZero();
             // Guard against a vacuous pass: an emitter that stopped emitting @Test methods would
-            // otherwise "succeed" with zero executed tests. 8 handler cases + 7 service cases
-            // (six CRUD delegations and the one T8 finder the fixture carries) + 7 repository
-            // cases each for Order and Invoice (the save/load round-trip and the six paths around
-            // it) — Invoice being the entity that carries every system column — + 4 saga cases.
-            assertThat(summary.getTestsSucceededCount()).isEqualTo(33);
+            // otherwise "succeed" with zero executed tests. 19 handler cases (8 covering the
+            // bodyless routes and the pre-decode guards, plus 11 @Validation cases: the baseline
+            // accept, a reject and a boundary accept for each of orderNumber's two length rules
+            // and quantity's two numeric ones, the not-null reject, and the one case proving
+            // handleUpdate carries the same guard) + 7 service cases (six CRUD delegations and
+            // the one T8 finder the fixture carries) + 7 repository cases each for Order and
+            // Invoice (the save/load round-trip and the six paths around it) — Invoice being the
+            // entity that carries every system column — + 4 saga cases.
+            assertThat(summary.getTestsSucceededCount()).isEqualTo(44);
         }
     }
 
@@ -254,6 +259,7 @@ class GeneratedTestsE2ETest {
                 import eu.exeris.sdk.annotation.Field;
                 import eu.exeris.sdk.annotation.Saga;
                 import eu.exeris.sdk.annotation.SagaStep;
+                import eu.exeris.sdk.annotation.Validation;
 
                 import java.math.BigDecimal;
                 import java.time.Instant;
@@ -270,15 +276,23 @@ class GeneratedTestsE2ETest {
 
                     // filterable so the entity carries a T8 finder — the generated service test
                     // emits one delegation case per finder, and that path is only proven if the
-                    // fixture actually has one.
+                    // fixture actually has one. The length bounds give the emitted validation
+                    // cases a boundary to sit on: without one, a reject-only case would survive
+                    // an emitter that wrote <= where it meant <.
                     @Field(label = "Order Number", required = true, filterable = true)
+                    @Validation(minLength = 3, maxLength = 8)
                     private String orderNumber;
 
                     // Not filterable (so they add no finder), but each takes a different bind /
                     // read pair through the repository — an int, a primitive boolean read as
                     // isExpedited(), a BigDecimal that round-trips through a String, and an
                     // Instant that binds natively. The generated round-trip covers all of them.
+                    // A primitive with both bounds: the numeric half of the validation guard
+                    // takes a different emission path from the String half (operators rather
+                    // than length()), and a primitive takes a different one again from a boxed
+                    // numeric — no null guard.
                     @Field(label = "Quantity")
+                    @Validation(min = 1, max = 99)
                     private int quantity;
 
                     @Field(label = "Expedited")

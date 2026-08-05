@@ -55,14 +55,55 @@ class KernelTestSupportGeneratorTest {
     }
 
     @Test
-    @DisplayName("generateAll emits both shared doubles into the same support package")
-    void emitsBothDoubles() {
+    @DisplayName("generateAll emits every shared double into the same support package")
+    void emitsEveryDouble() {
         List<GeneratedFile> files = new KernelTestSupportGenerator().generateAll("com.example");
 
         assertThat(files).extracting(GeneratedFile::className)
-                .containsExactly("RecordingHttpExchange", "RecordingPersistence", "RecordingFlow");
+                .containsExactly("RecordingHttpExchange", "RecordingPersistence", "RecordingFlow",
+                        "RecordingRequestBody");
         assertThat(files).allSatisfy(f ->
                 assertThat(f.packageName()).isEqualTo("com.example.testsupport"));
+    }
+
+    @Test
+    @DisplayName("RecordingRequestBody plays all four roles parseBody resolves past hasBody()")
+    void requestBodyDoubleImplementsTheWholeDecodePath() {
+        String source = new KernelTestSupportGenerator().generateRequestBody("com.example").content();
+
+        assertThat(source)
+                .contains("class RecordingRequestBody implements HttpRequestBodyDecoderRegistry,")
+                .contains("HttpRequestBodyDecoder,")
+                .contains("LoanedBuffer,")
+                // The allocator is the role that is easy to miss and impossible to omit:
+                // HttpRequestDecodingContext rejects a null one.
+                .contains("MemoryAllocator {")
+                .contains("public Object next")
+                .contains("return next");
+    }
+
+    @Test
+    @DisplayName("the buffer role is inert — it stages no bytes, because nothing reads any")
+    void theBufferRoleAnswersNothing() {
+        String source = new KernelTestSupportGenerator().generateRequestBody("com.example").content();
+
+        // The emitted decoder ignores the buffer and answers with the staged object, so a double
+        // that handed out bytes would be staging input no code path consumes.
+        assertThat(source)
+                .contains("the request buffer is never read")
+                .contains("the decoding context requires an allocator to exist, not to allocate")
+                .contains("public MemorySegment segment()")
+                .contains("public MemoryStats stats()");
+    }
+
+    @Test
+    @DisplayName("the exchange double gains body-carrying factories alongside the bodyless ones")
+    void exchangeCarriesABody() {
+        String source = new KernelTestSupportGenerator().generate("com.example").content();
+
+        assertThat(source)
+                .contains("public static RecordingHttpExchange post(String path, LoanedBuffer body)")
+                .contains("public static RecordingHttpExchange put(String path, LoanedBuffer body)");
     }
 
     @Test
