@@ -133,7 +133,9 @@ class GeneratedTestsE2ETest {
                             // The system-column entity: its round-trip is the only executed proof
                             // that the tenant/audit/soft-delete/version bind-read pairs line up.
                             DiscoverySelectors.selectClass(
-                                    Class.forName("com.shop.repository.InvoiceRepositoryTest", true, appLoader)))
+                                    Class.forName("com.shop.repository.InvoiceRepositoryTest", true, appLoader)),
+                            DiscoverySelectors.selectClass(
+                                    Class.forName("com.shop.saga.OrderSagaFlowTest", true, appLoader)))
                     .build();
 
             Launcher launcher = LauncherFactory.create();
@@ -154,8 +156,8 @@ class GeneratedTestsE2ETest {
             // otherwise "succeed" with zero executed tests. 8 handler cases + 7 service cases
             // (six CRUD delegations and the one T8 finder the fixture carries) + 7 repository
             // cases each for Order and Invoice (the save/load round-trip and the six paths around
-            // it) — Invoice being the entity that carries every system column.
-            assertThat(summary.getTestsSucceededCount()).isEqualTo(29);
+            // it) — Invoice being the entity that carries every system column — + 4 saga cases.
+            assertThat(summary.getTestsSucceededCount()).isEqualTo(33);
         }
     }
 
@@ -250,12 +252,18 @@ class GeneratedTestsE2ETest {
 
                 import eu.exeris.sdk.annotation.ExerisDomain;
                 import eu.exeris.sdk.annotation.Field;
+                import eu.exeris.sdk.annotation.Saga;
+                import eu.exeris.sdk.annotation.SagaStep;
 
                 import java.math.BigDecimal;
                 import java.time.Instant;
                 import java.util.UUID;
 
                 @ExerisDomain(module = "sales", path = "/orders")
+                // Three steps, one of them compensating: enough for the emitted saga test to have
+                // a transition chain to check (a single-step saga has none) and a compensation
+                // branch to exercise.
+                @Saga(name = "OrderSaga", timeout = "PT30M", maxRetries = 3)
                 public class Order {
 
                     private UUID id;
@@ -329,6 +337,18 @@ class GeneratedTestsE2ETest {
                     public void setPlacedAt(Instant placedAt) {
                         this.placedAt = placedAt;
                     }
+
+                    @SagaStep(order = 0, name = "reserveStock", service = "inventory",
+                            command = "ReserveStock", compensation = "ReleaseStock")
+                    public void reserveStock() {}
+
+                    @SagaStep(order = 1, name = "chargePayment", service = "payments",
+                            command = "ChargePayment")
+                    public void chargePayment() {}
+
+                    @SagaStep(order = 2, name = "ship", service = "logistics",
+                            command = "Ship")
+                    public void ship() {}
                 }
                 """);
         // A second entity carrying every system-column flag. Order covers the domain columns;

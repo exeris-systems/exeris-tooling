@@ -143,6 +143,24 @@ mode this repo rejects elsewhere: a wrong expected status would ship silently.
 > declared field type), but it is exactly the class of defect this channel exists to find, and it was
 > found by generated code exercising generated code.
 
+> **Note (2026-08-02, slice e).** Saga step-wiring tests shipped, and the slice-d rule — a generated
+> test earns its place only where the emitter has **two paths that must agree** — is what decided
+> their content rather than their existence. Most of the saga skeleton is compile-checked:
+> `builder.step(name, this::action, this::compensation)` cannot name a method that does not exist,
+> so asserting the step *names* would be the circular check all over again. Three things are not
+> compile-checked and are all this covers: the **transition chain** (`initialize()` walks the step
+> list twice, once to register and once to lay `transition(i, i + 1)` over it, each walk deriving
+> its own indices), **lazy-init idempotence**, and that **`schedule()` uses the plan `initialize()`
+> built** rather than compiling its own. The chain assertion is structural and reads the *recorded*
+> steps, so a chain built over a different list than the one registered fails; verified by
+> perturbation, as in slice d. A third shared double, `RecordingFlow`, collapses the flow SPI the
+> same way `RecordingPersistence` collapses the persistence one — engine, plan factory, definition
+> builder, scheduler, plan and context in one object, because the two walks can only be compared
+> where both were recorded.
+>
+> With this, T2's Java half is complete: handler, service, repository and saga. What remains is the
+> `@Validation` decision and the FE spec slice.
+
 > **Note (2026-08-01, slice b).** The body-carrying routes split at a line this ADR did not
 > anticipate. Their **guard** paths need nothing new: `parseBody` throws on `hasBody() == false`
 > before it resolves a decoder, and `handleUpdate`'s path-id guard runs earlier still, so

@@ -48,6 +48,9 @@ public final class KernelTestSupportGenerator {
     /** Simple name of the emitted persistence-SPI double. */
     public static final String RECORDING_PERSISTENCE = "RecordingPersistence";
 
+    /** Simple name of the emitted flow-SPI double. */
+    public static final String RECORDING_FLOW = "RecordingFlow";
+
     private static final ClassName HTTP_EXCHANGE =
             ClassName.get("eu.exeris.kernel.spi.http", "HttpExchange");
     private static final ClassName HTTP_REQUEST =
@@ -80,6 +83,23 @@ public final class KernelTestSupportGenerator {
     private static final ClassName QUERY_RESULT = ClassName.get(SPI_PERSISTENCE, "QueryResult");
     private static final ClassName ROW_CURSOR = ClassName.get(SPI_PERSISTENCE, "RowCursor");
 
+    private static final String SPI_FLOW = "eu.exeris.kernel.spi.flow";
+    private static final String SPI_FLOW_MODEL = SPI_FLOW + ".model";
+    private static final ClassName FLOW_ENGINE = ClassName.get(SPI_FLOW, "FlowEngine");
+    private static final ClassName PLAN_FACTORY = ClassName.get(SPI_FLOW, "FlowExecutionPlanFactory");
+    private static final ClassName DEFINITION_BUILDER = ClassName.get(SPI_FLOW, "FlowDefinitionBuilder");
+    private static final ClassName FLOW_SCHEDULER = ClassName.get(SPI_FLOW, "FlowScheduler");
+    private static final ClassName FLOW_REGISTRY = ClassName.get(SPI_FLOW, "FlowRegistry");
+    private static final ClassName FLOW_CAPABILITIES = ClassName.get(SPI_FLOW, "FlowEngineCapabilities");
+    private static final ClassName FLOW_STATS = ClassName.get(SPI_FLOW, "FlowEngineStats");
+    private static final ClassName FLOW_DEFINITION = ClassName.get(SPI_FLOW_MODEL, "FlowDefinition");
+    private static final ClassName FLOW_PLAN = ClassName.get(SPI_FLOW_MODEL, "FlowExecutionPlan");
+    private static final ClassName FLOW_CONTEXT = ClassName.get(SPI_FLOW_MODEL, "FlowContext");
+    private static final ClassName FLOW_STEP_ACTION = ClassName.get(SPI_FLOW_MODEL, "FlowStepAction");
+    private static final ClassName FLOW_STEP_DESCRIPTOR = ClassName.get(SPI_FLOW_MODEL, "FlowStepDescriptor");
+    private static final ClassName FLOW_STATE = ClassName.get(SPI_FLOW_MODEL, "FlowState");
+    private static final ClassName ARRAY_LIST = ClassName.get("java.util", "ArrayList");
+
     /**
      * Every shared double, in emission order.
      *
@@ -87,7 +107,8 @@ public final class KernelTestSupportGenerator {
      *                    {@code <basePackage>.testsupport}
      */
     public List<GeneratedFile> generateAll(String basePackage) {
-        return List.of(generate(basePackage), generatePersistence(basePackage));
+        return List.of(generate(basePackage), generatePersistence(basePackage),
+                generateFlow(basePackage));
     }
 
     /**
@@ -383,10 +404,162 @@ public final class KernelTestSupportGenerator {
                 .addStatement("return cell(column) == null")
                 .build());
         type.addMethod(returning("isValid", TypeName.BOOLEAN, "true"));
-        type.addMethod(unsupported("getSegment", MEMORY_SEGMENT));
-        type.addMethod(unsupported("getLength", TypeName.INT));
+        String noSuchRead = "no generated repository reads a column this way";
+        type.addMethod(unsupported("getSegment", MEMORY_SEGMENT, "column", noSuchRead));
+        type.addMethod(unsupported("getLength", TypeName.INT, "column", noSuchRead));
 
         return new GeneratedFile(packageName, RECORDING_PERSISTENCE,
+                KernelScaffold.render(packageName, type.build()), ArtifactType.TEST);
+    }
+
+    /**
+     * Emits {@code RecordingFlow} — one object playing every flow-SPI role a generated saga
+     * touches: {@code FlowEngine}, {@code FlowExecutionPlanFactory}, {@code FlowDefinitionBuilder},
+     * {@code FlowScheduler}, and (so a test needs no second fixture) the {@code FlowExecutionPlan}
+     * and {@code FlowContext} it hands back.
+     *
+     * <p>Same collapse, and the same reason, as {@code RecordingPersistence}: the saga walks
+     * {@code flowEngine.plans().newDefinition(name).step(...).transition(...)}, and what a test has
+     * to compare — the registered steps against the transition chain laid over them — only exists
+     * in one place if one object recorded both.
+     *
+     * <p>{@code build()} returns {@code null} deliberately. What a saga test asserts is what the
+     * builder was <em>told</em>, and the recorded call lists carry strictly more of that than the
+     * built {@code FlowDefinition} would; nothing under test reads the definition back.
+     */
+    public GeneratedFile generateFlow(String basePackage) {
+        String packageName = supportPackage(basePackage);
+        TypeName stringList = ParameterizedTypeName.get(LIST, ClassName.get(String.class));
+        TypeName actionList = ParameterizedTypeName.get(LIST, FLOW_STEP_ACTION);
+
+        TypeSpec.Builder type = KernelScaffold.publicClass(RECORDING_FLOW)
+                .addModifiers(Modifier.FINAL)
+                .addSuperinterface(FLOW_ENGINE)
+                .addSuperinterface(PLAN_FACTORY)
+                .addSuperinterface(DEFINITION_BUILDER)
+                .addSuperinterface(FLOW_SCHEDULER)
+                .addSuperinterface(FLOW_PLAN)
+                .addSuperinterface(FLOW_CONTEXT)
+                .addJavadoc("A flow-SPI double: one object plays the engine, the plan factory, the\n")
+                .addJavadoc("definition builder, the scheduler, and the plan and context they pass\n")
+                .addJavadoc("around — so the registered steps and the transition chain laid over\n")
+                .addJavadoc("them can be compared in one place.\n")
+                .addJavadoc("<p>No scheduler thread, no persistence, no engine lifecycle: every\n")
+                .addJavadoc("method is either a recording or a staged answer.\n")
+                .addJavadoc("<p><b>DO NOT EDIT</b> - Regenerate from domain models.\n")
+                .addField(FieldSpec.builder(String.class, "definitionName", Modifier.PUBLIC)
+                        .addJavadoc("The name the saga registered its definition under.\n").build())
+                .addField(FieldSpec.builder(stringList, "steps", Modifier.PUBLIC, Modifier.FINAL)
+                        .initializer("new $T<>()", ARRAY_LIST)
+                        .addJavadoc("Step names, in registration order — the transition indices point here.\n")
+                        .build())
+                .addField(FieldSpec.builder(actionList, "actions", Modifier.PUBLIC, Modifier.FINAL)
+                        .initializer("new $T<>()", ARRAY_LIST)
+                        .addJavadoc("The action bound to each step, positionally aligned with {@code steps}.\n")
+                        .build())
+                .addField(FieldSpec.builder(actionList, "compensations", Modifier.PUBLIC, Modifier.FINAL)
+                        .initializer("new $T<>()", ARRAY_LIST)
+                        .addJavadoc("The compensation per step; null where the step declares none.\n")
+                        .build())
+                .addField(FieldSpec.builder(stringList, "transitions", Modifier.PUBLIC, Modifier.FINAL)
+                        .initializer("new $T<>()", ARRAY_LIST)
+                        .addJavadoc("Each transition as {@code from->to}, in the order it was declared.\n")
+                        .build())
+                .addField(FieldSpec.builder(TypeName.LONG, "timeoutNanos", Modifier.PUBLIC).build())
+                .addField(FieldSpec.builder(TypeName.INT, "maxRetries", Modifier.PUBLIC).build())
+                .addField(FieldSpec.builder(TypeName.INT, "compiled", Modifier.PUBLIC)
+                        .addJavadoc("How many times a definition was compiled — 1 proves lazy init is idempotent.\n")
+                        .build())
+                .addField(FieldSpec.builder(FLOW_PLAN, "scheduled", Modifier.PUBLIC)
+                        .addJavadoc("The plan handed to the scheduler, or null if nothing was scheduled.\n")
+                        .build());
+
+        // --- FlowEngine
+        type.addMethod(returning("plans", PLAN_FACTORY, "this"));
+        type.addMethod(returning("scheduler", FLOW_SCHEDULER, "this"));
+        type.addMethod(override("start").build());
+        type.addMethod(override("close").build());
+        type.addMethod(unsupportedNoArg("registry", FLOW_REGISTRY));
+        type.addMethod(unsupportedNoArg("capabilities", FLOW_CAPABILITIES));
+        type.addMethod(unsupportedNoArg("stats", FLOW_STATS));
+
+        // --- FlowExecutionPlanFactory
+        type.addMethod(override("newDefinition")
+                .returns(DEFINITION_BUILDER)
+                .addParameter(String.class, "definitionName")
+                .addStatement("this.definitionName = definitionName")
+                .addStatement("return this")
+                .build());
+        type.addMethod(override("compile")
+                .returns(FLOW_PLAN)
+                .addParameter(FLOW_DEFINITION, "definition")
+                .addStatement("this.compiled++")
+                .addStatement("return this")
+                .build());
+
+        // --- FlowDefinitionBuilder
+        type.addMethod(override("step")
+                .returns(DEFINITION_BUILDER)
+                .addParameter(String.class, "name")
+                .addParameter(FLOW_STEP_ACTION, "action")
+                .addParameter(FLOW_STEP_ACTION, "compensation")
+                .addStatement("steps.add(name)")
+                .addStatement("actions.add(action)")
+                .addStatement("compensations.add(compensation)")
+                .addStatement("return this")
+                .build());
+        type.addMethod(override("transition")
+                .returns(DEFINITION_BUILDER)
+                .addParameter(TypeName.INT, "fromStep")
+                .addParameter(TypeName.INT, "toStep")
+                .addStatement("transitions.add(fromStep + $S + toStep)", "->")
+                .addStatement("return this")
+                .build());
+        type.addMethod(override("transition")
+                .returns(DEFINITION_BUILDER)
+                .addParameter(TypeName.INT, "fromStep")
+                .addParameter(TypeName.INT, "toStep")
+                .addParameter(String.class, "conditionTag")
+                .addStatement("return transition(fromStep, toStep)")
+                .build());
+        type.addMethod(override("timeoutDuration")
+                .returns(DEFINITION_BUILDER)
+                .addParameter(TypeName.LONG, "durationNanos")
+                .addStatement("this.timeoutNanos = durationNanos")
+                .addStatement("return this")
+                .build());
+        type.addMethod(override("maxRetries")
+                .returns(DEFINITION_BUILDER)
+                .addParameter(TypeName.INT, "maxRetries")
+                .addStatement("this.maxRetries = maxRetries")
+                .addStatement("return this")
+                .build());
+        type.addMethod(returning("build", FLOW_DEFINITION, "null"));
+
+        // --- FlowScheduler
+        type.addMethod(override("schedule")
+                .addParameter(FLOW_PLAN, "plan")
+                .addParameter(FLOW_CONTEXT, "context")
+                .addStatement("this.scheduled = plan")
+                .build());
+        type.addMethod(override("park").addParameter(FLOW_CONTEXT, "context").build());
+        type.addMethod(override("wake").addParameter(FLOW_CONTEXT, "context").build());
+
+        // --- FlowExecutionPlan (definitionName() is shared with FlowContext)
+        type.addMethod(returning("definitionName", ClassName.get(String.class), "definitionName"));
+        type.addMethod(returning("stepCount", TypeName.INT, "steps.size()"));
+        type.addMethod(returning("timeoutDurationNanos", TypeName.LONG, "timeoutNanos"));
+        type.addMethod(unsupported("stepAt", FLOW_STEP_DESCRIPTOR, "stepIndex",
+                "a generated saga reads its steps back off this double's own recording"));
+
+        // --- FlowContext
+        type.addMethod(returning("instanceIdMost", TypeName.LONG, "0L"));
+        type.addMethod(returning("instanceIdLeast", TypeName.LONG, "0L"));
+        type.addMethod(returning("currentStep", TypeName.INT, "0"));
+        type.addMethod(returning("timeoutNanos", TypeName.LONG, "timeoutNanos"));
+        type.addMethod(unsupportedNoArg("state", FLOW_STATE));
+
+        return new GeneratedFile(packageName, RECORDING_FLOW,
                 KernelScaffold.render(packageName, type.build()), ArtifactType.TEST);
     }
 
@@ -435,12 +608,27 @@ public final class KernelTestSupportGenerator {
         return override(name).returns(returnType).addStatement("return $L", expression).build();
     }
 
-    private static MethodSpec unsupported(String name, TypeName returnType) {
+    /** An accessor no generated artefact calls; throwing beats answering null silently. */
+    private static MethodSpec unsupportedNoArg(String name, TypeName returnType) {
         return override(name)
                 .returns(returnType)
-                .addParameter(TypeName.INT, "column")
                 .addStatement("throw new $T($S)", UnsupportedOperationException.class,
-                        name + " is not recorded — no generated repository reads a column this way")
+                        name + " is not recorded — no generated artefact calls it")
+                .build();
+    }
+
+    /**
+     * An indexed accessor no generated artefact calls. The reason is a parameter, not a constant:
+     * this helper serves doubles for different SPIs, and a persistence message emitted on a flow
+     * double would misdescribe the one case where it is ever read — the failure itself.
+     */
+    private static MethodSpec unsupported(String name, TypeName returnType, String paramName,
+                                          String reason) {
+        return override(name)
+                .returns(returnType)
+                .addParameter(TypeName.INT, paramName)
+                .addStatement("throw new $T($S)", UnsupportedOperationException.class,
+                        name + " is not recorded — " + reason)
                 .build();
     }
 

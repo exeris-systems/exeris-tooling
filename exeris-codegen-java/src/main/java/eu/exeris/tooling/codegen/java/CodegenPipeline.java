@@ -20,6 +20,7 @@ import eu.exeris.tooling.codegen.java.kernel.KernelApplicationGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelGeneratorStrategy;
 import eu.exeris.tooling.codegen.java.kernel.KernelHandlerTestGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelRepositoryTestGenerator;
+import eu.exeris.tooling.codegen.java.kernel.KernelSagaTestGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelServiceTestGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelTestSupportGenerator;
 
@@ -69,6 +70,7 @@ public final class CodegenPipeline {
     private final KernelHandlerTestGenerator handlerTestGenerator = new KernelHandlerTestGenerator();
     private final KernelServiceTestGenerator serviceTestGenerator = new KernelServiceTestGenerator();
     private final KernelRepositoryTestGenerator repositoryTestGenerator = new KernelRepositoryTestGenerator();
+    private final KernelSagaTestGenerator sagaTestGenerator = new KernelSagaTestGenerator();
 
     public CodegenPipeline(GeneratorRegistry registry,
                            KernelApplicationGenerator applicationGenerator,
@@ -422,6 +424,12 @@ public final class CodegenPipeline {
             writeFile(writer, serviceTestGenerator.generate(domain));
             writeFile(writer, repositoryTestGenerator.generate(domain, basePackage));
             filesGenerated += 3;
+            // Saga tests exist only where a saga does — same guard as the saga emitter itself.
+            GeneratedFile sagaTest = sagaTestGenerator.generate(domain, basePackage);
+            if (sagaTest != null) {
+                writeFile(writer, sagaTest);
+                filesGenerated++;
+            }
         }
 
         int pruned = writer.pruneOrphansAndWriteManifest();

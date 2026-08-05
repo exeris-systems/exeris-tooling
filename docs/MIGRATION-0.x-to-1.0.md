@@ -338,8 +338,9 @@ as a *test* compile source root and carrying its own generated-output manifest �
 can never touch the other. Commit it like the main generated tree.
 
 What is emitted so far, per entity: `<Entity>HandlerTest`, `<Entity>ServiceTest` and
-`<Entity>RepositoryTest`, plus two shared doubles under `<basePackage>.testsupport` —
-`RecordingHttpExchange` and `RecordingPersistence`.
+`<Entity>RepositoryTest` — plus `<Saga>FlowTest` for each entity that declares a `@Saga` — and three
+shared doubles under `<basePackage>.testsupport`: `RecordingHttpExchange`, `RecordingPersistence`
+and `RecordingFlow`.
 
 The handler test covers every status the handler owes the router on the bodyless CRUD routes, and
 the guard paths of `handleCreate` / `handleUpdate` — a missing body, and a malformed path id — each
@@ -365,10 +366,16 @@ One consequence worth knowing: for an entity with a collection field, the genera
 initialises the repository class, whose static Jackson mapper is constructed then. That is not a new
 requirement — such an entity's generated *main* code already imports Jackson.
 
+The saga test covers what the compiler cannot: that the transition chain spans exactly the steps
+that were registered, that `initialize()` is idempotent, and that `schedule()` hands the scheduler
+the plan `initialize()` built rather than compiling its own. No scheduler thread and no engine
+lifecycle are involved.
+
 Nothing is emitted, and nothing changes, unless you set the flag.
 
 If you had already turned the flag on, expect new `<Entity>ServiceTest` and
-`<Entity>RepositoryTest` files per entity, a new `RecordingPersistence` double, the regenerated
+`<Entity>RepositoryTest` files per entity, a `<Saga>FlowTest` per saga, new `RecordingPersistence`
+and `RecordingFlow` doubles, the regenerated
 `<Entity>HandlerTest` to gain three test methods, and the emitted `RecordingHttpExchange` to gain
 `post(...)` / `put(...)` factories.
 
