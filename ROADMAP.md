@@ -222,7 +222,7 @@ defers mesh resolution as unnecessary for a single-node API Gateway MVP. The ADR
 `composition.json` reader is Phase 5 (it ships with the `exeris-sku-api-gateway` scaffold alongside
 the authored-manifest schema in `exeris-sdk-composition-spec`), not this milestone.
 
-- [~] **T2 — Generated tests for the generated surface** (slices a–e shipped; the Java half is complete). Opt-in
+- [~] **T2 — Generated tests for the generated surface** (slices a–f shipped; the Java half is complete). Opt-in
       (`-Dexeris.tests=true`) emission into a **second output root** `src/test/generated/java`, with
       its own `OutputWriter` + T13 manifest and registered via `addTestCompileSourceRoot` — a test
       under the main root would compile into the application artefact and put JUnit on its runtime
@@ -265,11 +265,7 @@ the authored-manifest schema in `exeris-sdk-composition-spec`), not this milesto
       (a versioned entity with a wrapper `Long version` NPEs on its first `save()`). The
       gate **runs** the emitted tests through the JUnit Platform launcher instead of just compiling
       them; a test emitter whose output is never executed is the inert-output failure mode this repo
-      rejects everywhere else. *Open slices:* the paths **past** a successful decode — the
-      `@Validation` rejections — which need a body decoder, a memory allocator and a `LoanedBuffer`
-      bound through the kernel's `ScopedValue` provider slots, i.e. a decision about whether a
-      generated test may bind kernel providers at all (ADR-058 has not taken it; a generator test
-      currently asserts the emitted source names none of them). Slice e closed saga step-wiring:
+      rejects everywhere else. Slice e closed saga step-wiring:
       most of that skeleton is compile-checked, so what the emitted `<Saga>FlowTest` covers is the
       three things that are not — the **transition chain** (`initialize()` walks the step list
       twice, once to register and once to lay `transition(i, i + 1)` over it, with each walk
@@ -277,7 +273,25 @@ the authored-manifest schema in `exeris-sdk-composition-spec`), not this milesto
       `initialize()` built**. The chain assertion reads the *recorded* steps rather than a baked-in
       count, and a third shared double (`RecordingFlow`) collapses engine, plan factory, definition
       builder, scheduler, plan and context into one object for the same reason
-      `RecordingPersistence` does. Perturbation-verified. What remains is the
+      `RecordingPersistence` does. Perturbation-verified. Slice f takes the decision ADR-058 had
+      deferred — a generated test **may** bind kernel `ScopedValue` provider slots with emitted
+      doubles, but may not require a driver or a bootstrap. The line is a dependency line: those
+      slots live in `exeris-kernel-spi`, which the generated *main* code already binds, so the
+      JUnit + AssertJ contract is untouched (the kernel's own `KernelBootstrapHttpEngineFixture`
+      binds `HTTP_SERVER_HANDLER` the same way — booting an engine is the half not taken). On that
+      basis the `@Validation` paths ship through a fourth double, `RecordingRequestBody`, collapsing
+      the decoder registry, decoder, `LoanedBuffer` and `MemoryAllocator`. The allocator is the
+      detail that decides the slice: `HttpRequestDecodingContext` rejects a null one, and an unbound
+      slot throws inside the `try` that maps everything to **400** — the same status a rejection
+      produces, so a reject-only suite would go green having never reached a guard. Hence an
+      **accept** case per entity (`201` cannot be faked that way) and, for every bounded rule, an
+      accept sitting *exactly on* the boundary next to a reject one step outside it — a reject alone
+      would survive an emitter that wrote `<=` for `<`, since rule and probe come from the same
+      metadata. Both perturbations verified. `pattern` rules and floating-point bounds are
+      deliberately uncovered: neither has a probe that fails for the right reason. Which fields
+      carry a check now comes from one `KernelValidationRules`, read by the guard emitter and the
+      test emitter; the *comparison* stays unshared, or the pair would agree by construction rather
+      than by behaviour. What remains is the
       **FE spec slice** — which
       must wire `@angular/build:unit-test`
       (Vitest, founder-ruled 2026-07-31) because the emitted app declares `"test": "ng test"` but
@@ -357,7 +371,7 @@ because they gate the cap track, not because T2 was displaced.
 | T12 | N generated apps can't form a mesh — client is own-app/relative-host, saga step is local, no cross-app contract | **High** | 0.8.0 (deferred out of 0.7.0 by the gateway-caps plan) |
 | T17 | Capability-graph validation is closed-world per app — a legitimate cross-service `@Requires` hard-fails the build | **High** | 0.8.0 (deferred out of 0.7.0 by the gateway-caps plan) |
 | T26 | A `@ExerisDomain(versioned = true)` entity whose `version` field is the **wrapper** `Long` throws NPE on the first `save()` of a fresh entity: `buildColumnLayout` hardcodes the VERSION column's type as `Long` and the emitter binds it by unboxing (`stmt.bindLong(i, entity.getVersion())`), with no null guard — and no guard is possible while the column type is a constant, since a primitive `long version` field cannot be null-compared. `update()` has the same unboxing (`long expected = entity.getVersion()`). Every other nullable system column (`createdAt`/`updatedAt`) *is* guarded, so this is the one gap. Fix is to read the declared field type into the column instead of assuming, which makes it a repository-emitter change rather than a test one | **Medium** (latent; primitive-`long` entities were unaffected) | ✅ 0.7.x — found 2026-08-02 by the T2 slice-d system-column fixture, fixed the same day: both the version bind and `update()`'s expected-version read go through a boxed local with a null default, so a wrapper-typed field behaves exactly like the primitive it shadows. The e2e fixture keeps the **wrapper** declaration (a primitive would pass either way) and the generated repository test no longer pre-stages the version, which makes every consumer's emitted test a regression test for it |
-| T2  | Zero tests generated for the generated surface | Medium | 🔶 0.7.0 slices a–e — the **Java half is complete** (handler bodyless routes + body-route guards + service delegation + repository round-trip + saga wiring, ADR-058); `@Validation` paths + FE spec slice open |
+| T2  | Zero tests generated for the generated surface | Medium | 🔶 0.7.0 slices a–f — the **Java half is complete** (handler bodyless routes + body-route guards + service delegation + repository round-trip + saga wiring + `@Validation` boundary pairs, ADR-058); FE spec slice open |
 | T3  | Action identity = method name, not `@Action(name=…)` → bean-setter collisions | Medium | 0.5.x |
 | T4  | `@Relationship` target derived from field Java type, not `targetEntity` | Medium | 0.5.x |
 | T5  | System-field overrides (`tenantIdField`, …) ignored by the repository generator | Medium | 0.5.x |

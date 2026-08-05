@@ -51,6 +51,9 @@ public final class KernelTestSupportGenerator {
     /** Simple name of the emitted flow-SPI double. */
     public static final String RECORDING_FLOW = "RecordingFlow";
 
+    /** Simple name of the emitted request-body double. */
+    public static final String RECORDING_REQUEST_BODY = "RecordingRequestBody";
+
     private static final ClassName HTTP_EXCHANGE =
             ClassName.get("eu.exeris.kernel.spi.http", "HttpExchange");
     private static final ClassName HTTP_REQUEST =
@@ -68,6 +71,19 @@ public final class KernelTestSupportGenerator {
     private static final ClassName LINKED_HASH_MAP = ClassName.get("java.util", "LinkedHashMap");
     private static final ClassName FUNCTION = ClassName.get("java.util.function", "Function");
     private static final ClassName MEMORY_SEGMENT = ClassName.get("java.lang.foreign", "MemorySegment");
+
+    private static final String SPI_MEMORY = "eu.exeris.kernel.spi.memory";
+    private static final ClassName LOANED_BUFFER = ClassName.get(SPI_MEMORY, "LoanedBuffer");
+    private static final ClassName MEMORY_ALLOCATOR = ClassName.get(SPI_MEMORY, "MemoryAllocator");
+    private static final ClassName ALLOCATION_HINT = ClassName.get(SPI_MEMORY, "AllocationHint");
+    private static final ClassName MEMORY_STATS = ClassName.get(SPI_MEMORY, "MemoryStats");
+    private static final ClassName HTTP_REQUEST_BODY_DECODER =
+            ClassName.get("eu.exeris.kernel.spi.http", "HttpRequestBodyDecoder");
+    private static final ClassName HTTP_REQUEST_BODY_DECODER_REGISTRY =
+            ClassName.get("eu.exeris.kernel.spi.http", "HttpRequestBodyDecoderRegistry");
+    private static final ClassName HTTP_REQUEST_DECODING_CONTEXT =
+            ClassName.get("eu.exeris.kernel.spi.http", "HttpRequestDecodingContext");
+    private static final ClassName CLASS_OF_ANY = ClassName.get("java.lang", "Class");
 
     private static final String SPI_PERSISTENCE = "eu.exeris.kernel.spi.persistence";
     private static final ClassName TRANSACTIONAL_EXECUTOR =
@@ -108,7 +124,7 @@ public final class KernelTestSupportGenerator {
      */
     public List<GeneratedFile> generateAll(String basePackage) {
         return List.of(generate(basePackage), generatePersistence(basePackage),
-                generateFlow(basePackage));
+                generateFlow(basePackage), generateRequestBody(basePackage));
     }
 
     /**
@@ -149,6 +165,9 @@ public final class KernelTestSupportGenerator {
         // LoanedBuffer, so these need no buffer double — see KernelHandlerTestGenerator.
         type.addMethod(factory("post", "POST"));
         type.addMethod(factory("put", "PUT"));
+        // …and the body-carrying pair, for the paths past a successful decode.
+        type.addMethod(bodyFactory("post", "POST"));
+        type.addMethod(bodyFactory("put", "PUT"));
 
         type.addMethod(MethodSpec.methodBuilder("withPathParam")
                 .addModifiers(Modifier.PUBLIC)
@@ -646,6 +665,187 @@ public final class KernelTestSupportGenerator {
                 .addJavadoc("A bodyless {@code $L} exchange for {@code path}.\n", httpMethod)
                 .addStatement("return new $L($T.noBody($T.$L, path, $T.HTTP_1_1, $T.of()))",
                         RECORDING_EXCHANGE, HTTP_REQUEST, HTTP_METHOD, httpMethod, HTTP_VERSION, LIST)
+                .build();
+    }
+
+    /**
+     * A {@code static RecordingHttpExchange <verb>(String path, LoanedBuffer body)} factory.
+     *
+     * <p>{@code HttpRequest.hasBody()} is {@code body != null} and nothing more, so the buffer's
+     * only job here is to be non-null: it decides whether the handler's body guard rejects or the
+     * decoder runs. Its contents are never read — the emitted decoder answers with a staged object.
+     */
+    private MethodSpec bodyFactory(String name, String httpMethod) {
+        return MethodSpec.methodBuilder(name)
+                .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+                .returns(ClassName.bestGuess(RECORDING_EXCHANGE))
+                .addParameter(String.class, "path")
+                .addParameter(LOANED_BUFFER, "body")
+                .addJavadoc("A body-carrying {@code $L} exchange for {@code path}.\n", httpMethod)
+                .addJavadoc("<p>{@code body} only has to be non-null: {@code hasBody()} is a null\n")
+                .addJavadoc("check, and the decoder bound for the test never reads the buffer.\n")
+                .addStatement("return new $L(new $T($T.$L, path, $T.HTTP_1_1, $T.of(), body))",
+                        RECORDING_EXCHANGE, HTTP_REQUEST, HTTP_METHOD, httpMethod, HTTP_VERSION, LIST)
+                .build();
+    }
+
+    /**
+     * Emits {@code RecordingRequestBody} — one object playing every role the handler's
+     * {@code parseBody} resolves past {@code hasBody()}: the
+     * {@code HttpRequestBodyDecoderRegistry} it looks up, the {@code HttpRequestBodyDecoder} that
+     * registry returns, the {@code LoanedBuffer} handed to it, and the {@code MemoryAllocator} the
+     * {@code HttpRequestDecodingContext} carries.
+     *
+     * <p><b>Why the allocator is in here.</b> It is not optional and it is easy to miss:
+     * {@code HttpRequestDecodingContext} is a record with {@code requireNonNull(allocator)}, and
+     * {@code parseBody} fills that slot from {@code KernelProviders.MEMORY_ALLOCATOR.get()}. An
+     * unbound slot throws {@code NoSuchElementException}, which {@code parseBody} catches and maps
+     * to {@code 400 BAD_REQUEST} — the <em>same</em> status a validation rejection produces. A
+     * generated test that bound only the decoder registry would go green on every rejection case
+     * while never once reaching the validation guard. Binding it is what makes those cases mean
+     * what they say.
+     *
+     * <p>Which is also why {@link KernelHandlerTestGenerator} always emits the accept case
+     * alongside the reject cases: {@code 201 CREATED} can only come out the far end of a decode
+     * that actually worked, so the pair fails loudly if this wiring ever stops working, instead of
+     * passing quietly for the wrong reason.
+     *
+     * <p>The buffer and allocator roles are inert: every accessor throws, because nothing reads
+     * them. The decoder ignores the buffer and answers with {@code next}, so a double that returned
+     * bytes would be staging input no code path consumes.
+     */
+    public GeneratedFile generateRequestBody(String basePackage) {
+        String packageName = supportPackage(basePackage);
+        TypeName wildcardClass = ParameterizedTypeName.get(CLASS_OF_ANY,
+                com.palantir.javapoet.WildcardTypeName.subtypeOf(ClassName.OBJECT));
+
+        TypeSpec.Builder type = KernelScaffold.publicClass(RECORDING_REQUEST_BODY)
+                .addModifiers(Modifier.FINAL)
+                .addSuperinterface(HTTP_REQUEST_BODY_DECODER_REGISTRY)
+                .addSuperinterface(HTTP_REQUEST_BODY_DECODER)
+                .addSuperinterface(LOANED_BUFFER)
+                .addSuperinterface(MEMORY_ALLOCATOR)
+                .addJavadoc("Everything {@code parseBody} resolves, in one object: the decoder\n")
+                .addJavadoc("registry, the decoder it returns, the request buffer, and the memory\n")
+                .addJavadoc("allocator the decoding context requires.\n")
+                .addJavadoc("<p>Stage {@code next} with the object the body should decode into, bind\n")
+                .addJavadoc("this instance into both provider slots, and the handler runs its\n")
+                .addJavadoc("post-decode path — the {@code @Validation} guards — with no kernel\n")
+                .addJavadoc("bootstrap, no driver and no port.\n")
+                .addJavadoc("<p>{@code decodedType} and {@code contentType} record what the handler\n")
+                .addJavadoc("asked for.\n")
+                .addJavadoc("<p><b>DO NOT EDIT</b> - Regenerate from domain models.\n")
+                .addField(FieldSpec.builder(ClassName.OBJECT, "next", Modifier.PUBLIC)
+                        .addJavadoc("What the next decode returns.\n").build())
+                .addField(FieldSpec.builder(wildcardClass, "decodedType", Modifier.PUBLIC)
+                        .addJavadoc("The target type the handler asked to decode into.\n").build())
+                .addField(FieldSpec.builder(String.class, "contentType", Modifier.PUBLIC)
+                        .addJavadoc("The content-type the handler resolved the decoder with.\n").build());
+
+        // --- HttpRequestBodyDecoderRegistry: always this same object.
+        type.addMethod(override("resolve")
+                .returns(HTTP_REQUEST_BODY_DECODER)
+                .addParameter(wildcardClass, "targetType")
+                .addParameter(String.class, "contentType")
+                .addStatement("this.contentType = contentType")
+                .addStatement("return this")
+                .build());
+
+        // --- HttpRequestBodyDecoder.
+        type.addMethod(override("supports")
+                .returns(TypeName.BOOLEAN)
+                .addParameter(wildcardClass, "targetType")
+                .addParameter(String.class, "contentType")
+                .addStatement("return true")
+                .build());
+        type.addMethod(override("decode")
+                .returns(ClassName.OBJECT)
+                .addParameter(LOANED_BUFFER, "body")
+                .addParameter(wildcardClass, "targetType")
+                .addParameter(HTTP_REQUEST_DECODING_CONTEXT, "context")
+                .addJavadoc("Answers with {@code next}, ignoring {@code body}: what a handler test\n")
+                .addJavadoc("covers is the path <em>past</em> a decode, not the decode itself —\n")
+                .addJavadoc("that belongs to the codec driver, which is not generated code.\n")
+                .addStatement("this.decodedType = targetType")
+                .addStatement("return next")
+                .build());
+
+        // --- LoanedBuffer: inert. close()/retain() do nothing (the transport owns the body per
+        // the HttpRequest contract); everything that would hand out bytes throws.
+        type.addMethod(override("close").build());
+        type.addMethod(override("retain").build());
+        type.addMethod(unreadBuffer("segment", MEMORY_SEGMENT));
+        type.addMethod(unreadBuffer("size", TypeName.LONG));
+        type.addMethod(unreadBuffer("capacity", TypeName.LONG));
+        type.addMethod(unreadBuffer("refCount", TypeName.INT));
+        type.addMethod(unreadBuffer("view", LOANED_BUFFER));
+        // The buffer outlives every generated test unchanged, so it is alive throughout and
+        // nothing ever runs a close action — but both are on the interface, so both are answered.
+        type.addMethod(override("isAlive").returns(TypeName.BOOLEAN).addStatement("return true").build());
+        type.addMethod(override("addCloseAction")
+                .addParameter(ClassName.get("java.lang", "Runnable"), "action")
+                .addStatement("throw new $T($S)", UnsupportedOperationException.class, BUFFER_UNREAD)
+                .build());
+        type.addMethod(override("slice")
+                .returns(LOANED_BUFFER)
+                .addParameter(TypeName.LONG, "offset")
+                .addParameter(TypeName.LONG, "length")
+                .addStatement("throw new $T($S)", UnsupportedOperationException.class, BUFFER_UNREAD)
+                .build());
+        type.addMethod(override("peek")
+                .returns(LOANED_BUFFER)
+                .addParameter(TypeName.LONG, "offset")
+                .addParameter(TypeName.LONG, "length")
+                .addStatement("throw new $T($S)", UnsupportedOperationException.class, BUFFER_UNREAD)
+                .build());
+        type.addMethod(override("setSize")
+                .addParameter(TypeName.LONG, "newSize")
+                .addStatement("throw new $T($S)", UnsupportedOperationException.class, BUFFER_UNREAD)
+                .build());
+
+        // --- MemoryAllocator: the decoding context requires one to exist, not to allocate.
+        type.addMethod(override("allocate")
+                .returns(LOANED_BUFFER)
+                .addParameter(ALLOCATION_HINT, "hint")
+                .addStatement("throw new $T($S)", UnsupportedOperationException.class, ALLOCATOR_UNUSED)
+                .build());
+        type.addMethod(override("allocateNetwork")
+                .returns(LOANED_BUFFER)
+                .addParameter(TypeName.INT, "estimatedBytes")
+                .addStatement("throw new $T($S)", UnsupportedOperationException.class, ALLOCATOR_UNUSED)
+                .build());
+        type.addMethod(override("allocateCarrierSlab")
+                .returns(LOANED_BUFFER)
+                .addParameter(TypeName.INT, "carrierIndex")
+                .addStatement("throw new $T($S)", UnsupportedOperationException.class, ALLOCATOR_UNUSED)
+                .build());
+        type.addMethod(override("allocateInfrastructure")
+                .returns(LOANED_BUFFER)
+                .addParameter(TypeName.LONG, "sizeBytes")
+                .addStatement("throw new $T($S)", UnsupportedOperationException.class, ALLOCATOR_UNUSED)
+                .build());
+        type.addMethod(override("stats")
+                .returns(MEMORY_STATS)
+                .addStatement("throw new $T($S)", UnsupportedOperationException.class, ALLOCATOR_UNUSED)
+                .build());
+
+        return new GeneratedFile(packageName, RECORDING_REQUEST_BODY,
+                KernelScaffold.render(packageName, type.build()), ArtifactType.TEST);
+    }
+
+    private static final String BUFFER_UNREAD =
+            "the request buffer is never read — the decoder bound for a generated test answers"
+                    + " with a staged object";
+
+    private static final String ALLOCATOR_UNUSED =
+            "the decoding context requires an allocator to exist, not to allocate — nothing in a"
+                    + " generated test allocates";
+
+    /** A no-arg {@code LoanedBuffer} accessor that would hand out bytes nobody staged. */
+    private static MethodSpec unreadBuffer(String name, TypeName returnType) {
+        return override(name)
+                .returns(returnType)
+                .addStatement("throw new $T($S)", UnsupportedOperationException.class, BUFFER_UNREAD)
                 .build();
     }
 }

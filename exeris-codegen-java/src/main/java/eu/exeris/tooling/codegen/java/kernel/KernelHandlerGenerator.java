@@ -351,53 +351,32 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
      *  on numeric (BigDecimal via {@code compareTo}, other numerics via operators).
      *  Anything else is skipped (no check emitted). */
     private static void appendValidationGuard(MethodSpec.Builder method, List<FieldMetadata> fields) {
-        for (FieldMetadata f : fields) {
-            boolean nullCheck = f.required() && !isPrimitive(f.type());
-            boolean strChecks = isStringType(f.type())
-                    && (f.minLength() != null || f.maxLength() != null || f.pattern() != null);
-            boolean numChecks = (f.min() != null || f.max() != null) && isNumeric(f.type());
-            if (!nullCheck && !strChecks && !numChecks) {
-                continue;
-            }
-
+        for (KernelValidationRules.FieldRules fr : KernelValidationRules.of(fields)) {
             // Read the value once into a local (avoids re-invoking the getter per check).
-            // Prefix the local so it can NEVER collide with a handler-scope variable
-            // (id / idStr / entity / exchange / saved / updated): a field literally
-            // named `id` would otherwise emit `var id = …` and clash with handleUpdate's
-            // path-id `UUID id` — uncompilable (T22). "val" + Pascal is collision-proof
-            // and deterministic.
-            String pascal = NameCasing.pascal(f.name());
-            String v = "val" + pascal;
-            method.addStatement("var $L = entity.get$L()", v, pascal);
+            // The local is prefixed so it can never collide with a handler-scope variable —
+            // see KernelValidationRules.FieldRules#local for why (T22).
+            String v = fr.local();
+            method.addStatement("var $L = entity.$L()", v, fr.accessor());
 
-            if (nullCheck) {
-                reject400(method, v + " == null");
-            }
-            if (strChecks) {
-                if (f.minLength() != null) {
-                    reject400(method, v + " != null && " + v + ".length() < " + f.minLength());
+            for (KernelValidationRules.Rule rule : fr.rules()) {
+                switch (rule.kind()) {
+                    case NOT_NULL -> reject400(method, v + " == null");
+                    case MIN_LENGTH ->
+                            reject400(method, v + " != null && " + v + ".length() < " + rule.bound());
+                    case MAX_LENGTH ->
+                            reject400(method, v + " != null && " + v + ".length() > " + rule.bound());
+                    case PATTERN -> {
+                        method.beginControlFlow("if ($L != null && !$L.matches($S))",
+                                        v, v, rule.pattern())
+                                .addStatement("exchange.respond($T.BAD_REQUEST)", HTTP_STATUS)
+                                .addStatement("return")
+                                .endControlFlow();
+                    }
+                    case MIN -> appendNumericBound(method, fr.field().type(), v, "<", rule.bound());
+                    case MAX -> appendNumericBound(method, fr.field().type(), v, ">", rule.bound());
                 }
-                if (f.maxLength() != null) {
-                    reject400(method, v + " != null && " + v + ".length() > " + f.maxLength());
-                }
-                if (f.pattern() != null) {
-                    method.beginControlFlow("if ($L != null && !$L.matches($S))", v, v, f.pattern())
-                            .addStatement("exchange.respond($T.BAD_REQUEST)", HTTP_STATUS)
-                            .addStatement("return")
-                            .endControlFlow();
-                }
-            }
-            if (numChecks && f.min() != null) {
-                appendNumericBound(method, f.type(), v, "<", f.min());
-            }
-            if (numChecks && f.max() != null) {
-                appendNumericBound(method, f.type(), v, ">", f.max());
             }
         }
-    }
-
-    private static boolean isNumeric(String type) {
-        return isBigDecimal(type) || isPrimitiveNumeric(type) || isBoxedNumeric(type);
     }
 
     private static void reject400(MethodSpec.Builder method, String condition) {
@@ -411,52 +390,18 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
      *  BigDecimal compares via {@code compareTo}; primitives compare directly; boxed
      *  numerics get a null guard; non-numeric field types emit nothing. */
     private static void appendNumericBound(MethodSpec.Builder method, String type, String expr, String op, long bound) {
-        if (isBigDecimal(type)) {
+        if (KernelValidationRules.isBigDecimal(type)) {
             method.beginControlFlow("if ($L != null && $L.compareTo($T.valueOf($L)) $L 0)",
                             expr, expr, BIG_DECIMAL, bound + "L", op)
                     .addStatement("exchange.respond($T.BAD_REQUEST)", HTTP_STATUS)
                     .addStatement("return")
                     .endControlFlow();
-        } else if (isPrimitiveNumeric(type)) {
+        } else if (KernelValidationRules.isPrimitiveNumeric(type)) {
             reject400(method, expr + " " + op + " " + bound + "L");
-        } else if (isBoxedNumeric(type)) {
+        } else if (KernelValidationRules.isBoxedNumeric(type)) {
             reject400(method, expr + " != null && " + expr + " " + op + " " + bound + "L");
         }
         // else: not a numeric field — skip.
-    }
-
-    private static String simpleTypeName(String type) {
-        int dot = type.lastIndexOf('.');
-        return dot >= 0 ? type.substring(dot + 1) : type;
-    }
-
-    private static boolean isPrimitive(String type) {
-        return switch (type) {
-            case "int", "long", "short", "byte", "boolean", "char", "float", "double" -> true;
-            default -> false;
-        };
-    }
-
-    private static boolean isStringType(String type) {
-        return "String".equals(simpleTypeName(type));
-    }
-
-    private static boolean isBigDecimal(String type) {
-        return "BigDecimal".equals(simpleTypeName(type));
-    }
-
-    private static boolean isPrimitiveNumeric(String type) {
-        return switch (type) {
-            case "int", "long", "short", "byte", "float", "double" -> true;
-            default -> false;
-        };
-    }
-
-    private static boolean isBoxedNumeric(String type) {
-        return switch (simpleTypeName(type)) {
-            case "Integer", "Long", "Short", "Byte", "Float", "Double" -> true;
-            default -> false;
-        };
     }
 
     /** Emits the shared "catch RuntimeException → log + 500" tail that closes the

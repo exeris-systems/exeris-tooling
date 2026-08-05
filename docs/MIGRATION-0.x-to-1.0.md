@@ -338,15 +338,33 @@ as a *test* compile source root and carrying its own generated-output manifest �
 can never touch the other. Commit it like the main generated tree.
 
 What is emitted so far, per entity: `<Entity>HandlerTest`, `<Entity>ServiceTest` and
-`<Entity>RepositoryTest` — plus `<Saga>FlowTest` for each entity that declares a `@Saga` — and three
-shared doubles under `<basePackage>.testsupport`: `RecordingHttpExchange`, `RecordingPersistence`
-and `RecordingFlow`.
+`<Entity>RepositoryTest` — plus `<Saga>FlowTest` for each entity that declares a `@Saga` — and four
+shared doubles under `<basePackage>.testsupport`: `RecordingHttpExchange`, `RecordingPersistence`,
+`RecordingFlow` and `RecordingRequestBody`.
 
 The handler test covers every status the handler owes the router on the bodyless CRUD routes, and
 the guard paths of `handleCreate` / `handleUpdate` — a missing body, and a malformed path id — each
-also asserting the service was never reached. The `@Validation` rejection paths are not emitted yet:
-they require a decoded request body, and therefore kernel provider slots a generated test does not
-currently bind.
+also asserting the service was never reached.
+
+It also covers the `@Validation` guards past a successful decode, for any entity whose fields carry
+enforceable rules. Those cases bind `RecordingRequestBody` into two kernel `ScopedValue` slots
+(`HttpKernelProviders.HTTP_REQUEST_BODY_DECODER_REGISTRY` and `KernelProviders.MEMORY_ALLOCATOR`)
+and run the handler inside that scope. **This adds nothing to your build**: both slots and the SPI
+types behind them come from `exeris-kernel-spi`, which your generated main code already compiles
+against. No driver, no bootstrap, no port, no engine — the tests stay in-process, and the
+JUnit + AssertJ contract above is unchanged.
+
+Each rule gets a case that violates it, and each *bounded* rule also gets one sitting exactly on the
+boundary and expecting `201 CREATED`, because `min` / `max` / `minLength` / `maxLength` are
+inclusive. Every entity with rules additionally gets an all-rules-satisfied accept case. If you are
+wondering why the accepts are there: every failure past the body guard answers `400`, the same
+status a rejection does, so `201` is the only outcome that proves the request was decoded at all.
+
+Two cases are deliberately not emitted. A field with a `pattern` gets no length or numeric cases
+(and if it is also `required`, the entity gets no validation cases at all) — a regex has no
+synthesizable member, so nothing can build a valid baseline for the other fields to be tested
+against. Floating-point `min` / `max` are skipped too: the bound is a `long`, the comparison
+promotes, and a boundary probe that is only approximately on the boundary tests nothing.
 
 The service test covers the delegation contract: which repository method each call reaches (the
 `delete` → `deleteById` rename included), that `save` / `update` hand back the *repository's* result
@@ -374,10 +392,11 @@ lifecycle are involved.
 Nothing is emitted, and nothing changes, unless you set the flag.
 
 If you had already turned the flag on, expect new `<Entity>ServiceTest` and
-`<Entity>RepositoryTest` files per entity, a `<Saga>FlowTest` per saga, new `RecordingPersistence`
-and `RecordingFlow` doubles, the regenerated
-`<Entity>HandlerTest` to gain three test methods, and the emitted `RecordingHttpExchange` to gain
-`post(...)` / `put(...)` factories.
+`<Entity>RepositoryTest` files per entity, a `<Saga>FlowTest` per saga, new `RecordingPersistence`,
+`RecordingFlow` and `RecordingRequestBody` doubles, the regenerated
+`<Entity>HandlerTest` to gain three test methods plus its `@Validation` cases, and the emitted
+`RecordingHttpExchange` to gain `post(...)` / `put(...)` factories in both bodyless and
+body-carrying forms.
 
 ### Composed applications drive the boot conductor
 
