@@ -346,11 +346,20 @@ public final class KernelHandlerTestGenerator {
         // One case proving handleUpdate runs the same guard. The per-rule sharpness lives on
         // handleCreate; what this adds is that the guard is wired into the second route too —
         // which is a separate emitter call, and so a separate thing to get wrong.
-        KernelValidationRules.FieldRules first = rules.get(0);
-        Probe firstReject = probesFor(first, first.rules().get(0)).stream()
-                .filter(p -> !p.accept()).findFirst().orElse(null);
-        if (firstReject != null) {
-            type.addMethod(scaffold.update(first, firstReject));
+        //
+        // It scans every rule for the first one that yields a reject, rather than reading the
+        // first field's first rule: several kinds yield no probe at all (a pattern always, a
+        // zero minLength, a bound that does not fit its field's type), so anchoring on position
+        // would make this case's existence depend on field-declaration order.
+        for (KernelValidationRules.FieldRules fr : rules) {
+            Probe reject = fr.rules().stream()
+                    .flatMap(rule -> probesFor(fr, rule).stream())
+                    .filter(p -> !p.accept())
+                    .findFirst().orElse(null);
+            if (reject != null) {
+                type.addMethod(scaffold.update(fr, reject));
+                break;
+            }
         }
     }
 

@@ -153,6 +153,24 @@ class KernelHandlerTestGeneratorTest {
     }
 
     @Test
+    @DisplayName("the handleUpdate case survives a leading field whose rules yield no reject")
+    void theUpdateCaseDoesNotDependOnDeclarationOrder() {
+        // Several rule kinds yield no probe at all — a pattern always, and a minLength of 0 has
+        // no value below it. Anchoring the handleUpdate case on the first field's first rule
+        // would make its existence depend on which field happens to be declared first.
+        DomainMetadata leadingBlank = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .fields(java.util.List.of(
+                        FieldMetadata.builder("note", "String").minLength(0).build(),
+                        FieldMetadata.builder("quantity", "int").min(1L).build()))
+                .build();
+
+        assertThat(new KernelHandlerTestGenerator().generate(leadingBlank, "com.example").content())
+                .contains("void handleUpdateRunsTheSameValidationGuard()")
+                .contains("handler.handleUpdate(exchange)");
+    }
+
+    @Test
     @DisplayName("a required field constrained by a pattern suppresses the cases entirely")
     void aRequiredPatternFieldSuppressesTheCases() {
         // A regex has no synthesizable member, so no valid baseline exists — and without one,
