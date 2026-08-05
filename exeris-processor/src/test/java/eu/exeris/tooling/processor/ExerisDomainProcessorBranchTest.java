@@ -67,7 +67,7 @@ class ExerisDomainProcessorBranchTest {
                         graphqlApi = true,
                         realTimeApi = true,
                         internalClient = true,
-                        tenantScoped = true,
+                        dataScope = ExerisDomain.DataScope.TENANT,
                         softDelete = true,
                         audited = true,
                         versioned = true,
@@ -96,7 +96,7 @@ class ExerisDomainProcessorBranchTest {
                     .contains("\"graphqlApi\" : true")
                     .contains("\"realTimeApi\" : true")
                     .contains("\"internalClient\" : true")
-                    .contains("\"tenantScoped\" : true")
+                    .contains("\"dataScope\" : \"TENANT\"")
                     .contains("\"softDelete\" : true")
                     .contains("\"audited\" : true")
                     .contains("\"versioned\" : true")

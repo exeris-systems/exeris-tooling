@@ -739,6 +739,92 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         return constant != null ? BlockType.valueOf(constant) : null;
     }
 
+    /**
+     * Maps an {@code @ExerisDomain.DataScope} enum constant to the AST
+     * {@link DataScope}, or null when no tier was declared.
+     *
+     * <p>Null covers two cases the AST expresses identically — the attribute
+     * absent, and the attribute written as {@code UNSPECIFIED}. That constant
+     * exists only on the annotation side, because an annotation attribute
+     * cannot default to {@code null}; the AST expresses "no tier declared" as
+     * an absent field and therefore has no {@code UNSPECIFIED} (ADR-059).
+     * Everything else round-trips by constant name, the
+     * {@code SagaStep.StepKind} precedent.
+     */
+    private DataScope dataScope(Object value) {
+        String constant = enumConstantName(value);
+        if (constant == null || "UNSPECIFIED".equals(constant)) {
+            return null;
+        }
+        return DataScope.valueOf(constant);
+    }
+
+    /**
+     * The tier the deprecated {@code tenantScoped} boolean stands for. The
+     * mapping is total, which is what makes the contradiction check exact:
+     * declaring a tier and a boolean that means a different tier is an error,
+     * never a precedence puzzle.
+     */
+    private static DataScope fallbackTier(boolean tenantScoped) {
+        return tenantScoped ? DataScope.TENANT : DataScope.GLOBAL;
+    }
+
+    /**
+     * Warns that a build is still resolving its tier through the deprecated
+     * boolean. ADR-059 obligation 5 requires the fallback to be audible: a
+     * silent equivalence would let the whole deprecation window pass without
+     * anyone noticing the attribute is going away at 1.0.0.
+     */
+    private void warnDeprecatedTenantScoped(TypeElement element, boolean tenantScoped) {
+        DataScope tier = fallbackTier(tenantScoped);
+        messager.printMessage(
+                Diagnostic.Kind.WARNING,
+                DIAG_PREFIX + "@ExerisDomain.tenantScoped is deprecated for removal in SDK 1.0.0; "
+                        + "declare dataScope = DataScope." + tier + " instead. Reading the boolean "
+                        + "as a fallback for this build (tenantScoped = " + tenantScoped + " → "
+                        + tier + "). See MIGRATION.md in exeris-sdk.",
+                element);
+    }
+
+    /**
+     * Rejects a declared tier that disagrees with a declared {@code tenantScoped}.
+     * ADR-059 rules this a build error rather than something to resolve by
+     * precedence: whichever side lost would be a silent tenancy decision, and the
+     * author has already said two different things about one entity.
+     */
+    private void errorContradictingDataScope(
+            TypeElement element, DataScope declared, boolean tenantScoped) {
+        error(element,
+                "@ExerisDomain declares dataScope = DataScope." + declared
+                        + " and tenantScoped = " + tenantScoped + ", which contradict each other — "
+                        + "tenantScoped = " + tenantScoped + " means DataScope."
+                        + fallbackTier(tenantScoped) + ". Declare the tier once: drop tenantScoped, "
+                        + "which is deprecated for removal in SDK 1.0.0.");
+    }
+
+    /**
+     * Warns that {@code UNIVERSE} is declared but only partly transcribable.
+     *
+     * <p>The tier's kernel carrier ({@code sharedScopeKey} + the read-widen /
+     * write-pin RLS mode) lands on the kernel 0.11 line, which this repo does
+     * not pin yet, so the cross-tenant read-widen cannot be emitted. What is
+     * emitted is the TENANT shape — owner column plus an owner-pinned policy —
+     * which is UNIVERSE minus the widening, i.e. strictly narrower than the
+     * declaration rather than wider. Failing closed matters here: treating the
+     * tier as GLOBAL would drop the owner column and the policy altogether and
+     * silently publish rows the author scoped to an owner.
+     */
+    private void warnReservedUniverseTier(TypeElement element) {
+        messager.printMessage(
+                Diagnostic.Kind.WARNING,
+                DIAG_PREFIX + "@ExerisDomain.dataScope = DataScope.UNIVERSE is reserved: the kernel "
+                        + "carrier transcription (sharedScopeKey) is not built yet, so this build "
+                        + "emits the TENANT shape — owner column and owner-pinned RLS, without the "
+                        + "cross-tenant read-widen. Rows stay narrower than declared, never wider. "
+                        + "See ADR-059 (docs/adr/ADR-059.link.md).",
+                element);
+    }
+
     /** Maps a {@code @Bind.Source} enum constant to the AST {@link BindSource}; null when unset. */
     private BindSource bindSource(Object value) {
         String constant = enumConstantName(value);
@@ -811,7 +897,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         // Extract @ExerisDomain annotation values
         AnnotationMirror domainAnnotation = findAnnotation(element, "eu.exeris.sdk.annotation.ExerisDomain");
         if (domainAnnotation != null) {
-            extractDomainAnnotationValues(domainAnnotation, builder);
+            extractDomainAnnotationValues(domainAnnotation, builder, element);
         }
 
         // Extract fields with @Field annotations
@@ -867,7 +953,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         return builder.build();
     }
 
-    private void extractDomainAnnotationValues(AnnotationMirror annotation, DomainMetadata.Builder builder) {
+    private void extractDomainAnnotationValues(
+            AnnotationMirror annotation, DomainMetadata.Builder builder, TypeElement element) {
         Map<String, Object> values = extractAnnotationValues(annotation);
 
         // Identity
@@ -902,8 +989,33 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         }
 
         // Data Management
+        //
+        // ADR-059: `dataScope` is the canonical data-scope tier and
+        // `tenantScoped` is its deprecated predecessor. Both are extracted —
+        // the AST keeps the raw boolean so a pre-0.10.0 baseline reads back
+        // with exactly the meaning it always had — but no generator reads
+        // either directly. `DomainMetadata.effectiveDataScope()` is the single
+        // canonical read (explicit tier wins, else the boolean's fallback).
+        DataScope declaredScope = dataScope(values.get("dataScope"));
+        if (declaredScope != null) {
+            builder.dataScope(declaredScope);
+        }
+        boolean contradicted = false;
         if (values.containsKey("tenantScoped")) {
-            builder.tenantScoped((Boolean) values.get("tenantScoped"));
+            boolean tenantScoped = (Boolean) values.get("tenantScoped");
+            builder.tenantScoped(tenantScoped);
+            if (declaredScope == null) {
+                warnDeprecatedTenantScoped(element, tenantScoped);
+            } else if (declaredScope != fallbackTier(tenantScoped)) {
+                errorContradictingDataScope(element, declaredScope, tenantScoped);
+                contradicted = true;
+            }
+        }
+        // The reserved-tier warning describes what UNIVERSE emits. A contradicted
+        // declaration never reaches codegen, so saying what it would have emitted
+        // is noise on top of an error the author has to fix first.
+        if (declaredScope == DataScope.UNIVERSE && !contradicted) {
+            warnReservedUniverseTier(element);
         }
         if (values.containsKey("softDelete")) {
             builder.softDelete((Boolean) values.get("softDelete"));

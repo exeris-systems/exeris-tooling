@@ -44,7 +44,7 @@ export class StoreGenerator implements CodeGenerator {
   }
 
   private generateStoreContent(domain: DomainMetadata, context: GeneratorContext): string {
-    const { entityName, fields = [], softDelete, tenantScoped } = domain;
+    const { entityName, fields = [], softDelete } = domain;
     const kebab = DslMapper.toKebabCase(entityName);
     const camel = DslMapper.toCamelCase(entityName);
     const pluralCamel = camel + 's';

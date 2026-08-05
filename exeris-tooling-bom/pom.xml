@@ -16,7 +16,26 @@
     <description>Bill of materials for tooling modules and third-party deps.</description>
 
     <properties>
-        <exeris.sdk.version>0.9.0</exeris.sdk.version>
+        <!--
+          SNAPSHOT on purpose while the ADR-059 data-scope slice is in flight:
+          `dataScope`, the AST-owned `DataScope` and
+          `DomainMetadata.effectiveDataScope()` ship in SDK 0.10.0, which is not
+          cut yet. Same window the ADR-044 streaming slice used (0.8.0-SNAPSHOT
+          in cb1f85b, pinned to the released 0.8.0 in 8fb29eb). Bump to the
+          released 0.10.0 — and point the CI checkout back at the v0.10.0 tag —
+          as soon as the SDK cuts it.
+        -->
+        <exeris.sdk.version>0.10.0-SNAPSHOT</exeris.sdk.version>
+        <!--
+          Deliberately NOT moved for this slice. The SDK 0.10 line pairs with
+          kernel 0.11 (the `sharedScopeKey` carrier behind `DataScope.UNIVERSE`),
+          but 0.11 is unreleased — kernel `main` is 0.10.2 and the amendment
+          lives on `development/0.11.0`. Slice A needs nothing from it: it moves
+          the tenancy decision from `tenantScoped()` to `effectiveDataScope()`
+          without changing the shape of anything emitted. The UNIVERSE → carrier
+          transcription (ADR-059 obligation 5, last part) is slice B, and both
+          pins move together there.
+        -->
         <exeris.kernel.version>0.10.2</exeris.kernel.version>
 
         <auto-service.version>1.1.1</auto-service.version>

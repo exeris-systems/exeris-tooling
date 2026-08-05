@@ -394,6 +394,36 @@ consequences for such a build:
 A build with no capability metadata is unaffected: it emits byte-identically to 0.6.0, down
 to the absent import.
 
+### `@ExerisDomain.tenantScoped` is deprecated — a build warning, not a break
+
+ADR-059 makes `@ExerisDomain.dataScope` (`GLOBAL` / `TENANT` / `UNIVERSE`) the canonical
+expression of an entity's data-scope tier. `tenantScoped` is `@Deprecated(forRemoval = true)`
+in SDK 0.10.0 and stays readable for the whole 0.10.x line — removal is a 1.0.0 item.
+
+What this train changes for an existing build:
+
+- **Nothing in the output.** An entity that declares only `tenantScoped` resolves through
+  the fallback (`true → TENANT`, `false → GLOBAL`), which is exactly what the boolean always
+  meant. Emitted SQL, column layouts and Flyway versions are byte-identical — asserted by
+  `KernelFlywayGeneratorTest.deprecatedBooleanStillDrivesTheSameOutput`.
+- **One warning per entity that still declares it**, naming the tier it resolved to. Builds
+  running `-Werror` need the migration now rather than at 1.0.0.
+- **A new error** if an entity declares both and they disagree (`dataScope = GLOBAL` with
+  `tenantScoped = true`, or any pairing with `UNIVERSE` — no boolean value can express the
+  third tier). Declare the tier once.
+
+Migrating is a mechanical rewrite: `tenantScoped = true` → `dataScope = DataScope.TENANT`,
+`tenantScoped = false` → drop the attribute (`GLOBAL` is the default). Note that moving an
+entity *between* tiers — in either direction, and whichever attribute expresses it — changes
+its `migrationVersion` discriminator, which Flyway sees as a new migration rather than an edit
+to the existing one. That has always been true of a `tenantScoped` flip; it is worth restating
+because a one-word enum change makes it easier to do without noticing.
+
+`UNIVERSE` is accepted and **reserved**: it currently fails closed to the `TENANT` shape
+(owner column, owner index, owner-pinned RLS policy — UNIVERSE minus the cross-tenant
+read-widen) with a warning saying so, until the kernel `sharedScopeKey` carrier lands on the
+0.11 line. Do not declare it expecting cross-tenant reads yet.
+
 ---
 
 ## Reference
@@ -401,3 +431,4 @@ to the absent import.
 - [ADR-015 — Codegen emission strategy](adr/ADR-015-codegen-emission-strategy.md)
 - ADR-015 Amendment 1 — switch to Palantir's JavaPoet fork (same document)
 - [ADR-034 link stub — `KernelWebClient` facade rename](adr/ADR-034.link.md) (authoritative copy kernel-side)
+- [ADR-059 link stub — `DataScope` supersedes `tenantScoped`](adr/ADR-059.link.md) (authoritative copy SDK-side)
