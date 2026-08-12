@@ -62,9 +62,15 @@ jobs:
       #
       # Not needed before now — v0.9.0 had no such execution, which is why this
       # step survived the previous pin unchanged.
+      #
+      # maven.javadoc.skip for the same reason one step further: `attach-javadocs`
+      # built two javadoc jars nothing here consumes, at the cost of ~200 "no
+      # comment" warnings per run. Those are the SDK's own docs debt, reported
+      # against SDK sources, and reading them in this repo's log teaches only that
+      # our log is noisy. They belong to the SDK's build, where they are actionable.
       - name: Install exeris-sdk to local Maven repo
         working-directory: exeris-sdk
-        run: mvn -B -ntp -DskipTests -Djapicmp.skip=true install
+        run: mvn -B -ntp -DskipTests -Djapicmp.skip=true -Dmaven.javadoc.skip=true install
 
       - name: mvn -B verify (exeris-tooling)
         working-directory: exeris-tooling
