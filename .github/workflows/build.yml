@@ -29,23 +29,15 @@ jobs:
       # so this ref decides which SDK version lands in the local repo, and it
       # must match exeris.sdk.version in the BOM.
       #
-      # Tracking `main` (0.10.0-SNAPSHOT) for the duration of the ADR-059
-      # data-scope slice: `dataScope`, the AST-owned `DataScope` and
-      # `DomainMetadata.effectiveDataScope()` are on the SDK's main line but
-      # 0.10.0 is not cut yet. This is the same in-flight window the ADR-044
-      # streaming slice ran on 0.8.0-SNAPSHOT.
-      #
-      # Restore a tag ref (`v0.10.0`) the moment the SDK cuts the release — a
-      # moving ref means an unrelated SDK commit can turn this build red, which
-      # is the cost being accepted while the slice is open, not the steady state.
-      # 0.10.0 also still carries the composition surface the 0.7.0 gateway-caps
-      # track builds on (exeris-sdk-composition-lifecycle, and the
-      # CompositionConductor in exeris-sdk-composition-runtime).
-      - name: Checkout exeris-sdk (main — 0.10.0-SNAPSHOT, matches the in-flight BOM pin)
+      # Back on an immutable tag ref (U0). The `main` tracking this carried for
+      # the ADR-059 data-scope slice was an accepted cost while 0.10.0 was
+      # uncut — a moving ref lets an unrelated SDK commit turn this build red —
+      # and it ends with the release, not with the slice.
+      - name: Checkout exeris-sdk (v0.10.0 — matches exeris.sdk.version in the BOM)
         uses: actions/checkout@v4
         with:
           repository: exeris-systems/exeris-sdk
-          ref: main
+          ref: v0.10.0
           path: exeris-sdk
 
       - name: Set up JDK ${{ matrix.java }}
@@ -58,19 +50,35 @@ jobs:
           server-username: GITHUB_ACTOR
           server-password: GITHUB_TOKEN
 
+      # japicmp.skip mirrors what the SDK's own CI passes, and it is required from
+      # v0.10.0 on: that release introduced a `semver-gate` japicmp execution bound
+      # to `verify`, which `install` runs. The gate resolves the previous release
+      # jar as its baseline, and `eu.exeris` artifacts are not on Maven Central yet
+      # (deliberately — the SDK does not move to Central before the kernel does), so
+      # a runner has nothing to resolve. An absent baseline is configured to FAIL
+      # rather than report "no breaks found", which is the correct posture for the
+      # SDK and simply not our gate to run: we are building its jars to get the
+      # types on our classpath, not policing its API compatibility.
+      #
+      # Not needed before now — v0.9.0 had no such execution, which is why this
+      # step survived the previous pin unchanged.
+      #
+      # maven.javadoc.skip for the same reason one step further: `attach-javadocs`
+      # built two javadoc jars nothing here consumes, at the cost of ~200 "no
+      # comment" warnings per run. Those are the SDK's own docs debt, reported
+      # against SDK sources, and reading them in this repo's log teaches only that
+      # our log is noisy. They belong to the SDK's build, where they are actionable.
       - name: Install exeris-sdk to local Maven repo
         working-directory: exeris-sdk
-        run: mvn -B -ntp -DskipTests install
+        run: mvn -B -ntp -DskipTests -Djapicmp.skip=true -Dmaven.javadoc.skip=true install
 
       - name: mvn -B verify (exeris-tooling)
         working-directory: exeris-tooling
-        # Still no -U, even though the SDK pin is a SNAPSHOT again for the
-        # ADR-059 slice. The kernel dep is release-pinned (0.10.2 from GitHub
-        # Packages) and immutable, and the SDK SNAPSHOT is built from source and
-        # installed into the local repo by the step above — it is never resolved
-        # remotely, so a forced update check has nothing to find. Adding -U here
-        # would only invite a remote lookup that could shadow the freshly built
-        # artifact. -U belongs back if a SNAPSHOT ever arrives over the wire.
+        # No -U, and now for the simplest possible reason: every cross-repo pin
+        # is a release. The kernel deps resolve from GitHub Packages at 0.11.0
+        # and the SDK is built from the v0.10.0 tag into the local repo by the
+        # step above. Both are immutable, so a forced update check has nothing
+        # to find. -U belongs back only if a SNAPSHOT ever arrives over the wire.
         run: mvn -B -ntp verify
         env:
           GITHUB_ACTOR: ${{ github.actor }}
