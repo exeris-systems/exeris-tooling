@@ -1,6 +1,6 @@
 ---
 name: exeris-tooling-emitter-parity-review
-description: Java/TS emitter parity review for exeris-tooling. Use when DomainMetadata shape changes, when a new generator surface is added on one side, or when one side starts consuming a field the other does not emit.
+description: Java/TS emitter parity gate. Invoke before committing or opening a PR that adds or changes a DomainMetadata field, adds a generator on one side only, or edits exeris-codegen-java/ without a matching look at exeris-codegen-ts/src/ (or vice versa) — and when reviewing or addressing a review on such a change. Classifies each touched surface SHARED / JAVA_ONLY / TS_ONLY and demands cross-build evidence, because a field one emitter reads and the other ignores is a contract bug, not a feature gap.
 ---
 
 # Exeris Tooling Emitter Parity Review

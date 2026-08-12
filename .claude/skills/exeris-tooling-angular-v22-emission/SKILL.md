@@ -1,6 +1,6 @@
 ---
 name: exeris-tooling-angular-v22-emission
-description: Angular v22 emission discipline for exeris-codegen-ts. Use whenever authoring or modifying a TS generator (*-gen.ts) or the emitted app scaffold — keeps emitted Angular idioms on the v22 canon (Signal Forms, httpResource, dropped deprecations) and gates the phased A→B→C migration.
+description: Angular v22 emission gate for the TS side. Invoke before committing or opening a PR that edits any exeris-codegen-ts/src/generators/**/*-gen.ts or the emitted app scaffold (component, service, store, guard, form, list, detail, saga shapes) — and when reviewing or addressing a review on such a change. Keeps emitted Angular idioms on the v22 canon (Signal Forms, httpResource, dropped deprecations) and gates the phased A→B→C migration so emitted apps don't ship deprecated APIs.
 ---
 
 # Exeris Tooling — Angular v22 Emission Discipline
