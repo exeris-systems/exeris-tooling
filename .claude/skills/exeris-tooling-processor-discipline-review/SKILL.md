@@ -1,6 +1,6 @@
 ---
 name: exeris-tooling-processor-discipline-review
-description: Build-time purity review for `exeris-processor`. Use on every PR touching the annotation processor classpath, diagnostic surface, `javax.lang.model` extraction, or DomainMetadata write-out.
+description: Build-time purity gate for the annotation processor. Invoke before committing or opening a PR that edits anything under exeris-processor/ — ExerisDomainProcessor, javax.lang.model extraction, javac diagnostics, DomainMetadata write-out, @AutoService wiring — or that adds a dependency to exeris-processor/pom.xml, and when reviewing or addressing a review on such a change. Rejects runtime libraries, Spring, IoC containers, and anything that would make the processor load classes from the user's project classpath.
 ---
 
 # Exeris Tooling Processor Discipline Review

@@ -1,6 +1,6 @@
 ---
 name: exeris-tooling-strict-audit-review
-description: Strict-mode completeness-audit review for exeris-tooling. Use whenever a generator (Java or TS) starts or stops consuming an annotation attribute or a whole annotation, when an SDK annotation surface changes, or when the INERT_ATTRIBUTES / INERT_ANNOTATIONS registries in ExerisDomainProcessor are touched. Catches stale registry entries that produce false "no effect" warnings under -Aexeris.strict.
+description: INERT-registry hygiene gate for -Aexeris.strict. Invoke whenever a generator starts or stops reading an SDK annotation attribute, when exeris-sdk bumps its annotation surface, and before committing any edit to INERT_ATTRIBUTES or INERT_ANNOTATIONS in ExerisDomainProcessor — plus when reviewing or addressing a review on such a change. A registry entry left behind after a generator starts consuming the attribute emits a false "this has no effect" javac warning at the user's build.
 ---
 
 # Exeris Tooling Strict-Audit Review

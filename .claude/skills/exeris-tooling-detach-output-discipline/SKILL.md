@@ -1,6 +1,6 @@
 ---
 name: exeris-tooling-detach-output-discipline
-description: Generated-output lifecycle discipline for exeris-tooling. Use whenever a change touches how code is emitted to or pruned from src/main/generated, proposes "always regenerate" semantics, or affects the L1-committed / L2-detach story (OutputWriter, the codegen Maven plugin generate/detach mojos, the generated-output pruner, mvn clean interactions). Guards hard-constraint #6.
+description: Generated-output lifecycle gate. Invoke before committing or opening a PR that edits OutputWriter, the generated-output pruner, or anything under exeris-codegen-maven-plugin/ (GenerateMojo, DetachMojo), that changes what is written to or deleted from src/main/generated, or that proposes "just regenerate every build" — and when reviewing or addressing a review on such a change. Generated code is committed (L1) until a downstream app runs exeris:detach (L2); a change that assumes regeneration silently breaks apps that already detached.
 ---
 
 # Exeris Tooling Detach-Output Discipline

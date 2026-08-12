@@ -1,6 +1,6 @@
 ---
 name: exeris-tooling-adr-shape-gate
-description: Decision-document shape gate for exeris-tooling. Use BEFORE drafting an ADR, RFC, or research note — picks the right shape (Research vs RFC vs ADR) for the question, enforces number reservation in the central adr-index.md, and blocks refactor-only or measurement-missing material from becoming an ADR. Invoke whenever someone asks to "write an ADR", "document this decision", or capture a design choice.
+description: Decision-document shape gate. Invoke whenever the ask is to write an ADR, draft an RFC, "document this decision", record a design choice, or reserve an ADR number — before any drafting starts. Picks the right shape (Research vs RFC vs ADR) for the question, enforces number reservation in the central exeris-docs/adr-index.md, and blocks refactor-only or measurement-missing material from becoming an ADR (those belong in the PR description).
 ---
 
 # Exeris Tooling ADR Shape Gate
