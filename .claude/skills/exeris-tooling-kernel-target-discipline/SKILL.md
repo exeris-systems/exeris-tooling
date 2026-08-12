@@ -1,6 +1,6 @@
 ---
 name: exeris-tooling-kernel-target-discipline
-description: Single-target discipline for exeris-tooling. Use whenever a PR proposes a new generator shape, a backend-strategy parameter, or anything that could reintroduce the Spring/Quarkus/Micronaut/Vanilla multi-backend abstraction removed in 0.1.0.
+description: Single-target gate — Exeris kernel only. Invoke when adding a new *Generator or *-gen.ts shape, when any proposal mentions a backend/target/strategy parameter, a framework name (Spring, Quarkus, Micronaut, "vanilla"), or a pluggable emitter abstraction, and when reviewing or addressing a review on such a change. The multi-backend abstraction was deliberately removed in 0.1.0; Spring hosting belongs to exeris-spring-runtime, not to a generator here.
 ---
 
 # Exeris Tooling Kernel-Target Discipline

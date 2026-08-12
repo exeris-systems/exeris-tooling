@@ -6,28 +6,13 @@ Guardrails for AI assistants working inside `~/exeris-systems/exeris-tooling/`. 
 
 `exeris-tooling` is the **build-time pipeline** of the Exeris ecosystem: it turns annotated Entity-First Java sources (`@ExerisDomain`, `@Action`, `@Field`, …) into kernel-target code (handlers, services, repositories, OpenAPI, Flyway, sagas) and matching Angular/TypeScript artefacts. It is not a runtime, not a framework, and not a host-application — it runs at `javac` time and at `npm run build` time, and its output is committed into downstream user apps.
 
-Two builds live here:
-
-- **Java reactor** (`mvn install`) — `exeris-processor`, `exeris-codegen-core`, `exeris-codegen-java`, `exeris-e2e-tests`, `exeris-tooling-bom`, `exeris-tooling-parent`.
-- **TypeScript package** (`exeris-codegen-ts` — npm) — **not part of the Maven reactor**. Built independently with `npm install && npm test`. Cross-build coordination is intentional and must stay explicit.
+Two builds live here: the Java reactor (see `<modules>` in the root `pom.xml`), and
+**`exeris-codegen-ts` (npm) — not part of the Maven reactor**. Cross-build coordination is
+intentional and must stay explicit.
 
 The founding decision for the emission strategy is [`docs/adr/ADR-015-codegen-emission-strategy.md`](docs/adr/ADR-015-codegen-emission-strategy.md). Read it before any work in `exeris-codegen-java/*Generator.java`.
 
-Pipeline diagram (canonical, from [`README.md`](README.md)):
-
-```
-@ExerisDomain Order.java
-        ↓
-[ exeris-processor ]               ← javax.lang.model at compile time
-        ↓
-exeris-metadata/Order.json         ← canonical DomainMetadata (records in exeris-sdk-source-model)
-        ↓
-[ exeris-codegen-core ]            ← MetadataLoader + GeneratorRegistry
-   ├── exeris-codegen-java         ← kernel-target Java emission
-   └── exeris-codegen-ts           ← Angular components/services/stores (npm, separate build)
-        ↓
-src/main/generated/{java,typescript}/...  ← committed to repo, regenerated on demand
-```
+Canonical pipeline diagram: see [`README.md`](README.md).
 
 ## Hard constraints (always enforce)
 
@@ -78,26 +63,11 @@ When a kernel SPI change lands in `exeris-kernel`, the corresponding generator u
 Tooling-specific ADRs live in `docs/adr/`. The one currently load-bearing:
 
 - **ADR-015 — Codegen Emission Strategy** (text blocks for text artefacts, JavaPoet for Java, shared scaffold extraction; 0.4.0 implementation target).
-- **ADR-055 — Cap-Tier Wall Guard** (0.7.0): the pipeline reads a **second input class** — compiled bytecode from `target/classes`, not just processor-emitted metadata — to enforce ADR-024 validation predicate 4 in `exeris:verify-capabilities`. Two constraints to respect before touching `CapTierWall`: the scan uses the JDK-standard Class-File API (JEP 484) and must stay dependency-free, and a constant-pool-only walk is **unsound** (it misses types that appear only in descriptors or generic `Signature` attributes), so the five-source extraction union is load-bearing — don't "simplify" it.
-
-- **ADR-058 — Generated-test emission channel** (0.7.0): generated tests go to a **second output
-  root** (`src/test/generated/java`, own `OutputWriter` + T13 manifest, `addTestCompileSourceRoot`),
-  behind the opt-in `exeris.tests` flag. Two constraints before touching `Kernel*TestGenerator`: the
-  emitted tests may import **only JUnit 5 + AssertJ** (tooling emits no `pom.xml`, so every import
-  is a requirement on the consumer's build — doubles are emitted, never mocked), and the gate
-  **runs** the emitted tests rather than compiling them, so a new test emitter is not proven until
-  `GeneratedTestsE2ETest` executes it. This makes `public` + non-final + assignment-only
-  constructors a contract of generated code: the emitted service stub subclasses it.
-
-- **ADR-060 — Generated code logs through `System.Logger`** (0.7.0): the emitters bind **no logging
-  facade**. `slf4j-api` is not a dependency of `exeris-kernel-spi`/`-core` — it reached an app only
-  through the driver tier — so it was a requirement on the consumer's build that no document
-  carried. Three API differences are load-bearing when touching an emitted log call: placeholders
-  are `{0}`/`{1}` (`MessageFormat`), single quotes in a *parameterised* message must be doubled via
-  `KernelScaffold.escapeQuotes` (a placeholder inside quotes is emitted verbatim and its argument
-  silently dropped), and there is no trailing-`Throwable` convention — concatenate the value and use
-  `log(Level, String, Throwable)`. Enforcement is the ADR-058 gate compiling with **no** slf4j on
-  the classpath at all.
+- **ADR-055 / ADR-058 / ADR-060** (0.7.0) — the cap-tier Wall scan, the generated-test emission
+  channel, and `System.Logger` in emitted code. All three carry non-obvious constraints on what
+  tooling may require of the **consumer's** build. Before touching `CapTierWall`,
+  `Kernel*TestGenerator`, `KernelScaffold`, or any emitted log call, invoke the
+  **`exeris-tooling-consumer-build-contracts`** skill — it owns those constraints.
 
 The single-numbering namespace is owned at `~/exeris-systems/exeris-docs/adr-index.md` (per top-level `CLAUDE.md`). Reserve numbers there before drafting. Refactor-only changes do NOT get an ADR — they go in PR descriptions / commit history.
 
@@ -106,13 +76,9 @@ If a change affects pipeline shape, contract between processor and generators, e
 ## Build & test
 
 ```bash
-mvn -s ~/exeris-systems/.github/maven-settings.xml clean install   # full Java reactor (if settings present)
-mvn clean install                                                  # vanilla local build (settings optional)
-mvn -pl exeris-codegen-java -am test                               # one module + deps
+mvn -s ~/exeris-systems/.github/maven-settings.xml clean install   # full Java reactor (settings optional locally)
 mvn -pl exeris-e2e-tests -am test -Dtest=KernelCodegenCompileTest -Dsurefire.failIfNoSpecifiedTests=false   # compile-gate (catches removed-symbol regressions)
 mvn -pl exeris-e2e-tests -am test -Dtest=KernelCodegenE2ETest -Dsurefire.failIfNoSpecifiedTests=false       # substring assertions on emitted output
-
-cd exeris-codegen-ts && npm install && npm test                    # TS side (separate toolchain)
 ```
 
 JDK 26 is required (the processor processes Java 26 preview sources). Maven 3.9+ for Java modules. Node 18+ for `exeris-codegen-ts`.
@@ -139,10 +105,6 @@ Higher source wins; lower source is a doc-drift task.
 English everywhere — source, comments, commit messages, PR titles, ADRs, this file. Conversation with the founder happens in Polish; persisted artefacts are English.
 
 ## Agents, commands, skills
-
-- Functional sub-agents live in `.claude/agents/` (Router, Architect, Implementer, Codegen Verification, Docs/ADR).
-- Reusable slash commands live in `.claude/commands/` (codegen-determinism-check, processor-purity, emitter-parity, kernel-target-discipline).
-- Skill packs live in `.claude/skills/` (task classifier, routing planner, codegen-determinism review, emitter-parity review, processor-discipline review, kernel-target discipline).
 
 See [`.claude/README.md`](.claude/README.md) for layout, and individual `agents/*.md` / `skills/*/SKILL.md` for invocation contracts.
 
