@@ -128,11 +128,16 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
-                    <!-- G3 is the first test here that EXECUTES kernel classes rather than just
-                         compiling against them, and the kernel ships preview-tagged class files
-                         (v70.65535). Scoped to this module: the reactor itself still compiles
-                         without preview. -->
-                    <argLine>@{argLine} --enable-preview</argLine>
+                    <!-- No preview flag. G3 EXECUTES kernel classes rather than only compiling
+                         against them, which is why one was here: kernel 0.10.2 shipped
+                         preview-stamped classes (9 of them in exeris-kernel-core), and a
+                         preview-stamped class will not load without it.
+
+                         Kernel 0.11.0 ships none — measured, 0 stamps across spi/core/community/
+                         community-testkit at class-file major 69 (kernel ADR-066). So the U0 pin
+                         bump removed this flag's only reason to exist, and it goes with it rather
+                         than lingering behind a comment that stopped being true. -->
+                    <argLine>@{argLine}</argLine>
                 </configuration>
             </plugin>
         </plugins>

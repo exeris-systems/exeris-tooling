@@ -238,7 +238,26 @@ what changes is what the emitters produce from them.
 
 ### Dependency floor (hard)
 
-The BOM moves to released **`eu.exeris:exeris-sdk-*:0.9.0` and `eu.exeris:exeris-kernel-*:0.10.2`**.
+The BOM moves to released **`eu.exeris:exeris-sdk-*:0.10.0` and `eu.exeris:exeris-kernel-*:0.11.0`**.
+
+Two things ride along that a version bump does not usually carry.
+
+**The metadata schema stamp moves `0.9.0` → `0.10.0`.** SDK 0.10.0 bumps `SchemaVersion.CURRENT`, and
+the processor stamps it by reading `BaselineTrust.current(...)` rather than the compile-time constant,
+so regenerated `exeris-metadata/*.json` carries the new value with no tooling change. Per ADR-042 a
+pre-0.10.0 baseline reads back as `SCHEMA_VERSION_SKEW` — cross-shape baselines are refused rather
+than assumed compatible — so **re-run codegen once after upgrading**. Nothing in tooling reads a
+baseline for skew today; the refusal is the SDK `-io` reader's, and it is the thing to expect if you
+hold an older `.json` tree.
+
+**Kernel 0.11.0 ships two lines, and this BOM pins the default one.** `eu.exeris:*:0.11.0` is JDK 25
+LTS, class-file major 69, and requires no `--enable-preview` from you (kernel ADR-066); a second line
+publishes the same kernel under `eu.exeris.preview:*:0.11.0` for JDK 28 EA with Valhalla `value
+record`. Generated code is **identical** against either — of the 46 kernel types the emitters name,
+only `EventBus` (javadoc) and `MemoryStats` (the `value` modifier, transparent to a consumer) differ —
+so this is a build choice on your side, not a codegen variant. Note that 0.11.0 is also what makes an
+LTS toolchain reachable at all: 0.10.2 was major 70 and `exeris-kernel-core` carried preview-stamped
+classes, which JDK 25 refuses outright.
 
 ### `@Relationship(relationshipType = …)` is honoured — review your schema diff
 
