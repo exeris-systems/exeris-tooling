@@ -94,10 +94,13 @@
             <scope>test</scope>
         </dependency>
 
-        <!-- Jackson 3 (tools.jackson) on the test classpath: the codegen-
-             emitted Handler parses request bodies via tools.jackson.databind
-             (matching the canonical community-app pattern). Version managed
-             via exeris-tooling-bom (jackson3.version). -->
+        <!-- Jackson 3 (tools.jackson) on the test classpath, for the emitted
+             REPOSITORY, not the handler: KernelRepositoryGenerator persists
+             List<X> fields as JSON columns through ObjectMapper/TypeReference,
+             and is the only emitter that names tools.jackson. Handlers stopped
+             naming it at ADR-036, which moved request-body decode to the
+             HttpRequestBodyDecoder SPI. Version managed via exeris-tooling-bom
+             (jackson3.version). -->
         <dependency>
             <groupId>tools.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
