@@ -17,26 +17,31 @@
 
     <properties>
         <!--
-          SNAPSHOT on purpose while the ADR-059 data-scope slice is in flight:
-          `dataScope`, the AST-owned `DataScope` and
-          `DomainMetadata.effectiveDataScope()` ship in SDK 0.10.0, which is not
-          cut yet. Same window the ADR-044 streaming slice used (0.8.0-SNAPSHOT
-          in cb1f85b, pinned to the released 0.8.0 in 8fb29eb). Bump to the
-          released 0.10.0 — and point the CI checkout back at the v0.10.0 tag —
-          as soon as the SDK cuts it.
+          Released pins (U0). The SNAPSHOT window the ADR-059 slice-A work opened
+          is closed: SDK 0.10.0 ships `dataScope`, the AST-owned `DataScope` and
+          `DomainMetadata.effectiveDataScope()`. Nothing here may go back to a
+          SNAPSHOT — a cross-repo SNAPSHOT blocks cutting any release at all.
         -->
-        <exeris.sdk.version>0.10.0-SNAPSHOT</exeris.sdk.version>
+        <exeris.sdk.version>0.10.0</exeris.sdk.version>
         <!--
-          Deliberately NOT moved for this slice. The SDK 0.10 line pairs with
-          kernel 0.11 (the `sharedScopeKey` carrier behind `DataScope.UNIVERSE`),
-          but 0.11 is unreleased — kernel `main` is 0.10.2 and the amendment
-          lives on `development/0.11.0`. Slice A needs nothing from it: it moves
-          the tenancy decision from `tenantScoped()` to `effectiveDataScope()`
-          without changing the shape of anything emitted. The UNIVERSE → carrier
-          transcription (ADR-059 obligation 5, last part) is slice B, and both
-          pins move together there.
+          Kernel 0.11.0 — the line SDK 0.10 pairs with (the `sharedScopeKey`
+          carrier behind `DataScope.UNIVERSE`, consumed by ADR-059 slice B).
+
+          Load-bearing for what comes next: 0.11.0 is the first kernel whose
+          distributed artifacts are class-file **major 69** with zero preview
+          stamps (kernel ADR-066). 0.10.2 was major 70 and `exeris-kernel-core`
+          carried 9 preview-stamped classes, which JDK 25 refuses outright — so
+          this bump is a hard prerequisite for the JDK-25 LTS descent (U1), not
+          merely adjacent to it. Verified by reading the jars, not the notes.
+
+          0.11.0 also ships as `eu.exeris.preview:*:0.11.0` (JDK 28 EA, Valhalla
+          `value record`). That line is deliberately NOT consumed here: the
+          emitted source is identical across both (of the 46 kernel types the
+          emitters name, only `EventBus` — javadoc-only — and `MemoryStats` —
+          the `value` modifier, transparent to a consumer — differ), so choosing
+          a line is a build-matrix question, never a codegen fork.
         -->
-        <exeris.kernel.version>0.10.2</exeris.kernel.version>
+        <exeris.kernel.version>0.11.0</exeris.kernel.version>
 
         <auto-service.version>1.1.1</auto-service.version>
         <palantir.javapoet.version>0.15.0</palantir.javapoet.version>
