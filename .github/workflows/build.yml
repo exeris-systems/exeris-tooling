@@ -50,9 +50,21 @@ jobs:
           server-username: GITHUB_ACTOR
           server-password: GITHUB_TOKEN
 
+      # japicmp.skip mirrors what the SDK's own CI passes, and it is required from
+      # v0.10.0 on: that release introduced a `semver-gate` japicmp execution bound
+      # to `verify`, which `install` runs. The gate resolves the previous release
+      # jar as its baseline, and `eu.exeris` artifacts are not on Maven Central yet
+      # (deliberately — the SDK does not move to Central before the kernel does), so
+      # a runner has nothing to resolve. An absent baseline is configured to FAIL
+      # rather than report "no breaks found", which is the correct posture for the
+      # SDK and simply not our gate to run: we are building its jars to get the
+      # types on our classpath, not policing its API compatibility.
+      #
+      # Not needed before now — v0.9.0 had no such execution, which is why this
+      # step survived the previous pin unchanged.
       - name: Install exeris-sdk to local Maven repo
         working-directory: exeris-sdk
-        run: mvn -B -ntp -DskipTests install
+        run: mvn -B -ntp -DskipTests -Djapicmp.skip=true install
 
       - name: mvn -B verify (exeris-tooling)
         working-directory: exeris-tooling
