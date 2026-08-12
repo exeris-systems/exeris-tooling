@@ -329,7 +329,76 @@ extraction fix above. The remaining backlog item already targeted at 0.7.0 befor
 was folded in is **T2** (the full test-emitter, Java + the FE spec slice); G0–G3 lead the milestone
 because they gate the cap track, not because T2 was displaced.
 
+### Upstream catch-up (U0–U2) — added 2026-08-12
+
+Kernel 0.11.0 and SDK 0.10.0 both released, and both moved off the JDK this repo pins. The sequence
+below is **forced, not preferred**: 0.10.2 was class-file major 70 (and `exeris-kernel-core` carried
+9 preview-stamped classes), which JDK 25 refuses outright — so the pin bump has to land before the
+LTS descent can even compile. Verified by reading the jars.
+
+- [x] **U0 — release pins.** SDK `0.10.0-SNAPSHOT` → released `0.10.0`, kernel `0.10.2` → `0.11.0`;
+      CI SDK checkout back from the moving `main` ref to the `v0.10.0` tag. A SNAPSHOT pin blocks
+      cutting *any* release, so this is a release blocker rather than a convenience. Rider: SDK
+      bumps `SchemaVersion.CURRENT` `0.9.0` → `0.10.0`, which the processor picks up for free (it
+      stamps from `BaselineTrust.current(...)`, never the inlined constant) — consumers re-run
+      codegen once, per ADR-042 skew. Behaviour-neutral by design and by result: 82 / 99 / 388 / 43
+      / 24, unchanged.
+- [ ] **U1 — JDK 25 LTS baseline.** Enforcer `[26,27)` → `[25,)`, `maven.compiler.release` 26 → 25,
+      `@SupportedSourceVersion(RELEASE_26)` → an override returning `SourceVersion.latestSupported()`
+      (a pinned constant would warn on a consumer compiling at release 28 on the preview line), the
+      two hardcoded `--release 26` sites in `InMemoryJavaCompiler` + `GeneratedTestsE2ETest`, the
+      now-vestigial `--enable-preview` on the e2e surefire JVM, and the README D1 text. Net
+      *removal*. Measured ahead of the work: the whole main pipeline compiles clean at `--release 25`
+      against kernel 0.11.0, with that one `SourceVersion` constant as the sole blocker — the same
+      trap kernel ADR-066 documented. **This is what unblocks LTS consumers**; SDK 0.10.0's notes
+      name this repo as the remaining stop ("an LTS build can compile against the annotations but
+      not run the processor").
+- [ ] **U2 — CI matrix `['25','26']`**, 25 as the release-bearing row, copying the shape SDK 0.10.0
+      adopted. A third `eu.exeris.preview` row is *schedulable* (JDK 28 EA is publicly downloadable)
+      but deliberately not taken yet — see below.
+
+**Not a codegen fork.** Kernel 0.11 ships two lines (`eu.exeris` on JDK 25, `eu.exeris.preview` on
+JDK 28 EA with Valhalla `value record`), but the emitted source is identical against either: of the
+46 kernel types the emitters name, only `EventBus` (javadoc-only) and `MemoryStats` (the `value`
+modifier, transparent to a consumer) differ, and tooling emits no `pom.xml`, so no groupId reaches
+the output. Choosing a line is a build-matrix question. *Emitting* Valhalla shapes ourselves is a
+separate and legitimate question — it would be a language-level profile, not a backend target — but
+the prize today is two emitted record shapes (`<Event>Payload`, `<Action>Request`; entities are
+user-authored and mutable), and it needs measurement first (does the codec/decoder path construct a
+`value record` reflectively; what does the committed-L1 provenance manifest do with a profile stamp).
+Deferred by decision, not blocked.
+
 ## 0.8.0–0.9.0 — feedback-driven cleanups
+
+### Annotation-surface debt (S, C) — inventoried 2026-08-12
+
+An evidence survey against SDK 0.10.0 (matching on `eu.exeris.sdk.annotation.*` FQNs, since a
+word-grep false-positives on `Rule` / `EventHandler` / `GraphEdge` against our own and the kernel's
+types) found the processor names **21 of ~44** annotations.
+
+- [ ] **S1 — `@Saga.version` is never extracted.** `SagaMetadata.version` is never set, so
+      `@Saga(version = 3)` silently yields `1`. Cosmetic until kernel 0.11 / ADR-064, which keys the
+      plan catalog by `(name, version)` and **fails closed on an unregistered version** — so this is
+      now a wrong-output defect with a runtime consequence, not a coverage gap. `KernelSagaGenerator`
+      emits no version at all.
+- [ ] **S2 — a repeated `@SagaStep` yields zero steps** from the processor (SDK 0.10's survey; the
+      `-io` reader yields only the first). `@SagaSteps` compiles and contributes nothing.
+- [ ] **S3 — `@GraphEdge` processor half.** `GraphEdgeMetadata` exists and nobody fills it.
+- [ ] **C0 — strict mode audits the wrong half, and this is why the list above exists.**
+      `-Aexeris.strict` reports *extracted-but-unconsumed*; an attribute the processor never reads is
+      invisible to it, which is why `INERT_ATTRIBUTES` holds 2 entries against ~23 uncovered
+      annotations. Do this first in the C phase — it closes the defect *class* rather than the
+      instances, the same move SDK 0.10 made with its `@Repeatable`-container guard.
+- [ ] **C1 — `annotation.system.*` (10 field-level).** Trap worth naming: `DomainMetadata.systemFields`
+      *is* populated, but from `@ExerisDomain`'s override attributes (`extractSystemFieldsOverrides`),
+      never from `@PrimaryKey` / `@TenantId` / `@Version` / `@SoftDelete*` / `@Audit*`.
+- [ ] **C2 — `annotation.security.*`.** `@Encrypted` and `@RowLevelSecurity`; the latter overlaps the
+      RLS predicate `KernelFlywayGenerator` already drives from `dataScope`, so it needs a design
+      call, not just extraction.
+
+Deliberately **not** debt: `@Projection`, `@EventHandler`, `@Derived`, `@Rule` — AST carriers and
+`DomainMetadata` components exist, filled and read by nobody, and that reservation is design-gated on
+the behavioural corpus rather than overlooked.
 
 - [ ] **T12 + T17 — the cross-app contract mesh epic.** Deferred out of 0.7.0 by the gateway-caps
       plan; ADR-048 is reserved and RFC-2026-06-29 is the design gate that must close first.
