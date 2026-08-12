@@ -45,8 +45,21 @@
 
         <auto-service.version>1.1.1</auto-service.version>
         <palantir.javapoet.version>0.15.0</palantir.javapoet.version>
-        <jackson.version>2.18.8</jackson.version>
-        <jackson3.version>3.0.4</jackson3.version>
+        <!-- 2.18.9 closes the jackson-databind advisories Dependabot raises against
+             2.18.x. Patch-level, no API change. -->
+        <jackson.version>2.18.9</jackson.version>
+        <!-- 3.1.5 does two things at once, and the second is the one worth reading.
+
+             It closes the tools.jackson advisories (everything <= 3.1.4 is affected).
+             It also ends a drift: this property said 3.0.4 while BOTH kernel 0.10.2 and
+             0.11.0 pin Jackson 3 at 3.1.1 — a whole minor apart. The comment below
+             claims this dep tracks "the same Jackson 3 line the Open-Core kernel runtime
+             uses", and that had quietly stopped being true, which means the compile gate
+             was checking emitted `tools.jackson.*` references against a different minor
+             than the kernel actually runs. Being patch-ahead of the kernel inside 3.1 is
+             the right posture for a security bump; being a minor behind was not a
+             posture at all. -->
+        <jackson3.version>3.1.5</jackson3.version>
         <swagger-parser.version>2.1.45</swagger-parser.version>
 
         <junit.version>5.11.4</junit.version>
