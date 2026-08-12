@@ -10,12 +10,11 @@ migrations, sagas, and corresponding Angular/TypeScript frontend artifacts.
 
 ## Requirements
 
-- **Maven on JDK 26 — exactly.** The reactor builds class v70 artifacts (including
-  `exeris-codegen-maven-plugin`, whose classes load into Maven's own JVM), and the
-  annotation processor compiles Java 26 *preview* sources, which javac rejects for a
-  non-current release. A `maven-enforcer` rule fails the build with one clear line on
-  any other JDK (instead of the opaque classworlds `UnsupportedClassVersionError`
-  realm dump you would get at plugin load).
+- **Maven on JDK 25 LTS or newer.** The reactor compiles at `--release 25` and builds
+  class v69 artifacts, including `exeris-codegen-maven-plugin`, whose classes load into
+  Maven's own JVM — so an older JDK dies at plugin load with an opaque classworlds
+  `UnsupportedClassVersionError` realm dump. A `maven-enforcer` rule fails with one
+  clear line instead. No `--enable-preview` anywhere, and none imposed on you.
 - Maven 3.9+ (enforced alongside the JDK rule).
 - Node 18+ to build `exeris-codegen-ts`; the **generated** Angular v22 app targets
   Node 22+.
@@ -49,9 +48,9 @@ src/main/generated/typescript/...  ← Studio-friendly clean output
 
 | Module | Stack | Purpose |
 |---|---|---|
-| [`exeris-processor`](exeris-processor) | Java 26 | Annotation processor — extracts `DomainMetadata` from annotated sources at compile time. Self-registered via `@AutoService`. |
-| [`exeris-codegen-core`](exeris-codegen-core) | Java 26 | Shared infrastructure: `MetadataLoader`, `GeneratorRegistry`, `KernelArtifactGenerator` interface. |
-| [`exeris-codegen-java`](exeris-codegen-java) | Java 26 | Java code generators — kernel-target only (handlers, services, repositories, sagas, events, OpenAPI). |
+| [`exeris-processor`](exeris-processor) | Java 25 | Annotation processor — extracts `DomainMetadata` from annotated sources at compile time. Self-registered via `@AutoService`. |
+| [`exeris-codegen-core`](exeris-codegen-core) | Java 25 | Shared infrastructure: `MetadataLoader`, `GeneratorRegistry`, `KernelArtifactGenerator` interface. |
+| [`exeris-codegen-java`](exeris-codegen-java) | Java 25 | Java code generators — kernel-target only (handlers, services, repositories, sagas, events, OpenAPI). |
 | [`exeris-codegen-ts`](exeris-codegen-ts) | Node 18+ / TypeScript | Angular generators — component, service, store, guard, form, list, detail, app structure, sagas. |
 | [`exeris-e2e-tests`](exeris-e2e-tests) | JUnit 5 | Codegen output verification. Heavyweight runtime integration tests (Postgres, RestAssured) live in downstream platform repos. |
 | `exeris-tooling-bom` | — | Bill of materials. |

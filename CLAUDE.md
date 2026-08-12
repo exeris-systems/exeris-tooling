@@ -115,7 +115,7 @@ mvn -pl exeris-e2e-tests -am test -Dtest=KernelCodegenE2ETest -Dsurefire.failIfN
 cd exeris-codegen-ts && npm install && npm test                    # TS side (separate toolchain)
 ```
 
-JDK 26 is required (the processor processes Java 26 preview sources). Maven 3.9+ for Java modules. Node 18+ for `exeris-codegen-ts`.
+JDK 25 LTS or newer is required (`maven.compiler.release=25`; kernel ADR-066 / SDK ADR-069). Maven 3.9+ for Java modules. Node 18+ for `exeris-codegen-ts`.
 
 `-Aexeris.verbose` (added 0.2.0) controls per-entity processor chatter. Use it locally; leave default-quiet in CI.
 

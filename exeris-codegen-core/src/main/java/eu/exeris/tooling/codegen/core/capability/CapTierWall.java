@@ -54,8 +54,8 @@ import java.util.stream.Stream;
  * </ol>
  *
  * <p>Uses the JDK-standard Class-File API (JEP 484, final in JDK 24) rather than ASM:
- * this repo enforces JDK exactly {@code [26,27)}, so the API is always present and the
- * guard adds <b>no dependency</b> to the build-time path.
+ * this repo enforces JDK {@code [25,)}, so the API is always present and the guard adds
+ * <b>no dependency</b> to the build-time path. Keep it that way.
  *
  * <h2>Not caught (documented limits)</h2>
  * <p>Reflective reach-through ({@code Class.forName("org.springframework…")}) is invisible

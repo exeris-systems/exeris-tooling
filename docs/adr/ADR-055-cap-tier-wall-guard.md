@@ -85,8 +85,10 @@ Every one of the five has its own isolating test in `CapTierWallTest`.
 
 ### No new dependency, and specifically not ASM
 
-`exeris-tooling` enforces JDK exactly `[26,27)`, so the Class-File API (JEP 484, final in
-JDK 24) is always available. ASM appears in this repo only as a build-plugin-scoped override
+`exeris-tooling` enforces JDK `[25,)`, so the Class-File API (JEP 484, final in JDK 24)
+is always available. (The range was `[26,27)` when this ADR was written; U1 widened it to
+the JDK 25 LTS baseline on 2026-08-12. The conclusion is unchanged — JEP 484 predates
+both floors.) ASM appears in this repo only as a build-plugin-scoped override
 for `maven-plugin-plugin`'s descriptor scanner — it is *not* on the plugin's own classpath,
 so using it would have meant adding a real dependency to the build-time path for something
 the platform now ships.

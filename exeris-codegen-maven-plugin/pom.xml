@@ -28,7 +28,7 @@
          root-POM requireMavenVersion [3.9,) enforcer rule (D1, 0.6.0),
          inherited by this module. Note that rule guards *building this
          reactor* — a DOWNSTREAM app running the published plugin on old
-         Maven/JDK still hits the class-v70 plugin-load failure first. -->
+         Maven/JDK still hits the class-v69 plugin-load failure first. -->
 
     <dependencies>
         <!-- The pipeline this plugin wraps. Emission lives entirely here. -->
@@ -79,9 +79,11 @@
                 <version>${maven-plugin-tools.version}</version>
                 <!-- The descriptor scanner (maven-plugin-tools-annotations) reads
                      project + dependency bytecode via ASM. The version bundled in
-                     plugin-tools 3.13.1 predates Java 26 (class major 70) and aborts
-                     with "Unsupported class file major version 70" on the codegen-java
-                     dependency. Override ASM to 9.9.x, which supports Java 26. -->
+                     plugin-tools 3.13.1 aborts with "Unsupported class file major
+                     version 69" on the codegen-java dependency, so the ASM override
+                     is still required after the JDK-25 descent — re-measured, not
+                     assumed. Drop it only when plugin-tools bundles an ASM that
+                     reads major 69. -->
                 <dependencies>
                     <dependency>
                         <groupId>org.ow2.asm</groupId>

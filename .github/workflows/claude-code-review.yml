@@ -30,7 +30,7 @@ jobs:
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number }}
 
-            Review this PR. The repo is a Java 26 / Maven project in the Exeris
+            Review this PR. The repo is a Java 25 (LTS) / Maven project in the Exeris
             open-core stack.
 
             Focus on:

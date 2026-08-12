@@ -43,13 +43,23 @@ import java.util.*;
         "eu.exeris.sdk.annotation.capability.CapabilityModule",
         "eu.exeris.sdk.annotation.View"
 })
-@SupportedSourceVersion(SourceVersion.RELEASE_26)
 @SupportedOptions({ExerisDomainProcessor.OPTION_VERBOSE, ExerisDomainProcessor.OPTION_STRICT})
 @SuppressWarnings({
         "PMD.TooManyMethods",
         "PMD.CouplingBetweenObjects"
 })
 public class ExerisDomainProcessor extends AbstractProcessor {
+
+    /**
+     * Tracks the running compiler instead of a pinned constant — a literal in
+     * {@code @SupportedSourceVersion} warns on any consumer compiling at a higher release
+     * (the kernel's {@code preview} line compiles at 28). Safe because nothing read here is
+     * release-sensitive: annotations and {@code TypeMirror}s only, all {@code SOURCE}-retained.
+     */
+    @Override
+    public SourceVersion getSupportedSourceVersion() {
+        return SourceVersion.latestSupported();
+    }
 
     /**
      * Metadata output directory name.

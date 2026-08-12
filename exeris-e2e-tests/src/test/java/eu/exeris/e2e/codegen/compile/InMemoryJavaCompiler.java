@@ -75,15 +75,11 @@ public final class InMemoryJavaCompiler {
             compilationUnits.add(new SourceFileObject(entry.getKey(), entry.getValue()));
         }
 
-        // The kernel SPI (exeris-kernel-spi) is compiled on JDK 26 with
-        // --enable-preview, so its class files are tagged as using preview
-        // features. javac refuses to *load* such class files unless the
-        // consuming compilation also enables preview for the same release —
-        // otherwise every generated artifact that imports an SPI type fails
-        // with "uses preview features of Java SE 26". Pass the matching flags so
-        // the gate exercises the real preview SPI rather than tripping on the
-        // class-file version check.
-        List<String> options = List.of("--release", "26", "--enable-preview");
+        // Must match the reactor's maven.compiler.release: the gate compiles emitted
+        // code against the real kernel SPI, so it has to be the release a consumer
+        // actually gets. No --enable-preview — kernel 0.11.0 ships no preview-stamped
+        // classes, and adding it back would re-pin this to one exact JDK.
+        List<String> options = List.of("--release", "25");
 
         boolean success = compiler
                 .getTask(null, fileManager, diagnostics, options, null, compilationUnits)

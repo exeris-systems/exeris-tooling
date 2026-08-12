@@ -36,7 +36,7 @@ cross-reference index, so it retains shipped items alongside open ones.
 
 > Goal: `mvn exeris:generate` and `mvn exeris:detach` are first-class build steps in user apps.
 
-- [x] `exeris-codegen-maven-plugin` module — `maven-plugin` packaging, reactor-wired; a thin Maven shell over `CodegenPipeline` (no emission logic). ASM override (9.9.x) on `maven-plugin-plugin` so the descriptor scanner reads Java 26 (class major 70) bytecode
+- [x] `exeris-codegen-maven-plugin` module — `maven-plugin` packaging, reactor-wired; a thin Maven shell over `CodegenPipeline` (no emission logic). ASM override (9.9.x) on `maven-plugin-plugin` so the descriptor scanner reads the reactor's bytecode
 - [x] `exeris:generate` — bound to `generate-sources`; runs the pipeline against the processor-emitted `DomainMetadata` and writes to `src/main/generated/java`, registering it as a compile source root (`skip` / `addCompileSourceRoot` toggles)
 - [x] `exeris:detach` — promotes generated code to `src/main/java/`, prunes the emptied tree, strips the `.gitignore` entry (L2). Idempotent; never overwrites an owned file (conflicts reported, `failOnConflict` opt-in). Logic in a testable `DetachService`
 - [ ] `exeris:reattach` — inverse; re-enables on-demand regen. **Blocked on SDK 0.3.0** source-model round-trip (must re-derive `DomainMetadata` from owned `.java` to know what to regenerate)
@@ -176,7 +176,7 @@ See the **Codegen completeness backlog** below for per-item detail.
       files and misses a violation pulled in transitively when a dependency changes. Decided in
       [ADR-055](docs/adr/ADR-055-cap-tier-wall-guard.md), which also records the two findings that
       shaped it: the scan needs **no new dependency** (JDK-standard Class-File API, JEP 484 — not
-      ASM, since the repo pins JDK exactly `[26,27)`), and a constant-pool walk alone is
+      ASM, since the repo pins a JDK floor the API predates), and a constant-pool walk alone is
       **unsound** (a `void configure(ApplicationContext)` parameter and a `List<Forbidden>` type
       argument appear only in a descriptor and a `Signature` attribute respectively), so the
       extraction surface — pool ∪ descriptors ∪ signatures ∪ annotations — is the load-bearing
@@ -343,7 +343,7 @@ LTS descent can even compile. Verified by reading the jars.
       stamps from `BaselineTrust.current(...)`, never the inlined constant) — consumers re-run
       codegen once, per ADR-042 skew. Behaviour-neutral by design and by result: 82 / 99 / 388 / 43
       / 24, unchanged.
-- [ ] **U1 — JDK 25 LTS baseline.** Enforcer `[26,27)` → `[25,)`, `maven.compiler.release` 26 → 25,
+- [x] **U1 — JDK 25 LTS baseline.** Enforcer `[26,27)` → `[25,)`, `maven.compiler.release` 26 → 25,
       `@SupportedSourceVersion(RELEASE_26)` → an override returning `SourceVersion.latestSupported()`
       (a pinned constant would warn on a consumer compiling at release 28 on the preview line), the
       two hardcoded `--release 26` sites in `InMemoryJavaCompiler` + `GeneratedTestsE2ETest`, the
@@ -352,7 +352,11 @@ LTS descent can even compile. Verified by reading the jars.
       against kernel 0.11.0, with that one `SourceVersion` constant as the sole blocker — the same
       trap kernel ADR-066 documented. **This is what unblocks LTS consumers**; SDK 0.10.0's notes
       name this repo as the remaining stop ("an LTS build can compile against the annotations but
-      not run the processor").
+      not run the processor"). Pinned by a new `ClassFileBaselineTest`, which reads the emitted
+      class files rather than the build property — the two can disagree, and the bytes are what a
+      consumer's JVM refuses. Proven to fail by building at release 26. The ASM override on
+      `maven-plugin-plugin` was re-measured and **stays**: plugin-tools 3.13.1 aborts on major 69
+      too, not just 70.
 - [ ] **U2 — CI matrix `['25','26']`**, 25 as the release-bearing row, copying the shape SDK 0.10.0
       adopted. A third `eu.exeris.preview` row is *schedulable* (JDK 28 EA is publicly downloadable)
       but deliberately not taken yet — see below.
@@ -423,7 +427,7 @@ the behavioural corpus rather than overlooked.
 
 ## Codegen completeness backlog
 
-> Tooling gaps surfaced by exercising the full pipeline (processor + codegen + `javac` JDK 26 + the
+> Tooling gaps surfaced by exercising the full pipeline (processor + codegen + `javac` + the
 > Angular emitter) against a larger, multi-aggregate, multi-service domain than the `Order` sample.
 > Each item is the gap plus the concrete *needed update*; SDK/kernel/DX halves of these findings are
 > owned and tracked in their own repos. Where a tooling fix has an SDK/kernel counterpart
@@ -535,7 +539,7 @@ the behavioural corpus rather than overlooked.
       (`@Relationship Customer customer`) normalise correctly. Deterministic (sorted by name; generate-twice
       tests). `KernelCodegenCompileTest` fixture grew a `filterable` field + a `MANY_TO_ONE` relationship so the
       finders/indexes are javac-compiled against the real kernel SPI — which surfaced and fixed a harness gap:
-      `InMemoryJavaCompiler` now passes `--enable-preview --release 26` (it previously couldn't load the
+      `InMemoryJavaCompiler` then passed `--enable-preview --release 26` (it previously couldn't load the
       Java-26-preview kernel-spi 0.10 classes). Server-side only — no HTTP/client finder (would need a served
       route; no TS surface, parity-neutral). **T9 FK *constraints* also ship here** as a single trailing
       `V3000000__foreign_keys` migration (`KernelApplicationGenerator.generateForeignKeys`, wired in
@@ -932,6 +936,8 @@ Proposals, highest return-on-effort first:
       with one clear line at `validate`; README **Requirements** section moved up-front and rewritten
       ("Maven on JDK 26 — exactly", Node floors for generator vs generated app, released-pin resolution
       via GitHub Packages or the `v0.8.0` / 0.10.0 release tags).
+      *Superseded in 0.7.0 by U1:* the range widened to `[25,)` and the plugin's classes are v69. The
+      failure mode D1 exists to catch is unchanged — only the floor moved, and it moved down.
 
 - [ ] **D2 — Document the two-pass first build.** The processor writes
       `target/classes/exeris-metadata/*.json` during `compile`, which runs *after* the plugin's

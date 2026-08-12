@@ -229,6 +229,9 @@ compilation pins the release) with Maven 3.9+ (D1). This guards contributors bui
 *this* repo; downstream apps are unaffected beyond the JDK 26 requirement they already had
 for running the processor/plugin.
 
+> **Superseded in the 0.7.0 train** — the floor is now `[25,)` and no preview flag is used.
+> See "JDK floor drops 26 → 25 LTS" below; this paragraph describes 0.6.0 as shipped.
+
 ---
 
 ## 0.7.0 train — regeneration deltas
@@ -258,6 +261,22 @@ only `EventBus` (javadoc) and `MemoryStats` (the `value` modifier, transparent t
 so this is a build choice on your side, not a codegen variant. Note that 0.11.0 is also what makes an
 LTS toolchain reachable at all: 0.10.2 was major 70 and `exeris-kernel-core` carried preview-stamped
 classes, which JDK 25 refuses outright.
+
+### JDK floor drops 26 → 25 LTS — a widening, and it may remove work from your build
+
+Tooling now compiles at `--release 25` and publishes class-file **major 69**, with no
+`--enable-preview` anywhere (kernel ADR-066, SDK ADR-069). The `maven-enforcer` range moves from
+exactly `[26,27)` to open-ended `[25,)`.
+
+For you this only ever adds toolchains: anything that built on JDK 26 still does, and JDK 25 LTS
+becomes usable where a major-70 artifact was refused outright. `exeris-codegen-maven-plugin`'s
+classes load into Maven's own JVM, so this floor is the real constraint on which JDK your Maven can
+run — that is what previously stopped an LTS-only shop from running the processor at all.
+
+**Two things you can now delete**, if you added them only for us: any `--enable-preview` you were
+passing to build against preview-stamped kernel classes, and any JDK-26 pin in CI. Neither is
+required by anything this repo publishes. If your own code uses preview features, keep your flags —
+they were never ours to remove.
 
 ### `@Relationship(relationshipType = …)` is honoured — review your schema diff
 
