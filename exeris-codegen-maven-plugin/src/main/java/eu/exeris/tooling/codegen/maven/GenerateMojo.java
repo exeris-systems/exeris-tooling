@@ -162,6 +162,19 @@ public class GenerateMojo extends AbstractMojo {
     public void execute() throws MojoExecutionException, MojoFailureException {
         if (skip) {
             getLog().info("exeris:generate skipped (exeris.codegen.skip=true)");
+            // Skipping *generation* is not skipping the committed tree. Under the L1
+            // model the generated sources are checked in and hand-written code compiles
+            // against them, so the roots must stay on the compile path or javac cannot
+            // see types that are sitting right there on disk. This matters most on the
+            // one path that is documented to use the flag: the T18 recipe
+            // `mvn compile -Dexeris.codegen.skip=true` seeds metadata for the
+            // generate-sources/compile phase inversion, and before this it turned a
+            // "refusing to wipe the committed tree" failure into a "cannot find symbol"
+            // one for every consumer with glue over generated types.
+            registerSourceRoots();
+            if (generateTests) {
+                registerTestSourceRoot();
+            }
             return;
         }
 
@@ -191,16 +204,36 @@ public class GenerateMojo extends AbstractMojo {
                     "Code generation failed (metadataDir=" + metadataDir + ")", e);
         }
 
-        // Registered unconditionally (not gated on a generated-file count): the
-        // committed generated tree from prior runs must be on the compile path
-        // even when THIS run wrote nothing (no new metadata, or steady-state
-        // regen of unchanged sources). An absent/empty root is harmless to Maven.
+        registerSourceRoots();
+
+        generateTests();
+    }
+
+    /**
+     * Puts the generated tree on the compile path.
+     *
+     * <p>Registered unconditionally (not gated on a generated-file count): the
+     * committed generated tree from prior runs must be on the compile path even
+     * when THIS run wrote nothing — no new metadata, a steady-state regen of
+     * unchanged sources, or generation skipped outright. An absent or empty root
+     * is harmless to Maven.
+     */
+    private void registerSourceRoots() {
         if (addCompileSourceRoot && project != null) {
             project.addCompileSourceRoot(outputDir.getAbsolutePath());
             getLog().debug("Registered compile source root: " + outputDir);
         }
+    }
 
-        generateTests();
+    /**
+     * Puts the generated <em>test</em> tree on the test-compile path, for the same
+     * reason {@link #registerSourceRoots()} does it for main sources.
+     */
+    private void registerTestSourceRoot() {
+        if (addCompileSourceRoot && project != null) {
+            project.addTestCompileSourceRoot(testOutputDir.getAbsolutePath());
+            getLog().debug("Registered test compile source root: " + testOutputDir);
+        }
     }
 
     /**
@@ -222,10 +255,7 @@ public class GenerateMojo extends AbstractMojo {
             throw new MojoExecutionException(
                     "Test generation failed (testOutputDir=" + testOutputDir + ")", e);
         }
-        if (addCompileSourceRoot && project != null) {
-            project.addTestCompileSourceRoot(testOutputDir.getAbsolutePath());
-            getLog().debug("Registered test compile source root: " + testOutputDir);
-        }
+        registerTestSourceRoot();
     }
 
     /**

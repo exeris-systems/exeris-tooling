@@ -116,7 +116,7 @@ class GenerateMojoTest {
     }
 
     @Test
-    @DisplayName("skip=true short-circuits — no generation, no source root")
+    @DisplayName("skip=true suppresses generation but still registers the committed tree")
     void skipShortCircuits(@TempDir Path tmp) throws Exception {
         List<Call> calls = new ArrayList<>();
         GenerateMojo mojo = mojo(tmp, calls);
@@ -125,6 +125,38 @@ class GenerateMojoTest {
         mojo.execute();
 
         assertThat(calls).isEmpty();
+        // Skipping generation must not un-register the committed L1 tree: hand-written
+        // code compiles against it, and the documented T18 recipe
+        // (`mvn compile -Dexeris.codegen.skip=true`) is exactly this path.
+        assertThat(mojo.project.getCompileSourceRoots())
+                .contains(mojo.outputDir.getAbsolutePath());
+    }
+
+    @Test
+    @DisplayName("skip=true leaves the generated-test tree on the test-compile path too")
+    void skipStillRegistersTestRoot(@TempDir Path tmp) throws Exception {
+        GenerateMojo mojo = mojo(tmp, new ArrayList<>());
+        mojo.skip = true;
+        mojo.generateTests = true;
+        mojo.testPipeline = (m, o, b) -> {
+            throw new AssertionError("nothing runs when the whole pipeline is skipped");
+        };
+
+        mojo.execute();
+
+        assertThat(mojo.project.getTestCompileSourceRoots())
+                .contains(mojo.testOutputDir.getAbsolutePath());
+    }
+
+    @Test
+    @DisplayName("skip=true honours addCompileSourceRoot=false")
+    void skipRespectsSourceRootOptOut(@TempDir Path tmp) throws Exception {
+        GenerateMojo mojo = mojo(tmp, new ArrayList<>());
+        mojo.skip = true;
+        mojo.addCompileSourceRoot = false;
+
+        mojo.execute();
+
         assertThat(mojo.project.getCompileSourceRoots())
                 .doesNotContain(mojo.outputDir.getAbsolutePath());
     }
