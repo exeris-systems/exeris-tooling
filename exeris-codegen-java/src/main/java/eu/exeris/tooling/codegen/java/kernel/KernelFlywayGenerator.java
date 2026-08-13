@@ -60,9 +60,15 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
             ALTER TABLE %1$s ENABLE ROW LEVEL SECURITY;
             ALTER TABLE %1$s FORCE ROW LEVEL SECURITY;
 
+            -- NULLIF is load-bearing, not defensive noise. current_setting(…, true) yields NULL
+            -- only while the GUC has never been set in this session; once set and then RESET —
+            -- which is what a connection pool does when it hands a connection back — it yields
+            -- the empty string, and ''::uuid raises "invalid input syntax for type uuid". That
+            -- turns every subsequent query on a recycled connection into an error instead of a
+            -- closed door. NULLIF maps both states onto NULL, so an unbound tenant sees nothing.
             CREATE POLICY %1$s_tenant_policy ON %1$s
-                USING (%2$s = current_setting('app.tenant_id', true)::uuid)
-                WITH CHECK (%2$s = current_setting('app.tenant_id', true)::uuid);
+                USING (%2$s = NULLIF(current_setting('app.tenant_id', true), '')::uuid)
+                WITH CHECK (%2$s = NULLIF(current_setting('app.tenant_id', true), '')::uuid);
             """;
 
     @Override

@@ -91,9 +91,15 @@ class KernelFlywayGeneratorTest {
                 ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
                 ALTER TABLE orders FORCE ROW LEVEL SECURITY;
 
+                -- NULLIF is load-bearing, not defensive noise. current_setting(…, true) yields NULL
+                -- only while the GUC has never been set in this session; once set and then RESET —
+                -- which is what a connection pool does when it hands a connection back — it yields
+                -- the empty string, and ''::uuid raises "invalid input syntax for type uuid". That
+                -- turns every subsequent query on a recycled connection into an error instead of a
+                -- closed door. NULLIF maps both states onto NULL, so an unbound tenant sees nothing.
                 CREATE POLICY orders_tenant_policy ON orders
-                    USING (tenant_id = current_setting('app.tenant_id', true)::uuid)
-                    WITH CHECK (tenant_id = current_setting('app.tenant_id', true)::uuid);
+                    USING (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)
+                    WITH CHECK (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid);
                 """);
     }
 
@@ -264,8 +270,8 @@ class KernelFlywayGeneratorTest {
                 .contains("    deleted BOOLEAN DEFAULT FALSE")
                 // tenant index + RLS predicate use the overridden tenant column.
                 .contains("CREATE INDEX IF NOT EXISTS idx_orders_tenant ON orders(org_id);")
-                .contains("USING (org_id = current_setting('app.tenant_id', true)::uuid)")
-                .contains("WITH CHECK (org_id = current_setting('app.tenant_id', true)::uuid)")
+                .contains("USING (org_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)")
+                .contains("WITH CHECK (org_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)")
                 // The default tenant_id *column* must NOT leak (the 'app.tenant_id'
                 // GUC key is unrelated and legitimately retains the name).
                 .doesNotContain("tenant_id UUID")
