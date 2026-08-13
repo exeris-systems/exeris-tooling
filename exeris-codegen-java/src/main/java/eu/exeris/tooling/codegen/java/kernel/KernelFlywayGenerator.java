@@ -51,8 +51,14 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
     // The tenant column is parameterised so a tenantIdField override (T5) keeps
     // the RLS predicate aligned with the actual column.
     private static final String RLS_TEMPLATE = """
-            -- Row Level Security for tenant isolation
+            -- Row Level Security for tenant isolation.
+            -- FORCE is not redundant with ENABLE: PostgreSQL exempts a table's OWNER from
+            -- its policies unless the table is forced, so an application connecting as the
+            -- role that owns the schema would read every tenant's rows with no error and no
+            -- warning. That is the default shape of any quick-start or dev runtime, so the
+            -- guarantee cannot be left to depend on which role connects.
             ALTER TABLE %1$s ENABLE ROW LEVEL SECURITY;
+            ALTER TABLE %1$s FORCE ROW LEVEL SECURITY;
 
             CREATE POLICY %1$s_tenant_policy ON %1$s
                 USING (%2$s = current_setting('app.tenant_id', true)::uuid)
@@ -91,13 +97,19 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
 
     /**
      * Deterministic Flyway version — no wall-clock (hard-constraint #3): same
-     * {@code DomainMetadata} → same filename. Tenant-scoped tables (which emit a
-     * {@code REFERENCES tenants(id)} FK) tier above unscoped ones so the referenced
-     * table is created first; within a tier the order is a stable FQN hash. The
-     * tenant FK is the only cross-table reference this generator emits, so a
-     * two-tier scheme suffices. The {@code tenants} table itself is pinned to tier 1
-     * regardless of its flags, so the guarantee holds even if a {@code Tenant}
-     * entity is (mistakenly) marked tenant-scoped.
+     * {@code DomainMetadata} → same filename. Tenant-scoped tables tier above
+     * unscoped ones; within a tier the order is a stable FQN hash. A {@code tenants}
+     * table, if the consumer declares one, is pinned to tier 1 regardless of its flags.
+     *
+     * <p>The tiering originally existed to order a {@code REFERENCES tenants(id)} FK
+     * ahead of its target. That FK is no longer emitted — it referenced a table no
+     * generator produces, which made the schema inapplicable to an empty database —
+     * so this generator currently emits <em>no</em> cross-table references and the
+     * ordering is not load-bearing today. It is retained deliberately: it costs
+     * nothing, keeps filenames stable for already-committed migrations, and is the
+     * hook the FK work (T9) will need. <b>T9 must revisit it</b> — a general
+     * inter-entity FK needs dependency-ordered versions, which two tiers cannot
+     * express.
      *
      * <p><b>Collision:</b> the discriminator space is 1,000,000 per tier. For
      * realistic models (far fewer than ~1,000 entities per tier) collisions are
@@ -119,7 +131,15 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
         emittedColumns.add("id");
 
         if (isTenantPartitioned(metadata)) {
-            columns.add("    " + tenantColumn(metadata) + " UUID NOT NULL REFERENCES tenants(id)");
+            // No REFERENCES tenants(id): the emitted schema must apply to an empty database,
+            // and no generator emits a `tenants` table — an FK to it made every tenant-scoped
+            // migration fail on a fresh Postgres (19 of 22 in the Stellar corpus). Nothing the
+            // platform does needs the constraint: the RLS predicate below filters on
+            // current_setting('app.tenant_id') and never joins the tenant table. Emitting a
+            // tenant registry instead would mean this generator inventing a table shape the
+            // platform has never specified; if referential integrity is wanted, that contract
+            // should be declared upstream rather than assumed here.
+            columns.add("    " + tenantColumn(metadata) + " UUID NOT NULL");
             emittedColumns.add(tenantColumn(metadata));
         }
 

@@ -61,7 +61,7 @@ class KernelFlywayGeneratorTest {
 
                 CREATE TABLE IF NOT EXISTS orders (
                     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                    tenant_id UUID NOT NULL REFERENCES tenants(id),
+                    tenant_id UUID NOT NULL,
                     order_number VARCHAR(255) NOT NULL UNIQUE,
                     customer_name VARCHAR(255) NOT NULL,
                     amount DECIMAL(19,4) NOT NULL,
@@ -82,8 +82,14 @@ class KernelFlywayGeneratorTest {
                 CREATE INDEX IF NOT EXISTS idx_orders_order_number ON orders(order_number);
                 CREATE INDEX IF NOT EXISTS idx_orders_customer_name ON orders(customer_name);
 
-                -- Row Level Security for tenant isolation
+                -- Row Level Security for tenant isolation.
+                -- FORCE is not redundant with ENABLE: PostgreSQL exempts a table's OWNER from
+                -- its policies unless the table is forced, so an application connecting as the
+                -- role that owns the schema would read every tenant's rows with no error and no
+                -- warning. That is the default shape of any quick-start or dev runtime, so the
+                -- guarantee cannot be left to depend on which role connects.
                 ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
+                ALTER TABLE orders FORCE ROW LEVEL SECURITY;
 
                 CREATE POLICY orders_tenant_policy ON orders
                     USING (tenant_id = current_setting('app.tenant_id', true)::uuid)
@@ -136,8 +142,10 @@ class KernelFlywayGeneratorTest {
         // table — no tenant column, no index, no policy — for an author who had
         // declared TENANT in the canonical way. Silent, and only visible in prod.
         assertThat(file.content())
-                .contains("tenant_id UUID NOT NULL REFERENCES tenants(id)")
-                .contains("ENABLE ROW LEVEL SECURITY");
+                .contains("tenant_id UUID NOT NULL")
+                .doesNotContain("REFERENCES tenants(id)")
+                .contains("ENABLE ROW LEVEL SECURITY")
+                .contains("FORCE ROW LEVEL SECURITY");
         // Tier 2 in the migration version, so it sorts after the tenants table.
         assertThat(file.className()).startsWith("V2");
     }
@@ -160,8 +168,10 @@ class KernelFlywayGeneratorTest {
         // would drop the owner column and the policy and publish rows the
         // author scoped to an owner; that is the direction that must not fail.
         assertThat(file.content())
-                .contains("tenant_id UUID NOT NULL REFERENCES tenants(id)")
-                .contains("ENABLE ROW LEVEL SECURITY");
+                .contains("tenant_id UUID NOT NULL")
+                .doesNotContain("REFERENCES tenants(id)")
+                .contains("ENABLE ROW LEVEL SECURITY")
+                .contains("FORCE ROW LEVEL SECURITY");
         assertThat(file.className()).startsWith("V2");
     }
 
@@ -246,7 +256,7 @@ class KernelFlywayGeneratorTest {
 
         String sql = generator.generate(metadata).content();
         assertThat(sql)
-                .contains("    org_id UUID NOT NULL REFERENCES tenants(id)")
+                .contains("    org_id UUID NOT NULL")
                 .contains("    modified_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP")
                 .contains("    rev BIGINT DEFAULT 0")
                 // createdAt / deleted left at defaults.
