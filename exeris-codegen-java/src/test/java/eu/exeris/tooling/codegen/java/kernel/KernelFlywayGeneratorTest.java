@@ -83,23 +83,15 @@ class KernelFlywayGeneratorTest {
                 CREATE INDEX IF NOT EXISTS idx_orders_customer_name ON orders(customer_name);
 
                 -- Row Level Security for tenant isolation.
-                -- FORCE is not redundant with ENABLE: PostgreSQL exempts a table's OWNER from
-                -- its policies unless the table is forced, so an application connecting as the
-                -- role that owns the schema would read every tenant's rows with no error and no
-                -- warning. That is the default shape of any quick-start or dev runtime, so the
-                -- guarantee cannot be left to depend on which role connects.
+                -- FORCE: PostgreSQL exempts a table's owner from its own policies without it.
                 ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
                 ALTER TABLE orders FORCE ROW LEVEL SECURITY;
 
-                -- NULLIF is load-bearing, not defensive noise. current_setting(…, true) yields NULL
-                -- only while the GUC has never been set in this session; once set and then RESET —
-                -- which is what a connection pool does when it hands a connection back — it yields
-                -- the empty string, and ''::uuid raises "invalid input syntax for type uuid". That
-                -- turns every subsequent query on a recycled connection into an error instead of a
-                -- closed door. NULLIF maps both states onto NULL, so an unbound tenant sees nothing.
+                -- Session key set by the kernel's RlsConnectionInterceptor.
+                -- NULLIF: a RESET connection reports '' rather than NULL, and ''::uuid raises.
                 CREATE POLICY orders_tenant_policy ON orders
-                    USING (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)
-                    WITH CHECK (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid);
+                    USING (tenant_id = NULLIF(current_setting('exeris.tenant_id', true), '')::uuid)
+                    WITH CHECK (tenant_id = NULLIF(current_setting('exeris.tenant_id', true), '')::uuid);
                 """);
     }
 
@@ -270,8 +262,8 @@ class KernelFlywayGeneratorTest {
                 .contains("    deleted BOOLEAN DEFAULT FALSE")
                 // tenant index + RLS predicate use the overridden tenant column.
                 .contains("CREATE INDEX IF NOT EXISTS idx_orders_tenant ON orders(org_id);")
-                .contains("USING (org_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)")
-                .contains("WITH CHECK (org_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)")
+                .contains("USING (org_id = NULLIF(current_setting('exeris.tenant_id', true), '')::uuid)")
+                .contains("WITH CHECK (org_id = NULLIF(current_setting('exeris.tenant_id', true), '')::uuid)")
                 // The default tenant_id *column* must NOT leak (the 'app.tenant_id'
                 // GUC key is unrelated and legitimately retains the name).
                 .doesNotContain("tenant_id UUID")

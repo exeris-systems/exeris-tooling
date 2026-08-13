@@ -30,6 +30,30 @@ import java.util.Set;
  *       {@link eu.exeris.tooling.codegen.java.support.DataScopeSupport})</li>
  * </ul>
  *
+ * <h2>Row-Level Security</h2>
+ * Three clauses in {@code RLS_TEMPLATE} look like belt-and-braces and are each load-bearing.
+ * All three were found by applying these migrations to a real PostgreSQL for the first time;
+ * none is reachable through H2, and none was reachable while the other two were wrong.
+ *
+ * <ul>
+ *   <li><b>{@code FORCE ROW LEVEL SECURITY}</b> — PostgreSQL exempts a table's <em>owner</em>
+ *       from its own policies unless the table is forced. An application connecting as the role
+ *       that owns the schema (the default in any quick-start or dev runtime) otherwise reads
+ *       every tenant's rows, with no error and no warning.</li>
+ *   <li><b>{@code exeris.tenant_id}</b> — the session key the kernel actually publishes:
+ *       {@code RlsConnectionInterceptor} issues {@code set_config('exeris.tenant_id', …)} on
+ *       every isolation strategy. This generator previously named a key the kernel never
+ *       published, which no policy could match, so a correctly-configured application saw no
+ *       rows and could store none. The key is a cross-repo contract carried as a bare string
+ *       literal on both sides — if the kernel ever exposes it as an SPI constant, emit that
+ *       instead of transcribing it.</li>
+ *   <li><b>{@code NULLIF(…, '')}</b> — {@code current_setting(key, true)} returns NULL only
+ *       while the key has never been set in the session; after a {@code RESET} — what a
+ *       connection pool does on hand-back — it returns the empty string, and {@code ''::uuid}
+ *       raises. Without NULLIF every query on a recycled connection errors instead of returning
+ *       nothing, which is an outage rather than a closed door.</li>
+ * </ul>
+ *
  * @implNote Emission uses Java text blocks + {@link String#join} over a list
  * of column definitions (ADR-015 — JavaPoet does not apply to non-Java
  * artifacts). The {@code KernelFlywayGeneratorTest} golden snapshots are the
@@ -50,25 +74,19 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
     // possible); never pass arbitrary external input through this template.
     // The tenant column is parameterised so a tenantIdField override (T5) keeps
     // the RLS predicate aligned with the actual column.
+    // Emitted into every tenant-scoped migration, so the comments stay short. The reasoning
+    // behind each clause is in this class's Javadoc, under "Row-Level Security".
     private static final String RLS_TEMPLATE = """
             -- Row Level Security for tenant isolation.
-            -- FORCE is not redundant with ENABLE: PostgreSQL exempts a table's OWNER from
-            -- its policies unless the table is forced, so an application connecting as the
-            -- role that owns the schema would read every tenant's rows with no error and no
-            -- warning. That is the default shape of any quick-start or dev runtime, so the
-            -- guarantee cannot be left to depend on which role connects.
+            -- FORCE: PostgreSQL exempts a table's owner from its own policies without it.
             ALTER TABLE %1$s ENABLE ROW LEVEL SECURITY;
             ALTER TABLE %1$s FORCE ROW LEVEL SECURITY;
 
-            -- NULLIF is load-bearing, not defensive noise. current_setting(…, true) yields NULL
-            -- only while the GUC has never been set in this session; once set and then RESET —
-            -- which is what a connection pool does when it hands a connection back — it yields
-            -- the empty string, and ''::uuid raises "invalid input syntax for type uuid". That
-            -- turns every subsequent query on a recycled connection into an error instead of a
-            -- closed door. NULLIF maps both states onto NULL, so an unbound tenant sees nothing.
+            -- Session key set by the kernel's RlsConnectionInterceptor.
+            -- NULLIF: a RESET connection reports '' rather than NULL, and ''::uuid raises.
             CREATE POLICY %1$s_tenant_policy ON %1$s
-                USING (%2$s = NULLIF(current_setting('app.tenant_id', true), '')::uuid)
-                WITH CHECK (%2$s = NULLIF(current_setting('app.tenant_id', true), '')::uuid);
+                USING (%2$s = NULLIF(current_setting('exeris.tenant_id', true), '')::uuid)
+                WITH CHECK (%2$s = NULLIF(current_setting('exeris.tenant_id', true), '')::uuid);
             """;
 
     @Override
@@ -141,7 +159,7 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
             // and no generator emits a `tenants` table — an FK to it made every tenant-scoped
             // migration fail on a fresh Postgres (19 of 22 in the Stellar corpus). Nothing the
             // platform does needs the constraint: the RLS predicate below filters on
-            // current_setting('app.tenant_id') and never joins the tenant table. Emitting a
+            // current_setting('exeris.tenant_id') and never joins the tenant table. Emitting a
             // tenant registry instead would mean this generator inventing a table shape the
             // platform has never specified; if referential integrity is wanted, that contract
             // should be declared upstream rather than assumed here.
