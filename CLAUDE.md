@@ -81,7 +81,7 @@ mvn -pl exeris-e2e-tests -am test -Dtest=KernelCodegenCompileTest -Dsurefire.fai
 mvn -pl exeris-e2e-tests -am test -Dtest=KernelCodegenE2ETest -Dsurefire.failIfNoSpecifiedTests=false       # substring assertions on emitted output
 ```
 
-JDK 26 is required (the processor processes Java 26 preview sources). Maven 3.9+ for Java modules. Node 18+ for `exeris-codegen-ts`.
+JDK 25 or newer is required — a floor, not a pin (U1, 0.7.0). It was exactly 26 while the processor and the compile gates enabled preview to read kernel 0.10.x's preview-tagged SPI class files; kernel 0.11.0 is preview-clean at major 69 (ADR-066) and the SDK followed (ADR-069), so the reactor emits 69 and builds on any JDK from 25 up. Maven 3.9+ for Java modules. Node 18+ for `exeris-codegen-ts`.
 
 `-Aexeris.verbose` (added 0.2.0) controls per-entity processor chatter. Use it locally; leave default-quiet in CI.
 

@@ -343,16 +343,22 @@ LTS descent can even compile. Verified by reading the jars.
       stamps from `BaselineTrust.current(...)`, never the inlined constant) — consumers re-run
       codegen once, per ADR-042 skew. Behaviour-neutral by design and by result: 82 / 99 / 388 / 43
       / 24, unchanged.
-- [ ] **U1 — JDK 25 LTS baseline.** Enforcer `[26,27)` → `[25,)`, `maven.compiler.release` 26 → 25,
+- [x] **U1 — JDK 25 LTS baseline.** ✅ **DONE.** Enforcer `[26,27)` → `[25,)`, `maven.compiler.release` 26 → 25,
       `@SupportedSourceVersion(RELEASE_26)` → an override returning `SourceVersion.latestSupported()`
       (a pinned constant would warn on a consumer compiling at release 28 on the preview line), the
       two hardcoded `--release 26` sites in `InMemoryJavaCompiler` + `GeneratedTestsE2ETest`, the
       now-vestigial `--enable-preview` on the e2e surefire JVM, and the README D1 text. Net
-      *removal*. Measured ahead of the work: the whole main pipeline compiles clean at `--release 25`
-      against kernel 0.11.0, with that one `SourceVersion` constant as the sole blocker — the same
-      trap kernel ADR-066 documented. **This is what unblocks LTS consumers**; SDK 0.10.0's notes
-      name this repo as the remaining stop ("an LTS build can compile against the annotations but
-      not run the processor").
+      *removal*, and it landed as one: the measurement held, with that one `SourceVersion` constant
+      as the sole blocker — the same trap kernel ADR-066 documented. **This is what unblocks LTS
+      consumers**; SDK 0.10.0's notes named this repo as the remaining stop ("an LTS build can
+      compile against the annotations but not run the processor"), and that stop is now cleared.
+      Behaviour-neutral by design and by result: **82 / 99 / 388 / 43 / 24, unchanged from U0**, on a
+      full `mvn install` running on JDK 25; reactor classes verified at class-file major 69. The
+      `@SupportedSourceVersion` constant became a `getSupportedSourceVersion()` override returning
+      `SourceVersion.latestSupported()` rather than a re-pin to `RELEASE_25` — a pinned constant
+      makes javac warn in the build of every consumer compiling at a higher release, and the
+      preview line runs JDK 28 EA. The ASM override stays: 9.9.1 reads 69 and 70 alike, so keeping
+      it costs nothing and leaves the preview line buildable.
 - [ ] **U2 — CI matrix `['25','26']`**, 25 as the release-bearing row, copying the shape SDK 0.10.0
       adopted. A third `eu.exeris.preview` row is *schedulable* (JDK 28 EA is publicly downloadable)
       but deliberately not taken yet — see below.

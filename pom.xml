@@ -104,9 +104,9 @@
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-        <maven.compiler.source>26</maven.compiler.source>
-        <maven.compiler.target>26</maven.compiler.target>
-        <maven.compiler.release>26</maven.compiler.release>
+        <maven.compiler.source>25</maven.compiler.source>
+        <maven.compiler.target>25</maven.compiler.target>
+        <maven.compiler.release>25</maven.compiler.release>
 
         <!-- JaCoCo plugin version (build-plugin, not a dependency) — kept in
              the root POM so exeris-tooling-parent's pluginManagement can
@@ -131,7 +131,10 @@
         <maven.api.version>3.9.9</maven.api.version>
         <maven-plugin-tools.version>3.13.1</maven-plugin-tools.version>
         <!-- ASM override for the plugin descriptor scanner — plugin-tools 3.13.1
-             bundles a pre-Java-26 ASM that cannot read class major version 70. -->
+             bundles an ASM too old to read the class-file majors this reactor
+             emits. Retained across the U1 descent to 25 (major 69): the pinned
+             version reads 69 and 70 alike, so keeping it costs nothing and
+             leaves the preview line (JDK 28 EA) buildable. -->
         <asm.version>9.9.1</asm.version>
     </properties>
 
@@ -165,14 +168,18 @@
         </pluginManagement>
         <plugins>
             <!-- D1: fail fast, with one clear line, when Maven runs on the wrong
-                 JVM. The reactor builds class v70 (Java 26) artifacts — including
+                 JVM. The reactor builds class v69 (Java 25) artifacts — including
                  exeris-codegen-maven-plugin, whose classes load into Maven's own
                  JVM — so on an older JDK the build otherwise dies at plugin load
                  with an opaque classworlds UnsupportedClassVersionError realm
-                 dump, long before maven.compiler.release matters. Exactly 26
-                 (not 26+): the processor and the e2e in-memory compile gate
-                 compile with preview enabled at release 26, and javac rejects
-                 preview compilation for a non-current release. -->
+                 dump, long before maven.compiler.release matters. A floor, not a
+                 point: the exactly-26 pin existed only because the processor and
+                 the e2e in-memory compile gate compiled with preview enabled, and
+                 javac rejects preview compilation for a non-current release. No
+                 path compiles with preview any more (kernel 0.11.0 is
+                 preview-clean at major 69, kernel ADR-066), so the reactor builds
+                 on any JDK from 25 up — which is what admits the LTS consumer. -->
+
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-enforcer-plugin</artifactId>
@@ -185,8 +192,8 @@
                         <configuration>
                             <rules>
                                 <requireJavaVersion>
-                                    <version>[26,27)</version>
-                                    <message>exeris-tooling requires Maven to run on JDK 26 (exactly — the processor compiles Java 26 preview sources). Current JVM: ${java.version}.</message>
+                                    <version>[25,)</version>
+                                    <message>exeris-tooling requires Maven to run on JDK 25 or newer (the reactor emits class-file major 69). Current JVM: ${java.version}.</message>
                                 </requireJavaVersion>
                                 <requireMavenVersion>
                                     <version>[3.9,)</version>

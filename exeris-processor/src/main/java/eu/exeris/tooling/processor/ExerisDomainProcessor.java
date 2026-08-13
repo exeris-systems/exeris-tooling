@@ -43,7 +43,6 @@ import java.util.*;
         "eu.exeris.sdk.annotation.capability.CapabilityModule",
         "eu.exeris.sdk.annotation.View"
 })
-@SupportedSourceVersion(SourceVersion.RELEASE_26)
 @SupportedOptions({ExerisDomainProcessor.OPTION_VERBOSE, ExerisDomainProcessor.OPTION_STRICT})
 @SuppressWarnings({
         "PMD.TooManyMethods",
@@ -211,6 +210,25 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      */
     public ExerisDomainProcessor() {
         // Initialized in init()
+    }
+
+    /**
+     * Reports whatever source version the running {@code javac} supports, rather
+     * than a pinned constant.
+     *
+     * <p>This is deliberately not {@code @SupportedSourceVersion(RELEASE_25)}. A
+     * pinned constant makes {@code javac} emit a "Supported source version …
+     * less than -source" warning in the build of every consumer who compiles at
+     * a higher release than the one this processor was pinned to — and consumers
+     * legitimately do: the kernel's preview line runs on JDK 28 EA. The
+     * processor reads only the annotation surface through
+     * {@code javax.lang.model}, so it has no reason to refuse a newer release.
+     *
+     * @return the latest source version the host compiler supports
+     */
+    @Override
+    public SourceVersion getSupportedSourceVersion() {
+        return SourceVersion.latestSupported();
     }
 
     @Override

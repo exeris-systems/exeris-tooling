@@ -190,9 +190,9 @@ class GeneratedTestsE2ETest {
         List<String> args = new ArrayList<>(List.of(
                 "-d", outputDir.toString(),
                 "-classpath", contractClasspath(),
-                // The kernel SPI ships preview-tagged class files; javac refuses to load them
-                // without this, exactly as InMemoryJavaCompiler does for the same reason.
-                "--enable-preview", "--release", "26",
+                // Pinned to the promised baseline, exactly as InMemoryJavaCompiler does and
+                // for the same reason; the preview flag went away with kernel 0.11.0.
+                "--release", "25",
                 "-nowarn"));
         args.addAll(files);
 
