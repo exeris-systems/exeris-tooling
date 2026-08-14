@@ -145,8 +145,8 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                 if (action.hasParams()) {
                     handlerBuilder.addType(buildActionRequestRecord(action));
                 }
-                handlerBuilder.addMethod(
-                        buildActionHandler(action, entityType, optionalOfEntity, selfType, entityLower));
+                handlerBuilder.addMethod(buildActionHandler(
+                        action, entityType, optionalOfEntity, selfType, entityLower, tenantPartitioned));
             }
         }
 
@@ -237,13 +237,23 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
      *
      *  <p>The field-level {@code @Validation} guard (T10) is intentionally NOT applied here:
      *  an action decodes its own {@code @ActionParam} record and invokes an entity method,
-     *  it does not accept the field-shaped create/update body those rules describe. */
+     *  it does not accept the field-shaped create/update body those rules describe.
+     *
+     *  <p>The tenant guard IS applied, and was missing until finding T45. An action loads the
+     *  aggregate through the same service the CRUD routes use, so with no tenant bound row-level
+     *  security hides the row and the handler answers 404 — telling a caller the entity does not
+     *  exist when it does and the real fault is missing wiring. That is the same undiagnosable
+     *  answer T41 was opened for, wearing a different status code, so it gets the same refusal. */
     private MethodSpec buildActionHandler(ActionMetadata action, ClassName entityType,
                                           TypeName optionalOfEntity, ClassName selfType,
-                                          String entityLower) {
+                                          String entityLower, boolean tenantPartitioned) {
         MethodSpec.Builder method = crudHandler("handle" + NameCasing.pascal(action.name()));
         method.addJavadoc("Serves the {@code $L} action. NOTE (v1): a domain exception from "
                 + "the entity method surfaces as 500, not 4xx.\n", action.name());
+
+        // Before anything else, and before the body is even read: an action on a tenant-scoped
+        // entity cannot be served without a tenant, and answering 404 would be a lie.
+        appendTenantGuard(method, tenantPartitioned);
 
         // id from the {id} path-template variable — the same capture as the by-id
         // CRUD routes; the trailing /actions/{name} segment doesn't change it.

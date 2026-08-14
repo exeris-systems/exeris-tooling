@@ -173,6 +173,11 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      * attribute that now matters. Surfaced only under {@code -Aexeris.strict}.
      */
     private static final List<InertAttribute> INERT_ATTRIBUTES = List.of(
+            new InertAttribute("Action", "path",
+                    "the route is derived as {domainPath}/{id}/actions/{kebab-action-name} and this "
+                            + "value is never read — ActionMetadata carries no path component, so it "
+                            + "does not even reach the JSON. Note it has no default, so every author "
+                            + "is required to write a path the server will not answer on (T44)"),
             new InertAttribute("ActionParam", "description",
                     "the value reaches ActionParamMetadata in the JSON, but no emitter renders "
                             + "it — action-parameter generation reads only the parameter name and type"),
