@@ -62,8 +62,15 @@ export const GeneratorConfigSchema = z.object({
   /** Generate Event handlers */
   generateEvents: z.boolean().default(true),
 
-  /** API base path for generated services */
-  apiBasePath: z.string().default('/api'),
+  /** Prefix in front of every generated service URL.
+   *
+   *  Defaults to '' so the emitted client requests exactly what the emitted server serves:
+   *  KernelApplicationGenerator registers routes at the entity's path and the OpenAPI document
+   *  publishes the same, with no prefix. This defaulted to '/api' — combined with the apiVersion
+   *  segment below, every generated Angular service requested /api/v1/<path> and 404'd against the
+   *  router it was generated alongside. The knob stays for deployments that really do sit behind a
+   *  gateway at /api; the default no longer assumes one. */
+  apiBasePath: z.string().default(''),
 
   /** Human-readable application name — drives the emitted app title,
    *  route titles, sidebar logo text, and scaffold package.json name.
@@ -108,7 +115,7 @@ export const DEFAULT_CONFIG: GeneratorConfig = {
   generateStores: true,
   generateSagas: true,
   generateEvents: true,
-  apiBasePath: '/api',
+  apiBasePath: '',
   appName: 'Exeris Foundation',
   backend: 'KERNEL',
   overwrite: false,
