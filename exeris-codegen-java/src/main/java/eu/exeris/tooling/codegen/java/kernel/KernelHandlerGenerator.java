@@ -9,6 +9,7 @@ import com.palantir.javapoet.ParameterizedTypeName;
 import com.palantir.javapoet.TypeName;
 import com.palantir.javapoet.TypeSpec;
 import com.palantir.javapoet.TypeVariableName;
+import static eu.exeris.tooling.codegen.java.support.DataScopeSupport.isTenantPartitioned;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
@@ -100,6 +101,10 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         TypeName listOfEntity = ParameterizedTypeName.get(LIST, entityType);
         TypeName optionalOfEntity = ParameterizedTypeName.get(OPTIONAL, entityType);
 
+        // A tenant-scoped entity cannot be served without a tenant; a global one can. The guard is
+        // emitted only where its absence would produce a silently-empty response (finding T41).
+        boolean tenantPartitioned = isTenantPartitioned(metadata);
+
         TypeSpec.Builder handlerBuilder = KernelScaffold.publicClass(className)
                 .addJavadoc("Generated HTTP Handler for $L.\n", entity)
                 .addJavadoc("<p>Source: {@link $T}\n", entityType)
@@ -116,11 +121,11 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                         .addParameter(serviceType, "service")
                         .addStatement("this.service = service")
                         .build())
-                .addMethod(buildHandleGetAll(entityLower, listOfEntity))
-                .addMethod(buildHandleGetById(entityLower, optionalOfEntity))
-                .addMethod(buildHandleCreate(entityLower, entityType, metadata.fields()))
-                .addMethod(buildHandleUpdate(entityLower, entityType, metadata.fields()))
-                .addMethod(buildHandleDelete(entityLower));
+                .addMethod(buildHandleGetAll(entityLower, listOfEntity, tenantPartitioned))
+                .addMethod(buildHandleGetById(entityLower, optionalOfEntity, tenantPartitioned))
+                .addMethod(buildHandleCreate(entityLower, entityType, metadata.fields(), tenantPartitioned))
+                .addMethod(buildHandleUpdate(entityLower, entityType, metadata.fields(), tenantPartitioned))
+                .addMethod(buildHandleDelete(entityLower, tenantPartitioned));
 
         // T1: serve @Action methods. Each action gets a handler that loads the
         // aggregate, decodes its @ActionParam body (when any), invokes the actual
@@ -149,6 +154,9 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         // the {id} path-template variable, so a single helper reads it from
         // exchange.pathParams() (kernel 0.10 boot-path, PR #224) — no raw-path string
         // surgery, and no separate action-aware extractor.
+        if (tenantPartitioned) {
+            handlerBuilder.addMethod(buildRespondTenantUnbound(entityLower));
+        }
         handlerBuilder.addMethod(buildExtractPathId());
         handlerBuilder.addMethod(buildParseBody());
 
@@ -158,16 +166,18 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                 KernelScaffold.render(packageName, handler), ArtifactType.CONTROLLER);
     }
 
-    private MethodSpec buildHandleGetAll(String entityLower, TypeName listOfEntity) {
-        MethodSpec.Builder method = crudHandler("handleGetAll")
-                .beginControlFlow("try")
+    private MethodSpec buildHandleGetAll(String entityLower, TypeName listOfEntity, boolean tenantPartitioned) {
+        MethodSpec.Builder method = crudHandler("handleGetAll");
+        appendTenantGuard(method, tenantPartitioned);
+        method.beginControlFlow("try")
                 .addStatement("$T entities = service.findAll()", listOfEntity)
                 .addStatement("exchange.respond($T.OK, entities)", HTTP_STATUS);
         return appendServerErrorCatch(method, "Failed to get all " + entityLower + "s").build();
     }
 
-    private MethodSpec buildHandleGetById(String entityLower, TypeName optionalOfEntity) {
+    private MethodSpec buildHandleGetById(String entityLower, TypeName optionalOfEntity, boolean tenantPartitioned) {
         MethodSpec.Builder method = crudHandler("handleGetById");
+        appendTenantGuard(method, tenantPartitioned);
         appendPathIdGuard(method);
         method.beginControlFlow("try")
                 .addStatement("$T result = service.findById(id)", optionalOfEntity)
@@ -179,8 +189,9 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         return appendServerErrorCatch(method, "Failed to get " + entityLower).build();
     }
 
-    private MethodSpec buildHandleCreate(String entityLower, ClassName entityType, List<FieldMetadata> fields) {
+    private MethodSpec buildHandleCreate(String entityLower, ClassName entityType, List<FieldMetadata> fields, boolean tenantPartitioned) {
         MethodSpec.Builder method = crudHandler("handleCreate");
+        appendTenantGuard(method, tenantPartitioned);
         appendBodyParseGuard(method, entityType);
         appendValidationGuard(method, fields);
         method.beginControlFlow("try")
@@ -189,8 +200,9 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         return appendServerErrorCatch(method, "Failed to create " + entityLower).build();
     }
 
-    private MethodSpec buildHandleUpdate(String entityLower, ClassName entityType, List<FieldMetadata> fields) {
+    private MethodSpec buildHandleUpdate(String entityLower, ClassName entityType, List<FieldMetadata> fields, boolean tenantPartitioned) {
         MethodSpec.Builder method = crudHandler("handleUpdate");
+        appendTenantGuard(method, tenantPartitioned);
         appendPathIdGuard(method);
         appendBodyParseGuard(method, entityType);
         appendValidationGuard(method, fields);
@@ -200,8 +212,9 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         return appendServerErrorCatch(method, "Failed to update " + entityLower).build();
     }
 
-    private MethodSpec buildHandleDelete(String entityLower) {
+    private MethodSpec buildHandleDelete(String entityLower, boolean tenantPartitioned) {
         MethodSpec.Builder method = crudHandler("handleDelete");
+        appendTenantGuard(method, tenantPartitioned);
         appendPathIdGuard(method);
         method.beginControlFlow("try")
                 .addStatement("service.delete(id)")
@@ -315,6 +328,52 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         return MethodSpec.methodBuilder(name)
                 .addModifiers(Modifier.PUBLIC)
                 .addParameter(HTTP_EXCHANGE, EXCHANGE_PARAM);
+    }
+
+    /**
+     * Emits the call site of the tenant guard, for a tenant-partitioned entity only.
+     *
+     * <p>A global entity needs no tenant to be readable, so guarding it would refuse requests that
+     * are perfectly serviceable.
+     */
+    private static void appendTenantGuard(MethodSpec.Builder method, boolean tenantPartitioned) {
+        if (!tenantPartitioned) {
+            return;
+        }
+        method.beginControlFlow("if (!$T.STORAGE_CONTEXT.isBound())", KERNEL_PROVIDERS)
+                .addStatement("respondTenantUnbound(exchange)")
+                .addStatement("return")
+                .endControlFlow();
+    }
+
+    /**
+     * Emits the shared "no tenant is bound" refusal.
+     *
+     * <p>Without this, a request that reaches a tenant-scoped handler with no {@code STORAGE_CONTEXT}
+     * is served: the persistence layer falls back to a system-scope context whose isolation key is
+     * empty, the RLS policy matches no row, and the caller receives {@code 200 []}. Data exists and
+     * the response says there is none — indistinguishable from an empty database, and the single
+     * hardest failure to diagnose in the whole stack.
+     *
+     * <p>Reaching a handler at all means the kernel's own fail-closed gate did not run:
+     * {@code SecurityInterceptor} drops an unauthenticated request before dispatch, so an unbound
+     * context here is a <em>deployment</em> fault rather than a caller fault — hence 500 rather than
+     * 401, and hence a message naming the wiring rather than the request.
+     */
+    private static MethodSpec buildRespondTenantUnbound(String entityLower) {
+        return MethodSpec.methodBuilder("respondTenantUnbound")
+                .addJavadoc("Refuses a tenant-scoped request that carries no tenant.\n")
+                .addModifiers(Modifier.PRIVATE)
+                .addParameter(HTTP_EXCHANGE, EXCHANGE_PARAM)
+                .addStatement("LOG.log($T.ERROR, $S)", KernelScaffold.LOGGER_LEVEL,
+                        "Refusing " + entityLower + " request: no tenant is bound. This entity is "
+                                + "tenant-scoped, so row-level security would return no rows and the "
+                                + "response would be indistinguishable from an empty database. Install "
+                                + "the kernel SecurityInterceptor (which binds PRINCIPAL_CONTEXT and "
+                                + "STORAGE_CONTEXT from an authenticated token) ahead of this router, "
+                                + "or bind KernelProviders.STORAGE_CONTEXT around the dispatch.")
+                .addStatement("exchange.respond($T.INTERNAL_SERVER_ERROR)", HTTP_STATUS)
+                .build();
     }
 
     /** Emits the shared "parse {@code id} from the path or 400" guard: declares a
