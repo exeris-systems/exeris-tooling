@@ -141,8 +141,10 @@ describe('ServiceGenerator apiPath construction precedence', () => {
       .toBe('/api/custom/orders');
   });
 
-  it('apiVersion + path → /<apiVersion><path>', () => {
-    expect(baseUrlFor({ apiVersion: 'v1', path: '/orders' })).toBe('/api/v1/orders');
+  it('apiVersion is NOT folded into the URL — the server serves no version segment', () => {
+    // Emitting /api/v1/orders against a router listening on /orders is what made every generated
+    // service 404. apiVersion reaches no emitted route on either the Java or the TypeScript side.
+    expect(baseUrlFor({ apiVersion: 'v1', path: '/orders' })).toBe('/api/orders');
   });
 
   it('path only (no apiVersion) → just path', () => {

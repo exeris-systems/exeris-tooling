@@ -99,10 +99,12 @@ describe('GeneratorConfigSchema', () => {
 // ---------- DEFAULT_CONFIG ----------
 
 describe('DEFAULT_CONFIG', () => {
-  it('declares a KERNEL+angular default with /api basePath', () => {
+  it('declares a KERNEL+angular default with an unprefixed basePath', () => {
     expect(DEFAULT_CONFIG.backend).toBe('KERNEL');
     expect(DEFAULT_CONFIG.framework).toBe('angular');
-    expect(DEFAULT_CONFIG.apiBasePath).toBe('/api');
+    // '' rather than '/api': the emitted client must request what the emitted server serves, and
+    // the router registers the entity path with no prefix. The knob remains for gateway deployments.
+    expect(DEFAULT_CONFIG.apiBasePath).toBe('');
   });
 
   it('leaves templatesDir undefined (forces resolveTemplatesPath to use the built-in fallback)', () => {
