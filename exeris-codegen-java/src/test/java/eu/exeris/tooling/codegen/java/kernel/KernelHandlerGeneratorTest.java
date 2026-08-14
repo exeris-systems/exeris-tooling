@@ -4,6 +4,7 @@ import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.Artifact
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
 import eu.exeris.sdk.sourcemodel.ast.ActionParamMetadata;
+import eu.exeris.sdk.sourcemodel.ast.DataScope;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 import org.junit.jupiter.api.BeforeEach;
@@ -330,5 +331,41 @@ class KernelHandlerGeneratorTest {
         assertThat(handler)
                 .doesNotContain("quantity == null")
                 .doesNotContain("var quantity = entity.getQuantity()");
+    }
+    @Test
+    @DisplayName("a tenant-scoped entity refuses when no tenant is bound (T41)")
+    void tenantScopedHandlerGuardsAgainstAnUnboundTenant() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .dataScope(DataScope.TENANT)
+                .build();
+
+        String handler = new KernelHandlerGenerator().generate(metadata).content();
+
+        // Without the guard the request is served: persistence falls back to a system-scope context,
+        // the RLS policy matches nothing, and the caller gets 200 [] from a database that has rows.
+        assertThat(handler)
+                .contains("if (!KernelProviders.STORAGE_CONTEXT.isBound())")
+                .contains("respondTenantUnbound(exchange)")
+                .contains("no tenant is bound");
+
+        // Every entry point, not just reads — a write with no tenant fails later and worse.
+        assertThat(handler.split("respondTenantUnbound\\(exchange\\)", -1).length - 1)
+                .as("guard call sites: five CRUD handlers plus the helper's own body")
+                .isGreaterThanOrEqualTo(5);
+    }
+
+    @Test
+    @DisplayName("a global entity is not guarded — it needs no tenant to be readable")
+    void globalHandlerIsUnguarded() {
+        DomainMetadata metadata = DomainMetadata.builder("ShipDesign", "com.example.domain")
+                .dataScope(DataScope.GLOBAL)
+                .build();
+
+        String handler = new KernelHandlerGenerator().generate(metadata).content();
+
+        assertThat(handler)
+                .as("guarding a global entity would refuse perfectly serviceable requests")
+                .doesNotContain("STORAGE_CONTEXT")
+                .doesNotContain("respondTenantUnbound");
     }
 }
