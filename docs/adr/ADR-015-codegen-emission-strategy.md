@@ -27,7 +27,7 @@ This ADR exists because the standing rule is *"architecture-shaping refactors ne
 - **Output stability across 1.x.** We need a layer that knows what a method looks like, not what string a method renders to.
 - **Type and symbol safety.** A missing import or a fat-fingered modifier should fail at codegen-time, not at the user's `mvn compile`.
 - **Zero new logging-style hidden deps.** Per the project's standing rule, `exeris-tooling` does not pull in slf4j or any third-party logging stack. JavaPoet is a different category (a codegen library, not runtime infra), but the rule informs the bar: any new dep must earn its place.
-- **JDK floor is 25.** Text blocks (JEP 378, stable JDK 15) are unconditionally available. *(Read "26" when this ADR was accepted; U1 moved the floor to JDK 25 LTS on 2026-08-16, following kernel ADR-066 / SDK ADR-069. The driver is unaffected either way — text blocks went stable ten releases below either floor.)*
+- **JDK floor is 25.** Text blocks (JEP 378, stable JDK 15) are unconditionally available. *(Read "26" when this ADR was accepted; U1 moved the floor to JDK 25 LTS on 2026-08-12, following kernel ADR-066 / SDK ADR-069. The driver is unaffected either way — text blocks went stable ten-or-more releases below either floor.)*
 - **Sonar coverage gates the 0.4.0 release.** Whatever we pick must measurably reduce duplication, not just relocate it.
 - **Existing dep surface.** We already pull Square's AutoService (`@AutoService`) via the processor module; adding JavaPoet (also Square / Apache 2.0) is a marginal increase in supply-chain surface, not a new vendor.
 
