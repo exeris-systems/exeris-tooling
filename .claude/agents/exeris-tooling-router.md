@@ -31,8 +31,7 @@ If multiple categories apply, route by primary risk first and list required seco
 - Router plans and routes; specialists execute.
 
 ## Recommended Skills (triage and planning only)
-- `exeris-tooling-task-classifier` (must-have)
-- `exeris-tooling-routing-planner` (must-have)
+- `exeris-tooling-triage` (must-have — classification and routing plan in one pass)
 - `exeris-tooling-kernel-target-discipline` (recommended whenever a new generator surface is proposed)
 - `exeris-tooling-codegen-determinism-review` (recommended whenever generator output shape changes)
 

@@ -1,6 +1,6 @@
 ---
 name: exeris-tooling-codegen-determinism-review
-description: Codegen determinism review for exeris-tooling. Use for every PR that touches `*Generator` emission surfaces, scaffold helpers, or text-stable iteration. Catches timestamps, randoms, hash-iteration leakage, and locale-dependent formatting before they reach committed `src/main/generated/`.
+description: Determinism gate for emitted code. Invoke before committing or opening a PR that edits anything under exeris-codegen-java/, exeris-codegen-core/, or exeris-codegen-ts/src/ — especially any *Generator.java, *-gen.ts, KernelScaffold, or OutputWriter — and when reviewing or addressing a review on such a change. Verifies the same DomainMetadata still yields byte-identical output: no Instant.now/System.currentTimeMillis, no UUID.randomUUID, no HashMap/HashSet iteration order leaking into emitted text, no locale-dependent String.format or case conversion.
 ---
 
 # Exeris Tooling Codegen Determinism Review

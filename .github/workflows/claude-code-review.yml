@@ -4,8 +4,20 @@ on:
   pull_request:
     types: [opened, synchronize, ready_for_review, reopened]
 
+# One review per PR at a time. `synchronize` fires on every push, so without this a
+# quick follow-up push leaves two full reviews running against different commits —
+# the older one finishes and posts a verdict on code that no longer exists.
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   claude-review:
+    # Drafts and dependency bumps do not need a full review pass. Draft PRs still
+    # fire `opened`, and a bot PR would otherwise be reviewed once per push.
+    if: >-
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -14,13 +26,13 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
 
       - name: Run Claude Code Review
         id: claude-review
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action@9c41ed18ca8b2b2a17eaef4723d5092ccdebc814 # v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
 
@@ -44,6 +56,12 @@ jobs:
                on publishable modules, Maven Central metadata gaps
             5. **Risk** — call out functional, security, performance risks
                explicitly (state "none" if applicable; don't pad)
+
+            This repo ships its review gates as skills under `.claude/skills/`
+            (determinism, Java/TS emitter parity, processor purity, kernel-target
+            discipline, consumer-build contracts). When the diff touches a surface
+            one of them owns, invoke that skill and fold its verdict into your
+            review rather than re-deriving the rules from scratch.
 
             Skip cosmetic nits unless they affect the above. Be specific: cite
             `file:line`. Lead with blockers, then in-scope improvements, then
