@@ -17,7 +17,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        java: ['26']
+        # 25 is the release-bearing row — the baseline the reactor compiles at and the
+        # toolchain a published artifact must come from. 26 is forward-compatibility:
+        # it catches source that stops compiling on a newer JDK, which a single row
+        # would surface only downstream. Same shape as the SDK's matrix.
+        #
+        # 26 is also still the name in branch protection's required checks, so it stays
+        # until that list is updated to require the 25 row instead.
+        java: ['25', '26']
 
     steps:
       - name: Checkout exeris-tooling
@@ -90,6 +97,8 @@ jobs:
   # Node matrix can evolve independently. The gating jobs ("mvn verify (JDK 26)",
   # "vitest run --coverage (exeris-codegen-ts)", and "ng build (generated sample
   # app)") are in the required-status-checks list on branch protection for main.
+  # The JDK-25 row runs but is not required yet — switching which row gates is a
+  # branch-protection edit, not a workflow one.
   ts-coverage:
     name: vitest run --coverage (exeris-codegen-ts)
     runs-on: ubuntu-latest

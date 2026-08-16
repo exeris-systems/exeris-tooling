@@ -104,9 +104,12 @@
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-        <maven.compiler.source>26</maven.compiler.source>
-        <maven.compiler.target>26</maven.compiler.target>
-        <maven.compiler.release>26</maven.compiler.release>
+        <!-- JDK 25 LTS, per kernel ADR-066 / SDK ADR-069. Do not raise without a
+             reason: exeris-codegen-maven-plugin loads into Maven's own JVM, so this
+             release level is the floor a consumer's Maven must be able to read. -->
+        <maven.compiler.source>25</maven.compiler.source>
+        <maven.compiler.target>25</maven.compiler.target>
+        <maven.compiler.release>25</maven.compiler.release>
 
         <!-- JaCoCo plugin version (build-plugin, not a dependency) — kept in
              the root POM so exeris-tooling-parent's pluginManagement can
@@ -164,15 +167,12 @@
             </plugins>
         </pluginManagement>
         <plugins>
-            <!-- D1: fail fast, with one clear line, when Maven runs on the wrong
-                 JVM. The reactor builds class v70 (Java 26) artifacts — including
-                 exeris-codegen-maven-plugin, whose classes load into Maven's own
-                 JVM — so on an older JDK the build otherwise dies at plugin load
-                 with an opaque classworlds UnsupportedClassVersionError realm
-                 dump, long before maven.compiler.release matters. Exactly 26
-                 (not 26+): the processor and the e2e in-memory compile gate
-                 compile with preview enabled at release 26, and javac rejects
-                 preview compilation for a non-current release. -->
+            <!-- D1: fail fast with one clear line when Maven runs on too old a JVM,
+                 instead of the opaque classworlds UnsupportedClassVersionError realm
+                 dump you get at plugin load, long before maven.compiler.release
+                 matters. Open-ended — the range was only exact while this build
+                 compiled with preview, which javac rejects for a non-current
+                 release. -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-enforcer-plugin</artifactId>
@@ -185,8 +185,8 @@
                         <configuration>
                             <rules>
                                 <requireJavaVersion>
-                                    <version>[26,27)</version>
-                                    <message>exeris-tooling requires Maven to run on JDK 26 (exactly — the processor compiles Java 26 preview sources). Current JVM: ${java.version}.</message>
+                                    <version>[25,)</version>
+                                    <message>exeris-tooling requires Maven to run on JDK 25 or newer (the reactor emits class-file major 69, and exeris-codegen-maven-plugin loads into Maven's own JVM). Current JVM: ${java.version}.</message>
                                 </requireJavaVersion>
                                 <requireMavenVersion>
                                     <version>[3.9,)</version>

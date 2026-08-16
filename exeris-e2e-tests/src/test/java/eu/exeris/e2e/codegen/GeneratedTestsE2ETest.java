@@ -190,9 +190,9 @@ class GeneratedTestsE2ETest {
         List<String> args = new ArrayList<>(List.of(
                 "-d", outputDir.toString(),
                 "-classpath", contractClasspath(),
-                // The kernel SPI ships preview-tagged class files; javac refuses to load them
-                // without this, exactly as InMemoryJavaCompiler does for the same reason.
-                "--enable-preview", "--release", "26",
+                // Same release as the reactor and as InMemoryJavaCompiler — the emitted
+                // tests must compile at the level a consumer builds at.
+                "--release", "25",
                 "-nowarn"));
         args.addAll(files);
 
