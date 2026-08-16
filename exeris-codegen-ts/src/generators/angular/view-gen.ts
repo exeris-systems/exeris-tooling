@@ -85,6 +85,25 @@ function serviceFieldName(ref: string): string {
   return `${DslMapper.toCamelCase(simpleRef(ref))}Service`;
 }
 
+/** The injected field name for an entity's signal store (camelCase + `Store`). */
+function storeFieldName(ref: string): string {
+  return `${DslMapper.toCamelCase(simpleRef(ref))}Store`;
+}
+
+/** The `@for` loop variable for an entity collection (camelCase of the entity name). */
+function itemVarName(ref: string): string {
+  return DslMapper.toCamelCase(simpleRef(ref));
+}
+
+/**
+ * The `@for` track key.
+ *
+ * `id` because every generated entity carries one — the processor requires an identity field and the
+ * emitted `<Entity>Store` keys its own state on it. Tracking by index instead would defeat the point
+ * of `@for` on a signal collection.
+ */
+const TRACK_FIELD = 'id';
+
 /**
  * The effective route PATH for a view (RFC §5 route-assembly): the declared
  * `@View.route` with any leading slash(es) stripped (Angular child route paths
@@ -97,9 +116,26 @@ export function viewRoutePath(view: ViewMetadata): string {
   return (view.route ?? kebab).replace(/^\/+/, '');
 }
 
-/** The exported route-array const name for a view (`<camel>Routes`). */
+/**
+ * The exported route-array const name for a view (`<camel>Routes`).
+ *
+ * `toMethodName`, not `toCamelCase`: a view name is an author-chosen identity and kebab by
+ * convention, and `toCamelCase` only lower-cases the first character (it assumes already-camel entity
+ * input). It therefore returned `commander-roster` unchanged and emitted
+ * `export const commander-rosterRoutes`, which does not parse.
+ */
 export function viewRouteConstName(view: ViewMetadata): string {
-  return `${DslMapper.toCamelCase(view.name)}Routes`;
+  return `${DslMapper.toMethodName(view.name)}Routes`;
+}
+
+/**
+ * The emitted page-component class name for a view.
+ *
+ * Shared by the component and its route file so the `loadComponent` import always names the class the
+ * component file actually exports — deriving it twice is how they could drift.
+ */
+export function viewComponentClassName(view: ViewMetadata): string {
+  return `${DslMapper.toTypeName(view.name)}PageComponent`;
 }
 
 /**
@@ -189,7 +225,7 @@ function blockTag(type: BlockType): { tag: string; cls: string } {
  * Bindings are honoured per the slice-1 contract; OUT bindings emit a
  * TODO(@View G#) HTML comment passthrough rather than faking the data path.
  */
-function renderNode(node: ComponentNodeMetadata, level: number): string[] {
+function renderNode(node: ComponentNodeMetadata, level: number, itemVar?: string): string[] {
   const lines: string[] = [];
   const type = effectiveType(node);
   const pad = indent(level);
@@ -247,13 +283,37 @@ function renderNode(node: ComponentNodeMetadata, level: number): string[] {
   // Authored / literal content for STATIC / NONE: render props text if present.
   const propsText = (source === 'STATIC' || source === 'NONE') && node.props ? node.props : null;
 
-  // ENTITY: a signal read referencing the generated service. We emit the read in
-  // the template as an interpolation off the injected service signal.
+  // ENTITY: a signal read off the generated STORE.
+  //
+  // This used to emit `<entity>Service.current()`, which no generator produces: `service-gen` emits
+  // RxJS `findAll` / `findById` / `create` / `update` / `delete`, with no `current()` and no signal at
+  // all. `store-gen` is the signal-first surface this comment always described — `<Entity>Store`
+  // exposes `entities` (a readonly signal of the collection) and `selected` (the single). Two
+  // generators in one package had disagreed about the contract, and `tsc` could not see it because the
+  // call lives inside a template string; only an AOT build would have caught it.
+  //
+  // A LIST binds the collection and iterates; anything else reads the selected row. Emitting the
+  // collection without iterating it was the other half of the same hole — a `<ul>` whose children were
+  // rendered once, so a roster showed one row.
+  const isCollection = type === 'LIST' || type === 'GRID';
   let entityRead: string | null = null;
+  let iteration: { open: string; close: string; item: string } | null = null;
   if (source === 'ENTITY' && binding?.ref) {
-    const field = serviceFieldName(binding.ref);
-    const path = binding.path ? `?.${binding.path}` : '';
-    entityRead = `{{ ${field}.current()${path} }}`;
+    const field = storeFieldName(binding.ref);
+    if (isCollection) {
+      const item = itemVarName(binding.ref);
+      iteration = {
+        open: `@for (${item} of ${field}.entities(); track ${item}.${TRACK_FIELD}) {`,
+        close: '}',
+        item,
+      };
+    } else if (binding.path) {
+      // Inside a @for, the row IS the loop variable — reading the store's `selected` there would
+      // render the same row in every iteration, which is the bug this fix exists to remove.
+      entityRead = itemVar
+        ? `{{ ${itemVar}.${binding.path} }}`
+        : `{{ ${field}.selected()?.${binding.path} }}`;
+    }
   }
 
   // ACTION: a click handler calling the named action method.
@@ -280,8 +340,14 @@ function renderNode(node: ComponentNodeMetadata, level: number): string[] {
   if (entityRead) {
     lines.push(`${pad}  ${entityRead}`);
   }
+  if (iteration) {
+    lines.push(`${pad}  ${iteration.open}`);
+  }
   for (const child of node.children) {
-    lines.push(...renderNode(child, level + 1));
+    lines.push(...renderNode(child, level + 1, iteration ? iteration.item : itemVar));
+  }
+  if (iteration) {
+    lines.push(`${pad}  ${iteration.close}`);
   }
   lines.push(`${pad}</${tag}>`);
   return lines;
@@ -328,7 +394,7 @@ function escapeTsStr(value: string): string {
  */
 export function generateView(view: ViewMetadata, _config: GeneratorConfig): OutputFile {
   const kebab = DslMapper.toKebabCase(view.name);
-  const className = `${view.name}PageComponent`;
+  const className = viewComponentClassName(view);
   const selector = `app-${kebab}-page`;
   const title = view.title ?? view.name;
   const { entityRefs, actionRefs } = collectBindings(view);
@@ -342,14 +408,15 @@ export function generateView(view: ViewMetadata, _config: GeneratorConfig): Outp
   lines.push('');
   const coreImports = ['Component', 'ChangeDetectionStrategy'];
   if (entityRefs.length > 0) {
-    coreImports.push('inject');
+    coreImports.push('inject', 'OnInit');
   }
   lines.push(`import { ${coreImports.join(', ')} } from '@angular/core';`);
   lines.push("import { CommonModule } from '@angular/common';");
-  // ENTITY bindings reference the generated services by ref.
+  // ENTITY bindings reference the generated signal STORES by ref (store-gen), not the RxJS services:
+  // the template reads `entities()` / `selected()`, which only the store exposes.
   for (const ref of entityRefs) {
     const simple = simpleRef(ref);
-    lines.push(`import { ${simple}Service } from '../services/${DslMapper.toKebabCase(simple)}.service';`);
+    lines.push(`import { ${simple}Store } from '../stores/${DslMapper.toKebabCase(simple)}.store';`);
   }
   lines.push('');
   lines.push('@Component({');
@@ -366,11 +433,23 @@ export function generateView(view: ViewMetadata, _config: GeneratorConfig): Outp
   lines.push('    </main>');
   lines.push('  `,');
   lines.push('})');
-  lines.push(`export class ${className} {`);
-  // ENTITY services injected (signal-first: services expose a `current()` signal).
+  const implementsClause = entityRefs.length > 0 ? ' implements OnInit' : '';
+  lines.push(`export class ${className}${implementsClause} {`);
+  // ENTITY stores injected — signal-first, as store-gen emits them.
   for (const ref of entityRefs) {
     const simple = simpleRef(ref);
-    lines.push(`  protected readonly ${serviceFieldName(ref)} = inject(${simple}Service);`);
+    lines.push(`  protected readonly ${storeFieldName(ref)} = inject(${simple}Store);`);
+  }
+  // A store starts empty, so the page has to ask for its data. Without this the template renders a
+  // correct, permanently blank screen — the failure mode that is hardest to tell from a backend that
+  // is down.
+  if (entityRefs.length > 0) {
+    lines.push('');
+    lines.push('  ngOnInit(): void {');
+    for (const ref of entityRefs) {
+      lines.push(`    void this.${storeFieldName(ref)}.loadAll();`);
+    }
+    lines.push('  }');
   }
   if (entityRefs.length > 0 && actionRefs.length > 0) {
     lines.push('');
@@ -397,7 +476,7 @@ export function generateView(view: ViewMetadata, _config: GeneratorConfig): Outp
  */
 export function generateViewRoute(view: ViewMetadata, _config: GeneratorConfig): OutputFile {
   const kebab = DslMapper.toKebabCase(view.name);
-  const className = `${view.name}PageComponent`;
+  const className = viewComponentClassName(view);
   // Effective route path — declared `@View.route` minus any leading slash, else
   // kebab name. Shared with the app shell via viewRoutePath so they stay aligned.
   const path = viewRoutePath(view);

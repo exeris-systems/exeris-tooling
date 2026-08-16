@@ -22,6 +22,7 @@ import { generateTypes, TypeGenerator } from './generators/api/type-gen.js';
 import { generateService } from './generators/angular/service-gen.js';
 import { generateForm } from './generators/angular/form-gen.js';
 import { generateList } from './generators/angular/list-gen.js';
+import { generateStore } from './generators/angular/store-gen.js';
 import { generateAppStructure } from './generators/angular/app-structure-gen.js';
 import { generateView, generateViewRoute } from './generators/angular/view-gen.js';
 
@@ -150,6 +151,18 @@ export function buildGeneratedFiles(
     if (config.generateLists) {
       const list = generateList(domain, config);
       if (list) appTree.push(list);
+    }
+    // Signal stores. `generateStores` has defaulted to true since the flag was added, and nothing
+    // read it — `StoreGenerator` was exported from the Angular barrel and invoked by no one, so the
+    // signal-first surface the config promises was never emitted. That is what led view-gen to bind
+    // `<entity>Service.current()`, a method the RxJS service does not have: the author was reaching
+    // for a store that the pipeline silently dropped.
+    //
+    // NOTE: `generateDetails`, `generateSagas` and `generateEvents` are in the same state — declared,
+    // defaulted true, read by nothing. They are left alone here deliberately; wiring them changes what
+    // every consumer's tree contains, and each deserves its own change with its own evidence.
+    if (config.generateStores) {
+      appTree.push(generateStore(domain, config));
     }
   }
 
