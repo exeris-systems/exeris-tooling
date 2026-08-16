@@ -27,7 +27,7 @@ This ADR exists because the standing rule is *"architecture-shaping refactors ne
 - **Output stability across 1.x.** We need a layer that knows what a method looks like, not what string a method renders to.
 - **Type and symbol safety.** A missing import or a fat-fingered modifier should fail at codegen-time, not at the user's `mvn compile`.
 - **Zero new logging-style hidden deps.** Per the project's standing rule, `exeris-tooling` does not pull in slf4j or any third-party logging stack. JavaPoet is a different category (a codegen library, not runtime infra), but the rule informs the bar: any new dep must earn its place.
-- **JDK floor is 26.** Text blocks (JEP 378, stable JDK 15) are unconditionally available. Stable through 26.
+- **JDK floor is 25.** Text blocks (JEP 378, stable JDK 15) are unconditionally available. *(Read "26" when this ADR was accepted; U1 moved the floor to JDK 25 LTS on 2026-08-16, following kernel ADR-066 / SDK ADR-069. The driver is unaffected either way — text blocks went stable ten releases below either floor.)*
 - **Sonar coverage gates the 0.4.0 release.** Whatever we pick must measurably reduce duplication, not just relocate it.
 - **Existing dep surface.** We already pull Square's AutoService (`@AutoService`) via the processor module; adding JavaPoet (also Square / Apache 2.0) is a marginal increase in supply-chain surface, not a new vendor.
 
@@ -53,7 +53,7 @@ Replace `StringBuilder.append(...)` with Java 15+ text blocks for both Java emis
 
 - ✅ Zero new dep.
 - ✅ Massive readability win on the SQL/YAML paths (multi-line interpolation is the default case).
-- ✅ Already supported by JDK 26 floor.
+- ✅ Already supported by the JDK floor, whatever it currently is.
 - ❌ Java emission becomes a templating exercise: imports must be tracked manually, modifiers concatenated as strings, type references string-keyed. The "missing import" class of bug is unchanged.
 - ❌ Shared scaffold extraction is awkward: text blocks are not first-class composable values; you end up with a `String` constant pool keyed by template name, which is just `StringBuilder` with prettier syntax.
 - ⚠️ JEP 459 (String Templates) was the next-generation answer here, but it was withdrawn in JDK 23 and no replacement is on the JEP roadmap as of 26. Cannot rely on it.
