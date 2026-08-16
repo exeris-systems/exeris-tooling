@@ -1,0 +1,38 @@
+version: 2
+
+# Actions are pinned by commit SHA (OpenSSF Scorecard "Pinned-Dependencies"), which makes them
+# immune to a moved tag but also invisible to a human reading the file — nothing about
+# `@3d3c42e5…` says which version it is, or that it is three majors behind. Dependabot is what
+# closes that: it rewrites the SHA and the trailing `# vX.Y.Z` comment together, so the pin stays
+# current without anyone auditing eleven refs by hand. Without it, SHA-pinning trades a
+# supply-chain risk for a staleness one.
+#
+# That failure mode is not hypothetical here. `anthropics/claude-code-action@v1` had already moved
+# past the SHA a sibling repo pinned days earlier, which is both the argument for pinning and the
+# argument for renewing the pins automatically.
+#
+# Only the actions ecosystem is enabled, and the two package ecosystems are deliberately left out.
+# Maven and npm bumps in this repo change what the emitters resolve against — the Jackson 3 line
+# the compile gate checks emitted `tools.jackson.*` references against is the clearest case — so
+# they belong on the milestone path, behind the full reactor, the codegen coverage gate and the
+# generated-app FE build. Opening them as individual PRs would route version changes past the
+# gates that exist to catch exactly this.
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci(actions)"
+    labels:
+      - dependencies
+    groups:
+      # One PR for the routine github/actions bumps rather than five. Third-party actions
+      # (claude-code-action) stay ungrouped: those are the ones worth reading a changelog for
+      # before merging.
+      github-owned:
+        patterns:
+          - "actions/*"
+          - "github/*"
