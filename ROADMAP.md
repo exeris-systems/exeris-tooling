@@ -553,6 +553,51 @@ T30 (emitted imports as undeclared build requirements — the general case behin
 
 > Goal: any 1.x release produces source-compatible output; user apps' generated code keeps compiling across 1.x bumps.
 
+- [ ] **Annotation-surface coverage — every SDK annotation the kernel makes buildable reaches emitted
+      output.** Founder scope call, 2026-08-18. Measured the same day against `exeris-sdk` `main`:
+      **51 annotation types** are declared (55 files under `annotation/**` less four `package-info`),
+      and `ExerisDomainProcessor` references **21** of them by FQN — the four roots
+      (`@ExerisDomain`, `@Saga`, `@CapabilityModule`, `@View`) plus the members it walks. Of those 21,
+      exactly one — `@EventSourced` — is registered in `INERT_ANNOTATIONS`, i.e. extracted and
+      consumed by no generator.
+
+      **Two are excluded, both because the kernel cannot yet host them**, and both verified rather
+      than assumed:
+
+      - `@Blob` — the v0.11 blob SPI shipped with two Community drivers, but there is **no
+        `CommunityStorageSubsystem`**: the ten bootable subsystems are crypto, events, flow, graph,
+        http, memory, persistence, scheduling, security, transport. `Application.main()` boots
+        subsystems *by name*, so a generated app has no name to declare. Kernel-side ask (K6).
+      - `@EventSourced` — worth stating carefully, because the obvious check misleads.
+        `eu.exeris.kernel.spi.persistence.EventStore` **does** exist, which reads like the blocker is
+        gone. It is not that SPI: it is the **transactional outbox** (`append` / `pollPending` /
+        `markPublished`), i.e. guaranteed delivery. Event sourcing needs a *replayable per-aggregate
+        stream read* to rehydrate an aggregate, and there is none — `pollPending` returns undelivered
+        events and `markPublished` retires them.
+
+      Everything else in the unread 30 is buildable against the kernel as it stands today, and most
+      needs no kernel surface at all:
+
+      | Family | Count | What it needs |
+      |---|---|---|
+      | `system.*` — `@PrimaryKey`, `@TenantId`, `@Version`, `@SoftDelete*`, `@Audit*` | 10 | nothing new; the columns are already emitted, just derived from `@ExerisDomain`'s override attributes instead of these markers (**T5 / C1**) |
+      | presentation — `@Tab`, `@UIGroup`, `@NavMenu` | 3 | frontend emission only, no kernel involvement |
+      | behavioural — `@Derived`, `@Rule`, `@Rules`, `@EventHandler`, `@Projection` | 5 | pure emission + the events subsystem; design-gated, not capability-gated |
+      | graph — `@GraphEdge`, `@GraphEdges`, `@GraphProperty`, `@GraphQuery` | 4 | `CommunityGraphSubsystem` + the existing `KernelGraphSyncGenerator` (**S3**) |
+      | saga — `@SagaSteps`, `@SagaTransition`, `@SagaTransitions` | 3 | `CommunityFlowSubsystem`; `FlowDefinitionBuilder` already carries transitions (**S2**) |
+      | `security.*` — `@Encrypted`, `@RowLevelSecurity` | 2 | `CommunityCryptoSubsystem` exists; RLS overlaps the `dataScope`-driven predicate, so it is a design call (**C2**) |
+      | `@QueryParam`, `@Schedule` | 2 | the HTTP layer and `CommunitySchedulingSubsystem`, both present |
+
+      **So the 1.0 target is 49 of 51**, with `@Blob` and `@EventSourced` carried as kernel asks
+      rather than as tooling debt. Two rules that follow from the shape of this list, and matter more
+      than the count: an annotation is "covered" when it **reaches emitted output**, not when the
+      processor extracts it — `@EventSourced` is the standing counter-example. And every one that
+      lands must have its `INERT_ATTRIBUTES` / `INERT_ANNOTATIONS` entry deleted in the same change,
+      or `-Aexeris.strict` starts lying in the other direction.
+
+      Sequencing lives in the **S/C** entries under 0.8.0–0.9.0; `C0` comes first because it closes
+      the defect class (strict mode audits extracted-but-unconsumed, and is structurally blind to the
+      30 the processor never reads) rather than the instances.
 - [ ] Generated-code golden snapshot suite (per generator, per scenario)
 - [ ] `exeris-codegen-maven-plugin` API frozen (mojo parameters, lifecycle phase semantics)
 - [ ] `KernelArtifactGenerator` SPI frozen (third-party generators can plug in)

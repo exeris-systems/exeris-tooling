@@ -214,9 +214,14 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      */
     private static final List<InertAnnotation> INERT_ANNOTATIONS = List.of(
             new InertAnnotation("eu.exeris.sdk.annotation.EventSourced", "EventSourced",
-                    "event-sourcing emission is not yet implemented (blocked on a kernel "
-                            + "aggregate-event-store SPI), so the extracted EventSourcedMetadata "
-                            + "reaches no generator (see ROADMAP EV2)"));
+                    "event-sourcing emission is not yet implemented, so the extracted "
+                            + "EventSourcedMetadata reaches no generator (see ROADMAP EV2). The "
+                            + "kernel gate is a replayable per-aggregate stream read. Note that "
+                            + "eu.exeris.kernel.spi.persistence.EventStore exists and is NOT that "
+                            + "SPI: it is the transactional outbox (append / pollPending / "
+                            + "markPublished), i.e. guaranteed delivery — pollPending returns "
+                            + "undelivered events and markPublished retires them, so there is no "
+                            + "stream to rehydrate an aggregate from"));
 
     private ObjectMapper objectMapper;
     private Messager messager;
