@@ -837,24 +837,43 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     }
 
     /**
-     * Warns that {@code UNIVERSE} is declared but only partly transcribable.
+     * Refuses a {@code UNIVERSE} declaration at the declaration site (T29).
      *
-     * <p>The tier's kernel carrier ({@code sharedScopeKey} + the read-widen /
-     * write-pin RLS mode) lands on the kernel 0.11 line, which this repo does
-     * not pin yet, so the cross-tenant read-widen cannot be emitted. What is
-     * emitted is the TENANT shape — owner column plus an owner-pinned policy —
-     * which is UNIVERSE minus the widening, i.e. strictly narrower than the
-     * declaration rather than wider. Failing closed matters here: treating the
-     * tier as GLOBAL would drop the owner column and the policy altogether and
-     * silently publish rows the author scoped to an owner.
+     * <p>This was a WARNING until 0.8.0, on the reasoning that the emitted TENANT
+     * shape is UNIVERSE minus the read-widen — strictly narrower than declared,
+     * never wider — so a warning was enough. Failing closed is still the right
+     * policy and {@code DataScopeSupport.isTenantPartitioned} keeps it: treating
+     * the tier as GLOBAL would drop the owner column and the policy altogether
+     * and publish rows the author scoped to an owner.
+     *
+     * <p>What the warning missed is that the narrowing does not merely
+     * under-deliver — on the archetypal UNIVERSE entity it does not build. A
+     * shared-world row is precisely one with no tenant property, and the TENANT
+     * shape binds {@code entity.getTenantId()} in the emitted repository. So the
+     * author's reward for declaring the tier is {@code cannot find symbol}
+     * inside a generated file they are told not to edit, pointing at a getter
+     * they were never asked to write. A diagnostic at the declaration, naming the
+     * tier and the reason, is strictly better than a compile error two artefacts
+     * downstream.
+     *
+     * <p>The carrier is not the blocker any more: U0 pinned kernel {@code 0.11.0},
+     * so {@code sharedScopeKey} plus the read-widen / write-pin RLS mode are
+     * available and only the transcription here is outstanding. When it lands,
+     * this refusal goes with it.
      */
-    private void warnReservedUniverseTier(TypeElement element) {
+    private void errorReservedUniverseTier(TypeElement element) {
         messager.printMessage(
-                Diagnostic.Kind.WARNING,
-                DIAG_PREFIX + "@ExerisDomain.dataScope = DataScope.UNIVERSE is reserved: the kernel "
-                        + "carrier transcription (sharedScopeKey) is not built yet, so this build "
-                        + "emits the TENANT shape — owner column and owner-pinned RLS, without the "
-                        + "cross-tenant read-widen. Rows stay narrower than declared, never wider. "
+                Diagnostic.Kind.ERROR,
+                DIAG_PREFIX + "@ExerisDomain.dataScope = DataScope.UNIVERSE is reserved and is "
+                        + "refused here rather than half-emitted. The kernel carrier "
+                        + "(sharedScopeKey, read-widen / write-pin RLS) exists, but the codegen "
+                        + "transcription for it does not, so this tier would emit the TENANT shape: "
+                        + "an owner column, an owner-pinned policy, and a repository that binds "
+                        + "getTenantId(). A shared-world row has no tenant property, so that build "
+                        + "fails with 'cannot find symbol' inside generated code you are told not "
+                        + "to edit. Declare dataScope = TENANT if the entity really is partitioned "
+                        + "by an owner (and give it a tenant property); there is no way to obtain "
+                        + "cross-tenant read-widening from this build yet. "
                         + "See ADR-059 (docs/adr/ADR-059.link.md).",
                 element);
     }
@@ -1045,11 +1064,12 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                 contradicted = true;
             }
         }
-        // The reserved-tier warning describes what UNIVERSE emits. A contradicted
-        // declaration never reaches codegen, so saying what it would have emitted
-        // is noise on top of an error the author has to fix first.
+        // T29: UNIVERSE is refused at the declaration. Still suppressed when the
+        // declaration is already contradicted — two errors about one line, the second
+        // describing an emission that a fixed declaration may never reach, is noise on
+        // top of an error the author has to fix first.
         if (declaredScope == DataScope.UNIVERSE && !contradicted) {
-            warnReservedUniverseTier(element);
+            errorReservedUniverseTier(element);
         }
         if (values.containsKey("softDelete")) {
             builder.softDelete((Boolean) values.get("softDelete"));

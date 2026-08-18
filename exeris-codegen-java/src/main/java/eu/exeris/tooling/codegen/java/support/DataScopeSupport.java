@@ -23,8 +23,14 @@ import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
  * is transcribed here, UNIVERSE emits the TENANT shape — which is UNIVERSE minus
  * the widening, i.e. strictly narrower than declared. Failing closed is the whole
  * point: an "is TENANT" test would send UNIVERSE down the GLOBAL path and publish
- * rows the author scoped to an owner. The processor warns that the widening half
- * is not transcribed yet.
+ * rows the author scoped to an owner.
+ *
+ * <p>Since 0.8.0 the <b>processor refuses</b> a UNIVERSE declaration outright (T29),
+ * so the tier no longer arrives here from an annotated source. This branch stays
+ * anyway, and deliberately: metadata also reaches the emitters from the {@code -io}
+ * reader and from {@code exeris-codegen-maven-plugin} reading metadata JSON, neither
+ * of which goes through the processor's diagnostics. If UNIVERSE arrives by one of
+ * those routes, narrower-than-declared is still the only safe answer.
  *
  * <p><b>This rationale used to say the pin was what blocked the transcription</b>
  * ("the kernel 0.11 line, which this repo does not pin yet"). U0 pinned kernel
@@ -32,14 +38,14 @@ import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
  * because the sentence was the one a reader would trust before deciding whether
  * the work was reachable.
  *
- * <p><b>Known consequence, and it is not merely "narrower" (T29).</b> On the
- * archetypal UNIVERSE entity — a shared-world row with no tenant system-field
- * block, which is what "not tenant-partitioned" means — the emitted repository
- * grows a {@code tenant_id} column and calls {@code getTenantId()} on a type that
- * has none, so the build fails with {@code cannot find symbol} inside generated
- * code the consumer is told not to edit. The policy is right; what is missing is
- * an actionable processor diagnostic refusing the declaration instead of letting
- * it become a downstream compile error. Tracked in ROADMAP 0.8.0.
+ * <p><b>T29, closed in 0.8.0.</b> The gap was never that UNIVERSE under-delivers —
+ * it is that on the archetypal UNIVERSE entity it does not build. A shared-world row
+ * is precisely one with no tenant system-field block, and this shape makes the
+ * emitted repository bind {@code entity.getTenantId()}, so the author's reward for
+ * declaring the tier was {@code cannot find symbol} inside generated code they are
+ * told not to edit, pointing at a getter nobody asked them to write. Fixed where it
+ * belongs — a processor ERROR at the declaration — rather than by relaxing the
+ * policy here.
  *
  * <p>When the carrier mapping lands (ADR-059 obligation 5, last part), UNIVERSE
  * gains its own branch here rather than at seven call sites.

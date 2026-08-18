@@ -866,8 +866,8 @@ class ExerisDomainProcessorTest {
         }
 
         @Test
-        @DisplayName("UNIVERSE alone — extracted, warned as reserved, fails closed to the TENANT shape")
-        void universeIsReservedAndWarns() throws IOException {
+        @DisplayName("T29: UNIVERSE alone is refused at the declaration, not half-emitted")
+        void universeIsRefusedAtTheDeclaration() {
             JavaFileObject source = JavaFileObjects.forSourceString(
                     "com.example.Item",
                     """
@@ -883,17 +883,46 @@ class ExerisDomainProcessorTest {
             );
 
             Compilation compilation = compileWithProcessor(source);
-            assertThat(compilation).succeeded();
-            assertThat(compilation)
-                    .hadWarningContaining("DataScope.UNIVERSE is reserved");
-            assertThat(compilation)
-                    .hadWarningContaining("without the cross-tenant read-widen");
 
-            // The tier reaches the AST unchanged — "reserved" is about what the
-            // emitters can transcribe, not about dropping the author's intent.
-            String metadata = readContent(compilation.generatedFile(
-                    StandardLocation.CLASS_OUTPUT, "exeris-metadata/Item.json").orElseThrow());
-            assertThat(metadata).contains("\"dataScope\" : \"UNIVERSE\"");
+            // Until 0.8.0 this was a WARNING and the build went on to emit the TENANT
+            // shape. On the archetypal UNIVERSE entity — the one above, a shared-world
+            // row with no tenant property — that shape binds entity.getTenantId() and
+            // the consumer's build died with `cannot find symbol` inside a generated
+            // file. The refusal lands on the declaration instead.
+            assertThat(compilation).failed();
+            assertThat(compilation)
+                    .hadErrorContaining("DataScope.UNIVERSE is reserved");
+            // The message has to be actionable on its own terms: what would have been
+            // emitted, why it breaks, and the one thing the author can do today.
+            assertThat(compilation).hadErrorContaining("getTenantId()");
+            assertThat(compilation).hadErrorContaining("Declare dataScope = TENANT");
+            assertThat(compilation)
+                    .hadErrorContaining("cross-tenant read-widening from this build yet");
+        }
+
+        @Test
+        @DisplayName("T29: a contradicted UNIVERSE reports the contradiction only — "
+                + "not a second error about an emission the fixed declaration may never reach")
+        void contradictedUniverseDoesNotAlsoReportTheReservedTier() {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Item",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+
+                    @ExerisDomain(module = "catalog", path = "/items",
+                            dataScope = ExerisDomain.DataScope.UNIVERSE, tenantScoped = true)
+                    public class Item {
+                    }
+                    """
+            );
+
+            Compilation compilation = compileWithProcessor(source);
+
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorContaining("tenantScoped");
+            assertThat(compilation).hadErrorCount(1);
         }
     }
 
