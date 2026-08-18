@@ -103,7 +103,7 @@ public interface KernelArtifactGenerator {
         EVENT_HANDLER,   // domain-event subscriber (eu.exeris.kernel.spi.events.EventBus)
         GRAPH_SYNC,      // graph-sync projection (eu.exeris.kernel.spi.graph.*)
         SAGA,            // saga skeleton (eu.exeris.kernel.spi.flow.*)
-        APPLICATION,     // application bootstrap (Application + RuntimeLifecycle)
+        APPLICATION,     // application bootstrap (Application + RuntimeComponents + RuntimeLifecycle)
         CONFIGURATION,
         OPENAPI_SPEC,    // OpenAPI 3.1 specification (YAML)
         TEST             // generated test for a generated artefact (T2/ADR-058) — lands in the TEST output root, never in src/main

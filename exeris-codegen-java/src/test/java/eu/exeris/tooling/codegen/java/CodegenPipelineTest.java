@@ -172,9 +172,10 @@ class CodegenPipelineTest {
             int filesGenerated = pipeline.run(metadataDir, outputDir, "com.shop");
 
             assertThat(filesGenerated).isGreaterThan(0);
-            // Bootstrap pair is emitted by KernelApplicationGenerator under the
+            // The bootstrap trio is emitted by KernelApplicationGenerator under the
             // caller-supplied base package.
             assertThat(outputDir.resolve("com/shop/Application.java")).exists();
+            assertThat(outputDir.resolve("com/shop/RuntimeComponents.java")).exists();
             assertThat(outputDir.resolve("com/shop/RuntimeLifecycle.java")).exists();
         }
 
@@ -226,7 +227,8 @@ class CodegenPipelineTest {
 
             int filesGenerated = pipeline.run(metadataDir, outputDir, "com.shop");
 
-            // Two entities × per-entity generators + one bootstrap pair (Application + RuntimeLifecycle).
+            // Two entities × per-entity generators + one bootstrap trio
+            // (Application + RuntimeComponents + RuntimeLifecycle).
             assertThat(filesGenerated).isGreaterThan(4);
         }
     }
@@ -468,7 +470,7 @@ class CodegenPipelineTest {
          * Asserts the file-count math separates entity emission from bootstrap.
          */
         @Test
-        @DisplayName("empty generator registry → only bootstrap pair is written")
+        @DisplayName("empty generator registry → only the bootstrap trio is written")
         void emptyRegistryStillWritesBootstrap() throws IOException {
             GeneratorRegistry empty = new GeneratorRegistry();
             CodegenPipeline customPipeline = new CodegenPipeline(
@@ -480,8 +482,9 @@ class CodegenPipelineTest {
 
             int filesGenerated = customPipeline.run(metadataDir, outputDir, "com.shop");
 
-            assertThat(filesGenerated).isEqualTo(2);
+            assertThat(filesGenerated).isEqualTo(3);
             assertThat(outputDir.resolve("com/shop/Application.java")).exists();
+            assertThat(outputDir.resolve("com/shop/RuntimeComponents.java")).exists();
             assertThat(outputDir.resolve("com/shop/RuntimeLifecycle.java")).exists();
         }
 
@@ -499,8 +502,8 @@ class CodegenPipelineTest {
 
             int filesGenerated = customPipeline.run(metadataDir, outputDir, "com.shop");
 
-            // Null-returning generator emits 0; bootstrap pair emits 2.
-            assertThat(filesGenerated).isEqualTo(2);
+            // Null-returning generator emits 0; the bootstrap trio emits 3.
+            assertThat(filesGenerated).isEqualTo(3);
         }
     }
 

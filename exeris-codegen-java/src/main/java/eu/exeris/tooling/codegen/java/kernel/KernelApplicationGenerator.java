@@ -57,10 +57,19 @@ import java.util.Map;
  *       default body composes {@code new TransactionOrchestrator(
  *       KernelProviders.persistenceEngine())} once the kernel has bound
  *       the {@code PERSISTENCE_ENGINE} {@link java.lang.ScopedValue}.</li>
- *   <li>{@code RuntimeLifecycle.java} — Receives the bound
- *       {@code TransactionalExecutor}, instantiates each declared
- *       entity's {@code *Repository}, {@code *Service}, and
- *       {@code *Handler}, builds an
+ *   <li>{@code RuntimeComponents.java} — The composition-root seam (T49).
+ *       One {@code protected create*} factory, one memoising {@code public}
+ *       accessor and one field per generated {@code *Repository},
+ *       {@code *Service} and {@code *Handler}, plus a {@code configureRoutes}
+ *       hook. A consumer subclasses it to install a hand-written service or
+ *       to register a route the generator does not emit, and returns the
+ *       subclass from {@code Application#components(TransactionalExecutor)}.
+ *       Before it existed the emitted services were {@code public} and
+ *       non-final — extensible by design — with nowhere to plug the
+ *       extension in.</li>
+ *   <li>{@code RuntimeLifecycle.java} — Receives the
+ *       {@code RuntimeComponents}, takes each declared entity's
+ *       {@code *Handler} from it, builds an
  *       {@link eu.exeris.kernel.core.http.routing.HttpRouter} with the
  *       five canonical CRUD routes per entity (GET-all / GET-by-id /
  *       POST-create / PUT-update / DELETE), sets the forwarding handler
@@ -81,6 +90,14 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
 
     private static final String SUBSYSTEMS = "http,persistence,graph,flow,events,crypto";
     private static final String TX_EXECUTOR_NAME = "transactionalExecutor";
+    // T49: the open half of the composition root. RuntimeLifecycle stops calling
+    // `new XService(...)` and asks RuntimeComponents for it, so a consumer can
+    // subclass RuntimeComponents, override one factory, and install it by
+    // overriding Application#components(TransactionalExecutor).
+    private static final String COMPONENTS_TYPE_NAME = "RuntimeComponents";
+    private static final String COMPONENTS_METHOD = "components";
+    private static final String COMPONENTS_FIELD = "components";
+    private static final String CONFIGURE_ROUTES_METHOD = "configureRoutes";
 
     private static final ClassName ATOMIC_REFERENCE =
             ClassName.get("java.util.concurrent.atomic", "AtomicReference");
@@ -129,39 +146,44 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
     }
 
     /**
-     * Emits the two-file bootstrap skeleton for a project with <b>no</b>
+     * Emits the bootstrap skeleton for a project with <b>no</b>
      * composition — equivalent to {@link #generateAll(List, String, boolean)}
      * with {@code composed=false}.
      *
      * @param domains the full set of domain metadata records in the project; never {@code null}
      * @param basePackage the project base package (e.g.\ {@code "com.example.foundation"});
-     *                    {@code Application} and {@code RuntimeLifecycle} are emitted here
-     * @return the two emitted files; always {@code [Application, RuntimeLifecycle]}
+     *                    {@code Application}, {@code RuntimeComponents} and
+     *                    {@code RuntimeLifecycle} are emitted here
+     * @return the three emitted files; always
+     *         {@code [Application, RuntimeComponents, RuntimeLifecycle]}
      */
     public List<GeneratedFile> generateAll(List<DomainMetadata> domains, String basePackage) {
         return generateAll(domains, basePackage, false);
     }
 
     /**
-     * Emits the two-file bootstrap skeleton for the project. Invoked by
+     * Emits the bootstrap skeleton for the project. Invoked by
      * {@link eu.exeris.tooling.codegen.java.CodegenPipeline} after the per-entity
      * strategy loop.
      *
      * @param domains the full set of domain metadata records in the project; never {@code null}
      * @param basePackage the project base package (e.g.\ {@code "com.example.foundation"});
-     *                    {@code Application} and {@code RuntimeLifecycle} are emitted here
+     *                    {@code Application}, {@code RuntimeComponents} and
+     *                    {@code RuntimeLifecycle} are emitted here
      * @param composed whether this build has a capability composition (at least one
      *                 {@code @CapabilityModule}). When {@code true}, {@code Application}
      *                 drives the SDK boot conductor around the runtime lifecycle; when
      *                 {@code false} not a single conductor symbol is emitted — see
      *                 {@link #buildApplication(String, boolean)}
-     * @return the two emitted files; always {@code [Application, RuntimeLifecycle]}
+     * @return the three emitted files; always
+     *         {@code [Application, RuntimeComponents, RuntimeLifecycle]}
      * @since 0.7.0
      */
     public List<GeneratedFile> generateAll(List<DomainMetadata> domains, String basePackage,
                                            boolean composed) {
-        List<GeneratedFile> files = new ArrayList<>(2);
+        List<GeneratedFile> files = new ArrayList<>(3);
         files.add(buildApplication(basePackage, composed));
+        files.add(buildRuntimeComponents(domains, basePackage));
         files.add(buildRuntimeLifecycle(domains, basePackage));
         return files;
     }
@@ -318,6 +340,17 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
                 .returns(TypeName.VOID)
                 .addParameter(String[].class, "args")
+                .addJavadoc("Boots this class. Note the {@code new $T()} — it is not\n", selfType)
+                .addJavadoc("polymorphic, so a subclass overriding {@link #$L($T)}\n",
+                        COMPONENTS_METHOD, TRANSACTIONAL_EXECUTOR)
+                .addJavadoc("(or any other hook) is <b>not</b> reached through this entry point.\n")
+                .addJavadoc("Give the subclass its own {@code main}:\n")
+                .addJavadoc("<pre>{@code\n")
+                .addJavadoc("public static void main(String[] args) {\n")
+                .addJavadoc("    new MyApplication().run();\n")
+                .addJavadoc("}\n")
+                .addJavadoc("}</pre>\n")
+                .addJavadoc("and point the launcher at it.\n")
                 .addStatement("new $T().run()", selfType)
                 .build();
 
@@ -388,6 +421,31 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                         TRANSACTION_ORCHESTRATOR, KERNEL_PROVIDERS)
                 .build();
 
+        ClassName componentsType = ClassName.get(basePackage, COMPONENTS_TYPE_NAME);
+        MethodSpec componentsMethod = MethodSpec.methodBuilder(COMPONENTS_METHOD)
+                .addModifiers(Modifier.PROTECTED)
+                .returns(componentsType)
+                .addParameter(TRANSACTIONAL_EXECUTOR, TX_EXECUTOR_NAME)
+                .addJavadoc("Supplies the {@link $T} the runtime lifecycle wires from.\n", componentsType)
+                .addJavadoc("<p>This is the application-logic seam. Every generated Repository,\n")
+                .addJavadoc("Service and Handler is built by an overridable factory method on\n")
+                .addJavadoc("{@link $T}; subclass it, override the one factory you\n", componentsType)
+                .addJavadoc("care about, and return your subclass here:\n")
+                .addJavadoc("<pre>{@code\n")
+                .addJavadoc("class MyApplication extends Application {\n")
+                .addJavadoc("    @Override protected $L $L($T $L) {\n",
+                        COMPONENTS_TYPE_NAME, COMPONENTS_METHOD, TRANSACTIONAL_EXECUTOR, TX_EXECUTOR_NAME)
+                .addJavadoc("        return new My$L($L);\n", COMPONENTS_TYPE_NAME, TX_EXECUTOR_NAME)
+                .addJavadoc("    }\n")
+                .addJavadoc("}\n")
+                .addJavadoc("}</pre>\n")
+                .addJavadoc("<p>Called inside the {@code KernelBootstrap.boot(...)} callback, so a\n")
+                .addJavadoc("factory body may resolve any bound {@link $T} —\n", SCOPED_VALUE)
+                .addJavadoc("{@code KernelProviders.flowEngine()}, {@code KernelProviders.eventEngine()}\n")
+                .addJavadoc("and friends are all available by then.\n")
+                .addStatement("return new $T($L)", componentsType, TX_EXECUTOR_NAME)
+                .build();
+
         TypeSpec.Builder applicationType = KernelScaffold.publicClass("Application")
                 .addJavadoc("Generated application entry point.\n")
                 .addJavadoc("<p>Drives {@link $T} with the canonical SPI subsystem set\n", KERNEL_BOOTSTRAP)
@@ -400,11 +458,13 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                     .addJavadoc("capability lifecycle via {@link $T}\n", COMPOSITION_CONDUCTOR)
                     .addJavadoc("inside the kernel boot callback.\n")
                     .addJavadoc("<p>Subclass to override {@link #transactionalExecutor()},\n")
-                    .addJavadoc("{@link #subsystems()}, or {@link #$L()}.\n", CAP_MANIFEST_METHOD);
+                    .addJavadoc("{@link #subsystems()}, {@link #$L($T)} or {@link #$L()}.\n",
+                            COMPONENTS_METHOD, TRANSACTIONAL_EXECUTOR, CAP_MANIFEST_METHOD);
         } else {
             applicationType
-                    .addJavadoc("<p>Subclass to override {@link #transactionalExecutor()} or\n")
-                    .addJavadoc("{@link #subsystems()}.\n");
+                    .addJavadoc("<p>Subclass to override {@link #transactionalExecutor()},\n")
+                    .addJavadoc("{@link #subsystems()} or {@link #$L($T)}.\n",
+                            COMPONENTS_METHOD, TRANSACTIONAL_EXECUTOR);
         }
         applicationType
                 .addJavadoc("<p>Runtime classpath requirements (in addition to\n")
@@ -424,7 +484,8 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .addMethod(mainMethod)
                 .addMethod(runMethod)
                 .addMethod(subsystemsMethod)
-                .addMethod(transactionalExecutorMethod);
+                .addMethod(transactionalExecutorMethod)
+                .addMethod(componentsMethod);
         if (composed) {
             applicationType.addMethod(capManifestMethod());
         }
@@ -453,12 +514,13 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
             block.add("    .boot(() -> {\n")
                     .add("        try ($T conductor = $T.from($L()).start()) {\n",
                             COMPOSITION_CONDUCTOR, COMPOSITION_CONDUCTOR, CAP_MANIFEST_METHOD)
-                    .add("            new $T(handlerSlot, $L()).run();\n", lifecycleType, TX_EXECUTOR_NAME)
+                    .add("            new $T(handlerSlot, $L($L())).run();\n",
+                            lifecycleType, COMPONENTS_METHOD, TX_EXECUTOR_NAME)
                     .add("        }\n")
                     .add("    });\n");
         } else {
-            block.add("    .boot(() -> new $T(handlerSlot, $L()).run());\n",
-                    lifecycleType, TX_EXECUTOR_NAME);
+            block.add("    .boot(() -> new $T(handlerSlot, $L($L())).run());\n",
+                    lifecycleType, COMPONENTS_METHOD, TX_EXECUTOR_NAME);
         }
         return block.add("return null;\n")
                 .unindent()
@@ -486,30 +548,238 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .build();
     }
 
-    private GeneratedFile buildRuntimeLifecycle(List<DomainMetadata> domains, String basePackage) {
-        ClassName selfType = ClassName.get(basePackage, "RuntimeLifecycle");
-        TypeName atomicHttpHandler = ParameterizedTypeName.get(ATOMIC_REFERENCE, HTTP_HANDLER);
+    /** The three infrastructure packages derived from an entity's {@code .domain} package. */
+    private record InfraPackages(String repository, String service, String handler) {}
 
-        TypeSpec.Builder type = KernelScaffold.publicClass("RuntimeLifecycle")
-                .addModifiers(Modifier.FINAL)
-                .addJavadoc("Generated runtime-lifecycle wiring.\n")
-                .addJavadoc("<p>Composes per-entity Repository → Service → Handler chains,\n")
-                .addJavadoc("builds an {@link $T} with the canonical CRUD routes per\n", HTTP_ROUTER)
-                .addJavadoc("entity, sets the forwarding handler slot, and parks the JVM\n")
-                .addJavadoc("on a shutdown latch.\n")
-                .addJavadoc("<p><b>DO NOT EDIT</b> - Regenerate from domain models.\n")
-                .addField(KernelScaffold.loggerField(selfType))
-                .addField(FieldSpec.builder(atomicHttpHandler, "handlerSlot",
-                        Modifier.PRIVATE, Modifier.FINAL).build())
+    /**
+     * Derives the {@code .repository} / {@code .service} / {@code .handler} package paths
+     * from an entity's domain package. The {@code .domain} suffix substitution is the only
+     * thing locating the generated infrastructure types, so a package without it is rejected
+     * here rather than emitted as an unresolvable import.
+     */
+    private InfraPackages infraPackages(DomainMetadata domain) {
+        String domainPkg = domain.packageName();
+        if (!domainPkg.endsWith(".domain")) {
+            throw new IllegalArgumentException(
+                    "Domain package '" + domainPkg + "' for entity '" + domain.entityName()
+                            + "' does not end with '.domain'. The Application "
+                            + "generator derives the .repository/.service/.handler "
+                            + "package paths by replacing the '.domain' suffix; "
+                            + "without it the per-entity wiring would resolve "
+                            + "Repository/Service/Handler to the wrong location. "
+                            + "Either rename the domain package to end with "
+                            + "'.domain' or extend DomainMetadata to carry explicit "
+                            + "infrastructure package paths.");
+        }
+        return new InfraPackages(
+                domainPkg.replace(".domain", ".repository"),
+                domainPkg.replace(".domain", ".service"),
+                domainPkg.replace(".domain", ".handler"));
+    }
+
+    /**
+     * Emits {@code RuntimeComponents} — the open half of the composition root (T49).
+     *
+     * <p>Before this existed, {@code RuntimeLifecycle} constructed every repository,
+     * service and handler with an inline {@code new}, and {@code Application} exposed only
+     * infrastructure hooks ({@code subsystems()}, {@code transactionalExecutor()},
+     * {@code capManifest()}). A consumer could write {@code MyOrderService extends
+     * OrderService} — the emitted service is deliberately {@code public} and non-final so
+     * that they can (ADR-058) — and then had nowhere to install it.
+     *
+     * <p>Each component gets three members: a private field, a {@code public} memoising
+     * accessor, and a {@code protected create*} factory holding the default
+     * {@code new}. Overriding the factory replaces the component everywhere, because
+     * every downstream default resolves its dependency through the accessor rather than
+     * through a local. Memoisation makes the accessor safe to call from an override, which
+     * is what lets {@link #CONFIGURE_ROUTES_METHOD} build a hand-written collaborator out of
+     * generated parts.
+     *
+     * <p>Construction is lazy but single-threaded by construction: everything runs on the
+     * boot thread inside the {@code KernelBootstrap.boot(...)} callback, before the handler
+     * slot is set and therefore before any request can be served. No synchronisation is
+     * emitted and none is needed.
+     *
+     * <p><b>Consumer-build contract:</b> this file imports the same two kernel coordinates
+     * {@code RuntimeLifecycle} already imported ({@code exeris-kernel-spi} for
+     * {@link eu.exeris.kernel.spi.persistence.TransactionalExecutor}, {@code exeris-kernel-core}
+     * for {@link eu.exeris.kernel.core.http.routing.HttpRouter}) plus the project's own
+     * generated types. It adds no requirement to the consumer's build.
+     */
+    private GeneratedFile buildRuntimeComponents(List<DomainMetadata> domains, String basePackage) {
+        ClassName lifecycleType = ClassName.get(basePackage, "RuntimeLifecycle");
+        ClassName applicationType = ClassName.get(basePackage, "Application");
+
+        TypeSpec.Builder type = KernelScaffold.publicClass(COMPONENTS_TYPE_NAME)
+                .addJavadoc("Generated component factory — the seam where application logic\n")
+                .addJavadoc("enters the generated runtime.\n")
+                .addJavadoc("<p>{@link $T} asks this object for every repository,\n", lifecycleType)
+                .addJavadoc("service and handler it wires, instead of constructing them itself.\n")
+                .addJavadoc("Each component has a {@code protected create*} factory carrying the\n")
+                .addJavadoc("default construction; override one, and every consumer of that\n")
+                .addJavadoc("component sees the replacement.\n")
+                .addJavadoc("<pre>{@code\n")
+                .addJavadoc("class MyComponents extends $L {\n", COMPONENTS_TYPE_NAME)
+                .addJavadoc("    MyComponents(TransactionalExecutor tx) { super(tx); }\n")
+                .addJavadoc("\n")
+                .addJavadoc("    @Override protected OrderService createOrderService() {\n")
+                .addJavadoc("        return new MyOrderService(orderRepository(),\n")
+                .addJavadoc("                new OrderEventPublisher(KernelProviders.eventEngine()));\n")
+                .addJavadoc("    }\n")
+                .addJavadoc("}\n")
+                .addJavadoc("}</pre>\n")
+                .addJavadoc("<p>Install it by overriding {@link $T#$L($T)}.\n",
+                        applicationType, COMPONENTS_METHOD, TRANSACTIONAL_EXECUTOR)
+                .addJavadoc("<p>Every factory runs on the boot thread inside the kernel boot\n")
+                .addJavadoc("callback, so a body may resolve any bound provider\n")
+                .addJavadoc("({@code KernelProviders.flowEngine()},\n")
+                .addJavadoc("{@code KernelProviders.eventEngine()}, …). Accessors memoise and are\n")
+                .addJavadoc("deliberately unsynchronised: composition completes before the HTTP\n")
+                .addJavadoc("handler slot is set, so no request can observe a half-built graph.\n")
+                .addJavadoc("<p><b>DO NOT EDIT</b> - subclass instead; this file is regenerated\n")
+                .addJavadoc("from domain models.\n")
                 .addField(FieldSpec.builder(TRANSACTIONAL_EXECUTOR, TX_EXECUTOR_NAME,
                         Modifier.PRIVATE, Modifier.FINAL).build());
 
         type.addMethod(MethodSpec.constructorBuilder()
                 .addModifiers(Modifier.PUBLIC)
-                .addParameter(atomicHttpHandler, "handlerSlot")
                 .addParameter(TRANSACTIONAL_EXECUTOR, TX_EXECUTOR_NAME)
-                .addStatement("this.handlerSlot = handlerSlot")
                 .addStatement("this.$L = $L", TX_EXECUTOR_NAME, TX_EXECUTOR_NAME)
+                .build());
+
+        type.addMethod(MethodSpec.methodBuilder(TX_EXECUTOR_NAME)
+                .addModifiers(Modifier.PUBLIC)
+                .returns(TRANSACTIONAL_EXECUTOR)
+                .addJavadoc("The bound {@link $T} every generated repository\n", TRANSACTIONAL_EXECUTOR)
+                .addJavadoc("is constructed with. Supplied by\n")
+                .addJavadoc("{@link $T#$L()}.\n", applicationType, TX_EXECUTOR_NAME)
+                .addStatement("return $L", TX_EXECUTOR_NAME)
+                .build());
+
+        for (DomainMetadata domain : domains) {
+            String entity = domain.entityName();
+            String entityLower = lowerFirst(entity);
+            InfraPackages pkgs = infraPackages(domain);
+
+            ClassName repoType = ClassName.get(pkgs.repository(), entity + "Repository");
+            ClassName serviceType = ClassName.get(pkgs.service(), entity + "Service");
+            ClassName handlerType = ClassName.get(pkgs.handler(), entity + "Handler");
+
+            String repoName = entityLower + "Repository";
+            String serviceName = entityLower + "Service";
+
+            addComponent(type, repoType, repoName,
+                    CodeBlock.of("new $T($L())", repoType, TX_EXECUTOR_NAME));
+            addComponent(type, serviceType, serviceName,
+                    CodeBlock.of("new $T($L())", serviceType, repoName));
+            addComponent(type, handlerType, entityLower + "Handler",
+                    CodeBlock.of("new $T($L())", handlerType, serviceName));
+
+            // ADR-043 Slice 1 / ADR-044 Slice 2: the SSE stream handlers are no-arg today,
+            // but they go through the same seam so that a consumer overriding one does not
+            // have to know which handlers happen to take constructor arguments.
+            if (domain.realTimeApi()) {
+                ClassName streamHandlerType = ClassName.get(pkgs.handler(), entity + "StreamHandler");
+                addComponent(type, streamHandlerType, entityLower + "StreamHandler",
+                        CodeBlock.of("new $T()", streamHandlerType));
+            }
+            for (ActionMetadata action : domain.actions()) {
+                if (action.streaming()) {
+                    String actionPascal = NameCasing.pascal(action.name());
+                    ClassName actionStreamHandlerType =
+                            ClassName.get(pkgs.handler(), entity + actionPascal + "StreamHandler");
+                    addComponent(type, actionStreamHandlerType,
+                            entityLower + actionPascal + "StreamHandler",
+                            CodeBlock.of("new $T()", actionStreamHandlerType));
+                }
+            }
+        }
+
+        type.addMethod(MethodSpec.methodBuilder(CONFIGURE_ROUTES_METHOD)
+                .addModifiers(Modifier.PUBLIC)
+                .returns(TypeName.VOID)
+                .addParameter(HTTP_ROUTER.nestedClass("Builder"), "routes")
+                .addJavadoc("Registers routes this generator does not emit.\n")
+                .addJavadoc("<p>Called by {@link $T} after every generated route and\n", lifecycleType)
+                .addJavadoc("before {@code build()}, so a hand-written route may shadow nothing\n")
+                .addJavadoc("and add anything. The accessors above are already usable here — the\n")
+                .addJavadoc("point of the hook is to build a collaborator out of generated parts:\n")
+                .addJavadoc("<pre>{@code\n")
+                .addJavadoc("@Override public void $L($T.Builder routes) {\n",
+                        CONFIGURE_ROUTES_METHOD, HTTP_ROUTER)
+                .addJavadoc("    var saga = new OrderSagaOrchestrator(KernelProviders.flowEngine(),\n")
+                .addJavadoc("            orderRepository(), $L());\n", TX_EXECUTOR_NAME)
+                .addJavadoc("    routes.route(HttpMethod.POST, \"/checkout\", new CheckoutHandler(saga)::handle);\n")
+                .addJavadoc("}\n")
+                .addJavadoc("}</pre>\n")
+                .addComment("No generated body — override to register hand-written routes.")
+                .build());
+
+        return new GeneratedFile(basePackage, COMPONENTS_TYPE_NAME,
+                KernelScaffold.render(basePackage, type.build()), ArtifactType.APPLICATION);
+    }
+
+    /**
+     * Emits one component into {@code RuntimeComponents}: a private field, a public
+     * memoising accessor, and the {@code protected create*} factory holding
+     * {@code construction}.
+     */
+    private void addComponent(TypeSpec.Builder type, ClassName componentType,
+                              String name, CodeBlock construction) {
+        String factory = "create" + Character.toUpperCase(name.charAt(0)) + name.substring(1);
+
+        type.addField(FieldSpec.builder(componentType, name, Modifier.PRIVATE).build());
+
+        type.addMethod(MethodSpec.methodBuilder(name)
+                .addModifiers(Modifier.PUBLIC)
+                .returns(componentType)
+                .addJavadoc("The application's {@link $T}, built once by\n", componentType)
+                .addJavadoc("{@link #$L()} on first call and memoised.\n", factory)
+                .beginControlFlow("if ($L == null)", name)
+                .addStatement("$L = $L()", name, factory)
+                .endControlFlow()
+                .addStatement("return $L", name)
+                .build());
+
+        type.addMethod(MethodSpec.methodBuilder(factory)
+                .addModifiers(Modifier.PROTECTED)
+                .returns(componentType)
+                .addJavadoc("Constructs the {@link $T}. Override to install a\n", componentType)
+                .addJavadoc("subclass or an alternative implementation; call {@code super.$L()}\n", factory)
+                .addJavadoc("to decorate the default rather than replace it.\n")
+                .addStatement("return $L", construction)
+                .build());
+    }
+
+    private GeneratedFile buildRuntimeLifecycle(List<DomainMetadata> domains, String basePackage) {
+        ClassName selfType = ClassName.get(basePackage, "RuntimeLifecycle");
+        ClassName componentsType = ClassName.get(basePackage, COMPONENTS_TYPE_NAME);
+        TypeName atomicHttpHandler = ParameterizedTypeName.get(ATOMIC_REFERENCE, HTTP_HANDLER);
+
+        TypeSpec.Builder type = KernelScaffold.publicClass("RuntimeLifecycle")
+                .addModifiers(Modifier.FINAL)
+                .addJavadoc("Generated runtime-lifecycle wiring.\n")
+                .addJavadoc("<p>Takes each entity's Handler from {@link $T}, builds\n", componentsType)
+                .addJavadoc("an {@link $T} with the canonical CRUD routes per entity,\n", HTTP_ROUTER)
+                .addJavadoc("offers the same builder to {@link $T#$L($T.Builder)},\n",
+                        componentsType, CONFIGURE_ROUTES_METHOD, HTTP_ROUTER)
+                .addJavadoc("sets the forwarding handler slot, and parks the JVM on a\n")
+                .addJavadoc("shutdown latch.\n")
+                .addJavadoc("<p>Construction of the Repository → Service → Handler chain lives in\n")
+                .addJavadoc("{@link $T}, which is where it can be overridden.\n", componentsType)
+                .addJavadoc("<p><b>DO NOT EDIT</b> - Regenerate from domain models.\n")
+                .addField(KernelScaffold.loggerField(selfType))
+                .addField(FieldSpec.builder(atomicHttpHandler, "handlerSlot",
+                        Modifier.PRIVATE, Modifier.FINAL).build())
+                .addField(FieldSpec.builder(componentsType, COMPONENTS_FIELD,
+                        Modifier.PRIVATE, Modifier.FINAL).build());
+
+        type.addMethod(MethodSpec.constructorBuilder()
+                .addModifiers(Modifier.PUBLIC)
+                .addParameter(atomicHttpHandler, "handlerSlot")
+                .addParameter(componentsType, COMPONENTS_FIELD)
+                .addStatement("this.handlerSlot = handlerSlot")
+                .addStatement("this.$L = $L", COMPONENTS_FIELD, COMPONENTS_FIELD)
                 .build());
 
         type.addMethod(buildRunMethod(domains, basePackage));
@@ -525,44 +795,26 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .addJavadoc("Composes the application, sets the forwarding HTTP handler,\n")
                 .addJavadoc("and parks on a shutdown latch until the JVM exits.\n");
 
-        // Per-entity wiring: Repository → Service → Handler
+        // T49: the per-entity Repository → Service → Handler chain is built by
+        // RuntimeComponents, not here. Only the handlers need a local, because only they
+        // are named by a route; the repository and the service stay reachable through the
+        // components object, which is what a consumer's override reads.
         for (DomainMetadata domain : domains) {
             String entity = domain.entityName();
             String entityLower = lowerFirst(entity);
-            String domainPkg = domain.packageName();
-            if (!domainPkg.endsWith(".domain")) {
-                throw new IllegalArgumentException(
-                        "Domain package '" + domainPkg + "' for entity '" + entity
-                                + "' does not end with '.domain'. The Application "
-                                + "generator derives the .repository/.service/.handler "
-                                + "package paths by replacing the '.domain' suffix; "
-                                + "without it the per-entity wiring would resolve "
-                                + "Repository/Service/Handler to the wrong location. "
-                                + "Either rename the domain package to end with "
-                                + "'.domain' or extend DomainMetadata to carry explicit "
-                                + "infrastructure package paths.");
-            }
-            String repoPkg = domainPkg.replace(".domain", ".repository");
-            String servicePkg = domainPkg.replace(".domain", ".service");
-            String handlerPkg = domainPkg.replace(".domain", ".handler");
+            String handlerPkg = infraPackages(domain).handler();
 
-            ClassName repoType = ClassName.get(repoPkg, entity + "Repository");
-            ClassName serviceType = ClassName.get(servicePkg, entity + "Service");
             ClassName handlerType = ClassName.get(handlerPkg, entity + "Handler");
 
-            method.addStatement("$T $LRepository = new $T(transactionalExecutor)",
-                    repoType, entityLower, repoType);
-            method.addStatement("$T $LService = new $T($LRepository)",
-                    serviceType, entityLower, serviceType, entityLower);
-            method.addStatement("$T $LHandler = new $T($LService)",
-                    handlerType, entityLower, handlerType, entityLower);
+            method.addStatement("$T $LHandler = $L.$LHandler()",
+                    handlerType, entityLower, COMPONENTS_FIELD, entityLower);
             // ADR-043 Slice 1: instantiate the per-entity SSE live-view stream
             // handler when @ExerisDomain(realTimeApi). Emitted by
             // KernelStreamHandlerGenerator into the same .handler package.
             if (domain.realTimeApi()) {
                 ClassName streamHandlerType = ClassName.get(handlerPkg, entity + "StreamHandler");
-                method.addStatement("$T $LStreamHandler = new $T()",
-                        streamHandlerType, entityLower, streamHandlerType);
+                method.addStatement("$T $LStreamHandler = $L.$LStreamHandler()",
+                        streamHandlerType, entityLower, COMPONENTS_FIELD, entityLower);
             }
             // ADR-044 Slice 2: instantiate one per-action SSE stream handler per
             // @Action(streaming) action (no-arg, like the Slice-1 handler). Emitted
@@ -573,8 +825,9 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                     String actionPascal = NameCasing.pascal(action.name());
                     ClassName actionStreamHandlerType =
                             ClassName.get(handlerPkg, entity + actionPascal + "StreamHandler");
-                    method.addStatement("$T $L$LStreamHandler = new $T()",
-                            actionStreamHandlerType, entityLower, actionPascal, actionStreamHandlerType);
+                    method.addStatement("$T $L$LStreamHandler = $L.$L$LStreamHandler()",
+                            actionStreamHandlerType, entityLower, actionPascal,
+                            COMPONENTS_FIELD, entityLower, actionPascal);
                 }
             }
         }
@@ -625,6 +878,10 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                         HTTP_METHOD, basePath + "/stream", entityLower);
             }
         }
+        // T49: the consumer's routes are registered after every generated one and before
+        // build(), so a hand-written route can add to the table but never silently displace
+        // a generated one.
+        method.addStatement("$L.$L(routerBuilder)", COMPONENTS_FIELD, CONFIGURE_ROUTES_METHOD);
         method.addStatement("$T router = routerBuilder.build()", HTTP_ROUTER);
         // Publish the HttpRouter INSTANCE, not a `router::handle` method-ref.
         // The kernel stream dispatcher resolves a streaming route only when the
