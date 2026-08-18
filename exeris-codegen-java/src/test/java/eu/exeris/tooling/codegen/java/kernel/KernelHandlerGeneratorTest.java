@@ -109,6 +109,46 @@ class KernelHandlerGeneratorTest {
     }
 
     @Test
+    @DisplayName("T43: an unbound MEMORY_ALLOCATOR is a wiring fault (5xx), not a bad request (400)")
+    void unboundAllocatorIsRefusedAsAConfigurationFaultNotABadRequest() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .build();
+
+        String handler = strategy.generate(metadata).stream()
+                .filter(f -> f.artifactType() == ArtifactType.CONTROLLER)
+                .findFirst()
+                .orElseThrow()
+                .content();
+
+        // MEMORY_ALLOCATOR is a ScopedValue, so .get() on an unbound one throws
+        // NoSuchElementException — a RuntimeException, which the catch below turned into
+        // IllegalArgumentException("Invalid request body") and the call site into 400. The
+        // caller was told their body was bad; the body had not been read yet.
+        assertThat(handler)
+                .contains("if (!KernelProviders.MEMORY_ALLOCATOR.isBound())")
+                .contains("No MemoryAllocator is bound")
+                // The message has to name the wiring, not the request — same standard the
+                // unbound-registry refusal one line up already meets.
+                .contains("'memory' subsystem")
+                .contains("This is a wiring fault, not a malformed request");
+
+        assertThat(handler)
+                // The guard precedes the construction it protects, sits inside the guarded
+                // try, and throws the IllegalStateException that the catch re-throws
+                // unchanged — so it surfaces as 5xx exactly like the unbound registry, and
+                // is never downgraded to 400 (ADR-036 §2).
+                .containsSubsequence(
+                        "registry.resolve(type, contentType)",
+                        "if (!KernelProviders.MEMORY_ALLOCATOR.isBound())",
+                        "throw new IllegalStateException(\"No MemoryAllocator is bound",
+                        "new HttpRequestDecodingContext(",
+                        "catch (IllegalStateException e)",
+                        "throw e;",
+                        "catch (RuntimeException e)");
+    }
+
+    @Test
     @DisplayName("parseBody guards resolve/decode in one try; 5xx (IllegalState) re-thrown, only decode failures map to 400 (ADR-036 §2)")
     void shouldPreserveStatusMappingAcrossResolveAndDecode() {
         DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")

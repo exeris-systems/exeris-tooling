@@ -564,6 +564,18 @@ There is no way to obtain cross-tenant read-widening from this build yet; the ke
 (`sharedScopeKey`, read-widen / write-pin RLS) exists on the pinned `0.11.0` line, and the codegen
 transcription for it is the outstanding half.
 
+### An unbound `MemoryAllocator` now answers 5xx instead of 400 (T43)
+
+Regenerated handlers bound-check `KernelProviders.MEMORY_ALLOCATOR` before building the request
+decoding context. If it is unbound, the request fails with a server-side `IllegalStateException`
+naming the wiring, rather than an `IllegalArgumentException("Invalid request body")` that the call
+site mapped to **400 Bad Request**.
+
+Nothing works that did not work before — the request failed either way. What changes is who the
+response blames. If you have monitoring or tests that treat `POST`/`PUT` 400s as client errors, a
+deployment with this fault will now show up as a 5xx, which is where it belongs: the body has not
+been read at the point the failure occurs.
+
 ---
 
 ## Reference

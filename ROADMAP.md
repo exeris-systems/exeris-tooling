@@ -491,12 +491,58 @@ never-invoked emitter start emitting, and its output did not build.
       consumer is told not to edit. Fix is a processor **ERROR** refusing the declaration, not a
       change of policy. (The stale "this repo does not pin 0.11 yet" rationale is corrected in the
       same change; U0 pinned it.)
-- [ ] **T43 — a missing binding is reported as the caller's bad request.** `parseBody` resolves
+- [x] **T43 — a missing binding is reported as the caller's bad request.** *Shipped 2026-08-18 —
+      the refusal half. Two corrections to this entry came out of doing it, both below.*
+      `parseBody` now bound-checks `MEMORY_ALLOCATOR` and throws `IllegalStateException` naming the
+      wiring, which the existing dual-catch re-throws unchanged, so it surfaces as 5xx exactly like
+      the unbound-registry case one line above. The generator comment that listed "or the allocator"
+      among the *intended* 400 sources is gone — that comment was the defect, written down as a
+      decision.
+
+      **Correction 1: the "resolve lazily" half is not implementable as filed.** It read "the
+      community JSON decoder null-checks the context and then ignores the allocator", so deferring
+      resolution would cost nothing. But the context is constructed before the decoder ever sees it,
+      and `HttpRequestDecodingContext`'s compact constructor does
+      `Objects.requireNonNull(allocator, "allocator must not be null")`. A null allocator is refused
+      by the SPI, one frame earlier and still inside the same `try`. There is nothing to defer.
+
+      **Correction 2: the likely root cause is a capture-site difference, not a missing subsystem —
+      inferred, not measured.** `MEMORY_ALLOCATOR` is supplied by the `memory` subsystem, and the
+      default selector does boot it: `CommunityHttpSubsystem.dependsOn()` returns `["memory"]`, so
+      it arrives transitively even though the emitted list
+      (`http,persistence,graph,flow,events,crypto`) does not name it. Adding `memory` to that list
+      would therefore change nothing. What differs from the working reference is *where the
+      allocator is read*: `CommunityBenchmarkRuntimeLifecycle.java:100` resolves it **once, at
+      composition time, inside the boot callback** and passes it into its handler as a constructor
+      argument, whereas the generated handler calls `.get()` **per request**, on whatever thread the
+      transport dispatches. A `ScopedValue` binding is visible only within its dynamic scope, which
+      is consistent with the dog-food probe finding it unbound at request time — and with the T41
+      guard in the same file existing at all, since `STORAGE_CONTEXT` has the same shape. Not
+      verified by running a generated app, so it is recorded as the leading hypothesis rather than
+      as the cause. **The follow-up is now cheap:** capture the allocator in
+      `RuntimeComponents.createOrderHandler()` and pass it to the handler — the T49 seam is exactly
+      the place that construction belongs, and it is the reference's shape. Original finding below.
+
+      **T43 — a missing binding is reported as the caller's bad request.** `parseBody` resolves
       `KernelProviders.MEMORY_ALLOCATOR.get()` eagerly when building `HttpRequestDecodingContext`
       (`KernelHandlerGenerator.java:553`). An unbound allocator raises inside the `try` that maps
       everything to **400**, so a deployment fault is blamed on the request body. Two independent
       fixes: give it the T41 treatment (refuse, naming the missing binding), and resolve lazily —
       the community JSON decoder null-checks the context and then ignores the allocator.
+- [ ] **T43-follow-up — capture the allocator at composition time.** Split out of T43 so it does not
+      live as prose inside a closed item. T43 made the failure honest; this is what would stop it
+      happening. `RuntimeComponents.createOrderHandler()` resolves `KernelProviders.MEMORY_ALLOCATOR`
+      once, inside the boot callback where the binding is live, and passes it to the handler as a
+      constructor argument — the shape `CommunityBenchmarkRuntimeLifecycle.java:100` already uses and
+      the reason that app works with the same subsystem selector. Costs a handler constructor
+      parameter, which the T49 seam absorbs. **Do the measurement first:** the capture-site theory is
+      inferred from the reference and from the dog-food probe, not from running a generated app, and
+      a fix aimed at the wrong cause is worse than the honest 5xx we now emit.
+
+      *Deliberately not minted as `T51`.* The `T*` space is shared with the dog-food log, which runs
+      to T50 and is not readable from this checkout; taking the next number from a stale local view
+      is exactly how ADR-070 got claimed twice on 2026-08-18. A follow-up to a numbered finding does
+      not need a number of its own.
 - [ ] **T36 — the repository stamps three system fields and not the fourth.** `save` stamps
       `setId(randomUUID())` and both audit timestamps (`KernelRepositoryGenerator.java:620`) and never
       touches `tenantId`, although the kernel has it bound as a `ScopedValue`. The asymmetry is the
