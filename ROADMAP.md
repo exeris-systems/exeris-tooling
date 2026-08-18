@@ -472,7 +472,18 @@ never-invoked emitter start emitting, and its output did not build.
       remains, and the design question the seam does not answer is whether the publisher becomes a
       constructor argument of the generated service — changing every consumer's tree — or a
       generated decorator installed by the default factory.
-- [ ] **T29 — `DataScope.UNIVERSE` fails the build on the one shape it describes.**
+- [x] **T29 — `DataScope.UNIVERSE` fails the build on the one shape it describes.**
+      *Shipped 2026-08-18.* The processor now refuses a `UNIVERSE` declaration with an ERROR
+      naming what would have been emitted (the TENANT shape, binding `getTenantId()`), why it
+      breaks (a shared-world row has no tenant property), and the one thing the author can do
+      today (`dataScope = TENANT`, and there is no cross-tenant read-widening from this build
+      yet). The emitter policy is **unchanged** — `isTenantPartitioned` stays fail-closed,
+      because metadata also reaches the emitters from the `-io` reader and from the Maven
+      plugin reading metadata JSON, neither of which passes the processor's diagnostics.
+      A contradicted declaration still reports the contradiction only, so one line never
+      raises two errors. Original finding below.
+
+      **T29 — `DataScope.UNIVERSE` fails the build on the one shape it describes.**
       `DataScopeSupport.isTenantPartitioned` is fail-closed ("not GLOBAL"), which is the right policy
       (`DataScopeSupport.java:63`). The defect is the consequence: an entity with no tenant
       system-field block — which is what a shared-world row *is* — gets a `tenant_id` column and a

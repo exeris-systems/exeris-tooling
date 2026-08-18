@@ -542,6 +542,28 @@ called after every generated route and before `build()`, so a hand-written route
 routing table but never displace a generated one.
 
 
+### `dataScope = UNIVERSE` is now refused at the declaration (T29)
+
+A `UNIVERSE` declaration used to compile with a warning and emit the `TENANT` shape. It now fails the
+build with a processor **ERROR** on the annotated type.
+
+This is not a policy change — `UNIVERSE` never delivered cross-tenant read-widening from this
+pipeline, and still does not. What changed is where you find out. On the entity `UNIVERSE` actually
+describes — a shared-world row, which by definition has no tenant property — the emitted repository
+bound `entity.getTenantId()`, so the build failed anyway, with `cannot find symbol` inside a
+generated file you are told not to edit, pointing at a getter nobody asked you to write.
+
+**If you declared `UNIVERSE` and your entity has no tenant property:** your build was already
+failing. It now fails at the declaration with a message that says why.
+
+**If you declared `UNIVERSE` and your entity does have a tenant property:** your build worked and was
+silently giving you the `TENANT` shape. Change the declaration to `dataScope = DataScope.TENANT`,
+which is what you were getting. Emitted output is byte-identical.
+
+There is no way to obtain cross-tenant read-widening from this build yet; the kernel carrier
+(`sharedScopeKey`, read-widen / write-pin RLS) exists on the pinned `0.11.0` line, and the codegen
+transcription for it is the outstanding half.
+
 ---
 
 ## Reference
