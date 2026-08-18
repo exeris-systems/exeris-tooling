@@ -22,8 +22,9 @@ jobs:
         # it catches source that stops compiling on a newer JDK, which a single row
         # would surface only downstream. Same shape as the SDK's matrix.
         #
-        # 26 is also still the name in branch protection's required checks, so it stays
-        # until that list is updated to require the 25 row instead.
+        # Branch protection now requires the 25 row (U2, 2026-08-18). The 26 row runs on
+        # every PR and reports, but a red 26 does not block a merge — which is the point:
+        # forward-compatibility is information, not a gate on the release-bearing line.
         java: ['25', '26']
 
     steps:
@@ -94,11 +95,13 @@ jobs:
   # exeris-codegen-ts is the TypeScript / Angular emitter sibling of
   # exeris-codegen-java. It is NOT a Maven module — vitest drives its
   # tests + coverage. Lives in a parallel job so the JVM matrix and
-  # Node matrix can evolve independently. The gating jobs ("mvn verify (JDK 26)",
-  # "vitest run --coverage (exeris-codegen-ts)", and "ng build (generated sample
-  # app)") are in the required-status-checks list on branch protection for main.
-  # The JDK-25 row runs but is not required yet — switching which row gates is a
-  # branch-protection edit, not a workflow one.
+  # Node matrix can evolve independently.
+  #
+  # Branch protection requires exactly two checks: "mvn verify (JDK 25)" and
+  # "vitest run --coverage (exeris-codegen-ts)". "ng build (generated sample app)"
+  # runs on every PR but is NOT in that list — an earlier version of this comment
+  # claimed it was, which was never true. Adding it is a branch-protection edit and
+  # a deliberate decision, not something a workflow comment can assert into being.
   ts-coverage:
     name: vitest run --coverage (exeris-codegen-ts)
     runs-on: ubuntu-latest

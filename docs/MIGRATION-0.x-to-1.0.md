@@ -239,6 +239,17 @@ for running the processor/plugin.
 Same framing as the 0.6.0 section: annotation contracts and `DomainMetadata` are unchanged;
 what changes is what the emitters produce from them.
 
+### The tooling coordinate you depend on is now a release, not a SNAPSHOT
+
+`v0.5.0` and `v0.6.0` were tagged with the reactor POM still reading `0.5.0-SNAPSHOT` /
+`0.6.0-SNAPSHOT`, so the only way to consume a tagged tooling release was a snapshot coordinate that
+could change underneath you. From `v0.7.0` the tag carries the final version: `eu.exeris.tooling:*`
+is **`0.7.0`**.
+
+If your build pins `0.6.0-SNAPSHOT` (typically on `exeris-codegen-maven-plugin`), move it to `0.7.0`.
+Nothing else changes with it — this is a coordinate fix, not an API change — but a snapshot pin will
+keep resolving to whatever was last installed locally rather than to anything this train describes.
+
 ### Dependency floor (hard)
 
 The BOM moves to released **`eu.exeris:exeris-sdk-*:0.10.0` and `eu.exeris:exeris-kernel-*:0.11.0`**.
