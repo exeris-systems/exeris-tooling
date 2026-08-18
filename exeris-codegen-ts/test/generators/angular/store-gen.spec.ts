@@ -101,7 +101,8 @@ describe('StoreGenerator emitted content — top-level structure', () => {
     expect(content).toContain("from '@angular/core';");
     expect(content).toContain("import { takeUntilDestroyed } from '@angular/core/rxjs-interop';");
     expect(content).toContain("import { OrderService } from '../services/order.service';");
-    expect(content).toContain("import type { Order, OrderCreate, OrderUpdate, Page, PageRequest } from '../types/order.types';");
+    expect(content).toContain("import type { Order, OrderCreate, OrderUpdate } from '../types/order.types';");
+    expect(content).toContain("import type { Page, PageRequest } from '../services/order.service';");
   });
 
   it('emits Filter interface with search?: string always + filterable fields', () => {
@@ -503,7 +504,7 @@ describe('StoreGenerator getSearchableText emission', () => {
 describe('StoreGenerator extractErrorMessage helper — Error / message-bearing / fallback arms', () => {
   const gen = new StoreGenerator();
 
-  it('emits the 3-branch extractErrorMessage helper with $localize fallback', () => {
+  it('emits the 3-branch extractErrorMessage helper with a plain-string fallback', () => {
     const content = gen.generate(domain({ entityName: 'Order' }), CTX)!.content;
 
     expect(content).toContain('private extractErrorMessage(err: unknown): string {');
@@ -512,8 +513,37 @@ describe('StoreGenerator extractErrorMessage helper — Error / message-bearing 
     expect(content).toContain('return err.message;');
     // Arm 2: object with "message" property
     expect(content).toContain("typeof err === 'object' && err !== null && 'message' in err");
-    // Arm 3: fallback via $localize i18n marker
-    expect(content).toContain('$localize`:@@error.unknown:An unknown error occurred`');
+    // Arm 3: fallback
+    expect(content).toContain("return 'An unknown error occurred';");
+  });
+
+  it('emits no $localize — it would require @angular/localize, which the emitted app does not declare', () => {
+    // The previous version of this suite asserted the opposite, and that is the point worth
+    // keeping: `$localize` is a global supplied by @angular/localize, which the emitted app
+    // neither depends on nor lists in `polyfills`. A text assertion cannot tell a symbol that
+    // compiles from one that does not; only `ng build` on the emitted tree can.
+    const content = gen.generate(domain({ entityName: 'Order' }), CTX)!.content;
+    expect(content).not.toContain('$localize');
+  });
+});
+
+// ---------- import sources ----------
+
+describe('StoreGenerator emitted imports — every symbol from the module that exports it', () => {
+  const gen = new StoreGenerator();
+
+  it('imports Page/PageRequest from the service, which is where service-gen declares them', () => {
+    // They were imported from `../types/<kebab>.types`, which does not export them —
+    // service-gen emits both interfaces into the service module. TS2305 on every store.
+    const content = gen.generate(domain({ entityName: 'Order' }), CTX)!.content;
+
+    expect(content).toContain("import type { Page, PageRequest } from '../services/order.service';");
+    expect(content).not.toContain("Page, PageRequest } from '../types/order.types'");
+  });
+
+  it('imports the entity shapes from the types module', () => {
+    const content = gen.generate(domain({ entityName: 'Order' }), CTX)!.content;
+    expect(content).toContain("import type { Order, OrderCreate, OrderUpdate } from '../types/order.types';");
   });
 });
 

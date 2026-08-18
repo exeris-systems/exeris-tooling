@@ -30,6 +30,30 @@ import java.util.Set;
  *       {@link eu.exeris.tooling.codegen.java.support.DataScopeSupport})</li>
  * </ul>
  *
+ * <h2>Row-Level Security</h2>
+ * Three clauses in {@code RLS_TEMPLATE} look like belt-and-braces and are each load-bearing.
+ * All three were found by applying these migrations to a real PostgreSQL for the first time;
+ * none is reachable through H2, and none was reachable while the other two were wrong.
+ *
+ * <ul>
+ *   <li><b>{@code FORCE ROW LEVEL SECURITY}</b> — PostgreSQL exempts a table's <em>owner</em>
+ *       from its own policies unless the table is forced. An application connecting as the role
+ *       that owns the schema (the default in any quick-start or dev runtime) otherwise reads
+ *       every tenant's rows, with no error and no warning.</li>
+ *   <li><b>{@code exeris.tenant_id}</b> — the session key the kernel actually publishes:
+ *       {@code RlsConnectionInterceptor} issues {@code set_config('exeris.tenant_id', …)} on
+ *       every isolation strategy. This generator previously named a key the kernel never
+ *       published, which no policy could match, so a correctly-configured application saw no
+ *       rows and could store none. The key is a cross-repo contract carried as a bare string
+ *       literal on both sides — if the kernel ever exposes it as an SPI constant, emit that
+ *       instead of transcribing it.</li>
+ *   <li><b>{@code NULLIF(…, '')}</b> — {@code current_setting(key, true)} returns NULL only
+ *       while the key has never been set in the session; after a {@code RESET} — what a
+ *       connection pool does on hand-back — it returns the empty string, and {@code ''::uuid}
+ *       raises. Without NULLIF every query on a recycled connection errors instead of returning
+ *       nothing, which is an outage rather than a closed door.</li>
+ * </ul>
+ *
  * @implNote Emission uses Java text blocks + {@link String#join} over a list
  * of column definitions (ADR-015 — JavaPoet does not apply to non-Java
  * artifacts). The {@code KernelFlywayGeneratorTest} golden snapshots are the
@@ -50,13 +74,19 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
     // possible); never pass arbitrary external input through this template.
     // The tenant column is parameterised so a tenantIdField override (T5) keeps
     // the RLS predicate aligned with the actual column.
+    // Emitted into every tenant-scoped migration, so the comments stay short. The reasoning
+    // behind each clause is in this class's Javadoc, under "Row-Level Security".
     private static final String RLS_TEMPLATE = """
-            -- Row Level Security for tenant isolation
+            -- Row Level Security for tenant isolation.
+            -- FORCE: PostgreSQL exempts a table's owner from its own policies without it.
             ALTER TABLE %1$s ENABLE ROW LEVEL SECURITY;
+            ALTER TABLE %1$s FORCE ROW LEVEL SECURITY;
 
+            -- Session key set by the kernel's RlsConnectionInterceptor.
+            -- NULLIF: a RESET connection reports '' rather than NULL, and ''::uuid raises.
             CREATE POLICY %1$s_tenant_policy ON %1$s
-                USING (%2$s = current_setting('app.tenant_id', true)::uuid)
-                WITH CHECK (%2$s = current_setting('app.tenant_id', true)::uuid);
+                USING (%2$s = NULLIF(current_setting('exeris.tenant_id', true), '')::uuid)
+                WITH CHECK (%2$s = NULLIF(current_setting('exeris.tenant_id', true), '')::uuid);
             """;
 
     @Override
@@ -91,13 +121,19 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
 
     /**
      * Deterministic Flyway version — no wall-clock (hard-constraint #3): same
-     * {@code DomainMetadata} → same filename. Tenant-scoped tables (which emit a
-     * {@code REFERENCES tenants(id)} FK) tier above unscoped ones so the referenced
-     * table is created first; within a tier the order is a stable FQN hash. The
-     * tenant FK is the only cross-table reference this generator emits, so a
-     * two-tier scheme suffices. The {@code tenants} table itself is pinned to tier 1
-     * regardless of its flags, so the guarantee holds even if a {@code Tenant}
-     * entity is (mistakenly) marked tenant-scoped.
+     * {@code DomainMetadata} → same filename. Tenant-scoped tables tier above
+     * unscoped ones; within a tier the order is a stable FQN hash. A {@code tenants}
+     * table, if the consumer declares one, is pinned to tier 1 regardless of its flags.
+     *
+     * <p>The tiering originally existed to order a {@code REFERENCES tenants(id)} FK
+     * ahead of its target. That FK is no longer emitted — it referenced a table no
+     * generator produces, which made the schema inapplicable to an empty database —
+     * so this generator currently emits <em>no</em> cross-table references and the
+     * ordering is not load-bearing today. It is retained deliberately: it costs
+     * nothing, keeps filenames stable for already-committed migrations, and is the
+     * hook the FK work (T9) will need. <b>T9 must revisit it</b> — a general
+     * inter-entity FK needs dependency-ordered versions, which two tiers cannot
+     * express.
      *
      * <p><b>Collision:</b> the discriminator space is 1,000,000 per tier. For
      * realistic models (far fewer than ~1,000 entities per tier) collisions are
@@ -119,7 +155,15 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
         emittedColumns.add("id");
 
         if (isTenantPartitioned(metadata)) {
-            columns.add("    " + tenantColumn(metadata) + " UUID NOT NULL REFERENCES tenants(id)");
+            // No REFERENCES tenants(id): the emitted schema must apply to an empty database,
+            // and no generator emits a `tenants` table — an FK to it made every tenant-scoped
+            // migration fail on a fresh Postgres (19 of 22 in the Stellar corpus). Nothing the
+            // platform does needs the constraint: the RLS predicate below filters on
+            // current_setting('exeris.tenant_id') and never joins the tenant table. Emitting a
+            // tenant registry instead would mean this generator inventing a table shape the
+            // platform has never specified; if referential integrity is wanted, that contract
+            // should be declared upstream rather than assumed here.
+            columns.add("    " + tenantColumn(metadata) + " UUID NOT NULL");
             emittedColumns.add(tenantColumn(metadata));
         }
 

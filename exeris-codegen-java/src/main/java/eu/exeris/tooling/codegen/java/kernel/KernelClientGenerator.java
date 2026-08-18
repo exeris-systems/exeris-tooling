@@ -1,6 +1,5 @@
 package eu.exeris.tooling.codegen.java.kernel;
 
-import com.palantir.javapoet.AnnotationSpec;
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.FieldSpec;
 import com.palantir.javapoet.MethodSpec;
@@ -71,10 +70,6 @@ public class KernelClientGenerator implements KernelArtifactGenerator {
         TypeName optionalOfEntity = ParameterizedTypeName.get(OPTIONAL, entityType);
         TypeName listOfEntity = ParameterizedTypeName.get(LIST, entityType);
 
-        AnnotationSpec uncheckedSuppression = AnnotationSpec.builder(SuppressWarnings.class)
-                .addMember("value", "$S", "unchecked")
-                .build();
-
         TypeSpec client = KernelScaffold.publicClass(className)
                 .addJavadoc("Generated client for the $L API.\n", entity)
                 .addJavadoc("\n")
@@ -91,8 +86,8 @@ public class KernelClientGenerator implements KernelArtifactGenerator {
                 .addField(FieldSpec.builder(WEB_CLIENT, "client", Modifier.PRIVATE, Modifier.FINAL).build())
                 .addMethod(buildConstructor(className))
                 .addMethod(buildFindById(entity, entityType, optionalOfEntity))
-                .addMethod(buildFindAllPaged(entity, listOfEntity, uncheckedSuppression))
-                .addMethod(buildFindAll(entity, listOfEntity, uncheckedSuppression))
+                .addMethod(buildFindAllPaged(entity, entityType, listOfEntity))
+                .addMethod(buildFindAll(entity, entityType, listOfEntity))
                 .addMethod(buildCreate(entity, entityType))
                 .addMethod(buildUpdate(entity, entityType))
                 .addMethod(buildDelete(entity))
@@ -152,34 +147,30 @@ public class KernelClientGenerator implements KernelArtifactGenerator {
                 .build();
     }
 
-    private MethodSpec buildFindAllPaged(String entity, TypeName listOfEntity,
-                                         AnnotationSpec uncheckedSuppression) {
+    private MethodSpec buildFindAllPaged(String entity, ClassName entityType, TypeName listOfEntity) {
         return MethodSpec.methodBuilder("findAll")
                 .addJavadoc("Finds all $L entities with pagination.\n", entity)
                 .addJavadoc("\n")
                 .addJavadoc("@param page page number (0-based)\n")
                 .addJavadoc("@param size page size\n")
                 .addJavadoc("@return list of entities\n")
-                .addAnnotation(uncheckedSuppression)
                 .addModifiers(Modifier.PUBLIC)
                 .returns(listOfEntity)
                 .addParameter(TypeName.INT, "page")
                 .addParameter(TypeName.INT, "size")
                 .addStatement("String path = BASE_PATH + $S + page + $S + size", "?page=", "&size=")
-                .addStatement("return client.get(path, $T.class)", LIST)
+                .addStatement("return $T.of(client.get(path, $T[].class))", LIST, entityType)
                 .build();
     }
 
-    private MethodSpec buildFindAll(String entity, TypeName listOfEntity,
-                                    AnnotationSpec uncheckedSuppression) {
+    private MethodSpec buildFindAll(String entity, ClassName entityType, TypeName listOfEntity) {
         return MethodSpec.methodBuilder("findAll")
                 .addJavadoc("Finds all $L entities.\n", entity)
                 .addJavadoc("\n")
                 .addJavadoc("@return list of entities\n")
-                .addAnnotation(uncheckedSuppression)
                 .addModifiers(Modifier.PUBLIC)
                 .returns(listOfEntity)
-                .addStatement("return client.get(BASE_PATH, $T.class)", LIST)
+                .addStatement("return $T.of(client.get(BASE_PATH, $T[].class))", LIST, entityType)
                 .build();
     }
 
@@ -223,15 +214,37 @@ public class KernelClientGenerator implements KernelArtifactGenerator {
                 .build();
     }
 
+    /**
+     * The base path the generated client requests — which must be the path the generated
+     * <em>server</em> serves, because these two are the only pair in the suite that talk to each other.
+     *
+     * <p>This used to prepend {@code /api/<apiVersion>}. Nothing else emitted that prefix:
+     * {@code KernelApplicationGenerator} registers routes at {@link DomainMetadata#effectivePath()}
+     * and the OpenAPI document publishes the same, so the generated client could not reach the
+     * generated router at all — every cross-service call answered 404. It stayed invisible because
+     * the client and the router had never been run against each other; an in-process binding
+     * bypasses both.
+     *
+     * <p>Aligning the client on {@code effectivePath()} is the smaller of the two possible
+     * corrections and the one two of the three artifacts already agreed on.
+     *
+     * <p><b>Open design question this exposes.</b> {@code @ExerisDomain.apiVersion} reaches no
+     * emitted artifact — the server never served a versioned route, so the attribute has no
+     * destination. Serving {@code /api/<version>/…} from the router and the OpenAPI document instead
+     * is a defensible answer and arguably the better API, but it changes every emitted route and the
+     * published contract with it, so it is a decision to take deliberately rather than a bug to fix
+     * here. Until it is taken, {@code apiVersion} is inert, and it is now declared so in
+     * {@code ExerisDomainProcessor.INERT_ATTRIBUTES}.
+     *
+     * <p>That claim was premature when first written here: two TypeScript emitters
+     * ({@code stream-client-gen}, {@code action-stream-client-gen}) were still folding the version
+     * into their SSE routes, so declaring the attribute inert then would have produced a false
+     * "no effect" warning. They were aligned in the same batch; the registry entry followed.
+     */
     private String buildApiPath(DomainMetadata metadata) {
-        String apiVersion = metadata.apiVersion() != null ? metadata.apiVersion() : "v1";
-        // effectivePath() is the SDK-canonical derivation shared by every other
-        // generator (OpenAPI, Application, DSL): explicit path, else "/" + kebab + "s".
-        // Reusing it fixes the previously-dead fallback (the Builder defaults path to
-        // "", so a hand-rolled `path() != null` guard never fired and a path-less
-        // entity emitted a useless /api/<ver> root client) and keeps the client's base
-        // path consistent with the rest of the generator suite.
-        return "/api/" + apiVersion + metadata.effectivePath();
+        // effectivePath() is the SDK-canonical derivation shared by every other generator (OpenAPI,
+        // Application, DSL): explicit path, else "/" + kebab + "s".
+        return metadata.effectivePath();
     }
 
     @Override

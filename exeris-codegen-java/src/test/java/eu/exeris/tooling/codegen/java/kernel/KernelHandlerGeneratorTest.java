@@ -4,6 +4,7 @@ import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.Artifact
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
 import eu.exeris.sdk.sourcemodel.ast.ActionParamMetadata;
+import eu.exeris.sdk.sourcemodel.ast.DataScope;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 import org.junit.jupiter.api.BeforeEach;
@@ -330,5 +331,77 @@ class KernelHandlerGeneratorTest {
         assertThat(handler)
                 .doesNotContain("quantity == null")
                 .doesNotContain("var quantity = entity.getQuantity()");
+    }
+    @Test
+    @DisplayName("a tenant-scoped entity refuses when no tenant is bound (T41)")
+    void tenantScopedHandlerGuardsAgainstAnUnboundTenant() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .dataScope(DataScope.TENANT)
+                .build();
+
+        String handler = new KernelHandlerGenerator().generate(metadata).content();
+
+        // Without the guard the request is served: persistence falls back to a system-scope context,
+        // the RLS policy matches nothing, and the caller gets 200 [] from a database that has rows.
+        assertThat(handler)
+                .contains("if (!KernelProviders.STORAGE_CONTEXT.isBound())")
+                .contains("respondTenantUnbound(exchange)")
+                .contains("no tenant is bound");
+
+        // Every entry point, not just reads — a write with no tenant fails later and worse.
+        assertThat(handler.split("respondTenantUnbound\\(exchange\\)", -1).length - 1)
+                .as("one guard call site per CRUD handler (the declaration reads (HttpExchange exchange))")
+                .isEqualTo(5);
+    }
+
+    @Test
+    @DisplayName("action handlers are guarded too, and the guard runs before the body is read (T45)")
+    void tenantScopedActionHandlersAreGuardedAsWell() {
+        // T41 guarded the five CRUD handlers and its own assertion said "at least five", which is
+        // exactly why the action handlers could stay unguarded unnoticed. An action loads the
+        // aggregate through the same service, so with no tenant bound row-level security hides the
+        // row and the caller is told the entity does not exist — a 404 that is a lie.
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .dataScope(DataScope.TENANT)
+                .actions(List.of(
+                        ActionMetadata.builder("cancel").methodName("cancel").build(),
+                        ActionMetadata.builder("applyDiscount").methodName("applyDiscount")
+                                .params(List.of(ActionParamMetadata.required("percent", "java.math.BigDecimal")))
+                                .build()))
+                .build();
+
+        String handler = strategy.generate(metadata).stream()
+                .filter(f -> f.artifactType() == ArtifactType.CONTROLLER)
+                .findFirst().orElseThrow().content();
+
+        assertThat(handler.split("respondTenantUnbound\\(exchange\\)", -1).length - 1)
+                .as("five CRUD handlers plus both actions")
+                .isEqualTo(7);
+
+        // Ordering matters as much as presence: the guard has to come before parseBody, or a
+        // request with no tenant is answered 400 for its body rather than refused for its wiring.
+        int guard = handler.indexOf("respondTenantUnbound(exchange)",
+                handler.indexOf("void handleApplyDiscount("));
+        int parse = handler.indexOf("parseBody(exchange, ApplyDiscountRequest.class)");
+        assertThat(guard)
+                .as("the tenant guard precedes the body decode in the action handler")
+                .isGreaterThan(0)
+                .isLessThan(parse);
+    }
+
+    @Test
+    @DisplayName("a global entity is not guarded — it needs no tenant to be readable")
+    void globalHandlerIsUnguarded() {
+        DomainMetadata metadata = DomainMetadata.builder("ShipDesign", "com.example.domain")
+                .dataScope(DataScope.GLOBAL)
+                .build();
+
+        String handler = new KernelHandlerGenerator().generate(metadata).content();
+
+        assertThat(handler)
+                .as("guarding a global entity would refuse perfectly serviceable requests")
+                .doesNotContain("STORAGE_CONTEXT")
+                .doesNotContain("respondTenantUnbound");
     }
 }

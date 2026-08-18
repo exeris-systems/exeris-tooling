@@ -108,12 +108,14 @@ export class ServiceGenerator implements CodeGenerator {
     const entityName = metadata.entityName;
     const kebabName = DslMapper.toKebabCase(entityName);
 
-    // Build API path: prefer explicit apiPath, otherwise construct from apiVersion + path
-    // Backend uses: /api/v1/tenants (apiBasePath + apiVersion + path)
-    // Default fallback: /{entity}s (pluralized entity name)
-    const apiVersion = metadata.apiVersion ?? '';
+    // The emitted service must request what the emitted server serves. The router registers the
+    // entity's path with no version segment and the OpenAPI document publishes the same, so
+    // apiVersion is deliberately NOT folded into the URL here — doing so produced /api/v1/<path>
+    // against a server listening on /<path>, and every generated Angular service 404'd. The Java
+    // client carried the identical defect; both are the same emitter-parity miss.
+    // Default fallback: /{entity}s (pluralized entity name).
     const pathSegment = metadata.path ?? `/${kebabName}s`;
-    const apiPath = metadata.apiPath ?? (apiVersion ? `/${apiVersion}${pathSegment}` : pathSegment);
+    const apiPath = metadata.apiPath ?? pathSegment;
 
     // Collect enum types for imports (fields + action params — T20a)
     const enumTypes = this.collectEnumTypes(metadata);

@@ -65,7 +65,8 @@ class KernelClientGeneratorTest {
         // The emitted source uses the explicit path verbatim, prefixed
         // with /api/<version>/.
         assertThat(file.content())
-                .contains("\"/api/v1/orders\"")
+                .contains("\"/orders\"")
+                .doesNotContain("/api/")
                 .contains("public class OrderClient")
                 .contains("public OrderClient(");
         // Pin the ADR-034 binding target. The generator targets the
@@ -79,11 +80,11 @@ class KernelClientGeneratorTest {
     }
 
     @Test
-    @DisplayName("generate derives /api/v1/<kebab>s base via SDK effectivePath() when path() is unset")
+    @DisplayName("generate derives /<kebab>s base via SDK effectivePath() when path() is unset")
     void generateWithoutExplicitPath() {
         // buildApiPath delegates to DomainMetadata#effectivePath(), the SDK-canonical
         // derivation (explicit path, else "/" + kebab + "s"). With no explicit path,
-        // a "PaymentOrder" entity resolves to /api/v1/payment-orders — consistent with
+        // a "PaymentOrder" entity resolves to /payment-orders — consistent with
         // the OpenAPI / Application / DSL generators, which all use effectivePath().
         DomainMetadata metadata = DomainMetadata.builder("PaymentOrder", "com.example.domain")
                 .build();
@@ -91,12 +92,13 @@ class KernelClientGeneratorTest {
         GeneratedFile file = generator.generate(metadata);
 
         assertThat(file.content())
-                .contains("\"/api/v1/payment-orders\"");
+                .contains("\"/payment-orders\"")
+                .doesNotContain("/api/");
     }
 
     @Test
-    @DisplayName("apiVersion override is honoured in the emitted base path")
-    void generateRespectsApiVersionOverride() {
+    @DisplayName("apiVersion does NOT reach the client's base path — the server serves no versioned route")
+    void generateIgnoresApiVersion() {
         DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
                 .apiVersion("v2")
                 .path("/orders")
@@ -104,7 +106,12 @@ class KernelClientGeneratorTest {
 
         GeneratedFile file = generator.generate(metadata);
 
-        assertThat(file.content()).contains("\"/api/v2/orders\"");
+        // The client must request what KernelApplicationGenerator registers and what the OpenAPI
+        // document publishes, and neither of those carries an /api/<version> prefix. A client that
+        // versioned its own path could not reach the router it was generated alongside.
+        assertThat(file.content())
+                .contains("\"/orders\"")
+                .doesNotContain("/api/v2");
     }
 
     @Test

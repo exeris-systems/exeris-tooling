@@ -112,7 +112,10 @@ export interface BackendStrategy {
 
   /**
    * Transform API path based on kernel conventions.
-   * E.g., KERNEL: /api/v1/tenants
+   * E.g., KERNEL: /api/orders — the entity path under the configured base, with
+   * NO version segment. KernelApplicationGenerator registers routes at the entity
+   * path and the OpenAPI document publishes the same; a client that versions its
+   * own path cannot reach the server it was generated alongside.
    */
   transformPath(basePath: string, entityPath: string): string;
 
@@ -252,8 +255,13 @@ export class KernelStrategy implements BackendStrategy {
   }
 
   transformPath(basePath: string, entityPath: string): string {
-    const config = this.getClientConfig();
-    return `${basePath}/${config.apiVersion}${entityPath}`;
+    // No apiVersion segment. This used to read `${basePath}/${config.apiVersion}${entityPath}`,
+    // the same false premise the service, client and SSE emitters each carried and each had
+    // fixed. Nothing outside this file's own tests reaches this method today, which is exactly
+    // why it is worth correcting rather than leaving: it is named "path transformation for the
+    // backend contract", so it is where someone would look to reuse the logic — and reusing the
+    // old form would reintroduce a defect that took four commits to remove.
+    return `${basePath}${entityPath}`;
   }
 
   mapError(response: Response, body?: unknown): ApiError {
@@ -282,7 +290,8 @@ export class KernelStrategy implements BackendStrategy {
 
   getRealTimeConfig(): RealTimeConfig {
     return {
-      endpoint: '/api/v1/events/stream',
+      // Version-free, for the reason given on transformPath: the router serves no version segment.
+      endpoint: '/api/events/stream',
       reconnectAttempts: 5,
       reconnectDelayMs: 1000,
       heartbeatIntervalMs: 30000,

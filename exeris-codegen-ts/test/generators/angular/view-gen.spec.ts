@@ -78,7 +78,7 @@ describe('generateView — component shape', () => {
     expect(file.content).toContain('standalone: true,');
     expect(file.content).toContain('changeDetection: ChangeDetectionStrategy.OnPush,');
     expect(file.content).toContain("selector: 'app-product-landing-page',");
-    expect(file.content).toContain('export class ProductLandingPageComponent {');
+    expect(file.content).toContain('export class ProductLandingPageComponent implements OnInit {');
     expect(file.content).toContain('>Products</h1>');
   });
 
@@ -111,14 +111,26 @@ describe('generateView — component shape', () => {
     expect(file.content).toContain('Welcome');
   });
 
-  it('ENTITY binding injects the service and reads it as a signal', () => {
+  it('ENTITY binding injects the signal STORE and reads it', () => {
+    // Was the RxJS service + a `current()` call that no generator produces: service-gen emits
+    // findAll/findById/create/update/delete returning Observables, with no signal at all. store-gen is
+    // the signal-first surface — `entities` (collection) and `selected` (single). Two generators in one
+    // package had disagreed, and tsc could not see it because the call lives in a template string.
     expect(file.content).toContain(
-      "import { ProductService } from '../services/product.service';",
+      "import { ProductStore } from '../stores/product.store';",
     );
-    expect(file.content).toContain('inject(ProductService)');
-    expect(file.content).toContain('protected readonly productService = inject(ProductService);');
-    // The signal read references the injected service by ref.
-    expect(file.content).toContain('{{ productService.current()?.name }}');
+    expect(file.content).toContain('protected readonly productStore = inject(ProductStore);');
+    // A store starts empty, so the page asks for its data — without this the emitted screen renders
+    // correctly and permanently blank.
+    expect(file.content).toContain('void this.productStore.loadAll();');
+  });
+
+  it('an UNBOUND collection block does not iterate — its bound child reads the selected row', () => {
+    // The rule: the *collection block itself* carries the collection binding. This fixture's GRID
+    // binds nothing and its CARD binds ENTITY, which says "one card showing the selected product",
+    // not "a card per product" — and the emitter must not guess otherwise.
+    expect(file.content).toContain('{{ productStore.selected()?.name }}');
+    expect(file.content).not.toContain('current()');
   });
 
   it('ACTION binding emits a click handler + a handler stub method', () => {
@@ -240,5 +252,91 @@ describe('generateViewRoute — paired lazy route', () => {
     // so & stays literal (NOT &amp;) and the apostrophe is backslash-escaped.
     expect(f.content).toContain("title: 'Tom\\'s Books & More',");
     expect(f.content).not.toContain('&amp;');
+  });
+});
+
+describe('generateView — a kebab-case @View.name emits VALID TypeScript identifiers', () => {
+  /**
+   * The regression guard for the bug Stellar's first real @View hit: `@View.name` was interpolated
+   * raw into the class and route-const names, so the natural kebab name (it doubles as the file name
+   * and the `data-view` value) emitted `export class commander-rosterPageComponent` — TS1005, the file
+   * did not parse. Exactly the bug `DslMapper.toMethodName` was introduced to prevent for @Action
+   * names, one identifier kind later.
+   *
+   * The existing fixture above cannot catch it: `ProductLanding` is already PascalCase, so the raw
+   * interpolation happened to produce a legal identifier.
+   */
+  const kebabView: ViewMetadata = ViewMetadataSchema.parse({
+    name: 'commander-roster',
+    kind: 'PAGE',
+    route: '/roster',
+    title: 'Commander Roster',
+    regions: [],
+  });
+
+  it('the component class name is PascalCase, not the raw kebab name', () => {
+    const file = generateView(kebabView, DEFAULT_CONFIG);
+    expect(file.content).toContain('export class CommanderRosterPageComponent');
+    expect(file.content).not.toContain('commander-rosterPageComponent');
+    // The kebab form still names the file and the markup — only the identifier is normalised.
+    expect(file.path).toBe('pages/commander-roster.component.ts');
+    expect(file.content).toContain('data-view="commander-roster"');
+    expect(file.content).toContain("selector: 'app-commander-roster-page',");
+  });
+
+  it('the route const is camelCase and loads the class the component actually exports', () => {
+    const route = generateViewRoute(kebabView, DEFAULT_CONFIG);
+    expect(route.content).toContain('export const commanderRosterRoutes: Routes = [');
+    expect(route.content).not.toContain('commander-rosterRoutes');
+    // The two files must agree on the class name or loadComponent resolves to undefined at runtime.
+    expect(route.content).toContain('.then((m) => m.CommanderRosterPageComponent)');
+  });
+});
+
+describe('generateView — a collection block BOUND to an entity iterates its store signal', () => {
+  /**
+   * The other half of the `current()` fix. A LIST/GRID that carries the ENTITY binding is a
+   * collection: it must emit `@for` over the store's `entities()` signal, and its children must read
+   * the loop variable. Emitting the read without the iteration was the original shape — a `<ul>` whose
+   * children rendered once, so a roster showed one row.
+   */
+  const roster: ViewMetadata = ViewMetadataSchema.parse({
+    name: 'commander-roster',
+    kind: 'PAGE',
+    route: '/roster',
+    title: 'Commander Roster',
+    regions: [
+      {
+        slot: 'content',
+        components: [
+          {
+            type: 'LIST',
+            binding: { source: 'ENTITY', ref: 'Commander' },
+            children: [
+              {
+                type: 'CARD',
+                binding: { source: 'ENTITY', ref: 'Commander', path: 'name' },
+                children: [],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  });
+
+  const file = generateView(roster, DEFAULT_CONFIG);
+
+  it('emits @for over the store collection with a stable track key', () => {
+    expect(file.content).toContain('@for (commander of commanderStore.entities(); track commander.id) {');
+  });
+
+  it('the row reads the loop variable, not the selected row', () => {
+    expect(file.content).toContain('{{ commander.name }}');
+    expect(file.content).not.toContain('commanderStore.selected()');
+  });
+
+  it('is deterministic — same input yields byte-identical output', () => {
+    expect(generateView(roster, DEFAULT_CONFIG).content).toBe(file.content);
   });
 });

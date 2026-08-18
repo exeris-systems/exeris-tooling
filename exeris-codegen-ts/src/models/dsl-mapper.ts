@@ -588,6 +588,25 @@ export class DslMapper {
   }
 
   /**
+   * Normalise an arbitrary identity into a valid PascalCase TypeScript **type** name — the
+   * {@link toMethodName} walk with an upper-cased first character (`commander-roster` |
+   * `commander_roster` | `commanderRoster` → `CommanderRoster`).
+   *
+   * Use this for any emitted `class` / `interface` name derived from a name the *author* chose
+   * freely, as opposed to an entity name (which the processor already delivers in PascalCase).
+   * `@View.name` is the case in point: it is kebab by convention — it doubles as the file name and
+   * the `data-view` attribute — so interpolating it raw emitted
+   * `export class commander-rosterPageComponent`, which does not parse. Exactly the bug
+   * {@link toMethodName} was added to prevent for `@Action` names, one identifier kind later.
+   *
+   * ASCII-only, locale-independent.
+   */
+  static toTypeName(name: string): string {
+    const camel = DslMapper.toMethodName(name);
+    return camel.charAt(0).toUpperCase() + camel.slice(1);
+  }
+
+  /**
    * Generate TypeScript interface name from entity.
    */
   static toInterfaceName(entityName: string): string {

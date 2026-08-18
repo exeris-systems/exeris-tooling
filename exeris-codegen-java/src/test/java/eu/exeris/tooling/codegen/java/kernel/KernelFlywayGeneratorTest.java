@@ -61,7 +61,7 @@ class KernelFlywayGeneratorTest {
 
                 CREATE TABLE IF NOT EXISTS orders (
                     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                    tenant_id UUID NOT NULL REFERENCES tenants(id),
+                    tenant_id UUID NOT NULL,
                     order_number VARCHAR(255) NOT NULL UNIQUE,
                     customer_name VARCHAR(255) NOT NULL,
                     amount DECIMAL(19,4) NOT NULL,
@@ -82,12 +82,16 @@ class KernelFlywayGeneratorTest {
                 CREATE INDEX IF NOT EXISTS idx_orders_order_number ON orders(order_number);
                 CREATE INDEX IF NOT EXISTS idx_orders_customer_name ON orders(customer_name);
 
-                -- Row Level Security for tenant isolation
+                -- Row Level Security for tenant isolation.
+                -- FORCE: PostgreSQL exempts a table's owner from its own policies without it.
                 ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
+                ALTER TABLE orders FORCE ROW LEVEL SECURITY;
 
+                -- Session key set by the kernel's RlsConnectionInterceptor.
+                -- NULLIF: a RESET connection reports '' rather than NULL, and ''::uuid raises.
                 CREATE POLICY orders_tenant_policy ON orders
-                    USING (tenant_id = current_setting('app.tenant_id', true)::uuid)
-                    WITH CHECK (tenant_id = current_setting('app.tenant_id', true)::uuid);
+                    USING (tenant_id = NULLIF(current_setting('exeris.tenant_id', true), '')::uuid)
+                    WITH CHECK (tenant_id = NULLIF(current_setting('exeris.tenant_id', true), '')::uuid);
                 """);
     }
 
@@ -136,8 +140,10 @@ class KernelFlywayGeneratorTest {
         // table — no tenant column, no index, no policy — for an author who had
         // declared TENANT in the canonical way. Silent, and only visible in prod.
         assertThat(file.content())
-                .contains("tenant_id UUID NOT NULL REFERENCES tenants(id)")
-                .contains("ENABLE ROW LEVEL SECURITY");
+                .contains("tenant_id UUID NOT NULL")
+                .doesNotContain("REFERENCES tenants(id)")
+                .contains("ENABLE ROW LEVEL SECURITY")
+                .contains("FORCE ROW LEVEL SECURITY");
         // Tier 2 in the migration version, so it sorts after the tenants table.
         assertThat(file.className()).startsWith("V2");
     }
@@ -160,8 +166,10 @@ class KernelFlywayGeneratorTest {
         // would drop the owner column and the policy and publish rows the
         // author scoped to an owner; that is the direction that must not fail.
         assertThat(file.content())
-                .contains("tenant_id UUID NOT NULL REFERENCES tenants(id)")
-                .contains("ENABLE ROW LEVEL SECURITY");
+                .contains("tenant_id UUID NOT NULL")
+                .doesNotContain("REFERENCES tenants(id)")
+                .contains("ENABLE ROW LEVEL SECURITY")
+                .contains("FORCE ROW LEVEL SECURITY");
         assertThat(file.className()).startsWith("V2");
     }
 
@@ -246,7 +254,7 @@ class KernelFlywayGeneratorTest {
 
         String sql = generator.generate(metadata).content();
         assertThat(sql)
-                .contains("    org_id UUID NOT NULL REFERENCES tenants(id)")
+                .contains("    org_id UUID NOT NULL")
                 .contains("    modified_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP")
                 .contains("    rev BIGINT DEFAULT 0")
                 // createdAt / deleted left at defaults.
@@ -254,8 +262,8 @@ class KernelFlywayGeneratorTest {
                 .contains("    deleted BOOLEAN DEFAULT FALSE")
                 // tenant index + RLS predicate use the overridden tenant column.
                 .contains("CREATE INDEX IF NOT EXISTS idx_orders_tenant ON orders(org_id);")
-                .contains("USING (org_id = current_setting('app.tenant_id', true)::uuid)")
-                .contains("WITH CHECK (org_id = current_setting('app.tenant_id', true)::uuid)")
+                .contains("USING (org_id = NULLIF(current_setting('exeris.tenant_id', true), '')::uuid)")
+                .contains("WITH CHECK (org_id = NULLIF(current_setting('exeris.tenant_id', true), '')::uuid)")
                 // The default tenant_id *column* must NOT leak (the 'app.tenant_id'
                 // GUC key is unrelated and legitimately retains the name).
                 .doesNotContain("tenant_id UUID")

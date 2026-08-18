@@ -173,12 +173,25 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      * attribute that now matters. Surfaced only under {@code -Aexeris.strict}.
      */
     private static final List<InertAttribute> INERT_ATTRIBUTES = List.of(
+            new InertAttribute("Action", "path",
+                    "the route is derived as {domainPath}/{id}/actions/{kebab-action-name} and this "
+                            + "value is never read — ActionMetadata carries no path component, so it "
+                            + "does not even reach the JSON. Note it has no default, so every author "
+                            + "is required to write a path the server will not answer on (T44)"),
             new InertAttribute("ActionParam", "description",
                     "the value reaches ActionParamMetadata in the JSON, but no emitter renders "
                             + "it — action-parameter generation reads only the parameter name and type"),
             new InertAttribute("ActionParam", "required",
                     "the value reaches ActionParamMetadata in the JSON, but no emitter renders "
-                            + "it — action-parameter generation reads only the parameter name and type"));
+                            + "it — action-parameter generation reads only the parameter name and type"),
+            new InertAttribute("ExerisDomain", "apiVersion",
+                    "no emitted artifact carries a version segment: the router registers routes at "
+                            + "the entity path, the OpenAPI document publishes the same, and the Java "
+                            + "client and every TypeScript client were aligned onto it. Emitting "
+                            + "/api/{version}/{path} from the router instead is a defensible API "
+                            + "decision, but it changes every route and the published contract, so it "
+                            + "is a decision to take rather than a default to assume. Until it is "
+                            + "taken, setting this attribute has no effect on output"));
 
     /**
      * Hand-maintained registry of whole type-level annotations that are extracted

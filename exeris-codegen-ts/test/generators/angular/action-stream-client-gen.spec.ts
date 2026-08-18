@@ -89,6 +89,21 @@ describe('ActionStreamClientGenerator.generate — route + transport parity', ()
     expect(content).toContain("credentials: 'include'");
   });
 
+  it('apiVersion is NOT folded into the action-stream URL — the router serves no version segment', () => {
+    // Same miss as the entity-level stream client: the fixtures leave apiVersion unset,
+    // so nothing ever rendered the versioned path this emitter used to produce.
+    const d = domain({
+      entityName: 'Order',
+      actions: [streamingAction],
+      path: '/orders',
+      apiVersion: 'v1',
+    });
+    const content = gen.generate(d, CTX)!.content;
+
+    expect(content).toContain('const url = `/api/orders/${id}/actions/track-shipment`;');
+    expect(content).not.toContain('/v1/');
+  });
+
   it('is RxJS over fetch + ReadableStream (NOT a native EventSource — POST-open, Axis 4b)', () => {
     const content = gen.generate(domain({ entityName: 'Order', actions: [streamingAction] }), CTX)!.content;
 

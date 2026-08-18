@@ -104,7 +104,9 @@ describe('KernelStrategy — BackendStrategy contract', () => {
 describe('KernelStrategy specifics — RLS headers + HTTP/3 + correlation', () => {
   const kernel = new KernelStrategy();
 
-  it('uses HTTP/3 and versioned paths (matches Kernel runtime conventions)', () => {
+  it('uses HTTP/3 and still carries an apiVersion in config — which no path consumes', () => {
+    // The field remains on ClientConfig; what changed is that nothing folds it into a URL.
+    // See transformPath below and ExerisDomainProcessor.INERT_ATTRIBUTES.
     const config = kernel.getClientConfig();
     expect(config.useHttp3).toBe(true);
     expect(config.apiVersion).toBe('v1');
@@ -119,8 +121,10 @@ describe('KernelStrategy specifics — RLS headers + HTTP/3 + correlation', () =
     expect(headers['Authorization']).toBe('Bearer jwt-xyz');
   });
 
-  it('transformPath prepends the apiVersion segment between basePath and entityPath', () => {
-    expect(kernel.transformPath('/api', '/orders')).toBe('/api/v1/orders');
+  it('transformPath emits no version segment — the router serves none', () => {
+    // Asserted the opposite until the emitters were aligned. Kept as an assertion rather than
+    // deleted with the behaviour, because this is the shape a future reuse would copy.
+    expect(kernel.transformPath('/api', '/orders')).toBe('/api/orders');
   });
 
   it('mapError prefers X-Error-Code response header, then body.code, then KERNEL_ERROR fallback', () => {
@@ -158,14 +162,14 @@ describe('KernelStrategy specifics — RLS headers + HTTP/3 + correlation', () =
   });
 
   it('getRealTimeConfig points at the kernel event-stream endpoint', () => {
-    expect(kernel.getRealTimeConfig().endpoint).toBe('/api/v1/events/stream');
+    expect(kernel.getRealTimeConfig().endpoint).toBe('/api/events/stream');
   });
 
   it('generateClientCode wires up HttpClient + TenantContextService for the requested entity', () => {
     const code = kernel.generateClientCode('Order', '/orders');
     expect(code).toContain('HttpClient');
     expect(code).toContain('TenantContextService');
-    expect(code).toContain('/api/v1/orders');
+    expect(code).toContain('/api/orders');
     expect(code).toContain('X-Tenant-Id');
     expect(code).toContain('X-Correlation-Id');
   });
