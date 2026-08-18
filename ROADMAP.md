@@ -529,6 +529,20 @@ never-invoked emitter start emitting, and its output did not build.
       everything to **400**, so a deployment fault is blamed on the request body. Two independent
       fixes: give it the T41 treatment (refuse, naming the missing binding), and resolve lazily —
       the community JSON decoder null-checks the context and then ignores the allocator.
+- [ ] **T43-follow-up — capture the allocator at composition time.** Split out of T43 so it does not
+      live as prose inside a closed item. T43 made the failure honest; this is what would stop it
+      happening. `RuntimeComponents.createOrderHandler()` resolves `KernelProviders.MEMORY_ALLOCATOR`
+      once, inside the boot callback where the binding is live, and passes it to the handler as a
+      constructor argument — the shape `CommunityBenchmarkRuntimeLifecycle.java:100` already uses and
+      the reason that app works with the same subsystem selector. Costs a handler constructor
+      parameter, which the T49 seam absorbs. **Do the measurement first:** the capture-site theory is
+      inferred from the reference and from the dog-food probe, not from running a generated app, and
+      a fix aimed at the wrong cause is worse than the honest 5xx we now emit.
+
+      *Deliberately not minted as `T51`.* The `T*` space is shared with the dog-food log, which runs
+      to T50 and is not readable from this checkout; taking the next number from a stale local view
+      is exactly how ADR-070 got claimed twice on 2026-08-18. A follow-up to a numbered finding does
+      not need a number of its own.
 - [ ] **T36 — the repository stamps three system fields and not the fourth.** `save` stamps
       `setId(randomUUID())` and both audit timestamps (`KernelRepositoryGenerator.java:620`) and never
       touches `tenantId`, although the kernel has it bound as a `ScopedValue`. The asymmetry is the
