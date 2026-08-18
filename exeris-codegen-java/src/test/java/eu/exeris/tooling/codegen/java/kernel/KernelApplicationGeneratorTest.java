@@ -45,15 +45,29 @@ class KernelApplicationGeneratorTest {
         String lifecycle = files.stream()
                 .filter(f -> "RuntimeLifecycle".equals(f.className()))
                 .findFirst().orElseThrow().content();
-        // No per-entity wiring (no handler locals, no routes).
+        // No per-entity wiring. Asserted against the emission *pattern* rather than against
+        // a named entity: with a zero-entity list, "no OrderHandler" is true for reasons that
+        // have nothing to do with the generator behaving.
         assertThat(lifecycle)
-                .doesNotContain("components.orderHandler()")
+                // every per-entity local is `<Type> <name> = components.<name>()`
+                .doesNotContain("= components.")
                 .doesNotContain("routerBuilder.route")
                 .contains("HttpRouter.Builder routerBuilder = HttpRouter.builder()")
                 .contains("HttpRouter router = routerBuilder.build()")
                 // The count is known at generation time, so it is baked into the literal rather
                 // than left as a System.Logger parameter.
-                .contains("Application bootstrap complete: 0 entities wired");
+                .contains("Application bootstrap complete: 0 entities wired")
+                // the seam is still emitted and still invoked — an empty domain list is not
+                // a reason to drop the consumer's hook
+                .contains("components.configureRoutes(routerBuilder)");
+
+        // ...and the components file carries the scaffold with not one component factory.
+        // "\n    protected " matches a member declaration at class level; the javadoc lines
+        // that mention `protected create*` start with "     * " and are not matched.
+        assertThat(components(files))
+                .contains("public class RuntimeComponents")
+                .contains("public void configureRoutes(HttpRouter.Builder routes)")
+                .doesNotContain("\n    protected ");
     }
 
     @Test
