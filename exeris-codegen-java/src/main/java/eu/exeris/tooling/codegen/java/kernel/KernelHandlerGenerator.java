@@ -520,9 +520,10 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                 .addJavadoc("<p>Status mapping is the handler's concern, not the SPI's (ADR-036 §2):\n")
                 .addJavadoc("a decode failure — or any failure resolving/constructing the decode —\n")
                 .addJavadoc("surfaces as {@link IllegalArgumentException} (the call sites map it to\n")
-                .addJavadoc("{@code 400 BAD_REQUEST}); an unbound registry or unregistered decoder\n")
-                .addJavadoc("surfaces as {@link IllegalStateException} (a server-side configuration\n")
-                .addJavadoc("error → {@code 5xx}) and is re-thrown unchanged, never downgraded to 400.\n")
+                .addJavadoc("{@code 400 BAD_REQUEST}); an unbound registry, an unregistered decoder\n")
+                .addJavadoc("or an unbound {@code MEMORY_ALLOCATOR} surfaces as\n")
+                .addJavadoc("{@link IllegalStateException} (a server-side configuration error →\n")
+                .addJavadoc("{@code 5xx}) and is re-thrown unchanged, never downgraded to 400.\n")
                 .beginControlFlow("if (!exchange.request().hasBody())")
                 .addStatement("throw new $T($S)", ILLEGAL_ARGUMENT_EXCEPTION, "Missing body")
                 .endControlFlow()
@@ -531,11 +532,18 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                         "content-type")
                 // Decoder resolution, context construction, and decode all run inside
                 // one try so a RuntimeException from ANY of them (e.g. registry.resolve
-                // on a hostile content-type, or the allocator) maps to BAD_REQUEST at
-                // the call site rather than escaping parseBody unhandled. The
-                // IllegalStateException catch re-throws unchanged so the intentional
-                // 5xx mappings (unbound registry, unregistered decoder) survive per
+                // on a hostile content-type) maps to BAD_REQUEST at the call site rather
+                // than escaping parseBody unhandled. The IllegalStateException catch
+                // re-throws unchanged so the intentional 5xx mappings survive per
                 // ADR-036 §2 — they must NOT be downgraded to 400.
+                //
+                // T43: "or the allocator" used to be in that list of intended 400s, and
+                // it was wrong. MEMORY_ALLOCATOR is a ScopedValue; .get() on an unbound
+                // one throws NoSuchElementException, a RuntimeException, so a missing
+                // runtime binding was reported to the caller as "Invalid request body" —
+                // a deployment fault blamed on a request whose body was never read. The
+                // explicit bound-check below joins it to the unbound-registry case one
+                // line up: same class of fault, same IllegalStateException, same 5xx.
                 .beginControlFlow("try")
                 .addStatement("$T registry = $T.httpRequestBodyDecoderRegistry()\n"
                                 + ".orElseThrow(() -> new $T($S))",
@@ -547,6 +555,15 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                 .addStatement("throw new $T($S + type.getName() + $S + (contentType != null ? contentType : $S))",
                         ILLEGAL_STATE_EXCEPTION,
                         "No request body decoder registered for target type ", " and content-type ", "(absent)")
+                .endControlFlow()
+                .beginControlFlow("if (!$T.MEMORY_ALLOCATOR.isBound())", KERNEL_PROVIDERS)
+                .addStatement("throw new $T($S)", ILLEGAL_STATE_EXCEPTION,
+                        "No MemoryAllocator is bound; cannot build the request decoding "
+                                + "context. KernelProviders.MEMORY_ALLOCATOR is supplied by the "
+                                + "'memory' subsystem, which the default selector boots because "
+                                + "'http' declares it as a dependency, and is visible only inside "
+                                + "the dynamic scope of that binding. This is a wiring fault, not "
+                                + "a malformed request: the body has not been read yet.")
                 .endControlFlow()
                 .addStatement("$T context = new $T(exchange.request().method(), "
                                 + "exchange.request().path(), exchange.request().headers(), "
