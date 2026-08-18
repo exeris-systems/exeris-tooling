@@ -8,7 +8,20 @@
  * - CRUD operations with loading/error tracking
  * - Filter/search support
  * - Optimistic updates
- * - i18n-ready error messages
+ *
+ * <p><b>No `$localize` in emitted output.</b> The fallback error message used to be an
+ * `$localize` tagged template. `$localize` is a global that only exists once the consumer
+ * adds `@angular/localize` to their devDependencies and to `polyfills` in `angular.json` —
+ * and the app this tool emits declares `"polyfills": []` and no such dependency, so every
+ * emitted store failed `ng build` with `TS2304: Cannot find name '$localize'`. Tooling emits
+ * no `package.json` dependency the consumer did not ask for, so an emitted symbol that
+ * requires one is an undeclared requirement on their build — the same rule ADR-060 applied
+ * to slf4j on the Java side. Nothing else in the emitted app is internationalised; making it
+ * so is a deliberate change (polyfill + dependency + locale config), not a side effect of a
+ * fallback string.
+ *
+ * <p>This surfaced only when the generator was first wired into the orchestrator: it had been
+ * exported and invoked by nobody, so its output had never been built.
  *
  * @author Exeris Team
  * @since 0.3.0
@@ -80,7 +93,8 @@ import {
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { firstValueFrom } from 'rxjs';
 import { ${entityName}Service } from '../services/${kebab}.service';
-import type { ${entityName}, ${entityName}Create, ${entityName}Update, Page, PageRequest } from '../types/${kebab}.types';
+import type { Page, PageRequest } from '../services/${kebab}.service';
+import type { ${entityName}, ${entityName}Create, ${entityName}Update } from '../types/${kebab}.types';
 
 // ============================================================================
 // Filter Interface
@@ -576,7 +590,7 @@ ${this.generateSearchableFieldAccess(searchableFields)}
     if (typeof err === 'object' && err !== null && 'message' in err) {
       return String((err as { message: unknown }).message);
     }
-    return $localize\`:@@error.unknown:An unknown error occurred\`;
+    return 'An unknown error occurred';
   }
 }
 `;
