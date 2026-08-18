@@ -131,6 +131,10 @@ cross-reference index, so it retains shipped items alongside open ones.
 - **T2 (FE slice)** — emit `*.service.spec.ts` + `*.schema.spec.ts` into the generated app, run by the
   FE gate. *Status (0.6.0): DEFERRED → 0.7.0* (release-cut decision 2026-07-02) — rides with the full
   Java `Kernel*TestGenerator`, so 0.7.0 delivers the generated-test story in one piece.
+  *Superseded 2026-08-18: deferred again, to 0.8.0.* The "one piece" argument was made before the
+  gateway-caps track was folded into 0.7.0 and before U0/U1 arrived as forced upstream work; holding
+  a milestone whose stated goal (G0–G3) was complete, for a slice on the other side of the
+  toolchain split, would have paid the delay for a symmetry no consumer can observe.
 - **T18** — build-safety: guard the T13 pruner on empty input (#129) + the capability-pass phase
   ordering (`exeris:verify-capabilities` fresh-metadata gate + deferred validation at
   `generate-sources`) — **done**, see the backlog entry.
@@ -145,7 +149,7 @@ cross-reference index, so it retains shipped items alongside open ones.
 
 See the **Codegen completeness backlog** below for per-item detail.
 
-## 0.7.0 — gateway-caps enablement (tooling's half of the first SKU)
+## 0.7.0 — gateway-caps enablement (tooling's half of the first SKU) (shipped 2026-08-18)
 
 > Goal: unblock Phase 2 of the 2026-07-21 gateway-caps implementation plan — the first
 > `exeris-caps-*` repository — by closing the tooling-owned remainder of the plan's Phases 0/1.
@@ -291,11 +295,8 @@ the authored-manifest schema in `exeris-sdk-composition-spec`), not this milesto
       deliberately uncovered: neither has a probe that fails for the right reason. Which fields
       carry a check now comes from one `KernelValidationRules`, read by the guard emitter and the
       test emitter; the *comparison* stays unshared, or the pair would agree by construction rather
-      than by behaviour. What remains is the
-      **FE spec slice** — which
-      must wire `@angular/build:unit-test`
-      (Vitest, founder-ruled 2026-07-31) because the emitted app declares `"test": "ng test"` but
-      ships no runner and no test dependencies, so specs alone would be unrunnable.
+      than by behaviour. **The FE spec slice is deferred to 0.8.0** (release-cut decision
+      2026-08-18) — see the 0.8.0 entry for what it owes and why it did not ride along.
       *Found on the way:* a filterable field named `id` emitted a second `findById(UUID)` on both
       the repository and the service — uncompilable. Easy to hit by accident, since the processor
       records any field without `@Field` via `FieldMetadata.simple(...)`, which sets
@@ -327,7 +328,8 @@ completeness-table row saying otherwise were doc drift, corrected here. What was
 was that the constraints could never see a non-`MANY_TO_ONE` relationship or a cascade — the
 extraction fix above. The remaining backlog item already targeted at 0.7.0 before the gateway track
 was folded in is **T2** (the full test-emitter, Java + the FE spec slice); G0–G3 lead the milestone
-because they gate the cap track, not because T2 was displaced.
+because they gate the cap track, not because T2 was displaced. In the end T2 *was* split at the cut:
+the Java half shipped here, the FE spec slice moved to 0.8.0.
 
 ### Upstream catch-up (U0–U2) — added 2026-08-12
 
@@ -357,9 +359,15 @@ LTS descent can even compile. Verified by reading the jars.
       consumer's JVM refuses. Proven to fail by building at release 26. The ASM override on
       `maven-plugin-plugin` was re-measured and **stays**: plugin-tools 3.13.1 aborts on major 69
       too, not just 70.
-- [ ] **U2 — CI matrix `['25','26']`**, 25 as the release-bearing row, copying the shape SDK 0.10.0
+- [x] **U2 — CI matrix `['25','26']`**, 25 as the release-bearing row, copying the shape SDK 0.10.0
       adopted. A third `eu.exeris.preview` row is *schedulable* (JDK 28 EA is publicly downloadable)
-      but deliberately not taken yet — see below.
+      but deliberately not taken yet — see below. The matrix itself landed with U1 (#160); what
+      remained here was the half a workflow file cannot express — branch protection still required
+      `mvn verify (JDK 26)`, so the row that gated merges was the *forward-compatibility* row and
+      not the release-bearing one. Flipped to `mvn verify (JDK 25)` on 2026-08-18. The 26 row still
+      runs and still reports; it no longer blocks. `ng build (generated sample app)` is **not** in
+      the required list — the workflow comment claimed it was, which was never true and is corrected
+      rather than made true, because adding a gate is a decision and not a doc-fix.
 
 **Not a codegen fork.** Kernel 0.11 ships two lines (`eu.exeris` on JDK 25, `eu.exeris.preview` on
 JDK 28 EA with Valhalla `value record`), but the emitted source is identical against either: of the
@@ -404,6 +412,20 @@ Deliberately **not** debt: `@Projection`, `@EventHandler`, `@Derived`, `@Rule` �
 `DomainMetadata` components exist, filled and read by nobody, and that reservation is design-gated on
 the behavioural corpus rather than overlooked.
 
+- [ ] **T2 — the FE spec slice.** The half of the generated-test story that did not ship in 0.7.0
+      (the Java half is complete — slices a–f, ADR-058). Deferred at the 0.7.0 cut on 2026-08-18.
+      It is not "emit some spec files": the emitted app declares `"test": "ng test"` and ships
+      **no runner and no test dependencies**, so a spec alone would be unrunnable. The slice owes,
+      in one piece: a `test` target on `@angular/build:unit-test` in the emitted `angular.json`
+      (Vitest, founder-ruled 2026-07-31), a `tsconfig.spec.json`, the matching devDependencies, an
+      opt-in flag that is the TS-side counterpart of `-Dexeris.tests=true`, the spec emitters
+      themselves, and a CI gate that **runs** them rather than only type-checking them — the same
+      ruling ADR-058 made for the Java half, for the same reason.
+      Two constraints carry over from that ADR and are worth restating before anyone starts: tooling
+      emits no `package.json` dependency the consumer did not ask for, so whatever a generated spec
+      imports becomes a hard requirement on their build; and the emitted doubles must not drift from
+      the surface they double — on the Java side that was solved by emitting double and subject from
+      one source of truth, and the FE side has the same trap in `service-gen.ts`.
 - [ ] **T12 + T17 — the cross-app contract mesh epic.** Deferred out of 0.7.0 by the gateway-caps
       plan; ADR-048 is reserved and RFC-2026-06-29 is the design gate that must close first.
 - [ ] Generator output adjustments based on real budgetHQ + IDP-cap consumer feedback
@@ -444,7 +466,7 @@ the behavioural corpus rather than overlooked.
 | T12 | N generated apps can't form a mesh — client is own-app/relative-host, saga step is local, no cross-app contract | **High** | 0.8.0 (deferred out of 0.7.0 by the gateway-caps plan) |
 | T17 | Capability-graph validation is closed-world per app — a legitimate cross-service `@Requires` hard-fails the build | **High** | 0.8.0 (deferred out of 0.7.0 by the gateway-caps plan) |
 | T26 | A `@ExerisDomain(versioned = true)` entity whose `version` field is the **wrapper** `Long` throws NPE on the first `save()` of a fresh entity: `buildColumnLayout` hardcodes the VERSION column's type as `Long` and the emitter binds it by unboxing (`stmt.bindLong(i, entity.getVersion())`), with no null guard — and no guard is possible while the column type is a constant, since a primitive `long version` field cannot be null-compared. `update()` has the same unboxing (`long expected = entity.getVersion()`). Every other nullable system column (`createdAt`/`updatedAt`) *is* guarded, so this is the one gap. Fix is to read the declared field type into the column instead of assuming, which makes it a repository-emitter change rather than a test one | **Medium** (latent; primitive-`long` entities were unaffected) | ✅ 0.7.x — found 2026-08-02 by the T2 slice-d system-column fixture, fixed the same day: both the version bind and `update()`'s expected-version read go through a boxed local with a null default, so a wrapper-typed field behaves exactly like the primitive it shadows. The e2e fixture keeps the **wrapper** declaration (a primitive would pass either way) and the generated repository test no longer pre-stages the version, which makes every consumer's emitted test a regression test for it |
-| T2  | Zero tests generated for the generated surface | Medium | 🔶 0.7.0 slices a–f — the **Java half is complete** (handler bodyless routes + body-route guards + service delegation + repository round-trip + saga wiring + `@Validation` boundary pairs, ADR-058); FE spec slice open |
+| T2  | Zero tests generated for the generated surface | Medium | 🔶 0.7.0 slices a–f — the **Java half is complete** (handler bodyless routes + body-route guards + service delegation + repository round-trip + saga wiring + `@Validation` boundary pairs, ADR-058); **FE spec slice → 0.8.0** |
 | T3  | Action identity = method name, not `@Action(name=…)` → bean-setter collisions | Medium | 0.5.x |
 | T4  | `@Relationship` target derived from field Java type, not `targetEntity` | Medium | 0.5.x |
 | T5  | System-field overrides (`tenantIdField`, …) ignored by the repository generator | Medium | 0.5.x |
@@ -958,6 +980,13 @@ Proposals, highest return-on-effort first:
 - **0.x** — generated code shape may change in any release; consumers regenerate after every tooling bump
 - **1.x** — generated code shape changes only via additive minors; deprecation cycle for breaking changes
 - Output artifact compat is the headline contract — Maven plugin API is secondary
+- **A release tag carries a final version in the POM.** `v0.7.0` is the first one that does: `v0.5.0`
+  and `v0.6.0` were both tagged with the reactor still at `X-SNAPSHOT`, which no sibling repo does
+  (`exeris-sdk` `v0.10.0` → `0.10.0`, `exeris-kernel` `v0.11.0` → `0.11.0`). A tag pointing at a
+  mutable coordinate is a tag nobody can resolve. The cut is: release PR sets the final version →
+  tag that commit → a follow-up PR opens the next cycle at `X+1-SNAPSHOT`. Separately and still
+  binding: no cross-repo dependency may be a SNAPSHOT at a cut — release upstream first, pin the
+  final, then tag.
 
 ## Tracking
 
