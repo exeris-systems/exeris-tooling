@@ -578,19 +578,15 @@ T30 (emitted imports as undeclared build requirements — the general case behin
       exactly one — `@EventSourced` — is registered in `INERT_ANNOTATIONS`, i.e. extracted and
       consumed by no generator.
 
-      **Two are excluded, both because the kernel cannot yet host them**, and both verified rather
-      than assumed:
+      **One is excluded, because the kernel cannot yet host it**, verified rather than assumed:
 
       - `@Blob` — the v0.11 blob SPI shipped with two Community drivers, but there is **no
         `CommunityStorageSubsystem`**: the ten bootable subsystems are crypto, events, flow, graph,
         http, memory, persistence, scheduling, security, transport. `Application.main()` boots
         subsystems *by name*, so a generated app has no name to declare. Kernel-side ask (K6).
-      - `@EventSourced` — worth stating carefully, because the obvious check misleads.
-        `eu.exeris.kernel.spi.persistence.EventStore` **does** exist, which reads like the blocker is
-        gone. It is not that SPI: it is the **transactional outbox** (`append` / `pollPending` /
-        `markPublished`), i.e. guaranteed delivery. Event sourcing needs a *replayable per-aggregate
-        stream read* to rehydrate an aggregate, and there is none — `pollPending` returns undelivered
-        events and `markPublished` retires them.
+
+      *(`@EventSourced` sat here as a second kernel-gated exclusion until 2026-08-18. That was
+      wrong — see the correction below the table; the target moved from 49 to 50.)*
 
       Everything else in the unread 30 is buildable against the kernel as it stands today, and most
       needs no kernel surface at all:
@@ -604,17 +600,33 @@ T30 (emitted imports as undeclared build requirements — the general case behin
       | saga — `@SagaSteps`, `@SagaTransition`, `@SagaTransitions` | 3 | `CommunityFlowSubsystem`; `FlowDefinitionBuilder` already carries transitions (**S2**) |
       | `security.*` — `@Encrypted`, `@RowLevelSecurity` | 2 | `CommunityCryptoSubsystem` exists; RLS overlaps the `dataScope`-driven predicate, so it is a design call (**C2**) |
       | `@QueryParam`, `@Schedule` | 2 | the HTTP layer and `CommunitySchedulingSubsystem`, both present |
+      | `@EventSourced` | 1 | **re-measured 2026-08-18: not kernel-gated** — the replay SPI is on the pinned line; see below (**EV2**) |
 
-      **So the 1.0 target is 49 of 51**, with `@Blob` and `@EventSourced` carried as kernel asks
-      rather than as tooling debt. Two rules that follow from the shape of this list, and matter more
-      than the count: an annotation is "covered" when it **reaches emitted output**, not when the
-      processor extracts it — `@EventSourced` is the standing counter-example. And every one that
-      lands must have its `INERT_ATTRIBUTES` / `INERT_ANNOTATIONS` entry deleted in the same change,
-      or `-Aexeris.strict` starts lying in the other direction.
+      **`@EventSourced` is tooling debt, not a kernel ask — corrected 2026-08-18.** It was excluded on
+      the reasoning that event sourcing needs a replayable per-aggregate stream read and the kernel
+      had none. The evidence for that was
+      `eu.exeris.kernel.spi.persistence.EventStore`, which is the **transactional outbox** (`append` /
+      `pollPending` / `markPublished`) and genuinely is not the SPI — but concluding *absence* from
+      the wrong type being wrong is not a measurement. Enumerating
+      `eu.exeris.kernel.spi.events` at the tag this repo already pins (**kernel `0.11.0`**, per the
+      BOM) finds both halves: `EventStreamReader.replayFromVersion(StreamId, long)` is the replayable
+      per-aggregate read, `EventStreamAppender.append(StreamId, expectedVersion, …)` the
+      optimistic-concurrency write, with `JdbcEventStream{Reader,Appender}` and Kafka Community
+      bindings and a TCK IT. One real constraint survives and belongs in the design:
+      `KernelProviders.eventStreamReader()` returns an `Optional` — a broker may not support replay —
+      so emitted code must handle absence rather than assume a binding.
+
+      **So the 1.0 target is 50 of 51**, with only `@Blob` carried as a kernel ask. Two rules that
+      follow from the shape of this list, and matter more than the count: an annotation is "covered"
+      when it **reaches emitted output**, not when the processor extracts it — `@EventSourced` is
+      still the standing counter-example, now as pure tooling debt. And every one that lands must
+      have its `INERT_ATTRIBUTES` / `INERT_ANNOTATIONS` entry deleted in the same change, or
+      `-Aexeris.strict` starts lying in the other direction.
 
       Sequencing lives in the **S/C** entries under 0.8.0–0.9.0; `C0` comes first because it closes
       the defect class (strict mode audits extracted-but-unconsumed, and is structurally blind to the
-      30 the processor never reads) rather than the instances.
+      30 the processor never reads) rather than the instances. `@EventSourced` keeps its own track
+      (**EV2**) — it is the one item here that is a subsystem rather than an extraction.
 - [ ] Generated-code golden snapshot suite (per generator, per scenario)
 - [ ] `exeris-codegen-maven-plugin` API frozen (mojo parameters, lifecycle phase semantics)
 - [ ] `KernelArtifactGenerator` SPI frozen (third-party generators can plug in)

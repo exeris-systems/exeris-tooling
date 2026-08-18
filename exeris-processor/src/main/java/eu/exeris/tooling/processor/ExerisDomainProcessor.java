@@ -215,13 +215,19 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     private static final List<InertAnnotation> INERT_ANNOTATIONS = List.of(
             new InertAnnotation("eu.exeris.sdk.annotation.EventSourced", "EventSourced",
                     "event-sourcing emission is not yet implemented, so the extracted "
-                            + "EventSourcedMetadata reaches no generator (see ROADMAP EV2). The "
-                            + "kernel gate is a replayable per-aggregate stream read. Note that "
-                            + "eu.exeris.kernel.spi.persistence.EventStore exists and is NOT that "
-                            + "SPI: it is the transactional outbox (append / pollPending / "
-                            + "markPublished), i.e. guaranteed delivery — pollPending returns "
-                            + "undelivered events and markPublished retires them, so there is no "
-                            + "stream to rehydrate an aggregate from"));
+                            + "EventSourcedMetadata reaches no generator (see ROADMAP EV2). This "
+                            + "is a tooling gap, NOT a kernel gate: the kernel line this repo "
+                            + "pins (0.11.0) ships both halves — EventStreamReader."
+                            + "replayFromVersion(StreamId, long) is the replayable per-aggregate "
+                            + "read and EventStreamAppender.append(StreamId, expectedVersion, ...) "
+                            + "the optimistic-concurrency write, with JDBC and Kafka Community "
+                            + "bindings and a TCK. Two traps worth naming, because both have been "
+                            + "walked into: eu.exeris.kernel.spi.persistence.EventStore is NOT "
+                            + "that SPI (it is the transactional outbox — append / pollPending / "
+                            + "markPublished — so it holds no stream to rehydrate from), and "
+                            + "KernelProviders.eventStreamReader() returns an Optional because a "
+                            + "broker may not support replay, so generated code must handle "
+                            + "absence rather than assume a binding"));
 
     private ObjectMapper objectMapper;
     private Messager messager;
