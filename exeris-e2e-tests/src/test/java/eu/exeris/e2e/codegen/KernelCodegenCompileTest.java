@@ -196,7 +196,7 @@ class KernelCodegenCompileTest {
 
         List<GeneratedFile> generated = new KernelGeneratorStrategy().generate(metadata);
 
-        // Application + RuntimeLifecycle are project-wide; not in the
+        // Application + RuntimeComponents + RuntimeLifecycle are project-wide; not in the
         // strategy. Run the Application generator separately so the
         // compile-gate verifies the full bootstrap stack resolves
         // against the real exeris-kernel-spi and -core artifacts.

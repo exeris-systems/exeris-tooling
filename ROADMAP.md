@@ -440,9 +440,20 @@ never-invoked emitter start emitting, and its output did not build.
 
 **Open and tooling-owned.** These enter the 0.8.0 backlog:
 
-- [ ] **T49 — the generated composition root is closed.** `KernelApplicationGenerator` emits
-      `public final class RuntimeLifecycle` (`KernelApplicationGenerator.java:493-494`), constructing
-      every service inline. `Application` exposes three `protected` hooks, all infrastructure
+- [x] **T49 — the generated composition root is closed.** *Shipped 2026-08-18 (ADR-070).* A third
+      bootstrap file, `RuntimeComponents`, owns the construction of every generated repository,
+      service, handler and stream handler behind a `protected create*` factory with a memoising
+      public accessor; `RuntimeLifecycle` calls `new` on no generated type and offers its
+      `HttpRouter.Builder` to a `configureRoutes` hook after the last generated route.
+      `Application#components(TransactionalExecutor)` is the installation point, and it is invoked
+      inside the boot callback so a factory body can resolve `KernelProviders.flowEngine()` /
+      `eventEngine()`. The emitted `main()` now states that it is **not** polymorphic — a subclass
+      overriding a hook is not reached through it — because a seam whose obvious entry point ignores
+      it silently is the failure class this backlog keeps recording. Original finding below.
+
+      **T49 — the generated composition root is closed.** `KernelApplicationGenerator` emits
+      `public final class RuntimeLifecycle` (`KernelApplicationGenerator.java:493-494` **in the
+      pre-ADR-070 tree** — the line moved with the fix), constructing every service inline. `Application` exposes three `protected` hooks, all infrastructure
       (`subsystems()`, `transactionalExecutor()`, `capManifest()`); none admits application logic. So
       a consumer's hand-written service subclasses — the arrangement this repo's own rule 1
       prescribes — cannot be installed into the running app at all. The seam has to admit
@@ -455,6 +466,12 @@ never-invoked emitter start emitting, and its output did not build.
       performs that wiring. The declared chain `@Action` → `@DomainEvent` → saga is generated at every
       link except the call, so an action whose real work lives in a saga returns `200` and does
       nothing. Worth stating precisely: the emitted code *documents* a step nothing does.
+      **Now has somewhere to land** (ADR-070): a consumer can already close the chain by overriding
+      `createOrderService()` to return a publishing subclass built with
+      `new OrderEventPublisher(KernelProviders.eventEngine())`. Doing it in the pipeline is what
+      remains, and the design question the seam does not answer is whether the publisher becomes a
+      constructor argument of the generated service — changing every consumer's tree — or a
+      generated decorator installed by the default factory.
 - [ ] **T29 — `DataScope.UNIVERSE` fails the build on the one shape it describes.**
       `DataScopeSupport.isTenantPartitioned` is fail-closed ("not GLOBAL"), which is the right policy
       (`DataScopeSupport.java:63`). The defect is the consequence: an entity with no tenant

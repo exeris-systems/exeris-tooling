@@ -63,6 +63,11 @@ When a kernel SPI change lands in `exeris-kernel`, the corresponding generator u
 Tooling-specific ADRs live in `docs/adr/`. The one currently load-bearing:
 
 - **ADR-015 — Codegen Emission Strategy** (text blocks for text artefacts, JavaPoet for Java, shared scaffold extraction; 0.4.0 implementation target).
+- **ADR-070 — Generated composition root** (0.8.0, T49). `RuntimeComponents` is the seam where a
+  consumer's application logic enters a generated app: one `protected create*` factory per emitted
+  component, installed via `Application#components(TransactionalExecutor)`, plus a `configureRoutes`
+  hook. A new emitted component type joins that seam **in the same change that introduces it** —
+  otherwise it is unreachable to the consumer, which is the defect the ADR exists to close.
 - **ADR-055 / ADR-058 / ADR-060** (0.7.0) — the cap-tier Wall scan, the generated-test emission
   channel, and `System.Logger` in emitted code. All three carry non-obvious constraints on what
   tooling may require of the **consumer's** build. Before touching `CapTierWall`,

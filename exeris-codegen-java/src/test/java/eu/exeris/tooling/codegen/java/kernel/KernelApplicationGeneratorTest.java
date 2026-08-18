@@ -35,20 +35,19 @@ class KernelApplicationGeneratorTest {
     }
 
     @Test
-    @DisplayName("generateAll with an empty domain list still emits both files (no entity wiring, no routes)")
+    @DisplayName("generateAll with an empty domain list still emits all three files "
+            + "(no entity wiring, no routes)")
     void shouldEmitBothFilesForEmptyDomainList() {
         KernelApplicationGenerator gen = new KernelApplicationGenerator();
         List<GeneratedFile> files = gen.generateAll(List.of(), "com.example.foundation");
-        assertThat(files).hasSize(2);
+        assertThat(files).hasSize(3);
 
         String lifecycle = files.stream()
                 .filter(f -> "RuntimeLifecycle".equals(f.className()))
                 .findFirst().orElseThrow().content();
-        // No per-entity wiring (no Repository/Service/Handler lines).
+        // No per-entity wiring (no handler locals, no routes).
         assertThat(lifecycle)
-                .doesNotContain("Repository(transactionalExecutor)")
-                .doesNotContain("Service(")
-                .doesNotContain("Handler(")
+                .doesNotContain("components.orderHandler()")
                 .doesNotContain("routerBuilder.route")
                 .contains("HttpRouter.Builder routerBuilder = HttpRouter.builder()")
                 .contains("HttpRouter router = routerBuilder.build()")
@@ -71,7 +70,8 @@ class KernelApplicationGeneratorTest {
     }
 
     @Test
-    @DisplayName("generateAll emits Application + RuntimeLifecycle against Open-Core SPI")
+    @DisplayName("generateAll emits Application + RuntimeComponents + RuntimeLifecycle "
+            + "against Open-Core SPI")
     void shouldGenerateApplicationAndLifecycle() {
         KernelApplicationGenerator gen = new KernelApplicationGenerator();
         DomainMetadata order = DomainMetadata.builder("Order", "com.example.domain")
@@ -82,7 +82,7 @@ class KernelApplicationGeneratorTest {
         List<GeneratedFile> files = gen.generateAll(List.of(order, product),
                 "com.example.foundation");
 
-        assertThat(files).hasSize(2);
+        assertThat(files).hasSize(3);
         GeneratedFile application = files.stream()
                 .filter(f -> "Application".equals(f.className()))
                 .findFirst().orElseThrow();
@@ -108,8 +108,13 @@ class KernelApplicationGeneratorTest {
                 .contains("BootstrapSelector.forNames(subsystems().split")
                 .doesNotContain("SUBSYSTEMS.split")
                 .contains("protected String subsystems()")
-                .contains(".boot(() -> new RuntimeLifecycle(handlerSlot, transactionalExecutor()).run())")
+                .contains(".boot(() -> new RuntimeLifecycle(handlerSlot, "
+                        + "components(transactionalExecutor())).run())")
                 .contains("exchange.respond(HttpStatus.SERVICE_UNAVAILABLE)")
+                // T49: the seam that lets a consumer install their own components.
+                .contains("protected RuntimeComponents components(TransactionalExecutor "
+                        + "transactionalExecutor)")
+                .contains("return new RuntimeComponents(transactionalExecutor)")
                 .contains("protected TransactionalExecutor transactionalExecutor()")
                 .contains("return new TransactionOrchestrator(KernelProviders.persistenceEngine())")
                 .doesNotContain("import javax.sql")
@@ -119,12 +124,17 @@ class KernelApplicationGeneratorTest {
         assertThat(lifecycle.content())
                 .contains("import eu.exeris.kernel.core.http.routing.HttpRouter")
                 .contains("import eu.exeris.kernel.spi.http.HttpMethod")
-                .contains("import eu.exeris.kernel.spi.persistence.TransactionalExecutor")
+                // The executor import moved with the construction it served: the lifecycle
+                // never names a TransactionalExecutor now, RuntimeComponents does.
+                .doesNotContain("import eu.exeris.kernel.spi.persistence.TransactionalExecutor")
                 .contains("public final class RuntimeLifecycle")
-                .contains("OrderRepository orderRepository = new OrderRepository(transactionalExecutor)")
-                .contains("OrderService orderService = new OrderService(orderRepository)")
-                .contains("OrderHandler orderHandler = new OrderHandler(orderService)")
-                .contains("ProductRepository productRepository = new ProductRepository(transactionalExecutor)")
+                // T49: construction moved to RuntimeComponents; the lifecycle only takes the
+                // handlers it routes to, and never calls `new` on a generated type again.
+                .contains("OrderHandler orderHandler = components.orderHandler()")
+                .contains("ProductHandler productHandler = components.productHandler()")
+                .doesNotContain("new OrderRepository(")
+                .doesNotContain("new OrderService(")
+                .doesNotContain("new OrderHandler(")
                 .contains("HttpRouter.Builder routerBuilder = HttpRouter.builder()")
                 .contains("routerBuilder.route(HttpMethod.GET, \"/orders\", orderHandler::handleGetAll)")
                 .contains("routerBuilder.route(HttpMethod.POST, \"/orders\", orderHandler::handleCreate)")
@@ -159,9 +169,11 @@ class KernelApplicationGeneratorTest {
                 // both still inside boot(...), i.e. after KERNEL READY and before the kernel
                 // stops. That ordering is the whole point of the call site (ADR-024).
                 .contains("try (CompositionConductor conductor = CompositionConductor.from(capManifest()).start())")
-                .contains("new RuntimeLifecycle(handlerSlot, transactionalExecutor()).run();")
+                .contains("new RuntimeLifecycle(handlerSlot, "
+                        + "components(transactionalExecutor())).run();")
                 // ...and NOT the bare, unconducted boot line.
-                .doesNotContain(".boot(() -> new RuntimeLifecycle(handlerSlot, transactionalExecutor()).run())")
+                .doesNotContain(".boot(() -> new RuntimeLifecycle(handlerSlot, "
+                        + "components(transactionalExecutor())).run())")
                 .contains("protected Path capManifest()")
                 .contains("import java.nio.file.Path")
                 .contains("return Path.of(System.getProperty(\"exeris.capManifest\", \"cap-manifest.json\"))");
@@ -184,7 +196,8 @@ class KernelApplicationGeneratorTest {
                 .doesNotContain("capManifest")
                 .doesNotContain("cap-manifest.json")
                 .doesNotContain("java.nio.file.Path")
-                .contains(".boot(() -> new RuntimeLifecycle(handlerSlot, transactionalExecutor()).run())");
+                .contains(".boot(() -> new RuntimeLifecycle(handlerSlot, "
+                        + "components(transactionalExecutor())).run())");
     }
 
     @Test
@@ -209,6 +222,108 @@ class KernelApplicationGeneratorTest {
         assertThat(application(gen.generateAll(domains, "com.example.foundation", true)))
                 .isEqualTo(application(new KernelApplicationGenerator()
                         .generateAll(domains, "com.example.foundation", true)));
+    }
+
+    @Test
+    @DisplayName("T49: RuntimeComponents gives every generated component a field, a memoising "
+            + "accessor and an overridable factory, and the defaults chain through the accessors")
+    void componentsExposesAnOverridableFactoryPerComponent() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        DomainMetadata order = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders").build();
+
+        String components = components(gen.generateAll(List.of(order), "com.example.foundation"));
+
+        assertThat(components)
+                // Not final — the whole point is that a consumer subclasses it.
+                .contains("public class RuntimeComponents")
+                .doesNotContain("public final class RuntimeComponents")
+                .contains("public RuntimeComponents(TransactionalExecutor transactionalExecutor)")
+                // field + public accessor + protected factory, per component
+                .contains("private OrderRepository orderRepository;")
+                .contains("public OrderRepository orderRepository()")
+                .contains("protected OrderRepository createOrderRepository()")
+                .contains("private OrderService orderService;")
+                .contains("public OrderService orderService()")
+                .contains("protected OrderService createOrderService()")
+                .contains("private OrderHandler orderHandler;")
+                .contains("public OrderHandler orderHandler()")
+                .contains("protected OrderHandler createOrderHandler()")
+                // The default construction reads its dependency through the ACCESSOR, not a
+                // field or a local. That indirection is what makes one override take effect
+                // everywhere downstream: override createOrderRepository() and the service
+                // built by the untouched createOrderService() gets the replacement.
+                .contains("return new OrderRepository(transactionalExecutor())")
+                .contains("return new OrderService(orderRepository())")
+                .contains("return new OrderHandler(orderService())")
+                // Memoisation, so an accessor is safe to call from an override.
+                .contains("if (orderRepository == null) {")
+                .contains("orderRepository = createOrderRepository();");
+    }
+
+    @Test
+    @DisplayName("T49: configureRoutes runs after every generated route and before build(), "
+            + "so a hand-written route can add but never displace")
+    void configureRoutesHookRunsAfterGeneratedRoutesAndBeforeBuild() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        DomainMetadata order = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders").build();
+        List<GeneratedFile> files = gen.generateAll(List.of(order), "com.example.foundation");
+
+        assertThat(components(files))
+                .contains("public void configureRoutes(HttpRouter.Builder routes)");
+
+        String lifecycle = lifecycle(files);
+        int lastGeneratedRoute = lifecycle.lastIndexOf("routerBuilder.route(");
+        int hook = lifecycle.indexOf("components.configureRoutes(routerBuilder)");
+        int build = lifecycle.indexOf("HttpRouter router = routerBuilder.build()");
+
+        assertThat(lastGeneratedRoute).isGreaterThan(-1);
+        assertThat(hook).isGreaterThan(lastGeneratedRoute);
+        assertThat(build).isGreaterThan(hook);
+    }
+
+    @Test
+    @DisplayName("T49: the SSE stream handlers go through the seam too — no generated type is "
+            + "constructed outside RuntimeComponents")
+    void streamHandlersAreBuiltThroughTheSeam() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        DomainMetadata order = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .realTimeApi(true)
+                .actions(List.of(ActionMetadata.builder("trackShipment").streaming(true).build()))
+                .build();
+        List<GeneratedFile> files = gen.generateAll(List.of(order), "com.example.foundation");
+
+        assertThat(components(files))
+                .contains("protected OrderStreamHandler createOrderStreamHandler()")
+                .contains("return new OrderStreamHandler()")
+                .contains("protected OrderTrackShipmentStreamHandler "
+                        + "createOrderTrackShipmentStreamHandler()")
+                .contains("return new OrderTrackShipmentStreamHandler()");
+
+        assertThat(lifecycle(files))
+                .contains("OrderStreamHandler orderStreamHandler = components.orderStreamHandler()")
+                .contains("OrderTrackShipmentStreamHandler orderTrackShipmentStreamHandler = "
+                        + "components.orderTrackShipmentStreamHandler()")
+                // The lifecycle calls `new` on nothing the pipeline generated.
+                .doesNotContain("= new Order");
+    }
+
+    @Test
+    @DisplayName("T49: composition changes Application only — RuntimeComponents is byte-identical")
+    void compositionLeavesTheRuntimeComponentsUntouched() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        List<DomainMetadata> domains = List.of(DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders").build());
+
+        assertThat(components(gen.generateAll(domains, "com.example.foundation", true)))
+                .isEqualTo(components(gen.generateAll(domains, "com.example.foundation", false)));
+    }
+
+    private static String components(List<GeneratedFile> files) {
+        return files.stream().filter(f -> "RuntimeComponents".equals(f.className()))
+                .findFirst().orElseThrow().content();
     }
 
     private static String application(List<GeneratedFile> files) {
@@ -264,9 +379,9 @@ class KernelApplicationGeneratorTest {
 
         String content = lifecycle.content();
         assertThat(content)
-                // per-action stream handler instantiated no-arg
+                // per-action stream handler taken from the T49 seam (constructed no-arg there)
                 .contains("OrderTrackShipmentStreamHandler orderTrackShipmentStreamHandler = "
-                        + "new OrderTrackShipmentStreamHandler()")
+                        + "components.orderTrackShipmentStreamHandler()")
                 // registered via the typed streamRoute(...), POST, at the action path
                 .contains("routerBuilder.streamRoute(HttpMethod.POST, "
                         + "\"/orders/{id}/actions/track-shipment\", orderTrackShipmentStreamHandler::handle)")

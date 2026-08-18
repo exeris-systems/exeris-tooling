@@ -492,6 +492,56 @@ because a one-word enum change makes it easier to do without noticing.
 read-widen) with a warning saying so, until the kernel `sharedScopeKey` carrier lands on the
 0.11 line. Do not declare it expecting cross-tenant reads yet.
 
+## 0.8.0 train — regeneration deltas
+
+### A third bootstrap file, and `RuntimeLifecycle`'s constructor changed (ADR-070)
+
+Regeneration now emits `RuntimeComponents.java` next to `Application.java` and
+`RuntimeLifecycle.java`. It owns the construction of every generated repository, service, handler
+and SSE stream handler; `RuntimeLifecycle` takes it as its second constructor argument and no longer
+calls `new` on a generated type.
+
+**If you only regenerate, there is nothing to do** — all three files are generated and change
+together. Two cases need action:
+
+- **You hand-wrote something that constructs `RuntimeLifecycle` directly** (a custom launcher, a
+  test harness). `new RuntimeLifecycle(handlerSlot, transactionalExecutor)` becomes
+  `new RuntimeLifecycle(handlerSlot, new RuntimeComponents(transactionalExecutor))`.
+- **You forked a generated file to install your own service.** That was the only way to do it
+  before; it is no longer necessary and the fork can be dropped. Subclass `RuntimeComponents`,
+  override the one `create*` factory, and return the subclass from
+  `Application#components(TransactionalExecutor)`:
+
+  ```java
+  class MyComponents extends RuntimeComponents {
+      MyComponents(TransactionalExecutor tx) { super(tx); }
+
+      @Override protected OrderService createOrderService() {
+          return new MyOrderService(orderRepository(),
+                  new OrderEventPublisher(KernelProviders.eventEngine()));
+      }
+  }
+
+  class MyApplication extends Application {
+      @Override protected RuntimeComponents components(TransactionalExecutor tx) {
+          return new MyComponents(tx);
+      }
+
+      public static void main(String[] args) { new MyApplication().run(); }
+  }
+  ```
+
+**Point your launcher at the subclass.** The generated `Application.main()` does
+`new Application().run()` — it is not polymorphic, so running it ignores your overrides silently.
+Give the subclass its own `main`, as above.
+
+Two properties worth knowing rather than rediscovering: every factory runs inside the
+`KernelBootstrap.boot(...)` callback, so a body may resolve any bound provider
+(`KernelProviders.flowEngine()`, `eventEngine()`, …); and `configureRoutes(HttpRouter.Builder)` is
+called after every generated route and before `build()`, so a hand-written route can add to the
+routing table but never displace a generated one.
+
+
 ---
 
 ## Reference
@@ -500,3 +550,4 @@ read-widen) with a warning saying so, until the kernel `sharedScopeKey` carrier 
 - ADR-015 Amendment 1 — switch to Palantir's JavaPoet fork (same document)
 - [ADR-034 link stub — `KernelWebClient` facade rename](adr/ADR-034.link.md) (authoritative copy kernel-side)
 - [ADR-059 link stub — `DataScope` supersedes `tenantScoped`](adr/ADR-059.link.md) (authoritative copy SDK-side)
+- [ADR-070 — Open the generated composition root: `RuntimeComponents`](adr/ADR-070-generated-composition-root-seam.md)

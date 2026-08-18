@@ -43,7 +43,8 @@ import java.util.List;
  * <h2>Project-wide (invoked separately by {@code CodegenPipeline})</h2>
  * <p>{@link KernelApplicationGenerator} is <b>not</b> part of the
  * per-entity strategy — it emits two project-wide files
- * ({@code Application.java} + {@code RuntimeLifecycle.java}) and
+ * ({@code Application.java} + {@code RuntimeComponents.java} +
+ * {@code RuntimeLifecycle.java}) and
  * therefore needs the full domain list, not a single
  * {@link DomainMetadata}. {@code CodegenPipeline} invokes it explicitly
  * after the per-entity loop via
