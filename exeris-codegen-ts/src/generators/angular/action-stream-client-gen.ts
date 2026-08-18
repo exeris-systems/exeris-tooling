@@ -156,12 +156,16 @@ export class ActionStreamClientGenerator implements CodeGenerator {
    * the Java handler is registered under: {@code {base}/{id}/actions/{kebab}}.
    * The {@code {base}} derivation mirrors the ServiceGenerator's {@code baseUrl}
    * ({@code apiBasePath + apiPath}); {@code {id}} is interpolated by the caller.
+   *
+   * <p>{@code apiVersion} is deliberately NOT folded in — same reason, and same
+   * miss, as {@code StreamClientGenerator.streamUrl}: the router registers no
+   * version segment, so a domain declaring {@code @ExerisDomain(apiVersion = …)}
+   * streamed to a path nothing serves.
    */
   private actionPath(domain: DomainMetadata, action: ActionMetadata, context: GeneratorContext): string {
     const kebabEntity = DslMapper.toKebabCase(domain.entityName);
-    const apiVersion = domain.apiVersion ?? '';
     const pathSegment = domain.path ?? `/${kebabEntity}s`;
-    const apiPath = domain.apiPath ?? (apiVersion ? `/${apiVersion}${pathSegment}` : pathSegment);
+    const apiPath = domain.apiPath ?? pathSegment;
     const kebabAction = DslMapper.toKebabCase(action.name);
     return `${context.config.apiBasePath}${apiPath}/${'${id}'}/actions/${kebabAction}`;
   }

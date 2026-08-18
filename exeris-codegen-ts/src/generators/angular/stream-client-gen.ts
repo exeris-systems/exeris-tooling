@@ -101,12 +101,26 @@ export class StreamClientGenerator implements CodeGenerator {
    * handler is registered under: {@code {base}/stream}. The {@code {base}}
    * derivation mirrors the ServiceGenerator's {@code baseUrl}
    * ({@code apiBasePath + apiPath}).
+   *
+   * <p>{@code apiVersion} is deliberately NOT folded in. It used to be, which made
+   * the parity claimed above false: {@code KernelApplicationGenerator} registers
+   * {@code streamRoute} at {@code effectivePath() + "/stream"} with no version
+   * segment, so a domain that declares {@code @ExerisDomain(apiVersion = …)}
+   * opened {@code /<version>/<path>/stream} against a router serving
+   * {@code /<path>/stream} and got a 404. Only explicitly-declared versions were
+   * affected — the processor records `getElementValues()`, not the annotation
+   * defaults, so an author who never wrote the attribute never carried it — but
+   * the attribute exists to be written, and its own SDK javadoc still advertises
+   * the {@code /api/{version}/{path}} shape nothing serves.
+   *
+   * <p>Same defect the service emitter carried, in the same batch of fixes; these
+   * two were missed because their fixtures leave {@code apiVersion} unset, so no
+   * test rendered the broken path.
    */
   private streamUrl(domain: DomainMetadata, context: GeneratorContext): string {
     const kebabName = DslMapper.toKebabCase(domain.entityName);
-    const apiVersion = domain.apiVersion ?? '';
     const pathSegment = domain.path ?? `/${kebabName}s`;
-    const apiPath = domain.apiPath ?? (apiVersion ? `/${apiVersion}${pathSegment}` : pathSegment);
+    const apiPath = domain.apiPath ?? pathSegment;
     return `${context.config.apiBasePath}${apiPath}/stream`;
   }
 

@@ -79,6 +79,28 @@ describe('StreamClientGenerator.generate — route parity with the kernel handle
     expect(content).toContain(`private readonly streamUrl = '/api/orders/stream';`);
   });
 
+  it('apiVersion is NOT folded into the stream URL — the router serves no version segment', () => {
+    // The fixtures above leave apiVersion unset, which is why this emitter kept folding
+    // it in long after the service emitter stopped: no test ever rendered the broken path.
+    // KernelApplicationGenerator registers streamRoute at effectivePath() + "/stream".
+    const d = domain({ entityName: 'Order', realTimeApi: true, path: '/orders', apiVersion: 'v1' });
+    const content = gen.generate(d, CTX)!.content;
+
+    expect(content).toContain(`private readonly streamUrl = '/api/orders/stream';`);
+    expect(content).not.toContain('/v1/');
+  });
+
+  it('explicit apiPath still wins over the derived path', () => {
+    const d = domain({
+      entityName: 'Order',
+      realTimeApi: true,
+      path: '/anything',
+      apiVersion: 'v2',
+      apiPath: '/custom/orders',
+    });
+    expect(gen.generate(d, CTX)!.content).toContain(`private readonly streamUrl = '/api/custom/orders/stream';`);
+  });
+
   it('uses a native EventSource with withCredentials (GET-only, cookie auth)', () => {
     const content = gen.generate(domain({ entityName: 'Order', realTimeApi: true }), CTX)!.content;
 

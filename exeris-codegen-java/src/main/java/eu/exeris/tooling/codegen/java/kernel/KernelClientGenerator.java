@@ -228,12 +228,18 @@ public class KernelClientGenerator implements KernelArtifactGenerator {
      * <p>Aligning the client on {@code effectivePath()} is the smaller of the two possible
      * corrections and the one two of the three artifacts already agreed on.
      *
-     * <p><b>Open design question this exposes.</b> {@code @ExerisDomain.apiVersion} now reaches no
-     * emitted artifact at all — the server never served a versioned route, so the attribute has no
+     * <p><b>Open design question this exposes.</b> {@code @ExerisDomain.apiVersion} reaches no
+     * emitted artifact — the server never served a versioned route, so the attribute has no
      * destination. Serving {@code /api/<version>/…} from the router and the OpenAPI document instead
      * is a defensible answer and arguably the better API, but it changes every emitted route and the
      * published contract with it, so it is a decision to take deliberately rather than a bug to fix
-     * here. Until it is taken, {@code apiVersion} is inert and should be declared so.
+     * here. Until it is taken, {@code apiVersion} is inert, and it is now declared so in
+     * {@code ExerisDomainProcessor.INERT_ATTRIBUTES}.
+     *
+     * <p>That claim was premature when first written here: two TypeScript emitters
+     * ({@code stream-client-gen}, {@code action-stream-client-gen}) were still folding the version
+     * into their SSE routes, so declaring the attribute inert then would have produced a false
+     * "no effect" warning. They were aligned in the same batch; the registry entry followed.
      */
     private String buildApiPath(DomainMetadata metadata) {
         // effectivePath() is the SDK-canonical derivation shared by every other generator (OpenAPI,

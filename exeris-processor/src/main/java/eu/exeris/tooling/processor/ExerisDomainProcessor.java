@@ -183,7 +183,15 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "it — action-parameter generation reads only the parameter name and type"),
             new InertAttribute("ActionParam", "required",
                     "the value reaches ActionParamMetadata in the JSON, but no emitter renders "
-                            + "it — action-parameter generation reads only the parameter name and type"));
+                            + "it — action-parameter generation reads only the parameter name and type"),
+            new InertAttribute("ExerisDomain", "apiVersion",
+                    "no emitted artifact carries a version segment: the router registers routes at "
+                            + "the entity path, the OpenAPI document publishes the same, and the Java "
+                            + "client and every TypeScript client were aligned onto it. Emitting "
+                            + "/api/{version}/{path} from the router instead is a defensible API "
+                            + "decision, but it changes every route and the published contract, so it "
+                            + "is a decision to take rather than a default to assume. Until it is "
+                            + "taken, setting this attribute has no effect on output"));
 
     /**
      * Hand-maintained registry of whole type-level annotations that are extracted
