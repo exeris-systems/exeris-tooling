@@ -412,6 +412,121 @@ Deliberately **not** debt: `@Projection`, `@EventHandler`, `@Derived`, `@Rule` �
 `DomainMetadata` components exist, filled and read by nobody, and that reservation is design-gated on
 the behavioural corpus rather than overlooked.
 
+### Dog-food reconciliation (T-namespace) — 2026-08-18
+
+The `T*` numbers in this file and the `T*` numbers in the Stellar-Tactics dog-food log
+(`dogfooding-findings.md`, in the showcase repo) are **one namespace**, not two. This file carries
+T1–T26 because that is as far as the backlog had been transcribed; the log continues to **T50**, and
+adds `V1–V3` (the `@View` emitter), `S1–S5` (SDK), `K1–K7` (kernel) and `D1–D3` (DX). Findings are
+numbered *there*, by the consumer that hits them; this file records the tooling-owned subset and its
+disposition. That direction is deliberate — a finding is minted by whoever measures it, and tooling
+does not get to renumber somebody else's evidence.
+
+Everything below was **re-verified against this tree** rather than transcribed. The log is a good
+document and it says so itself: it records three occasions where it published an inferred cause as a
+measured one (the OpenAPI determinism claim, the T19 re-grade, the T43 cause). So a status is listed
+here only with the `path:line` that settles it, and anything not re-checked in this pass is marked.
+
+**Closed by the 0.8.0 dog-food batch (#166), with the log's numbering:** T31 (`REFERENCES tenants(id)`
+against a table nothing emits), T33 (RLS enabled but never forced — the owner role read every
+tenant's rows), T34 (`current_setting(…, true)` returns `''` after a pool `RESET`, so `''::uuid`
+raised on every recycled connection), T35 (the policy read `app.tenant_id`; the kernel publishes
+`exeris.tenant_id`), T38 (client requested `/api/<version>/…` against a router serving the entity
+path), T39 (`findAll()` decoded `List<LinkedHashMap>` under a `@SuppressWarnings`), T41 + T45 (the
+tenant guard, and its extension past CRUD to actions), T44 (`@Action.path` registered inert),
+V1–V3 (the emitted `@View` did not parse, bound a `current()` no generator produced, and did not
+iterate). Plus one the batch itself introduced and the FE gate caught: wiring `StoreGenerator` made a
+never-invoked emitter start emitting, and its output did not build.
+
+**Open and tooling-owned.** These enter the 0.8.0 backlog:
+
+- [ ] **T49 — the generated composition root is closed.** `KernelApplicationGenerator` emits
+      `public final class RuntimeLifecycle` (`KernelApplicationGenerator.java:493-494`), constructing
+      every service inline. `Application` exposes three `protected` hooks, all infrastructure
+      (`subsystems()`, `transactionalExecutor()`, `capManifest()`); none admits application logic. So
+      a consumer's hand-written service subclasses — the arrangement this repo's own rule 1
+      prescribes — cannot be installed into the running app at all. The seam has to admit
+      *construction*, not just configuration: a saga needs the `FlowEngine`, a publisher the
+      `EventEngine`. **Highest-leverage item in this list**: T48 and T50 are both downstream of it,
+      and it is the difference between an app that serves CRUD and an app that runs.
+- [ ] **T48 — emitted event publishers are never invoked.** `KernelServiceGenerator`'s javadoc
+      (`KernelServiceGenerator.java:24-27`) says publishing is "intentionally out of scope" and that
+      the emitted `*EventPublisher` "is wired separately by the application bootstrap". No emitter
+      performs that wiring. The declared chain `@Action` → `@DomainEvent` → saga is generated at every
+      link except the call, so an action whose real work lives in a saga returns `200` and does
+      nothing. Worth stating precisely: the emitted code *documents* a step nothing does.
+- [ ] **T29 — `DataScope.UNIVERSE` fails the build on the one shape it describes.**
+      `DataScopeSupport.isTenantPartitioned` is fail-closed ("not GLOBAL"), which is the right policy
+      (`DataScopeSupport.java:63`). The defect is the consequence: an entity with no tenant
+      system-field block — which is what a shared-world row *is* — gets a `tenant_id` column and a
+      `getTenantId()` call, so the build fails with `cannot find symbol` inside generated code the
+      consumer is told not to edit. Fix is a processor **ERROR** refusing the declaration, not a
+      change of policy. (The stale "this repo does not pin 0.11 yet" rationale is corrected in the
+      same change; U0 pinned it.)
+- [ ] **T43 — a missing binding is reported as the caller's bad request.** `parseBody` resolves
+      `KernelProviders.MEMORY_ALLOCATOR.get()` eagerly when building `HttpRequestDecodingContext`
+      (`KernelHandlerGenerator.java:553`). An unbound allocator raises inside the `try` that maps
+      everything to **400**, so a deployment fault is blamed on the request body. Two independent
+      fixes: give it the T41 treatment (refuse, naming the missing binding), and resolve lazily —
+      the community JSON decoder null-checks the context and then ignores the allocator.
+- [ ] **T36 — the repository stamps three system fields and not the fourth.** `save` stamps
+      `setId(randomUUID())` and both audit timestamps (`KernelRepositoryGenerator.java:620`) and never
+      touches `tenantId`, although the kernel has it bound as a `ScopedValue`. The asymmetry is the
+      trap: forget it and the write is refused by the RLS `WITH CHECK`, reported as a security
+      violation rather than the omission it is. Either stamp it from the ambient `StorageContext` or
+      say in the emitted javadoc that the caller owns it — silence is the worst of the three.
+- [ ] **T40 — an entity named `Component` breaks its own generated Angular code.** `form-gen` emits
+      `import { Component, … } from '@angular/core'` and `import { <Entity>, … } from '../services/…'`
+      unaliased (`form-gen.ts:141,144`), so an entity called `Component` collides with the decorator
+      in the file it decorates. `Directive`, `Injectable`, `Pipe`, `Input`, `Output`, `Signal` and
+      `Type` are the same shape. Alias unconditionally rather than maintaining a reserved-word list
+      against every Angular release.
+- [ ] **T50 — the emitted app declares no runtime driver.** `Application.main()` boots subsystems by
+      name and every provider behind those names is in `exeris-kernel-community`; nothing in the
+      emitted build says so, and the failure is a bootstrap error naming a subsystem rather than a
+      jar. This is **T30 one phase later** and it fails worse. Tooling emits no `pom.xml`, so the
+      honest options are a documented requirement or — smaller and better-timed — failing the *build*
+      when a selected subsystem has no provider on the runtime classpath.
+- [ ] **T42 — the mesh has no generated frontend contract.** `codegen-ts` is single-service by
+      construction: one metadata directory in, one app out. A mesh consumer retypes the other
+      service's vocabulary by hand across a language boundary with no compiler between. The cheap
+      honest version is a **types-only** second emission — point the CLI at a second metadata
+      directory and emit `types/` without services or components. Much smaller than the T12/T17
+      command epic, and it prevents the drift class outright.
+- [ ] **Three config flags are declared, default `true`, and read by nothing.** `generateDetails`,
+      `generateSagas`, `generateEvents` (`config.ts:54,60,63`); only `generateStores` is read, and
+      only since #166 (`orchestrator.ts:164`). That a flag can default to `true` and be honoured by
+      nobody is worth more than any of the three individually — it is the same silent-failure shape
+      as an inert annotation, one layer out, and it is exactly how `view-gen` came to bind a
+      `current()` that no generator produced. Each wiring changes every consumer's tree, so each
+      needs its own change with its own evidence.
+- [ ] **The inert registries are far smaller than the unread surface.** `INERT_ATTRIBUTES` holds four
+      entries and `INERT_ANNOTATIONS` one (`ExerisDomainProcessor.java:175,215`), against ~23
+      annotations the processor never reads. `@Derived`, `@Rule` and `@NavMenu` reach no generator —
+      verified: `DerivedMetadata`/`RuleMetadata` appear in no emitter or processor source — and none
+      is registered, so `-Aexeris.strict` is silent about all three. This is **C0** in the section
+      above, and the dog-food log is the corpus that sizes it: `@NavMenu` is decorative on most of a
+      real domain.
+
+**Open, verified, and deliberately not scheduled here:**
+
+- **T6 (naive plural) is centralised but unchanged.** `KernelTableNaming` exists precisely so the
+  repository and the migration cannot disagree, and it deliberately returns
+  `toSnakeCase(entityName) + "s"` because changing it would change default output for every existing
+  consumer (`KernelTableNaming.java:15,42`). The seam for a fix now exists in one place; the fix is a
+  breaking regeneration and wants a migration note, not a quiet edit. Fresh evidence that it still
+  bites: a downstream hand-copied DDL said `reassemblies` while the generator emits `reassemblys`.
+- **OpenAPI key order is toolchain-dependent, not per-run.** The log filed this as hash-seed churn and
+  then corrected itself: five consecutive fresh-JVM runs are byte-identical, and the order moved once,
+  across a toolchain change. Still worth sorting the keys — every toolchain bump emits a large
+  content-free diff on a committed L1 tree — but it is a per-bump cost, not the determinism violation
+  first reported.
+
+**Not re-verified in this pass**, carried from the log and marked as such: T5 (system-field overrides
+ignored by the repository generator), T20b (the TS pruner does not remove cross-service orphans),
+T20d (`form-gen` coerces numeric fields but not booleans), T25/G6 (theme-variant binding for `@View`),
+T30 (emitted imports as undeclared build requirements — the general case behind T50).
+
 - [ ] **T2 — the FE spec slice.** The half of the generated-test story that did not ship in 0.7.0
       (the Java half is complete — slices a–f, ADR-058). Deferred at the 0.7.0 cut on 2026-08-18.
       It is not "emit some spec files": the emitted app declares `"test": "ng test"` and ships

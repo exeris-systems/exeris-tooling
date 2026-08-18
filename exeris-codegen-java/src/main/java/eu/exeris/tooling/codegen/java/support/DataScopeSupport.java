@@ -19,12 +19,27 @@ import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
  * <p>The predicate is deliberately phrased as "not {@code GLOBAL}" rather than
  * "is {@code TENANT}". {@link DataScope#UNIVERSE} is rows owned by a tenant but
  * readable across tenants; its kernel carrier ({@code sharedScopeKey}, the
- * read-widen / write-pin RLS mode) lands on the kernel 0.11 line, which this
- * repo does not pin yet. Until it does, UNIVERSE emits the TENANT shape — which
- * is UNIVERSE minus the widening, i.e. strictly narrower than declared. Failing
- * closed is the whole point: an "is TENANT" test would send UNIVERSE down the
- * GLOBAL path and publish rows the author scoped to an owner. The processor
- * warns that the widening half is not transcribed yet.
+ * read-widen / write-pin RLS mode) is on the kernel 0.11 line. Until the carrier
+ * is transcribed here, UNIVERSE emits the TENANT shape — which is UNIVERSE minus
+ * the widening, i.e. strictly narrower than declared. Failing closed is the whole
+ * point: an "is TENANT" test would send UNIVERSE down the GLOBAL path and publish
+ * rows the author scoped to an owner. The processor warns that the widening half
+ * is not transcribed yet.
+ *
+ * <p><b>This rationale used to say the pin was what blocked the transcription</b>
+ * ("the kernel 0.11 line, which this repo does not pin yet"). U0 pinned kernel
+ * {@code 0.11.0}, so only the transcription itself is outstanding. Corrected
+ * because the sentence was the one a reader would trust before deciding whether
+ * the work was reachable.
+ *
+ * <p><b>Known consequence, and it is not merely "narrower" (T29).</b> On the
+ * archetypal UNIVERSE entity — a shared-world row with no tenant system-field
+ * block, which is what "not tenant-partitioned" means — the emitted repository
+ * grows a {@code tenant_id} column and calls {@code getTenantId()} on a type that
+ * has none, so the build fails with {@code cannot find symbol} inside generated
+ * code the consumer is told not to edit. The policy is right; what is missing is
+ * an actionable processor diagnostic refusing the declaration instead of letting
+ * it become a downstream compile error. Tracked in ROADMAP 0.8.0.
  *
  * <p>When the carrier mapping lands (ADR-059 obligation 5, last part), UNIVERSE
  * gains its own branch here rather than at seven call sites.
