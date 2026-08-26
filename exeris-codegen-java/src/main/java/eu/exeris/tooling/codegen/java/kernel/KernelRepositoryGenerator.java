@@ -91,6 +91,25 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     private static final ClassName ROW_CURSOR =
             ClassName.get(SPI_PERSISTENCE_PKG, "RowCursor");
 
+    /**
+     * {@code KernelProviders} — the SPI's ambient-context accessor. The repository reads exactly one
+     * thing from it: the acting tenant, when a tenant-partitioned row arrives with no owner set
+     * (T36). Already a compile-time requirement of every emitted repository via
+     * {@code TransactionalExecutor}, so this adds no dependency to the consumer's build.
+     */
+    private static final ClassName KERNEL_PROVIDERS =
+            ClassName.get("eu.exeris.kernel.spi.context", "KernelProviders");
+    private static final ClassName ILLEGAL_STATE_EXCEPTION =
+            ClassName.get(IllegalStateException.class);
+    private static final ClassName ILLEGAL_ARGUMENT_EXCEPTION =
+            ClassName.get(IllegalArgumentException.class);
+
+    /** Name of the emitted acting-tenant resolver — see {@link #buildActingTenantId}. */
+    static final String ACTING_TENANT_METHOD = "actingTenantId";
+    /** Emitted message constants, so the resolver's own body stays one readable line per step. */
+    private static final String SYSTEM_SCOPE_FIELD = "TENANT_SCOPE_REQUIRED";
+    private static final String NOT_A_UUID_FIELD = "TENANT_KEY_NOT_A_UUID";
+
     private static final ClassName OBJECT_MAPPER =
             ClassName.get("tools.jackson.databind", "ObjectMapper");
     private static final ClassName JACKSON_EXCEPTION =
@@ -212,6 +231,21 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                     .build());
         }
 
+        if (isTenantPartitioned(metadata)) {
+            repo.addField(messageField(SYSTEM_SCOPE_FIELD,
+                            "The bound StorageContext carries no isolation key, which is the "
+                                    + "system/global scope. A tenant-partitioned row needs an owner: "
+                                    + "this table's row-level-security policy compares its tenant "
+                                    + "column against the session key the kernel publishes from that "
+                                    + "context, so a row written without one is refused. Bind a "
+                                    + "tenant-scoped StorageContext around this write."))
+                    .addField(messageField(NOT_A_UUID_FIELD,
+                            "The bound StorageContext's isolation key is not a UUID. The generated "
+                                    + "migration for this table casts the session key to uuid inside "
+                                    + "its RLS policy, so a non-UUID key matches no row on read "
+                                    + "either. This is a deployment fault, not a malformed request."));
+        }
+
         repo.addField(FieldSpec.builder(TRANSACTIONAL_EXECUTOR, "executor",
                         Modifier.PRIVATE, Modifier.FINAL).build())
                 .addMethod(MethodSpec.constructorBuilder()
@@ -235,6 +269,10 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                 .addMethod(buildDeleteById(ctx))
                 .addMethod(buildCount(ctx))
                 .addMethod(buildMapRow(ctx));
+
+        if (isTenantPartitioned(metadata)) {
+            repo.addMethod(buildActingTenantId(ctx));
+        }
 
         if (hasListField) {
             repo.addMethod(buildParseList())
@@ -601,6 +639,84 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     }
 
 
+    /**
+     * Emits the tenant stamp, for a tenant-partitioned entity only (T36).
+     *
+     * <p>Both write paths bind the tenant column from the entity, and nothing upstream fills it:
+     * the emitted handler decodes the request body straight into the entity, and the emitted
+     * Angular form treats the tenant as a system field and never sends one. So the value bound was
+     * {@code null} on every create and on every full-body update — and the row-level-security
+     * policy this generator's own migration installs refuses a row whose tenant does not match the
+     * session key. The write failed as a security violation rather than as the missing stamp it was.
+     *
+     * <p>Filled only when absent, exactly like {@code id} one line above: {@code save} already has
+     * a "fills what the caller left out" contract, and the tenant is the fourth system field it was
+     * not honouring. A <em>contradicted</em> tenant is deliberately left to the RLS
+     * {@code WITH CHECK} predicate — that is where the authority for it lives, and re-deciding it
+     * here would be a second implementation of a rule the database already enforces.
+     */
+    private static void appendTenantStamp(MethodSpec.Builder method, Context ctx) {
+        if (!isTenantPartitioned(ctx.metadata())) {
+            return;
+        }
+        Column tenant = systemColumn(ctx, ColumnKind.TENANT_ID);
+        method.addStatement("if (entity.$L() == null) entity.$L($L())",
+                getterFor(tenant), setterFor(tenant), ACTING_TENANT_METHOD);
+    }
+
+    /** A {@code private static final String} in the emitted class, so a long diagnostic message
+     *  does not push the statement that throws it off the readable width. */
+    private static FieldSpec messageField(String name, String message) {
+        return FieldSpec.builder(String.class, name,
+                        Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                .initializer("$S", message)
+                .build();
+    }
+
+    /**
+     * Emits the acting-tenant resolver: the owner stamped on a row whose caller left the tenant
+     * unset.
+     *
+     * <p>Reads {@code KernelProviders.storageContext()} — the SPI accessor documented for
+     * request-scoped code, which throws rather than falling back to the system scope. The
+     * fallback accessor ({@code storageContextOrSystem}) would be the wrong one here by its own
+     * Javadoc: it silently disables tenant isolation, and a row stamped from it would be refused
+     * one layer down with no trace of why.
+     *
+     * <p>Both failures raised here are {@code IllegalStateException}, never
+     * {@code IllegalArgumentException}. An unbound context and a non-UUID isolation key are
+     * deployment faults, and the emitted handler maps a {@code RuntimeException} out of the service
+     * call to 500 — while {@code UUID.fromString}'s own {@code IllegalArgumentException}, escaping
+     * unwrapped, is the shape that ADR-036 §2 maps to a caller's 400. Wrapping it is what keeps a
+     * misconfigured deployment from being reported as a malformed request (T43, same lesson).
+     */
+    private static MethodSpec buildActingTenantId(Context ctx) {
+        Column tenant = systemColumn(ctx, ColumnKind.TENANT_ID);
+        return MethodSpec.methodBuilder(ACTING_TENANT_METHOD)
+                .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+                .returns(UUID_TYPE)
+                .addJavadoc("The acting tenant — the owner stamped on a written row when the\n")
+                .addJavadoc("caller left {@code $L} unset.\n", tenant.javaName())
+                .addJavadoc("\n")
+                .addJavadoc("<p>This is the bound {@code StorageContext}'s isolation key, which is\n")
+                .addJavadoc("also what the kernel publishes as {@code exeris.tenant_id} and what\n")
+                .addJavadoc("this table's row-level-security policy compares against — so a row\n")
+                .addJavadoc("stamped here is a row that policy accepts.\n")
+                .addJavadoc("\n")
+                .addJavadoc("@return the acting tenant's id, never {@code null}\n")
+                .addJavadoc("@throws IllegalStateException if the bound context carries no isolation\n")
+                .addJavadoc("        key, or carries one that is not a UUID — both deployment faults\n")
+                .addStatement("$T isolationKey = $T.storageContext().isolationKey()$W"
+                                + ".orElseThrow(() -> new $T($L))",
+                        String.class, KERNEL_PROVIDERS, ILLEGAL_STATE_EXCEPTION, SYSTEM_SCOPE_FIELD)
+                .beginControlFlow("try")
+                .addStatement("return $T.fromString(isolationKey)", UUID_TYPE)
+                .nextControlFlow("catch ($T e)", ILLEGAL_ARGUMENT_EXCEPTION)
+                .addStatement("throw new $T($L, e)", ILLEGAL_STATE_EXCEPTION, NOT_A_UUID_FIELD)
+                .endControlFlow()
+                .build();
+    }
+
     private MethodSpec buildSave(Context ctx) {
         String columnsJoined = String.join(", ", ctx.columns().stream().map(Column::sqlName).toList());
         String placeholders = String.join(", ", ctx.columns().stream().map(c -> "?").toList());
@@ -612,9 +728,17 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                 .addParameter(ctx.entityType(), "entity")
                 .addJavadoc("Inserts {@code entity}. <b>Mutates the input:</b> a missing\n")
                 .addJavadoc("{@code id} is filled with a random UUID");
+        boolean tenantPartitioned = isTenantPartitioned(ctx.metadata());
         if (ctx.metadata().audited()) {
-            save.addJavadoc(", and {@code createdAt} /\n")
+            // "and" belongs to whichever clause ends the list, so it moves when a tenant
+            // clause follows this one.
+            save.addJavadoc(tenantPartitioned ? ", {@code createdAt} /\n" : ", and {@code createdAt} /\n")
                 .addJavadoc("{@code updatedAt} are stamped with {@code Instant.now()}");
+        }
+        if (tenantPartitioned) {
+            save.addJavadoc(", and a missing\n")
+                .addJavadoc("{@code $L} is filled with the acting tenant",
+                        systemColumn(ctx, ColumnKind.TENANT_ID).javaName());
         }
         save.addJavadoc(" before the INSERT.\n")
                 .addStatement("if (entity.getId() == null) entity.setId($T.randomUUID())", UUID_TYPE);
@@ -623,6 +747,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
             save.addStatement("entity.$L(now)", setterFor(systemColumn(ctx, ColumnKind.CREATED_AT)));
             save.addStatement("entity.$L(now)", setterFor(systemColumn(ctx, ColumnKind.UPDATED_AT)));
         }
+        appendTenantStamp(save, ctx);
         save.addStatement(SQL_VAR_STMT, sql);
 
         CodeBlock.Builder body = CodeBlock.builder()
@@ -663,6 +788,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
             update.addStatement("entity.$L($T.now())",
                     setterFor(systemColumn(ctx, ColumnKind.UPDATED_AT)), INSTANT);
         }
+        appendTenantStamp(update, ctx);
         if (versioned) {
             update.addJavadoc("Optimistic-lock update. The caller-supplied {@code entity.version}\n");
             update.addJavadoc("is the <i>expected</i> row version; this method increments it before\n");
@@ -676,6 +802,18 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
             update.addStatement("$T currentVersion = entity.$L()", BOXED_LONG, getterFor(versionColumn));
             update.addStatement("long expectedVersion = currentVersion == null ? 0L : currentVersion");
             update.addStatement("entity.$L(expectedVersion + 1L)", setterFor(versionColumn));
+        }
+        if (isTenantPartitioned(ctx.metadata())) {
+            if (!versioned) {
+                // The versioned branch above already opened the doc comment with a summary
+                // sentence; without it, this paragraph would be a <p> with nothing before it.
+                update.addJavadoc("Updates the row identified by {@code id}.\n");
+            }
+            update.addJavadoc("<p>A missing {@code $L} is filled with the acting tenant first: the\n",
+                            systemColumn(ctx, ColumnKind.TENANT_ID).javaName())
+                    .addJavadoc("SET list writes that column on every update, so a caller who built\n")
+                    .addJavadoc("the entity from a request body rather than from a read would\n")
+                    .addJavadoc("otherwise clear the row's owner.\n");
         }
         update.addStatement(SQL_VAR_STMT, sql);
         update.addStatement("long[] rowsAffected = {0L}");

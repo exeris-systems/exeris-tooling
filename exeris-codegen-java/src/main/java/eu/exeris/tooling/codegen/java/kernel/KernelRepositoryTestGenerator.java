@@ -2,6 +2,7 @@ package eu.exeris.tooling.codegen.java.kernel;
 
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.CodeBlock;
+import com.palantir.javapoet.FieldSpec;
 import com.palantir.javapoet.MethodSpec;
 import com.palantir.javapoet.TypeName;
 import com.palantir.javapoet.TypeSpec;
@@ -11,6 +12,8 @@ import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.Artifact
 import eu.exeris.tooling.codegen.java.kernel.KernelRepositoryGenerator.Column;
 import eu.exeris.tooling.codegen.java.kernel.KernelRepositoryGenerator.ColumnKind;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
+
+import static eu.exeris.tooling.codegen.java.support.DataScopeSupport.isTenantPartitioned;
 
 import javax.lang.model.element.Modifier;
 import java.util.List;
@@ -62,6 +65,23 @@ public final class KernelRepositoryTestGenerator {
     /** The substring both not-found messages the repository throws share. */
     private static final String NOT_FOUND = "not found";
 
+    private static final ClassName KERNEL_PROVIDERS =
+            ClassName.get("eu.exeris.kernel.spi.context", "KernelProviders");
+    private static final ClassName STORAGE_CONTEXT =
+            ClassName.get("eu.exeris.kernel.spi.security", "StorageContext");
+    private static final ClassName IMMUTABLE_STORAGE_CONTEXT =
+            ClassName.get("eu.exeris.kernel.spi.security", "ImmutableStorageContext");
+    private static final ClassName SCOPED_VALUE = ClassName.get("java.lang", "ScopedValue");
+
+    /**
+     * The tenant the generated tests bind. Deliberately <em>not</em>
+     * {@link KernelTestSamples#FIXED_ID}: the stamp test has to be able to tell a tenant that came
+     * from the bound context apart from one that happened to be staged on the entity, and it cannot
+     * if both are the same UUID.
+     */
+    private static final String TENANT_KEY = "00000000-0000-4000-8000-000000000002";
+    private static final String AS_TENANT = "asTenant";
+
     /**
      * @param metadata    the entity whose repository is under test
      * @param basePackage the project base package (the {@code testsupport} package is resolved from
@@ -95,16 +115,40 @@ public final class KernelRepositoryTestGenerator {
                 .addJavadoc("recording double rather than by asserting the emitted SQL, which is\n")
                 .addJavadoc("generated from the same metadata as this test and so could never\n")
                 .addJavadoc("disagree with it.\n")
-                .addJavadoc("<p>Requires JUnit 5 and AssertJ on the test classpath, and nothing else.\n")
+                .addJavadoc("<p>Requires JUnit 5 and AssertJ on the test classpath, and nothing\n")
+                .addJavadoc("else beyond what the repository under test already needs.\n")
                 .addJavadoc("<p><b>DO NOT EDIT</b> - Regenerate from domain models.\n");
 
-        type.addMethod(roundTripTest(entityType, repositoryType, persistenceType, columns));
-        type.addMethod(saveFillsIdTest(entityType, repositoryType, persistenceType));
-        type.addMethod(updateBindsIdTest(entityType, repositoryType, persistenceType, columns));
+        boolean tenantScoped = isTenantPartitioned(metadata);
+        if (tenantScoped) {
+            type.addField(FieldSpec.builder(String.class, "TENANT_KEY",
+                                    Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                            .initializer("$S", TENANT_KEY)
+                            .build())
+                    .addField(FieldSpec.builder(STORAGE_CONTEXT, "TENANT_SCOPE",
+                                    Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                            .initializer("$T.shared(TENANT_KEY)", IMMUTABLE_STORAGE_CONTEXT)
+                            .build());
+        }
+
+        type.addMethod(roundTripTest(entityType, repositoryType, persistenceType, columns,
+                tenantScoped));
+        type.addMethod(saveFillsIdTest(entityType, repositoryType, persistenceType, tenantScoped));
+        if (tenantScoped) {
+            type.addMethod(saveStampsTenantTest(entityType, repositoryType, persistenceType,
+                    columns));
+            type.addMethod(saveKeepsCallerTenantTest(entityType, repositoryType, persistenceType,
+                    columns));
+        }
+        type.addMethod(updateBindsIdTest(entityType, repositoryType, persistenceType, columns,
+                tenantScoped));
         type.addMethod(findByIdEmptyTest(repositoryType, persistenceType));
-        type.addMethod(updateRejectsTest(entityType, repositoryType, persistenceType));
+        type.addMethod(updateRejectsTest(entityType, repositoryType, persistenceType, tenantScoped));
         type.addMethod(deleteRejectsTest(repositoryType, persistenceType));
         type.addMethod(countTest(repositoryType, persistenceType));
+        if (tenantScoped) {
+            type.addMethod(asTenantHelper());
+        }
 
         return new GeneratedFile(packageName, className,
                 KernelScaffold.render(packageName, type.build()), ArtifactType.TEST);
@@ -112,7 +156,8 @@ public final class KernelRepositoryTestGenerator {
 
     /** The central test — see the class Javadoc for why it is a round-trip and not a SQL check. */
     private MethodSpec roundTripTest(ClassName entityType, ClassName repositoryType,
-                                     ClassName persistenceType, List<Column> columns) {
+                                     ClassName persistenceType, List<Column> columns,
+                                     boolean tenantScoped) {
         MethodSpec.Builder test = test("savedRowReadsBackColumnForColumn")
                 .addJavadoc("The INSERT's binds, replayed as the SELECT's row. Every column has to\n")
                 .addJavadoc("survive the trip: a bind index that drifts from its read index lands on\n")
@@ -129,7 +174,7 @@ public final class KernelRepositoryTestGenerator {
             }
         }
 
-        test.addStatement("repository.save(original)")
+        test.addStatement(write("repository.save(original)", tenantScoped))
                 .addCode("\n")
                 .addComment("Snapshot before the read: prepare(...) clears the recorded binds.")
                 .addStatement("persistence.row = persistence.recordedRow()")
@@ -145,7 +190,7 @@ public final class KernelRepositoryTestGenerator {
     }
 
     private MethodSpec saveFillsIdTest(ClassName entityType, ClassName repositoryType,
-                                       ClassName persistenceType) {
+                                       ClassName persistenceType, boolean tenantScoped) {
         return test("saveGeneratesAMissingIdAndBindsItFirst")
                 .addJavadoc("{@code id} is column 0 of the layout, so it is also parameter 0 of the\n")
                 .addJavadoc("INSERT — and the value bound there is the one the caller can read back\n")
@@ -154,7 +199,7 @@ public final class KernelRepositoryTestGenerator {
                 .addStatement("$T repository = new $T(persistence)", repositoryType, repositoryType)
                 .addStatement("$T entity = new $T()", entityType, entityType)
                 .addStatement("$T.assertThat(entity.getId()).isNull()", ASSERTIONS)
-                .addStatement("repository.save(entity)")
+                .addStatement(write("repository.save(entity)", tenantScoped))
                 .addStatement("$T.assertThat(entity.getId()).isNotNull()", ASSERTIONS)
                 .addStatement("$T.assertThat(persistence.binds.get(0)).isEqualTo(entity.getId())",
                         ASSERTIONS)
@@ -167,7 +212,8 @@ public final class KernelRepositoryTestGenerator {
      * one thing a reordering of {@code emitUpdateBinds} would silently break.
      */
     private MethodSpec updateBindsIdTest(ClassName entityType, ClassName repositoryType,
-                                         ClassName persistenceType, List<Column> columns) {
+                                         ClassName persistenceType, List<Column> columns,
+                                         boolean tenantScoped) {
         // SET list = columns minus id, so the WHERE id lands one slot past its last entry.
         int whereIdIndex = columns.size() - 1;
         MethodSpec.Builder test = test("updateBindsTheIdAfterTheSetList")
@@ -175,7 +221,7 @@ public final class KernelRepositoryTestGenerator {
                 .addStatement("$T repository = new $T(persistence)", repositoryType, repositoryType)
                 .addStatement("$T entity = new $T()", entityType, entityType);
         test.addStatement("$T id = $T.fromString($S)", UUID, UUID, KernelTestSamples.FIXED_ID)
-                .addStatement("repository.update(id, entity)")
+                .addStatement(write("repository.update(id, entity)", tenantScoped))
                 .addStatement("$T.assertThat(persistence.binds.get($L)).isEqualTo(id)",
                         ASSERTIONS, whereIdIndex);
         return test.build();
@@ -191,7 +237,7 @@ public final class KernelRepositoryTestGenerator {
     }
 
     private MethodSpec updateRejectsTest(ClassName entityType, ClassName repositoryType,
-                                         ClassName persistenceType) {
+                                         ClassName persistenceType, boolean tenantScoped) {
         MethodSpec.Builder test = test("updateRejectsWhenNoRowMatched")
                 .addJavadoc("Zero rows affected is the row-is-gone (or, on a versioned entity, the\n")
                 .addJavadoc("stale-version) case, and it must not pass for a silent no-op.\n")
@@ -203,8 +249,8 @@ public final class KernelRepositoryTestGenerator {
         // field is also a RuntimeException, and would make this pass without the guard running.
         // Nothing is staged on the entity on purpose — on a versioned entity that also pins T26,
         // since update() reads the version off a freshly constructed instance.
-        test.addStatement("$T.assertThatThrownBy(() -> repository.update($T.fromString($S), entity))"
-                        + ".hasMessageContaining($S)",
+        test.addStatement(write("$T.assertThatThrownBy(() -> repository.update($T.fromString($S), "
+                        + "entity)).hasMessageContaining($S)", tenantScoped),
                 ASSERTIONS, UUID, KernelTestSamples.FIXED_ID, NOT_FOUND);
         return test.build();
     }
@@ -229,6 +275,97 @@ public final class KernelRepositoryTestGenerator {
                 .addStatement("$T.assertThat(repository.count()).isEqualTo($LL)",
                         ASSERTIONS, KernelTestSamples.SAMPLE_NUMBER)
                 .build();
+    }
+
+    /**
+     * Proves the stamp: a caller who sets no tenant gets the bound one, and it reaches the INSERT.
+     *
+     * <p>Asserting the entity alone would not be enough — a stamp applied after the binds were
+     * recorded would still leave the row unowned — so the bind at the tenant column's index is
+     * checked too. {@code TENANT_KEY} is deliberately not the sample UUID every other field is
+     * staged with, so a value that came from the bound context cannot be confused with one that was
+     * already there.
+     */
+    private MethodSpec saveStampsTenantTest(ClassName entityType, ClassName repositoryType,
+                                            ClassName persistenceType, List<Column> columns) {
+        Column tenant = tenantColumn(columns);
+        String getter = KernelRepositoryGenerator.getterFor(tenant);
+        return test("saveStampsTheActingTenantWhenTheCallerLeftItUnset")
+                .addJavadoc("The emitted handler decodes a request body straight into the entity and\n")
+                .addJavadoc("the emitted form treats the tenant as a system field it never sends, so\n")
+                .addJavadoc("a caller leaving it unset is the ordinary path rather than the\n")
+                .addJavadoc("exceptional one. An unstamped row is refused by this table's\n")
+                .addJavadoc("row-level-security policy — reported as a security violation, which is\n")
+                .addJavadoc("the least informative way to report a missing default.\n")
+                .addStatement("$T persistence = new $T()", persistenceType, persistenceType)
+                .addStatement("$T repository = new $T(persistence)", repositoryType, repositoryType)
+                .addStatement("$T entity = new $T()", entityType, entityType)
+                .addStatement("$T.assertThat(entity.$L()).isNull()", ASSERTIONS, getter)
+                .addStatement("$L(() -> repository.save(entity))", AS_TENANT)
+                .addStatement("$T.assertThat(entity.$L()).isEqualTo($T.fromString(TENANT_KEY))",
+                        ASSERTIONS, getter, UUID)
+                .addStatement("$T.assertThat(persistence.binds.get($L)).isEqualTo(entity.$L())",
+                        ASSERTIONS, columns.indexOf(tenant), getter)
+                .build();
+    }
+
+    /**
+     * The other half of the contract: filling is not overwriting.
+     *
+     * <p>Whether a caller-supplied tenant is one this deployment may write is the RLS
+     * {@code WITH CHECK} predicate's decision, not the repository's — re-deciding it here would be a
+     * second implementation of a rule the database already enforces, and the two would drift.
+     */
+    private MethodSpec saveKeepsCallerTenantTest(ClassName entityType, ClassName repositoryType,
+                                                 ClassName persistenceType, List<Column> columns) {
+        Column tenant = tenantColumn(columns);
+        return test("saveKeepsATenantTheCallerSet")
+                .addJavadoc("A tenant the caller set survives the save — the stamp fills a gap, it\n")
+                .addJavadoc("does not override an intent.\n")
+                .addStatement("$T persistence = new $T()", persistenceType, persistenceType)
+                .addStatement("$T repository = new $T(persistence)", repositoryType, repositoryType)
+                .addStatement("$T entity = new $T()", entityType, entityType)
+                .addStatement("$T callerTenant = $T.fromString($S)", UUID, UUID,
+                        KernelTestSamples.FIXED_ID)
+                .addStatement("entity.$L(callerTenant)", KernelRepositoryGenerator.setterFor(tenant))
+                .addStatement("$L(() -> repository.save(entity))", AS_TENANT)
+                .addStatement("$T.assertThat(entity.$L()).isEqualTo(callerTenant)",
+                        ASSERTIONS, KernelRepositoryGenerator.getterFor(tenant))
+                .build();
+    }
+
+    /** Emits the tenant-binding helper the write tests run inside. */
+    private MethodSpec asTenantHelper() {
+        return MethodSpec.methodBuilder(AS_TENANT)
+                .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+                .returns(TypeName.VOID)
+                .addParameter(Runnable.class, "work")
+                .addJavadoc("Runs {@code work} with a tenant bound, the way a request reaches the\n")
+                .addJavadoc("repository: the kernel's SecurityInterceptor binds\n")
+                .addJavadoc("{@code STORAGE_CONTEXT} for the duration of the dispatch, and the\n")
+                .addJavadoc("repository resolves the acting tenant out of it.\n")
+                .addStatement("$T.where($T.STORAGE_CONTEXT, TENANT_SCOPE).run(work)",
+                        SCOPED_VALUE, KERNEL_PROVIDERS)
+                .build();
+    }
+
+    /**
+     * Wraps a write in the tenant scope when the entity is tenant-partitioned. A tenant-scoped
+     * repository resolves the acting tenant from the ambient {@code StorageContext} on every write
+     * (T36), so a write made outside a bound scope throws before it reaches the double — failing
+     * these tests for a reason none of them is about.
+     */
+    private static String write(String statement, boolean tenantScoped) {
+        return tenantScoped ? AS_TENANT + "(() -> " + statement + ")" : statement;
+    }
+
+    /** The layout's tenant column; only called for an entity whose metadata emits one. */
+    private static Column tenantColumn(List<Column> columns) {
+        return columns.stream()
+                .filter(c -> c.kind() == ColumnKind.TENANT_ID)
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException(
+                        "tenant-partitioned entity with no tenant column in the layout"));
     }
 
     /**

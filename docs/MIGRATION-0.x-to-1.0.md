@@ -576,6 +576,34 @@ response blames. If you have monitoring or tests that treat `POST`/`PUT` 400s as
 deployment with this fault will now show up as a 5xx, which is where it belongs: the body has not
 been read at the point the failure occurs.
 
+### A tenant-scoped repository now stamps the tenant it writes (T36)
+
+`save` and `update` on a repository generated for a tenant-partitioned entity fill an absent tenant
+from the ambient `StorageContext` before binding it, the same way `save` has always filled an absent
+`id`. A tenant the caller *did* set is left alone.
+
+This is a fix, not a new requirement. Nothing upstream ever supplied the value: the generated handler
+decodes a request body straight into the entity, and the generated Angular form treats the tenant as
+a system field it never sends. So every create — and every update built from a request body rather
+than from a read — bound `null`, and the RLS policy this pipeline's own migration installs refused
+the row. The failure surfaced as a row-level-security violation, which reads as an attempted
+cross-tenant write rather than as the missing default it was.
+
+**If you were working around it** by setting the tenant on the entity before calling the repository —
+in a service, an interceptor, or a hand-written route — nothing breaks: a value you set is kept.
+The workaround is now redundant, not wrong.
+
+**Two new failure modes, both deployment faults, both `IllegalStateException` → 5xx:** the bound
+context carries no isolation key (that is the system/global scope, which has no owner to stamp), or
+it carries one that is not a UUID. The second was already fatal one layer down — the generated RLS
+predicate casts the session key `::uuid` — it just failed at the database instead of at the write.
+
+**Regenerated tests:** a tenant-partitioned entity's `<Entity>RepositoryTest` now binds a tenant
+around each write and gains two cases (`saveStampsTheActingTenantWhenTheCallerLeftItUnset`,
+`saveKeepsATenantTheCallerSet`). The scaffold uses `KernelProviders` and `ImmutableStorageContext`,
+both already compile-time requirements of the repository under test — the ADR-058 "JUnit 5 and
+AssertJ and nothing else" contract is unchanged.
+
 ---
 
 ## Reference

@@ -32,6 +32,16 @@ class KernelRepositoryTestGeneratorTest {
                             FieldMetadata.builder("status", "com.example.OrderStatus").build()))
                     .build();
 
+    /** The same entity, tenant-partitioned — the only difference the T36 emission keys on. */
+    private static final DomainMetadata TENANT_ORDER =
+            DomainMetadata.builder("Order", "com.example.domain")
+                    .path("/orders")
+                    .tenantScoped(true)
+                    .fields(List.of(
+                            FieldMetadata.builder("orderNumber", "String").build(),
+                            FieldMetadata.builder("quantity", "int").build()))
+                    .build();
+
     private static String generate(DomainMetadata metadata) {
         return new KernelRepositoryTestGenerator().generate(metadata, "com.example").content();
     }
@@ -159,6 +169,71 @@ class KernelRepositoryTestGeneratorTest {
     void emissionIsDeterministic() {
         assertThat(generate(ORDER)).isEqualTo(generate(ORDER));
         assertThat(generate(ORDER)).doesNotContain("UUID.randomUUID()");
+    }
+
+    @Test
+    @DisplayName("T36: every write in a tenant-scoped entity's tests runs inside a bound tenant")
+    void bindsATenantAroundEveryWrite() {
+        String source = generate(TENANT_ORDER);
+
+        // A tenant-scoped repository resolves the acting tenant on every write, so a write made
+        // outside a bound scope throws before it reaches the double — which would fail these
+        // tests for a reason none of them is about.
+        assertThat(source)
+                .contains("asTenant(() -> repository.save(original))")
+                .contains("asTenant(() -> repository.save(entity))")
+                .contains("asTenant(() -> repository.update(id, entity))")
+                .contains("asTenant(() -> Assertions.assertThatThrownBy(() -> repository.update(")
+                .contains("ScopedValue.where(KernelProviders.STORAGE_CONTEXT, TENANT_SCOPE).run(work)")
+                .contains("ImmutableStorageContext.shared(TENANT_KEY)");
+        // The read paths are left alone — binding a tenant around them would say something the
+        // test does not mean.
+        assertThat(source)
+                .contains("Assertions.assertThatThrownBy(() -> repository.deleteById(")
+                .doesNotContain("asTenant(() -> repository.deleteById(");
+    }
+
+    @Test
+    @DisplayName("T36: the stamp pair is emitted, keyed on a tenant no other value in the file shares")
+    void emitsTheStampPair() {
+        String source = generate(TENANT_ORDER);
+
+        assertThat(source)
+                .contains("void saveStampsTheActingTenantWhenTheCallerLeftItUnset()")
+                .contains("void saveKeepsATenantTheCallerSet()")
+                // The bound tenant must differ from the UUID every other field is staged with,
+                // or the stamp test could not tell a value that came from the context apart from
+                // one that was already on the entity.
+                .contains("TENANT_KEY = \"00000000-0000-4000-8000-000000000002\"")
+                .contains("callerTenant = UUID.fromString(\"00000000-0000-4000-8000-000000000001\")");
+    }
+
+    @Test
+    @DisplayName("T36: a global entity's tests carry none of the tenant scaffold")
+    void globalEntityGetsNoTenantScaffold() {
+        // Non-vacuous: bindsATenantAroundEveryWrite proves the same emitter writes all of this
+        // for a tenant-partitioned entity.
+        assertThat(generate(ORDER))
+                .contains("repository.save(original)")
+                .doesNotContain("asTenant")
+                .doesNotContain("TENANT_SCOPE")
+                .doesNotContain("KernelProviders")
+                .doesNotContain("ScopedValue");
+    }
+
+    @Test
+    @DisplayName("T36: the tenant scaffold adds no test-only dependency, only kernel SPI")
+    void tenantScaffoldStaysInsideTheDependencyContract() {
+        String source = generate(TENANT_ORDER);
+
+        // The two SPI types the scaffold reaches for are already compile-time requirements of the
+        // repository under test, so the "JUnit + AssertJ and nothing else" half of ADR-058 is
+        // untouched: no mocking framework, no test-only artefact.
+        assertThat(source)
+                .contains("import eu.exeris.kernel.spi.context.KernelProviders;")
+                .contains("import eu.exeris.kernel.spi.security.ImmutableStorageContext;")
+                .doesNotContain("org.mockito")
+                .doesNotContain("org.easymock");
     }
 
     @Test
