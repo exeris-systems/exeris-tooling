@@ -180,6 +180,61 @@ class KernelRepositoryGeneratorTest {
     }
 
     @Test
+    @DisplayName("T36: both write paths fill an absent tenant from the acting StorageContext")
+    void shouldStampTheActingTenantOnWrites() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .tenantScoped(true)
+                .audited(true)
+                .fields(List.of(FieldMetadata.builder("orderNumber", "String").build()))
+                .build();
+
+        GeneratedFile repo = strategy.generate(metadata).stream()
+                .filter(f -> f.artifactType() == ArtifactType.REPOSITORY)
+                .findFirst().orElseThrow();
+
+        String stamp = "if (entity.getTenantId() == null) entity.setTenantId(actingTenantId());";
+        assertThat(repo.content())
+                // Both write paths, each ahead of its own SQL — not just save. The SET list writes
+                // tenant_id on every update, so an entity built from a request body rather than
+                // from a read would otherwise clear the row's owner. A subsequence, because
+                // contains() alone would pass on one occurrence in either method.
+                .containsSubsequence(
+                        "public Order save(Order entity)", stamp, "INSERT INTO orders",
+                        "public Order update(UUID id, Order entity)", stamp, "UPDATE orders SET")
+                // The resolver reads the request-scoped accessor, which throws on an unbound
+                // slot, and not storageContextOrSystem(), whose own Javadoc says it silently
+                // disables tenant isolation.
+                .contains("KernelProviders.storageContext().isolationKey()")
+                .doesNotContain("storageContextOrSystem")
+                // ADR-036 §2 / T43: a deployment fault must not reach the handler as the
+                // IllegalArgumentException that maps to 400.
+                .contains("catch (IllegalArgumentException e)")
+                .contains("throw new IllegalStateException(TENANT_KEY_NOT_A_UUID, e);")
+                .contains("new IllegalStateException(TENANT_SCOPE_REQUIRED)");
+    }
+
+    @Test
+    @DisplayName("T36: a global entity gets no tenant stamp and no resolver")
+    void shouldNotStampATenantOnAGlobalEntity() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .audited(true)
+                .fields(List.of(FieldMetadata.builder("orderNumber", "String").build()))
+                .build();
+
+        GeneratedFile repo = strategy.generate(metadata).stream()
+                .filter(f -> f.artifactType() == ArtifactType.REPOSITORY)
+                .findFirst().orElseThrow();
+
+        // Non-vacuous: shouldStampTheActingTenantOnWrites proves the same emitter does write
+        // all three of these for a tenant-partitioned entity.
+        assertThat(repo.content())
+                .contains("entity.setCreatedAt(now)")
+                .doesNotContain("actingTenantId")
+                .doesNotContain("TENANT_SCOPE_REQUIRED")
+                .doesNotContain("KernelProviders");
+    }
+
+    @Test
     @DisplayName("Full feature flag matrix: tenantScoped + audited + softDelete + versioned all wire together")
     void shouldHandleFullFeatureMatrix() {
         DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
@@ -326,6 +381,8 @@ class KernelRepositoryGeneratorTest {
                 // Accessors derive from the overridden java names.
                 .contains("entity.getOrgId()")
                 .contains("entity.setOrgId(row.getUuid(")
+                // T36 stamp reads the override, not a hardcoded tenantId.
+                .contains("if (entity.getOrgId() == null) entity.setOrgId(actingTenantId());")
                 .contains("entity.setModifiedAt(now)")
                 // T19: native getInstant/bindInstant for the (overridden) updatedAt column.
                 .contains("entity.setModifiedAt(row.getInstant(")

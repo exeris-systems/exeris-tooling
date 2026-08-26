@@ -159,10 +159,12 @@ class GeneratedTestsE2ETest {
             // accept, a reject and a boundary accept for each of orderNumber's two length rules
             // and quantity's two numeric ones, the not-null reject, and the one case proving
             // handleUpdate carries the same guard) + 7 service cases (six CRUD delegations and
-            // the one T8 finder the fixture carries) + 7 repository cases each for Order and
-            // Invoice (the save/load round-trip and the six paths around it) — Invoice being the
-            // entity that carries every system column — + 4 saga cases.
-            assertThat(summary.getTestsSucceededCount()).isEqualTo(44);
+            // the one T8 finder the fixture carries) + 7 repository cases for Order (the save/load
+            // round-trip and the six paths around it) + 9 for Invoice — the entity that carries
+            // every system column, and the only tenant-partitioned one here, so it alone gets the
+            // T36 pair proving save stamps an absent tenant and keeps one the caller set — + 4
+            // saga cases.
+            assertThat(summary.getTestsSucceededCount()).isEqualTo(46);
         }
     }
 

@@ -543,7 +543,38 @@ never-invoked emitter start emitting, and its output did not build.
       to T50 and is not readable from this checkout; taking the next number from a stale local view
       is exactly how ADR-070 got claimed twice on 2026-08-18. A follow-up to a numbered finding does
       not need a number of its own.
-- [ ] **T36 — the repository stamps three system fields and not the fourth.** `save` stamps
+- [x] **T36 — the repository stamps three system fields and not the fourth.** *Shipped 2026-08-26.
+      Stamped, not documented — two corrections to this entry came out of doing it, both below.*
+      `save` and `update` now fill an absent tenant from the ambient `StorageContext` before binding
+      it, exactly as `save` has always filled an absent `id`. A tenant the caller **did** set is left
+      alone: whether that value is one this deployment may write is the RLS `WITH CHECK` predicate's
+      decision, and re-deciding it in emitted Java would be a second implementation of a rule the
+      database already enforces. The resolver reads `KernelProviders.storageContext()` — the accessor
+      documented for request-scoped code, which throws rather than falling back to the system scope —
+      and raises `IllegalStateException`, never `IllegalArgumentException`, on both an empty
+      isolation key and a non-UUID one, so a deployment fault cannot reach the handler as the 400
+      that `UUID.fromString` would otherwise have produced (ADR-036 §2; T43, same lesson).
+      The generated `<Entity>RepositoryTest` binds a tenant around each write and gains two cases
+      proving the fill and the non-overwrite; `GeneratedTestsE2ETest` executes them.
+
+      **Correction 1: "forget it" understates it — nothing upstream ever supplied the value.** The
+      entry reads as a caller mistake. It is not: the emitted handler decodes a request body straight
+      into the entity (`KernelHandlerGenerator.java:408`), and the emitted Angular form lists the
+      tenant among the system fields it never renders or sends (`form-gen.ts:90`). So the value bound
+      was `null` on every create, and on every update built from a request body rather than from a
+      read — which is what the emitted `PUT` path does. The emitted stack, end to end, could not
+      write a row to a tenant-scoped table. That also settles the entry's third option: "say the
+      caller owns it" was not available, because on the generated path the caller has no way to.
+
+      **Correction 2: the carrier is not a `UUID`, and the conversion is not a new assumption.**
+      `StorageContext.isolationKey()` is `Optional<String>`, while the tenant column is `UUID` and
+      binds through `bindUuid`. The bridge is `UUID.fromString` — and it imposes nothing new, because
+      the RLS policy this pipeline's own migration emits already casts the session key
+      (`NULLIF(current_setting('exeris.tenant_id', true), '')::uuid`, `KernelFlywayGenerator.java:88`).
+      A non-UUID isolation key was already fatal one layer down; it now fails at the write, named.
+      Original finding below.
+
+      **T36 — the repository stamps three system fields and not the fourth.** `save` stamps
       `setId(randomUUID())` and both audit timestamps (`KernelRepositoryGenerator.java:620`) and never
       touches `tenantId`, although the kernel has it bound as a `ScopedValue`. The asymmetry is the
       trap: forget it and the write is refused by the RLS `WITH CHECK`, reported as a security
