@@ -1219,6 +1219,27 @@ Proposals, highest return-on-effort first:
       *Update:* document that "delete and regenerate from scratch" is not a safe loop once glue exists,
       until detach lands.
 
+- [ ] **D4 — Stable diagnostic IDs. Inbound ask from `exeris-ai-bridge` 0.7.0** (its `build:explain_diagnostic`
+      tool; recorded in that repo's cross-repo asks table). Processor diagnostics are prefixed free text:
+      `DIAG_PREFIX = "[Exeris] "` (`ExerisDomainProcessor.java:90`) is applied at **all 9**
+      `Messager.printMessage` sites, so a consumer can already tell an Exeris diagnostic apart from a plain
+      `javac` one — it just cannot tell *which* one. The kernel's `KernelErrorCodes` single-source-of-truth
+      is the precedent to copy. Without IDs the bridge tool degrades to substring matching on message text
+      that no gate holds stable, and every message reworded here silently breaks it.
+      *Two corrections to the ask as stated, measured 2026-08-26:*
+      **(a) 9 sites is not 9 diagnostics.** Six sites carry one message each (`tenantScoped` deprecation,
+      the T29 `UNIVERSE` refusal, unknown `@Validation.validateOn`, deprecated `@Validation` attribute, and
+      the two `-Aexeris.strict` inert warnings). The other three are the helpers `note` / `error` /
+      `reportProcessingFailure`, which fan out to 11 / 5 / 5 call sites. The error+warning path therefore
+      needs ~16 identifiers, not 9 — and giving those three helpers a required ID parameter is what forces
+      each call site to name one, so the count is the design input, not a detail.
+      **(b) The prefix covers the `javac` half only.** `exeris-codegen-maven-plugin` raises 14 further
+      user-facing diagnostics (`VerifyCapabilitiesMojo`, `GenerateMojo`, `DetachMojo`) and **none** carries
+      the prefix — several are bare `e.getMessage()` pass-throughs of a `CapabilityGraphException` or an
+      ADR-055 Wall violation. A developer pasting "my build failed" is at least as likely to paste one of
+      those as a processor warning, so scoping the registry to `ExerisDomainProcessor` would leave the more
+      opaque half of the surface dark.
+
 ---
 
 ## Versioning policy
