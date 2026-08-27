@@ -143,8 +143,14 @@ public final class KernelRepositoryTestGenerator {
         type.addMethod(updateBindsIdTest(entityType, repositoryType, persistenceType, columns,
                 tenantScoped));
         type.addMethod(findByIdEmptyTest(repositoryType, persistenceType));
-        type.addMethod(updateRejectsTest(entityType, repositoryType, persistenceType, tenantScoped));
-        type.addMethod(deleteRejectsTest(repositoryType, persistenceType));
+        // ADR-076: update reports a versioned entity's zero-row outcome as a conflict, because
+        // it matched on id and version together; deleteById matched on id alone and can only
+        // ever report a missing row.
+        ClassName notFoundType = KernelErrorGenerator.notFoundType(metadata);
+        ClassName conflictType = KernelErrorGenerator.versionConflictType(metadata);
+        type.addMethod(updateRejectsTest(entityType, repositoryType, persistenceType, tenantScoped,
+                conflictType != null ? conflictType : notFoundType));
+        type.addMethod(deleteRejectsTest(repositoryType, persistenceType, notFoundType));
         type.addMethod(countTest(repositoryType, persistenceType));
         if (tenantScoped) {
             type.addMethod(asTenantHelper());
@@ -237,7 +243,8 @@ public final class KernelRepositoryTestGenerator {
     }
 
     private MethodSpec updateRejectsTest(ClassName entityType, ClassName repositoryType,
-                                         ClassName persistenceType, boolean tenantScoped) {
+                                         ClassName persistenceType, boolean tenantScoped,
+                                         ClassName rejectionType) {
         MethodSpec.Builder test = test("updateRejectsWhenNoRowMatched")
                 .addJavadoc("Zero rows affected is the row-is-gone (or, on a versioned entity, the\n")
                 .addJavadoc("stale-version) case, and it must not pass for a silent no-op.\n")
@@ -245,24 +252,28 @@ public final class KernelRepositoryTestGenerator {
                 .addStatement("persistence.rowsAffected = 0L")
                 .addStatement("$T repository = new $T(persistence)", repositoryType, repositoryType)
                 .addStatement("$T entity = new $T()", entityType, entityType);
-        // hasMessageContaining, not isInstanceOf(RuntimeException) alone: an NPE from an unstaged
-        // field is also a RuntimeException, and would make this pass without the guard running.
+        // The type, not a message substring (ADR-076). The substring was here for a reason worth
+        // keeping: isInstanceOf(RuntimeException) alone would also pass on an NPE from an unstaged
+        // field, so the assertion has to exclude "some other RuntimeException". A dedicated type
+        // does that exactly, where "not found" only did it by coincidence of wording — and it is
+        // the same type the handler catches to answer 404/409 rather than 500.
         // Nothing is staged on the entity on purpose — on a versioned entity that also pins T26,
         // since update() reads the version off a freshly constructed instance.
         test.addStatement(write("$T.assertThatThrownBy(() -> repository.update($T.fromString($S), "
-                        + "entity)).hasMessageContaining($S)", tenantScoped),
-                ASSERTIONS, UUID, KernelTestSamples.FIXED_ID, NOT_FOUND);
+                        + "entity)).isInstanceOf($T.class)", tenantScoped),
+                ASSERTIONS, UUID, KernelTestSamples.FIXED_ID, rejectionType);
         return test.build();
     }
 
-    private MethodSpec deleteRejectsTest(ClassName repositoryType, ClassName persistenceType) {
+    private MethodSpec deleteRejectsTest(ClassName repositoryType, ClassName persistenceType,
+                                         ClassName notFoundType) {
         return test("deleteByIdRejectsWhenNoRowMatched")
                 .addStatement("$T persistence = new $T()", persistenceType, persistenceType)
                 .addStatement("persistence.rowsAffected = 0L")
                 .addStatement("$T repository = new $T(persistence)", repositoryType, repositoryType)
                 .addStatement("$T.assertThatThrownBy(() -> repository.deleteById($T.fromString($S)))"
-                                + ".hasMessageContaining($S)",
-                        ASSERTIONS, UUID, KernelTestSamples.FIXED_ID, NOT_FOUND)
+                                + ".isInstanceOf($T.class)",
+                        ASSERTIONS, UUID, KernelTestSamples.FIXED_ID, notFoundType)
                 .build();
     }
 

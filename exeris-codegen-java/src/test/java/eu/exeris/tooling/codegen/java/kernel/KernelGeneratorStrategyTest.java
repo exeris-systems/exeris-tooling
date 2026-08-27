@@ -48,10 +48,13 @@ class KernelGeneratorStrategyTest {
 
         List<GeneratedFile> files = strategy.generate(metadata);
 
-        assertThat(files).hasSize(10);
+        assertThat(files).hasSize(11);
         assertThat(files).extracting(GeneratedFile::artifactType)
                 .containsExactlyInAnyOrder(
                         ArtifactType.CONTROLLER,
+                        // ADR-076: one here, not two — Product is unversioned, so it has no
+                        // stale-version failure mode and no conflict type is emitted for it.
+                        ArtifactType.DOMAIN_ERROR,
                         ArtifactType.SERVICE,
                         ArtifactType.REPOSITORY,
                         ArtifactType.EVENT,

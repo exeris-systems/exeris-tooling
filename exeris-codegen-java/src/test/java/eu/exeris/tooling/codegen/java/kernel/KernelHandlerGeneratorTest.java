@@ -57,6 +57,15 @@ class KernelHandlerGeneratorTest {
                 .build();
     }
 
+    /**
+     * Strips each line's leading whitespace, so an expected block can be written as a contiguous
+     * run of statements without pinning JavaPoet's indentation. What survives is what matters
+     * here: which statements sit next to each other, and in what order.
+     */
+    private static String noIndent(String source) {
+        return source.replaceAll("(?m)^[ \\t]+", "");
+    }
+
     private GeneratedFile handlerFor(DomainMetadata metadata) {
         return strategy.generate(metadata).stream()
                 .filter(f -> f.artifactType() == ArtifactType.CONTROLLER)
@@ -94,6 +103,76 @@ class KernelHandlerGeneratorTest {
                         "entity.approve()",
                         "Order updated = service.update(id, entity)",
                         "publisher.publishOrderApprovedEvent(id)");
+    }
+
+    @Test
+    @DisplayName("D7/ADR-076: a write that matched no row answers 404, and the catch that says so "
+            + "precedes the one that answers 500")
+    void shouldAnswerNotFoundForAnAbsentRow() {
+        GeneratedFile handler = handlerFor(DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .fields(List.of(FieldMetadata.simple("amount", "java.math.BigDecimal")))
+                .actions(List.of(ActionMetadata.builder("approve").methodName("approve").build()))
+                .build());
+
+        // Contiguous blocks, not containsSubsequence: every CRUD method ends in the same shapes,
+        // so a subsequence over the whole file can be satisfied by clauses belonging to a
+        // different method. A perturbation run proved it — deleting the delete route's catch
+        // still passed a subsequence assertion, which matched the action route's instead.
+        assertThat(handler.content())
+                .contains("import com.example.repository.OrderNotFoundException");
+        assertThat(noIndent(handler.content()))
+                // The typed catch must precede catch (RuntimeException); the other order is
+                // actually a javac error in the consumer's build ("already caught"), so this
+                // pins that the emitter never produces the unbuildable arrangement either.
+                .contains("""
+                        service.delete(id);
+                        exchange.respond(HttpStatus.NO_CONTENT);
+                        } catch (OrderNotFoundException e) {
+                        exchange.respond(HttpStatus.NOT_FOUND);
+                        } catch (RuntimeException e) {""")
+                .contains("""
+                        Order updated = service.update(id, entity);
+                        exchange.respond(HttpStatus.OK, updated);
+                        } catch (OrderNotFoundException e) {
+                        exchange.respond(HttpStatus.NOT_FOUND);
+                        } catch (RuntimeException e) {""")
+                // The action route persists through the same service.update, so it inherits it.
+                .contains("""
+                        entity.approve();
+                        Order updated = service.update(id, entity);
+                        exchange.respond(HttpStatus.OK, updated);
+                        } catch (OrderNotFoundException e) {""")
+                // Unversioned: no conflict type exists for this entity, so no clause names one.
+                .doesNotContain("OrderVersionConflictException")
+                .doesNotContain("HttpStatus.CONFLICT");
+    }
+
+    @Test
+    @DisplayName("D7/ADR-076: a versioned update answers 409, because it cannot tell a missing "
+            + "row from a stale version — but its delete still answers 404")
+    void shouldAnswerConflictForAVersionedUpdate() {
+        GeneratedFile handler = handlerFor(DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .versioned(true)
+                .fields(List.of(FieldMetadata.simple("amount", "java.math.BigDecimal")))
+                .build());
+
+        assertThat(handler.content())
+                .contains("import com.example.repository.OrderVersionConflictException");
+        assertThat(noIndent(handler.content()))
+                .contains("""
+                        Order updated = service.update(id, entity);
+                        exchange.respond(HttpStatus.OK, updated);
+                        } catch (OrderVersionConflictException e) {
+                        exchange.respond(HttpStatus.CONFLICT);""")
+                // deleteById matches on id alone, so the delete route has no conflict to report
+                // even here — the two routes genuinely differ, and this pins that they do.
+                .contains("""
+                        service.delete(id);
+                        exchange.respond(HttpStatus.NO_CONTENT);
+                        } catch (OrderNotFoundException e) {
+                        exchange.respond(HttpStatus.NOT_FOUND);""");
     }
 
     @Test

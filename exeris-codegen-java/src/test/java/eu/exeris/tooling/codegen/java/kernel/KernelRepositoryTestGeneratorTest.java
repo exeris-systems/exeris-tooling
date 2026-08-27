@@ -123,9 +123,11 @@ class KernelRepositoryTestGeneratorTest {
                 .contains("void updateRejectsWhenNoRowMatched()")
                 .contains("void deleteByIdRejectsWhenNoRowMatched()")
                 .contains("void countReadsTheAggregateFromColumnZero()")
-                // hasMessageContaining, not isInstanceOf(RuntimeException): an NPE would satisfy
-                // the latter and make the not-found guard untested.
-                .contains("hasMessageContaining(\"not found\")");
+                // ADR-076: the emitted assertion names the type. isInstanceOf(RuntimeException)
+                // would be satisfied by an NPE and leave the guard untested; the dedicated type
+                // excludes that exactly, where the old "not found" substring did it by accident
+                // of wording. Unversioned entity here, so update reports the missing row.
+                .contains("isInstanceOf(OrderNotFoundException.class)");
     }
 
     @Test

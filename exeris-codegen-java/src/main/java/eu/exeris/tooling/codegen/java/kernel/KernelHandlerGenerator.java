@@ -231,6 +231,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         appendPublishCalls(method, metadata, DomainEventMetadata.Trigger.UPDATE, null,
                 "id", "updated");
         method.addStatement("exchange.respond($T.OK, updated)", HTTP_STATUS);
+        appendWriteRejectionCatch(method, metadata, true);
         return appendServerErrorCatch(method, "Failed to update " + entityLower).build();
     }
 
@@ -247,14 +248,15 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         // single-statement delete it has always had.
         //
         // Why no publish here needs a "did the row exist" guard, measured rather than
-        // assumed: the emitted repository's deleteById throws when rowsAffected == 0
-        // (KernelRepositoryGenerator#buildDeleteById), and the service delegates straight
-        // to it. So a DELETE on an absent id — including a retried one, since the second
-        // call affects no rows — leaves this try block through the catch below and answers
-        // 500. Every statement after service.delete(id), publish calls included, is
-        // reachable only when a row was actually removed. The isPresent() check on the
-        // payload path is defensive against a race between the read and the delete, not
-        // the thing that makes the publish correct.
+        // assumed: the emitted repository's deleteById throws <Entity>NotFoundException when
+        // rowsAffected == 0 (KernelRepositoryGenerator#buildDeleteById), and the service
+        // delegates straight to it. So a DELETE on an absent id — including a retried one,
+        // since the second call affects no rows — leaves this try block through the
+        // not-found catch below and answers 404 (ADR-076; it answered 500 until then).
+        // Every statement after service.delete(id), publish calls included, is reachable
+        // only when a row was actually removed. The isPresent() check on the payload path
+        // is defensive against a race between the read and the delete, not the thing that
+        // makes the publish correct.
         boolean needsAggregate = triggered(metadata, DomainEventMetadata.Trigger.DELETE, null).stream()
                 .anyMatch(event -> !KernelEventGenerator.payloadFields(event, metadata).isEmpty());
         if (needsAggregate) {
@@ -271,7 +273,36 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
             method.endControlFlow();
         }
         method.addStatement("exchange.respond($T.NO_CONTENT)", HTTP_STATUS);
+        // Always the not-found type, never the conflict one: deleteById matches on id alone,
+        // so a versioned entity has no stale-version failure mode on this route.
+        appendWriteRejectionCatch(method, metadata, false);
         return appendServerErrorCatch(method, "Failed to delete " + entityLower).build();
+    }
+
+    /**
+     * The {@code catch} that turns a write rejection into the status it deserves (ADR-076),
+     * emitted ahead of the {@code RuntimeException} → 500 tail so it is reached first.
+     *
+     * <p>Exactly one catch is emitted, because exactly one type is reachable at each site.
+     * {@code deleteById} matches on {@code id} alone and can only report a missing row, so
+     * {@code fromUpdate} is false there. {@code update} on a {@code versioned} entity matches
+     * on {@code id} <i>and</i> version in one statement and reports the pair as a conflict, so
+     * a versioned update — and every action route, which persists through the same
+     * {@code service.update} — answers {@code 409} and never {@code 404}. Emitting both
+     * catches everywhere would put a clause on each method that nothing can throw into it.
+     */
+    private static void appendWriteRejectionCatch(MethodSpec.Builder method,
+                                                  DomainMetadata metadata, boolean fromUpdate) {
+        ClassName conflict = fromUpdate ? KernelErrorGenerator.versionConflictType(metadata) : null;
+        if (conflict != null) {
+            method.nextControlFlow("catch ($T e)", conflict)
+                    .addStatement("exchange.respond($T.CONFLICT)", HTTP_STATUS);
+            return;
+        }
+        // No log: this is the same answer handleGetById already gives for the same fact, and
+        // that path logs nothing either. A missing row is not an event the server owns.
+        method.nextControlFlow("catch ($T e)", KernelErrorGenerator.notFoundType(metadata))
+                .addStatement("exchange.respond($T.NOT_FOUND)", HTTP_STATUS);
     }
 
     /**
@@ -434,6 +465,10 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         appendPublishCalls(method, metadata, DomainEventMetadata.Trigger.ACTION, action.name(),
                 "id", "updated");
         method.addStatement("exchange.respond($T.OK, updated)", HTTP_STATUS);
+        // The action persists through service.update, so it inherits that route's rejection.
+        // The findById above already answered 404 for an id that was never there; what this
+        // catches is the row disappearing (or its version moving) between the read and the write.
+        appendWriteRejectionCatch(method, metadata, true);
         return appendServerErrorCatch(method,
                 "Failed to execute action " + action.name() + " on " + entityLower).build();
     }

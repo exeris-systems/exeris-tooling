@@ -1430,7 +1430,36 @@ Proposals, highest return-on-effort first:
       the loop's `else` branch already admits such a field to the AST via `FieldMetadata.simple(...)`.
       Gating the sweep on `@Field` would inherit somebody else's condition, which is D5 again, shifted
       by one call.
-- [ ] **D7 — the emitted handler test asserts a delete status production does not give.** Found
+- [x] **D7 — a write against a row that is not there answers 404 (ADR-076).** Shipped 0.8.0. What
+      the finding named — an emitted test asserting `204` where production answers `500` — turned
+      out to be one of *three* answers the emitted app gave to one question, and fixing only the
+      double would have made the test agree with a wrong handler. The measured spread:
+      `KernelRepositoryGenerator` threw `RuntimeException("<Entity> not found: " + id)`, so the fact
+      existed as a message substring; `KernelHandlerGenerator#appendServerErrorCatch` closed every
+      route with one `catch (RuntimeException)` → **500**; `OpenApiPathsBuilder#buildResponses`
+      declared **404** on every operation and **500** on none; the emitted handler test asserted
+      **204**. Meanwhile `GET /{id}` and every action route already answered **404** for the same
+      fact, so the resource's by-id surface disagreed with itself.
+
+      The fix is the smallest thing a `catch` can act on: a type. `KernelErrorGenerator` emits
+      `<Entity>NotFoundException` per entity and `<Entity>VersionConflictException` for a versioned
+      one, into the generated repository package — per entity because a shared type would live under
+      `basePackage`, which a per-domain emitter cannot resolve (it is a pipeline input, explicit or
+      auto-detected), and in the *repository* package because the domain package is the consumer's
+      own and `OrderNotFoundException` is a name they may already have written there. `DELETE` and
+      an unversioned `PUT` answer `404`; a versioned `PUT` and every action route answer `409`,
+      because the update matches on `id` **and** version in one statement and `409` is true of both
+      outcomes where `404` would lie about one. The spec now declares `500` everywhere and `409`
+      where it can occur. The stub service gained `rowExists`, so the emitted test says which side
+      of the branch it is on.
+
+      Perturbation found a defect in the *new tests* before it found anything else: a
+      `containsSubsequence` over the whole emitted file matched catch clauses belonging to a
+      different handler method, so deleting the delete route's catch still passed. Rewritten as
+      contiguous indentation-normalised blocks. Two follow-ups fell out and are recorded as **D8**.
+      Original finding below.
+
+      **D7 — the emitted handler test asserts a delete status production does not give.** Found
       2026-08-27 while checking a review challenge on T48, and it is the same class as the
       stub-service `id` gap that T48 itself closed. The emitted `<Entity>HandlerTest`'s
       `Stub<Entity>Service.delete` records the id and returns; the real service delegates to
@@ -1446,6 +1475,28 @@ Proposals, highest return-on-effort first:
       `DELETE` on an absent id **should** be a 500 at all — an idempotent-delete endpoint answering
       `404`, or `204`, are both defensible, and the current answer was never chosen so much as
       inherited from a `rowsAffected == 0` guard written for a different reason.
+- [ ] **D8 — the emitted OpenAPI promises an authentication the emitted app does not have.** Found
+      2026-08-27 while auditing `buildResponses` for D7, and left out of ADR-076 deliberately: it is
+      the same *family* of defect — a spec claiming what no emitted code can do — but it is a claim
+      about authentication rather than about write rejection, and merging them would have made
+      ADR-076 decide something it never measured.
+
+      `OpenApiSecurityBuilder.buildSecurity` attaches a `bearerAuth` requirement to **every**
+      operation of **every** entity, unconditionally, and `buildSecuritySchemes` describes it as
+      JWT bearer. `grep -rn UNAUTHORIZED exeris-codegen-java/src/main/java/` returns nothing: no
+      emitter answers `401`, and no emitter enforces any scheme. So a consumer who hands the spec to
+      a client generator, or to a reviewer, gets an API that documents authentication it does not
+      perform — the most consequential shape of the "spec over-promises" defect, because the reader
+      most likely to trust it is the one deciding whether the endpoint is safe to expose.
+
+      Second, smaller half: `buildResponses` puts `404` on routes that have no id to miss — the
+      collection `GET` and the create `POST`. Harmless next to the first half, same root cause (one
+      response set for every operation shape), and worth fixing in the same pass.
+
+      Two things to settle in the slice: whether the security block should be **removed** until an
+      auth story exists, or **gated** on something the author declares (there is no annotation for
+      it today — which is itself the answer to whether it can be gated); and whether the response
+      set should become per-operation-accurate while it is being touched, which is the cheap half.
 
 ---
 

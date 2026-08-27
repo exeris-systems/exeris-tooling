@@ -33,7 +33,7 @@ public final class OpenApiPathsBuilder {
 
         PathItem itemPath = new PathItem();
         itemPath.setGet(buildGetOperation(entityName));
-        itemPath.setPut(buildUpdateOperation(entityName));
+        itemPath.setPut(buildUpdateOperation(entityName, metadata.versioned()));
         itemPath.setDelete(buildDeleteOperation(entityName));
         paths.addPathItem(basePath + "/{id}", itemPath);
 
@@ -41,7 +41,7 @@ public final class OpenApiPathsBuilder {
             for (ActionMetadata action : metadata.actions()) {
                 String actionPath = basePath + "/{id}/actions/" + NameCasing.kebab(action.name());
                 PathItem actionPathItem = new PathItem();
-                actionPathItem.setPost(buildActionOperation(entityName, action));
+                actionPathItem.setPost(buildActionOperation(entityName, action, metadata.versioned()));
                 paths.addPathItem(actionPath, actionPathItem);
             }
         }
@@ -77,14 +77,14 @@ public final class OpenApiPathsBuilder {
         return op;
     }
 
-    private static Operation buildUpdateOperation(String entity) {
+    private static Operation buildUpdateOperation(String entity, boolean versioned) {
         Operation op = new Operation();
         op.setOperationId("update" + entity);
         op.setSummary("Update " + entity);
         op.setTags(List.of(entity));
         op.addParametersItem(buildIdParam());
         op.setRequestBody(RequestBodyFactory.buildUpdateRequestBody(entity));
-        op.setResponses(buildResponses("200", "Updated " + entity));
+        op.setResponses(buildResponses("200", "Updated " + entity, versioned));
         return op;
     }
 
@@ -98,7 +98,7 @@ public final class OpenApiPathsBuilder {
         return op;
     }
 
-    private static Operation buildActionOperation(String entity, ActionMetadata action) {
+    private static Operation buildActionOperation(String entity, ActionMetadata action, boolean versioned) {
         Operation op = new Operation();
         op.setOperationId(action.name() + entity);
         op.setSummary(action.description() != null ? action.description() : "Execute " + action.name());
@@ -107,7 +107,7 @@ public final class OpenApiPathsBuilder {
         if (action.hasParams()) {
             op.setRequestBody(RequestBodyFactory.buildActionRequestBody(entity, action));
         }
-        op.setResponses(buildResponses("200", "Action result"));
+        op.setResponses(buildResponses("200", "Action result", versioned));
         return op;
     }
 
@@ -122,11 +122,33 @@ public final class OpenApiPathsBuilder {
     }
 
     private static ApiResponses buildResponses(String code, String description) {
+        return buildResponses(code, description, false);
+    }
+
+    /**
+     * The statuses an operation declares.
+     *
+     * <p>{@code 500} is here because every emitted handler can reach it — the tenant guard
+     * answers it directly, and every service call is wrapped in a {@code catch (RuntimeException)}
+     * that does. Until ADR-076 the spec declared {@code 404} and not {@code 500} while the handler
+     * answered {@code 500} and not {@code 404} for an absent row: the spec named the one status
+     * the code could not give and omitted the one it did.
+     *
+     * <p>{@code 409} is declared only on a versioned entity's write routes, which is the only
+     * place the emitted repository raises the conflict type: the update matches on {@code id} and
+     * on the expected version together, and reports the pair rather than guessing between them.
+     */
+    private static ApiResponses buildResponses(String code, String description, boolean conflict) {
         ApiResponses responses = new ApiResponses();
         responses.addApiResponse(code, new ApiResponse().description(description));
         responses.addApiResponse("400", new ApiResponse().description("Bad request"));
         responses.addApiResponse("401", new ApiResponse().description("Unauthorized"));
         responses.addApiResponse("404", new ApiResponse().description("Not found"));
+        if (conflict) {
+            responses.addApiResponse("409",
+                    new ApiResponse().description("Version conflict — re-read and retry"));
+        }
+        responses.addApiResponse("500", new ApiResponse().description("Internal server error"));
         return responses;
     }
 

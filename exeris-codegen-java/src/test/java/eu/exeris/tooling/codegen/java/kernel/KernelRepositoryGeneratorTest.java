@@ -264,8 +264,9 @@ class KernelRepositoryGeneratorTest {
                 .contains("Long currentVersion = entity.getVersion()")
                 .contains("long expectedVersion = currentVersion == null ? 0L : currentVersion")
                 .contains("entity.setVersion(expectedVersion + 1L)")
-                // The "not found or stale version" error message is used when versioned.
-                .contains("Order not found or stale version: ");
+                // ADR-076: versioned, so the zero-row outcome is reported as a conflict — the
+                // statement matched on id AND version and cannot say which of them missed.
+                .contains("throw new OrderVersionConflictException(id)");
     }
 
     @Test
@@ -346,8 +347,8 @@ class KernelRepositoryGeneratorTest {
                 .contains("stmt.bindLong(1, versionValue == null ? 0L : versionValue)")
                 .contains("stmt.bindUuid(2, id)")
                 .contains("stmt.bindLong(3, expectedVersion)")
-                // Distinct error message for stale-version case.
-                .contains("Order not found or stale version: ");
+                // ADR-076: the stale-version case carries its own type, which the handler maps to 409.
+                .contains("throw new OrderVersionConflictException(id)");
     }
 
     @Test

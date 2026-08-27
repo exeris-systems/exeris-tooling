@@ -66,6 +66,7 @@ public class KernelGeneratorStrategy {
         registry.register(new KernelActionStreamHandlerGenerator());
         registry.register(new KernelServiceGenerator());
         registry.register(new KernelRepositoryGenerator());
+        registry.register(new KernelErrorGenerator());
         registry.register(new KernelEventGenerator());
         registry.register(new KernelEventHandlerGenerator());
         registry.register(new KernelGraphSyncGenerator());

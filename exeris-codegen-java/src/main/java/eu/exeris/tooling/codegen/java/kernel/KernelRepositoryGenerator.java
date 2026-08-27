@@ -775,9 +775,14 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         String whereClause = versioned
                 ? WHERE_ID_CLAUSE + " AND " + toSnakeCase(ctx.sys().version()) + " = ?" : WHERE_ID_CLAUSE;
         String sql = "UPDATE " + ctx.table() + " SET " + setClause + whereClause;
-        String notFoundMessage = versioned
-                ? ctx.entity() + " not found or stale version: "
-                : ctx.entity() + " not found: ";
+        // ADR-076: the rejection carries a type, and the message moved into it. A versioned
+        // update matches on id AND on the expected version in one statement, so a zero row
+        // count means "gone or stale" and cannot be split without a second query — hence a
+        // distinct type the handler maps to 409, rather than a 404 that would be a lie about
+        // one of the two.
+        ClassName rejection = versioned
+                ? KernelErrorGenerator.versionConflictType(ctx.metadata())
+                : KernelErrorGenerator.notFoundType(ctx.metadata());
 
         MethodSpec.Builder update = MethodSpec.methodBuilder("update")
                 .addModifiers(Modifier.PUBLIC)
@@ -828,8 +833,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
 
         update.addCode(body.build());
         update.beginControlFlow("if (rowsAffected[0] == 0L)")
-                .addStatement("throw new $T($S + id)",
-                        RuntimeException.class, notFoundMessage)
+                .addStatement("throw new $T(id)", rejection)
                 .endControlFlow();
         update.addStatement("entity.setId(id)");
         update.addStatement("LOG.log($T.INFO, $S, id)", KernelScaffold.LOGGER_LEVEL,
@@ -863,8 +867,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                 .addStatement("long[] rowsAffected = {0L}")
                 .addCode(body.build())
                 .beginControlFlow("if (rowsAffected[0] == 0L)")
-                .addStatement("throw new $T($S + id)",
-                        RuntimeException.class, ctx.entity() + " not found: ")
+                .addStatement("throw new $T(id)", KernelErrorGenerator.notFoundType(ctx.metadata()))
                 .endControlFlow()
                 .addStatement("LOG.log($T.INFO, $S, id)", KernelScaffold.LOGGER_LEVEL,
                         "Deleted " + ctx.entity() + ": {0}")
