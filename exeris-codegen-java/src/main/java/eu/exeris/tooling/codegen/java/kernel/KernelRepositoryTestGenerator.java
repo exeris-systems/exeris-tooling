@@ -62,9 +62,6 @@ public final class KernelRepositoryTestGenerator {
     private static final ClassName INTEGER = ClassName.get(Integer.class);
     private static final ClassName OBJECT = ClassName.get(Object.class);
 
-    /** The substring both not-found messages the repository throws share. */
-    private static final String NOT_FOUND = "not found";
-
     private static final ClassName KERNEL_PROVIDERS =
             ClassName.get("eu.exeris.kernel.spi.context", "KernelProviders");
     private static final ClassName STORAGE_CONTEXT =
