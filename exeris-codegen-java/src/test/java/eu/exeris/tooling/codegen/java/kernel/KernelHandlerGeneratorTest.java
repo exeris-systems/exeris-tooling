@@ -5,6 +5,7 @@ import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
 import eu.exeris.sdk.sourcemodel.ast.ActionParamMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DataScope;
+import eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 import org.junit.jupiter.api.BeforeEach;
@@ -30,6 +31,148 @@ class KernelHandlerGeneratorTest {
     @BeforeEach
     void setup() {
         strategy = new KernelGeneratorStrategy();
+    }
+
+    /** An entity whose events cover every trigger the handler serves (T48 / ADR-075). */
+    private static DomainMetadata orderWithEvents() {
+        return DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .fields(List.of(FieldMetadata.simple("amount", "java.math.BigDecimal")))
+                .actions(List.of(ActionMetadata.builder("approve").methodName("approve").build()))
+                .events(List.of(
+                        DomainEventMetadata.builder("OrderCreated")
+                                .trigger(DomainEventMetadata.Trigger.CREATE)
+                                .build(),
+                        DomainEventMetadata.builder("OrderAmended")
+                                .trigger(DomainEventMetadata.Trigger.UPDATE)
+                                .payloadFields(List.of("amount"))
+                                .build(),
+                        DomainEventMetadata.builder("OrderCancelled")
+                                .trigger(DomainEventMetadata.Trigger.DELETE)
+                                .build(),
+                        DomainEventMetadata.builder("OrderApproved")
+                                .trigger(DomainEventMetadata.Trigger.ACTION)
+                                .actionName("approve")
+                                .build()))
+                .build();
+    }
+
+    private GeneratedFile handlerFor(DomainMetadata metadata) {
+        return strategy.generate(metadata).stream()
+                .filter(f -> f.artifactType() == ArtifactType.CONTROLLER)
+                .findFirst()
+                .orElseThrow();
+    }
+
+    @Test
+    @DisplayName("T48: the publisher is a constructor argument and every trigger gets its call")
+    void shouldPublishOnEveryTrigger() {
+        GeneratedFile handler = handlerFor(orderWithEvents());
+
+        assertThat(handler.content())
+                .contains("import com.example.event.OrderEventPublisher")
+                .contains("private final OrderEventPublisher publisher")
+                .contains("public OrderHandler(OrderService service, OrderEventPublisher publisher)")
+                // Each call lands after its mutation and before the response, which is the
+                // ordering the whole design turns on — a publish before the write would
+                // announce a row that may not exist.
+                .containsSubsequence(
+                        "Order saved = service.save(entity)",
+                        "publisher.publishOrderCreatedEvent(saved.getId())",
+                        "exchange.respond(HttpStatus.CREATED, saved)")
+                .containsSubsequence(
+                        "Order updated = service.update(id, entity)",
+                        "publisher.publishOrderAmendedEvent(id, updated)",
+                        "exchange.respond(HttpStatus.OK, updated)")
+                .containsSubsequence(
+                        "service.delete(id)",
+                        "publisher.publishOrderCancelledEvent(id)",
+                        "exchange.respond(HttpStatus.NO_CONTENT)")
+                // The ACTION trigger is the case a service-held publisher could not reach:
+                // the action is invoked on the entity, here.
+                .containsSubsequence(
+                        "entity.approve()",
+                        "Order updated = service.update(id, entity)",
+                        "publisher.publishOrderApprovedEvent(id)");
+    }
+
+    @Test
+    @DisplayName("T48: an entity with no events keeps its single-argument constructor")
+    void shouldNotTakeAPublisherWithoutEvents() {
+        GeneratedFile handler = handlerFor(DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .build());
+
+        assertThat(handler.content())
+                .contains("public OrderHandler(OrderService service)")
+                .doesNotContain("OrderEventPublisher")
+                .doesNotContain("publisher.publish");
+    }
+
+    @Test
+    @DisplayName("T48: an event with no trigger is published by no handler method")
+    void shouldNotPublishAnEventWithoutATrigger() {
+        // trigger is nullable by design — null means "this baseline predates EV2
+        // extraction", which is a different claim from "fires on CREATE". Guessing CREATE
+        // here would publish an event the author never asked for on every create.
+        GeneratedFile handler = handlerFor(DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .events(List.of(DomainEventMetadata.simple("OrderCreated")))
+                .build());
+
+        // And it takes no publisher either: a field no emitted line reads is inert wiring.
+        assertThat(handler.content())
+                .contains("public OrderHandler(OrderService service)")
+                .doesNotContain("OrderEventPublisher");
+    }
+
+    @Test
+    @DisplayName("T48: an event whose trigger no handler method serves brings no publisher")
+    void shouldNotTakeAPublisherForAnUnservedTrigger() {
+        // MANUAL is published by the consumer's own code. The publisher is still emitted and
+        // still joins RuntimeComponents — that is how such code reaches it — but the handler
+        // has nothing to do with it.
+        GeneratedFile handler = handlerFor(DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .events(List.of(DomainEventMetadata.builder("OrderNoted")
+                        .trigger(DomainEventMetadata.Trigger.MANUAL)
+                        .build()))
+                .build());
+
+        assertThat(handler.content())
+                .contains("public OrderHandler(OrderService service)")
+                .doesNotContain("OrderEventPublisher");
+    }
+
+    @Test
+    @DisplayName("T48: a payload-bearing DELETE event reads the aggregate before deleting it")
+    void shouldReadTheAggregateForAPayloadBearingDelete() {
+        GeneratedFile handler = handlerFor(DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .fields(List.of(FieldMetadata.simple("amount", "java.math.BigDecimal")))
+                .events(List.of(DomainEventMetadata.builder("OrderCancelled")
+                        .trigger(DomainEventMetadata.Trigger.DELETE)
+                        .payloadFields(List.of("amount"))
+                        .build()))
+                .build());
+
+        // Deleting an absent id still answers 204, so the read must not turn a no-op
+        // delete into an event.
+        assertThat(handler.content())
+                .containsSubsequence(
+                        "Optional<Order> removed = service.findById(id)",
+                        "service.delete(id)",
+                        "if (removed.isPresent())",
+                        "publisher.publishOrderCancelledEvent(id, removed.get())",
+                        "exchange.respond(HttpStatus.NO_CONTENT)");
+    }
+
+    @Test
+    @DisplayName("T48: a DELETE event with no payload keeps the single-statement delete")
+    void shouldNotReadTheAggregateForAPayloadFreeDelete() {
+        GeneratedFile handler = handlerFor(orderWithEvents());
+
+        assertThat(handler.content()).doesNotContain("removed = service.findById(id)");
     }
 
     @Test

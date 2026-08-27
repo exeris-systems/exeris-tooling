@@ -53,7 +53,11 @@ class KernelEventGeneratorTest {
                 .contains("import eu.exeris.kernel.spi.events.EventDescriptor")
                 .contains("import eu.exeris.kernel.spi.events.EventPayload")
                 .contains("import eu.exeris.kernel.spi.events.EventTypeSpec")
-                .contains("public final class OrderEventPublisher")
+                // Non-final since T48: the publisher is a RuntimeComponents component, and
+                // that seam invites a consumer to override its factory and decorate the
+                // default by calling super — which a final class forecloses.
+                .contains("public class OrderEventPublisher")
+                .doesNotContain("public final class OrderEventPublisher")
                 .contains("EventTypeSpec ORDER_CREATED_EVENT")
                 .contains("EventTypeSpec ORDER_SHIPPED_EVENT")
                 // ADR-050: a declared @DomainEvent.topic lands on the per-type spec

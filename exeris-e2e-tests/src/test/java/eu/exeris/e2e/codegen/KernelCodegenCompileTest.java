@@ -167,8 +167,25 @@ class KernelCodegenCompileTest {
                                 .streaming(true)
                                 .streamEventType("ShipmentMoved")
                                 .build()))
+                // T48 (ADR-075): every trigger the handler serves is represented here, because
+                // the emitted publish call and the emitted publish method are produced by two
+                // different generators and only javac proves their signatures agree. CREATE and
+                // DELETE take the no-payload overload, ACTION the payload one, and the DELETE
+                // event deliberately carries no payload so the delete path keeps its
+                // single-statement shape — the payload-bearing delete is covered by the
+                // generator's own unit test, where an extra read is cheap to assert.
                 .events(List.of(
-                        DomainEventMetadata.simple("OrderCreated"),
+                        DomainEventMetadata.builder("OrderCreated")
+                                .trigger(DomainEventMetadata.Trigger.CREATE)
+                                .build(),
+                        DomainEventMetadata.builder("OrderCancelled")
+                                .trigger(DomainEventMetadata.Trigger.DELETE)
+                                .build(),
+                        DomainEventMetadata.builder("OrderDiscounted")
+                                .trigger(DomainEventMetadata.Trigger.ACTION)
+                                .actionName("applyDiscount")
+                                .payloadFields(List.of("amount", "orderNumber"))
+                                .build(),
                         DomainEventMetadata.withTopic("OrderShipped", "orders.shipped"),
                         // EV1 (ADR-046): an event WITH payloadFields drives the
                         // codec-resolved publish path — the generated publisher emits a

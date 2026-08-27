@@ -259,6 +259,7 @@ class GeneratedTestsE2ETest {
 
                 import eu.exeris.sdk.annotation.ExerisDomain;
                 import eu.exeris.sdk.annotation.Field;
+                import eu.exeris.sdk.annotation.DomainEvent;
                 import eu.exeris.sdk.annotation.Saga;
                 import eu.exeris.sdk.annotation.SagaStep;
                 import eu.exeris.sdk.annotation.Validation;
@@ -268,6 +269,12 @@ class GeneratedTestsE2ETest {
                 import java.util.UUID;
 
                 @ExerisDomain(module = "sales", path = "/orders")
+                // T48: one @DomainEvent, so the emitted handler test actually constructs the
+                // two-argument handler over a real publisher and a RecordingEventEngine. ADR-058
+                // says a test emitter is not proven until this gate RUNS its output, and the
+                // publisher branch of newHandler() is emitted code — without an event here it
+                // would be emitted and never executed.
+                @DomainEvent(name = "OrderPlaced", trigger = DomainEvent.Trigger.CREATE, topic = "orders.placed")
                 // Three steps, one of them compensating: enough for the emitted saga test to have
                 // a transition chain to check (a single-step saga has none) and a compensation
                 // branch to exercise.

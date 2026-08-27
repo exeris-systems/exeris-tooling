@@ -144,10 +144,48 @@ public final class KernelHandlerTestGenerator {
         type.addMethod(updateMissingBodyTest(entity, handlerType, exchangeType, stubType, basePath));
         addValidationTests(type, metadata, entityType, handlerType, exchangeType, bodyType,
                 stubType, basePath);
+        type.addMethod(newHandlerFactory(metadata, handlerType, stubType, basePackage));
         type.addType(stubService(entity, entityType, serviceType, repositoryType, stubType));
 
         return new GeneratedFile(packageName, className,
                 KernelScaffold.render(packageName, type.build()), ArtifactType.TEST);
+    }
+
+    /**
+     * T48: the one place the handler is constructed, so the publisher argument is added in one
+     * place rather than at every test site.
+     *
+     * <p>The publisher is real — a generated class over a {@code RecordingEventEngine} — rather
+     * than a stub of the publisher itself: its constructor registers every {@code EventTypeSpec}
+     * into the engine's registry, so a double that skipped that would test a publisher the
+     * application never builds. ADR-058 fixes the emitted-test classpath at JUnit 5 + AssertJ, so
+     * this is a double, not a mock.
+     */
+    private MethodSpec newHandlerFactory(DomainMetadata metadata, ClassName handlerType,
+                                         ClassName stubType, String basePackage) {
+        MethodSpec.Builder factory = MethodSpec.methodBuilder("newHandler")
+                .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+                .returns(handlerType)
+                .addParameter(stubType, "service")
+                .addJavadoc("The handler under test, over the supplied service double.\n");
+
+        if (!KernelHandlerGenerator.publishesFromHandler(metadata)) {
+            return factory.addStatement("return new $T(service)", handlerType).build();
+        }
+
+        ClassName publisherType = ClassName.get(
+                metadata.packageName().replace(".domain", ".event"),
+                metadata.entityName() + "EventPublisher");
+        ClassName engineType = ClassName.get(
+                KernelTestSupportGenerator.supportPackage(basePackage),
+                KernelTestSupportGenerator.RECORDING_EVENT_ENGINE);
+        return factory
+                .addJavadoc("<p>The publisher is built over a fresh {@link $T}, so a\n", engineType)
+                .addJavadoc("test that wants to assert on published events can construct one\n")
+                .addJavadoc("itself and keep the reference.\n")
+                .addStatement("return new $T(service, new $T(new $T()))",
+                        handlerType, publisherType, engineType)
+                .build();
     }
 
     private MethodSpec getAllTest(String entity, ClassName entityType, ClassName handlerType,
@@ -155,7 +193,7 @@ public final class KernelHandlerTestGenerator {
         return test("handleGetAllRespondsOkWithTheServiceResult")
                 .addStatement("$T service = new $T()", stubType, stubType)
                 .addStatement("service.all = $T.of(new $T())", LIST, entityType)
-                .addStatement("$T handler = new $T(service)", handlerType, handlerType)
+                .addStatement("$T handler = newHandler(service)", handlerType)
                 .addStatement("$T exchange = $T.get($S)", exchangeType, exchangeType, basePath)
                 .addStatement("handler.handleGetAll(exchange)")
                 .addStatement("$T.assertThat(exchange.status()).isEqualTo($T.OK)", ASSERTIONS, HTTP_STATUS)
@@ -169,7 +207,7 @@ public final class KernelHandlerTestGenerator {
                 .addStatement("$T found = new $T()", entityType, entityType)
                 .addStatement("$T service = new $T()", stubType, stubType)
                 .addStatement("service.byId = $T.of(found)", OPTIONAL)
-                .addStatement("$T handler = new $T(service)", handlerType, handlerType)
+                .addStatement("$T handler = newHandler(service)", handlerType)
                 .addStatement("$T exchange = $T.get($S).withPathParam($S, $S)",
                         exchangeType, exchangeType, basePath + "/" + FIXED_ID, "id", FIXED_ID)
                 .addStatement("handler.handleGetById(exchange)")
@@ -183,7 +221,7 @@ public final class KernelHandlerTestGenerator {
         return test("handleGetByIdRespondsNotFoundWhenTheEntityIsAbsent")
                 .addStatement("$T service = new $T()", stubType, stubType)
                 .addStatement("service.byId = $T.empty()", OPTIONAL)
-                .addStatement("$T handler = new $T(service)", handlerType, handlerType)
+                .addStatement("$T handler = newHandler(service)", handlerType)
                 .addStatement("$T exchange = $T.get($S).withPathParam($S, $S)",
                         exchangeType, exchangeType, basePath + "/" + FIXED_ID, "id", FIXED_ID)
                 .addStatement("handler.handleGetById(exchange)")
@@ -198,7 +236,7 @@ public final class KernelHandlerTestGenerator {
                 .addJavadoc("The id guard runs before the service is consulted, so a malformed path\n")
                 .addJavadoc("parameter must never reach it.\n")
                 .addStatement("$T service = new $T()", stubType, stubType)
-                .addStatement("$T handler = new $T(service)", handlerType, handlerType)
+                .addStatement("$T handler = newHandler(service)", handlerType)
                 .addStatement("$T exchange = $T.get($S).withPathParam($S, $S)",
                         exchangeType, exchangeType, basePath + "/not-a-uuid", "id", "not-a-uuid")
                 .addStatement("handler.handleGetById(exchange)")
@@ -212,7 +250,7 @@ public final class KernelHandlerTestGenerator {
                                   ClassName stubType, String basePath) {
         return test("handleDeleteRespondsNoContentAndDelegatesTheId")
                 .addStatement("$T service = new $T()", stubType, stubType)
-                .addStatement("$T handler = new $T(service)", handlerType, handlerType)
+                .addStatement("$T handler = newHandler(service)", handlerType)
                 .addStatement("$T exchange = $T.delete($S).withPathParam($S, $S)",
                         exchangeType, exchangeType, basePath + "/" + FIXED_ID, "id", FIXED_ID)
                 .addStatement("handler.handleDelete(exchange)")
@@ -229,7 +267,7 @@ public final class KernelHandlerTestGenerator {
                 .addJavadoc("A bodyless {@code POST} is rejected by the body guard, before the\n")
                 .addJavadoc("service is consulted — so nothing is persisted on a malformed request.\n")
                 .addStatement("$T service = new $T()", stubType, stubType)
-                .addStatement("$T handler = new $T(service)", handlerType, handlerType)
+                .addStatement("$T handler = newHandler(service)", handlerType)
                 .addStatement("$T exchange = $T.post($S)", exchangeType, exchangeType, basePath)
                 .addStatement("handler.handleCreate(exchange)")
                 .addStatement("$T.assertThat(exchange.status()).isEqualTo($T.BAD_REQUEST)",
@@ -244,7 +282,7 @@ public final class KernelHandlerTestGenerator {
                 .addJavadoc("The path-id guard runs before the body guard, so a malformed id is\n")
                 .addJavadoc("rejected without the body ever being read.\n")
                 .addStatement("$T service = new $T()", stubType, stubType)
-                .addStatement("$T handler = new $T(service)", handlerType, handlerType)
+                .addStatement("$T handler = newHandler(service)", handlerType)
                 .addStatement("$T exchange = $T.put($S).withPathParam($S, $S)",
                         exchangeType, exchangeType, basePath + "/not-a-uuid", "id", "not-a-uuid")
                 .addStatement("handler.handleUpdate(exchange)")
@@ -260,7 +298,7 @@ public final class KernelHandlerTestGenerator {
                 .addJavadoc("A well-formed id is not enough: the body guard still rejects, and the\n")
                 .addJavadoc("service is never reached.\n")
                 .addStatement("$T service = new $T()", stubType, stubType)
-                .addStatement("$T handler = new $T(service)", handlerType, handlerType)
+                .addStatement("$T handler = newHandler(service)", handlerType)
                 .addStatement("$T exchange = $T.put($S).withPathParam($S, $S)",
                         exchangeType, exchangeType, basePath + "/" + FIXED_ID, "id", FIXED_ID)
                 .addStatement("handler.handleUpdate(exchange)")
@@ -587,7 +625,7 @@ public final class KernelHandlerTestGenerator {
         private void stage(MethodSpec.Builder m, KernelValidationRules.FieldRules perturbed,
                            CodeBlock value) {
             m.addStatement("$T service = new $T()", stubType, stubType)
-                    .addStatement("$T handler = new $T(service)", handlerType, handlerType)
+                    .addStatement("$T handler = newHandler(service)", handlerType)
                     .addStatement("$T body = new $T()", bodyType, bodyType)
                     .addStatement("$T decoded = new $T()", entityType, entityType);
             for (KernelValidationRules.FieldRules fr : rules) {
@@ -669,11 +707,20 @@ public final class KernelHandlerTestGenerator {
                         .build())
                 // save/update are overridden so a guard that stopped short-circuiting is reported
                 // as a failed assertion on a recorder, not as an NPE from the null repository.
+                //
+                // save fills an absent id, because the real repository does — the generated
+                // service test asserts exactly that ("save returns the repository's result, not
+                // the argument it was handed"). A double that skipped it under-specified the
+                // contract harmlessly until T48 gave the handler a caller for saved.getId(); it
+                // then produced a 500 from a null id that production never sees.
                 .addMethod(MethodSpec.methodBuilder("save")
                         .addAnnotation(Override.class)
                         .addModifiers(Modifier.PUBLIC)
                         .returns(entityType)
                         .addParameter(entityType, "entity")
+                        .beginControlFlow("if (entity.getId() == null)")
+                        .addStatement("entity.setId($T.fromString($S))", UUID, FIXED_ID)
+                        .endControlFlow()
                         .addStatement("this.saved = entity")
                         .addStatement("return entity")
                         .build())

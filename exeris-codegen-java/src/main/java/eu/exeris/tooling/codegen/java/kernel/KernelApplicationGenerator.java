@@ -548,8 +548,8 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .build();
     }
 
-    /** The three infrastructure packages derived from an entity's {@code .domain} package. */
-    private record InfraPackages(String repository, String service, String handler) {}
+    /** The infrastructure packages derived from an entity's {@code .domain} package. */
+    private record InfraPackages(String repository, String service, String handler, String event) {}
 
     /**
      * Derives the {@code .repository} / {@code .service} / {@code .handler} package paths
@@ -563,7 +563,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
             throw new IllegalArgumentException(
                     "Domain package '" + domainPkg + "' for entity '" + domain.entityName()
                             + "' does not end with '.domain'. The Application "
-                            + "generator derives the .repository/.service/.handler "
+                            + "generator derives the .repository/.service/.handler/.event "
                             + "package paths by replacing the '.domain' suffix; "
                             + "without it the per-entity wiring would resolve "
                             + "Repository/Service/Handler to the wrong location. "
@@ -574,7 +574,8 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
         return new InfraPackages(
                 domainPkg.replace(".domain", ".repository"),
                 domainPkg.replace(".domain", ".service"),
-                domainPkg.replace(".domain", ".handler"));
+                domainPkg.replace(".domain", ".handler"),
+                domainPkg.replace(".domain", ".event"));
     }
 
     /**
@@ -672,8 +673,29 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                     CodeBlock.of("new $T($L())", repoType, TX_EXECUTOR_NAME));
             addComponent(type, serviceType, serviceName,
                     CodeBlock.of("new $T($L())", serviceType, repoName));
-            addComponent(type, handlerType, entityLower + "Handler",
-                    CodeBlock.of("new $T($L())", handlerType, serviceName));
+
+            // T48 (ADR-070's own rule, applied to the one component that had been left out):
+            // the publisher joins the seam, so a consumer can override how it is built — and
+            // the handler takes it, because an action is invoked on the entity by the handler
+            // and never reaches the service.
+            // The publisher joins the seam whenever one is emitted at all, including for the
+            // triggers no handler method serves — a MANUAL event is published by the
+            // consumer's own code, and the seam is how that code reaches the publisher. The
+            // handler only takes it when a handler method would actually call it, so an
+            // entity with only unserved triggers does not carry a field nothing reads.
+            String publisherName = entityLower + "EventPublisher";
+            if (domain.hasEvents()) {
+                ClassName publisherType = ClassName.get(pkgs.event(), entity + "EventPublisher");
+                addComponent(type, publisherType, publisherName,
+                        CodeBlock.of("new $T($T.eventEngine())", publisherType, KERNEL_PROVIDERS));
+            }
+            if (KernelHandlerGenerator.publishesFromHandler(domain)) {
+                addComponent(type, handlerType, entityLower + "Handler",
+                        CodeBlock.of("new $T($L(), $L())", handlerType, serviceName, publisherName));
+            } else {
+                addComponent(type, handlerType, entityLower + "Handler",
+                        CodeBlock.of("new $T($L())", handlerType, serviceName));
+            }
 
             // ADR-043 Slice 1 / ADR-044 Slice 2: the SSE stream handlers are no-arg today,
             // but they go through the same seam so that a consumer overriding one does not

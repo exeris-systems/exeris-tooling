@@ -112,6 +112,15 @@ export const DomainEventMetadataSchema = z.object({
   // SDK record carries @JsonInclude(NON_NULL) and absent lists are missing on the wire.
   payloadFields: z.array(z.string()).optional(),
   sensitiveFields: z.array(z.string()).optional(),
+  // EV2 (T48 / ADR-075): WHEN the event fires. The Java side reads these to place a
+  // publish call in the generated handler; no TS emitter reads them, and mirroring them
+  // here is the parity contract rather than a pending feature — the front-end consumes
+  // events off the SSE stream and never decides where one is produced. `trigger` is
+  // nullable by design upstream: absent means "this baseline predates EV2 extraction",
+  // which is a different claim from CREATE.
+  trigger: z.string().optional(),
+  actionName: z.string().optional(),
+  fieldName: z.string().optional(),
   // Legacy/never-populated: the AST never carried inline FieldMetadata on events
   // (the original parity bug read this). Kept optional for backward-compat; the
   // generator now reads payloadFields instead.

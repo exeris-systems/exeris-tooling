@@ -483,7 +483,26 @@ never-invoked emitter start emitting, and its output did not build.
       *construction*, not just configuration: a saga needs the `FlowEngine`, a publisher the
       `EventEngine`. **Highest-leverage item in this list**: T48 and T50 are both downstream of it,
       and it is the difference between an app that serves CRUD and an app that runs.
-- [ ] **T48 — emitted event publishers are never invoked.** `KernelServiceGenerator`'s javadoc
+- [x] **T48 — emitted event publishers are never invoked.** *Shipped 2026-08-27 (ADR-075).* The
+      publisher is a component in `RuntimeComponents` and a constructor argument of
+      `<Entity>Handler`; the processor extracts the trigger triple SDK 0.11.0 shipped; and
+      `handleCreate` / `handleUpdate` / `handleDelete` / each action handler publish the events whose
+      trigger they satisfy, after the mutation and before the response.
+
+      **Neither option this entry recorded was taken, and the measurement is why.** An action is
+      invoked on the *entity, by the handler*, and never reaches the service — so a publisher held by
+      the service, whether as a constructor argument or as a generated decorator, is structurally
+      unable to see the `ACTION` trigger, which is the case this finding names. Both options would
+      have closed the CRUD half and left the half that motivated it.
+
+      Three consequences stated rather than designed around: publishing is coupled to the HTTP
+      transport (a saga calling the service directly publishes nothing); the publish runs after the
+      commit, since the transaction boundary is in the repository, so `FLAG_PERSISTENT` makes
+      delivery durable but not the publish; and `FIELD_CHANGED` / `STATE_TRANSITION` / `SCHEDULED` /
+      `MANUAL` / `SNAPSHOT` publish nothing, each needing a source of truth the handler does not
+      have. Original finding below.
+
+      **T48 — emitted event publishers are never invoked.** `KernelServiceGenerator`'s javadoc
       (`KernelServiceGenerator.java:24-27`) says publishing is "intentionally out of scope" and that
       the emitted `*EventPublisher` "is wired separately by the application bootstrap". No emitter
       performs that wiring. The declared chain `@Action` → `@DomainEvent` → saga is generated at every
@@ -1411,6 +1430,22 @@ Proposals, highest return-on-effort first:
       the loop's `else` branch already admits such a field to the AST via `FieldMetadata.simple(...)`.
       Gating the sweep on `@Field` would inherit somebody else's condition, which is D5 again, shifted
       by one call.
+- [ ] **D7 — the emitted handler test asserts a delete status production does not give.** Found
+      2026-08-27 while checking a review challenge on T48, and it is the same class as the
+      stub-service `id` gap that T48 itself closed. The emitted `<Entity>HandlerTest`'s
+      `Stub<Entity>Service.delete` records the id and returns; the real service delegates to
+      `deleteById`, which **throws** when `rowsAffected == 0`
+      (`KernelRepositoryGenerator#buildDeleteById`). So the emitted `handleDelete` test deletes an id
+      the stub has never seen and asserts `204`, while the same call against a real repository
+      answers `500`. The test is not wrong about the handler's routing — that is what it is for — but
+      it is the only place a reader can look for "what does DELETE do on an unknown id", and it
+      answers the opposite of production.
+
+      Two things to settle in the slice, not here: whether the double should track existence and
+      throw (making the emitted test assert 500, which documents the real behaviour), and whether a
+      `DELETE` on an absent id **should** be a 500 at all — an idempotent-delete endpoint answering
+      `404`, or `204`, are both defensible, and the current answer was never chosen so much as
+      inherited from a `rowsAffected == 0` guard written for a different reason.
 
 ---
 

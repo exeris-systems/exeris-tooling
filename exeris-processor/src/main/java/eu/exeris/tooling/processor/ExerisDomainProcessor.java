@@ -1560,6 +1560,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                         .aggregateType(element.getSimpleName().toString())
                         .payloadFields(payloadFields)
                         .sensitiveFields(sensitiveFields)
+                        .trigger(eventTrigger(values))
+                        .actionName(nonBlank(values, "action"))
+                        .fieldName(nonBlank(values, "field"))
                         .build());
             }
         }
@@ -1573,7 +1576,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         // TODO(T11-strict): no warnInertAttributes("DomainEvent", values, ...) call yet,
         // so -Aexeris.strict cannot audit unconsumed @DomainEvent attributes (the
         // @Field / @ActionParam paths do). Add one once the consumed-attribute set is
-        // settled (name/topic/description/trigger/includeFields/excludeFields/sensitiveFields).
+        // settled (name/topic/description/trigger/action/field/includeFields/
+        // excludeFields/sensitiveFields).
         String name = values.containsKey("name") ? (String) values.get("name") : null;
         if (name == null || name.isBlank()) {
             // Derive from trigger type
@@ -1598,7 +1602,48 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                 .aggregateType(element.getSimpleName().toString())
                 .payloadFields(payloadFields)
                 .sensitiveFields(sensitiveFields)
+                .trigger(eventTrigger(values))
+                .actionName(nonBlank(values, "action"))
+                .fieldName(nonBlank(values, "field"))
                 .build();
+    }
+
+    /**
+     * EV2 (T48): {@code @DomainEvent.trigger} as an AST value rather than a suffix input.
+     *
+     * <p>Note the asymmetry with the name derivation above, which defaults an absent
+     * trigger to {@code CREATE} because all it needs is a suffix. Here an absent trigger
+     * stays {@code null}, because the AST component makes a claim downstream: {@code null}
+     * means "this baseline predates EV2 extraction", which is a different statement from
+     * "fires on CREATE". Same rule the {@code -io} reader already applies
+     * (ADR-042 lock-step; the reader took this one first).
+     *
+     * <p>An unrecognised constant also yields {@code null} rather than a guess. The
+     * annotation's enum cannot hold a value this switch does not know without an SDK
+     * change, so the branch is unreachable from a well-formed source — but silently
+     * mapping an unknown trigger onto a known one would place a publish call in the wrong
+     * handler method, which is worse than emitting none.
+     */
+    private DomainEventMetadata.Trigger eventTrigger(Map<String, Object> values) {
+        if (!values.containsKey("trigger")) {
+            return null;
+        }
+        String declared = values.get("trigger").toString();
+        for (DomainEventMetadata.Trigger candidate : DomainEventMetadata.Trigger.values()) {
+            if (candidate.name().equals(declared)) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    /** An annotation attribute's value, or {@code null} when absent or blank. */
+    private String nonBlank(Map<String, Object> values, String attribute) {
+        Object value = values.get(attribute);
+        if (!(value instanceof String text) || text.isBlank()) {
+            return null;
+        }
+        return text;
     }
 
     /**
