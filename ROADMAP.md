@@ -368,6 +368,26 @@ LTS descent can even compile. Verified by reading the jars.
       runs and still reports; it no longer blocks. `ng build (generated sample app)` is **not** in
       the required list — the workflow comment claimed it was, which was never true and is corrected
       rather than made true, because adding a gate is a decision and not a doc-fix.
+- [x] **U3 — SDK pin `0.10.0` → `0.11.0`** (SDK released 2026-08-26). Same shape as U0 and the same
+      rider: SDK bumps `SchemaVersion.CURRENT` `0.10.0` → `0.11.0`, the processor picks it up for
+      free (it stamps from `BaselineTrust.current(...)`, never the inlined constant), and consumers
+      re-run codegen once per ADR-042 skew. Behaviour-neutral by design and by result: **83 / 99 /
+      402 / 45 / 28 on both sides of the pin**, measured by flipping it back and re-running, and no
+      source change was needed at all. The delta is additive on every record this repo reads —
+      `FieldMetadata.blob`, `ActionMetadata.schedule`, `DomainEventMetadata.{trigger, actionName,
+      fieldName}`, plus the new `BlobMetadata` / `ScheduleMetadata` carriers — and all of it is
+      reserved: the processor extracts none of it, no generator consumes it. One narrowing rides
+      along: `@Action.path` moved from `required` to `default`, and stays registered inert (T44).
+
+      **What it puts on a released coordinate**, which is the point of doing it now rather than at
+      the cut: the `@Blob` / `@Schedule` transcription (`@Schedule` is buildable today; `@Blob`
+      still carries its kernel ask — there is no `CommunityStorageSubsystem` for a generated app to
+      name, K6), and the T48 publisher wiring. T48 needed the trigger triple specifically: until
+      0.11.0 the processor read `@DomainEvent.trigger` only to derive the event *name* suffix and
+      then discarded it — and only when the author supplied no explicit `name` — so
+      `@DomainEvent(name = "OrderPlaced", trigger = CREATE)` left no trace of the trigger anywhere
+      and no generator could know where a publish call belongs. Extracting the triple is a processor
+      slice this repo owes; the carrier for it now exists.
 
 **Not a codegen fork.** Kernel 0.11 ships two lines (`eu.exeris` on JDK 25, `eu.exeris.preview` on
 JDK 28 EA with Valhalla `value record`), but the emitted source is identical against either: of the

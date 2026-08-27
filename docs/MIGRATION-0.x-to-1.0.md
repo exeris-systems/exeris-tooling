@@ -494,6 +494,26 @@ read-widen) with a warning saying so, until the kernel `sharedScopeKey` carrier 
 
 ## 0.8.0 train — regeneration deltas
 
+### Dependency floor (hard)
+
+The BOM moves to released **`eu.exeris:exeris-sdk-*:0.11.0`**. The kernel pin does not move — it
+stays at `0.11.0`, both lines and all the notes from the 0.7.0 train still apply.
+
+**The metadata schema stamp moves `0.10.0` → `0.11.0`.** SDK 0.11.0 bumps `SchemaVersion.CURRENT`
+for two reserved AST components: `FieldMetadata.blob` and `ActionMetadata.schedule`, the twins of
+`@Blob` and `@Schedule` (SDK ADR-072). Nothing in this train populates them — the processor extracts
+neither annotation and no generator consumes either carrier — but the schema names the shape rather
+than its population, so the stamp moves anyway and a pre-`0.11.0` baseline reads back as
+`SCHEMA_VERSION_SKEW`. **Re-run codegen once after upgrading**, exactly as at the previous bump. As
+before, the refusal is the SDK `-io` reader's; nothing in tooling reads a baseline for skew today.
+
+**Nothing else in emitted output changes.** The rest of the SDK delta is additive record components
+(`DomainEventMetadata` grows `trigger` / `actionName` / `fieldName`, alongside the two above) plus
+one narrowing on the annotation surface: `@Action.path` is now `default` rather than `required`.
+`path` stays registered inert (T44), so the only difference you can observe is under
+`-Aexeris.strict`, where an action that never sets it no longer draws the "set but no code generator
+consumes it" warning.
+
 ### A third bootstrap file, and `RuntimeLifecycle`'s constructor changed (ADR-070)
 
 Regeneration now emits `RuntimeComponents.java` next to `Application.java` and
