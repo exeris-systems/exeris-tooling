@@ -624,6 +624,20 @@ around each write and gains two cases (`saveStampsTheActingTenantWhenTheCallerLe
 both already compile-time requirements of the repository under test — the ADR-058 "JUnit 5 and
 AssertJ and nothing else" contract is unchanged.
 
+### `-Aexeris.strict` now reports `@Action.path` and `@ExerisDomain.apiVersion` (D5)
+
+Only if you pass `-Aexeris.strict`. A default build is unchanged and stays silent, and nothing about
+what the compiler *produces* changes either way.
+
+Both attributes have been registered inert since the flag shipped, but the audit is driven by a
+per-annotation call site and `@Action` and `@ExerisDomain` had none — so a strict build never
+reported them. It does now. Expect one new warning per `@ExerisDomain(apiVersion = …)` and one per
+`@Action(path = …)`.
+
+Both are safe to delete from your sources: neither is read by any generator, `apiVersion` reaches no
+emitted route or document, and `path` no longer has to be written at all now that SDK 0.11.0 has
+given it a default.
+
 ---
 
 ## Reference
