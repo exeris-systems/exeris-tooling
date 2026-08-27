@@ -380,9 +380,12 @@ LTS descent can even compile. Verified by reading the jars.
       along: `@Action.path` moved from `required` to `default`, and stays registered inert (T44).
 
       **What it puts on a released coordinate**, which is the point of doing it now rather than at
-      the cut: the `@Blob` / `@Schedule` transcription (`@Schedule` is buildable today; `@Blob`
-      still carries its kernel ask — there is no `CommunityStorageSubsystem` for a generated app to
-      name, K6), and the T48 publisher wiring. T48 needed the trigger triple specifically: until
+      the cut: T48, and the `@Schedule` half of the transcription. Worth stating the shape of what
+      moved, because it does not move everything — a released coordinate unblocks work whose blocker
+      was **metadata-shaped**. T48's was (no carrier for the trigger), `@Schedule`'s design-time half
+      was. `@Blob`'s blocker is **runtime-hosting-shaped** (K6), so the same bump changed nothing
+      binding for it: `FieldMetadata.blob` and `BlobMetadata` arrived with everything else and were
+      simply never the constraint. T48 needed the trigger triple specifically: until
       0.11.0 the processor read `@DomainEvent.trigger` only to derive the event *name* suffix and
       then discarded it — and only when the author supplied no explicit `name` — so
       `@DomainEvent(name = "OrderPlaced", trigger = CREATE)` left no trace of the trigger anywhere
@@ -692,6 +695,45 @@ T30 (emitted imports as undeclared build requirements — the general case behin
         `CommunityStorageSubsystem`**: the ten bootable subsystems are crypto, events, flow, graph,
         http, memory, persistence, scheduling, security, transport. `Application.main()` boots
         subsystems *by name*, so a generated app has no name to declare. Kernel-side ask (K6).
+        SDK 0.11.0 shipped the design-time half (`@Blob` + `FieldMetadata.blob`, ADR-072) — see
+        [`docs/adr/ADR-072.link.md`](docs/adr/ADR-072.link.md), which also carries the build-time
+        rejection this repo owes: `@Blob` on a `dataScope = GLOBAL` entity is unstorable by
+        construction, because an absent `isolationKey` is a terminal deny in `BlobStore` and `GLOBAL`
+        is exactly the tier that leaves it empty.
+
+        **The "no subsystem to name" reading is the smaller half of K6 — corrected 2026-08-27** from
+        a kernel-side reading, then re-verified here against the tag this repo pins (`v0.11.0`), not
+        transcribed. Three things a transcription slice would otherwise walk into:
+
+        1. **A subsystem name alone would emit an app that does not boot.** Both drivers
+           (`CommunityFilesystemBlobStorageProvider`, `CommunityS3BlobStorageProvider`) register at
+           the same Community priority, and the kernel's disposition is that an unset selection key
+           with more than one provider present is a **startup failure, not a default** — by design.
+           So whatever K6 delivers, the emitter's obligation is a name *plus* a configuration key, or
+           forcing the author to supply one. This is the exact asymmetry against `@Schedule`, and it
+           is why K6 exists at all: scheduling has one provider and can fall back
+           (`JobSchedulerConfig.DEFAULT_NAME`); storage has two, so a fallback is not available to it.
+        2. **There is no `KernelProviders` slot to bind, and the obvious name is taken.** At `v0.11.0`
+           the slot list carries `JOB_SCHEDULER` + `JOB_SCHEDULER_PROVIDER` for scheduling and
+           **nothing** for blobs — while `STORAGE_CONTEXT` already exists and is the ADR-012
+           isolation-key carrier (the one T36's emitted `actingTenantId()` reads), not a store. K6
+           should name its slot unambiguously; "storage" is spoken for.
+        3. **Blob storage is invisible to kernel introspection.** `CommunityProviderInventory.discover`
+           sweeps nine SPIs — memory, crypto, telemetry, persistence, events, flow, transport, graph,
+           security — and `BlobStorageProvider` is not among them despite being `ServiceLoader`-
+           registered. Measured here at `v0.11.0`, and one addition to the kernel-side report:
+           **`JobSchedulerProvider` is missing from that sweep too**, so the gap is not blob-specific.
+           This matters to us specifically if tooling ever probes kernel capability through
+           `exeris-ai-bridge`'s `kernel:list_providers` (D4's neighbourhood): it would report "no
+           storage backend" for the wrong reason — the SPI is there, the inventory does not look. A
+           cheap, independent kernel-side ask, and the only one that unblocks introspection *before*
+           the subsystem exists. Unnumbered here on purpose: the kernel mints K-numbers.
+
+        **And the timeline is not ours.** `exeris-kernel/docs/subsystems/storage.md` opens its status
+        with "Post-1.0 per the ROADMAP's narrowed-core decision — 1.0 GA is not gated on this
+        subsystem." So `@Blob` is not an exclusion waiting to be revoked before our 1.0; it is
+        excluded against a subsystem the kernel has deliberately scheduled *after* it. The 50-of-51
+        target below is honest only while it says that, which it now does.
 
       *(`@EventSourced` sat here as a second kernel-gated exclusion until 2026-08-18. That was
       wrong — see the correction below the table; the target moved from 49 to 50.)*
@@ -707,7 +749,7 @@ T30 (emitted imports as undeclared build requirements — the general case behin
       | graph — `@GraphEdge`, `@GraphEdges`, `@GraphProperty`, `@GraphQuery` | 4 | `CommunityGraphSubsystem` + the existing `KernelGraphSyncGenerator` (**S3**) |
       | saga — `@SagaSteps`, `@SagaTransition`, `@SagaTransitions` | 3 | `CommunityFlowSubsystem`; `FlowDefinitionBuilder` already carries transitions (**S2**) |
       | `security.*` — `@Encrypted`, `@RowLevelSecurity` | 2 | `CommunityCryptoSubsystem` exists; RLS overlaps the `dataScope`-driven predicate, so it is a design call (**C2**) |
-      | `@QueryParam`, `@Schedule` | 2 | the HTTP layer and `CommunitySchedulingSubsystem`, both present |
+      | `@QueryParam`, `@Schedule` | 2 | the HTTP layer and `CommunitySchedulingSubsystem`, both present — but `@Schedule` carries one open question that is not ours (below) |
       | `@EventSourced` | 1 | **re-measured 2026-08-18: not kernel-gated** — the replay SPI is on the pinned line; see below (**EV2**) |
 
       **`@EventSourced` is tooling debt, not a kernel ask — corrected 2026-08-18.** It was excluded on
@@ -724,7 +766,31 @@ T30 (emitted imports as undeclared build requirements — the general case behin
       `KernelProviders.eventStreamReader()` returns an `Optional` — a broker may not support replay —
       so emitted code must handle absence rather than assume a binding.
 
-      **So the 1.0 target is 50 of 51**, with only `@Blob` carried as a kernel ask. Two rules that
+      **`@Schedule` has its subsystem and still cannot be transcribed yet** — noted 2026-08-27, when
+      SDK 0.11.0 landed the annotation (ADR-072). `CommunitySchedulingSubsystem` is bootable, so the
+      table row above is right about capability and incomplete about readiness. `JobScheduler.submit(…)`
+      captures the ambient `PrincipalContext` and `StorageContext` and **fails a job closed at dispatch**
+      when neither is bound (kernel `spi/scheduling/JobScheduler.java:14-17` at `v0.11.0`), and a
+      declared schedule has no submission event, hence no principal to capture. So a naive transcription
+      emits a job that fails on every fire. The answer is a kernel-side system principal for declared
+      jobs, or an SDK attribute naming the identity to run as — an authorization decision in a
+      design-time annotation, and the worse option on its face. Owner: kernel; consumer: this repo. See
+      [`docs/adr/ADR-072.link.md`](docs/adr/ADR-072.link.md).
+
+      **This does not move the count, and mints no K-number.** The two exclusions are different kinds.
+      `@Blob` is excluded because the platform cannot host it: `Application.main()` boots subsystems by
+      name and there is no name to declare, which no amount of design in this repo fixes. `@Schedule`
+      has its subsystem and is gated on a design question — the same bucket the behavioural family
+      sits in (`@Derived`, `@Rule`, `@EventHandler`, `@Projection`, listed above as "design-gated, not
+      capability-gated"), and those count toward the 50. An ask this repo may be able to discharge
+      itself is not a kernel ask. The likeliest discharge is the seam ADR-070 already built —
+      `RuntimeComponents` is where a consumer supplies construction-time collaborators, and the
+      identity a declared job runs as is one — but that is a slice to design, not a decision to record
+      here.
+
+      **So the 1.0 target is 50 of 51**, with only `@Blob` carried as a kernel ask — and carried
+      knowing the kernel has scheduled its subsystem post-1.0, so this is an exclusion that stands at
+      our GA rather than one expected to close before it. Two rules that
       follow from the shape of this list, and matter more than the count: an annotation is "covered"
       when it **reaches emitted output**, not when the processor extracts it — `@EventSourced` is
       still the standing counter-example, now as pure tooling debt. And every one that lands must
@@ -1306,6 +1372,29 @@ Proposals, highest return-on-effort first:
       answer on") stale; writing the correction is what exposed that the warning carrying it could not
       fire. Worth naming as a class: this is D4's problem from the other end — D4 is about diagnostics a
       consumer cannot identify, D5 about diagnostics a consumer never receives.
+- [ ] **D6 — D5 fixed the instance; the class is one registry wider.** Opened 2026-08-27, from a
+      kernel-side reading of the `@Blob` disposition. The failure class D5 closed is *a registry whose
+      entries are reachable only through call sites, with no gate proving reachability*. There are
+      **two** such registries and only one has a gate: D5's test is literally named "reaches every
+      registered inert attribute" and asserts four `@X.y` warnings, all from `INERT_ATTRIBUTES`.
+      `INERT_ANNOTATIONS` has no equivalent, and is correct today only because it holds a single entry
+      (`@EventSourced`) that happens to be `@Target(TYPE)` — which is what `warnInertAnnotations`
+      inspects, taking a `TypeElement` at both call sites. `@Blob` is `@Target(FIELD)` and `@Schedule`
+      is `@Target(METHOD)`; either added today would be a dead entry.
+
+      **This is due independently of whether `@Blob` extraction happens**, because the registry is
+      currently right by accident rather than by construction. The work: extend criterion (3) and a
+      reachability gate to `INERT_ANNOTATIONS`, and widen `warnInertAnnotations` from `TypeElement` to
+      `Element`. That last part is cheap — `findAnnotation` already takes `Element`, and the
+      per-element traversals already exist and already host the twin `warnInertAttributes` sweep, so
+      no new traversal is added.
+
+      **One placement trap, recorded before anyone hits it:** the field-level sweep belongs in the
+      field *loop*, not inside `extractFieldMetadata`, which sits behind a `@Field` gate. A `@Blob`
+      field with no `@Field` is a real shape — `@Blob` describes a byte carrier, not a column — and
+      the loop's `else` branch already admits such a field to the AST via `FieldMetadata.simple(...)`.
+      Gating the sweep on `@Field` would inherit somebody else's condition, which is D5 again, shifted
+      by one call.
 
 ---
 
