@@ -331,7 +331,7 @@ was folded in is **T2** (the full test-emitter, Java + the FE spec slice); G0–
 because they gate the cap track, not because T2 was displaced. In the end T2 *was* split at the cut:
 the Java half shipped here, the FE spec slice moved to 0.8.0.
 
-### Upstream catch-up (U0–U2) — added 2026-08-12
+### Upstream catch-up (U0–U3) — added 2026-08-12
 
 Kernel 0.11.0 and SDK 0.10.0 both released, and both moved off the JDK this repo pins. The sequence
 below is **forced, not preferred**: 0.10.2 was class-file major 70 (and `exeris-kernel-core` carried
