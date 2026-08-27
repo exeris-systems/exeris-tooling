@@ -692,6 +692,11 @@ T30 (emitted imports as undeclared build requirements — the general case behin
         `CommunityStorageSubsystem`**: the ten bootable subsystems are crypto, events, flow, graph,
         http, memory, persistence, scheduling, security, transport. `Application.main()` boots
         subsystems *by name*, so a generated app has no name to declare. Kernel-side ask (K6).
+        SDK 0.11.0 shipped the design-time half (`@Blob` + `FieldMetadata.blob`, ADR-072) — see
+        [`docs/adr/ADR-072.link.md`](docs/adr/ADR-072.link.md), which also carries the build-time
+        rejection this repo owes: `@Blob` on a `dataScope = GLOBAL` entity is unstorable by
+        construction, because an absent `isolationKey` is a terminal deny in `BlobStore` and `GLOBAL`
+        is exactly the tier that leaves it empty.
 
       *(`@EventSourced` sat here as a second kernel-gated exclusion until 2026-08-18. That was
       wrong — see the correction below the table; the target moved from 49 to 50.)*
@@ -707,7 +712,7 @@ T30 (emitted imports as undeclared build requirements — the general case behin
       | graph — `@GraphEdge`, `@GraphEdges`, `@GraphProperty`, `@GraphQuery` | 4 | `CommunityGraphSubsystem` + the existing `KernelGraphSyncGenerator` (**S3**) |
       | saga — `@SagaSteps`, `@SagaTransition`, `@SagaTransitions` | 3 | `CommunityFlowSubsystem`; `FlowDefinitionBuilder` already carries transitions (**S2**) |
       | `security.*` — `@Encrypted`, `@RowLevelSecurity` | 2 | `CommunityCryptoSubsystem` exists; RLS overlaps the `dataScope`-driven predicate, so it is a design call (**C2**) |
-      | `@QueryParam`, `@Schedule` | 2 | the HTTP layer and `CommunitySchedulingSubsystem`, both present |
+      | `@QueryParam`, `@Schedule` | 2 | the HTTP layer and `CommunitySchedulingSubsystem`, both present — but `@Schedule` carries one open question that is not ours (below) |
       | `@EventSourced` | 1 | **re-measured 2026-08-18: not kernel-gated** — the replay SPI is on the pinned line; see below (**EV2**) |
 
       **`@EventSourced` is tooling debt, not a kernel ask — corrected 2026-08-18.** It was excluded on
@@ -723,6 +728,17 @@ T30 (emitted imports as undeclared build requirements — the general case behin
       bindings and a TCK IT. One real constraint survives and belongs in the design:
       `KernelProviders.eventStreamReader()` returns an `Optional` — a broker may not support replay —
       so emitted code must handle absence rather than assume a binding.
+
+      **`@Schedule` has its subsystem and still cannot be transcribed yet** — noted 2026-08-27, when
+      SDK 0.11.0 landed the annotation (ADR-072). `CommunitySchedulingSubsystem` is bootable, so the
+      table row above is right about capability and incomplete about readiness. `JobScheduler.submit(…)`
+      captures the ambient `PrincipalContext` and `StorageContext` and **fails a job closed at dispatch**
+      when neither is bound (kernel `spi/scheduling/JobScheduler.java:14-17` at `v0.11.0`), and a
+      declared schedule has no submission event, hence no principal to capture. So a naive transcription
+      emits a job that fails on every fire. The answer is a kernel-side system principal for declared
+      jobs, or an SDK attribute naming the identity to run as — an authorization decision in a
+      design-time annotation, and the worse option on its face. Owner: kernel; consumer: this repo. See
+      [`docs/adr/ADR-072.link.md`](docs/adr/ADR-072.link.md).
 
       **So the 1.0 target is 50 of 51**, with only `@Blob` carried as a kernel ask. Two rules that
       follow from the shape of this list, and matter more than the count: an annotation is "covered"
