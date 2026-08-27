@@ -483,7 +483,26 @@ never-invoked emitter start emitting, and its output did not build.
       *construction*, not just configuration: a saga needs the `FlowEngine`, a publisher the
       `EventEngine`. **Highest-leverage item in this list**: T48 and T50 are both downstream of it,
       and it is the difference between an app that serves CRUD and an app that runs.
-- [ ] **T48 — emitted event publishers are never invoked.** `KernelServiceGenerator`'s javadoc
+- [x] **T48 — emitted event publishers are never invoked.** *Shipped 2026-08-27 (ADR-075).* The
+      publisher is a component in `RuntimeComponents` and a constructor argument of
+      `<Entity>Handler`; the processor extracts the trigger triple SDK 0.11.0 shipped; and
+      `handleCreate` / `handleUpdate` / `handleDelete` / each action handler publish the events whose
+      trigger they satisfy, after the mutation and before the response.
+
+      **Neither option this entry recorded was taken, and the measurement is why.** An action is
+      invoked on the *entity, by the handler*, and never reaches the service — so a publisher held by
+      the service, whether as a constructor argument or as a generated decorator, is structurally
+      unable to see the `ACTION` trigger, which is the case this finding names. Both options would
+      have closed the CRUD half and left the half that motivated it.
+
+      Three consequences stated rather than designed around: publishing is coupled to the HTTP
+      transport (a saga calling the service directly publishes nothing); the publish runs after the
+      commit, since the transaction boundary is in the repository, so `FLAG_PERSISTENT` makes
+      delivery durable but not the publish; and `FIELD_CHANGED` / `STATE_TRANSITION` / `SCHEDULED` /
+      `MANUAL` / `SNAPSHOT` publish nothing, each needing a source of truth the handler does not
+      have. Original finding below.
+
+      **T48 — emitted event publishers are never invoked.** `KernelServiceGenerator`'s javadoc
       (`KernelServiceGenerator.java:24-27`) says publishing is "intentionally out of scope" and that
       the emitted `*EventPublisher` "is wired separately by the application bootstrap". No emitter
       performs that wiring. The declared chain `@Action` → `@DomainEvent` → saga is generated at every

@@ -2309,7 +2309,8 @@ class ExerisDomainProcessorTest {
 
                 @ExerisDomain(module = "sales", path = "/orders")
                 @DomainEvent(name = "OrderCreated", trigger = Trigger.CREATE, topic = "orders.created")
-                @DomainEvent(name = "OrderPicked", trigger = Trigger.ACTION, topic = "orders.picked",
+                @DomainEvent(name = "OrderPicked", trigger = Trigger.ACTION, action = "pick",
+                        topic = "orders.picked",
                         includeFields = {"amount", "orderNumber"}, sensitiveFields = "customerEmail")
                 @DomainEvent(name = "OrderRedacted", trigger = Trigger.UPDATE, topic = "orders.redacted",
                         excludeFields = {"customerEmail"})
@@ -2341,6 +2342,42 @@ class ExerisDomainProcessorTest {
             return new ObjectMapper()
                     .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
                     .readValue(readContent(metadataFile.get()), DomainMetadata.class);
+        }
+
+        @Test
+        @DisplayName("EV2 (T48): the trigger triple reaches the AST, in both event forms")
+        void extractsTheTriggerTriple() throws IOException {
+            DomainMetadata dm = read();
+
+            assertThat(event(dm, "OrderCreated").trigger())
+                    .isEqualTo(eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata.Trigger.CREATE);
+            assertThat(event(dm, "OrderRedacted").trigger())
+                    .isEqualTo(eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata.Trigger.UPDATE);
+            // The nested-class legacy form goes through a different extraction path and had to
+            // be taught the triple separately.
+            assertThat(event(dm, "OrderArchived").trigger())
+                    .isEqualTo(eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata.Trigger.DELETE);
+
+            assertThat(event(dm, "OrderPicked").trigger())
+                    .isEqualTo(eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata.Trigger.ACTION);
+            assertThat(event(dm, "OrderPicked").actionName()).isEqualTo("pick");
+            // Unset @DomainEvent.action / .field are blank on the annotation and null in the
+            // AST — "" would read as an action named the empty string when a generator matches.
+            assertThat(event(dm, "OrderCreated").actionName()).isNull();
+            assertThat(event(dm, "OrderCreated").fieldName()).isNull();
+        }
+
+        @Test
+        @DisplayName("EV2 (T48): an explicit name no longer hides the trigger")
+        void keepsTheTriggerWhenTheNameIsExplicit() throws IOException {
+            // The defect the carrier exists to close: the processor read `trigger` only to
+            // derive a name suffix, and only when no explicit name was given, so
+            // @DomainEvent(name = "...", trigger = CREATE) left no trace of CREATE anywhere.
+            // Every event in the fixture above declares an explicit name.
+            DomainMetadata dm = read();
+
+            assertThat(dm.events())
+                    .allSatisfy(event -> assertThat(event.trigger()).isNotNull());
         }
 
         private eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata event(DomainMetadata dm, String name) {

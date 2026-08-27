@@ -61,7 +61,7 @@ class KernelTestSupportGeneratorTest {
 
         assertThat(files).extracting(GeneratedFile::className)
                 .containsExactly("RecordingHttpExchange", "RecordingPersistence", "RecordingFlow",
-                        "RecordingRequestBody");
+                        "RecordingRequestBody", "RecordingEventEngine");
         assertThat(files).allSatisfy(f ->
                 assertThat(f.packageName()).isEqualTo("com.example.testsupport"));
     }

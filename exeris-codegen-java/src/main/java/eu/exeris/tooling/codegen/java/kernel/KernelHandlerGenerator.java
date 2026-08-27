@@ -13,10 +13,12 @@ import static eu.exeris.tooling.codegen.java.support.DataScopeSupport.isTenantPa
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
+import eu.exeris.tooling.codegen.java.support.KernelEventSupport;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
 import eu.exeris.tooling.codegen.java.support.NameCasing;
 import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
 import eu.exeris.sdk.sourcemodel.ast.ActionParamMetadata;
+import eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 
@@ -56,6 +58,9 @@ import java.util.List;
  * @since 0.1.0
  */
 public class KernelHandlerGenerator implements KernelArtifactGenerator {
+
+    /** The generated publisher's field and constructor-parameter name (T48). */
+    private static final String PUBLISHER = "publisher";
 
     private static final ClassName HTTP_EXCHANGE =
             ClassName.get("eu.exeris.kernel.spi.http", "HttpExchange");
@@ -115,17 +120,30 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                 .addJavadoc("<p><b>DO NOT EDIT</b> - Regenerate from domain model.\n")
                 .addField(KernelScaffold.loggerField(selfType))
                 .addField(FieldSpec.builder(serviceType, "service", Modifier.PRIVATE, Modifier.FINAL)
-                        .build())
-                .addMethod(MethodSpec.constructorBuilder()
-                        .addModifiers(Modifier.PUBLIC)
-                        .addParameter(serviceType, "service")
-                        .addStatement("this.service = service")
-                        .build())
+                        .build());
+
+        // T48 (ADR-075): the generated publisher becomes a constructor argument here
+        // rather than of the service, because an action is invoked on the ENTITY by this
+        // class and never reaches the service — so a service-held publisher cannot see
+        // the ACTION trigger, which is the case T48 names.
+        ClassName publisherType = publisherType(metadata);
+        MethodSpec.Builder constructor = MethodSpec.constructorBuilder()
+                .addModifiers(Modifier.PUBLIC)
+                .addParameter(serviceType, "service")
+                .addStatement("this.service = service");
+        if (publisherType != null) {
+            handlerBuilder.addField(FieldSpec.builder(publisherType, PUBLISHER, Modifier.PRIVATE, Modifier.FINAL)
+                    .build());
+            constructor.addParameter(publisherType, PUBLISHER)
+                    .addStatement("this.$L = $L", PUBLISHER, PUBLISHER);
+        }
+
+        handlerBuilder.addMethod(constructor.build())
                 .addMethod(buildHandleGetAll(entityLower, listOfEntity, tenantPartitioned))
                 .addMethod(buildHandleGetById(entityLower, optionalOfEntity, tenantPartitioned))
-                .addMethod(buildHandleCreate(entityLower, entityType, metadata.fields(), tenantPartitioned))
-                .addMethod(buildHandleUpdate(entityLower, entityType, metadata.fields(), tenantPartitioned))
-                .addMethod(buildHandleDelete(entityLower, tenantPartitioned));
+                .addMethod(buildHandleCreate(entityLower, entityType, metadata, tenantPartitioned))
+                .addMethod(buildHandleUpdate(entityLower, entityType, metadata, tenantPartitioned))
+                .addMethod(buildHandleDelete(entityLower, entityType, optionalOfEntity, metadata, tenantPartitioned));
 
         // T1: serve @Action methods. Each action gets a handler that loads the
         // aggregate, decodes its @ActionParam body (when any), invokes the actual
@@ -146,7 +164,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                     handlerBuilder.addType(buildActionRequestRecord(action));
                 }
                 handlerBuilder.addMethod(buildActionHandler(
-                        action, entityType, optionalOfEntity, selfType, entityLower, tenantPartitioned));
+                        action, entityType, optionalOfEntity, selfType, entityLower, metadata, tenantPartitioned));
             }
         }
 
@@ -189,37 +207,134 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         return appendServerErrorCatch(method, "Failed to get " + entityLower).build();
     }
 
-    private MethodSpec buildHandleCreate(String entityLower, ClassName entityType, List<FieldMetadata> fields, boolean tenantPartitioned) {
+    private MethodSpec buildHandleCreate(String entityLower, ClassName entityType, DomainMetadata metadata, boolean tenantPartitioned) {
         MethodSpec.Builder method = crudHandler("handleCreate");
         appendTenantGuard(method, tenantPartitioned);
         appendBodyParseGuard(method, entityType);
-        appendValidationGuard(method, fields);
+        appendValidationGuard(method, metadata.fields());
         method.beginControlFlow("try")
-                .addStatement("$T saved = service.save(entity)", entityType)
-                .addStatement("exchange.respond($T.CREATED, saved)", HTTP_STATUS);
+                .addStatement("$T saved = service.save(entity)", entityType);
+        appendPublishCalls(method, metadata, DomainEventMetadata.Trigger.CREATE, null,
+                "saved.getId()", "saved");
+        method.addStatement("exchange.respond($T.CREATED, saved)", HTTP_STATUS);
         return appendServerErrorCatch(method, "Failed to create " + entityLower).build();
     }
 
-    private MethodSpec buildHandleUpdate(String entityLower, ClassName entityType, List<FieldMetadata> fields, boolean tenantPartitioned) {
+    private MethodSpec buildHandleUpdate(String entityLower, ClassName entityType, DomainMetadata metadata, boolean tenantPartitioned) {
         MethodSpec.Builder method = crudHandler("handleUpdate");
         appendTenantGuard(method, tenantPartitioned);
         appendPathIdGuard(method);
         appendBodyParseGuard(method, entityType);
-        appendValidationGuard(method, fields);
+        appendValidationGuard(method, metadata.fields());
         method.beginControlFlow("try")
-                .addStatement("$T updated = service.update(id, entity)", entityType)
-                .addStatement("exchange.respond($T.OK, updated)", HTTP_STATUS);
+                .addStatement("$T updated = service.update(id, entity)", entityType);
+        appendPublishCalls(method, metadata, DomainEventMetadata.Trigger.UPDATE, null,
+                "id", "updated");
+        method.addStatement("exchange.respond($T.OK, updated)", HTTP_STATUS);
         return appendServerErrorCatch(method, "Failed to update " + entityLower).build();
     }
 
-    private MethodSpec buildHandleDelete(String entityLower, boolean tenantPartitioned) {
+    private MethodSpec buildHandleDelete(String entityLower, ClassName entityType, TypeName optionalOfEntity,
+                                         DomainMetadata metadata, boolean tenantPartitioned) {
         MethodSpec.Builder method = crudHandler("handleDelete");
         appendTenantGuard(method, tenantPartitioned);
         appendPathIdGuard(method);
-        method.beginControlFlow("try")
-                .addStatement("service.delete(id)")
-                .addStatement("exchange.respond($T.NO_CONTENT)", HTTP_STATUS);
+        method.beginControlFlow("try");
+
+        // A DELETE-triggered event that carries a payload needs the aggregate, and after
+        // service.delete(id) there is none. The read is emitted only when some event
+        // actually needs it, so an entity with no payload-bearing DELETE event keeps the
+        // single-statement delete it has always had.
+        boolean needsAggregate = triggered(metadata, DomainEventMetadata.Trigger.DELETE, null).stream()
+                .anyMatch(event -> !KernelEventGenerator.payloadFields(event, metadata).isEmpty());
+        if (needsAggregate) {
+            method.addStatement("$T removed = service.findById(id)", optionalOfEntity);
+        }
+        method.addStatement("service.delete(id)");
+        // Non-payload DELETE events publish unconditionally; payload-bearing ones only when
+        // the row was actually there. Deleting an absent id still answers 204, as it always
+        // has, so the read must not turn a no-op delete into an event.
+        appendPublishCalls(method, metadata, DomainEventMetadata.Trigger.DELETE, null, "id", null);
+        if (needsAggregate) {
+            method.beginControlFlow("if (removed.isPresent())");
+            appendPayloadPublishCalls(method, metadata, DomainEventMetadata.Trigger.DELETE, null,
+                    "id", "removed.get()");
+            method.endControlFlow();
+        }
+        method.addStatement("exchange.respond($T.NO_CONTENT)", HTTP_STATUS);
         return appendServerErrorCatch(method, "Failed to delete " + entityLower).build();
+    }
+
+    /** The emitted publisher's type, or {@code null} when the entity declares no events. */
+    private ClassName publisherType(DomainMetadata metadata) {
+        if (!metadata.hasEvents()) {
+            return null;
+        }
+        return ClassName.get(metadata.packageName().replace(".domain", ".event"),
+                metadata.entityName() + "EventPublisher");
+    }
+
+    /**
+     * The events a given handler method owes a publish call, in declaration order.
+     *
+     * <p>{@code actionName} is the discriminator for {@link DomainEventMetadata.Trigger#ACTION}
+     * only; for every other trigger it is {@code null} and ignored. An {@code ACTION} event whose
+     * {@code actionName} names no declared action matches nothing and is silently unpublished —
+     * deliberately, because refusing the build on it would make a typo in one event fail an
+     * entity's whole CRUD surface, and the {@code -Aexeris.strict} audit is the place that kind of
+     * "you wrote it and it does nothing" belongs.
+     */
+    private List<DomainEventMetadata> triggered(DomainMetadata metadata,
+                                                DomainEventMetadata.Trigger trigger,
+                                                String actionName) {
+        return metadata.events().stream()
+                .filter(event -> event.trigger() == trigger)
+                .filter(event -> trigger != DomainEventMetadata.Trigger.ACTION
+                        || (actionName != null && actionName.equals(event.actionName())))
+                .toList();
+    }
+
+    /**
+     * T48 (ADR-075): emits the publish calls for one handler method, after the mutation and
+     * before the response.
+     *
+     * <p><b>After the commit, not inside it.</b> The transaction boundary lives in the repository,
+     * below the service, so a publish from here necessarily runs post-commit: a crash between the
+     * two loses the event. The descriptors carry {@code FLAG_PERSISTENT}, which makes *delivery*
+     * durable once published — not the publish itself. Moving the call inside the transaction means
+     * moving it below the service, which is exactly the seam that cannot see the {@code ACTION}
+     * trigger (ADR-075).
+     *
+     * @param aggregateExpr expression yielding the aggregate for payload-bearing events, or
+     *                      {@code null} when the caller has none to offer
+     */
+    private void appendPublishCalls(MethodSpec.Builder method, DomainMetadata metadata,
+                                    DomainEventMetadata.Trigger trigger, String actionName,
+                                    String idExpr, String aggregateExpr) {
+        for (DomainEventMetadata event : triggered(metadata, trigger, actionName)) {
+            if (!KernelEventGenerator.payloadFields(event, metadata).isEmpty()) {
+                continue;
+            }
+            method.addStatement("$L.publish$L($L)", PUBLISHER,
+                    KernelEventSupport.eventName(event, metadata.entityName()), idExpr);
+        }
+        if (aggregateExpr != null) {
+            appendPayloadPublishCalls(method, metadata, trigger, actionName, idExpr, aggregateExpr);
+        }
+    }
+
+    /** The payload-bearing half of {@link #appendPublishCalls}, separable because the delete
+     *  path can only offer an aggregate inside a presence check. */
+    private void appendPayloadPublishCalls(MethodSpec.Builder method, DomainMetadata metadata,
+                                           DomainEventMetadata.Trigger trigger, String actionName,
+                                           String idExpr, String aggregateExpr) {
+        for (DomainEventMetadata event : triggered(metadata, trigger, actionName)) {
+            if (KernelEventGenerator.payloadFields(event, metadata).isEmpty()) {
+                continue;
+            }
+            method.addStatement("$L.publish$L($L, $L)", PUBLISHER,
+                    KernelEventSupport.eventName(event, metadata.entityName()), idExpr, aggregateExpr);
+        }
     }
 
     /** Emits the per-action handler: parse {@code id} from the action path, decode the
@@ -246,7 +361,8 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
      *  answer T41 was opened for, wearing a different status code, so it gets the same refusal. */
     private MethodSpec buildActionHandler(ActionMetadata action, ClassName entityType,
                                           TypeName optionalOfEntity, ClassName selfType,
-                                          String entityLower, boolean tenantPartitioned) {
+                                          String entityLower, DomainMetadata metadata,
+                                          boolean tenantPartitioned) {
         MethodSpec.Builder method = crudHandler("handle" + NameCasing.pascal(action.name()));
         method.addJavadoc("Serves the {@code $L} action. NOTE (v1): a domain exception from "
                 + "the entity method surfaces as 500, not 4xx.\n", action.name());
@@ -287,8 +403,10 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
             method.addStatement("entity.$L()", action.effectiveMethodName());
         }
 
-        method.addStatement("$T updated = service.update(id, entity)", entityType)
-                .addStatement("exchange.respond($T.OK, updated)", HTTP_STATUS);
+        method.addStatement("$T updated = service.update(id, entity)", entityType);
+        appendPublishCalls(method, metadata, DomainEventMetadata.Trigger.ACTION, action.name(),
+                "id", "updated");
+        method.addStatement("exchange.respond($T.OK, updated)", HTTP_STATUS);
         return appendServerErrorCatch(method,
                 "Failed to execute action " + action.name() + " on " + entityLower).build();
     }

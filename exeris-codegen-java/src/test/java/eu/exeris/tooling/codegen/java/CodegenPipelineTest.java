@@ -107,13 +107,14 @@ class CodegenPipelineTest {
 
             int written = pipeline.runTests(metadataDir, testOutputDir, "com.shop");
 
-            // Four project-wide doubles, plus the handler, service and repository tests for the
+            // Five project-wide doubles, plus the handler, service and repository tests for the
             // one entity. No saga test: productDomain() declares no saga.
-            assertThat(written).isEqualTo(7);
+            assertThat(written).isEqualTo(8);
             assertThat(testOutputDir.resolve("com/shop/testsupport/RecordingHttpExchange.java")).exists();
             assertThat(testOutputDir.resolve("com/shop/testsupport/RecordingPersistence.java")).exists();
             assertThat(testOutputDir.resolve("com/shop/testsupport/RecordingFlow.java")).exists();
             assertThat(testOutputDir.resolve("com/shop/testsupport/RecordingRequestBody.java")).exists();
+            assertThat(testOutputDir.resolve("com/shop/testsupport/RecordingEventEngine.java")).exists();
             assertThat(testOutputDir.resolve("com/shop/handler/ProductHandlerTest.java")).exists();
             assertThat(testOutputDir.resolve("com/shop/service/ProductServiceTest.java")).exists();
             assertThat(testOutputDir.resolve("com/shop/repository/ProductRepositoryTest.java")).exists();

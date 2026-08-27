@@ -657,6 +657,43 @@ and blob storage is post-1.0 kernel-side), `@Schedule` on the identity a declare
 surface you are meant to be able to declare against. The warning tells you the build does nothing
 with it *yet*.
 
+### Generated handlers now publish domain events, and take the publisher as an argument (T48)
+
+`<Entity>Handler`'s constructor gains a second parameter, `<Entity>EventPublisher`, for every entity
+that declares a `@DomainEvent`. `RuntimeComponents` supplies it and gains a
+`create<Entity>EventPublisher()` factory alongside the ones it already had, so the wiring is the
+seam's, not yours — **unless you construct a handler by hand**, in which case that call site needs
+the extra argument.
+
+**What starts happening:** an event whose `trigger` is `CREATE`, `UPDATE`, `DELETE` or `ACTION` is
+now published by the handler method that satisfies it, after the mutation and before the response.
+Before this change the emitted publisher existed and nothing called it, so a declared
+`@Action` → `@DomainEvent` → saga chain returned `200` and did nothing.
+
+**What still publishes nothing:** an event with no `trigger`, and the `FIELD_CHANGED`,
+`STATE_TRANSITION`, `SCHEDULED`, `MANUAL` and `SNAPSHOT` triggers. Each needs a source of truth the
+handler does not have.
+
+**Two behaviours worth knowing before you rely on it.** The publish runs *after* the commit — the
+transaction boundary is in the repository, below the service — so a crash between the two loses the
+event; `FLAG_PERSISTENT` makes delivery durable once published, not the publish itself. And
+publishing is coupled to the HTTP transport: a saga or a scheduled job calling the service directly
+publishes nothing. ADR-070's seam is where you install a publishing service of your own if you need
+that today.
+
+**Two smaller shape changes ride along.** `<Entity>EventPublisher` is no longer `final`, because the
+emitted handler test constructs it. And a `DELETE`-triggered event that carries a payload makes
+`handleDelete` read the aggregate before deleting it — emitted only when such an event exists, and
+guarded so deleting an absent id still answers `204`.
+
+**Regenerated tests:** a new project-wide double, `RecordingEventEngine`, joins
+`RecordingHttpExchange` / `RecordingPersistence` / `RecordingFlow` / `RecordingRequestBody` under
+`<basePackage>.testsupport`; the emitted handler test routes construction through one `newHandler`
+helper; and the emitted stub service now fills an absent id on `save`, matching what the real
+repository does. The ADR-058 "JUnit 5 and AssertJ and nothing else" contract is unchanged.
+
+See [`adr/ADR-075-generated-event-publisher-caller.md`](adr/ADR-075-generated-event-publisher-caller.md).
+
 ---
 
 ## Reference

@@ -54,6 +54,9 @@ public final class KernelTestSupportGenerator {
     /** Simple name of the emitted request-body double. */
     public static final String RECORDING_REQUEST_BODY = "RecordingRequestBody";
 
+    /** Simple name of the emitted event-engine double (T48). */
+    public static final String RECORDING_EVENT_ENGINE = "RecordingEventEngine";
+
     private static final ClassName HTTP_EXCHANGE =
             ClassName.get("eu.exeris.kernel.spi.http", "HttpExchange");
     private static final ClassName HTTP_REQUEST =
@@ -101,6 +104,18 @@ public final class KernelTestSupportGenerator {
 
     private static final String SPI_FLOW = "eu.exeris.kernel.spi.flow";
     private static final String SPI_FLOW_MODEL = SPI_FLOW + ".model";
+    private static final String SPI_EVENTS = "eu.exeris.kernel.spi.events";
+    private static final ClassName EVENT_ENGINE = ClassName.get(SPI_EVENTS, "EventEngine");
+    private static final ClassName EVENT_BUS = ClassName.get(SPI_EVENTS, "EventBus");
+    private static final ClassName EVENT_REGISTRY = ClassName.get(SPI_EVENTS, "EventRegistry");
+    private static final ClassName EVENT_QUEUE = ClassName.get(SPI_EVENTS, "EventQueue");
+    private static final ClassName EVENT_LOOP = ClassName.get(SPI_EVENTS, "EventLoop");
+    private static final ClassName EVENT_ENGINE_STATS = ClassName.get(SPI_EVENTS, "EventEngineStats");
+    private static final ClassName EVENT_DESCRIPTOR = ClassName.get(SPI_EVENTS, "EventDescriptor");
+    private static final ClassName EVENT_PAYLOAD = ClassName.get(SPI_EVENTS, "EventPayload");
+    private static final ClassName EVENT_TYPE_SPEC = ClassName.get(SPI_EVENTS, "EventTypeSpec");
+    private static final ClassName EVENT_HANDLER = ClassName.get(SPI_EVENTS, "EventHandler");
+    private static final ClassName SUBSCRIPTION_TOKEN = ClassName.get(SPI_EVENTS, "SubscriptionToken");
     private static final ClassName FLOW_ENGINE = ClassName.get(SPI_FLOW, "FlowEngine");
     private static final ClassName PLAN_FACTORY = ClassName.get(SPI_FLOW, "FlowExecutionPlanFactory");
     private static final ClassName DEFINITION_BUILDER = ClassName.get(SPI_FLOW, "FlowDefinitionBuilder");
@@ -124,7 +139,8 @@ public final class KernelTestSupportGenerator {
      */
     public List<GeneratedFile> generateAll(String basePackage) {
         return List.of(generate(basePackage), generatePersistence(basePackage),
-                generateFlow(basePackage), generateRequestBody(basePackage));
+                generateFlow(basePackage), generateRequestBody(basePackage),
+                generateEventEngine(basePackage));
     }
 
     /**
@@ -652,6 +668,114 @@ public final class KernelTestSupportGenerator {
     }
 
     /** {@code <basePackage>.testsupport} — where the shared doubles live. */
+    /**
+     * Emits {@code RecordingEventEngine} — one object playing the three roles of the events SPI a
+     * generated publisher walks: the {@code EventEngine} it is constructed with, the
+     * {@code EventRegistry} its constructor registers every {@code EventTypeSpec} into, and the
+     * {@code EventBus} each {@code publish*} call reaches. Same shape as
+     * {@link #RECORDING_PERSISTENCE}, and for the same reason: T48 made the publisher a constructor
+     * argument of the generated handler, so the emitted handler test needs something constructible,
+     * and ADR-058 fixes the emitted-test classpath at JUnit 5 + AssertJ — there is no mocking
+     * framework to reach for.
+     *
+     * <p>{@code queue()}, {@code loop()} and {@code stats()} return {@code null}: no generated code
+     * calls them, and a double that fabricates a value for a role nothing plays would be inventing
+     * behaviour rather than recording it. {@code start()} and {@code close()} are no-ops for the
+     * same reason.
+     *
+     * @param basePackage the project base package; the support type lands in
+     *                    {@code <basePackage>.testsupport}
+     * @return the single emitted file; never {@code null}
+     */
+    public GeneratedFile generateEventEngine(String basePackage) {
+        String packageName = supportPackage(basePackage);
+        TypeName descriptorList = ParameterizedTypeName.get(LIST, EVENT_DESCRIPTOR);
+        TypeName specList = ParameterizedTypeName.get(LIST, EVENT_TYPE_SPEC);
+        TypeName stringSet = ParameterizedTypeName.get(ClassName.get(java.util.Set.class),
+                ClassName.get(String.class));
+
+        TypeSpec.Builder type = KernelScaffold.publicClass(RECORDING_EVENT_ENGINE)
+                .addModifiers(Modifier.FINAL)
+                .addSuperinterface(EVENT_ENGINE)
+                .addSuperinterface(EVENT_BUS)
+                .addSuperinterface(EVENT_REGISTRY)
+                .addJavadoc("Recording double for the events SPI a generated publisher walks.\n")
+                .addJavadoc("<p>One object plays {@link $T}, {@link $T} and {@link $T}: the\n",
+                        EVENT_ENGINE, EVENT_BUS, EVENT_REGISTRY)
+                .addJavadoc("publisher is constructed with the engine, registers its\n")
+                .addJavadoc("{@code EventTypeSpec}s into the registry, and publishes onto the bus.\n")
+                .addJavadoc("<p>{@code published} and {@code registered} are the assertion surface.\n")
+                .addJavadoc("<p><b>DO NOT EDIT</b> - Regenerate from domain models.\n")
+                .addField(FieldSpec.builder(descriptorList, "published", Modifier.PUBLIC, Modifier.FINAL)
+                        .initializer("new $T<>()", ClassName.get(java.util.ArrayList.class))
+                        .addJavadoc("Every descriptor passed to {@link #publish}, in call order.\n")
+                        .build())
+                .addField(FieldSpec.builder(specList, "registered", Modifier.PUBLIC, Modifier.FINAL)
+                        .initializer("new $T<>()", ClassName.get(java.util.ArrayList.class))
+                        .addJavadoc("Every spec passed to {@link #register}, in call order.\n")
+                        .build());
+
+        // EventEngine
+        type.addMethod(override("bus", EVENT_BUS).addStatement("return this").build());
+        type.addMethod(override("registry", EVENT_REGISTRY).addStatement("return this").build());
+        type.addMethod(override("queue", EVENT_QUEUE).addStatement("return null").build());
+        type.addMethod(override("loop", EVENT_LOOP).addStatement("return null").build());
+        type.addMethod(override("stats", EVENT_ENGINE_STATS).addStatement("return null").build());
+        type.addMethod(override("start", TypeName.VOID).build());
+        type.addMethod(override("close", TypeName.VOID).build());
+
+        // EventBus
+        type.addMethod(override("publish", TypeName.VOID)
+                .addParameter(EVENT_DESCRIPTOR, "descriptor")
+                .addParameter(EVENT_PAYLOAD, "payload")
+                .addStatement("published.add(descriptor)")
+                .build());
+        type.addMethod(override("publishAndAwait", TypeName.VOID)
+                .addParameter(EVENT_DESCRIPTOR, "descriptor")
+                .addParameter(EVENT_PAYLOAD, "payload")
+                .addStatement("published.add(descriptor)")
+                .build());
+        type.addMethod(override("subscribe", SUBSCRIPTION_TOKEN)
+                .addParameter(ClassName.get(String.class), "eventType")
+                .addParameter(EVENT_HANDLER, "handler")
+                .addStatement("return null")
+                .build());
+        type.addMethod(override("unsubscribe", TypeName.VOID)
+                .addParameter(SUBSCRIPTION_TOKEN, "token")
+                .build());
+
+        // EventRegistry
+        type.addMethod(override("register", TypeName.VOID)
+                .addParameter(EVENT_TYPE_SPEC, "spec")
+                .addStatement("registered.add(spec)")
+                .build());
+        type.addMethod(override("resolve", EVENT_TYPE_SPEC)
+                .addParameter(ClassName.get(String.class), "eventType")
+                .addStatement("return registered.stream()\n"
+                        + "        .filter(spec -> spec.name().equals(eventType))\n"
+                        + "        .findFirst()\n"
+                        + "        .orElse(null)")
+                .build());
+        type.addMethod(override("registeredTypes", stringSet)
+                .addStatement("return registered.stream().map($T::name).collect($T.toSet())",
+                        EVENT_TYPE_SPEC, ClassName.get(java.util.stream.Collectors.class))
+                .build());
+        type.addMethod(override("size", TypeName.INT)
+                .addStatement("return registered.size()")
+                .build());
+
+        return new GeneratedFile(packageName, RECORDING_EVENT_ENGINE,
+                KernelScaffold.render(packageName, type.build()), ArtifactType.TEST);
+    }
+
+    /** A {@code public} {@code @Override} method builder — every double method has that shape. */
+    private static MethodSpec.Builder override(String name, TypeName returns) {
+        return MethodSpec.methodBuilder(name)
+                .addAnnotation(Override.class)
+                .addModifiers(Modifier.PUBLIC)
+                .returns(returns);
+    }
+
     public static String supportPackage(String basePackage) {
         return basePackage + "." + TEST_SUPPORT_PACKAGE;
     }

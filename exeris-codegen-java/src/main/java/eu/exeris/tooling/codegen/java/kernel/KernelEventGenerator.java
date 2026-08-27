@@ -128,8 +128,12 @@ public class KernelEventGenerator implements KernelArtifactGenerator {
 
         KernelEventSupport.assertDistinctEventNames(metadata);
 
+        // Not final: the emitted handler test constructs a recording subclass rather
+        // than mocking (ADR-058 emits doubles), and T48 made the publisher a
+        // constructor argument of the generated handler, so something has to be
+        // constructible in a test. Same public/non-final/assignment-only contract the
+        // generated service already carries for the same reason.
         TypeSpec.Builder publisher = KernelScaffold.publicClass(className)
-                .addModifiers(Modifier.FINAL)
                 .addJavadoc("Generated domain-event publisher for $L.\n", entity)
                 .addJavadoc("<p>Publishes events through the Open-Core SPI\n")
                 .addJavadoc("{@link $T} bus. Each event type is registered with the\n", EVENT_ENGINE)
@@ -238,7 +242,7 @@ public class KernelEventGenerator implements KernelArtifactGenerator {
     /** Resolved payload fields for an event: its {@code payloadFields} minus
      *  {@code sensitiveFields}, mapped to the entity's {@link FieldMetadata}
      *  (declaration-order, skipping names not present on the entity). */
-    private static List<FieldMetadata> payloadFields(DomainEventMetadata event, DomainMetadata metadata) {
+    static List<FieldMetadata> payloadFields(DomainEventMetadata event, DomainMetadata metadata) {
         Set<String> sensitive = new HashSet<>(event.sensitiveFields());
         List<FieldMetadata> out = new ArrayList<>();
         for (String name : event.payloadFields()) {
