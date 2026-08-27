@@ -1290,6 +1290,22 @@ Proposals, highest return-on-effort first:
       ADR-055 Wall violation. A developer pasting "my build failed" is at least as likely to paste one of
       those as a processor warning, so scoping the registry to `ExerisDomainProcessor` would leave the more
       opaque half of the surface dark.
+- [x] **D5 — half the `-Aexeris.strict` inert registry could never fire.** *Fixed 2026-08-27.* The audit
+      is driven by `warnInertAttributes(...)` call sites, not by `INERT_ATTRIBUTES` itself, and only two
+      call sites existed: `@Field` and `@ActionParam`. Two of the four registered entries —
+      `@Action.path` and `@ExerisDomain.apiVersion` — were therefore unreachable. A strict build never
+      reported either, and nothing noticed, because no test had ever asserted either warning. Both call
+      sites are added. The gate against a repeat is a reachability test that sets all four registered
+      attributes in one compilation unit and asserts four warnings by name, so an entry added without its
+      call site fails there rather than going quiet; the registry javadoc gains criterion (3) —
+      *the annotation's extraction path must call `warnInertAttributes` with the same simple name* —
+      alongside the two it already stated.
+
+      Surfaced while pinning SDK 0.11.0 (U3). `@Action.path` gained a default there, which made its
+      registry note ("it has no default, so every author is required to write a path the server will not
+      answer on") stale; writing the correction is what exposed that the warning carrying it could not
+      fire. Worth naming as a class: this is D4's problem from the other end — D4 is about diagnostics a
+      consumer cannot identify, D5 about diagnostics a consumer never receives.
 
 ---
 

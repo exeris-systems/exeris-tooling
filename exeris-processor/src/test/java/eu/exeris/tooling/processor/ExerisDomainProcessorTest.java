@@ -1426,7 +1426,7 @@ class ExerisDomainProcessorTest {
 
                     @ExerisDomain(module = "core", path = "/orders")
                     public class Order {
-                        @Action(name = "approve", label = "Approve", path = "/{id}/approve")
+                        @Action(name = "approve", label = "Approve")
                         public void approve(
                                 @ActionParam(label = "Reason", required = false) String reason) {
                         }
@@ -1558,6 +1558,102 @@ class ExerisDomainProcessorTest {
             );
         }
 
+        @Test
+        @DisplayName("-Aexeris.strict reaches every registered inert attribute (the audit is driven by call sites)")
+        void strictReachesEveryRegisteredInertAttribute() {
+            // The registry is a list; the warnings come from warnInertAttributes call
+            // sites. An entry whose annotation has no call site is unreachable and reads
+            // as coverage while producing nothing — which is what @Action.path and
+            // @ExerisDomain.apiVersion did. This fixture sets all four registered
+            // attributes at once, so a future entry added without its call site fails
+            // here rather than going quiet.
+            Compilation compilation = javac()
+                    .withOptions("-Aexeris.strict=true")
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(everyInertAttributeSet());
+
+            assertThat(compilation).succeeded();
+            assertThat(hasInertWarningFor(compilation, "@Action.path")).isTrue();
+            assertThat(hasInertWarningFor(compilation, "@ExerisDomain.apiVersion")).isTrue();
+            assertThat(hasInertWarningFor(compilation, "@ActionParam.description")).isTrue();
+            assertThat(hasInertWarningFor(compilation, "@ActionParam.required")).isTrue();
+            assertThat(inertWarnings(compilation))
+                    .as("one warning per registered inert attribute, no more")
+                    .isEqualTo(4);
+        }
+
+        @Test
+        @DisplayName("-Aexeris.strict is quiet on an @Action that omits path (SDK 0.11.0 gave it a default)")
+        void strictIsQuietOnActionWithoutPath() {
+            // Before SDK 0.11.0 `path` had no default, so every @Action carried it and
+            // a working audit would have warned on all of them. Omitting it is legal
+            // now, and the audit reports only what an author actually wrote.
+            Compilation compilation = javac()
+                    .withOptions("-Aexeris.strict=true")
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(actionWithoutPath());
+
+            assertThat(compilation).succeeded();
+            assertThat(inertWarnings(compilation))
+                    .as("inert warnings when the action sets nothing inert")
+                    .isZero();
+        }
+
+        @Test
+        @DisplayName("Default build stays quiet on @Action.path and @ExerisDomain.apiVersion too")
+        void defaultBuildDoesNotWarnOnTheNewlyReachedEntries() {
+            Compilation compilation = javac()
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(everyInertAttributeSet());
+
+            assertThat(compilation).succeeded();
+            assertThat(inertWarnings(compilation))
+                    .as("inert-attribute warnings with strict unset")
+                    .isZero();
+        }
+
+        private JavaFileObject everyInertAttributeSet() {
+            return JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Action;
+                    import eu.exeris.sdk.annotation.ActionParam;
+
+                    @ExerisDomain(module = "core", path = "/orders", apiVersion = "v1")
+                    public class Order {
+                        @Action(name = "approve", label = "Approve", path = "/{id}/approve")
+                        public void approve(
+                                @ActionParam(label = "Reason",
+                                        description = "Why this order is approved",
+                                        required = true) String reason) {
+                        }
+                    }
+                    """
+            );
+        }
+
+        private JavaFileObject actionWithoutPath() {
+            return JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Action;
+
+                    @ExerisDomain(module = "core", path = "/orders")
+                    public class Order {
+                        @Action(name = "approve", label = "Approve")
+                        public void approve() {
+                        }
+                    }
+                    """
+            );
+        }
+
         private JavaFileObject actionParamWithInertAttributes() {
             return JavaFileObjects.forSourceString(
                     "com.example.Order",
@@ -1570,7 +1666,7 @@ class ExerisDomainProcessorTest {
 
                     @ExerisDomain(module = "core", path = "/orders")
                     public class Order {
-                        @Action(name = "approve", label = "Approve", path = "/{id}/approve")
+                        @Action(name = "approve", label = "Approve")
                         public void approve(
                                 @ActionParam(label = "Reason",
                                         description = "Why this order is approved",

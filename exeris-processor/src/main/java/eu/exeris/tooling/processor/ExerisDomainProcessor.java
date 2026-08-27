@@ -164,6 +164,15 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      * of the Java and TS emitters — an attribute read by only one side is NOT
      * inert and must not appear here.
      *
+     * <p><strong>(3) the annotation's extraction path must call
+     * {@link #warnInertAttributes} with the same simple name.</strong> The audit
+     * is driven from those call sites, not from this list, so an entry whose
+     * annotation has no call site is unreachable — it reads as coverage and
+     * produces nothing. Two entries sat here in exactly that state ({@code Action}
+     * and {@code ExerisDomain}) until the call sites were added; a registry that
+     * silently accepts dead entries is the same defect class the audit exists to
+     * report.
+     *
      * <p>NB: an AST record component (e.g. {@code RelationshipMetadata.valueField()})
      * is NOT an annotation attribute — several such accessors exist with no
      * matching annotation element, and they are deliberately absent here.
@@ -176,8 +185,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             new InertAttribute("Action", "path",
                     "the route is derived as {domainPath}/{id}/actions/{kebab-action-name} and this "
                             + "value is never read — ActionMetadata carries no path component, so it "
-                            + "does not even reach the JSON. Note it has no default, so every author "
-                            + "is required to write a path the server will not answer on (T44)"),
+                            + "does not even reach the JSON. Deleting the attribute changes nothing: "
+                            + "it has had a default since SDK 0.11.0, so it is no longer a value "
+                            + "every author is forced to write (T44)"),
             new InertAttribute("ActionParam", "description",
                     "the value reaches ActionParamMetadata in the JSON, but no emitter renders "
                             + "it — action-parameter generation reads only the parameter name and type"),
@@ -1009,6 +1019,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     private void extractDomainAnnotationValues(
             AnnotationMirror annotation, DomainMetadata.Builder builder, TypeElement element) {
         Map<String, Object> values = extractAnnotationValues(annotation);
+        warnInertAttributes("ExerisDomain", values, element, annotation);
 
         // Identity
         if (values.containsKey("module")) {
@@ -1390,6 +1401,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
 
     private ActionMetadata extractActionMetadata(ExecutableElement method, AnnotationMirror annotation) {
         Map<String, Object> values = extractAnnotationValues(annotation);
+        warnInertAttributes("Action", values, method, annotation);
 
         // T3: action identity is the @Action(name=…) attribute (required on the SDK
         // annotation, so always present), NOT the method name. Reading the method
