@@ -61,9 +61,10 @@ events whose trigger it satisfies.**
   needs a source of truth the handler does not have — a previous value, a state machine, a scheduler,
   a caller. Emitting a guess for any of them would put a publish call where the author did not ask
   for one.
-- `<Entity>EventPublisher` loses `final`, and the emitted handler test constructs it over a new
-  `RecordingEventEngine` double. That is the ADR-058 contract already carried by the generated
-  service, applied to the one generated type that had escaped it.
+- `<Entity>EventPublisher` loses `final`, because `create<Entity>EventPublisher()` invites a
+  consumer to decorate the default by calling `super` — which a final class forecloses. The emitted
+  handler test constructs the real publisher over a new `RecordingEventEngine`: it doubles the
+  collaborator, not the publisher, so the test is not the reason for the modifier.
 
 ## Consequences
 
@@ -90,8 +91,14 @@ events whose trigger it satisfies.**
   seam that cannot see `ACTION`.
 - **A payload-bearing `DELETE` event costs one extra read.** The aggregate is gone after
   `service.delete(id)`, so the handler reads it first — emitted only when some `DELETE` event
-  actually carries a payload, and guarded on presence so deleting an absent id still answers `204`
-  and publishes nothing.
+  actually carries a payload.
+
+  No delete publish needs a "did the row exist" guard, and this was measured rather than assumed:
+  the generated `deleteById` throws when `rowsAffected == 0`, and the service delegates straight to
+  it, so a `DELETE` on an unknown id — including a retried one, whose second call affects no rows —
+  leaves the handler through its 5xx catch before reaching any statement after `service.delete(id)`.
+  The `isPresent()` check on the payload path is defensive against a race between the read and the
+  delete, not the thing that makes the publish correct.
 - **An `ACTION` event whose `actionName` names no declared action is silently unpublished.** Failing
   the build on it would make one typo take down an entity's whole CRUD surface; `-Aexeris.strict` is
   where "you wrote it and it does nothing" belongs (see **D5** / **D6**).

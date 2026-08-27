@@ -169,7 +169,7 @@ public final class KernelHandlerTestGenerator {
                 .addParameter(stubType, "service")
                 .addJavadoc("The handler under test, over the supplied service double.\n");
 
-        if (!metadata.hasEvents()) {
+        if (!KernelHandlerGenerator.publishesFromHandler(metadata)) {
             return factory.addStatement("return new $T(service)", handlerType).build();
         }
 

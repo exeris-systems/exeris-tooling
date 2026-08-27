@@ -678,11 +678,18 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
             // the publisher joins the seam, so a consumer can override how it is built — and
             // the handler takes it, because an action is invoked on the entity by the handler
             // and never reaches the service.
+            // The publisher joins the seam whenever one is emitted at all, including for the
+            // triggers no handler method serves — a MANUAL event is published by the
+            // consumer's own code, and the seam is how that code reaches the publisher. The
+            // handler only takes it when a handler method would actually call it, so an
+            // entity with only unserved triggers does not carry a field nothing reads.
+            String publisherName = entityLower + "EventPublisher";
             if (domain.hasEvents()) {
                 ClassName publisherType = ClassName.get(pkgs.event(), entity + "EventPublisher");
-                String publisherName = entityLower + "EventPublisher";
                 addComponent(type, publisherType, publisherName,
                         CodeBlock.of("new $T($T.eventEngine())", publisherType, KERNEL_PROVIDERS));
+            }
+            if (KernelHandlerGenerator.publishesFromHandler(domain)) {
                 addComponent(type, handlerType, entityLower + "Handler",
                         CodeBlock.of("new $T($L(), $L())", handlerType, serviceName, publisherName));
             } else {

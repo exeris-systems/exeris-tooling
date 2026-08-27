@@ -128,11 +128,12 @@ public class KernelEventGenerator implements KernelArtifactGenerator {
 
         KernelEventSupport.assertDistinctEventNames(metadata);
 
-        // Not final: the emitted handler test constructs a recording subclass rather
-        // than mocking (ADR-058 emits doubles), and T48 made the publisher a
-        // constructor argument of the generated handler, so something has to be
-        // constructible in a test. Same public/non-final/assignment-only contract the
-        // generated service already carries for the same reason.
+        // Not final because T48 made the publisher a component of RuntimeComponents, and
+        // that seam's contract is that a consumer may override create<Entity>EventPublisher()
+        // and "call super to decorate the default rather than replace it" — which a final
+        // class forecloses. Same public/non-final contract the generated service carries, and
+        // for the same reason. (NOT for the emitted test: that constructs the real publisher
+        // over a RecordingEventEngine and doubles the collaborator, not the publisher.)
         TypeSpec.Builder publisher = KernelScaffold.publicClass(className)
                 .addJavadoc("Generated domain-event publisher for $L.\n", entity)
                 .addJavadoc("<p>Publishes events through the Open-Core SPI\n")

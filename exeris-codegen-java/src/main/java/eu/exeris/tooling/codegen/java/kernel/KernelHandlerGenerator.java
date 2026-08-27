@@ -245,15 +245,24 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         // service.delete(id) there is none. The read is emitted only when some event
         // actually needs it, so an entity with no payload-bearing DELETE event keeps the
         // single-statement delete it has always had.
+        //
+        // Why no publish here needs a "did the row exist" guard, measured rather than
+        // assumed: the emitted repository's deleteById throws when rowsAffected == 0
+        // (KernelRepositoryGenerator#buildDeleteById), and the service delegates straight
+        // to it. So a DELETE on an absent id — including a retried one, since the second
+        // call affects no rows — leaves this try block through the catch below and answers
+        // 500. Every statement after service.delete(id), publish calls included, is
+        // reachable only when a row was actually removed. The isPresent() check on the
+        // payload path is defensive against a race between the read and the delete, not
+        // the thing that makes the publish correct.
         boolean needsAggregate = triggered(metadata, DomainEventMetadata.Trigger.DELETE, null).stream()
                 .anyMatch(event -> !KernelEventGenerator.payloadFields(event, metadata).isEmpty());
         if (needsAggregate) {
             method.addStatement("$T removed = service.findById(id)", optionalOfEntity);
         }
         method.addStatement("service.delete(id)");
-        // Non-payload DELETE events publish unconditionally; payload-bearing ones only when
-        // the row was actually there. Deleting an absent id still answers 204, as it always
-        // has, so the read must not turn a no-op delete into an event.
+        // Non-payload DELETE events publish straight after the delete; payload-bearing ones
+        // inside the presence check, because they need an aggregate to hand over.
         appendPublishCalls(method, metadata, DomainEventMetadata.Trigger.DELETE, null, "id", null);
         if (needsAggregate) {
             method.beginControlFlow("if (removed.isPresent())");
@@ -265,9 +274,27 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         return appendServerErrorCatch(method, "Failed to delete " + entityLower).build();
     }
 
-    /** The emitted publisher's type, or {@code null} when the entity declares no events. */
+    /**
+     * Whether any declared event has a trigger a handler method serves.
+     *
+     * <p>Deliberately narrower than {@code hasEvents()}: an entity whose only events are
+     * {@code FIELD_CHANGED} / {@code STATE_TRANSITION} / {@code SCHEDULED} / {@code MANUAL} /
+     * {@code SNAPSHOT}, or that carry no trigger at all, would otherwise get a publisher field
+     * and constructor parameter no emitted line ever reads. The publisher still joins
+     * {@code RuntimeComponents} in that case — a {@code MANUAL} event is published by the
+     * consumer's own code, which needs to reach it — it just does not reach the handler.
+     */
+    static boolean publishesFromHandler(DomainMetadata metadata) {
+        return metadata.events().stream()
+                .anyMatch(event -> event.trigger() == DomainEventMetadata.Trigger.CREATE
+                        || event.trigger() == DomainEventMetadata.Trigger.UPDATE
+                        || event.trigger() == DomainEventMetadata.Trigger.DELETE
+                        || event.trigger() == DomainEventMetadata.Trigger.ACTION);
+    }
+
+    /** The emitted publisher's type, or {@code null} when no handler method would call it. */
     private ClassName publisherType(DomainMetadata metadata) {
-        if (!metadata.hasEvents()) {
+        if (!publishesFromHandler(metadata)) {
             return null;
         }
         return ClassName.get(metadata.packageName().replace(".domain", ".event"),

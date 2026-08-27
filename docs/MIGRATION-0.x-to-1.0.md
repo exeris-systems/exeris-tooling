@@ -681,10 +681,16 @@ publishing is coupled to the HTTP transport: a saga or a scheduled job calling t
 publishes nothing. ADR-070's seam is where you install a publishing service of your own if you need
 that today.
 
-**Two smaller shape changes ride along.** `<Entity>EventPublisher` is no longer `final`, because the
-emitted handler test constructs it. And a `DELETE`-triggered event that carries a payload makes
-`handleDelete` read the aggregate before deleting it — emitted only when such an event exists, and
-guarded so deleting an absent id still answers `204`.
+**Two smaller shape changes ride along.** `<Entity>EventPublisher` is no longer `final`, so that a
+consumer overriding `create<Entity>EventPublisher()` can decorate the default by calling `super`
+rather than only replacing it. And a `DELETE`-triggered event that carries a payload makes
+`handleDelete` read the aggregate before deleting it, emitted only when such an event exists.
+
+**No delete publishes an event for a row that was not there.** Not because of a guard — because the
+generated repository's `deleteById` already throws when the delete affects no rows, and the service
+delegates straight to it. A `DELETE` on an unknown id, including a retried one, leaves the handler
+through its 5xx catch and never reaches the publish. That behaviour predates this change; it is
+stated here because the publish call now depends on it.
 
 **Regenerated tests:** a new project-wide double, `RecordingEventEngine`, joins
 `RecordingHttpExchange` / `RecordingPersistence` / `RecordingFlow` / `RecordingRequestBody` under

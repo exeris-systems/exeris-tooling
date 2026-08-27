@@ -120,9 +120,28 @@ class KernelHandlerGeneratorTest {
                 .events(List.of(DomainEventMetadata.simple("OrderCreated")))
                 .build());
 
+        // And it takes no publisher either: a field no emitted line reads is inert wiring.
         assertThat(handler.content())
-                .contains("public OrderHandler(OrderService service, OrderEventPublisher publisher)")
-                .doesNotContain("publisher.publish");
+                .contains("public OrderHandler(OrderService service)")
+                .doesNotContain("OrderEventPublisher");
+    }
+
+    @Test
+    @DisplayName("T48: an event whose trigger no handler method serves brings no publisher")
+    void shouldNotTakeAPublisherForAnUnservedTrigger() {
+        // MANUAL is published by the consumer's own code. The publisher is still emitted and
+        // still joins RuntimeComponents — that is how such code reaches it — but the handler
+        // has nothing to do with it.
+        GeneratedFile handler = handlerFor(DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .events(List.of(DomainEventMetadata.builder("OrderNoted")
+                        .trigger(DomainEventMetadata.Trigger.MANUAL)
+                        .build()))
+                .build());
+
+        assertThat(handler.content())
+                .contains("public OrderHandler(OrderService service)")
+                .doesNotContain("OrderEventPublisher");
     }
 
     @Test

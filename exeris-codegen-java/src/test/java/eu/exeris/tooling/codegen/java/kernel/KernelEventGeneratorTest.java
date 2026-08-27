@@ -53,9 +53,9 @@ class KernelEventGeneratorTest {
                 .contains("import eu.exeris.kernel.spi.events.EventDescriptor")
                 .contains("import eu.exeris.kernel.spi.events.EventPayload")
                 .contains("import eu.exeris.kernel.spi.events.EventTypeSpec")
-                // Non-final since T48: the generated handler takes the publisher as a
-                // constructor argument, and the emitted handler test doubles it by
-                // subclassing rather than mocking (ADR-058).
+                // Non-final since T48: the publisher is a RuntimeComponents component, and
+                // that seam invites a consumer to override its factory and decorate the
+                // default by calling super — which a final class forecloses.
                 .contains("public class OrderEventPublisher")
                 .doesNotContain("public final class OrderEventPublisher")
                 .contains("EventTypeSpec ORDER_CREATED_EVENT")

@@ -1430,6 +1430,22 @@ Proposals, highest return-on-effort first:
       the loop's `else` branch already admits such a field to the AST via `FieldMetadata.simple(...)`.
       Gating the sweep on `@Field` would inherit somebody else's condition, which is D5 again, shifted
       by one call.
+- [ ] **D7 — the emitted handler test asserts a delete status production does not give.** Found
+      2026-08-27 while checking a review challenge on T48, and it is the same class as the
+      stub-service `id` gap that T48 itself closed. The emitted `<Entity>HandlerTest`'s
+      `Stub<Entity>Service.delete` records the id and returns; the real service delegates to
+      `deleteById`, which **throws** when `rowsAffected == 0`
+      (`KernelRepositoryGenerator#buildDeleteById`). So the emitted `handleDelete` test deletes an id
+      the stub has never seen and asserts `204`, while the same call against a real repository
+      answers `500`. The test is not wrong about the handler's routing — that is what it is for — but
+      it is the only place a reader can look for "what does DELETE do on an unknown id", and it
+      answers the opposite of production.
+
+      Two things to settle in the slice, not here: whether the double should track existence and
+      throw (making the emitted test assert 500, which documents the real behaviour), and whether a
+      `DELETE` on an absent id **should** be a 500 at all — an idempotent-delete endpoint answering
+      `404`, or `204`, are both defensible, and the current answer was never chosen so much as
+      inherited from a `rowsAffected == 0` guard written for a different reason.
 
 ---
 
