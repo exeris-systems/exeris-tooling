@@ -1372,7 +1372,23 @@ Proposals, highest return-on-effort first:
       answer on") stale; writing the correction is what exposed that the warning carrying it could not
       fire. Worth naming as a class: this is D4's problem from the other end — D4 is about diagnostics a
       consumer cannot identify, D5 about diagnostics a consumer never receives.
-- [ ] **D6 — D5 fixed the instance; the class is one registry wider.** Opened 2026-08-27, from a
+- [x] **D6 — D5 fixed the instance; the class is one registry wider.** *Shipped 2026-08-27.*
+      `warnInertAnnotations` takes an `Element`, and the field and method traversals that already
+      hosted the twin `warnInertAttributes` sweep now host this one too — in the *loops*, so a
+      warning's reachability does not depend on whether `@Field` or `@Action` is also present. The
+      gate is a second reachability test, over `INERT_ANNOTATIONS`: one fixture places all three
+      registered annotations at their declared targets and asserts three warnings by name. Proven by
+      deleting the two new call sites — exactly the three new tests fail, nothing else.
+
+      `@Blob` (`FIELD`) and `@Schedule` (`METHOD`) are registered in the same change, which is what
+      makes the two new sweeps non-vacuous: before them neither registry held an entry outside type
+      level, so a gate written without them would have covered code nothing exercised. Registration
+      is **not** extraction — nothing is written to the AST, so the ADR-042 lockstep stays unarmed
+      and the `-io` reader owes nothing. What changes is that an author who writes either annotation
+      and runs `-Aexeris.strict` is told it has no effect, instead of hearing nothing. Original
+      finding below.
+
+      **D6 — D5 fixed the instance; the class is one registry wider.** Opened 2026-08-27, from a
       kernel-side reading of the `@Blob` disposition. The failure class D5 closed is *a registry whose
       entries are reachable only through call sites, with no gate proving reachability*. There are
       **two** such registries and only one has a gate: D5's test is literally named "reaches every
