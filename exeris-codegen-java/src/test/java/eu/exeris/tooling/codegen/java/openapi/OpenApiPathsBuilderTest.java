@@ -39,7 +39,7 @@ class OpenApiPathsBuilderTest {
     }
 
     @Test
-    @DisplayName("Every CRUD operation tags the entity and lists the standard 400/401/404 responses")
+    @DisplayName("Every CRUD operation tags the entity and lists the standard 400/401/404/500 responses")
     void operationsTagAndStandardErrors() {
         DomainMetadata meta = DomainMetadata.builder("Order", "com.example.domain")
                 .path("/orders").build();
@@ -47,13 +47,36 @@ class OpenApiPathsBuilderTest {
         Operation get = OpenApiPathsBuilder.buildPaths(meta).get("/orders/{id}").getGet();
 
         assertThat(get.getTags()).containsExactly("Order");
-        assertThat(get.getResponses()).containsKeys("200", "400", "401", "404");
+        // 500 is declared because every emitted handler can reach it — the tenant guard answers
+        // it directly, and every service call sits inside a catch (RuntimeException) that does.
+        // Until ADR-076 the spec named 404 and omitted 500 while the handler did the opposite.
+        assertThat(get.getResponses()).containsKeys("200", "400", "401", "404", "500");
         // id path-param emitted with uuid format.
         assertThat(get.getParameters()).hasSize(1);
         assertThat(get.getParameters().get(0).getName()).isEqualTo("id");
         assertThat(get.getParameters().get(0).getIn()).isEqualTo("path");
         assertThat(get.getParameters().get(0).getRequired()).isTrue();
         assertThat(get.getParameters().get(0).getSchema().getFormat()).isEqualTo("uuid");
+    }
+
+    @Test
+    @DisplayName("ADR-076: 409 is declared only where a versioned write can report one")
+    void conflictOnlyOnVersionedWrites() {
+        DomainMetadata unversioned = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders").build();
+        DomainMetadata versioned = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders").versioned(true).build();
+
+        Paths plain = OpenApiPathsBuilder.buildPaths(unversioned);
+        Paths locked = OpenApiPathsBuilder.buildPaths(versioned);
+
+        assertThat(plain.get("/orders/{id}").getPut().getResponses()).doesNotContainKey("409");
+        assertThat(locked.get("/orders/{id}").getPut().getResponses()).containsKey("409");
+        // Not on the routes that cannot raise it: deleteById matches on id alone, and a read
+        // has no expected version to be stale against.
+        assertThat(locked.get("/orders/{id}").getDelete().getResponses()).doesNotContainKey("409");
+        assertThat(locked.get("/orders/{id}").getGet().getResponses()).doesNotContainKey("409");
+        assertThat(locked.get("/orders").getPost().getResponses()).doesNotContainKey("409");
     }
 
     @Test

@@ -154,8 +154,10 @@ class GeneratedTestsE2ETest {
                     .as("generated-test failures:%n%s", render(summary))
                     .isZero();
             // Guard against a vacuous pass: an emitter that stopped emitting @Test methods would
-            // otherwise "succeed" with zero executed tests. 19 handler cases (8 covering the
-            // bodyless routes and the pre-decode guards, plus 11 @Validation cases: the baseline
+            // otherwise "succeed" with zero executed tests. 20 handler cases (9 covering the
+            // bodyless routes and the pre-decode guards — including the ADR-076 pair that pins
+            // both sides of a DELETE: 204 when a row matched, 404 when none did — plus 11
+            // @Validation cases: the baseline
             // accept, a reject and a boundary accept for each of orderNumber's two length rules
             // and quantity's two numeric ones, the not-null reject, and the one case proving
             // handleUpdate carries the same guard) + 7 service cases (six CRUD delegations and
@@ -164,7 +166,7 @@ class GeneratedTestsE2ETest {
             // every system column, and the only tenant-partitioned one here, so it alone gets the
             // T36 pair proving save stamps an absent tenant and keeps one the caller set — + 4
             // saga cases.
-            assertThat(summary.getTestsSucceededCount()).isEqualTo(46);
+            assertThat(summary.getTestsSucceededCount()).isEqualTo(47);
         }
     }
 

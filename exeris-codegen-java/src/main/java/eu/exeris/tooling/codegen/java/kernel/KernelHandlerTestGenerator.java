@@ -139,13 +139,15 @@ public final class KernelHandlerTestGenerator {
         type.addMethod(getByIdAbsentTest(entity, handlerType, exchangeType, stubType, basePath));
         type.addMethod(getByIdMalformedTest(entity, handlerType, exchangeType, stubType, basePath));
         type.addMethod(deleteTest(entity, handlerType, exchangeType, stubType, basePath));
+        type.addMethod(deleteAbsentTest(handlerType, exchangeType, stubType, basePath));
         type.addMethod(createMissingBodyTest(entity, handlerType, exchangeType, stubType, basePath));
         type.addMethod(updateMalformedIdTest(entity, handlerType, exchangeType, stubType, basePath));
         type.addMethod(updateMissingBodyTest(entity, handlerType, exchangeType, stubType, basePath));
         addValidationTests(type, metadata, entityType, handlerType, exchangeType, bodyType,
                 stubType, basePath);
         type.addMethod(newHandlerFactory(metadata, handlerType, stubType, basePackage));
-        type.addType(stubService(entity, entityType, serviceType, repositoryType, stubType));
+        type.addType(stubService(entity, entityType, serviceType, repositoryType, stubType,
+                metadata));
 
         return new GeneratedFile(packageName, className,
                 KernelScaffold.render(packageName, type.build()), ArtifactType.TEST);
@@ -249,6 +251,9 @@ public final class KernelHandlerTestGenerator {
     private MethodSpec deleteTest(String entity, ClassName handlerType, ClassName exchangeType,
                                   ClassName stubType, String basePath) {
         return test("handleDeleteRespondsNoContentAndDelegatesTheId")
+                .addJavadoc("The row is there — {@code rowExists} defaults true — so this is the\n")
+                .addJavadoc("delete that actually removes something. See the sibling test for the\n")
+                .addJavadoc("other side of that flag.\n")
                 .addStatement("$T service = new $T()", stubType, stubType)
                 .addStatement("$T handler = newHandler(service)", handlerType)
                 .addStatement("$T exchange = $T.delete($S).withPathParam($S, $S)",
@@ -258,6 +263,28 @@ public final class KernelHandlerTestGenerator {
                         ASSERTIONS, HTTP_STATUS)
                 .addStatement("$T.assertThat(service.deleted).isEqualTo($T.fromString($S))",
                         ASSERTIONS, UUID, FIXED_ID)
+                .build();
+    }
+
+    /**
+     * D7 / ADR-076. The status this route gives when no row matched, which until 0.8.0 was 500 —
+     * and which this test could not have caught, because the double returned quietly where the
+     * real service propagates the repository's rejection.
+     */
+    private MethodSpec deleteAbsentTest(ClassName handlerType, ClassName exchangeType,
+                                        ClassName stubType, String basePath) {
+        return test("handleDeleteRespondsNotFoundWhenNoRowMatched")
+                .addJavadoc("A {@code DELETE} of an id no row carries — including the second\n")
+                .addJavadoc("attempt of a retried delete, which matches nothing either.\n")
+                .addStatement("$T service = new $T()", stubType, stubType)
+                .addStatement("service.rowExists = false")
+                .addStatement("$T handler = newHandler(service)", handlerType)
+                .addStatement("$T exchange = $T.delete($S).withPathParam($S, $S)",
+                        exchangeType, exchangeType, basePath + "/" + FIXED_ID, "id", FIXED_ID)
+                .addStatement("handler.handleDelete(exchange)")
+                .addStatement("$T.assertThat(exchange.status()).isEqualTo($T.NOT_FOUND)",
+                        ASSERTIONS, HTTP_STATUS)
+                .addStatement("$T.assertThat(service.deleted).isNull()", ASSERTIONS)
                 .build();
     }
 
@@ -663,9 +690,17 @@ public final class KernelHandlerTestGenerator {
      * generated double has no callers to protect, and accessors would be noise.
      */
     private TypeSpec stubService(String entity, ClassName entityType, ClassName serviceType,
-                                 ClassName repositoryType, ClassName stubType) {
+                                 ClassName repositoryType, ClassName stubType,
+                                 DomainMetadata metadata) {
         TypeName listOfEntity = ParameterizedTypeName.get(LIST, entityType);
         TypeName optionalOfEntity = ParameterizedTypeName.get(OPTIONAL, entityType);
+
+        // ADR-076: the rejection the real repository raises when a write matches no row, so the
+        // double has the failure mode production has. delete matches on id alone and can only
+        // report a missing row; a versioned update matched on id and version together and
+        // reports the pair as a conflict.
+        ClassName notFound = KernelErrorGenerator.notFoundType(metadata);
+        ClassName conflict = KernelErrorGenerator.versionConflictType(metadata);
 
         return TypeSpec.classBuilder(stubType.simpleName())
                 .addModifiers(Modifier.STATIC, Modifier.FINAL)
@@ -682,6 +717,12 @@ public final class KernelHandlerTestGenerator {
                 .addField(FieldSpec.builder(UUID, "deleted").build())
                 .addField(FieldSpec.builder(entityType, "saved").build())
                 .addField(FieldSpec.builder(UUID, "updatedId").build())
+                .addField(FieldSpec.builder(TypeName.BOOLEAN, "rowExists")
+                        .initializer("true")
+                        .addJavadoc("Whether the row a write addresses exists. Defaults true, so\n")
+                        .addJavadoc("a test that says nothing is testing the path that found\n")
+                        .addJavadoc("something; set it false to take the other branch.\n")
+                        .build())
                 .addMethod(MethodSpec.constructorBuilder()
                         .addStatement("super(($T) null)", repositoryType)
                         .build())
@@ -703,6 +744,9 @@ public final class KernelHandlerTestGenerator {
                         .addAnnotation(Override.class)
                         .addModifiers(Modifier.PUBLIC)
                         .addParameter(UUID, "id")
+                        .beginControlFlow("if (!rowExists)")
+                        .addStatement("throw new $T(id)", notFound)
+                        .endControlFlow()
                         .addStatement("this.deleted = id")
                         .build())
                 // save/update are overridden so a guard that stopped short-circuiting is reported
@@ -730,6 +774,9 @@ public final class KernelHandlerTestGenerator {
                         .returns(entityType)
                         .addParameter(UUID, "id")
                         .addParameter(entityType, "entity")
+                        .beginControlFlow("if (!rowExists)")
+                        .addStatement("throw new $T(id)", conflict != null ? conflict : notFound)
+                        .endControlFlow()
                         .addStatement("this.updatedId = id")
                         .addStatement("return entity")
                         .build())

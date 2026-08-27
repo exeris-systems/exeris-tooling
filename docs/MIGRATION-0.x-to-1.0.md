@@ -700,6 +700,55 @@ repository does. The ADR-058 "JUnit 5 and AssertJ and nothing else" contract is 
 
 See [`adr/ADR-075-generated-event-publisher-caller.md`](adr/ADR-075-generated-event-publisher-caller.md).
 
+### `PUT` and `DELETE` against an absent id now answer `404`, not `500` (D7)
+
+**This changes the status codes your deployed API returns.** Read it before regenerating in front of
+a live client.
+
+| Request | Before | Now |
+|---|---|---|
+| `DELETE /{path}/{unknown-id}` | `500` | `404` |
+| `PUT /{path}/{unknown-id}`, entity **not** `versioned` | `500` | `404` |
+| `PUT /{path}/{id}` with a stale version, entity `versioned` | `500` | `409` |
+| `PUT /{path}/{unknown-id}`, entity `versioned` | `500` | `409` |
+| `POST /{path}/{id}/actions/{name}` where the row vanished mid-request | `500` | `404` / `409` as above |
+
+Nothing else moves: a row that *was* there still answers `204` / `200` exactly as before, and a
+genuine infrastructure failure still answers `500`.
+
+**New emitted types.** Per entity, in the generated **repository** package:
+`<Entity>NotFoundException` always, and `<Entity>VersionConflictException` when the entity is
+`versioned`. Both extend `RuntimeException` and expose the id through `id()`. They are how the fact
+crosses the layer boundary — it used to travel only as a message substring, which the handler's
+single `catch (RuntimeException)` could not read.
+
+> A versioned `PUT` answers `409` for a **missing** row too. That is deliberate: the emitted
+> statement matches on `id` and on the expected version together, so a zero row count cannot say
+> which of the two missed. `409` — *your write did not apply, re-read and retry* — is true of both;
+> `404` would be a lie about one. See ADR-076 for why the extra query that would split them is not
+> worth its cost.
+
+**Client impact.** If your client treats `5xx` as retryable and `4xx` as terminal, a delete of an
+already-deleted row stops being retried — which is the point. If it treats any non-`2xx` from `PUT`
+as fatal, a `409` is now the signal to re-read and retry rather than to page someone.
+
+**Regenerated OpenAPI:** every operation now declares `500`, and a versioned entity's write routes
+declare `409`. The spec previously declared `404` on every operation and `500` on none — it named
+the one status the handler could not give, and omitted the one it did.
+
+**Regenerated tests:** `Stub<Entity>Service` carries a `boolean rowExists = true` field and throws
+the rejection type from `delete` / `update` when it is false, so the double has the failure mode the
+real service has. The existing delete case is unchanged in behaviour (the flag defaults to "the row
+is there"); one new case, `handleDeleteRespondsNotFoundWhenNoRowMatched`, covers the other branch.
+The emitted repository test now asserts the exception **type** rather than
+`hasMessageContaining("not found")`. ADR-058's "JUnit 5 and AssertJ and nothing else" is unchanged.
+
+**If you have hand-written code catching the old shape:** a `catch (RuntimeException e)` around a
+generated `update` / `delete` still catches these — they are subclasses. Code that matched on
+`e.getMessage().contains("not found")` should switch to `instanceof <Entity>NotFoundException`.
+
+See [`adr/ADR-076-write-rejection-status.md`](adr/ADR-076-write-rejection-status.md).
+
 ---
 
 ## Reference
@@ -709,3 +758,5 @@ See [`adr/ADR-075-generated-event-publisher-caller.md`](adr/ADR-075-generated-ev
 - [ADR-034 link stub — `KernelWebClient` facade rename](adr/ADR-034.link.md) (authoritative copy kernel-side)
 - [ADR-059 link stub — `DataScope` supersedes `tenantScoped`](adr/ADR-059.link.md) (authoritative copy SDK-side)
 - [ADR-070 — Open the generated composition root: `RuntimeComponents`](adr/ADR-070-generated-composition-root-seam.md)
+- [ADR-075 — The generated event publisher is invoked from the generated handler](adr/ADR-075-generated-event-publisher-caller.md)
+- [ADR-076 — A write against a row that is not there answers 404, not 500](adr/ADR-076-write-rejection-status.md)

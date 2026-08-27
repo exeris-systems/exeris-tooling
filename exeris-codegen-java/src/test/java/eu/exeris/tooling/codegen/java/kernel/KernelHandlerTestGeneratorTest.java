@@ -57,6 +57,54 @@ class KernelHandlerTestGeneratorTest {
     }
 
     @Test
+    @DisplayName("D7/ADR-076: the service double has the failure mode production has, and the "
+            + "emitted test drives both sides of it")
+    void theDoubleRejectsAnAbsentRow() {
+        String source = new KernelHandlerTestGenerator().generate(ORDER, "com.example").content();
+
+        assertThat(source)
+                // The defect D7 named: the double returned quietly where the real service
+                // propagates the repository's rejection, so the emitted test asserted a status
+                // production does not give. The flag is the staging — a test that says nothing
+                // is testing the found path, and must say so to test the other.
+                .contains("boolean rowExists = true")
+                .containsSubsequence(
+                        "public void delete(UUID id)",
+                        "if (!rowExists)",
+                        "throw new OrderNotFoundException(id)")
+                .containsSubsequence(
+                        "public Order update(UUID id, Order entity)",
+                        "if (!rowExists)",
+                        "throw new OrderNotFoundException(id)")
+                .contains("void handleDeleteRespondsNotFoundWhenNoRowMatched()")
+                .containsSubsequence(
+                        "service.rowExists = false",
+                        "handler.handleDelete(exchange)",
+                        "assertThat(exchange.status()).isEqualTo(HttpStatus.NOT_FOUND)",
+                        // Nothing was removed, so nothing was recorded — this is what separates
+                        // "rejected" from "deleted and then answered 404".
+                        "assertThat(service.deleted).isNull()");
+    }
+
+    @Test
+    @DisplayName("D7/ADR-076: a versioned entity's double reports its update as a conflict")
+    void theDoubleReportsAVersionedUpdateAsAConflict() {
+        DomainMetadata versioned = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders").versioned(true).build();
+
+        String source = new KernelHandlerTestGenerator().generate(versioned, "com.example").content();
+
+        assertThat(source)
+                .containsSubsequence(
+                        "public Order update(UUID id, Order entity)",
+                        "throw new OrderVersionConflictException(id)")
+                // delete matches on id alone even here, so it keeps the not-found type.
+                .containsSubsequence(
+                        "public void delete(UUID id)",
+                        "throw new OrderNotFoundException(id)");
+    }
+
+    @Test
     @DisplayName("covers the body-carrying routes' guard paths, which reject before the body is read")
     void coversTheBodyRouteGuards() {
         String source = new KernelHandlerTestGenerator().generate(ORDER, "com.example").content();

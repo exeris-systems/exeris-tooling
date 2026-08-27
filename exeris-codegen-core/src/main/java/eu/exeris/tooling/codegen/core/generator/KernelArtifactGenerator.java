@@ -104,6 +104,7 @@ public interface KernelArtifactGenerator {
         GRAPH_SYNC,      // graph-sync projection (eu.exeris.kernel.spi.graph.*)
         SAGA,            // saga skeleton (eu.exeris.kernel.spi.flow.*)
         APPLICATION,     // application bootstrap (Application + RuntimeComponents + RuntimeLifecycle)
+        DOMAIN_ERROR,   // per-entity write-rejection exception (<Entity>NotFoundException, <Entity>VersionConflictException) raised by the repository and mapped to 404/409 by the handler (ADR-076)
         CONFIGURATION,
         OPENAPI_SPEC,    // OpenAPI 3.1 specification (YAML)
         TEST             // generated test for a generated artefact (T2/ADR-058) — lands in the TEST output root, never in src/main
