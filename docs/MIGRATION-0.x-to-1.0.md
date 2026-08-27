@@ -749,6 +749,62 @@ generated `update` / `delete` still catches these — they are subclasses. Code 
 
 See [`adr/ADR-076-write-rejection-status.md`](adr/ADR-076-write-rejection-status.md).
 
+### New goal `exeris:verify-runtime` — bind it, or it does nothing (T50)
+
+**Action required to get the check.** Like `exeris:verify-capabilities`, this goal is inert
+until you bind it. Add the execution alongside the ones you already have:
+
+```xml
+<execution>
+  <id>exeris-verify-runtime</id>
+  <goals><goal>verify-runtime</goal></goals>
+</execution>
+```
+
+Default phase is `process-classes` — the same phase, and for the same reason, as
+`verify-capabilities`: it reads the metadata the annotation processor emitted during `compile`.
+
+**What it catches.** The generated `Application.main()` boots the kernel by subsystem *name*,
+and every provider behind those names is discovered through `ServiceLoader` from a runtime driver
+artefact. Tooling emits no `pom.xml`, so nothing in your build declared that dependency and
+nothing verified it — the first sign was a bootstrap error at start-up naming a subsystem, when
+the missing thing was a jar.
+
+Measured against the published artefacts: `exeris-kernel-core-0.11.0.jar` carries **zero**
+`META-INF/services` entries, and `BootstrapSelector` selects by name from
+`ServiceLoader<SubsystemProvider>` — so an application on SPI + Core alone has no name that can
+resolve at all.
+
+**What it requires**, derived from what the pipeline emitted into *your* project — not from the
+`subsystems()` string, which you are free to override:
+
+| SPI | Required when |
+|---|---|
+| `eu.exeris.kernel.spi.bootstrap.SubsystemProvider` | always |
+| `eu.exeris.kernel.spi.persistence.PersistenceProvider` | always (a repository per entity) |
+| `eu.exeris.kernel.spi.http.HttpProvider` | always (a handler per entity) |
+| `eu.exeris.kernel.spi.events.EventProvider` | some entity declares a `@DomainEvent` |
+| `eu.exeris.kernel.spi.graph.GraphProvider` | some entity carries graph metadata |
+| `eu.exeris.kernel.spi.flow.FlowProvider` | some entity declares a saga |
+
+Crypto is **not** required, though the default `subsystems()` names it — no emitted artefact
+uses it.
+
+**How to satisfy it.** Add a runtime driver to the module that runs the generated application:
+`eu.exeris.kernel:exeris-kernel-community` in the open-core tree. Enterprise and third-party
+drivers register the same SPIs and satisfy the check equally.
+
+**Opt-out.** `-Dexeris.verifyRuntime.skip=true` degrades the verdict to a WARNING — intended for a
+module that *generates* code another module runs, and so has no driver on its own runtime
+classpath by design. `-Dexeris.codegen.skip=true` skips it along with the rest of the pipeline.
+
+> **What a pass does not prove:** that the registered provider supplies a particular subsystem
+> name, satisfies a version range, or starts. Answering any of those means running the provider,
+> which a build-time gate deliberately does not do. The check is a `META-INF/services` resource
+> scan of the resolved **runtime** classpath — it loads no class of yours.
+
+See [`adr/ADR-078-runtime-driver-gate.md`](adr/ADR-078-runtime-driver-gate.md).
+
 ---
 
 ## Reference
@@ -760,3 +816,4 @@ See [`adr/ADR-076-write-rejection-status.md`](adr/ADR-076-write-rejection-status
 - [ADR-070 — Open the generated composition root: `RuntimeComponents`](adr/ADR-070-generated-composition-root-seam.md)
 - [ADR-075 — The generated event publisher is invoked from the generated handler](adr/ADR-075-generated-event-publisher-caller.md)
 - [ADR-076 — A write against a row that is not there answers 404, not 500](adr/ADR-076-write-rejection-status.md)
+- [ADR-078 — The build fails when the generated application has no driver to run on](adr/ADR-078-runtime-driver-gate.md)

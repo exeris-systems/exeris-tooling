@@ -8,6 +8,8 @@ import eu.exeris.sdk.sourcemodel.ast.RequiresMetadata;
 import eu.exeris.tooling.codegen.core.capability.CapTierWallException;
 import eu.exeris.tooling.codegen.core.capability.CapabilityGraphException;
 import eu.exeris.tooling.codegen.core.capability.CapabilityModuleDescriptor;
+import eu.exeris.tooling.codegen.core.driver.RequiredDrivers;
+import eu.exeris.tooling.codegen.core.driver.RuntimeDriverCheck;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.core.generator.GeneratorRegistry;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
@@ -308,6 +310,90 @@ class CodegenPipelineTest {
             assertThat(filesGenerated).isZero();
             assertThat(owned).doesNotExist();
             assertThat(outputDir.resolve("com/shop/repository")).doesNotExist();
+        }
+    }
+
+    @Nested
+    @DisplayName("runtime-driver gate (T50 / ADR-078)")
+    class RuntimeDriverGate {
+
+        /** Stands in for the resolved runtime classpath — jars live here, not in the output tree. */
+        @TempDir
+        Path classpathDir;
+
+        private Path driverJar(String name, String... spis) throws IOException {
+            Path jar = classpathDir.resolve(name);
+            try (java.util.zip.ZipOutputStream zip = new java.util.zip.ZipOutputStream(
+                    Files.newOutputStream(jar))) {
+                for (String spi : spis) {
+                    zip.putNextEntry(new java.util.zip.ZipEntry("META-INF/services/" + spi));
+                    zip.write("com.example.Impl\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                    zip.closeEntry();
+                }
+            }
+            return jar;
+        }
+
+        private void writeDomain(String entity, String extra) throws IOException {
+            Files.writeString(metadataDir.resolve(entity + ".json"),
+                    "{\"entityName\":\"" + entity + "\",\"packageName\":\"com.shop.domain\","
+                            + "\"path\":\"/" + entity.toLowerCase() + "\"" + extra + "}");
+        }
+
+        @Test
+        @DisplayName("the whole path: real metadata in, a real classpath scanned, a verdict out")
+        void reportsMissingDriversForRealMetadata() throws IOException {
+            writeDomain("Product", "");
+            // Deliberately an element with classes and no META-INF/services — the measured shape
+            // of exeris-kernel-core-0.11.0.jar, which carries zero service registrations. That is
+            // what makes this gate non-vacuous rather than a formality.
+            Path coreLike = driverJar("core-like.jar");
+
+            RuntimeDriverCheck.Result result =
+                    pipeline.verifyRuntimeDrivers(metadataDir, List.of(coreLike));
+
+            assertThat(result.satisfied()).isFalse();
+            assertThat(result.missing()).containsExactly(
+                    RequiredDrivers.SUBSYSTEM_PROVIDER,
+                    RequiredDrivers.PERSISTENCE_PROVIDER,
+                    RequiredDrivers.HTTP_PROVIDER);
+        }
+
+        @Test
+        @DisplayName("a driver registering the required SPIs satisfies it")
+        void satisfiedByADriverOnTheClasspath() throws IOException {
+            writeDomain("Product", "");
+            Path driver = driverJar("driver.jar",
+                    RequiredDrivers.SUBSYSTEM_PROVIDER,
+                    RequiredDrivers.PERSISTENCE_PROVIDER,
+                    RequiredDrivers.HTTP_PROVIDER);
+
+            assertThat(pipeline.verifyRuntimeDrivers(metadataDir, List.of(driver)).satisfied())
+                    .isTrue();
+        }
+
+        @Test
+        @DisplayName("a declared event widens the requirement, and the metadata is what says so")
+        void declaredEventsWidenTheRequirement() throws IOException {
+            writeDomain("Product", ",\"events\":[{\"name\":\"ProductCreated\"}]");
+            Path driver = driverJar("driver.jar",
+                    RequiredDrivers.SUBSYSTEM_PROVIDER,
+                    RequiredDrivers.PERSISTENCE_PROVIDER,
+                    RequiredDrivers.HTTP_PROVIDER);
+
+            RuntimeDriverCheck.Result result =
+                    pipeline.verifyRuntimeDrivers(metadataDir, List.of(driver));
+
+            assertThat(result.missing()).containsExactly(RequiredDrivers.EVENT_PROVIDER);
+        }
+
+        @Test
+        @DisplayName("no metadata is a vacuous verdict — a build with no emitted app needs no driver")
+        void noMetadataIsVacuous() throws IOException {
+            RuntimeDriverCheck.Result result =
+                    pipeline.verifyRuntimeDrivers(metadataDir, List.of());
+
+            assertThat(result.vacuous()).isTrue();
         }
     }
 
