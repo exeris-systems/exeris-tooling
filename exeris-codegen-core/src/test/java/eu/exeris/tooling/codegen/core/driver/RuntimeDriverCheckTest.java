@@ -102,6 +102,22 @@ class RuntimeDriverCheckTest {
     }
 
     @Test
+    @DisplayName("a zero-byte service entry in a jar registers nothing either — same rule, "
+            + "different carrier")
+    void emptyServiceEntryInAJarIsNotAProvider() throws IOException {
+        Path jar = workspace.resolve("empty-entry.jar");
+        try (OutputStream out = Files.newOutputStream(jar);
+             ZipOutputStream zip = new ZipOutputStream(out)) {
+            zip.putNextEntry(new ZipEntry("META-INF/services/" + SUBSYSTEM));
+            zip.closeEntry();
+        }
+
+        RuntimeDriverCheck.Result result = RuntimeDriverCheck.scan(List.of(jar), Set.of(SUBSYSTEM));
+
+        assertThat(result.missing()).containsExactly(SUBSYSTEM);
+    }
+
+    @Test
     @DisplayName("a zero-byte service file registers nothing and does not count")
     void emptyServiceFileIsNotAProvider() throws IOException {
         Path root = Files.createDirectories(workspace.resolve("empty-reg"));

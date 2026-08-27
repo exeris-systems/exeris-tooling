@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
 /**
@@ -132,7 +133,7 @@ public final class RuntimeDriverCheck {
             throws IOException {
         try (ZipFile zip = new ZipFile(archive.toFile())) {
             for (String spi : requiredSpis) {
-                if (!found.contains(spi) && zip.getEntry(SERVICES + spi) != null) {
+                if (!found.contains(spi) && registers(zip.getEntry(SERVICES + spi))) {
                     found.add(spi);
                 }
             }
@@ -140,11 +141,19 @@ public final class RuntimeDriverCheck {
     }
 
     /**
-     * A zero-byte service file registers nothing — {@code ServiceLoader} reads it and yields
-     * no implementations — so it must not count as a provider. Only checked for directory
-     * elements; inside an archive the entry's presence is taken at face value, since an empty
-     * one is a build accident nobody produces on purpose.
+     * A zero-byte service file registers nothing — {@code ServiceLoader} reads it and yields no
+     * implementations — so it must not count as a provider, in a jar exactly as in a directory.
+     *
+     * <p>{@code ZipFile} reads the central directory, so {@code getSize()} is normally known
+     * here; the {@code -1} branch is the case where it is not, and it resolves to "present".
+     * A missing driver reported wrongly is a build this gate broke for no reason, which is a
+     * worse failure than the one it exists to catch — so an unknown size fails open.
      */
+    private static boolean registers(ZipEntry entry) {
+        return entry != null && entry.getSize() != 0L;
+    }
+
+    /** The directory half of {@link #registers(ZipEntry)} — same rule, different carrier. */
     private static boolean isNonEmptyFile(Path candidate) throws IOException {
         return Files.isRegularFile(candidate) && Files.size(candidate) > 0L;
     }

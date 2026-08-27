@@ -114,6 +114,10 @@ floor `CapTierWall` keeps for its class-file scan (ADR-055).
 - **A multi-module consumer may see a false positive** where one module generates code that
   another runs. `-Dexeris.verifyRuntime.skip=true` covers it, and degrades the verdict to a
   WARNING rather than removing it — the build still says what it found.
+- **The zero-byte rule fails open on an unknown entry size.** `ZipFile` reads the central
+  directory, so a service entry's size is normally known; where it is not, the entry counts as
+  a registration. A driver reported missing when it is present would be a build this gate broke
+  for no reason — a worse failure than the one it exists to catch.
 - **The SPI names are string constants in tooling.** A kernel that renames or repackages a
   provider interface breaks the gate silently (it would report a missing driver that is
   present). Not tracked by a compile dependency because tooling does not depend on the kernel

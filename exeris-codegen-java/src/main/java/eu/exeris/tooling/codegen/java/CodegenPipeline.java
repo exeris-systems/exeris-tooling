@@ -444,24 +444,6 @@ public final class CodegenPipeline {
     }
 
     /**
-     * Loads {@code capability_*.json} from {@code metadataDir} and resolves +
-     * validates the capability graph <b>without writing anything</b> — the
-     * authoritative T18(a) gate. Bound (via {@code exeris:verify-capabilities})
-     * after the {@code compile} phase, it always sees the metadata the processor
-     * emitted <em>this</em> build, so a failure here is a genuine graph problem,
-     * never the stale-input deadlock the deferred generate-sources pass avoids.
-     * No capability metadata is not an error — there is nothing to validate.
-     *
-     * @param metadataDir directory holding processor-emitted JSON
-     * @return the number of capability modules validated ({@code 0} when there
-     *         is no capability metadata)
-     * @throws IOException if metadata cannot be read
-     * @throws eu.exeris.tooling.codegen.core.capability.CapabilityGraphException
-     *         (unchecked) on an unsatisfied non-optional {@code @Requires},
-     *         version mismatch, or dependency cycle
-     * @since 0.6.0
-     */
-    /**
      * T50 / ADR-078. Reports which kernel SPIs the emitted application needs a provider for and
      * has none registered on {@code runtimeClasspath}.
      *
@@ -495,6 +477,24 @@ public final class CodegenPipeline {
         return RuntimeDriverCheck.scan(runtimeClasspath, required);
     }
 
+    /**
+     * Loads {@code capability_*.json} from {@code metadataDir} and resolves +
+     * validates the capability graph <b>without writing anything</b> — the
+     * authoritative T18(a) gate. Bound (via {@code exeris:verify-capabilities})
+     * after the {@code compile} phase, it always sees the metadata the processor
+     * emitted <em>this</em> build, so a failure here is a genuine graph problem,
+     * never the stale-input deadlock the deferred generate-sources pass avoids.
+     * No capability metadata is not an error — there is nothing to validate.
+     *
+     * @param metadataDir directory holding processor-emitted JSON
+     * @return the number of capability modules validated ({@code 0} when there
+     *         is no capability metadata)
+     * @throws IOException if metadata cannot be read
+     * @throws eu.exeris.tooling.codegen.core.capability.CapabilityGraphException
+     *         (unchecked) on an unsatisfied non-optional {@code @Requires},
+     *         version mismatch, or dependency cycle
+     * @since 0.6.0
+     */
     public int validateCapabilities(Path metadataDir) throws IOException {
         Objects.requireNonNull(metadataDir, "metadataDir");
         List<CapabilityModuleDescriptor> capabilities = loadCapabilities(metadataDir);
