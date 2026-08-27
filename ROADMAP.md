@@ -711,7 +711,7 @@ T30 (emitted imports as undeclared build requirements — the general case behin
            with more than one provider present is a **startup failure, not a default** — by design.
            So whatever K6 delivers, the emitter's obligation is a name *plus* a configuration key, or
            forcing the author to supply one. This is the exact asymmetry against `@Schedule`, and it
-           is the whole of K6: scheduling has one provider and can fall back
+           is why K6 exists at all: scheduling has one provider and can fall back
            (`JobSchedulerConfig.DEFAULT_NAME`); storage has two, so a fallback is not available to it.
         2. **There is no `KernelProviders` slot to bind, and the obvious name is taken.** At `v0.11.0`
            the slot list carries `JOB_SCHEDULER` + `JOB_SCHEDULER_PROVIDER` for scheduling and
@@ -1372,6 +1372,29 @@ Proposals, highest return-on-effort first:
       answer on") stale; writing the correction is what exposed that the warning carrying it could not
       fire. Worth naming as a class: this is D4's problem from the other end — D4 is about diagnostics a
       consumer cannot identify, D5 about diagnostics a consumer never receives.
+- [ ] **D6 — D5 fixed the instance; the class is one registry wider.** Opened 2026-08-27, from a
+      kernel-side reading of the `@Blob` disposition. The failure class D5 closed is *a registry whose
+      entries are reachable only through call sites, with no gate proving reachability*. There are
+      **two** such registries and only one has a gate: D5's test is literally named "reaches every
+      registered inert attribute" and asserts four `@X.y` warnings, all from `INERT_ATTRIBUTES`.
+      `INERT_ANNOTATIONS` has no equivalent, and is correct today only because it holds a single entry
+      (`@EventSourced`) that happens to be `@Target(TYPE)` — which is what `warnInertAnnotations`
+      inspects, taking a `TypeElement` at both call sites. `@Blob` is `@Target(FIELD)` and `@Schedule`
+      is `@Target(METHOD)`; either added today would be a dead entry.
+
+      **This is due independently of whether `@Blob` extraction happens**, because the registry is
+      currently right by accident rather than by construction. The work: extend criterion (3) and a
+      reachability gate to `INERT_ANNOTATIONS`, and widen `warnInertAnnotations` from `TypeElement` to
+      `Element`. That last part is cheap — `findAnnotation` already takes `Element`, and the
+      per-element traversals already exist and already host the twin `warnInertAttributes` sweep, so
+      no new traversal is added.
+
+      **One placement trap, recorded before anyone hits it:** the field-level sweep belongs in the
+      field *loop*, not inside `extractFieldMetadata`, which sits behind a `@Field` gate. A `@Blob`
+      field with no `@Field` is a real shape — `@Blob` describes a byte carrier, not a column — and
+      the loop's `else` branch already admits such a field to the AST via `FieldMetadata.simple(...)`.
+      Gating the sweep on `@Field` would inherit somebody else's condition, which is D5 again, shifted
+      by one call.
 
 ---
 
