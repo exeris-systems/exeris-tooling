@@ -740,6 +740,17 @@ T30 (emitted imports as undeclared build requirements — the general case behin
       design-time annotation, and the worse option on its face. Owner: kernel; consumer: this repo. See
       [`docs/adr/ADR-072.link.md`](docs/adr/ADR-072.link.md).
 
+      **This does not move the count, and mints no K-number.** The two exclusions are different kinds.
+      `@Blob` is excluded because the platform cannot host it: `Application.main()` boots subsystems by
+      name and there is no name to declare, which no amount of design in this repo fixes. `@Schedule`
+      has its subsystem and is gated on a design question — the same bucket the behavioural family
+      sits in (`@Derived`, `@Rule`, `@EventHandler`, `@Projection`, listed above as "design-gated, not
+      capability-gated"), and those count toward the 50. An ask this repo may be able to discharge
+      itself is not a kernel ask. The likeliest discharge is the seam ADR-070 already built —
+      `RuntimeComponents` is where a consumer supplies construction-time collaborators, and the
+      identity a declared job runs as is one — but that is a slice to design, not a decision to record
+      here.
+
       **So the 1.0 target is 50 of 51**, with only `@Blob` carried as a kernel ask. Two rules that
       follow from the shape of this list, and matter more than the count: an annotation is "covered"
       when it **reaches emitted output**, not when the processor extracts it — `@EventSourced` is
