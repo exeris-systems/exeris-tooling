@@ -17,14 +17,26 @@
 
     <properties>
         <!--
-          Released pins (U0). The SNAPSHOT window the ADR-059 slice-A work opened
-          is closed: SDK 0.10.0 ships `dataScope`, the AST-owned `DataScope` and
-          `DomainMetadata.effectiveDataScope()`. Nothing here may go back to a
-          SNAPSHOT — a cross-repo SNAPSHOT blocks cutting any release at all.
+          Released pins (U0). Nothing here may go back to a SNAPSHOT — a
+          cross-repo SNAPSHOT blocks cutting any release at all.
+
+          SDK 0.11.0 (released 2026-08-26) needed no source change here because
+          it is additive on every record this repo reads: `ActionMetadata` grows
+          `schedule`, `FieldMetadata` grows `blob`, `DomainEventMetadata` grows
+          `trigger` / `actionName` / `fieldName`, and `BlobMetadata` +
+          `ScheduleMetadata` are new carriers. The processor extracts none of
+          them yet and no generator consumes them — reserved surface lands in
+          the SDK ahead of its processor slice by design.
+
+          One narrowing rides along and is invisible here: `@Action.path` moved
+          from `required` to `default`, so it is no longer present in every
+          annotation-value map. The attribute is registered inert either way
+          (T44), so `-Aexeris.strict` simply stops reporting it on actions that
+          never set it.
         -->
-        <exeris.sdk.version>0.10.0</exeris.sdk.version>
+        <exeris.sdk.version>0.11.0</exeris.sdk.version>
         <!--
-          Kernel 0.11.0 — the line SDK 0.10 pairs with (the `sharedScopeKey`
+          Kernel 0.11.0 — the line both SDK 0.10 and 0.11 pair with (the `sharedScopeKey`
           carrier behind `DataScope.UNIVERSE`, consumed by ADR-059 slice B).
 
           Load-bearing for what comes next: 0.11.0 is the first kernel whose
