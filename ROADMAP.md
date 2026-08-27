@@ -380,9 +380,12 @@ LTS descent can even compile. Verified by reading the jars.
       along: `@Action.path` moved from `required` to `default`, and stays registered inert (T44).
 
       **What it puts on a released coordinate**, which is the point of doing it now rather than at
-      the cut: the `@Blob` / `@Schedule` transcription (`@Schedule` is buildable today; `@Blob`
-      still carries its kernel ask — there is no `CommunityStorageSubsystem` for a generated app to
-      name, K6), and the T48 publisher wiring. T48 needed the trigger triple specifically: until
+      the cut: T48, and the `@Schedule` half of the transcription. Worth stating the shape of what
+      moved, because it does not move everything — a released coordinate unblocks work whose blocker
+      was **metadata-shaped**. T48's was (no carrier for the trigger), `@Schedule`'s design-time half
+      was. `@Blob`'s blocker is **runtime-hosting-shaped** (K6), so the same bump changed nothing
+      binding for it: `FieldMetadata.blob` and `BlobMetadata` arrived with everything else and were
+      simply never the constraint. T48 needed the trigger triple specifically: until
       0.11.0 the processor read `@DomainEvent.trigger` only to derive the event *name* suffix and
       then discarded it — and only when the author supplied no explicit `name` — so
       `@DomainEvent(name = "OrderPlaced", trigger = CREATE)` left no trace of the trigger anywhere
@@ -698,6 +701,40 @@ T30 (emitted imports as undeclared build requirements — the general case behin
         construction, because an absent `isolationKey` is a terminal deny in `BlobStore` and `GLOBAL`
         is exactly the tier that leaves it empty.
 
+        **The "no subsystem to name" reading is the smaller half of K6 — corrected 2026-08-27** from
+        a kernel-side reading, then re-verified here against the tag this repo pins (`v0.11.0`), not
+        transcribed. Three things a transcription slice would otherwise walk into:
+
+        1. **A subsystem name alone would emit an app that does not boot.** Both drivers
+           (`CommunityFilesystemBlobStorageProvider`, `CommunityS3BlobStorageProvider`) register at
+           the same Community priority, and the kernel's disposition is that an unset selection key
+           with more than one provider present is a **startup failure, not a default** — by design.
+           So whatever K6 delivers, the emitter's obligation is a name *plus* a configuration key, or
+           forcing the author to supply one. This is the exact asymmetry against `@Schedule`, and it
+           is the whole of K6: scheduling has one provider and can fall back
+           (`JobSchedulerConfig.DEFAULT_NAME`); storage has two, so a fallback is not available to it.
+        2. **There is no `KernelProviders` slot to bind, and the obvious name is taken.** At `v0.11.0`
+           the slot list carries `JOB_SCHEDULER` + `JOB_SCHEDULER_PROVIDER` for scheduling and
+           **nothing** for blobs — while `STORAGE_CONTEXT` already exists and is the ADR-012
+           isolation-key carrier (the one T36's emitted `actingTenantId()` reads), not a store. K6
+           should name its slot unambiguously; "storage" is spoken for.
+        3. **Blob storage is invisible to kernel introspection.** `CommunityProviderInventory.discover`
+           sweeps nine SPIs — memory, crypto, telemetry, persistence, events, flow, transport, graph,
+           security — and `BlobStorageProvider` is not among them despite being `ServiceLoader`-
+           registered. Measured here at `v0.11.0`, and one addition to the kernel-side report:
+           **`JobSchedulerProvider` is missing from that sweep too**, so the gap is not blob-specific.
+           This matters to us specifically if tooling ever probes kernel capability through
+           `exeris-ai-bridge`'s `kernel:list_providers` (D4's neighbourhood): it would report "no
+           storage backend" for the wrong reason — the SPI is there, the inventory does not look. A
+           cheap, independent kernel-side ask, and the only one that unblocks introspection *before*
+           the subsystem exists. Unnumbered here on purpose: the kernel mints K-numbers.
+
+        **And the timeline is not ours.** `exeris-kernel/docs/subsystems/storage.md` opens its status
+        with "Post-1.0 per the ROADMAP's narrowed-core decision — 1.0 GA is not gated on this
+        subsystem." So `@Blob` is not an exclusion waiting to be revoked before our 1.0; it is
+        excluded against a subsystem the kernel has deliberately scheduled *after* it. The 50-of-51
+        target below is honest only while it says that, which it now does.
+
       *(`@EventSourced` sat here as a second kernel-gated exclusion until 2026-08-18. That was
       wrong — see the correction below the table; the target moved from 49 to 50.)*
 
@@ -751,7 +788,9 @@ T30 (emitted imports as undeclared build requirements — the general case behin
       identity a declared job runs as is one — but that is a slice to design, not a decision to record
       here.
 
-      **So the 1.0 target is 50 of 51**, with only `@Blob` carried as a kernel ask. Two rules that
+      **So the 1.0 target is 50 of 51**, with only `@Blob` carried as a kernel ask — and carried
+      knowing the kernel has scheduled its subsystem post-1.0, so this is an exclusion that stands at
+      our GA rather than one expected to close before it. Two rules that
       follow from the shape of this list, and matter more than the count: an annotation is "covered"
       when it **reaches emitted output**, not when the processor extracts it — `@EventSourced` is
       still the standing counter-example, now as pure tooling debt. And every one that lands must
