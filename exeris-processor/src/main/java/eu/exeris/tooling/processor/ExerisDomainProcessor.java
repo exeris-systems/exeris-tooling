@@ -102,9 +102,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     private record InertAttribute(String annotation, String attribute, String note) {}
 
     /**
-     * A type-level SDK annotation the processor extracts into metadata but that
-     * <em>no</em> generator consumes — so applying it has no effect on emitted
-     * output. Distinct from {@link InertAttribute}: here the <em>whole</em>
+     * An SDK annotation that <em>no</em> generator consumes — so applying it has no
+     * effect on emitted output, whether or not the processor extracts it. Distinct
+     * from {@link InertAttribute}: here the <em>whole</em>
      * annotation is inert (a missing-generator gap), so strict mode reports it
      * once per entity rather than per attribute.
      *
@@ -237,7 +237,26 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "markPublished — so it holds no stream to rehydrate from), and "
                             + "KernelProviders.eventStreamReader() returns an Optional because a "
                             + "broker may not support replay, so generated code must handle "
-                            + "absence rather than assume a binding"));
+                            + "absence rather than assume a binding"),
+            new InertAnnotation("eu.exeris.sdk.annotation.Blob", "Blob",
+                    "the processor does not extract it and no generator consumes it, so the field "
+                            + "is emitted exactly as if the annotation were absent. The design-time "
+                            + "surface is reserved (ADR-072) and the transcription is additionally "
+                            + "kernel-gated: Application.main() boots subsystems by name and there "
+                            + "is no CommunityStorageSubsystem to name, a name alone would not be "
+                            + "enough anyway (two Community blob drivers share a priority, and an "
+                            + "unset selection key with more than one provider present is a startup "
+                            + "failure by design), and the kernel has scheduled that subsystem "
+                            + "post-1.0. See docs/adr/ADR-072.link.md (K6)"),
+            new InertAnnotation("eu.exeris.sdk.annotation.Schedule", "Schedule",
+                    "the processor does not extract it and no generator consumes it, so the "
+                            + "annotated method is emitted exactly as if the annotation were absent. "
+                            + "The design-time surface is reserved (ADR-072). This one is NOT "
+                            + "capability-gated — the scheduling subsystem boots — it is gated on "
+                            + "identity: JobScheduler.submit(...) captures the ambient "
+                            + "PrincipalContext and StorageContext at submission and fails a job "
+                            + "closed at dispatch when neither is bound, and a declared schedule has "
+                            + "no submission event to capture from. See docs/adr/ADR-072.link.md"));
 
     private ObjectMapper objectMapper;
     private Messager messager;
@@ -1204,6 +1223,15 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             // Detect and collect enum types
             collectEnumType(field.asType());
 
+            // D6: the inert-annotation sweep sits in the loop, NOT inside
+            // extractFieldMetadata — that extractor is reached only when @Field is
+            // present, and a field-level inert annotation on a field without @Field
+            // is a real shape (@Blob describes a byte carrier, not a column). The
+            // else branch below still admits such a field to the AST through
+            // FieldMetadata.simple(...), so gating this call on @Field would suppress
+            // a warning for a field that is nonetheless in the model.
+            warnInertAnnotations(field);
+
             AnnotationMirror fieldAnnotation = findAnnotation(field, "eu.exeris.sdk.annotation.Field");
 
             if (fieldAnnotation != null) {
@@ -1389,6 +1417,12 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             if (enclosed.getKind() != ElementKind.METHOD) continue;
 
             ExecutableElement method = (ExecutableElement) enclosed;
+
+            // D6: in the loop rather than in extractActionMetadata, for the reason
+            // spelled out at the field sweep — a method-level inert annotation must
+            // not have its reachability decided by whether @Action is also present.
+            warnInertAnnotations(method);
+
             AnnotationMirror actionAnnotation = findAnnotation(method, "eu.exeris.sdk.annotation.Action");
 
             if (actionAnnotation != null) {
@@ -1917,7 +1951,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      * No-op unless strict mode is on. Reported once per entity, not per attribute;
      * the diagnostic anchors on the offending annotation mirror.
      */
-    private void warnInertAnnotations(TypeElement element) {
+    private void warnInertAnnotations(Element element) {
         if (!strict) {
             return;
         }

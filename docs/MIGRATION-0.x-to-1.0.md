@@ -638,6 +638,25 @@ Both are safe to delete from your sources: neither is read by any generator, `ap
 emitted route or document, and `path` no longer has to be written at all now that SDK 0.11.0 has
 given it a default.
 
+### `-Aexeris.strict` now reports `@Blob` and `@Schedule` (D6)
+
+Only if you pass `-Aexeris.strict`, and again nothing about what the compiler produces changes.
+
+Both annotations shipped in SDK 0.11.0 and are **reserved**: no processor extracts them and no
+generator consumes them, so a field or method carrying one is emitted exactly as if it were absent.
+Strict mode now says so. Before this change it could not have, even with the entries registered —
+the inert-annotation sweep only inspected type-level annotations, and `@Blob` is `@Target(FIELD)`,
+`@Schedule` is `@Target(METHOD)`.
+
+Expect one warning per `@Blob` field and one per `@Schedule` method. Each names why the annotation is
+inert and where the transcription is gated — `@Blob` on the kernel (no bootable storage subsystem,
+and blob storage is post-1.0 kernel-side), `@Schedule` on the identity a declared job runs as. See
+[`adr/ADR-072.link.md`](adr/ADR-072.link.md).
+
+**Not** a signal to remove them from your sources: unlike `@Action.path`, these are a reserved
+surface you are meant to be able to declare against. The warning tells you the build does nothing
+with it *yet*.
+
 ---
 
 ## Reference

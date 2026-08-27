@@ -1612,6 +1612,135 @@ class ExerisDomainProcessorTest {
                     .isZero();
         }
 
+        @Test
+        @DisplayName("-Aexeris.strict reaches every registered inert annotation, at all three targets (D6)")
+        void strictReachesEveryRegisteredInertAnnotation() {
+            // Same gate as the attribute one, for the other registry. INERT_ANNOTATIONS
+            // is driven by warnInertAnnotations call sites, and until D6 there were only
+            // type-level ones — so a FIELD- or METHOD-targeted entry would have been dead
+            // on arrival. This fixture places all three registered annotations at their
+            // declared targets in one compilation unit.
+            Compilation compilation = javac()
+                    .withOptions("-Aexeris.strict=true")
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(everyInertAnnotationSet());
+
+            assertThat(compilation).succeeded();
+            assertThat(hasInertWarningFor(compilation, "@EventSourced")).isTrue();
+            assertThat(hasInertWarningFor(compilation, "@Blob")).isTrue();
+            assertThat(hasInertWarningFor(compilation, "@Schedule")).isTrue();
+            assertThat(inertWarnings(compilation))
+                    .as("one warning per registered inert annotation, no more")
+                    .isEqualTo(3);
+        }
+
+        @Test
+        @DisplayName("-Aexeris.strict warns on @Blob on a field that carries no @Field")
+        void strictWarnsOnBlobWithoutField() {
+            // The sweep must not sit inside extractFieldMetadata, which is reached only
+            // when @Field is present. A @Blob field with no @Field is a real shape — the
+            // annotation describes a byte carrier, not a column — and the field is still
+            // admitted to the AST through FieldMetadata.simple(...).
+            Compilation compilation = javac()
+                    .withOptions("-Aexeris.strict=true")
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(blobOnAFieldWithoutFieldAnnotation());
+
+            assertThat(compilation).succeeded();
+            assertThat(hasInertWarningFor(compilation, "@Blob")).isTrue();
+            assertThat(inertWarnings(compilation)).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("-Aexeris.strict warns on @Schedule on a method that carries no @Action")
+        void strictWarnsOnScheduleWithoutAction() {
+            Compilation compilation = javac()
+                    .withOptions("-Aexeris.strict=true")
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(scheduleOnAMethodWithoutAction());
+
+            assertThat(compilation).succeeded();
+            assertThat(hasInertWarningFor(compilation, "@Schedule")).isTrue();
+            assertThat(inertWarnings(compilation)).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("Default build stays quiet on @Blob and @Schedule too")
+        void defaultBuildDoesNotWarnOnTheNewAnnotationEntries() {
+            Compilation compilation = javac()
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(everyInertAnnotationSet());
+
+            assertThat(compilation).succeeded();
+            assertThat(inertWarnings(compilation))
+                    .as("inert warnings with strict unset")
+                    .isZero();
+        }
+
+        private JavaFileObject everyInertAnnotationSet() {
+            return JavaFileObjects.forSourceString(
+                    "com.example.Document",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.Action;
+                    import eu.exeris.sdk.annotation.Blob;
+                    import eu.exeris.sdk.annotation.EventSourced;
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Schedule;
+
+                    @ExerisDomain(module = "core", path = "/documents")
+                    @EventSourced
+                    public class Document {
+                        @Blob
+                        private byte[] content;
+
+                        @Schedule(cron = "0 0 * * *")
+                        @Action(name = "archive", label = "Archive")
+                        public void archive() {
+                        }
+                    }
+                    """
+            );
+        }
+
+        private JavaFileObject blobOnAFieldWithoutFieldAnnotation() {
+            return JavaFileObjects.forSourceString(
+                    "com.example.Document",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.Blob;
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+
+                    @ExerisDomain(module = "core", path = "/documents")
+                    public class Document {
+                        @Blob
+                        private byte[] content;
+                    }
+                    """
+            );
+        }
+
+        private JavaFileObject scheduleOnAMethodWithoutAction() {
+            return JavaFileObjects.forSourceString(
+                    "com.example.Document",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Schedule;
+
+                    @ExerisDomain(module = "core", path = "/documents")
+                    public class Document {
+                        @Schedule(every = "PT1H")
+                        public void sweep() {
+                        }
+                    }
+                    """
+            );
+        }
+
         private JavaFileObject everyInertAttributeSet() {
             return JavaFileObjects.forSourceString(
                     "com.example.Order",
