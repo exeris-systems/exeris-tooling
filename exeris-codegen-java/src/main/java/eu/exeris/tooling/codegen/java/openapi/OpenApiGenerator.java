@@ -9,7 +9,6 @@ import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.info.Contact;
 import io.swagger.v3.oas.models.info.Info;
 import io.swagger.v3.oas.models.info.License;
-import io.swagger.v3.oas.models.security.SecurityRequirement;
 import io.swagger.v3.oas.models.servers.Server;
 
 import java.io.IOException;
@@ -30,7 +29,6 @@ public class OpenApiGenerator {
     private static final String DEFAULT_OUTPUT_DIR = "target/generated-openapi";
     private static final String OPENAPI_VERSION = "3.1.0";
     private static final String API_VERSION = "1.0.0";
-    private static final String SECURITY_BEARER_AUTH = "bearerAuth";
 
     private final ObjectMapper yamlMapper;
     private Path outputDirectory;
@@ -108,9 +106,7 @@ public class OpenApiGenerator {
         openAPI.setTags(allTags);
         openAPI.setPaths(allPaths);
         allComponents.setSchemas(allSchemas);
-        allComponents.setSecuritySchemes(OpenApiSecurityBuilder.buildSecuritySchemes());
         openAPI.setComponents(allComponents);
-        openAPI.setSecurity(List.of(new SecurityRequirement().addList(SECURITY_BEARER_AUTH)));
 
         Path outputFile = outputDirectory.resolve(moduleName + "-api.yaml");
         yamlMapper.writeValue(outputFile.toFile(), openAPI);
@@ -126,7 +122,6 @@ public class OpenApiGenerator {
         openAPI.setTags(OpenApiTagsBuilder.buildTags(metadata));
         openAPI.setPaths(OpenApiPathsBuilder.buildPaths(metadata));
         openAPI.setComponents(OpenApiComponentsBuilder.buildComponents(metadata));
-        openAPI.setSecurity(OpenApiSecurityBuilder.buildSecurity(metadata));
         return openAPI;
     }
 

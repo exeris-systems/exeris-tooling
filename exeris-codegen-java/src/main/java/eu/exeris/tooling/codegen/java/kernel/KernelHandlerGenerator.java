@@ -545,10 +545,12 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
      * the response says there is none — indistinguishable from an empty database, and the single
      * hardest failure to diagnose in the whole stack.
      *
-     * <p>Reaching a handler at all means the kernel's own fail-closed gate did not run:
-     * {@code SecurityInterceptor} drops an unauthenticated request before dispatch, so an unbound
-     * context here is a <em>deployment</em> fault rather than a caller fault — hence 500 rather than
-     * 401, and hence a message naming the wiring rather than the request.
+     * <p>500 rather than 401, because an unbound context is a <em>deployment</em> fault rather than
+     * a caller fault: the kernel binds both contexts in {@code SecurityInterceptor}, which the
+     * Community dispatcher runs only for a route whose {@code HttpRoutePolicy} requirement is not
+     * {@code permitAll()} — and the emitted application binds no policy (ADR-079), so no emitted
+     * route demands identity and the interceptor never runs. Hence also a message naming the
+     * wiring rather than the request: the caller has nothing to correct.
      */
     private static MethodSpec buildRespondTenantUnbound(String entityLower) {
         return MethodSpec.methodBuilder("respondTenantUnbound")
@@ -558,10 +560,14 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                 .addStatement("LOG.log($T.ERROR, $S)", KernelScaffold.LOGGER_LEVEL,
                         "Refusing " + entityLower + " request: no tenant is bound. This entity is "
                                 + "tenant-scoped, so row-level security would return no rows and the "
-                                + "response would be indistinguishable from an empty database. Install "
-                                + "the kernel SecurityInterceptor (which binds PRINCIPAL_CONTEXT and "
-                                + "STORAGE_CONTEXT from an authenticated token) ahead of this router, "
-                                + "or bind KernelProviders.STORAGE_CONTEXT around the dispatch.")
+                                + "response would be indistinguishable from an empty database. The "
+                                + "kernel binds PRINCIPAL_CONTEXT and STORAGE_CONTEXT from an "
+                                + "authenticated token in its SecurityInterceptor, which the HTTP "
+                                + "dispatcher runs only for a route whose HttpRoutePolicy requirement "
+                                + "is not permitAll() - and this application binds no policy, so no "
+                                + "route demands identity. Bind HttpKernelProviders.HTTP_ROUTE_POLICY "
+                                + "around boot, or bind KernelProviders.STORAGE_CONTEXT around the "
+                                + "dispatch.")
                 .addStatement("exchange.respond($T.INTERNAL_SERVER_ERROR)", HTTP_STATUS)
                 .build();
     }

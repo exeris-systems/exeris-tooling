@@ -53,7 +53,7 @@ public final class OpenApiPathsBuilder {
         op.setOperationId("list" + entity);
         op.setSummary("List all " + entity);
         op.setTags(List.of(entity));
-        op.setResponses(buildResponses("200", "List of " + entity));
+        op.setResponses(Responses.of("200", "List of " + entity).serverError());
         return op;
     }
 
@@ -63,7 +63,7 @@ public final class OpenApiPathsBuilder {
         op.setSummary("Get " + entity + " by ID");
         op.setTags(List.of(entity));
         op.addParametersItem(buildIdParam());
-        op.setResponses(buildResponses("200", entity + " details"));
+        op.setResponses(Responses.of("200", entity + " details").badRequest().notFound().serverError());
         return op;
     }
 
@@ -73,7 +73,7 @@ public final class OpenApiPathsBuilder {
         op.setSummary("Create new " + entity);
         op.setTags(List.of(entity));
         op.setRequestBody(RequestBodyFactory.buildCreateRequestBody(entity));
-        op.setResponses(buildResponses("201", "Created " + entity));
+        op.setResponses(Responses.of("201", "Created " + entity).badRequest().serverError());
         return op;
     }
 
@@ -84,7 +84,10 @@ public final class OpenApiPathsBuilder {
         op.setTags(List.of(entity));
         op.addParametersItem(buildIdParam());
         op.setRequestBody(RequestBodyFactory.buildUpdateRequestBody(entity));
-        op.setResponses(buildResponses("200", "Updated " + entity, versioned));
+        Responses responses = Responses.of("200", "Updated " + entity).badRequest();
+        op.setResponses(versioned
+                ? responses.conflict().serverError()
+                : responses.notFound().serverError());
         return op;
     }
 
@@ -94,7 +97,7 @@ public final class OpenApiPathsBuilder {
         op.setSummary("Delete " + entity);
         op.setTags(List.of(entity));
         op.addParametersItem(buildIdParam());
-        op.setResponses(buildResponses("204", entity + " deleted"));
+        op.setResponses(Responses.of("204", entity + " deleted").badRequest().notFound().serverError());
         return op;
     }
 
@@ -107,7 +110,8 @@ public final class OpenApiPathsBuilder {
         if (action.hasParams()) {
             op.setRequestBody(RequestBodyFactory.buildActionRequestBody(entity, action));
         }
-        op.setResponses(buildResponses("200", "Action result", versioned));
+        Responses responses = Responses.of("200", "Action result").badRequest().notFound();
+        op.setResponses(versioned ? responses.conflict().serverError() : responses.serverError());
         return op;
     }
 
@@ -121,35 +125,55 @@ public final class OpenApiPathsBuilder {
         return param;
     }
 
-    private static ApiResponses buildResponses(String code, String description) {
-        return buildResponses(code, description, false);
-    }
-
     /**
-     * The statuses an operation declares.
+     * The statuses one operation declares, named at each call site from what the emitted handler
+     * for that route can answer.
      *
-     * <p>{@code 500} is here because every emitted handler can reach it — the tenant guard
-     * answers it directly, and every service call is wrapped in a {@code catch (RuntimeException)}
-     * that does. Until ADR-076 the spec declared {@code 404} and not {@code 500} while the handler
-     * answered {@code 500} and not {@code 404} for an absent row: the spec named the one status
-     * the code could not give and omitted the one it did.
+     * <p>Every emitted route ends in a {@code catch (RuntimeException)} that answers {@code 500},
+     * and a tenant-partitioned entity answers it from the tenant guard as well, so
+     * {@link #serverError()} closes every set. The rest is per-route: {@code 400} needs an id to
+     * parse or a body to decode, {@code 404} needs an id to miss, and {@code 409} is raised only by
+     * the write path of a versioned entity — where it replaces {@code 404} rather than joining it,
+     * because that update matches on {@code id} and version together and reports the pair.
      *
-     * <p>{@code 409} is declared only on a versioned entity's write routes, which is the only
-     * place the emitted repository raises the conflict type: the update matches on {@code id} and
-     * on the expected version together, and reports the pair rather than guessing between them.
+     * <p>Two corrections are recorded in this shape. Until ADR-076 the spec declared {@code 404}
+     * and not {@code 500} while the handler answered {@code 500} and not {@code 404} for an absent
+     * row. Until ADR-079 one set served every operation: the collection {@code GET} and the create
+     * {@code POST} declared a {@code 404} they have no id to produce, the collection {@code GET}
+     * declared a {@code 400} it has nothing to reject, and every operation declared a {@code 401}
+     * no emitted route can reach.
      */
-    private static ApiResponses buildResponses(String code, String description, boolean conflict) {
-        ApiResponses responses = new ApiResponses();
-        responses.addApiResponse(code, new ApiResponse().description(description));
-        responses.addApiResponse("400", new ApiResponse().description("Bad request"));
-        responses.addApiResponse("401", new ApiResponse().description("Unauthorized"));
-        responses.addApiResponse("404", new ApiResponse().description("Not found"));
-        if (conflict) {
-            responses.addApiResponse("409",
-                    new ApiResponse().description("Version conflict — re-read and retry"));
+    private static final class Responses {
+
+        private final ApiResponses declared = new ApiResponses();
+
+        private Responses() {}
+
+        static Responses of(String code, String description) {
+            return new Responses().add(code, description);
         }
-        responses.addApiResponse("500", new ApiResponse().description("Internal server error"));
-        return responses;
+
+        Responses badRequest() {
+            return add("400", "Bad request");
+        }
+
+        Responses notFound() {
+            return add("404", "Not found");
+        }
+
+        Responses conflict() {
+            return add("409", "Version conflict — re-read and retry");
+        }
+
+        /** Terminal, because every emitted handler can answer it. */
+        ApiResponses serverError() {
+            return add("500", "Internal server error").declared;
+        }
+
+        private Responses add(String code, String description) {
+            declared.addApiResponse(code, new ApiResponse().description(description));
+            return this;
+        }
     }
 
 }

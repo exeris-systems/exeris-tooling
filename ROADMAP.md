@@ -1501,7 +1501,32 @@ Proposals, highest return-on-effort first:
       `DELETE` on an absent id **should** be a 500 at all — an idempotent-delete endpoint answering
       `404`, or `204`, are both defensible, and the current answer was never chosen so much as
       inherited from a `rowsAffected == 0` guard written for a different reason.
-- [ ] **D8 — the emitted OpenAPI promises an authentication the emitted app does not have.** Found
+- [x] **D8 — the emitted OpenAPI promises an authentication the emitted app does not have
+      (ADR-079).** Shipped 0.8.0. The `grep` that found it — no emitter answers `401` — is not by
+      itself proof, because in this architecture the *kernel* answers `401`, not the handler. So the
+      claim was measured against kernel 0.11, and the measurement is what settled both open
+      questions. `CommunityHttpRequestProcessor` reads `HttpKernelProviders.httpRoutePolicy()`, an
+      `Optional` over a `ScopedValue` the application binds; with nothing bound the dispatcher
+      resolves every route to `RouteRequirement.permitAll()` ("an application that declares nothing
+      carries no edge authorization at all"), and a `PERMIT_ALL` route is admitted **without running
+      the `SecurityInterceptor`** — no token read, no `PRINCIPAL_CONTEXT`, and the `401` the
+      dispatcher can otherwise write is unreachable. No emitter binds `HTTP_ROUTE_POLICY`; the
+      emitted `Application` binds exactly one HTTP slot, `HTTP_SERVER_HANDLER`.
+
+      **Removed, not gated**, because gating fails twice: there is no annotation that declares edge
+      authentication (`@RowLevelSecurity` and `@TenantId` scope *data*), and the one case that
+      looked like it justified a gate — a tenant-partitioned entity, which truly cannot serve
+      without a bound context — answers `500` from the tenant guard, not `401`. A gated claim would
+      have named the wrong status for its own best case. The cheap half landed with it: response
+      sets are now per route (`GET` collection `200/500`; `POST` `201/400/500`; by-id `GET`,
+      unversioned `PUT`, `DELETE` `…/400/404/500`; versioned `PUT` `200/400/409/500`, agreeing with
+      ADR-076's emitted catch instead of declaring both). Carried in the same change: the emitted
+      tenant-guard message told the consumer to "install the kernel SecurityInterceptor ahead of
+      this router", inoperative at 0.11 — the interceptor is already in the dispatcher and runs only
+      for a route that demands identity. Two follow-ups recorded as **T51** and **D9**.
+      Original finding below.
+
+      **D8 — the emitted OpenAPI promises an authentication the emitted app does not have.** Found
       2026-08-27 while auditing `buildResponses` for D7, and left out of ADR-076 deliberately: it is
       the same *family* of defect — a spec claiming what no emitted code can do — but it is a claim
       about authentication rather than about write rejection, and merging them would have made
@@ -1523,6 +1548,47 @@ Proposals, highest return-on-effort first:
       auth story exists, or **gated** on something the author declares (there is no annotation for
       it today — which is itself the answer to whether it can be gated); and whether the response
       set should become per-operation-accurate while it is being touched, which is the cheap half.
+
+- [ ] **D9 — the emitted OpenAPI document is mostly `null`.** Found 2026-08-28 while asserting on
+      the emitted YAML for D8. `OpenApiGenerator`'s YAML mapper writes every unset field of the
+      swagger model: a single-entity spec carries `termsOfService: null`, `contact: null`,
+      `externalDocs: null`, `security: null`, and per-operation `callbacks: null`, `deprecated: null`,
+      `servers: null`, plus roughly thirty `null` keys inside every schema (`multipleOf`,
+      `exclusiveMaximum`, `uniqueItems`, …). The document is valid YAML and parses, so nothing has
+      broken; what it costs is a spec no human reads by choice and a diff nobody can review. The
+      fix is one mapper configuration (`setSerializationInclusion(NON_NULL)`), which makes it a
+      one-line change with a large emitted-output diff — hence a slice of its own rather than a
+      rider on D8. Worth checking while there: whether the emitted spec is byte-identical across
+      runs once the nulls are gone, and whether any downstream consumer (the TS client, a
+      generator a user points at it) reads a field that is currently emitted as explicit `null`.
+
+- [ ] **T51 — the generated app cannot declare that a route needs a caller.** Split out of D8 with
+      its scope already measured. Two halves are missing and both are needed before the OpenAPI
+      security block can come back (ADR-079). **A declaration:** no SDK annotation says "this route
+      requires identity" — `@RowLevelSecurity` and `@TenantId` scope data, not the edge — so there
+      is nothing for the processor to extract into `DomainMetadata`. **A seam:** the kernel reads
+      the policy from `HttpKernelProviders.HTTP_ROUTE_POLICY`, a `ScopedValue`, so the only binding
+      site is the `ScopedValue.where(...)` chain inside the emitted `Application`; ADR-070's
+      `RuntimeComponents` carries `create*` factories and `configureRoutes` and reaches neither, so
+      a consumer today cannot bind a policy without editing generated code. That makes it an
+      ADR-070 gap of the shape that ADR exists to name, and it is the same shape T48 closed for the
+      event publisher. Sequence: SDK annotation → processor extraction → emitted policy +
+      `RuntimeComponents` factory → restore the spec's security block, gated on the declaration.
+      Coordinate with `exeris-sdk`; the annotation is theirs, the emission is ours.
+
+- [ ] **D10 — the TS side has a bearer-token code path that reaches no emitted output.** Surfaced by
+      the review of the D8 PR and verified: `KernelStrategy.getDefaultHeaders`
+      (`exeris-codegen-ts/src/core/backend-strategy.ts:231`) sets
+      `` headers['Authorization'] = `Bearer ${context.accessToken}` `` at `:251`, and the method is
+      declared on the `BackendStrategy` interface at `:111` — but its only caller in the repository
+      is its own spec (`test/core/backend-strategy.spec.ts`). No `*-gen.ts` generator invokes it, so
+      no emitted Angular service ever sends the header. It is the same defect ADR-079 removed from
+      the OpenAPI document, in the other emitter: a code path that describes an authentication the
+      generated app does not perform, kept honest only by a test that calls it directly. The
+      question the slice settles is which way it resolves — delete it as dead (the `@Retention`-style
+      argument: nothing reads it, so it has no effect), or wire it, which is a T51 question because
+      a header is worth sending only once a route requires one. Related to the standing
+      "emitters wired by nobody" pattern; do not fix it in isolation from T51.
 
 ---
 
