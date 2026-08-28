@@ -1576,6 +1576,20 @@ Proposals, highest return-on-effort first:
       `RuntimeComponents` factory → restore the spec's security block, gated on the declaration.
       Coordinate with `exeris-sdk`; the annotation is theirs, the emission is ours.
 
+- [ ] **D10 — the TS side has a bearer-token code path that reaches no emitted output.** Surfaced by
+      the review of the D8 PR and verified: `KernelStrategy.getDefaultHeaders`
+      (`exeris-codegen-ts/src/core/backend-strategy.ts:231`) sets
+      `headers['Authorization'] = \`Bearer ${context.accessToken}\`` at `:251`, and the method is
+      declared on the `BackendStrategy` interface at `:111` — but its only caller in the repository
+      is its own spec (`test/core/backend-strategy.spec.ts`). No `*-gen.ts` generator invokes it, so
+      no emitted Angular service ever sends the header. It is the same defect ADR-079 removed from
+      the OpenAPI document, in the other emitter: a code path that describes an authentication the
+      generated app does not perform, kept honest only by a test that calls it directly. The
+      question the slice settles is which way it resolves — delete it as dead (the `@Retention`-style
+      argument: nothing reads it, so it has no effect), or wire it, which is a T51 question because
+      a header is worth sending only once a route requires one. Related to the standing
+      "emitters wired by nobody" pattern; do not fix it in isolation from T51.
+
 ---
 
 ## Versioning policy

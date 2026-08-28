@@ -145,7 +145,7 @@ public final class OpenApiPathsBuilder {
      */
     private static final class Responses {
 
-        private final ApiResponses responses = new ApiResponses();
+        private final ApiResponses declared = new ApiResponses();
 
         private Responses() {}
 
@@ -167,11 +167,11 @@ public final class OpenApiPathsBuilder {
 
         /** Terminal, because every emitted handler can answer it. */
         ApiResponses serverError() {
-            return add("500", "Internal server error").responses;
+            return add("500", "Internal server error").declared;
         }
 
         private Responses add(String code, String description) {
-            responses.addApiResponse(code, new ApiResponse().description(description));
+            declared.addApiResponse(code, new ApiResponse().description(description));
             return this;
         }
     }
