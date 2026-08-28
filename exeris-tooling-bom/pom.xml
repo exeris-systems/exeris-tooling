@@ -73,6 +73,12 @@
              posture at all. -->
         <jackson3.version>3.1.5</jackson3.version>
         <swagger-parser.version>2.1.45</swagger-parser.version>
+        <!-- swagger-core carries the OpenAPI model types and the 3.1 mappers this module
+             compiles against directly. It arrives transitively through swagger-parser, so
+             this pin must track what that version resolves (2.1.45 -> 2.2.52) rather than
+             move on its own; declaring it keeps a transitive reshuffle from breaking the
+             build silently. -->
+        <swagger-core.version>2.2.52</swagger-core.version>
 
         <junit.version>5.11.4</junit.version>
         <!-- 3.27.7 closes GHSA-rqfh-9r24-8c9r — XXE in isXmlEqualTo when
@@ -216,6 +222,16 @@
                 <groupId>io.swagger.parser.v3</groupId>
                 <artifactId>swagger-parser</artifactId>
                 <version>${swagger-parser.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.swagger.core.v3</groupId>
+                <artifactId>swagger-core</artifactId>
+                <version>${swagger-core.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.swagger.core.v3</groupId>
+                <artifactId>swagger-models</artifactId>
+                <version>${swagger-core.version}</version>
             </dependency>
 
             <!-- Test deps -->

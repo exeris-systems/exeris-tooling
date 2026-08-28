@@ -1,7 +1,11 @@
 package eu.exeris.tooling.codegen.java.openapi;
 
+import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
+import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 import io.swagger.v3.oas.models.OpenAPI;
+import io.swagger.v3.parser.OpenAPIV3Parser;
+import io.swagger.v3.parser.core.models.SwaggerParseResult;
 import io.swagger.v3.oas.models.info.Contact;
 import io.swagger.v3.oas.models.info.License;
 import org.junit.jupiter.api.BeforeEach;
@@ -164,5 +168,49 @@ class OpenApiGeneratorTest {
         assertThat(single.getComponents().getSecuritySchemes()).isNull();
         assertThat(Files.readString(tempDir.resolve("catalog-api.yaml")))
                 .doesNotContain("bearerAuth");
+    }
+
+    @Test
+    @DisplayName("D9: the emitted document carries no null-valued fields and no swagger bookkeeping")
+    void emitsNoUnsetFields() throws IOException {
+        DomainMetadata meta = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders").versioned(true)
+                .description("Customer order")
+                .fields(List.of(
+                        FieldMetadata.builder("orderNumber", "String").required(true).build(),
+                        FieldMetadata.builder("amount", "BigDecimal").build()))
+                .actions(List.of(ActionMetadata.builder("approve").build()))
+                .build();
+
+        String yaml = generator.generateYaml(meta);
+
+        // The same document used to be 1664 lines, 1479 of them ": null". `exampleSetFlag` is not
+        // an OpenAPI field at all — it is swagger-model bookkeeping, and the 3.1 schema's
+        // unevaluatedProperties: false rejects it — so NON_NULL alone would not have been enough.
+        assertThat(yaml)
+                .doesNotContain(": null")
+                .doesNotContain("exampleSetFlag");
+        assertThat(yaml.lines().count()).isLessThan(400);
+    }
+
+    @Test
+    @DisplayName("D9: the emitted document parses back as an OpenAPI 3.1 spec with its routes intact")
+    void emittedDocumentRoundTrips() throws IOException {
+        DomainMetadata meta = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders").versioned(true)
+                .fields(List.of(FieldMetadata.builder("orderNumber", "String").required(true).build()))
+                .actions(List.of(ActionMetadata.builder("approve").build()))
+                .build();
+
+        SwaggerParseResult parsed = new OpenAPIV3Parser().readContents(generator.generateYaml(meta));
+
+        // Dropping fields from the writer is only safe if the reader still gets a whole document,
+        // so the gate is a parse rather than a text assertion.
+        assertThat(parsed.getMessages()).isEmpty();
+        assertThat(parsed.getOpenAPI()).isNotNull();
+        assertThat(parsed.getOpenAPI().getPaths())
+                .containsKeys("/orders", "/orders/{id}", "/orders/{id}/actions/approve");
+        assertThat(parsed.getOpenAPI().getComponents().getSchemas())
+                .containsKeys("Order", "OrderCreateDto", "OrderUpdateDto");
     }
 }

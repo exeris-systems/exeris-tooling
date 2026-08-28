@@ -855,6 +855,29 @@ in ADR-079.
 
 See [`adr/ADR-079-emitted-openapi-authentication-claim.md`](adr/ADR-079-emitted-openapi-authentication-claim.md).
 
+### The regenerated OpenAPI is ~90% smaller, with the same content (D9)
+
+**What changed.** The spec was written by a hand-configured `ObjectMapper`, which serialises every
+unset field of the swagger model. One entity with two fields and one action emitted **1664 lines,
+1479 of them `: null`** (`contact: null`, `externalDocs: null`, `callbacks: null`, and ~30 nulls
+inside every schema). It is now written by swagger's own `Yaml31.mapper()`: **167 lines**, no nulls.
+
+**It was also invalid, not just noisy.** `exampleSetFlag` — swagger-model bookkeeping, not an
+OpenAPI field — was emitted into every media-type object, and OpenAPI 3.1's schema rejects unknown
+properties there. A strict validator was entitled to fail the old document. `NON_NULL` alone would
+not have fixed that; the library's own mapper does.
+
+**Expect a large diff on first regeneration, and a style change.** Arrays now use swagger's
+canonical indentation (`- url:` at the parent's indent rather than indented under it). Content is
+unchanged: the emitted document is parsed back with `OpenAPIV3Parser` in the test suite, which
+asserts zero messages and the same paths and schemas.
+
+**Action required:** none, unless you diff generated files in review — in which case regenerate in
+its own commit so the shrink does not bury the change you are actually reviewing.
+
+**If you post-process the spec:** a step that relied on a key always being present (even as `null`)
+now has to handle its absence, which is what every OpenAPI reader already does.
+
 ---
 
 ## Reference
