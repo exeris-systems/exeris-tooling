@@ -76,15 +76,44 @@ pipeline did not emit.
   policy says so explicitly rather than by omission — a reader may still read it as "everything is
   covered".
 
-### Option B: Emit a policy that is `AUTHENTICATED` by default, `PERMIT_ALL` only where nothing is declared on any entity
+### Option B: Secure by default — every emitted route is `AUTHENTICATED` unless declared open
 
 Mirrors `HttpRoutePolicy.unmatched()`, which returns `authenticated()`.
 
-- **For:** matches the kernel's own idea of a sensible unmatched default; an app that starts
-  declaring permissions gets a closed edge rather than a half-open one.
-- **Against:** the moment one entity declares a permission, every *other* emitted route starts
-  demanding identity — including routes an existing app serves anonymously today. That is a
-  behaviour change no author asked for, delivered by regenerating.
+- **For:** the failure mode of forgetting to declare is a `401`, which is loud and safe, rather
+  than an open endpoint, which is silent and not. That is the direction every mature framework
+  chose, and it is the same class of defect ADR-079 just closed — a security story that reads as
+  present and is absent.
+- **For:** it follows the kernel's own stated opinion instead of inventing a second one.
+- **Against — it needs a declaration that does not exist.** Opt-out is meaningless without a way to
+  say "this route is public"; the SDK has no such attribute, so this option carries a cross-repo
+  prerequisite that Option A does not.
+- **Against — it does not merely tighten, it can stop the app serving.** Measured:
+  `CommunityHttpRequestDispatcher` builds the interceptor only when a `SecurityProvider` is
+  present, and `SecurityInterceptor.intercept` returns `false` — dispatcher writes `401` — when
+  the provider is absent, throws, or no bearer header arrives. An emitted app has no identity
+  wiring by default, so flipping this default answers `401` to **every** request until the
+  consumer installs a provider.
+- **Against — one policy governs every path, including the ones we did not emit.**
+  `HttpKernelProviders.httpRoutePolicy()` holds a single `HttpRoutePolicy`, and the dispatcher asks
+  it about every request. A generated policy that answers `AUTHENTICATED` for anything it does not
+  recognise would silently close a consumer's hand-written routes, a health endpoint, and the docs
+  path. This is the constraint that reshapes the whole question, and it is what Option B′ answers.
+
+### Option B′: Secure by default **for the routes we emit**, transparent for everything else
+
+The emitted policy answers `ANY_SCOPE`/`ALL_SCOPES` where permissions are declared,
+`AUTHENTICATED` for every other route **the pipeline emitted**, and delegates anything it does not
+recognise to a fallback supplied at construction (default `permitAll()`).
+
+- **For:** fail-closed where the pipeline is the authority, and silent where it is not. A
+  hand-written route keeps whatever it had.
+- **For:** the blast radius is exactly the surface the author described with `@ExerisDomain`, which
+  is the surface they can reason about.
+- **Against:** still a behaviour change on regeneration for emitted routes — smaller, but real, and
+  it still needs the "this one is public" declaration Option B needs.
+- **Against:** delegation makes the emitted policy a composite, which is more machinery than a
+  lookup table and one more thing to get wrong.
 
 ### Option C: Emit the table, bind nothing, and let the consumer install it
 
@@ -105,47 +134,57 @@ Leave all five layers unjoined and keep the strict warnings as the only signal.
 
 ## Recommendation
 
-**Option A, with the policy bound by the emitted `Application`.** It is the only option where the
-author's declaration is both the switch and the content, and the only one that cannot change an
-existing app that declared nothing.
+**The end state should be Option B′ — fail-closed for emitted routes — reached through a flag whose
+default is today's behaviour until 1.0.** Concretely: emit the policy under Option A's rule now
+(`PERMIT_ALL` unless a permission is declared), add `-Aexeris.routeDefault=permitAll|authenticated`
+in the same change, and make `authenticated` the default at the 1.0 train with a migration entry.
 
-> **The seam is not solved, and this recommendation must not be read as if it were.** An earlier
-> draft said "reachable through `RuntimeComponents`", which contradicts ADR-079's own finding:
-> `HTTP_ROUTE_POLICY` is a `ScopedValue` bound *around boot*, and ADR-070's seam carries `create*`
-> factories and a `configureRoutes` hook, neither of which reaches a provider bound at that point.
-> Saying otherwise would have let a reader assume the seam already exists. It does not — see open
-> question 2, which blocks the ADR on the same footing as path matching.
+The reasoning, stated plainly because it is a security posture and not an ergonomics preference:
 
-Sketch of what that means concretely, for review rather than as a commitment:
+| | Opt-in (A) | Opt-out (B′) |
+|---|---|---|
+| Forgetting to declare | endpoint is **open**, silently | endpoint answers **401**, loudly |
+| Existing generated apps | unchanged | must declare public routes, or install identity, before regenerating |
+| Needs a new SDK declaration | no | **yes** — nothing says "this route is public" today |
+| Governs hand-written routes | no | no (that is what B′ fixes over B) |
+| Matches the kernel's own default | no | yes (`unmatched()` → `authenticated()`) |
 
-- `<Entity>` with `permissions = {"order:read"}` yields, for its emitted routes, a
-  `RouteRequirement.requiringAnyScope(Set.of("order:read"))`.
-- `@Action(permissions = {"order:approve"})` overrides for that action's route only.
-- Path matching is by emitted template, not by string equality: the dispatcher passes a concrete
-  path (`/orders/9f3…`), so the emitted policy needs the same template match the router already
-  performs. **This is the largest unknown in the sketch** and needs a spike before an ADR.
-- The FE guards read the declared permission names instead of inventing them, and
-  `app-structure-gen` attaches them to the routes it emits — so front and back state the same rule.
-- The OpenAPI security block returns for the protected routes only, which is the last step and
-  closes ADR-079's loop.
+A fails in the direction that hurts: an author who declares permissions on nine entities and
+forgets the tenth ships the tenth open, and nothing in the build says so. B′ fails in the direction
+that is merely inconvenient: the tenth answers `401` until someone declares it public. **Between a
+defect that exposes and a defect that annoys, the pipeline should choose the second** — that is the
+same principle ADR-078's build gate and ADR-079's removed claim both rest on.
+
+What stops B′ from being the immediate answer is not the principle but the sequence: it needs the
+public-route declaration first (an `exeris-sdk` change), and flipping it without one would leave an
+author no way to say "this is the login endpoint". So the flag is not a hedge — it is the honest
+order of operations, and the ADR should state the train at which the default flips rather than
+leaving it to drift.
 
 ### Why not the alternatives?
 
-B trades a security-shaped default for a silent behaviour change on regeneration, which is the one
-kind of change this pipeline must not make by itself. C ships an artefact nothing runs. D leaves
-the frontend lying.
+**Plain A, permanently.** It makes the absence of a declaration the most permissive outcome, which
+is backwards, and it leaves a policy file that protects two entities out of ten reading as though
+it were the policy.
+
+**Plain B, now.** Two measured objections, either of which is enough on its own: without identity
+wiring the app answers `401` to everything, and a single bound policy answering `AUTHENTICATED` for
+unrecognised paths would close routes this pipeline never emitted.
+
+**C** ships an artefact nothing runs. **D** leaves the emitted frontend guarding on invented names.
 
 ### Risks of the recommendation
 
-- **`ANY_SCOPE` vs `ALL_SCOPES` is unresolved.** "Permissions required to execute this action"
-  reads like ALL; "default permissions required to access this entity's API" reads like ANY. The
-  ADR must pick one per site and say why, or the SDK Javadoc must.
-- **Partial coverage.** An app that protects two entities out of ten has an edge that is mostly
-  open, and a policy file that looks authoritative. The emitted policy should say so in a comment
-  that names the uncovered routes.
-- **Detachment.** After `exeris:detach` the policy is the consumer's file; a later `permissions`
-  change in the domain no longer reaches it. This is the general L2 problem, but it is sharper for
-  a security artefact, and the ADR should say whether the policy is detachable at all.
+- **A flag with a scheduled flip is a promise, and promises drift.** The 1.0 migration entry has to
+  be written when the flag lands, not when it flips.
+- **`ANY_SCOPE` vs `ALL_SCOPES` is unresolved.** "Permissions required to execute this action" reads
+  like ALL; "default permissions required to access this entity's API" reads like ANY.
+- **Partial coverage.** Under the `permitAll` default an app that protects two entities has a mostly
+  open edge and a policy file that looks authoritative; the emitted policy should name the uncovered
+  routes in a comment rather than leave them to inference.
+- **Detachment.** After `exeris:detach` the policy is the consumer's file, and a later `permissions`
+  change no longer reaches it. Sharper here than for any other artefact, because the stale copy is
+  the one deciding who gets in.
 
 ## Decision Record
 
@@ -171,8 +210,10 @@ Two of these block the ADR. The rest can be settled in it.
 
    This is the same problem T48 solved for the event publisher, one layer earlier in the boot
    sequence, and it is worth deciding for *providers in general* rather than for this policy alone.
-3. `ANY_SCOPE` vs `ALL_SCOPES`, per site.
-4. Whether the emitted policy is detachable, and what a stale detached policy should do.
-5. What `roles` compiles into, if anything — currently nothing, deliberately (**not** this RFC).
-6. **D10** and **D11** intersect this: the TS `getDefaultHeaders` bearer path and the unwired
+3. **The public-route declaration** — opt-out is meaningless without one, and the SDK has no
+   attribute for it. `exeris-sdk`'s call, ours to consume.
+4. `ANY_SCOPE` vs `ALL_SCOPES`, per site.
+5. Whether the emitted policy is detachable, and what a stale detached policy should do.
+6. What `roles` compiles into, if anything — currently nothing, deliberately (**not** this RFC).
+7. **D10** and **D11** intersect this: the TS `getDefaultHeaders` bearer path and the unwired
    Handlebars templates are both parts of the same unjoined story.

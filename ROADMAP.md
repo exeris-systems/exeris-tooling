@@ -1650,10 +1650,15 @@ Proposals, highest return-on-effort first:
       first.
 
       Design opened as [`RFC-2026-08-28 Route Authorization Emission (tooling)`](docs/rfc/RFC-2026-08-28%20Route%20Authorization%20Emission%20%28tooling%29.md)
-      (DRAFT). It recommends emitting a policy **only where a permission is declared**, leaving
-      every other route `PERMIT_ALL`, because the alternative that matches the kernel's own
-      `unmatched()` default would make one entity's declaration close every other route of an
-      existing app on regeneration. **Two** questions block the ADR: how the emitted policy matches a
+      (DRAFT). Its recommendation moved after review: the end state should be **fail-closed for the
+      routes the pipeline emits**, reached through `-Aexeris.routeDefault` whose default stays
+      today's `permitAll` until the 1.0 train. Opt-in fails in the direction that hurts — forget one
+      entity and it ships open, silently — while opt-out fails in the direction that merely annoys.
+      What stops opt-out being immediate is sequence, not principle: the SDK has no way to say "this
+      route is public", and two measured facts rule out the naive form — without identity wiring the
+      app answers `401` to everything, and a single bound policy answering `AUTHENTICATED` for
+      unrecognised paths would close routes this pipeline never emitted. **Two** questions block the
+      ADR: how the emitted policy matches a
       path template against the concrete path the dispatcher passes, and where a provider bound
       *around boot* joins the composition root at all — ADR-070's seam reaches components the
       lifecycle constructs, not a `ScopedValue` bound around `KernelBootstrap.boot(...)`, which is
