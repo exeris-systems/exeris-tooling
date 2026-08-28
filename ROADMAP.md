@@ -1649,6 +1649,13 @@ Proposals, highest return-on-effort first:
       declared rather than invented. Restoring ADR-079's security block is the last step, not the
       first.
 
+      Design opened as [`RFC-2026-08-28 Route Authorization Emission (tooling)`](docs/rfc/RFC-2026-08-28%20Route%20Authorization%20Emission%20%28tooling%29.md)
+      (DRAFT). It recommends emitting a policy **only where a permission is declared**, leaving
+      every other route `PERMIT_ALL`, because the alternative that matches the kernel's own
+      `unmatched()` default would make one entity's declaration close every other route of an
+      existing app on regeneration. One spike blocks the ADR: how the emitted policy matches a path
+      template against the concrete path the dispatcher passes.
+
 - [ ] **D10 — the TS side has a bearer-token code path that reaches no emitted output.** Surfaced by
       the review of the D8 PR and verified: `KernelStrategy.getDefaultHeaders`
       (`exeris-codegen-ts/src/core/backend-strategy.ts:231`) sets
