@@ -16,7 +16,7 @@
  * strings.
  *
  * The four formatting helpers (humanize / toKebabCase / toCamelCase /
- * toInterfaceName) get focused one-liner tests.
+ * toKebabCase) get focused one-liner tests.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -370,7 +370,7 @@ describe('DslMapper.mapField — label + placeholder fallback', () => {
   });
 });
 
-// ---------- humanize / toKebabCase / toCamelCase / toInterfaceName ----------
+// ---------- humanize / toKebabCase / toCamelCase ----------
 
 describe('DslMapper.humanize', () => {
   it('camelCase → space-separated Title Case', () => {
@@ -405,15 +405,5 @@ describe('DslMapper.toCamelCase', () => {
 
   it('already-camelCase passes through unchanged', () => {
     expect(DslMapper.toCamelCase('orderLine')).toBe('orderLine');
-  });
-});
-
-describe('DslMapper.toInterfaceName', () => {
-  it('strips trailing "Entity" suffix', () => {
-    expect(DslMapper.toInterfaceName('OrderEntity')).toBe('Order');
-  });
-
-  it('leaves names without the "Entity" suffix unchanged', () => {
-    expect(DslMapper.toInterfaceName('Order')).toBe('Order');
   });
 });

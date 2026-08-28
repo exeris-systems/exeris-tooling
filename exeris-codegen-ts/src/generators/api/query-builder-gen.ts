@@ -14,6 +14,7 @@
 
 import type { DomainMetadata, FieldMetadata, CodeGenerator, GeneratedFile, GeneratorContext } from '../../core/generator-registry.js';
 import { DslMapper } from '../../models/dsl-mapper.js';
+import { modelTypeName } from '../../models/model-naming.js';
 import type { GeneratorConfig } from '../../config.js';
 import type { BackendType } from '../../core/backend-strategy.js';
 import { outPath } from '../../core/paths.js';
@@ -54,6 +55,7 @@ export class QueryBuilderGenerator implements CodeGenerator {
 
   private generateQueryBuilderContent(domain: DomainMetadata, context: GeneratorContext): string {
     const { entityName, fields = [] } = domain;
+    const modelName = modelTypeName(entityName);
     const kebab = DslMapper.toKebabCase(domain.entityName);
 
     const filterableFields = fields.filter(f => f.filterable);
@@ -70,7 +72,7 @@ export class QueryBuilderGenerator implements CodeGenerator {
     lines.push(` */`);
     lines.push(``);
     lines.push(`import { HttpParams } from '@angular/common/http';`);
-    lines.push(`import type { ${entityName} } from '../types/${kebab}.types';`);
+    lines.push(`import type { ${modelName} } from '../types/${kebab}.types';`);
 
     if (enumTypes.length > 0) {
       lines.push(`import { ${enumTypes.join(', ')} } from '../types/enums';`);

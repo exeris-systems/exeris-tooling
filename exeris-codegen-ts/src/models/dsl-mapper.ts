@@ -606,13 +606,5 @@ export class DslMapper {
     return camel.charAt(0).toUpperCase() + camel.slice(1);
   }
 
-  /**
-   * Generate TypeScript interface name from entity.
-   */
-  static toInterfaceName(entityName: string): string {
-    return entityName.endsWith('Entity')
-      ? entityName.slice(0, -6)
-      : entityName;
-  }
 }
 

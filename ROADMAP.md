@@ -622,7 +622,33 @@ never-invoked emitter start emitting, and its output did not build.
       trap: forget it and the write is refused by the RLS `WITH CHECK`, reported as a security
       violation rather than the omission it is. Either stamp it from the ambient `StorageContext` or
       say in the emitted javadoc that the caller owns it — silence is the worst of the three.
-- [ ] **T40 — an entity named `Component` breaks its own generated Angular code.** `form-gen` emits
+- [x] **T40 — an entity named `Component` breaks its own generated Angular code.** Shipped 0.8.0.
+      The finding named `form-gen.ts:141,144` and guessed at the blast radius — "`Directive`,
+      `Injectable`, `Pipe`, `Input`, `Output`, `Signal` and `Type` are the same shape". Generating
+      an app per candidate name and reading the emitted modules back said otherwise: `Directive`,
+      `Pipe`, `Input`, `Output`, `Signal` and `Type` are **not** imported by any emitted module and
+      never collided, while `Page` and `PageRequest` — helper types the emitted *service* declares,
+      not framework names at all — collided in four files each. The measured set is 22 names, and
+      the two the finding could not have guessed are the ones this repo emits itself.
+
+      So the fix is neither the finding's "alias unconditionally" nor a reserved-word list against
+      Angular releases. `modelTypeName` renames the entity's own type **only** when the name is one
+      an emitted module already binds, and `model-naming.spec.ts` derives the candidate set *from
+      freshly generated output* — every identifier the emitted app imports from a package, plus the
+      helpers it declares — and asserts no module binds a name twice. A new import or helper type
+      enters that set on its own. Emitted output for an ordinary entity is byte-identical (verified
+      by diffing a full generated app against `main`), and the sample app in CI now carries an
+      entity literally named `Component`, so `ng build` proves it rather than a substring assertion.
+
+      A second bug of the same shape fell out and is fixed here: `DslMapper.toInterfaceName` stripped
+      a trailing `Entity` from the **declared** interface name only, so an entity named
+      `CustomerEntity` had its types module declare `Customer` while every other emitter imported
+      `CustomerEntity` from it. Unreachable behaviour — an app with a `*Entity` domain never
+      compiled — visible only to a unit test that pinned it in isolation. The strip is gone, the
+      helper with it, and one function now decides the name for declarer and importer alike. No ADR:
+      neither half had a working consumer to migrate.
+
+      **T40 — an entity named `Component` breaks its own generated Angular code.** `form-gen` emits
       `import { Component, … } from '@angular/core'` and `import { <Entity>, … } from '../services/…'`
       unaliased (`form-gen.ts:141,144`), so an entity called `Component` collides with the decorator
       in the file it decorates. `Directive`, `Injectable`, `Pipe`, `Input`, `Output`, `Signal` and

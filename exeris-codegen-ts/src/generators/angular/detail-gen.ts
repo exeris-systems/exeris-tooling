@@ -14,6 +14,7 @@
 
 import type { DomainMetadata, FieldMetadata, CodeGenerator, GeneratedFile, GeneratorContext } from '../../core/generator-registry.js';
 import { DslMapper } from '../../models/dsl-mapper.js';
+import { modelTypeName } from '../../models/model-naming.js';
 import type { GeneratorConfig } from '../../config.js';
 import type { BackendType } from '../../core/backend-strategy.js';
 import { outPath } from '../../core/paths.js';
@@ -42,6 +43,7 @@ export class DetailGenerator implements CodeGenerator {
 
   private generateDetailContent(domain: DomainMetadata, context: GeneratorContext): string {
     const { entityName, fields = [] } = domain;
+    const modelName = modelTypeName(entityName);
     const kebab = DslMapper.toKebabCase(entityName);
     const displayName = domain.displayName ?? entityName;
     const idField = domain.systemFields?.idField ?? 'id';
@@ -70,7 +72,7 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`import { CommonModule, DatePipe } from '@angular/common';`);
     lines.push(`import { RouterModule, Router } from '@angular/router';`);
     lines.push(`import { ${entityName}Service } from '../services/${kebab}.service';`);
-    lines.push(`import type { ${entityName} } from '../types/${kebab}.types';`);
+    lines.push(`import type { ${modelName} } from '../types/${kebab}.types';`);
 
     if (enumTypes.length > 0) {
       lines.push(`import { ${enumTypes.flatMap(e => [e, `${e}DisplayNames`]).join(', ')} } from '../types/enums';`);
@@ -78,7 +80,7 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(``);
 
     lines.push(`interface FieldDisplay {`);
-    lines.push(`  name: keyof ${entityName};`);
+    lines.push(`  name: keyof ${modelName};`);
     lines.push(`  label: string;`);
     lines.push(`  type: 'text' | 'number' | 'boolean' | 'date' | 'datetime' | 'enum';`);
     lines.push(`  enumType?: string;`);
@@ -97,7 +99,7 @@ export class DetailGenerator implements CodeGenerator {
       const dataType = field.dataType === 'currency' || field.dataType === 'percent' || field.dataType === 'url'
         ? field.dataType
         : undefined;
-      lines.push(`  { name: '${field.name}' as keyof ${entityName}, label: $localize\`:@@${kebab}.field.${field.name}:${mapping.label}\`, type: '${fieldType}'${enumTypeName ? `, enumType: '${enumTypeName}'` : ''}${dataType ? `, dataType: '${dataType}'` : ''} },`);
+      lines.push(`  { name: '${field.name}' as keyof ${modelName}, label: $localize\`:@@${kebab}.field.${field.name}:${mapping.label}\`, type: '${fieldType}'${enumTypeName ? `, enumType: '${enumTypeName}'` : ''}${dataType ? `, dataType: '${dataType}'` : ''} },`);
     }
     lines.push(`];`);
     lines.push(``);
@@ -200,15 +202,15 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`  }`);
     lines.push(``);
 
-    lines.push(`  rawValue(field: FieldDisplay, entity: ${entityName} | null): unknown {`);
+    lines.push(`  rawValue(field: FieldDisplay, entity: ${modelName} | null): unknown {`);
     lines.push(`    if (!entity) return null;`);
-    lines.push(`    return entity[field.name as keyof ${entityName}] ?? null;`);
+    lines.push(`    return entity[field.name as keyof ${modelName}] ?? null;`);
     lines.push(`  }`);
     lines.push(``);
 
-    lines.push(`  formatValue(field: FieldDisplay, entity: ${entityName} | null): string {`);
+    lines.push(`  formatValue(field: FieldDisplay, entity: ${modelName} | null): string {`);
     lines.push(`    if (!entity) return '';`);
-    lines.push(`    const value = entity[field.name as keyof ${entityName}];`);
+    lines.push(`    const value = entity[field.name as keyof ${modelName}];`);
     lines.push(`    if (value === null || value === undefined) return '—';`);
     lines.push(`    switch (field.type) {`);
     lines.push(`      case 'boolean': return value ? 'Yes' : 'No';`);

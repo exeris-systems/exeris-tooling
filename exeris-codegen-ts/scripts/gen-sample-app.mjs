@@ -45,6 +45,11 @@ const domains = [
     ],
   }),
   d({ entityName: 'Product', fields: [{ name: 'id', type: 'java.util.UUID' }, { name: 'name', type: 'String' }] }),
+  // Named for the collision, not for the shop: `Component` is what an emitted module already
+  // imports from '@angular/core', so before T40 this entity's form and list components imported
+  // the identifier twice and `ng build` failed here. It stays in the fixture because a unit test
+  // asserting on emitted strings cannot prove that the emitted app compiles.
+  d({ entityName: 'Component', fields: [{ name: 'id', type: 'java.util.UUID' }, { name: 'name', type: 'String' }] }),
 ];
 const enums = [{
   name: 'OrderStatus',

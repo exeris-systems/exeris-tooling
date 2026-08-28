@@ -28,6 +28,7 @@
  */
 
 import type { DomainMetadata } from '../../models/domain-model.js';
+import { modelTypeName } from '../../models/model-naming.js';
 import type { GeneratorConfig } from '../../config.js';
 import type { CodeGenerator, GeneratedFile, GeneratorContext } from '../../core/generator-registry.js';
 import type { BackendType } from '../../core/backend-strategy.js';
@@ -58,6 +59,7 @@ export class StoreGenerator implements CodeGenerator {
 
   private generateStoreContent(domain: DomainMetadata, context: GeneratorContext): string {
     const { entityName, fields = [], softDelete } = domain;
+    const modelName = modelTypeName(entityName);
     const kebab = DslMapper.toKebabCase(entityName);
     const camel = DslMapper.toCamelCase(entityName);
     const pluralCamel = camel + 's';
@@ -94,13 +96,13 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { firstValueFrom } from 'rxjs';
 import { ${entityName}Service } from '../services/${kebab}.service';
 import type { Page, PageRequest } from '../services/${kebab}.service';
-import type { ${entityName}, ${entityName}Create, ${entityName}Update } from '../types/${kebab}.types';
+import type { ${modelName}, ${modelName}Create, ${modelName}Update } from '../types/${kebab}.types';
 
 // ============================================================================
 // Filter Interface
 // ============================================================================
 
-export interface ${entityName}Filter {
+export interface ${modelName}Filter {
   /** Full-text search query */
   search?: string;
 ${filterFields}
@@ -111,12 +113,12 @@ ${filterFields}
 // ============================================================================
 
 export interface ${entityName}StoreState {
-  entities: ${entityName}[];
-  selected: ${entityName} | null;
+  entities: ${modelName}[];
+  selected: ${modelName} | null;
   loading: boolean;
   saving: boolean;
   error: string | null;
-  filter: ${entityName}Filter;
+  filter: ${modelName}Filter;
   pagination: {
     page: number;
     size: number;
@@ -142,12 +144,12 @@ export class ${entityName}Store {
   // Private State Signals
   // ═══════════════════════════════════════════════════════════════════════════
 
-  private readonly _entities = signal<${entityName}[]>([]);
-  private readonly _selected = signal<${entityName} | null>(null);
+  private readonly _entities = signal<${modelName}[]>([]);
+  private readonly _selected = signal<${modelName} | null>(null);
   private readonly _loading = signal(false);
   private readonly _saving = signal(false);
   private readonly _error = signal<string | null>(null);
-  private readonly _filter = signal<${entityName}Filter>({});
+  private readonly _filter = signal<${modelName}Filter>({});
   private readonly _page = signal(0);
   private readonly _size = signal(20);
   private readonly _totalElements = signal(0);
@@ -237,7 +239,7 @@ export class ${entityName}Store {
   /** Whether there is an active filter */
   readonly hasActiveFilter = computed(() => {
     const filter = this._filter();
-    return !!filter.search || Object.keys(filter).some(k => k !== 'search' && filter[k as keyof ${entityName}Filter] !== undefined);
+    return !!filter.search || Object.keys(filter).some(k => k !== 'search' && filter[k as keyof ${modelName}Filter] !== undefined);
   });
 
   /** Whether there are more pages to load */
@@ -301,7 +303,7 @@ export class ${entityName}Store {
   /**
    * Load a single entity by ID.
    */
-  async loadById(id: string): Promise<${entityName}> {
+  async loadById(id: string): Promise<${modelName}> {
     this._loading.set(true);
     this._error.set(null);
 
@@ -327,7 +329,7 @@ export class ${entityName}Store {
    * Create a new entity.
    * Performs optimistic update on success.
    */
-  async create(data: ${entityName}Create): Promise<${entityName}> {
+  async create(data: ${modelName}Create): Promise<${modelName}> {
     this._saving.set(true);
     this._error.set(null);
 
@@ -351,14 +353,14 @@ export class ${entityName}Store {
    * Update an existing entity.
    * Performs optimistic update.
    */
-  async update(id: string, data: ${entityName}Update): Promise<${entityName}> {
+  async update(id: string, data: ${modelName}Update): Promise<${modelName}> {
     this._saving.set(true);
     this._error.set(null);
 
     // Optimistic update
     const previousEntities = this._entities();
     this._entities.update(entities =>
-      entities.map(e => e.${idField} === id ? { ...e, ...data } as ${entityName} : e)
+      entities.map(e => e.${idField} === id ? { ...e, ...data } as ${modelName} : e)
     );
 
     try {
@@ -445,7 +447,7 @@ ${softDelete ? this.generateSoftDeleteMethods(entityName, idField) : ''}
   /**
    * Set filter and reload data.
    */
-  async setFilter(filter: ${entityName}Filter): Promise<void> {
+  async setFilter(filter: ${modelName}Filter): Promise<void> {
     this._filter.set(filter);
     this._page.set(0); // Reset to first page
     await this.loadAll();
@@ -454,9 +456,9 @@ ${softDelete ? this.generateSoftDeleteMethods(entityName, idField) : ''}
   /**
    * Update a single filter field.
    */
-  async updateFilter<K extends keyof ${entityName}Filter>(
+  async updateFilter<K extends keyof ${modelName}Filter>(
     key: K, 
-    value: ${entityName}Filter[K]
+    value: ${modelName}Filter[K]
   ): Promise<void> {
     this._filter.update(f => ({ ...f, [key]: value }));
     this._page.set(0);
@@ -576,7 +578,7 @@ ${softDelete ? this.generateSoftDeleteMethods(entityName, idField) : ''}
   // Private Helpers
   // ═══════════════════════════════════════════════════════════════════════════
 
-  private getSearchableText(entity: ${entityName}): string {
+  private getSearchableText(entity: ${modelName}): string {
     // Combine searchable fields for full-text search
     const parts: string[] = [];
 ${this.generateSearchableFieldAccess(searchableFields)}
@@ -626,6 +628,7 @@ ${this.generateSearchableFieldAccess(searchableFields)}
   }
 
   private generateSoftDeleteMethods(entityName: string, idField: string): string {
+    const modelName = modelTypeName(entityName);
     return `
   // ═══════════════════════════════════════════════════════════════════════════
   // Actions - Soft Delete
@@ -659,7 +662,7 @@ ${this.generateSearchableFieldAccess(searchableFields)}
   /**
    * Restore a soft-deleted entity.
    */
-  async restore(id: string): Promise<${entityName}> {
+  async restore(id: string): Promise<${modelName}> {
     this._saving.set(true);
     this._error.set(null);
 
