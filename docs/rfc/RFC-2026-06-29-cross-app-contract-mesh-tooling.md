@@ -2,10 +2,10 @@
 
 | Field             | Value                                                                 |
 |:------------------|:----------------------------------------------------------------------|
-| **Status**        | **DRAFT** — proposal pending founder review, since 2026-06-29; Amendments 1–2 (2026-08-28) fold **T42** in as the first slice and revisit §3 against kernel ADR-074. No code has landed (unlike the SSE/`@View` slices); this RFC is the **design gate** for the T12/T17 mesh epic and the **RFC half** of the reserved ADR-048. |
+| **Status**        | **ACCEPTED** 2026-08-28, with Amendments 1–2 (T42 as the first slice; §3 revisited against kernel ADR-074) and one ruling taken at acceptance: the contract artifact carries **full `DomainMetadata`**, not a pruned subset. Ratified as [ADR-048](../adr/ADR-048-cross-app-contract-mesh.md). No code has landed (unlike the SSE/`@View` slices); this RFC is the **design gate** for the T12/T17 mesh epic and the **RFC half** of the reserved ADR-048. |
 | **Author(s)**     | arkstack-dev                                                          |
 | **Date Opened**   | 2026-06-29                                                           |
-| **Date Closed**   | —                                                                    |
+| **Date Closed**   | 2026-08-28                                                           |
 | **Target ADR(s)** | **ADR-048** (reserved in `exeris-docs/adr-index.md`, 2026-06-29) — "cross-app contract mesh" — ratifies this RFC's recommendation; sibling to [ADR-044](../adr/ADR-044-tooling-sse-stream-emitter-shape.md). |
 | **Affected Repos**| `exeris-tooling` (a contract-registry stage in `exeris-codegen-core`; a peer **remote-client + DTO** emitter in `exeris-codegen-java` **and** `exeris-codegen-ts` — Java∪TS parity); `exeris-sdk` (the `@SagaStep(service, command)` surface + capability inertness **S5** — named, gated); `exeris-kernel` (**K4** logical-name→endpoint addressing — named, gated; `KernelWebClient` is single-host today) |
 | **Reviewers**     | —                                                                    |
@@ -175,9 +175,9 @@ no authority and no resolver, which is precisely why Amendment 1 cut the boundar
 
 ## Open questions / follow-ups (technical — gated, not blocking the slice)
 
-*Two of the four closed on 2026-08-28; struck through rather than deleted, so the record shows what
+*Three of the four closed on 2026-08-28; struck through rather than deleted, so the record shows what
 the platform answered rather than what we quietly dropped.*
-- **Published-contract artifact format** — the provided-entity `DomainMetadata` in full vs a pruned "contract subset" (only the `@Provides` services + the entities they expose). *Version/compat is decided (§1): ADR-042 `schemaVersion`, floor 2.*
+- ~~**Published-contract artifact format**~~ — **CLOSED 2026-08-28 at acceptance: full `DomainMetadata`, no pruning.** Pruning would decide what a consumer needs before knowing what it generates, and would stand up a second schema to keep in step with the first. Recorded with it: a full artifact exposes the producer's whole domain surface to its consumers, which is a disclosure decision taken knowingly — an app that must not publish an entity keeps it out by not providing it.
 - ~~**Addressing seam shape**~~ — **CLOSED 2026-08-28 by kernel ADR-074.** The addressee rides on `HttpRequest`; a generated client takes an authority and names no resolver. The "K4 convergence" this line held open does not arise: ADR-074 records that a future `ServiceResolver` returns an endpoint which *becomes* the authority, so nothing on our side converges later.
 - ~~**K4 runtime addressing as a gate**~~ — **CLOSED**: delivered on the kernel 0.12 train. What replaces it is a version pin, not a gate.
 - **Saga remote-dispatch body** — the command-dispatch + park-on-`@DomainEvent` mechanics; follow-up slice on the T1 command-surface track.

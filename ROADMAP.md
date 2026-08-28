@@ -733,7 +733,13 @@ never-invoked emitter start emitting, and its output did not build.
       slice, which ADR-074 turned from kernel-free-with-a-stub into kernel-pinned. Which release
       carries T42 is therefore a scheduling choice, not a dependency.
 
-      **Next action is a founder decision on the RFC, open since 2026-06-29** — not more code.
+      **RFC ACCEPTED 2026-08-28**, with the artifact-format ruling taken at acceptance: **full
+      `DomainMetadata`, no pruning**. Ratified as
+      [`ADR-048`](docs/adr/ADR-048-cross-app-contract-mesh.md), which also settles the two questions
+      the slice could not: a peer is **named by the consumer** (measured: nothing in the emitted
+      artefacts carries an app identity — `CapabilityModuleDescriptor` names a *module*), and peer
+      DTOs are **per-consumer copies** rather than a shared package. T42 is unblocked and gated on
+      nothing: next action is the types slice itself.
 
 - [ ] **Three config flags are declared, default `true`, and read by nothing.** `generateDetails`,
       `generateSagas`, `generateEvents` (`config.ts:54,60,63`); only `generateStores` is read, and
