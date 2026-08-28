@@ -1579,7 +1579,7 @@ Proposals, highest return-on-effort first:
 - [ ] **D10 — the TS side has a bearer-token code path that reaches no emitted output.** Surfaced by
       the review of the D8 PR and verified: `KernelStrategy.getDefaultHeaders`
       (`exeris-codegen-ts/src/core/backend-strategy.ts:231`) sets
-      `headers['Authorization'] = \`Bearer ${context.accessToken}\`` at `:251`, and the method is
+      `` headers['Authorization'] = `Bearer ${context.accessToken}` `` at `:251`, and the method is
       declared on the `BackendStrategy` interface at `:111` — but its only caller in the repository
       is its own spec (`test/core/backend-strategy.spec.ts`). No `*-gen.ts` generator invokes it, so
       no emitted Angular service ever sends the header. It is the same defect ADR-079 removed from
