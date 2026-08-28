@@ -638,7 +638,11 @@ never-invoked emitter start emitting, and its output did not build.
       helpers it declares — and asserts no module binds a name twice. A new import or helper type
       enters that set on its own. Emitted output for an ordinary entity is byte-identical (verified
       by diffing a full generated app against `main`), and the sample app in CI now carries an
-      entity literally named `Component`, so `ng build` proves it rather than a substring assertion.
+      entity literally named `Component`, so `ng build` proves it rather than a substring assertion —
+      and it earned its place immediately: it failed on the first CI run over a site the unit spec
+      could not see, the emitted `src/app/index.ts` barrel, which **re-exports** `<Entity>Filter`
+      rather than importing it. The spec now reads a re-export clause the same way it reads an
+      import, and runs the check for a colliding name as well as the suffix case.
 
       A second bug of the same shape fell out and is fixed here: `DslMapper.toInterfaceName` stripped
       a trailing `Entity` from the **declared** interface name only, so an entity named
@@ -1634,6 +1638,19 @@ Proposals, highest return-on-effort first:
       argument: nothing reads it, so it has no effect), or wire it, which is a T51 question because
       a header is worth sending only once a route requires one. Related to the standing
       "emitters wired by nobody" pattern; do not fix it in isolation from T51.
+
+- [ ] **D11 — three Handlebars templates and the `templatesDir` config option are wired to nothing.**
+      Found 2026-08-28 while tracing the T40 barrel failure. `src/templates/angular/` holds
+      `entity.service.ts.hbs`, `form.component.ts.hbs` and `list.component.ts.hbs` — a second,
+      parallel implementation of three generators — and `config.ts` exposes `templatesDir` plus
+      `resolveTemplatesPath` to locate them. `grep` for `.hbs` outside that directory returns
+      nothing, and `resolveTemplatesPath` has **no callers**: the emitters build their output with
+      `lines.push(...)`, and the templates have drifted from them (the list template still emits
+      `{{entityName}}Filter`, which T40 has just corrected in the live path). The config option is
+      the worse half — it invites a consumer to point at a template directory that nothing reads.
+      Same family as the `generateDetails` / `generateSagas` / `generateEvents` flags and **D10**:
+      code that describes a capability the pipeline does not have. Decide per artefact — delete, or
+      wire and keep in step — but do not leave a documented knob attached to nothing.
 
 ---
 

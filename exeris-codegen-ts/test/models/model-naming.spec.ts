@@ -155,12 +155,12 @@ function resolveFrom(fromPath: string, spec: string): string {
 }
 
 describe('every emitted import resolves to something emitted', () => {
-  it('names an export the target module actually declares', () => {
+  it.each(['CustomerEntity', 'Component', 'Page'])('names an export the target module actually declares (%s)', (entity) => {
     // The collision spec above cannot see this failure mode: an import that binds a name once,
     // but a name the target module does not export. That is exactly how the `Entity`-suffix strip
     // stayed hidden — the types module declared `Customer`, every importer asked for
     // `CustomerEntity`, and no single file looked wrong on its own.
-    const files = new Map(appFor('CustomerEntity').map((f) => [f.path, f.content]));
+    const files = new Map(appFor(entity).map((f) => [f.path, f.content]));
     const exportsOf = new Map<string, Set<string>>();
     for (const [path, content] of files) {
       const names = new Set<string>();
@@ -174,16 +174,24 @@ describe('every emitted import resolves to something emitted', () => {
       exportsOf.set(path, names);
     }
 
+    // A re-export reads from the target module exactly like an import does. Leaving them out is
+    // what let the emitted `src/app/index.ts` barrel ask for `<Entity>Filter` after the service
+    // began exporting `<Entity>ModelFilter` — a break only `ng build` saw.
+    const reads = (content: string) => [
+      ...[...content.matchAll(IMPORT)].map((m) => ({ clause: m[1], from: m[2] })),
+      ...[...content.matchAll(EXPORT_FROM)].map((m) => ({ clause: m[1], from: m[2] })),
+    ];
+
     const dangling: string[] = [];
     for (const [path, content] of files) {
-      for (const m of content.matchAll(IMPORT)) {
-        if (!m[2].startsWith('.')) continue;
-        const target = resolveFrom(path, m[2]);
+      for (const { clause, from } of reads(content)) {
+        if (!from.startsWith('.')) continue;
+        const target = resolveFrom(path, from);
         const available = exportsOf.get(target);
         if (!available) continue; // not an emitted module (ui-kit, a path we do not own)
-        for (const raw of m[1].split(',')) {
+        for (const raw of clause.split(',')) {
           const name = raw.trim().replace(/^type\s+/, '').split(/\s+as\s+/)[0]?.trim();
-          if (name && !available.has(name)) dangling.push(`${path} imports '${name}' from ${target}, which does not export it`);
+          if (name && !available.has(name)) dangling.push(`${path} reads '${name}' from ${target}, which does not export it`);
         }
       }
     }
