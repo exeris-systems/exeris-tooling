@@ -88,6 +88,17 @@ export const GeneratorConfigSchema = z.object({
   /** Verbose output */
   verbose: z.boolean().default(false),
 
+  /** Peer contracts this app imports types from (T42, ADR-048).
+   *
+   *  Each entry names a peer and points at its contract artifact — the peer's
+   *  `cap-manifest.json` plus the metadata of the entities it provides. The NAME is
+   *  declared here, by the consumer, not read from the artifact: nothing in the emitted
+   *  artefacts carries an application identity, and the name lands in this app's own import
+   *  paths, where it has to stay stable across whatever the producer later renames itself
+   *  to. Peers in one build supply the same directory shape from a local path — the
+   *  degenerate same-build case, not a second input model. */
+  peers: z.array(z.object({ name: z.string(), path: z.string() })).default([]),
+
 });
 
 export type GeneratorConfig = z.infer<typeof GeneratorConfigSchema>;
@@ -118,6 +129,7 @@ export const DEFAULT_CONFIG: GeneratorConfig = {
   overwrite: false,
   dryRun: false,
   verbose: false,
+  peers: [],
 };
 
 // ============================================================================
