@@ -56,9 +56,17 @@ The registry resolves against the **union** of these — a single input that ser
 ### 2. Cross-app contract registry = open-world resolution (T17)
 A new **contract-registry stage** in `exeris-codegen-core` extends `CapabilityGraph` from closed-world to **open-world**: feed the resolver the **union of peer cap-manifests**, so a `@Requires(S)` / `@SagaStep(service=S)` unprovided locally but provided by a peer resolves to a **remote binding** `(peerApp, service)` instead of hard-failing. The closed-world hard-fail stays for a requirement **no app in the configured mesh** provides. Deterministic (sorted union, stable resolution order); the existing `VersionRange` intersection and `CompositionStamp` discipline carry over. This *is* T17 — same input, same stage as the client/DTO resolution.
 
-### 3. Peer remote-client + DTO generator (the kernel-free **client+DTO slice**)
+### 3. Peer remote-client + DTO generator (the client+DTO slice)
+
+> **Superseded in part by Amendment 2 and [ADR-048](../adr/ADR-048-cross-app-contract-mesh.md) §5.**
+> Two claims in this subsection no longer hold: the slice is **not** kernel-free (it needs a final
+> kernel 0.12), and the `PeerAddressResolver` interface below is **dropped, not stubbed** — the
+> generated client takes an **authority** and names no resolver, because kernel ADR-074 decided the
+> addressee rides on the request and holds the `ServiceResolver` seam post-1.0. The text is kept as
+> written so the amendment has something to amend; read §5 of the ADR for the shape that ships.
+
 Per resolved cross-app binding, generalize `KernelClientGenerator` to emit a typed **`<PeerEntity>Client` + shared DTOs against the *peer's* `DomainMetadata`** — the same client shape as intra-app, with two changes:
-- the base host is an **injected addressing seam** — a narrow `PeerAddressResolver { String resolve(String service); }` interface resolved at call time (`addressing.resolve("<service>")`), **not** a relative own-app path and **not** a raw config map. Pinning the *interface* (over a map default) is deliberate: it is the shape K4 runtime discovery drops into unchanged, so the generated client's public API does **not** break when addressing lands — a map default would force a client-signature change at that point;
+- ~~the base host is an **injected addressing seam**~~ *(superseded — see the note above)* — a narrow `PeerAddressResolver { String resolve(String service); }` interface resolved at call time (`addressing.resolve("<service>")`), **not** a relative own-app path and **not** a raw config map. Pinning the *interface* (over a map default) is deliberate: it is the shape K4 runtime discovery drops into unchanged, so the generated client's public API does **not** break when addressing lands — a map default would force a client-signature change at that point;
 - the DTOs are emitted from the **peer's** contract (imported), deduped when multiple consumers import the same peer entity.
 
 **Java∪TS parity (load-bearing):** the peer client is emitted by **both** `exeris-codegen-java` and `exeris-codegen-ts` — a TS app calling a Java service needs the same typed client. This is the parity obligation the SSE/`@View` emitters established.
