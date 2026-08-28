@@ -70,8 +70,30 @@ Generalize `KernelSagaGenerator` so a `@SagaStep(service, command)` resolved to 
 The mesh is a **platform** concern: the contract registry and addressing live platform-side (platform → kernel, never reverse), and **no mesh type leaks into the kernel**. The generated peer client binds only the tier-neutral `KernelWebClient` facade (ADR-034). The contract-registry artifact follows the `cap-manifest` precedent — deterministic, ADR-042 baseline-trust fields, no timestamps. Per the strict-inert rule (`-Aexeris.strict`), if cross-app `@Requires`/`@SagaStep.service` resolution is extracted in a window before its generator lands, the registry entry is added then removed in lock-step.
 
 ### Slice boundary (build-gate honesty)
-- **Kernel-free, ships now:** the contract registry (open-world resolution, **T17**) + the peer remote-client + DTO generator (the **client+DTO slice**), Java∪TS, with the addressing seam stubbed behind the `PeerAddressResolver` interface (a config-injected logical name until K4 lands).
-- **Gated, named not built:** **K4** runtime addressing (kernel-core); the saga remote-dispatch **body** (T1 command surface + S5); S5 SDK capability inertness.
+
+*Re-cut by Amendment 2 — the original boundary is kept below it, because the reason it moved is the
+point.*
+
+- **Kernel-free, ships first — the types slice (T42):** peer DTOs only, per peer, under its own
+  namespace with its own enum module and barrel. No client, no registry, no addressing. Depends on
+  nothing in the kernel and on no kernel version: it is `DomainMetadata` in, TypeScript (and, when
+  its consumer exists, Java) types out. Its only gate is the artifact-format question below.
+- **Pinned to a final kernel 0.12 — the client+DTO slice:** the peer remote-client + the contract
+  registry's open-world resolution (**T17**). Addressing is no longer stubbed and no longer gated: a
+  generated client takes an **authority** (ADR-074) and names no resolver. What this slice now waits
+  for is the kernel **pin**, not the kernel **feature** — `HttpRequest` takes a binary break on a
+  `stable` carrier there, behind a bridge constructor.
+- **Still gated, named not built:** the saga remote-dispatch **body** (T1 command surface + S5); S5
+  SDK capability inertness. The kernel's `ServiceResolver` seam is post-1.0 by its own ruling, and
+  tooling models nothing of it — a resolver's output is simply the authority.
+
+> **Original boundary (2026-06-29), superseded:** *"Kernel-free, ships now: the contract registry
+> (T17) + the peer remote-client + DTO generator, Java∪TS, with the addressing seam stubbed behind
+> the `PeerAddressResolver` interface (a config-injected logical name until K4 lands). Gated, named
+> not built: K4 runtime addressing (kernel-core); the saga remote-dispatch body; S5."* It read the
+> client slice as kernel-free because the kernel could not address a peer at all; ADR-074 makes it
+> addressable and, in doing so, makes that slice kernel-**pinned** rather than kernel-free. The
+> genuinely kernel-free half turned out to be the one this RFC had not carved out yet.
 
 ## Amendment 1 (2026-08-28) — where **T42** sits, and what it may not decide by itself
 
@@ -152,11 +174,18 @@ cut) applies. **T42, the types-only slice, is untouched by all of this**: peer t
 no authority and no resolver, which is precisely why Amendment 1 cut the boundary where it did.
 
 ## Open questions / follow-ups (technical — gated, not blocking the slice)
+
+*Two of the four closed on 2026-08-28; struck through rather than deleted, so the record shows what
+the platform answered rather than what we quietly dropped.*
 - **Published-contract artifact format** — the provided-entity `DomainMetadata` in full vs a pruned "contract subset" (only the `@Provides` services + the entities they expose). *Version/compat is decided (§1): ADR-042 `schemaVersion`, floor 2.*
-- **Addressing seam shape** — *decided (§3): a `PeerAddressResolver` interface, not a config map.* Genuinely open only at its **K4 convergence** — the kernel-side logical-name→endpoint discovery that backs the resolver (`KernelWebClient` host parameter).
+- ~~**Addressing seam shape**~~ — **CLOSED 2026-08-28 by kernel ADR-074.** The addressee rides on `HttpRequest`; a generated client takes an authority and names no resolver. The "K4 convergence" this line held open does not arise: ADR-074 records that a future `ServiceResolver` returns an endpoint which *becomes* the authority, so nothing on our side converges later.
+- ~~**K4 runtime addressing as a gate**~~ — **CLOSED**: delivered on the kernel 0.12 train. What replaces it is a version pin, not a gate.
 - **Saga remote-dispatch body** — the command-dispatch + park-on-`@DomainEvent` mechanics; follow-up slice on the T1 command-surface track.
 - **DTO dedup / sharing** — one shared generated DTO per peer entity across N consumers vs per-consumer copies.
 
 ## Next action
+
+*Amended 2026-08-28: the first thing to build is now the types slice (T42), which no kernel version
+gates; the client slice follows the 0.12 pin.*
 
 On **ACCEPT**: author **ADR-048** (already reserved in `exeris-docs/adr-index.md`) fixing the contract-mesh shape — the registry (open-world resolution), the peer remote-client + DTO emitter (Java∪TS), and the K4-shaped addressing seam — as the contract, and scoping the gated follow-ups (K4 addressing, saga remote-dispatch body). Then build the **kernel-free slice**: the contract-registry stage + the peer client/DTO generator + T17 open-world capability resolution, behind the addressing seam, with determinism + parity gates. K4 addressing and saga remote-dispatch land as named follow-ups.

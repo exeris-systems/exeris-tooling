@@ -727,6 +727,12 @@ never-invoked emitter start emitting, and its output did not build.
       the kernel pin moved to a **final** 0.12. T42 itself is untouched — peer types need no client,
       no authority and no resolver.
 
+      **T42 is not gated on kernel 0.12** — worth stating plainly, because Amendment 2 makes it easy
+      to assume otherwise. Peer types are `DomainMetadata` in, TypeScript types out: no client, no
+      authority, no resolver, no kernel version at all. The 0.12 pin belongs to the **client+DTO**
+      slice, which ADR-074 turned from kernel-free-with-a-stub into kernel-pinned. Which release
+      carries T42 is therefore a scheduling choice, not a dependency.
+
       **Next action is a founder decision on the RFC, open since 2026-06-29** — not more code.
 
 - [ ] **Three config flags are declared, default `true`, and read by nothing.** `generateDetails`,
