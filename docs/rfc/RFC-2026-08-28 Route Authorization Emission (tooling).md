@@ -105,9 +105,16 @@ Leave all five layers unjoined and keep the strict warnings as the only signal.
 
 ## Recommendation
 
-**Option A, with the policy bound by the emitted `Application` and reachable through
-`RuntimeComponents`.** It is the only option where the author's declaration is both the switch and
-the content, and the only one that cannot change an existing app that declared nothing.
+**Option A, with the policy bound by the emitted `Application`.** It is the only option where the
+author's declaration is both the switch and the content, and the only one that cannot change an
+existing app that declared nothing.
+
+> **The seam is not solved, and this recommendation must not be read as if it were.** An earlier
+> draft said "reachable through `RuntimeComponents`", which contradicts ADR-079's own finding:
+> `HTTP_ROUTE_POLICY` is a `ScopedValue` bound *around boot*, and ADR-070's seam carries `create*`
+> factories and a `configureRoutes` hook, neither of which reaches a provider bound at that point.
+> Saying otherwise would have let a reader assume the seam already exists. It does not — see open
+> question 2, which blocks the ADR on the same footing as path matching.
 
 Sketch of what that means concretely, for review rather than as a commitment:
 
@@ -148,9 +155,24 @@ entries stay), and record the spike outcome for path matching.
 
 ## Open questions / follow-ups
 
-1. Path-template matching in emitted code — spike required.
-2. `ANY_SCOPE` vs `ALL_SCOPES`, per site.
-3. Whether the emitted policy is detachable, and what a stale detached policy should do.
-4. What `roles` compiles into, if anything — currently nothing, deliberately (**not** this RFC).
-5. **D10** and **D11** intersect this: the TS `getDefaultHeaders` bearer path and the unwired
+Two of these block the ADR. The rest can be settled in it.
+
+1. **(Blocking)** Path-template matching in emitted code — spike required.
+2. **(Blocking) Where a boot-time provider joins the composition root.** ADR-070's
+   `RuntimeComponents` reaches components the lifecycle constructs, not a `ScopedValue` bound around
+   `KernelBootstrap.boot(...)`. Three shapes, none free:
+   - **(a) Extend the seam** — `RuntimeComponents` gains a `createRoutePolicy()` the emitted
+     `Application` reads before binding. Keeps one composition root, but it is an ADR-070 amendment
+     in substance: the seam would carry a member of a different kind, resolved earlier than the rest.
+   - **(b) Make the boot chain overridable** — a `protected` method on `Application` returning the
+     policy, defaulting to the generated one. Cheapest, and it leaves the consumer with two seams to
+     learn instead of one.
+   - **(c) Bind nothing** — Option C above, already rejected as inert output.
+
+   This is the same problem T48 solved for the event publisher, one layer earlier in the boot
+   sequence, and it is worth deciding for *providers in general* rather than for this policy alone.
+3. `ANY_SCOPE` vs `ALL_SCOPES`, per site.
+4. Whether the emitted policy is detachable, and what a stale detached policy should do.
+5. What `roles` compiles into, if anything — currently nothing, deliberately (**not** this RFC).
+6. **D10** and **D11** intersect this: the TS `getDefaultHeaders` bearer path and the unwired
    Handlebars templates are both parts of the same unjoined story.
