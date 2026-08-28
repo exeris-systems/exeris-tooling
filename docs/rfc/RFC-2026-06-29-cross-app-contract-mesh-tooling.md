@@ -7,7 +7,7 @@
 | **Date Opened**   | 2026-06-29                                                           |
 | **Date Closed**   | 2026-08-28                                                           |
 | **Target ADR(s)** | **ADR-048** (reserved in `exeris-docs/adr-index.md`, 2026-06-29) — "cross-app contract mesh" — ratifies this RFC's recommendation; sibling to [ADR-044](../adr/ADR-044-tooling-sse-stream-emitter-shape.md). |
-| **Affected Repos**| `exeris-tooling` (a contract-registry stage in `exeris-codegen-core`; a peer **remote-client + DTO** emitter in `exeris-codegen-java` **and** `exeris-codegen-ts` — Java∪TS parity); `exeris-sdk` (the `@SagaStep(service, command)` surface + capability inertness **S5** — named, gated); `exeris-kernel` (**K4** logical-name→endpoint addressing — named, gated; `KernelWebClient` is single-host today) |
+| **Affected Repos**| `exeris-tooling` (a contract-registry stage in `exeris-codegen-core`; a peer **remote-client + DTO** emitter in `exeris-codegen-java` **and** `exeris-codegen-ts` — Java∪TS parity); `exeris-sdk` (the `@SagaStep(service, command)` surface + capability inertness **S5** — named, gated); `exeris-kernel` (**K4** logical-name→endpoint addressing — **delivered on the 0.12 train by ADR-074**; when this RFC was written `KernelWebClient` could not address a peer at all, see Amendment 2) |
 | **Reviewers**     | —                                                                    |
 
 ## Question
@@ -175,17 +175,26 @@ no authority and no resolver, which is precisely why Amendment 1 cut the boundar
 
 ## Open questions / follow-ups (technical — gated, not blocking the slice)
 
-*Three of the four closed on 2026-08-28; struck through rather than deleted, so the record shows what
+*All four closed on 2026-08-28; struck through rather than deleted, so the record shows what
 the platform answered rather than what we quietly dropped.*
 - ~~**Published-contract artifact format**~~ — **CLOSED 2026-08-28 at acceptance: full `DomainMetadata`, no pruning.** Pruning would decide what a consumer needs before knowing what it generates, and would stand up a second schema to keep in step with the first. Recorded with it: a full artifact exposes the producer's whole domain surface to its consumers, which is a disclosure decision taken knowingly — an app that must not publish an entity keeps it out by not providing it.
 - ~~**Addressing seam shape**~~ — **CLOSED 2026-08-28 by kernel ADR-074.** The addressee rides on `HttpRequest`; a generated client takes an authority and names no resolver. The "K4 convergence" this line held open does not arise: ADR-074 records that a future `ServiceResolver` returns an endpoint which *becomes* the authority, so nothing on our side converges later.
 - ~~**K4 runtime addressing as a gate**~~ — **CLOSED**: delivered on the kernel 0.12 train. What replaces it is a version pin, not a gate.
 - **Saga remote-dispatch body** — the command-dispatch + park-on-`@DomainEvent` mechanics; follow-up slice on the T1 command-surface track.
-- **DTO dedup / sharing** — one shared generated DTO per peer entity across N consumers vs per-consumer copies.
+- ~~**DTO dedup / sharing**~~ — **CLOSED 2026-08-28 by [ADR-048](../adr/ADR-048-cross-app-contract-mesh.md) §4: per-consumer copies.** A shared generated package would be a *distribution* decision — publishing types on a producer's behalf — and this pipeline generates into one app's tree. Dedup within an app is what the peer namespace provides.
 
 ## Next action
 
-*Amended 2026-08-28: the first thing to build is now the types slice (T42), which no kernel version
-gates; the client slice follows the 0.12 pin.*
+*Superseded 2026-08-28 — this RFC is ACCEPTED and ratified as
+[ADR-048](../adr/ADR-048-cross-app-contract-mesh.md). What follows is the plan as it stood before
+acceptance, kept because the sequence it names is still the sequence.*
 
-On **ACCEPT**: author **ADR-048** (already reserved in `exeris-docs/adr-index.md`) fixing the contract-mesh shape — the registry (open-world resolution), the peer remote-client + DTO emitter (Java∪TS), and the K4-shaped addressing seam — as the contract, and scoping the gated follow-ups (K4 addressing, saga remote-dispatch body). Then build the **kernel-free slice**: the contract-registry stage + the peer client/DTO generator + T17 open-world capability resolution, behind the addressing seam, with determinism + parity gates. K4 addressing and saga remote-dispatch land as named follow-ups.
+**Now:** build the **types slice (T42)** — peer DTOs, namespaced per peer, gated on no kernel
+version. Then the client + registry slice, once the kernel pin moves to a final 0.12.
+
+> **Before acceptance, this section read:** *"On **ACCEPT**: author **ADR-048** (already reserved in
+> `exeris-docs/adr-index.md`) fixing the contract-mesh shape — the registry (open-world resolution),
+> the peer remote-client + DTO emitter (Java∪TS), and the K4-shaped addressing seam — as the
+> contract, and scoping the gated follow-ups (K4 addressing, saga remote-dispatch body). Then build
+> the kernel-free slice … "* The ADR is written; the "K4-shaped addressing seam" in that sentence is
+> the part ADR-074 retired.
