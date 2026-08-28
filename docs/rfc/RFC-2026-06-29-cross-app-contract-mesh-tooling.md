@@ -2,7 +2,7 @@
 
 | Field             | Value                                                                 |
 |:------------------|:----------------------------------------------------------------------|
-| **Status**        | **DRAFT** — proposal pending founder review. No code has landed (unlike the SSE/`@View` slices); this RFC is the **design gate** for the T12/T17 mesh epic and the **RFC half** of the reserved ADR-048. |
+| **Status**        | **DRAFT** — proposal pending founder review, since 2026-06-29; Amendment 1 (2026-08-28) folds **T42** in as the first slice. No code has landed (unlike the SSE/`@View` slices); this RFC is the **design gate** for the T12/T17 mesh epic and the **RFC half** of the reserved ADR-048. |
 | **Author(s)**     | arkstack-dev                                                          |
 | **Date Opened**   | 2026-06-29                                                           |
 | **Date Closed**   | —                                                                    |
@@ -72,6 +72,45 @@ The mesh is a **platform** concern: the contract registry and addressing live pl
 ### Slice boundary (build-gate honesty)
 - **Kernel-free, ships now:** the contract registry (open-world resolution, **T17**) + the peer remote-client + DTO generator (the **client+DTO slice**), Java∪TS, with the addressing seam stubbed behind the `PeerAddressResolver` interface (a config-injected logical name until K4 lands).
 - **Gated, named not built:** **K4** runtime addressing (kernel-core); the saga remote-dispatch **body** (T1 command surface + S5); S5 SDK capability inertness.
+
+## Amendment 1 (2026-08-28) — where **T42** sits, and what it may not decide by itself
+
+T42 in `ROADMAP.md` proposed a "cheap honest version" of the mesh: a **types-only** second emission,
+"point the CLI at a second metadata directory and emit `types/` without services or components".
+Picked up on 2026-08-28, it turned out to sit inside this RFC's scope and to contradict two things
+this RFC has already decided. Recording that here rather than building it, because the difference is
+not a detail:
+
+1. **Contract source.** §1 decided the source is the **published contract artifact** (cap-manifest +
+   the provided entities' `DomainMetadata`, `schemaVersion` floor 2), with peers-in-one-build as the
+   *degenerate same-build case* that drops its `exeris-metadata/*.json` onto the same path. T42's
+   "second metadata directory" **is** that degenerate case — so building it as *the* input shape
+   would ship a second input model the artifact model then has to retire, and would skip the
+   ADR-042 baseline-trust check that makes a peer contract trustworthy at all.
+2. **Parity.** §3 pins the peer DTO emitter as **Java∪TS**, load-bearing. A types-only TS emission
+   is not automatically a parity breach — a *frontend* retyping a Java service's vocabulary is a
+   different consumer from a Java app calling a peer — but the distinction has to be stated rather
+   than left to the diff, and the Java half named. It is the RFC's own client+DTO slice (T12).
+
+**What T42 becomes:** the first slice of this RFC's recommendation, not a shortcut around it —
+*peer types, no peer client*. Concretely, once ADR-048 is authored:
+
+- input: a configured peer-contract artifact set, exactly §1's shape, with the same-build directory
+  as the degenerate supply mode rather than as a separate CLI concept;
+- output: peer DTOs only — the entity interface, its `Create`/`Update` shapes and (under
+  `generateZod`) its schemas — emitted per peer under its own namespace, with its own enum module
+  and its own barrel, never merged into the app's own `types/` barrel. Two peers may both call an
+  entity `Order`, and T40 is the record of what happens when two identifiers meet in one namespace;
+- explicitly **not** in it: the peer client (§3), the registry's open-world resolution (§2), saga
+  remote-dispatch (§4). Those are what makes it a *slice* rather than a subset.
+
+**Why it is worth having as its own slice:** it prevents the drift class outright — a mesh consumer
+currently retypes a peer's vocabulary by hand across a language boundary, with no compiler between —
+and it needs neither addressing (K4) nor the capability twin (T17), so it can ship while those are
+still gated.
+
+**What it still may not decide alone:** the peer-namespace scheme and DTO dedup are open questions
+below, and both are visible in emitted output the moment this slice lands. The ADR settles them.
 
 ## Open questions / follow-ups (technical — gated, not blocking the slice)
 - **Published-contract artifact format** — the provided-entity `DomainMetadata` in full vs a pruned "contract subset" (only the `@Provides` services + the entities they expose). *Version/compat is decided (§1): ADR-042 `schemaVersion`, floor 2.*

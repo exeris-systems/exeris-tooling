@@ -692,10 +692,28 @@ never-invoked emitter start emitting, and its output did not build.
       when a selected subsystem has no provider on the runtime classpath.
 - [ ] **T42 — the mesh has no generated frontend contract.** `codegen-ts` is single-service by
       construction: one metadata directory in, one app out. A mesh consumer retypes the other
-      service's vocabulary by hand across a language boundary with no compiler between. The cheap
-      honest version is a **types-only** second emission — point the CLI at a second metadata
-      directory and emit `types/` without services or components. Much smaller than the T12/T17
-      command epic, and it prevents the drift class outright.
+      service's vocabulary by hand across a language boundary with no compiler between.
+
+      **Blocked on the mesh RFC being accepted, not on effort** (established 2026-08-28 on picking it
+      up). The entry's own "cheap honest version" — *point the CLI at a second metadata directory and
+      emit `types/`* — contradicts two things
+      [`RFC-2026-06-29`](docs/rfc/RFC-2026-06-29-cross-app-contract-mesh-tooling.md) has already
+      decided, and that RFC is the design gate for the reserved **ADR-048**: the contract source is
+      the **published contract artifact** (cap-manifest + provided-entity `DomainMetadata`,
+      `schemaVersion` floor 2, ADR-042 baseline trust), with peers-in-one-build as the *degenerate
+      same-build case* — which is exactly what "a second metadata directory" is. Building it that way
+      would ship a second input model the artifact model then retires, and skip the trust check that
+      makes a peer contract worth importing. The RFC also pins the peer DTO emitter as Java∪TS, so a
+      TS-only emission needs its parity story stated rather than assumed.
+
+      Recorded as **Amendment 1** on the RFC: T42 becomes the RFC's **first slice** — *peer types, no
+      peer client* — emitted per peer under its own namespace with its own enum module and barrel,
+      never merged into the app's own `types/` barrel (two peers may both call an entity `Order`, and
+      **T40** is the record of what happens when two identifiers meet in one namespace). It needs
+      neither K4 addressing nor the T17 capability twin, so it can ship while those stay gated. The
+      peer-namespace scheme and DTO dedup are the two questions it cannot settle by itself; the ADR
+      does. **Next action is a founder decision on the RFC, open since 2026-06-29** — not more code.
+
 - [ ] **Three config flags are declared, default `true`, and read by nothing.** `generateDetails`,
       `generateSagas`, `generateEvents` (`config.ts:54,60,63`); only `generateStores` is read, and
       only since #166 (`orchestrator.ts:164`). That a flag can default to `true` and be honoured by
