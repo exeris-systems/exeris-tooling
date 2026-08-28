@@ -1549,7 +1549,26 @@ Proposals, highest return-on-effort first:
       it today — which is itself the answer to whether it can be gated); and whether the response
       set should become per-operation-accurate while it is being touched, which is the cheap half.
 
-- [ ] **D9 — the emitted OpenAPI document is mostly `null`.** Found 2026-08-28 while asserting on
+- [x] **D9 — the emitted OpenAPI document is mostly `null`.** Shipped 0.8.0. Measured before
+      touching anything: one entity with two fields, one action and `versioned` emitted **1664
+      lines, 1479 of them `: null`** — 89% of the document. The one-line `NON_NULL` fix the finding
+      predicted works for those, and is not enough: `exampleSetFlag` survives it. That field is
+      swagger-model bookkeeping, not an OpenAPI field, and the 3.1 schema's
+      `unevaluatedProperties: false` rejects it — so the hand-configured mapper was emitting an
+      invalid document, not merely a noisy one. The fix is to stop hand-configuring: swagger ships
+      `Yaml31.mapper()` for exactly this model, and it drops both. 1664 → 167 lines, and array
+      indentation moves to swagger's canonical style, which is a visible diff in every regenerated
+      spec.
+
+      The gate is a **round-trip**, not a text assertion: dropping fields from the writer is only
+      safe if the reader still gets a whole document, so the emitted YAML is parsed back with
+      `OpenAPIV3Parser` and asserted to yield zero messages with its paths and schemas intact.
+      `swagger-core` and `swagger-models` are now declared rather than used as swagger-parser
+      transitives — this module imports their types directly, and an undeclared compile dependency
+      breaks the moment a transitive is reshuffled. No ADR: the document's *content* is unchanged
+      and the round-trip proves it; what changed is the serializer. Original finding below.
+
+      **D9 — the emitted OpenAPI document is mostly `null`.** Found 2026-08-28 while asserting on
       the emitted YAML for D8. `OpenApiGenerator`'s YAML mapper writes every unset field of the
       swagger model: a single-entity spec carries `termsOfService: null`, `contact: null`,
       `externalDocs: null`, `security: null`, and per-operation `callbacks: null`, `deprecated: null`,

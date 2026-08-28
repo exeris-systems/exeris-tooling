@@ -2,8 +2,7 @@ package eu.exeris.tooling.codegen.java.openapi;
 
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
-import com.fasterxml.jackson.dataformat.yaml.YAMLGenerator;
+import io.swagger.v3.core.util.Yaml31;
 import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.info.Contact;
@@ -37,14 +36,18 @@ public class OpenApiGenerator {
     private Contact contact;
     private License license;
 
+    /**
+     * The writer is swagger's own 3.1 mapper rather than a hand-configured one.
+     *
+     * <p>A plain {@code ObjectMapper} over a YAML factory writes every unset field of the swagger
+     * model: an emitted single-entity spec was 1664 lines, 1479 of them {@code : null}. Setting
+     * {@code NON_NULL} removes those but not {@code exampleSetFlag}, a swagger-model bookkeeping
+     * boolean that is not an OpenAPI field at all and that the 3.1 schema's
+     * {@code unevaluatedProperties: false} rejects. {@link Yaml31#mapper()} handles both, because
+     * it is the serializer the model was written for.
+     */
     public OpenApiGenerator() {
-        this.yamlMapper = new ObjectMapper(
-            YAMLFactory.builder()
-                .disable(YAMLGenerator.Feature.WRITE_DOC_START_MARKER)
-                .enable(YAMLGenerator.Feature.MINIMIZE_QUOTES)
-                .enable(YAMLGenerator.Feature.INDENT_ARRAYS_WITH_INDICATOR)
-                .build()
-        );
+        this.yamlMapper = Yaml31.mapper();
         this.outputDirectory = Path.of(DEFAULT_OUTPUT_DIR);
     }
 

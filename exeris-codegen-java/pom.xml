@@ -43,9 +43,15 @@
             </exclusions>
         </dependency>
 
+        <!-- The OpenAPI model types and the 3.1 YAML mapper are imported directly here, so they
+             are declared here rather than relied on as swagger-parser transitives. -->
         <dependency>
-            <groupId>com.fasterxml.jackson.dataformat</groupId>
-            <artifactId>jackson-dataformat-yaml</artifactId>
+            <groupId>io.swagger.core.v3</groupId>
+            <artifactId>swagger-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.swagger.core.v3</groupId>
+            <artifactId>swagger-models</artifactId>
         </dependency>
 
         <!-- Testing -->
