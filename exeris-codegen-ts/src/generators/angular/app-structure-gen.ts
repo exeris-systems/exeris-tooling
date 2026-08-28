@@ -17,6 +17,7 @@
 import type { DomainMetadata, ViewMetadata } from '../../models/domain-model.js';
 import type { GeneratorConfig } from '../../config.js';
 import { DslMapper } from '../../models/dsl-mapper.js';
+import { modelTypeName } from '../../models/model-naming.js';
 import { getStrategy } from '../../core/backend-strategy.js';
 import {
   viewRoutePath,
@@ -380,11 +381,12 @@ function generateBarrelExport(visibleDomains: DomainMetadata[], enums: EnumMetad
   let pageTypesExported = false;
   for (const domain of visibleDomains) {
     const kebab = DslMapper.toKebabCase(domain.entityName);
+    const model = modelTypeName(domain.entityName);
     if (!pageTypesExported) {
-      exports.push(`export { ${domain.entityName}Service, ${domain.entityName}Filter, Page, PageRequest } from './services/${kebab}.service';`);
+      exports.push(`export { ${domain.entityName}Service, ${model}Filter, Page, PageRequest } from './services/${kebab}.service';`);
       pageTypesExported = true;
     } else {
-      exports.push(`export { ${domain.entityName}Service, ${domain.entityName}Filter } from './services/${kebab}.service';`);
+      exports.push(`export { ${domain.entityName}Service, ${model}Filter } from './services/${kebab}.service';`);
     }
   }
 

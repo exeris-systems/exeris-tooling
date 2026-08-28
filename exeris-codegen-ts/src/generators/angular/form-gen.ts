@@ -7,6 +7,7 @@
  */
 
 import type { DomainMetadata, FieldMetadata } from '../../models/domain-model.js';
+import { modelTypeName } from '../../models/model-naming.js';
 import { DslMapper } from '../../models/dsl-mapper.js';
 import type { GeneratorConfig } from '../../config.js';
 import type { CodeGenerator, GeneratedFile, GeneratorContext } from '../../core/generator-registry.js';
@@ -110,6 +111,8 @@ export class FormGenerator implements CodeGenerator {
     };
 
     const entityName = domain.entityName;
+
+    const modelName = modelTypeName(entityName);
     const kebabName = DslMapper.toKebabCase(entityName);
     const idField = domain.systemFields?.idField ?? 'id';
 
@@ -141,7 +144,7 @@ export class FormGenerator implements CodeGenerator {
     lines.push("import { Component, ChangeDetectionStrategy, input, output, signal, effect, inject } from '@angular/core';");
     lines.push("import { CommonModule } from '@angular/common';");
     lines.push("import { FormsModule, ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';");
-    lines.push(`import { ${entityName}, ${entityName}Create, ${entityName}Update, ${entityName}Service } from '../services/${kebabName}.service';`);
+    lines.push(`import { ${modelName}, ${modelName}Create, ${modelName}Update, ${entityName}Service } from '../services/${kebabName}.service';`);
 
     // Collect enum types used in create fields
     const enumTypes = new Set<string>();
@@ -242,9 +245,9 @@ export class FormGenerator implements CodeGenerator {
     }
 
     lines.push(`  readonly mode = input<'create' | 'edit'>('create');`);
-    lines.push(`  readonly entity = input<${entityName} | null>(null);`);
+    lines.push(`  readonly entity = input<${modelName} | null>(null);`);
     lines.push('');
-    lines.push(`  readonly saved = output<${entityName}>();`);
+    lines.push(`  readonly saved = output<${modelName}>();`);
     lines.push('  readonly cancelled = output<void>();');
     lines.push('');
     lines.push('  readonly saving = signal(false);');
@@ -318,7 +321,7 @@ export class FormGenerator implements CodeGenerator {
     } else {
       lines.push('    const data = this.form.getRawValue();');
     }
-    lines.push(`    const request$ = this.mode() === 'create' ? this.service.create(data as ${entityName}Create) : this.service.update(String(this.entity()!.${idField}), data as ${entityName}Update);`);
+    lines.push(`    const request$ = this.mode() === 'create' ? this.service.create(data as ${modelName}Create) : this.service.update(String(this.entity()!.${idField}), data as ${modelName}Update);`);
     lines.push('');
     lines.push('    request$.subscribe({');
     lines.push('      next: (result) => {');

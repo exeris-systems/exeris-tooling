@@ -82,14 +82,16 @@ describe('TypeGenerator.generate — per-domain interface emission', () => {
     )).toBeNull();
   });
 
-  it('strips the "Entity" suffix from interface names (toInterfaceName behavior)', () => {
+  it('declares the entity under its own name, "Entity" suffix and all (T40)', () => {
     const content = gen.generate(domain({ entityName: 'CustomerEntity' }), CTX)!.content;
-    // Interface declarations use the stripped name.
-    expect(content).toContain('export interface Customer {');
-    expect(content).toContain('export interface CustomerCreate {');
-    expect(content).toContain('export type CustomerUpdate = Partial<CustomerCreate>;');
-    // ListResponse type uses the stripped name too.
-    expect(content).toContain('export interface CustomerListResponse {');
+    // This spec used to pin the opposite: `toInterfaceName` stripped the suffix here, so the
+    // types module declared `Customer` while every other emitter imported `CustomerEntity` from
+    // it. The strip was only ever visible to this test — an app with a `*Entity` domain did not
+    // compile — so the fix is one name, decided in one place, for declarer and importer alike.
+    expect(content).toContain('export interface CustomerEntity {');
+    expect(content).toContain('export interface CustomerEntityCreate {');
+    expect(content).toContain('export type CustomerEntityUpdate = Partial<CustomerEntityCreate>;');
+    expect(content).toContain('export interface CustomerEntityListResponse {');
   });
 
   it('embeds displayName in the doc header when present, falls back to entityName otherwise', () => {

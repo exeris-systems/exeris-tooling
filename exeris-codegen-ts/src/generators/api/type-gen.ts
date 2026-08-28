@@ -9,6 +9,7 @@
 import { outPath } from '../../core/paths.js';
 import type { DomainMetadata, FieldMetadata } from '../../models/domain-model.js';
 import { DslMapper } from '../../models/dsl-mapper.js';
+import { modelTypeName } from '../../models/model-naming.js';
 import type { GeneratorConfig } from '../../config.js';
 import type { CodeGenerator, GeneratedFile, GeneratorContext } from '../../core/generator-registry.js';
 import type { BackendType } from '../../core/backend-strategy.js';
@@ -70,7 +71,7 @@ export class TypeGenerator implements CodeGenerator {
   }
 
   private generateInterface(metadata: DomainMetadata, context: GeneratorContext): string {
-    const interfaceName = DslMapper.toInterfaceName(metadata.entityName);
+    const interfaceName = modelTypeName(metadata.entityName);
     const kebabName = DslMapper.toKebabCase(metadata.entityName);
 
     // Collect enum types used in fields
@@ -148,7 +149,7 @@ export class TypeGenerator implements CodeGenerator {
   }
 
   private generateZodSchema(metadata: DomainMetadata, context: GeneratorContext): GeneratedFile {
-    const interfaceName = DslMapper.toInterfaceName(metadata.entityName);
+    const interfaceName = modelTypeName(metadata.entityName);
     const kebabName = DslMapper.toKebabCase(metadata.entityName);
 
     // Collect enum types used in fields

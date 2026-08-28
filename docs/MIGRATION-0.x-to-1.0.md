@@ -878,6 +878,32 @@ its own commit so the shrink does not bury the change you are actually reviewing
 **If you post-process the spec:** a step that relied on a key always being present (even as `null`)
 now has to handle its absence, which is what every OpenAPI reader already does.
 
+### An entity whose name the emitted app already uses now compiles (T40)
+
+**Who is affected:** two groups, both of whom have a generated frontend that does **not** build today.
+
+**1. An entity named after something an emitted module binds.** `Component`, `Page`, `PageRequest`,
+`Observable`, `Injectable`, `HttpClient`, `Validators`, `Routes`, `Subject` and 14 more — 23 in
+all, listed as `RESERVED_MODULE_IDENTIFIERS` in `src/models/model-naming.ts`. The emitted form and list
+components imported the name twice, once from a framework package and once from the entity's own
+service.
+
+Such an entity's **type** is now emitted as `<Entity>Model` — `ComponentModel`,
+`ComponentModelCreate`, `ComponentModelUpdate`. Everything else keeps the entity's own name: the
+service class stays `ComponentService`, the files stay `component.service.ts` /
+`component-form.component.ts`, and the routes stay `/components`. Only the TypeScript type is
+renamed, because only the TypeScript type collided.
+
+**2. An entity whose name ends in `Entity`.** The types module used to declare `Customer` for a
+`CustomerEntity` domain while every other emitted file imported `CustomerEntity` from it. The
+suffix strip is gone: the type is now declared as `CustomerEntity`, matching what the importers
+already asked for.
+
+**Action required:** none for an ordinary entity — emitted output is byte-identical, verified by
+diffing a full generated app. If you are in either group above, regenerate; your app compiles for
+the first time, and any hand-written code that referenced the emitted type should use the name the
+types module now declares.
+
 ---
 
 ## Reference

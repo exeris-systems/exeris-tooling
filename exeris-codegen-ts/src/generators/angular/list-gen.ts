@@ -12,6 +12,7 @@
  */
 
 import type { DomainMetadata } from '../../models/domain-model.js';
+import { modelTypeName } from '../../models/model-naming.js';
 import { DslMapper } from '../../models/dsl-mapper.js';
 import type { GeneratorConfig } from '../../config.js';
 import type { CodeGenerator, GeneratedFile, GeneratorContext } from '../../core/generator-registry.js';
@@ -46,6 +47,7 @@ export class ListGenerator implements CodeGenerator {
   private generateListContent(domain: DomainMetadata, context: GeneratorContext): string {
     const metadata = domain;
     const entityName = metadata.entityName;
+    const modelName = modelTypeName(entityName);
     const kebabName = DslMapper.toKebabCase(entityName);
     const displayName = metadata.displayName ?? entityName;
     const pluralName = metadata.pluralName ?? `${entityName}s`;
@@ -104,7 +106,7 @@ export class ListGenerator implements CodeGenerator {
     lines.push(`import { CommonModule } from '@angular/common';`);
     lines.push(`import { RouterModule } from '@angular/router';`);
     lines.push(`import { FormsModule } from '@angular/forms';`);
-    lines.push(`import { ${entityName}, ${entityName}Service, PageRequest, ${entityName}Filter, Page } from '../services/${kebabName}.service';`);
+    lines.push(`import { ${modelName}, ${entityName}Service, PageRequest, ${modelName}Filter, Page } from '../services/${kebabName}.service';`);
     lines.push(`import { Subject, debounceTime, distinctUntilChanged } from 'rxjs';`);
     lines.push(`import { takeUntilDestroyed } from '@angular/core/rxjs-interop';`);
     lines.push(``);
@@ -379,10 +381,10 @@ export class ListGenerator implements CodeGenerator {
     lines.push(`  readonly pageSize = signal(20);`);
     lines.push(`  readonly sortField = signal<string>('${idField}');`);
     lines.push(`  readonly sortDirection = signal<'asc' | 'desc'>('desc');`);
-    lines.push(`  readonly filter = signal<${entityName}Filter>({});`);
+    lines.push(`  readonly filter = signal<${modelName}Filter>({});`);
     lines.push(``);
     lines.push(`  // Data signals`);
-    lines.push(`  readonly data = signal<Page<${entityName}> | null>(null);`);
+    lines.push(`  readonly data = signal<Page<${modelName}> | null>(null);`);
     lines.push(`  readonly isLoading = signal(false);`);
     lines.push(`  readonly error = signal<string | null>(null);`);
     lines.push(``);
@@ -465,7 +467,7 @@ export class ListGenerator implements CodeGenerator {
     lines.push(`    }`);
     lines.push(`  }`);
     lines.push(``);
-    lines.push(`  onDelete(item: ${entityName}): void {`);
+    lines.push(`  onDelete(item: ${modelName}): void {`);
     lines.push(`    if (confirm('Are you sure you want to delete this ${displayName.toLowerCase()}?')) {`);
     lines.push(`      this.service.delete(String(item.${idField})).subscribe({`);
     lines.push(`        next: () => {`);

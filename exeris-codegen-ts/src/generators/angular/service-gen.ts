@@ -11,7 +11,7 @@ import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { outPath } from '../../core/paths.js';
 import type { DomainMetadata, FieldMetadata } from '../../models/index.js';
-import { DslMapper } from '../../models/index.js';
+import { DslMapper, modelTypeName } from '../../models/index.js';
 import type { GeneratorConfig } from '../../config.js';
  import type { CodeGenerator, GeneratedFile, GeneratorContext } from '../../core/generator-registry.js';
 import type { BackendType } from '../../core/backend-strategy.js';
@@ -106,6 +106,7 @@ export class ServiceGenerator implements CodeGenerator {
   private generateServiceContent(domain: DomainMetadata, context: GeneratorContext): string {
     const metadata = domain;
     const entityName = metadata.entityName;
+    const modelName = modelTypeName(entityName);
     const kebabName = DslMapper.toKebabCase(entityName);
 
     // The emitted service must request what the emitted server serves. The router registers the
@@ -188,6 +189,7 @@ export class ServiceGenerator implements CodeGenerator {
       enumTypes: string[];
     };
 
+    const modelName = modelTypeName(entityName);
     const kebabName = entityName.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase();
     const lines: string[] = [];
 
@@ -204,7 +206,7 @@ export class ServiceGenerator implements CodeGenerator {
     lines.push(``);
 
     // Import types from types file
-    lines.push(`import type { ${entityName}, ${entityName}Create, ${entityName}Update } from '../types/${kebabName}.types';`);
+    lines.push(`import type { ${modelName}, ${modelName}Create, ${modelName}Update } from '../types/${kebabName}.types';`);
 
     // Add enum imports if needed
     if (enumTypes && enumTypes.length > 0) {
@@ -215,7 +217,7 @@ export class ServiceGenerator implements CodeGenerator {
 
     // Re-export types for convenience
     lines.push(`// Re-export types for convenience`);
-    lines.push(`export type { ${entityName}, ${entityName}Create, ${entityName}Update } from '../types/${kebabName}.types';`);
+    lines.push(`export type { ${modelName}, ${modelName}Create, ${modelName}Update } from '../types/${kebabName}.types';`);
     lines.push(``);
 
     // Page and PageRequest interfaces (only define once, not duplicated)
@@ -245,7 +247,7 @@ export class ServiceGenerator implements CodeGenerator {
     lines.push(``);
 
     // Filter interface
-    lines.push(`export interface ${entityName}Filter {`);
+    lines.push(`export interface ${modelName}Filter {`);
     for (const ff of filterableFields) {
       lines.push(`  ${ff.name}?: ${ff.filterType};`);
     }
@@ -263,7 +265,7 @@ export class ServiceGenerator implements CodeGenerator {
     lines.push(`  private readonly http = inject(HttpClient);`);
     lines.push(`  private readonly baseUrl = '${apiBasePath}${apiPath}';`);
     lines.push(``);
-    lines.push(`  findAll(pageRequest: PageRequest = {}, filter: ${entityName}Filter = {}): Observable<Page<${entityName}>> {`);
+    lines.push(`  findAll(pageRequest: PageRequest = {}, filter: ${modelName}Filter = {}): Observable<Page<${modelName}>> {`);
     lines.push(`    let params = new HttpParams();`);
     lines.push(`    if (pageRequest.page !== undefined) params = params.set('page', pageRequest.page.toString());`);
     lines.push(`    if (pageRequest.size !== undefined) params = params.set('size', pageRequest.size.toString());`);
@@ -273,19 +275,19 @@ export class ServiceGenerator implements CodeGenerator {
     lines.push(`        params = params.set(key, String(value));`);
     lines.push(`      }`);
     lines.push(`    });`);
-    lines.push(`    return this.http.get<Page<${entityName}>>(this.baseUrl, { params });`);
+    lines.push(`    return this.http.get<Page<${modelName}>>(this.baseUrl, { params });`);
     lines.push(`  }`);
     lines.push(``);
-    lines.push(`  findById(id: string): Observable<${entityName}> {`);
-    lines.push(`    return this.http.get<${entityName}>(\`\${this.baseUrl}/\${id}\`);`);
+    lines.push(`  findById(id: string): Observable<${modelName}> {`);
+    lines.push(`    return this.http.get<${modelName}>(\`\${this.baseUrl}/\${id}\`);`);
     lines.push(`  }`);
     lines.push(``);
-    lines.push(`  create(data: ${entityName}Create): Observable<${entityName}> {`);
-    lines.push(`    return this.http.post<${entityName}>(this.baseUrl, data);`);
+    lines.push(`  create(data: ${modelName}Create): Observable<${modelName}> {`);
+    lines.push(`    return this.http.post<${modelName}>(this.baseUrl, data);`);
     lines.push(`  }`);
     lines.push(``);
-    lines.push(`  update(id: string, data: ${entityName}Update): Observable<${entityName}> {`);
-    lines.push(`    return this.http.patch<${entityName}>(\`\${this.baseUrl}/\${id}\`, data);`);
+    lines.push(`  update(id: string, data: ${modelName}Update): Observable<${modelName}> {`);
+    lines.push(`    return this.http.patch<${modelName}>(\`\${this.baseUrl}/\${id}\`, data);`);
     lines.push(`  }`);
     lines.push(``);
     lines.push(`  delete(id: string): Observable<void> {`);
@@ -298,8 +300,8 @@ export class ServiceGenerator implements CodeGenerator {
       lines.push(`    return this.http.patch<void>(\`\${this.baseUrl}/\${id}/archive\`, {});`);
       lines.push(`  }`);
       lines.push(``);
-      lines.push(`  restore(id: string): Observable<${entityName}> {`);
-      lines.push(`    return this.http.patch<${entityName}>(\`\${this.baseUrl}/\${id}/restore\`, {});`);
+      lines.push(`  restore(id: string): Observable<${modelName}> {`);
+      lines.push(`    return this.http.patch<${modelName}>(\`\${this.baseUrl}/\${id}/restore\`, {});`);
       lines.push(`  }`);
     }
 
@@ -314,8 +316,8 @@ export class ServiceGenerator implements CodeGenerator {
       const bodyParams = action.hasParams
         ? `{ ${action.params.map(p => p.name).join(', ')} }`
         : '{}';
-      lines.push(`  ${action.methodName}(id: string${paramsStr}): Observable<${entityName}> {`);
-      lines.push(`    return this.http.post<${entityName}>(\`\${this.baseUrl}/\${id}/actions/${action.kebabName}\`, ${bodyParams});`);
+      lines.push(`  ${action.methodName}(id: string${paramsStr}): Observable<${modelName}> {`);
+      lines.push(`    return this.http.post<${modelName}>(\`\${this.baseUrl}/\${id}/actions/${action.kebabName}\`, ${bodyParams});`);
       lines.push(`  }`);
     }
 
