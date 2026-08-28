@@ -24,7 +24,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve, sep, isAbsolute } from 'node:path';
+import { join, resolve } from 'node:path';
 import {
   GeneratorConfigSchema,
   DEFAULT_CONFIG,
