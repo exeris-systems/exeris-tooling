@@ -188,6 +188,24 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "does not even reach the JSON. Deleting the attribute changes nothing: "
                             + "it has had a default since SDK 0.11.0, so it is no longer a value "
                             + "every author is forced to write (T44)"),
+            new InertAttribute("Action", "permissions",
+                    "the processor does not extract it, so ActionMetadata's permissions field is "
+                            + "empty in every build. One generator does read that field — "
+                            + "DomainMetadataGenerator copies it into the metadata JSON the frontend "
+                            + "generators consume — which is why this attribute is inert by an "
+                            + "extraction gap rather than by neglect: the consumer is there and the "
+                            + "value never arrives. Of the two access "
+                            + "attributes this is the half with a destination: the kernel's "
+                            + "RouteRequirement decides on named scopes, so a permission is what a "
+                            + "generated URL-to-policy table would carry — and that table is this "
+                            + "repository's to emit and is not built (T51)"),
+            new InertAttribute("Action", "roles",
+                    "the processor does not extract it, and unlike permissions it has no route-level "
+                            + "destination: the kernel decides a route on scopes and never on roles, "
+                            + "and mapping ROLE_x onto a scope would stand up a second authority "
+                            + "model at the edge. Roles resolve at the method level through the "
+                            + "kernel's own @RequiresRole (kernel ADR-014). What this attribute "
+                            + "should compile into here, if anything, is undecided (T51)"),
             new InertAttribute("ActionParam", "description",
                     "the value reaches ActionParamMetadata in the JSON, but no emitter renders "
                             + "it — action-parameter generation reads only the parameter name and type"),
@@ -201,7 +219,22 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "/api/{version}/{path} from the router instead is a defensible API "
                             + "decision, but it changes every route and the published contract, so it "
                             + "is a decision to take rather than a default to assume. Until it is "
-                            + "taken, setting this attribute has no effect on output"));
+                            + "taken, setting this attribute has no effect on output"),
+            new InertAttribute("ExerisDomain", "permissions",
+                    "the processor does not extract it, so DomainMetadata's permissions field — "
+                            + "which exists, and is mirrored in the TypeScript model — is empty in "
+                            + "every build and no emitter can read it. The destination exists: the "
+                            + "kernel's RouteRequirement decides on named scopes, and a generated "
+                            + "URL-to-policy table would carry these. That table is this "
+                            + "repository's to emit and is not built (T51)"),
+            new InertAttribute("ExerisDomain", "roles",
+                    "the processor does not extract it, and unlike permissions it has no route-level "
+                            + "destination: the kernel decides a route on scopes and never on roles, "
+                            + "and mapping ROLE_x onto a scope would stand up a second authority "
+                            + "model at the edge. Roles resolve at the method level through the "
+                            + "kernel's own @RequiresRole (kernel ADR-014). Note that the emitted "
+                            + "Angular guards do check a role, but against a name this pipeline "
+                            + "invents rather than one declared here (T51)"));
 
     /**
      * Hand-maintained registry of whole type-level annotations that are extracted
