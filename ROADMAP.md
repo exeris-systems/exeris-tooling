@@ -692,10 +692,55 @@ never-invoked emitter start emitting, and its output did not build.
       when a selected subsystem has no provider on the runtime classpath.
 - [ ] **T42 — the mesh has no generated frontend contract.** `codegen-ts` is single-service by
       construction: one metadata directory in, one app out. A mesh consumer retypes the other
-      service's vocabulary by hand across a language boundary with no compiler between. The cheap
-      honest version is a **types-only** second emission — point the CLI at a second metadata
-      directory and emit `types/` without services or components. Much smaller than the T12/T17
-      command epic, and it prevents the drift class outright.
+      service's vocabulary by hand across a language boundary with no compiler between.
+
+      **Blocked on the mesh RFC being accepted, not on effort** (established 2026-08-28 on picking it
+      up). The entry's own "cheap honest version" — *point the CLI at a second metadata directory and
+      emit `types/`* — contradicts two things
+      [`RFC-2026-06-29`](docs/rfc/RFC-2026-06-29-cross-app-contract-mesh-tooling.md) has already
+      decided, and that RFC is the design gate for the reserved **ADR-048**: the contract source is
+      the **published contract artifact** (cap-manifest + provided-entity `DomainMetadata`,
+      `schemaVersion` floor 2, ADR-042 baseline trust), with peers-in-one-build as the *degenerate
+      same-build case* — which is exactly what "a second metadata directory" is. Building it that way
+      would ship a second input model the artifact model then retires, and skip the trust check that
+      makes a peer contract worth importing. The RFC also pins the peer DTO emitter as Java∪TS, so a
+      TS-only emission needs its parity story stated rather than assumed.
+
+      Recorded as **Amendment 1** on the RFC: T42 becomes the RFC's **first slice** — *peer types, no
+      peer client* — emitted per peer under its own namespace with its own enum module and barrel,
+      never merged into the app's own `types/` barrel (two peers may both call an entity `Order`, and
+      **T40** is the record of what happens when two identifiers meet in one namespace). It needs
+      neither K4 addressing nor the T17 capability twin, so it can ship while those stay gated. The
+      peer-namespace scheme and DTO dedup are the two questions it cannot settle by itself; the ADR
+      does.
+
+      **Amendment 2, same day:** checking the RFC against kernel `development/0.12.0` before
+      accepting it falsified one of its premises. Kernel **ADR-074 is ACCEPTED** — the addressee now
+      rides on `HttpRequest` as an `authority`, and `KernelWebClient.withAuthority(String)` addresses
+      a peer while sharing engine and retry policy. So "`KernelWebClient` is single-host today" is
+      false on 0.12, the client+DTO slice stops waiting on addressing, and the RFC's proposed
+      `PeerAddressResolver` should be **dropped rather than stubbed**: the kernel deliberately holds
+      the `ServiceResolver` seam post-1.0, and ADR-074 records that a future resolver's output simply
+      *becomes* the authority. Emitting our own resolver interface would stand up a second addressing
+      vocabulary one train before the platform's. Cost to carry: `HttpRequest` is a `stable` carrier
+      and ADR-074 takes a binary break on it behind a bridge constructor, so the client slice needs
+      the kernel pin moved to a **final** 0.12. T42 itself is untouched — peer types need no client,
+      no authority and no resolver.
+
+      **T42 is not gated on kernel 0.12** — worth stating plainly, because Amendment 2 makes it easy
+      to assume otherwise. Peer types are `DomainMetadata` in, TypeScript types out: no client, no
+      authority, no resolver, no kernel version at all. The 0.12 pin belongs to the **client+DTO**
+      slice, which ADR-074 turned from kernel-free-with-a-stub into kernel-pinned. Which release
+      carries T42 is therefore a scheduling choice, not a dependency.
+
+      **RFC ACCEPTED 2026-08-28**, with the artifact-format ruling taken at acceptance: **full
+      `DomainMetadata`, no pruning**. Ratified as
+      [`ADR-048`](docs/adr/ADR-048-cross-app-contract-mesh.md), which also settles the two questions
+      the slice could not: a peer is **named by the consumer** (measured: nothing in the emitted
+      artefacts carries an app identity — `CapabilityModuleDescriptor` names a *module*), and peer
+      DTOs are **per-consumer copies** rather than a shared package. T42 is unblocked and gated on
+      nothing: next action is the types slice itself.
+
 - [ ] **Three config flags are declared, default `true`, and read by nothing.** `generateDetails`,
       `generateSagas`, `generateEvents` (`config.ts:54,60,63`); only `generateStores` is read, and
       only since #166 (`orchestrator.ts:164`). That a flag can default to `true` and be honoured by
@@ -901,8 +946,8 @@ T30 (emitted imports as undeclared build requirements — the general case behin
 | T23 | Stream-route boot-reachability — the generated `RuntimeLifecycle` published a `router::handle` lambda, erasing the `HttpRouter` type the kernel stream dispatcher resolves via `instanceof`, so every generated `streamRoute(...)` silently 404'd / fell back to respond-once on a real boot | **High** (latent) | ✅ 0.6.0 (folded into #106, ADR-044 Slice 2 — `handlerSlot.set(router)`; pinned by `KernelApplicationGeneratorTest`) |
 | T8  | No generated finders/indexes for FK + `filterable` fields → O(n) `findAll().filter()` everywhere | **High** | ✅ 2026-06-28 (finders + FK/filterable indexes; T9 constraints deferred) |
 | T10 | `@Validation` enforced client-side (Zod) but dropped server-side (handler/service/DB) | **High** | ✅ 0.6.0 (#103) |
-| T12 | N generated apps can't form a mesh — client is own-app/relative-host, saga step is local, no cross-app contract | **High** | 0.8.0 (deferred out of 0.7.0 by the gateway-caps plan) |
-| T17 | Capability-graph validation is closed-world per app — a legitimate cross-service `@Requires` hard-fails the build | **High** | 0.8.0 (deferred out of 0.7.0 by the gateway-caps plan) |
+| T12 | N generated apps can't form a mesh — client is own-app/relative-host, saga step is local, no cross-app contract | **High** | **T42 (types) 0.8.0, no kernel gate; client+registry 0.9.0** — split by ADR-048; the client half needs a final kernel 0.12 (ADR-074's binary break on `HttpRequest`) |
+| T17 | Capability-graph validation is closed-world per app — a legitimate cross-service `@Requires` hard-fails the build | **High** | **0.9.0** — ships with the client+registry slice per ADR-048 |
 | T26 | A `@ExerisDomain(versioned = true)` entity whose `version` field is the **wrapper** `Long` throws NPE on the first `save()` of a fresh entity: `buildColumnLayout` hardcodes the VERSION column's type as `Long` and the emitter binds it by unboxing (`stmt.bindLong(i, entity.getVersion())`), with no null guard — and no guard is possible while the column type is a constant, since a primitive `long version` field cannot be null-compared. `update()` has the same unboxing (`long expected = entity.getVersion()`). Every other nullable system column (`createdAt`/`updatedAt`) *is* guarded, so this is the one gap. Fix is to read the declared field type into the column instead of assuming, which makes it a repository-emitter change rather than a test one | **Medium** (latent; primitive-`long` entities were unaffected) | ✅ 0.7.x — found 2026-08-02 by the T2 slice-d system-column fixture, fixed the same day: both the version bind and `update()`'s expected-version read go through a boxed local with a null default, so a wrapper-typed field behaves exactly like the primitive it shadows. The e2e fixture keeps the **wrapper** declaration (a primitive would pass either way) and the generated repository test no longer pre-stages the version, which makes every consumer's emitted test a regression test for it |
 | T2  | Zero tests generated for the generated surface | Medium | 🔶 0.7.0 slices a–f — the **Java half is complete** (handler bodyless routes + body-route guards + service delegation + repository round-trip + saga wiring + `@Validation` boundary pairs, ADR-058); **FE spec slice → 0.8.0** |
 | T3  | Action identity = method name, not `@Action(name=…)` → bean-setter collisions | Medium | 0.5.x |
