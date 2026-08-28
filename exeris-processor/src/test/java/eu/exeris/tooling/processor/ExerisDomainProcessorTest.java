@@ -1413,6 +1413,46 @@ class ExerisDomainProcessorTest {
         }
 
         @Test
+        @DisplayName("-Aexeris.strict warns on the four access attributes nothing extracts (T51)")
+        void strictWarnsOnInertAccessAttributes() {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Action;
+
+                    @ExerisDomain(module = "core", path = "/orders",
+                            roles = {"ROLE_MANAGER"}, permissions = {"order:read"})
+                    public class Order {
+                        @Action(name = "approve", label = "Approve",
+                                roles = {"ROLE_MANAGER"}, permissions = {"order:approve"})
+                        public void approve() {
+                        }
+                    }
+                    """
+            );
+
+            Compilation compilation = javac()
+                    .withOptions("-Aexeris.strict=true")
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(source);
+
+            assertThat(compilation).succeeded();
+            // An author who writes a permission today gets no enforcement anywhere and, until this
+            // entry existed, no warning either: the processor never extracts these, so the fields
+            // that carry them are empty in every build.
+            assertThat(hasInertWarningFor(compilation, "@ExerisDomain.roles")).isTrue();
+            assertThat(hasInertWarningFor(compilation, "@ExerisDomain.permissions")).isTrue();
+            assertThat(hasInertWarningFor(compilation, "@Action.roles")).isTrue();
+            assertThat(hasInertWarningFor(compilation, "@Action.permissions")).isTrue();
+            assertThat(inertWarnings(compilation))
+                    .as("exactly four inert warnings, one per access attribute set")
+                    .isEqualTo(4);
+        }
+
+        @Test
         @DisplayName("-Aexeris.strict warns on @ActionParam.required even when set to false")
         void strictWarnsOnActionParamRequiredFalse() {
             JavaFileObject source = JavaFileObjects.forSourceString(

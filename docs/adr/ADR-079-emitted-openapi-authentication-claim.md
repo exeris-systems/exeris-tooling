@@ -79,9 +79,22 @@ answers it, and a tenant-partitioned entity answers it from the tenant guard as 
 The alternative was to keep the block and emit it only where an author declared that a route
 needs identity. It is unavailable twice over.
 
-**There is no declaration.** The SDK's only security-adjacent annotations are `@RowLevelSecurity`
-and `@TenantId`, and both scope *data* — which rows a bound context may see — not the edge.
-Nothing in the annotation surface says "this route requires a caller."
+**The declaration exists and is inert.** *(Corrected 2026-08-28. This ADR first said no
+declaration existed, on the strength of a search that looked at annotation **type** names —
+`@RowLevelSecurity`, `@TenantId` — and missed attributes. It was wrong, and the correction
+strengthens the decision rather than weakening it.)* `@ExerisDomain` carries `String[] roles()`
+and `String[] permissions()`, and so does `@Action`. `DomainMetadata` even has fields for them,
+with `@JsonProperty` names, and the TypeScript model has matching Zod entries. What does not
+exist is **extraction**: `grep -rn "roles\|permissions" exeris-processor/src/main` returns
+nothing, so the attributes never reach the metadata JSON and every one of those fields is always
+empty. The SDK says as much in its own Javadoc — *"Open-Core status (kernel v0.11, ADR-061):
+declared but not extracted"* — and names this repository as the owner of the missing piece: *"the
+kernel's `RouteRequirement` decides on named scopes, so a permission is what a generated
+URL-to-policy table could carry. That table is `exeris-tooling`'s to emit and is not built."*
+
+So gating the security block on the declaration would have gated it on a list that is empty for
+every entity in every build. The block would have vanished exactly as it does here, minus the
+honesty about why.
 
 **And a gated claim would still be false.** The closest candidate is the tenant-partitioned
 entity, where the emitted handler genuinely cannot serve a request without a bound context. But
@@ -92,11 +105,17 @@ one case that seemed to justify it.
 
 ### What re-adding the block would need
 
-A slice of its own, with both halves it lacks today:
+A slice of its own — **T51** — with the three halves it lacks today (corrected 2026-08-28; the
+first of these was originally listed as a missing declaration surface):
 
-1. **A declaration surface** — an annotation an author writes to say a route requires identity,
-   and a metadata field carrying it.
-2. **A binding seam** — `HTTP_ROUTE_POLICY` is a `ScopedValue`, so the only place to bind one is
+1. **Extraction** — the processor must read `@ExerisDomain(permissions)` and `@Action(permissions)`
+   into the `DomainMetadata` fields that already exist for them.
+2. **A policy to emit** — a URL-to-`RouteRequirement` table. `RouteRequirement` offers
+   `PERMIT_ALL`, `AUTHENTICATED`, `ANY_SCOPE` and `ALL_SCOPES`, and decides on **scopes**, which is
+   why `permissions` is the half with a destination and `roles` is not: the SDK rules out a
+   `ROLE_x`-to-scope convention explicitly, because it would stand up a second authority model at
+   the edge, and points roles at the kernel's method-level `@RequiresRole` (ADR-014) instead.
+3. **A binding seam** — `HTTP_ROUTE_POLICY` is a `ScopedValue`, so the only place to bind one is
    the `ScopedValue.where(...)` chain inside the emitted `Application`. ADR-070's
    `RuntimeComponents` seam does not reach it: it carries `create*` factories and a
    `configureRoutes` hook, neither of which can install a provider around boot. A consumer today

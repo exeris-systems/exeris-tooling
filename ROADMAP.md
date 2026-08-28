@@ -1543,8 +1543,11 @@ Proposals, highest return-on-effort first:
       dispatcher can otherwise write is unreachable. No emitter binds `HTTP_ROUTE_POLICY`; the
       emitted `Application` binds exactly one HTTP slot, `HTTP_SERVER_HANDLER`.
 
-      **Removed, not gated**, because gating fails twice: there is no annotation that declares edge
-      authentication (`@RowLevelSecurity` and `@TenantId` scope *data*), and the one case that
+      **Removed, not gated**, because gating fails twice: the declaration exists but is inert
+      end-to-end (corrected 2026-08-28 — the first write-up said no declaration existed, having
+      searched annotation *type* names and missed attributes: `@ExerisDomain` and `@Action` both
+      carry `roles` and `permissions`, `DomainMetadata` has fields for them, and the processor
+      extracts neither, so every one of those lists is empty in every build), and the one case that
       looked like it justified a gate — a tenant-partitioned entity, which truly cannot serve
       without a bound context — answers `500` from the tenant guard, not `401`. A gated claim would
       have named the wrong status for its own best case. The cheap half landed with it: response
@@ -1611,19 +1614,39 @@ Proposals, highest return-on-effort first:
       runs once the nulls are gone, and whether any downstream consumer (the TS client, a
       generator a user points at it) reads a field that is currently emitted as explicit `null`.
 
-- [ ] **T51 — the generated app cannot declare that a route needs a caller.** Split out of D8 with
-      its scope already measured. Two halves are missing and both are needed before the OpenAPI
-      security block can come back (ADR-079). **A declaration:** no SDK annotation says "this route
-      requires identity" — `@RowLevelSecurity` and `@TenantId` scope data, not the edge — so there
-      is nothing for the processor to extract into `DomainMetadata`. **A seam:** the kernel reads
-      the policy from `HttpKernelProviders.HTTP_ROUTE_POLICY`, a `ScopedValue`, so the only binding
-      site is the `ScopedValue.where(...)` chain inside the emitted `Application`; ADR-070's
-      `RuntimeComponents` carries `create*` factories and `configureRoutes` and reaches neither, so
-      a consumer today cannot bind a policy without editing generated code. That makes it an
-      ADR-070 gap of the shape that ADR exists to name, and it is the same shape T48 closed for the
-      event publisher. Sequence: SDK annotation → processor extraction → emitted policy +
-      `RuntimeComponents` factory → restore the spec's security block, gated on the declaration.
-      Coordinate with `exeris-sdk`; the annotation is theirs, the emission is ours.
+- [ ] **T51 — five layers of an authorization story, none of them joined.** Split out of D8, then
+      re-measured on 2026-08-28 because D8's own account of it was wrong. The declaration is not
+      missing; almost everything else is. What exists, and what each layer actually does:
+
+      | Layer | State |
+      |---|---|
+      | `@ExerisDomain(roles, permissions)`, `@Action(roles, permissions)` | declared in the SDK, with Javadoc saying "**declared but not extracted**" (kernel v0.11, ADR-061) |
+      | `DomainMetadata.roles/permissions`, `ActionMetadata.permissions`, and the TS Zod schema | fields exist, `@JsonProperty` and all — always empty |
+      | processor extraction | **absent**: `grep -rn "roles\|permissions" exeris-processor/src/main` returns nothing |
+      | `-Aexeris.strict` completeness audit | **silent** — no `INERT_ATTRIBUTES` entry, so an author sets a permission and is told nothing (fixed alongside this entry) |
+      | backend enforcement | nothing binds `HTTP_ROUTE_POLICY`, so every emitted route is `PERMIT_ALL` (ADR-079) |
+      | frontend enforcement | `guard-gen` emits `canView<Entity>` etc. checking `auth.hasPermission(<ENTITY>_PERMISSIONS.READ)` against **invented** constant names, and `app-structure-gen` attaches them to **no route** |
+
+      The last row is the sharpest: the generated frontend guards on permissions the generated
+      backend does not check and the author did not declare, and then does not install the guards.
+
+      **The vocabulary question is already settled upstream, and not by us.** The kernel's
+      `RouteRequirement` decides on **scopes** (`PERMIT_ALL` / `AUTHENTICATED` / `ANY_SCOPE` /
+      `ALL_SCOPES`); `RouteAuthorizationEnforcer` consults `PrincipalContext.scopes()` and never
+      `roles()`. The SDK's Javadoc rules out mapping `roles` onto scopes by a `ROLE_x` convention —
+      it would stand up a second, silently diverging authority model at the edge — and points roles
+      at the kernel's method-level `@RequiresRole` (kernel ADR-014, its own build-config processor)
+      instead. So **`permissions` is the half with a destination** and `roles` is deliberately not.
+
+      What is left for us is a design with real forks, hence an RFC before an ADR: how a path
+      template matches the concrete path the dispatcher passes; what an *undeclared* route gets
+      (today's `PERMIT_ALL`, or `HttpRoutePolicy.unmatched()`'s `AUTHENTICATED`, which would lock
+      down every route of every existing app); whether an entity's permissions are `ANY_SCOPE` or
+      `ALL_SCOPES`; how `@Action` permissions compose with the entity's; where the policy binds,
+      given that `HTTP_ROUTE_POLICY` is a `ScopedValue` bound around boot and ADR-070's
+      `RuntimeComponents` reaches neither; and what the FE guards should read once the names are
+      declared rather than invented. Restoring ADR-079's security block is the last step, not the
+      first.
 
 - [ ] **D10 — the TS side has a bearer-token code path that reaches no emitted output.** Surfaced by
       the review of the D8 PR and verified: `KernelStrategy.getDefaultHeaders`
