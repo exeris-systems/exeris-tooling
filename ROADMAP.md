@@ -628,7 +628,33 @@ never-invoked emitter start emitting, and its output did not build.
       in the file it decorates. `Directive`, `Injectable`, `Pipe`, `Input`, `Output`, `Signal` and
       `Type` are the same shape. Alias unconditionally rather than maintaining a reserved-word list
       against every Angular release.
-- [ ] **T50 — the emitted app declares no runtime driver.** `Application.main()` boots subsystems by
+- [x] **T50 — the build fails when the generated app has no driver to run on (ADR-078).** Shipped
+      0.8.0, taking the finding's own second option. Checking the premise against the **published
+      jars** rather than the source tree sharpened it: `exeris-kernel-core-0.11.0.jar` carries
+      **zero** `META-INF/services` entries, and subsystems are not resolved one SPI at a time —
+      `BootstrapSelector` selects *by name* from `ServiceLoader<SubsystemProvider>`, and Core
+      registers no `SubsystemProvider` at all. So SPI + Core alone is not "a subsystem that fails to
+      start", it is an application in which no requested name can resolve. That is also what makes
+      the gate non-vacuous: Core cannot satisfy it.
+
+      New goal `exeris:verify-runtime` at `process-classes`, `requiresDependencyResolution = RUNTIME`
+      so Maven injects the set the application actually starts with. It scans that classpath for a
+      `META-INF/services/<spi>` registration — a file read, no consumer class loaded, no dependency
+      added beyond `java.nio.file` and `java.util.zip`.
+
+      The required SPIs come from **what the pipeline emitted**, never from the `subsystems()`
+      string: repositories and handlers always (so `SubsystemProvider`, `PersistenceProvider`,
+      `HttpProvider`), plus `EventProvider` / `GraphProvider` / `FlowProvider` where a
+      `@DomainEvent`, graph metadata or a saga made the corresponding artefact exist. Crypto is
+      absent even though the default string names it — the emitted javadoc invites the consumer to
+      override that string, so a check driven by it would fail correct builds.
+
+      **Named rather than discovered later:** an unbound goal is silent, exactly like an unbound
+      `verify-capabilities` — the same shape as a config flag read by nobody. A plugin cannot bind
+      itself into a consumer's lifecycle, so the migration entry leads with the execution block
+      instead. Original finding below.
+
+      **T50 — the emitted app declares no runtime driver.** `Application.main()` boots subsystems by
       name and every provider behind those names is in `exeris-kernel-community`; nothing in the
       emitted build says so, and the failure is a bootstrap error naming a subsystem rather than a
       jar. This is **T30 one phase later** and it fails worse. Tooling emits no `pom.xml`, so the

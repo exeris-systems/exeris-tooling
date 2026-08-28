@@ -13,6 +13,8 @@ import eu.exeris.tooling.codegen.core.capability.CapabilityGraph;
 import eu.exeris.tooling.codegen.core.capability.CapabilityGraphException;
 import eu.exeris.tooling.codegen.core.capability.CapabilityModuleDescriptor;
 import eu.exeris.tooling.codegen.core.capability.CompositionStamp;
+import eu.exeris.tooling.codegen.core.driver.RequiredDrivers;
+import eu.exeris.tooling.codegen.core.driver.RuntimeDriverCheck;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.core.generator.GeneratorRegistry;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
@@ -439,6 +441,40 @@ public final class CodegenPipeline {
         LOG.log(Level.INFO, "Generated tests: files=" + filesGenerated
                 + " pruned=" + pruned + " output=" + testOutputDir);
         return filesGenerated;
+    }
+
+    /**
+     * T50 / ADR-078. Reports which kernel SPIs the emitted application needs a provider for and
+     * has none registered on {@code runtimeClasspath}.
+     *
+     * <p>Sits here rather than in the mojo for the same reason
+     * {@link #validateCapabilities(Path)} does: the metadata read is this pipeline's own input,
+     * loaded through the one reader that knows which JSON files are domains and which are
+     * {@code enum_} / {@code capability_} siblings. A caller that assembled its own loader would
+     * be a second, drifting answer to that question.
+     *
+     * <p>A verdict over zero domains is {@link RuntimeDriverCheck.Result#vacuous() vacuous}, not
+     * a pass: a build that emitted no application requires no driver to run one.
+     *
+     * @param metadataDir      directory holding processor-emitted JSON
+     * @param runtimeClasspath the resolved runtime classpath elements
+     * @return the verdict; never {@code null}
+     * @throws IOException if the metadata cannot be read
+     */
+    public RuntimeDriverCheck.Result verifyRuntimeDrivers(Path metadataDir,
+                                                          List<Path> runtimeClasspath)
+            throws IOException {
+        Objects.requireNonNull(metadataDir, "metadataDir");
+        Objects.requireNonNull(runtimeClasspath, "runtimeClasspath");
+        Set<String> required = RequiredDrivers.forDomains(loadMetadata(metadataDir));
+        if (required.isEmpty()) {
+            LOG.log(Level.INFO, "No domain metadata in " + metadataDir
+                    + " — no emitted application, so no runtime driver to require");
+            return new RuntimeDriverCheck.Result(List.of(), List.of(), 0);
+        }
+        LOG.log(Level.INFO, "Checking " + required.size() + " required runtime driver SPI(s) against "
+                + runtimeClasspath.size() + " classpath element(s)");
+        return RuntimeDriverCheck.scan(runtimeClasspath, required);
     }
 
     /**
