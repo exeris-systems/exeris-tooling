@@ -2,12 +2,12 @@
 
 | Field             | Value |
 |:------------------|:------|
-| **Status**        | **DRAFT** |
+| **Status**        | **DRAFT** — deferred to the 0.9.0 train, targeted at the nominal kernel/SDK shape rather than a 0.11 workaround |
 | **Author(s)**     | ArkStack |
 | **Date Opened**   | 2026-08-28 |
 | **Date Closed**   | — |
 | **Target ADR(s)** | TBD (one; reserve after acceptance) |
-| **Affected Repos**| `exeris-tooling` (all of it), `exeris-sdk` (nothing new — the annotations already exist), `exeris-kernel` (nothing — the SPI already offers what is needed) |
+| **Affected Repos**| `exeris-tooling` (all of it); `exeris-kernel` **0.12** and `exeris-sdk` **0.12** carry the two prerequisites below |
 | **Reviewers**     | — |
 
 ## Question
@@ -61,6 +61,31 @@ backend.
 4. **Backwards compatibility is a security question here, not an ergonomics one.** Every existing
    generated app runs permit-all today. Any default that tightens routes silently upgrades an app
    into refusing traffic it currently serves.
+
+### What kernel 0.12 changes, and why this RFC waits for it
+
+Two of the three findings this RFC measured against kernel 0.11 are being answered at the platform
+level, on the kernel 0.12 / SDK 0.12 train (founder ruling, 2026-08-28):
+
+- **A fifth `RouteRequirement` kind, `ABSTAIN`** — "I do not describe this route" — plus a
+  combinator, `HttpRoutePolicy.firstMatch(generated, handWritten, fallback)` with a **mandatory**
+  fallback. Totality is preserved and moves to the composite instead of burdening every component.
+  Additive, but `spi.http` is on the stable surface, so it goes through the API gate and likely
+  earns an amendment to ADR-061.
+- **A denial reason on the JFR event** — `NO_PROVIDER` / `NO_TOKEN` / `TOKEN_REJECTED`. The HTTP
+  status stays `401`, which is correct for the caller; what changes is that `NO_PROVIDER` — the one
+  that means *this application is misassembled* — becomes readable without guessing.
+
+Those are precisely the two measurements that shaped Option B′. `ABSTAIN` + `firstMatch` is a
+better version of the delegating composite B′ proposed, provided by the platform rather than
+hand-rolled into emitted code; and a legible `NO_PROVIDER` turns "the app answers 401 to
+everything" from an indistinguishable outage into a diagnosable wiring fault. **Building B′'s
+composite against 0.11 would therefore mean emitting machinery the platform supersedes one train
+later** — which is how this repository's inert-output findings (D10, D11, the unwired Handlebars
+templates) got written in the first place.
+
+So this RFC targets the nominal shape and the slice moves to **0.9.0**, gated on kernel 0.12 and
+SDK 0.12 being final — the release-ordering rule forbids shipping against a cross-repo SNAPSHOT.
 
 ## Options Considered
 
@@ -134,32 +159,46 @@ Leave all five layers unjoined and keep the strict warnings as the only signal.
 
 ## Recommendation
 
-**The end state should be Option B′ — fail-closed for emitted routes — reached through a flag whose
-default is today's behaviour until 1.0.** Concretely: emit the policy under Option A's rule now
-(`PERMIT_ALL` unless a permission is declared), add `-Aexeris.routeDefault=permitAll|authenticated`
-in the same change, and make `authenticated` the default at the 1.0 train with a migration entry.
+**Fail-closed for the routes the pipeline emits, `ABSTAIN` for everything else, composed by the
+kernel's `firstMatch` with a fallback the consumer must choose.** Deferred to 0.9.0, on the kernel
+0.12 / SDK 0.12 train.
+
+Concretely, once those land:
+
+- The emitted policy answers `ANY_SCOPE`/`ALL_SCOPES` where a permission is declared,
+  `AUTHENTICATED` for the other routes **it emitted**, and `ABSTAIN` for every path it does not
+  know. It never speaks for a route it did not generate — which is a property it can now *state*
+  rather than approximate.
+- `Application` composes `firstMatch(generated, handWritten, fallback)`. The fallback is mandatory,
+  so the decision about an undescribed route is made once, explicitly, by the consumer — which is
+  what ADR-061 asks for and what no amount of emitted cleverness could supply.
+- A misassembled app is diagnosable: `NO_PROVIDER` on the JFR event says "this application has no
+  identity wiring", instead of a `401` that looks like every other `401`.
 
 The reasoning, stated plainly because it is a security posture and not an ergonomics preference:
 
-| | Opt-in (A) | Opt-out (B′) |
+| | Opt-in (A) | Fail-closed for emitted routes |
 |---|---|---|
 | Forgetting to declare | endpoint is **open**, silently | endpoint answers **401**, loudly |
 | Existing generated apps | unchanged | must declare public routes, or install identity, before regenerating |
-| Needs a new SDK declaration | no | **yes** — nothing says "this route is public" today |
-| Governs hand-written routes | no | no (that is what B′ fixes over B) |
-| Matches the kernel's own default | no | yes (`unmatched()` → `authenticated()`) |
+| Needs a new SDK declaration | no | **yes** — nothing says "this route is public" today (SDK 0.12) |
+| Governs hand-written routes | no | no — `ABSTAIN` is the mechanism, not a convention |
+| Undescribed route | decided by omission | decided **once, by the consumer**, in the mandatory fallback |
 
 A fails in the direction that hurts: an author who declares permissions on nine entities and
-forgets the tenth ships the tenth open, and nothing in the build says so. B′ fails in the direction
-that is merely inconvenient: the tenth answers `401` until someone declares it public. **Between a
-defect that exposes and a defect that annoys, the pipeline should choose the second** — that is the
-same principle ADR-078's build gate and ADR-079's removed claim both rest on.
+forgets the tenth ships the tenth open, and nothing in the build says so. Fail-closed fails in the
+direction that is merely inconvenient. **Between a defect that exposes and a defect that annoys,
+the pipeline should choose the second** — the same principle ADR-078's build gate and ADR-079's
+removed claim both rest on.
 
-What stops B′ from being the immediate answer is not the principle but the sequence: it needs the
-public-route declaration first (an `exeris-sdk` change), and flipping it without one would leave an
-author no way to say "this is the login endpoint". So the flag is not a hedge — it is the honest
-order of operations, and the ADR should state the train at which the default flips rather than
-leaving it to drift.
+### On the `-Aexeris.routeDefault` flag this RFC previously recommended
+
+Dropped as load-bearing, kept as an escape hatch at most. It existed to buy a migration window for
+two problems the platform now solves: a policy that had to answer for paths it never emitted, and a
+`401` nobody could attribute. What remains is an ordinary breaking change to emitted behaviour,
+announced in the migration guide for the train that carries it — which is what the 0.x versioning
+policy already provides for. A flag with a scheduled flip is a promise that drifts; a migration
+entry is a fact.
 
 ### Why not the alternatives?
 
@@ -167,16 +206,24 @@ leaving it to drift.
 is backwards, and it leaves a policy file that protects two entities out of ten reading as though
 it were the policy.
 
-**Plain B, now.** Two measured objections, either of which is enough on its own: without identity
-wiring the app answers `401` to everything, and a single bound policy answering `AUTHENTICATED` for
-unrecognised paths would close routes this pipeline never emitted.
+**Option B′ against 0.11.** Not wrong, and now unnecessary: it hand-rolled into emitted code the
+composite the SPI is about to provide. Shipping it would put a second, weaker combinator in every
+generated app one train before the real one arrives, and this repository has enough emitted
+machinery nobody runs.
+
+**Plain B against 0.11.** Two measured objections, either sufficient alone: without identity wiring
+the app answers `401` to everything with no way to tell that apart from a rejected token, and a
+single bound policy answering `AUTHENTICATED` for unrecognised paths would close routes this
+pipeline never emitted. Kernel 0.12 removes both.
 
 **C** ships an artefact nothing runs. **D** leaves the emitted frontend guarding on invented names.
 
 ### Risks of the recommendation
 
-- **A flag with a scheduled flip is a promise, and promises drift.** The 1.0 migration entry has to
-  be written when the flag lands, not when it flips.
+- **The slice now spans three repositories and two trains.** Kernel 0.12 (`ABSTAIN`, `firstMatch`,
+  the JFR reason), SDK 0.12 (the public-route declaration), tooling 0.9.0. If either upstream half
+  slips, this RFC's recommendation does not degrade gracefully — it degrades back into Option B′,
+  and the decision to wait has to be taken again rather than assumed.
 - **`ANY_SCOPE` vs `ALL_SCOPES` is unresolved.** "Permissions required to execute this action" reads
   like ALL; "default permissions required to access this entity's API" reads like ANY.
 - **Partial coverage.** Under the `permitAll` default an app that protects two entities has a mostly
@@ -188,9 +235,12 @@ unrecognised paths would close routes this pipeline never emitted.
 
 ## Decision Record
 
-Pending. On acceptance: reserve one ADR number in `exeris-docs/adr-index.md`, delete the four
-`INERT_ATTRIBUTES` entries for `permissions` in the change that starts consuming them (the `roles`
-entries stay), and record the spike outcome for path matching.
+Pending, and deliberately not taken yet: the recommendation depends on two upstream changes that
+are decided but not shipped. On acceptance — expected once kernel 0.12 and SDK 0.12 are final —
+reserve one ADR number in `exeris-docs/adr-index.md`, cite the ADR-061 amendment the kernel writes
+for the `spi.http` addition, delete the two `INERT_ATTRIBUTES` entries for `permissions` in the
+change that starts consuming them (the `roles` entries stay), and record the spike outcome for path
+matching.
 
 ## Open questions / follow-ups
 
@@ -210,8 +260,8 @@ Two of these block the ADR. The rest can be settled in it.
 
    This is the same problem T48 solved for the event publisher, one layer earlier in the boot
    sequence, and it is worth deciding for *providers in general* rather than for this policy alone.
-3. **The public-route declaration** — opt-out is meaningless without one, and the SDK has no
-   attribute for it. `exeris-sdk`'s call, ours to consume.
+3. **The public-route declaration** — fail-closed is meaningless without one. Assigned to SDK 0.12
+   on the same train as the kernel half; this RFC assumes it and does not design it.
 4. `ANY_SCOPE` vs `ALL_SCOPES`, per site.
 5. Whether the emitted policy is detachable, and what a stale detached policy should do.
 6. What `roles` compiles into, if anything — currently nothing, deliberately (**not** this RFC).
