@@ -213,4 +213,24 @@ class OpenApiGeneratorTest {
         assertThat(parsed.getOpenAPI().getComponents().getSchemas())
                 .containsKeys("Order", "OrderCreateDto", "OrderUpdateDto");
     }
+
+    @Test
+    @DisplayName("The same metadata emits a byte-identical document twice")
+    void emissionIsDeterministic() throws IOException {
+        DomainMetadata meta = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders").versioned(true)
+                .fields(List.of(
+                        FieldMetadata.builder("orderNumber", "String").required(true).build(),
+                        FieldMetadata.builder("amount", "BigDecimal").build()))
+                .actions(List.of(
+                        ActionMetadata.builder("approve").build(),
+                        ActionMetadata.builder("cancel").build()))
+                .build();
+
+        // Hard constraint 3, and this generator had no gate for it: two entities' worth of
+        // map-valued state (paths, schemas, tags) reaches the writer, and a HashMap slipped in
+        // anywhere would show up here rather than as an unexplained diff in a consumer's repo.
+        assertThat(generator.generateYaml(meta)).isEqualTo(generator.generateYaml(meta));
+        assertThat(new OpenApiGenerator().generateYaml(meta)).isEqualTo(generator.generateYaml(meta));
+    }
 }
