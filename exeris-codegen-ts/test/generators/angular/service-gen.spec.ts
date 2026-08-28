@@ -568,3 +568,24 @@ describe('ServiceGenerator getSystemFields default-set branch', () => {
     }), CTX)).not.toThrow();
   });
 });
+
+describe('generateService — top-level convenience function', () => {
+  it('returns the per-domain file for a visible domain', () => {
+    const file = generateService(domain({ entityName: 'Order' }), CTX.config);
+
+    expect(file).not.toBeNull();
+    expect(file!.path).toBe('services/order.service.ts');
+  });
+
+  it('returns null for a hidden domain', () => {
+    expect(generateService(hiddenDomain('Audit'), CTX.config)).toBeNull();
+  });
+
+  it('falls back to KERNEL backend when config.backend is undefined (still emits per-domain file)', () => {
+    const partialConfig = { ...CTX.config, backend: undefined as unknown as GeneratorContext['backend'] };
+    const file = generateService(domain({ entityName: 'Order' }), partialConfig);
+
+    expect(file).not.toBeNull();
+    expect(file!.path).toBe('services/order.service.ts');
+  });
+});
