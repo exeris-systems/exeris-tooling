@@ -39,7 +39,7 @@ class OpenApiPathsBuilderTest {
     }
 
     @Test
-    @DisplayName("Every CRUD operation tags the entity and lists the standard 400/401/404/500 responses")
+    @DisplayName("A by-id GET declares exactly what its handler answers: 200/400/404/500")
     void operationsTagAndStandardErrors() {
         DomainMetadata meta = DomainMetadata.builder("Order", "com.example.domain")
                 .path("/orders").build();
@@ -50,7 +50,9 @@ class OpenApiPathsBuilderTest {
         // 500 is declared because every emitted handler can reach it — the tenant guard answers
         // it directly, and every service call sits inside a catch (RuntimeException) that does.
         // Until ADR-076 the spec named 404 and omitted 500 while the handler did the opposite.
-        assertThat(get.getResponses()).containsKeys("200", "400", "401", "404", "500");
+        // containsOnly, not contains: ADR-079 removed the 401 this set carried, and the point of
+        // the fix is the statuses that are absent.
+        assertThat(get.getResponses()).containsOnlyKeys("200", "400", "404", "500");
         // id path-param emitted with uuid format.
         assertThat(get.getParameters()).hasSize(1);
         assertThat(get.getParameters().get(0).getName()).isEqualTo("id");
@@ -72,6 +74,11 @@ class OpenApiPathsBuilderTest {
 
         assertThat(plain.get("/orders/{id}").getPut().getResponses()).doesNotContainKey("409");
         assertThat(locked.get("/orders/{id}").getPut().getResponses()).containsKey("409");
+        // A versioned update raises the conflict INSTEAD of the not-found: one statement matches on
+        // id and version together, so the emitted catch is the conflict alone. An unversioned one
+        // is the other way round.
+        assertThat(locked.get("/orders/{id}").getPut().getResponses()).doesNotContainKey("404");
+        assertThat(plain.get("/orders/{id}").getPut().getResponses()).containsKey("404");
         // Not on the routes that cannot raise it: deleteById matches on id alone, and a read
         // has no expected version to be stale against.
         assertThat(locked.get("/orders/{id}").getDelete().getResponses()).doesNotContainKey("409");
@@ -159,5 +166,54 @@ class OpenApiPathsBuilderTest {
         assertThat(post.getRequestBody()).isNotNull();
         assertThat(post.getRequestBody().getContent().get("application/json").getSchema().get$ref())
                 .isEqualTo("#/components/schemas/OrderApproveRequest");
+    }
+
+    @Test
+    @DisplayName("ADR-079: no operation declares 401, on any route shape")
+    void noOperationDeclaresAnUnreachableUnauthorized() {
+        DomainMetadata meta = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders").versioned(true)
+                .actions(List.of(ActionMetadata.builder("approve").build()))
+                .build();
+
+        Paths paths = OpenApiPathsBuilder.buildPaths(meta);
+
+        // The emitted application binds no HttpRoutePolicy, so the kernel dispatcher resolves every
+        // route to permitAll(), never runs the SecurityInterceptor, and cannot reach the 401 it is
+        // otherwise able to write. A spec declaring it describes a check that does not run.
+        assertThat(paths.values().stream()
+                .flatMap(item -> item.readOperations().stream())
+                .flatMap(op -> op.getResponses().keySet().stream()))
+                .doesNotContain("401");
+    }
+
+    @Test
+    @DisplayName("ADR-079: each operation declares only the statuses its own handler can answer")
+    void responseSetsFollowTheRouteShape() {
+        DomainMetadata plain = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .actions(List.of(ActionMetadata.builder("approve").build()))
+                .build();
+        DomainMetadata locked = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders").versioned(true)
+                .actions(List.of(ActionMetadata.builder("approve").build()))
+                .build();
+
+        Paths paths = OpenApiPathsBuilder.buildPaths(plain);
+
+        // The collection GET parses no id and decodes no body, so it can reject nothing, and it has
+        // no id to miss: its handler is a service call inside the 500 catch and nothing else.
+        assertThat(paths.get("/orders").getGet().getResponses()).containsOnlyKeys("200", "500");
+        // The create POST decodes a body — 400 — but addresses no row, so no 404.
+        assertThat(paths.get("/orders").getPost().getResponses()).containsOnlyKeys("201", "400", "500");
+        assertThat(paths.get("/orders/{id}").getDelete().getResponses())
+                .containsOnlyKeys("204", "400", "404", "500");
+        // An action answers 404 twice over — the findById guard, then the write rejection — and on a
+        // versioned entity the write half becomes the conflict, so both statuses are declared.
+        assertThat(paths.get("/orders/{id}/actions/approve").getPost().getResponses())
+                .containsOnlyKeys("200", "400", "404", "500");
+        assertThat(OpenApiPathsBuilder.buildPaths(locked)
+                .get("/orders/{id}/actions/approve").getPost().getResponses())
+                .containsOnlyKeys("200", "400", "404", "409", "500");
     }
 }

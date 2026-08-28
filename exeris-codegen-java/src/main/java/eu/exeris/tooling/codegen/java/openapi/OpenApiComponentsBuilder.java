@@ -23,7 +23,6 @@ public final class OpenApiComponentsBuilder {
         schemas.put(metadata.entityName(), buildEntitySchema(metadata));
         schemas.put(metadata.entityName() + "CreateDto", buildCreateDtoSchema(metadata));
         schemas.put(metadata.entityName() + "UpdateDto", buildUpdateDtoSchema(metadata));
-        components.setSecuritySchemes(OpenApiSecurityBuilder.buildSecuritySchemes());
         components.setSchemas(schemas);
         return components;
     }

@@ -143,4 +143,26 @@ class OpenApiGeneratorTest {
     void outputDirectoryGetter() {
         assertThat(generator.getOutputDirectory()).isEqualTo(tempDir);
     }
+
+    @Test
+    @DisplayName("ADR-079: neither emitted document declares a security requirement or scheme")
+    void emitsNoSecurityBlock() throws IOException {
+        DomainMetadata order = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders").build();
+        DomainMetadata product = DomainMetadata.builder("Product", "com.example.domain")
+                .path("/products").build();
+
+        OpenAPI aggregate = generator.generateAggregated(List.of(order, product), "catalog");
+        OpenAPI single = generator.generate(order);
+
+        // Both documents, because the requirement was set on both: the per-entity spec and the
+        // aggregate. An emitted app binds no HttpRoutePolicy, so every route is permit-all and no
+        // token is ever read — a spec that says otherwise describes a check that does not run.
+        assertThat(aggregate.getSecurity()).isNull();
+        assertThat(aggregate.getComponents().getSecuritySchemes()).isNull();
+        assertThat(single.getSecurity()).isNull();
+        assertThat(single.getComponents().getSecuritySchemes()).isNull();
+        assertThat(Files.readString(tempDir.resolve("catalog-api.yaml")))
+                .doesNotContain("bearerAuth");
+    }
 }

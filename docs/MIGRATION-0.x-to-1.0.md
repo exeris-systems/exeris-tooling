@@ -805,6 +805,56 @@ classpath by design. `-Dexeris.codegen.skip=true` skips it along with the rest o
 
 See [`adr/ADR-078-runtime-driver-gate.md`](adr/ADR-078-runtime-driver-gate.md).
 
+### The regenerated OpenAPI no longer claims authentication (D8, ADR-079)
+
+**What changed.** The emitted spec attached a `bearerAuth` (JWT) requirement to every operation and
+declared `401` on every operation. It no longer declares either, and the `securitySchemes` block is
+gone from both the per-entity and the aggregate document.
+
+**Why, in one measurement.** The kernel — not the emitted handler — answers `401`, so the absence of
+`UNAUTHORIZED` in the emitters proves nothing on its own. What proves it is the dispatch path:
+`CommunityHttpRequestProcessor` reads `HttpKernelProviders.httpRoutePolicy()`, a `ScopedValue` slot
+**your application** binds; with nothing bound every route resolves to `RouteRequirement.permitAll()`,
+and a permit-all route is admitted *without running the `SecurityInterceptor`* — no token is read and
+no identity is bound. No emitter binds `HTTP_ROUTE_POLICY`, so every generated route is permit-all
+and the `401` the spec promised was unreachable.
+
+> **Read this as a document catching up with the code, not as a capability being withdrawn.** The
+> generated API was never authenticating requests. What changed is that the spec stops saying it
+> was.
+
+**Response sets are now per operation.** One set used to serve every route shape:
+
+| Route | Now declares | Was |
+|---|---|---|
+| `GET` collection | `200`, `500` | `200`, `400`, `401`, `404`, `500` |
+| `POST` collection | `201`, `400`, `500` | `201`, `400`, `401`, `404`, `500` |
+| `GET /{id}` | `200`, `400`, `404`, `500` | + `401` |
+| `PUT /{id}` unversioned | `200`, `400`, `404`, `500` | + `401` |
+| `PUT /{id}` versioned | `200`, `400`, `409`, `500` | + `401`, + `404` |
+| `DELETE /{id}` | `204`, `400`, `404`, `500` | + `401` |
+| `POST /{id}/actions/…` | `200`, `400`, `404`, `500` (+ `409` versioned) | + `401` |
+
+The versioned `PUT` row is the one behavioural correction beyond the removals: ADR-076's emitted
+catch raises the conflict *instead of* the not-found, and the spec now says so.
+
+**Client impact.** A client generated from the new spec stops emitting an `Authorization` header
+and stops modelling a `401` branch. If you generate clients from this document and your deployment
+*does* front the app with identity, keep the old header handling — the spec now under-describes
+your deployment, which is the safe direction, and the accurate fix is T51.
+
+**Regenerated handlers:** the tenant-guard log message changed. It told you to "install the kernel
+`SecurityInterceptor` ahead of this router", which is inoperative at kernel 0.11 — the interceptor
+is already inside the dispatcher and runs only for a route whose requirement is not `permitAll()`.
+It now names the operative step: bind `HttpKernelProviders.HTTP_ROUTE_POLICY`, or bind
+`KernelProviders.STORAGE_CONTEXT` around the dispatch. Behaviour is unchanged; only the text is.
+
+**If you want the security block back:** that needs a route policy the application actually binds,
+which needs a declaration surface and a binding seam — neither exists today. Tracked as T51, scoped
+in ADR-079.
+
+See [`adr/ADR-079-emitted-openapi-authentication-claim.md`](adr/ADR-079-emitted-openapi-authentication-claim.md).
+
 ---
 
 ## Reference
@@ -817,3 +867,4 @@ See [`adr/ADR-078-runtime-driver-gate.md`](adr/ADR-078-runtime-driver-gate.md).
 - [ADR-075 — The generated event publisher is invoked from the generated handler](adr/ADR-075-generated-event-publisher-caller.md)
 - [ADR-076 — A write against a row that is not there answers 404, not 500](adr/ADR-076-write-rejection-status.md)
 - [ADR-078 — The build fails when the generated application has no driver to run on](adr/ADR-078-runtime-driver-gate.md)
+- [ADR-079 — The emitted OpenAPI describes no authentication](adr/ADR-079-emitted-openapi-authentication-claim.md)
