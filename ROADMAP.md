@@ -1625,6 +1625,7 @@ Proposals, highest return-on-effort first:
       | processor extraction | **absent**: `grep -rn "roles\|permissions" exeris-processor/src/main` returns nothing |
       | `-Aexeris.strict` completeness audit | **silent** — no `INERT_ATTRIBUTES` entry, so an author sets a permission and is told nothing (fixed alongside this entry) |
       | backend enforcement | nothing binds `HTTP_ROUTE_POLICY`, so every emitted route is `PERMIT_ALL` (ADR-079) |
+      | one generator that *would* read it | `DomainMetadataGenerator` copies `action.permissions()` into the metadata JSON the frontend generators consume — a consumer that is there and never receives a value |
       | frontend enforcement | `guard-gen` emits `canView<Entity>` etc. checking `auth.hasPermission(<ENTITY>_PERMISSIONS.READ)` against **invented** constant names, and `app-structure-gen` attaches them to **no route** |
 
       The last row is the sharpest: the generated frontend guards on permissions the generated

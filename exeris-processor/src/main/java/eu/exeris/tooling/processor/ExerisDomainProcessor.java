@@ -189,8 +189,12 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "it has had a default since SDK 0.11.0, so it is no longer a value "
                             + "every author is forced to write (T44)"),
             new InertAttribute("Action", "permissions",
-                    "the processor does not extract it, so it never reaches ActionMetadata's "
-                            + "permissions field and no emitter can read it. Of the two access "
+                    "the processor does not extract it, so ActionMetadata's permissions field is "
+                            + "empty in every build. One generator does read that field — "
+                            + "DomainMetadataGenerator copies it into the metadata JSON the frontend "
+                            + "generators consume — which is why this attribute is inert by an "
+                            + "extraction gap rather than by neglect: the consumer is there and the "
+                            + "value never arrives. Of the two access "
                             + "attributes this is the half with a destination: the kernel's "
                             + "RouteRequirement decides on named scopes, so a permission is what a "
                             + "generated URL-to-policy table would carry — and that table is this "
