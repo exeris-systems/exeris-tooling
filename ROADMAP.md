@@ -1649,6 +1649,34 @@ Proposals, highest return-on-effort first:
       declared rather than invented. Restoring ADR-079's security block is the last step, not the
       first.
 
+      Design opened as [`RFC-2026-08-28 Route Authorization Emission (tooling)`](docs/rfc/RFC-2026-08-28%20Route%20Authorization%20Emission%20%28tooling%29.md)
+      (DRAFT), and **deferred to 0.9.0** on 2026-08-28 rather than built against kernel 0.11.
+
+      The recommendation is fail-closed for the routes the pipeline emits — opt-in fails in the
+      direction that hurts, since forgetting one entity ships it open and silently, while opt-out
+      fails in the direction that merely annoys. Two measured facts about kernel 0.11 stood in the
+      way, and both are being answered upstream on the kernel 0.12 / SDK 0.12 train (founder ruling,
+      2026-08-28): a fifth `RouteRequirement` kind **`ABSTAIN`** plus
+      `HttpRoutePolicy.firstMatch(generated, handWritten, fallback)` with a **mandatory** fallback —
+      totality moves to the composite instead of burdening each component — and a **denial reason on
+      the JFR event** (`NO_PROVIDER` / `NO_TOKEN` / `TOKEN_REJECTED`), so the one that means "this
+      application is misassembled" stops looking like every other `401`. The `spi.http` addition is
+      additive but lands on a stable surface, so it carries an ADR-061 amendment, which our ADR will
+      cite.
+
+      Those are exactly the two constraints that shaped the RFC's interim option, a delegating
+      composite hand-rolled into emitted code. Building it now would emit machinery the platform
+      supersedes one train later — the same way D10, D11 and the unwired Handlebars templates came
+      to exist. So the slice waits for the nominal shape, gated on kernel 0.12 and SDK 0.12 being
+      **final** (no cross-repo SNAPSHOT at a cut), and the `-Aexeris.routeDefault` flag the RFC
+      first proposed is dropped as load-bearing: it bought a migration window for two problems the
+      platform now solves.
+
+      Still ours to settle when it starts: path-template matching against the concrete path the
+      dispatcher passes, and where a provider bound *around boot* joins the composition root —
+      ADR-070's seam reaches components the lifecycle constructs, not a `ScopedValue` bound around
+      `KernelBootstrap.boot(...)`, and that is worth deciding for boot-time providers in general.
+
 - [ ] **D10 — the TS side has a bearer-token code path that reaches no emitted output.** Surfaced by
       the review of the D8 PR and verified: `KernelStrategy.getDefaultHeaders`
       (`exeris-codegen-ts/src/core/backend-strategy.ts:231`) sets
