@@ -341,6 +341,29 @@ describe('ServiceGenerator enum-type collection + import line', () => {
     expect(content).toContain("import type { Custom } from '../types/enums';");
   });
 
+  it('a fully-qualified known Java type is not an enum, on the simple-name arm', () => {
+    // `java.time.LocalDate` reaches the heuristic as an FQN: the early exact-match check misses
+    // it, the simple name `LocalDate` is what KNOWN_JAVA_TYPES recognises. Without that arm it
+    // would match the PascalCase regex and be imported from a module that declares no such enum.
+    const content = gen.generate(domain({
+      entityName: 'Thing',
+      fields: [field({ name: 'when', type: 'java.time.LocalDate' })],
+    }), CTX)!.content;
+
+    expect(content).not.toContain("from '../types/enums'");
+  });
+
+  it('a PascalCase domain type with no enum suffix and no .domain. segment is left alone', () => {
+    // The conservative tail of the heuristic: `Widget` looks like a type name and nothing else
+    // about it says enum, so the generator emits no import rather than guessing.
+    const content = gen.generate(domain({
+      entityName: 'Thing',
+      fields: [field({ name: 'attr', type: 'com.shop.Widget' })],
+    }), CTX)!.content;
+
+    expect(content).not.toContain("from '../types/enums'");
+  });
+
   it('Known Java types + generics + arrays are NOT treated as enums (no enum import)', () => {
     const content = gen.generate(domain({
       entityName: 'Thing',
@@ -545,50 +568,6 @@ describe('ServiceGenerator getSystemFields default-set branch', () => {
     }), CTX)).not.toThrow();
   });
 });
-
-// ---------- Handlebars helpers registered at module load ----------
-
-describe('Handlebars helpers registered by service-gen module', () => {
-  // The service-gen module registers four global Handlebars helpers
-  // at import time (eq / kebabCase / camelCase / pascalCase) for use
-  // in any external Handlebars template that consumes them. The
-  // generator's own renderService is inline-string-based and never
-  // invokes them, so coverage of the helper callbacks themselves
-  // requires direct invocation through Handlebars.helpers.
-  //
-  // These tests exercise the closures registered on module load —
-  // proving the registration succeeded and the helpers work, even
-  // though the inline renderer doesn't invoke them today.
-
-  it('eq returns true for equal values, false otherwise', async () => {
-    const { default: Handlebars } = await import('handlebars');
-    const eq = Handlebars.helpers.eq as (a: unknown, b: unknown) => boolean;
-    expect(eq('foo', 'foo')).toBe(true);
-    expect(eq('foo', 'bar')).toBe(false);
-    expect(eq(1, 1)).toBe(true);
-  });
-
-  it('kebabCase delegates to DslMapper.toKebabCase', async () => {
-    const { default: Handlebars } = await import('handlebars');
-    const kebabCase = Handlebars.helpers.kebabCase as (s: string) => string;
-    expect(kebabCase('OrderLine')).toBe('order-line');
-  });
-
-  it('camelCase delegates to DslMapper.toCamelCase', async () => {
-    const { default: Handlebars } = await import('handlebars');
-    const camelCase = Handlebars.helpers.camelCase as (s: string) => string;
-    expect(camelCase('OrderLine')).toBe('orderLine');
-  });
-
-  it('pascalCase upper-cases the first char only', async () => {
-    const { default: Handlebars } = await import('handlebars');
-    const pascalCase = Handlebars.helpers.pascalCase as (s: string) => string;
-    expect(pascalCase('orderLine')).toBe('OrderLine');
-    expect(pascalCase('order')).toBe('Order');
-  });
-});
-
-// ---------- generateService convenience ----------
 
 describe('generateService — top-level convenience function', () => {
   it('returns the per-domain file for a visible domain', () => {

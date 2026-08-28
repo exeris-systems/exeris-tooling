@@ -1663,7 +1663,31 @@ Proposals, highest return-on-effort first:
       a header is worth sending only once a route requires one. Related to the standing
       "emitters wired by nobody" pattern; do not fix it in isolation from T51.
 
-- [ ] **D11 — three Handlebars templates and the `templatesDir` config option are wired to nothing.**
+- [x] **D11 — three Handlebars templates and the `templatesDir` config option are wired to nothing.**
+      Shipped 0.8.0, deleted rather than wired. The measurement made the choice easy: nothing calls
+      `Handlebars.compile` anywhere in the package, so the three `.hbs` files were never rendered by
+      anything, and the four helpers `service-gen` registered at module load existed for templates
+      that no code loads. The templates had also drifted — the list template still emitted the
+      pre-T40 `{{entityName}}Filter` — which is what a parallel implementation nobody runs always
+      does.
+
+      Removed with them: `resolveTemplatesPath` (no callers), the `templatesDir` config key (read
+      only by that function), the `handlebars` runtime dependency, and the two test blocks that
+      existed to cover the dead code — one of which said so in its own comment ("the inline renderer
+      doesn't invoke them today"). Emitted output is byte-identical; the schema strips unknown keys,
+      so a consumer config that still sets `templatesDir` keeps building, exactly as silently as it
+      did when the key existed and did nothing.
+
+      One consequence worth recording, because it looks like a coverage dodge and is not: deleting
+      well-covered dead code *lowered* `service-gen.ts` branch coverage below its gate, since the
+      file's remaining uncovered arms became a larger share. Two real tests closed it — a
+      fully-qualified known Java type and a PascalCase domain type with no enum suffix, both of
+      which must **not** produce an enum import. The one arm still uncovered is unreachable while
+      every non-primitive entry in `KNOWN_JAVA_TYPES` carries both its simple name and its FQN; it
+      now carries a comment saying so, rather than inviting the next reader to write a test that
+      cannot pass. Original finding below.
+
+      **D11 — three Handlebars templates and the `templatesDir` config option are wired to nothing.**
       Found 2026-08-28 while tracing the T40 barrel failure. `src/templates/angular/` holds
       `entity.service.ts.hbs`, `form.component.ts.hbs` and `list.component.ts.hbs` — a second,
       parallel implementation of three generators — and `config.ts` exposes `templatesDir` plus

@@ -9,7 +9,6 @@
 
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve, dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 
 // ============================================================================
@@ -89,8 +88,6 @@ export const GeneratorConfigSchema = z.object({
   /** Verbose output */
   verbose: z.boolean().default(false),
 
-  /** Custom templates directory */
-  templatesDir: z.string().optional(),
 });
 
 export type GeneratorConfig = z.infer<typeof GeneratorConfigSchema>;
@@ -121,7 +118,6 @@ export const DEFAULT_CONFIG: GeneratorConfig = {
   overwrite: false,
   dryRun: false,
   verbose: false,
-  templatesDir: undefined,
 };
 
 // ============================================================================
@@ -185,12 +181,4 @@ export function resolveOutputPath(config: GeneratorConfig): string {
   return resolve(process.cwd(), config.outputPath);
 }
 
-export function resolveTemplatesPath(config: GeneratorConfig): string {
-  if (config.templatesDir) {
-    return resolve(process.cwd(), config.templatesDir);
-  }
-  // Use built-in templates
-  const __dirname = dirname(fileURLToPath(import.meta.url));
-  return resolve(__dirname, '..', 'templates');
-}
 

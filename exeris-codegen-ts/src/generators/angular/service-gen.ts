@@ -6,9 +6,6 @@
  * @since 0.2.0
  */
 
-import Handlebars from 'handlebars';
-import { dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { outPath } from '../../core/paths.js';
 import type { DomainMetadata, FieldMetadata } from '../../models/index.js';
 import { DslMapper, modelTypeName } from '../../models/index.js';
@@ -16,7 +13,6 @@ import type { GeneratorConfig } from '../../config.js';
  import type { CodeGenerator, GeneratedFile, GeneratorContext } from '../../core/generator-registry.js';
 import type { BackendType } from '../../core/backend-strategy.js';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // Java types that map to a built-in TS type and therefore never need an enum
 // import. Hoisted to a module constant so enum detection (run per field AND per
@@ -43,11 +39,6 @@ const KNOWN_JAVA_TYPES = new Set([
   'byte[]', 'Object', 'java.lang.Object',
 ]);
 
-// Register Handlebars helpers
-Handlebars.registerHelper('eq', (a, b) => a === b);
-Handlebars.registerHelper('kebabCase', (str: string) => DslMapper.toKebabCase(str));
-Handlebars.registerHelper('camelCase', (str: string) => DslMapper.toCamelCase(str));
-Handlebars.registerHelper('pascalCase', (str: string) => str.charAt(0).toUpperCase() + str.slice(1));
 
 export { GeneratedFile };
 
@@ -418,6 +409,11 @@ export class ServiceGenerator implements CodeGenerator {
       ? javaType.substring(javaType.lastIndexOf('.') + 1)
       : javaType;
 
+    // Defensive, and currently unreachable: every non-primitive entry in KNOWN_JAVA_TYPES carries
+    // both its simple name and its FQN, so an FQN whose simple name is known is caught by the exact
+    // match above. It stays because the invariant is a property of that set, not of this code — add
+    // one simple-name-only entry and this becomes the arm that keeps an emitted import from naming
+    // an enum that does not exist. That is also why it shows as an uncovered branch.
     if (KNOWN_JAVA_TYPES.has(simpleName)) {
       return null;
     }

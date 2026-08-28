@@ -904,6 +904,21 @@ diffing a full generated app. If you are in either group above, regenerate; your
 the first time, and any hand-written code that referenced the emitted type should use the name the
 types module now declares.
 
+### `exeris-codegen-ts` drops `templatesDir` and the `handlebars` dependency (D11)
+
+**What changed.** The package shipped three Handlebars templates (`entity.service`, `form.component`,
+`list.component`), a `templatesDir` config key, and a `handlebars` runtime dependency. Nothing in
+the package ever called `Handlebars.compile`: the generators build their output with string
+assembly, `resolveTemplatesPath` had no callers, and the templates had drifted away from the
+generators they shadowed. All of it is deleted.
+
+**Action required:** none. Emitted output is byte-identical. If your config sets `templatesDir`, the
+schema strips unknown keys, so the build keeps working — the key did nothing before and does
+nothing now, with one fewer place to look for the reason.
+
+**If you installed the package and audit your dependency tree:** `handlebars` is gone from
+`exeris-codegen-ts`'s runtime dependencies.
+
 ---
 
 ## Reference

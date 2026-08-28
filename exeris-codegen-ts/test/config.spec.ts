@@ -19,16 +19,12 @@
  *     We control which file findConfigFile sees by chdir-ing into a temp
  *     dir whose chain has (or doesn't have) one of the recognised names.
  *   - resolveInputPath / resolveOutputPath: resolve against process.cwd().
- *   - resolveTemplatesPath: the `if (templatesDir)` branch and the
- *     built-in fallback derived from import.meta.url (we don't pin the
- *     exact built-in path — it's environment-dependent — we pin only the
- *     branch and the shape: absolute path ending in /templates).
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve, sep, isAbsolute } from 'node:path';
+import { join, resolve } from 'node:path';
 import {
   GeneratorConfigSchema,
   DEFAULT_CONFIG,
@@ -37,7 +33,6 @@ import {
   loadConfig,
   resolveInputPath,
   resolveOutputPath,
-  resolveTemplatesPath,
   type GeneratorConfig,
 } from '../src/config.js';
 
@@ -58,9 +53,6 @@ afterEach(() => {
 describe('GeneratorConfigSchema', () => {
   it('parses an empty object into the same value DEFAULT_CONFIG declares', () => {
     const parsed = GeneratorConfigSchema.parse({});
-    // The schema parses `templatesDir` as `undefined` (optional, no
-    // default); DEFAULT_CONFIG sets it explicitly to undefined. Both
-    // shapes serialise identically.
     expect(parsed).toEqual(DEFAULT_CONFIG);
   });
 
@@ -88,11 +80,9 @@ describe('GeneratorConfigSchema', () => {
       backend: 'KERNEL',
       framework: 'angular',
       apiBasePath: '/v2/api',
-      templatesDir: 'custom/tpl',
     });
     expect(parsed.backend).toBe('KERNEL');
     expect(parsed.apiBasePath).toBe('/v2/api');
-    expect(parsed.templatesDir).toBe('custom/tpl');
   });
 });
 
@@ -105,10 +95,6 @@ describe('DEFAULT_CONFIG', () => {
     // '' rather than '/api': the emitted client must request what the emitted server serves, and
     // the router registers the entity path with no prefix. The knob remains for gateway deployments.
     expect(DEFAULT_CONFIG.apiBasePath).toBe('');
-  });
-
-  it('leaves templatesDir undefined (forces resolveTemplatesPath to use the built-in fallback)', () => {
-    expect(DEFAULT_CONFIG.templatesDir).toBeUndefined();
   });
 });
 
@@ -231,29 +217,3 @@ describe('resolveInputPath / resolveOutputPath', () => {
   });
 });
 
-// ---------- resolveTemplatesPath ----------
-
-describe('resolveTemplatesPath', () => {
-  it('uses templatesDir (resolved against cwd) when provided', () => {
-    process.chdir(tempRoot);
-    const cfg: GeneratorConfig = { ...DEFAULT_CONFIG, templatesDir: 'my-tpl' };
-    expect(resolveTemplatesPath(cfg)).toBe(resolve(tempRoot, 'my-tpl'));
-  });
-
-  it('falls back to the built-in templates dir when templatesDir is undefined', () => {
-    // chdir into tempRoot so the cwd-rooted resolve (which the
-    // `if (templatesDir)` branch would use) is provably distinct
-    // from the import.meta.url-derived fallback. Otherwise running
-    // tests from the repo root would make the two paths collide
-    // by accident and weaken the assertion.
-    process.chdir(tempRoot);
-    const cfg: GeneratorConfig = { ...DEFAULT_CONFIG, templatesDir: undefined };
-    const out = resolveTemplatesPath(cfg);
-    // The fallback is import.meta.url-derived: <src-dir>/../templates.
-    // Pin only the invariants — absolute path, ends with /templates,
-    // not equal to the cwd-rooted templatesDir branch result.
-    expect(isAbsolute(out)).toBe(true);
-    expect(out.endsWith(`${sep}templates`)).toBe(true);
-    expect(out).not.toBe(resolve(tempRoot, 'templates'));
-  });
-});
