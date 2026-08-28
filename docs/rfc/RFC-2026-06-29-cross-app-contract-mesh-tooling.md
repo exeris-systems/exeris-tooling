@@ -2,7 +2,7 @@
 
 | Field             | Value                                                                 |
 |:------------------|:----------------------------------------------------------------------|
-| **Status**        | **DRAFT** — proposal pending founder review, since 2026-06-29; Amendment 1 (2026-08-28) folds **T42** in as the first slice. No code has landed (unlike the SSE/`@View` slices); this RFC is the **design gate** for the T12/T17 mesh epic and the **RFC half** of the reserved ADR-048. |
+| **Status**        | **DRAFT** — proposal pending founder review, since 2026-06-29; Amendments 1–2 (2026-08-28) fold **T42** in as the first slice and revisit §3 against kernel ADR-074. No code has landed (unlike the SSE/`@View` slices); this RFC is the **design gate** for the T12/T17 mesh epic and the **RFC half** of the reserved ADR-048. |
 | **Author(s)**     | arkstack-dev                                                          |
 | **Date Opened**   | 2026-06-29                                                           |
 | **Date Closed**   | —                                                                    |
@@ -111,6 +111,45 @@ still gated.
 
 **What it still may not decide alone:** the peer-namespace scheme and DTO dedup are open questions
 below, and both are visible in emitted output the moment this slice lands. The ADR settles them.
+
+## Amendment 2 (2026-08-28) — kernel 0.12 addresses peers, and §3's seam has to change because of it
+
+Checked before acceptance, on the founder's prompt that kernel 0.12 might already ease this. It
+does, and it also **falsifies a premise this RFC rests on**.
+
+**Verified on `exeris-kernel` `development/0.12.0`:** [`ADR-074 — A request names its own peer`]
+is **ACCEPTED** (2026-08-26, scope `kernel/http`). The addressee now rides on `HttpRequest` as an
+`authority` component, and `KernelWebClient` gained `withAuthority(String)` returning a client that
+addresses that peer while sharing engine, allocator and retry policy —
+`client.withAuthority("payments:8443").get(...)`. Authority is `host:port` (IPv6 bracketed), or
+`null` to fall back to the engine default. ADR-074 fixes the order as *authority → enrich → send*, so
+an outbound credential's audience binds to the peer rather than to the connect target.
+
+Two consequences for this RFC:
+
+1. **§3's stated premise — "`KernelWebClient` is single-host today" — is false on 0.12.** ADR-074's
+   own spike found it was narrower still: through the supported path the client dialled the address
+   its *own server* listens on (`targetHost = config.bindHost()`), so an app could not address even
+   the first peer. That is fixed. **The client+DTO slice no longer waits on addressing at all.**
+2. **`PeerAddressResolver` should be dropped, not stubbed.** This RFC proposed it as "the shape K4
+   runtime discovery drops into unchanged". The kernel has since decided the opposite disposition
+   deliberately: multi-peer addressing is 1.0, the **`ServiceResolver` seam is post-1.0**, and
+   ADR-074 records that a future resolver "returns an endpoint, which becomes the authority on the
+   request. No rework of this decision is implied." So a generated client should **take an
+   authority**, and name no resolver of its own. Defining `PeerAddressResolver` here would stand up a
+   second addressing vocabulary one train before the platform's own — the same mistake this
+   repository has now recorded three times as inert emitted machinery, and the same argument the SDK
+   used to refuse a `ROLE_x`-to-scope convention.
+
+**What that leaves for the ADR:** the generated peer client takes an authority (a constructor
+argument or a `withAuthority` call at the seam), the consumer supplies it, and when the kernel's
+`ServiceResolver` lands its output *is* that authority — no generated signature changes.
+
+**Cost to note, not to hide:** `HttpRequest` is a `stable` carrier and ADR-074 accepts a binary break
+on it, mitigated by a bridge constructor. Tooling pins kernel 0.11 today, so the client slice
+requires moving the pin to a **final** 0.12 — the release-ordering rule (no cross-repo SNAPSHOT at a
+cut) applies. **T42, the types-only slice, is untouched by all of this**: peer types need no client,
+no authority and no resolver, which is precisely why Amendment 1 cut the boundary where it did.
 
 ## Open questions / follow-ups (technical — gated, not blocking the slice)
 - **Published-contract artifact format** — the provided-entity `DomainMetadata` in full vs a pruned "contract subset" (only the `@Provides` services + the entities they expose). *Version/compat is decided (§1): ADR-042 `schemaVersion`, floor 2.*

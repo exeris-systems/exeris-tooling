@@ -712,7 +712,22 @@ never-invoked emitter start emitting, and its output did not build.
       **T40** is the record of what happens when two identifiers meet in one namespace). It needs
       neither K4 addressing nor the T17 capability twin, so it can ship while those stay gated. The
       peer-namespace scheme and DTO dedup are the two questions it cannot settle by itself; the ADR
-      does. **Next action is a founder decision on the RFC, open since 2026-06-29** — not more code.
+      does.
+
+      **Amendment 2, same day:** checking the RFC against kernel `development/0.12.0` before
+      accepting it falsified one of its premises. Kernel **ADR-074 is ACCEPTED** — the addressee now
+      rides on `HttpRequest` as an `authority`, and `KernelWebClient.withAuthority(String)` addresses
+      a peer while sharing engine and retry policy. So "`KernelWebClient` is single-host today" is
+      false on 0.12, the client+DTO slice stops waiting on addressing, and the RFC's proposed
+      `PeerAddressResolver` should be **dropped rather than stubbed**: the kernel deliberately holds
+      the `ServiceResolver` seam post-1.0, and ADR-074 records that a future resolver's output simply
+      *becomes* the authority. Emitting our own resolver interface would stand up a second addressing
+      vocabulary one train before the platform's. Cost to carry: `HttpRequest` is a `stable` carrier
+      and ADR-074 takes a binary break on it behind a bridge constructor, so the client slice needs
+      the kernel pin moved to a **final** 0.12. T42 itself is untouched — peer types need no client,
+      no authority and no resolver.
+
+      **Next action is a founder decision on the RFC, open since 2026-06-29** — not more code.
 
 - [ ] **Three config flags are declared, default `true`, and read by nothing.** `generateDetails`,
       `generateSagas`, `generateEvents` (`config.ts:54,60,63`); only `generateStores` is read, and
