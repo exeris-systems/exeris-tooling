@@ -883,8 +883,8 @@ now has to handle its absence, which is what every OpenAPI reader already does.
 **Who is affected:** two groups, both of whom have a generated frontend that does **not** build today.
 
 **1. An entity named after something an emitted module binds.** `Component`, `Page`, `PageRequest`,
-`Observable`, `Injectable`, `HttpClient`, `Validators`, `Routes`, `Subject` and 13 more — the full
-set is `RESERVED_MODULE_IDENTIFIERS` in `src/models/model-naming.ts`. The emitted form and list
+`Observable`, `Injectable`, `HttpClient`, `Validators`, `Routes`, `Subject` and 14 more — 23 in
+all, listed as `RESERVED_MODULE_IDENTIFIERS` in `src/models/model-naming.ts`. The emitted form and list
 components imported the name twice, once from a framework package and once from the entity's own
 service.
 

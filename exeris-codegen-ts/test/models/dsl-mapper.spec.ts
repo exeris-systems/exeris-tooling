@@ -15,8 +15,8 @@
  * format-driven inputType override + the textarea promotion for long
  * strings.
  *
- * The four formatting helpers (humanize / toKebabCase / toCamelCase /
- * toKebabCase) get focused one-liner tests.
+ * The three formatting helpers (humanize / toKebabCase / toCamelCase) get
+ * focused one-liner tests.
  */
 
 import { describe, expect, it } from 'vitest';

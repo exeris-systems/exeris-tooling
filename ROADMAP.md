@@ -650,7 +650,7 @@ never-invoked emitter start emitting, and its output did not build.
       `CustomerEntity` from it. Unreachable behaviour — an app with a `*Entity` domain never
       compiled — visible only to a unit test that pinned it in isolation. The strip is gone, the
       helper with it, and one function now decides the name for declarer and importer alike. No ADR:
-      neither half had a working consumer to migrate.
+      neither half had a working consumer to migrate. Original finding below.
 
       **T40 — an entity named `Component` breaks its own generated Angular code.** `form-gen` emits
       `import { Component, … } from '@angular/core'` and `import { <Entity>, … } from '../services/…'`
