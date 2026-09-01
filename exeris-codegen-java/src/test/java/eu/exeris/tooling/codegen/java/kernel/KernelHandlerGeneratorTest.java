@@ -677,4 +677,72 @@ class KernelHandlerGeneratorTest {
                 .doesNotContain("STORAGE_CONTEXT")
                 .doesNotContain("respondTenantUnbound");
     }
+
+    @Test
+    @DisplayName("a decoder fault is answered and logged instead of escaping the handler (T52)")
+    void decoderFaultIsAnsweredRatherThanEscaping() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .build();
+
+        String handler = new KernelHandlerGenerator().generate(metadata).content();
+
+        // parseBody re-throws IllegalStateException unchanged so ADR-036 is honoured and an
+        // absent decoder is never downgraded to 400. Nothing caught it either, so it escaped
+        // the handler: the dispatcher answered a bare 500, empty body, nothing logged.
+        assertThat(handler)
+                .contains("catch (IllegalStateException e)")
+                .contains("respondDecoderUnavailable(exchange, e)")
+                .contains("no request body decoder was available");
+
+        // Still 5xx, and still the deployment being blamed rather than the caller.
+        assertThat(handler)
+                .as("a missing decoder is a deployment fault, so the refusal must not become a 400")
+                .contains("private void respondDecoderUnavailable(HttpExchange exchange, "
+                        + "IllegalStateException cause)")
+                .contains("exchange.respond(HttpStatus.INTERNAL_SERVER_ERROR)");
+
+        assertThat(handler.split("respondDecoderUnavailable\\(exchange, e\\)", -1).length - 1)
+                .as("one per parseBody call site: handleCreate and handleUpdate")
+                .isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("every parseBody call site guards the decoder fault, actions included (T52)")
+    void everyBodyCallSiteGuardsTheDecoderFault() {
+        // The action handler decodes through its own inline try rather than appendBodyParseGuard,
+        // so it is a second call site that a fix applied to one place would miss — the same way
+        // T45's action handlers were missed by the T41 guard.
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .actions(List.of(
+                        ActionMetadata.builder("cancel").methodName("cancel").build(),
+                        ActionMetadata.builder("applyDiscount").methodName("applyDiscount")
+                                .params(List.of(ActionParamMetadata.required("percent", "java.math.BigDecimal")))
+                                .build()))
+                .build();
+
+        String handler = strategy.generate(metadata).stream()
+                .filter(f -> f.artifactType() == ArtifactType.CONTROLLER)
+                .findFirst().orElseThrow().content();
+
+        assertThat(handler.split("respondDecoderUnavailable\\(exchange, e\\)", -1).length - 1)
+                .as("handleCreate, handleUpdate, and the one action that carries a body "
+                        + "(cancel takes no params, so it never decodes)")
+                .isEqualTo(3);
+
+        // The caller-fault branch is untouched: a body the decoder rejected is still the
+        // caller's 400. Both catches must sit on the same try, or one of the two answers is lost.
+        assertThat(handler.split("exchange\\.respond\\(HttpStatus\\.BAD_REQUEST\\)", -1).length - 1)
+                .as("three body decodes plus the three path-id guards on getById/update/delete "
+                        + "and the action's own path-id guard")
+                .isEqualTo(8);
+
+        int parse = handler.indexOf("parseBody(exchange, ApplyDiscountRequest.class)");
+        int badRequest = handler.indexOf("exchange.respond(HttpStatus.BAD_REQUEST)", parse);
+        int decoderFault = handler.indexOf("respondDecoderUnavailable(exchange, e)", parse);
+        assertThat(decoderFault)
+                .as("the decoder-fault catch closes the same try that the 400 catch opens")
+                .isGreaterThan(badRequest);
+    }
 }
