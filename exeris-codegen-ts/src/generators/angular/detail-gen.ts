@@ -217,7 +217,11 @@ export class DetailGenerator implements CodeGenerator {
     // in the three-entity sample, none of which anything had ever compiled.
     lines.push(`  numericValue(field: FieldDisplay, entity: ${modelName} | null): number | null {`);
     lines.push(`    const value = this.rawValue(field, entity);`);
-    lines.push(`    return typeof value === 'number' ? value : Number.isFinite(Number(value)) ? Number(value) : null;`);
+    // Null/absent stays null so the pipes render nothing, rather than Number(null) === 0
+    // turning a missing amount into $0.00 — formatValue shows an em-dash for the same case.
+    lines.push(`    if (value === null || value === undefined || value === '') return null;`);
+    lines.push(`    const numeric = Number(value);`);
+    lines.push(`    return Number.isFinite(numeric) ? numeric : null;`);
     lines.push(`  }`);
     lines.push(``);
 
@@ -257,7 +261,9 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`  onDelete(): void {`);
     lines.push(`    if (confirm('Are you sure you want to delete this ${displayName.toLowerCase()}?')) {`);
     lines.push(`      this.service.delete(this.id()).subscribe({`);
-    lines.push(`        next: () => this.router.navigate(['/${kebab}s']),`);
+    // The route table's own plural, not `kebab + 's'`: an entity ending in `s` routes to
+    // `/address`, and the naive form navigated to `/addresss` — a URL nothing declares.
+    lines.push(`        next: () => this.router.navigate(['/${DslMapper.routePlural(entityName)}']),`);
     lines.push(`        error: (err) => alert('Failed to delete'),`);
     lines.push(`      });`);
     lines.push(`    }`);

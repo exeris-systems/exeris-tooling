@@ -184,9 +184,9 @@ function labelPlural(entityName: string): string {
   return entityName.endsWith('s') ? entityName : entityName + 's';
 }
 
+/** Delegates to the single authority — see DslMapper.routePlural. */
 function routePlural(entityName: string): string {
-  const kebab = DslMapper.toKebabCase(entityName);
-  return entityName.endsWith('s') ? kebab : kebab + 's';
+  return DslMapper.routePlural(entityName);
 }
 
 /**

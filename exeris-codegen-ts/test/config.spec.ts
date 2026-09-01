@@ -259,16 +259,24 @@ describe('cliOverrides', () => {
   it('maps every option to its config key', () => {
     const all = {
       input: 'i', output: 'o', apiBase: '/a', appName: 'n', framework: 'angular', styling: 'none',
-      backend: 'KERNEL', zod: false, services: false, forms: false, lists: false, stores: false,
-      sagas: false, events: false, overwrite: true, dryRun: true, verbose: true, peer: ['p=./p'],
+      backend: 'KERNEL', zod: false, services: false, forms: false, lists: false, details: false,
+      stores: false, sagas: false, events: false, overwrite: true, dryRun: true, verbose: true,
+      peer: ['p=./p'],
     };
     expect(cliOverrides(all, () => true)).toEqual({
       inputPath: 'i', outputPath: 'o', apiBasePath: '/a', appName: 'n', framework: 'angular',
       styling: 'none', backend: 'KERNEL', generateZod: false, generateServices: false,
-      generateForms: false, generateLists: false, generateStores: false, generateSagas: false,
-      generateEvents: false, overwrite: true, dryRun: true, verbose: true,
+      generateForms: false, generateLists: false, generateDetails: false, generateStores: false,
+      generateSagas: false, generateEvents: false, overwrite: true, dryRun: true, verbose: true,
       peers: [{ name: 'p', path: './p' }],
     });
+  });
+
+  // --no-details existed nowhere until the detail generator was wired: no .option(), no take().
+  // Since commander does not allowUnknownOption, typing it was a hard error rather than a no-op.
+  it('maps --no-details, like every other --no-* flag', () => {
+    expect(cliOverrides({ details: false }, passed('details'))).toEqual({ generateDetails: false });
+    expect(cliOverrides({ details: true }, nothingPassed)).toEqual({});
   });
 
   it('propagates a malformed peer reference rather than dropping it', () => {

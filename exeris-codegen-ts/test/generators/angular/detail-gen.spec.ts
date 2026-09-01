@@ -525,3 +525,24 @@ describe('DetailGenerator — defects exposed by wiring', () => {
     expect(content).not.toContain('entity()?.createdAt');
   });
 });
+
+describe('DetailGenerator — post-delete navigation', () => {
+  const entity = (entityName: string) =>
+    DomainMetadataSchema.parse({
+      packageName: 'com.shop', entityName,
+      fields: [{ name: 'id', type: 'java.util.UUID' }],
+    });
+
+  it('navigates to the plural the route table actually declares', () => {
+    expect(generateDetail(entity('Order'), DEFAULT_CONFIG).content)
+      .toContain("this.router.navigate(['/orders'])");
+  });
+
+  // The route table uses routePlural, which does NOT append a second 's'. detail-gen appended
+  // one unconditionally, so a successful delete left the user on a URL with no matching route.
+  it('does not double the s for an entity whose name already ends in one', () => {
+    const content = generateDetail(entity('Address'), DEFAULT_CONFIG).content;
+    expect(content).toContain("this.router.navigate(['/address'])");
+    expect(content).not.toContain('addresss');
+  });
+});

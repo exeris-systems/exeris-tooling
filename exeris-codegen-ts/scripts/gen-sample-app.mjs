@@ -55,6 +55,10 @@ const domains = [
   // the identifier twice and `ng build` failed here. It stays in the fixture because a unit test
   // asserting on emitted strings cannot prove that the emitted app compiles.
   d({ entityName: 'Component', fields: [{ name: 'id', type: 'java.util.UUID' }, { name: 'name', type: 'String' }] }),
+  // Named for the plural, not for the shop: an entity already ending in 's' routes to
+  // '/address', while detail-gen used to navigate to '/addresss' after a delete — a URL the
+  // route table never declares. No fixture entity ended in 's', which is why nothing caught it.
+  d({ entityName: 'Address', fields: [{ name: 'id', type: 'java.util.UUID' }, { name: 'city', type: 'String' }] }),
 ];
 const enums = [{
   name: 'OrderStatus',

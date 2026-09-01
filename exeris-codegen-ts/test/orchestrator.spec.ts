@@ -257,7 +257,10 @@ describe('buildGeneratedFiles — detail components', () => {
     expect(files.some((f) => f.path === 'src/app/components/order-detail.component.ts')).toBe(true);
   });
 
-  it('honours --no-details', () => {
+  // Named for what it actually does. The earlier title said "honours --no-details" while
+  // testing only the config object — and the CLI flag did not exist at all, so the name was
+  // the thing hiding the gap. The flag itself is covered in config.spec.ts (cliOverrides).
+  it('emits no detail component when generateDetails is false', () => {
     const files = buildGeneratedFiles([order], [], { ...DEFAULT_CONFIG, generateDetails: false });
     expect(files.some((f) => f.path.includes('-detail.component'))).toBe(false);
   });
