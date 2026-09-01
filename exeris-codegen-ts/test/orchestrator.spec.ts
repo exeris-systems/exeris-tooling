@@ -294,3 +294,69 @@ describe('buildGeneratedFiles — detail components', () => {
     expect(routes).toContain("path: 'orders/:id/edit'");
   });
 });
+
+// ---------------------------------------------------------------------------
+// generateEvents wiring (0.8.0). Unlike its siblings this generator has TWO call
+// sites: a per-entity handler and one app-wide bus that every handler imports.
+// Wiring only the first would emit handlers importing a file that does not exist.
+// ---------------------------------------------------------------------------
+
+describe('buildGeneratedFiles — domain events', () => {
+  const withEvents = domain({
+    entityName: 'Order',
+    fields: [{ name: 'id', type: 'java.util.UUID' }, { name: 'total', type: 'java.math.BigDecimal' }],
+    events: [{ name: 'OrderPlaced', payloadFields: ['id', 'total'] }],
+  });
+  const noEvents = domain({ entityName: 'Product', fields: [{ name: 'id', type: 'java.util.UUID' }] });
+  const at = (files: { path: string; content: string }[], p: string) =>
+    files.find((f) => f.path === p)?.content ?? '';
+
+  it('emits both the per-entity handler and the shared bus', () => {
+    const files = buildGeneratedFiles([withEvents], [], DEFAULT_CONFIG);
+    expect(files.some((f) => f.path === 'src/app/events/order.events.ts')).toBe(true);
+    expect(files.some((f) => f.path === 'src/app/events/event-bus.service.ts')).toBe(true);
+  });
+
+  // The handler imports './event-bus.service'. Emitting one without the other is a dangling
+  // import — TS2307 — which is why both call sites had to be wired in the same change.
+  it('emits the bus the handler imports', () => {
+    const files = buildGeneratedFiles([withEvents], [], DEFAULT_CONFIG);
+    expect(at(files, 'src/app/events/order.events.ts')).toContain("from './event-bus.service'");
+    expect(files.some((f) => f.path === 'src/app/events/event-bus.service.ts')).toBe(true);
+  });
+
+  it('emits one bus for many entities, not one per entity', () => {
+    const second = domain({
+      entityName: 'Invoice',
+      fields: [{ name: 'id', type: 'java.util.UUID' }],
+      events: [{ name: 'InvoiceIssued', payloadFields: ['id'] }],
+    });
+    const buses = buildGeneratedFiles([withEvents, second], [], DEFAULT_CONFIG)
+      .filter((f) => f.path.endsWith('event-bus.service.ts'));
+    expect(buses).toHaveLength(1);
+  });
+
+  it('emits nothing under events/ when no entity declares one', () => {
+    const files = buildGeneratedFiles([noEvents], [], DEFAULT_CONFIG);
+    expect(files.some((f) => f.path.includes('/events/'))).toBe(false);
+  });
+
+  it('emits no event code when generateEvents is false', () => {
+    const files = buildGeneratedFiles([withEvents], [], { ...DEFAULT_CONFIG, generateEvents: false });
+    expect(files.some((f) => f.path.includes('/events/'))).toBe(false);
+  });
+
+  // Both emitted classes are providedIn:'root' and nothing in the emitted app injects them —
+  // they exist for the consumer's own code, like the generated services. The barrel is how that
+  // code reaches them, so an event surface missing from it is emitted-but-unreachable.
+  it('exports the event surface from the app barrel', () => {
+    const barrel = at(buildGeneratedFiles([withEvents], [], DEFAULT_CONFIG), 'src/app/index.ts');
+    expect(barrel).toContain("export { EventBusService } from './events/event-bus.service';");
+    expect(barrel).toContain("export * from './events/order.events';");
+  });
+
+  it('adds no event exports to the barrel for an app with no events', () => {
+    const barrel = at(buildGeneratedFiles([noEvents], [], DEFAULT_CONFIG), 'src/app/index.ts');
+    expect(barrel).not.toContain('events/');
+  });
+});

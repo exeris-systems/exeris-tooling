@@ -24,6 +24,7 @@ import { generateService } from './generators/angular/service-gen.js';
 import { generateForm } from './generators/angular/form-gen.js';
 import { generateList } from './generators/angular/list-gen.js';
 import { generateDetail } from './generators/angular/detail-gen.js';
+import { EventHandlerGenerator } from './generators/angular/event-gen.js';
 import { generateStore } from './generators/angular/store-gen.js';
 import { generateAppStructure } from './generators/angular/app-structure-gen.js';
 import { generateView, generateViewRoute } from './generators/angular/view-gen.js';
@@ -70,6 +71,12 @@ export function buildGeneratedFiles(
 ): OutputFile[] {
   const generatedFiles: OutputFile[] = [];
 
+  // Hoisted above the per-entity loop: the event generator needs a context for BOTH its
+  // per-entity handler and its app-wide bus, and building one per entity would be wasteful
+  // and would give the two halves different views of the domain set.
+  const ctx = createGeneratorContext(config, domains);
+  const eventGenerator = new EventHandlerGenerator();
+
   // The per-entity tree — emitted by the real generators, then re-rooted to src/app.
   const appTree: OutputFile[] = [];
 
@@ -114,12 +121,26 @@ export function buildGeneratedFiles(
     if (config.generateStores) {
       appTree.push(generateStore(domain, config));
     }
+
+    // Domain-event handlers. `generateEvents` has defaulted to true since the flag was added and
+    // nothing read it, so no generated app could observe its own domain events — the emitted
+    // publisher's counterpart on the front end simply did not exist. Two call sites, not one:
+    // the per-entity handler here, and the shared event bus below, which several entities share.
+    if (config.generateEvents) {
+      const handler = eventGenerator.generate(domain, ctx);
+      if (handler) appTree.push(handler);
+    }
   }
 
   // Real per-entity Zod schemas + type/schema barrels (gated by config.generateZod).
   // These were a stub before (T20); the schemas reference the real enum module above.
-  const ctx = createGeneratorContext(config, domains);
   appTree.push(...new TypeGenerator().generateAggregate(domains, ctx));
+
+  // The event bus is app-wide: one service every entity's handler imports, emitted only when
+  // some entity actually declares an event.
+  if (config.generateEvents) {
+    appTree.push(...eventGenerator.generateAggregate(domains, ctx));
+  }
 
   // Presentation IR (@View): one page component + paired route per view, in
   // declaration order (deterministic — the views arrive in directory-scan order

@@ -20,6 +20,24 @@ import type { BackendType } from '../../core/backend-strategy.js';
 import { DslMapper } from '../../models/dsl-mapper.js';
 
 
+/** A TS single-quoted string literal — event display names come from metadata. */
+function tsSingleQuoted(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\r?\n/g, ' ');
+}
+
+/**
+ * <b>No `$localize` in emitted output.</b> Three announcer strings used `$localize` tagged
+ * templates. `$localize` is a global that exists only once the consumer adds `@angular/localize`
+ * to their dependencies and to `polyfills` in `angular.json` — and the app this tool emits
+ * declares `"polyfills": []` and no such dependency, so every emitted event handler failed
+ * `ng build` with `TS2304: Cannot find name '$localize'`. Tooling emits no dependency the
+ * consumer did not ask for, so an emitted symbol that requires one is an undeclared requirement
+ * on their build — the rule ADR-060 applied to slf4j on the Java side, and the one `store-gen`
+ * and `detail-gen` already record.
+ *
+ * <p>This surfaced only when the generator was first wired into the orchestrator: it had been
+ * exported and invoked by nobody, so its output had never been built.
+ */
 export class EventHandlerGenerator implements CodeGenerator {
   readonly name = 'EventHandlerGenerator';
   readonly artifactType = 'EVENT' as const;
@@ -327,7 +345,7 @@ export interface ${entityName}${pascalName}Event {
     const priority = isDestructive ? 'assertive' : 'polite';
 
     return `  private announce${pascalName}(event: ${entityName}${pascalName}Event): void {
-    const message = $localize\`:@@${entityName.toLowerCase()}.event.${camelName}:${this.humanize(event.name)}\`;
+    const message = '${tsSingleQuoted(this.humanize(event.name))}';
     this.liveAnnouncer.announce(message, '${priority}');
   }`;
   }
@@ -481,7 +499,7 @@ export class EventBusService implements OnDestroy {
           this._connectionState.next('CONNECTED');
           this.reconnectAttempt = 0;
           this.liveAnnouncer.announce(
-            $localize\`:@@events.connected:Connected to event stream\`,
+            'Connected to event stream',
             'polite'
           );
         });
@@ -592,7 +610,7 @@ export class EventBusService implements OnDestroy {
     } else {
       this._connectionState.next('ERROR');
       this.liveAnnouncer.announce(
-        $localize\`:@@events.connection.failed:Failed to connect to event stream\`,
+        'Failed to connect to event stream',
         'assertive'
       );
     }

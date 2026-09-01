@@ -402,6 +402,20 @@ function generateBarrelExport(visibleDomains: DomainMetadata[], enums: EnumMetad
     exports.push(`export { ${domain.entityName}DetailComponent } from './components/${kebab}-detail.component';`);
   }
 
+  // Domain events. Both emitted classes are `providedIn: 'root'`, so they need no provider —
+  // but nothing in the emitted app injects them: they exist for the CONSUMER's code, exactly
+  // like the generated services. The barrel is how that code reaches them without knowing
+  // internal paths, so an event surface missing from it is emitted-but-unreachable.
+  const eventDomains = visibleDomains.filter((d) => d.events && d.events.length > 0);
+  if (eventDomains.length > 0) {
+    exports.push('', '// Domain events (handlers, payload types, and the shared bus)');
+    exports.push(`export { EventBusService } from './events/event-bus.service';`);
+    exports.push(`export type { DomainEvent } from './events/event-bus.service';`);
+    for (const domain of eventDomains) {
+      exports.push(`export * from './events/${DslMapper.toKebabCase(domain.entityName)}.events';`);
+    }
+  }
+
   return exports.join('\n') + '\n';
 }
 

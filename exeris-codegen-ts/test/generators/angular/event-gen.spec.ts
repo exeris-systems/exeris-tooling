@@ -335,13 +335,14 @@ describe('EventHandlerGenerator announcement-priority heuristic', () => {
     expect(announcementPriorityFor(eventName)).toBe(expected);
   });
 
-  it('humanize fires inside the $localize message body for the announcement', () => {
+  it('humanize supplies the announcement message body', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
       events: [{ name: 'OrderPlaced', fields: [] }],
     }), CTX)!.content;
 
-    expect(content).toContain('$localize`:@@order.event.orderPlaced:Order Placed`');
+    // Was a $localize tagged template; see the no-$localize note on EventHandlerGenerator.
+    expect(content).toContain("const message = 'Order Placed';");
   });
 
   it('toPascalCase capture-group callback fires on snake_case + kebab-case event names', () => {
@@ -466,7 +467,7 @@ describe('EventHandlerGenerator.generateAggregate — central event-bus service'
       }),
     ], CTX)[0].content;
 
-    expect(content).toContain('$localize`:@@events.connection.failed:Failed to connect to event stream`');
+    expect(content).toContain("'Failed to connect to event stream',");
     expect(content).toContain("'assertive'");
   });
 
@@ -478,7 +479,7 @@ describe('EventHandlerGenerator.generateAggregate — central event-bus service'
       }),
     ], CTX)[0].content;
 
-    expect(content).toContain('$localize`:@@events.connected:Connected to event stream`');
+    expect(content).toContain("'Connected to event stream',");
     expect(content).toContain('this.reconnectAttempt = 0;');
   });
 
@@ -542,5 +543,41 @@ describe('generateEventHandler — top-level convenience function', () => {
 
     expect(file).not.toBeNull();
     expect(file!.path).toBe('events/order.events.ts');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Wired into the orchestrator (0.8.0). Until then the generator was exported and
+// invoked by nobody, so its output had never been compiled.
+// ---------------------------------------------------------------------------
+
+describe('EventHandlerGenerator — wired', () => {
+  const ordered = DomainMetadataSchema.parse({
+    packageName: 'com.shop',
+    entityName: 'Order',
+    fields: [{ name: 'id', type: 'java.util.UUID' }, { name: 'total', type: 'java.math.BigDecimal' }],
+    events: [{ name: 'OrderPlaced', payloadFields: ['id', 'total'] }],
+  });
+
+  // $localize is a global that exists only once the consumer adds @angular/localize and a
+  // polyfill entry; the emitted app declares neither. Same rule store-gen and detail-gen record,
+  // and the rule ADR-060 applied to slf4j on the Java side.
+  it('emits no $localize in either half — it would be an undeclared consumer-build requirement', () => {
+    const gen = new EventHandlerGenerator();
+    const ctx = createGeneratorContext({}, [ordered]);
+    expect(gen.generate(ordered, ctx)?.content).not.toContain('$localize');
+    for (const file of gen.generateAggregate([ordered], ctx)) {
+      expect(file.content).not.toContain('$localize');
+    }
+  });
+
+  it('emits nothing for a domain that declares no events', () => {
+    const gen = new EventHandlerGenerator();
+    const plain = DomainMetadataSchema.parse({
+      packageName: 'com.shop', entityName: 'Plain', fields: [{ name: 'id', type: 'java.util.UUID' }],
+    });
+    const ctx = createGeneratorContext({}, [plain]);
+    expect(gen.generate(plain, ctx)).toBeNull();
+    expect(gen.generateAggregate([plain], ctx)).toEqual([]);
   });
 });
