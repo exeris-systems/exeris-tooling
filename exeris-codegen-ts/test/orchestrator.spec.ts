@@ -240,3 +240,57 @@ describe('buildGeneratedFiles — peer contracts', () => {
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// generateDetails wiring (0.8.0). The flag defaulted to true and was read by nobody,
+// so DetailGenerator emitted nothing — while the emitted LIST already linked to the
+// routes a detail component owns.
+// ---------------------------------------------------------------------------
+
+describe('buildGeneratedFiles — detail components', () => {
+  const order = domain({ entityName: 'Order', fields: [{ name: 'id', type: 'java.util.UUID' }] });
+  const at = (files: { path: string; content: string }[], p: string) =>
+    files.find((f) => f.path === p)?.content ?? '';
+
+  it('emits a detail component per entity', () => {
+    const files = buildGeneratedFiles([order], [], DEFAULT_CONFIG);
+    expect(files.some((f) => f.path === 'src/app/components/order-detail.component.ts')).toBe(true);
+  });
+
+  // Named for what it actually does. The earlier title said "honours --no-details" while
+  // testing only the config object — and the CLI flag did not exist at all, so the name was
+  // the thing hiding the gap. The flag itself is covered in config.spec.ts (cliOverrides).
+  it('emits no detail component when generateDetails is false', () => {
+    const files = buildGeneratedFiles([order], [], { ...DEFAULT_CONFIG, generateDetails: false });
+    expect(files.some((f) => f.path.includes('-detail.component'))).toBe(false);
+  });
+
+  it('exports the detail component from the app barrel, like form and list', () => {
+    const barrel = at(buildGeneratedFiles([order], [], DEFAULT_CONFIG), 'src/app/index.ts');
+    expect(barrel).toContain("export { OrderDetailComponent } from './components/order-detail.component';");
+  });
+
+  // The route shape is not a preference: list-gen emits `[routerLink]="[item.id]"` labelled
+  // "View" and `[routerLink]="[item.id, 'edit']"` labelled "Edit". Before this wiring, `:id`
+  // loaded the FORM — so "View" opened an editor — and `:id/edit` matched no route at all,
+  // because the emitted table carries no wildcard.
+  it('routes :id to the detail view and :id/edit to the form', () => {
+    const routes = at(buildGeneratedFiles([order], [], DEFAULT_CONFIG), 'src/app/app.routes.ts');
+    expect(routes).toContain("path: 'orders/:id'");
+    expect(routes).toContain('m.OrderDetailComponent');
+    expect(routes).toContain("path: 'orders/:id/edit'");
+    expect(routes).toContain('m.OrderFormComponent');
+  });
+
+  it('gives every link the emitted list renders a matching route', () => {
+    const files = buildGeneratedFiles([order], [], DEFAULT_CONFIG);
+    const list = at(files, 'src/app/components/order-list.component.ts');
+    const routes = at(files, 'src/app/app.routes.ts');
+
+    expect(list).toContain('[routerLink]="[item.id]"');
+    expect(list).toContain(`[routerLink]="[item.id, 'edit']"`);
+    // ...and both targets now exist.
+    expect(routes).toContain("path: 'orders/:id'");
+    expect(routes).toContain("path: 'orders/:id/edit'");
+  });
+});

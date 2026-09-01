@@ -191,6 +191,7 @@ export function cliOverrides(
   take('services', 'generateServices', () => options.services !== false);
   take('forms', 'generateForms', () => options.forms !== false);
   take('lists', 'generateLists', () => options.lists !== false);
+  take('details', 'generateDetails', () => options.details !== false);
   take('stores', 'generateStores', () => options.stores !== false);
   take('sagas', 'generateSagas', () => options.sagas !== false);
   take('events', 'generateEvents', () => options.events !== false);

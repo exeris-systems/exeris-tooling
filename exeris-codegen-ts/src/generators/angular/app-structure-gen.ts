@@ -184,9 +184,9 @@ function labelPlural(entityName: string): string {
   return entityName.endsWith('s') ? entityName : entityName + 's';
 }
 
+/** Delegates to the single authority — see DslMapper.routePlural. */
 function routePlural(entityName: string): string {
-  const kebab = DslMapper.toKebabCase(entityName);
-  return entityName.endsWith('s') ? kebab : kebab + 's';
+  return DslMapper.routePlural(entityName);
 }
 
 /**
@@ -302,7 +302,11 @@ function generateAppRoutes(domains: DomainMetadata[], appName: string, views: Vi
     // in the tab + history. The /new and /:id titles use the bare
     // singular and are unaffected.
     const titlePlural = labelPlural(domain.entityName);
-    routes.push(`\n  {\n    path: '${plural}',\n    loadComponent: () => import('./components/${kebab}-list.component')\n      .then(m => m.${domain.entityName}ListComponent),\n    title: '${titlePlural} - ${tsSingleQuoted(appName)}'\n  },\n  {\n    path: '${plural}/new',\n    loadComponent: () => import('./components/${kebab}-form.component')\n      .then(m => m.${domain.entityName}FormComponent),\n    title: 'New ${domain.entityName} - ${tsSingleQuoted(appName)}'\n  },\n  {\n    path: '${plural}/:id',\n    loadComponent: () => import('./components/${kebab}-form.component')\n      .then(m => m.${domain.entityName}FormComponent),\n    title: 'Edit ${domain.entityName} - ${tsSingleQuoted(appName)}'\n  },`);
+    // Route shape is dictated by what the emitted LIST already links to, not by preference:
+    // `[item.id]` is labelled "View" and `[item.id, 'edit']` is labelled "Edit" (list-gen.ts).
+    // Before detail-gen was wired, `:id` loaded the FORM — so "View" opened an editor — and
+    // `:id/edit` matched nothing at all, because this table carries no wildcard route.
+    routes.push(`\n  {\n    path: '${plural}',\n    loadComponent: () => import('./components/${kebab}-list.component')\n      .then(m => m.${domain.entityName}ListComponent),\n    title: '${titlePlural} - ${tsSingleQuoted(appName)}'\n  },\n  {\n    path: '${plural}/new',\n    loadComponent: () => import('./components/${kebab}-form.component')\n      .then(m => m.${domain.entityName}FormComponent),\n    title: 'New ${domain.entityName} - ${tsSingleQuoted(appName)}'\n  },\n  {\n    path: '${plural}/:id',\n    loadComponent: () => import('./components/${kebab}-detail.component')\n      .then(m => m.${domain.entityName}DetailComponent),\n    title: '${domain.entityName} - ${tsSingleQuoted(appName)}'\n  },\n  {\n    path: '${plural}/:id/edit',\n    loadComponent: () => import('./components/${kebab}-form.component')\n      .then(m => m.${domain.entityName}FormComponent),\n    title: 'Edit ${domain.entityName} - ${tsSingleQuoted(appName)}'\n  },`);
   }
 
   // Presentation-IR views (RFC §5): each emits a `pages/<kebab>.route.ts` exporting
@@ -395,6 +399,7 @@ function generateBarrelExport(visibleDomains: DomainMetadata[], enums: EnumMetad
     const kebab = DslMapper.toKebabCase(domain.entityName);
     exports.push(`export { ${domain.entityName}FormComponent } from './components/${kebab}-form.component';`);
     exports.push(`export { ${domain.entityName}ListComponent } from './components/${kebab}-list.component';`);
+    exports.push(`export { ${domain.entityName}DetailComponent } from './components/${kebab}-detail.component';`);
   }
 
   return exports.join('\n') + '\n';

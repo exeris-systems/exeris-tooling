@@ -69,7 +69,12 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`  input,`);
     lines.push(`} from '@angular/core';`);
     lines.push(`import { rxResource } from '@angular/core/rxjs-interop';`);
-    lines.push(`import { CommonModule, DatePipe } from '@angular/common';`);
+    const stamps = timestampFields(domain);
+    // DatePipe is only imported when something renders a date: Angular reports an unused
+    // standalone import against the template.
+    lines.push(stamps.length > 0
+      ? `import { CommonModule, DatePipe } from '@angular/common';`
+      : `import { CommonModule } from '@angular/common';`);
     lines.push(`import { RouterModule, Router } from '@angular/router';`);
     lines.push(`import { ${entityName}Service } from '../services/${kebab}.service';`);
     lines.push(`import type { ${modelName} } from '../types/${kebab}.types';`);
@@ -99,7 +104,7 @@ export class DetailGenerator implements CodeGenerator {
       const dataType = field.dataType === 'currency' || field.dataType === 'percent' || field.dataType === 'url'
         ? field.dataType
         : undefined;
-      lines.push(`  { name: '${field.name}' as keyof ${modelName}, label: $localize\`:@@${kebab}.field.${field.name}:${mapping.label}\`, type: '${fieldType}'${enumTypeName ? `, enumType: '${enumTypeName}'` : ''}${dataType ? `, dataType: '${dataType}'` : ''} },`);
+      lines.push(`  { name: '${field.name}' as keyof ${modelName}, label: '${tsSingleQuoted(mapping.label)}', type: '${fieldType}'${enumTypeName ? `, enumType: '${enumTypeName}'` : ''}${dataType ? `, dataType: '${dataType}'` : ''} },`);
     }
     lines.push(`];`);
     lines.push(``);
@@ -107,7 +112,7 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`@Component({`);
     lines.push(`  selector: 'app-${kebab}-detail',`);
     lines.push(`  standalone: true,`);
-    lines.push(`  imports: [CommonModule, RouterModule, DatePipe],`);
+    lines.push(`  imports: [CommonModule, RouterModule${stamps.length > 0 ? ', DatePipe' : ''}],`);
     lines.push(`  changeDetection: ChangeDetectionStrategy.OnPush,`);
     lines.push(`  template: \``);
     lines.push(`    <article role="article" [attr.aria-labelledby]="'detail-title'" [attr.aria-busy]="isLoading()" class="max-w-4xl mx-auto">`);
@@ -138,8 +143,8 @@ export class DetailGenerator implements CodeGenerator {
     // @Field.dataType render facets (Wave 1A): currency/percent pipes and url anchor
     // operate on the raw entity value; every other field falls through to formatValue().
     lines.push(`                  @switch (field.dataType) {`);
-    lines.push(`                    @case ('currency') { {{ rawValue(field, entity()) | currency }} }`);
-    lines.push(`                    @case ('percent') { {{ rawValue(field, entity()) | percent }} }`);
+    lines.push(`                    @case ('currency') { {{ numericValue(field, entity()) | currency }} }`);
+    lines.push(`                    @case ('percent') { {{ numericValue(field, entity()) | percent }} }`);
     lines.push(`                    @case ('url') { <a [href]="rawValue(field, entity())" class="text-exeris-primary hover:underline">{{ rawValue(field, entity()) }}</a> }`);
     lines.push(`                    @default { {{ formatValue(field, entity()) }} }`);
     lines.push(`                  }`);
@@ -152,8 +157,12 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`          <h3 class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-4">System Information</h3>`);
     lines.push(`          <dl class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">`);
     lines.push(`            <div><dt class="text-gray-400">ID</dt><dd class="font-mono text-gray-600 dark:text-gray-300">{{ entity()?.${idField} }}</dd></div>`);
-    lines.push(`            @if (entity()?.createdAt) { <div><dt class="text-gray-400">Created</dt><dd>{{ entity()?.createdAt | date:'medium' }}</dd></div> }`);
-    lines.push(`            @if (entity()?.updatedAt) { <div><dt class="text-gray-400">Updated</dt><dd>{{ entity()?.updatedAt | date:'medium' }}</dd></div> }`);
+    // Only for entities that actually DECLARE them. These were emitted unconditionally, so an
+    // entity without the fields produced `TS2339: Property 'createdAt' does not exist` — which
+    // nothing caught while this generator was wired to no one.
+    for (const stamp of timestampFields(domain)) {
+      lines.push(`            @if (entity()?.${stamp.name}) { <div><dt class="text-gray-400">${stamp.label}</dt><dd>{{ entity()?.${stamp.name} | date:'medium' }}</dd></div> }`);
+    }
     lines.push(`          </dl>`);
     lines.push(`        </section>`);
     lines.push(`      }`);
@@ -202,6 +211,20 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`  }`);
     lines.push(``);
 
+    // The currency/percent pipes accept `string | number | null | undefined`, never `unknown`.
+    // Angular type-checks every @switch branch whether or not a field selects it, so `rawValue`
+    // feeding those two pipes made EVERY emitted detail component fail with TS2769 — six errors
+    // in the three-entity sample, none of which anything had ever compiled.
+    lines.push(`  numericValue(field: FieldDisplay, entity: ${modelName} | null): number | null {`);
+    lines.push(`    const value = this.rawValue(field, entity);`);
+    // Null/absent stays null so the pipes render nothing, rather than Number(null) === 0
+    // turning a missing amount into $0.00 — formatValue shows an em-dash for the same case.
+    lines.push(`    if (value === null || value === undefined || value === '') return null;`);
+    lines.push(`    const numeric = Number(value);`);
+    lines.push(`    return Number.isFinite(numeric) ? numeric : null;`);
+    lines.push(`  }`);
+    lines.push(``);
+
     lines.push(`  rawValue(field: FieldDisplay, entity: ${modelName} | null): unknown {`);
     lines.push(`    if (!entity) return null;`);
     lines.push(`    return entity[field.name as keyof ${modelName}] ?? null;`);
@@ -238,7 +261,9 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`  onDelete(): void {`);
     lines.push(`    if (confirm('Are you sure you want to delete this ${displayName.toLowerCase()}?')) {`);
     lines.push(`      this.service.delete(this.id()).subscribe({`);
-    lines.push(`        next: () => this.router.navigate(['/${kebab}s']),`);
+    // The route table's own plural, not `kebab + 's'`: an entity ending in `s` routes to
+    // `/address`, and the naive form navigated to `/addresss` — a URL nothing declares.
+    lines.push(`        next: () => this.router.navigate(['/${DslMapper.routePlural(entityName)}']),`);
     lines.push(`        error: (err) => alert('Failed to delete'),`);
     lines.push(`      });`);
     lines.push(`    }`);
@@ -293,6 +318,28 @@ export class DetailGenerator implements CodeGenerator {
     }
     return [...enums];
   }
+}
+
+/** A TS single-quoted string literal — labels come from metadata and may contain quotes. */
+function tsSingleQuoted(s: string): string {
+  return s.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\r?\n/g, ' ');
+}
+
+/**
+ * The audit timestamps this entity actually declares, with the label the detail view shows.
+ * `systemFields` may rename them, so the declared field list is the authority rather than the
+ * conventional names.
+ */
+function timestampFields(metadata: DomainMetadata): Array<{ name: string; label: string }> {
+  const declared = new Set(metadata.fields.map((f) => f.name));
+  const sf = metadata.systemFields;
+  const candidates: Array<{ name: string | undefined; label: string }> = [
+    { name: sf?.createdAtField ?? 'createdAt', label: 'Created' },
+    { name: sf?.updatedAtField ?? 'updatedAt', label: 'Updated' },
+  ];
+  return candidates
+    .filter((c): c is { name: string; label: string } => !!c.name && declared.has(c.name))
+    .map((c) => ({ name: c.name, label: c.label }));
 }
 
 export function generateDetail(metadata: DomainMetadata, config: GeneratorConfig): GeneratedFile {

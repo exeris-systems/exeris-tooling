@@ -542,6 +542,20 @@ export class DslMapper {
    * the default `toLowerCase()` and `Locale.ROOT` agree, so the URL segment produced
    * here matches the kernel route + OpenAPI path byte-for-byte.
    */
+  /**
+   * The plural path segment an entity's routes live under.
+   *
+   * One authority on purpose: `app-structure-gen` builds the route TABLE from this, and
+   * `detail-gen` navigates to it after a delete. Those two had drifted — detail-gen appended
+   * `s` unconditionally, so an entity already ending in `s` (`Address`, `Status`) got
+   * `/addresss`, a URL the table never declares. That is the same "link target vs. route table"
+   * defect this generator was wired to fix, one path over.
+   */
+  static routePlural(entityName: string): string {
+    const kebab = DslMapper.toKebabCase(entityName);
+    return entityName.endsWith('s') ? kebab : `${kebab}s`;
+  }
+
   static toKebabCase(name: string): string {
     return name
       .replace(/([a-z])([A-Z])/g, '$1-$2')

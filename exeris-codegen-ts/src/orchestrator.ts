@@ -23,6 +23,7 @@ import { generateEnumTypes, type EnumMetadataForGen } from './generators/api/enu
 import { generateService } from './generators/angular/service-gen.js';
 import { generateForm } from './generators/angular/form-gen.js';
 import { generateList } from './generators/angular/list-gen.js';
+import { generateDetail } from './generators/angular/detail-gen.js';
 import { generateStore } from './generators/angular/store-gen.js';
 import { generateAppStructure } from './generators/angular/app-structure-gen.js';
 import { generateView, generateViewRoute } from './generators/angular/view-gen.js';
@@ -92,6 +93,14 @@ export function buildGeneratedFiles(
     if (config.generateLists) {
       const list = generateList(domain, config);
       if (list) appTree.push(list);
+    }
+    // Detail views. `generateDetails` has defaulted to true since the flag was added and nothing
+    // read it, so `DetailGenerator` emitted nothing — while the emitted LIST already linked to the
+    // routes a detail component owns: `[item.id]` labelled "View", and `[item.id, 'edit']` for
+    // Edit. Neither worked. `{plural}/:id` loaded the edit form (so "View" opened an editor), and
+    // `{plural}/:id/edit` matched no route at all, since the emitted table has no wildcard.
+    if (config.generateDetails) {
+      appTree.push(generateDetail(domain, config));
     }
     // Signal stores. `generateStores` has defaulted to true since the flag was added, and nothing
     // read it — `StoreGenerator` was exported from the Angular barrel and invoked by no one, so the

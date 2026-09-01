@@ -36,6 +36,10 @@ export const RESERVED_MODULE_IDENTIFIERS: ReadonlySet<string> = new Set([
   'ReactiveFormsModule',
   'Validators',
   // @angular/router
+  // `Router` joined when detail-gen was wired (it navigates after delete); nothing emitted
+  // before that imported it. model-naming.spec derives this set from freshly generated output
+  // and failed on exactly this identifier, which is the mechanism working rather than a surprise.
+  'Router',
   'RouterLink',
   'RouterLinkActive',
   'RouterModule',
