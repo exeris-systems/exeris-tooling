@@ -1958,7 +1958,7 @@ class ExerisDomainProcessorTest {
         }
 
         @Test
-        @DisplayName("-Aexeris.strict warns on the four access attributes nothing extracts (T51)")
+        @DisplayName("-Aexeris.strict warns on the four access attributes nothing extracts (T53)")
         void strictWarnsOnInertAccessAttributes() {
             JavaFileObject source = JavaFileObjects.forSourceString(
                     "com.example.Order",

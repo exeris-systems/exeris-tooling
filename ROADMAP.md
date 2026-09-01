@@ -903,12 +903,59 @@ never-invoked emitter start emitting, and its output did not build.
       Adds no import to emitted code (`IllegalStateException` is `java.lang` and already in
       `parseBody`), so it creates no new requirement on the consumer build (ADR-060).
 
-      **Numbering collision, for the founder.** The dog-food reconciliation below states the `T*`
-      space is *one* namespace and that tooling does not renumber somebody else's evidence. It is
-      currently violated in this file: **T51** here is "five layers of an authorization story",
-      while T51 in the log is "a hand-wired composition inherits an unpublished list of required
-      scopes" — two findings, one number — and the log's **T52** had no entry here at all until
-      this one. One of the two T51s needs to move, and which is not this repo's call to make alone.
+      **Numbering collision — resolved 2026-09-01.** This file had minted its own **T51** ("five
+      layers of an authorization story") while T51 in the log is "a hand-wired composition inherits
+      an unpublished list of required scopes" — two findings, one number, in a space the
+      reconciliation below declares to be single. Ours moved to **T53**, because that rule says a
+      finding is minted by whoever measures it and tooling does not renumber somebody else's
+      evidence; the log's T51 and T52 were already taken, so T53 was the next free number. The
+      log's T51 now has its own entry here (below), which it never had.
+
+- [ ] **The whole `codegen-java` `dsl` package is invoked by nobody.** Measured 2026-09-01 while
+      checking a claim in the T53 table. `DomainMetadataGenerator`, `EntitySchemaGenerator`,
+      `FormDslGenerator`, `PageDslGenerator`, `TableDslGenerator` and `DslTypeMapper` have **zero**
+      production call sites between them; the only hits outside their own package are three
+      *comments* naming them (`ExerisDomainProcessor:252`, `NameCasing:12`). Nothing reads the
+      `<entity>.meta.json` they would write either — the real processor↔generator contract is
+      `exeris-metadata/<entity>.json`, a different file.
+
+      This is the "emitters wired by nobody" pattern at package scale rather than at flag scale,
+      and it has already cost something: two places in this repo cited `DomainMetadataGenerator` as
+      a live consumer of `@Action.permissions`, including a `-Aexeris.strict` reason that reaches a
+      user's `javac` output. Both are corrected in this change.
+
+      **It also holds a determinism violation that is currently unreachable.**
+      `DomainMetadataGenerator:53` writes `"generatedAt": Instant.now().toString()` into its output —
+      exactly the timestamp-in-emitted-artefact the 0.1.0 `OutputWriter` fix removed and hard
+      constraint 3 forbids. It cannot fire today because nothing calls it, which is precisely what
+      makes it a trap: wiring the package would reintroduce a regression the repo believes it closed.
+
+      **Decide before 1.0: delete or wire.** Deleting is the honest default — the Atom-UI DSL target
+      it serves has no consumer in this ecosystem, and dead emitters are what produced the false
+      claims above. Wiring means first removing the timestamp. What must not persist is the third
+      state, where the code exists, is tested, and is cited in diagnostics as though it ran.
+
+- [ ] **T51 — a hand-wired composition inherits an unpublished list of required scopes.** The log's
+      T51, recorded here for the first time on 2026-09-01 (this file previously used the number for
+      something else — see the T52 entry above). Generated code reads `ScopedValue`s the kernel binds
+      during `KernelBootstrap.boot(...)`. A test or tool that composes `RuntimeLifecycle` directly —
+      which ADR-070 now makes possible, and which is the point of a fast integration harness — has to
+      bind them itself, and **the set is written down nowhere**. It is discovered one failed request
+      at a time:
+
+      | scope | read by | discovered when |
+      |---|---|---|
+      | `KernelProviders.MEMORY_ALLOCATOR` | `RuntimeComponents.create*Handler()` | composition throws — the right time, and T43 made it so |
+      | `KernelProviders.eventEngine()` | `RuntimeComponents.create*EventPublisher()` | composition throws |
+      | `HttpKernelProviders.HTTP_REQUEST_BODY_DECODER_REGISTRY` | the emitted `parseBody` | first `POST` — now a named 500 rather than a silent one (T52) |
+      | `KernelProviders.storageContext()` | the emitted repository's `actingTenantId()` | first write, as a 500 |
+
+      The first two fail at composition; the last two fail per-request, long after the thing that
+      could have prevented them ran. **The generator knows exactly which providers the code it writes
+      will read**, so the ask is to emit the list — a `RuntimeRequirements` constant, or a documented
+      block in `Application`'s Javadoc — turning a sequence of runtime surprises into something a
+      harness satisfies in one pass. Cheap, and it pairs naturally with the T49 `decorate` seam,
+      since a wrapper is usually what supplies the missing binding.
 
 - [x] **T50 — the build fails when the generated app has no driver to run on (ADR-078).** Shipped
       0.8.0, taking the finding's own second option. Checking the premise against the **published
@@ -2235,7 +2282,7 @@ Proposals, highest return-on-effort first:
       ADR-076's emitted catch instead of declaring both). Carried in the same change: the emitted
       tenant-guard message told the consumer to "install the kernel SecurityInterceptor ahead of
       this router", inoperative at 0.11 — the interceptor is already in the dispatcher and runs only
-      for a route that demands identity. Two follow-ups recorded as **T51** and **D9**.
+      for a route that demands identity. Two follow-ups recorded as **T53** (was T51) and **D9**.
       Original finding below.
 
       **D8 — the emitted OpenAPI promises an authentication the emitted app does not have.** Found
@@ -2293,8 +2340,10 @@ Proposals, highest return-on-effort first:
       runs once the nulls are gone, and whether any downstream consumer (the TS client, a
       generator a user points at it) reads a field that is currently emitted as explicit `null`.
 
-- [ ] **T51 — five layers of an authorization story, none of them joined.** Split out of D8, then
-      re-measured on 2026-08-28 because D8's own account of it was wrong. The declaration is not
+- [ ] **T53 — five layers of an authorization story, none of them joined.** Split out of D8, then
+      re-measured on 2026-08-28 because D8's own account of it was wrong. *Renumbered from T51 on
+      2026-09-01: the log had already minted T51 and T52, and the reconciliation rule below says
+      tooling does not renumber somebody else's evidence — so ours is the one that moves.* The declaration is not
       missing; almost everything else is. What exists, and what each layer actually does:
 
       | Layer | State |
@@ -2304,7 +2353,7 @@ Proposals, highest return-on-effort first:
       | processor extraction | **absent**: `grep -rn "roles\|permissions" exeris-processor/src/main` returns nothing |
       | `-Aexeris.strict` completeness audit | **silent** — no `INERT_ATTRIBUTES` entry, so an author sets a permission and is told nothing (fixed alongside this entry) |
       | backend enforcement | nothing binds `HTTP_ROUTE_POLICY`, so every emitted route is `PERMIT_ALL` (ADR-079) |
-      | one generator that *would* read it | `DomainMetadataGenerator` copies `action.permissions()` into the metadata JSON the frontend generators consume — a consumer that is there and never receives a value |
+      | the generator that *would* read it | `DomainMetadataGenerator` copies `action.permissions()` into a `.meta.json` — but it is **constructed by no production code path and that file is read by nothing** (measured 2026-09-01; the earlier wording here claimed "a consumer that is there and never receives a value", which was wrong in both halves). Closing the extraction alone would still produce no effect |
       | frontend enforcement | `guard-gen` emits `canView<Entity>` etc. checking `auth.hasPermission(<ENTITY>_PERMISSIONS.READ)` against **invented** constant names, and `app-structure-gen` attaches them to **no route** |
 
       The last row is the sharpest: the generated frontend guards on permissions the generated
@@ -2338,9 +2387,9 @@ Proposals, highest return-on-effort first:
       the OpenAPI document, in the other emitter: a code path that describes an authentication the
       generated app does not perform, kept honest only by a test that calls it directly. The
       question the slice settles is which way it resolves — delete it as dead (the `@Retention`-style
-      argument: nothing reads it, so it has no effect), or wire it, which is a T51 question because
+      argument: nothing reads it, so it has no effect), or wire it, which is a T53 question because
       a header is worth sending only once a route requires one. Related to the standing
-      "emitters wired by nobody" pattern; do not fix it in isolation from T51.
+      "emitters wired by nobody" pattern; do not fix it in isolation from T53.
 
 - [x] **D11 — three Handlebars templates and the `templatesDir` config option are wired to nothing.**
       Shipped 0.8.0, deleted rather than wired. The measurement made the choice easy: nothing calls
@@ -2412,11 +2461,11 @@ results, and a line-number citation that expired between being measured and bein
 `exeris-kernel` nor `exeris-sdk` has a final `0.12.0`, and the no-cross-repo-SNAPSHOT rule below
 applies to pinning as much as to tagging. Four groups, by what blocks them —
 
-- **No external gate:** D10 (whose *resolution* is a T51 question — do not settle it before that
+- **No external gate:** D10 (whose *resolution* is a T53 question — do not settle it before that
   RFC), the TS `GraphEdgeMetadataSchema` parity gap, the `npm start` proxy prefix and its three
-  residual `/api` sites, the `<Entity>Store` barrel question, C1, C2, T51.
+  residual `/api` sites, the `<Entity>Store` barrel question, C1, C2, T53.
 - **Behind a final kernel 0.12:** the pin bump, `@Saga.version`'s emitter half, T12's client half +
-  T17, and the EV1-stream per-action driver.
+  T17. **Not** the EV1-stream per-action driver — see the readiness measurement below.
 - **Behind an SDK record change:** the `GraphEdgeMetadata` field/identity split, the six
   `@Saga.compensation*` attributes, `@SagaStep.waitForAll` / `.failFast`. Each is a carrier that does
   not exist; extracting into nothing is the failure mode 0.8.0 spent itself removing.
@@ -2425,6 +2474,41 @@ applies to pinning as much as to tagging. Four groups, by what blocks them —
 
 Also open and independent of all four: the missing `warnInertAttributes` call sites for `Saga` and
 `SagaStep`, and a comment naming the processor as the saga-step sorter.
+
+### 0.12 readiness — measured 2026-09-01, against the installed snapshots
+
+The four groups above were written from the plan, not from the jars. Measured against
+`exeris-kernel-*:0.12.0-SNAPSHOT` and `exeris-sdk-*:0.12.0-SNAPSHOT` in the local repository, three
+of their premises are wrong and one large item is not blocked at all.
+
+| premise | measured |
+|---|---|
+| "the EV1-stream per-action driver is behind kernel 0.12" | **Wrong — it is unblocked at 0.11.0, which this repo already pins.** `StreamRouteTable` with a `TemplateEntry`, `PathTemplateRoute`, `PathParamStreamExchange` and `HttpRouter.resolveStream(...)` are all present in `exeris-kernel-core-0.11.0`. The log's T28 records the same thing from the consumer side. **This moves to the no-external-gate group**, where it is the largest available item |
+| "ADR-074 takes a binary break on `HttpRequest` behind a bridge constructor" | **Overstated.** `javap` diff 0.11 → 0.12 shows only *additions*: `authority()`, `withAuthority(String)`, and a 6-arg constructor. The 5-arg constructor is retained, nothing is removed, so no consumer of ours breaks. `KernelTestSupportGenerator` is our only emitter that names `HttpRequest`, and it is unaffected |
+| "`@Saga.version`'s emitter half waits on the kernel" | **Ready.** `FlowDefinitionBuilder.version(int)` exists as a `default` method in `exeris-kernel-spi-0.12.0-SNAPSHOT`. The processor half shipped in 0.8.0, so this is one emitted call once the pin can move |
+| "Track C waits on an SDK record change" | **Unchanged, and the SDK cannot be pinned yet anyway.** The 0.12 annotation surface is *shape-identical* to 0.11 — same 51 annotation types, and a per-annotation element-count diff is empty — so no new extraction is owed. More practically: `exeris-sdk-source-model` and `-source-model-io` have **no 0.12 artefact** installed at all, only `annotations` / `parent` / `root`, so an SDK bump is not merely ungated-by-policy, it is currently impossible |
+
+**Whole-SPI delta, for scope:** six types added to `exeris-kernel-spi` between 0.11.0 and
+0.12.0-SNAPSHOT and **none removed** — `RequestBodyDecodeException`, `HttpConfigValidation`,
+`RouteRequirement.Execution`, and `TimeSource` (+2 nested). So the bump itself is additive; the work
+is in what we choose to consume, not in repair.
+
+**Two of those six are opportunities rather than obligations:**
+
+- **`TimeSource` (`nanoTime()` / `wallTime()` / `asClock()`, with a `SYSTEM` default).** The emitted
+  repository stamps `createdAt` / `updatedAt` with `Instant.now()`, which is correct but makes a
+  generated app's audit fields untestable — a consumer cannot freeze the clock. Stamping through the
+  kernel's `TimeSource` would fix that with no change to the emitted shape. Note this is about the
+  *runtime* behaviour of emitted code, not about emission determinism, which forbids a clock at
+  generation time and is unaffected either way.
+- **`RouteRequirement.Execution`** joins the scope vocabulary T53 has to compile into, and adds a
+  long-running variant (`PERMIT_ALL_LONG_RUNNING`, `AUTHENTICATED_LONG_RUNNING`) that a streaming
+  route plausibly wants. Worth reading before the T53 RFC fixes the URL-to-policy table's shape,
+  because it changes what a row in that table can say.
+
+**What still cannot be done:** pin either dependency. The rule is unchanged — no cross-repo
+`-SNAPSHOT` at a cut, and the tag's own POM must be final — so B0 waits for kernel `0.12.0` final,
+and the SDK bump additionally waits for the 0.12 line to publish a source model.
 
 ## Versioning policy
 

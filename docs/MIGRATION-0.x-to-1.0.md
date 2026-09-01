@@ -845,7 +845,8 @@ catch raises the conflict *instead of* the not-found, and the spec now says so.
 **Client impact.** A client generated from the new spec stops emitting an `Authorization` header
 and stops modelling a `401` branch. If you generate clients from this document and your deployment
 *does* front the app with identity, keep the old header handling — the spec now under-describes
-your deployment, which is the safe direction, and the accurate fix is T51.
+your deployment, which is the safe direction, and the accurate fix is T53 (renumbered from T51 on
+2026-09-01 — the dog-food log had already minted T51 for a different finding).
 
 **Regenerated handlers:** the tenant-guard log message changed. It told you to "install the kernel
 `SecurityInterceptor` ahead of this router", which is inoperative at kernel 0.11 — the interceptor
@@ -854,7 +855,7 @@ It now names the operative step: bind `HttpKernelProviders.HTTP_ROUTE_POLICY`, o
 `KernelProviders.STORAGE_CONTEXT` around the dispatch. Behaviour is unchanged; only the text is.
 
 **If you want the security block back:** that needs a route policy the application actually binds,
-which needs a declaration surface and a binding seam — neither exists today. Tracked as T51, scoped
+which needs a declaration surface and a binding seam — neither exists today. Tracked as T53, scoped
 in ADR-079.
 
 See [`adr/ADR-079-emitted-openapi-authentication-claim.md`](adr/ADR-079-emitted-openapi-authentication-claim.md).
