@@ -197,20 +197,19 @@ class KernelHandlerTestGeneratorTest {
     void bindsTheDecoderRegistrySlotAndPassesTheStagedDouble() {
         String source = new KernelHandlerTestGenerator().generate(VALIDATED, "com.example").content();
 
-        // The registry slot still has to be bound — parseBody resolves the decoder through it, and
-        // dropping the binding turns every reject case green for free.
         assertThat(source)
+                // The registry slot still has to be bound — parseBody resolves the decoder through
+                // it, and dropping the binding turns every reject case green for free.
                 .contains("ScopedValue.where(HttpKernelProviders.HTTP_REQUEST_BODY_DECODER_REGISTRY, body)")
-                .contains("RecordingHttpExchange.post(\"/orders\", body)");
-
-        // The MEMORY_ALLOCATOR slot is NOT bound any more, and must not be: T43-follow-up made the
-        // allocator a constructor argument, so binding it would be setup the handler never reads —
-        // the emitted-and-consumed-by-nobody shape this backlog keeps finding.
-        assertThat(source).doesNotContain("MEMORY_ALLOCATOR");
-
-        // The handler's allocator is the SAME instance the test staged, so the decoding context
-        // still sees exactly this double rather than an unrelated one.
-        assertThat(source).contains("newHandler(service, body)");
+                .contains("RecordingHttpExchange.post(\"/orders\", body)")
+                // The MEMORY_ALLOCATOR slot is NOT bound any more, and must not be: T43-follow-up
+                // made the allocator a constructor argument, so binding it would be setup the
+                // handler never reads — the emitted-and-consumed-by-nobody shape this backlog
+                // keeps finding.
+                .doesNotContain("MEMORY_ALLOCATOR")
+                // The handler's allocator is the SAME instance the test staged, so the decoding
+                // context still sees exactly this double rather than an unrelated one.
+                .contains("newHandler(service, body)");
     }
 
     @Test

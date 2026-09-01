@@ -675,6 +675,14 @@ never-invoked emitter start emitting, and its output did not build.
       tripped them by saying the word. Retargeted at `ScopedValue.where` — the binding is the
       invariant; a word in a comment is not.
 
+      **One behaviour change to be aware of, raised in review and deliberate.** The field, the
+      constructor parameter and `parseBody` are emitted unconditionally, so *every* handler now
+      resolves the allocator in its factory — including entities whose routes never decode a body.
+      That widens an unbound-allocator failure from "the first body-carrying request against an
+      entity that decodes" to "boot, for every entity". That is the trade this entry exists to
+      make: the fault is a wiring fault, and a wiring fault belongs at boot with the composition on
+      the stack. Worth knowing before someone reads a boot failure as a regression.
+
       Evidence: full reactor `clean install` green — 429 codegen-java tests, 115 processor, 53 core,
       28 e2e including `GeneratedTestsE2ETest`, which **runs** the emitted tests rather than
       compiling them. Perturbation: restoring the per-request `.get()` fails exactly the two tests
