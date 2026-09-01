@@ -1320,8 +1320,29 @@ never-invoked emitter start emitting, and its output did not build.
 
 **Not re-verified in this pass**, carried from the log and marked as such: T5 (system-field overrides
 ignored by the repository generator), T20b (the TS pruner does not remove cross-service orphans),
-T20d (`form-gen` coerces numeric fields but not booleans), T25/G6 (theme-variant binding for `@View`),
-T30 (emitted imports as undeclared build requirements — the general case behind T50).
+T25/G6 (theme-variant binding for `@View`), T30 (emitted imports as undeclared build requirements —
+the general case behind T50).
+
+- [x] **T20d — a boolean form control held a string.** Shipped 0.9.0, and re-measuring it widened
+      the finding. The log reports two `TS2352`s from a missing boolean branch in the submit-time
+      coercion, and proposes adding one. The cause is upstream of the coercion: **three** sites
+      shaped a boolean control and all three tested the literal `'java.lang.Boolean'`, so a
+      *primitive* `boolean` — whose DTO type is `boolean` just the same — fell through every one.
+      It rendered as `type="text"`, seeded `''`, and only then produced the cast the log counted.
+
+      So the fix is not a coercion. `isBooleanField` keys off `DslMapper.mapType(...).tsType`, which
+      is the doctrine `isNumericField`'s own comment already states — mirror the DTO type, never a
+      hand-rolled java-type list — and a checkbox has no empty state, so the control can simply be
+      **seeded with a real boolean**. A `boolean | null` control overlaps the DTO's `boolean` and
+      casts cleanly; the coercion a numeric field needs exists only because `''` must stay
+      distinguishable from `0`, which does not arise here. A declared `defaultValue` is emitted
+      unquoted for the same reason (`'true'` is a string). Adding the coercion instead would have
+      left the text input and the wrong control type in place and put `Number(true)` on the path.
+
+      **The gate could not have caught it, and now can.** Neither the `tsc` data-layer gate nor the
+      `ng build` sample carried a boolean field *of either kind* — which is why this type-checked
+      for two trains. `gen-sample-app.mjs` now emits a primitive `boolean`, so the AOT gate is a
+      real regression test rather than a fixture that happens to agree.
 
 - [x] **T2 — the FE spec slice.** Shipped 0.8.0. Delivered in one piece as the entry demanded: a
       `test` target on `@angular/build:unit-test` (Vitest), a `tsconfig.spec.json`, the two

@@ -50,6 +50,16 @@ export class FormGenerator implements CodeGenerator {
       return value.replace(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase());
     };
 
+    // T20d: which fields carry a boolean DTO type. Keyed off DslMapper for the same
+    // reason isNumericField is (see below) — the three sites that used to test the
+    // literal 'java.lang.Boolean' all missed a *primitive* `boolean`, whose DTO type is
+    // `boolean` just the same. That one omission produced a text input for a checkbox
+    // field, a '' seed, and a `string | null` -> `boolean` cast (TS2352).
+    const isBooleanField = (field: FieldMetadata): boolean => {
+      const ts = DslMapper.mapType(field.type).tsType;
+      return ts === 'boolean' || ts === 'boolean | null';
+    };
+
     const mapInputType = (field: FieldMetadata): string => {
       // @Field.dataType — front-presentation hint (Wave 1A, additive). For an
       // editable form control the facet maps to the closest native input type:
@@ -58,7 +68,7 @@ export class FormGenerator implements CodeGenerator {
       if (field.dataType === 'url') return 'url';
       if (field.dataType === 'currency' || field.dataType === 'percent') return 'number';
       const type = field.type;
-      if (type === 'java.lang.Boolean') return 'checkbox';
+      if (isBooleanField(field)) return 'checkbox';
       if (type === 'java.lang.Integer' || type === 'java.lang.Long' || type === 'java.lang.Double' || type === 'java.lang.Float') return 'number';
       if (type === 'java.time.Instant' || type === 'java.time.LocalDateTime') return 'datetime-local';
       if (type === 'java.time.LocalDate') return 'date';
@@ -263,7 +273,13 @@ export class FormGenerator implements CodeGenerator {
       if (f.min !== undefined) validators.push(`Validators.min(${f.min})`);
       if (f.max !== undefined) validators.push(`Validators.max(${f.max})`);
       const validatorsArray = validators.length ? `[${validators.join(', ')}]` : '[]';
-      const defaultValue = f.defaultValue ? `'${f.defaultValue}'` : (f.type === 'java.lang.Boolean' ? 'false' : "''");
+      // A checkbox has no empty state, so a boolean control can be seeded with a real
+      // boolean and needs no submit-time coercion — unlike a numeric control, which must
+      // seed '' to keep "blank" distinguishable from 0 and is coerced below. A declared
+      // defaultValue goes in unquoted for the same reason: `'true'` is a string.
+      const defaultValue = isBooleanField(f)
+        ? (String(f.defaultValue ?? 'false').trim().toLowerCase() === 'true' ? 'true' : 'false')
+        : (f.defaultValue ? `'${f.defaultValue}'` : "''");
       lines.push(`    ${f.name}: [${defaultValue}, ${validatorsArray}],`);
     }
     lines.push('  });');
