@@ -43,6 +43,10 @@ const domains = [
       { name: 'updatedAt', type: 'java.time.Instant' },
       { name: 'status', type: 'com.shop.OrderStatus', enumType: 'com.shop.OrderStatus', required: true },
       { name: 'productId', type: 'java.util.UUID' },
+      // T20d: a *primitive* boolean. The sample carried no boolean of either kind, which
+      // is why a text-input-and-'' -seeded checkbox field type-checked here for two trains.
+      // The wrapper was always handled; the primitive is the one that fell through.
+      { name: 'expedited', type: 'boolean' },
     ],
     // Domain events drive the per-entity handler AND the shared event bus. Without one in the
     // fixture, neither half of the event generator is ever built.

@@ -137,6 +137,66 @@ describe('FormGenerator emitted content — top-level structure', () => {
   });
 });
 
+// ---------- T20d: a boolean control holds a boolean ----------
+
+describe('FormGenerator boolean controls (T20d)', () => {
+  const gen = new FormGenerator();
+
+  // The three sites that shaped a boolean control all tested the literal
+  // 'java.lang.Boolean', so a *primitive* `boolean` — whose DTO type is `boolean`
+  // just the same — fell through every one of them: a text input, a '' seed, and
+  // therefore a `string | null` value cast to a `boolean` DTO field (TS2352, the
+  // two errors left on the generated app after the T20c numeric fix).
+  it('a primitive boolean is a checkbox seeded with false, exactly like the wrapper', () => {
+    const content = gen.generate(domain({
+      entityName: 'Empire',
+      fields: [
+        field({ name: 'onVacation', type: 'boolean' }),
+        field({ name: 'flagged', type: 'java.lang.Boolean' }),
+      ],
+    }), CTX)!.content;
+
+    expect(content).toContain('type="checkbox" formControlName="onVacation"');
+    expect(content).toContain('type="checkbox" formControlName="flagged"');
+    expect(content).toContain('onVacation: [false, []],');
+    expect(content).toContain('flagged: [false, []],');
+
+    // The seed is what fixes the cast: a boolean-seeded control is typed
+    // `boolean | null`, which overlaps the DTO's `boolean` and casts cleanly.
+    // A '' seed types it `string | null`, which does not overlap at all.
+    expect(content).not.toContain("onVacation: ['', []],");
+  });
+
+  it('a declared boolean default is emitted unquoted', () => {
+    // `'true'` is a string and would reintroduce the same no-overlap cast through
+    // the one path that bypasses the seed default.
+    const content = gen.generate(domain({
+      entityName: 'Empire',
+      fields: [
+        field({ name: 'enabled', type: 'boolean', defaultValue: 'true' }),
+        field({ name: 'archived', type: 'boolean', defaultValue: 'false' }),
+      ],
+    }), CTX)!.content;
+
+    expect(content).toContain('enabled: [true, []],');
+    expect(content).toContain('archived: [false, []],');
+    expect(content).not.toContain("enabled: ['true'");
+  });
+
+  it('booleans are not run through the numeric coercion', () => {
+    // Number(true) is 1. The coercion exists because a numeric control must seed ''
+    // to keep "blank" distinct from 0; a checkbox has no blank state, so a boolean
+    // needs no coercion and must not acquire one.
+    const content = gen.generate(domain({
+      entityName: 'Empire',
+      fields: [field({ name: 'onVacation', type: 'boolean' })],
+    }), CTX)!.content;
+
+    expect(content).not.toContain('Number(raw.onVacation)');
+    expect(content).toContain('const data = this.form.getRawValue();');
+  });
+});
+
 // ---------- T20c: numeric coercion on submit ----------
 
 describe('FormGenerator onSubmit numeric coercion (T20c)', () => {
