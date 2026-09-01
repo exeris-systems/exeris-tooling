@@ -35,7 +35,12 @@ const domains = [
     entityName: 'Order',
     fields: [
       { name: 'id', type: 'java.util.UUID' },
-      { name: 'total', type: 'java.math.BigDecimal' },
+      // dataType exercises the detail view's currency branch, and the audit stamps exercise
+      // its DatePipe branch — both are emitted per-entity, so a fixture without them builds
+      // only half of what the generator can produce.
+      { name: 'total', type: 'java.math.BigDecimal', dataType: 'currency' },
+      { name: 'createdAt', type: 'java.time.Instant' },
+      { name: 'updatedAt', type: 'java.time.Instant' },
       { name: 'status', type: 'com.shop.OrderStatus', enumType: 'com.shop.OrderStatus' },
       { name: 'productId', type: 'java.util.UUID' },
     ],

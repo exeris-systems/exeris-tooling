@@ -19,6 +19,7 @@ import {
   createGeneratorContext,
   type GeneratorContext,
 } from '../../../src/core/generator-registry.js';
+import { DEFAULT_CONFIG } from '../../../src/config.js';
 import {
   DomainMetadataSchema,
   FieldMetadataSchema,
@@ -409,7 +410,9 @@ describe('DetailGenerator @Field.dataType render facets', () => {
     }), CTX)!.content;
 
     expect(content).toContain("dataType: 'currency'");
-    expect(content).toContain("@case ('currency') { {{ rawValue(field, entity()) | currency }} }");
+    // numericValue, not rawValue: the currency/percent pipes reject `unknown`, and Angular
+    // type-checks every @switch branch whether or not a field selects it.
+    expect(content).toContain("@case ('currency') { {{ numericValue(field, entity()) | currency }} }");
     expect(content).toContain('rawValue(field: FieldDisplay');
   });
 
@@ -420,7 +423,7 @@ describe('DetailGenerator @Field.dataType render facets', () => {
     }), CTX)!.content;
 
     expect(content).toContain("dataType: 'percent'");
-    expect(content).toContain("@case ('percent') { {{ rawValue(field, entity()) | percent }} }");
+    expect(content).toContain("@case ('percent') { {{ numericValue(field, entity()) | percent }} }");
   });
 
   it("dataType 'url' renders an <a [href]> switch arm", () => {
@@ -446,5 +449,79 @@ describe('DetailGenerator @Field.dataType render facets', () => {
     expect(content).not.toContain("dataType: 'rainbow'");
     // …and the default switch arm (formatValue) is always present.
     expect(content).toContain('@default { {{ formatValue(field, entity()) }} }');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Wired into the orchestrator (0.8.0). Everything below is a defect the generator
+// carried while `generateDetails` defaulted to true and was read by nobody — so its
+// output had never been compiled. Each one failed the `ng build` gate.
+// ---------------------------------------------------------------------------
+
+describe('DetailGenerator — defects exposed by wiring', () => {
+  const withFields = (fields: Array<Record<string, unknown>>) =>
+    DomainMetadataSchema.parse({ packageName: 'com.shop', entityName: 'Order', fields });
+
+  const idOnly = withFields([{ name: 'id', type: 'java.util.UUID' }]);
+  const stamped = withFields([
+    { name: 'id', type: 'java.util.UUID' },
+    { name: 'createdAt', type: 'java.time.Instant' },
+    { name: 'updatedAt', type: 'java.time.Instant' },
+  ]);
+
+  // `$localize` is a global that exists only once the consumer adds @angular/localize and a
+  // polyfill entry; the emitted app declares neither. Same rule store-gen recorded, and the
+  // same rule ADR-060 applied to slf4j on the Java side.
+  it('emits no $localize — it would be an undeclared requirement on the consumer build', () => {
+    expect(generateDetail(idOnly, DEFAULT_CONFIG).content).not.toContain('$localize');
+  });
+
+  it('emits field labels as plain quoted strings', () => {
+    const content = generateDetail(
+      withFields([{ name: 'id', type: 'java.util.UUID' }, { name: 'total', type: 'java.math.BigDecimal' }]),
+      DEFAULT_CONFIG,
+    ).content;
+    expect(content).toContain("label: 'Total'");
+  });
+
+  // TS2339 before: emitted unconditionally against entities that declare neither field.
+  it('renders the audit stamps only for an entity that declares them', () => {
+    const bare = generateDetail(idOnly, DEFAULT_CONFIG).content;
+    expect(bare).not.toContain('createdAt');
+    expect(bare).not.toContain('updatedAt');
+
+    const withStamps = generateDetail(stamped, DEFAULT_CONFIG).content;
+    expect(withStamps).toContain("entity()?.createdAt | date:'medium'");
+    expect(withStamps).toContain("entity()?.updatedAt | date:'medium'");
+  });
+
+  // Angular reports an unused standalone import against the template, so DatePipe may only be
+  // brought in when something actually renders a date.
+  it('imports DatePipe only when a stamp is rendered', () => {
+    expect(generateDetail(idOnly, DEFAULT_CONFIG).content).not.toContain('DatePipe');
+    const withStamps = generateDetail(stamped, DEFAULT_CONFIG).content;
+    expect(withStamps).toContain("import { CommonModule, DatePipe } from '@angular/common';");
+    expect(withStamps).toContain('imports: [CommonModule, RouterModule, DatePipe],');
+  });
+
+  // TS2769 before: the currency/percent pipes accept string|number|null|undefined, never
+  // `unknown`, and Angular type-checks every @switch branch whether or not a field selects it —
+  // so this failed for EVERY entity, with or without a currency field.
+  it('feeds the currency and percent pipes a number, not unknown', () => {
+    const content = generateDetail(idOnly, DEFAULT_CONFIG).content;
+    expect(content).toContain('numericValue(field: FieldDisplay, entity: Order | null): number | null');
+    expect(content).toContain("@case ('currency') { {{ numericValue(field, entity()) | currency }} }");
+    expect(content).not.toContain('rawValue(field, entity()) | currency');
+  });
+
+  it('honours a renamed audit field from systemFields', () => {
+    const renamed = DomainMetadataSchema.parse({
+      packageName: 'com.shop', entityName: 'Order',
+      fields: [{ name: 'id', type: 'java.util.UUID' }, { name: 'insertedOn', type: 'java.time.Instant' }],
+      systemFields: { createdAtField: 'insertedOn' },
+    });
+    const content = generateDetail(renamed, DEFAULT_CONFIG).content;
+    expect(content).toContain("entity()?.insertedOn | date:'medium'");
+    expect(content).not.toContain('entity()?.createdAt');
   });
 });

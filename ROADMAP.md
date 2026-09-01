@@ -816,9 +816,36 @@ never-invoked emitter start emitting, and its output did not build.
         production caller at all** (only its own two tests), making it a third emitter wired by
         nobody, alongside `enum-gen.ts` and the D10 bearer path.
 
-- [ ] **Three config flags are declared, default `true`, and read by nothing.** `generateDetails`,
-      `generateSagas`, `generateEvents` (`config.ts:54,60,63`); only `generateStores` is read, and
-      only since #166 (`orchestrator.ts:164`). That a flag can default to `true` and be honoured by
+- [ ] **Two config flags are declared, default `true`, and read by nothing.** `generateSagas`,
+      `generateEvents` (`config.ts:60,63`). `generateDetails` was the third and is **wired as of
+      0.8.0** — see below; `generateStores` was read only since #166 (`orchestrator.ts:164`).
+
+      **`generateDetails` (done).** Wiring it was not cosmetic: the emitted **list** already linked
+      to the two routes a detail component owns — `[routerLink]="[item.id]"` labelled *View* and
+      `[routerLink]="[item.id, 'edit']"` labelled *Edit* (`list-gen.ts:299,300`) — while the route
+      table sent `:id` to the **form** and had no `:id/edit` entry and no wildcard. So in every
+      generated app, *View* opened an editor and *Edit* navigated to nothing. `DetailGenerator`
+      existed, complete and unreachable, for exactly the route the list was asking for.
+
+      Wiring it exposed three defects in output nothing had ever compiled, all caught by the
+      `ng build` gate and each confirmed by putting it back:
+
+      - `$localize` in every field label → `TS2304`. Dropped, per the rule `store-gen.ts:12-25`
+        already recorded: the emitted app declares `"polyfills": []` and no `@angular/localize`, so
+        an emitted symbol requiring one is an undeclared requirement on the consumer's build — the
+        same rule ADR-060 applied to slf4j on the Java side. `enum-gen`, `event-gen` and `saga-gen`
+        still emit `$localize` and will hit this when they are wired.
+      - `createdAt`/`updatedAt` rendered unconditionally → `TS2339` for any entity not declaring
+        them. Now driven by the declared field list, honouring a `systemFields` rename, with
+        `DatePipe` imported only when a stamp is actually rendered.
+      - `rawValue()` (typed `unknown`) fed to the `currency`/`percent` pipes → `TS2769`. Angular
+        type-checks every `@switch` branch whether or not a field selects it, so this failed for
+        **every** entity, with or without a currency field.
+
+      One more thing it surfaced: `Router` is the first identifier an emitted module imports from
+      `@angular/router`, so it joined `RESERVED_MODULE_IDENTIFIERS`. `model-naming.spec` derives
+      that set from freshly generated output and failed on exactly this name — the T40 mechanism
+      working rather than a surprise. That a flag can default to `true` and be honoured by
       nobody is worth more than any of the three individually — it is the same silent-failure shape
       as an inert annotation, one layer out, and it is exactly how `view-gen` came to bind a
       `current()` that no generator produced. Each wiring changes every consumer's tree, so each
