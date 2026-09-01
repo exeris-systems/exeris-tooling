@@ -115,9 +115,9 @@ export function buildGeneratedFiles(
     // `<entity>Service.current()`, a method the RxJS service does not have: the author was reaching
     // for a store that the pipeline silently dropped.
     //
-    // NOTE: `generateDetails`, `generateSagas` and `generateEvents` are in the same state — declared,
-    // defaulted true, read by nothing. They are left alone here deliberately; wiring them changes what
-    // every consumer's tree contains, and each deserves its own change with its own evidence.
+    // NOTE: `generateSagas` is the last flag still in that state — declared, defaulted true, read
+    // by nothing. `generateDetails` and `generateEvents` have since been wired, each in its own
+    // change with its own evidence; the ROADMAP entry carries what each one exposed.
     if (config.generateStores) {
       appTree.push(generateStore(domain, config));
     }
