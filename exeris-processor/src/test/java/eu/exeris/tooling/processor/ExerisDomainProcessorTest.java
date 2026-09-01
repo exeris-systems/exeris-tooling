@@ -1522,6 +1522,43 @@ class ExerisDomainProcessorTest {
         }
 
         @Test
+        @DisplayName("the NESTED @Repeatable container is not reported either (@DomainEvent.DomainEvents)")
+        void strictDoesNotWarnOnNestedSynthesisedContainer() {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.DomainEvent;
+                    import eu.exeris.sdk.annotation.DomainEvent.Trigger;
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+
+                    @ExerisDomain(module = "core", path = "/orders")
+                    @DomainEvent(trigger = Trigger.CREATE, topic = "orders.created")
+                    @DomainEvent(trigger = Trigger.DELETE, topic = "orders.deleted")
+                    public class Order {
+                        private String reference;
+                    }
+                    """
+            );
+
+            Compilation compilation = javac()
+                    .withOptions("-Aexeris.strict=true")
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(source);
+
+            assertThat(compilation).succeeded();
+            // Two @DomainEvent make javac synthesise @DomainEvent.DomainEvents, whose last
+            // dot-segment is "DomainEvents". A name-keyed container registry covering only the
+            // SDK's plain-plural idiom (@SagaSteps, @Rules) missed this one and warned that an
+            // annotation the processor fully extracts "is never read" — on the ordinary,
+            // encouraged shape of declaring more than one event. Caught in review of this PR.
+            assertThat(unreadWarnings(compilation))
+                    .as("no warning for a container holding an annotation the processor reads")
+                    .isZero();
+        }
+
+        @Test
         @DisplayName("default build stays quiet — the audit is opt-in like the rest of strict mode")
         void defaultBuildDoesNotWarnOnUnreadAnnotations() {
             JavaFileObject source = JavaFileObjects.forSourceString(

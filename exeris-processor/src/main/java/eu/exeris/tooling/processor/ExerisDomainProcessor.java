@@ -13,9 +13,11 @@ import eu.exeris.sdk.sourcemodel.mutation.SourceDigest;
 import javax.annotation.processing.*;
 import javax.lang.model.SourceVersion;
 import javax.lang.model.element.*;
+import javax.lang.model.type.ArrayType;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
+import javax.lang.model.util.ElementFilter;
 import javax.tools.Diagnostic;
 import javax.tools.FileObject;
 import javax.tools.StandardLocation;
@@ -129,15 +131,6 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      */
     private record UnreadAnnotation(String display, String note) {}
 
-    /**
-     * A {@code @Repeatable} container and the annotation it holds. A container is never written
-     * by an author, so reporting it by its own name is a diagnostic about a synthetic type: the
-     * warning names the member instead.
-     *
-     * @param container the container's simple name (e.g. {@code Rules})
-     * @param member    the repeatable member's simple name (e.g. {@code Rule})
-     */
-    private record RepeatableContainer(String container, String member) {}
 
     /**
      * JSON wire shape for one {@code @CapabilityModule} class. The SDK's
@@ -345,18 +338,6 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             "DomainEvent", "EventSourced", "ExerisDomain", "Field", "Graph", "InternalApi",
             "Provides", "Region", "Relationship", "Requires", "Saga", "SagaStep", "UI",
             "Validation", "View");
-
-    /**
-     * {@code @Repeatable} containers, mapped to the annotation they hold. An author never writes
-     * a container — {@code javac} synthesises it when the member appears more than once — so a
-     * warning naming {@code @Rules} would be a diagnostic about a type the author has never seen.
-     * The member's name is reported instead.
-     */
-    private static final List<RepeatableContainer> REPEATABLE_CONTAINERS = List.of(
-            new RepeatableContainer("GraphEdges", "GraphEdge"),
-            new RepeatableContainer("Rules", "Rule"),
-            new RepeatableContainer("SagaSteps", "SagaStep"),
-            new RepeatableContainer("SagaTransitions", "SagaTransition"));
 
     /**
      * Reasons for the annotations {@link #EXTRACTED_ANNOTATIONS} does not contain. Optional by
@@ -2192,7 +2173,12 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      * <p>Iterates the element's own mirrors rather than a registry, which is what makes the audit
      * complete: an annotation nobody has classified still shows up, with a generic reason. A
      * {@code @Repeatable} container is reported under its member's name — the container is
-     * synthesised by {@code javac} and the author never wrote it.
+     * synthesised by {@code javac} and the author never wrote it — and is skipped entirely when
+     * that member is one the processor reads. Both the SDK's plain-plural containers
+     * ({@code @SagaSteps}) and its nested ones ({@code @DomainEvent.DomainEvents},
+     * {@code @Provides.List}) are covered, because the test is structural rather than by name;
+     * the two {@code .List} containers share a simple name, which no name-keyed scheme could
+     * have told apart.
      *
      * <p>Order is source order ({@code getAnnotationMirrors}), so a build's diagnostics are stable
      * across runs on the same input.
@@ -2207,11 +2193,12 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             if (isAlreadyAudited(simpleName)) {
                 continue;
             }
-            String display = reportedNameFor(simpleName);
-            if (isAlreadyAudited(display)) {
-                // A repeatable member the processor DOES read (e.g. several @SagaStep on one
-                // class synthesise @SagaSteps). The container is an artefact of repetition, not
-                // an unread annotation.
+            String contained = containedAnnotationName(mirror);
+            String display = contained != null ? contained : simpleName;
+            if (contained != null && isAlreadyAudited(contained)) {
+                // A repeatable member the processor DOES read — several @DomainEvent or @SagaStep
+                // on one class synthesise their container. The container is an artefact of
+                // repetition, not an unread annotation.
                 continue;
             }
             messager.printMessage(
@@ -2246,14 +2233,45 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         return false;
     }
 
-    /** The name to report {@code simpleName} under: a repeatable container reports as its member. */
-    private static String reportedNameFor(String simpleName) {
-        for (RepeatableContainer container : REPEATABLE_CONTAINERS) {
-            if (container.container().equals(simpleName)) {
-                return container.member();
+    /**
+     * The simple name of the annotation a {@code @Repeatable} container holds, or {@code null}
+     * when {@code mirror} is not a container.
+     *
+     * <p><strong>Detected structurally, not from a list.</strong> A hand-maintained container
+     * registry was the first attempt and it was wrong in the way this whole change is about: it
+     * covered the SDK's plain-plural idiom ({@code @Rules}, {@code @SagaSteps}) and silently
+     * missed the nested one, so a perfectly ordinary entity with two {@code @DomainEvent}
+     * triggers drew a false "never read" warning about {@code @DomainEvent.DomainEvents} — a type
+     * the author never wrote, naming an annotation the processor plainly does read. Fixing that
+     * by adding one entry would have left the next repeatable annotation to rediscover it.
+     *
+     * <p>JLS 9.6.3: a containing annotation type declares a {@code value()} element whose type is
+     * an array of the repeatable annotation type, and every other element has a default. That is
+     * checkable here, so the container class is closed rather than enumerated.
+     */
+    private static String containedAnnotationName(AnnotationMirror mirror) {
+        Element annotationType = mirror.getAnnotationType().asElement();
+        ExecutableElement valueElement = null;
+        for (ExecutableElement method : ElementFilter.methodsIn(annotationType.getEnclosedElements())) {
+            if (method.getSimpleName().contentEquals("value")) {
+                valueElement = method;
+            } else if (method.getDefaultValue() == null) {
+                // An element without a default that is not `value` — not a containing type.
+                return null;
             }
         }
-        return simpleName;
+        if (valueElement == null || valueElement.getReturnType().getKind() != TypeKind.ARRAY) {
+            return null;
+        }
+        TypeMirror component = ((ArrayType) valueElement.getReturnType()).getComponentType();
+        if (component.getKind() != TypeKind.DECLARED) {
+            return null;
+        }
+        Element componentElement = ((DeclaredType) component).asElement();
+        if (componentElement.getKind() != ElementKind.ANNOTATION_TYPE) {
+            return null;
+        }
+        return componentElement.getSimpleName().toString();
     }
 
     /** The registered reason for an unread annotation, or the generic one when none is registered. */

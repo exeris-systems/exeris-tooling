@@ -441,6 +441,17 @@ types) found the processor names **21 of ~44** annotations.
 
       Three things the implementation had to get right:
 
+      - **A `@Repeatable` container is detected structurally, not from a list.** The first
+        implementation keyed a registry on simple names and covered only the SDK's plain-plural
+        idiom (`@Rules`, `@SagaSteps`), so the nested one slipped through: an entity with two
+        `@DomainEvent` triggers — ordinary, encouraged, and already exercised six-deep by the
+        existing tests — drew a false "never read" warning about `@DomainEvent.DomainEvents`, an
+        annotation the processor fully extracts. **Caught in review, and the instance fix was the
+        wrong one**: adding one entry would have left the next repeatable annotation to rediscover
+        it, in a change whose whole thesis is closing classes. `containedAnnotationName` now applies
+        the JLS 9.6.3 test (a `value()` element returning an array of an annotation type, every
+        other element defaulted), which also handles the two `.List` containers that share a simple
+        name and that no name-keyed scheme could have told apart.
       - **The allowlist must not lie.** `@Blob` and `@Schedule` are unextracted *and* already have
         rich `INERT_ANNOTATIONS` entries. Listing them as "extracted" would have silenced the
         duplicate while making the set assert something false; `isAlreadyAudited` derives the
@@ -461,9 +472,11 @@ types) found the processor names **21 of ~44** annotations.
       hit. All 12 unread singles have a note today, so the generic sentence is a safety net with no
       current instance — it exists for the annotation the SDK adds next.
 
-      Evidence: 99 processor tests pass, 6 of them new; full reactor `clean install` green.
-      Perturbation — commenting out the pass-2 call fails exactly the 3 tests that assert a warning
-      and leaves the pass-1 counts untouched.
+      Evidence: 100 processor tests pass, 7 of them new; full reactor `clean install` green.
+      Perturbations, both confirmed: commenting out the pass-2 call fails exactly the 3 tests that
+      assert a warning and leaves the pass-1 counts untouched; making `containedAnnotationName`
+      return `null` (the name-keyed scheme's behaviour on a nested container) fails the
+      `@DomainEvent` test and nothing else.
 - [ ] **C1 — `annotation.system.*` (10 field-level).** Trap worth naming: `DomainMetadata.systemFields`
       *is* populated, but from `@ExerisDomain`'s override attributes (`extractSystemFieldsOverrides`),
       never from `@PrimaryKey` / `@TenantId` / `@Version` / `@SoftDelete*` / `@Audit*`.
@@ -907,57 +920,49 @@ never-invoked emitter start emitting, and its output did not build.
       `event-gen`, `detail-gen` and `app-structure-gen` each carried a byte-identical private copy
       and saga-gen would have been the fourth (strong-default #2).
 
-      **Raised in the #195 review, re-graded, and scheduled for 0.9.0 against SDK 0.12 — `@SagaStep.order`
-      is a required attribute that nothing reads.**
+      **Raised in the #195 review, twice mis-graded, and finally measured — `@SagaStep.order` is
+      consumed, and always was.** Withdrawn as a finding; only a documentation gap and one SDK
+      question survive it.
 
-      *Correction to the framing this entry first carried.* It was recorded as a T11
-      `INERT_ATTRIBUTES` candidate. That is wrong, and the SDK's own Javadoc is what settles it:
-      `order()` is documented as **"Step execution order (lower = first)"**, with "steps with same
-      order can execute in parallel if `parallel = true`". So this is not an attribute nobody needs —
-      it is an attribute with a **documented, load-bearing meaning that both emitters silently
-      override with source declaration order**. Registering it as inert would write the defect down
-      as a design. It belongs in the emitters, not in the registry.
+      The claim went out twice and was wrong both times. #195 recorded it as a T11
+      `INERT_ATTRIBUTES` candidate ("a required attribute nothing reads"); #196 re-graded that to
+      "an attribute with a load-bearing meaning both emitters silently override", and scheduled an
+      SDK-0.12 / tooling-0.9.0 split to fix it. The #196 review asked for the third check, and it
+      settles it: **`ExerisDomainProcessor:2095` already sorts —
+      `steps.sort(Comparator.comparingInt(SagaStepMetadata::order))`, at the end of
+      `extractSagaSteps`, before the metadata is ever serialised.** So `order` is honoured
+      end-to-end, with declaration order as a stable tie-break (`List.sort` is stable), which is
+      exactly the semantics the SDK Javadoc describes for equal orders.
 
-      The stakes are not cosmetic: kernel ADR-062 makes a step *reorder* a breaking change for sagas
-      already in flight (a parked flow records the step name at its position and resume fails closed
-      when the plan there now carries a different name), with a prescribed drain-before-deploy
-      procedure. Today the only thing that decides that order is where the author happened to put
-      the method in the file.
+      Both earlier passes checked the same two places — `KernelSagaGenerator` and `saga-gen.ts` —
+      found `steps` walked in list order, and concluded the attribute was dropped. Neither checked
+      the producer of that list. `KernelSagaGenerator`'s Javadoc even says who sorts ("callers
+      wanting non-list ordering must sort their step list before passing it to the AST"); the
+      processor is that caller, and nothing said so on the processor side. **That is the whole
+      remaining defect: a correct sentence at the emitter that reads as "`order` is ignored" unless
+      you already know where the sort lives.** Two independent readers took it that way in
+      consecutive PRs, which is evidence enough that the comment is the problem.
 
-      **Shape, split by owner:**
+      What actually survives, and neither part is scheduled against SDK 0.12 any more:
 
-      - **SDK 0.12 (theirs).** `@Saga` carries only `name()`, yet `SagaMetadata` has
-        `compensationStrategy` and `compensationOrder` — record fields with no annotation behind
-        them, so an author cannot set them and no generator reads them. Either the annotation grows
-        the two attributes or the record sheds them; both are SDK calls. The `parallel`-plus-equal-
-        `order` semantics the `@SagaStep` Javadoc promises also need a contract statement, because
-        it is the kernel `FlowDefinition` that would have to express parallelism.
-      - **Tooling 0.9.0 (ours), on the SDK 0.12 bump.** `KernelSagaGenerator` and `saga-gen.ts` sort
-        steps by `order` with a documented tie-break (declaration order), the Javadoc paragraph that
-        currently says `order()` "is not consulted" comes out, and `SagaStepMetadata` gains whatever
-        the SDK settled. **No `INERT_ATTRIBUTES` entry is added** — consuming it is the fix, and C0
-        already reports `@SagaTransition` on the same class of gap. Original finding below.
+      - **A comment, ours, free.** Name the processor as the sorter at
+        `KernelSagaGenerator`'s Javadoc and at the sort site. Fold into the next change that
+        touches either.
+      - **`SagaMetadata.compensationStrategy` / `.compensationOrder` — still an SDK question.**
+        `@Saga` carries only `name()`, so these are record fields with no annotation behind them:
+        an author cannot set them and no generator reads them. Either the annotation grows the two
+        attributes or the record sheds them. Unaffected by the correction above, and unrelated to
+        `order`.
+      - **`saga-gen.ts` sorts nothing** — harmless for real builds, since it consumes the JSON the
+        processor already sorted, but it means hand-built metadata (every TS unit test) is ordered
+        by whatever the fixture wrote. An instance of the untested processor↔emitter seam, not a
+        shipping defect.
 
-      Verified on both sides: `KernelSagaGenerator`'s own Javadoc states it
-      outright ("The `SagaStepMetadata#order()` field is **not** consulted — callers wanting
-      non-list ordering must sort their step list before passing it to the AST"), and `saga-gen.ts`
-      has zero references to `.order` or to any sort. Both emitters walk `steps` in declaration
-      order. The processor *does* extract it (`ExerisDomainProcessor:1951`, defaulting to 1), so
-      this is inert by consumption, not by an extraction gap.
+      Method note, because this cost two rounds: "no emitter reads X" is not the same claim as "X
+      has no effect", and only the second one is worth writing down. The pipeline has three stages
+      and a check that skips one of them can invert the answer.
 
-      That makes it a **T11 `INERT_ATTRIBUTES` candidate, and a worse one than most already
-      registered**: `@SagaStep.order()` has **no default** in the SDK, so every author is forced to
-      supply a value that has no effect on output — the condition the `@Action.path` entry notes it
-      escaped when SDK 0.11.0 gave that attribute a default (T44). Either a generator starts sorting
-      by it or it earns a registry entry; deciding which is the work, and it belongs with the SDK
-      question (adding a default is an SDK change), not in a codegen-ts wiring slice.
-
-      Separately, `SagaMetadata.compensationStrategy` and `.compensationOrder` are read by no
-      generator either — but they are **not** `INERT_ATTRIBUTES` candidates, because `@Saga` carries
-      only `name()`; they are unused fields of the metadata record, so the honest surface for them is
-      the record, not the strict-mode registry.
-
-      **`generateEvents` (done).** Two call sites, not one — the only flag in this group with that
+            **`generateEvents` (done).** Two call sites, not one — the only flag in this group with that
       shape: the per-entity handler (`events/<kebab>.events.ts`) and the app-wide
       `events/event-bus.service.ts` that every handler imports. Wiring the first alone emits a
       dangling import; confirmed by doing exactly that and watching `ng build` return `TS2307` ×3
