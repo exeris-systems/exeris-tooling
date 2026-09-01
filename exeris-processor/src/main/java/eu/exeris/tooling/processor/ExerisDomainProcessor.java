@@ -91,6 +91,11 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     /** Diagnostic prefix prepended to every NOTE/WARNING/ERROR this processor emits. */
     private static final String DIAG_PREFIX = "[Exeris] ";
 
+    /** {@code @SagaStep}, and the container javac synthesises when it is repeated on one method. */
+    private static final String SAGA_STEP_FQN = "eu.exeris.sdk.annotation.SagaStep";
+
+    private static final String SAGA_STEPS_FQN = "eu.exeris.sdk.annotation.SagaSteps";
+
     /** Package every SDK annotation lives under, including the {@code capability} sub-package. */
     private static final String SDK_ANNOTATION_PACKAGE = "eu.exeris.sdk.annotation.";
 
@@ -2063,6 +2068,12 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         if (values.containsKey("description")) builder.description((String) values.get("description"));
         if (values.containsKey("timeout")) builder.timeout((String) values.get("timeout"));
         if (values.containsKey("maxRetries")) builder.maxRetries(getInt(values, "maxRetries", 0));
+        // S1: `version` was never read, so SagaMetadata reported 1 for every saga and
+        // `@Saga(version = 3)` produced a metadata document that contradicted its own source.
+        // Correcting an existing field, not adding one — the record already declares it and the
+        // TypeScript schema already mirrors it. What no generator can do with it yet is a separate,
+        // kernel-gated question; see the ROADMAP entry.
+        if (values.containsKey("version")) builder.version(getInt(values, "version", 1));
 
         // Extract saga steps from methods
         List<SagaStepMetadata> steps = extractSagaSteps(element);
@@ -2071,6 +2082,19 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         return builder.build();
     }
 
+    /**
+     * The saga's steps, in {@code order}.
+     *
+     * <p><b>S2: a repeated {@code @SagaStep} used to contribute nothing.</b> The annotation is
+     * {@code @Repeatable(SagaSteps.class)} and the container is public precisely so a step can be
+     * repeated from any package — so repeating one is a supported authoring shape. But {@code javac}
+     * replaces the repeats with the synthesised container, and a lookup for the exact type
+     * {@code eu.exeris.sdk.annotation.SagaStep} then finds nothing: every step on that method was
+     * dropped, silently, and the emitted flow was short by however many the author wrote. The SDK's
+     * own {@code SagaSteps} javadoc records the same finding — "repeating a step compiles, and is
+     * then dropped". Both shapes are read here now, through the container helper the capability
+     * extraction already uses for {@code @Provides.List}.
+     */
     private List<SagaStepMetadata> extractSagaSteps(TypeElement element) {
         List<SagaStepMetadata> steps = new ArrayList<>();
 
@@ -2078,23 +2102,16 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             if (enclosed.getKind() != ElementKind.METHOD) continue;
 
             ExecutableElement method = (ExecutableElement) enclosed;
-            AnnotationMirror stepAnnotation = findAnnotation(method, "eu.exeris.sdk.annotation.SagaStep");
 
+            AnnotationMirror stepAnnotation = findAnnotation(method, SAGA_STEP_FQN);
             if (stepAnnotation != null) {
-                Map<String, Object> values = extractAnnotationValues(stepAnnotation);
-                String name = getString(values, "name", method.getSimpleName().toString());
-                int order = getInt(values, "order", 1);
+                steps.add(sagaStep(stepAnnotation, method));
+            }
 
-                SagaStepMetadata.Builder builder = SagaStepMetadata.builder(name, order);
-
-                if (values.containsKey("description")) builder.description((String) values.get("description"));
-                if (values.containsKey("service")) builder.service((String) values.get("service"));
-                if (values.containsKey("command")) builder.command((String) values.get("command"));
-                if (values.containsKey("compensation")) builder.compensation((String) values.get("compensation"));
-                if (values.containsKey("timeout")) builder.timeout((String) values.get("timeout"));
-                if (values.containsKey("parallel")) builder.parallel((Boolean) values.get("parallel"));
-
-                steps.add(builder.build());
+            // Repeated: javac put the singles inside the container and left no direct mirror.
+            AnnotationMirror container = findAnnotation(method, SAGA_STEPS_FQN);
+            if (container != null) {
+                forEachContained(container, contained -> steps.add(sagaStep(contained, method)));
             }
         }
 
@@ -2102,6 +2119,24 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         steps.sort(Comparator.comparingInt(SagaStepMetadata::order));
 
         return steps;
+    }
+
+    /** One {@code @SagaStep} mirror, whether it stood alone or came out of the container. */
+    private SagaStepMetadata sagaStep(AnnotationMirror stepAnnotation, ExecutableElement method) {
+        Map<String, Object> values = extractAnnotationValues(stepAnnotation);
+        String name = getString(values, "name", method.getSimpleName().toString());
+        int order = getInt(values, "order", 1);
+
+        SagaStepMetadata.Builder builder = SagaStepMetadata.builder(name, order);
+
+        if (values.containsKey("description")) builder.description((String) values.get("description"));
+        if (values.containsKey("service")) builder.service((String) values.get("service"));
+        if (values.containsKey("command")) builder.command((String) values.get("command"));
+        if (values.containsKey("compensation")) builder.compensation((String) values.get("compensation"));
+        if (values.containsKey("timeout")) builder.timeout((String) values.get("timeout"));
+        if (values.containsKey("parallel")) builder.parallel((Boolean) values.get("parallel"));
+
+        return builder.build();
     }
 
     /**

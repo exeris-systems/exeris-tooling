@@ -411,13 +411,44 @@ An evidence survey against SDK 0.10.0 (matching on `eu.exeris.sdk.annotation.*` 
 word-grep false-positives on `Rule` / `EventHandler` / `GraphEdge` against our own and the kernel's
 types) found the processor names **21 of ~44** annotations.
 
-- [ ] **S1 — `@Saga.version` is never extracted.** `SagaMetadata.version` is never set, so
-      `@Saga(version = 3)` silently yields `1`. Cosmetic until kernel 0.11 / ADR-064, which keys the
-      plan catalog by `(name, version)` and **fails closed on an unregistered version** — so this is
-      now a wrong-output defect with a runtime consequence, not a coverage gap. `KernelSagaGenerator`
-      emits no version at all.
-- [ ] **S2 — a repeated `@SagaStep` yields zero steps** from the processor (SDK 0.10's survey; the
-      `-io` reader yields only the first). `@SagaSteps` compiles and contributes nothing.
+- [~] **S1 — `@Saga.version` is never extracted.** *Processor half shipped 0.8.0; the emitter half
+      is kernel-gated on 0.12 and that gate was measured, not assumed.*
+
+      `SagaMetadata` declares `int version` defaulting to 1 and nothing set it, so
+      `@Saga(version = 3)` produced a metadata document contradicting its own source. The processor
+      now reads it — a correction to an existing field, not a new one: the record already declares
+      it and the TypeScript schema already mirrors it.
+
+      **The emitter half cannot land on the pinned line, and the workaround is a documented trap.**
+      Measured against the artefact this repo actually compiles against rather than the kernel
+      working tree (which is `0.12.0-SNAPSHOT` and would have answered the wrong question):
+      `javap` on `exeris-kernel-spi-0.11.0.jar` shows `FlowDefinitionBuilder` with
+      `step`/`transition`×2/`timeoutDuration`/`maxRetries`/`build` and **no `version` setter at
+      all**. Emitting `.version(n)` would not compile. The kernel's own Javadoc on the 0.12 setter
+      says why the obvious workaround is worse than the gap: building through the builder and then
+      rebuilding the record with the five-argument `FlowDefinition` constructor "works only by side
+      effect", and a versioned definition constructed without first building one under the same name
+      "compiled to a plan with steps and **no declared edges**, and no diagnostic" — which
+      linearises rather than stalls, so a declared branch silently runs a path it never declared.
+
+      So the emitter half waits for the kernel 0.12 bump, where it is one `.version(...)` call.
+      ADR-064's stakes are unchanged and are why this is worth finishing: `(name, version)` is the
+      plan's identity, a parked saga resumes on the exact version it parked under, and an unhosted
+      version fails closed. **No `INERT_ATTRIBUTES` entry** — the cause is a missing upstream
+      contract, which is exactly the carve-out C0 wrote into the registry Javadoc.
+- [x] **S2 — a repeated `@SagaStep` yielded zero steps.** *Shipped 0.8.0.* `@SagaStep` is
+      `@Repeatable(SagaSteps.class)` and the container is public precisely so a step can be repeated
+      from any package — so repeating one is a supported authoring shape. But `javac` replaces the
+      repeats with the synthesised container, and the lookup matched the exact type
+      `eu.exeris.sdk.annotation.SagaStep`, which a container does not present: **every step on that
+      method was dropped, silently, and the emitted flow was short by however many the author
+      wrote.** The SDK's own `SagaSteps` Javadoc records the same finding as a 0.10.0 correction —
+      "repeating a step compiles, and is then dropped".
+
+      Both shapes are read now, through the `forEachContained` helper the capability extraction
+      already used for `@Provides.List`. A second test pins that they do not double-count: `javac`
+      never presents both the direct mirror and the container on one element, and the fix reads both
+      — an assumption worth a test rather than a comment.
 - [ ] **S3 — `@GraphEdge` processor half.** `GraphEdgeMetadata` exists and nobody fills it.
 - [x] **C0 — strict mode audited the wrong half, and that is why the list above exists.** *Shipped
       0.8.0.* `-Aexeris.strict` reported only *extracted-but-unconsumed*, from two hand-maintained
