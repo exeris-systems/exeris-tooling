@@ -940,8 +940,17 @@ T30 (emitted imports as undeclared build requirements — the general case behin
       existed — verified against `main` across `src/`, `package.json`, `angular.json` and
       `tsconfig.app.json`.
 
+      One correction from review, worth keeping because it splits a rule the slice had applied too
+      broadly. "Inventing a value that fails is worse than omitting one" holds for an **optional**
+      field — the schema tolerates absence. For a **required** one it does not: omitting it makes the
+      fixture incomplete by construction, and the round-trip assertion then ships red. A required
+      enum now takes the first member of its own emitted enum module; a required field with no
+      derivable literal at all (an author-owned `pattern`) drops the assertion and says so in the
+      emitted comment. Note the `ng test` gate **cannot** catch this class — a silently-dropped
+      assertion is still green — so the guards are content assertions in `spec-gen.spec.ts`.
+
       Original entry below.
-- [ ] **T2 — the FE spec slice.** The half of the generated-test story that did not ship in 0.7.0
+      **T2 — the FE spec slice.** The half of the generated-test story that did not ship in 0.7.0
       (the Java half is complete — slices a–f, ADR-058). Deferred at the 0.7.0 cut on 2026-08-18.
       It is not "emit some spec files": the emitted app declares `"test": "ng test"` and ships
       **no runner and no test dependencies**, so a spec alone would be unrunnable. The slice owes,

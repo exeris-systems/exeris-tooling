@@ -41,7 +41,7 @@ const domains = [
       { name: 'total', type: 'java.math.BigDecimal', dataType: 'currency' },
       { name: 'createdAt', type: 'java.time.Instant' },
       { name: 'updatedAt', type: 'java.time.Instant' },
-      { name: 'status', type: 'com.shop.OrderStatus', enumType: 'com.shop.OrderStatus' },
+      { name: 'status', type: 'com.shop.OrderStatus', enumType: 'com.shop.OrderStatus', required: true },
       { name: 'productId', type: 'java.util.UUID' },
     ],
     // Domain events drive the per-entity handler AND the shared event bus. Without one in the

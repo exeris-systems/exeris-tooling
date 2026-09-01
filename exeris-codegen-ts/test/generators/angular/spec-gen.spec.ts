@@ -110,6 +110,67 @@ describe('generateSchemaSpec', () => {
     expect(withRequired).toContain('rejects a Order missing %s');
     expect(withRequired).toContain('["name"]');
   });
+
+  // A required field the fixture cannot produce is NOT the same as an optional one. Omitting an
+  // optional field is safe — the schema tolerates absence. Omitting a required one makes the
+  // fixture incomplete by construction, and the round-trip assertion then ships red to the
+  // consumer. Both cases below are content assertions on purpose: the `ng test` gate cannot see
+  // this class, because a silently-dropped assertion still passes.
+  const ORDER_STATUS = [{
+    name: 'OrderStatus', qualifiedName: 'com.shop.OrderStatus', packageName: 'com.shop',
+    values: [{ name: 'NEW', displayName: 'New', ordinal: 0 }, { name: 'PAID', displayName: 'Paid', ordinal: 1 }],
+  }];
+
+  it('gives a required enum field the first member of its own enum module', () => {
+    const content = generateSchemaSpec(
+      entity([
+        { name: 'id', type: 'java.util.UUID' },
+        { name: 'status', type: 'com.shop.OrderStatus', enumType: 'com.shop.OrderStatus', required: true },
+      ]),
+      DEFAULT_CONFIG,
+      ORDER_STATUS,
+    ).content;
+    expect(content).toContain("status: 'NEW',");
+    expect(content).toContain("it('accepts a well-formed Order'");
+    expect(content).toContain('rejects a Order missing %s');
+  });
+
+  it('drops the round-trip assertion when a required field has no derivable literal', () => {
+    const content = generateSchemaSpec(
+      entity([
+        { name: 'id', type: 'java.util.UUID' },
+        { name: 'code', type: 'String', pattern: '^[A-Z]{3}$', required: true },
+      ]),
+      DEFAULT_CONFIG,
+    ).content;
+    expect(content).not.toContain("it('accepts a well-formed Order'");
+    expect(content).toContain('No round-trip assertion: code is required');
+  });
+
+  // Removing a key the fixture never carried asserts nothing and would pass whatever the schema
+  // said — so a required field missing from the fixture must not appear in the removal list.
+  it('never asserts removal of a field the fixture does not carry', () => {
+    const content = generateSchemaSpec(
+      entity([
+        { name: 'id', type: 'java.util.UUID' },
+        { name: 'code', type: 'String', pattern: '^[A-Z]{3}$', required: true },
+      ]),
+      DEFAULT_CONFIG,
+    ).content;
+    expect(content).not.toContain('rejects a Order missing');
+  });
+
+  it('falls back when the enum module for a required enum is absent', () => {
+    const content = generateSchemaSpec(
+      entity([
+        { name: 'id', type: 'java.util.UUID' },
+        { name: 'status', type: 'com.shop.OrderStatus', enumType: 'com.shop.OrderStatus', required: true },
+      ]),
+      DEFAULT_CONFIG,
+      [],
+    ).content;
+    expect(content).not.toContain("it('accepts a well-formed Order'");
+  });
 });
 
 describe('generateServiceSpec', () => {

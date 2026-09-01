@@ -137,7 +137,7 @@ export function buildGeneratedFiles(
     // gated on the surface it exercises actually being emitted — a schema spec for an app built
     // with --no-zod would import a file that does not exist.
     if (config.generateTests) {
-      if (config.generateZod) appTree.push(generateSchemaSpec(domain, config));
+      if (config.generateZod) appTree.push(generateSchemaSpec(domain, config, enums));
       if (config.generateServices) appTree.push(generateServiceSpec(domain, config));
     }
   }

@@ -27,6 +27,7 @@ import type { DomainMetadata, FieldMetadata } from '../../models/domain-model.js
 import { DslMapper } from '../../models/dsl-mapper.js';
 import { modelTypeName } from '../../models/model-naming.js';
 import type { GeneratorConfig } from '../../config.js';
+import type { EnumMetadataForGen } from '../api/enum-module-gen.js';
 import { serviceApiPath } from './service-gen.js';
 
 /** An emitted file, in the (path, content) shape the orchestrator composes. */
@@ -57,8 +58,15 @@ const HEADER = (what: string): string[] => [
  * field the schema marks optional tolerates absence, and inventing a value that fails is worse
  * than omitting one.
  */
-function sampleLiteral(field: FieldMetadata): string | null {
-  if (field.enumType) return null;
+function sampleLiteral(field: FieldMetadata, enums: EnumMetadataForGen[]): string | null {
+  if (field.enumType) {
+    // The enum module emits a const object keyed by member name, so the member name IS the value.
+    const simple = field.enumType.includes('.')
+      ? field.enumType.slice(field.enumType.lastIndexOf('.') + 1)
+      : field.enumType;
+    const first = enums.find((e) => e.name === simple)?.values[0]?.name;
+    return first ? `'${first}'` : null;
+  }
   if (field.pattern) return null;
   if (field.format === 'email') return "'sample@example.com'";
   if (field.format === 'url') return "'https://example.com'";
@@ -90,7 +98,11 @@ function sampleLiteral(field: FieldMetadata): string | null {
  * to be omitted. An entity that supports neither gets the round-trip assertion alone rather than
  * an invented one.
  */
-export function generateSchemaSpec(metadata: DomainMetadata, _config: GeneratorConfig): SpecOutputFile {
+export function generateSchemaSpec(
+  metadata: DomainMetadata,
+  _config: GeneratorConfig,
+  enums: EnumMetadataForGen[] = [],
+): SpecOutputFile {
   const name = modelTypeName(metadata.entityName);
   const kebab = DslMapper.toKebabCase(metadata.entityName);
   const required = metadata.fields.filter((f) => f.required);
@@ -102,19 +114,36 @@ export function generateSchemaSpec(metadata: DomainMetadata, _config: GeneratorC
   lines.push(`describe('${name}Schema', () => {`);
 
   const fixture = metadata.fields
-    .map((f) => ({ f, literal: sampleLiteral(f) }))
+    .map((f) => ({ f, literal: sampleLiteral(f, enums) }))
     .filter((e): e is { f: FieldMetadata; literal: string } => e.literal !== null);
+  const covered = new Set(fixture.map((e) => e.f.name));
+
+  // Omitting a field the fixture cannot produce is only safe while that field is OPTIONAL. A
+  // REQUIRED field with no derivable literal (a pattern the entity author owns, an enum whose
+  // module this app does not emit) makes the fixture incomplete by construction, and asserting it
+  // parses would ship a red `ng test` to the consumer. The assertion is dropped instead, because
+  // the same rule that forbids inventing a value forbids asserting one was found.
+  const unsatisfiable = required.filter((f) => !covered.has(f.name));
+
   lines.push(`  const valid = {`);
   for (const { f, literal } of fixture) lines.push(`    ${f.name}: ${literal},`);
   lines.push(`  };`);
   lines.push('');
-  lines.push(`  it('accepts a well-formed ${metadata.entityName}', () => {`);
-  lines.push(`    expect(${name}Schema.safeParse(valid).success).toBe(true);`);
-  lines.push(`  });`);
+  if (unsatisfiable.length === 0) {
+    lines.push(`  it('accepts a well-formed ${metadata.entityName}', () => {`);
+    lines.push(`    expect(${name}Schema.safeParse(valid).success).toBe(true);`);
+    lines.push(`  });`);
+  } else {
+    lines.push(`  // No round-trip assertion: ${unsatisfiable.map((f) => f.name).join(', ')} ${unsatisfiable.length === 1 ? 'is' : 'are'} required`);
+    lines.push(`  // and no literal can be derived for ${unsatisfiable.length === 1 ? 'it' : 'them'}, so any fixture here would be a guess.`);
+  }
 
-  if (required.length > 0) {
+  // Only fields the fixture actually carries: removing a key that was never present asserts
+  // nothing, and would pass whatever the schema said.
+  const removable = required.filter((f) => covered.has(f.name));
+  if (removable.length > 0) {
     lines.push('');
-    lines.push(`  it.each(${JSON.stringify(required.map((f) => f.name))})('rejects a ${metadata.entityName} missing %s', (field) => {`);
+    lines.push(`  it.each(${JSON.stringify(removable.map((f) => f.name))})('rejects a ${metadata.entityName} missing %s', (field) => {`);
     lines.push(`    const { [field]: _omitted, ...rest } = valid as Record<string, unknown>;`);
     lines.push(`    expect(${name}Schema.safeParse(rest).success).toBe(false);`);
     lines.push(`  });`);
