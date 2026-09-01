@@ -816,9 +816,41 @@ never-invoked emitter start emitting, and its output did not build.
         production caller at all** (only its own two tests), making it a third emitter wired by
         nobody, alongside `enum-gen.ts` and the D10 bearer path.
 
-- [ ] **Two config flags are declared, default `true`, and read by nothing.** `generateSagas`,
-      `generateEvents` (`config.ts:60,63`). `generateDetails` was the third and is **wired as of
-      0.8.0** — see below; `generateStores` was read only since #166 (`orchestrator.ts:164`).
+- [ ] **One config flag is declared, default `true`, and read by nothing.** `generateSagas`
+      (`config.ts:60`). `generateDetails` and `generateEvents` were the other two and are **wired as
+      of 0.8.0** — see below; `generateStores` was read only since #166 (`orchestrator.ts:164`).
+
+      **`generateEvents` (done).** Two call sites, not one — the only flag in this group with that
+      shape: the per-entity handler (`events/<kebab>.events.ts`) and the app-wide
+      `events/event-bus.service.ts` that every handler imports. Wiring the first alone emits a
+      dangling import; confirmed by doing exactly that and watching `ng build` return `TS2307` ×3
+      plus cascading errors.
+
+      Wiring exposed one defect, the predicted one: three `$localize` announcer strings →
+      `TS2304` ×4 on the first build. Dropped per the rule `store-gen.ts` recorded and `detail-gen`
+      followed. **`enum-gen` and `saga-gen` still emit `$localize`**; `enum-gen` is itself wired to
+      nobody (`EnumGenerator` is exported and composed by no one — the orchestrator emits the enum
+      module from `enum-module-gen.ts` instead), so `saga-gen` is the one that will meet it.
+
+      Also fixed a reachability gap rather than only a compile one: both emitted classes are
+      `providedIn: 'root'` and nothing in the emitted app injects them — they exist for the
+      *consumer's* code, exactly like the generated services — but neither was exported from the
+      app barrel, which is how that code reaches them without knowing internal paths.
+
+- [ ] **`<Entity>Store` is generated, injectable, and has no barrel path.** Raised in the #193
+      review. `store-gen` emits a `providedIn: 'root'` signal store per entity — the signal-first
+      surface the pipeline advertises — but `generateBarrelExport` has no Stores section at all, so
+      a consumer's own code can only reach one by internal relative path. `view-gen` reaches it
+      that way for the pages it generates; nothing else can. Exactly the reachability gap the
+      events slice closed, on the shape that arguably matters most.
+
+      Not folded into #193: adding a barrel section is trivial, but the question underneath is
+      whether the store or the service is the consumer's intended entry point, and answering it by
+      quietly exporting both is how a surface ends up with two ways to do one thing.
+
+      Note for whoever takes it: `barrel-resolves.spec` already iterates `generateStores`, and that
+      case is **vacuous** today — zero specifiers either way. It is the guard that fires if a
+      Stores section lands ungated, not evidence that one is covered.
 
       **`generateDetails` (done).** Wiring it was not cosmetic: the emitted **list** already linked
       to the two routes a detail component owns — `[routerLink]="[item.id]"` labelled *View* and

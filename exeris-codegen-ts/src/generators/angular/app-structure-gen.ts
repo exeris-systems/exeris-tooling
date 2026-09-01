@@ -120,7 +120,7 @@ export function generateAppStructure(
   files.push({ path: `${appRoot}/app.config.ts`, content: generateAppConfig(), overwritable: false });
   files.push({ path: `${appRoot}/app.component.ts`, content: generateAppComponent(visibleDomains, appName, sortedViews), overwritable: false });
   files.push({ path: `${appRoot}/app.routes.ts`, content: generateAppRoutes(visibleDomains, appName, sortedViews), overwritable: false });
-  files.push({ path: `${appRoot}/index.ts`, content: generateBarrelExport(visibleDomains, enums), overwritable: true });
+  files.push({ path: `${appRoot}/index.ts`, content: generateBarrelExport(visibleDomains, enums, config), overwritable: true });
 
   // T20: per-entity components/services/types/schemas and enums are emitted by the
   // CLI orchestrator under src/app/ (the real generators), NOT here — this function
@@ -351,7 +351,26 @@ export const routes: Routes = [
 `;
 }
 
-function generateBarrelExport(visibleDomains: DomainMetadata[], enums: EnumMetadata[]): string {
+/**
+ * The app barrel — every generated symbol a consumer's own code can reach without knowing
+ * internal paths.
+ *
+ * <p><b>Every section is gated on the flag that gates its emission.</b> The barrel used to export
+ * unconditionally while the orchestrator honoured `generateServices` / `generateForms` /
+ * `generateLists` / `generateDetails` / `generateZod` / `generateEvents`, so turning any of them
+ * off produced `export ... from './x'` pointing at a file that was never written — `ng build`
+ * `TS2307`. Measured with a one-entity project: `--no-forms`, `--no-lists`, `--no-services`,
+ * `--no-zod` and `--no-details` each left one dangling export, and `--no-events` left three.
+ *
+ * <p>`barrel-resolves.spec` asserts the general invariant — every specifier the barrel names is a
+ * path some generator actually emitted, for every combination of these flags — rather than
+ * re-checking each shape by hand, so a future section joins the gate on its own.
+ */
+function generateBarrelExport(
+  visibleDomains: DomainMetadata[],
+  enums: EnumMetadata[],
+  config: GeneratorConfig,
+): string {
   // Caller (generateAppStructure) is responsible for filtering out
   // hidden domains — see the `visibleDomains` comment at the call
   // site. This function trusts its input and iterates everything
@@ -373,33 +392,61 @@ function generateBarrelExport(visibleDomains: DomainMetadata[], enums: EnumMetad
     exports.push(`export * from './types/${kebab}.types';`);
   }
 
-  exports.push("", "// Schemas (Zod validation schemas only)");
-  for (const domain of visibleDomains) {
-    const kebab = DslMapper.toKebabCase(domain.entityName);
-    exports.push(`export * from './schemas/${kebab}.schema';`);
-  }
-
-  exports.push("", "// Services (export service classes and pagination types)");
-
-  // Export Page and PageRequest only once from first service
-  let pageTypesExported = false;
-  for (const domain of visibleDomains) {
-    const kebab = DslMapper.toKebabCase(domain.entityName);
-    const model = modelTypeName(domain.entityName);
-    if (!pageTypesExported) {
-      exports.push(`export { ${domain.entityName}Service, ${model}Filter, Page, PageRequest } from './services/${kebab}.service';`);
-      pageTypesExported = true;
-    } else {
-      exports.push(`export { ${domain.entityName}Service, ${model}Filter } from './services/${kebab}.service';`);
+  if (config.generateZod) {
+    exports.push("", "// Schemas (Zod validation schemas only)");
+    for (const domain of visibleDomains) {
+      const kebab = DslMapper.toKebabCase(domain.entityName);
+      exports.push(`export * from './schemas/${kebab}.schema';`);
     }
   }
 
-  exports.push("", "// Components");
-  for (const domain of visibleDomains) {
-    const kebab = DslMapper.toKebabCase(domain.entityName);
-    exports.push(`export { ${domain.entityName}FormComponent } from './components/${kebab}-form.component';`);
-    exports.push(`export { ${domain.entityName}ListComponent } from './components/${kebab}-list.component';`);
-    exports.push(`export { ${domain.entityName}DetailComponent } from './components/${kebab}-detail.component';`);
+  if (config.generateServices) {
+    exports.push("", "// Services (export service classes and pagination types)");
+
+    // Export Page and PageRequest only once from first service
+    let pageTypesExported = false;
+    for (const domain of visibleDomains) {
+      const kebab = DslMapper.toKebabCase(domain.entityName);
+      const model = modelTypeName(domain.entityName);
+      if (!pageTypesExported) {
+        exports.push(`export { ${domain.entityName}Service, ${model}Filter, Page, PageRequest } from './services/${kebab}.service';`);
+        pageTypesExported = true;
+      } else {
+        exports.push(`export { ${domain.entityName}Service, ${model}Filter } from './services/${kebab}.service';`);
+      }
+    }
+  }
+
+  if (config.generateForms || config.generateLists || config.generateDetails) {
+    exports.push("", "// Components");
+    for (const domain of visibleDomains) {
+      const kebab = DslMapper.toKebabCase(domain.entityName);
+      if (config.generateForms) {
+        exports.push(`export { ${domain.entityName}FormComponent } from './components/${kebab}-form.component';`);
+      }
+      if (config.generateLists) {
+        exports.push(`export { ${domain.entityName}ListComponent } from './components/${kebab}-list.component';`);
+      }
+      if (config.generateDetails) {
+        exports.push(`export { ${domain.entityName}DetailComponent } from './components/${kebab}-detail.component';`);
+      }
+    }
+  }
+
+  // Domain events. Both emitted classes are `providedIn: 'root'`, so they need no provider —
+  // but nothing in the emitted app injects them: they exist for the CONSUMER's code, exactly
+  // like the generated services. The barrel is how that code reaches them without knowing
+  // internal paths, so an event surface missing from it is emitted-but-unreachable.
+  const eventDomains = config.generateEvents
+    ? visibleDomains.filter((d) => d.events && d.events.length > 0)
+    : [];
+  if (eventDomains.length > 0) {
+    exports.push('', '// Domain events (handlers, payload types, and the shared bus)');
+    exports.push(`export { EventBusService } from './events/event-bus.service';`);
+    exports.push(`export type { DomainEvent } from './events/event-bus.service';`);
+    for (const domain of eventDomains) {
+      exports.push(`export * from './events/${DslMapper.toKebabCase(domain.entityName)}.events';`);
+    }
   }
 
   return exports.join('\n') + '\n';

@@ -44,6 +44,12 @@ const domains = [
       { name: 'status', type: 'com.shop.OrderStatus', enumType: 'com.shop.OrderStatus' },
       { name: 'productId', type: 'java.util.UUID' },
     ],
+    // Domain events drive the per-entity handler AND the shared event bus. Without one in the
+    // fixture, neither half of the event generator is ever built.
+    events: [
+      { name: 'OrderPlaced', payloadFields: ['id', 'total'] },
+      { name: 'OrderCancelled', payloadFields: ['id'], sensitiveFields: ['total'] },
+    ],
     actions: [
       { name: 'cancel', methodName: 'cancel' },
       { name: 'setStatus', methodName: 'setStatus', params: [{ name: 'status', type: 'com.shop.OrderStatus' }] },
