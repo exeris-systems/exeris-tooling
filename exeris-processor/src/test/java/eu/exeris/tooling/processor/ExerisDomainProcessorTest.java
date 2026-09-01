@@ -225,6 +225,116 @@ class ExerisDomainProcessorTest {
         }
 
         @Test
+        @DisplayName("S2: a repeated @SagaStep contributes its steps instead of vanishing")
+        void repeatedSagaStepIsExtracted() throws IOException {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.CheckoutSaga",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.Saga;
+                    import eu.exeris.sdk.annotation.SagaStep;
+
+                    @Saga(name = "CheckoutSaga")
+                    public class CheckoutSaga {
+
+                        // Repeated on ONE method: javac replaces both with the synthesised
+                        // @SagaSteps container and leaves no direct @SagaStep mirror behind.
+                        @SagaStep(order = 1, name = "reserve", service = "stock", command = "Reserve")
+                        @SagaStep(order = 2, name = "charge", service = "billing", command = "Charge")
+                        public void bothHalves() {}
+
+                        @SagaStep(order = 3, name = "notify", service = "mail", command = "Notify")
+                        public void notifyCustomer() {}
+                    }
+                    """
+            );
+
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).succeeded();
+
+            String metadata = readContent(compilation.generatedFile(
+                    StandardLocation.CLASS_OUTPUT, "exeris-metadata/CheckoutSaga.json").orElseThrow());
+
+            // Before S2 the first two were dropped: the lookup matched the exact type
+            // eu.exeris.sdk.annotation.SagaStep, which a synthesised container does not present.
+            // The emitted flow was short by two steps, with no diagnostic anywhere.
+            assertThat(metadata)
+                    .contains("\"reserve\"")
+                    .contains("\"charge\"")
+                    .contains("\"notify\"");
+        }
+
+        @Test
+        @DisplayName("S2: the container and a standalone step on the same class do not double-count")
+        void repeatedAndStandaloneStepsAreEachCountedOnce() throws IOException {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.CheckoutSaga",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.Saga;
+                    import eu.exeris.sdk.annotation.SagaStep;
+
+                    @Saga(name = "CheckoutSaga")
+                    public class CheckoutSaga {
+
+                        @SagaStep(order = 1, name = "reserve", service = "stock", command = "Reserve")
+                        @SagaStep(order = 2, name = "charge", service = "billing", command = "Charge")
+                        public void bothHalves() {}
+
+                        @SagaStep(order = 3, name = "notify", service = "mail", command = "Notify")
+                        public void notifyCustomer() {}
+                    }
+                    """
+            );
+
+            String metadata = readContent(compileWithProcessor(source).generatedFile(
+                    StandardLocation.CLASS_OUTPUT, "exeris-metadata/CheckoutSaga.json").orElseThrow());
+
+            // The probe has to be a REPEATED step, not the standalone one. Reading both the direct
+            // mirror and the container is the fix, so a javac that presented both shapes for one
+            // annotation type would emit `reserve` and `charge` twice each — `notify` arrives
+            // through the direct mirror either way and would stay at one, proving nothing. Raised
+            // in review of this PR: the first version of this test asserted on `notify`.
+            assertThat(metadata.split("\"reserve\"", -1))
+                    .as("the first repeated step, once")
+                    .hasSize(2);
+            assertThat(metadata.split("\"charge\"", -1))
+                    .as("the second repeated step, once")
+                    .hasSize(2);
+        }
+
+        @Test
+        @DisplayName("S1: @Saga.version reaches the metadata instead of always reporting 1")
+        void sagaVersionIsExtracted() throws IOException {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.CheckoutSaga",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.Saga;
+                    import eu.exeris.sdk.annotation.SagaStep;
+
+                    @Saga(name = "CheckoutSaga", version = 3)
+                    public class CheckoutSaga {
+
+                        @SagaStep(order = 1, name = "reserve", service = "stock", command = "Reserve")
+                        public void reserve() {}
+                    }
+                    """
+            );
+
+            String metadata = readContent(compileWithProcessor(source).generatedFile(
+                    StandardLocation.CLASS_OUTPUT, "exeris-metadata/CheckoutSaga.json").orElseThrow());
+
+            // SagaMetadata declares `int version` defaulting to 1, and nothing set it — so a
+            // document that said version 1 sat next to a source that said 3. This corrects an
+            // existing field rather than adding one.
+            assertThat(metadata).contains("\"version\" : 3");
+        }
+
+        @Test
         @DisplayName("Should extract Saga with compensation")
         void shouldExtractSagaWithCompensation() throws IOException {
             JavaFileObject source = JavaFileObjects.forSourceString(
