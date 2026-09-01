@@ -64,6 +64,11 @@ program
   .option('--no-forms', 'Skip form component generation')
   .option('--no-lists', 'Skip list component generation')
   .option('--no-details', 'Skip detail component generation')
+  .option(
+    '--tests',
+    'Emit specs for the generated surface plus the Vitest runner that executes them '
+      + '(adds a test target, tsconfig.spec.json and the vitest + jsdom devDependencies)',
+  )
   .option('--no-stores', 'Skip Signal store generation')
   .option('--no-sagas', 'Skip Saga UI generation')
   .option('--no-events', 'Skip Event handler generation')

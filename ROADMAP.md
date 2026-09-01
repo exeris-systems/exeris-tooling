@@ -909,6 +909,38 @@ ignored by the repository generator), T20b (the TS pruner does not remove cross-
 T20d (`form-gen` coerces numeric fields but not booleans), T25/G6 (theme-variant binding for `@View`),
 T30 (emitted imports as undeclared build requirements — the general case behind T50).
 
+- [x] **T2 — the FE spec slice.** Shipped 0.8.0. Delivered in one piece as the entry demanded: a
+      `test` target on `@angular/build:unit-test` (Vitest), a `tsconfig.spec.json`, the two
+      devDependencies the runner needs, the opt-in `generateTests` / `--tests` flag, both spec
+      emitters, and a CI gate that **runs** them.
+
+      Both ADR-058 constraints were live, not ceremonial. **Doubles, never mocks**: the service spec
+      drives the real service through `provideHttpClientTesting()`, which ships inside
+      `@angular/common` — already a dependency — so the specs add nothing beyond the runner.
+      **The double must not drift from its subject**: the spec asserts the service's URL, so the
+      path derivation moved into one exported `serviceApiPath()` that both call. A re-derived path
+      would agree only until one side changed.
+
+      The two consumer-build requirements were measured, not assumed: `vitest` is an **optional**
+      peer of `@angular/build` (the builder is inert without it), and the builder refuses to start
+      without a DOM implementation, naming `jsdom` or `happy-dom` itself. Specs are excluded from
+      `tsconfig.app.json` so a production `ng build` never needs either — without that, `include`
+      covers `src/**/*.ts` and a test-only dependency leaks into the build path.
+
+      Two things worth keeping. **The emitted service spec is a regression test for the defect that
+      shipped twice**: reintroducing the `/api` prefix into a generated service fails all four URL
+      assertions, so every consumer's app now carries that guard. And **assertions are derived from
+      metadata, never assumed** — the first hand-written probe for this slice asserted that an empty
+      object fails the entity schema, and it passed, because that entity declares no required field.
+      The fixture is keyed off the **zod** type rather than the TS type for the same reason: a
+      `BigDecimal` is `string` in TypeScript but `z.string().regex(...)` in the schema, and the first
+      generated run emitted a spec that failed on exactly that.
+
+      With the flag off, emitted output is **byte-identical** to an app generated before the slice
+      existed — verified against `main` across `src/`, `package.json`, `angular.json` and
+      `tsconfig.app.json`.
+
+      Original entry below.
 - [ ] **T2 — the FE spec slice.** The half of the generated-test story that did not ship in 0.7.0
       (the Java half is complete — slices a–f, ADR-058). Deferred at the 0.7.0 cut on 2026-08-18.
       It is not "emit some spec files": the emitted app declares `"test": "ng test"` and ships

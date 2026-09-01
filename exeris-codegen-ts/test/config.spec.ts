@@ -260,14 +260,15 @@ describe('cliOverrides', () => {
     const all = {
       input: 'i', output: 'o', apiBase: '/a', appName: 'n', framework: 'angular', styling: 'none',
       backend: 'KERNEL', zod: false, services: false, forms: false, lists: false, details: false,
-      stores: false, sagas: false, events: false, overwrite: true, dryRun: true, verbose: true,
-      peer: ['p=./p'],
+      stores: false, sagas: false, events: false, tests: true, overwrite: true, dryRun: true,
+      verbose: true, peer: ['p=./p'],
     };
     expect(cliOverrides(all, () => true)).toEqual({
       inputPath: 'i', outputPath: 'o', apiBasePath: '/a', appName: 'n', framework: 'angular',
       styling: 'none', backend: 'KERNEL', generateZod: false, generateServices: false,
       generateForms: false, generateLists: false, generateDetails: false, generateStores: false,
-      generateSagas: false, generateEvents: false, overwrite: true, dryRun: true, verbose: true,
+      generateSagas: false, generateEvents: false, generateTests: true, overwrite: true,
+      dryRun: true, verbose: true,
       peers: [{ name: 'p', path: './p' }],
     });
   });

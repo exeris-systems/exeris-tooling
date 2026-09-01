@@ -360,3 +360,63 @@ describe('buildGeneratedFiles — domain events', () => {
     expect(barrel).not.toContain('events/');
   });
 });
+
+// ---------------------------------------------------------------------------
+// T2 FE spec slice (0.8.0, ADR-058). Opt-in: `generateTests` defaults to false,
+// because turning it on also puts a runner and two devDependencies into the
+// consumer's package.json.
+// ---------------------------------------------------------------------------
+
+describe('buildGeneratedFiles — generated specs', () => {
+  const order = domain({
+    entityName: 'Order',
+    fields: [{ name: 'id', type: 'java.util.UUID' }, { name: 'total', type: 'java.math.BigDecimal' }],
+  });
+  const withTests = { ...DEFAULT_CONFIG, generateTests: true };
+  const at = (files: { path: string; content: string }[], p: string) =>
+    files.find((f) => f.path === p)?.content ?? '';
+
+  it('emits no spec and no runner by default', () => {
+    const files = buildGeneratedFiles([order], [], DEFAULT_CONFIG);
+    expect(files.some((f) => f.path.endsWith('.spec.ts'))).toBe(false);
+    expect(files.some((f) => f.path.endsWith('tsconfig.spec.json'))).toBe(false);
+    expect(at(files, './package.json')).not.toContain('vitest');
+    expect(at(files, './angular.json')).not.toContain('unit-test');
+  });
+
+  it('emits both specs and the whole runner when asked', () => {
+    const files = buildGeneratedFiles([order], [], withTests);
+    expect(files.some((f) => f.path === 'src/app/schemas/order.schema.spec.ts')).toBe(true);
+    expect(files.some((f) => f.path === 'src/app/services/order.service.spec.ts')).toBe(true);
+    expect(files.some((f) => f.path === './tsconfig.spec.json')).toBe(true);
+    expect(at(files, './angular.json')).toContain('"builder": "@angular/build:unit-test"');
+  });
+
+  // Both are consumer-build requirements the runner cannot start without: vitest is an OPTIONAL
+  // peer of @angular/build, and the builder refuses to run without a DOM implementation, naming
+  // jsdom or happy-dom itself.
+  it('declares the two dependencies the runner needs, and only under the flag', () => {
+    const on = at(buildGeneratedFiles([order], [], withTests), './package.json');
+    expect(on).toContain('"vitest"');
+    expect(on).toContain('"jsdom"');
+  });
+
+  // Otherwise a consumer's production `ng build` type-checks the specs and therefore needs vitest
+  // installed — a test-only dependency leaking into the build path.
+  it('excludes specs from the app tsconfig so a production build never needs the runner', () => {
+    expect(at(buildGeneratedFiles([order], [], withTests), './tsconfig.app.json'))
+      .toContain('"exclude": ["src/**/*.spec.ts"]');
+    expect(at(buildGeneratedFiles([order], [], DEFAULT_CONFIG), './tsconfig.app.json'))
+      .not.toContain('exclude');
+  });
+
+  // A spec must never import a file the same run did not emit.
+  it('emits a spec only for a surface that was itself emitted', () => {
+    const noZod = buildGeneratedFiles([order], [], { ...withTests, generateZod: false });
+    expect(noZod.some((f) => f.path.endsWith('.schema.spec.ts'))).toBe(false);
+    expect(noZod.some((f) => f.path.endsWith('.service.spec.ts'))).toBe(true);
+
+    const noServices = buildGeneratedFiles([order], [], { ...withTests, generateServices: false });
+    expect(noServices.some((f) => f.path.endsWith('.service.spec.ts'))).toBe(false);
+  });
+});

@@ -79,6 +79,14 @@ export default defineConfig({
         // (not directory-wide yet — landing-gen.ts has pre-existing
         // tsc errors + model-misalignment bugs that need a fix-then-
         // test PR before it can join the gate).
+        // T2: the spec emitters. Their real proof is the CI `ng test` on the generated
+        // sample; this pins the generator itself against silent erosion like every other.
+        'src/generators/angular/spec-gen.ts': {
+          lines: 85,
+          functions: 85,
+          branches: 85,
+          statements: 85,
+        },
         'src/generators/angular/guard-gen.ts': {
           lines: 85,
           functions: 85,
