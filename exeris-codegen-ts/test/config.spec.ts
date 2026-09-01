@@ -31,6 +31,7 @@ import {
   findConfigFile,
   loadConfigFile,
   loadConfig,
+  peerOverride,
   resolveInputPath,
   resolveOutputPath,
   type GeneratorConfig,
@@ -217,3 +218,64 @@ describe('resolveInputPath / resolveOutputPath', () => {
   });
 });
 
+
+// ---------- peerOverride + the config-file `peers` path ----------
+//
+// `loadConfig` merges overrides with a spread, so an override key that is always PRESENT always
+// wins — regardless of its value. Commander hands back `[]`, not `undefined`, for a repeatable
+// option with a default, so building the `peers` override unconditionally made the documented
+// `"peers"` config-file array dead config: declared, documented, and read by nothing. These tests
+// pin the shape rather than the symptom, because the symptom (no peer tree emitted) only shows up
+// in a full CLI run, which nothing else here exercises.
+
+describe('peerOverride', () => {
+  it('omits the key entirely when the flag was not passed', () => {
+    expect(peerOverride(undefined)).toEqual({});
+  });
+
+  // The regression itself: commander gives [], not undefined.
+  it('omits the key for the empty array commander actually hands back', () => {
+    const override = peerOverride([]);
+    expect(override).toEqual({});
+    expect('peers' in override).toBe(false);
+  });
+
+  it('parses the specs when the flag was passed', () => {
+    expect(peerOverride(['billing=../billing/contract'])).toEqual({
+      peers: [{ name: 'billing', path: '../billing/contract' }],
+    });
+  });
+
+  it('propagates a malformed reference rather than dropping it', () => {
+    expect(() => peerOverride(['no-equals-sign'])).toThrow(/<name>=<path>/);
+  });
+});
+
+describe('loadConfig — peers', () => {
+  const writeConfigWithPeers = () => {
+    writeFileSync(
+      join(tempRoot, 'exeris-codegen.json'),
+      JSON.stringify({ peers: [{ name: 'billing', path: '../billing/contract' }] }),
+    );
+    process.chdir(tempRoot);
+  };
+
+  it('keeps the config file\'s peers when no --peer was passed', () => {
+    writeConfigWithPeers();
+    expect(loadConfig({ ...peerOverride([]) }).peers).toEqual([
+      { name: 'billing', path: '../billing/contract' },
+    ]);
+  });
+
+  it('lets --peer replace the config file\'s peers', () => {
+    writeConfigWithPeers();
+    expect(loadConfig({ ...peerOverride(['shipping=./s']) }).peers).toEqual([
+      { name: 'shipping', path: './s' },
+    ]);
+  });
+
+  it('defaults to no peers when neither declares any', () => {
+    process.chdir(tempRoot);
+    expect(loadConfig({ ...peerOverride(undefined) }).peers).toEqual([]);
+  });
+});

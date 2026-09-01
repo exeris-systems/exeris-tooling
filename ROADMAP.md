@@ -690,9 +690,48 @@ never-invoked emitter start emitting, and its output did not build.
       jar. This is **T30 one phase later** and it fails worse. Tooling emits no `pom.xml`, so the
       honest options are a documented requirement or — smaller and better-timed — failing the *build*
       when a selected subsystem has no provider on the runtime classpath.
-- [ ] **T42 — the mesh has no generated frontend contract.** `codegen-ts` is single-service by
-      construction: one metadata directory in, one app out. A mesh consumer retypes the other
-      service's vocabulary by hand across a language boundary with no compiler between.
+- [x] **T42 — the mesh has no generated frontend contract.** Types slice shipped 0.8.0 (ADR-048).
+      `codegen-ts` was single-service by construction: one metadata directory in, one app out. A mesh
+      consumer retyped the other service's vocabulary by hand across a language boundary with no
+      compiler between.
+
+      **What shipped:** `--peer <name>=<path>` (repeatable; also `peers` in the config file) reads a
+      peer's **contract artifact** — its `cap-manifest.json` plus the `DomainMetadata` of the
+      entities it provides — and emits that peer's DTOs under `src/app/peers/<name>/`: the entity
+      interface, its `Create`/`Update` shapes, its Zod schemas under `generateZod`, its own enum
+      module and its own barrel. No client, no registry, no saga dispatch — those are the 0.9.0
+      slice, and the client half is the one pinned to a final kernel 0.12.
+
+      Three things the implementation had to settle that the ADR left to it. **The manifest is
+      required even though nothing reads its body yet** — it is what makes a directory a contract
+      rather than a pile of JSON, and accepting a manifest-less directory would ship exactly the
+      input model ADR-048 rejects, with no way to take it back once consumers adopt it. **`Filter`
+      and `ListResponse` are not emitted for a peer**, unlike the local emitter: they describe this
+      app's own list/query surface, and for a peer whose client arrives in 0.9.0 they would describe
+      a query nobody can make — the inert-emitted-surface failure mode D10, D11 and the unwired
+      templates each record. **Peer entities are sorted by name**; the local path inherits
+      `readdirSync` order, which is stable for one tree on one machine, but a published artifact is
+      unpacked by tools we do not own onto filesystems we do not own.
+
+      The guarantee is a compile, not a substring: `verify:generated` now runs a
+      `two-peers-same-entity` case where the app and two peers each declare `Order` and one peer
+      declares an enum with the app's own enum name, and a hand-written consumer module imports all
+      three `Order`s into one namespace under distinct local names. Perturbed both ways — merging the
+      peer namespaces gives TS2307, re-exporting a peer from the app's `types/` barrel gives TS2308
+      on `Order` — which is the T40 break at mesh scale. The CI `ng build` sample carries the same
+      three-`Order` shape plus a peer entity named `Component`; a deliberate type error in an
+      unreferenced peer file was confirmed to fail it, so that gate is not vacuous either.
+
+      One measurement worth carrying: the contract artifact has **two independently-versioned
+      `schemaVersion` fields** — an integer on `cap-manifest.json` (`CapabilityGraph.SCHEMA_VERSION`,
+      today 2) and a *string* on each entity JSON (`SchemaVersion.CURRENT`, today `"0.11.0"`, the
+      ADR-042 baseline-trust stamp). ADR-048's "floor 2" can only be the manifest's. The entity
+      stamp is a *skew* check, not a floor, and enforcing it as equality here would require every
+      peer to have been built with the consumer's exact SDK version — which contradicts ADR-048's
+      own "apps stay independently built and versioned". Left unchecked in this slice, deliberately;
+      it belongs with the registry slice that actually reads the peer's contract for trust.
+
+      Original finding below.
 
       **Blocked on the mesh RFC being accepted, not on effort** (established 2026-08-28 on picking it
       up). The entry's own "cheap honest version" — *point the CLI at a second metadata directory and
@@ -946,7 +985,7 @@ T30 (emitted imports as undeclared build requirements — the general case behin
 | T23 | Stream-route boot-reachability — the generated `RuntimeLifecycle` published a `router::handle` lambda, erasing the `HttpRouter` type the kernel stream dispatcher resolves via `instanceof`, so every generated `streamRoute(...)` silently 404'd / fell back to respond-once on a real boot | **High** (latent) | ✅ 0.6.0 (folded into #106, ADR-044 Slice 2 — `handlerSlot.set(router)`; pinned by `KernelApplicationGeneratorTest`) |
 | T8  | No generated finders/indexes for FK + `filterable` fields → O(n) `findAll().filter()` everywhere | **High** | ✅ 2026-06-28 (finders + FK/filterable indexes; T9 constraints deferred) |
 | T10 | `@Validation` enforced client-side (Zod) but dropped server-side (handler/service/DB) | **High** | ✅ 0.6.0 (#103) |
-| T12 | N generated apps can't form a mesh — client is own-app/relative-host, saga step is local, no cross-app contract | **High** | **T42 (types) 0.8.0, no kernel gate; client+registry 0.9.0** — split by ADR-048; the client half needs a final kernel 0.12 (ADR-074's binary break on `HttpRequest`) |
+| T12 | N generated apps can't form a mesh — client is own-app/relative-host, saga step is local, no cross-app contract | **High** | **T42 (types) SHIPPED 0.8.0**, no kernel gate; client+registry 0.9.0 — split by ADR-048; the client half needs a final kernel 0.12 (ADR-074's binary break on `HttpRequest`) |
 | T17 | Capability-graph validation is closed-world per app — a legitimate cross-service `@Requires` hard-fails the build | **High** | **0.9.0** — ships with the client+registry slice per ADR-048 |
 | T26 | A `@ExerisDomain(versioned = true)` entity whose `version` field is the **wrapper** `Long` throws NPE on the first `save()` of a fresh entity: `buildColumnLayout` hardcodes the VERSION column's type as `Long` and the emitter binds it by unboxing (`stmt.bindLong(i, entity.getVersion())`), with no null guard — and no guard is possible while the column type is a constant, since a primitive `long version` field cannot be null-compared. `update()` has the same unboxing (`long expected = entity.getVersion()`). Every other nullable system column (`createdAt`/`updatedAt`) *is* guarded, so this is the one gap. Fix is to read the declared field type into the column instead of assuming, which makes it a repository-emitter change rather than a test one | **Medium** (latent; primitive-`long` entities were unaffected) | ✅ 0.7.x — found 2026-08-02 by the T2 slice-d system-column fixture, fixed the same day: both the version bind and `update()`'s expected-version read go through a boxed local with a null default, so a wrapper-typed field behaves exactly like the primitive it shadows. The e2e fixture keeps the **wrapper** declaration (a primitive would pass either way) and the generated repository test no longer pre-stages the version, which makes every consumer's emitted test a regression test for it |
 | T2  | Zero tests generated for the generated surface | Medium | 🔶 0.7.0 slices a–f — the **Java half is complete** (handler bodyless routes + body-route guards + service delegation + repository round-trip + saga wiring + `@Validation` boundary pairs, ADR-058); **FE spec slice → 0.8.0** |

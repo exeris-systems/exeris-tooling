@@ -159,3 +159,84 @@ describe('buildGeneratedFiles — presentation IR (@View) flows to src/app/pages
     expect(routes.content).toContain("redirectTo: 'orders'");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Peer contracts (T42, ADR-048) — composition, and the invariant that keeps the
+// three-Order sample compiling.
+// ---------------------------------------------------------------------------
+
+describe('buildGeneratedFiles — peer contracts', () => {
+  const peerOrder = (pkg: string, extra: Record<string, string>) =>
+    DomainMetadataSchema.parse({
+      packageName: pkg,
+      entityName: 'Order',
+      fields: [{ name: 'id', type: 'java.util.UUID' }, extra],
+    });
+
+  const peers = [
+    { name: 'billing', domains: [peerOrder('com.billing', { name: 'invoiceNo', type: 'String' })], enums: [] },
+    { name: 'shipping', domains: [peerOrder('com.shipping', { name: 'trackingCode', type: 'String' })], enums: [] },
+  ];
+
+  const localOrder = DomainMetadataSchema.parse({
+    packageName: 'com.shop',
+    entityName: 'Order',
+    fields: [{ name: 'id', type: 'java.util.UUID' }, { name: 'total', type: 'java.math.BigDecimal' }],
+  });
+
+  it('emits nothing under peers/ when no peer is declared', () => {
+    const files = buildGeneratedFiles([localOrder], [], DEFAULT_CONFIG);
+    expect(files.some((f) => f.path.includes('/peers/'))).toBe(false);
+  });
+
+  it('roots each peer tree under src/app/peers/<name>', () => {
+    const files = buildGeneratedFiles([localOrder], [], DEFAULT_CONFIG, [], peers);
+    expect(files.some((f) => f.path === 'src/app/peers/billing/index.ts')).toBe(true);
+    expect(files.some((f) => f.path === 'src/app/peers/shipping/index.ts')).toBe(true);
+  });
+
+  // ADR-048 §3. Two peers and the app may all declare `Order`; that compiles only because
+  // no barrel outside a peer's own directory re-exports it. `export *` of two modules that
+  // both export `Order` does not merge them — it makes `Order` unexported (TS2308/TS2305),
+  // which is the mesh-scale form of the T40 break.
+  it('never re-exports a peer from the app barrel or the app\'s own types barrel', () => {
+    const files = buildGeneratedFiles([localOrder], [], DEFAULT_CONFIG, [], peers);
+    const appBarrel = files.find((f) => f.path === 'src/app/index.ts')?.content ?? '';
+    const typesBarrel = files.find((f) => f.path === 'src/app/types/index.ts')?.content ?? '';
+
+    expect(appBarrel).not.toContain('peers/');
+    expect(typesBarrel).not.toContain('peers/');
+    expect(appBarrel.length).toBeGreaterThan(0);
+    expect(typesBarrel).toContain("export * from './order.types';");
+  });
+
+  // The reverse edge is the same invariant read the other way: a peer file must not reach
+  // into the app's tree either, or the app's `Order` would leak into the peer's namespace.
+  it('emits no peer file that imports outside its own peer directory', () => {
+    const files = buildGeneratedFiles([localOrder], [], DEFAULT_CONFIG, [], peers);
+    const peerFiles = files.filter((f) => f.path.includes('/peers/'));
+    expect(peerFiles.length).toBeGreaterThan(0);
+    for (const file of peerFiles) {
+      for (const [, spec] of file.content.matchAll(/from '([^']+)'/g)) {
+        expect(spec === 'zod' || spec.startsWith('./') || spec.startsWith('../types')).toBe(true);
+      }
+    }
+  });
+
+  it('keeps each peer\'s own field set — the trees are separate, not deduplicated', () => {
+    const files = buildGeneratedFiles([localOrder], [], DEFAULT_CONFIG, [], peers);
+    const at = (p: string) => files.find((f) => f.path === p)?.content ?? '';
+    expect(at('src/app/peers/billing/types/order.types.ts')).toContain('invoiceNo');
+    expect(at('src/app/peers/shipping/types/order.types.ts')).toContain('trackingCode');
+    expect(at('src/app/types/order.types.ts')).toContain('total');
+  });
+
+  it('emits peers in the order given, which the loader has already sorted by name', () => {
+    const paths = buildGeneratedFiles([localOrder], [], DEFAULT_CONFIG, [], peers)
+      .filter((f) => f.path.includes('/peers/'))
+      .map((f) => f.path);
+    expect(paths.findIndex((p) => p.includes('/billing/'))).toBeLessThan(
+      paths.findIndex((p) => p.includes('/shipping/')),
+    );
+  });
+});

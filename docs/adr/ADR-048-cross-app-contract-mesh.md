@@ -52,6 +52,17 @@ schema to keep in step with the first — this repository's own backlog is a cat
 to a second surface that drifts. ADR-042's `sourceDigest` is computed over what the producer emitted,
 so a pruned artifact would need a digest story of its own.
 
+> **Implementation note (types slice, 0.8.0) — which `schemaVersion`.** The artifact carries
+> **two**, versioned independently: an integer on `cap-manifest.json`
+> (`CapabilityGraph.SCHEMA_VERSION`, today `2`) and a *string* on each entity JSON
+> (`SchemaVersion.CURRENT`, today `"0.11.0"` — the ADR-042 baseline-trust stamp). "Floor 2" above
+> is the manifest's, and that is what the loader enforces. The entity stamp is a **skew** check
+> rather than a floor: ADR-042 refuses a baseline whose version differs from the reader's, and
+> enforcing that here would require every peer to have been built with the consumer's exact SDK
+> version — which contradicts this ADR's own "apps stay independently built and versioned". It is
+> therefore not checked by the types slice; it belongs with the registry slice, which is the one
+> that reads a peer's contract for trust rather than for shape.
+
 > **Recorded as a consequence, not hidden:** a full artifact exposes the producer's whole domain
 > surface to every consumer of the contract, including entities they never import. That is a
 > disclosure decision, and it is taken here knowingly. An app that must not publish an entity keeps

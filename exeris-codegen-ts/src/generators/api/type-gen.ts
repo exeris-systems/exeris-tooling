@@ -75,7 +75,7 @@ export class TypeGenerator implements CodeGenerator {
     const kebabName = DslMapper.toKebabCase(metadata.entityName);
 
     // Collect enum types used in fields
-    const enumTypes = this.collectEnumTypes(metadata.fields);
+    const enumTypes = collectEnumTypes(metadata.fields);
 
     const lines: string[] = [
       `/**`,
@@ -103,10 +103,7 @@ export class TypeGenerator implements CodeGenerator {
     lines.push(`}`);
     lines.push(``);
 
-    // Create DTO (without system fields and lifecycle fields)
-    const systemFields = this.getSystemFieldNames(metadata);
-    const lifecycleFields = ['active', 'onboardingStatus', 'onboardingStartedAt', 'onboardingCompletedAt', 'hierarchyLevel', 'createdAt', 'updatedAt', 'deleted', 'version', 'parentTenantId'];
-    const createFields = metadata.fields.filter(f => !systemFields.includes(f.name) && !lifecycleFields.includes(f.name) && f.inCreate !== false);
+    const createFields = createDtoFields(metadata);
 
     lines.push(`export interface ${interfaceName}Create {`);
     for (const field of createFields) {
@@ -153,7 +150,7 @@ export class TypeGenerator implements CodeGenerator {
     const kebabName = DslMapper.toKebabCase(metadata.entityName);
 
     // Collect enum types used in fields
-    const enumTypes = this.collectEnumTypes(metadata.fields);
+    const enumTypes = collectEnumTypes(metadata.fields);
     const enumSchemaImports = enumTypes.map(e => `${e}Schema`);
 
     const lines: string[] = [
@@ -175,7 +172,7 @@ export class TypeGenerator implements CodeGenerator {
     // Main schema
     lines.push(`export const ${interfaceName}Schema = z.object({`);
     for (const field of metadata.fields) {
-      const zodType = this.buildZodType(field);
+      const zodType = buildZodType(field);
       lines.push(`  ${field.name}: ${zodType},`);
     }
     lines.push(`});`);
@@ -186,7 +183,7 @@ export class TypeGenerator implements CodeGenerator {
     // type level (TS2322: `true` not assignable to `never`), so omitting a system
     // field the entity doesn't declare breaks the generated schema's compile (T20).
     const presentFields = new Set(metadata.fields.map((f) => f.name));
-    const omitKeys = this.getSystemFieldNames(metadata).filter((sf) => presentFields.has(sf));
+    const omitKeys = systemFieldNames(metadata).filter((sf) => presentFields.has(sf));
 
     lines.push(`export const ${interfaceName}CreateSchema = ${interfaceName}Schema.omit({`);
     for (const sf of omitKeys) {
@@ -241,139 +238,162 @@ export class TypeGenerator implements CodeGenerator {
     return lines.join('\n');
   }
 
-  private buildZodType(field: FieldMetadata): string {
-    const baseMapping = DslMapper.mapType(field.type);
-    let zodType = baseMapping.zodType;
+}
 
-    // Apply validations
-    if (field.minLength && zodType.includes('z.string')) {
-      zodType = zodType.replace('z.string()', `z.string().min(${field.minLength})`);
-    }
-    if (field.maxLength && zodType.includes('z.string')) {
-      zodType += `.max(${field.maxLength})`;
-    }
-    if (field.min !== undefined && zodType.includes('z.number')) {
-      zodType += `.min(${field.min})`;
-    }
-    if (field.max !== undefined && zodType.includes('z.number')) {
-      zodType += `.max(${field.max})`;
-    }
-    if (field.format === 'email') {
-      zodType = 'z.string().email()';
-    }
-    if (field.format === 'url') {
-      zodType = 'z.string().url()';
-    }
-    if (field.pattern) {
-      zodType = `z.string().regex(/${field.pattern}/)`;
-    }
+/**
+ * The Zod expression for one field: the base mapping plus whatever validations the
+ * metadata declares. Shared with the peer emitter (T42) so a peer's schema and this app's
+ * own are produced by one implementation — a second copy is a parity bug waiting to happen.
+ */
+export function buildZodType(field: FieldMetadata): string {
+  const baseMapping = DslMapper.mapType(field.type);
+  let zodType = baseMapping.zodType;
 
-    // Optional handling
-    if (!field.required) {
-      zodType += '.optional()';
-    }
-
-    return zodType;
+  // Apply validations
+  if (field.minLength && zodType.includes('z.string')) {
+    zodType = zodType.replace('z.string()', `z.string().min(${field.minLength})`);
+  }
+  if (field.maxLength && zodType.includes('z.string')) {
+    zodType += `.max(${field.maxLength})`;
+  }
+  if (field.min !== undefined && zodType.includes('z.number')) {
+    zodType += `.min(${field.min})`;
+  }
+  if (field.max !== undefined && zodType.includes('z.number')) {
+    zodType += `.max(${field.max})`;
+  }
+  if (field.format === 'email') {
+    zodType = 'z.string().email()';
+  }
+  if (field.format === 'url') {
+    zodType = 'z.string().url()';
+  }
+  if (field.pattern) {
+    zodType = `z.string().regex(/${field.pattern}/)`;
   }
 
-  private getSystemFieldNames(metadata: DomainMetadata): string[] {
-    const fields = ['id'];
-    const sf = metadata.systemFields;
-
-    if (sf) {
-      if (sf.idField && sf.idField !== 'id') fields.push(sf.idField);
-      if (sf.versionField) fields.push(sf.versionField);
-      if (sf.createdAtField) fields.push(sf.createdAtField);
-      if (sf.updatedAtField) fields.push(sf.updatedAtField);
-      if (sf.createdByField) fields.push(sf.createdByField);
-      if (sf.updatedByField) fields.push(sf.updatedByField);
-      if (sf.tenantIdField) fields.push(sf.tenantIdField);
-      if (sf.deletedAtField) fields.push(sf.deletedAtField);
-    } else {
-      // Default system fields
-      fields.push('version', 'createdAt', 'updatedAt');
-    }
-
-    return [...new Set(fields)];
+  // Optional handling
+  if (!field.required) {
+    zodType += '.optional()';
   }
 
-  /**
-   * Collects enum type names from fields that reference enums.
-   * Detects enum types by checking if the field type is not a known Java type.
-   */
-  private collectEnumTypes(fields: FieldMetadata[]): string[] {
-    const enumTypes = new Set<string>();
+  return zodType;
+}
 
-    // Known Java types that should NOT be treated as enums
-    const knownJavaTypes = new Set([
-      'String', 'java.lang.String',
-      'Integer', 'java.lang.Integer', 'int',
-      'Long', 'java.lang.Long', 'long',
-      'Double', 'java.lang.Double', 'double',
-      'Float', 'java.lang.Float', 'float',
-      'Boolean', 'java.lang.Boolean', 'boolean',
-      'BigDecimal', 'java.math.BigDecimal',
-      'BigInteger', 'java.math.BigInteger',
-      'UUID', 'java.util.UUID',
-      'Instant', 'java.time.Instant',
-      'LocalDate', 'java.time.LocalDate',
-      'LocalDateTime', 'java.time.LocalDateTime',
-      'LocalTime', 'java.time.LocalTime',
-      'ZonedDateTime', 'java.time.ZonedDateTime',
-      'Duration', 'java.time.Duration',
-      'Period', 'java.time.Period',
-      'Date', 'java.util.Date',
-      'byte[]', 'Object', 'java.lang.Object',
-    ]);
+/**
+ * The fields the server owns: the id, plus whatever the entity's `systemFields` block
+ * declares (or the `version`/`createdAt`/`updatedAt` default when it declares none).
+ */
+export function systemFieldNames(metadata: DomainMetadata): string[] {
+  const fields = ['id'];
+  const sf = metadata.systemFields;
 
-    for (const field of fields) {
-      const javaType = field.type;
+  if (sf) {
+    if (sf.idField && sf.idField !== 'id') fields.push(sf.idField);
+    if (sf.versionField) fields.push(sf.versionField);
+    if (sf.createdAtField) fields.push(sf.createdAtField);
+    if (sf.updatedAtField) fields.push(sf.updatedAtField);
+    if (sf.createdByField) fields.push(sf.createdByField);
+    if (sf.updatedByField) fields.push(sf.updatedByField);
+    if (sf.tenantIdField) fields.push(sf.tenantIdField);
+    if (sf.deletedAtField) fields.push(sf.deletedAtField);
+  } else {
+    // Default system fields
+    fields.push('version', 'createdAt', 'updatedAt');
+  }
 
-      // Check if field has explicit enumType metadata
-      if (field.enumType) {
-        const simpleName = field.enumType.includes('.')
-          ? field.enumType.substring(field.enumType.lastIndexOf('.') + 1)
-          : field.enumType;
+  return [...new Set(fields)];
+}
+
+/**
+ * Collects enum type names from fields that reference enums.
+ * Detects enum types by checking if the field type is not a known Java type.
+ */
+export function collectEnumTypes(fields: FieldMetadata[]): string[] {
+  const enumTypes = new Set<string>();
+
+  // Known Java types that should NOT be treated as enums
+  const knownJavaTypes = new Set([
+    'String', 'java.lang.String',
+    'Integer', 'java.lang.Integer', 'int',
+    'Long', 'java.lang.Long', 'long',
+    'Double', 'java.lang.Double', 'double',
+    'Float', 'java.lang.Float', 'float',
+    'Boolean', 'java.lang.Boolean', 'boolean',
+    'BigDecimal', 'java.math.BigDecimal',
+    'BigInteger', 'java.math.BigInteger',
+    'UUID', 'java.util.UUID',
+    'Instant', 'java.time.Instant',
+    'LocalDate', 'java.time.LocalDate',
+    'LocalDateTime', 'java.time.LocalDateTime',
+    'LocalTime', 'java.time.LocalTime',
+    'ZonedDateTime', 'java.time.ZonedDateTime',
+    'Duration', 'java.time.Duration',
+    'Period', 'java.time.Period',
+    'Date', 'java.util.Date',
+    'byte[]', 'Object', 'java.lang.Object',
+  ]);
+
+  for (const field of fields) {
+    const javaType = field.type;
+
+    // Check if field has explicit enumType metadata
+    if (field.enumType) {
+      const simpleName = field.enumType.includes('.')
+        ? field.enumType.substring(field.enumType.lastIndexOf('.') + 1)
+        : field.enumType;
+      enumTypes.add(simpleName);
+      continue;
+    }
+
+    // Skip known Java types
+    if (knownJavaTypes.has(javaType)) {
+      continue;
+    }
+
+    // Skip generics (List, Map, Set, etc.)
+    if (javaType.includes('<') || javaType.endsWith('[]')) {
+      continue;
+    }
+
+    // Extract simple name from qualified name
+    const simpleName = javaType.includes('.')
+      ? javaType.substring(javaType.lastIndexOf('.') + 1)
+      : javaType;
+
+    // Skip if simple name is a known type
+    if (knownJavaTypes.has(simpleName)) {
+      continue;
+    }
+
+    // If it's a PascalCase name that's not a known type, it's likely an enum or entity
+    // For now, we assume types ending with common enum suffixes or in "domain" package are enums
+    if (/^[A-Z][a-zA-Z0-9]*$/.test(simpleName)) {
+      // Check if it looks like an enum (typically short names or ends with Role, Status, Type, Plan, etc.)
+      if (simpleName.endsWith('Role') || simpleName.endsWith('Status') ||
+          simpleName.endsWith('Type') || simpleName.endsWith('Plan') ||
+          simpleName.endsWith('State') || simpleName.endsWith('Level') ||
+          simpleName.endsWith('Kind') || simpleName.endsWith('Mode') ||
+          simpleName.endsWith('Category') || javaType.includes('.domain.')) {
         enumTypes.add(simpleName);
-        continue;
-      }
-
-      // Skip known Java types
-      if (knownJavaTypes.has(javaType)) {
-        continue;
-      }
-
-      // Skip generics (List, Map, Set, etc.)
-      if (javaType.includes('<') || javaType.endsWith('[]')) {
-        continue;
-      }
-
-      // Extract simple name from qualified name
-      const simpleName = javaType.includes('.')
-        ? javaType.substring(javaType.lastIndexOf('.') + 1)
-        : javaType;
-
-      // Skip if simple name is a known type
-      if (knownJavaTypes.has(simpleName)) {
-        continue;
-      }
-
-      // If it's a PascalCase name that's not a known type, it's likely an enum or entity
-      // For now, we assume types ending with common enum suffixes or in "domain" package are enums
-      if (/^[A-Z][a-zA-Z0-9]*$/.test(simpleName)) {
-        // Check if it looks like an enum (typically short names or ends with Role, Status, Type, Plan, etc.)
-        if (simpleName.endsWith('Role') || simpleName.endsWith('Status') ||
-            simpleName.endsWith('Type') || simpleName.endsWith('Plan') ||
-            simpleName.endsWith('State') || simpleName.endsWith('Level') ||
-            simpleName.endsWith('Kind') || simpleName.endsWith('Mode') ||
-            simpleName.endsWith('Category') || javaType.includes('.domain.')) {
-          enumTypes.add(simpleName);
-        }
       }
     }
-
-    return [...enumTypes];
   }
+
+  return [...enumTypes];
+}
+
+/**
+ * The fields a create DTO carries: everything the server does not own and the entity does
+ * not mark `inCreate: false`. The lifecycle list is the set an Exeris entity gets from the
+ * platform rather than from its own declaration.
+ */
+export function createDtoFields(metadata: DomainMetadata): FieldMetadata[] {
+  const system = systemFieldNames(metadata);
+  const lifecycle = ['active', 'onboardingStatus', 'onboardingStartedAt', 'onboardingCompletedAt', 'hierarchyLevel', 'createdAt', 'updatedAt', 'deleted', 'version', 'parentTenantId'];
+  return metadata.fields.filter(
+    (f) => !system.includes(f.name) && !lifecycle.includes(f.name) && f.inCreate !== false,
+  );
 }
 
 export function generateTypes(metadata: DomainMetadata, config: GeneratorConfig): GeneratedFile[] {

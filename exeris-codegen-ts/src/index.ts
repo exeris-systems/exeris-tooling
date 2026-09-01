@@ -16,12 +16,13 @@
 
 import { Command } from 'commander';
 import pc from 'picocolors';
-import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync } from 'node:fs';
+import { writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join, dirname, basename, resolve } from 'node:path';
 import { pruneOrphansAndWriteManifest, MANIFEST_NAME } from './output/manifest.js';
-import { loadConfig, type GeneratorConfig, DEFAULT_CONFIG } from './config.js';
-import { parseDomainMetadata, parseExerisMetadata, parseViewJson, type DomainMetadata, type ViewMetadata } from './models/domain-model.js';
-import { buildGeneratedFiles, type EnumMetadataForGen } from './orchestrator.js';
+import { loadConfig, peerOverride, type GeneratorConfig, DEFAULT_CONFIG } from './config.js';
+import { findMetadataFiles, loadMetadataFamilies } from './models/metadata-files.js';
+import { loadPeerContracts, type PeerContract } from './peers/peer-contract.js';
+import { buildGeneratedFiles } from './orchestrator.js';
 
 // Import new generators (v0.3.0)
 import { getStrategy } from './core/backend-strategy.js';
@@ -61,6 +62,13 @@ program
   .option('--no-stores', 'Skip Signal store generation')
   .option('--no-sagas', 'Skip Saga UI generation')
   .option('--no-events', 'Skip Event handler generation')
+  .option(
+    '--peer <name=path>',
+    'Import a peer\'s DTOs: <name> is the name YOU give the peer (it becomes the import path), '
+      + '<path> its contract artifact directory. Repeatable.',
+    (value: string, previous: string[] = []) => [...previous, value],
+    [] as string[],
+  )
   .option('--overwrite', 'Overwrite existing files')
   .option('--dry-run', 'Show what would be generated without writing files')
   .option('-v, --verbose', 'Verbose output')
@@ -84,6 +92,7 @@ program
         overwrite: (options.overwrite as boolean) ?? false,
         dryRun: (options.dryRun as boolean) ?? false,
         verbose: (options.verbose as boolean) ?? false,
+        ...peerOverride(options.peer as string[] | undefined),
       });
 
       await runGenerate(config);
@@ -134,10 +143,20 @@ async function runGenerate(config: GeneratorConfig): Promise<void> {
   console.log(pc.dim('Styling:'), config.styling);
   console.log(pc.dim('─'.repeat(50)));
 
+  // Peer contracts (T42, ADR-048), loaded BEFORE the empty-input return: a declared peer
+  // must never be silently dropped, and an app whose whole domain is a peer's is a real
+  // shape. Loading fails the run on a missing manifest or a below-floor schemaVersion — a
+  // peer contract that cannot be verified is not a weaker contract, and emitting types from
+  // it would say otherwise.
+  const peers: PeerContract[] = loadPeerContracts(config.peers);
+  if (peers.length > 0) {
+    console.log(pc.green('Peers:'), peers.map((p) => `${p.name} (${p.domains.length} entity/ies)`).join(', '));
+  }
+
   // Find metadata files
   const metadataFiles = findMetadataFiles(inputPath);
 
-  if (metadataFiles.length === 0) {
+  if (metadataFiles.length === 0 && peers.length === 0) {
     console.error(pc.yellow('No metadata files found in'), inputPath);
     console.log(pc.dim('Make sure to run Maven compile first to generate metadata.'));
     // T13 (parity with the Java pipeline): "no entities" is a valid output
@@ -154,58 +173,14 @@ async function runGenerate(config: GeneratorConfig): Promise<void> {
 
   console.log(pc.green('Found'), metadataFiles.length, 'metadata file(s)');
 
-  // Separate the parallel JSON families by basename (mirrors the enum_* split):
-  // enum_* (enum modules), view_* (presentation IR), everything else is a domain.
-  const enumFiles = metadataFiles.filter(f => basename(f).startsWith('enum_'));
-  const viewFiles = metadataFiles.filter(f => basename(f).startsWith('view_'));
-  const domainFiles = metadataFiles.filter(
-    f => !basename(f).startsWith('enum_') && !basename(f).startsWith('view_'),
-  );
-
-  // Load and parse enum metadata (the wire shape is owned by orchestrator.ts).
-  const enums: EnumMetadataForGen[] = [];
-  for (const file of enumFiles) {
-    if (config.verbose) {
-      console.log(pc.dim('  Loading enum:'), basename(file));
-    }
-    const content = readFileSync(file, 'utf-8');
-    const json = JSON.parse(content) as EnumMetadataForGen;
-    enums.push(json);
-  }
-
-  // Load and parse presentation-IR views (the processor's view_*.json = the
-  // ViewJson wrapper; parseViewJson returns the inner ViewMetadata). Mirrors the
-  // enum_* handling exactly — a separate, app-wide family, never nested in a domain.
-  const views: ViewMetadata[] = [];
-  for (const file of viewFiles) {
-    if (config.verbose) {
-      console.log(pc.dim('  Loading view:'), basename(file));
-    }
-    const content = readFileSync(file, 'utf-8');
-    views.push(parseViewJson(JSON.parse(content)));
-  }
-
-  // Load and parse domain metadata
-  const domains: DomainMetadata[] = [];
-  for (const file of domainFiles) {
-    if (config.verbose) {
-      console.log(pc.dim('  Loading:'), basename(file));
-    }
-
-    const content = readFileSync(file, 'utf-8');
-    const json = JSON.parse(content) as unknown;
-
-    // Handle both single domain and multi-domain files
-    if (typeof json === 'object' && json !== null) {
-      const obj = json as Record<string, unknown>;
-      if (Array.isArray(obj.domains)) {
-        const metadata = parseExerisMetadata(json);
-        domains.push(...metadata.domains);
-      } else if (typeof obj.entityName === 'string') {
-        domains.push(parseDomainMetadata(json));
-      }
-    }
-  }
+  // Family split + parse live in models/metadata-files.ts — the peer path (T42) reads a
+  // peer's contract through the same loader, which is what makes a peer contract the same
+  // input model as the local one rather than a second one (ADR-048 §1).
+  const { domains, enums, views } = loadMetadataFamilies(metadataFiles, (family, file) => {
+    if (!config.verbose) return;
+    const label = family === 'domain' ? '  Loading:' : `  Loading ${family}:`;
+    console.log(pc.dim(label), basename(file));
+  });
 
   console.log(pc.green('Loaded'), domains.length, 'domain(s)', '+', enums.length, 'enum(s)', '+', views.length, 'view(s)');
 
@@ -213,7 +188,7 @@ async function runGenerate(config: GeneratorConfig): Promise<void> {
   // artefacts + the enum module are emitted by the real generators under src/app
   // (one tree); generateAppStructure adds the scaffold only. The presentation-IR
   // views emit one page component + route each (RFC-2026-06-28).
-  const generatedFiles = buildGeneratedFiles(domains, enums, config, views);
+  const generatedFiles = buildGeneratedFiles(domains, enums, config, views, peers);
 
   // Write files
   console.log(pc.dim('─'.repeat(50)));
@@ -267,39 +242,6 @@ async function runGenerate(config: GeneratorConfig): Promise<void> {
   }
 
   console.log(pc.green('✓'), 'Done');
-}
-
-function findMetadataFiles(inputPath: string): string[] {
-  if (!existsSync(inputPath)) {
-    return [];
-  }
-
-  const files: string[] = [];
-
-  // If it's a file, check if it's JSON
-  const stat = statSync(inputPath);
-  if (stat.isFile()) {
-    if (inputPath.endsWith('.json')) {
-      return [inputPath];
-    }
-    return [];
-  }
-
-  // It's a directory, scan for JSON files
-  const entries = readdirSync(inputPath, { withFileTypes: true });
-
-  for (const entry of entries) {
-    const fullPath = join(inputPath, entry.name);
-
-    if (entry.isFile() && entry.name.endsWith('.json')) {
-      files.push(fullPath);
-    } else if (entry.isDirectory()) {
-      // Recursively scan subdirectories
-      files.push(...findMetadataFiles(fullPath));
-    }
-  }
-
-  return files;
 }
 
 // ============================================================================

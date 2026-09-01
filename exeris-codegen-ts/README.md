@@ -68,6 +68,9 @@ Options:
   --no-services          Skip service generation
   --no-forms             Skip form component generation
   --no-lists             Skip list component generation
+  --peer <name=path>     Import a peer's DTOs. <name> is the name YOU give the peer — it
+                         becomes the directory and import path its types are reached by.
+                         <path> is the peer's contract artifact. Repeatable.
   --overwrite            Overwrite existing files
   --dry-run              Show what would be generated without writing files
   -v, --verbose          Verbose output
@@ -101,9 +104,44 @@ Create `exeris-codegen.json` in your project root:
   "generateServices": true,
   "generateForms": true,
   "generateLists": true,
-  "apiBasePath": "/api"
+  "apiBasePath": "/api",
+  "peers": [
+    { "name": "billing", "path": "../billing-service/target/contract" }
+  ]
 }
 ```
+
+## Peer contracts (mesh)
+
+An app that talks to a peer service can generate that peer's DTOs instead of retyping them
+([ADR-048](../docs/adr/ADR-048-cross-app-contract-mesh.md)). A peer's **contract artifact** is
+a directory holding its `cap-manifest.json` and the metadata of the entities it provides:
+
+```
+billing-contract/
+├── cap-manifest.json          # required — schemaVersion >= 2
+└── exeris-metadata/
+    ├── Order.json
+    └── enum_OrderStatus.json
+```
+
+```bash
+exeris-gen generate --peer billing=../billing-contract --peer shipping=../shipping-contract
+```
+
+Three things to know:
+
+- **You name the peer.** Nothing in an Exeris artifact carries an application identity, and the
+  name lands in *your* import paths, where it has to survive the producer renaming itself.
+- **Each peer gets its own namespace**, its own enum module and its own barrel, and is never
+  re-exported from your app's `types/` barrel. Two peers may both call an entity `Order`; that
+  compiles only because neither is merged into anyone else's namespace.
+- **The manifest is required.** A directory of metadata alone is not a contract — the build
+  fails, naming the peer, rather than importing something it cannot check.
+
+Peers in one build are the same shape supplied from a local path — the degenerate case, not a
+second mode. What is emitted is DTOs only: the peer **client** and the capability registry are
+the next slice.
 
 ## Generated Structure
 
@@ -118,11 +156,19 @@ src/app/generated/
 ├── services/                 # Angular services
 │   ├── product.service.ts
 │   └── customer.service.ts
-└── components/               # Angular components
-    ├── product-form.component.ts
-    ├── product-list.component.ts
-    ├── customer-form.component.ts
-    └── customer-list.component.ts
+├── components/               # Angular components
+│   ├── product-form.component.ts
+│   ├── product-list.component.ts
+│   ├── customer-form.component.ts
+│   └── customer-list.component.ts
+└── peers/                    # one self-contained tree per --peer, never merged above
+    └── billing/
+        ├── types/
+        │   ├── enums.ts
+        │   └── order.types.ts
+        ├── schemas/
+        │   └── order.schema.ts
+        └── index.ts          # the peer's own barrel
 ```
 
 ## Type Mapping

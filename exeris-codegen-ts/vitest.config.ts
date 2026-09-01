@@ -60,6 +60,15 @@ export default defineConfig({
           branches: 85,
           statements: 85,
         },
+        // T42: the peer-contract loader. Almost all of it is refusals, and each refusal
+        // is the contract — a peer whose artifact cannot be verified is rejected, never
+        // degraded — so it is gated like every other src/ directory.
+        'src/peers/**/*.ts': {
+          lines: 85,
+          functions: 85,
+          branches: 85,
+          statements: 85,
+        },
         'src/generators/api/**/*.ts': {
           lines: 85,
           functions: 85,

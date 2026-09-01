@@ -10,6 +10,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve, dirname, join } from 'node:path';
 import { z } from 'zod';
+import { parsePeerRef } from './peers/peer-contract.js';
 
 // ============================================================================
 // Configuration Schema
@@ -88,6 +89,17 @@ export const GeneratorConfigSchema = z.object({
   /** Verbose output */
   verbose: z.boolean().default(false),
 
+  /** Peer contracts this app imports types from (T42, ADR-048).
+   *
+   *  Each entry names a peer and points at its contract artifact — the peer's
+   *  `cap-manifest.json` plus the metadata of the entities it provides. The NAME is
+   *  declared here, by the consumer, not read from the artifact: nothing in the emitted
+   *  artefacts carries an application identity, and the name lands in this app's own import
+   *  paths, where it has to stay stable across whatever the producer later renames itself
+   *  to. Peers in one build supply the same directory shape from a local path — the
+   *  degenerate same-build case, not a second input model. */
+  peers: z.array(z.object({ name: z.string(), path: z.string() })).default([]),
+
 });
 
 export type GeneratorConfig = z.infer<typeof GeneratorConfigSchema>;
@@ -118,7 +130,25 @@ export const DEFAULT_CONFIG: GeneratorConfig = {
   overwrite: false,
   dryRun: false,
   verbose: false,
+  peers: [],
 };
+
+/**
+ * The CLI's repeated `--peer` values as a config override — **omitted entirely** when the flag
+ * was not passed.
+ *
+ * `loadConfig` merges overrides with a spread, so a key that is always present always wins.
+ * Commander hands back `[]`, not `undefined`, for a repeatable option carrying a default, so
+ * building the override unconditionally made `"peers"` in `exeris-codegen.json` dead config —
+ * documented in the README and silently ignored, which is the "declared and read by nothing"
+ * defect this backlog already tracks three times over.
+ *
+ * Returning `{}` is the fix, and `{ peers: undefined }` is not: the spread would still overwrite
+ * the file's value, and the schema default would then turn it into `[]`.
+ */
+export function peerOverride(specs: readonly string[] | undefined): Partial<GeneratorConfig> {
+  return specs && specs.length > 0 ? { peers: specs.map(parsePeerRef) } : {};
+}
 
 // ============================================================================
 // Configuration Loader

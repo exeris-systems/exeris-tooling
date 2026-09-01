@@ -62,7 +62,59 @@ const enums = [{
   ],
 }];
 
-const files = buildGeneratedFiles(domains, enums, DEFAULT_CONFIG);
+// Two peers, both declaring an entity named `Order` — which this app also declares. Three
+// `Order` types in one generated app is the mesh form of the T40 break: it compiles only
+// because each peer owns its namespace and neither is re-exported from the app barrel.
+// `billing` additionally declares an enum named `OrderStatus`, the same name the app's own
+// enum module binds, so the enum modules are proven separate too.
+const peers = [
+  {
+    name: 'billing',
+    domains: [
+      d({
+        entityName: 'Order',
+        packageName: 'com.billing',
+        fields: [
+          { name: 'id', type: 'java.util.UUID' },
+          { name: 'invoiceNo', type: 'String', required: true },
+          { name: 'status', type: 'com.billing.OrderStatus', enumType: 'com.billing.OrderStatus' },
+        ],
+      }),
+    ],
+    enums: [{
+      name: 'OrderStatus',
+      qualifiedName: 'com.billing.OrderStatus',
+      packageName: 'com.billing',
+      values: [
+        { name: 'DRAFT', displayName: 'Draft', ordinal: 0 },
+        { name: 'SETTLED', displayName: 'Settled', ordinal: 1 },
+      ],
+    }],
+  },
+  {
+    name: 'shipping',
+    domains: [
+      d({
+        entityName: 'Order',
+        packageName: 'com.shipping',
+        fields: [
+          { name: 'id', type: 'java.util.UUID' },
+          { name: 'trackingCode', type: 'String', required: true },
+        ],
+      }),
+      // Named for the same collision T40 records, on the peer side: a peer's entity name is
+      // outside this app's control, so a peer may legitimately be called `Component`.
+      d({
+        entityName: 'Component',
+        packageName: 'com.shipping',
+        fields: [{ name: 'id', type: 'java.util.UUID' }, { name: 'sku', type: 'String' }],
+      }),
+    ],
+    enums: [],
+  },
+];
+
+const files = buildGeneratedFiles(domains, enums, DEFAULT_CONFIG, [], peers);
 
 // Rewrite src/ (preserve node_modules); overwrite root config files in place.
 rmSync(join(out, 'src'), { recursive: true, force: true });
