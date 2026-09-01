@@ -173,3 +173,11 @@ jobs:
           echo "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}" >> .npmrc
           npm install --no-audit --no-fund
           npx ng build --configuration development
+
+      # T2 (ADR-058): the gate RUNS the emitted specs. A generated test that is only
+      # type-checked proves nothing — the same ruling the Java half's GeneratedTestsE2ETest
+      # carries. The sample above is generated with `generateTests` on, so this executes the
+      # emitted *.schema.spec.ts and *.service.spec.ts through the emitted Vitest runner.
+      - name: ng test (emitted specs, generated app)
+        working-directory: ${{ runner.temp }}/fe-sample
+        run: npx ng test

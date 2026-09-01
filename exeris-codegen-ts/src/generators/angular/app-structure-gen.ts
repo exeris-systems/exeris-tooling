@@ -84,10 +84,15 @@ export function generateAppStructure(
   const appName = config.appName;
 
   // Config files at the project root
-  files.push({ path: `${outputRoot}/package.json`, content: generatePackageJson(appName), overwritable: false });
-  files.push({ path: `${outputRoot}/angular.json`, content: generateAngularJson(appName), overwritable: false });
+  files.push({ path: `${outputRoot}/package.json`, content: generatePackageJson(appName, config), overwritable: false });
+  files.push({ path: `${outputRoot}/angular.json`, content: generateAngularJson(appName, config), overwritable: false });
   files.push({ path: `${outputRoot}/tsconfig.json`, content: generateTsConfig(), overwritable: false });
-  files.push({ path: `${outputRoot}/tsconfig.app.json`, content: generateTsConfigApp(), overwritable: false });
+  files.push({ path: `${outputRoot}/tsconfig.app.json`, content: generateTsConfigApp(config), overwritable: false });
+  // T2 (ADR-058): the spec tsconfig only exists when specs do. It is the counterpart of the Java
+  // half's second output root — specs compile under their own config, never the app's.
+  if (config.generateTests) {
+    files.push({ path: `${outputRoot}/tsconfig.spec.json`, content: generateTsConfigSpec(), overwritable: false });
+  }
   files.push({ path: `${outputRoot}/tailwind.config.js`, content: generateTailwindConfig(), overwritable: true });
   files.push({ path: `${outputRoot}/.postcssrc.json`, content: generatePostcssConfig(), overwritable: true });
   files.push({ path: `${outputRoot}/proxy.conf.json`, content: generateProxyConfig(), overwritable: true });
@@ -452,7 +457,7 @@ function generateBarrelExport(
   return exports.join('\n') + '\n';
 }
 
-function generatePackageJson(appName: string): string {
+function generatePackageJson(appName: string, config: GeneratorConfig): string {
   const pkgName = frontendSlug(appName);
   return `{
   "name": ${jsonValue(pkgName)},
@@ -492,13 +497,13 @@ function generatePackageJson(appName: string): string {
     "@types/node": "^22.0.0",
     "postcss": "^8.5.0",
     "tailwindcss": "^4.0.0",
-    "typescript": "~6.0.0"
+    "typescript": "~6.0.0"${testDevDependencies(config)}
   }
 }
 `;
 }
 
-function generateAngularJson(appName: string): string {
+function generateAngularJson(appName: string, config: GeneratorConfig): string {
   const slug = frontendSlug(appName);
   return `{
   "$schema": "./node_modules/@angular/cli/lib/config/schema.json",
@@ -559,7 +564,7 @@ function generateAngularJson(appName: string): string {
             "development": { "buildTarget": "${slug}:build:development" }
           },
           "defaultConfiguration": "development"
-        }
+        }${testTarget(config)}
       }
     }
   }
@@ -601,7 +606,12 @@ function generateTsConfig(): string {
 `;
 }
 
-function generateTsConfigApp(): string {
+function generateTsConfigApp(config: GeneratorConfig): string {
+  // Specs are excluded from the APP config on purpose. `include` covers `src/**/*.ts`, so without
+  // this a consumer's production `ng build` would type-check the emitted specs and therefore
+  // require `vitest` to be installed — a test-only dependency leaking into the build path, which
+  // is the requirement class ADR-058 exists to prevent.
+  const exclude = config.generateTests ? `,\n  "exclude": ["src/**/*.spec.ts"]` : '';
   return `{
   "extends": "./tsconfig.json",
   "compilerOptions": {
@@ -609,7 +619,51 @@ function generateTsConfigApp(): string {
     "types": []
   },
   "files": ["src/main.ts"],
-  "include": ["src/**/*.ts", "src/**/*.d.ts"]
+  "include": ["src/**/*.ts", "src/**/*.d.ts"]${exclude}
+}
+`;
+}
+
+/**
+ * The `test` architect target — `@angular/build:unit-test` on Vitest (founder-ruled 2026-07-31).
+ * Emitted only under `generateTests`, so an app that did not ask for tests keeps the scaffold it
+ * had before this slice existed.
+ */
+function testTarget(config: GeneratorConfig): string {
+  if (!config.generateTests) return '';
+  return `,
+        "test": {
+          "builder": "@angular/build:unit-test",
+          "options": {
+            "buildTarget": "::development",
+            "tsConfig": "tsconfig.spec.json",
+            "runner": "vitest"
+          }
+        }`;
+}
+
+/**
+ * The two devDependencies the runner needs, and the reason each is named rather than assumed:
+ * `vitest` is an **optional** peer of `@angular/build` (so the builder is inert without it), and a
+ * DOM implementation is required for non-browser tests — the builder refuses to start otherwise,
+ * naming `jsdom` or `happy-dom` itself. Both are added only under `generateTests`.
+ */
+function testDevDependencies(config: GeneratorConfig): string {
+  if (!config.generateTests) return '';
+  return `,
+    "jsdom": "^26.0.0",
+    "vitest": "^4.0.8"`;
+}
+
+/** Specs compile under their own config — the app's excludes them. */
+function generateTsConfigSpec(): string {
+  return `{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./out-tsc/spec",
+    "types": []
+  },
+  "include": ["src/**/*.spec.ts", "src/**/*.d.ts"]
 }
 `;
 }

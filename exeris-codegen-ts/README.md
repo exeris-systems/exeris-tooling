@@ -70,6 +70,9 @@ Options:
   --no-services          Skip service generation
   --no-forms             Skip form component generation
   --no-lists             Skip list component generation
+  --tests                Emit specs for the generated surface plus the Vitest runner that
+                         executes them (adds a test target, tsconfig.spec.json and the
+                         vitest + jsdom devDependencies). Opt-in; off by default.
   --peer <name=path>     Import a peer's DTOs. <name> is the name YOU give the peer — it
                          becomes the directory and import path its types are reached by.
                          <path> is the peer's contract artifact. Repeatable.
@@ -166,7 +169,7 @@ src/app/generated/
 │   ├── product-list.component.ts
 │   ├── customer-form.component.ts
 │   └── customer-list.component.ts
-└── peers/                    # one self-contained tree per --peer, never merged above
+├── peers/                    # one self-contained tree per --peer, never merged above
     └── billing/
         ├── types/
         │   ├── enums.ts
@@ -175,6 +178,25 @@ src/app/generated/
         │   └── order.schema.ts
         └── index.ts          # the peer's own barrel
 ```
+
+Under `--tests`, each entity also gets `schemas/<entity>.schema.spec.ts` and
+`services/<entity>.service.spec.ts`, run by `npm test`.
+
+## Generated tests (`--tests`)
+
+Off by default, because turning it on adds to *your* `package.json`. It emits, in one piece:
+
+- `*.schema.spec.ts` — a fixture built from your metadata, asserting the schema accepts it and
+  rejects each declared required field's absence;
+- `*.service.spec.ts` — the real service driven through Angular's own
+  `provideHttpClientTesting()`, asserting the URL and verb of each call. **No mocking library** is
+  needed: the double ships with `@angular/common`, which the app already depends on;
+- a `test` target on `@angular/build:unit-test` (Vitest), a `tsconfig.spec.json`, and the two
+  devDependencies the runner cannot start without — `vitest` (an *optional* peer of
+  `@angular/build`) and `jsdom` (the builder refuses to run without a DOM implementation).
+
+Specs are excluded from `tsconfig.app.json`, so a production `ng build` never requires the test
+dependencies.
 
 ## Type Mapping
 

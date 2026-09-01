@@ -25,6 +25,7 @@ import { generateForm } from './generators/angular/form-gen.js';
 import { generateList } from './generators/angular/list-gen.js';
 import { generateDetail } from './generators/angular/detail-gen.js';
 import { EventHandlerGenerator } from './generators/angular/event-gen.js';
+import { generateSchemaSpec, generateServiceSpec } from './generators/angular/spec-gen.js';
 import { generateStore } from './generators/angular/store-gen.js';
 import { generateAppStructure } from './generators/angular/app-structure-gen.js';
 import { generateView, generateViewRoute } from './generators/angular/view-gen.js';
@@ -129,6 +130,15 @@ export function buildGeneratedFiles(
     if (config.generateEvents) {
       const handler = eventGenerator.generate(domain, ctx);
       if (handler) appTree.push(handler);
+    }
+
+    // Generated specs (T2, ADR-058). Opt-in: `generateTests` defaults to false, because turning it
+    // on also puts a runner and two devDependencies into the consumer's package.json. Each spec is
+    // gated on the surface it exercises actually being emitted — a schema spec for an app built
+    // with --no-zod would import a file that does not exist.
+    if (config.generateTests) {
+      if (config.generateZod) appTree.push(generateSchemaSpec(domain, config, enums));
+      if (config.generateServices) appTree.push(generateServiceSpec(domain, config));
     }
   }
 

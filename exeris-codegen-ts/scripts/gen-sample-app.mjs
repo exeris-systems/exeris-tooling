@@ -41,7 +41,7 @@ const domains = [
       { name: 'total', type: 'java.math.BigDecimal', dataType: 'currency' },
       { name: 'createdAt', type: 'java.time.Instant' },
       { name: 'updatedAt', type: 'java.time.Instant' },
-      { name: 'status', type: 'com.shop.OrderStatus', enumType: 'com.shop.OrderStatus' },
+      { name: 'status', type: 'com.shop.OrderStatus', enumType: 'com.shop.OrderStatus', required: true },
       { name: 'productId', type: 'java.util.UUID' },
     ],
     // Domain events drive the per-entity handler AND the shared event bus. Without one in the
@@ -129,7 +129,11 @@ const peers = [
   },
 ];
 
-const files = buildGeneratedFiles(domains, enums, DEFAULT_CONFIG, [], peers);
+// T2 (ADR-058): the gate must RUN the emitted specs, not merely type-check them, so the sample is
+// generated with tests on. EXERIS_SAMPLE_NO_TESTS generates the default (opt-out) shape instead,
+// which is what proves the flag leaves output untouched when nobody asks for tests.
+const config = { ...DEFAULT_CONFIG, generateTests: !process.env.EXERIS_SAMPLE_NO_TESTS };
+const files = buildGeneratedFiles(domains, enums, config, [], peers);
 
 // Rewrite src/ (preserve node_modules); overwrite root config files in place.
 rmSync(join(out, 'src'), { recursive: true, force: true });

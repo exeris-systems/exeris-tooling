@@ -89,6 +89,15 @@ export const GeneratorConfigSchema = z.object({
   /** Verbose output */
   verbose: z.boolean().default(false),
 
+  /** Emit specs for the generated surface, and the runner that executes them (T2, ADR-058).
+   *
+   *  **Opt-in, defaulting to false** — the TS counterpart of the Java half's `-Dexeris.tests=true`.
+   *  It gates more than the spec files: turning it on also adds a `test` target, a
+   *  `tsconfig.spec.json`, and the `vitest` + `jsdom` devDependencies the runner needs. Tooling
+   *  emits no dependency the consumer did not ask for, so asking is what this flag is. With it off,
+   *  emitted output is byte-identical to an app generated before the slice existed. */
+  generateTests: z.boolean().default(false),
+
   /** Peer contracts this app imports types from (T42, ADR-048).
    *
    *  Each entry names a peer and points at its contract artifact — the peer's
@@ -131,6 +140,7 @@ export const DEFAULT_CONFIG: GeneratorConfig = {
   dryRun: false,
   verbose: false,
   peers: [],
+  generateTests: false,
 };
 
 /**
@@ -192,6 +202,7 @@ export function cliOverrides(
   take('forms', 'generateForms', () => options.forms !== false);
   take('lists', 'generateLists', () => options.lists !== false);
   take('details', 'generateDetails', () => options.details !== false);
+  take('tests', 'generateTests', () => options.tests === true);
   take('stores', 'generateStores', () => options.stores !== false);
   take('sagas', 'generateSagas', () => options.sagas !== false);
   take('events', 'generateEvents', () => options.events !== false);

@@ -42,6 +42,21 @@ const KNOWN_JAVA_TYPES = new Set([
 
 export { GeneratedFile };
 
+/**
+ * The API path an emitted service calls, and the single authority on it.
+ *
+ * Exported because the generated **service spec** must assert the URL the service actually builds.
+ * ADR-058's rule for the Java half — the emitted double and its subject come from one source of
+ * truth — has the same trap here: a spec that re-derives the path agrees with the service only
+ * until one of them changes, and then it asserts a fiction.
+ *
+ * Mirrors the SDK's `DomainMetadata.effectivePath()`, which is what the emitted kernel router
+ * registers, so client and server agree by construction.
+ */
+export function serviceApiPath(metadata: DomainMetadata): string {
+  return metadata.apiPath ?? metadata.path ?? `/${DslMapper.toKebabCase(metadata.entityName)}s`;
+}
+
 export class ServiceGenerator implements CodeGenerator {
   readonly name = 'ServiceGenerator';
   readonly artifactType = 'SERVICE' as const;
@@ -106,8 +121,7 @@ export class ServiceGenerator implements CodeGenerator {
     // against a server listening on /<path>, and every generated Angular service 404'd. The Java
     // client carried the identical defect; both are the same emitter-parity miss.
     // Default fallback: /{entity}s (pluralized entity name).
-    const pathSegment = metadata.path ?? `/${kebabName}s`;
-    const apiPath = metadata.apiPath ?? pathSegment;
+    const apiPath = serviceApiPath(metadata);
 
     // Collect enum types for imports (fields + action params — T20a)
     const enumTypes = this.collectEnumTypes(metadata);
