@@ -616,7 +616,31 @@ never-invoked emitter start emitting, and its output did not build.
       inside the boot callback so a factory body can resolve `KernelProviders.flowEngine()` /
       `eventEngine()`. The emitted `main()` now states that it is **not** polymorphic — a subclass
       overriding a hook is not reached through it — because a seam whose obvious entry point ignores
-      it silently is the failure class this backlog keeps recording. Original finding below.
+      it silently is the failure class this backlog keeps recording.
+
+      **The residual closed in 0.9.0: the HTTP handler had no wrap hook.** ADR-070 opened every
+      *component* and left the one thing between the router and the socket shut — `RuntimeLifecycle`
+      published the router into the handler slot with nothing to override, so a deployment needing a
+      per-request scope (a tenant binding, a decoder registry, an allocator) had to reimplement
+      `run()`. That is paid **per application**, not once: the dog-food carries three such wrappers
+      and each copy stops tracking the generated original silently. `RuntimeComponents.decorate(
+      HttpRouter) -> HttpHandler` is the sibling of `configureRoutes`, called one line later on the
+      same object, defaulting to the router unchanged.
+
+      **What made it a design question rather than a one-liner:** the kernel resolves a stream route
+      only when the bound handler *is* an `HttpRouter` (`handler instanceof HttpRouter`), which is
+      the whole content of T23. Any wrapper erases that type, so a hook that simply accepted one
+      would have re-broken every `streamRoute` — and re-broken it *silently*, because registration
+      succeeds either way and only a real boot notices. So wrapping and streaming are mutually
+      exclusive until the kernel resolves streams through something a wrapper can carry, and the
+      emitted app **refuses to boot** when a stream-bearing application returns a wrapper, naming
+      both halves in the message. Apps that stream nothing — the common case, and the one the hook
+      exists for — carry no guard at all.
+
+      **That exclusivity is a kernel ask, not a tooling limitation**, and it is the second finding
+      (after T23 itself) to be caused by `instanceof` on a concrete router type. Worth raising
+      upstream: a stream route that resolved through an interface a decorator could delegate would
+      remove the trade-off entirely. Original finding below.
 
       **T49 — the generated composition root is closed.** `KernelApplicationGenerator` emits
       `public final class RuntimeLifecycle` (`KernelApplicationGenerator.java:493-494` **in the

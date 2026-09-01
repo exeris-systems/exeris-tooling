@@ -49,8 +49,11 @@ class KernelApplicationGeneratorTest {
         // a named entity: with a zero-entity list, "no OrderHandler" is true for reasons that
         // have nothing to do with the generator behaving.
         assertThat(lifecycle)
-                // every per-entity local is `<Type> <name> = components.<name>()`
-                .doesNotContain("= components.")
+                // every per-entity local is `<Entity>Handler <entity>Handler = components.<...>()`,
+                // so the capitalised `Handler` is what marks it per-entity. The app-level seams
+                // (configureRoutes, decorate) also read `components.` and are emitted for a
+                // zero-entity app on purpose — a bare `= components.` would catch those too.
+                .doesNotContain("Handler = components.")
                 .doesNotContain("routerBuilder.route")
                 .contains("HttpRouter.Builder routerBuilder = HttpRouter.builder()")
                 .contains("HttpRouter router = routerBuilder.build()")
@@ -153,10 +156,14 @@ class KernelApplicationGeneratorTest {
                 .contains("routerBuilder.route(HttpMethod.GET, \"/orders\", orderHandler::handleGetAll)")
                 .contains("routerBuilder.route(HttpMethod.POST, \"/orders\", orderHandler::handleCreate)")
                 .contains("routerBuilder.route(HttpMethod.PUT, \"/orders/{id}\", orderHandler::handleUpdate)")
-                // T23: the HttpRouter INSTANCE is published (not a router::handle
+                // T23: the HttpRouter INSTANCE reaches the slot (not a router::handle
                 // lambda) so the kernel stream dispatcher's `instanceof HttpRouter`
                 // sees it and streamRoute(...) registrations resolve on a real boot.
-                .contains("handlerSlot.set(router)")
+                // It now arrives via the T49 decorate hook, whose default returns the
+                // router unchanged — so the property holds by default, and an app that
+                // streams refuses a wrapper at boot rather than losing it silently.
+                .contains("HttpHandler handler = components.decorate(router)")
+                .contains("handlerSlot.set(handler)")
                 .doesNotContain("handlerSlot.set(router::handle)")
                 .contains("CountDownLatch shutdownLatch = new CountDownLatch(1)")
                 .contains("Runtime.getRuntime().addShutdownHook")
@@ -275,6 +282,74 @@ class KernelApplicationGeneratorTest {
                 // Memoisation, so an accessor is safe to call from an override.
                 .contains("if (orderRepository == null) {")
                 .contains("orderRepository = createOrderRepository();");
+    }
+
+    @Test
+    @DisplayName("T49 residual: decorate wraps the router on the way to the handler slot, "
+            + "and defaults to no wrapping at all")
+    void decorateHookWrapsTheRouterBeforeItIsServed() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        DomainMetadata order = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders").build();
+        List<GeneratedFile> files = gen.generateAll(List.of(order), "com.example.foundation");
+
+        // Until this hook existed a deployment needing a per-request scope had to
+        // reimplement run(), because RuntimeLifecycle bound the router itself.
+        assertThat(components(files))
+                .contains("public HttpHandler decorate(HttpRouter router)")
+                .contains("return router");
+
+        String lifecycle = lifecycle(files);
+        int build = lifecycle.indexOf("HttpRouter router = routerBuilder.build()");
+        int decorate = lifecycle.indexOf("HttpHandler handler = components.decorate(router)");
+        int publish = lifecycle.indexOf("handlerSlot.set(handler)");
+
+        assertThat(build).isGreaterThan(-1);
+        assertThat(decorate)
+                .as("the router has to exist before it can be decorated")
+                .isGreaterThan(build);
+        assertThat(publish)
+                .as("what is published is the decorated handler, not the bare router")
+                .isGreaterThan(decorate);
+        assertThat(lifecycle)
+                .as("publishing the router directly would silently discard the hook")
+                .doesNotContain("handlerSlot.set(router)");
+    }
+
+    @Test
+    @DisplayName("T49 residual: an app with stream routes refuses a wrapper at boot rather than "
+            + "serving one whose every stream route 404s (T23)")
+    void streamBearingAppRefusesAWrappingDecorator() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        DomainMetadata live = DomainMetadata.builder("GalacticEra", "com.example.domain")
+                .path("/era").realTimeApi(true).build();
+        List<GeneratedFile> files = gen.generateAll(List.of(live), "com.example.foundation");
+
+        String lifecycle = lifecycle(files);
+        // The kernel resolves a stream only via `handler instanceof HttpRouter`, so any
+        // wrapper erases the type and every streamRoute registers and then never matches.
+        // Registration succeeding either way is exactly why T23 needed a real boot to find.
+        assertThat(lifecycle)
+                .contains("routerBuilder.streamRoute(")
+                .contains("if (!(handler instanceof HttpRouter))")
+                .contains("throw new IllegalStateException")
+                .contains("emits stream routes");
+    }
+
+    @Test
+    @DisplayName("T49 residual: an app with no stream routes takes any wrapper — the guard is "
+            + "emitted only where it can bite")
+    void appWithoutStreamRoutesCarriesNoGuard() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        DomainMetadata order = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders").build();
+        List<GeneratedFile> files = gen.generateAll(List.of(order), "com.example.foundation");
+
+        // Guarding an app that streams nothing would refuse a wrapper for a constraint it
+        // does not have — which is the whole reason a deployment wants the hook.
+        assertThat(lifecycle(files))
+                .doesNotContain("instanceof HttpRouter")
+                .doesNotContain("emits stream routes");
     }
 
     @Test
