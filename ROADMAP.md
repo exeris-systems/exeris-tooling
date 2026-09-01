@@ -780,6 +780,42 @@ never-invoked emitter start emitting, and its output did not build.
       DTOs are **per-consumer copies** rather than a shared package. T42 is unblocked and gated on
       nothing: next action is the types slice itself.
 
+- [ ] **`npm start` proxies a prefix the emitted client no longer requests.** Measured while
+      fixing the CLI-override defect (which had every generated app calling `/api/<path>` at a
+      router serving `/<path>`). With `apiBasePath` correctly empty, the emitted service requests
+      `/orders`; the emitted `proxy.conf.json` still declares a single rule for `/api` with **no**
+      `pathRewrite`, and `package.json` wires it as `ng serve --proxy-config proxy.conf.json`. So
+      the rule now matches nothing and `npm start` cannot reach the backend at all — before the
+      fix it matched and forwarded `/api/orders` verbatim to a server serving `/orders`, i.e. it
+      404'd. Both states are broken; the prefix fix changes which way.
+
+      Not folded into that fix deliberately: `generateProxyConfig()` takes no arguments and cannot
+      know the entity paths, so making it correct is a **design** choice (one rule per
+      `effectivePath()`, or a single catch-all) rather than a one-line correction, and it wants its
+      own evidence — including what `ng serve` does with a path that collides with an Angular
+      route. `generateAppStructure` already has `domains` at the call site, so the input is there.
+
+      **Three more `/api` sites survive the same fix** (found in the #191 review, verified against
+      real CLI output). None reproduces the 404 today; all three are the same `''`-vs-`/api`
+      confusion and would resurrect it:
+
+      - `app-structure-gen.ts:710` — `apiUrl: config.apiBasePath || clientConfig.baseUrl || '/api'`
+        uses `||`, so the now-correct `''` is falsy and falls through to the strategy's hardcoded
+        `/api` (`backend-strategy.ts:222`). A real CLI run emits `environment.ts` declaring
+        `apiUrl: '/api'` while the services beside it call `/orders` — a generated artefact that
+        contradicts its own siblings. Harmless only because **nothing imports it**: grepping the
+        emitted tree for an `environment` import returns zero hits, so it is also an instance of
+        the "emitted and read by nobody" class this list already tracks. Note this contradiction
+        is *introduced* by the #191 prefix fix on the CLI path — before it, both said `/api`.
+      - `generator-registry.ts:308` — `apiBasePath: config.apiBasePath ?? '/api'`, a second,
+        drifted declaration of the old default. Dormant: its only caller (`orchestrator.ts:112`)
+        always passes a fully-resolved config where the value is `''`, never `undefined`. It would
+        wake for any future partial-config caller that bypasses `loadConfig`.
+      - `backend-strategy.ts:310` — `KernelStrategy.generateClientCode` builds
+        `transformPath('/api', entityPath)` with the prefix hardcoded past any config. It has **no
+        production caller at all** (only its own two tests), making it a third emitter wired by
+        nobody, alongside `enum-gen.ts` and the D10 bearer path.
+
 - [ ] **Three config flags are declared, default `true`, and read by nothing.** `generateDetails`,
       `generateSagas`, `generateEvents` (`config.ts:54,60,63`); only `generateStores` is read, and
       only since #166 (`orchestrator.ts:164`). That a flag can default to `true` and be honoured by
