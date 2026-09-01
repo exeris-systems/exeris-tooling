@@ -128,10 +128,16 @@ class KernelHandlerTestGeneratorTest {
 
         // Binding a ScopedValue is only justified by the guards it lets a test reach. With no
         // rules there are none, so the emitted test stays a plain in-process unit test.
+        //
+        // The probe is `ScopedValue.where`, not the bare type name: since T43-follow-up the
+        // emitted newHandler Javadoc explains why the allocator is a constructor argument and
+        // says "ScopedValue" while doing it. A binding is what this test is about, and a word in
+        // a comment is not one — asserting on the word made prose part of the contract.
         assertThat(source)
-                .doesNotContain("ScopedValue")
-                .doesNotContain("KernelProviders")
-                .doesNotContain("RecordingRequestBody");
+                .doesNotContain("ScopedValue.where")
+                .doesNotContain("KernelProviders.");
+        // RecordingRequestBody IS referenced now, as the allocator every handler needs at
+        // construction. That is a double being passed, not a provider slot being bound.
     }
 
     @Test
@@ -187,17 +193,24 @@ class KernelHandlerTestGeneratorTest {
     }
 
     @Test
-    @DisplayName("both provider slots are bound — the allocator is not optional")
-    void bindsBothProviderSlots() {
+    @DisplayName("the decoder-registry slot is bound, and the allocator arrives by constructor")
+    void bindsTheDecoderRegistrySlotAndPassesTheStagedDouble() {
         String source = new KernelHandlerTestGenerator().generate(VALIDATED, "com.example").content();
 
-        // HttpRequestDecodingContext rejects a null allocator, and parseBody fills that slot from
-        // an unbound ScopedValue if nobody binds it — which throws inside the try that maps
-        // everything to 400. Dropping this line turns every reject case green for free.
+        // The registry slot still has to be bound — parseBody resolves the decoder through it, and
+        // dropping the binding turns every reject case green for free.
         assertThat(source)
                 .contains("ScopedValue.where(HttpKernelProviders.HTTP_REQUEST_BODY_DECODER_REGISTRY, body)")
-                .contains(".where(KernelProviders.MEMORY_ALLOCATOR, body)")
                 .contains("RecordingHttpExchange.post(\"/orders\", body)");
+
+        // The MEMORY_ALLOCATOR slot is NOT bound any more, and must not be: T43-follow-up made the
+        // allocator a constructor argument, so binding it would be setup the handler never reads —
+        // the emitted-and-consumed-by-nobody shape this backlog keeps finding.
+        assertThat(source).doesNotContain("MEMORY_ALLOCATOR");
+
+        // The handler's allocator is the SAME instance the test staged, so the decoding context
+        // still sees exactly this double rather than an unrelated one.
+        assertThat(source).contains("newHandler(service, body)");
     }
 
     @Test
@@ -234,7 +247,7 @@ class KernelHandlerTestGeneratorTest {
 
         assertThat(new KernelHandlerTestGenerator().generate(patterned, "com.example").content())
                 .doesNotContain("handleCreateRejectsQuantityBelowMin")
-                .doesNotContain("ScopedValue");
+                .doesNotContain("ScopedValue.where");
     }
 
     @Test

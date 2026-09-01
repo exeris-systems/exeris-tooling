@@ -81,7 +81,10 @@ class KernelHandlerGeneratorTest {
         assertThat(handler.content())
                 .contains("import com.example.event.OrderEventPublisher")
                 .contains("private final OrderEventPublisher publisher")
-                .contains("public OrderHandler(OrderService service, OrderEventPublisher publisher)")
+                // T43-follow-up put MemoryAllocator between the two. Asserted piecewise because
+                // JavaPoet wraps a signature this long and the wrap point is not the contract.
+                .contains("public OrderHandler(OrderService service, MemoryAllocator allocator")
+                .contains("OrderEventPublisher publisher)")
                 // Each call lands after its mutation and before the response, which is the
                 // ordering the whole design turns on — a publish before the write would
                 // announce a row that may not exist.
@@ -183,7 +186,7 @@ class KernelHandlerGeneratorTest {
                 .build());
 
         assertThat(handler.content())
-                .contains("public OrderHandler(OrderService service)")
+                .contains("public OrderHandler(OrderService service, MemoryAllocator allocator)")
                 .doesNotContain("OrderEventPublisher")
                 .doesNotContain("publisher.publish");
     }
@@ -201,7 +204,7 @@ class KernelHandlerGeneratorTest {
 
         // And it takes no publisher either: a field no emitted line reads is inert wiring.
         assertThat(handler.content())
-                .contains("public OrderHandler(OrderService service)")
+                .contains("public OrderHandler(OrderService service, MemoryAllocator allocator)")
                 .doesNotContain("OrderEventPublisher");
     }
 
@@ -219,7 +222,7 @@ class KernelHandlerGeneratorTest {
                 .build());
 
         assertThat(handler.content())
-                .contains("public OrderHandler(OrderService service)")
+                .contains("public OrderHandler(OrderService service, MemoryAllocator allocator)")
                 .doesNotContain("OrderEventPublisher");
     }
 
@@ -311,7 +314,10 @@ class KernelHandlerGeneratorTest {
                 .contains("import eu.exeris.kernel.spi.http.HttpRequestBodyDecoderRegistry")
                 .contains("import eu.exeris.kernel.spi.http.HttpRequestDecodingContext")
                 .contains("import eu.exeris.kernel.spi.http.HttpKernelProviders")
-                .contains("import eu.exeris.kernel.spi.context.KernelProviders")
+                // KernelProviders is no longer imported here for this path: T43-follow-up moved
+                // the MEMORY_ALLOCATOR read out of the handler and into RuntimeComponents, and
+                // that was the handler's only use of it on the plain CRUD shape.
+                .contains("import eu.exeris.kernel.spi.memory.MemoryAllocator")
                 .contains("httpRequestBodyDecoderRegistry()")
                 .contains("registry.resolve(type, contentType)")
                 .contains("decoder.decode(body, type, context)")
@@ -319,7 +325,7 @@ class KernelHandlerGeneratorTest {
                 // … hands the decoder the LoanedBuffer + a fresh decoding context …
                 .contains("exchange.request().hasBody()")
                 .contains("new HttpRequestDecodingContext(")
-                .contains("KernelProviders.MEMORY_ALLOCATOR.get()")
+                .contains("this.allocator)")
                 // … and consumes the LoanedBuffer directly — no byte[]/String round-trip.
                 .doesNotContain("new String(")
                 .doesNotContain("MemorySegment.copy");
@@ -331,8 +337,8 @@ class KernelHandlerGeneratorTest {
     }
 
     @Test
-    @DisplayName("T43: an unbound MEMORY_ALLOCATOR is a wiring fault (5xx), not a bad request (400)")
-    void unboundAllocatorIsRefusedAsAConfigurationFaultNotABadRequest() {
+    @DisplayName("T43-follow-up: the allocator is captured at construction, so a request can never find it unbound")
+    void allocatorIsCapturedAtConstructionRatherThanResolvedPerRequest() {
         DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
                 .path("/orders")
                 .build();
@@ -343,27 +349,32 @@ class KernelHandlerGeneratorTest {
                 .orElseThrow()
                 .content();
 
-        // MEMORY_ALLOCATOR is a ScopedValue, so .get() on an unbound one throws
-        // NoSuchElementException — a RuntimeException, which the catch below turned into
-        // IllegalArgumentException("Invalid request body") and the call site into 400. The
-        // caller was told their body was bad; the body had not been read yet.
+        // KernelProviders.MEMORY_ALLOCATOR is a ScopedValue. Its binding is established around
+        // the bootstrap callback; a request is served on a virtual thread started with
+        // Thread.ofVirtual().start(), which inherits no ScopedValue binding — only
+        // StructuredTaskScope forks do, and the kernel documents that start as its one
+        // deliberate exception to the STS mandate. So reading it from a request could only ever
+        // have found it unbound. T43 made that honest (a 5xx naming the wiring); this removes it.
         assertThat(handler)
-                .contains("if (!KernelProviders.MEMORY_ALLOCATOR.isBound())")
-                .contains("No MemoryAllocator is bound")
-                // The message has to name the wiring, not the request — same standard the
-                // unbound-registry refusal one line up already meets.
-                .contains("'memory' subsystem")
-                .contains("This is a wiring fault, not a malformed request");
+                .contains("private final MemoryAllocator allocator;")
+                .contains("public OrderHandler(OrderService service, MemoryAllocator allocator)")
+                .contains("this.allocator = Objects.requireNonNull(allocator")
+                .contains("this.allocator)");
 
+        // The per-request lookup and its guard are gone, together: there is nothing left to
+        // guard once the field cannot be unbound. Both halves are asserted, because leaving the
+        // guard behind would be dead code that reads as a live protection.
         assertThat(handler)
-                // The guard precedes the construction it protects, sits inside the guarded
-                // try, and throws the IllegalStateException that the catch re-throws
-                // unchanged — so it surfaces as 5xx exactly like the unbound registry, and
-                // is never downgraded to 400 (ADR-036 §2).
+                .doesNotContain("MEMORY_ALLOCATOR.isBound()")
+                .doesNotContain("MEMORY_ALLOCATOR.get()")
+                .doesNotContain("No MemoryAllocator is bound");
+
+        // The decoding context is still built inside the guarded try, and the two failure modes
+        // that ARE request-time — unbound registry, unregistered decoder — keep their 5xx
+        // mapping (ADR-036 §2). Only the allocator left that list.
+        assertThat(handler)
                 .containsSubsequence(
                         "registry.resolve(type, contentType)",
-                        "if (!KernelProviders.MEMORY_ALLOCATOR.isBound())",
-                        "throw new IllegalStateException(\"No MemoryAllocator is bound",
                         "new HttpRequestDecodingContext(",
                         "catch (IllegalStateException e)",
                         "throw e;",

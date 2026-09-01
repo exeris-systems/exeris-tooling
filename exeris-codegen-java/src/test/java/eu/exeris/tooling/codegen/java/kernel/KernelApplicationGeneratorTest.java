@@ -269,7 +269,9 @@ class KernelApplicationGeneratorTest {
                 // built by the untouched createOrderService() gets the replacement.
                 .contains("return new OrderRepository(transactionalExecutor())")
                 .contains("return new OrderService(orderRepository())")
-                .contains("return new OrderHandler(orderService())")
+                // T43-follow-up: the factory resolves the ScopedValue here, inside the bootstrap
+                // callback where it is bound, and hands the instance to the handler.
+                .contains("return new OrderHandler(orderService(), KernelProviders.MEMORY_ALLOCATOR.get())")
                 // Memoisation, so an accessor is safe to call from an override.
                 .contains("if (orderRepository == null) {")
                 .contains("orderRepository = createOrderRepository();");

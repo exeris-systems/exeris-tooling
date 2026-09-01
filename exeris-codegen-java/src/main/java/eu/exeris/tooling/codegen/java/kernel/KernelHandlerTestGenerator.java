@@ -146,6 +146,17 @@ public final class KernelHandlerTestGenerator {
         addValidationTests(type, metadata, entityType, handlerType, exchangeType, bodyType,
                 stubType, basePath);
         type.addMethod(newHandlerFactory(metadata, handlerType, stubType, basePackage));
+        // The bodyless routes never reach parseBody, so the allocator they hold is never
+        // touched — but the handler still requires one, so they get a fresh double rather
+        // than every call site naming it.
+        type.addMethod(MethodSpec.methodBuilder("newHandler")
+                .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+                .returns(handlerType)
+                .addParameter(stubType, "service")
+                .addJavadoc("The handler under test over a throwaway allocator, for the routes that\n")
+                .addJavadoc("never decode a body.\n")
+                .addStatement("return newHandler(service, new $T())", bodyType)
+                .build());
         type.addType(stubService(entity, entityType, serviceType, repositoryType, stubType,
                 metadata));
 
@@ -165,14 +176,24 @@ public final class KernelHandlerTestGenerator {
      */
     private MethodSpec newHandlerFactory(DomainMetadata metadata, ClassName handlerType,
                                          ClassName stubType, String basePackage) {
+        ClassName bodyType = ClassName.get(
+                KernelTestSupportGenerator.supportPackage(basePackage),
+                KernelTestSupportGenerator.RECORDING_REQUEST_BODY);
+
         MethodSpec.Builder factory = MethodSpec.methodBuilder("newHandler")
                 .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
                 .returns(handlerType)
                 .addParameter(stubType, "service")
-                .addJavadoc("The handler under test, over the supplied service double.\n");
+                .addParameter(bodyType, "allocator")
+                .addJavadoc("The handler under test, over the supplied service double.\n")
+                .addJavadoc("<p>T43-follow-up: the handler takes its {@code MemoryAllocator} at\n")
+                .addJavadoc("construction rather than reading the {@code ScopedValue} per request, so\n")
+                .addJavadoc("it is supplied here. {@link $T} already implements the interface — the\n", bodyType)
+                .addJavadoc("decoding context requires an allocator to exist, never to allocate, so its\n")
+                .addJavadoc("allocate methods throw and are never reached.\n");
 
         if (!KernelHandlerGenerator.publishesFromHandler(metadata)) {
-            return factory.addStatement("return new $T(service)", handlerType).build();
+            return factory.addStatement("return new $T(service, allocator)", handlerType).build();
         }
 
         ClassName publisherType = ClassName.get(
@@ -185,7 +206,7 @@ public final class KernelHandlerTestGenerator {
                 .addJavadoc("<p>The publisher is built over a fresh {@link $T}, so a\n", engineType)
                 .addJavadoc("test that wants to assert on published events can construct one\n")
                 .addJavadoc("itself and keep the reference.\n")
-                .addStatement("return new $T(service, new $T(new $T()))",
+                .addStatement("return new $T(service, allocator, new $T(new $T()))",
                         handlerType, publisherType, engineType)
                 .build();
     }
@@ -651,9 +672,11 @@ public final class KernelHandlerTestGenerator {
         /** Builds the decoded entity: every rule-carrying field valid, bar the one under test. */
         private void stage(MethodSpec.Builder m, KernelValidationRules.FieldRules perturbed,
                            CodeBlock value) {
+            // `body` is declared before the handler: since T43-follow-up the handler takes the
+            // allocator at construction, and it must be the same double this test stages.
             m.addStatement("$T service = new $T()", stubType, stubType)
-                    .addStatement("$T handler = newHandler(service)", handlerType)
                     .addStatement("$T body = new $T()", bodyType, bodyType)
+                    .addStatement("$T handler = newHandler(service, body)", handlerType)
                     .addStatement("$T decoded = new $T()", entityType, entityType);
             for (KernelValidationRules.FieldRules fr : rules) {
                 CodeBlock staged = perturbed != null && perturbed.field().name().equals(fr.field().name())
@@ -665,15 +688,18 @@ public final class KernelHandlerTestGenerator {
         }
 
         /**
-         * Runs the handler with both provider slots bound. Binding the allocator is not optional:
-         * {@code HttpRequestDecodingContext} rejects a null one, and an unbound {@code ScopedValue}
-         * throws inside the {@code try} that maps everything to 400.
+         * Runs the handler with the decoder-registry slot bound.
+         *
+         * <p>The {@code MEMORY_ALLOCATOR} slot used to be bound here too, and is not any more:
+         * T43-follow-up made the allocator a constructor argument, so the handler no longer reads
+         * that {@code ScopedValue} and binding it would be setup nothing consumes. The same
+         * {@code RecordingRequestBody} the registry returns is what {@code newHandler} was given,
+         * so the decoding context still gets exactly the instance this test staged.
          */
         private void run(MethodSpec.Builder m, String handlerMethod) {
             m.addStatement("$T.where($T.HTTP_REQUEST_BODY_DECODER_REGISTRY, body)\n"
-                            + ".where($T.MEMORY_ALLOCATOR, body)\n"
                             + ".run(() -> handler.$L(exchange))",
-                    SCOPED_VALUE, HTTP_KERNEL_PROVIDERS, KERNEL_PROVIDERS, handlerMethod);
+                    SCOPED_VALUE, HTTP_KERNEL_PROVIDERS, handlerMethod);
         }
 
         private String caseName(String prefix, KernelValidationRules.FieldRules fr, Probe probe) {
