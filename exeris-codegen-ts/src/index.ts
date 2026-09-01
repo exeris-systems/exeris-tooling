@@ -19,9 +19,9 @@ import pc from 'picocolors';
 import { writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join, dirname, basename, resolve } from 'node:path';
 import { pruneOrphansAndWriteManifest, MANIFEST_NAME } from './output/manifest.js';
-import { loadConfig, type GeneratorConfig, DEFAULT_CONFIG } from './config.js';
+import { loadConfig, peerOverride, type GeneratorConfig, DEFAULT_CONFIG } from './config.js';
 import { findMetadataFiles, loadMetadataFamilies } from './models/metadata-files.js';
-import { loadPeerContracts, parsePeerRef, type PeerContract } from './peers/peer-contract.js';
+import { loadPeerContracts, type PeerContract } from './peers/peer-contract.js';
 import { buildGeneratedFiles } from './orchestrator.js';
 
 // Import new generators (v0.3.0)
@@ -92,7 +92,7 @@ program
         overwrite: (options.overwrite as boolean) ?? false,
         dryRun: (options.dryRun as boolean) ?? false,
         verbose: (options.verbose as boolean) ?? false,
-        peers: ((options.peer as string[] | undefined) ?? []).map(parsePeerRef),
+        ...peerOverride(options.peer as string[] | undefined),
       });
 
       await runGenerate(config);
@@ -183,7 +183,6 @@ async function runGenerate(config: GeneratorConfig): Promise<void> {
   });
 
   console.log(pc.green('Loaded'), domains.length, 'domain(s)', '+', enums.length, 'enum(s)', '+', views.length, 'view(s)');
-
 
   // Compose what to write (pure step — see orchestrator.ts). T20: per-entity
   // artefacts + the enum module are emitted by the real generators under src/app

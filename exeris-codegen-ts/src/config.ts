@@ -10,6 +10,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve, dirname, join } from 'node:path';
 import { z } from 'zod';
+import { parsePeerRef } from './peers/peer-contract.js';
 
 // ============================================================================
 // Configuration Schema
@@ -131,6 +132,23 @@ export const DEFAULT_CONFIG: GeneratorConfig = {
   verbose: false,
   peers: [],
 };
+
+/**
+ * The CLI's repeated `--peer` values as a config override — **omitted entirely** when the flag
+ * was not passed.
+ *
+ * `loadConfig` merges overrides with a spread, so a key that is always present always wins.
+ * Commander hands back `[]`, not `undefined`, for a repeatable option carrying a default, so
+ * building the override unconditionally made `"peers"` in `exeris-codegen.json` dead config —
+ * documented in the README and silently ignored, which is the "declared and read by nothing"
+ * defect this backlog already tracks three times over.
+ *
+ * Returning `{}` is the fix, and `{ peers: undefined }` is not: the spread would still overwrite
+ * the file's value, and the schema default would then turn it into `[]`.
+ */
+export function peerOverride(specs: readonly string[] | undefined): Partial<GeneratorConfig> {
+  return specs && specs.length > 0 ? { peers: specs.map(parsePeerRef) } : {};
+}
 
 // ============================================================================
 // Configuration Loader
