@@ -982,7 +982,7 @@ own field.
 rather than the generator's `"Node"` fallback. Precedence is `targetLabel` → `target` simple name →
 `targetName`.
 
-### `-Aexeris.strict` reports 16 more annotations (C0)
+### `-Aexeris.strict` reports eleven more annotations (C0, net of S3)
 
 **What changed.** Strict mode audited only *extracted-but-unconsumed* attributes, driven from the
 extraction call sites — so an annotation the processor never reads could not produce a warning by
@@ -990,9 +990,15 @@ any path. It now also reports every SDK annotation the processor does not read.
 
 **Action required:** none, and only if you pass `-Aexeris.strict`, which is opt-in. Expect new
 warnings for `@Derived`, `@EventHandler`, `@GraphProperty`, `@GraphQuery`, `@NavMenu`,
-`@Projection`, `@QueryParam`, `@Rule`, `@SagaTransition`, `@Tab` and `@UIGroup`. Each says whether it
-is reserved (design-gated, AST carriers exist) or simply unbuilt — the warning text carries the
-difference.
+`@Projection`, `@QueryParam`, `@Rule`, `@SagaTransition`, `@Tab` and `@UIGroup` — eleven, each saying
+whether it is reserved (design-gated, AST carriers exist) or simply unbuilt; the warning text carries
+the difference.
+
+C0 itself opened sixteen: twelve annotations plus four `@Repeatable` containers, which report under
+their member's name. S3 then extracted `@GraphEdge` later in the same train, and its container went
+quiet with it — so eleven is what a 0.8.0 consumer actually sees. An SDK annotation with no
+registered reason still reports, with a generic one; that is what makes the audit complete rather
+than a list somebody has to remember to extend.
 
 ### `exeris-codegen-ts`: three config flags now do what they said (0.8.0)
 
