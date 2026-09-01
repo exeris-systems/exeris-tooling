@@ -292,10 +292,17 @@ class ExerisDomainProcessorTest {
             String metadata = readContent(compileWithProcessor(source).generatedFile(
                     StandardLocation.CLASS_OUTPUT, "exeris-metadata/CheckoutSaga.json").orElseThrow());
 
-            // Reading both the direct mirror and the container is the fix; reading them without
-            // the exclusivity javac guarantees would emit "notify" twice. javac never presents
-            // both shapes on one element, and this pins that assumption rather than trusting it.
-            assertThat(metadata.split("\"notify\"", -1)).hasSize(2);
+            // The probe has to be a REPEATED step, not the standalone one. Reading both the direct
+            // mirror and the container is the fix, so a javac that presented both shapes for one
+            // annotation type would emit `reserve` and `charge` twice each — `notify` arrives
+            // through the direct mirror either way and would stay at one, proving nothing. Raised
+            // in review of this PR: the first version of this test asserted on `notify`.
+            assertThat(metadata.split("\"reserve\"", -1))
+                    .as("the first repeated step, once")
+                    .hasSize(2);
+            assertThat(metadata.split("\"charge\"", -1))
+                    .as("the second repeated step, once")
+                    .hasSize(2);
         }
 
         @Test

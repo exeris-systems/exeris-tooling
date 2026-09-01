@@ -91,6 +91,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     /** Diagnostic prefix prepended to every NOTE/WARNING/ERROR this processor emits. */
     private static final String DIAG_PREFIX = "[Exeris] ";
 
+    /** Attribute name shared by {@code @Saga} and the capability {@code @Provides}/{@code @Requires}. */
+    private static final String VERSION_ATTRIBUTE = "version";
+
     /** {@code @SagaStep}, and the container javac synthesises when it is repeated on one method. */
     private static final String SAGA_STEP_FQN = "eu.exeris.sdk.annotation.SagaStep";
 
@@ -694,7 +697,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     private ProvidesMetadata extractProvides(AnnotationMirror annotation) {
         Map<String, Object> values = extractAnnotationValues(annotation);
         String service = serviceFqn(values.get("service"));
-        String version = getString(values, "version", null);
+        String version = getString(values, VERSION_ATTRIBUTE, null);
         return new ProvidesMetadata(service, blankToNull(version));
     }
 
@@ -2073,7 +2076,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         // Correcting an existing field, not adding one — the record already declares it and the
         // TypeScript schema already mirrors it. What no generator can do with it yet is a separate,
         // kernel-gated question; see the ROADMAP entry.
-        if (values.containsKey("version")) builder.version(getInt(values, "version", 1));
+        if (values.containsKey(VERSION_ATTRIBUTE)) builder.version(getInt(values, VERSION_ATTRIBUTE, 1));
 
         // Extract saga steps from methods
         List<SagaStepMetadata> steps = extractSagaSteps(element);
