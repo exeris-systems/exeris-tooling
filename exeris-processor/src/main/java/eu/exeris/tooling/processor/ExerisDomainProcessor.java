@@ -216,8 +216,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      * for any of them would fire <em>nothing</em>. {@link #warnInertAttributes} is called for
      * {@code ExerisDomain}, {@code Field}, {@code Action} and {@code ActionParam} and for nothing
      * else, so {@code Saga} and {@code SagaStep} have no call site — condition (3) above, the
-     * unreachable-entry trap, exactly as the {@code DomainEvent} TODO records for its own
-     * annotation. Adding the two missing call sites is worth doing on its own merits; it is not a
+     * unreachable-entry trap, exactly as the standing {@code T11-strict} marker on
+     * {@code DomainEvent} records for its own annotation. Adding the two missing call sites is worth doing on its own merits; it is not a
      * prerequisite for a decision that is to add no entry.
      *
      * <p>When a generator starts consuming one of these, DELETE its entry in the

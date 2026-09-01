@@ -928,9 +928,9 @@ never-invoked emitter start emitting, and its output did not build.
       `INERT_ATTRIBUTES` candidate ("a required attribute nothing reads"); #196 re-graded that to
       "an attribute with a load-bearing meaning both emitters silently override", and scheduled an
       SDK-0.12 / tooling-0.9.0 split to fix it. The #196 review asked for the third check, and it
-      settles it: **`ExerisDomainProcessor:2095` already sorts —
-      `steps.sort(Comparator.comparingInt(SagaStepMetadata::order))`, at the end of
-      `extractSagaSteps`, before the metadata is ever serialised.** So `order` is honoured
+      settles it: **`ExerisDomainProcessor.extractSagaSteps` already sorts —
+      `steps.sort(Comparator.comparingInt(SagaStepMetadata::order))`, at the end of the method,
+      before the metadata is ever serialised.** So `order` is honoured
       end-to-end, with declaration order as a stable tie-break (`List.sort` is stable), which is
       exactly the semantics the SDK Javadoc describes for equal orders.
 
@@ -950,8 +950,8 @@ never-invoked emitter start emitting, and its output did not build.
       `name()` is the only one **without a default**, and that is the whole story of the error —
       the check behind the claim was `grep "();"`, which matches an element declaration only when
       nothing follows the parentheses. It found required attributes and got reported as attributes.
-      `compensationOrder()` (`Saga.java:299`) and `compensationStrategy()` (`:306`) are both there,
-      both defaulted, both settable by an author.
+      `@Saga.compensationOrder()` and `@Saga.compensationStrategy()` are both there, both defaulted,
+      both settable by an author.
 
       So there is nothing for the SDK to add and nothing for the record to shed — `SagaMetadata`
       carries them too. The missing link is the middle one: **neither producer extracts them.**
@@ -970,7 +970,7 @@ never-invoked emitter start emitting, and its output did not build.
       answered: the value is load-bearing, so requiring it is correct.
 
       **The real defect the three passes kept circling is `parallel`.** Extracted in
-      `extractSagaSteps` (`ExerisDomainProcessor:2086`), carried by `SagaStepMetadata.parallel()`,
+      `ExerisDomainProcessor.extractSagaSteps`, carried by `SagaStepMetadata.parallel()`,
       read by **nothing** — verified against both emitters, where the only textual matches are the
       English word in unrelated comments. The emitted flow is a strict linear chain, so two steps with equal
       `order` and `parallel = true` execute one after the other while two Javadocs promise they may
@@ -1006,11 +1006,11 @@ never-invoked emitter start emitting, and its output did not build.
 
       A second reason, measured while answering the #197 review, and it is the stronger one: **an
       entry would not fire at all.** `warnInertAttributes` is called for exactly four annotations —
-      `ExerisDomain`, `Field`, `Action`, `ActionParam` (`:1195`, `:1425`, `:1592`, `:1659`) — and
-      never for `Saga` or `SagaStep`; `@SagaStep` is in `EXTRACTED_ANNOTATIONS`, so C0's pass 2 is
-      silent about it too. So **no strict-mode diagnostic exists for `@SagaStep.parallel` today**,
-      and adding a registry entry would produce nothing: the unreachable-entry trap the registry
-      Javadoc already documents, the same shape as the standing `DomainEvent` TODO at `:1735`.
+      `ExerisDomain`, `Field`, `Action`, `ActionParam` — and never for `Saga` or `SagaStep`;
+      `@SagaStep` is in `EXTRACTED_ANNOTATIONS`, so C0's pass 2 is silent about it too. So **no
+      strict-mode diagnostic exists for `@SagaStep.parallel` today**, and adding a registry entry
+      would produce nothing: the unreachable-entry trap the registry Javadoc already documents, the
+      same shape as the standing `T11-strict` marker on `DomainEvent`.
       Two `warnInertAttributes` call sites are therefore missing — `Saga` and `SagaStep` — which is
       a real gap, independent of whether any of these ten attributes ever earns an entry.
 
@@ -1037,11 +1037,18 @@ never-invoked emitter start emitting, and its output did not build.
          attributes, not attributes. The claim that came out of it — "`@Saga` carries only
          `name()`" — reached a ROADMAP entry, a PR body, a PR comment and a chat summary before
          anyone checked, because nothing in it looked like a measurement with a filter in it.
-      3. **A line number is a measurement with an expiry date.** The `parallel` citation above first
-         went in as `:1960`, which was correct on `2893f0e` and wrong by the time it was written
-         down: the C0 merge moved it 115 lines and this entry's own Javadoc insertion moved it 11
-         more. Caught in the #197 review — in the PR whose subject is exactly this. Name the method
-         alongside the line, so the stale half is repairable from the surviving half.
+      3. **A line number is a measurement with an expiry date — so do not put one here.** The
+         `parallel` citation first went in as `:1960`, correct on `2893f0e` and wrong by the time it
+         was written down. The fix restated it as `:2086` and that was wrong on arrival too: the
+         same commit inserted an eight-line Javadoc paragraph above it, and above the five other
+         citations it had just added, moving all six by exactly 8. A seventh, predating this entry,
+         had drifted by 6. Three rounds, same defect, twice while correcting it.
+
+         So the citations in this entry name **symbols, not lines** — `extractSagaSteps`,
+         `warnInertAttributes`, `SagaStepMetadata.parallel()`. A symbol survives every edit above it
+         and is greppable; a line number in a document that outlives a release is a claim with a
+         short half-life and no way to tell whether it has expired. `path:line` stays right for a
+         review comment or a PR body, which are read once against a known commit.
 
       And the pattern both of these sit inside: a cross-repo report describes what is visible from
       one side of a boundary and names the other side as the cause. Twice now the diagnosis was
