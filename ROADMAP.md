@@ -962,7 +962,7 @@ never-invoked emitter start emitting, and its output did not build.
       has no effect", and only the second one is worth writing down. The pipeline has three stages
       and a check that skips one of them can invert the answer.
 
-            **`generateEvents` (done).** Two call sites, not one — the only flag in this group with that
+      **`generateEvents` (done).** Two call sites, not one — the only flag in this group with that
       shape: the per-entity handler (`events/<kebab>.events.ts`) and the app-wide
       `events/event-bus.service.ts` that every handler imports. Wiring the first alone emits a
       dangling import; confirmed by doing exactly that and watching `ng build` return `TS2307` ×3
