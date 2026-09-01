@@ -183,6 +183,18 @@ describe('FormGenerator boolean controls (T20d)', () => {
     expect(content).not.toContain("enabled: ['true'");
   });
 
+  it('a boolean default is read case-insensitively', () => {
+    // defaultValue is free text from the annotation, so 'True' is the same intent as
+    // 'true'. Anything else still falls back to false rather than being validated —
+    // permissive, and deliberately so, matching the rest of this generator.
+    const content = gen.generate(domain({
+      entityName: 'Empire',
+      fields: [field({ name: 'enabled', type: 'boolean', defaultValue: 'True' })],
+    }), CTX)!.content;
+
+    expect(content).toContain('enabled: [true, []],');
+  });
+
   it('booleans are not run through the numeric coercion', () => {
     // Number(true) is 1. The coercion exists because a numeric control must seed ''
     // to keep "blank" distinct from 0; a checkbox has no blank state, so a boolean

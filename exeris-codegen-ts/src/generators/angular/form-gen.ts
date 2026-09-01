@@ -278,7 +278,7 @@ export class FormGenerator implements CodeGenerator {
       // seed '' to keep "blank" distinguishable from 0 and is coerced below. A declared
       // defaultValue goes in unquoted for the same reason: `'true'` is a string.
       const defaultValue = isBooleanField(f)
-        ? (String(f.defaultValue ?? 'false') === 'true' ? 'true' : 'false')
+        ? (String(f.defaultValue ?? 'false').trim().toLowerCase() === 'true' ? 'true' : 'false')
         : (f.defaultValue ? `'${f.defaultValue}'` : "''");
       lines.push(`    ${f.name}: [${defaultValue}, ${validatorsArray}],`);
     }
