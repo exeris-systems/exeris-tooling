@@ -201,6 +201,17 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      * is NOT an annotation attribute — several such accessors exist with no
      * matching annotation element, and they are deliberately absent here.
      *
+     * <p><strong>Second carve-out: an attribute blocked upstream is not inert, and does not
+     * belong here.</strong> {@code @SagaStep.parallel} is the live case — extracted, carried by
+     * {@code SagaStepMetadata.parallel()}, read by no emitter, so it passes every test above and
+     * an entry for it would look obviously correct. It would still be wrong. The emitted flow is
+     * a strict linear chain because the kernel {@code FlowDefinition} has no way to express
+     * concurrent steps; until it does, the chain is the only correct compilation available, and
+     * registering the attribute would record a missing kernel contract as neglect by a generator
+     * that has nothing else it could emit. {@code @SagaStep.waitForAll} and {@code .failFast}
+     * share the cause and are additionally uncarried. When the kernel grows the contract, the
+     * generators consume all three — no entry to delete, because none was ever added.
+     *
      * <p>When a generator starts consuming one of these, DELETE its entry in the
      * same change — a stale entry produces a false "no effect" warning on an
      * attribute that now matters. Surfaced only under {@code -Aexeris.strict}.

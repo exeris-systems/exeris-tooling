@@ -943,24 +943,93 @@ never-invoked emitter start emitting, and its output did not build.
       you already know where the sort lives.** Two independent readers took it that way in
       consecutive PRs, which is evidence enough that the comment is the problem.
 
-      What actually survives, and neither part is scheduled against SDK 0.12 any more:
+      *Second correction, from the SDK-side audit (exeris-sdk#115) and re-measured here.* Two more
+      claims in the paragraph this replaces were wrong, and one of them was mine three times over.
+
+      **`@Saga` does not carry only `name()`. It declares 77 elements.** Measured on the tree:
+      `name()` is the only one **without a default**, and that is the whole story of the error —
+      the check behind the claim was `grep "();"`, which matches an element declaration only when
+      nothing follows the parentheses. It found required attributes and got reported as attributes.
+      `compensationOrder()` (`Saga.java:299`) and `compensationStrategy()` (`:306`) are both there,
+      both defaulted, both settable by an author.
+
+      So there is nothing for the SDK to add and nothing for the record to shed — `SagaMetadata`
+      carries them too. The missing link is the middle one: **neither producer extracts them.**
+      Measured across both: `ExerisDomainProcessor` 0 hits, `SourceModelReader` 0 hits.
+
+      **And `order` has a second producer.** `SourceModelReader.sagaSteps`
+      (`exeris-sdk-source-model-io`) reads and sorts by it exactly as `extractSagaSteps` does, with
+      a Javadoc saying so. Whichever entry path a build takes, the list reaching an emitter is
+      already ordered — which is what makes "alive end-to-end" true rather than incidental.
+
+      **`order()` stays without a default — founder ruling, and the reason is worth keeping.** A
+      default would let every step share one value, and a stable sort would then hand ordering to
+      position in the file: an innocent method move becomes exactly the ADR-062 break, with no
+      trace in the source. That is what separates it from `@Action.path` (T44), whose default is
+      derivable and carries no ordering semantics. The forced-value objection from #195 is
+      answered: the value is load-bearing, so requiring it is correct.
+
+      **The real defect the three passes kept circling is `parallel`.** Extracted
+      (`ExerisDomainProcessor:1960`), carried by `SagaStepMetadata.parallel()`, read by **nothing**
+      — verified against both emitters, where the only textual matches are the English word in
+      unrelated comments. The emitted flow is a strict linear chain, so two steps with equal
+      `order` and `parallel = true` execute one after the other while two Javadocs promise they may
+      not. That is a real contradiction between declared and emitted behaviour, and it is the one
+      the `order` hunt was standing next to the whole time.
+
+      **Measured surface, ten attributes.** The report that opened this carried one candidate; the
+      SDK-side audit made it six; measuring here gives ten, in three shapes:
+
+      | attribute | annotation | carrier | extracted | reaches output |
+      |---|---|---|---|---|
+      | `@SagaStep.order` | required | yes | **both producers** | **yes — the sort** |
+      | `@SagaStep.parallel` | default `false` | yes | processor | no |
+      | `@SagaStep.waitForAll` | default `true` | **none** | no | no |
+      | `@SagaStep.failFast` | default `false` | **none** | no | no |
+      | `@Saga.compensationStrategy` | default | yes (+ TS schema) | no | no |
+      | `@Saga.compensationOrder` | default | yes (+ TS schema) | no | no |
+      | `@Saga.compensationTimeout` | default | yes (+ TS schema) | no | no |
+      | `@Saga.compensationMaxRetries` | default | **none** | no | no |
+      | `@Saga.compensationRetryDelay` | default | **none** | no | no |
+      | `@Saga.compensationDlq` | default | **none** | no | no |
+
+      Three shapes, and they are not one job: *alive* (row 1, off the list); *declared and carried,
+      never extracted* (rows 2, 5–7 — an extraction gap on this side, whether the emitter can then
+      act on the value is a separate question); *declared with no carrier at all* (rows 3–4, 8–10 —
+      the source model has no field to put it in).
+
+      **None of them goes into `INERT_ATTRIBUTES`, and that is a decision, not an oversight.** For
+      the parallelism family the cause is upstream: the kernel `FlowDefinition` has no way to
+      express concurrent steps, so a strict linear chain is the only correct compilation available
+      and registering the attributes would record a missing kernel contract as generator neglect.
+      Noted in the registry's own Javadoc so the next reader does not add them in good faith. The
+      compensation family is not blocked the same way, but its ownership question — what an emitter
+      would do with `BEST_EFFORT` or `PARALLEL` against the kernel's compensation surface — is one
+      this pass did not measure, so it is left open rather than assigned.
+
+      What still survives from the first correction:
 
       - **A comment, ours, free.** Name the processor as the sorter at
         `KernelSagaGenerator`'s Javadoc and at the sort site. Fold into the next change that
         touches either.
-      - **`SagaMetadata.compensationStrategy` / `.compensationOrder` — still an SDK question.**
-        `@Saga` carries only `name()`, so these are record fields with no annotation behind them:
-        an author cannot set them and no generator reads them. Either the annotation grows the two
-        attributes or the record sheds them. Unaffected by the correction above, and unrelated to
-        `order`.
       - **`saga-gen.ts` sorts nothing** — harmless for real builds, since it consumes the JSON the
         processor already sorted, but it means hand-built metadata (every TS unit test) is ordered
         by whatever the fixture wrote. An instance of the untested processor↔emitter seam, not a
         shipping defect.
 
-      Method note, because this cost two rounds: "no emitter reads X" is not the same claim as "X
-      has no effect", and only the second one is worth writing down. The pipeline has three stages
-      and a check that skips one of them can invert the answer.
+      Two method notes, because this cost three rounds across two repositories:
+
+      1. **"No emitter reads X" is not "X has no effect."** The pipeline has three stages and a
+         check that skips one can invert the answer. Both `order` mis-gradings skipped the producer.
+      2. **Grep for the shape you mean, then say what you measured.** `grep "();"` finds required
+         attributes, not attributes. The claim that came out of it — "`@Saga` carries only
+         `name()`" — reached a ROADMAP entry, a PR body, a PR comment and a chat summary before
+         anyone checked, because nothing in it looked like a measurement with a filter in it.
+
+      And the pattern both of these sit inside: a cross-repo report describes what is visible from
+      one side of a boundary and names the other side as the cause. Twice now the diagnosis was
+      worth having and the ownership split was not — treat that section as a hypothesis to verify in
+      the target repo, which has cost minutes each time and changed the scope of the work every time.
 
       **`generateEvents` (done).** Two call sites, not one — the only flag in this group with that
       shape: the per-entity handler (`events/<kebab>.events.ts`) and the app-wide
