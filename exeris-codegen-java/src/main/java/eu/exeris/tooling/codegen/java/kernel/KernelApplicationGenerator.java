@@ -98,6 +98,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
     private static final String COMPONENTS_METHOD = "components";
     private static final String COMPONENTS_FIELD = "components";
     private static final String CONFIGURE_ROUTES_METHOD = "configureRoutes";
+    private static final String DECORATE_METHOD = "decorate";
 
     private static final ClassName ATOMIC_REFERENCE =
             ClassName.get("java.util.concurrent.atomic", "AtomicReference");
@@ -115,6 +116,8 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
             ClassName.get("eu.exeris.kernel.spi.bootstrap", "BootstrapSelector");
     private static final ClassName HTTP_HANDLER =
             ClassName.get("eu.exeris.kernel.spi.http", "HttpHandler");
+    private static final ClassName ILLEGAL_STATE_EXCEPTION =
+            ClassName.get("java.lang", "IllegalStateException");
     private static final ClassName HTTP_KERNEL_PROVIDERS =
             ClassName.get("eu.exeris.kernel.spi.http", "HttpKernelProviders");
     private static final ClassName HTTP_METHOD =
@@ -747,6 +750,30 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .addComment("No generated body — override to register hand-written routes.")
                 .build());
 
+        type.addMethod(MethodSpec.methodBuilder(DECORATE_METHOD)
+                .addModifiers(Modifier.PUBLIC)
+                .returns(HTTP_HANDLER)
+                .addParameter(HTTP_ROUTER, "router")
+                .addJavadoc("Wraps the built router before it is bound as the server handler.\n")
+                .addJavadoc("<p>Called by {@link $T} with the router {@code build()} returned;\n", lifecycleType)
+                .addJavadoc("whatever this returns is what the kernel serves. The default returns the\n")
+                .addJavadoc("router unchanged. Override to install a per-request concern the generated\n")
+                .addJavadoc("code does not own — binding a tenant, a decoder registry, an allocator:\n")
+                .addJavadoc("<pre>{@code\n")
+                .addJavadoc("@Override public $T $L($T router) {\n",
+                        HTTP_HANDLER, DECORATE_METHOD, HTTP_ROUTER)
+                .addJavadoc("    return exchange -> ScopedValue.where(KernelProviders.STORAGE_CONTEXT, ctx)\n")
+                .addJavadoc("            .run(() -> router.handle(exchange));\n")
+                .addJavadoc("}\n")
+                .addJavadoc("}</pre>\n")
+                .addJavadoc("<p><b>A wrapper gives up streaming.</b> The kernel dispatcher resolves a\n")
+                .addJavadoc("stream route only when the bound handler <em>is</em> an {@link $T}\n", HTTP_ROUTER)
+                .addJavadoc("({@code handler instanceof HttpRouter}), so any wrapper erases that type and\n")
+                .addJavadoc("every {@code streamRoute} silently falls back to respond-once. An application\n")
+                .addJavadoc("that emits stream routes refuses to boot rather than serve that state.\n")
+                .addStatement("return router")
+                .build());
+
         return new GeneratedFile(basePackage, COMPONENTS_TYPE_NAME,
                 KernelScaffold.render(basePackage, type.build()), ArtifactType.APPLICATION);
     }
@@ -821,6 +848,11 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
     }
 
     private MethodSpec buildRunMethod(List<DomainMetadata> domains, String basePackage) {
+        // Whether any streamRoute(...) is registered below. Decides only whether the decorate
+        // hook's return is type-checked at boot — see the guard at the handler-slot publish.
+        boolean hasStreamRoutes = domains.stream().anyMatch(d ->
+                d.realTimeApi() || d.actions().stream().anyMatch(ActionMetadata::streaming));
+
         MethodSpec.Builder method = MethodSpec.methodBuilder("run")
                 .addModifiers(Modifier.PUBLIC)
                 .returns(TypeName.VOID)
@@ -923,7 +955,25 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
         // Slice 2 per-action) would silently fall back to respond-once / 404 on
         // a real boot. HttpRouter implements HttpHandler, so the forwarding
         // slot's respond-once dispatch is byte-for-byte identical either way.
-        method.addStatement("handlerSlot.set(router)");
+        // T49 residual: the consumer's one chance to wrap the router before it is served.
+        // Whatever decorate(...) returns is what the kernel gets.
+        method.addStatement("$T handler = $L.$L(router)", HTTP_HANDLER, COMPONENTS_FIELD, DECORATE_METHOD);
+        if (hasStreamRoutes) {
+            // A wrapper erases the HttpRouter type the dispatcher tests for, so wrapping and
+            // streaming are mutually exclusive until the kernel resolves streams through
+            // something a wrapper can carry. Refused at boot: registration succeeds either
+            // way, so the alternative is an app whose every stream route 404s (T23).
+            method.beginControlFlow("if (!(handler instanceof $T))", HTTP_ROUTER)
+                    .addStatement("throw new $T($S)", ILLEGAL_STATE_EXCEPTION,
+                            "RuntimeComponents.decorate(...) returned a wrapper, but this application "
+                                    + "emits stream routes. The kernel dispatcher resolves a stream only "
+                                    + "when the bound handler is an HttpRouter, so every streamRoute would "
+                                    + "register and then never match. Return the router unchanged, or "
+                                    + "remove @ExerisDomain(realTimeApi) / @Action(streaming) from this "
+                                    + "application.")
+                    .endControlFlow();
+        }
+        method.addStatement("handlerSlot.set(handler)");
         // The entity count is known at generation time, so it is baked into the literal rather
         // than passed as a parameter — one fewer MessageFormat call at runtime, same output.
         method.addStatement("LOG.log($T.INFO, $S)", KernelScaffold.LOGGER_LEVEL,
