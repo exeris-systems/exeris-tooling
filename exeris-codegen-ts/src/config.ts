@@ -158,36 +158,52 @@ export function cliOverrides(
   options: Record<string, unknown>,
   wasPassed: (optionKey: string) => boolean,
 ): Partial<GeneratorConfig> {
-  const overrides: Record<string, unknown> = {};
-  const take = (optionKey: string, configKey: keyof GeneratorConfig, value: unknown): void => {
-    if (wasPassed(optionKey)) overrides[configKey] = value;
+  const overrides: Partial<GeneratorConfig> = {};
+
+  /**
+   * `read` is a thunk, not a value: a flag that was not passed must not have its value even
+   * *computed*. Eagerly evaluating made `cliOverrides` throw on a malformed `--peer` reference
+   * the user never typed — commander cannot produce that state today, which is precisely the kind
+   * of "safe by accident" this helper should not rely on.
+   *
+   * Generic in the config key rather than `Record<string, unknown>` + a cast at the return, so a
+   * mismatched optionKey/configKey pair is a compile error instead of something only the
+   * "maps every option to its config key" test would catch.
+   */
+  const take = <K extends keyof GeneratorConfig>(
+    optionKey: string,
+    configKey: K,
+    read: () => GeneratorConfig[K],
+  ): void => {
+    if (wasPassed(optionKey)) overrides[configKey] = read();
   };
 
-  take('input', 'inputPath', options.input);
-  take('output', 'outputPath', options.output);
-  take('apiBase', 'apiBasePath', options.apiBase);
-  take('appName', 'appName', options.appName);
-  take('framework', 'framework', options.framework);
-  take('styling', 'styling', options.styling);
-  take('backend', 'backend', options.backend);
+  take('input', 'inputPath', () => options.input as string);
+  take('output', 'outputPath', () => options.output as string);
+  take('apiBase', 'apiBasePath', () => options.apiBase as string);
+  take('appName', 'appName', () => options.appName as string);
+  take('framework', 'framework', () => options.framework as GeneratorConfig['framework']);
+  take('styling', 'styling', () => options.styling as GeneratorConfig['styling']);
+  take('backend', 'backend', () => options.backend as GeneratorConfig['backend']);
 
   // `--no-x` reads back as `x === false`; the option key is the positive one.
-  take('zod', 'generateZod', options.zod !== false);
-  take('services', 'generateServices', options.services !== false);
-  take('forms', 'generateForms', options.forms !== false);
-  take('lists', 'generateLists', options.lists !== false);
-  take('stores', 'generateStores', options.stores !== false);
-  take('sagas', 'generateSagas', options.sagas !== false);
-  take('events', 'generateEvents', options.events !== false);
+  take('zod', 'generateZod', () => options.zod !== false);
+  take('services', 'generateServices', () => options.services !== false);
+  take('forms', 'generateForms', () => options.forms !== false);
+  take('lists', 'generateLists', () => options.lists !== false);
+  take('stores', 'generateStores', () => options.stores !== false);
+  take('sagas', 'generateSagas', () => options.sagas !== false);
+  take('events', 'generateEvents', () => options.events !== false);
 
-  take('overwrite', 'overwrite', options.overwrite === true);
-  take('dryRun', 'dryRun', options.dryRun === true);
-  take('verbose', 'verbose', options.verbose === true);
+  take('overwrite', 'overwrite', () => options.overwrite === true);
+  take('dryRun', 'dryRun', () => options.dryRun === true);
+  take('verbose', 'verbose', () => options.verbose === true);
 
-  // Peers carry a parse step, and a malformed reference must fail the run rather than be dropped.
-  take('peer', 'peers', ((options.peer as string[] | undefined) ?? []).map(parsePeerRef));
+  // Peers carry a parse step, and a malformed reference must fail the run rather than be dropped
+  // — but only when the flag was actually passed, which is what the thunk above guarantees.
+  take('peer', 'peers', () => ((options.peer as string[] | undefined) ?? []).map(parsePeerRef));
 
-  return overrides as Partial<GeneratorConfig>;
+  return overrides;
 }
 
 // ============================================================================

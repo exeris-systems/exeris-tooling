@@ -274,6 +274,14 @@ describe('cliOverrides', () => {
   it('propagates a malformed peer reference rather than dropping it', () => {
     expect(() => cliOverrides({ peer: ['no-equals-sign'] }, passed('peer'))).toThrow(/<name>=<path>/);
   });
+
+  // A flag that was not passed must not have its value even COMPUTED. This threw before the
+  // value became a thunk — commander cannot hand back a malformed spec it was never given, so
+  // the old code was safe only by accident, which is not a property worth relying on.
+  it('does not evaluate the value of a flag that was not passed', () => {
+    expect(() => cliOverrides({ peer: ['no-equals-sign'] }, nothingPassed)).not.toThrow();
+    expect(cliOverrides({ peer: ['no-equals-sign'] }, nothingPassed)).toEqual({});
+  });
 });
 
 describe('loadConfig — a config file survives untyped flags', () => {
