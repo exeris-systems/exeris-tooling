@@ -969,10 +969,10 @@ never-invoked emitter start emitting, and its output did not build.
       derivable and carries no ordering semantics. The forced-value objection from #195 is
       answered: the value is load-bearing, so requiring it is correct.
 
-      **The real defect the three passes kept circling is `parallel`.** Extracted
-      (`ExerisDomainProcessor:1960`), carried by `SagaStepMetadata.parallel()`, read by **nothing**
-      — verified against both emitters, where the only textual matches are the English word in
-      unrelated comments. The emitted flow is a strict linear chain, so two steps with equal
+      **The real defect the three passes kept circling is `parallel`.** Extracted in
+      `extractSagaSteps` (`ExerisDomainProcessor:2086`), carried by `SagaStepMetadata.parallel()`,
+      read by **nothing** — verified against both emitters, where the only textual matches are the
+      English word in unrelated comments. The emitted flow is a strict linear chain, so two steps with equal
       `order` and `parallel = true` execute one after the other while two Javadocs promise they may
       not. That is a real contradiction between declared and emitted behaviour, and it is the one
       the `order` hunt was standing next to the whole time.
@@ -1002,7 +1002,19 @@ never-invoked emitter start emitting, and its output did not build.
       the parallelism family the cause is upstream: the kernel `FlowDefinition` has no way to
       express concurrent steps, so a strict linear chain is the only correct compilation available
       and registering the attributes would record a missing kernel contract as generator neglect.
-      Noted in the registry's own Javadoc so the next reader does not add them in good faith. The
+      Noted in the registry's own Javadoc so the next reader does not add them in good faith.
+
+      A second reason, measured while answering the #197 review, and it is the stronger one: **an
+      entry would not fire at all.** `warnInertAttributes` is called for exactly four annotations —
+      `ExerisDomain`, `Field`, `Action`, `ActionParam` (`:1195`, `:1425`, `:1592`, `:1659`) — and
+      never for `Saga` or `SagaStep`; `@SagaStep` is in `EXTRACTED_ANNOTATIONS`, so C0's pass 2 is
+      silent about it too. So **no strict-mode diagnostic exists for `@SagaStep.parallel` today**,
+      and adding a registry entry would produce nothing: the unreachable-entry trap the registry
+      Javadoc already documents, the same shape as the standing `DomainEvent` TODO at `:1735`.
+      Two `warnInertAttributes` call sites are therefore missing — `Saga` and `SagaStep` — which is
+      a real gap, independent of whether any of these ten attributes ever earns an entry.
+
+      The
       compensation family is not blocked the same way, but its ownership question — what an emitter
       would do with `BEST_EFFORT` or `PARALLEL` against the kernel's compensation surface — is one
       this pass did not measure, so it is left open rather than assigned.
@@ -1025,6 +1037,11 @@ never-invoked emitter start emitting, and its output did not build.
          attributes, not attributes. The claim that came out of it — "`@Saga` carries only
          `name()`" — reached a ROADMAP entry, a PR body, a PR comment and a chat summary before
          anyone checked, because nothing in it looked like a measurement with a filter in it.
+      3. **A line number is a measurement with an expiry date.** The `parallel` citation above first
+         went in as `:1960`, which was correct on `2893f0e` and wrong by the time it was written
+         down: the C0 merge moved it 115 lines and this entry's own Javadoc insertion moved it 11
+         more. Caught in the #197 review — in the PR whose subject is exactly this. Name the method
+         alongside the line, so the stale half is repairable from the surviving half.
 
       And the pattern both of these sit inside: a cross-repo report describes what is visible from
       one side of a boundary and names the other side as the cause. Twice now the diagnosis was

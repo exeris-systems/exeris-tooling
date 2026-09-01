@@ -212,6 +212,14 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      * share the cause and are additionally uncarried. When the kernel grows the contract, the
      * generators consume all three — no entry to delete, because none was ever added.
      *
+     * <p>Today the point is moot twice over, and the second reason is the sharper one: an entry
+     * for any of them would fire <em>nothing</em>. {@link #warnInertAttributes} is called for
+     * {@code ExerisDomain}, {@code Field}, {@code Action} and {@code ActionParam} and for nothing
+     * else, so {@code Saga} and {@code SagaStep} have no call site — condition (3) above, the
+     * unreachable-entry trap, exactly as the {@code DomainEvent} TODO records for its own
+     * annotation. Adding the two missing call sites is worth doing on its own merits; it is not a
+     * prerequisite for a decision that is to add no entry.
+     *
      * <p>When a generator starts consuming one of these, DELETE its entry in the
      * same change — a stale entry produces a false "no effect" warning on an
      * attribute that now matters. Surfaced only under {@code -Aexeris.strict}.
