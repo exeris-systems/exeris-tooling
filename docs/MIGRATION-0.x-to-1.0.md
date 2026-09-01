@@ -596,6 +596,10 @@ response blames. If you have monitoring or tests that treat `POST`/`PUT` 400s as
 deployment with this fault will now show up as a 5xx, which is where it belongs: the body has not
 been read at the point the failure occurs.
 
+> **Superseded later in the same train.** The bound-check described above is gone, together with the
+> per-request read it protected — see *"Generated handlers take a `MemoryAllocator`"* below. The
+> fault it reported can no longer reach a request at all; it fails the boot instead.
+
 ### A tenant-scoped repository now stamps the tenant it writes (T36)
 
 `save` and `update` on a repository generated for a tenant-partitioned entity fill an absent tenant
@@ -918,6 +922,117 @@ nothing now, with one fewer place to look for the reason.
 
 **If you installed the package and audit your dependency tree:** `handlebars` is gone from
 `exeris-codegen-ts`'s runtime dependencies.
+
+### Generated handlers take a `MemoryAllocator`, and `create<Entity>Handler()` changed with them (T43-follow-up)
+
+**What changed.** `<Entity>Handler`'s constructor gained a `MemoryAllocator` parameter, between the
+service and the event publisher. `RuntimeComponents.create<Entity>Handler()` resolves
+`KernelProviders.MEMORY_ALLOCATOR` and passes it in.
+
+**Why.** That `ScopedValue`'s binding is established around the bootstrap callback. A request is
+served on a virtual thread started with `Thread.ofVirtual().start()` — which inherits no
+`ScopedValue` binding, only `StructuredTaskScope` forks do — so the previous per-request `.get()`
+could only ever find it unbound. Resolving it where the binding is live is what the kernel's own
+benchmark runtime does.
+
+**Action required — only if you override the factory.** If your `RuntimeComponents` subclass
+overrides `create<Entity>Handler()`, the `new <Entity>Handler(...)` call inside it needs the extra
+argument; `super.create<Entity>Handler()` needs nothing. Everything else regenerates.
+
+**Behaviour change worth knowing:** every handler now resolves the allocator at composition time,
+including entities whose routes never decode a body. An unwired allocator therefore fails the
+**boot**, for every entity, instead of the first body-carrying request against one entity. That is
+the point of the change — a wiring fault belongs at boot with the composition on the stack — but a
+boot failure that used to be a runtime 5xx can read as a regression if you do not know why.
+
+### A repeated `@SagaStep` now contributes its steps (S2)
+
+**What changed.** `@SagaStep` is `@Repeatable`. Repeating it on one method used to contribute
+**nothing** — `javac` replaces the repeats with the synthesised container, and the processor looked
+up the exact annotation type. The steps were dropped silently and the emitted flow was short.
+
+**Action required:** none, but **check your emitted flow if you wrote repeated steps.** It gains the
+steps it should always have had, which changes the generated orchestrator's transition chain. A saga
+already in flight resumes against a plan whose step list has changed — kernel ADR-062 makes that a
+drain-before-deploy situation, not a hot swap.
+
+### `@Saga(version = …)` reaches the metadata (S1, processor half)
+
+`SagaMetadata.version` reported `1` for every saga regardless of what the annotation said. It now
+carries the declared value. **No emitted Java changes**: `FlowDefinitionBuilder` has no `version`
+setter on kernel 0.11.0, so the generator still emits no version. If you read the metadata JSON
+directly, the field stops contradicting your source.
+
+### `@GraphEdge` now reaches the emitted graph sync, and a repeat on one field is refused (S3)
+
+**What changed.** `GraphMetadata.edges` was a hardcoded empty list, so every generated graph-sync
+artefact carried zero edges whatever the entity declared. Edges are now extracted, and
+`<Entity>GraphSync` emits one `GraphEdgeDescriptor` constant and one `upsertEdge` call per declared
+edge.
+
+**Action required if you declared `@GraphEdge`:** your regenerated graph sync starts writing edges
+it never wrote. That is the intended behaviour, and it is new traffic against your graph engine.
+
+**Breaking, narrowly:** two `@GraphEdge` on one field are now a **compile error**, naming the field.
+`GraphEdgeMetadata.name` is both the edge's identity and the source of the entity getter, so the
+shape cannot be carried — previously it compiled and the edges vanished. Declare each edge on its
+own field.
+
+**Target labels:** an edge with `target = Foo.class` but no `targetLabel` now resolves to `Foo`
+rather than the generator's `"Node"` fallback. Precedence is `targetLabel` → `target` simple name →
+`targetName`.
+
+### `-Aexeris.strict` reports 16 more annotations (C0)
+
+**What changed.** Strict mode audited only *extracted-but-unconsumed* attributes, driven from the
+extraction call sites — so an annotation the processor never reads could not produce a warning by
+any path. It now also reports every SDK annotation the processor does not read.
+
+**Action required:** none, and only if you pass `-Aexeris.strict`, which is opt-in. Expect new
+warnings for `@Derived`, `@EventHandler`, `@GraphProperty`, `@GraphQuery`, `@NavMenu`,
+`@Projection`, `@QueryParam`, `@Rule`, `@SagaTransition`, `@Tab` and `@UIGroup`. Each says whether it
+is reserved (design-gated, AST carriers exist) or simply unbuilt — the warning text carries the
+difference.
+
+### `exeris-codegen-ts`: three config flags now do what they said (0.8.0)
+
+`generateDetails`, `generateEvents` and `generateSagas` all defaulted to `true` and were read by
+nothing. A regenerated app now gains, per entity: a detail component plus the `{plural}/:id` and
+`{plural}/:id/edit` routes the emitted list already linked to; a domain-event handler and the shared
+`events/event-bus.service.ts`; and a saga state machine for any entity declaring `@Saga`. All are
+exported from the app barrel. Turn any of them off with `--no-details` / `--no-events` /
+`--no-sagas`, which now also do what they said.
+
+**The emitted saga state machine carries no transport, deliberately.** It used to call
+`/api/v1/sagas/<entity>/{start,cancel,retry,status}` and poll once a second. No layer of this stack
+serves that contract — no emitted route, no OpenAPI path, and no per-execution handle in the kernel
+flow SPI — so the machine now tracks a run and takes its updates from your code:
+`begin(entityId, executionId)`, `applyStatus(snapshot)`, `failToStart` / `cancelling` / `retrying` /
+`reset`.
+
+**`$localize` is gone from all emitted output.** The emitted app declares `"polyfills": []` and no
+`@angular/localize`, so an emitted symbol requiring one was an undeclared requirement on your build.
+Labels are plain strings. If you were relying on extraction from generated files, that surface never
+compiled.
+
+### `exeris-codegen-ts`: `--api-base` no longer defaults to `/api` on the CLI path (#191)
+
+The config default became `''` in 0.7.0 so the emitted client requests exactly what the emitted
+router serves — but commander's own default re-applied `/api` on every CLI run, so CLI-generated
+services called `/api/orders` against a router serving `/orders`. **If you generate through the CLI
+and your deployment really does sit behind a gateway at `/api`, pass `--api-base /api` explicitly.**
+Otherwise your regenerated services stop prefixing.
+
+### `exeris-codegen-ts`: peer DTOs, and an opt-in test surface (T42, T2)
+
+`--peer <name=path>` emits a self-contained `peers/<name>/` tree from a peer's contract artifact —
+its own types, schemas, enum module and barrel, never merged with your app's. Additive; nothing
+changes if you pass no peer.
+
+`--tests` (off by default) emits a schema spec and a service spec per entity, plus a `test` target on
+`@angular/build:unit-test`, a `tsconfig.spec.json`, and the `vitest` + `jsdom` devDependencies the
+runner cannot start without. Specs are excluded from `tsconfig.app.json`, so a production build never
+requires them.
 
 ---
 

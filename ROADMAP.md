@@ -2302,6 +2302,51 @@ Proposals, highest return-on-effort first:
 
 ---
 
+## 0.8.0 — shipped
+
+Cut 2026-09-01. The train's own entries carry the evidence; this is the close-out.
+
+**What it was about.** Two defect classes, both found by looking rather than by being reported.
+*Surface emitted and reachable by nobody* — three `codegen-ts` config flags that defaulted to `true`
+and were read by nothing, a detail route the emitted list already linked to, an event bus with no
+barrel path, a saga machine calling four URLs no layer of this stack serves. And *metadata declared
+and carried by nobody* — a saga step dropped whenever it was repeated, a `@Saga.version` that always
+reported 1, a graph edge list hardcoded empty while the generator consuming it was already written
+and already compile-gated.
+
+**Shipped:** T42 (peer types, ADR-048) · the `generateDetails` / `generateEvents` / `generateSagas`
+wirings · T2 FE (the generated app tests itself, ADR-058) · C0 (strict mode audits the half it was
+structurally blind to) · T43-follow-up (the allocator is captured where its binding is live) ·
+S1 processor half · S2 · S3 · plus the CLI `--api-base` prefix fix.
+
+**Two things the train taught, both recorded in the entries above.** A check that skips a pipeline
+stage can invert its answer — "no emitter reads X" is not "X has no effect", and that mistake cost
+three rounds on one attribute. And a green gate is not evidence until you know what it counted: this
+train produced a `BUILD SUCCESS` on zero executed tests, a CI monitor reporting a previous commit's
+results, and a line-number citation that expired between being measured and being written down.
+
+**Not in it, and why:** everything gated on a final kernel or SDK `0.12.0` — neither exists yet.
+
+## 0.9.0 sequencing
+
+0.9.0's defining property is that a large share of it is not this repo's to unblock: neither
+`exeris-kernel` nor `exeris-sdk` has a final `0.12.0`, and the no-cross-repo-SNAPSHOT rule below
+applies to pinning as much as to tagging. Four groups, by what blocks them —
+
+- **No external gate:** D10 (whose *resolution* is a T51 question — do not settle it before that
+  RFC), the TS `GraphEdgeMetadataSchema` parity gap, the `npm start` proxy prefix and its three
+  residual `/api` sites, the `<Entity>Store` barrel question, C1, C2, T51.
+- **Behind a final kernel 0.12:** the pin bump, `@Saga.version`'s emitter half, T12's client half +
+  T17, and the EV1-stream per-action driver.
+- **Behind an SDK record change:** the `GraphEdgeMetadata` field/identity split, the six
+  `@Saga.compensation*` attributes, `@SagaStep.waitForAll` / `.failFast`. Each is a carrier that does
+  not exist; extracting into nothing is the failure mode 0.8.0 spent itself removing.
+- **Behind a kernel contract:** `@SagaStep.parallel` — the reason it stays out of `INERT_ATTRIBUTES`
+  is recorded at that registry, so nobody adds it in good faith.
+
+Also open and independent of all four: the missing `warnInertAttributes` call sites for `Saga` and
+`SagaStep`, and a comment naming the processor as the saga-step sorter.
+
 ## Versioning policy
 
 - **0.x** — generated code shape may change in any release; consumers regenerate after every tooling bump
