@@ -56,8 +56,10 @@ const domains = [
     ],
     // The saga state machine is emitted only for an entity that declares one, so without this
     // the `generateSagas` flag has nothing to build and the FE gate never compiles saga-gen's
-    // output. Steps carry a compensation and an out-of-declaration `order` so the emitted step
-    // table exercises both the sort and the compensating-action branch.
+    // output. Two of the three steps carry a compensation and one does not, which is the only
+    // branch the emitted step table actually has. (`order` is set because the SDK's @SagaStep
+    // requires it, not because anything reads it — no generator on either side sorts by it; see
+    // ROADMAP.)
     sagaMetadata: {
       name: 'OrderFulfilment',
       steps: [

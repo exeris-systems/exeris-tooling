@@ -867,6 +867,26 @@ never-invoked emitter start emitting, and its output did not build.
       `event-gen`, `detail-gen` and `app-structure-gen` each carried a byte-identical private copy
       and saga-gen would have been the fourth (strong-default #2).
 
+      **Raised in the #195 review, not fixed there — `@SagaStep.order` is a required attribute that
+      nothing reads.** Verified on both sides: `KernelSagaGenerator`'s own Javadoc states it
+      outright ("The `SagaStepMetadata#order()` field is **not** consulted — callers wanting
+      non-list ordering must sort their step list before passing it to the AST"), and `saga-gen.ts`
+      has zero references to `.order` or to any sort. Both emitters walk `steps` in declaration
+      order. The processor *does* extract it (`ExerisDomainProcessor:1951`, defaulting to 1), so
+      this is inert by consumption, not by an extraction gap.
+
+      That makes it a **T11 `INERT_ATTRIBUTES` candidate, and a worse one than most already
+      registered**: `@SagaStep.order()` has **no default** in the SDK, so every author is forced to
+      supply a value that has no effect on output — the condition the `@Action.path` entry notes it
+      escaped when SDK 0.11.0 gave that attribute a default (T44). Either a generator starts sorting
+      by it or it earns a registry entry; deciding which is the work, and it belongs with the SDK
+      question (adding a default is an SDK change), not in a codegen-ts wiring slice.
+
+      Separately, `SagaMetadata.compensationStrategy` and `.compensationOrder` are read by no
+      generator either — but they are **not** `INERT_ATTRIBUTES` candidates, because `@Saga` carries
+      only `name()`; they are unused fields of the metadata record, so the honest surface for them is
+      the record, not the strict-mode registry.
+
       **`generateEvents` (done).** Two call sites, not one — the only flag in this group with that
       shape: the per-entity handler (`events/<kebab>.events.ts`) and the app-wide
       `events/event-bus.service.ts` that every handler imports. Wiring the first alone emits a
