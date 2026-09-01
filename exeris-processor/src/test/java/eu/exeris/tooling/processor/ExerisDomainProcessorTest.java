@@ -19,8 +19,11 @@ import com.google.testing.compile.JavaFileObjects;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import java.util.stream.Stream;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import javax.tools.JavaFileObject;
 import javax.tools.StandardLocation;
@@ -1482,65 +1485,61 @@ class ExerisDomainProcessorTest {
                     .isTrue();
         }
 
-        @Test
-        @DisplayName("a synthesised @Repeatable container is not reported — the member is what the author wrote")
-        void strictDoesNotWarnOnSynthesisedContainer() {
-            JavaFileObject source = JavaFileObjects.forSourceString(
-                    "com.example.Checkout",
-                    """
-                    package com.example;
+        /**
+         * Both {@code @Repeatable} idioms the SDK uses, in one test because the assertion is the
+         * same and only the idiom differs — which is exactly the asymmetry that produced the bug.
+         *
+         * <p>{@code @SagaStep} takes the plain-plural container ({@code @SagaSteps});
+         * {@code @DomainEvent} takes the nested one ({@code @DomainEvent.DomainEvents}), whose
+         * last dot-segment is {@code "DomainEvents"}. The first implementation keyed a registry on
+         * simple names, covered the first idiom and missed the second, so an entity declaring two
+         * events — ordinary, encouraged, and exercised six-deep elsewhere in this file — was told
+         * that an annotation the processor fully extracts "is never read". Caught in review of the
+         * C0 PR; the fix detects containers structurally (JLS 9.6.3) rather than by name.
+         */
+        static Stream<Arguments> repeatableIdioms() {
+            return Stream.of(
+                    Arguments.of("plain-plural container (@SagaStep → @SagaSteps)",
+                            """
+                            package com.example;
 
-                    import eu.exeris.sdk.annotation.Saga;
-                    import eu.exeris.sdk.annotation.SagaStep;
+                            import eu.exeris.sdk.annotation.Saga;
+                            import eu.exeris.sdk.annotation.SagaStep;
 
-                    @Saga(name = "Checkout")
-                    public class Checkout {
+                            @Saga(name = "Checkout")
+                            public class Subject {
 
-                        @SagaStep(order = 1, name = "reserve", service = "stock", command = "reserve")
-                        public void reserve() {
-                        }
+                                @SagaStep(order = 1, name = "reserve", service = "stock", command = "reserve")
+                                public void reserve() {
+                                }
 
-                        @SagaStep(order = 2, name = "charge", service = "billing", command = "charge")
-                        public void charge() {
-                        }
-                    }
-                    """
-            );
+                                @SagaStep(order = 2, name = "charge", service = "billing", command = "charge")
+                                public void charge() {
+                                }
+                            }
+                            """),
+                    Arguments.of("nested container (@DomainEvent → @DomainEvent.DomainEvents)",
+                            """
+                            package com.example;
 
-            Compilation compilation = javac()
-                    .withOptions("-Aexeris.strict=true")
-                    .withProcessors(new ExerisDomainProcessor())
-                    .compile(source);
+                            import eu.exeris.sdk.annotation.DomainEvent;
+                            import eu.exeris.sdk.annotation.DomainEvent.Trigger;
+                            import eu.exeris.sdk.annotation.ExerisDomain;
 
-            assertThat(compilation).succeeded();
-            // Two @SagaStep on one class make javac synthesise @SagaSteps. The author never wrote
-            // that type, and @SagaStep itself IS extracted — so the honest number of unread
-            // warnings here is zero, not one about a container nobody has heard of.
-            assertThat(unreadWarnings(compilation))
-                    .as("no warning about a container the author never wrote")
-                    .isZero();
+                            @ExerisDomain(module = "core", path = "/orders")
+                            @DomainEvent(trigger = Trigger.CREATE, topic = "orders.created")
+                            @DomainEvent(trigger = Trigger.DELETE, topic = "orders.deleted")
+                            public class Subject {
+                                private String reference;
+                            }
+                            """));
         }
 
-        @Test
-        @DisplayName("the NESTED @Repeatable container is not reported either (@DomainEvent.DomainEvents)")
-        void strictDoesNotWarnOnNestedSynthesisedContainer() {
-            JavaFileObject source = JavaFileObjects.forSourceString(
-                    "com.example.Order",
-                    """
-                    package com.example;
-
-                    import eu.exeris.sdk.annotation.DomainEvent;
-                    import eu.exeris.sdk.annotation.DomainEvent.Trigger;
-                    import eu.exeris.sdk.annotation.ExerisDomain;
-
-                    @ExerisDomain(module = "core", path = "/orders")
-                    @DomainEvent(trigger = Trigger.CREATE, topic = "orders.created")
-                    @DomainEvent(trigger = Trigger.DELETE, topic = "orders.deleted")
-                    public class Order {
-                        private String reference;
-                    }
-                    """
-            );
+        @ParameterizedTest(name = "{0}")
+        @MethodSource("repeatableIdioms")
+        @DisplayName("a synthesised @Repeatable container is not reported — the member is what the author wrote")
+        void strictDoesNotWarnOnSynthesisedContainer(String idiom, String sourceText) {
+            JavaFileObject source = JavaFileObjects.forSourceString("com.example.Subject", sourceText);
 
             Compilation compilation = javac()
                     .withOptions("-Aexeris.strict=true")
@@ -1548,13 +1547,8 @@ class ExerisDomainProcessorTest {
                     .compile(source);
 
             assertThat(compilation).succeeded();
-            // Two @DomainEvent make javac synthesise @DomainEvent.DomainEvents, whose last
-            // dot-segment is "DomainEvents". A name-keyed container registry covering only the
-            // SDK's plain-plural idiom (@SagaSteps, @Rules) missed this one and warned that an
-            // annotation the processor fully extracts "is never read" — on the ordinary,
-            // encouraged shape of declaring more than one event. Caught in review of this PR.
             assertThat(unreadWarnings(compilation))
-                    .as("no warning for a container holding an annotation the processor reads")
+                    .as("no warning about a container the author never wrote (%s)", idiom)
                     .isZero();
         }
 

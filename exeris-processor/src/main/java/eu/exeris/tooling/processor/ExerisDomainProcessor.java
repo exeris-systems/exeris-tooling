@@ -94,6 +94,12 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     /** Package every SDK annotation lives under, including the {@code capability} sub-package. */
     private static final String SDK_ANNOTATION_PACKAGE = "eu.exeris.sdk.annotation.";
 
+    /** The sole element of a {@code @Repeatable} container, and of every single-value annotation. */
+    private static final String VALUE_ELEMENT = "value";
+
+    /** Closing clause on every strict-mode diagnostic — it is opt-in, so say so at the point of use. */
+    private static final String STRICT_SUFFIX = ". (reported because -Aexeris.strict is enabled)";
+
     /**
      * An annotation attribute the author can set but that <em>no</em> code
      * generator — neither {@code exeris-codegen-java} nor
@@ -650,7 +656,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
 
     /** Iterates the {@code value} array of a {@code @Provides.List}/{@code @Requires.List} container. */
     private void forEachContained(AnnotationMirror container, java.util.function.Consumer<AnnotationMirror> action) {
-        Object value = extractAnnotationValues(container).get("value");
+        Object value = extractAnnotationValues(container).get(VALUE_ELEMENT);
         if (value instanceof List<?> entries) {
             for (Object entry : entries) {
                 if (entry instanceof AnnotationMirror contained) {
@@ -1660,7 +1666,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             // Check for @DomainEvents container (from @Repeatable)
             if (annotationType.equals("eu.exeris.sdk.annotation.DomainEvent.DomainEvents")) {
                 Map<String, Object> containerValues = extractAnnotationValues(am);
-                Object valueObj = containerValues.get("value");
+                Object valueObj = containerValues.get(VALUE_ELEMENT);
                 if (valueObj instanceof List<?> eventAnnotations) {
                     for (Object eventAnnotation : eventAnnotations) {
                         if (eventAnnotation instanceof AnnotationMirror eventAm) {
@@ -2126,7 +2132,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                         Diagnostic.Kind.WARNING,
                         DIAG_PREFIX + "@" + annotationSimpleName + "." + inert.attribute()
                                 + " is set but no code generator consumes it — "
-                                + inert.note() + ". (reported because -Aexeris.strict is enabled)",
+                                + inert.note() + STRICT_SUFFIX,
                         element, mirror);
             }
         }
@@ -2159,7 +2165,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                         Diagnostic.Kind.WARNING,
                         DIAG_PREFIX + "@" + inert.display()
                                 + " is set but no code generator consumes it — "
-                                + inert.note() + ". (reported because -Aexeris.strict is enabled)",
+                                + inert.note() + STRICT_SUFFIX,
                         element, mirror);
             }
         }
@@ -2185,30 +2191,43 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      */
     private void warnUnreadAnnotations(Element element) {
         for (AnnotationMirror mirror : element.getAnnotationMirrors()) {
-            String fqn = mirror.getAnnotationType().toString();
-            if (!fqn.startsWith(SDK_ANNOTATION_PACKAGE)) {
-                continue;
+            String display = unreadNameOf(mirror);
+            if (display != null) {
+                messager.printMessage(
+                        Diagnostic.Kind.WARNING,
+                        DIAG_PREFIX + "@" + display
+                                + " is set but this processor never reads it, so no generator can "
+                                + "consume it and the annotation has no effect on emitted output — "
+                                + noteFor(display) + STRICT_SUFFIX,
+                        element, mirror);
             }
-            String simpleName = fqn.substring(fqn.lastIndexOf('.') + 1);
-            if (isAlreadyAudited(simpleName)) {
-                continue;
-            }
-            String contained = containedAnnotationName(mirror);
-            String display = contained != null ? contained : simpleName;
-            if (contained != null && isAlreadyAudited(contained)) {
-                // A repeatable member the processor DOES read — several @DomainEvent or @SagaStep
-                // on one class synthesise their container. The container is an artefact of
-                // repetition, not an unread annotation.
-                continue;
-            }
-            messager.printMessage(
-                    Diagnostic.Kind.WARNING,
-                    DIAG_PREFIX + "@" + display
-                            + " is set but this processor never reads it, so no generator can "
-                            + "consume it and the annotation has no effect on emitted output — "
-                            + noteFor(display) + ". (reported because -Aexeris.strict is enabled)",
-                    element, mirror);
         }
+    }
+
+    /**
+     * The name to warn about for {@code mirror}, or {@code null} when there is nothing to say —
+     * it is not an SDK annotation, the processor reads it, or the first pass already covers it.
+     *
+     * <p>Split out of the loop so the decision reads as one expression with one exit rather than
+     * a chain of {@code continue}s, and so each reason for staying quiet can carry its own line.
+     */
+    private static String unreadNameOf(AnnotationMirror mirror) {
+        String fqn = mirror.getAnnotationType().toString();
+        if (!fqn.startsWith(SDK_ANNOTATION_PACKAGE)) {
+            return null;
+        }
+        String simpleName = fqn.substring(fqn.lastIndexOf('.') + 1);
+        if (isAlreadyAudited(simpleName)) {
+            return null;
+        }
+        // A repeatable member the processor DOES read — several @DomainEvent or @SagaStep on one
+        // class synthesise their container. The container is an artefact of repetition, not an
+        // unread annotation, so it reports under the member's name or not at all.
+        String contained = containedAnnotationName(mirror);
+        if (contained != null) {
+            return isAlreadyAudited(contained) ? null : contained;
+        }
+        return simpleName;
     }
 
     /**
@@ -2253,7 +2272,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         Element annotationType = mirror.getAnnotationType().asElement();
         ExecutableElement valueElement = null;
         for (ExecutableElement method : ElementFilter.methodsIn(annotationType.getEnclosedElements())) {
-            if (method.getSimpleName().contentEquals("value")) {
+            if (method.getSimpleName().contentEquals(VALUE_ELEMENT)) {
                 valueElement = method;
             } else if (method.getDefaultValue() == null) {
                 // An element without a default that is not `value` — not a containing type.
