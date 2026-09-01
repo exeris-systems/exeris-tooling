@@ -134,20 +134,60 @@ export const DEFAULT_CONFIG: GeneratorConfig = {
 };
 
 /**
- * The CLI's repeated `--peer` values as a config override — **omitted entirely** when the flag
- * was not passed.
+ * Turns parsed CLI options into config overrides, keeping only the flags the user actually
+ * **passed**.
  *
- * `loadConfig` merges overrides with a spread, so a key that is always present always wins.
- * Commander hands back `[]`, not `undefined`, for a repeatable option carrying a default, so
- * building the override unconditionally made `"peers"` in `exeris-codegen.json` dead config —
- * documented in the README and silently ignored, which is the "declared and read by nothing"
- * defect this backlog already tracks three times over.
+ * `loadConfig` merges overrides with a spread, so a key that is always PRESENT always wins,
+ * whatever its value. Commander fills every option that declares a default — and every option
+ * here does, `--no-*` booleans included, where "absent" and "explicitly true" are the same value.
+ * Building the override object unconditionally therefore made the whole of `exeris-codegen.json`
+ * inert for these fields: whatever it declared was overwritten by a CLI default the user never
+ * typed.
  *
- * Returning `{}` is the fix, and `{ peers: undefined }` is not: the spread would still overwrite
- * the file's value, and the schema default would then turn it into `[]`.
+ * That was not only a config-file bug. `apiBasePath` had drifted — `config.ts` deliberately
+ * defaults it to `''` so the emitted client requests what the emitted server serves, while this
+ * CLI still declared `'/api'` — and because the CLI default always won, every app generated
+ * through `exeris-gen` shipped a frontend calling `/api/<path>` at a router serving `/<path>`.
+ *
+ * `wasPassed` is commander's `getOptionValueSource(key) === 'cli'`, injected rather than imported
+ * so this stays unit-testable without building a `Command`. Anything not passed is omitted, not
+ * set to `undefined`: the spread would still overwrite the file's value, and the schema default
+ * would then fill it in.
  */
-export function peerOverride(specs: readonly string[] | undefined): Partial<GeneratorConfig> {
-  return specs && specs.length > 0 ? { peers: specs.map(parsePeerRef) } : {};
+export function cliOverrides(
+  options: Record<string, unknown>,
+  wasPassed: (optionKey: string) => boolean,
+): Partial<GeneratorConfig> {
+  const overrides: Record<string, unknown> = {};
+  const take = (optionKey: string, configKey: keyof GeneratorConfig, value: unknown): void => {
+    if (wasPassed(optionKey)) overrides[configKey] = value;
+  };
+
+  take('input', 'inputPath', options.input);
+  take('output', 'outputPath', options.output);
+  take('apiBase', 'apiBasePath', options.apiBase);
+  take('appName', 'appName', options.appName);
+  take('framework', 'framework', options.framework);
+  take('styling', 'styling', options.styling);
+  take('backend', 'backend', options.backend);
+
+  // `--no-x` reads back as `x === false`; the option key is the positive one.
+  take('zod', 'generateZod', options.zod !== false);
+  take('services', 'generateServices', options.services !== false);
+  take('forms', 'generateForms', options.forms !== false);
+  take('lists', 'generateLists', options.lists !== false);
+  take('stores', 'generateStores', options.stores !== false);
+  take('sagas', 'generateSagas', options.sagas !== false);
+  take('events', 'generateEvents', options.events !== false);
+
+  take('overwrite', 'overwrite', options.overwrite === true);
+  take('dryRun', 'dryRun', options.dryRun === true);
+  take('verbose', 'verbose', options.verbose === true);
+
+  // Peers carry a parse step, and a malformed reference must fail the run rather than be dropped.
+  take('peer', 'peers', ((options.peer as string[] | undefined) ?? []).map(parsePeerRef));
+
+  return overrides as Partial<GeneratorConfig>;
 }
 
 // ============================================================================

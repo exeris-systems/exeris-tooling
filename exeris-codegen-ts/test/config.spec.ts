@@ -31,7 +31,7 @@ import {
   findConfigFile,
   loadConfigFile,
   loadConfig,
-  peerOverride,
+  cliOverrides,
   resolveInputPath,
   resolveOutputPath,
   type GeneratorConfig,
@@ -219,63 +219,96 @@ describe('resolveInputPath / resolveOutputPath', () => {
 });
 
 
-// ---------- peerOverride + the config-file `peers` path ----------
+// ---------- cliOverrides + the config-file path ----------
 //
 // `loadConfig` merges overrides with a spread, so an override key that is always PRESENT always
-// wins — regardless of its value. Commander hands back `[]`, not `undefined`, for a repeatable
-// option with a default, so building the `peers` override unconditionally made the documented
-// `"peers"` config-file array dead config: declared, documented, and read by nothing. These tests
-// pin the shape rather than the symptom, because the symptom (no peer tree emitted) only shows up
-// in a full CLI run, which nothing else here exercises.
+// wins — regardless of its value. Commander fills every option that declares a default, so
+// building the override object unconditionally made exeris-codegen.json inert for those fields,
+// and took the deliberate apiBasePath='' fix down with it on the CLI path. These tests pin the
+// rule rather than the symptom: the symptom only appears in a full CLI run, and src/index.ts is
+// excluded from coverage, which is why it shipped.
 
-describe('peerOverride', () => {
-  it('omits the key entirely when the flag was not passed', () => {
-    expect(peerOverride(undefined)).toEqual({});
+/** Commander's getOptionValueSource(k) === 'cli', as an injectable predicate. */
+const passed = (...keys: string[]) => (key: string) => keys.includes(key);
+const nothingPassed = () => false;
+
+describe('cliOverrides', () => {
+  it('is empty when no flag was passed, whatever values commander filled in', () => {
+    expect(cliOverrides(
+      { input: 'target/classes/exeris-metadata', apiBase: '/api', appName: 'Exeris Foundation', zod: true, peer: [] },
+      nothingPassed,
+    )).toEqual({});
   });
 
-  // The regression itself: commander gives [], not undefined.
-  it('omits the key for the empty array commander actually hands back', () => {
-    const override = peerOverride([]);
-    expect(override).toEqual({});
-    expect('peers' in override).toBe(false);
+  // The defect, in one assertion: a CLI default the user never typed must not reach the config.
+  it('omits apiBasePath when --api-base was not typed, even though commander supplies a value', () => {
+    const overrides = cliOverrides({ apiBase: '/api' }, nothingPassed);
+    expect('apiBasePath' in overrides).toBe(false);
   });
 
-  it('parses the specs when the flag was passed', () => {
-    expect(peerOverride(['billing=../billing/contract'])).toEqual({
-      peers: [{ name: 'billing', path: '../billing/contract' }],
+  it('takes a flag that was typed', () => {
+    expect(cliOverrides({ apiBase: '/gateway' }, passed('apiBase'))).toEqual({ apiBasePath: '/gateway' });
+  });
+
+  // `--no-x` reads back as x === false; absent reads back as true. Only the source tells them apart.
+  it('distinguishes an absent --no-zod from a typed one', () => {
+    expect(cliOverrides({ zod: true }, nothingPassed)).toEqual({});
+    expect(cliOverrides({ zod: false }, passed('zod'))).toEqual({ generateZod: false });
+  });
+
+  it('maps every option to its config key', () => {
+    const all = {
+      input: 'i', output: 'o', apiBase: '/a', appName: 'n', framework: 'angular', styling: 'none',
+      backend: 'KERNEL', zod: false, services: false, forms: false, lists: false, stores: false,
+      sagas: false, events: false, overwrite: true, dryRun: true, verbose: true, peer: ['p=./p'],
+    };
+    expect(cliOverrides(all, () => true)).toEqual({
+      inputPath: 'i', outputPath: 'o', apiBasePath: '/a', appName: 'n', framework: 'angular',
+      styling: 'none', backend: 'KERNEL', generateZod: false, generateServices: false,
+      generateForms: false, generateLists: false, generateStores: false, generateSagas: false,
+      generateEvents: false, overwrite: true, dryRun: true, verbose: true,
+      peers: [{ name: 'p', path: './p' }],
     });
   });
 
-  it('propagates a malformed reference rather than dropping it', () => {
-    expect(() => peerOverride(['no-equals-sign'])).toThrow(/<name>=<path>/);
+  it('propagates a malformed peer reference rather than dropping it', () => {
+    expect(() => cliOverrides({ peer: ['no-equals-sign'] }, passed('peer'))).toThrow(/<name>=<path>/);
   });
 });
 
-describe('loadConfig — peers', () => {
-  const writeConfigWithPeers = () => {
-    writeFileSync(
-      join(tempRoot, 'exeris-codegen.json'),
-      JSON.stringify({ peers: [{ name: 'billing', path: '../billing/contract' }] }),
-    );
+describe('loadConfig — a config file survives untyped flags', () => {
+  const writeConfig = (body: Record<string, unknown>) => {
+    writeFileSync(join(tempRoot, 'exeris-codegen.json'), JSON.stringify(body));
     process.chdir(tempRoot);
   };
 
-  it('keeps the config file\'s peers when no --peer was passed', () => {
-    writeConfigWithPeers();
-    expect(loadConfig({ ...peerOverride([]) }).peers).toEqual([
-      { name: 'billing', path: '../billing/contract' },
-    ]);
+  it("keeps the file's apiBasePath when --api-base was not typed", () => {
+    writeConfig({ apiBasePath: '/from-config' });
+    expect(loadConfig(cliOverrides({ apiBase: '/api' }, nothingPassed)).apiBasePath).toBe('/from-config');
   });
 
-  it('lets --peer replace the config file\'s peers', () => {
-    writeConfigWithPeers();
-    expect(loadConfig({ ...peerOverride(['shipping=./s']) }).peers).toEqual([
-      { name: 'shipping', path: './s' },
-    ]);
+  it("keeps the file's peers when --peer was not passed", () => {
+    writeConfig({ peers: [{ name: 'billing', path: '../billing/contract' }] });
+    expect(loadConfig(cliOverrides({ peer: [] }, nothingPassed)).peers)
+      .toEqual([{ name: 'billing', path: '../billing/contract' }]);
   });
 
-  it('defaults to no peers when neither declares any', () => {
+  it("keeps the file's generateZod:false when --no-zod was not typed", () => {
+    writeConfig({ generateZod: false });
+    expect(loadConfig(cliOverrides({ zod: true }, nothingPassed)).generateZod).toBe(false);
+  });
+
+  it('lets a typed flag replace the file value', () => {
+    writeConfig({ apiBasePath: '/from-config', peers: [{ name: 'billing', path: './b' }] });
+    const config = loadConfig(cliOverrides({ apiBase: '/typed', peer: ['shipping=./s'] }, passed('apiBase', 'peer')));
+    expect(config.apiBasePath).toBe('/typed');
+    expect(config.peers).toEqual([{ name: 'shipping', path: './s' }]);
+  });
+
+  // The default the CLI must NOT re-introduce: '' so the emitted client requests what the
+  // emitted kernel router serves (#166). A CLI default of '/api' made every generated app 404.
+  it('falls back to the schema default of an empty apiBasePath, never /api', () => {
     process.chdir(tempRoot);
-    expect(loadConfig({ ...peerOverride(undefined) }).peers).toEqual([]);
+    expect(loadConfig(cliOverrides({ apiBase: '/api' }, nothingPassed)).apiBasePath).toBe('');
   });
 });

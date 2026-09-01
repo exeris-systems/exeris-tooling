@@ -61,7 +61,9 @@ exeris-gen generate [options]
 Options:
   -i, --input <path>     Input path for metadata JSON files (default: "target/classes/exeris-metadata")
   -o, --output <path>    Output directory for generated code (default: "src/app/generated")
-  --api-base <path>      API base path (default: "/api")
+  --api-base <path>      Prefix in front of every generated service URL (default: "" —
+                         the emitted client requests exactly what the emitted
+                         kernel router serves)
   --framework <name>     Target framework: angular, react, vue (default: "angular")
   --styling <name>       Style system: tailwind, material, bootstrap, none (default: "tailwind")
   --no-zod               Skip Zod schema generation
@@ -89,7 +91,10 @@ Options:
 
 ## Configuration File
 
-Create `exeris-codegen.json` in your project root:
+Create `exeris-codegen.json` in your project root. Every field below is also a CLI flag;
+a flag **only** overrides the file when you actually type it, so the file is the place to
+put settings you want to keep.
+
 
 ```json
 {
@@ -104,7 +109,7 @@ Create `exeris-codegen.json` in your project root:
   "generateServices": true,
   "generateForms": true,
   "generateLists": true,
-  "apiBasePath": "/api",
+  "apiBasePath": "",
   "peers": [
     { "name": "billing", "path": "../billing-service/target/contract" }
   ]

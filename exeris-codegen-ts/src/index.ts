@@ -19,7 +19,7 @@ import pc from 'picocolors';
 import { writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join, dirname, basename, resolve } from 'node:path';
 import { pruneOrphansAndWriteManifest, MANIFEST_NAME } from './output/manifest.js';
-import { loadConfig, peerOverride, type GeneratorConfig, DEFAULT_CONFIG } from './config.js';
+import { loadConfig, cliOverrides, type GeneratorConfig, DEFAULT_CONFIG } from './config.js';
 import { findMetadataFiles, loadMetadataFamilies } from './models/metadata-files.js';
 import { loadPeerContracts, type PeerContract } from './peers/peer-contract.js';
 import { buildGeneratedFiles } from './orchestrator.js';
@@ -50,7 +50,11 @@ program
   .description('Generate frontend code from domain metadata')
   .option('-i, --input <path>', 'Input path for metadata JSON files', 'target/classes/exeris-metadata')
   .option('-o, --output <path>', 'Output directory for generated code', 'src/app/generated')
-  .option('--api-base <path>', 'API base path', '/api')
+  .option(
+    '--api-base <path>',
+    'Prefix in front of every generated service URL. Default empty: the emitted client '
+      + 'requests exactly what the emitted kernel router serves.',
+  )
   .option('--app-name <name>', 'Application name (app title, route titles, package name)', 'Exeris Foundation')
   .option('--framework <name>', 'Target framework (angular, react, vue)', 'angular')
   .option('--styling <name>', 'Style system (tailwind, material, bootstrap, none)', 'tailwind')
@@ -72,28 +76,14 @@ program
   .option('--overwrite', 'Overwrite existing files')
   .option('--dry-run', 'Show what would be generated without writing files')
   .option('-v, --verbose', 'Verbose output')
-  .action(async (options: Record<string, unknown>) => {
+  .action(async (options: Record<string, unknown>, command: Command) => {
     try {
-      const config = loadConfig({
-        inputPath: options.input as string | undefined,
-        outputPath: options.output as string | undefined,
-        apiBasePath: options.apiBase as string | undefined,
-        appName: options.appName as string | undefined,
-        framework: options.framework as 'angular' | 'react' | 'vue' | undefined,
-        styling: options.styling as 'tailwind' | 'material' | 'bootstrap' | 'none' | undefined,
-        backend: options.backend as 'KERNEL' | undefined,
-        generateZod: options.zod !== false,
-        generateServices: options.services !== false,
-        generateForms: options.forms !== false,
-        generateLists: options.lists !== false,
-        generateStores: options.stores !== false,
-        generateSagas: options.sagas !== false,
-        generateEvents: options.events !== false,
-        overwrite: (options.overwrite as boolean) ?? false,
-        dryRun: (options.dryRun as boolean) ?? false,
-        verbose: (options.verbose as boolean) ?? false,
-        ...peerOverride(options.peer as string[] | undefined),
-      });
+      // Only the flags actually typed become overrides — see cliOverrides. A CLI default that
+      // always wins silently disables exeris-codegen.json, and once disabled it took the
+      // deliberate apiBasePath='' fix with it.
+      const config = loadConfig(
+        cliOverrides(options, (key) => command.getOptionValueSource(key) === 'cli'),
+      );
 
       await runGenerate(config);
     } catch (error) {

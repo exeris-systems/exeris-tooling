@@ -780,6 +780,21 @@ never-invoked emitter start emitting, and its output did not build.
       DTOs are **per-consumer copies** rather than a shared package. T42 is unblocked and gated on
       nothing: next action is the types slice itself.
 
+- [ ] **`npm start` proxies a prefix the emitted client no longer requests.** Measured while
+      fixing the CLI-override defect (which had every generated app calling `/api/<path>` at a
+      router serving `/<path>`). With `apiBasePath` correctly empty, the emitted service requests
+      `/orders`; the emitted `proxy.conf.json` still declares a single rule for `/api` with **no**
+      `pathRewrite`, and `package.json` wires it as `ng serve --proxy-config proxy.conf.json`. So
+      the rule now matches nothing and `npm start` cannot reach the backend at all — before the
+      fix it matched and forwarded `/api/orders` verbatim to a server serving `/orders`, i.e. it
+      404'd. Both states are broken; the prefix fix changes which way.
+
+      Not folded into that fix deliberately: `generateProxyConfig()` takes no arguments and cannot
+      know the entity paths, so making it correct is a **design** choice (one rule per
+      `effectivePath()`, or a single catch-all) rather than a one-line correction, and it wants its
+      own evidence — including what `ng serve` does with a path that collides with an Angular
+      route. `generateAppStructure` already has `domains` at the call site, so the input is there.
+
 - [ ] **Three config flags are declared, default `true`, and read by nothing.** `generateDetails`,
       `generateSagas`, `generateEvents` (`config.ts:54,60,63`); only `generateStores` is read, and
       only since #166 (`orchestrator.ts:164`). That a flag can default to `true` and be honoured by
