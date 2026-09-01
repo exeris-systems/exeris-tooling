@@ -248,22 +248,23 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "every author is forced to write (T44)"),
             new InertAttribute("Action", "permissions",
                     "the processor does not extract it, so ActionMetadata's permissions field is "
-                            + "empty in every build. One generator does read that field — "
-                            + "DomainMetadataGenerator copies it into the metadata JSON the frontend "
-                            + "generators consume — which is why this attribute is inert by an "
-                            + "extraction gap rather than by neglect: the consumer is there and the "
-                            + "value never arrives. Of the two access "
-                            + "attributes this is the half with a destination: the kernel's "
+                            + "empty in every build - and nothing would read it if it were filled. "
+                            + "The one generator that copies the field, DomainMetadataGenerator, is "
+                            + "constructed by no production code path, and the .meta.json it would "
+                            + "write is read by nothing. So this is not an extraction gap in front "
+                            + "of a waiting consumer: closing the extraction alone would still "
+                            + "produce no effect. Of the two access attributes this is nonetheless "
+                            + "the half with a destination in principle: the kernel's "
                             + "RouteRequirement decides on named scopes, so a permission is what a "
-                            + "generated URL-to-policy table would carry — and that table is this "
-                            + "repository's to emit and is not built (T51)"),
+                            + "generated URL-to-policy table would carry - and that table is this "
+                            + "repository's to emit and is not built (T53)"),
             new InertAttribute("Action", "roles",
                     "the processor does not extract it, and unlike permissions it has no route-level "
                             + "destination: the kernel decides a route on scopes and never on roles, "
                             + "and mapping ROLE_x onto a scope would stand up a second authority "
                             + "model at the edge. Roles resolve at the method level through the "
                             + "kernel's own @RequiresRole (kernel ADR-014). What this attribute "
-                            + "should compile into here, if anything, is undecided (T51)"),
+                            + "should compile into here, if anything, is undecided (T53)"),
             new InertAttribute("ActionParam", "description",
                     "the value reaches ActionParamMetadata in the JSON, but no emitter renders "
                             + "it — action-parameter generation reads only the parameter name and type"),
@@ -284,7 +285,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "every build and no emitter can read it. The destination exists: the "
                             + "kernel's RouteRequirement decides on named scopes, and a generated "
                             + "URL-to-policy table would carry these. That table is this "
-                            + "repository's to emit and is not built (T51)"),
+                            + "repository's to emit and is not built (T53)"),
             new InertAttribute("ExerisDomain", "roles",
                     "the processor does not extract it, and unlike permissions it has no route-level "
                             + "destination: the kernel decides a route on scopes and never on roles, "
@@ -292,7 +293,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "model at the edge. Roles resolve at the method level through the "
                             + "kernel's own @RequiresRole (kernel ADR-014). Note that the emitted "
                             + "Angular guards do check a role, but against a name this pipeline "
-                            + "invents rather than one declared here (T51)"));
+                            + "invents rather than one declared here (T53)"));
 
     /**
      * Hand-maintained registry of whole type-level annotations that are extracted
