@@ -68,6 +68,24 @@ export interface PeerContract {
  */
 const PEER_NAME = /^[a-zA-Z][a-zA-Z0-9]*(-[a-zA-Z0-9]+)*$/;
 
+/**
+ * Code-unit ordering, deliberately not `localeCompare`.
+ *
+ * These comparators decide the order of emitted files and of the lines in a peer's barrel, so
+ * they leak straight into emitted text. `localeCompare` is backed by ICU collation data that
+ * ships with the Node build and is versioned with it (`process.versions.icu`), and it disagrees
+ * with code-unit order on ordinary identifiers — `Order` vs `order`, `Zeta` vs `alpha` and
+ * `A` vs `_B` all invert. Two consumers on different Node builds would emit the same contract
+ * in different orders.
+ *
+ * Code-unit order has no such dependency, it is what `Array.prototype.sort` already gives the
+ * T13 manifest (`output/manifest.ts`), and it is what `String.compareTo` gives on the Java side
+ * — which the client slice's Java peer-DTO emitter will have to agree with.
+ */
+function byCodeUnit(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
 /** Raised for every malformed reference or untrustworthy artifact; the message names the peer. */
 export class PeerContractError extends Error {
   constructor(message: string) {
@@ -152,15 +170,15 @@ export function loadPeerContract(ref: PeerContractRef): PeerContract {
 
   return {
     name: ref.name,
-    domains: [...domains].sort((a, b) => a.entityName.localeCompare(b.entityName, 'en')),
-    enums: [...enums].sort((a, b) => a.name.localeCompare(b.name, 'en')),
+    domains: [...domains].sort((a, b) => byCodeUnit(a.entityName, b.entityName)),
+    enums: [...enums].sort((a, b) => byCodeUnit(a.name, b.name)),
   };
 }
 
 /** Loads every declared peer, sorted by declared name so emission order is deterministic. */
 export function loadPeerContracts(refs: PeerContractRef[]): PeerContract[] {
   return [...refs]
-    .sort((a, b) => a.name.localeCompare(b.name, 'en'))
+    .sort((a, b) => byCodeUnit(a.name, b.name))
     .map(loadPeerContract);
 }
 

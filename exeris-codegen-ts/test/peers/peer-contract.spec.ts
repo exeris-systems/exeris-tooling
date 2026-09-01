@@ -111,6 +111,16 @@ describe('loadPeerContract', () => {
       .toEqual(['Apex', 'Mid', 'Zone']);
   });
 
+  // Ordering leaks into emitted text: it decides file order and the lines of the peer's barrel.
+  // `localeCompare` is backed by the Node build's ICU collation table, and it INVERTS these
+  // pairs relative to code-unit order — so two consumers on different Node builds would emit
+  // the same contract in different orders. These names are chosen to fail under localeCompare.
+  it('orders by code unit, not by ICU collation', () => {
+    const dir = artifact('billing', { entities: ['order', 'Order', 'Zeta', 'alpha'] });
+    expect(loadPeerContract({ name: 'billing', path: dir }).domains.map((d) => d.entityName))
+      .toEqual(['Order', 'Zeta', 'alpha', 'order']);
+  });
+
   it('does not read the manifest as an entity', () => {
     const dir = artifact('billing', { entities: ['Order'] });
     expect(loadPeerContract({ name: 'billing', path: dir }).domains).toHaveLength(1);
