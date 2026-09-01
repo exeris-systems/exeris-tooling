@@ -93,6 +93,8 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
             ClassName.get("java.lang", "RuntimeException");
     /** JavaPoet parameter name for the {@code HttpExchange} every handler method takes. */
     private static final String EXCHANGE_PARAM = "exchange";
+    /** The 500 tail every deployment-fault refusal ends on (T41, T52, and the service-call catch). */
+    private static final String RESPOND_SERVER_ERROR = "exchange.respond($T.INTERNAL_SERVER_ERROR)";
 
     @Override
     public GeneratedFile generate(DomainMetadata metadata) {
@@ -597,7 +599,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                                 + "route demands identity. Bind HttpKernelProviders.HTTP_ROUTE_POLICY "
                                 + "around boot, or bind KernelProviders.STORAGE_CONTEXT around the "
                                 + "dispatch.")
-                .addStatement("exchange.respond($T.INTERNAL_SERVER_ERROR)", HTTP_STATUS)
+                .addStatement(RESPOND_SERVER_ERROR, HTTP_STATUS)
                 .build();
     }
 
@@ -626,7 +628,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                                 + "rather than a malformed body - so it is answered 500 and never "
                                 + "downgraded to 400 (ADR-036). Bind the registry around boot, or "
                                 + "register a decoder for the content-type this route receives.")
-                .addStatement("exchange.respond($T.INTERNAL_SERVER_ERROR)", HTTP_STATUS)
+                .addStatement(RESPOND_SERVER_ERROR, HTTP_STATUS)
                 .build();
     }
 
@@ -731,7 +733,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
     private static MethodSpec.Builder appendServerErrorCatch(MethodSpec.Builder method, String failMessage) {
         return method.nextControlFlow("catch ($T e)", RUNTIME_EXCEPTION)
                 .addStatement("LOG.log($T.ERROR, $S, e)", KernelScaffold.LOGGER_LEVEL, failMessage)
-                .addStatement("exchange.respond($T.INTERNAL_SERVER_ERROR)", HTTP_STATUS)
+                .addStatement(RESPOND_SERVER_ERROR, HTTP_STATUS)
                 .endControlFlow();
     }
 

@@ -690,14 +690,12 @@ class KernelHandlerGeneratorTest {
         // parseBody re-throws IllegalStateException unchanged so ADR-036 is honoured and an
         // absent decoder is never downgraded to 400. Nothing caught it either, so it escaped
         // the handler: the dispatcher answered a bare 500, empty body, nothing logged.
+        // ...and it stays 5xx, blaming the deployment rather than the caller.
         assertThat(handler)
+                .as("a missing decoder is a deployment fault, so it is answered, logged, and never a 400")
                 .contains("catch (IllegalStateException e)")
                 .contains("respondDecoderUnavailable(exchange, e)")
-                .contains("no request body decoder was available");
-
-        // Still 5xx, and still the deployment being blamed rather than the caller.
-        assertThat(handler)
-                .as("a missing decoder is a deployment fault, so the refusal must not become a 400")
+                .contains("no request body decoder was available")
                 .contains("private void respondDecoderUnavailable(HttpExchange exchange, "
                         + "IllegalStateException cause)")
                 .contains("exchange.respond(HttpStatus.INTERNAL_SERVER_ERROR)");
@@ -734,8 +732,9 @@ class KernelHandlerGeneratorTest {
         // The caller-fault branch is untouched: a body the decoder rejected is still the
         // caller's 400. Both catches must sit on the same try, or one of the two answers is lost.
         assertThat(handler.split("exchange\\.respond\\(HttpStatus\\.BAD_REQUEST\\)", -1).length - 1)
-                .as("three body decodes plus the three path-id guards on getById/update/delete "
-                        + "and the action's own path-id guard")
+                .as("three body decodes, the three path-id guards on getById/update/delete, "
+                        + "and one per action - appendPathIdGuard runs for both, not only the "
+                        + "one that carries a body")
                 .isEqualTo(8);
 
         int parse = handler.indexOf("parseBody(exchange, ApplyDiscountRequest.class)");
