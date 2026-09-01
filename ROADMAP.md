@@ -468,6 +468,30 @@ types) found the processor names **21 of ~44** annotations.
       Explicit label wins, then the class's simple name, then the name string; this mirrors how the
       node label itself is derived from `nodeClass` or the element's own simple name.
 
+      **Two edges on one field are refused, at the field.** `@GraphEdge` is repeatable and
+      `GraphEdgeMetadata` cannot express the result: `name` is the edge's identity — the graph-sync
+      generator's `assertDistinctEdgeNames` rejects a repeat — *and* the source of the entity getter
+      (`"get" + capitalize(name)`). Two edges on one field need the same getter and different
+      identities, and one `String` cannot be both. Extracting them would have built at `javac` time
+      and crashed `codegen-java` two stages later, with a message telling the author to "declare a
+      unique name" on an annotation that has no `name` attribute. Raised in review, after the first
+      version of this slice shipped a test documenting the shape as supported. The processor now
+      errors at the declaration, naming the real limitation; lifting it is an SDK ask —
+      `GraphEdgeMetadata` needs the field and the identity as separate components.
+
+      **`@GraphEdge` joined `EXTRACTED_ANNOTATIONS` and lost its `UNREAD_NOTES` entry** — also
+      caught in review, and it is the rule C0 wrote being broken by the next change to touch it:
+      "a new extraction must join the set in the same change." Without it, strict mode told every
+      author that a now-consumed annotation has no effect on emitted output. There is now a test
+      for that specific direction, which C0's own suite lacked.
+
+      **A latent Java/TS parity gap, recorded not fixed** (raised in the same review):
+      `exeris-codegen-ts` declares `GraphEdgeMetadataSchema` as `name`/`targetEntity`/`edgeType`/
+      `direction`, while the Java side serialises `name`/`targetLabel`/`relationType`. No TS
+      generator reads `graphMetadata`, so it is dormant — but `targetEntity` carries no
+      `.optional()`, so the first TS graph consumer built against that schema would fail to parse
+      real metadata. Fixing it belongs with that consumer, not here.
+
       **Eleven of the annotation's attributes have no component to carry them** — `direction`,
       `bidirectional`, `inverseType`, `weighted`, `weightField`, `description`, `properties`,
       `propertyMappings`, `staticProperties`, `computedProperties`, and `target`/`targetName` beyond
@@ -478,10 +502,10 @@ types) found the processor names **21 of ~44** annotations.
       Nothing reads either field today, so neither is a live defect; changing the `null` would
       change the emitted JSON shape, which is a decision rather than a tidy-up.
 
-      Evidence: 107 processor tests, up from 103; full reactor `clean install` green. Perturbation:
-      restoring the empty literal fails exactly the three tests that assert an edge, and leaves the
-      fourth — the one pinning that an entity with no edge still yields `[]` rather than `null` —
-      passing, as it should.
+      Evidence: 108 processor tests, up from 103; full reactor `clean install` green. Two
+      perturbations: restoring the empty edge literal fails the tests that assert an edge and leaves
+      the no-edge case passing, as it should; removing `GraphEdge` from `EXTRACTED_ANNOTATIONS`
+      fails the strict-mode guard and nothing else.
 
       *Counting note.* Earlier entries and PR bodies in this train said "115 processor"; that is
       Codegen Core. The modules are Annotation Processor 107, Codegen Core 115, Codegen Java 429,

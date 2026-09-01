@@ -444,8 +444,8 @@ class ExerisDomainProcessorTest {
         }
 
         @Test
-        @DisplayName("S3: a repeated @GraphEdge contributes both edges, each once")
-        void repeatedGraphEdgeIsExtracted() throws IOException {
+        @DisplayName("S3: two @GraphEdge on one field are refused at the field, not two stages later")
+        void repeatedGraphEdgeOnOneFieldIsRefused() {
             JavaFileObject source = JavaFileObjects.forSourceString(
                     "com.example.Order",
                     """
@@ -458,9 +458,6 @@ class ExerisDomainProcessorTest {
                     @ExerisDomain(module = "sales", path = "/orders")
                     @Graph(nodeClass = "Order")
                     public class Order {
-                        // Repeated on ONE field: javac replaces both with @GraphEdges and leaves no
-                        // direct @GraphEdge mirror — the same shape that dropped every repeated
-                        // @SagaStep before S2.
                         @GraphEdge(type = "OWNED_BY", targetLabel = "User")
                         @GraphEdge(type = "BILLED_TO", targetLabel = "Account")
                         private String partyId;
@@ -468,12 +465,20 @@ class ExerisDomainProcessorTest {
                     """
             );
 
-            JsonNode edges = readMetadataRoot(compileWithProcessor(source), "Order")
-                    .path("graphMetadata").path("edges");
+            Compilation compilation = compileWithProcessor(source);
 
-            assertThat(edges).hasSize(2);
-            assertThat(edges.get(0).path("relationType").asText()).isEqualTo("OWNED_BY");
-            assertThat(edges.get(1).path("relationType").asText()).isEqualTo("BILLED_TO");
+            // Raised in review of this PR, and it was right: the first version of this test
+            // asserted both edges extracted, which would have shipped metadata the consumer
+            // rejects. GraphEdgeMetadata.name is the edge's identity AND the source of the entity
+            // getter ("get" + capitalize) in KernelGraphSyncGenerator, whose assertDistinctEdgeNames
+            // throws on a repeat — so two edges on one field need one name to be both, and the
+            // metadata would have built at javac time and crashed codegen-java.
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorContaining("@GraphEdge is declared 2 times on field 'partyId'");
+            assertThat(compilation).hadErrorContaining("OWNED_BY, BILLED_TO");
+            // The generator's own message tells the author to "declare a unique name" on an
+            // annotation that has no name attribute. This one names the real limitation.
+            assertThat(compilation).hadErrorContaining("separate identity component");
         }
 
         @Test
@@ -1783,6 +1788,43 @@ class ExerisDomainProcessorTest {
             assertThat(unreadWarnings(compilation))
                     .as("no warning about a container the author never wrote (%s)", idiom)
                     .isZero();
+        }
+
+        @Test
+        @DisplayName("C0 + S3: @GraphEdge stops being reported the moment its extraction lands")
+        void strictIsQuietForAnAnnotationThatJustGainedAnExtraction() {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Graph;
+                    import eu.exeris.sdk.annotation.GraphEdge;
+
+                    @ExerisDomain(module = "sales", path = "/orders")
+                    @Graph(nodeClass = "Order")
+                    public class Order {
+                        @GraphEdge(type = "OWNED_BY", targetLabel = "User")
+                        private String ownerId;
+                    }
+                    """
+            );
+
+            Compilation compilation = javac()
+                    .withOptions("-Aexeris.strict=true")
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(source);
+
+            assertThat(compilation).succeeded();
+            // The rule EXTRACTED_ANNOTATIONS states — "a new extraction must join the set in the
+            // same change" — was written by C0 and broken by the very next change to touch it:
+            // S3 added the @GraphEdge extraction without updating the set, so strict mode told
+            // every author that a now-consumed annotation "has no effect on emitted output".
+            // Caught in review. This is the guard that was missing.
+            assertThat(hasUnreadWarningFor(compilation, "@GraphEdge"))
+                    .as("no unread warning for an annotation the processor now reads")
+                    .isFalse();
         }
 
         @Test

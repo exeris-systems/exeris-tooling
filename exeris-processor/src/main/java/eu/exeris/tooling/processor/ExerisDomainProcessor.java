@@ -18,6 +18,7 @@ import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.ElementFilter;
+import java.util.stream.Collectors;
 import javax.tools.Diagnostic;
 import javax.tools.FileObject;
 import javax.tools.StandardLocation;
@@ -374,9 +375,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      */
     private static final Set<String> EXTRACTED_ANNOTATIONS = Set.of(
             "Action", "ActionParam", "Bind", "Block", "CapabilityLifecycle", "CapabilityModule",
-            "DomainEvent", "EventSourced", "ExerisDomain", "Field", "Graph", "InternalApi",
-            "Provides", "Region", "Relationship", "Requires", "Saga", "SagaStep", "UI",
-            "Validation", "View");
+            "DomainEvent", "EventSourced", "ExerisDomain", "Field", "Graph", "GraphEdge",
+            "InternalApi", "Provides", "Region", "Relationship", "Requires", "Saga", "SagaStep",
+            "UI", "Validation", "View");
 
     /**
      * Reasons for the annotations {@link #EXTRACTED_ANNOTATIONS} does not contain. Optional by
@@ -407,14 +408,12 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                     "reserved. Its open question is cross-service exposure, which is the same fork "
                             + "T12 and the @View mesh binding sit on — so it is design-gated on a "
                             + "topology decision, not on an extractor"),
-            new UnreadAnnotation("GraphEdge",
-                    "@Graph is extracted at the type level, but the per-edge annotation is not: "
-                            + "GraphMetadata carries no edge list built from it, so declaring edges "
-                            + "this way changes no emitted artefact"),
             new UnreadAnnotation("GraphProperty",
-                    "same gap as @GraphEdge — the type-level @Graph is read, this is not"),
+                    "the type-level @Graph is read and, since S3, so is @GraphEdge — this one is "
+                            + "not, and GraphMetadata.properties is passed as null in consequence"),
             new UnreadAnnotation("GraphQuery",
-                    "same gap as @GraphEdge — the type-level @Graph is read, this is not"),
+                    "the type-level @Graph is read and, since S3, so is @GraphEdge — this one is "
+                            + "not, and GraphMetadata.queries is passed as an empty list"),
             new UnreadAnnotation("SagaTransition",
                     "KernelSagaGenerator emits transitions as a strict linear chain over "
                             + "SagaMetadata.steps() in declaration order and consults no transition "
@@ -2060,13 +2059,58 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                 edges.add(graphEdge(direct, enclosed));
             }
 
+            // Repeated on one field: javac replaced the singles with the container. Read it, so
+            // the repeat is seen rather than silently dropped — and then refuse it, because
+            // GraphEdgeMetadata cannot express it. See refuseRepeatedEdge.
             AnnotationMirror container = findAnnotation(enclosed, GRAPH_EDGES_FQN);
             if (container != null) {
-                forEachContained(container, contained -> edges.add(graphEdge(contained, enclosed)));
+                List<GraphEdgeMetadata> repeated = new ArrayList<>();
+                forEachContained(container, contained -> repeated.add(graphEdge(contained, enclosed)));
+                if (repeated.size() > 1) {
+                    refuseRepeatedEdge(enclosed, container, repeated);
+                } else {
+                    edges.addAll(repeated);
+                }
             }
         }
 
         return List.copyOf(edges);
+    }
+
+    /**
+     * Refuses two {@code @GraphEdge}s on one field, at the declaration, with the reason.
+     *
+     * <p><b>The record cannot express the shape, and the consumer proves it.</b>
+     * {@code GraphEdgeMetadata.name} does two jobs in {@code KernelGraphSyncGenerator}: it is the
+     * edge's identity — {@code assertDistinctEdgeNames} rejects a repeat outright — and it is how
+     * the entity getter is derived, {@code "get" + capitalize(name)}. Two edges on one field need
+     * the same getter and different identities, and one {@code String} cannot be both.
+     *
+     * <p>Accepting the shape here would produce metadata that builds at {@code javac} time and then
+     * fails the generator with "Duplicate edge names", two stages away from the declaration — and
+     * that generator's message tells the author to "declare a unique name" on an annotation that
+     * has no {@code name} attribute at all. Refusing at the field, naming the real limitation, is
+     * the better of the three available outcomes; silently dropping the repeats, which is what
+     * happened before this change, is the worst.
+     *
+     * <p>Lifting it is an SDK ask: {@code GraphEdgeMetadata} needs the field and the identity as
+     * separate components. Recorded in the ROADMAP.
+     */
+    private void refuseRepeatedEdge(Element field, AnnotationMirror container,
+                                    List<GraphEdgeMetadata> repeated) {
+        String types = repeated.stream()
+                .map(e -> e.relationType() != null ? e.relationType() : "(no type)")
+                .collect(Collectors.joining(", "));
+        messager.printMessage(
+                Diagnostic.Kind.ERROR,
+                DIAG_PREFIX + "@GraphEdge is declared " + repeated.size() + " times on field '"
+                        + field.getSimpleName() + "' (" + types + "), and the pipeline cannot carry "
+                        + "that. GraphEdgeMetadata identifies an edge by the field it is declared "
+                        + "on, and the graph-sync generator derives the entity getter from the same "
+                        + "value — so two edges on one field would need one name to be both. "
+                        + "Declare each edge on its own field, or open an SDK change giving "
+                        + "GraphEdgeMetadata a separate identity component.",
+                field, container);
     }
 
     /**
