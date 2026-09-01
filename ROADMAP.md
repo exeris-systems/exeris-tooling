@@ -919,7 +919,7 @@ never-invoked emitter start emitting, and its output did not build.
       `<entity>.meta.json` they would write either — the real processor↔generator contract is
       `exeris-metadata/<entity>.json`, a different file.
 
-      This is the [[emitters-wired-by-nobody]] pattern at package scale rather than at flag scale,
+      This is the "emitters wired by nobody" pattern at package scale rather than at flag scale,
       and it has already cost something: two places in this repo cited `DomainMetadataGenerator` as
       a live consumer of `@Action.permissions`, including a `-Aexeris.strict` reason that reaches a
       user's `javac` output. Both are corrected in this change.

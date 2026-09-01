@@ -105,7 +105,8 @@ one case that seemed to justify it.
 
 ### What re-adding the block would need
 
-A slice of its own — **T51** — with the three halves it lacks today (corrected 2026-08-28; the
+A slice of its own — **T53** (renumbered from T51 on 2026-09-01; the dog-food log had already
+minted T51 for a different finding) — with the three halves it lacks today (corrected 2026-08-28; the
 first of these was originally listed as a missing declaration surface):
 
 1. **Extraction** — the processor must read `@ExerisDomain(permissions)` and `@Action(permissions)`

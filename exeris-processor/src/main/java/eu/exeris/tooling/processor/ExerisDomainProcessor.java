@@ -248,7 +248,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "every author is forced to write (T44)"),
             new InertAttribute("Action", "permissions",
                     "the processor does not extract it, so ActionMetadata's permissions field is "
-                            + "empty in every build - and nothing would read it if it were filled. "
+                            + "empty in every build — and nothing would read it if it were filled. "
                             + "The one generator that copies the field, DomainMetadataGenerator, is "
                             + "constructed by no production code path, and the .meta.json it would "
                             + "write is read by nothing. So this is not an extraction gap in front "
@@ -256,7 +256,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "produce no effect. Of the two access attributes this is nonetheless "
                             + "the half with a destination in principle: the kernel's "
                             + "RouteRequirement decides on named scopes, so a permission is what a "
-                            + "generated URL-to-policy table would carry - and that table is this "
+                            + "generated URL-to-policy table would carry — and that table is this "
                             + "repository's to emit and is not built (T53)"),
             new InertAttribute("Action", "roles",
                     "the processor does not extract it, and unlike permissions it has no route-level "
