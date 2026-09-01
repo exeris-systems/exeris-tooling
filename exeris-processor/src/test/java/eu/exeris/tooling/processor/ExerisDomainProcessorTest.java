@@ -375,6 +375,140 @@ class ExerisDomainProcessorTest {
     class RelationshipAndGraphTests {
 
         @Test
+        @DisplayName("S3: @GraphEdge reaches graph.edges() instead of an always-empty list")
+        void graphEdgesAreExtracted() throws IOException {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Graph;
+                    import eu.exeris.sdk.annotation.GraphEdge;
+
+                    @ExerisDomain(module = "sales", path = "/orders")
+                    @Graph(nodeClass = "Order", syncToGraph = true)
+                    public class Order {
+                        @GraphEdge(type = "OWNED_BY", targetLabel = "User")
+                        private String ownerId;
+                    }
+                    """
+            );
+
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).succeeded();
+
+            JsonNode edges = readMetadataRoot(compilation, "Order").path("graphMetadata").path("edges");
+
+            // GraphMetadata was built as `new GraphMetadata(label, null, List.of(), List.of())` —
+            // the edge list was a literal empty, so KernelGraphSyncGenerator, which iterates
+            // graph.edges() to emit one GraphEdgeDescriptor apiece, had nothing to iterate in any
+            // build. Consumer ready, producer absent.
+            assertThat(edges).hasSize(1);
+            assertThat(edges.get(0).path("name").asText()).isEqualTo("ownerId");
+            assertThat(edges.get(0).path("targetLabel").asText()).isEqualTo("User");
+            assertThat(edges.get(0).path("relationType").asText()).isEqualTo("OWNED_BY");
+        }
+
+        @Test
+        @DisplayName("S3: the target class supplies the label when targetLabel is not written")
+        void graphEdgeTargetClassSuppliesTheLabel() throws IOException {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Graph;
+                    import eu.exeris.sdk.annotation.GraphEdge;
+
+                    @ExerisDomain(module = "sales", path = "/orders")
+                    @Graph(nodeClass = "Order")
+                    public class Order {
+                        // The obvious way to write an edge, and the one that used to produce a
+                        // descriptor pointing at the generator's "Node" fallback: GraphEdgeMetadata
+                        // holds one label, the annotation offers three ways to name a target.
+                        @GraphEdge(type = "OWNED_BY", target = User.class)
+                        private String ownerId;
+                    }
+
+                    class User {}
+                    """
+            );
+
+            JsonNode edges = readMetadataRoot(compileWithProcessor(source), "Order")
+                    .path("graphMetadata").path("edges");
+
+            assertThat(edges).hasSize(1);
+            assertThat(edges.get(0).path("targetLabel").asText()).isEqualTo("User");
+        }
+
+        @Test
+        @DisplayName("S3: two @GraphEdge on one field are refused at the field, not two stages later")
+        void repeatedGraphEdgeOnOneFieldIsRefused() {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Graph;
+                    import eu.exeris.sdk.annotation.GraphEdge;
+
+                    @ExerisDomain(module = "sales", path = "/orders")
+                    @Graph(nodeClass = "Order")
+                    public class Order {
+                        @GraphEdge(type = "OWNED_BY", targetLabel = "User")
+                        @GraphEdge(type = "BILLED_TO", targetLabel = "Account")
+                        private String partyId;
+                    }
+                    """
+            );
+
+            Compilation compilation = compileWithProcessor(source);
+
+            // Raised in review of this PR, and it was right: the first version of this test
+            // asserted both edges extracted, which would have shipped metadata the consumer
+            // rejects. GraphEdgeMetadata.name is the edge's identity AND the source of the entity
+            // getter ("get" + capitalize) in KernelGraphSyncGenerator, whose assertDistinctEdgeNames
+            // throws on a repeat — so two edges on one field need one name to be both, and the
+            // metadata would have built at javac time and crashed codegen-java.
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorContaining("@GraphEdge is declared 2 times on field 'partyId'");
+            assertThat(compilation).hadErrorContaining("OWNED_BY, BILLED_TO");
+            // The generator's own message tells the author to "declare a unique name" on an
+            // annotation that has no name attribute. This one names the real limitation.
+            assertThat(compilation).hadErrorContaining("separate identity component");
+        }
+
+        @Test
+        @DisplayName("S3: an entity declaring no edge yields an empty list, never null")
+        void graphWithoutEdgesYieldsAnEmptyList() throws IOException {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Graph;
+
+                    @ExerisDomain(module = "sales", path = "/orders")
+                    @Graph(nodeClass = "Order")
+                    public class Order {
+                        private String reference;
+                    }
+                    """
+            );
+
+            JsonNode graph = readMetadataRoot(compileWithProcessor(source), "Order").path("graphMetadata");
+
+            // KernelGraphSyncGenerator guards with `edges() != null && !isEmpty()`. Empty keeps
+            // that guard on its documented path; null would rely on the first half of it.
+            assertThat(graph.path("edges").isArray()).isTrue();
+            assertThat(graph.path("edges")).isEmpty();
+        }
+
+        @Test
         @DisplayName("Should extract @Relationship metadata")
         void shouldExtractRelationshipMetadata() throws IOException {
             JavaFileObject source = JavaFileObjects.forSourceString(
@@ -1390,12 +1524,6 @@ class ExerisDomainProcessorTest {
             );
         }
 
-        private JsonNode readMetadataRoot(Compilation compilation, String entity) throws IOException {
-            JavaFileObject metadataFile = compilation.generatedFile(
-                    StandardLocation.CLASS_OUTPUT, "exeris-metadata/" + entity + ".json")
-                    .orElseThrow();
-            return new ObjectMapper().readTree(readContent(metadataFile));
-        }
     }
 
     @Nested
@@ -1660,6 +1788,43 @@ class ExerisDomainProcessorTest {
             assertThat(unreadWarnings(compilation))
                     .as("no warning about a container the author never wrote (%s)", idiom)
                     .isZero();
+        }
+
+        @Test
+        @DisplayName("C0 + S3: @GraphEdge stops being reported the moment its extraction lands")
+        void strictIsQuietForAnAnnotationThatJustGainedAnExtraction() {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Graph;
+                    import eu.exeris.sdk.annotation.GraphEdge;
+
+                    @ExerisDomain(module = "sales", path = "/orders")
+                    @Graph(nodeClass = "Order")
+                    public class Order {
+                        @GraphEdge(type = "OWNED_BY", targetLabel = "User")
+                        private String ownerId;
+                    }
+                    """
+            );
+
+            Compilation compilation = javac()
+                    .withOptions("-Aexeris.strict=true")
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(source);
+
+            assertThat(compilation).succeeded();
+            // The rule EXTRACTED_ANNOTATIONS states — "a new extraction must join the set in the
+            // same change" — was written by C0 and broken by the very next change to touch it:
+            // S3 added the @GraphEdge extraction without updating the set, so strict mode told
+            // every author that a now-consumed annotation "has no effect on emitted output".
+            // Caught in review. This is the guard that was missing.
+            assertThat(hasUnreadWarningFor(compilation, "@GraphEdge"))
+                    .as("no unread warning for an annotation the processor now reads")
+                    .isFalse();
         }
 
         @Test
@@ -2860,6 +3025,19 @@ class ExerisDomainProcessorTest {
         return javac()
                 .withProcessors(new ExerisDomainProcessor())
                 .compile(sources);
+    }
+
+    /**
+     * The emitted metadata document for {@code entity}, parsed.
+     *
+     * <p>Outer-class rather than nested: the graph tests need the same reader the event tests
+     * already had, and a second copy of five lines is how two readers of one document drift.
+     */
+    private JsonNode readMetadataRoot(Compilation compilation, String entity) throws IOException {
+        JavaFileObject metadataFile = compilation.generatedFile(
+                StandardLocation.CLASS_OUTPUT, "exeris-metadata/" + entity + ".json")
+                .orElseThrow();
+        return new ObjectMapper().readTree(readContent(metadataFile));
     }
 
     private String readContent(JavaFileObject file) throws IOException {
