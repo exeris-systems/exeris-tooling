@@ -80,7 +80,22 @@ after every generated route is registered.
 5. **`configureRoutes(HttpRouter.Builder)` runs after every generated route and before `build()`.**
    A hand-written route can add to the table; it can never silently displace a generated one.
    Enforced by an ordering assertion, not by convention.
-6. **The emitted `main()` says that it is not polymorphic.** `main` does `new Application().run()`,
+6. **`decorate(HttpRouter)` runs between `build()` and the handler slot.** *(Added 0.9.0 — the
+   T49 residual.)* Whatever it returns is what the kernel serves; the default returns the router
+   unchanged. It is the sibling of obligation 5 — same object, one line later — and exists because
+   a per-request concern the generated code does not own (a tenant binding, a decoder registry, an
+   allocator) otherwise forces a consumer to reimplement `Application#run()`, once per application.
+
+   **A wrapper and a stream route are mutually exclusive, and the emitted app enforces it.** The
+   kernel resolves a streaming route only when the bound handler *is* an `HttpRouter`
+   (`handler instanceof HttpRouter`). Any wrapper erases that type, so every `streamRoute` would
+   register and then never match — silently, since registration succeeds either way, which is why
+   this bug class needed a real boot to find the first time. An application that emits a stream
+   route therefore **refuses to boot** when `decorate` returns a non-`HttpRouter`, naming both
+   halves; an application that emits none carries no guard. This is a kernel constraint rather than
+   a tooling choice: a stream resolved through an interface a decorator could delegate would remove
+   the trade-off, and that is the standing upstream ask.
+7. **The emitted `main()` says that it is not polymorphic.** `main` does `new Application().run()`,
    so a subclass overriding `components(...)` is *not* reached through it. The emitted javadoc states
    this and shows the subclass's own `main`. An extension hook whose obvious entry point silently
    ignores it is the failure class this repo keeps paying for; it gets named in the output.
