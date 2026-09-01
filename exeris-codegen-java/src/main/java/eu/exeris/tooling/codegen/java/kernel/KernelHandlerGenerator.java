@@ -93,6 +93,8 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
             ClassName.get("java.lang", "RuntimeException");
     /** JavaPoet parameter name for the {@code HttpExchange} every handler method takes. */
     private static final String EXCHANGE_PARAM = "exchange";
+    /** The 500 tail every deployment-fault refusal ends on (T41, T52, and the service-call catch). */
+    private static final String RESPOND_SERVER_ERROR = "exchange.respond($T.INTERNAL_SERVER_ERROR)";
 
     @Override
     public GeneratedFile generate(DomainMetadata metadata) {
@@ -201,6 +203,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
             handlerBuilder.addMethod(buildRespondTenantUnbound(entityLower));
         }
         handlerBuilder.addMethod(buildExtractPathId());
+        handlerBuilder.addMethod(buildRespondDecoderUnavailable(entityLower));
         handlerBuilder.addMethod(buildParseBody());
 
         TypeSpec handler = handlerBuilder.build();
@@ -466,6 +469,9 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                     .nextControlFlow("catch ($T e)", ILLEGAL_ARGUMENT_EXCEPTION)
                     .addStatement("exchange.respond($T.BAD_REQUEST)", HTTP_STATUS)
                     .addStatement("return")
+                    .nextControlFlow("catch ($T e)", ILLEGAL_STATE_EXCEPTION)
+                    .addStatement("respondDecoderUnavailable(exchange, e)")
+                    .addStatement("return")
                     .endControlFlow();
         }
 
@@ -593,7 +599,36 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                                 + "route demands identity. Bind HttpKernelProviders.HTTP_ROUTE_POLICY "
                                 + "around boot, or bind KernelProviders.STORAGE_CONTEXT around the "
                                 + "dispatch.")
-                .addStatement("exchange.respond($T.INTERNAL_SERVER_ERROR)", HTTP_STATUS)
+                .addStatement(RESPOND_SERVER_ERROR, HTTP_STATUS)
+                .build();
+    }
+
+    /**
+     * Emits the shared "no decoder could read this body" refusal (T52).
+     *
+     * <p>{@code parseBody} re-throws {@link IllegalStateException} unchanged so an absent
+     * decoder registry is never downgraded to 400 (ADR-036), which makes this the one
+     * {@code parseBody} failure a handler must answer as a deployment fault. Hence 500, and
+     * hence a message naming the wiring rather than the request: a caller whose body was never
+     * read has nothing to correct. The cause is logged rather than returned, so no internals
+     * reach the client — the same contract as {@link #buildRespondTenantUnbound}.
+     */
+    private static MethodSpec buildRespondDecoderUnavailable(String entityLower) {
+        return MethodSpec.methodBuilder("respondDecoderUnavailable")
+                .addJavadoc("Refuses a request whose body no registered decoder could read.\n")
+                .addModifiers(Modifier.PRIVATE)
+                .addParameter(HTTP_EXCHANGE, EXCHANGE_PARAM)
+                .addParameter(ILLEGAL_STATE_EXCEPTION, "cause")
+                .addStatement("LOG.log($T.ERROR, $S, cause)", KernelScaffold.LOGGER_LEVEL,
+                        "Refusing " + entityLower + " request: no request body decoder was "
+                                + "available. The kernel resolves one from HttpKernelProviders."
+                                + "HTTP_REQUEST_BODY_DECODER_REGISTRY, which the HTTP subsystem "
+                                + "binds around the dispatch. An absent registry, or no decoder "
+                                + "registered for the request content-type, is a deployment fault "
+                                + "rather than a malformed body - so it is answered 500 and never "
+                                + "downgraded to 400 (ADR-036). Bind the registry around boot, or "
+                                + "register a decoder for the content-type this route receives.")
+                .addStatement(RESPOND_SERVER_ERROR, HTTP_STATUS)
                 .build();
     }
 
@@ -611,14 +646,23 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                 .endControlFlow();
     }
 
-    /** Emits the shared "decode the request body into {@code entity} or 400" guard.
-     *  Leaves {@code entity} in scope for the caller. */
+    /** Emits the shared "decode the request body into {@code entity} or fail" guard.
+     *  Leaves {@code entity} in scope for the caller.
+     *
+     *  <p>Two catches, because {@code parseBody} raises two failures that mean opposite
+     *  things: {@link IllegalArgumentException} is the body the caller sent (400), and
+     *  {@link IllegalStateException} is the decoder this deployment did not bind (500,
+     *  never downgraded — ADR-036). Both must be caught here; an uncaught one leaves the
+     *  handler and is answered by the dispatcher with no body and no log. */
     private static void appendBodyParseGuard(MethodSpec.Builder method, ClassName entityType) {
         method.addStatement("$T entity", entityType)
                 .beginControlFlow("try")
                 .addStatement("entity = parseBody(exchange, $T.class)", entityType)
                 .nextControlFlow("catch ($T e)", ILLEGAL_ARGUMENT_EXCEPTION)
                 .addStatement("exchange.respond($T.BAD_REQUEST)", HTTP_STATUS)
+                .addStatement("return")
+                .nextControlFlow("catch ($T e)", ILLEGAL_STATE_EXCEPTION)
+                .addStatement("respondDecoderUnavailable(exchange, e)")
                 .addStatement("return")
                 .endControlFlow();
     }
@@ -689,7 +733,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
     private static MethodSpec.Builder appendServerErrorCatch(MethodSpec.Builder method, String failMessage) {
         return method.nextControlFlow("catch ($T e)", RUNTIME_EXCEPTION)
                 .addStatement("LOG.log($T.ERROR, $S, e)", KernelScaffold.LOGGER_LEVEL, failMessage)
-                .addStatement("exchange.respond($T.INTERNAL_SERVER_ERROR)", HTTP_STATUS)
+                .addStatement(RESPOND_SERVER_ERROR, HTTP_STATUS)
                 .endControlFlow();
     }
 

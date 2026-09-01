@@ -852,6 +852,40 @@ never-invoked emitter start emitting, and its output did not build.
       in the file it decorates. `Directive`, `Injectable`, `Pipe`, `Input`, `Output`, `Signal` and
       `Type` are the same shape. Alias unconditionally rather than maintaining a reserved-word list
       against every Angular release.
+- [x] **T52 — a decoder fault escaped the handler unanswered and unlogged.** Shipped 0.9.0. The
+      finding files two failures under one number, and only one of them was ours.
+
+      *The caller-fault half needs no change here.* The log predicts that when kernel 0.12 ships
+      `RequestBodyDecodeException`, "an unmodified generated handler will let it escape exactly as
+      today". Measured against this tree, it will not: `parseBody` already converts every non-`ISE`
+      `RuntimeException` into `IllegalArgumentException`, and the new exception extends
+      `ExerisKernelException extends RuntimeException` without passing through
+      `IllegalStateException` — so it lands on the existing `catch (IllegalArgumentException) → 400`
+      of its own accord. That half closes on **B0**, the pin bump, with no emitter change. The log
+      was written against an older emission and its premise did not survive re-measurement.
+
+      *The deployment-fault half was real and is what shipped.* `parseBody` re-throws
+      `IllegalStateException` unchanged so an absent decoder registry is never downgraded to 400
+      (ADR-036) — and nothing caught it either. Both call sites guarded only
+      `IllegalArgumentException`, so the exception left the handler, the dispatcher answered a bare
+      500 with an empty body, and no line was logged anywhere. Right status, no diagnosis: the same
+      shape as the `200 []` that `respondTenantUnbound` replaced, which is why the fix is built to
+      match it — a `respondDecoderUnavailable(exchange, cause)` that answers 500 and logs a message
+      naming `HTTP_REQUEST_BODY_DECODER_REGISTRY` rather than the request, because a caller whose
+      body was never read has nothing to correct. Both call sites are covered: the shared CRUD
+      `appendBodyParseGuard` and the action handler's own inline decode, which is a second site a
+      one-place fix would have missed exactly as T41 missed the action handlers before T45.
+
+      Adds no import to emitted code (`IllegalStateException` is `java.lang` and already in
+      `parseBody`), so it creates no new requirement on the consumer build (ADR-060).
+
+      **Numbering collision, for the founder.** The dog-food reconciliation below states the `T*`
+      space is *one* namespace and that tooling does not renumber somebody else's evidence. It is
+      currently violated in this file: **T51** here is "five layers of an authorization story",
+      while T51 in the log is "a hand-wired composition inherits an unpublished list of required
+      scopes" — two findings, one number — and the log's **T52** had no entry here at all until
+      this one. One of the two T51s needs to move, and which is not this repo's call to make alone.
+
 - [x] **T50 — the build fails when the generated app has no driver to run on (ADR-078).** Shipped
       0.8.0, taking the finding's own second option. Checking the premise against the **published
       jars** rather than the source tree sharpened it: `exeris-kernel-core-0.11.0.jar` carries
