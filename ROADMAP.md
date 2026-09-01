@@ -2302,6 +2302,13 @@ Proposals, highest return-on-effort first:
 
 ---
 
+## 0.9.0 sequencing
+
+Item-level detail stays in the entries above; [`docs/0.9.0-plan.md`](docs/0.9.0-plan.md) holds the
+ordering and the gates, because 0.9.0's defining property is that a large share of it is not this
+repo's to unblock — neither `exeris-kernel` nor `exeris-sdk` has a final `0.12.0` yet, and the
+no-cross-repo-SNAPSHOT rule below applies to pinning as much as to tagging.
+
 ## Versioning policy
 
 - **0.x** — generated code shape may change in any release; consumers regenerate after every tooling bump
