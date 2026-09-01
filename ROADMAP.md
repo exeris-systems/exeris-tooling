@@ -949,7 +949,7 @@ T30 (emitted imports as undeclared build requirements — the general case behin
       emitted comment. Note the `ng test` gate **cannot** catch this class — a silently-dropped
       assertion is still green — so the guards are content assertions in `spec-gen.spec.ts`.
 
-      Original entry below.
+      Original finding below.
       **T2 — the FE spec slice.** The half of the generated-test story that did not ship in 0.7.0
       (the Java half is complete — slices a–f, ADR-058). Deferred at the 0.7.0 cut on 2026-08-18.
       It is not "emit some spec files": the emitted app declares `"test": "ng test"` and ships
