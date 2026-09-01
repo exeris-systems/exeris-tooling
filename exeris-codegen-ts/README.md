@@ -70,6 +70,10 @@ Options:
   --no-services          Skip service generation
   --no-forms             Skip form component generation
   --no-lists             Skip list component generation
+  --no-details           Skip detail component generation
+  --no-stores            Skip Signal store generation
+  --no-sagas             Skip saga state-machine generation
+  --no-events            Skip domain-event handler generation
   --tests                Emit specs for the generated surface plus the Vitest runner that
                          executes them (adds a test target, tsconfig.spec.json and the
                          vitest + jsdom devDependencies). Opt-in; off by default.
@@ -169,6 +173,11 @@ src/app/generated/
 │   ├── product-list.component.ts
 │   ├── customer-form.component.ts
 │   └── customer-list.component.ts
+├── events/                   # domain-event handlers + the shared bus
+│   ├── event-bus.service.ts
+│   └── order.events.ts
+├── sagas/                    # one state machine per entity declaring @Saga
+│   └── order.saga.ts
 ├── peers/                    # one self-contained tree per --peer, never merged above
     └── billing/
         ├── types/
@@ -197,6 +206,32 @@ Off by default, because turning it on adds to *your* `package.json`. It emits, i
 
 Specs are excluded from `tsconfig.app.json`, so a production `ng build` never requires the test
 dependencies.
+
+## Saga state machines
+
+An entity declaring `@Saga` gets `sagas/<entity>.saga.ts`: a `providedIn: 'root'` signal machine
+holding the declared steps in order, their status, progress, an estimated time remaining, and
+screen-reader announcements — everything a progress UI needs, derived from the metadata you
+already wrote.
+
+**It tracks a run; it does not perform one.** No transport is emitted, because there is nothing
+to emit it against: the generated backend registers no saga route, the generated OpenAPI
+document describes none, and the kernel flow SPI exposes no per-execution handle to build one
+from. Saga *orchestration* is generated on the Java side (`<Entity>SagaOrchestrator`, driven by
+the flow engine); how a browser observes it is your application's decision.
+
+So you drive it:
+
+```typescript
+const { executionId } = await this.myBackend.startFulfilment(orderId);
+this.saga.begin(orderId, executionId);
+
+// then on every update you receive — poll, SSE frame, websocket message, in-process call:
+this.saga.applyStatus(snapshot);   // SagaStatusSnapshot
+```
+
+`begin` / `failToStart` / `cancelling` / `retrying` / `reset` are the remaining transitions. The
+machine, and the `SagaStatusSnapshot` shape it folds, are exported from the app barrel.
 
 ## Type Mapping
 

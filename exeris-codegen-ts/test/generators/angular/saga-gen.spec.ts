@@ -1,8 +1,14 @@
 /**
  * Coverage for src/generators/angular/saga-gen.ts — SagaGenerator emits
  * a per-domain saga UI state machine with @Injectable Signal-based
- * step tracking, polling, accessibility announcements, and computed
- * progress estimation.
+ * step tracking, accessibility announcements, and computed progress
+ * estimation.
+ *
+ * The transport assertions this file used to carry are gone with the transport (0.8.0). They
+ * pinned a client for `/api/v1/sagas/<entity>` — a contract no emitted route serves, no emitted
+ * OpenAPI document lists, and the kernel flow SPI cannot back — plus the 1-second poll against
+ * it. The `emits no transport` block below pins their absence instead, so re-adding a fetch is
+ * a red test rather than a silent regression.
  *
  * Unique-to-saga-gen contracts pinned:
  *   - artifactType=SAGA, supportedBackends=[] (all backends)
@@ -18,7 +24,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { SagaGenerator, generateSaga } from '../../../src/generators/angular/saga-gen.js';
+import { SagaGenerator, generateSaga, sagaMachineName } from '../../../src/generators/angular/saga-gen.js';
 import {
   createGeneratorContext,
   type GeneratorContext,
@@ -105,17 +111,19 @@ describe('SagaGenerator emitted content — top-level types + class skeleton', (
     }), CTX)!.content;
   }
 
-  it('imports Angular core signals + LiveAnnouncer + HttpClient + firstValueFrom', () => {
+  it('imports Angular core signals + LiveAnnouncer, and nothing for a transport it no longer has', () => {
     const content = sagaContent();
 
     expect(content).toContain('Injectable,');
     expect(content).toContain('signal,');
     expect(content).toContain('computed,');
-    expect(content).toContain('effect,');
+    // `effect` was in this import list and called nowhere — dead in every emitted file since the
+    // generator was written, unnoticed because nothing ever compiled its output.
+    expect(content).not.toContain('effect,');
     expect(content).toContain("from '@angular/core';");
     expect(content).toContain("import { LiveAnnouncer } from '@angular/cdk/a11y';");
-    expect(content).toContain("import { HttpClient } from '@angular/common/http';");
-    expect(content).toContain("import { firstValueFrom } from 'rxjs';");
+    expect(content).not.toContain('@angular/common/http');
+    expect(content).not.toContain("from 'rxjs'");
   });
 
   it('emits SagaState union with 6 documented values', () => {
@@ -145,14 +153,22 @@ describe('SagaGenerator emitted content — top-level types + class skeleton', (
     expect(content).toContain('state: SagaState;');
   });
 
-  it('@Injectable + <PascalSaga>StateMachine class with the right baseUrl + http/liveAnnouncer inject', () => {
+  it('@Injectable + <PascalSaga>StateMachine class injecting only the announcer', () => {
     const content = sagaContent();
 
     expect(content).toContain("@Injectable({ providedIn: 'root' })");
     expect(content).toContain('export class OrderFulfillmentStateMachine {');
-    expect(content).toContain('private readonly http = inject(HttpClient);');
     expect(content).toContain('private readonly liveAnnouncer = inject(LiveAnnouncer);');
-    expect(content).toContain("private readonly baseUrl = '/api/v1/sagas/order';");
+    expect(content).not.toContain('inject(HttpClient)');
+    expect(content).not.toContain('baseUrl');
+  });
+
+  it('exports the SagaStatusSnapshot the caller feeds applyStatus', () => {
+    const content = sagaContent();
+
+    expect(content).toContain('export interface SagaStatusSnapshot {');
+    expect(content).toContain('state: SagaState;');
+    expect(content).toContain('applyStatus(status: SagaStatusSnapshot): void {');
   });
 
   it('saga.name fallback: empty string → <entityName>Saga (Zod requires name as string, so undefined is unreachable; empty-string is the next-falsy value)', () => {
@@ -255,7 +271,7 @@ describe('SagaGenerator signal surface', () => {
   });
 });
 
-// ---------- actions: start / cancel / retry / reset ----------
+// ---------- actions: begin / failToStart / cancelling / retrying / reset ----------
 
 describe('SagaGenerator action methods', () => {
   const gen = new SagaGenerator();
@@ -267,48 +283,54 @@ describe('SagaGenerator action methods', () => {
     }), CTX)!.content;
   }
 
-  it('start: async + canStart guard + reset/_entityId/_state/_startedAt + http.post → executionId + startPolling', () => {
+  it('begin: canStart guard + records the caller-supplied executionId + RUNNING/startedAt', () => {
     const c = content();
 
-    expect(c).toContain('async start(entityId: string, params?: Record<string, unknown>): Promise<string> {');
+    expect(c).toContain('begin(entityId: string, executionId: string): void {');
     expect(c).toContain('if (!this.canStart()) {');
     expect(c).toContain('throw new Error(`Cannot start saga in state: ${this._state()}`);');
     expect(c).toContain('this.reset();');
     expect(c).toContain('this._entityId.set(entityId);');
+    // The id comes from the caller's own start call — nothing here performs one.
+    expect(c).toContain('this._executionId.set(executionId);');
     expect(c).toContain("this._state.set('RUNNING');");
     expect(c).toContain('this._startedAt.set(new Date());');
-    expect(c).toContain('$localize`:@@saga.started:Saga started`');
-    expect(c).toContain('this.http.post<{ executionId: string }>(');
-    expect(c).toContain('this._executionId.set(response.executionId);');
-    expect(c).toContain('this.startPolling();');
+    expect(c).toContain("this.announce('Saga started', 'polite');");
   });
 
-  it('cancel: throws when no executionId; otherwise POSTs to /cancel + sets COMPENSATING', () => {
+  it('failToStart: the caller-owned start errored before any step reported', () => {
     const c = content();
 
-    expect(c).toContain('async cancel(): Promise<void> {');
+    expect(c).toContain('failToStart(error: string): void {');
+    expect(c).toContain("this._state.set('FAILED');");
+    expect(c).toContain('this._error.set(error);');
+    expect(c).toContain("this.announce('Saga failed to start', 'assertive');");
+  });
+
+  it('cancelling: throws without an executionId; otherwise sets COMPENSATING', () => {
+    const c = content();
+
+    expect(c).toContain('cancelling(): void {');
     expect(c).toContain("throw new Error('No saga execution to cancel');");
     expect(c).toContain("this._state.set('COMPENSATING');");
-    expect(c).toContain('$localize`:@@saga.cancelling:Cancelling saga...`');
-    expect(c).toContain('${execId}/cancel');
+    expect(c).toContain("this.announce('Cancelling saga...', 'polite');");
   });
 
-  it('retry: throws unless state===FAILED + has executionId; POSTs to /retry + restartPolling', () => {
+  it('retrying: throws unless state===FAILED + has executionId; returns to RUNNING', () => {
     const c = content();
 
-    expect(c).toContain('async retry(): Promise<void> {');
-    expect(c).toContain("if (!execId || this._state() !== 'FAILED') {");
+    expect(c).toContain('retrying(): void {');
+    expect(c).toContain("if (!this._executionId() || this._state() !== 'FAILED') {");
     expect(c).toContain("throw new Error('Cannot retry saga');");
     expect(c).toContain("this._state.set('RUNNING');");
     expect(c).toContain('this._error.set(null);');
-    expect(c).toContain('${execId}/retry');
   });
 
-  it('reset: stops polling + resets all 8 signals to initial values', () => {
+  it('reset: resets all 8 signals to initial values (no polling left to stop)', () => {
     const c = content();
 
     expect(c).toContain('reset(): void {');
-    expect(c).toContain('this.stopPolling();');
+    expect(c).not.toContain('this.stopPolling();');
     expect(c).toContain('this._executionId.set(null);');
     expect(c).toContain('this._entityId.set(null);');
     expect(c).toContain("this._state.set('IDLE');");
@@ -319,9 +341,41 @@ describe('SagaGenerator action methods', () => {
   });
 });
 
-// ---------- polling: startPolling / stopPolling / pollStatus ----------
+// ---------- the transport that is deliberately absent ----------
 
-describe('SagaGenerator polling lifecycle', () => {
+describe('SagaGenerator emits no transport', () => {
+  const gen = new SagaGenerator();
+
+  const c = gen.generate(domain({
+    entityName: 'Order',
+    sagaMetadata: { name: 'OrderSaga', steps: [{ name: 'reserveInventory' }] },
+  }), CTX)!.content;
+
+  // Measured before this generator was wired: zero saga routes in the emitted Java application,
+  // zero saga paths in the emitted OpenAPI, and no per-execution handle anywhere in the kernel
+  // flow SPI. A client for those URLs would 404 in every generated app.
+  it.each([
+    ['a saga base URL', '/api/v1/sagas'],
+    ['a start endpoint', '/start'],
+    ['a cancel endpoint', '/cancel'],
+    ['a retry endpoint', '/retry'],
+    ['a status endpoint', '/status'],
+    ['an HttpClient', 'HttpClient'],
+    ['a poll timer', 'setInterval'],
+  ])('emits no %s', (_label, needle) => {
+    expect(c).not.toContain(needle);
+  });
+
+  // `$localize` is a global the emitted app cannot resolve: it declares "polyfills": [] and no
+  // @angular/localize. This was 14 TS2304 errors on the first `ng build` after wiring.
+  it('emits no $localize', () => {
+    expect(c).not.toContain('$localize');
+  });
+});
+
+// ---------- applyStatus: the consumer-driven fold ----------
+
+describe('SagaGenerator applyStatus', () => {
   const gen = new SagaGenerator();
 
   function content() {
@@ -331,30 +385,10 @@ describe('SagaGenerator polling lifecycle', () => {
     }), CTX)!.content;
   }
 
-  it('startPolling sets setInterval at 1000ms after stopPolling guard', () => {
+  it('merges snapshot steps onto local steps + announces step changes + handles terminal states', () => {
     const c = content();
 
-    expect(c).toContain('private startPolling(): void {');
-    expect(c).toContain('this.stopPolling();');
-    expect(c).toContain('this.pollingInterval = setInterval(() => {');
-    expect(c).toContain('this.pollStatus();');
-    expect(c).toContain('}, 1000);');
-  });
-
-  it('stopPolling clears the interval guard', () => {
-    const c = content();
-
-    expect(c).toContain('private stopPolling(): void {');
-    expect(c).toContain('if (this.pollingInterval) {');
-    expect(c).toContain('clearInterval(this.pollingInterval);');
-    expect(c).toContain('this.pollingInterval = null;');
-  });
-
-  it('pollStatus: GET status + merges server steps onto local steps + announces step changes + handles terminal states', () => {
-    const c = content();
-
-    expect(c).toContain('private async pollStatus(): Promise<void> {');
-    expect(c).toContain('${execId}/status');
+    expect(c).toContain('applyStatus(status: SagaStatusSnapshot): void {');
     // Merge logic
     expect(c).toContain('const serverStep = status.steps.find(s => s.name === step.name);');
     expect(c).toContain('status: serverStep.status,');
@@ -362,16 +396,14 @@ describe('SagaGenerator polling lifecycle', () => {
     // Current step index update
     expect(c).toContain("const runningIdx = updatedSteps.findIndex(s => s.status === 'RUNNING');");
     // Step-change announcement
-    expect(c).toContain('$localize`:@@saga.step.running:Running step: ${step.label}`');
+    expect(c).toContain('this.announce(`Running step: ${step.label}`, \'polite\');');
     // Terminal-state branches
     expect(c).toContain("if (status.state === 'COMPLETED' ||");
     expect(c).toContain("status.state === 'FAILED' ||");
     expect(c).toContain("status.state === 'COMPENSATED'");
-    expect(c).toContain('$localize`:@@saga.completed:Saga completed successfully`');
-    expect(c).toContain('$localize`:@@saga.failed:Saga failed`');
-    expect(c).toContain('$localize`:@@saga.compensated:Saga was compensated`');
-    // Doesn't crash on transient errors
-    expect(c).toContain("console.error('Failed to poll saga status:', err);");
+    expect(c).toContain("this.announce('Saga completed successfully', 'polite');");
+    expect(c).toContain("this.announce('Saga failed', 'assertive');");
+    expect(c).toContain("this.announce('Saga was compensated', 'polite');");
   });
 });
 
@@ -394,14 +426,15 @@ describe('SagaGenerator helper methods', () => {
     expect(c).toContain('this.liveAnnouncer.announce(message, priority);');
   });
 
-  it('extractErrorMessage: 3-arm helper (Error / message-bearing object / $localize fallback)', () => {
+  it('extractErrorMessage: 3-arm helper, public because the caller now holds the rejection', () => {
     const c = content();
 
-    expect(c).toContain('private extractErrorMessage(err: unknown): string {');
+    expect(c).toContain('extractErrorMessage(err: unknown): string {');
+    expect(c).not.toContain('private extractErrorMessage');
     expect(c).toContain('if (err instanceof Error) {');
     expect(c).toContain('return err.message;');
     expect(c).toContain("typeof err === 'object' && err !== null && 'message' in err");
-    expect(c).toContain('$localize`:@@error.unknown:An unknown error occurred`');
+    expect(c).toContain("return 'An unknown error occurred';");
   });
 });
 
@@ -420,7 +453,7 @@ describe('SagaGenerator step-definitions emission', () => {
     expect(content).toContain('private readonly _steps = signal<SagaStep[]>([]);');
   });
 
-  it('populated steps → SAGA_STEPS array with PENDING status + $localize label per step', () => {
+  it('populated steps → SAGA_STEPS array with PENDING status + a plain humanised label per step', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
       sagaMetadata: {
@@ -433,10 +466,23 @@ describe('SagaGenerator step-definitions emission', () => {
     }), CTX)!.content;
 
     expect(content).toContain("name: 'reserveInventory',");
-    expect(content).toContain('label: $localize`:@@saga.step.reserveInventory:Reserve Inventory`');
+    expect(content).toContain("label: 'Reserve Inventory',");
     expect(content).toContain("status: 'PENDING',");
     expect(content).toContain("name: 'chargePayment',");
-    expect(content).toContain('label: $localize`:@@saga.step.chargePayment:Charge Payment`');
+    expect(content).toContain("label: 'Charge Payment',");
+  });
+
+  it("a step name carrying a quote cannot close the literal it is emitted into", () => {
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      // Step names are consumer-authored metadata. Before the labels stopped being $localize
+      // tagged templates they sat inside a template literal; as single-quoted literals an
+      // unescaped apostrophe would end the string and emit a syntax error into the app.
+      sagaMetadata: { name: 'OrderSaga', steps: [{ name: "o'brien", compensatingAction: "undo'it" }] },
+    }), CTX)!.content;
+
+    expect(content).toContain("name: 'o\\'brien',");
+    expect(content).toContain("compensatingAction: 'undo\\'it',");
   });
 
   it('step with compensatingAction → emits compensatingAction: \'<action>\'; without → emits undefined literal', () => {
@@ -501,5 +547,35 @@ describe('generateSaga — top-level convenience function', () => {
 
     expect(file).not.toBeNull();
     expect(file!.path).toBe('sagas/order.saga.ts');
+  });
+});
+
+// ---------- sagaMachineName: the barrel's authority for the class name ----------
+
+describe('sagaMachineName', () => {
+  it('is null for a domain that declares no saga (the barrel emits no row for it)', () => {
+    expect(sagaMachineName(domain({ entityName: 'Order' }))).toBeNull();
+  });
+
+  it('derives the machine name from the saga name', () => {
+    expect(sagaMachineName(domain({
+      entityName: 'Order',
+      sagaMetadata: { name: 'order-fulfilment', steps: [] },
+    }))).toBe('OrderFulfilmentStateMachine');
+  });
+
+  it('falls back to <entityName>Saga when the saga name is empty', () => {
+    expect(sagaMachineName(domain({
+      entityName: 'Order',
+      sagaMetadata: { name: '', steps: [] },
+    }))).toBe('OrderSagaStateMachine');
+  });
+
+  // The barrel names this class; the file declares it. They are derived from the same function
+  // precisely so they cannot drift the way the detail route's plural did (#192).
+  it('names the class the emitted file actually declares', () => {
+    const d = domain({ entityName: 'Order', sagaMetadata: { name: '', steps: [] } });
+    const content = new SagaGenerator().generate(d, CTX)!.content;
+    expect(content).toContain(`export class ${sagaMachineName(d)} {`);
   });
 });

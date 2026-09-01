@@ -29,6 +29,9 @@ const order = DomainMetadataSchema.parse({
   entityName: 'Order',
   fields: [{ name: 'id', type: 'java.util.UUID' }, { name: 'total', type: 'java.math.BigDecimal' }],
   events: [{ name: 'OrderPlaced', payloadFields: ['id', 'total'] }],
+  // Declared so the `generateSagas` case below is not vacuous the way `generateStores` is: the
+  // saga file is emitted per-entity only for an entity that has one.
+  sagaMetadata: { name: 'OrderFulfilment', steps: [{ name: 'reserveStock' }] },
 });
 
 /** Every module specifier the barrel names, resolved against what was actually emitted. */
@@ -52,6 +55,7 @@ const FLAGS = [
   // Vacuous today — see the caveat above. Present so a future Stores section cannot land ungated.
   'generateStores',
   'generateEvents',
+  'generateSagas',
 ] as const;
 
 describe('app barrel resolves', () => {
@@ -81,5 +85,35 @@ describe('app barrel resolves', () => {
 
     expect(on).toContain("export { EventBusService } from './events/event-bus.service';");
     expect(off).not.toContain('events/');
+  });
+
+  it('exports the saga surface when the flag is on, and drops it when off', () => {
+    const on = buildGeneratedFiles([order], [], DEFAULT_CONFIG)
+      .find((f) => f.path === 'src/app/index.ts')?.content ?? '';
+    const off = buildGeneratedFiles([order], [], { ...DEFAULT_CONFIG, generateSagas: false })
+      .find((f) => f.path === 'src/app/index.ts')?.content ?? '';
+
+    expect(on).toContain("export { OrderFulfilmentStateMachine } from './sagas/order.saga';");
+    expect(off).not.toContain('sagas/');
+  });
+
+  // Two saga files each declare their own SagaState/SagaStep/SagaStatusSnapshot. `export *` from
+  // both would make every shared name ambiguous — and TypeScript drops an ambiguous star export
+  // silently, so nothing would fail; the names would just stop being reachable.
+  it('names the shared saga types once, from one saga file, however many sagas there are', () => {
+    const second = DomainMetadataSchema.parse({
+      packageName: 'com.shop',
+      entityName: 'Product',
+      fields: [{ name: 'id', type: 'java.util.UUID' }],
+      sagaMetadata: { name: 'ProductRestock', steps: [{ name: 'requestQuote' }] },
+    });
+
+    const barrel = buildGeneratedFiles([order, second], [], DEFAULT_CONFIG)
+      .find((f) => f.path === 'src/app/index.ts')?.content ?? '';
+
+    expect(barrel).not.toContain("export * from './sagas/");
+    expect(barrel).toContain("export { OrderFulfilmentStateMachine } from './sagas/order.saga';");
+    expect(barrel).toContain("export { ProductRestockStateMachine } from './sagas/product.saga';");
+    expect((barrel.match(/export type \{ SagaState,/g) ?? []).length).toBe(1);
   });
 });

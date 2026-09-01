@@ -816,9 +816,56 @@ never-invoked emitter start emitting, and its output did not build.
         production caller at all** (only its own two tests), making it a third emitter wired by
         nobody, alongside `enum-gen.ts` and the D10 bearer path.
 
-- [ ] **One config flag is declared, default `true`, and read by nothing.** `generateSagas`
-      (`config.ts:60`). `generateDetails` and `generateEvents` were the other two and are **wired as
-      of 0.8.0** — see below; `generateStores` was read only since #166 (`orchestrator.ts:164`).
+- [x] **Three config flags were declared, default `true`, and read by nothing — all wired in
+      0.8.0.** `generateDetails`, `generateEvents` and `generateSagas`, each in its own change with
+      its own evidence (`generateStores` was read only since #166, `orchestrator.ts:164`). Every one
+      of them turned out to be hiding output that had never compiled, because a flag nobody reads is
+      a generator nobody builds.
+
+      **`generateSagas` (done).** The costly one, and not because of the compile errors. Wiring it
+      would have shipped, into every generated app, a `providedIn: 'root'` service whose entire
+      public API pointed at a contract that does not exist: `POST /api/v1/sagas/<entity>/start`,
+      `/{id}/cancel`, `/{id}/retry` and a `GET /{id}/status` polled once a second. Measured before
+      touching anything — `KernelApplicationGenerator` registers **no** saga route (its own Javadoc
+      hands saga routing to the consumer: `routes.route(POST, "/checkout", new
+      CheckoutHandler(saga)::handle)`), `KernelOpenApiGenerator` contains **zero** occurrences of
+      "saga", and the string `sagas` appears **nowhere** in `exeris-codegen-java/src/main/java/`.
+      Nor could the consumer have served it by hand from what the pipeline gives them: the kernel
+      flow SPI has no per-execution handle at all — `FlowEngine` exposes
+      `plans/scheduler/registry/capabilities/stats` and nothing else, so there is no execution id
+      to cancel, no status to read, no retry to call. The advertised-but-dead defect class of
+      T20/T23 and the EV1-stream re-gate, except this one would have arrived with a poll loop
+      attached.
+
+      So the transport went and the tracking stayed. The emitted machine keeps everything the
+      metadata really supports — the declared steps in order with their compensations, status,
+      progress, estimated time remaining, a11y announcements — and takes its updates from the
+      caller: `begin(entityId, executionId)`, `applyStatus(SagaStatusSnapshot)`,
+      `failToStart`/`cancelling`/`retrying`/`reset`. The consumer's code is the binding point,
+      which is the TS reading of the same seam ADR-070 fixed on the Java side. Java-side saga
+      *orchestration* is unaffected: `KernelSagaGenerator` still emits `<Entity>SagaOrchestrator`
+      against the flow engine, and it never had an HTTP surface to lose.
+
+      Beyond that, wiring exposed the predicted compile break and two smaller things:
+
+      - **14 × `TS2304`** from `$localize` — announcements, the unknown-error fallback, and one per
+        declared step. Same rule, fourth time: `store-gen.ts:12-25`, then `detail-gen`, `event-gen`,
+        now `saga-gen`. This was the last reachable `$localize` in the emitter tree; `enum-gen` still
+        has them but is composed by nobody (the orchestrator emits the enum module from
+        `enum-module-gen.ts`), so it is unreachable rather than pending.
+      - **`effect` was imported from `@angular/core` in every emitted saga file and called
+        nowhere** — dead since the generator was written in 0.3.0, invisible because nothing had
+        ever compiled its output.
+      - **The barrel cannot `export *` from a saga file.** Each one declares its own `SagaState`,
+        `StepStatus`, `SagaStep`, `SagaExecution` and `SagaStatusSnapshot`, so starring two would
+        make every shared name ambiguous — and TypeScript drops an ambiguous star export silently
+        rather than reporting it. Named exports, with the shared types taken from the first saga
+        only, exactly as `Page`/`PageRequest` already work in the services section. The fixture now
+        declares two sagas, because one could never have shown this.
+
+      `tsSingleQuoted` was extracted to `generators/angular/ts-literal.ts` in the same change:
+      `event-gen`, `detail-gen` and `app-structure-gen` each carried a byte-identical private copy
+      and saga-gen would have been the fourth (strong-default #2).
 
       **`generateEvents` (done).** Two call sites, not one — the only flag in this group with that
       shape: the per-entity handler (`events/<kebab>.events.ts`) and the app-wide
@@ -831,6 +878,7 @@ never-invoked emitter start emitting, and its output did not build.
       followed. **`enum-gen` and `saga-gen` still emit `$localize`**; `enum-gen` is itself wired to
       nobody (`EnumGenerator` is exported and composed by no one — the orchestrator emits the enum
       module from `enum-module-gen.ts` instead), so `saga-gen` is the one that will meet it.
+      *(It did — 14 of them; see the `generateSagas` block above. `enum-gen`'s remain unreachable.)*
 
       Also fixed a reachability gap rather than only a compile one: both emitted classes are
       `providedIn: 'root'` and nothing in the emitted app injects them — they exist for the
@@ -850,7 +898,8 @@ never-invoked emitter start emitting, and its output did not build.
 
       Note for whoever takes it: `barrel-resolves.spec` already iterates `generateStores`, and that
       case is **vacuous** today — zero specifiers either way. It is the guard that fires if a
-      Stores section lands ungated, not evidence that one is covered.
+      Stores section lands ungated, not evidence that one is covered. (`generateSagas` joined that
+      list when it was wired, and is *not* vacuous: the spec's fixture entity declares a saga.)
 
       **`generateDetails` (done).** Wiring it was not cosmetic: the emitted **list** already linked
       to the two routes a detail component owns — `[routerLink]="[item.id]"` labelled *View* and

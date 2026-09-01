@@ -1,12 +1,27 @@
 /**
  * Angular Saga UI State Machine Generator
  *
- * Generates UI state machines for saga visualization and progress tracking.
- * Features:
- * - Step-by-step progress display
- * - Error handling with compensation
- * - Screen reader announcements (a11y)
- * - i18n-ready messages
+ * Emits, per entity declaring `@Saga`, a signal-based state machine that tracks a saga run for
+ * display: the declared steps in order, their status, progress, and screen-reader announcements.
+ *
+ * <b>The emitted machine carries no transport, deliberately.</b> Until this generator was wired
+ * (0.8.0) it emitted an `HttpClient` bound to `/api/v1/sagas/&lt;entity&gt;` with `/start`,
+ * `/{id}/cancel`, `/{id}/retry` and `/{id}/status`, plus a 1-second polling loop. No layer of
+ * this stack serves that contract: `KernelApplicationGenerator` registers no saga route (its own
+ * Javadoc hands saga routing to the consumer), `KernelOpenApiGenerator` documents no saga path,
+ * and the kernel flow SPI has no per-execution handle at all — `FlowEngine` exposes
+ * `plans/scheduler/registry/capabilities/stats`, with no execution id, status read, cancel or
+ * retry. Emitting a client for it would have shipped four dead URLs into every generated app and
+ * polled a 404 once a second. So the transitions are local and the consumer drives them from
+ * whatever it does serve — the TS analogue of the ADR-070 composition-root seam.
+ *
+ * <b>No `$localize` in emitted output.</b> Fourteen `$localize` sites (announcements, the
+ * unknown-error fallback, and one per declared step) failed `ng build` with `TS2304` the moment
+ * the flag was honoured: `$localize` is a global that exists only once the consumer adds
+ * `@angular/localize` and a polyfills entry, and the emitted app declares `"polyfills": []`.
+ * Emitting a symbol that requires an undeclared consumer dependency is the rule ADR-060 settled
+ * on the Java side for slf4j; `store-gen.ts` recorded it for the TS side and `detail-gen` and
+ * `event-gen` followed.
  *
  * @author Exeris Team
  * @since 0.3.0
@@ -17,7 +32,26 @@ import type { GeneratorConfig } from '../../config.js';
 import type { CodeGenerator, GeneratedFile, GeneratorContext } from '../../core/generator-registry.js';
 import type { BackendType } from '../../core/backend-strategy.js';
 import { DslMapper } from '../../models/dsl-mapper.js';
+import { tsSingleQuoted } from './ts-literal.js';
 
+
+/**
+ * The class name the emitted state machine binds, or null for a domain that declares no saga.
+ *
+ * Exported because the barrel needs the same answer and deriving it twice is how `routePlural`
+ * came to disagree with itself (T40 follow-up, #192).
+ */
+export function sagaMachineName(domain: DomainMetadata): string | null {
+  if (!domain.sagaMetadata) return null;
+  const sagaName = domain.sagaMetadata.name || `${domain.entityName}Saga`;
+  return `${toPascalCase(sagaName)}StateMachine`;
+}
+
+function toPascalCase(name: string): string {
+  return name
+    .replace(/[-_](.)/g, (_, c) => c.toUpperCase())
+    .replace(/^(.)/, (_, c) => c.toUpperCase());
+}
 
 export class SagaGenerator implements CodeGenerator {
   readonly name = 'SagaGenerator';
@@ -44,7 +78,7 @@ export class SagaGenerator implements CodeGenerator {
   private generateSagaContent(domain: DomainMetadata, saga: SagaMetadata): string {
     const { entityName } = domain;
     const sagaName = saga.name || `${entityName}Saga`;
-    const pascalSagaName = this.toPascalCase(sagaName);
+    const pascalSagaName = toPascalCase(sagaName);
     const kebab = DslMapper.toKebabCase(entityName);
     const steps = saga.steps || [];
 
@@ -63,11 +97,8 @@ import {
   inject, 
   signal, 
   computed,
-  effect,
 } from '@angular/core';
 import { LiveAnnouncer } from '@angular/cdk/a11y';
-import { HttpClient } from '@angular/common/http';
-import { firstValueFrom } from 'rxjs';
 
 // ============================================================================
 // Types
@@ -126,6 +157,29 @@ export interface SagaExecution {
   error?: string;
 }
 
+/**
+ * The shape this machine folds into its state. The consumer produces it from whatever it
+ * actually serves — a poll, an SSE frame, a websocket message, or an in-process call — and
+ * hands it to \`applyStatus\`. Emitting a fetch for it here would mean inventing an endpoint
+ * (see this file's generator header).
+ */
+export interface SagaStatusSnapshot {
+  /** Overall saga state as the backing run reports it. */
+  state: SagaState;
+  /** Per-step status; steps absent from the snapshot keep their current local status. */
+  steps: Array<{
+    name: string;
+    status: StepStatus;
+    /** ISO-8601 instants — parsed here so the caller can pass the wire value through. */
+    startedAt?: string;
+    completedAt?: string;
+    error?: string;
+    progress?: number;
+  }>;
+  /** Failure detail, when the run reports one. */
+  error?: string;
+}
+
 // ============================================================================
 // Saga Steps Definition
 // ============================================================================
@@ -138,10 +192,7 @@ ${this.generateStepDefinitions(steps)}
 
 @Injectable({ providedIn: 'root' })
 export class ${pascalSagaName}StateMachine {
-  private readonly http = inject(HttpClient);
   private readonly liveAnnouncer = inject(LiveAnnouncer);
-
-  private readonly baseUrl = '/api/v1/sagas/${kebab}';
 
   // ═══════════════════════════════════════════════════════════════════════════
   // Private State Signals
@@ -155,9 +206,6 @@ export class ${pascalSagaName}StateMachine {
   private readonly _error = signal<string | null>(null);
   private readonly _startedAt = signal<Date | null>(null);
   private readonly _completedAt = signal<Date | null>(null);
-
-  // Polling state
-  private pollingInterval: ReturnType<typeof setInterval> | null = null;
 
   // ═══════════════════════════════════════════════════════════════════════════
   // Public Read-Only Signals
@@ -287,98 +335,66 @@ export class ${pascalSagaName}StateMachine {
   // ═══════════════════════════════════════════════════════════════════════════
 
   /**
-   * Start the saga for a given entity.
+   * Enter the RUNNING state for a saga the caller has started.
+   *
+   * The caller owns the start itself — this stack serves no saga route to call (see the
+   * generator header) — and passes back the execution id its own backend assigned, so every
+   * later snapshot can be matched to a run.
    */
-  async start(entityId: string, params?: Record<string, unknown>): Promise<string> {
+  begin(entityId: string, executionId: string): void {
     if (!this.canStart()) {
       throw new Error(\`Cannot start saga in state: \${this._state()}\`);
     }
 
     this.reset();
     this._entityId.set(entityId);
+    this._executionId.set(executionId);
     this._state.set('RUNNING');
     this._startedAt.set(new Date());
 
-    this.announce($localize\`:@@saga.started:Saga started\`, 'polite');
-
-    try {
-      // Call backend to start saga
-      const response = await firstValueFrom(
-        this.http.post<{ executionId: string }>(
-          \`\${this.baseUrl}/start\`,
-          { entityId, ...params }
-        )
-      );
-
-      this._executionId.set(response.executionId);
-
-      // Start polling for updates
-      this.startPolling();
-
-      return response.executionId;
-    } catch (err) {
-      this._state.set('FAILED');
-      this._error.set(this.extractErrorMessage(err));
-      this.announce($localize\`:@@saga.failed:Saga failed to start\`, 'assertive');
-      throw err;
-    }
+    this.announce('Saga started', 'polite');
   }
 
   /**
-   * Cancel a running saga (triggers compensation).
+   * Record that the run failed before it could report a single step — the caller's start
+   * attempt itself errored.
    */
-  async cancel(): Promise<void> {
-    const execId = this._executionId();
-    if (!execId) {
+  failToStart(error: string): void {
+    this._state.set('FAILED');
+    this._error.set(error);
+    this.announce('Saga failed to start', 'assertive');
+  }
+
+  /**
+   * Enter the COMPENSATING state. The caller performs the cancellation against its own backend;
+   * the resulting step statuses arrive through \`applyStatus\` like any others.
+   */
+  cancelling(): void {
+    if (!this._executionId()) {
       throw new Error('No saga execution to cancel');
     }
 
     this._state.set('COMPENSATING');
-    this.announce($localize\`:@@saga.cancelling:Cancelling saga...\`, 'polite');
-
-    try {
-      await firstValueFrom(
-        this.http.post(\`\${this.baseUrl}/\${execId}/cancel\`, {})
-      );
-    } catch (err) {
-      this._error.set(this.extractErrorMessage(err));
-      this.announce($localize\`:@@saga.cancel.failed:Failed to cancel saga\`, 'assertive');
-      throw err;
-    }
+    this.announce('Cancelling saga...', 'polite');
   }
 
   /**
-   * Retry a failed saga.
+   * Return a FAILED run to RUNNING for a retry the caller is performing.
    */
-  async retry(): Promise<void> {
-    const execId = this._executionId();
-    if (!execId || this._state() !== 'FAILED') {
+  retrying(): void {
+    if (!this._executionId() || this._state() !== 'FAILED') {
       throw new Error('Cannot retry saga');
     }
 
     this._state.set('RUNNING');
     this._error.set(null);
-    this.announce($localize\`:@@saga.retrying:Retrying saga...\`, 'polite');
-
-    try {
-      await firstValueFrom(
-        this.http.post(\`\${this.baseUrl}/\${execId}/retry\`, {})
-      );
-      
-      this.startPolling();
-    } catch (err) {
-      this._state.set('FAILED');
-      this._error.set(this.extractErrorMessage(err));
-      this.announce($localize\`:@@saga.retry.failed:Retry failed\`, 'assertive');
-      throw err;
-    }
+    this.announce('Retrying saga...', 'polite');
   }
 
   /**
    * Reset saga state to initial.
    */
   reset(): void {
-    this.stopPolling();
     this._executionId.set(null);
     this._entityId.set(null);
     this._state.set('IDLE');
@@ -390,110 +406,72 @@ export class ${pascalSagaName}StateMachine {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // Polling
+  // Status
   // ═══════════════════════════════════════════════════════════════════════════
 
-  private startPolling(): void {
-    this.stopPolling();
-    
-    this.pollingInterval = setInterval(() => {
-      this.pollStatus();
-    }, 1000); // Poll every second
-  }
+  /**
+   * Fold a status snapshot into the machine: step statuses and timings, the current step, the
+   * announcements that go with a step change, and the terminal transition.
+   *
+   * The caller decides when to call this and where the snapshot comes from. Nothing here polls:
+   * the previous version ran a one-second timer against an endpoint no part of this stack
+   * serves, from a \`providedIn: 'root'\` service that outlives every component that might have
+   * stopped it.
+   */
+  applyStatus(status: SagaStatusSnapshot): void {
+    this._state.set(status.state);
 
-  private stopPolling(): void {
-    if (this.pollingInterval) {
-      clearInterval(this.pollingInterval);
-      this.pollingInterval = null;
-    }
-  }
-
-  private async pollStatus(): Promise<void> {
-    const execId = this._executionId();
-    if (!execId) {
-      this.stopPolling();
-      return;
+    if (status.error) {
+      this._error.set(status.error);
     }
 
-    try {
-      const status = await firstValueFrom(
-        this.http.get<{
-          state: SagaState;
-          steps: Array<{
-            name: string;
-            status: StepStatus;
-            startedAt?: string;
-            completedAt?: string;
-            error?: string;
-            progress?: number;
-          }>;
-          error?: string;
-        }>(\`\${this.baseUrl}/\${execId}/status\`)
-      );
+    // Update steps
+    const updatedSteps = this._steps().map(step => {
+      const serverStep = status.steps.find(s => s.name === step.name);
+      if (!serverStep) return step;
 
-      // Update state
-      const previousState = this._state();
-      this._state.set(status.state);
-      
-      if (status.error) {
-        this._error.set(status.error);
+      return {
+        ...step,
+        status: serverStep.status,
+        startedAt: serverStep.startedAt ? new Date(serverStep.startedAt) : undefined,
+        completedAt: serverStep.completedAt ? new Date(serverStep.completedAt) : undefined,
+        error: serverStep.error,
+        progress: serverStep.progress,
+      };
+    });
+
+    this._steps.set(updatedSteps);
+
+    // Update current step index. Capture the PREVIOUS index BEFORE
+    // the set so the step-change announcement below compares
+    // against the actual previous state. The earlier version
+    // compared the new index against this._currentStepIndex()
+    // AFTER calling .set() on it — which always returned the
+    // just-set value, making the !== check trivially false and
+    // silently dropping every step-running announcement.
+    const prevIdx = this._currentStepIndex();
+    const runningIdx = updatedSteps.findIndex(s => s.status === 'RUNNING');
+    this._currentStepIndex.set(runningIdx);
+
+    // Announce step changes
+    if (runningIdx >= 0 && runningIdx !== prevIdx) {
+      const step = updatedSteps[runningIdx];
+      this.announce(\`Running step: \${step.label}\`, 'polite');
+    }
+
+    // Check if saga finished
+    if (status.state === 'COMPLETED' || 
+        status.state === 'FAILED' || 
+        status.state === 'COMPENSATED') {
+      this._completedAt.set(new Date());
+
+      if (status.state === 'COMPLETED') {
+        this.announce('Saga completed successfully', 'polite');
+      } else if (status.state === 'FAILED') {
+        this.announce('Saga failed', 'assertive');
+      } else {
+        this.announce('Saga was compensated', 'polite');
       }
-
-      // Update steps
-      const updatedSteps = this._steps().map(step => {
-        const serverStep = status.steps.find(s => s.name === step.name);
-        if (!serverStep) return step;
-
-        return {
-          ...step,
-          status: serverStep.status,
-          startedAt: serverStep.startedAt ? new Date(serverStep.startedAt) : undefined,
-          completedAt: serverStep.completedAt ? new Date(serverStep.completedAt) : undefined,
-          error: serverStep.error,
-          progress: serverStep.progress,
-        };
-      });
-
-      this._steps.set(updatedSteps);
-
-      // Update current step index. Capture the PREVIOUS index BEFORE
-      // the set so the step-change announcement below compares
-      // against the actual previous state. The earlier version
-      // compared the new index against this._currentStepIndex()
-      // AFTER calling .set() on it — which always returned the
-      // just-set value, making the !== check trivially false and
-      // silently dropping every step-running announcement.
-      const prevIdx = this._currentStepIndex();
-      const runningIdx = updatedSteps.findIndex(s => s.status === 'RUNNING');
-      this._currentStepIndex.set(runningIdx);
-
-      // Announce step changes
-      if (runningIdx >= 0 && runningIdx !== prevIdx) {
-        const step = updatedSteps[runningIdx];
-        this.announce(
-          $localize\`:@@saga.step.running:Running step: \${step.label}\`,
-          'polite'
-        );
-      }
-
-      // Check if saga finished
-      if (status.state === 'COMPLETED' || 
-          status.state === 'FAILED' || 
-          status.state === 'COMPENSATED') {
-        this._completedAt.set(new Date());
-        this.stopPolling();
-
-        if (status.state === 'COMPLETED') {
-          this.announce($localize\`:@@saga.completed:Saga completed successfully\`, 'polite');
-        } else if (status.state === 'FAILED') {
-          this.announce($localize\`:@@saga.failed:Saga failed\`, 'assertive');
-        } else {
-          this.announce($localize\`:@@saga.compensated:Saga was compensated\`, 'polite');
-        }
-      }
-    } catch (err) {
-      console.error('Failed to poll saga status:', err);
-      // Don't stop polling on transient errors
     }
   }
 
@@ -509,14 +487,18 @@ export class ${pascalSagaName}StateMachine {
   // Helpers
   // ═══════════════════════════════════════════════════════════════════════════
 
-  private extractErrorMessage(err: unknown): string {
+  /**
+   * Normalise a thrown value to a message. Public because the caller owns the transport now and
+   * so is the one holding the rejection to feed \`failToStart\`.
+   */
+  extractErrorMessage(err: unknown): string {
     if (err instanceof Error) {
       return err.message;
     }
     if (typeof err === 'object' && err !== null && 'message' in err) {
       return String((err as { message: unknown }).message);
     }
-    return $localize\`:@@error.unknown:An unknown error occurred\`;
+    return 'An unknown error occurred';
   }
 }
 
@@ -534,7 +516,7 @@ export class ${pascalSagaName}StateMachine {
  *          [attr.aria-valuenow]="saga.progress()"
  *          aria-valuemin="0" 
  *          aria-valuemax="100"
- *          [attr.aria-label]="$localize\\\`:@@saga.progress:Saga progress\\\`">
+ *          aria-label="Saga progress">
  *       
  *       @for (step of saga.steps(); track step.name) {
  *         <div class="step" 
@@ -554,28 +536,33 @@ export class ${pascalSagaName}StateMachine {
  *   readonly saga = inject(${pascalSagaName}StateMachine);
  * }
  * \`\`\`
+ *
+ * Driving it — the machine tracks a run, it does not perform one. This stack serves no saga
+ * route, so the calls below are yours:
+ *
+ * \`\`\`typescript
+ * const { executionId } = await this.myBackend.startFulfilment(orderId);
+ * this.saga.begin(orderId, executionId);
+ * // then, on each update you receive (poll, SSE frame, websocket message, in-process call):
+ * this.saga.applyStatus(snapshot);
+ * \`\`\`
  */
 `;
   }
 
-  private toPascalCase(name: string): string {
-    return name
-      .replace(/[-_](.)/g, (_, c) => c.toUpperCase())
-      .replace(/^(.)/, (_, c) => c.toUpperCase());
-  }
 
   private generateStepDefinitions(steps: SagaStepMetadata[]): string {
     if (steps.length === 0) {
       return `const SAGA_STEPS: SagaStep[] = [];`;
     }
 
-    const stepDefs = steps.map((step, index) => {
+    const stepDefs = steps.map(step => {
       const label = this.humanize(step.name);
       return `  {
-    name: '${step.name}',
-    label: $localize\`:@@saga.step.${step.name}:${label}\`,
+    name: '${tsSingleQuoted(step.name)}',
+    label: '${tsSingleQuoted(label)}',
     status: 'PENDING',
-    compensatingAction: ${step.compensatingAction ? `'${step.compensatingAction}'` : 'undefined'},
+    compensatingAction: ${step.compensatingAction ? `'${tsSingleQuoted(step.compensatingAction)}'` : 'undefined'},
   }`;
     }).join(',\n');
 

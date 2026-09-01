@@ -18,6 +18,7 @@ import { modelTypeName } from '../../models/model-naming.js';
 import type { GeneratorConfig } from '../../config.js';
 import type { BackendType } from '../../core/backend-strategy.js';
 import { outPath } from '../../core/paths.js';
+import { tsSingleQuoted } from './ts-literal.js';
 
 export class DetailGenerator implements CodeGenerator {
   readonly name = 'DetailGenerator';
@@ -318,11 +319,6 @@ export class DetailGenerator implements CodeGenerator {
     }
     return [...enums];
   }
-}
-
-/** A TS single-quoted string literal — labels come from metadata and may contain quotes. */
-function tsSingleQuoted(s: string): string {
-  return s.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\r?\n/g, ' ');
 }
 
 /**
