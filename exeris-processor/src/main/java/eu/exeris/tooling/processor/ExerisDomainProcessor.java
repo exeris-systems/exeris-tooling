@@ -94,6 +94,11 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     /** Attribute name shared by {@code @Saga} and the capability {@code @Provides}/{@code @Requires}. */
     private static final String VERSION_ATTRIBUTE = "version";
 
+    /** {@code @GraphEdge}, and the container javac synthesises when it is repeated on one field. */
+    private static final String GRAPH_EDGE_FQN = "eu.exeris.sdk.annotation.GraphEdge";
+
+    private static final String GRAPH_EDGES_FQN = "eu.exeris.sdk.annotation.GraphEdges";
+
     /** {@code @SagaStep}, and the container javac synthesises when it is repeated on one method. */
     private static final String SAGA_STEP_FQN = "eu.exeris.sdk.annotation.SagaStep";
 
@@ -2023,9 +2028,92 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         return new GraphMetadata(
                 label,
                 null,
-                List.of(),
+                graphEdges(element),
                 List.of()
         );
+    }
+
+    /**
+     * The entity's declared graph edges, from {@code @GraphEdge} on its fields.
+     *
+     * <p><b>S3: this list was hardcoded to {@code List.of()}.</b> {@code GraphEdgeMetadata} exists,
+     * and {@code KernelGraphSyncGenerator} iterates {@code graph.edges()} to emit one
+     * {@code GraphEdgeDescriptor} constant apiece — so the consumer was ready and the producer did
+     * not exist. Every generated graph-sync artefact carried zero edges, in every build, whatever
+     * the entity declared.
+     *
+     * <p>{@code @GraphEdge} is {@code @Repeatable(GraphEdges.class)}, so both the direct mirror and
+     * the synthesised container are read — the same shape S2 fixed for {@code @SagaStep}, and the
+     * same helper.
+     *
+     * <p>Order is field declaration order, which decides the order of the emitted constants. That
+     * is the assumption every other extraction here already makes.
+     */
+    private List<GraphEdgeMetadata> graphEdges(TypeElement element) {
+        List<GraphEdgeMetadata> edges = new ArrayList<>();
+
+        for (Element enclosed : element.getEnclosedElements()) {
+            if (enclosed.getKind() != ElementKind.FIELD) continue;
+
+            AnnotationMirror direct = findAnnotation(enclosed, GRAPH_EDGE_FQN);
+            if (direct != null) {
+                edges.add(graphEdge(direct, enclosed));
+            }
+
+            AnnotationMirror container = findAnnotation(enclosed, GRAPH_EDGES_FQN);
+            if (container != null) {
+                forEachContained(container, contained -> edges.add(graphEdge(contained, enclosed)));
+            }
+        }
+
+        return List.copyOf(edges);
+    }
+
+    /**
+     * One {@code @GraphEdge} mirror, narrowed to the three components {@link GraphEdgeMetadata}
+     * carries: the annotated field's name, the target node label, and the relation type.
+     *
+     * <p><b>Target-label precedence, and why it is not just {@code targetLabel()}.</b> The
+     * annotation offers three ways to say what the edge points at — {@code targetLabel()} (the
+     * graph label), {@code target()} (the entity class) and {@code targetName()} (its name when
+     * the class is not on the path). The record holds one. Taking only {@code targetLabel()} would
+     * mean {@code @GraphEdge(type = "OWNED_BY", target = User.class)} — the obvious way to write
+     * one — emitted a descriptor pointing at the generator's {@code "Node"} fallback, which is
+     * nobody's label. So an explicit label wins, then the class's simple name, then the name
+     * string; this mirrors how the node label above is derived from {@code nodeClass} or the
+     * element's own simple name.
+     *
+     * <p>The annotation's remaining eleven attributes — {@code direction}, {@code bidirectional},
+     * {@code inverseType}, {@code weighted}, {@code weightField}, {@code description},
+     * {@code properties}, {@code propertyMappings}, {@code staticProperties},
+     * {@code computedProperties} and {@code target}/{@code targetName} beyond the label above —
+     * have <em>no component in the record to carry them</em>. Extracting them would need an SDK
+     * change first; recorded in the ROADMAP rather than half-read here.
+     */
+    private GraphEdgeMetadata graphEdge(AnnotationMirror mirror, Element field) {
+        Map<String, Object> values = extractAnnotationValues(mirror);
+
+        String label = blankToNull(getString(values, "targetLabel", null));
+        if (label == null && values.containsKey("target")) {
+            label = simpleNameOf(serviceFqn(values.get("target")));
+        }
+        if (label == null) {
+            label = blankToNull(getString(values, "targetName", null));
+        }
+
+        return new GraphEdgeMetadata(
+                field.getSimpleName().toString(),
+                label,
+                blankToNull(getString(values, "type", null)));
+    }
+
+    /** The simple name of a fully-qualified type, or null for {@code void.class} / an absent one. */
+    private static String simpleNameOf(String fqn) {
+        if (fqn == null || fqn.isBlank() || "void".equals(fqn)) {
+            return null;
+        }
+        int lastDot = fqn.lastIndexOf('.');
+        return lastDot >= 0 ? fqn.substring(lastDot + 1) : fqn;
     }
 
     private EventSourcedMetadata extractEventSourcedMetadata(TypeElement element) {

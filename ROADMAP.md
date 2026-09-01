@@ -449,7 +449,43 @@ types) found the processor names **21 of ~44** annotations.
       already used for `@Provides.List`. A second test pins that they do not double-count: `javac`
       never presents both the direct mirror and the container on one element, and the fix reads both
       — an assumption worth a test rather than a comment.
-- [ ] **S3 — `@GraphEdge` processor half.** `GraphEdgeMetadata` exists and nobody fills it.
+- [x] **S3 — `@GraphEdge` processor half.** *Shipped 0.8.0.* `extractGraphMetadata` built
+      `new GraphMetadata(label, null, List.of(), List.of())` — the edge list was a **literal
+      empty**, so every generated graph-sync artefact carried zero edges in every build, whatever
+      the entity declared. The consumer was ready and waiting: `KernelGraphSyncGenerator` iterates
+      `graph.edges()` to emit one `GraphEdgeDescriptor` constant apiece, and the compile gate
+      already exercises it with a hand-built non-empty list. Only the producer was missing.
+
+      `@GraphEdge` is `@Repeatable(GraphEdges.class)`, so both the direct mirror and the synthesised
+      container are read — the same shape S2 fixed for `@SagaStep`, through the same
+      `forEachContained` helper. Third call site for it now.
+
+      **The target label needed a precedence rule, and that is the one judgement call here.**
+      `GraphEdgeMetadata` holds a single `targetLabel`; the annotation offers three ways to name a
+      target — `targetLabel()`, `target()` (the class) and `targetName()`. Reading only the first
+      would mean `@GraphEdge(type = "OWNED_BY", target = User.class)` — the obvious way to write one
+      — emitted a descriptor pointing at the generator's `"Node"` fallback, which is nobody's label.
+      Explicit label wins, then the class's simple name, then the name string; this mirrors how the
+      node label itself is derived from `nodeClass` or the element's own simple name.
+
+      **Eleven of the annotation's attributes have no component to carry them** — `direction`,
+      `bidirectional`, `inverseType`, `weighted`, `weightField`, `description`, `properties`,
+      `propertyMappings`, `staticProperties`, `computedProperties`, and `target`/`targetName` beyond
+      the label rule above. Same shape as the saga family: an SDK record change is the prerequisite,
+      so they are recorded rather than half-read. Two sibling gaps stay open alongside them —
+      `GraphMetadata.properties` is passed as `null` (not `List.of()`) and `queries` as an empty
+      literal, and `@GraphProperty` / `@GraphQuery` are among the annotations C0 reports as unread.
+      Nothing reads either field today, so neither is a live defect; changing the `null` would
+      change the emitted JSON shape, which is a decision rather than a tidy-up.
+
+      Evidence: 107 processor tests, up from 103; full reactor `clean install` green. Perturbation:
+      restoring the empty literal fails exactly the three tests that assert an edge, and leaves the
+      fourth — the one pinning that an entity with no edge still yields `[]` rather than `null` —
+      passing, as it should.
+
+      *Counting note.* Earlier entries and PR bodies in this train said "115 processor"; that is
+      Codegen Core. The modules are Annotation Processor 107, Codegen Core 115, Codegen Java 429,
+      Maven Plugin 53, E2E 28. The totals were real and the label was wrong.
 - [x] **C0 — strict mode audited the wrong half, and that is why the list above exists.** *Shipped
       0.8.0.* `-Aexeris.strict` reported only *extracted-but-unconsumed*, from two hand-maintained
       denylists driven by the extraction call sites. That made it structurally blind exactly where

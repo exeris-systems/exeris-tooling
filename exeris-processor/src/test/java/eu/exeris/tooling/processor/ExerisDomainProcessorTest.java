@@ -375,6 +375,135 @@ class ExerisDomainProcessorTest {
     class RelationshipAndGraphTests {
 
         @Test
+        @DisplayName("S3: @GraphEdge reaches graph.edges() instead of an always-empty list")
+        void graphEdgesAreExtracted() throws IOException {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Graph;
+                    import eu.exeris.sdk.annotation.GraphEdge;
+
+                    @ExerisDomain(module = "sales", path = "/orders")
+                    @Graph(nodeClass = "Order", syncToGraph = true)
+                    public class Order {
+                        @GraphEdge(type = "OWNED_BY", targetLabel = "User")
+                        private String ownerId;
+                    }
+                    """
+            );
+
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).succeeded();
+
+            JsonNode edges = readMetadataRoot(compilation, "Order").path("graphMetadata").path("edges");
+
+            // GraphMetadata was built as `new GraphMetadata(label, null, List.of(), List.of())` —
+            // the edge list was a literal empty, so KernelGraphSyncGenerator, which iterates
+            // graph.edges() to emit one GraphEdgeDescriptor apiece, had nothing to iterate in any
+            // build. Consumer ready, producer absent.
+            assertThat(edges).hasSize(1);
+            assertThat(edges.get(0).path("name").asText()).isEqualTo("ownerId");
+            assertThat(edges.get(0).path("targetLabel").asText()).isEqualTo("User");
+            assertThat(edges.get(0).path("relationType").asText()).isEqualTo("OWNED_BY");
+        }
+
+        @Test
+        @DisplayName("S3: the target class supplies the label when targetLabel is not written")
+        void graphEdgeTargetClassSuppliesTheLabel() throws IOException {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Graph;
+                    import eu.exeris.sdk.annotation.GraphEdge;
+
+                    @ExerisDomain(module = "sales", path = "/orders")
+                    @Graph(nodeClass = "Order")
+                    public class Order {
+                        // The obvious way to write an edge, and the one that used to produce a
+                        // descriptor pointing at the generator's "Node" fallback: GraphEdgeMetadata
+                        // holds one label, the annotation offers three ways to name a target.
+                        @GraphEdge(type = "OWNED_BY", target = User.class)
+                        private String ownerId;
+                    }
+
+                    class User {}
+                    """
+            );
+
+            JsonNode edges = readMetadataRoot(compileWithProcessor(source), "Order")
+                    .path("graphMetadata").path("edges");
+
+            assertThat(edges).hasSize(1);
+            assertThat(edges.get(0).path("targetLabel").asText()).isEqualTo("User");
+        }
+
+        @Test
+        @DisplayName("S3: a repeated @GraphEdge contributes both edges, each once")
+        void repeatedGraphEdgeIsExtracted() throws IOException {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Graph;
+                    import eu.exeris.sdk.annotation.GraphEdge;
+
+                    @ExerisDomain(module = "sales", path = "/orders")
+                    @Graph(nodeClass = "Order")
+                    public class Order {
+                        // Repeated on ONE field: javac replaces both with @GraphEdges and leaves no
+                        // direct @GraphEdge mirror — the same shape that dropped every repeated
+                        // @SagaStep before S2.
+                        @GraphEdge(type = "OWNED_BY", targetLabel = "User")
+                        @GraphEdge(type = "BILLED_TO", targetLabel = "Account")
+                        private String partyId;
+                    }
+                    """
+            );
+
+            JsonNode edges = readMetadataRoot(compileWithProcessor(source), "Order")
+                    .path("graphMetadata").path("edges");
+
+            assertThat(edges).hasSize(2);
+            assertThat(edges.get(0).path("relationType").asText()).isEqualTo("OWNED_BY");
+            assertThat(edges.get(1).path("relationType").asText()).isEqualTo("BILLED_TO");
+        }
+
+        @Test
+        @DisplayName("S3: an entity declaring no edge yields an empty list, never null")
+        void graphWithoutEdgesYieldsAnEmptyList() throws IOException {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Graph;
+
+                    @ExerisDomain(module = "sales", path = "/orders")
+                    @Graph(nodeClass = "Order")
+                    public class Order {
+                        private String reference;
+                    }
+                    """
+            );
+
+            JsonNode graph = readMetadataRoot(compileWithProcessor(source), "Order").path("graphMetadata");
+
+            // KernelGraphSyncGenerator guards with `edges() != null && !isEmpty()`. Empty keeps
+            // that guard on its documented path; null would rely on the first half of it.
+            assertThat(graph.path("edges").isArray()).isTrue();
+            assertThat(graph.path("edges")).isEmpty();
+        }
+
+        @Test
         @DisplayName("Should extract @Relationship metadata")
         void shouldExtractRelationshipMetadata() throws IOException {
             JavaFileObject source = JavaFileObjects.forSourceString(
@@ -1390,12 +1519,6 @@ class ExerisDomainProcessorTest {
             );
         }
 
-        private JsonNode readMetadataRoot(Compilation compilation, String entity) throws IOException {
-            JavaFileObject metadataFile = compilation.generatedFile(
-                    StandardLocation.CLASS_OUTPUT, "exeris-metadata/" + entity + ".json")
-                    .orElseThrow();
-            return new ObjectMapper().readTree(readContent(metadataFile));
-        }
     }
 
     @Nested
@@ -2860,6 +2983,19 @@ class ExerisDomainProcessorTest {
         return javac()
                 .withProcessors(new ExerisDomainProcessor())
                 .compile(sources);
+    }
+
+    /**
+     * The emitted metadata document for {@code entity}, parsed.
+     *
+     * <p>Outer-class rather than nested: the graph tests need the same reader the event tests
+     * already had, and a second copy of five lines is how two readers of one document drift.
+     */
+    private JsonNode readMetadataRoot(Compilation compilation, String entity) throws IOException {
+        JavaFileObject metadataFile = compilation.generatedFile(
+                StandardLocation.CLASS_OUTPUT, "exeris-metadata/" + entity + ".json")
+                .orElseThrow();
+        return new ObjectMapper().readTree(readContent(metadataFile));
     }
 
     private String readContent(JavaFileObject file) throws IOException {
