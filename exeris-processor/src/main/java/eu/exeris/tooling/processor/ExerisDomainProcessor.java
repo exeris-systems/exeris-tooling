@@ -13,9 +13,11 @@ import eu.exeris.sdk.sourcemodel.mutation.SourceDigest;
 import javax.annotation.processing.*;
 import javax.lang.model.SourceVersion;
 import javax.lang.model.element.*;
+import javax.lang.model.type.ArrayType;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
+import javax.lang.model.util.ElementFilter;
 import javax.tools.Diagnostic;
 import javax.tools.FileObject;
 import javax.tools.StandardLocation;
@@ -89,6 +91,15 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     /** Diagnostic prefix prepended to every NOTE/WARNING/ERROR this processor emits. */
     private static final String DIAG_PREFIX = "[Exeris] ";
 
+    /** Package every SDK annotation lives under, including the {@code capability} sub-package. */
+    private static final String SDK_ANNOTATION_PACKAGE = "eu.exeris.sdk.annotation.";
+
+    /** The sole element of a {@code @Repeatable} container, and of every single-value annotation. */
+    private static final String VALUE_ELEMENT = "value";
+
+    /** Closing clause on every strict-mode diagnostic — it is opt-in, so say so at the point of use. */
+    private static final String STRICT_SUFFIX = ". (reported because -Aexeris.strict is enabled)";
+
     /**
      * An annotation attribute the author can set but that <em>no</em> code
      * generator — neither {@code exeris-codegen-java} nor
@@ -113,6 +124,19 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      * @param note    why it is inert today — surfaced verbatim in the warning
      */
     private record InertAnnotation(String fqn, String display, String note) {}
+
+    /**
+     * An SDK annotation the processor never reads at all, with the reason. Distinct from
+     * {@link InertAnnotation}, and the distinction is the whole point of the C0 audit: an
+     * {@code InertAnnotation} is <em>extracted and consumed by nobody</em>, whereas these never
+     * enter the pipeline in the first place — no extraction call, therefore no
+     * {@link #warnInertAttributes} call site, therefore, before C0, no possible warning.
+     *
+     * @param display the simple name shown in the warning
+     * @param note    why it is unread today — surfaced verbatim in the warning
+     */
+    private record UnreadAnnotation(String display, String note) {}
+
 
     /**
      * JSON wire shape for one {@code @CapabilityModule} class. The SDK's
@@ -290,6 +314,92 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "PrincipalContext and StorageContext at submission and fails a job "
                             + "closed at dispatch when neither is bound, and a declared schedule has "
                             + "no submission event to capture from. See docs/adr/ADR-072.link.md"));
+
+    /**
+     * Every SDK annotation this processor extracts, by simple name. <strong>C0: this set is the
+     * audit's authority, and it is an allowlist on purpose.</strong>
+     *
+     * <p>Before C0, strict mode could only report what somebody had written into
+     * {@link #INERT_ATTRIBUTES} / {@link #INERT_ANNOTATIONS} — a denylist, driven from the
+     * extraction call sites. That made it structurally blind to exactly the largest gap: an
+     * annotation this processor never reads has no extraction site, so it has no
+     * {@code warnInert*} call, so no entry in either registry could ever fire for it. Sixteen of
+     * the SDK's thirty-five annotations were in that state, silently.
+     *
+     * <p>Inverting it closes the class rather than the instances. Anything present on a visited
+     * element and absent from this set is reported without anyone having to notice it first, and
+     * a new extraction must be added here in the same change — the mirror image of the
+     * delete-your-registry-entry rule that already governs {@link #INERT_ATTRIBUTES}.
+     *
+     * <p>Membership means "the processor reads it", strictly — NOT "it reaches emitted output",
+     * and NOT "the audit stays quiet about it". The narrower consumption question stays with the
+     * two inert registries: {@code @EventSourced} is in this set and is still reported, by
+     * {@link #INERT_ANNOTATIONS}. And an unextracted annotation that already has a registry entry
+     * ({@code @Blob}, {@code @Schedule}) is deliberately absent here and silenced by
+     * {@link #isAlreadyAudited} instead, so that this set never claims an extraction that does not
+     * exist. Every SDK annotation is answered by exactly one of the two passes.
+     */
+    private static final Set<String> EXTRACTED_ANNOTATIONS = Set.of(
+            "Action", "ActionParam", "Bind", "Block", "CapabilityLifecycle", "CapabilityModule",
+            "DomainEvent", "EventSourced", "ExerisDomain", "Field", "Graph", "InternalApi",
+            "Provides", "Region", "Relationship", "Requires", "Saga", "SagaStep", "UI",
+            "Validation", "View");
+
+    /**
+     * Reasons for the annotations {@link #EXTRACTED_ANNOTATIONS} does not contain. Optional by
+     * design: the audit reports an unread annotation whether or not it has an entry here, which
+     * is what makes the set above sufficient on its own. An entry only replaces the generic
+     * sentence with the specific one.
+     *
+     * <p>The distinction these notes carry is real and worth the words: {@code @Derived},
+     * {@code @Rule}, {@code @EventHandler} and {@code @Projection} are <em>reserved</em> — AST
+     * carriers exist and the emission is design-gated on the behavioural corpus — whereas
+     * {@code @NavMenu} or {@code @Tab} are simply unbuilt. Both are "no effect on output" and an
+     * author deserves to know which one they have hit.
+     */
+    private static final List<UnreadAnnotation> UNREAD_NOTES = List.of(
+            new UnreadAnnotation("Derived",
+                    "DerivedMetadata exists in the source model and is filled by nobody: the "
+                            + "processor performs no extraction and no emitter names the type. "
+                            + "Reserved rather than overlooked — emission is design-gated on the "
+                            + "behavioural corpus (ROADMAP, behavioural AST)"),
+            new UnreadAnnotation("Rule",
+                    "RuleMetadata exists in the source model and is filled by nobody, for the same "
+                            + "reason as @Derived: reserved, design-gated on the behavioural corpus"),
+            new UnreadAnnotation("EventHandler",
+                    "reserved for the event-reaction verb, which is design-gated on the behavioural "
+                            + "corpus. Not to be confused with @DomainEvent, which IS extracted and "
+                            + "does reach the emitters"),
+            new UnreadAnnotation("Projection",
+                    "reserved. Its open question is cross-service exposure, which is the same fork "
+                            + "T12 and the @View mesh binding sit on — so it is design-gated on a "
+                            + "topology decision, not on an extractor"),
+            new UnreadAnnotation("GraphEdge",
+                    "@Graph is extracted at the type level, but the per-edge annotation is not: "
+                            + "GraphMetadata carries no edge list built from it, so declaring edges "
+                            + "this way changes no emitted artefact"),
+            new UnreadAnnotation("GraphProperty",
+                    "same gap as @GraphEdge — the type-level @Graph is read, this is not"),
+            new UnreadAnnotation("GraphQuery",
+                    "same gap as @GraphEdge — the type-level @Graph is read, this is not"),
+            new UnreadAnnotation("SagaTransition",
+                    "KernelSagaGenerator emits transitions as a strict linear chain over "
+                            + "SagaMetadata.steps() in declaration order and consults no transition "
+                            + "annotation, so a declared transition is discarded before it reaches "
+                            + "any generator"),
+            new UnreadAnnotation("QueryParam",
+                    "action parameters are extracted through @ActionParam only; a parameter "
+                            + "carrying just this annotation reaches ActionMetadata as if it were "
+                            + "unannotated"),
+            new UnreadAnnotation("NavMenu",
+                    "no navigation artefact is emitted from it on either side. The TS app shell "
+                            + "builds its sidebar from the entity list and the @View routes, never "
+                            + "from this annotation"),
+            new UnreadAnnotation("Tab",
+                    "presentation grouping is emitted from @View (regions and blocks) and, at the "
+                            + "leaf level, from @UI. This annotation feeds neither"),
+            new UnreadAnnotation("UIGroup",
+                    "same gap as @Tab: @UI is extracted per field, this grouping annotation is not"));
 
     private ObjectMapper objectMapper;
     private Messager messager;
@@ -546,7 +656,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
 
     /** Iterates the {@code value} array of a {@code @Provides.List}/{@code @Requires.List} container. */
     private void forEachContained(AnnotationMirror container, java.util.function.Consumer<AnnotationMirror> action) {
-        Object value = extractAnnotationValues(container).get("value");
+        Object value = extractAnnotationValues(container).get(VALUE_ELEMENT);
         if (value instanceof List<?> entries) {
             for (Object entry : entries) {
                 if (entry instanceof AnnotationMirror contained) {
@@ -653,7 +763,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             // INERT_ANNOTATIONS — a @View-only compilation under -Aexeris.strict
             // emits no inert warning for @View. The call stays so any *other* inert
             // annotation on a @View type is still honestly flagged (Java∪TS union).
-            warnInertAnnotations(element);
+            auditAnnotations(element);
 
             note("Generated view metadata for: " + name);
         } catch (Exception e) {
@@ -1063,7 +1173,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
 
         // T11: under -Aexeris.strict, flag type-level annotations that are
         // extracted above but consumed by no generator (e.g. @EventSourced).
-        warnInertAnnotations(element);
+        auditAnnotations(element);
 
         return builder.build();
     }
@@ -1263,7 +1373,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             // else branch below still admits such a field to the AST through
             // FieldMetadata.simple(...), so gating this call on @Field would suppress
             // a warning for a field that is nonetheless in the model.
-            warnInertAnnotations(field);
+            auditAnnotations(field);
 
             AnnotationMirror fieldAnnotation = findAnnotation(field, "eu.exeris.sdk.annotation.Field");
 
@@ -1454,7 +1564,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             // D6: in the loop rather than in extractActionMetadata, for the reason
             // spelled out at the field sweep — a method-level inert annotation must
             // not have its reachability decided by whether @Action is also present.
-            warnInertAnnotations(method);
+            auditAnnotations(method);
 
             AnnotationMirror actionAnnotation = findAnnotation(method, "eu.exeris.sdk.annotation.Action");
 
@@ -1516,6 +1626,11 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         // Extract parameters
         List<ActionParamMetadata> params = new ArrayList<>();
         for (VariableElement param : method.getParameters()) {
+            // Outside the @ActionParam gate, for the reason the field and method sweeps give:
+            // @QueryParam on an otherwise-unannotated parameter is precisely the shape C0 exists
+            // to report, and gating the audit on @ActionParam would hide it.
+            auditAnnotations(param);
+
             AnnotationMirror paramAnnotation = findAnnotation(param, "eu.exeris.sdk.annotation.ActionParam");
             if (paramAnnotation != null) {
                 params.add(extractActionParamMetadata(param, paramAnnotation));
@@ -1551,7 +1666,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             // Check for @DomainEvents container (from @Repeatable)
             if (annotationType.equals("eu.exeris.sdk.annotation.DomainEvent.DomainEvents")) {
                 Map<String, Object> containerValues = extractAnnotationValues(am);
-                Object valueObj = containerValues.get("value");
+                Object valueObj = containerValues.get(VALUE_ELEMENT);
                 if (valueObj instanceof List<?> eventAnnotations) {
                     for (Object eventAnnotation : eventAnnotations) {
                         if (eventAnnotation instanceof AnnotationMirror eventAm) {
@@ -2017,19 +2132,29 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                         Diagnostic.Kind.WARNING,
                         DIAG_PREFIX + "@" + annotationSimpleName + "." + inert.attribute()
                                 + " is set but no code generator consumes it — "
-                                + inert.note() + ". (reported because -Aexeris.strict is enabled)",
+                                + inert.note() + STRICT_SUFFIX,
                         element, mirror);
             }
         }
     }
 
     /**
-     * Under {@code -Aexeris.strict}, emits a WARNING for every whole annotation
-     * on {@code element} that no generator consumes (per {@link #INERT_ANNOTATIONS}).
-     * No-op unless strict mode is on. Reported once per entity, not per attribute;
-     * the diagnostic anchors on the offending annotation mirror.
+     * Under {@code -Aexeris.strict}, audits every SDK annotation on {@code element}. No-op unless
+     * strict mode is on. Reported once per element, not per attribute; each diagnostic anchors on
+     * the offending annotation mirror.
+     *
+     * <p><strong>Two passes, and the second one is C0.</strong> The first reports the
+     * <em>extracted but unconsumed</em> annotations somebody registered in
+     * {@link #INERT_ANNOTATIONS}. The second reports every SDK annotation this processor never
+     * reads at all, driven from {@link #EXTRACTED_ANNOTATIONS} — which needs no registration,
+     * and so is not blind to the case nobody has noticed yet. Before it existed, an unread
+     * annotation could not produce a warning by any path: no extraction means no call site, and
+     * the audit was driven from call sites.
+     *
+     * <p>The passes cannot double-report: the second skips everything the first can see, because
+     * an annotation is in {@link #EXTRACTED_ANNOTATIONS} exactly when the processor reads it.
      */
-    private void warnInertAnnotations(Element element) {
+    private void auditAnnotations(Element element) {
         if (!strict) {
             return;
         }
@@ -2040,10 +2165,144 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                         Diagnostic.Kind.WARNING,
                         DIAG_PREFIX + "@" + inert.display()
                                 + " is set but no code generator consumes it — "
-                                + inert.note() + ". (reported because -Aexeris.strict is enabled)",
+                                + inert.note() + STRICT_SUFFIX,
                         element, mirror);
             }
         }
+        warnUnreadAnnotations(element);
+    }
+
+    /**
+     * C0's half of {@link #auditAnnotations}: every {@code eu.exeris.sdk.annotation} mirror on
+     * {@code element} whose simple name is absent from {@link #EXTRACTED_ANNOTATIONS}.
+     *
+     * <p>Iterates the element's own mirrors rather than a registry, which is what makes the audit
+     * complete: an annotation nobody has classified still shows up, with a generic reason. A
+     * {@code @Repeatable} container is reported under its member's name — the container is
+     * synthesised by {@code javac} and the author never wrote it — and is skipped entirely when
+     * that member is one the processor reads. Both the SDK's plain-plural containers
+     * ({@code @SagaSteps}) and its nested ones ({@code @DomainEvent.DomainEvents},
+     * {@code @Provides.List}) are covered, because the test is structural rather than by name;
+     * the two {@code .List} containers share a simple name, which no name-keyed scheme could
+     * have told apart.
+     *
+     * <p>Order is source order ({@code getAnnotationMirrors}), so a build's diagnostics are stable
+     * across runs on the same input.
+     */
+    private void warnUnreadAnnotations(Element element) {
+        for (AnnotationMirror mirror : element.getAnnotationMirrors()) {
+            String display = unreadNameOf(mirror);
+            if (display != null) {
+                messager.printMessage(
+                        Diagnostic.Kind.WARNING,
+                        DIAG_PREFIX + "@" + display
+                                + " is set but this processor never reads it, so no generator can "
+                                + "consume it and the annotation has no effect on emitted output — "
+                                + noteFor(display) + STRICT_SUFFIX,
+                        element, mirror);
+            }
+        }
+    }
+
+    /**
+     * The name to warn about for {@code mirror}, or {@code null} when there is nothing to say —
+     * it is not an SDK annotation, the processor reads it, or the first pass already covers it.
+     *
+     * <p>Split out of the loop so the decision reads as one expression with one exit rather than
+     * a chain of {@code continue}s, and so each reason for staying quiet can carry its own line.
+     */
+    private static String unreadNameOf(AnnotationMirror mirror) {
+        String fqn = mirror.getAnnotationType().toString();
+        if (!fqn.startsWith(SDK_ANNOTATION_PACKAGE)) {
+            return null;
+        }
+        String simpleName = fqn.substring(fqn.lastIndexOf('.') + 1);
+        if (isAlreadyAudited(simpleName)) {
+            return null;
+        }
+        // A repeatable member the processor DOES read — several @DomainEvent or @SagaStep on one
+        // class synthesise their container. The container is an artefact of repetition, not an
+        // unread annotation, so it reports under the member's name or not at all.
+        String contained = containedAnnotationName(mirror);
+        if (contained != null) {
+            return isAlreadyAudited(contained) ? null : contained;
+        }
+        return simpleName;
+    }
+
+    /**
+     * Whether the first pass already covers {@code simpleName} — either the processor extracts it,
+     * or {@link #INERT_ANNOTATIONS} carries an entry for it.
+     *
+     * <p>The registry half is derived rather than restated. {@code @Blob} and {@code @Schedule} are
+     * the live case: both are unextracted, so on name alone this pass would report them — and both
+     * already have a registry entry whose note is far better than the generic sentence. Listing
+     * them in {@link #EXTRACTED_ANNOTATIONS} would silence the duplicate but make that set claim
+     * something false about them, and the next reader would believe it.
+     */
+    private static boolean isAlreadyAudited(String simpleName) {
+        if (EXTRACTED_ANNOTATIONS.contains(simpleName)) {
+            return true;
+        }
+        for (InertAnnotation inert : INERT_ANNOTATIONS) {
+            if (inert.display().equals(simpleName)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * The simple name of the annotation a {@code @Repeatable} container holds, or {@code null}
+     * when {@code mirror} is not a container.
+     *
+     * <p><strong>Detected structurally, not from a list.</strong> A hand-maintained container
+     * registry was the first attempt and it was wrong in the way this whole change is about: it
+     * covered the SDK's plain-plural idiom ({@code @Rules}, {@code @SagaSteps}) and silently
+     * missed the nested one, so a perfectly ordinary entity with two {@code @DomainEvent}
+     * triggers drew a false "never read" warning about {@code @DomainEvent.DomainEvents} — a type
+     * the author never wrote, naming an annotation the processor plainly does read. Fixing that
+     * by adding one entry would have left the next repeatable annotation to rediscover it.
+     *
+     * <p>JLS 9.6.3: a containing annotation type declares a {@code value()} element whose type is
+     * an array of the repeatable annotation type, and every other element has a default. That is
+     * checkable here, so the container class is closed rather than enumerated.
+     */
+    private static String containedAnnotationName(AnnotationMirror mirror) {
+        Element annotationType = mirror.getAnnotationType().asElement();
+        ExecutableElement valueElement = null;
+        for (ExecutableElement method : ElementFilter.methodsIn(annotationType.getEnclosedElements())) {
+            if (method.getSimpleName().contentEquals(VALUE_ELEMENT)) {
+                valueElement = method;
+            } else if (method.getDefaultValue() == null) {
+                // An element without a default that is not `value` — not a containing type.
+                return null;
+            }
+        }
+        if (valueElement == null || valueElement.getReturnType().getKind() != TypeKind.ARRAY) {
+            return null;
+        }
+        TypeMirror component = ((ArrayType) valueElement.getReturnType()).getComponentType();
+        if (component.getKind() != TypeKind.DECLARED) {
+            return null;
+        }
+        Element componentElement = ((DeclaredType) component).asElement();
+        if (componentElement.getKind() != ElementKind.ANNOTATION_TYPE) {
+            return null;
+        }
+        return componentElement.getSimpleName().toString();
+    }
+
+    /** The registered reason for an unread annotation, or the generic one when none is registered. */
+    private static String noteFor(String display) {
+        for (UnreadAnnotation unread : UNREAD_NOTES) {
+            if (unread.display().equals(display)) {
+                return unread.note();
+            }
+        }
+        return "no extraction exists for it in ExerisDomainProcessor. Every SDK annotation is "
+                + "@Retention(SOURCE), so the build-time pipeline is the only possible consumer "
+                + "and an unextracted annotation is erased with nothing having read it";
     }
 
     private AnnotationMirror findAnnotation(Element element, String annotationFqn) {

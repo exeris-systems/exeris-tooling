@@ -19,8 +19,11 @@ import com.google.testing.compile.JavaFileObjects;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import java.util.stream.Stream;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import javax.tools.JavaFileObject;
 import javax.tools.StandardLocation;
@@ -1342,6 +1345,273 @@ class ExerisDomainProcessorTest {
                     }
                     """
             );
+        }
+    }
+
+    @Nested
+    @DisplayName("-Aexeris.strict unread-annotation audit (C0)")
+    class StrictModeUnreadAnnotationTests {
+
+        /**
+         * C0's pass reports "never read", which is a different sentence from the inert pass's
+         * "no code generator consumes it" — deliberately, so the two counts stay separable and a
+         * test cannot mistake one pass's output for the other's.
+         */
+        private long unreadWarnings(Compilation compilation) {
+            return compilation.warnings().stream()
+                    .filter(d -> d.getMessage(null) != null
+                            && d.getMessage(null).contains("this processor never reads it"))
+                    .count();
+        }
+
+        private boolean hasUnreadWarningFor(Compilation compilation, String annotation) {
+            return compilation.warnings().stream()
+                    .anyMatch(d -> d.getMessage(null) != null
+                            && d.getMessage(null).contains("this processor never reads it")
+                            && d.getMessage(null).contains(annotation));
+        }
+
+        private long inertWarnings(Compilation compilation) {
+            return compilation.warnings().stream()
+                    .filter(d -> d.getMessage(null) != null
+                            && d.getMessage(null).contains("no code generator consumes it"))
+                    .count();
+        }
+
+        @Test
+        @DisplayName("warns on @NavMenu — a type-level annotation no extraction ever touched")
+        void strictWarnsOnUnreadTypeAnnotation() {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Account",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.NavMenu;
+
+                    @ExerisDomain(module = "core", path = "/accounts")
+                    @NavMenu(label = "Accounts")
+                    public class Account {
+                        private String name;
+                    }
+                    """
+            );
+
+            Compilation compilation = javac()
+                    .withOptions("-Aexeris.strict=true")
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(source);
+
+            assertThat(compilation).succeeded();
+            assertThat(hasUnreadWarningFor(compilation, "@NavMenu"))
+                    .as("warning naming @NavMenu")
+                    .isTrue();
+            // Before C0 this was unreportable by construction: no extraction means no call site,
+            // and the audit was driven from call sites. Neither inert registry could hold it.
+            assertThat(inertWarnings(compilation))
+                    .as("the inert pass says nothing about it — the two passes are separate")
+                    .isZero();
+        }
+
+        @Test
+        @DisplayName("warns on @Derived at the field sweep, and says it is reserved rather than unbuilt")
+        void strictWarnsOnUnreadFieldAnnotationWithItsReason() {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Account",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.Derived;
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+
+                    @ExerisDomain(module = "core", path = "/accounts")
+                    public class Account {
+                        @Derived(expression = "first + last")
+                        private String fullName;
+                    }
+                    """
+            );
+
+            Compilation compilation = javac()
+                    .withOptions("-Aexeris.strict=true")
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(source);
+
+            assertThat(compilation).succeeded();
+            assertThat(hasUnreadWarningFor(compilation, "@Derived")).isTrue();
+            // "No effect on output" covers both a reserved surface and an unbuilt one, and an
+            // author is owed the difference: @Derived is design-gated, not forgotten.
+            assertThat(compilation.warnings().stream()
+                    .anyMatch(d -> d.getMessage(null) != null
+                            && d.getMessage(null).contains("@Derived")
+                            && d.getMessage(null).contains("Reserved rather than overlooked")))
+                    .as("the registered reason, not the generic sentence")
+                    .isTrue();
+        }
+
+        @Test
+        @DisplayName("warns on @QueryParam — the action-parameter site C0 added")
+        void strictWarnsOnUnreadParameterAnnotation() {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Account",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.Action;
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.QueryParam;
+
+                    @ExerisDomain(module = "core", path = "/accounts")
+                    public class Account {
+                        private String name;
+
+                        @Action(name = "search", label = "Search")
+                        public void search(@QueryParam("q") String query) {
+                        }
+                    }
+                    """
+            );
+
+            Compilation compilation = javac()
+                    .withOptions("-Aexeris.strict=true")
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(source);
+
+            assertThat(compilation).succeeded();
+            // The parameter carries no @ActionParam, so the pre-existing sweep never visited it:
+            // the audit call had to sit outside that gate, which is exactly the shape this pins.
+            assertThat(hasUnreadWarningFor(compilation, "@QueryParam"))
+                    .as("warning naming @QueryParam on an otherwise-unannotated parameter")
+                    .isTrue();
+        }
+
+        /**
+         * Both {@code @Repeatable} idioms the SDK uses, in one test because the assertion is the
+         * same and only the idiom differs — which is exactly the asymmetry that produced the bug.
+         *
+         * <p>{@code @SagaStep} takes the plain-plural container ({@code @SagaSteps});
+         * {@code @DomainEvent} takes the nested one ({@code @DomainEvent.DomainEvents}), whose
+         * last dot-segment is {@code "DomainEvents"}. The first implementation keyed a registry on
+         * simple names, covered the first idiom and missed the second, so an entity declaring two
+         * events — ordinary, encouraged, and exercised six-deep elsewhere in this file — was told
+         * that an annotation the processor fully extracts "is never read". Caught in review of the
+         * C0 PR; the fix detects containers structurally (JLS 9.6.3) rather than by name.
+         */
+        static Stream<Arguments> repeatableIdioms() {
+            return Stream.of(
+                    Arguments.of("plain-plural container (@SagaStep → @SagaSteps)",
+                            """
+                            package com.example;
+
+                            import eu.exeris.sdk.annotation.Saga;
+                            import eu.exeris.sdk.annotation.SagaStep;
+
+                            @Saga(name = "Checkout")
+                            public class Subject {
+
+                                @SagaStep(order = 1, name = "reserve", service = "stock", command = "reserve")
+                                public void reserve() {
+                                }
+
+                                @SagaStep(order = 2, name = "charge", service = "billing", command = "charge")
+                                public void charge() {
+                                }
+                            }
+                            """),
+                    Arguments.of("nested container (@DomainEvent → @DomainEvent.DomainEvents)",
+                            """
+                            package com.example;
+
+                            import eu.exeris.sdk.annotation.DomainEvent;
+                            import eu.exeris.sdk.annotation.DomainEvent.Trigger;
+                            import eu.exeris.sdk.annotation.ExerisDomain;
+
+                            @ExerisDomain(module = "core", path = "/orders")
+                            @DomainEvent(trigger = Trigger.CREATE, topic = "orders.created")
+                            @DomainEvent(trigger = Trigger.DELETE, topic = "orders.deleted")
+                            public class Subject {
+                                private String reference;
+                            }
+                            """));
+        }
+
+        @ParameterizedTest(name = "{0}")
+        @MethodSource("repeatableIdioms")
+        @DisplayName("a synthesised @Repeatable container is not reported — the member is what the author wrote")
+        void strictDoesNotWarnOnSynthesisedContainer(String idiom, String sourceText) {
+            JavaFileObject source = JavaFileObjects.forSourceString("com.example.Subject", sourceText);
+
+            Compilation compilation = javac()
+                    .withOptions("-Aexeris.strict=true")
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(source);
+
+            assertThat(compilation).succeeded();
+            assertThat(unreadWarnings(compilation))
+                    .as("no warning about a container the author never wrote (%s)", idiom)
+                    .isZero();
+        }
+
+        @Test
+        @DisplayName("default build stays quiet — the audit is opt-in like the rest of strict mode")
+        void defaultBuildDoesNotWarnOnUnreadAnnotations() {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Account",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.NavMenu;
+
+                    @ExerisDomain(module = "core", path = "/accounts")
+                    @NavMenu(label = "Accounts")
+                    public class Account {
+                        private String name;
+                    }
+                    """
+            );
+
+            Compilation compilation = javac()
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(source);
+
+            assertThat(compilation).succeeded();
+            assertThat(unreadWarnings(compilation)).isZero();
+        }
+
+        @Test
+        @DisplayName("an entity using only extracted annotations draws no unread warning")
+        void strictIsQuietForAFullyReadEntity() {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Account",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.Action;
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Field;
+
+                    @ExerisDomain(module = "core", path = "/accounts")
+                    public class Account {
+                        @Field(label = "Name")
+                        private String name;
+
+                        @Action(name = "close", label = "Close")
+                        public void close() {
+                        }
+                    }
+                    """
+            );
+
+            Compilation compilation = javac()
+                    .withOptions("-Aexeris.strict=true")
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(source);
+
+            assertThat(compilation).succeeded();
+            assertThat(unreadWarnings(compilation))
+                    .as("no false positive on the annotations the pipeline does read")
+                    .isZero();
         }
     }
 
