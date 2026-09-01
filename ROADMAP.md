@@ -419,11 +419,51 @@ types) found the processor names **21 of ~44** annotations.
 - [ ] **S2 — a repeated `@SagaStep` yields zero steps** from the processor (SDK 0.10's survey; the
       `-io` reader yields only the first). `@SagaSteps` compiles and contributes nothing.
 - [ ] **S3 — `@GraphEdge` processor half.** `GraphEdgeMetadata` exists and nobody fills it.
-- [ ] **C0 — strict mode audits the wrong half, and this is why the list above exists.**
-      `-Aexeris.strict` reports *extracted-but-unconsumed*; an attribute the processor never reads is
-      invisible to it, which is why `INERT_ATTRIBUTES` holds 2 entries against ~23 uncovered
-      annotations. Do this first in the C phase — it closes the defect *class* rather than the
-      instances, the same move SDK 0.10 made with its `@Repeatable`-container guard.
+- [x] **C0 — strict mode audited the wrong half, and that is why the list above exists.** *Shipped
+      0.8.0.* `-Aexeris.strict` reported only *extracted-but-unconsumed*, from two hand-maintained
+      denylists driven by the extraction call sites. That made it structurally blind exactly where
+      the gap was largest: an annotation the processor never reads has no extraction, therefore no
+      `warnInert*` call site, therefore no entry in either registry could ever fire for it. **16 of
+      the SDK's 35 annotations were in that state** — `@Derived`, `@EventHandler`, `@GraphEdge`,
+      `@GraphProperty`, `@GraphQuery`, `@NavMenu`, `@Projection`, `@QueryParam`, `@Rule`,
+      `@SagaTransition`, `@Tab`, `@UIGroup`, plus the four `@Repeatable` containers.
+
+      **The fix inverts the registry.** `EXTRACTED_ANNOTATIONS` is an allowlist of what the
+      processor reads; anything present on a visited element and absent from it is reported without
+      anyone having had to notice it first, and a new extraction must join the set in the same
+      change. That is the mirror image of the delete-your-entry rule `INERT_ATTRIBUTES` already
+      carries, and it closes the class rather than the instances.
+
+      Two passes now, answering different questions and never both: pass 1 is the old
+      *extracted-but-unconsumed* audit; pass 2 is *never-read*. They use different sentences on
+      purpose ("no code generator consumes it" vs "this processor never reads it") so the two counts
+      stay separable and no test can mistake one for the other.
+
+      Three things the implementation had to get right:
+
+      - **The allowlist must not lie.** `@Blob` and `@Schedule` are unextracted *and* already have
+        rich `INERT_ANNOTATIONS` entries. Listing them as "extracted" would have silenced the
+        duplicate while making the set assert something false; `isAlreadyAudited` derives the
+        registry half instead, so the set means exactly "the processor reads it".
+      - **A `@Repeatable` container is not an annotation an author wrote.** Two `@SagaStep` methods
+        make `javac` synthesise `@SagaSteps`; warning about it would be a diagnostic about a type
+        the author has never seen. Containers report under their member's name, and a container
+        whose member *is* extracted reports nothing.
+      - **The parameter sweep had to sit outside the `@ActionParam` gate**, or `@QueryParam` on an
+        otherwise-unannotated parameter — the exact shape C0 exists to report — stays invisible.
+        Same reasoning D6 already applied to the field and method sweeps.
+
+      Notes are optional by design: an unread annotation is reported whether or not `UNREAD_NOTES`
+      has an entry, which is what makes the allowlist sufficient on its own. Where a note exists it
+      carries a distinction worth the words — `@Derived`, `@Rule`, `@EventHandler` and `@Projection`
+      are **reserved** and design-gated on the behavioural corpus, while `@NavMenu` and `@Tab` are
+      simply unbuilt. Both are "no effect on output" and an author deserves to know which one they
+      hit. All 12 unread singles have a note today, so the generic sentence is a safety net with no
+      current instance — it exists for the annotation the SDK adds next.
+
+      Evidence: 99 processor tests pass, 6 of them new; full reactor `clean install` green.
+      Perturbation — commenting out the pass-2 call fails exactly the 3 tests that assert a warning
+      and leaves the pass-1 counts untouched.
 - [ ] **C1 — `annotation.system.*` (10 field-level).** Trap worth naming: `DomainMetadata.systemFields`
       *is* populated, but from `@ExerisDomain`'s override attributes (`extractSystemFieldsOverrides`),
       never from `@PrimaryKey` / `@TenantId` / `@Version` / `@SoftDelete*` / `@Audit*`.
@@ -867,8 +907,38 @@ never-invoked emitter start emitting, and its output did not build.
       `event-gen`, `detail-gen` and `app-structure-gen` each carried a byte-identical private copy
       and saga-gen would have been the fourth (strong-default #2).
 
-      **Raised in the #195 review, not fixed there — `@SagaStep.order` is a required attribute that
-      nothing reads.** Verified on both sides: `KernelSagaGenerator`'s own Javadoc states it
+      **Raised in the #195 review, re-graded, and scheduled for 0.9.0 against SDK 0.12 — `@SagaStep.order`
+      is a required attribute that nothing reads.**
+
+      *Correction to the framing this entry first carried.* It was recorded as a T11
+      `INERT_ATTRIBUTES` candidate. That is wrong, and the SDK's own Javadoc is what settles it:
+      `order()` is documented as **"Step execution order (lower = first)"**, with "steps with same
+      order can execute in parallel if `parallel = true`". So this is not an attribute nobody needs —
+      it is an attribute with a **documented, load-bearing meaning that both emitters silently
+      override with source declaration order**. Registering it as inert would write the defect down
+      as a design. It belongs in the emitters, not in the registry.
+
+      The stakes are not cosmetic: kernel ADR-062 makes a step *reorder* a breaking change for sagas
+      already in flight (a parked flow records the step name at its position and resume fails closed
+      when the plan there now carries a different name), with a prescribed drain-before-deploy
+      procedure. Today the only thing that decides that order is where the author happened to put
+      the method in the file.
+
+      **Shape, split by owner:**
+
+      - **SDK 0.12 (theirs).** `@Saga` carries only `name()`, yet `SagaMetadata` has
+        `compensationStrategy` and `compensationOrder` — record fields with no annotation behind
+        them, so an author cannot set them and no generator reads them. Either the annotation grows
+        the two attributes or the record sheds them; both are SDK calls. The `parallel`-plus-equal-
+        `order` semantics the `@SagaStep` Javadoc promises also need a contract statement, because
+        it is the kernel `FlowDefinition` that would have to express parallelism.
+      - **Tooling 0.9.0 (ours), on the SDK 0.12 bump.** `KernelSagaGenerator` and `saga-gen.ts` sort
+        steps by `order` with a documented tie-break (declaration order), the Javadoc paragraph that
+        currently says `order()` "is not consulted" comes out, and `SagaStepMetadata` gains whatever
+        the SDK settled. **No `INERT_ATTRIBUTES` entry is added** — consuming it is the fix, and C0
+        already reports `@SagaTransition` on the same class of gap. Original finding below.
+
+      Verified on both sides: `KernelSagaGenerator`'s own Javadoc states it
       outright ("The `SagaStepMetadata#order()` field is **not** consulted — callers wanting
       non-list ordering must sort their step list before passing it to the AST"), and `saga-gen.ts`
       has zero references to `.order` or to any sort. Both emitters walk `steps` in declaration
@@ -951,13 +1021,15 @@ never-invoked emitter start emitting, and its output did not build.
       as an inert annotation, one layer out, and it is exactly how `view-gen` came to bind a
       `current()` that no generator produced. Each wiring changes every consumer's tree, so each
       needs its own change with its own evidence.
-- [ ] **The inert registries are far smaller than the unread surface.** `INERT_ATTRIBUTES` holds four
-      entries and `INERT_ANNOTATIONS` one (`ExerisDomainProcessor.java:175,215`), against ~23
-      annotations the processor never reads. `@Derived`, `@Rule` and `@NavMenu` reach no generator —
-      verified: `DerivedMetadata`/`RuleMetadata` appear in no emitter or processor source — and none
-      is registered, so `-Aexeris.strict` is silent about all three. This is **C0** in the section
-      above, and the dog-food log is the corpus that sizes it: `@NavMenu` is decorative on most of a
-      real domain.
+- [x] **The inert registries were far smaller than the unread surface.** *Closed by C0 (0.8.0).*
+      `INERT_ATTRIBUTES` held four entries and `INERT_ANNOTATIONS` three, against **16** annotations
+      the processor never reads (re-counted during C0 — the earlier "~23" counted the capability
+      annotations, which `ExerisDomainProcessor` does read, through
+      `eu.exeris.sdk.annotation.capability.*`). `@Derived`, `@Rule` and `@NavMenu` reached no
+      generator, none was registered, and `-Aexeris.strict` was silent about all three. All 16 are
+      now reported without a registry entry, which is the point: the audit no longer depends on
+      somebody having noticed first. The dog-food log remains the corpus that sizes the *value* —
+      `@NavMenu` is decorative on most of a real domain.
 
 **Open, verified, and deliberately not scheduled here:**
 
