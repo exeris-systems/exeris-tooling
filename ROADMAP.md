@@ -624,20 +624,70 @@ never-invoked emitter start emitting, and its output did not build.
       everything to **400**, so a deployment fault is blamed on the request body. Two independent
       fixes: give it the T41 treatment (refuse, naming the missing binding), and resolve lazily —
       the community JSON decoder null-checks the context and then ignores the allocator.
-- [ ] **T43-follow-up — capture the allocator at composition time.** Split out of T43 so it does not
-      live as prose inside a closed item. T43 made the failure honest; this is what would stop it
-      happening. `RuntimeComponents.createOrderHandler()` resolves `KernelProviders.MEMORY_ALLOCATOR`
-      once, inside the boot callback where the binding is live, and passes it to the handler as a
-      constructor argument — the shape `CommunityBenchmarkRuntimeLifecycle.java:100` already uses and
-      the reason that app works with the same subsystem selector. Costs a handler constructor
-      parameter, which the T49 seam absorbs. **Do the measurement first:** the capture-site theory is
-      inferred from the reference and from the dog-food probe, not from running a generated app, and
-      a fix aimed at the wrong cause is worse than the honest 5xx we now emit.
+- [x] **T43-follow-up — capture the allocator at composition time.** *Shipped 0.8.0. The
+      measurement this entry demanded came back confirming the theory, with a mechanism the kernel
+      documents rather than the inference it was filed on.*
 
-      *Deliberately not minted as `T51`.* The `T*` space is shared with the dog-food log, which runs
-      to T50 and is not readable from this checkout; taking the next number from a stale local view
-      is exactly how ADR-070 got claimed twice on 2026-08-18. A follow-up to a numbered finding does
-      not need a number of its own.
+      **What was measured, before changing anything.** The entry said the capture-site theory was
+      inferred from a reference app and a dog-food probe, and that a fix aimed at the wrong cause
+      would be worse than the honest 5xx T43 emits. Four facts settle it, all read off the kernel
+      tree:
+
+      - `KernelProviders.MEMORY_ALLOCATOR` is a `ScopedValue`, supplied by a subsystem through
+        `Subsystem.providerBindings()`.
+      - `KernelBootstrap` binds the enriched carrier around `orchestrator.start(config)` and
+        `kernelMain.run()`, and the generated `RuntimeComponents` factories run inside that
+        callback — so **the binding is live at composition time**.
+      - `StructuredScope` states the propagation rule: a `StructuredTaskScope` fork inherits the
+        bindings in effect, and a thread that is not such a fork reads back `isBound() == false`.
+      - `PaqsScheduler` spawns **one virtual thread per admitted stream with
+        `Thread.ofVirtual().start()`**, and documents it as *"the sole deliberate exception to the
+        STS mandate"* — because `fork()` must be called from the thread that opened the scope, and
+        the carrier threads dispatching streams own no shared scope.
+
+      So a request runs on a thread that inherits nothing, and the per-request `.get()` could only
+      ever have failed. Not a missing subsystem, not a selector gap: a capture site, exactly as
+      filed. One kernel-side doc defect fell out of it — `KernelBootstrap`'s comment claims *"Every
+      VT spawned from here inherits MEMORY_ALLOCATOR"*, which is true only for STS forks and not
+      for the path that serves requests. Reported as measured; theirs to confirm and own.
+
+      **The change.** `RuntimeComponents.create<Entity>Handler()` resolves the allocator and passes
+      it in; the handler holds it as a final field and `parseBody` uses that. T43's bound-check and
+      its message are gone from `parseBody` — not because the fault stopped mattering, but because
+      it can no longer reach a request: an unwired allocator now fails at boot with the composition
+      on the stack, which is strictly better than a 5xx on the first request carrying a body.
+
+      Three consequences worth naming, all of them things the gates caught rather than review:
+
+      - **The emitted handler stopped importing `KernelProviders` on the CRUD path.** That import
+        existed for this one read.
+      - **Every emitted handler test had to supply an allocator.** `RecordingRequestBody` already
+        implements `MemoryAllocator` — the support doubles are emitted unconditionally — so the
+        validation tests hand the handler the *same* double they stage, and the bodyless routes get
+        a throwaway through a `newHandler(service)` overload.
+      - **The emitted tests stopped binding the `MEMORY_ALLOCATOR` slot.** Nothing reads it now, so
+        binding it would be setup nothing consumes — the emitted-and-read-by-nobody shape this
+        backlog keeps finding, and it would have shipped inside a change that removes an instance
+        of it.
+
+      Two of the generator tests asserted `doesNotContain("ScopedValue")` as a proxy for "binds no
+      provider slot", and the new Javadoc explaining why the allocator is a constructor argument
+      tripped them by saying the word. Retargeted at `ScopedValue.where` — the binding is the
+      invariant; a word in a comment is not.
+
+      **One behaviour change to be aware of, raised in review and deliberate.** The field, the
+      constructor parameter and `parseBody` are emitted unconditionally, so *every* handler now
+      resolves the allocator in its factory — including entities whose routes never decode a body.
+      That widens an unbound-allocator failure from "the first body-carrying request against an
+      entity that decodes" to "boot, for every entity". That is the trade this entry exists to
+      make: the fault is a wiring fault, and a wiring fault belongs at boot with the composition on
+      the stack. Worth knowing before someone reads a boot failure as a regression.
+
+      Evidence: full reactor `clean install` green — 429 codegen-java tests, 115 processor, 53 core,
+      28 e2e including `GeneratedTestsE2ETest`, which **runs** the emitted tests rather than
+      compiling them. Perturbation: restoring the per-request `.get()` fails exactly the two tests
+      that pin the capture, and nothing else.
+
 - [x] **T36 — the repository stamps three system fields and not the fourth.** *Shipped 2026-08-26.
       Stamped, not documented — two corrections to this entry came out of doing it, both below.*
       `save` and `update` now fill an absent tenant from the ambient `StorageContext` before binding

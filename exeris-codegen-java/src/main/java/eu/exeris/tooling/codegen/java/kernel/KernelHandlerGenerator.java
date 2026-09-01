@@ -76,6 +76,9 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
             ClassName.get("eu.exeris.kernel.spi.http", "HttpRequestBodyDecoderRegistry");
     private static final ClassName HTTP_REQUEST_DECODING_CONTEXT =
             ClassName.get("eu.exeris.kernel.spi.http", "HttpRequestDecodingContext");
+    private static final ClassName MEMORY_ALLOCATOR =
+            ClassName.get("eu.exeris.kernel.spi.memory", "MemoryAllocator");
+
     private static final ClassName KERNEL_PROVIDERS =
             ClassName.get("eu.exeris.kernel.spi.context", "KernelProviders");
     private static final ClassName ILLEGAL_STATE_EXCEPTION =
@@ -120,6 +123,10 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                 .addJavadoc("<p><b>DO NOT EDIT</b> - Regenerate from domain model.\n")
                 .addField(KernelScaffold.loggerField(selfType))
                 .addField(FieldSpec.builder(serviceType, "service", Modifier.PRIVATE, Modifier.FINAL)
+                        .build())
+                // T43-follow-up: the allocator is captured, not resolved per request. See the
+                // constructor Javadoc below for why the ScopedValue cannot be read from here.
+                .addField(FieldSpec.builder(MEMORY_ALLOCATOR, "allocator", Modifier.PRIVATE, Modifier.FINAL)
                         .build());
 
         // T48 (ADR-075): the generated publisher becomes a constructor argument here
@@ -129,8 +136,26 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         ClassName publisherType = publisherType(metadata);
         MethodSpec.Builder constructor = MethodSpec.constructorBuilder()
                 .addModifiers(Modifier.PUBLIC)
+                .addJavadoc("<p><b>The {@code allocator} is a constructor argument, not a per-request\n")
+                .addJavadoc("lookup, and it has to be.</b> {@code KernelProviders.MEMORY_ALLOCATOR} is a\n")
+                .addJavadoc("{@link java.lang.ScopedValue}. Its binding is established once, around the\n")
+                .addJavadoc("bootstrap callback that constructs this handler, and a {@code ScopedValue} is\n")
+                .addJavadoc("visible only inside that dynamic scope and in {@code StructuredTaskScope}\n")
+                .addJavadoc("forks of it. The kernel serves each request on a virtual thread started with\n")
+                .addJavadoc("{@code Thread.ofVirtual().start()} — documented as the sole deliberate\n")
+                .addJavadoc("exception to the structured-concurrency mandate, because the carrier threads\n")
+                .addJavadoc("that dispatch streams own no shared scope — so that thread inherits nothing,\n")
+                .addJavadoc("and reading the value from a request would find it unbound.\n")
+                .addJavadoc("<p>Resolving it where the binding is live and holding the instance is what\n")
+                .addJavadoc("the kernel's own benchmark runtime does. A wiring fault now fails at boot,\n")
+                .addJavadoc("with the composition on the stack, instead of on the first request.\n")
                 .addParameter(serviceType, "service")
-                .addStatement("this.service = service");
+                .addParameter(MEMORY_ALLOCATOR, "allocator")
+                .addStatement("this.service = service")
+                .addStatement("this.allocator = $T.requireNonNull(allocator, $S)",
+                        ClassName.get("java.util", "Objects"),
+                        "allocator must not be null — RuntimeComponents captures it from "
+                                + "KernelProviders.MEMORY_ALLOCATOR inside the bootstrap callback");
         if (publisherType != null) {
             handlerBuilder.addField(FieldSpec.builder(publisherType, PUBLISHER, Modifier.PRIVATE, Modifier.FINAL)
                     .build());
@@ -706,10 +731,12 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                 .addJavadoc("<p>Status mapping is the handler's concern, not the SPI's (ADR-036 §2):\n")
                 .addJavadoc("a decode failure — or any failure resolving/constructing the decode —\n")
                 .addJavadoc("surfaces as {@link IllegalArgumentException} (the call sites map it to\n")
-                .addJavadoc("{@code 400 BAD_REQUEST}); an unbound registry, an unregistered decoder\n")
-                .addJavadoc("or an unbound {@code MEMORY_ALLOCATOR} surfaces as\n")
-                .addJavadoc("{@link IllegalStateException} (a server-side configuration error →\n")
-                .addJavadoc("{@code 5xx}) and is re-thrown unchanged, never downgraded to 400.\n")
+                .addJavadoc("{@code 400 BAD_REQUEST}); an unbound registry or an unregistered\n")
+                .addJavadoc("decoder surfaces as {@link IllegalStateException} (a server-side\n")
+                .addJavadoc("configuration error → {@code 5xx}) and is re-thrown unchanged, never\n")
+                .addJavadoc("downgraded to 400.\n")
+                .addJavadoc("<p>The allocator is no longer among those failure modes: it is a\n")
+                .addJavadoc("constructor-captured field, so an absent one cannot reach a request at all.\n")
                 .beginControlFlow("if (!exchange.request().hasBody())")
                 .addStatement("throw new $T($S)", ILLEGAL_ARGUMENT_EXCEPTION, "Missing body")
                 .endControlFlow()
@@ -727,9 +754,17 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                 // it was wrong. MEMORY_ALLOCATOR is a ScopedValue; .get() on an unbound
                 // one throws NoSuchElementException, a RuntimeException, so a missing
                 // runtime binding was reported to the caller as "Invalid request body" —
-                // a deployment fault blamed on a request whose body was never read. The
-                // explicit bound-check below joins it to the unbound-registry case one
-                // line up: same class of fault, same IllegalStateException, same 5xx.
+                // a deployment fault blamed on a request whose body was never read. T43
+                // made that honest with a bound-check and a 5xx.
+                //
+                // T43-follow-up removes the failure instead of reporting it. The check and
+                // the .get() are gone from here because there is nothing left to check: the
+                // allocator arrives as a constructor argument, captured by RuntimeComponents
+                // inside the bootstrap callback where the ScopedValue binding is live.
+                // Reading it here could only ever have failed — the request runs on a virtual
+                // thread started with Thread.ofVirtual().start(), which inherits no
+                // ScopedValue binding (only StructuredTaskScope forks do), and the kernel
+                // documents that start as its one deliberate exception to the STS mandate.
                 .beginControlFlow("try")
                 .addStatement("$T registry = $T.httpRequestBodyDecoderRegistry()\n"
                                 + ".orElseThrow(() -> new $T($S))",
@@ -742,19 +777,10 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                         ILLEGAL_STATE_EXCEPTION,
                         "No request body decoder registered for target type ", " and content-type ", "(absent)")
                 .endControlFlow()
-                .beginControlFlow("if (!$T.MEMORY_ALLOCATOR.isBound())", KERNEL_PROVIDERS)
-                .addStatement("throw new $T($S)", ILLEGAL_STATE_EXCEPTION,
-                        "No MemoryAllocator is bound; cannot build the request decoding "
-                                + "context. KernelProviders.MEMORY_ALLOCATOR is supplied by the "
-                                + "'memory' subsystem, which the default selector boots because "
-                                + "'http' declares it as a dependency, and is visible only inside "
-                                + "the dynamic scope of that binding. This is a wiring fault, not "
-                                + "a malformed request: the body has not been read yet.")
-                .endControlFlow()
                 .addStatement("$T context = new $T(exchange.request().method(), "
                                 + "exchange.request().path(), exchange.request().headers(), "
-                                + "$T.MEMORY_ALLOCATOR.get())",
-                        HTTP_REQUEST_DECODING_CONTEXT, HTTP_REQUEST_DECODING_CONTEXT, KERNEL_PROVIDERS)
+                                + "this.allocator)",
+                        HTTP_REQUEST_DECODING_CONTEXT, HTTP_REQUEST_DECODING_CONTEXT)
                 .addStatement("return ($T) decoder.decode(body, type, context)", tVar)
                 .nextControlFlow("catch ($T e)", ILLEGAL_STATE_EXCEPTION)
                 .addStatement("throw e")

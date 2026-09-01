@@ -689,12 +689,22 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 addComponent(type, publisherType, publisherName,
                         CodeBlock.of("new $T($T.eventEngine())", publisherType, KERNEL_PROVIDERS));
             }
+            // T43-follow-up: KernelProviders.MEMORY_ALLOCATOR is resolved HERE and handed to the
+            // handler, rather than read per request inside parseBody. This factory runs inside the
+            // KernelBootstrap.boot(...) callback, which the kernel executes inside the enriched
+            // ScopedValue carrier — so the binding is live at exactly this point and nowhere the
+            // handler will later run: a request is served on a virtual thread started with
+            // Thread.ofVirtual().start(), which inherits no ScopedValue binding. Same shape the
+            // kernel's own CommunityBenchmarkRuntimeLifecycle uses, and it turns a wiring fault
+            // into a boot failure instead of a 5xx on the first request with a body.
+            CodeBlock allocator = CodeBlock.of("$T.MEMORY_ALLOCATOR.get()", KERNEL_PROVIDERS);
             if (KernelHandlerGenerator.publishesFromHandler(domain)) {
                 addComponent(type, handlerType, entityLower + "Handler",
-                        CodeBlock.of("new $T($L(), $L())", handlerType, serviceName, publisherName));
+                        CodeBlock.of("new $T($L(), $L, $L())",
+                                handlerType, serviceName, allocator, publisherName));
             } else {
                 addComponent(type, handlerType, entityLower + "Handler",
-                        CodeBlock.of("new $T($L())", handlerType, serviceName));
+                        CodeBlock.of("new $T($L(), $L)", handlerType, serviceName, allocator));
             }
 
             // ADR-043 Slice 1 / ADR-044 Slice 2: the SSE stream handlers are no-arg today,
