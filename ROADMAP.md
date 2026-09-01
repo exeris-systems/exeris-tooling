@@ -837,6 +837,21 @@ never-invoked emitter start emitting, and its output did not build.
       *consumer's* code, exactly like the generated services — but neither was exported from the
       app barrel, which is how that code reaches them without knowing internal paths.
 
+- [ ] **`<Entity>Store` is generated, injectable, and has no barrel path.** Raised in the #193
+      review. `store-gen` emits a `providedIn: 'root'` signal store per entity — the signal-first
+      surface the pipeline advertises — but `generateBarrelExport` has no Stores section at all, so
+      a consumer's own code can only reach one by internal relative path. `view-gen` reaches it
+      that way for the pages it generates; nothing else can. Exactly the reachability gap the
+      events slice closed, on the shape that arguably matters most.
+
+      Not folded into #193: adding a barrel section is trivial, but the question underneath is
+      whether the store or the service is the consumer's intended entry point, and answering it by
+      quietly exporting both is how a surface ends up with two ways to do one thing.
+
+      Note for whoever takes it: `barrel-resolves.spec` already iterates `generateStores`, and that
+      case is **vacuous** today — zero specifiers either way. It is the guard that fires if a
+      Stores section lands ungated, not evidence that one is covered.
+
       **`generateDetails` (done).** Wiring it was not cosmetic: the emitted **list** already linked
       to the two routes a detail component owns — `[routerLink]="[item.id]"` labelled *View* and
       `[routerLink]="[item.id, 'edit']"` labelled *Edit* (`list-gen.ts:299,300`) — while the route

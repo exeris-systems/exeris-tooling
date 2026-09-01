@@ -10,6 +10,13 @@
  *
  * This asserts the INVARIANT rather than the six known shapes, so a section added later is
  * covered without anyone remembering to extend a list.
+ *
+ * <p>One honest caveat: `generateStores` is in the flag list but the barrel has no Stores section
+ * at all, so that case passes vacuously — zero specifiers either way. It is kept deliberately, as
+ * the guard that fires the day a Stores section is added ungated, but it is not evidence of
+ * anything today. Whether `<Entity>Store` *should* be barrel-exported is a separate question
+ * (it is `providedIn: 'root'` like `EventBusService`, and today a consumer can only reach it by
+ * internal relative path) — tracked in ROADMAP, not answered here.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -42,6 +49,7 @@ const FLAGS = [
   'generateForms',
   'generateLists',
   'generateDetails',
+  // Vacuous today — see the caveat above. Present so a future Stores section cannot land ungated.
   'generateStores',
   'generateEvents',
 ] as const;
