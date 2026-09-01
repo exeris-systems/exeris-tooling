@@ -54,8 +54,37 @@ const domains = [
       { name: 'cancel', methodName: 'cancel' },
       { name: 'setStatus', methodName: 'setStatus', params: [{ name: 'status', type: 'com.shop.OrderStatus' }] },
     ],
+    // The saga state machine is emitted only for an entity that declares one, so without this
+    // the `generateSagas` flag has nothing to build and the FE gate never compiles saga-gen's
+    // output. Two of the three steps carry a compensation and one does not, which is the only
+    // branch the emitted step table actually has. (`order` is set because the SDK's @SagaStep
+    // requires it, not because anything reads it — no generator on either side sorts by it; see
+    // ROADMAP.)
+    sagaMetadata: {
+      name: 'OrderFulfilment',
+      steps: [
+        { name: 'reserveStock', action: 'reserve', compensatingAction: 'releaseStock', order: 0 },
+        { name: 'chargeCard', action: 'charge', compensatingAction: 'refundCard', order: 1 },
+        { name: 'notifyCustomer', action: 'notify', order: 2 },
+      ],
+      compensationStrategy: 'ALL_OR_NOTHING',
+      compensationOrder: 'REVERSE',
+    },
   }),
-  d({ entityName: 'Product', fields: [{ name: 'id', type: 'java.util.UUID' }, { name: 'name', type: 'String' }] }),
+  // A SECOND saga, so the barrel is built with two machines. Each saga file declares its own
+  // SagaState/SagaStep/SagaStatusSnapshot, so a barrel that starred both would make every one of
+  // those names ambiguous. One saga in the fixture could never show that.
+  d({
+    entityName: 'Product',
+    fields: [{ name: 'id', type: 'java.util.UUID' }, { name: 'name', type: 'String' }],
+    sagaMetadata: {
+      name: 'ProductRestock',
+      steps: [
+        { name: 'requestQuote', order: 0 },
+        { name: 'placePurchaseOrder', compensatingAction: 'cancelPurchaseOrder', order: 1 },
+      ],
+    },
+  }),
   // Named for the collision, not for the shop: `Component` is what an emitted module already
   // imports from '@angular/core', so before T40 this entity's form and list components imported
   // the identifier twice and `ng build` failed here. It stays in the fixture because a unit test

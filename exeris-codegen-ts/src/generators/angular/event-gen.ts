@@ -18,12 +18,8 @@ import type { GeneratorConfig } from '../../config.js';
 import type { CodeGenerator, GeneratedFile, GeneratorContext } from '../../core/generator-registry.js';
 import type { BackendType } from '../../core/backend-strategy.js';
 import { DslMapper } from '../../models/dsl-mapper.js';
+import { tsSingleQuoted } from './ts-literal.js';
 
-
-/** A TS single-quoted string literal — event display names come from metadata. */
-function tsSingleQuoted(value: string): string {
-  return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\r?\n/g, ' ');
-}
 
 /**
  * <b>No `$localize` in emitted output.</b> Three announcer strings used `$localize` tagged

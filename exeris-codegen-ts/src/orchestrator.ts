@@ -26,6 +26,7 @@ import { generateList } from './generators/angular/list-gen.js';
 import { generateDetail } from './generators/angular/detail-gen.js';
 import { EventHandlerGenerator } from './generators/angular/event-gen.js';
 import { generateSchemaSpec, generateServiceSpec } from './generators/angular/spec-gen.js';
+import { generateSaga } from './generators/angular/saga-gen.js';
 import { generateStore } from './generators/angular/store-gen.js';
 import { generateAppStructure } from './generators/angular/app-structure-gen.js';
 import { generateView, generateViewRoute } from './generators/angular/view-gen.js';
@@ -115,12 +116,17 @@ export function buildGeneratedFiles(
     // signal-first surface the config promises was never emitted. That is what led view-gen to bind
     // `<entity>Service.current()`, a method the RxJS service does not have: the author was reaching
     // for a store that the pipeline silently dropped.
-    //
-    // NOTE: `generateSagas` is the last flag still in that state — declared, defaulted true, read
-    // by nothing. `generateDetails` and `generateEvents` have since been wired, each in its own
-    // change with its own evidence; the ROADMAP entry carries what each one exposed.
     if (config.generateStores) {
       appTree.push(generateStore(domain, config));
+    }
+
+    // Saga UI state machines. `generateSagas` was the last flag declared, defaulted true and read
+    // by nothing, so no generated app ever received the one artefact that knows a saga's step
+    // names, labels, order and compensations — a consumer had to retype the flow the processor
+    // already extracted. Emitted only for an entity that declares `@Saga`.
+    if (config.generateSagas) {
+      const saga = generateSaga(domain, config);
+      if (saga) appTree.push(saga);
     }
 
     // Domain-event handlers. `generateEvents` has defaulted to true since the flag was added and

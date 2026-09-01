@@ -420,3 +420,57 @@ describe('buildGeneratedFiles — generated specs', () => {
     expect(noServices.some((f) => f.path.endsWith('.service.spec.ts'))).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// generateSagas wiring (0.8.0). The last flag that was declared, defaulted to
+// true, and read by nothing. Wiring it is what first put the saga file into a
+// generated app — which is why the fabricated `/api/v1/sagas/...` transport it
+// carried had to go in the same change rather than ship to consumers.
+// ---------------------------------------------------------------------------
+
+describe('buildGeneratedFiles — saga state machines', () => {
+  const withSaga = domain({
+    entityName: 'Order',
+    fields: [{ name: 'id', type: 'java.util.UUID' }],
+    sagaMetadata: {
+      name: 'OrderFulfilment',
+      steps: [{ name: 'reserveStock', compensatingAction: 'releaseStock' }],
+    },
+  });
+  const noSaga = domain({ entityName: 'Product', fields: [{ name: 'id', type: 'java.util.UUID' }] });
+  const at = (files: { path: string; content: string }[], p: string) =>
+    files.find((f) => f.path === p)?.content ?? '';
+
+  it('emits the state machine for an entity that declares a saga', () => {
+    const files = buildGeneratedFiles([withSaga], [], DEFAULT_CONFIG);
+    expect(files.some((f) => f.path === 'src/app/sagas/order.saga.ts')).toBe(true);
+  });
+
+  it('emits nothing under sagas/ for an entity that declares none', () => {
+    const files = buildGeneratedFiles([noSaga], [], DEFAULT_CONFIG);
+    expect(files.some((f) => f.path.includes('/sagas/'))).toBe(false);
+  });
+
+  it('emits no saga code when generateSagas is false', () => {
+    const files = buildGeneratedFiles([withSaga], [], { ...DEFAULT_CONFIG, generateSagas: false });
+    expect(files.some((f) => f.path.includes('/sagas/'))).toBe(false);
+  });
+
+  // The machine is providedIn:'root' and injected by nothing the pipeline emits — the consumer's
+  // progress UI is the only thing that can drive it, so the barrel is the whole point.
+  it('exports the machine and the shared saga types from the app barrel', () => {
+    const barrel = at(buildGeneratedFiles([withSaga], [], DEFAULT_CONFIG), 'src/app/index.ts');
+    expect(barrel).toContain("export { OrderFulfilmentStateMachine } from './sagas/order.saga';");
+    expect(barrel).toContain('SagaStatusSnapshot');
+  });
+
+  // Measured before wiring: KernelApplicationGenerator registers no saga route, the emitted
+  // OpenAPI names no saga path, and the kernel flow SPI exposes no per-execution handle. The
+  // emitted machine must therefore ask its caller for status rather than fetch it.
+  it('emits a machine with no transport of its own', () => {
+    const saga = at(buildGeneratedFiles([withSaga], [], DEFAULT_CONFIG), 'src/app/sagas/order.saga.ts');
+    expect(saga).toContain('applyStatus(status: SagaStatusSnapshot): void {');
+    expect(saga).not.toContain('/api/v1/sagas');
+    expect(saga).not.toContain('HttpClient');
+  });
+});

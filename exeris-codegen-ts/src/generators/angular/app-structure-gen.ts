@@ -25,6 +25,8 @@ import {
   viewRouteImportPath,
   isPageView,
 } from './view-gen.js';
+import { tsSingleQuoted } from './ts-literal.js';
+import { sagaMachineName } from './saga-gen.js';
 
 export interface GeneratedFile {
   path: string;
@@ -41,10 +43,6 @@ function jsonValue(s: string): string {
 /** HTML text content (index.html title). */
 function htmlText(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-/** A TS single-quoted string literal (component `title`, route titles). */
-function tsSingleQuoted(s: string): string {
-  return s.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\r?\n/g, ' ');
 }
 /** HTML text that sits inside an emitted TS backtick template (both layers). */
 function htmlInTemplate(s: string): string {
@@ -451,6 +449,34 @@ function generateBarrelExport(
     exports.push(`export type { DomainEvent } from './events/event-bus.service';`);
     for (const domain of eventDomains) {
       exports.push(`export * from './events/${DslMapper.toKebabCase(domain.entityName)}.events';`);
+    }
+  }
+
+  // Saga state machines. `providedIn: 'root'` like the event classes, and injected by nothing the
+  // pipeline emits — they exist for the consumer's own progress UI, which is the only code that
+  // can drive them (the machine carries no transport; see saga-gen's header).
+  //
+  // Named exports, not `export *`: every saga file declares its own `SagaState`, `StepStatus`,
+  // `SagaStep`, `SagaExecution` and `SagaStatusSnapshot`, so starring two of them would make each
+  // of those names ambiguous — and an ambiguous star export is dropped silently rather than
+  // reported. The shared type names therefore come from the first saga only, exactly as `Page`
+  // and `PageRequest` do in the services section above.
+  const sagaDomains = config.generateSagas
+    ? visibleDomains.filter((d) => sagaMachineName(d) !== null)
+    : [];
+  if (sagaDomains.length > 0) {
+    exports.push('', '// Saga state machines');
+    let sagaTypesExported = false;
+    for (const domain of sagaDomains) {
+      const kebab = DslMapper.toKebabCase(domain.entityName);
+      const machine = sagaMachineName(domain);
+      if (!sagaTypesExported) {
+        exports.push(`export { ${machine} } from './sagas/${kebab}.saga';`);
+        exports.push(`export type { SagaState, StepStatus, SagaStep, SagaExecution, SagaStatusSnapshot } from './sagas/${kebab}.saga';`);
+        sagaTypesExported = true;
+      } else {
+        exports.push(`export { ${machine} } from './sagas/${kebab}.saga';`);
+      }
     }
   }
 
