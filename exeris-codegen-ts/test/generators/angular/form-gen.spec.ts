@@ -127,13 +127,18 @@ describe('FormGenerator emitted content — top-level structure', () => {
     expect(content).toContain('this.service.update(String(this.entity()!.id), data as OrderUpdate)');
   });
 
-  it('uses systemFields.idField alias in the update dispatch path', () => {
+  it('dispatches the update on id even when primaryKeyField names something else', () => {
+    // A declared override must NOT move the emitted identity: nothing in the pipeline honours
+    // `primaryKeyField` — Flyway emits `id UUID PRIMARY KEY`, the repository's clause is the
+    // constant " WHERE id = ?", every by-id handler binds `{id}` — so an emitted app that
+    // requested the override would talk to the wrong REST identifier.
     const content = gen.generate(domain({
       entityName: 'Order',
-      systemFields: { idField: 'uuid' },
+      systemFields: { primaryKeyField: 'uuid' },
     }), CTX)!.content;
 
-    expect(content).toContain('this.entity()!.uuid');
+    expect(content).toContain('this.entity()!.id');
+    expect(content).not.toContain('this.entity()!.uuid');
   });
 });
 

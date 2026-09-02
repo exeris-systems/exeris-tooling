@@ -266,15 +266,24 @@ export type SagaMetadata = z.infer<typeof SagaMetadataSchema>;
 // System Fields Metadata
 // ============================================================================
 
+// Mirrors eu.exeris.sdk.sourcemodel.ast.SystemFieldsMetadata, component for component.
+// Six of the ten names already agreed; four did not, and the producer's spelling wins:
+// `primaryKeyField` (was `idField` here) and `softDeleteTimestampField` (was `deletedAtField`)
+// are the record's names, and `softDeleteField` / `softDeletedByField` had no declaration here
+// at all. The record carries @JsonInclude(NON_NULL), and `SystemFieldsMetadata.defaults()`
+// leaves the three soft-delete components null, so those are absent unless the entity overrides
+// them — hence .optional() on everything the defaults do not fill.
 export const SystemFieldsMetadataSchema = z.object({
-  idField: z.string().default('id'),
-  versionField: z.string().optional(),
+  primaryKeyField: z.string().default('id'),
   createdAtField: z.string().optional(),
-  updatedAtField: z.string().optional(),
   createdByField: z.string().optional(),
+  updatedAtField: z.string().optional(),
   updatedByField: z.string().optional(),
   tenantIdField: z.string().optional(),
-  deletedAtField: z.string().optional(),
+  versionField: z.string().optional(),
+  softDeleteField: z.string().optional(),
+  softDeleteTimestampField: z.string().optional(),
+  softDeletedByField: z.string().optional(),
 });
 
 export type SystemFieldsMetadata = z.infer<typeof SystemFieldsMetadataSchema>;

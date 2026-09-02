@@ -581,6 +581,48 @@ types) found the processor names **21 of ~44** annotations.
 - [ ] **C1 — `annotation.system.*` (10 field-level).** Trap worth naming: `DomainMetadata.systemFields`
       *is* populated, but from `@ExerisDomain`'s override attributes (`extractSystemFieldsOverrides`),
       never from `@PrimaryKey` / `@TenantId` / `@Version` / `@SoftDelete*` / `@Audit*`.
+
+      Every one of the ten has a carrier — `SystemFieldsMetadata` declares exactly ten components,
+      one per annotation — so this is genuine extraction, unlike the saga and graph families. The
+      consumers are ready too: `KernelRepositoryGenerator` and `KernelFlywayGenerator` read the
+      record on the Java side, and six TypeScript generators read it on the other.
+
+      **Its prerequisite shipped first (0.9.0): four of the ten keys did not exist on the TS side.**
+      Measured before starting the extraction, because C1 populates `systemFields` on far more
+      entities and would have multiplied the defect. `SystemFieldsMetadataSchema` declared
+      `idField` and `deletedAtField` against a record serialising `primaryKeyField` and
+      `softDeleteTimestampField`, and had no declaration at all for `softDeleteField` /
+      `softDeletedByField`. Six names agreed, four did not, and Zod strips unknown keys — so the
+      four were dropped in silence while `idField`'s own `.default('id')` supplied a plausible
+      wrong answer in their place.
+
+      **That reached emitted code.** An entity declaring the soft-delete overrides got a create
+      DTO whose omit set came out **empty**, so three columns the server owns were client-writable.
+      Proven by regenerating the sample app in both directions.
+
+      **The primary key is the one component to leave alone, and finding out why was the review's
+      doing.** The first version of the fix wired `primaryKeyField` into identity — and
+      `primaryKeyField` is honoured by *nothing*: `KernelFlywayGenerator` emits
+      `id UUID PRIMARY KEY` unconditionally and its `sysCol` switch maps the other nine names only,
+      `KernelRepositoryGenerator` resolves five system fields and identifies every row through the
+      constant `" WHERE id = ?"`, every by-id handler binds the `{id}` path variable, and
+      `extractSystemFieldsOverrides`'s own Javadoc says it outright ("generators leave the primary
+      key as the literal `id`"). Honouring it on the TypeScript side alone would have made the
+      emitted app request an identifier the router does not serve — a runtime break no `tsc`,
+      `ng build` or unit test can see, since none of them talk to a kernel. The six read sites use
+      the literal `id`, each carrying the reason, and eight tests that had pinned the override
+      *moving* the identity now pin it **not** moving.
+
+      **`@ExerisDomain.primaryKeyField` joined `INERT_ATTRIBUTES`** in the same change. It is the
+      reverse of the registry's usual direction — an attribute that stopped being consumed rather
+      than started — and without it the author of `primaryKeyField = "invoiceNo"` gets silence and
+      an `id`. Renaming the primary key is one change across the SQL, the repository and the route
+      template; that is this item's scope, and the entry is deleted in the change that lands it.
+
+      **Nothing could have caught any of it**: every unit fixture was written from the schema rather
+      than the record, and neither FE gate declared a `systemFields` block at all. The sample app
+      now carries `Invoice`, which declares `id` *and* `primaryKeyField = "invoiceNo"` — pinning
+      both halves of the real contract, the honoured overrides and the ignored one.
 - [ ] **C2 — `annotation.security.*`.** `@Encrypted` and `@RowLevelSecurity`; the latter overlaps the
       RLS predicate `KernelFlywayGenerator` already drives from `dataScope`, so it needs a design
       call, not just extraction.

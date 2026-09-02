@@ -1942,6 +1942,37 @@ class ExerisDomainProcessorTest {
         }
 
         @Test
+        @DisplayName("-Aexeris.strict warns on @ExerisDomain.primaryKeyField, the one system field nobody honours")
+        void strictWarnsOnInertPrimaryKeyField() {
+            // SystemFieldsMetadata's other nine components are all read — Flyway's sysCol maps
+            // tenantId, the audit stamps, the soft-delete trio and version; the repository
+            // resolves five of them. The primary key is read by none: the schema emits
+            // `id UUID PRIMARY KEY` unconditionally, the repository's clause is the constant
+            // " WHERE id = ?", and every by-id handler binds {id}. Setting it therefore changes
+            // no emitted artefact, which is exactly what this audit exists to say out loud.
+            Compilation compilation = javac()
+                    .withOptions("-Aexeris.strict=true")
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(JavaFileObjects.forSourceString(
+                            "com.example.Invoice",
+                            """
+                            package com.example;
+                            import eu.exeris.sdk.annotation.ExerisDomain;
+
+                            @ExerisDomain(module = "billing", path = "/invoices",
+                                          primaryKeyField = "invoiceNo")
+                            public class Invoice {
+                                private String invoiceNo;
+                            }
+                            """));
+
+            assertThat(compilation).succeeded();
+            assertThat(hasInertWarningFor(compilation, "@ExerisDomain.primaryKeyField"))
+                    .as("strict names the attribute that has no effect")
+                    .isTrue();
+        }
+
+        @Test
         @DisplayName("-Aexeris.strict warns on @ActionParam.description and .required")
         void strictWarnsOnInertActionParamAttributes() {
             Compilation compilation = javac()

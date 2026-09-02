@@ -286,6 +286,22 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "kernel's RouteRequirement decides on named scopes, and a generated "
                             + "URL-to-policy table would carry these. That table is this "
                             + "repository's to emit and is not built (T53)"),
+            new InertAttribute("ExerisDomain", "primaryKeyField",
+                    "it is extracted — SystemFieldsMetadata carries it — but it is the one "
+                            + "component of that record no generator reads. The other nine are all "
+                            + "honoured: KernelFlywayGenerator's sysCol maps tenantId, the four "
+                            + "audit stamps, the three soft-delete columns and version, and "
+                            + "KernelRepositoryGenerator resolves five of them. The primary key is "
+                            + "not among them anywhere. Flyway emits id UUID PRIMARY KEY "
+                            + "unconditionally, the repository identifies every row through the "
+                            + "constant WHERE id = ?, and every by-id handler binds the {id} path "
+                            + "variable, so a renamed key reaches neither the schema, the query nor "
+                            + "the route. The TypeScript emitters did read it for one change and "
+                            + "were corrected: honouring it on one side alone made the emitted app "
+                            + "request an identifier the router does not serve, which is worse than "
+                            + "ignoring it on both. Renaming the primary key is a change to the SQL, "
+                            + "the repository and the route template together — that is C1's scope, "
+                            + "and this entry is deleted in the change that lands it"),
             new InertAttribute("ExerisDomain", "roles",
                     "the processor does not extract it, and unlike permissions it has no route-level "
                             + "destination: the kernel decides a route on scopes and never on roles, "
