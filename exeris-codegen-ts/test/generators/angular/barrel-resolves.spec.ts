@@ -50,7 +50,6 @@ const FLAGS = [
   'generateForms',
   'generateLists',
   'generateDetails',
-  // Vacuous today — see the caveat above. Present so a future Stores section cannot land ungated.
   'generateStores',
   'generateEvents',
   'generateSagas',

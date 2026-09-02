@@ -399,7 +399,7 @@ describe('generateAppStructure — multi-domain wiring', () => {
     // would make that name ambiguous against the services section — and an ambiguous star
     // export is dropped silently rather than reported.
     const barrel = fileAt(files, 'src/app/index.ts')!;
-    expect(barrel.content).not.toContain("from './stores/order.store';\nexport *");
+    expect(barrel.content).not.toMatch(/export \*[^\n]*from '\.\/stores\//);
     expect(barrel.content.match(/OrderFilter/g) ?? []).toHaveLength(1);
   });
 
