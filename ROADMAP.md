@@ -485,12 +485,22 @@ types) found the processor names **21 of ~44** annotations.
       author that a now-consumed annotation has no effect on emitted output. There is now a test
       for that specific direction, which C0's own suite lacked.
 
-      **A latent Java/TS parity gap, recorded not fixed** (raised in the same review):
-      `exeris-codegen-ts` declares `GraphEdgeMetadataSchema` as `name`/`targetEntity`/`edgeType`/
-      `direction`, while the Java side serialises `name`/`targetLabel`/`relationType`. No TS
-      generator reads `graphMetadata`, so it is dormant — but `targetEntity` carries no
-      `.optional()`, so the first TS graph consumer built against that schema would fail to parse
-      real metadata. Fixing it belongs with that consumer, not here.
+      **The Java/TS parity gap raised in the same review is closed.** *Shipped 0.9.0.*
+      `exeris-codegen-ts` declared `GraphEdgeMetadataSchema` as `name`/`targetEntity`/`edgeType`/
+      `direction` while the Java side serialises `name`/`targetLabel`/`relationType`, and
+      `targetEntity` carried no `.optional()` — so the first TS graph consumer would have failed to
+      parse any real document, on a required key the producer has never emitted.
+
+      Re-measuring widened it twice. `GraphMetadataSchema` declared only `label` and `edges`, so
+      `properties` and `queries` were dropped in silence rather than refused. And the three tests
+      covering these schemas asserted the fiction rather than the record — one of them pinned a
+      `direction` default, which is why the divergence survived a suite that passes. All four
+      schemas now mirror the SDK records component-for-component, `.optional()` wherever
+      `@JsonInclude(NON_NULL)` drops a null off the wire.
+
+      **`direction` is now absent by design**, not overlooked: it is one of the eleven attributes
+      below with no component to carry it, so no metadata document contains it and a schema default
+      would report `OUTGOING` for every edge in the pipeline.
 
       **Eleven of the annotation's attributes have no component to carry them** — `direction`,
       `bidirectional`, `inverseType`, `weighted`, `weightField`, `description`, `properties`,
@@ -2462,8 +2472,8 @@ results, and a line-number citation that expired between being measured and bein
 applies to pinning as much as to tagging. Four groups, by what blocks them —
 
 - **No external gate:** D10 (whose *resolution* is a T53 question — do not settle it before that
-  RFC), the TS `GraphEdgeMetadataSchema` parity gap, the `npm start` proxy prefix and its three
-  residual `/api` sites, the `<Entity>Store` barrel question, C1, C2, T53.
+  RFC), the `npm start` proxy prefix and its three residual `/api` sites, the `<Entity>Store` barrel
+  question, C1, C2, T53. The TS `GraphEdgeMetadataSchema` parity gap shipped from this group.
 - **Behind a final kernel 0.12:** the pin bump, `@Saga.version`'s emitter half, T12's client half +
   T17. **Not** the EV1-stream per-action driver — see the readiness measurement below.
 - **Behind an SDK record change:** the `GraphEdgeMetadata` field/identity split, the six
