@@ -289,14 +289,15 @@ export function systemFieldNames(metadata: DomainMetadata): string[] {
   const sf = metadata.systemFields;
 
   if (sf) {
-    if (sf.idField && sf.idField !== 'id') fields.push(sf.idField);
     if (sf.versionField) fields.push(sf.versionField);
     if (sf.createdAtField) fields.push(sf.createdAtField);
     if (sf.updatedAtField) fields.push(sf.updatedAtField);
     if (sf.createdByField) fields.push(sf.createdByField);
     if (sf.updatedByField) fields.push(sf.updatedByField);
     if (sf.tenantIdField) fields.push(sf.tenantIdField);
-    if (sf.deletedAtField) fields.push(sf.deletedAtField);
+    if (sf.softDeleteField) fields.push(sf.softDeleteField);
+    if (sf.softDeleteTimestampField) fields.push(sf.softDeleteTimestampField);
+    if (sf.softDeletedByField) fields.push(sf.softDeletedByField);
   } else {
     // Default system fields
     fields.push('version', 'createdAt', 'updatedAt');

@@ -98,6 +98,35 @@ const domains = [
   // '/address', while detail-gen used to navigate to '/addresss' after a delete — a URL the
   // route table never declares. No fixture entity ended in 's', which is why nothing caught it.
   d({ entityName: 'Address', fields: [{ name: 'id', type: 'java.util.UUID' }, { name: 'city', type: 'String' }] }),
+  // Named for the overrides, not for the shop: the only fixture entity declaring a systemFields
+  // block at all, which is why four of that block's ten keys could be spelled wrong on the TS
+  // side for two trains without any gate noticing.
+  //
+  // It declares `id` AND `primaryKeyField: 'invoiceNo'` on purpose. That pins the real contract
+  // in both directions: the soft-delete trio IS honoured — KernelFlywayGenerator.sysCol maps
+  // deleted/deletedAt/deletedBy, so those columns are server-owned and must leave the create
+  // DTO — while `primaryKeyField` is honoured by NOTHING (the PK column, the repository's
+  // " WHERE id = ?" and every by-id handler are all the literal `id`). An emitted artefact that
+  // starts requesting `invoiceNo` fails here, which is the regression this entity exists to
+  // catch.
+  d({
+    entityName: 'Invoice',
+    softDelete: true,
+    fields: [
+      { name: 'id', type: 'java.util.UUID' },
+      { name: 'invoiceNo', type: 'String' },
+      { name: 'amount', type: 'java.math.BigDecimal', dataType: 'currency' },
+      { name: 'archived', type: 'boolean' },
+      { name: 'archivedAt', type: 'java.time.Instant' },
+      { name: 'archivedBy', type: 'String' },
+    ],
+    systemFields: {
+      primaryKeyField: 'invoiceNo',
+      softDeleteField: 'archived',
+      softDeleteTimestampField: 'archivedAt',
+      softDeletedByField: 'archivedBy',
+    },
+  }),
 ];
 const enums = [{
   name: 'OrderStatus',

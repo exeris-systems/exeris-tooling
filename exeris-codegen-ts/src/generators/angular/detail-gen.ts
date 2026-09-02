@@ -47,7 +47,13 @@ export class DetailGenerator implements CodeGenerator {
     const modelName = modelTypeName(entityName);
     const kebab = DslMapper.toKebabCase(entityName);
     const displayName = domain.displayName ?? entityName;
-    const idField = domain.systemFields?.idField ?? 'id';
+    // The literal 'id', deliberately, not systemFields.primaryKeyField. Nothing in the pipeline
+    // honours that override: KernelFlywayGenerator emits `id UUID PRIMARY KEY` unconditionally,
+    // KernelRepositoryGenerator's WHERE clause is the constant " WHERE id = ?", every by-id
+    // handler binds the {id} path variable, and the processor says so outright ("generators leave
+    // the primary key as the literal id"). Reading it here would make this the only layer that
+    // honours it, and the emitted app would then request the wrong identifier.
+    const idField = 'id';
 
     const systemFieldNames = this.getSystemFieldNames(domain);
     const displayFields = fields.filter(f => !systemFieldNames.includes(f.name) && !f.hidden);
@@ -278,7 +284,6 @@ export class DetailGenerator implements CodeGenerator {
     const fields = ['id', 'version', 'createdAt', 'updatedAt', 'createdBy', 'updatedBy', 'tenantId', 'deletedAt', 'deleted'];
     const sf = domain.systemFields;
     if (sf) {
-      if (sf.idField) fields.push(sf.idField);
       if (sf.versionField) fields.push(sf.versionField);
       if (sf.createdAtField) fields.push(sf.createdAtField);
       if (sf.updatedAtField) fields.push(sf.updatedAtField);

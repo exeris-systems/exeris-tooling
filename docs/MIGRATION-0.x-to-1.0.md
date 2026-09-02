@@ -1043,6 +1043,116 @@ requires them.
 
 ---
 
+## 0.9.0 train — regeneration deltas
+
+### Dependency floor (unchanged)
+
+**Neither pin moves in this train.** `exeris.sdk.version` and `exeris.kernel.version` both stay at
+`0.11.0`, so the metadata schema stamp stays at `0.11.0` too and no re-run is forced by a skew
+check. Everything below is a change to what the generators emit, not to what they are built against.
+
+The 0.12 lines exist only as snapshots. When they cut finals, that bump is its own entry.
+
+### A missing request-body decoder now answers 500 and says so (T52)
+
+Regenerated handlers gain a private `respondDecoderUnavailable(HttpExchange, IllegalStateException)`
+and call it from every body-parsing site. Before, an `IllegalStateException` out of `parseBody` — no
+decoder registered for the request's content type — escaped the handler: the kernel's own fallback
+answered a bare 500 with nothing logged, so a misconfigured
+`HttpKernelProviders.HTTP_REQUEST_BODY_DECODER_REGISTRY` looked identical to a crash in your service.
+
+**The status is unchanged and deliberately so** (ADR-036 §2): a missing decoder is a deployment
+fault, not a client error, and is never downgraded to 400. What changes is that the response is now
+the handler's own and the cause reaches your log at `ERROR`, naming the registry.
+
+**If you only regenerate, there is nothing to do.** If you asserted on the old behaviour — an
+unlogged 500 — that assertion now sees a logged one.
+
+### A primitive `boolean` field now renders as a checkbox (T20d)
+
+Three sites in `form-gen` tested the literal type name `java.lang.Boolean`, so a field declared
+`boolean` missed all three: it rendered as a **text input**, seeded with `''`, and was then cast as
+if it held a boolean. All three now go through `DslMapper.mapType(field.type).tsType`, which is the
+DTO type the rest of the pipeline already agrees on.
+
+**Regenerated forms change for every primitive-`boolean` field**: input type `checkbox`, and the
+control seeds `false` rather than `''` — a checkbox has no empty state, so the seed is the fix, not
+the cast. A boxed `Boolean` field is unaffected; it was already correct.
+
+### `RuntimeComponents` gains a `decorate` hook, and refuses one combination at boot (T49, ADR-070)
+
+`RuntimeComponents` now has `public HttpHandler decorate(HttpRouter router) { return router; }`, and
+`Application` publishes `components.decorate(router)` rather than the router itself. Override it to
+wrap the whole router once — a per-request scope, a tracing span, a request-id filter — instead of
+copying the generated bootstrap to get at the publish site.
+
+**A generated app that both wraps and streams now refuses to start.** The kernel resolves a stream
+only through `handler instanceof HttpRouter`, so any wrapper erases the type and every `streamRoute`
+registers and then never matches, silently. If your domain declares `realTimeApi` or any
+`@Action(streaming = true)`, `decorate` must return the router it was given; returning anything else
+throws `IllegalStateException` at boot with that explanation. This is a tooling guard over a kernel
+limitation, and it goes away when a stream can be resolved through a delegable interface.
+
+### `exeris-codegen-ts`: `GraphEdgeMetadata` and `GraphMetadata` change shape (#208)
+
+Two exported TypeScript types are realigned onto the records they mirror. `GraphEdgeMetadata` was
+`name` / `targetEntity` / `edgeType` / `direction`; it is now `name` / `targetLabel?` /
+`relationType?`. `GraphMetadata` gains `properties` and `queries`, which it had been dropping
+silently.
+
+**`direction` is gone rather than renamed.** `@GraphEdge.direction` has no component on the metadata
+record, so no document has ever carried it; the old schema supplied a `'OUTGOING'` default for every
+edge regardless.
+
+**No generated output changes** — no TypeScript generator reads `graphMetadata` yet. This matters
+only if your own code imports those types from the package.
+
+### `exeris-codegen-ts`: `environment.apiUrl` stops announcing `/api` (#209)
+
+`resolveApiSettings` used `config.apiBasePath || clientConfig.baseUrl || '/api'`. `apiBasePath`
+defaults to `''`, which is falsy, so the default fell through to the KERNEL strategy's `/api` and
+every emitted `environment.ts` published a prefix the services beside it never requested. It now
+publishes `config.apiBasePath` and nothing else.
+
+**Nothing in the emitted tree imports `environment`**, so this changes a file that used to
+contradict its siblings and now does not. If your own code reads `environment.apiUrl`, it now
+matches what the generated services actually call.
+
+Separately, `createGeneratorContext` filled `apiBasePath` with `/api` when a caller omitted it,
+contradicting the schema default. **Only programmatic callers are affected** — the CLI and config
+paths always pass a resolved value.
+
+### `exeris-codegen-ts`: the app barrel gains a Stores section (#210)
+
+`src/app/index.ts` now exports `<Entity>Store` and the `<Entity>StoreState` type for every visible
+entity, gated on `generateStores` like every other section. Previously a store was reachable only by
+its internal path, `./stores/<kebab>.store`.
+
+Additive: no existing export changes name, path or kind. The `<Model>Filter` type still comes from
+the service alone — the store file declares its own, and exporting both would make the name
+ambiguous, which TypeScript resolves by dropping it without a diagnostic.
+
+### `exeris-codegen-ts`: `systemFields` overrides reach the front end (#211)
+
+Four of the ten `SystemFieldsMetadata` keys did not exist on the TypeScript side: the schema
+declared `idField` and `deletedAtField` where the record serialises `primaryKeyField` and
+`softDeleteTimestampField`, and declared nothing at all for `softDeleteField` / `softDeletedByField`.
+Zod strips unknown keys, so all four values were discarded in silence.
+
+**If your entity declares `@ExerisDomain(softDeleteField = …, softDeleteTimestampField = …,
+softDeletedByField = …)`, the regenerated create and update schemas now omit those columns.** They
+are server-owned — `KernelFlywayGenerator` maps all three — and were previously client-writable.
+
+**`@ExerisDomain.primaryKeyField` is the exception, and it now says so.** Nothing in the pipeline
+honours it: the schema emits `id UUID PRIMARY KEY` unconditionally, the repository identifies rows
+through `WHERE id = ?`, and every by-id handler binds `{id}`. The emitted Angular app therefore uses
+`id` for identity, as it always has in practice. Under `-Aexeris.strict` the attribute now draws the
+"set but no code generator consumes it" warning, so setting it is no longer silent. Renaming a
+primary key end to end is a change across the SQL, the repository and the route template together,
+and is not available in this train.
+
+---
+
 ## Reference
 
 - [ADR-015 — Codegen emission strategy](adr/ADR-015-codegen-emission-strategy.md)
