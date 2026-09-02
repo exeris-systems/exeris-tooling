@@ -458,11 +458,13 @@ describe('generateAppStructure — resolveApiSettings', () => {
     expect(env.content).toContain("apiUrl: '/custom-base'");
   });
 
-  it('falls back to strategy.getClientConfig().baseUrl when apiBasePath is empty', () => {
-    // KERNEL strategy baseUrl = '/api'.
+  it('publishes the empty default rather than the strategy baseUrl', () => {
+    // The fall-through to KERNEL's '/api' was the bug: apiBasePath's schema default is '',
+    // so `||` skipped the configured value exactly when it held that default and environment.ts
+    // announced a prefix the emitted services never request.
     const files = generateAppStructure([], [], cfg({ apiBasePath: '' }));
     const env = fileAt(files, 'src/environments/environment.ts')!;
-    expect(env.content).toContain("apiUrl: '/api'");
+    expect(env.content).toContain("apiUrl: ''");
   });
 
   it('always pulls apiVersion from the strategy (KERNEL → "v1")', () => {

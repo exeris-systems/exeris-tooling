@@ -315,7 +315,9 @@ describe('createGeneratorContext — default-fill behaviour', () => {
     expect(ctx.config.generateStores).toBe(true);
     expect(ctx.config.generateSagas).toBe(true);
     expect(ctx.config.generateEvents).toBe(true);
-    expect(ctx.config.apiBasePath).toBe('/api');
+    // '' — this filled '/api' and so did every context built here, which is how the
+    // package's whole test suite came to describe a prefix the shipped default never emits.
+    expect(ctx.config.apiBasePath).toBe('');
     expect(ctx.config.overwrite).toBe(false);
     expect(ctx.config.dryRun).toBe(false);
     expect(ctx.config.verbose).toBe(false);

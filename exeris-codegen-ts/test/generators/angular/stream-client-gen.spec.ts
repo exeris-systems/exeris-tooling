@@ -75,8 +75,9 @@ describe('StreamClientGenerator.generate — route parity with the kernel handle
     const d = domain({ entityName: 'Order', realTimeApi: true, path: '/orders' });
     const content = gen.generate(d, CTX)!.content;
 
-    // CTX apiBasePath default is '/api'; path '/orders' → '/api/orders/stream'.
-    expect(content).toContain(`private readonly streamUrl = '/api/orders/stream';`);
+    // CTX apiBasePath default is '' (the shipped default); path '/orders' → '/orders/stream',
+    // which is what KernelStreamHandlerGenerator registers: effectivePath() + "/stream".
+    expect(content).toContain(`private readonly streamUrl = '/orders/stream';`);
   });
 
   it('apiVersion is NOT folded into the stream URL — the router serves no version segment', () => {
@@ -86,7 +87,7 @@ describe('StreamClientGenerator.generate — route parity with the kernel handle
     const d = domain({ entityName: 'Order', realTimeApi: true, path: '/orders', apiVersion: 'v1' });
     const content = gen.generate(d, CTX)!.content;
 
-    expect(content).toContain(`private readonly streamUrl = '/api/orders/stream';`);
+    expect(content).toContain(`private readonly streamUrl = '/orders/stream';`);
     expect(content).not.toContain('/v1/');
   });
 
@@ -98,7 +99,7 @@ describe('StreamClientGenerator.generate — route parity with the kernel handle
       apiVersion: 'v2',
       apiPath: '/custom/orders',
     });
-    expect(gen.generate(d, CTX)!.content).toContain(`private readonly streamUrl = '/api/custom/orders/stream';`);
+    expect(gen.generate(d, CTX)!.content).toContain(`private readonly streamUrl = '/custom/orders/stream';`);
   });
 
   it('uses a native EventSource with withCredentials (GET-only, cookie auth)', () => {

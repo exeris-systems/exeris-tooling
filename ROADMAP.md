@@ -1104,26 +1104,55 @@ never-invoked emitter start emitting, and its output did not build.
       own evidence — including what `ng serve` does with a path that collides with an Angular
       route. `generateAppStructure` already has `domains` at the call site, so the input is there.
 
+      **That collision is real, and it rules out the one-rule-per-path answer.** Measured 0.9.0 on
+      a generated sample app: `app.routes.ts` routes `orders`, `orders/new`, `orders/:id` and
+      `orders/:id/edit`, while the emitted service requests `/orders` and `/orders/{id}` — the API
+      path and the SPA route are the *same string*, because both derive from `effectivePath()` and
+      the app is served same-origin. A `proxy.conf.json` rule for `/orders` therefore forwards a
+      browser navigation to `http://localhost:4200/orders` to the backend, which answers JSON:
+      deep-linking or refreshing the list page stops working. The first attempt at this item
+      shipped exactly that trade, and was reverted before it landed rather than after.
+
+      Trimming the rule set does not help — `/orders` and `/orders/{id}` overlap their route twins
+      almost completely, and the two paths that do *not* collide (`/orders/stream`,
+      `/orders/{id}/actions/…`) are not the ones being missed. **The only discriminator between the
+      two requests is the header**: a navigation sends `Accept: text/html`, an `HttpClient` call
+      does not. A JSON proxy config cannot express that, so the remaining shape is `proxy.conf.js`
+      with a `bypass`, wired as `ng serve --proxy-config proxy.conf.js` — and it needs verifying
+      against a real `ng serve`, since Angular 22 runs the Vite dev server and it is the builder's
+      translation of the config, not Vite's own `bypass` support, that is in question. That
+      verification is the next action; the input and the constraint are both settled.
+
       **Three more `/api` sites survive the same fix** (found in the #191 review, verified against
       real CLI output). None reproduces the 404 today; all three are the same `''`-vs-`/api`
       confusion and would resurrect it:
 
-      - `app-structure-gen.ts:710` — `apiUrl: config.apiBasePath || clientConfig.baseUrl || '/api'`
-        uses `||`, so the now-correct `''` is falsy and falls through to the strategy's hardcoded
-        `/api` (`backend-strategy.ts:222`). A real CLI run emits `environment.ts` declaring
-        `apiUrl: '/api'` while the services beside it call `/orders` — a generated artefact that
-        contradicts its own siblings. Harmless only because **nothing imports it**: grepping the
-        emitted tree for an `environment` import returns zero hits, so it is also an instance of
-        the "emitted and read by nobody" class this list already tracks. Note this contradiction
-        is *introduced* by the #191 prefix fix on the CLI path — before it, both said `/api`.
-      - `generator-registry.ts:308` — `apiBasePath: config.apiBasePath ?? '/api'`, a second,
-        drifted declaration of the old default. Dormant: its only caller (`orchestrator.ts:112`)
-        always passes a fully-resolved config where the value is `''`, never `undefined`. It would
-        wake for any future partial-config caller that bypasses `loadConfig`.
-      - `backend-strategy.ts:310` — `KernelStrategy.generateClientCode` builds
+      - [x] `app-structure-gen.ts` `resolveApiSettings` — `apiUrl: config.apiBasePath ||
+        clientConfig.baseUrl || '/api'` used `||`, so the now-correct `''` was falsy and fell
+        through to the strategy's hardcoded `/api` (`backend-strategy.ts:222`). A real CLI run
+        emitted `environment.ts` declaring `apiUrl: '/api'` while the services beside it called
+        `/orders` — a generated artefact contradicting its own siblings. Harmless only because
+        **nothing imports it**: grepping the emitted tree for an `environment` import returns zero
+        hits, so it is also an instance of the "emitted and read by nobody" class this list already
+        tracks. The contradiction was *introduced* by the #191 prefix fix on the CLI path — before
+        it, both said `/api`. It now reads `config.apiBasePath` and nothing else, which is the
+        value `service-gen` interpolates into every emitted `baseUrl`.
+      - [x] `generator-registry.ts:308` — `apiBasePath: config.apiBasePath ?? '/api'`, a second,
+        drifted declaration of the old default. **The "dormant" reading above was measured wrong.**
+        It holds for the production path — `orchestrator.ts` passes a fully-resolved config where
+        the value is `''`, never `undefined` — and fails for every other caller:
+        `createGeneratorContext` takes a `Partial`, and some thirty test contexts across this
+        package are built from `{}`. So the whole TS suite generated against `/api` while the
+        shipped default generates against `''`, and twelve assertions — three of them named
+        "byte-for-byte with the kernel streamRoute" — pinned URLs no `exeris-gen` run has produced
+        since #191. Now `?? ''`, and those twelve fixtures assert what the tool emits.
+      - [ ] `backend-strategy.ts:310` — `KernelStrategy.generateClientCode` builds
         `transformPath('/api', entityPath)` with the prefix hardcoded past any config. It has **no
         production caller at all** (only its own two tests), making it a third emitter wired by
-        nobody, alongside `enum-gen.ts` and the D10 bearer path.
+        nobody, alongside `enum-gen.ts` and the D10 bearer path. Re-measured 0.9.0:
+        `getRealTimeConfig` is in the same state — no caller but its own test, which pins
+        `/api/events/stream`, an endpoint no emitted route serves. Both belong with the
+        delete-or-wire decision, not with a prefix correction.
 
 - [x] **Three config flags were declared, default `true`, and read by nothing — all wired in
       0.8.0.** `generateDetails`, `generateEvents` and `generateSagas`, each in its own change with
@@ -2472,8 +2501,10 @@ results, and a line-number citation that expired between being measured and bein
 applies to pinning as much as to tagging. Four groups, by what blocks them —
 
 - **No external gate:** D10 (whose *resolution* is a T53 question — do not settle it before that
-  RFC), the `npm start` proxy prefix and its three residual `/api` sites, the `<Entity>Store` barrel
-  question, C1, C2, T53. The TS `GraphEdgeMetadataSchema` parity gap shipped from this group.
+  RFC), the `npm start` proxy prefix, the `<Entity>Store` barrel question, C1, C2, T53. The TS
+  `GraphEdgeMetadataSchema` parity gap and two of the three residual `/api` sites shipped from this
+  group; the proxy prefix now carries its measurement and the one shape left open to it
+  (`proxy.conf.js` with a `bypass`, verified against a real `ng serve`).
 - **Behind a final kernel 0.12:** the pin bump, `@Saga.version`'s emitter half, T12's client half +
   T17. **Not** the EV1-stream per-action driver — see the readiness measurement below.
 - **Behind an SDK record change:** the `GraphEdgeMetadata` field/identity split, the six
