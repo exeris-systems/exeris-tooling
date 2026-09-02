@@ -281,12 +281,52 @@ describe('SagaStepMetadataSchema + SagaMetadataSchema', () => {
 });
 
 describe('SystemFieldsMetadataSchema', () => {
-  it('defaults idField to "id" when omitted', () => {
-    expect(SystemFieldsMetadataSchema.parse({}).idField).toBe('id');
+  it('defaults primaryKeyField to "id" when omitted', () => {
+    expect(SystemFieldsMetadataSchema.parse({}).primaryKeyField).toBe('id');
   });
 
-  it('preserves a custom idField value', () => {
-    expect(SystemFieldsMetadataSchema.parse({ idField: 'uuid' }).idField).toBe('uuid');
+  it('preserves a custom primaryKeyField value', () => {
+    expect(SystemFieldsMetadataSchema.parse({ primaryKeyField: 'uuid' }).primaryKeyField).toBe('uuid');
+  });
+
+  it('keeps every component of a fully-populated SystemFieldsMetadata document', () => {
+    // The ten keys eu.exeris.sdk.sourcemodel.ast.SystemFieldsMetadata serialises. Four of them
+    // had no matching declaration here before 0.9.0 — `primaryKeyField` was spelled `idField`,
+    // `softDeleteTimestampField` was `deletedAtField`, and the other two soft-delete components
+    // were absent — so a real document lost them to Zod's unknown-key stripping while
+    // `idField`'s own default silently supplied "id" in their place.
+    const wire = {
+      primaryKeyField: 'orderNo',
+      createdAtField: 'ct',
+      createdByField: 'cb',
+      updatedAtField: 'ut',
+      updatedByField: 'ub',
+      tenantIdField: 'tid',
+      versionField: 'rev',
+      softDeleteField: 'gone',
+      softDeleteTimestampField: 'goneAt',
+      softDeletedByField: 'goneBy',
+    };
+
+    expect(SystemFieldsMetadataSchema.parse(wire)).toEqual(wire);
+  });
+
+  it('omits the three soft-delete components that defaults() leaves null', () => {
+    // SystemFieldsMetadata.defaults() fills seven components and leaves the soft-delete three
+    // null; @JsonInclude(NON_NULL) then drops them from the wire entirely.
+    const result = SystemFieldsMetadataSchema.parse({
+      primaryKeyField: 'id',
+      createdAtField: 'createdAt',
+      createdByField: 'createdBy',
+      updatedAtField: 'updatedAt',
+      updatedByField: 'updatedBy',
+      tenantIdField: 'tenantId',
+      versionField: 'version',
+    });
+
+    expect(result.softDeleteField).toBeUndefined();
+    expect(result.softDeleteTimestampField).toBeUndefined();
+    expect(result.softDeletedByField).toBeUndefined();
   });
 });
 
@@ -361,14 +401,14 @@ describe('DomainMetadataSchema — top-level entity record', () => {
       graphMetadata: { label: 'Order', edges: [] },
       sagaMetadata: { name: 'OrderSaga' },
       eventSourced: { aggregateType: 'Order' },
-      systemFields: { idField: 'uuid' },
+      systemFields: { primaryKeyField: 'uuid' },
       internalApi: { internal: true },
     });
     expect(result.uiMetadata?.icon).toBe('cart');
     expect(result.graphMetadata?.label).toBe('Order');
     expect(result.sagaMetadata?.name).toBe('OrderSaga');
     expect(result.eventSourced?.aggregateType).toBe('Order');
-    expect(result.systemFields?.idField).toBe('uuid');
+    expect(result.systemFields?.primaryKeyField).toBe('uuid');
     expect(result.internalApi?.internal).toBe(true);
   });
 

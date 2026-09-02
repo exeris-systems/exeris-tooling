@@ -581,6 +581,32 @@ types) found the processor names **21 of ~44** annotations.
 - [ ] **C1 — `annotation.system.*` (10 field-level).** Trap worth naming: `DomainMetadata.systemFields`
       *is* populated, but from `@ExerisDomain`'s override attributes (`extractSystemFieldsOverrides`),
       never from `@PrimaryKey` / `@TenantId` / `@Version` / `@SoftDelete*` / `@Audit*`.
+
+      Every one of the ten has a carrier — `SystemFieldsMetadata` declares exactly ten components,
+      one per annotation — so this is genuine extraction, unlike the saga and graph families. The
+      consumers are ready too: `KernelRepositoryGenerator` and `KernelFlywayGenerator` read the
+      record on the Java side, and six TypeScript generators read it on the other.
+
+      **Its prerequisite shipped first (0.9.0): four of the ten keys did not exist on the TS side.**
+      Measured before starting the extraction, because C1 populates `systemFields` on far more
+      entities and would have multiplied the defect. `SystemFieldsMetadataSchema` declared
+      `idField` and `deletedAtField` against a record serialising `primaryKeyField` and
+      `softDeleteTimestampField`, and had no declaration at all for `softDeleteField` /
+      `softDeletedByField`. Six names agreed, four did not, and Zod strips unknown keys — so the
+      four were dropped in silence while `idField`'s own `.default('id')` supplied a plausible
+      wrong answer in their place.
+
+      **That reached emitted code, and it did not compile.** An entity with
+      `@ExerisDomain(primaryKeyField = "invoiceNo")` got a `store-gen` emitting `e.id === id` at
+      ten identity sites, a `list-gen` emitting `track item.id`, and a `type-gen` DTO declaring
+      `invoiceNo` and no `id` — `TS2339` under `ng build`. Its create-DTO omit set came out
+      **empty**, so the server-owned primary key and all three soft-delete columns were
+      client-writable. Proven by regenerating the sample app in both directions.
+
+      **Nothing could have caught it**: every unit fixture was written from the schema rather than
+      the record, and neither FE gate declared a `systemFields` block at all. The sample app now
+      carries an entity whose primary key is not `id`, named for the rename the way `Component` and
+      `Address` are named for their collisions.
 - [ ] **C2 — `annotation.security.*`.** `@Encrypted` and `@RowLevelSecurity`; the latter overlaps the
       RLS predicate `KernelFlywayGenerator` already drives from `dataScope`, so it needs a design
       call, not just extraction.

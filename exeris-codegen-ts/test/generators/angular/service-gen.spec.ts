@@ -558,7 +558,7 @@ describe('ServiceGenerator getSystemFields default-set branch', () => {
     expect(() => gen.generate(domain({
       entityName: 'Order',
       systemFields: {
-        idField: 'id',
+        primaryKeyField: 'id',
         versionField: 'rev',
         createdAtField: 'ct',
         updatedAtField: 'ut',

@@ -52,7 +52,7 @@ export class ListGenerator implements CodeGenerator {
     const displayName = metadata.displayName ?? entityName;
     const pluralName = metadata.pluralName ?? `${entityName}s`;
 
-    const idField = metadata.systemFields?.idField ?? 'id';
+    const idField = metadata.systemFields?.primaryKeyField ?? 'id';
 
     // Determine list columns
     const listColumnNames = metadata.uiMetadata?.listColumns?.length

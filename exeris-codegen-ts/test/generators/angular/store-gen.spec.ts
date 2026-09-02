@@ -321,9 +321,9 @@ describe('StoreGenerator action surface', () => {
   });
 });
 
-// ---------- systemFields.idField alias ----------
+// ---------- systemFields.primaryKeyField alias ----------
 
-describe('StoreGenerator systemFields.idField alias propagation', () => {
+describe('StoreGenerator systemFields.primaryKeyField alias propagation', () => {
   const gen = new StoreGenerator();
 
   it('default idField "id" used in ALL 9 ${idField} substitution sites across the emitted store', () => {
@@ -341,7 +341,7 @@ describe('StoreGenerator systemFields.idField alias propagation', () => {
     expect((content.match(/this\._selected\(\)\?\.id === id/g) ?? []).length).toBe(2);
   });
 
-  it('custom systemFields.idField overrides ALL 9 substitution sites uniformly (matches the default-idField parity)', () => {
+  it('custom systemFields.primaryKeyField overrides ALL 9 substitution sites uniformly (matches the default-idField parity)', () => {
     // Reviewer of #57 flagged that the previous version of this test
     // checked 5 of 9 sites — the 4 missed sites were in update()
     // (optimistic + server-replace mapping + selected-match check)
@@ -351,7 +351,7 @@ describe('StoreGenerator systemFields.idField alias propagation', () => {
     // default-idField sibling test above.
     const content = gen.generate(domain({
       entityName: 'Order',
-      systemFields: { idField: 'uuid' },
+      systemFields: { primaryKeyField: 'uuid' },
     }), CTX)!.content;
 
     expect(content).toContain("private readonly _sortField = signal<string>('uuid');");      // 1
@@ -411,7 +411,7 @@ describe('StoreGenerator softDelete branch', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
       softDelete: true,
-      systemFields: { idField: 'uuid' },
+      systemFields: { primaryKeyField: 'uuid' },
     }), CTX)!.content;
 
     expect(content).toContain('async archive(id: string): Promise<void>');

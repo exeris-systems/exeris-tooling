@@ -127,10 +127,10 @@ describe('FormGenerator emitted content — top-level structure', () => {
     expect(content).toContain('this.service.update(String(this.entity()!.id), data as OrderUpdate)');
   });
 
-  it('uses systemFields.idField alias in the update dispatch path', () => {
+  it('uses systemFields.primaryKeyField alias in the update dispatch path', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
-      systemFields: { idField: 'uuid' },
+      systemFields: { primaryKeyField: 'uuid' },
     }), CTX)!.content;
 
     expect(content).toContain('this.entity()!.uuid');

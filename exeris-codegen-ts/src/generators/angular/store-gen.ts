@@ -67,7 +67,7 @@ export class StoreGenerator implements CodeGenerator {
     // Identify searchable and filterable fields
     const searchableFields = fields.filter(f => f.searchable);
     const filterableFields = fields.filter(f => f.filterable);
-    const idField = domain.systemFields?.idField ?? 'id';
+    const idField = domain.systemFields?.primaryKeyField ?? 'id';
 
     // Build filter interface fields
     const filterFields = filterableFields

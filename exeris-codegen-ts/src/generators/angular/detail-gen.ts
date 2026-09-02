@@ -47,7 +47,7 @@ export class DetailGenerator implements CodeGenerator {
     const modelName = modelTypeName(entityName);
     const kebab = DslMapper.toKebabCase(entityName);
     const displayName = domain.displayName ?? entityName;
-    const idField = domain.systemFields?.idField ?? 'id';
+    const idField = domain.systemFields?.primaryKeyField ?? 'id';
 
     const systemFieldNames = this.getSystemFieldNames(domain);
     const displayFields = fields.filter(f => !systemFieldNames.includes(f.name) && !f.hidden);
@@ -278,7 +278,7 @@ export class DetailGenerator implements CodeGenerator {
     const fields = ['id', 'version', 'createdAt', 'updatedAt', 'createdBy', 'updatedBy', 'tenantId', 'deletedAt', 'deleted'];
     const sf = domain.systemFields;
     if (sf) {
-      if (sf.idField) fields.push(sf.idField);
+      if (sf.primaryKeyField) fields.push(sf.primaryKeyField);
       if (sf.versionField) fields.push(sf.versionField);
       if (sf.createdAtField) fields.push(sf.createdAtField);
       if (sf.updatedAtField) fields.push(sf.updatedAtField);

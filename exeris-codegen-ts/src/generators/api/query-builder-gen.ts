@@ -60,7 +60,7 @@ export class QueryBuilderGenerator implements CodeGenerator {
 
     const filterableFields = fields.filter(f => f.filterable);
     const sortableFields = fields.filter(f => f.sortable);
-    const idField = domain.systemFields?.idField ?? 'id';
+    const idField = domain.systemFields?.primaryKeyField ?? 'id';
     const enumTypes = this.collectEnumTypes(filterableFields);
 
     const lines: string[] = [];

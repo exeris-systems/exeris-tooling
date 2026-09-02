@@ -529,10 +529,10 @@ describe('TypeGenerator system-field resolution (exercised via .omit set in the 
     expect(schema).not.toContain('updatedAt: true');
   });
 
-  it('explicit systemFields.idField !== "id" adds the alias alongside "id"', () => {
+  it('explicit systemFields.primaryKeyField !== "id" adds the alias alongside "id"', () => {
     const files = gen.generateAggregate([domain({
       entityName: 'Thing',
-      systemFields: { idField: 'uuid' },
+      systemFields: { primaryKeyField: 'uuid' },
       fields: [field({ name: 'uuid', type: 'UUID' })],
     })], ctx);
     const schema = files.find(f => f.path === 'schemas/thing.schema.ts')!.content;
@@ -545,14 +545,16 @@ describe('TypeGenerator system-field resolution (exercised via .omit set in the 
     const files = gen.generateAggregate([domain({
       entityName: 'Thing',
       systemFields: {
-        idField: 'id',
+        primaryKeyField: 'id',
         versionField: 'rev',
         createdAtField: 'ct',
         updatedAtField: 'ut',
         createdByField: 'cb',
         updatedByField: 'ub',
         tenantIdField: 'tid',
-        deletedAtField: 'dt',
+        softDeleteField: 'gone',
+        softDeleteTimestampField: 'dt',
+        softDeletedByField: 'db',
       },
       // The aliases must be present on the entity to be omittable (z.omit rejects
       // absent keys); a real audited/tenant entity declares them.
@@ -564,12 +566,17 @@ describe('TypeGenerator system-field resolution (exercised via .omit set in the 
         field({ name: 'cb', type: 'String' }),
         field({ name: 'ub', type: 'String' }),
         field({ name: 'tid', type: 'UUID' }),
+        field({ name: 'gone', type: 'boolean' }),
         field({ name: 'dt', type: 'Instant' }),
+        field({ name: 'db', type: 'String' }),
       ],
     })], ctx);
     const schema = files.find(f => f.path === 'schemas/thing.schema.ts')!.content;
 
-    for (const f of ['rev', 'ct', 'ut', 'cb', 'ub', 'tid', 'dt']) {
+    // All nine non-primary-key components of SystemFieldsMetadata. The three soft-delete
+    // ones had no declaration in the TS schema at all until 0.9.0, so this loop could not
+    // have covered them however it was written.
+    for (const f of ['rev', 'ct', 'ut', 'cb', 'ub', 'tid', 'gone', 'dt', 'db']) {
       expect(schema).toContain(`${f}: true`);
     }
   });

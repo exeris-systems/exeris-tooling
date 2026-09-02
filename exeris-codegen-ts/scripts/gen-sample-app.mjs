@@ -98,6 +98,29 @@ const domains = [
   // '/address', while detail-gen used to navigate to '/addresss' after a delete — a URL the
   // route table never declares. No fixture entity ended in 's', which is why nothing caught it.
   d({ entityName: 'Address', fields: [{ name: 'id', type: 'java.util.UUID' }, { name: 'city', type: 'String' }] }),
+  // Named for the rename, not for the shop: the only fixture entity whose primary key is not
+  // `id`, and the only one declaring a systemFields block at all. Every emitted Angular artefact
+  // interpolates that key — the store's ~10 identity comparisons, the list's @for track and
+  // routerLinks, the form's update dispatch — so reading it from the wrong metadata key emitted
+  // `e.id` against a DTO that declares no `id`. Unit tests over emitted strings passed anyway,
+  // because their fixtures were written from the same wrong key; only a build catches it.
+  d({
+    entityName: 'Invoice',
+    softDelete: true,
+    fields: [
+      { name: 'invoiceNo', type: 'java.util.UUID' },
+      { name: 'amount', type: 'java.math.BigDecimal', dataType: 'currency' },
+      { name: 'archived', type: 'boolean' },
+      { name: 'archivedAt', type: 'java.time.Instant' },
+      { name: 'archivedBy', type: 'String' },
+    ],
+    systemFields: {
+      primaryKeyField: 'invoiceNo',
+      softDeleteField: 'archived',
+      softDeleteTimestampField: 'archivedAt',
+      softDeletedByField: 'archivedBy',
+    },
+  }),
 ];
 const enums = [{
   name: 'OrderStatus',

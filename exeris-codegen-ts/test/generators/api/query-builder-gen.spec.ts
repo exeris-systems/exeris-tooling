@@ -93,7 +93,7 @@ describe('QueryBuilderGenerator.generate — per-domain', () => {
     expect(content).toContain("import type { OrderLine } from '../types/order-line.types'");
   });
 
-  it('SortField type unions every sortable field; falls back to systemFields.idField when none are sortable', () => {
+  it('SortField type unions every sortable field; falls back to systemFields.primaryKeyField when none are sortable', () => {
     const sortable = gen.generate(domain({
       entityName: 'Order',
       fields: [
@@ -106,7 +106,7 @@ describe('QueryBuilderGenerator.generate — per-domain', () => {
 
     const fallback = gen.generate(domain({
       entityName: 'Order',
-      systemFields: { idField: 'uuid' },
+      systemFields: { primaryKeyField: 'uuid' },
     }), CTX)!.content;
     expect(fallback).toContain("export type OrderSortField = 'uuid';");
   });

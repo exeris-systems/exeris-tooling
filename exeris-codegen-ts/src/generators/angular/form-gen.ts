@@ -124,7 +124,7 @@ export class FormGenerator implements CodeGenerator {
 
     const modelName = modelTypeName(entityName);
     const kebabName = DslMapper.toKebabCase(entityName);
-    const idField = domain.systemFields?.idField ?? 'id';
+    const idField = domain.systemFields?.primaryKeyField ?? 'id';
 
     const fields = domain.fields;
     const createFields = fields.filter((f) =>

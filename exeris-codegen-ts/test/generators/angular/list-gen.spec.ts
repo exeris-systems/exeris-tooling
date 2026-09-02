@@ -8,7 +8,7 @@
  *   - listColumns precedence: explicit uiMetadata.listColumns >
  *     getDefaultListColumns (first 5 non-hidden non-system fields)
  *   - displayName / pluralName fallbacks
- *   - systemFields.idField alias in track / data-testid / delete dispatch
+ *   - systemFields.primaryKeyField alias in track / data-testid / delete dispatch
  *   - Per-column rendering matrix: Boolean → Yes/No badge; date format →
  *     mediumDate; datetime/Instant → medium; default → {{ item.<name> }}
  *   - Sortable column gets click handler + aria-sort + arrow markup
@@ -429,9 +429,9 @@ describe('ListGenerator sortable column markers', () => {
   });
 });
 
-// ---------- systemFields.idField alias ----------
+// ---------- systemFields.primaryKeyField alias ----------
 
-describe('ListGenerator systemFields.idField alias propagation', () => {
+describe('ListGenerator systemFields.primaryKeyField alias propagation', () => {
   const gen = new ListGenerator();
 
   it('default idField "id" used in track / data-testid attrs / sortField initial / delete dispatch', () => {
@@ -443,10 +443,10 @@ describe('ListGenerator systemFields.idField alias propagation', () => {
     expect(content).toContain('this.service.delete(String(item.id))');
   });
 
-  it('custom systemFields.idField overrides all 4 reference sites', () => {
+  it('custom systemFields.primaryKeyField overrides all 4 reference sites', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
-      systemFields: { idField: 'uuid' },
+      systemFields: { primaryKeyField: 'uuid' },
     }), CTX)!.content;
 
     expect(content).toContain('@for (item of items(); track item.uuid; let i = $index)');

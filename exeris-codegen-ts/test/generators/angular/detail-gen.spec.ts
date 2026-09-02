@@ -163,10 +163,10 @@ describe('DetailGenerator system-field filtering', () => {
     expect(content).not.toContain("name: 'updatedAt' as keyof Order");
   });
 
-  it('explicit systemFields.idField alias is appended to the hidden set alongside default "id"', () => {
+  it('explicit systemFields.primaryKeyField alias is appended to the hidden set alongside default "id"', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
-      systemFields: { idField: 'uuid' },
+      systemFields: { primaryKeyField: 'uuid' },
       fields: [
         field({ name: 'uuid', type: 'UUID' }),       // hidden by the alias
         field({ name: 'orderNumber', type: 'String' }), // visible
@@ -369,10 +369,10 @@ describe('DetailGenerator getTitle fallback', () => {
     expect(content).toContain('return String(entity.id);');
   });
 
-  it('uses systemFields.idField alias in the fallback when configured', () => {
+  it('uses systemFields.primaryKeyField alias in the fallback when configured', () => {
     const content = gen.generate(domain({
       entityName: 'Thing',
-      systemFields: { idField: 'uuid' },
+      systemFields: { primaryKeyField: 'uuid' },
     }), CTX)!.content;
 
     expect(content).toContain('return String(entity.uuid);');
