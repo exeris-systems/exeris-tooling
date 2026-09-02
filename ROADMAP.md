@@ -405,11 +405,189 @@ Deferred by decision, not blocked.
 
 ## 0.8.0–0.9.0 — feedback-driven cleanups
 
+### Annotation surface — three buckets, measured 2026-09-02
+
+**Supersedes the annotation-level count below as the planning unit.** The SDK ships a
+machine-readable catalogue nothing here had been measured against:
+`exeris-sdk-annotations/src/test/resources/annotation-surface.txt`, guarded by
+`AnnotationSurfaceContractTest`, one line per element as
+`fully.qualified.Annotation#element=returnType:default|required`. It is complete — 49 annotations
+with elements plus `@CapabilityModule` and `@CapabilityLifecycle`, which are pure markers.
+
+**943 elements. The AST carries 283 components across 30 records.** That is the ceiling before any
+work is scheduled: at most ~30% of the declared surface can reach a generator without an SDK record
+change. Measured today, by same-name matching against the AST and against every emitter read in
+`exeris-codegen-{core,java,ts}`:
+
+| bucket | elements | what it means |
+|---|---:|---|
+| **A — done** | **100 (10%)** | carried by an AST component *and* read by at least one emitter |
+| **B — tooling only** | **50 (5%)** | carrier exists, no emitter reads it. No SDK change, no kernel change |
+| **C — no carrier** | **793 (84%)** | an SDK record change is the prerequisite, before any emitter question |
+
+**A carries error in both directions and is an estimate, not a count.** Same-name matching
+*undercounts* it where a semantic mapping exists (`@Graph.nodeClass` → `GraphMetadata.label`), and
+*overcounts* it where an unrelated identifier collides. `@Blob` is the demonstrated case: it scores
+A = 1 because `BlobMetadata.container` matches a local in `dsl-mapper.ts` that destructures a
+generic type — nothing reads `BlobMetadata` anywhere, so its true reading is A = 0, B = 2. Treat A
+as an order of magnitude. **C does not carry that error**: it is derived from the absence of a
+carrier, which no identifier collision can manufacture.
+
+Concentration matters more than the totals: **seven annotations hold 490 of the 943 elements** —
+`@Projection` 97, `@Saga` 81, `@SagaStep` 75, `@GraphQuery` 65, `@DomainEvent` 58, `@EventSourced` 57,
+`@Graph` 57. Fully carried today (C = 0): `@View`, `@Bind`, `@Rule`, `@Derived`, `@Requires`,
+`@Provides`, `@Region`, `@Blob`.
+
+#### Bucket B — runnable with no kernel and no SDK change (50)
+
+Carrier populated, read by nobody. `@ExerisDomain` 11, `@SagaStep` 6, `@UI` 6, `@EventHandler` 6,
+`@EventSourced` 4, `@Saga` 3, `@Field` 3, and singles elsewhere. This is the cheapest work on the
+board and the least visible, because a quiet `-Aexeris.strict` build says nothing about it — strict
+audits *extracted-then-unconsumed* per its registries, not *carried-then-unread* wholesale.
+
+#### Bucket C, split by whether the kernel is actually the blocker
+
+The kernel was assumed to be the constraint. Measured against `exeris-kernel-spi-0.11.0.jar` (260
+types), **it usually is not** — and in two places it expresses *more* than the AST carries.
+
+**C1 — no kernel involvement at all.** Front-end, DDL and OpenAPI targets. `@UI` 29, `@ActionParam`
+29, `@Validation` 24, `@Relationship` 20 (the display half), `@NavMenu` 18, `@RowLevelSecurity` 16,
+`@Field` 14 (the presentation half), `@Tab` 11, `@Encrypted` 11, `@QueryParam` 10, `@UIGroup` 10,
+the ten `annotation.system.*` (24 between them), `@InternalApi` 5. **~220 elements whose only
+prerequisite is an SDK record component.** `@RowLevelSecurity` is worth naming: it compiles to
+Postgres DDL, and the kernel has no RLS type by design — `KernelFlywayGenerator` already emits
+predicates from `dataScope`.
+
+**C2 — the kernel contract already exists; the AST is the gap.** Two of these are the reverse of
+what the ROADMAP has been recording:
+
+- `GraphEdgeDescriptor(sourceNode, edgeType, targetNode, weight, bidirectional, direction, tableName)`
+  — the kernel already takes **weight, bidirectional and direction**, three of the eleven
+  `@GraphEdge` attributes recorded above as having "no component to carry them". The carrier gap is
+  `GraphEdgeMetadata`'s three components, not the kernel.
+- `GraphNodeDescriptor(nodeLabel, sourceTable, idProperty, properties, syncToGraph)` — same for
+  `@Graph.idProperty` / `.sourceTable` / `.syncToGraph`.
+- `@Schedule` (cron / every / at) is **not kernel-gated at all**: `JobScheduler`, `JobDescriptor`,
+  `JobTrigger` and `CronSyntax` are all present at 0.11.
+- `EventTypeSpec(name, ordinal, persistent, ordered, topic)` covers `@DomainEvent.persistent`,
+  `.orderingRequired` and `.topic`.
+- `@Saga.version` — `FlowDefinitionBuilder.version(int)` lands in 0.12 (measured, ROADMAP S1).
+
+**C3 — not kernel-gated; Tier 2 cap territory.** Re-measured against the HLA (`exeris-docs/
+high-level-architecture.md` §3.2) after the first version of this section put all of it on the
+kernel. The kernel is deliberately not the owner, and most of what looked gated has a **named cap**:
+
+| attributes | HLA cap owner |
+|---|---|
+| `@SagaStep.circuitBreaker*` | `exeris-caps-circuit-breaker` (`CircuitBreakerPolicy`) |
+| `@Saga`/`@SagaStep` idempotency window, dedup | `exeris-caps-idempotency` (`IdempotencyGuard`, `DeduplicationWindow`) |
+| the rich saga surface — approvals, timers, state machines | `exeris-caps-workflow-engine` (`Workflow`), which itself `@Requires` kernel Flow SPI |
+| `@RowLevelSecurity` (16) | `exeris-caps-multi-tenancy` (`TenantContext`, RLS routing) |
+| `@SoftDelete.retentionPeriod` and siblings | `exeris-caps-soft-delete` (`SoftDeletePolicy`, retention scheduler) |
+| `@Version`, `@Audit*` | `exeris-caps-entity-versioning` (`EntityHistory`), `exeris-caps-audit-trail` |
+| every `graphql*` attribute across `@Graph`/`@GraphQuery`/`@GraphProperty`/`@Projection` | `exeris-caps-graphql-emission` |
+| `fullText*`, `@GraphProperty.similarity*` | `exeris-caps-search-index`, `exeris-caps-ai-vector-store`, `exeris-caps-ai-embedding-pipeline` |
+| `emitMetrics`, `traceSampleRate`, `alertChannels` | `exeris-caps-observability-bridge` over the kernel Telemetry SPI |
+| `@Blob` | `exeris-caps-attachment-storage` — **and see the 0.12 sweep: the kernel half landed** |
+
+**This reclassifies the work without unblocking it.** `cap-license-registry.md` records **55 of 58
+caps as `specified`**, 2 scaffolded, 1 implemented; `exeris-caps-cors-policy` is the only repository
+that exists. "Cap-tier" is a correct owner and an empty one — but it is the difference between a
+kernel ask and a product-roadmap item, and only one of those is ours to file.
+
+**C3′ — genuinely unowned. `@Projection`, 90 of 97, and it is an orphan rather than a gap.**
+
+The attributes say plainly what it is: `eventClasses`, `startPosition`, `checkpointInterval`,
+`checkpointStorage`, `rebuildStrategy`, `onlineRebuild`, `cacheReadModel`, `consumerGroup`, `topics`,
+`partitionKey`, `lagAlertThreshold`, `exposeRestApi`. That is a **CQRS read-model worker**: consume a
+stream, maintain a queryable model, checkpoint the position, rebuild on demand, expose it.
+
+Nothing in the architecture owns it, and this was checked in all three places rather than assumed:
+
+- **Kernel:** zero types matching `Projection` at **0.11 and 0.12** — and zero `ReadModel`.
+- **Tier 2:** seven cap layers, ~50 caps enumerated, **none** is a projection or read-model cap. The
+  nearest neighbours are `exeris-caps-search-index` (a read side, but full-text/faceted, not
+  event-derived) and `exeris-caps-entity-versioning` (`EntityHistory`).
+- **Tier 3:** no SKU manifest composes anything projection-shaped.
+- The HLA names event sourcing **once**, and describes it as "transactional outbox plus in-process
+  publish/subscribe" — that is *delivery*. Read-model maintenance is a different concern and the
+  document does not place it.
+
+So `@Projection` is 97 attributes of annotation surface with no runtime owner at any tier. It is the
+strongest single argument for the shrink-the-surface direction below, and the question it raises is
+**for the HLA, not for this repo**: either a `exeris-caps-projection` / read-model cap enters Tier 2,
+or the annotation should be withdrawn rather than left declaring a capability the platform has
+never placed.
+
+**C3″ — remaining kernel absences, measured at 0.12:**
+
+- **The saga shape itself.** `FlowDefinition(name, version, steps, timeoutNanos, maxRetries)` +
+  `FlowStepDescriptor(stepId, name, action, compensation)` + `FlowTransitionDescriptor(from, to,
+  conditionTag)` — **eight fields** against `@Saga`'s 81 and `@SagaStep`'s 75. A cap can add
+  policy *around* a flow; it cannot add a field to a `FlowDefinition`. `@SagaStep.parallel` is the
+  sharp case and stays where it was: a `FlowDefinition` cannot express concurrency, so the linear
+  chain is the only correct compilation available, and that is a kernel ask.
+- **`@EventSourced` — the storage half.** The replay SPI is present at 0.11
+  (`EventStreamReader` / `EventStreamAppender`), so EV2 is tooling debt rather than a gate; snapshot
+  strategy, compression, encryption and lock policy have no kernel type and no cap owner either.
+
+### The 0.12 sweep — measured 2026-09-02, not assumed
+
+The section above was first measured against `exeris-kernel-spi-0.11.0.jar`, which is the wrong
+baseline: 0.9.0 pins **0.12**. Re-run as a member-level diff (1964 → 2052 members, 4 types added, 0
+removed). Three additions change entries in this file:
+
+- **`@Blob`'s gate is lifted, and it was the *only* recorded exclusion from the 50/51 GA
+  commitment.** `exeris-kernel-community` 0.12 adds **`CommunityStorageSubsystem`** — `name()` is
+  `"storage"`, `dependsOn()` is `["memory"]`, phase `SERVICES` — alongside
+  `KernelProviders.BLOB_STORE` / `BLOB_STORAGE_PROVIDER` ScopedValues, three `EX_BLOB_*` error codes
+  and three `BlobStorageException` factories. `Application.main()` boots subsystems by name, and
+  now there is a name to declare. Kernel ask **K6 is answered**.
+- **`FlowDefinitionBuilder.version(int)` is present** (a `default` method), confirming S1's emitter
+  half is one call once the pin moves.
+- **T53's vocabulary landed**: `RouteRequirement.Execution{PROMPT, LONG_RUNNING}`,
+  `RouteRequirement.abstain()` / `isAbstention()`, `Kind.ABSTAIN`, and
+  `HttpRoutePolicy.firstDeclared(List, RouteRequirement)`. Read these before the T53 RFC fixes the
+  policy-table shape — the ordering rule is now the kernel's, not ours to invent.
+
+Two more worth recording, neither blocking: **`TimeSource`** with `KernelProviders.timeSource()`
+(emitted repositories stamp `Instant.now()` today, so a consumer cannot freeze the clock), and
+**`ConnectionInterceptor.SESSION_KEY_TENANT_ID` / `SESSION_KEY_SHARED_SCOPE`**, which name the RLS
+session keys the Flyway predicates already assume.
+
+**What 0.12 does not change:** still **zero** types matching `Projection`, `ReadModel`, `Metric`,
+`Alert`, `CircuitBreaker`, `Partition` or `Checkpoint`. Every absence this section rests on survives
+the bump.
+
+#### What this changes about the 1.0 GA commitment
+
+**Two things, and the first is a number.** The commitment is recorded below as **50 of 51**, with
+`@Blob` the single exclusion, "carried as a kernel ask … an exclusion that stands at our GA rather
+than one expected to close before it". The 0.12 sweep above falsifies the premise that rested on:
+the exclusion was never really about the kernel's *schedule*, it was about `Application.main()`
+booting subsystems by name and there being no name to declare. At 0.12 there is one — `"storage"`.
+**51 of 51 is reachable, and `@Blob` moves from a kernel ask to tooling work.** See the reconciled
+entry in the GA section below for what that work is; it is four pieces and none of them is started.
+
+**Second, the unit.** The commitment is annotation-level, and it is satisfied by reading *one*
+attribute of `@Saga` while ≥72 of its 81 do nothing. In the attribute unit the same surface is at
+**10%**, with a ~30% ceiling. Both numbers are true; they are not measuring the same thing, and only
+one of them is what a consumer experiences.
+
+The honest reading is not "775 attributes of backlog". Most of C is surface designed ahead of any
+runtime contract — circuit breakers, Kafka topic patterns, GraphQL exposure, alert thresholds,
+embedding services — and the question it raises is whether the annotation surface should **shrink**
+toward what the pipeline can compile, rather than the pipeline growing toward the surface. That is a
+founder decision; this section exists so it is taken against measurements rather than an impression.
+
 ### Annotation-surface debt (S, C) — inventoried 2026-08-12
 
 An evidence survey against SDK 0.10.0 (matching on `eu.exeris.sdk.annotation.*` FQNs, since a
 word-grep false-positives on `Rule` / `EventHandler` / `GraphEdge` against our own and the kernel's
-types) found the processor names **21 of ~44** annotations.
+types) found the processor names **21 of ~44** annotations — the denominator was a grep estimate and
+the catalogue puts it at **51**. **Superseded as the planning unit** by
+the three-bucket measurement above — kept because its per-item entries carry the evidence behind
+each fix.
 
 - [~] **S1 — `@Saga.version` is never extracted.** *Processor half shipped 0.8.0; the emitter half
       is kernel-gated on 0.12 and that gate was measured, not assumed.*
@@ -1600,6 +1778,15 @@ the general case behind T50).
         excluded against a subsystem the kernel has deliberately scheduled *after* it. The 50-of-51
         target below is honest only while it says that, which it now does.
 
+        **Superseded 2026-09-02 by measurement — the subsystem shipped anyway.**
+        `exeris-kernel-community` **0.12** contains `CommunityStorageSubsystem`: `name()` returns
+        `"storage"`, `dependsOn()` is `["memory"]`, phase `SERVICES`. `KernelProviders` gains
+        `BLOB_STORE` and `BLOB_STORAGE_PROVIDER`. That is the whole of what K6 asked for, and 0.12
+        is the line 0.9.0 pins. The paragraph above conflated two claims — the kernel *scheduling*
+        the subsystem post-1.0, and the subsystem *not existing* — and only the second was ever the
+        blocker. The kernel's own `storage.md` Status line is now behind its own jar; that is a
+        kernel-side note, not a condition on this entry.
+
       *(`@EventSourced` sat here as a second kernel-gated exclusion until 2026-08-18. That was
       wrong — see the correction below the table; the target moved from 49 to 50.)*
 
@@ -1653,9 +1840,25 @@ the general case behind T50).
       identity a declared job runs as is one — but that is a slice to design, not a decision to record
       here.
 
-      **So the 1.0 target is 50 of 51**, with only `@Blob` carried as a kernel ask — and carried
-      knowing the kernel has scheduled its subsystem post-1.0, so this is an exclusion that stands at
-      our GA rather than one expected to close before it. Two rules that
+      **So the 1.0 target was 50 of 51.** Superseded 2026-09-02: `CommunityStorageSubsystem` ships
+      in kernel 0.12 — the line 0.9.0 pins — so `@Blob` has a name to declare and **51 of 51 is
+      reachable**. It is not covered, and the distinction is the one this list already insists on:
+      an annotation is covered when it reaches emitted output. Four pieces, all unstarted, measured
+      rather than estimated:
+
+      1. **Extraction.** `@Blob` is in `INERT_ANNOTATIONS` and the processor reads it nowhere.
+      2. **Population.** `FieldMetadata.blob` exists as a carrier and nothing sets it.
+      3. **Emission.** Zero references to `BlobMetadata` in `exeris-codegen-java` or
+         `exeris-codegen-ts` — no generator would know what to do with it if it were filled.
+      4. **Boot.** `KernelApplicationGenerator.SUBSYSTEMS` is the literal
+         `"http,persistence,graph,flow,events,crypto"` — six names, unconditional, no `storage`.
+         **And it should not simply become seven.** An app with no `@Blob` field would then boot a
+         subsystem its composition never asked for, which contradicts the manifest-proportional
+         resident cost the HLA claims (§3.1). The list has to become domain-derived before it grows,
+         and that is a change to a hardcoded constant every emitted app already carries.
+
+      So the ask genuinely moved: **owner kernel → owner this repo**, and it is a slice rather than
+      a line. Two rules that
       follow from the shape of this list, and matter more than the count: an annotation is "covered"
       when it **reaches emitted output**, not when the processor extracts it — `@EventSourced` is
       still the standing counter-example, now as pure tooling debt. And every one that lands must
