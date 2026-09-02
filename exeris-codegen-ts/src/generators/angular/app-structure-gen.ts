@@ -420,6 +420,25 @@ function generateBarrelExport(
     }
   }
 
+  // Entity stores. `providedIn: 'root'` like the services, and layered ON them rather than
+  // offered instead of them: the store injects `<Entity>Service` and adds the signal state
+  // (entities, selected, loading, filter, pagination). Both are consumer surfaces, at different
+  // levels — the emitted CRUD components inject the service, the emitted @View components inject
+  // the store — so exporting both is one entry point per level, not two ways to do one thing.
+  //
+  // Named exports, not `export *`, for the reason the sagas section below gives: the store file
+  // declares its own `<Model>Filter`, which the services section already exports, and starring
+  // both would make that name ambiguous — an ambiguous star export is dropped silently rather
+  // than reported. The filter type therefore keeps coming from the service alone.
+  if (config.generateStores) {
+    exports.push("", "// Stores (signal state over the services)");
+    for (const domain of visibleDomains) {
+      const kebab = DslMapper.toKebabCase(domain.entityName);
+      exports.push(`export { ${domain.entityName}Store } from './stores/${kebab}.store';`);
+      exports.push(`export type { ${domain.entityName}StoreState } from './stores/${kebab}.store';`);
+    }
+  }
+
   if (config.generateForms || config.generateLists || config.generateDetails) {
     exports.push("", "// Components");
     for (const domain of visibleDomains) {
