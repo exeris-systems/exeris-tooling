@@ -384,6 +384,31 @@ describe('generateAppStructure — multi-domain wiring', () => {
     const matches = barrel.content.match(/PageRequest/g) ?? [];
     expect(matches).toHaveLength(1);
   });
+
+  it('barrel exports each entity store and its state type', () => {
+    const barrel = fileAt(files, 'src/app/index.ts')!;
+    expect(barrel.content).toContain("export { OrderStore } from './stores/order.store';");
+    expect(barrel.content).toContain(
+      "export type { OrderStoreState } from './stores/order.store';",
+    );
+    expect(barrel.content).toContain("export { ProductStore } from './stores/product.store';");
+  });
+
+  it('takes the Filter type from the service alone, never from the store', () => {
+    // The store file declares its own `<Model>Filter`. Exporting the store with `export *`
+    // would make that name ambiguous against the services section — and an ambiguous star
+    // export is dropped silently rather than reported.
+    const barrel = fileAt(files, 'src/app/index.ts')!;
+    expect(barrel.content).not.toMatch(/export \*[^\n]*from '\.\/stores\//);
+    expect(barrel.content.match(/OrderFilter/g) ?? []).toHaveLength(1);
+  });
+
+  it('emits no Stores section when generateStores is off', () => {
+    const off = generateAppStructure(domains, enums, cfg({ generateStores: false }));
+    const barrel = fileAt(off, 'src/app/index.ts')!;
+    expect(barrel.content).not.toContain('OrderStore');
+    expect(barrel.content).not.toContain('./stores/');
+  });
 });
 
 // ---------- nav label pluralisation + entity-icon table ----------

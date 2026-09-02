@@ -1146,6 +1146,16 @@ never-invoked emitter start emitting, and its output did not build.
         shipped default generates against `''`, and twelve assertions — three of them named
         "byte-for-byte with the kernel streamRoute" — pinned URLs no `exeris-gen` run has produced
         since #191. Now `?? ''`, and those twelve fixtures assert what the tool emits.
+      - [ ] `event-gen.ts` — the emitted `EventBusService` defaults to
+        `endpoint: '/api/v1/events/stream'`. A fourth site, raised in the #209 review and confirmed
+        against the Java side: this one is **not** a prefix problem and stripping `/api/v1` would
+        not fix it. The kernel registers stream routes per entity — `KernelStreamHandlerGenerator`
+        emits `effectivePath() + "/stream"`, and `KernelApplicationGenerator` registers
+        `basePath + "/stream"` — so there is **no app-wide event stream to point at**, at any
+        prefix. The emitted bus connects to a route the emitted server never serves. What it should
+        connect to (fan-in over the per-entity streams, a consumer-supplied aggregate endpoint, or
+        nothing until the kernel serves one) is a design question, not a transcription, which is
+        why it is filed here rather than folded into the prefix fix.
       - [ ] `backend-strategy.ts:310` — `KernelStrategy.generateClientCode` builds
         `transformPath('/api', entityPath)` with the prefix hardcoded past any config. It has **no
         production caller at all** (only its own two tests), making it a third emitter wired by
@@ -1358,21 +1368,36 @@ never-invoked emitter start emitting, and its output did not build.
       *consumer's* code, exactly like the generated services — but neither was exported from the
       app barrel, which is how that code reaches them without knowing internal paths.
 
-- [ ] **`<Entity>Store` is generated, injectable, and has no barrel path.** Raised in the #193
-      review. `store-gen` emits a `providedIn: 'root'` signal store per entity — the signal-first
-      surface the pipeline advertises — but `generateBarrelExport` has no Stores section at all, so
-      a consumer's own code can only reach one by internal relative path. `view-gen` reaches it
-      that way for the pages it generates; nothing else can. Exactly the reachability gap the
-      events slice closed, on the shape that arguably matters most.
+- [x] **`<Entity>Store` is generated, injectable, and had no barrel path.** *Shipped 0.9.0.*
+      Raised in the #193 review. `store-gen` emits a `providedIn: 'root'` signal store per entity —
+      the signal-first surface the pipeline advertises — but `generateBarrelExport` had no Stores
+      section at all, so a consumer's own code could only reach one by internal relative path.
+      `view-gen` reaches it that way for the pages it generates; nothing else could. Exactly the
+      reachability gap the events slice closed, on the shape that arguably matters most.
 
-      Not folded into #193: adding a barrel section is trivial, but the question underneath is
-      whether the store or the service is the consumer's intended entry point, and answering it by
-      quietly exporting both is how a surface ends up with two ways to do one thing.
+      Not folded into #193, because the question underneath is whether the store or the service is
+      the consumer's intended entry point, and exporting both without answering it is how a surface
+      ends up with two ways to do one thing.
 
-      Note for whoever takes it: `barrel-resolves.spec` already iterates `generateStores`, and that
-      case is **vacuous** today — zero specifiers either way. It is the guard that fires if a
-      Stores section lands ungated, not evidence that one is covered. (`generateSagas` joined that
-      list when it was wired, and is *not* vacuous: the spec's fixture entity declares a saga.)
+      **The tree answers it: they are layered, not alternatives.** The store *injects*
+      `<Entity>Service` and adds signal state over it (entities, selected, loading, filter,
+      pagination). The emitted CRUD components — list, detail, form — inject the **service**; the
+      emitted `@View` components inject the **store**. So the pipeline already uses both, at
+      different levels, and both are consumer-facing in the same sense `EventBusService` and the
+      saga machines are — which this same function exports for exactly that stated reason. Two
+      levels, one entry point each.
+
+      **Named exports, not `export *`** — and this is where the "trivial" version would have gone
+      wrong silently. The emitted store file declares its own `<Model>Filter`, the name the
+      services section already exports; starring both makes it ambiguous, and an ambiguous star
+      export is **dropped without a diagnostic**. The section therefore exports `<Entity>Store` and
+      the `<Entity>StoreState` type only, and the filter type keeps coming from the service alone.
+      The sagas section carries the same constraint for the same reason.
+
+      **`barrel-resolves.spec`'s `generateStores` case is no longer vacuous.** It was kept as the
+      guard that fires if a Stores section lands ungated; pointing the new specifier at a file the
+      store generator does not write now fails eight of its thirteen cases. Its header said the
+      case asserted nothing — that note is corrected in the same change rather than left to drift.
 
       **`generateDetails` (done).** Wiring it was not cosmetic: the emitted **list** already linked
       to the two routes a detail component owns — `[routerLink]="[item.id]"` labelled *View* and
@@ -2501,8 +2526,8 @@ results, and a line-number citation that expired between being measured and bein
 applies to pinning as much as to tagging. Four groups, by what blocks them —
 
 - **No external gate:** D10 (whose *resolution* is a T53 question — do not settle it before that
-  RFC), the `npm start` proxy prefix, the `<Entity>Store` barrel question, C1, C2, T53. The TS
-  `GraphEdgeMetadataSchema` parity gap and two of the three residual `/api` sites shipped from this
+  RFC), the `npm start` proxy prefix, C1, C2, T53. The TS `GraphEdgeMetadataSchema` parity gap, two
+  of the three residual `/api` sites and the `<Entity>Store` barrel question shipped from this
   group; the proxy prefix now carries its measurement and the one shape left open to it
   (`proxy.conf.js` with a `bypass`, verified against a real `ng serve`).
 - **Behind a final kernel 0.12:** the pin bump, `@Saga.version`'s emitter half, T12's client half +
