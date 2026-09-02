@@ -83,8 +83,9 @@ describe('ActionStreamClientGenerator.generate — route + transport parity', ()
     const d = domain({ entityName: 'Order', actions: [streamingAction], path: '/orders' });
     const content = gen.generate(d, CTX)!.content;
 
-    // CTX apiBasePath default is '/api'; path '/orders', kebab(trackShipment) = track-shipment.
-    expect(content).toContain('const url = `/api/orders/${id}/actions/track-shipment`;');
+    // CTX apiBasePath default is '' (the shipped default); path '/orders',
+    // kebab(trackShipment) = track-shipment.
+    expect(content).toContain('const url = `/orders/${id}/actions/track-shipment`;');
     expect(content).toContain("method: 'POST'");
     expect(content).toContain("credentials: 'include'");
   });
@@ -100,7 +101,7 @@ describe('ActionStreamClientGenerator.generate — route + transport parity', ()
     });
     const content = gen.generate(d, CTX)!.content;
 
-    expect(content).toContain('const url = `/api/orders/${id}/actions/track-shipment`;');
+    expect(content).toContain('const url = `/orders/${id}/actions/track-shipment`;');
     expect(content).not.toContain('/v1/');
   });
 

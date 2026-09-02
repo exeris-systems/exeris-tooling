@@ -138,28 +138,28 @@ describe('ServiceGenerator apiPath construction precedence', () => {
 
   it('explicit apiPath wins over apiVersion + path', () => {
     expect(baseUrlFor({ apiPath: '/custom/orders', apiVersion: 'v2', path: '/anything' }))
-      .toBe('/api/custom/orders');
+      .toBe('/custom/orders');
   });
 
   it('apiVersion is NOT folded into the URL — the server serves no version segment', () => {
     // Emitting /api/v1/orders against a router listening on /orders is what made every generated
     // service 404. apiVersion reaches no emitted route on either the Java or the TypeScript side.
-    expect(baseUrlFor({ apiVersion: 'v1', path: '/orders' })).toBe('/api/orders');
+    expect(baseUrlFor({ apiVersion: 'v1', path: '/orders' })).toBe('/orders');
   });
 
   it('path only (no apiVersion) → just path', () => {
-    expect(baseUrlFor({ path: '/orders' })).toBe('/api/orders');
+    expect(baseUrlFor({ path: '/orders' })).toBe('/orders');
   });
 
   it('neither apiPath nor path → /<kebab>s default', () => {
-    expect(baseUrlFor({})).toBe('/api/orders');
+    expect(baseUrlFor({})).toBe('/orders');
   });
 
   it('default pluralization uses kebab + s (for multi-word entityName too)', () => {
-    expect(baseUrlFor({})).toBe('/api/orders');
+    expect(baseUrlFor({})).toBe('/orders');
     const olUrl = gen.generate(domain({ entityName: 'OrderLine' }), CTX)!.content
       .match(/baseUrl = '([^']+)'/)![1];
-    expect(olUrl).toBe('/api/order-lines');
+    expect(olUrl).toBe('/order-lines');
   });
 });
 

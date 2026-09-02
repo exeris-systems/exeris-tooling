@@ -835,11 +835,20 @@ export const environment = {
 `;
 }
 
+/**
+ * `environment.apiUrl` states the prefix the emitted services actually use, which is
+ * `config.apiBasePath` and nothing else — `service-gen` interpolates that value directly.
+ *
+ * It used to read `config.apiBasePath || clientConfig.baseUrl || '/api'`. `apiBasePath` carries
+ * a schema default of `''`, so `||` skipped the configured value precisely when it was the
+ * default and fell through to the strategy's `/api`: every emitted `environment.ts` published a
+ * prefix its own services had never requested.
+ */
 function resolveApiSettings(config: GeneratorConfig): { apiUrl: string; apiVersion: string } {
   const strategy = getStrategy(config.backend);
   const clientConfig = strategy.getClientConfig();
   return {
-    apiUrl: config.apiBasePath || clientConfig.baseUrl || '/api',
+    apiUrl: config.apiBasePath,
     apiVersion: clientConfig.apiVersion ?? 'v1',
   };
 }
