@@ -194,22 +194,50 @@ describe('UIMetadataSchema', () => {
 });
 
 describe('GraphEdgeMetadataSchema + GraphMetadataSchema', () => {
-  it('GraphEdgeMetadata defaults direction=OUTGOING', () => {
-    expect(GraphEdgeMetadataSchema.parse({
-      name: 'placedBy', targetEntity: 'User',
-    }).direction).toBe('OUTGOING');
+  // Fixtures below are the shapes eu.exeris.sdk.sourcemodel.ast.GraphMetadata and
+  // GraphEdgeMetadata actually serialise to. Java is the producer and there is no
+  // cross-build fixture, so these assertions are the only place the mirror is checked.
+
+  it('keeps every component of a fully-populated GraphMetadata document', () => {
+    const result = GraphMetadataSchema.parse({
+      label: 'Order',
+      properties: [{ name: 'total', type: 'BigDecimal', indexed: true }],
+      edges: [{ name: 'placedBy', targetLabel: 'User', relationType: 'PLACED_BY' }],
+      queries: [{ name: 'recent', cypher: 'MATCH (o:Order) RETURN o', description: 'Recent orders' }],
+    });
+
+    expect(result.label).toBe('Order');
+    expect(result.properties).toEqual([{ name: 'total', type: 'BigDecimal', indexed: true }]);
+    expect(result.edges).toEqual([
+      { name: 'placedBy', targetLabel: 'User', relationType: 'PLACED_BY' },
+    ]);
+    expect(result.queries[0].cypher).toBe('MATCH (o:Order) RETURN o');
   });
 
-  it('GraphEdgeMetadata accepts each direction enum value', () => {
-    for (const d of ['OUTGOING', 'INCOMING', 'BOTH'] as const) {
-      expect(GraphEdgeMetadataSchema.parse({
-        name: 'e', targetEntity: 'X', direction: d,
-      }).direction).toBe(d);
-    }
+  it('accepts an edge whose optional components are absent from the wire', () => {
+    // @JsonInclude(NON_NULL): a @GraphEdge that named neither a target nor a type
+    // serialises to the field name alone.
+    expect(GraphEdgeMetadataSchema.parse({ name: 'placedBy' })).toEqual({ name: 'placedBy' });
   });
 
-  it('GraphMetadata defaults edges=[]', () => {
-    expect(GraphMetadataSchema.parse({}).edges).toEqual([]);
+  it('does not manufacture a direction the pipeline never carried', () => {
+    const result = GraphEdgeMetadataSchema.parse({ name: 'placedBy', targetLabel: 'User' });
+
+    expect('direction' in result).toBe(false);
+  });
+
+  it('GraphMetadata defaults all three collections to []', () => {
+    const result = GraphMetadataSchema.parse({});
+
+    expect(result.properties).toEqual([]);
+    expect(result.edges).toEqual([]);
+    expect(result.queries).toEqual([]);
+  });
+
+  it('defaults GraphProperty.indexed to false when the producer omits it', () => {
+    const result = GraphMetadataSchema.parse({ properties: [{ name: 'total' }] });
+
+    expect(result.properties[0].indexed).toBe(false);
   });
 });
 

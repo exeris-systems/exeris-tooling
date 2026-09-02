@@ -182,18 +182,47 @@ export type UIMetadata = z.infer<typeof UIMetadataSchema>;
 // Graph Metadata
 // ============================================================================
 
+// Mirrors eu.exeris.sdk.sourcemodel.ast.GraphMetadata and its three element records
+// (GraphPropertyMetadata / GraphEdgeMetadata / GraphQueryMetadata). Every reference-typed
+// component is .optional() because those records carry @JsonInclude(NON_NULL), so a null
+// component is absent from the wire rather than null: the processor passes
+// GraphMetadata.properties as null today, and an edge's targetLabel / relationType are null
+// whenever the annotation left them blank.
+//
+// @GraphEdge.direction has no component on GraphEdgeMetadata — one of the eleven attributes
+// with no carrier, recorded under S3 — so no metadata document carries it. Declaring it with
+// a default would report OUTGOING for every edge, which is a direction the pipeline has never
+// been told.
+
+export const GraphPropertyMetadataSchema = z.object({
+  name: z.string(),
+  type: z.string().optional(),
+  indexed: z.boolean().default(false),
+});
+
+export type GraphPropertyMetadata = z.infer<typeof GraphPropertyMetadataSchema>;
+
 export const GraphEdgeMetadataSchema = z.object({
   name: z.string(),
-  targetEntity: z.string(),
-  edgeType: z.string().optional(),
-  direction: z.enum(['OUTGOING', 'INCOMING', 'BOTH']).default('OUTGOING'),
+  targetLabel: z.string().optional(),
+  relationType: z.string().optional(),
 });
 
 export type GraphEdgeMetadata = z.infer<typeof GraphEdgeMetadataSchema>;
 
+export const GraphQueryMetadataSchema = z.object({
+  name: z.string(),
+  cypher: z.string().optional(),
+  description: z.string().optional(),
+});
+
+export type GraphQueryMetadata = z.infer<typeof GraphQueryMetadataSchema>;
+
 export const GraphMetadataSchema = z.object({
   label: z.string().optional(),
+  properties: z.array(GraphPropertyMetadataSchema).default([]),
   edges: z.array(GraphEdgeMetadataSchema).default([]),
+  queries: z.array(GraphQueryMetadataSchema).default([]),
 });
 
 export type GraphMetadata = z.infer<typeof GraphMetadataSchema>;
