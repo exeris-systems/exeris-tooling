@@ -443,16 +443,21 @@ describe('ListGenerator systemFields.primaryKeyField alias propagation', () => {
     expect(content).toContain('this.service.delete(String(item.id))');
   });
 
-  it('custom systemFields.primaryKeyField overrides all 4 reference sites', () => {
+  it('a systemFields.primaryKeyField override does NOT move any of the 4 reference sites', () => {
+    // A declared override must NOT move the emitted identity: nothing in the pipeline honours
+    // `primaryKeyField` — Flyway emits `id UUID PRIMARY KEY`, the repository's clause is the
+    // constant " WHERE id = ?", every by-id handler binds `{id}` — so an emitted app that
+    // requested the override would talk to the wrong REST identifier.
     const content = gen.generate(domain({
       entityName: 'Order',
       systemFields: { primaryKeyField: 'uuid' },
     }), CTX)!.content;
 
-    expect(content).toContain('@for (item of items(); track item.uuid; let i = $index)');
-    expect(content).toContain("'row-' + item.uuid");
-    expect(content).toContain("readonly sortField = signal<string>('uuid');");
-    expect(content).toContain('this.service.delete(String(item.uuid))');
+    expect(content).toContain('@for (item of items(); track item.id; let i = $index)');
+    expect(content).toContain("'row-' + item.id");
+    expect(content).toContain("readonly sortField = signal<string>('id');");
+    expect(content).toContain('this.service.delete(String(item.id))');
+    expect(content).not.toContain('item.uuid');
   });
 });
 

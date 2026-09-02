@@ -60,7 +60,13 @@ export class QueryBuilderGenerator implements CodeGenerator {
 
     const filterableFields = fields.filter(f => f.filterable);
     const sortableFields = fields.filter(f => f.sortable);
-    const idField = domain.systemFields?.primaryKeyField ?? 'id';
+    // The literal 'id', deliberately, not systemFields.primaryKeyField. Nothing in the pipeline
+    // honours that override: KernelFlywayGenerator emits `id UUID PRIMARY KEY` unconditionally,
+    // KernelRepositoryGenerator's WHERE clause is the constant " WHERE id = ?", every by-id
+    // handler binds the {id} path variable, and the processor says so outright ("generators leave
+    // the primary key as the literal id"). Reading it here would make this the only layer that
+    // honours it, and the emitted app would then request the wrong identifier.
+    const idField = 'id';
     const enumTypes = this.collectEnumTypes(filterableFields);
 
     const lines: string[] = [];

@@ -341,31 +341,31 @@ describe('StoreGenerator systemFields.primaryKeyField alias propagation', () => 
     expect((content.match(/this\._selected\(\)\?\.id === id/g) ?? []).length).toBe(2);
   });
 
-  it('custom systemFields.primaryKeyField overrides ALL 9 substitution sites uniformly (matches the default-idField parity)', () => {
-    // Reviewer of #57 flagged that the previous version of this test
-    // checked 5 of 9 sites — the 4 missed sites were in update()
-    // (optimistic + server-replace mapping + selected-match check)
-    // and in delete()'s selected-match check. A future edit forgetting
-    // to substitute `${idField}` at any of those would have passed the
-    // old test. All 9 are now explicitly pinned for parity with the
-    // default-idField sibling test above.
+  it('a systemFields.primaryKeyField override moves NONE of the 9 substitution sites', () => {
+    // The override must NOT move the emitted identity. Nothing in the pipeline honours
+    // `primaryKeyField`: Flyway emits `id UUID PRIMARY KEY`, the repository's clause is the
+    // constant " WHERE id = ?", every by-id handler binds `{id}`, and the processor records the
+    // same ("generators leave the primary key as the literal id"). An emitted app that honoured
+    // it here would be the only layer doing so, and would request the wrong REST identifier.
+    //
+    // The nine sites are enumerated for the reason the #57 reviewer gave: an earlier version
+    // checked five, and the four it missed — update()'s optimistic map, server-replace map and
+    // selected-match, plus delete()'s selected-match — are exactly where a partial change hides.
     const content = gen.generate(domain({
       entityName: 'Order',
       systemFields: { primaryKeyField: 'uuid' },
     }), CTX)!.content;
 
-    expect(content).toContain("private readonly _sortField = signal<string>('uuid');");      // 1
-    expect(content).toContain('entities.map(e => e.uuid === id ? entity : e)');                // 2 — loadById
-    expect(content).toContain('entities.map(e => e.uuid === id ? { ...e, ...data }');         // 3 — update optimistic
-    expect(content).toContain('entities.map(e => e.uuid === id ? updated : e)');              // 4 — update server-replace
-    expect(content).toContain('entities.filter(e => e.uuid !== id)');                          // 5 — delete optimistic
-    expect(content).toContain('this._entities().find(e => e.uuid === id)');                    // 6 — select find
-    expect(content).toContain("this._sortField.set('uuid');");                                 // 7 — reset re-init
-    expect((content.match(/this\._selected\(\)\?\.uuid === id/g) ?? []).length).toBe(2);       // 8 + 9 — selected match in update + delete
-    // Negative: zero 'id' references at these sites (proves the
-    // substitution was complete, not partial).
-    expect(content).not.toContain('this._selected()?.id === id');
-    expect(content).not.toContain('entities.filter(e => e.id !== id)');
+    expect(content).toContain("private readonly _sortField = signal<string>('id');");        // 1
+    expect(content).toContain('entities.map(e => e.id === id ? entity : e)');                 // 2 — loadById
+    expect(content).toContain('entities.map(e => e.id === id ? { ...e, ...data }');           // 3 — update optimistic
+    expect(content).toContain('entities.map(e => e.id === id ? updated : e)');                // 4 — update server-replace
+    expect(content).toContain('entities.filter(e => e.id !== id)');                           // 5 — delete optimistic
+    expect(content).toContain('this._entities().find(e => e.id === id)');                     // 6 — select find
+    expect(content).toContain("this._sortField.set('id');");                                  // 7 — reset re-init
+    expect((content.match(/this\._selected\(\)\?\.id === id/g) ?? []).length).toBe(2);       // 8 + 9 — selected match in update + delete
+    // Negative: the override reaches no site at all.
+    expect(content).not.toContain('uuid');
   });
 });
 
@@ -400,14 +400,11 @@ describe('StoreGenerator softDelete branch', () => {
     expect(content).not.toContain('this.service.restore(');
   });
 
-  it('softDelete + custom idField: archive method substitutes idField at BOTH its sites (filter + selected-match)', () => {
-    // The softDelete branch in generateSoftDeleteMethods has its own
-    // two ${idField} substitution sites that the default-idField
-    // softDelete test above doesn't exercise. This combination test
-    // catches a regression where archive() forgets the idField
-    // substitution while the rest of the store correctly uses the
-    // alias (e.g. by hardcoding 'id' inside the soft-delete branch
-    // template).
+  it('softDelete + a primaryKeyField override: archive still identifies on id at both its sites', () => {
+    // generateSoftDeleteMethods has its own two ${idField} substitution sites, which the
+    // default softDelete test above does not reach. Kept as the combination case: if the
+    // override were ever honoured, the soft-delete branch is where a partial change would
+    // land first.
     const content = gen.generate(domain({
       entityName: 'Order',
       softDelete: true,
@@ -415,10 +412,9 @@ describe('StoreGenerator softDelete branch', () => {
     }), CTX)!.content;
 
     expect(content).toContain('async archive(id: string): Promise<void>');
-    expect(content).toContain('entities.filter(e => e.uuid !== id)');
-    expect(content).toContain('this._selected()?.uuid === id');
-    // Negative: no leaked 'id' substitution at the soft-delete sites.
-    expect(content).not.toContain('entities.filter(e => e.id !== id)');
+    expect(content).toContain('entities.filter(e => e.id !== id)');
+    expect(content).toContain('this._selected()?.id === id');
+    expect(content).not.toContain('uuid');
   });
 });
 

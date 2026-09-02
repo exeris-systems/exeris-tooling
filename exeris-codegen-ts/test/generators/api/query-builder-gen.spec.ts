@@ -93,7 +93,7 @@ describe('QueryBuilderGenerator.generate — per-domain', () => {
     expect(content).toContain("import type { OrderLine } from '../types/order-line.types'");
   });
 
-  it('SortField type unions every sortable field; falls back to systemFields.primaryKeyField when none are sortable', () => {
+  it('SortField type unions every sortable field; falls back to id when none are sortable', () => {
     const sortable = gen.generate(domain({
       entityName: 'Order',
       fields: [
@@ -104,14 +104,16 @@ describe('QueryBuilderGenerator.generate — per-domain', () => {
     }), CTX)!.content;
     expect(sortable).toContain("export type OrderSortField = 'createdAt' | 'total';");
 
+    // The fallback is `id` whatever primaryKeyField says, for the reason recorded at
+    // query-builder-gen.ts's idField: no layer of the pipeline honours that override.
     const fallback = gen.generate(domain({
       entityName: 'Order',
       systemFields: { primaryKeyField: 'uuid' },
     }), CTX)!.content;
-    expect(fallback).toContain("export type OrderSortField = 'uuid';");
+    expect(fallback).toContain("export type OrderSortField = 'id';");
   });
 
-  it('falls back to default idField "id" when systemFields is absent and no sortable fields exist', () => {
+  it('falls back to id when systemFields is absent and no sortable fields exist', () => {
     const content = gen.generate(domain({ entityName: 'Order' }), CTX)!.content;
     expect(content).toContain("export type OrderSortField = 'id';");
   });

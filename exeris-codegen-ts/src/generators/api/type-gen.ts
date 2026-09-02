@@ -289,7 +289,6 @@ export function systemFieldNames(metadata: DomainMetadata): string[] {
   const sf = metadata.systemFields;
 
   if (sf) {
-    if (sf.primaryKeyField && sf.primaryKeyField !== 'id') fields.push(sf.primaryKeyField);
     if (sf.versionField) fields.push(sf.versionField);
     if (sf.createdAtField) fields.push(sf.createdAtField);
     if (sf.updatedAtField) fields.push(sf.updatedAtField);

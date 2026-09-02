@@ -163,17 +163,24 @@ describe('DetailGenerator system-field filtering', () => {
     expect(content).not.toContain("name: 'updatedAt' as keyof Order");
   });
 
-  it('explicit systemFields.primaryKeyField alias is appended to the hidden set alongside default "id"', () => {
+  it('a primaryKeyField override does not hide the field it names', () => {
+    // The override must NOT move the emitted identity. Nothing in the pipeline honours
+    // `primaryKeyField`: Flyway emits `id UUID PRIMARY KEY`, the repository's clause is the
+    // constant " WHERE id = ?", every by-id handler binds `{id}`, and the processor records the
+    // same ("generators leave the primary key as the literal id"). An emitted app that honoured
+    // it here would be the only layer doing so, and would request the wrong REST identifier.
+    // The field stays visible because the backend treats it as an ordinary column: the row's
+    // identity is the `id` the repository writes, not the name this attribute carries.
     const content = gen.generate(domain({
       entityName: 'Order',
       systemFields: { primaryKeyField: 'uuid' },
       fields: [
-        field({ name: 'uuid', type: 'UUID' }),       // hidden by the alias
-        field({ name: 'orderNumber', type: 'String' }), // visible
+        field({ name: 'uuid', type: 'UUID' }),
+        field({ name: 'orderNumber', type: 'String' }),
       ],
     }), CTX)!.content;
 
-    expect(content).not.toContain("name: 'uuid' as keyof Order");
+    expect(content).toContain("name: 'uuid' as keyof Order");
     expect(content).toContain("name: 'orderNumber' as keyof Order");
   });
 
@@ -369,13 +376,14 @@ describe('DetailGenerator getTitle fallback', () => {
     expect(content).toContain('return String(entity.id);');
   });
 
-  it('uses systemFields.primaryKeyField alias in the fallback when configured', () => {
+  it('falls back to entity.id for the title even when primaryKeyField names something else', () => {
     const content = gen.generate(domain({
       entityName: 'Thing',
       systemFields: { primaryKeyField: 'uuid' },
     }), CTX)!.content;
 
-    expect(content).toContain('return String(entity.uuid);');
+    expect(content).toContain('return String(entity.id);');
+    expect(content).not.toContain('entity.uuid');
   });
 });
 

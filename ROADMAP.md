@@ -596,17 +596,33 @@ types) found the processor names **21 of ~44** annotations.
       four were dropped in silence while `idField`'s own `.default('id')` supplied a plausible
       wrong answer in their place.
 
-      **That reached emitted code, and it did not compile.** An entity with
-      `@ExerisDomain(primaryKeyField = "invoiceNo")` got a `store-gen` emitting `e.id === id` at
-      ten identity sites, a `list-gen` emitting `track item.id`, and a `type-gen` DTO declaring
-      `invoiceNo` and no `id` — `TS2339` under `ng build`. Its create-DTO omit set came out
-      **empty**, so the server-owned primary key and all three soft-delete columns were
-      client-writable. Proven by regenerating the sample app in both directions.
+      **That reached emitted code.** An entity declaring the soft-delete overrides got a create
+      DTO whose omit set came out **empty**, so three columns the server owns were client-writable.
+      Proven by regenerating the sample app in both directions.
 
-      **Nothing could have caught it**: every unit fixture was written from the schema rather than
-      the record, and neither FE gate declared a `systemFields` block at all. The sample app now
-      carries an entity whose primary key is not `id`, named for the rename the way `Component` and
-      `Address` are named for their collisions.
+      **The primary key is the one component to leave alone, and finding out why was the review's
+      doing.** The first version of the fix wired `primaryKeyField` into identity — and
+      `primaryKeyField` is honoured by *nothing*: `KernelFlywayGenerator` emits
+      `id UUID PRIMARY KEY` unconditionally and its `sysCol` switch maps the other nine names only,
+      `KernelRepositoryGenerator` resolves five system fields and identifies every row through the
+      constant `" WHERE id = ?"`, every by-id handler binds the `{id}` path variable, and
+      `extractSystemFieldsOverrides`'s own Javadoc says it outright ("generators leave the primary
+      key as the literal `id`"). Honouring it on the TypeScript side alone would have made the
+      emitted app request an identifier the router does not serve — a runtime break no `tsc`,
+      `ng build` or unit test can see, since none of them talk to a kernel. The six read sites use
+      the literal `id`, each carrying the reason, and eight tests that had pinned the override
+      *moving* the identity now pin it **not** moving.
+
+      **`@ExerisDomain.primaryKeyField` joined `INERT_ATTRIBUTES`** in the same change. It is the
+      reverse of the registry's usual direction — an attribute that stopped being consumed rather
+      than started — and without it the author of `primaryKeyField = "invoiceNo"` gets silence and
+      an `id`. Renaming the primary key is one change across the SQL, the repository and the route
+      template; that is this item's scope, and the entry is deleted in the change that lands it.
+
+      **Nothing could have caught any of it**: every unit fixture was written from the schema rather
+      than the record, and neither FE gate declared a `systemFields` block at all. The sample app
+      now carries `Invoice`, which declares `id` *and* `primaryKeyField = "invoiceNo"` — pinning
+      both halves of the real contract, the honoured overrides and the ignored one.
 - [ ] **C2 — `annotation.security.*`.** `@Encrypted` and `@RowLevelSecurity`; the latter overlaps the
       RLS predicate `KernelFlywayGenerator` already drives from `dataScope`, so it needs a design
       call, not just extraction.
