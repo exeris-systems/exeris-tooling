@@ -1151,6 +1151,37 @@ through `WHERE id = ?`, and every by-id handler binds `{id}`. The emitted Angula
 primary key end to end is a change across the SQL, the repository and the route template together,
 and is not available in this train.
 
+### `annotation.system.*` on a field now names the column (C1)
+
+Nine of the ten field-level system annotations — `@TenantId`, `@Version`, `@SoftDelete`,
+`@SoftDeleteTimestamp`, `@SoftDeletedBy`, `@AuditCreatedAt`, `@AuditCreatedBy`, `@AuditUpdatedAt`,
+`@AuditUpdatedBy` — are extracted. Until now only `@ExerisDomain`'s override attributes named those
+fields, so annotating a field had no effect on emitted output.
+
+**If your entity carries any of the nine on a field whose name is not the canonical one, the
+regenerated schema and repository change with it.** `@AuditCreatedAt private Instant bornAt` on an
+`audited` entity emits `born_at` where it emitted `created_at`. **That is a column rename in a
+Flyway migration** — review the generated migration before applying it to a database that already
+has the old column.
+
+**They rename a column; they do not add one.** Whether the audit, soft-delete and version columns
+exist is still decided by `@ExerisDomain(audited = …, softDelete = …, versioned = …)`. Annotating a
+field on an entity that sets none of those flags still emits nothing.
+
+**Two shapes are now refused at `javac`**, both previously accepted and silently mis-compiled: the
+same annotation on two fields (the metadata record holds one field name per role), and an
+`@ExerisDomain` override naming a different field than the annotation does.
+
+**`@PrimaryKey` is unchanged and still has no effect.** Nothing in the pipeline honours
+`primaryKeyField` — the schema emits `id UUID PRIMARY KEY`, the repository identifies rows through
+`WHERE id = ?`, and every by-id handler binds `{id}`. Under `-Aexeris.strict` it still draws a
+never-read warning, now with that reason.
+
+**`-Aexeris.strict` gets 19 new attribute warnings**, one per attribute the nine annotations carry
+and no generator reads (`@TenantId.autoPopulate`, `@Version.useForETag`,
+`@SoftDelete.retentionPeriod`, …). Setting any of them changes no emitted output; the warning says
+so rather than letting the extraction hide it.
+
 ---
 
 ## Reference

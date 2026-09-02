@@ -271,6 +271,122 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             new InertAttribute("ActionParam", "required",
                     "the value reaches ActionParamMetadata in the JSON, but no emitter renders "
                             + "it — action-parameter generation reads only the parameter name and type"),
+            new InertAttribute("TenantId", "autoPopulate",
+                    "the annotation's role — which field plays it — is extracted (C1) and "
+                            + "reaches the schema and the repository. This attribute is not: "
+                            + "SystemFieldsMetadata carries one field name per role and has no component "
+                            + "for it, so setting it changes no emitted output. The generated repository "
+                            + "already stamps the tenant it writes (T36), unconditionally"),
+            new InertAttribute("TenantId", "exposeInApi",
+                    "the annotation's role — which field plays it — is extracted (C1) and "
+                            + "reaches the schema and the repository. This attribute is not: "
+                            + "SystemFieldsMetadata carries one field name per role and has no component "
+                            + "for it, so setting it changes no emitted output. Whether a tenant column "
+                            + "reaches the DTO is decided by the emitted type, which omits system fields "
+                            + "wholesale"),
+            new InertAttribute("TenantId", "scopeUniqueConstraints",
+                    "the annotation's role — which field plays it — is extracted (C1) and "
+                            + "reaches the schema and the repository. This attribute is not: "
+                            + "SystemFieldsMetadata carries one field name per role and has no component "
+                            + "for it, so setting it changes no emitted output. A DDL concern "
+                            + "KernelFlywayGenerator could carry and does not"),
+            new InertAttribute("TenantId", "validateOnMutation",
+                    "the annotation's role — which field plays it — is extracted (C1) and "
+                            + "reaches the schema and the repository. This attribute is not: "
+                            + "SystemFieldsMetadata carries one field name per role and has no component "
+                            + "for it, so setting it changes no emitted output"),
+            new InertAttribute("Version", "initialValue",
+                    "the annotation's role — which field plays it — is extracted (C1) and "
+                            + "reaches the schema and the repository. This attribute is not: "
+                            + "SystemFieldsMetadata carries one field name per role and has no component "
+                            + "for it, so setting it changes no emitted output. The emitted DDL defaults "
+                            + "the version column to 0"),
+            new InertAttribute("Version", "requiredOnUpdate",
+                    "the annotation's role — which field plays it — is extracted (C1) and "
+                            + "reaches the schema and the repository. This attribute is not: "
+                            + "SystemFieldsMetadata carries one field name per role and has no component "
+                            + "for it, so setting it changes no emitted output. The repository's "
+                            + "optimistic-lock UPDATE always carries the version predicate"),
+            new InertAttribute("Version", "useForETag",
+                    "the annotation's role — which field plays it — is extracted (C1) and "
+                            + "reaches the schema and the repository. This attribute is not: "
+                            + "SystemFieldsMetadata carries one field name per role and has no component "
+                            + "for it, so setting it changes no emitted output. No emitted handler sets "
+                            + "or reads an ETag header"),
+            new InertAttribute("SoftDelete", "allowHardDelete",
+                    "the annotation's role — which field plays it — is extracted (C1) and "
+                            + "reaches the schema and the repository. This attribute is not: "
+                            + "SystemFieldsMetadata carries one field name per role and has no component "
+                            + "for it, so setting it changes no emitted output. The emitted repository "
+                            + "picks UPDATE-or-DELETE from the domain's softDelete flag alone"),
+            new InertAttribute("SoftDelete", "defaultValue",
+                    "the annotation's role — which field plays it — is extracted (C1) and "
+                            + "reaches the schema and the repository. This attribute is not: "
+                            + "SystemFieldsMetadata carries one field name per role and has no component "
+                            + "for it, so setting it changes no emitted output. The emitted DDL defaults "
+                            + "the flag to false"),
+            new InertAttribute("SoftDelete", "excludeFromUniqueConstraints",
+                    "the annotation's role — which field plays it — is extracted (C1) and "
+                            + "reaches the schema and the repository. This attribute is not: "
+                            + "SystemFieldsMetadata carries one field name per role and has no component "
+                            + "for it, so setting it changes no emitted output. A DDL concern "
+                            + "KernelFlywayGenerator could carry and does not"),
+            new InertAttribute("SoftDelete", "retentionPeriod",
+                    "the annotation's role — which field plays it — is extracted (C1) and "
+                            + "reaches the schema and the repository. This attribute is not: "
+                            + "SystemFieldsMetadata carries one field name per role and has no component "
+                            + "for it, so setting it changes no emitted output. Retention is a runtime "
+                            + "scheduler rather than an emission concern — HLA places it in "
+                            + "exeris-caps-soft-delete"),
+            new InertAttribute("SoftDeleteTimestamp", "clearOnRestore",
+                    "the annotation's role — which field plays it — is extracted (C1) and "
+                            + "reaches the schema and the repository. This attribute is not: "
+                            + "SystemFieldsMetadata carries one field name per role and has no component "
+                            + "for it, so setting it changes no emitted output. The emitted restore "
+                            + "clears the timestamp unconditionally"),
+            new InertAttribute("SoftDeletedBy", "clearOnRestore",
+                    "the annotation's role — which field plays it — is extracted (C1) and "
+                            + "reaches the schema and the repository. This attribute is not: "
+                            + "SystemFieldsMetadata carries one field name per role and has no component "
+                            + "for it, so setting it changes no emitted output. The emitted restore "
+                            + "clears the actor unconditionally"),
+            new InertAttribute("AuditCreatedAt", "immutable",
+                    "the annotation's role — which field plays it — is extracted (C1) and "
+                            + "reaches the schema and the repository. This attribute is not: "
+                            + "SystemFieldsMetadata carries one field name per role and has no component "
+                            + "for it, so setting it changes no emitted output. The emitted UPDATE never "
+                            + "lists the created-at column"),
+            new InertAttribute("AuditCreatedBy", "expression",
+                    "the annotation's role — which field plays it — is extracted (C1) and "
+                            + "reaches the schema and the repository. This attribute is not: "
+                            + "SystemFieldsMetadata carries one field name per role and has no component "
+                            + "for it, so setting it changes no emitted output. An actor expression needs "
+                            + "a principal to evaluate against, which the emitted repository does not "
+                            + "take"),
+            new InertAttribute("AuditCreatedBy", "immutable",
+                    "the annotation's role — which field plays it — is extracted (C1) and "
+                            + "reaches the schema and the repository. This attribute is not: "
+                            + "SystemFieldsMetadata carries one field name per role and has no component "
+                            + "for it, so setting it changes no emitted output. The emitted UPDATE never "
+                            + "lists the created-by column"),
+            new InertAttribute("AuditUpdatedAt", "setOnCreate",
+                    "the annotation's role — which field plays it — is extracted (C1) and "
+                            + "reaches the schema and the repository. This attribute is not: "
+                            + "SystemFieldsMetadata carries one field name per role and has no component "
+                            + "for it, so setting it changes no emitted output. The emitted INSERT stamps "
+                            + "both timestamps"),
+            new InertAttribute("AuditUpdatedBy", "expression",
+                    "the annotation's role — which field plays it — is extracted (C1) and "
+                            + "reaches the schema and the repository. This attribute is not: "
+                            + "SystemFieldsMetadata carries one field name per role and has no component "
+                            + "for it, so setting it changes no emitted output. The same principal gap as "
+                            + "@AuditCreatedBy.expression"),
+            new InertAttribute("AuditUpdatedBy", "setOnCreate",
+                    "the annotation's role — which field plays it — is extracted (C1) and "
+                            + "reaches the schema and the repository. This attribute is not: "
+                            + "SystemFieldsMetadata carries one field name per role and has no component "
+                            + "for it, so setting it changes no emitted output. The emitted INSERT stamps "
+                            + "both actors"),
             new InertAttribute("ExerisDomain", "apiVersion",
                     "no emitted artifact carries a version segment: the router registers routes at "
                             + "the entity path, the OpenAPI document publishes the same, and the Java "
@@ -391,10 +507,12 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      * exist. Every SDK annotation is answered by exactly one of the two passes.
      */
     private static final Set<String> EXTRACTED_ANNOTATIONS = Set.of(
-            "Action", "ActionParam", "Bind", "Block", "CapabilityLifecycle", "CapabilityModule",
+            "Action", "ActionParam", "AuditCreatedAt", "AuditCreatedBy", "AuditUpdatedAt",
+            "AuditUpdatedBy", "Bind", "Block", "CapabilityLifecycle", "CapabilityModule",
             "DomainEvent", "EventSourced", "ExerisDomain", "Field", "Graph", "GraphEdge",
             "InternalApi", "Provides", "Region", "Relationship", "Requires", "Saga", "SagaStep",
-            "UI", "Validation", "View");
+            "SoftDelete", "SoftDeleteTimestamp", "SoftDeletedBy", "TenantId", "UI", "Validation",
+            "Version", "View");
 
     /**
      * Reasons for the annotations {@link #EXTRACTED_ANNOTATIONS} does not contain. Optional by
@@ -409,6 +527,16 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      * author deserves to know which one they have hit.
      */
     private static final List<UnreadAnnotation> UNREAD_NOTES = List.of(
+            new UnreadAnnotation("PrimaryKey",
+                    "the other nine annotation.system.* annotations are extracted (C1) and their "
+                            + "field names reach the schema and the repository. This one is held "
+                            + "back on purpose: SystemFieldsMetadata.primaryKeyField is the single "
+                            + "component no generator honours — KernelFlywayGenerator emits "
+                            + "id UUID PRIMARY KEY unconditionally, the repository identifies rows "
+                            + "through the constant WHERE id = ?, and every by-id handler binds the "
+                            + "{id} path variable. Extracting it would end this warning without "
+                            + "changing one byte of emitted output. Renaming a primary key is one "
+                            + "change across the SQL, the repository and the route template"),
             new UnreadAnnotation("Derived",
                     "DerivedMetadata exists in the source model and is filled by nobody: the "
                             + "processor performs no extraction and no emitter names the type. "
@@ -1331,43 +1459,131 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         // annotations) — the previous containsKey("tableName") check
         // was unreachable and was removed in PR #45.
 
-        // System-field overrides (T5). Only build a SystemFieldsMetadata when
-        // the user explicitly wrote at least one override attribute; otherwise
-        // leave systemFields null so the default-case JSON is byte-identical
-        // to pre-T5 output (determinism invariant).
-        SystemFieldsMetadata systemFields = extractSystemFieldsOverrides(values);
+        // System fields, from two sources (T5 + C1). Only build a SystemFieldsMetadata when
+        // something was actually declared; otherwise leave it null so the default-case JSON is
+        // byte-identical to pre-T5 output (determinism invariant).
+        SystemFieldsMetadata systemFields = resolveSystemFields(values, element);
         if (systemFields != null) {
             builder.systemFields(systemFields);
         }
     }
 
     /**
-     * Builds a {@link SystemFieldsMetadata} from explicitly-written
-     * {@code @ExerisDomain} override attributes. Returns {@code null} when no
-     * relevant override was set, so the metadata record stays absent and the
-     * emitted JSON is unchanged for the default case.
-     *
-     * <p>Unset components are filled from {@link SystemFieldsMetadata#defaults()}
-     * so the record is internally complete. {@code primaryKeyField} defaults to
-     * {@code "id"} (annotation default) and is included for completeness, but
-     * generators leave the primary key as the literal {@code "id"} (out of T5
-     * scope).
+     * One system-field role: the {@code annotation.system} annotation that declares it on a field,
+     * and the {@code @ExerisDomain} attribute that names the same field remotely.
      */
-    private SystemFieldsMetadata extractSystemFieldsOverrides(Map<String, Object> values) {
+    private record SystemFieldRole(String annotation, String overrideAttribute) {
+        String fqn() {
+            return "eu.exeris.sdk.annotation.system." + annotation;
+        }
+    }
+
+    /**
+     * The nine roles read from {@code annotation.system.*} (C1). Ordered, and iterated in this
+     * order, so a diagnostic sequence is stable across runs.
+     *
+     * <p><b>{@code @PrimaryKey} is deliberately absent.</b> Its component,
+     * {@code SystemFieldsMetadata.primaryKeyField}, is the one no generator honours — the schema
+     * emits {@code id UUID PRIMARY KEY} unconditionally, the repository identifies rows through
+     * {@code " WHERE id = ?"}, and every by-id handler binds {@code {id}}. Extracting it would move
+     * the annotation out of the never-read audit while leaving its effect at zero, which is the
+     * failure mode this repository spent 0.8.0 removing. It stays unextracted, and C0 keeps
+     * reporting it, until the slice that renames the key across the SQL, the repository and the
+     * route template lands.
+     */
+    private static final List<SystemFieldRole> SYSTEM_FIELD_ROLES = List.of(
+            new SystemFieldRole("TenantId", "tenantIdField"),
+            new SystemFieldRole("Version", "versionField"),
+            new SystemFieldRole("SoftDelete", "softDeleteField"),
+            new SystemFieldRole("SoftDeleteTimestamp", "softDeleteTimestampField"),
+            new SystemFieldRole("SoftDeletedBy", "softDeletedByField"),
+            new SystemFieldRole("AuditCreatedAt", "createdAtField"),
+            new SystemFieldRole("AuditCreatedBy", "createdByField"),
+            new SystemFieldRole("AuditUpdatedAt", "updatedAtField"),
+            new SystemFieldRole("AuditUpdatedBy", "updatedByField"));
+
+    /**
+     * Which field plays each system role, from the two sources that can say so: a
+     * {@code annotation.system} annotation on the field itself (C1) and the matching
+     * {@code @ExerisDomain} override attribute (T5).
+     *
+     * <p>Returns {@code null} when neither source declared anything, so the record stays absent and
+     * the emitted JSON is byte-identical to the default case.
+     *
+     * <p><b>Two refusals, both at the declaration.</b> Two fields carrying one role cannot be
+     * compiled — {@code SystemFieldsMetadata} holds one name per role — and neither can an override
+     * naming a different field than the annotation does. Accepting either would produce metadata
+     * that builds here and contradicts itself downstream, which is the shape S3 refused for a
+     * repeated {@code @GraphEdge}.
+     */
+    private SystemFieldsMetadata resolveSystemFields(Map<String, Object> values, TypeElement element) {
+        Map<String, String> declared = new LinkedHashMap<>();
+
+        for (SystemFieldRole role : SYSTEM_FIELD_ROLES) {
+            VariableElement carrier = null;
+            for (Element enclosed : element.getEnclosedElements()) {
+                if (enclosed.getKind() != ElementKind.FIELD) continue;
+                AnnotationMirror mirror = findAnnotation(enclosed, role.fqn());
+                if (mirror == null) continue;
+
+                warnInertAttributes(role.annotation(), extractAnnotationValues(mirror), enclosed, mirror);
+
+                if (carrier != null) {
+                    messager.printMessage(
+                            Diagnostic.Kind.ERROR,
+                            DIAG_PREFIX + "@" + role.annotation() + " is declared on two fields ('"
+                                    + carrier.getSimpleName() + "' and '" + enclosed.getSimpleName()
+                                    + "'). SystemFieldsMetadata carries one field name per role, so "
+                                    + "the pipeline cannot express both. Declare it once.",
+                            enclosed, mirror);
+                    continue;
+                }
+                carrier = (VariableElement) enclosed;
+            }
+            if (carrier == null) continue;
+
+            String annotated = carrier.getSimpleName().toString();
+            String override = blankToNull(getString(values, role.overrideAttribute(), null));
+            if (override != null && !override.equals(annotated)) {
+                messager.printMessage(
+                        Diagnostic.Kind.ERROR,
+                        DIAG_PREFIX + "@" + role.annotation() + " is on field '" + annotated
+                                + "' while @ExerisDomain(" + role.overrideAttribute() + " = \""
+                                + override + "\") names a different one. One role resolves to one "
+                                + "field; drop whichever is wrong.",
+                        carrier, findAnnotation(carrier, role.fqn()));
+                continue;
+            }
+            declared.put(role.overrideAttribute(), annotated);
+        }
+
+        return extractSystemFieldsOverrides(values, declared);
+    }
+
+    /**
+     * Builds a {@link SystemFieldsMetadata} from the {@code @ExerisDomain} override attributes and
+     * the field roles resolved above. Returns {@code null} when neither source said anything.
+     *
+     * <p>Unset components are filled from {@link SystemFieldsMetadata#defaults()} so the record is
+     * internally complete. {@code primaryKeyField} defaults to {@code "id"} and is carried for
+     * completeness; no generator reads it (see {@link #SYSTEM_FIELD_ROLES}).
+     */
+    private SystemFieldsMetadata extractSystemFieldsOverrides(
+            Map<String, Object> values, Map<String, String> declared) {
         SystemFieldsMetadata d = SystemFieldsMetadata.defaults();
 
         // The annotation default for primaryKeyField is "id"; everything else
         // is "". A blank value is treated as "not overridden".
         String primaryKeyField = nonBlankOr(getString(values, "primaryKeyField", null), d.primaryKeyField());
-        String tenantIdField = nonBlankOr(getString(values, "tenantIdField", null), d.tenantIdField());
-        String softDeleteField = nonBlankOr(getString(values, "softDeleteField", null), d.softDeleteField());
-        String softDeleteTimestampField = nonBlankOr(getString(values, "softDeleteTimestampField", null), d.softDeleteTimestampField());
-        String softDeletedByField = nonBlankOr(getString(values, "softDeletedByField", null), d.softDeletedByField());
-        String versionField = nonBlankOr(getString(values, "versionField", null), d.versionField());
-        String createdAtField = nonBlankOr(getString(values, "createdAtField", null), d.createdAtField());
-        String createdByField = nonBlankOr(getString(values, "createdByField", null), d.createdByField());
-        String updatedAtField = nonBlankOr(getString(values, "updatedAtField", null), d.updatedAtField());
-        String updatedByField = nonBlankOr(getString(values, "updatedByField", null), d.updatedByField());
+        String tenantIdField = resolved(declared, values, "tenantIdField", d.tenantIdField());
+        String softDeleteField = resolved(declared, values, "softDeleteField", d.softDeleteField());
+        String softDeleteTimestampField = resolved(declared, values, "softDeleteTimestampField", d.softDeleteTimestampField());
+        String softDeletedByField = resolved(declared, values, "softDeletedByField", d.softDeletedByField());
+        String versionField = resolved(declared, values, "versionField", d.versionField());
+        String createdAtField = resolved(declared, values, "createdAtField", d.createdAtField());
+        String createdByField = resolved(declared, values, "createdByField", d.createdByField());
+        String updatedAtField = resolved(declared, values, "updatedAtField", d.updatedAtField());
+        String updatedByField = resolved(declared, values, "updatedByField", d.updatedByField());
 
         // Did the user explicitly override anything (other than the implicit
         // primaryKeyField="id" annotation default)? primaryKeyField counts only
@@ -1385,7 +1601,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                 || (isExplicitNonBlank(values, "primaryKeyField")
                         && !"id".equals(getString(values, "primaryKeyField", "id")));
 
-        if (!anyOverride) {
+        if (!anyOverride && declared.isEmpty()) {
             return null;
         }
 
@@ -1397,6 +1613,19 @@ public class ExerisDomainProcessor extends AbstractProcessor {
 
     private static String nonBlankOr(String value, String fallback) {
         return (value != null && !value.isBlank()) ? value : fallback;
+    }
+
+    /**
+     * The field playing one role: what an {@code annotation.system} annotation declared, else the
+     * {@code @ExerisDomain} override, else the canonical default. The two sources cannot disagree
+     * here — {@link #resolveSystemFields} refuses that at the declaration.
+     */
+    private static String resolved(Map<String, String> declared, Map<String, Object> values,
+                                   String attribute, String fallback) {
+        String fromAnnotation = declared.get(attribute);
+        return fromAnnotation != null
+                ? fromAnnotation
+                : nonBlankOr(getString(values, attribute, null), fallback);
     }
 
     private static boolean isExplicitNonBlank(Map<String, Object> values, String key) {
