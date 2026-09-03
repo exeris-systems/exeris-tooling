@@ -40,8 +40,11 @@ import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
  * Kernel 0.12 promotes both names to constants on {@code ConnectionInterceptor},
  * which is what makes the transcription emittable: it is gated on the 0.12 pin.
  *
- * <p>A second half is missing independently of the pin — the policy needs a
- * shared-scope <em>column</em>, and no SDK carrier names one.
+ * <p>A second half is missing independently of the pin, and it is not the column:
+ * {@code shared_scope TEXT NOT NULL DEFAULT ''} is canonically named and fail-safe.
+ * What is missing is any way to declare which field carries a row's shared-scope
+ * value, without which the emitted repository binds nothing and every row keeps
+ * {@code ''} — UNIVERSE with a column and no widening.
  *
  * <p>{@code StorageContext.sharedScopeKey()} is on 0.11, and reading only that is
  * how this repo came to say in five places that the gate was gone. It carries the

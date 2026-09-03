@@ -1216,9 +1216,12 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      * and {@code SESSION_KEY_SHARED_SCOPE}, which is what makes the transcription
      * emittable — so this refusal is gated on B0, the 0.12 pin.
      *
-     * <p>A second half is missing independently of the pin: the policy also needs a
-     * shared-scope <em>column</em>, and no SDK carrier names one —
-     * {@code SystemFieldsMetadata} declares ten components and none of them is it.
+     * <p>A second half is missing independently of the pin, and it is not the column:
+     * {@code shared_scope TEXT NOT NULL DEFAULT ''} has a canonical name and a fail-safe
+     * default, so it emits like {@code tenant_id} does. What is missing is any way to
+     * declare <em>which field carries the row's shared-scope value</em> — so the emitted
+     * repository would bind nothing, every row would keep {@code ''}, and UNIVERSE would
+     * be behaviourally identical to TENANT. One SDK annotation plus one component.
      *
      * <p>{@code StorageContext.sharedScopeKey()} does exist on 0.11, and reading only
      * that is how this repo came to say in five places that the gate was gone. The

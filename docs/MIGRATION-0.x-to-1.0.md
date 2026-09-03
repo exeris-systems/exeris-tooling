@@ -1206,8 +1206,11 @@ shared-scope one is not yet emittable. Kernel 0.12 promotes both to
 `ConnectionInterceptor.SESSION_KEY_TENANT_ID` / `SESSION_KEY_SHARED_SCOPE`, which is what makes the
 transcription legitimate.
 
-A second half is missing independently of the pin: the policy also needs a shared-scope **column**,
-and no SDK carrier names one — `SystemFieldsMetadata` declares ten components and none is it.
+A second half is missing independently of the pin. The shared-scope **column** is not it — it has a
+canonical name and a fail-safe default (`shared_scope TEXT NOT NULL DEFAULT ''`, where `''` means
+tenant-private), so it can be emitted the way `tenant_id` is. What is missing is any way to declare
+**which field carries the row's shared-scope value**, so the emitted repository would bind nothing
+and every row would keep `''` — leaving `UNIVERSE` behaviourally identical to `TENANT`.
 
 **If you were waiting on this:** nothing you can do changes, but the wait is longer than the docs
 said. Declare `dataScope = TENANT` for entities that really are partitioned by an owner.

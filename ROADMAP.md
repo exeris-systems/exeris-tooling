@@ -2916,9 +2916,29 @@ The accessor carries the value; it does not name the variable a policy reads. Th
 `AbstractSharedScopeAccessMatrixTck` is on 0.11 too and asserts the *behaviour* through the SPI
 without pinning the variable name, so it does not close the gap either.
 
-**A second half is missing independently of the pin, and it is an SDK ask:** the policy also needs a
-shared-scope **column**, and no carrier names one — `SystemFieldsMetadata` declares ten components
-and none is it. So slice B is one kernel pin plus one SDK record change, not "the branch itself".
+A second half is missing independently of the pin, and it is a **small SDK ask that should land
+before SDK 0.12 cuts**. Measured against the kernel's own shared-scope integration test, the shape
+is fully specified and needs no invention:
+
+```sql
+shared_scope TEXT NOT NULL DEFAULT ''          -- '' means tenant-private
+USING (tenant_id = current_setting('exeris.tenant_id', true)
+       OR (NULLIF(current_setting('exeris.shared_scope', true), '') IS NOT NULL
+           AND shared_scope = current_setting('exeris.shared_scope', true)))
+WITH CHECK (tenant_id = current_setting('exeris.tenant_id', true))
+```
+
+The **column** is not the gap — it has a canonical name and a fail-safe default, so tooling can emit
+it the way it emits `tenant_id` / `deleted` / `version`. The gap is that **nothing lets an author say
+which field carries the row's shared-scope value**, so the emitted repository would bind nothing on
+INSERT, every row would keep `''`, and `UNIVERSE` would emit a column that leaves it behaviourally
+identical to `TENANT` — the emit-into-nothing failure mode again. The SDK's 953-line annotation
+surface has zero matches for "shared".
+
+The ask is one field annotation plus one component — `@SharedScope` and
+`SystemFieldsMetadata.sharedScopeField`, the exact shape of the nine that landed in C1 (#213).
+
+So slice B is one kernel pin plus one small SDK addition, not "the branch itself".
 
 Corrected in the same change: the processor's user-facing `javac` message, `DataScopeSupport`'s
 rationale, two `MIGRATION` paragraphs, the ADR-059 stub's slice B, and a Flyway test comment. The
@@ -2952,6 +2972,39 @@ emitted mapping should read it rather than re-derive it is a slice to measure, n
 **What still cannot be done:** pin either dependency. The rule is unchanged — no cross-repo
 `-SNAPSHOT` at a cut, and the tag's own POM must be final — so B0 waits for kernel `0.12.0` final,
 and the SDK bump additionally waits for the 0.12 line to publish a source model.
+
+### Maven Central at 0.9.0 — measured 2026-09-03, and this repo cannot publish there yet
+
+The intent is already in the POM and none of the machinery is. `distributionManagement` names
+`central` for both releases and snapshots, and the only related plugin configured is
+`maven-source-plugin`. There is **no** `maven-gpg-plugin`, **no** `central-publishing-maven-plugin`,
+**no** `maven-javadoc-plugin`, no release profile and no release workflow (`build.yml`,
+`claude-code-review.yml`, `claude.yml`). Central rejects an unsigned artefact and one without a
+javadoc jar, so a `deploy` today fails at the portal rather than at the build — which is the worse
+end to find out.
+
+**`exeris-kernel` is the reference and it is ahead of us**, per the cross-repo reference-first rule.
+Its `development/0.12.0` line carries a release profile with `maven-gpg-plugin` 3.2.8 and
+`central-publishing-maven-plugin` 0.11.0 (`autoPublish=false`, `waitUntil=validated` — a deployment
+sitting in the portal can be dropped, a published one never can), while its default
+`distributionManagement` stays on GitHub Packages. Two lessons are already written into its POM
+comments and are ours to copy rather than re-learn: the GPG passphrase reaches the build through the
+env var named by `actions/setup-java`'s `gpg-passphrase` input, not through POM configuration (a
+mismatch surfaces as `gpg: signing failed: No pinentry`, which names the wrong cause); and Central
+requires a sources **and** a javadoc jar per coordinate, which is what forced `exeris-kernel-tck`'s
+`Abstract*Tck` classes out of `src/test` into `src/main`.
+
+**The ordering is a hard constraint, not a preference.** A tooling artefact on Central declares
+`eu.exeris:exeris-sdk-*` and `eu.exeris:exeris-kernel-*` dependencies; a Central consumer can only
+resolve those if they are on Central too. So the chain is **kernel → SDK → tooling**, and
+`exeris-sdk` is at the same starting point we are — `distributionManagement` pointing at Central with
+no signing or publishing plugin and no release workflow. Its readiness is a prerequisite for ours.
+
+**One POM change belongs to the same slice:** this repo declares two `<repositories>` entries for
+GitHub Packages so the compile gate can resolve the kernel. A POM published to Central should not
+carry them — a consumer without a GitHub token gets an unresolvable build, and Central's validation
+flags the pattern. They can move into a profile that CI activates once kernel and SDK resolve from
+Central.
 
 ## Versioning policy
 
