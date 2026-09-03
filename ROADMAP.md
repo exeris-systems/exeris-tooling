@@ -797,9 +797,37 @@ each fix.
       assert a warning and leaves the pass-1 counts untouched; making `containedAnnotationName`
       return `null` (the name-keyed scheme's behaviour on a nested container) fails the
       `@DomainEvent` test and nothing else.
-- [ ] **C1 — `annotation.system.*` (10 field-level).** Trap worth naming: `DomainMetadata.systemFields`
-      *is* populated, but from `@ExerisDomain`'s override attributes (`extractSystemFieldsOverrides`),
-      never from `@PrimaryKey` / `@TenantId` / `@Version` / `@SoftDelete*` / `@Audit*`.
+- [~] **C1 — `annotation.system.*` (10 field-level).** *Nine shipped 0.9.0; `@PrimaryKey` is held
+      back deliberately.* `DomainMetadata.systemFields` was populated only from `@ExerisDomain`'s
+      override attributes (`extractSystemFieldsOverrides`), never from the field-level annotations —
+      so annotating a field said nothing about emitted output.
+
+      The nine now resolve from the field they are declared on, and reach the schema:
+      `KernelFlywayGenerator.sysCol` maps all nine, `KernelRepositoryGenerator` resolves five.
+      **They rename a column; they do not add one** — whether the audit, soft-delete and version
+      columns exist at all is still decided by `@ExerisDomain(audited/softDelete/versioned)`.
+      Whether declaring `@AuditCreatedAt` should *imply* `audited = true` is a separate decision,
+      recorded rather than taken.
+
+      **Two refusals, both at the declaration**, on the S3 principle that metadata which builds here
+      and contradicts itself downstream is worse than a diagnostic: several fields carrying one role
+      (the record holds one name per role), and an `@ExerisDomain` override naming a different field
+      than the annotation does. The first reports **once per role, naming every field** — an author
+      cannot pick the single survivor from a list that repeats the same "first" field against each
+      later one.
+
+      **`@PrimaryKey` is not extracted, and that is the point of the slice rather than an omission.**
+      `SystemFieldsMetadata.primaryKeyField` is the one component no generator honours, so
+      extracting it would move the annotation out of C0's never-read audit while leaving its effect
+      at zero — the "extracting into nothing" failure mode 0.8.0 spent itself removing. It keeps its
+      warning, now with a specific reason, until the slice that renames a key across the SQL, the
+      repository and the route template.
+
+      **The nine joined `EXTRACTED_ANNOTATIONS`, and their 19 unread attributes joined
+      `INERT_ATTRIBUTES` in the same change.** Without the second half the annotations would have
+      moved from "reported by C0" to silent, taking 19 attributes with them — `@TenantId.autoPopulate`,
+      `@Version.useForETag`, `@SoftDelete.retentionPeriod` and the rest. That is the audit escaping
+      through a change meant to improve it.
 
       Every one of the ten has a carrier — `SystemFieldsMetadata` declares exactly ten components,
       one per annotation — so this is genuine extraction, unlike the saga and graph families. The
@@ -845,6 +873,14 @@ each fix.
 - [ ] **C2 — `annotation.security.*`.** `@Encrypted` and `@RowLevelSecurity`; the latter overlaps the
       RLS predicate `KernelFlywayGenerator` already drives from `dataScope`, so it needs a design
       call, not just extraction.
+- [ ] **Registry entries are unverified strings.** `INERT_ATTRIBUTES` and `UNREAD_NOTES` are keyed by
+      hand-written `Annotation#attribute` names that nothing checks against the SDK. A typo does not
+      fail a build — it silently disables the `-Aexeris.strict` warning for that attribute, forever,
+      which is the one failure the audit cannot report on itself. Only a handful of the ~200 entries
+      are pinned by a test that compiles the attribute. Closeable in one test: the annotation
+      *types* are on the processor's test classpath (`@Retention(SOURCE)` erases the *use*, not the
+      class file), so each key can be resolved reflectively to a declared method. Raised on the C1
+      review; registry-wide, so not folded into C1.
 
 Deliberately **not** debt: `@Projection`, `@EventHandler`, `@Derived`, `@Rule` — AST carriers and
 `DomainMetadata` components exist, filled and read by nobody, and that reservation is design-gated on

@@ -2909,6 +2909,246 @@ class ExerisDomainProcessorTest {
         }
     }
 
+    @Nested
+    @DisplayName("C1 — annotation.system.* on fields reaches systemFields")
+    class SystemFieldAnnotationTests {
+
+        private long inertWarnings(Compilation compilation) {
+            return compilation.warnings().stream()
+                    .filter(d -> d.getMessage(null) != null
+                            && d.getMessage(null).contains("no code generator consumes it"))
+                    .count();
+        }
+
+        @Test
+        @DisplayName("All nine roles resolve from the field they are declared on")
+        void shouldResolveEveryRoleFromItsField() throws IOException {
+            Compilation compilation = compileWithProcessor(JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.system.TenantId;
+                    import eu.exeris.sdk.annotation.system.Version;
+                    import eu.exeris.sdk.annotation.system.SoftDelete;
+                    import eu.exeris.sdk.annotation.system.SoftDeleteTimestamp;
+                    import eu.exeris.sdk.annotation.system.SoftDeletedBy;
+                    import eu.exeris.sdk.annotation.system.AuditCreatedAt;
+                    import eu.exeris.sdk.annotation.system.AuditCreatedBy;
+                    import eu.exeris.sdk.annotation.system.AuditUpdatedAt;
+                    import eu.exeris.sdk.annotation.system.AuditUpdatedBy;
+
+                    @ExerisDomain(module = "sales", path = "/orders")
+                    public class Order {
+                        @TenantId private String orgId;
+                        @Version private long rev;
+                        @SoftDelete private boolean archived;
+                        @SoftDeleteTimestamp private String archivedAt;
+                        @SoftDeletedBy private String archivedBy;
+                        @AuditCreatedAt private String bornAt;
+                        @AuditCreatedBy private String bornBy;
+                        @AuditUpdatedAt private String touchedAt;
+                        @AuditUpdatedBy private String touchedBy;
+                    }
+                    """));
+
+            assertThat(compilation).succeeded();
+            String metadata = readContent(compilation.generatedFile(
+                    StandardLocation.CLASS_OUTPUT, "exeris-metadata/Order.json").orElseThrow());
+            assertThat(metadata)
+                    .contains("\"tenantIdField\" : \"orgId\"")
+                    .contains("\"versionField\" : \"rev\"")
+                    .contains("\"softDeleteField\" : \"archived\"")
+                    .contains("\"softDeleteTimestampField\" : \"archivedAt\"")
+                    .contains("\"softDeletedByField\" : \"archivedBy\"")
+                    .contains("\"createdAtField\" : \"bornAt\"")
+                    .contains("\"createdByField\" : \"bornBy\"")
+                    .contains("\"updatedAtField\" : \"touchedAt\"")
+                    .contains("\"updatedByField\" : \"touchedBy\"");
+        }
+
+        @Test
+        @DisplayName("An annotation agreeing with its @ExerisDomain override is accepted")
+        void shouldAcceptAgreeingOverride() throws IOException {
+            Compilation compilation = compileWithProcessor(JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.system.TenantId;
+
+                    @ExerisDomain(module = "sales", path = "/orders", tenantIdField = "orgId")
+                    public class Order {
+                        @TenantId private String orgId;
+                    }
+                    """));
+
+            assertThat(compilation).succeeded();
+            assertThat(readContent(compilation.generatedFile(
+                    StandardLocation.CLASS_OUTPUT, "exeris-metadata/Order.json").orElseThrow()))
+                    .contains("\"tenantIdField\" : \"orgId\"");
+        }
+
+        @Test
+        @DisplayName("An override naming a different field than the annotation is refused")
+        void shouldRefuseDisagreeingOverride() {
+            Compilation compilation = compileWithProcessor(JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.system.TenantId;
+
+                    @ExerisDomain(module = "sales", path = "/orders", tenantIdField = "somethingElse")
+                    public class Order {
+                        @TenantId private String orgId;
+                    }
+                    """));
+
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorContaining("names a different one");
+        }
+
+        @Test
+        @DisplayName("Two fields carrying one role are refused, naming both")
+        void shouldRefuseDuplicateRole() {
+            Compilation compilation = compileWithProcessor(JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.system.TenantId;
+
+                    @ExerisDomain(module = "sales", path = "/orders")
+                    public class Order {
+                        @TenantId private String orgId;
+                        @TenantId private String otherOrgId;
+                    }
+                    """));
+
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorContaining("declared on 2 fields ('orgId', 'otherOrgId')");
+        }
+
+        @Test
+        @DisplayName("Three fields carrying one role are refused once, naming all three")
+        void shouldRefuseTriplicateRoleInOneDiagnostic() {
+            Compilation compilation = compileWithProcessor(JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.system.TenantId;
+
+                    @ExerisDomain(module = "sales", path = "/orders")
+                    public class Order {
+                        @TenantId private String orgId;
+                        @TenantId private String otherOrgId;
+                        @TenantId private String thirdOrgId;
+                    }
+                    """));
+
+            assertThat(compilation).failed();
+            // One diagnostic for the role, not one per field past the first: an author cannot
+            // pick the single survivor from a list that repeats 'orgId' against every later field.
+            assertThat(compilation)
+                    .hadErrorContaining("declared on 3 fields ('orgId', 'otherOrgId', 'thirdOrgId')");
+            assertThat(compilation.errors().stream()
+                    .filter(d -> d.getMessage(null).contains("is declared on"))
+                    .count())
+                    .isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("No system annotation and no override → systemFields stays absent")
+        void shouldStayAbsentWithoutEitherSource() throws IOException {
+            Compilation compilation = compileWithProcessor(JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+
+                    @ExerisDomain(module = "sales", path = "/orders")
+                    public class Order {
+                        private String name;
+                    }
+                    """));
+
+            assertThat(compilation).succeededWithoutWarnings();
+            assertThat(readContent(compilation.generatedFile(
+                    StandardLocation.CLASS_OUTPUT, "exeris-metadata/Order.json").orElseThrow()))
+                    .doesNotContain("\"systemFields\"");
+        }
+
+        @Test
+        @DisplayName("-Aexeris.strict still reports @PrimaryKey as never read, and no longer reports the nine")
+        void strictReportsPrimaryKeyButNotTheNine() {
+            Compilation compilation = javac()
+                    .withOptions("-Aexeris.strict=true")
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(JavaFileObjects.forSourceString(
+                            "com.example.Order",
+                            """
+                            package com.example;
+
+                            import eu.exeris.sdk.annotation.ExerisDomain;
+                            import eu.exeris.sdk.annotation.system.PrimaryKey;
+                            import eu.exeris.sdk.annotation.system.TenantId;
+
+                            @ExerisDomain(module = "sales", path = "/orders")
+                            public class Order {
+                                @PrimaryKey private String id;
+                                @TenantId private String orgId;
+                            }
+                            """));
+
+            assertThat(compilation).succeeded();
+            // @PrimaryKey is held back on purpose: its component is honoured by no generator, so
+            // extracting it would end this warning without changing emitted output.
+            boolean primaryKeyReported = compilation.warnings().stream()
+                    .anyMatch(d -> d.getMessage(null) != null
+                            && d.getMessage(null).contains("PrimaryKey"));
+            boolean tenantIdReported = compilation.warnings().stream()
+                    .anyMatch(d -> d.getMessage(null) != null
+                            && d.getMessage(null).contains("@TenantId is set")
+                            && d.getMessage(null).contains("never read"));
+            assertThat(primaryKeyReported).as("@PrimaryKey still reported").isTrue();
+            assertThat(tenantIdReported).as("@TenantId no longer reported as never read").isFalse();
+        }
+
+        @Test
+        @DisplayName("-Aexeris.strict reports an attribute the role extraction does not consume")
+        void strictReportsUnconsumedRoleAttribute() {
+            Compilation compilation = javac()
+                    .withOptions("-Aexeris.strict=true")
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(JavaFileObjects.forSourceString(
+                            "com.example.Order",
+                            """
+                            package com.example;
+
+                            import eu.exeris.sdk.annotation.ExerisDomain;
+                            import eu.exeris.sdk.annotation.system.SoftDelete;
+
+                            @ExerisDomain(module = "sales", path = "/orders")
+                            public class Order {
+                                @SoftDelete(retentionPeriod = "P30D") private boolean archived;
+                            }
+                            """));
+
+            assertThat(compilation).succeeded();
+            assertThat(inertWarnings(compilation))
+                    .as("@SoftDelete.retentionPeriod is extracted-but-unconsumed")
+                    .isPositive();
+        }
+    }
+
     // Helper methods
 
     @Nested
