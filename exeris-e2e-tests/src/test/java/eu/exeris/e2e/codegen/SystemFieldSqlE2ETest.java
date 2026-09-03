@@ -61,8 +61,12 @@ class SystemFieldSqlE2ETest {
                 .contains("born_by VARCHAR(255)")
                 .contains("touched_at TIMESTAMPTZ")
                 .contains("touched_by VARCHAR(255)")
-                // The canonical names are what the schema emitted before C1 and must be gone.
+                // The canonical names are what the schema emitted before C1. Every one of the
+                // four is excluded: the four roles resolve independently, so a rename that
+                // works for one says nothing about the next.
                 .doesNotContain("created_at TIMESTAMPTZ")
+                .doesNotContain("created_by VARCHAR(255)")
+                .doesNotContain("updated_at TIMESTAMPTZ")
                 .doesNotContain("updated_by VARCHAR(255)");
     }
 
@@ -75,13 +79,24 @@ class SystemFieldSqlE2ETest {
                 .contains("archived_by VARCHAR(255)")
                 .contains("rev BIGINT")
                 .doesNotContain("deleted BOOLEAN")
+                .doesNotContain("deleted_at TIMESTAMPTZ")
+                .doesNotContain("deleted_by VARCHAR(255)")
                 .doesNotContain("version BIGINT");
     }
 
     @Test
-    @DisplayName("the tenant column follows @TenantId")
+    @DisplayName("the tenant column follows @TenantId — column, RLS predicate and index alike")
     void tenantColumnFollowsItsField() {
-        assertThat(createInvoices).contains("org_id");
+        assertThat(createInvoices)
+                .contains("org_id UUID NOT NULL")
+                // The RLS predicate and the index are generated from the same resolved name.
+                // A rename that reached only the column list would leave a policy filtering on
+                // a column the table does not have.
+                .contains("USING (org_id = NULLIF(")
+                .contains("(org_id);")
+                // Excluded in its column form only: 'exeris.tenant_id' is the session key the
+                // policy reads, is not a column, and is correctly unaffected by the rename.
+                .doesNotContain("tenant_id UUID");
     }
 
     /** Reads the one emitted migration whose file name contains {@code fragment}. */

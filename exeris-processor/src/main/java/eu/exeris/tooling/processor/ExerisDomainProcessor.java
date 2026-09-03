@@ -1510,7 +1510,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      * <p>Returns {@code null} when neither source declared anything, so the record stays absent and
      * the emitted JSON is byte-identical to the default case.
      *
-     * <p><b>Two refusals, both at the declaration.</b> Two fields carrying one role cannot be
+     * <p><b>Two refusals, both at the declaration.</b> Several fields carrying one role cannot be
      * compiled — {@code SystemFieldsMetadata} holds one name per role — and neither can an override
      * naming a different field than the annotation does. Accepting either would produce metadata
      * that builds here and contradicts itself downstream, which is the shape S3 refused for a
@@ -1520,28 +1520,33 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         Map<String, String> declared = new LinkedHashMap<>();
 
         for (SystemFieldRole role : SYSTEM_FIELD_ROLES) {
-            VariableElement carrier = null;
+            List<VariableElement> carriers = new ArrayList<>();
             for (Element enclosed : element.getEnclosedElements()) {
                 if (enclosed.getKind() != ElementKind.FIELD) continue;
                 AnnotationMirror mirror = findAnnotation(enclosed, role.fqn());
                 if (mirror == null) continue;
 
                 warnInertAttributes(role.annotation(), extractAnnotationValues(mirror), enclosed, mirror);
-
-                if (carrier != null) {
-                    messager.printMessage(
-                            Diagnostic.Kind.ERROR,
-                            DIAG_PREFIX + "@" + role.annotation() + " is declared on two fields ('"
-                                    + carrier.getSimpleName() + "' and '" + enclosed.getSimpleName()
-                                    + "'). SystemFieldsMetadata carries one field name per role, so "
-                                    + "the pipeline cannot express both. Declare it once.",
-                            enclosed, mirror);
-                    continue;
-                }
-                carrier = (VariableElement) enclosed;
+                carriers.add((VariableElement) enclosed);
             }
-            if (carrier == null) continue;
+            if (carriers.isEmpty()) continue;
 
+            if (carriers.size() > 1) {
+                // One diagnostic naming the whole set, not one per field past the first. The
+                // author has to choose which single field survives, and cannot choose from a
+                // list that repeats the same "first" field against every later one.
+                VariableElement offender = carriers.get(1);
+                messager.printMessage(
+                        Diagnostic.Kind.ERROR,
+                        DIAG_PREFIX + "@" + role.annotation() + " is declared on " + carriers.size()
+                                + " fields (" + quotedNames(carriers) + "). SystemFieldsMetadata "
+                                + "carries one field name per role, so the pipeline cannot express "
+                                + "more than one. Declare it once.",
+                        offender, findAnnotation(offender, role.fqn()));
+                continue;
+            }
+
+            VariableElement carrier = carriers.getFirst();
             String annotated = carrier.getSimpleName().toString();
             String override = blankToNull(getString(values, role.overrideAttribute(), null));
             if (override != null && !override.equals(annotated)) {
@@ -1558,6 +1563,13 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         }
 
         return extractSystemFieldsOverrides(values, declared);
+    }
+
+    /** {@code 'a', 'b', 'c'} — the fields carrying one role, in declaration order. */
+    private static String quotedNames(List<VariableElement> fields) {
+        return fields.stream()
+                .map(f -> "'" + f.getSimpleName() + "'")
+                .collect(Collectors.joining(", "));
     }
 
     /**

@@ -810,9 +810,11 @@ each fix.
       recorded rather than taken.
 
       **Two refusals, both at the declaration**, on the S3 principle that metadata which builds here
-      and contradicts itself downstream is worse than a diagnostic: two fields carrying one role
+      and contradicts itself downstream is worse than a diagnostic: several fields carrying one role
       (the record holds one name per role), and an `@ExerisDomain` override naming a different field
-      than the annotation does.
+      than the annotation does. The first reports **once per role, naming every field** — an author
+      cannot pick the single survivor from a list that repeats the same "first" field against each
+      later one.
 
       **`@PrimaryKey` is not extracted, and that is the point of the slice rather than an omission.**
       `SystemFieldsMetadata.primaryKeyField` is the one component no generator honours, so
@@ -871,6 +873,14 @@ each fix.
 - [ ] **C2 — `annotation.security.*`.** `@Encrypted` and `@RowLevelSecurity`; the latter overlaps the
       RLS predicate `KernelFlywayGenerator` already drives from `dataScope`, so it needs a design
       call, not just extraction.
+- [ ] **Registry entries are unverified strings.** `INERT_ATTRIBUTES` and `UNREAD_NOTES` are keyed by
+      hand-written `Annotation#attribute` names that nothing checks against the SDK. A typo does not
+      fail a build — it silently disables the `-Aexeris.strict` warning for that attribute, forever,
+      which is the one failure the audit cannot report on itself. Only a handful of the ~200 entries
+      are pinned by a test that compiles the attribute. Closeable in one test: the annotation
+      *types* are on the processor's test classpath (`@Retention(SOURCE)` erases the *use*, not the
+      class file), so each key can be resolved reflectively to a declared method. Raised on the C1
+      review; registry-wide, so not folded into C1.
 
 Deliberately **not** debt: `@Projection`, `@EventHandler`, `@Derived`, `@Rule` — AST carriers and
 `DomainMetadata` components exist, filled and read by nobody, and that reservation is design-gated on

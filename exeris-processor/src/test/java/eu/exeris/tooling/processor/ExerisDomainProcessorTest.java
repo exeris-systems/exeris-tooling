@@ -3013,7 +3013,7 @@ class ExerisDomainProcessorTest {
         }
 
         @Test
-        @DisplayName("Two fields carrying one role are refused")
+        @DisplayName("Two fields carrying one role are refused, naming both")
         void shouldRefuseDuplicateRole() {
             Compilation compilation = compileWithProcessor(JavaFileObjects.forSourceString(
                     "com.example.Order",
@@ -3031,7 +3031,37 @@ class ExerisDomainProcessorTest {
                     """));
 
             assertThat(compilation).failed();
-            assertThat(compilation).hadErrorContaining("declared on two fields");
+            assertThat(compilation).hadErrorContaining("declared on 2 fields ('orgId', 'otherOrgId')");
+        }
+
+        @Test
+        @DisplayName("Three fields carrying one role are refused once, naming all three")
+        void shouldRefuseTriplicateRoleInOneDiagnostic() {
+            Compilation compilation = compileWithProcessor(JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.system.TenantId;
+
+                    @ExerisDomain(module = "sales", path = "/orders")
+                    public class Order {
+                        @TenantId private String orgId;
+                        @TenantId private String otherOrgId;
+                        @TenantId private String thirdOrgId;
+                    }
+                    """));
+
+            assertThat(compilation).failed();
+            // One diagnostic for the role, not one per field past the first: an author cannot
+            // pick the single survivor from a list that repeats 'orgId' against every later field.
+            assertThat(compilation)
+                    .hadErrorContaining("declared on 3 fields ('orgId', 'otherOrgId', 'thirdOrgId')");
+            assertThat(compilation.errors().stream()
+                    .filter(d -> d.getMessage(null).contains("is declared on"))
+                    .count())
+                    .isEqualTo(1);
         }
 
         @Test
