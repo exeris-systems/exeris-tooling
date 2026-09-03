@@ -1205,18 +1205,35 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      * tier and the reason, is strictly better than a compile error two artefacts
      * downstream.
      *
-     * <p>The carrier is not the blocker any more: U0 pinned kernel {@code 0.11.0},
-     * so {@code sharedScopeKey} plus the read-widen / write-pin RLS mode are
-     * available and only the transcription here is outstanding. When it lands,
-     * this refusal goes with it.
+     * <p><b>The blocker is the session-variable name, and it is not on the pinned
+     * line.</b> An emitted RLS policy has to name the PostgreSQL session variable it
+     * reads. At kernel {@code v0.11.0} — the pin — {@code exeris.tenant_id} is named
+     * in SPI, Core and the TCK, so the tenant policy we already emit rests on a
+     * contract; {@code exeris.shared_scope} is named in {@code exeris-kernel-community}
+     * and nowhere else. The driver is swappable Community/Enterprise, so emitting it
+     * would bake one driver's internal literal into a migration the consumer commits.
+     * Kernel 0.12 promotes both to {@code ConnectionInterceptor.SESSION_KEY_TENANT_ID}
+     * and {@code SESSION_KEY_SHARED_SCOPE}, which is what makes the transcription
+     * emittable — so this refusal is gated on B0, the 0.12 pin.
+     *
+     * <p>A second half is missing independently of the pin: the policy also needs a
+     * shared-scope <em>column</em>, and no SDK carrier names one —
+     * {@code SystemFieldsMetadata} declares ten components and none of them is it.
+     *
+     * <p>{@code StorageContext.sharedScopeKey()} does exist on 0.11, and reading only
+     * that is how this repo came to say in five places that the gate was gone. The
+     * accessor carries the value; it does not name the variable an emitted policy
+     * reads.
      */
     private void errorReservedUniverseTier(TypeElement element) {
         messager.printMessage(
                 Diagnostic.Kind.ERROR,
                 DIAG_PREFIX + "@ExerisDomain.dataScope = DataScope.UNIVERSE is reserved and is "
                         + "refused here rather than half-emitted. The kernel carrier "
-                        + "(sharedScopeKey, read-widen / write-pin RLS) exists, but the codegen "
-                        + "transcription for it does not, so this tier would emit the TENANT shape: "
+                        + "(sharedScopeKey) exists, but the session variable an emitted policy "
+                        + "must read is named only inside the Community driver on this kernel pin, "
+                        + "so there is nothing contracted to emit against yet and this tier would "
+                        + "fall back to the TENANT shape: "
                         + "an owner column, an owner-pinned policy, and a repository that binds "
                         + "getTenantId(). A shared-world row has no tenant property, so that build "
                         + "fails with 'cannot find symbol' inside generated code you are told not "
