@@ -489,8 +489,8 @@ because a one-word enum change makes it easier to do without noticing.
 
 `UNIVERSE` is accepted and **reserved**: it currently fails closed to the `TENANT` shape
 (owner column, owner index, owner-pinned RLS policy — UNIVERSE minus the cross-tenant
-read-widen) with a warning saying so, until the kernel `sharedScopeKey` carrier lands on the
-0.11 line. Do not declare it expecting cross-tenant reads yet.
+read-widen) with a warning saying so. Do not declare it expecting cross-tenant reads yet.
+(As of the 0.8.0 train the tier is refused outright at the declaration.)
 
 ## 0.8.0 train — regeneration deltas
 
@@ -580,9 +580,10 @@ failing. It now fails at the declaration with a message that says why.
 silently giving you the `TENANT` shape. Change the declaration to `dataScope = DataScope.TENANT`,
 which is what you were getting. Emitted output is byte-identical.
 
-There is no way to obtain cross-tenant read-widening from this build yet; the kernel carrier
-(`sharedScopeKey`, read-widen / write-pin RLS) exists on the pinned `0.11.0` line, and the codegen
-transcription for it is the outstanding half.
+There is no way to obtain cross-tenant read-widening from this build yet. An emitted RLS policy
+names a PostgreSQL session variable, and on the pinned `0.11.0` line the shared-scope one is named
+only inside the Community driver — not in SPI, Core or the TCK — so there is nothing contracted to
+emit against. Kernel 0.12 promotes it to a constant on `ConnectionInterceptor`.
 
 ### An unbound `MemoryAllocator` now answers 5xx instead of 400 (T43)
 

@@ -1205,18 +1205,24 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      * tier and the reason, is strictly better than a compile error two artefacts
      * downstream.
      *
-     * <p>The carrier is not the blocker any more: U0 pinned kernel {@code 0.11.0},
-     * so {@code sharedScopeKey} plus the read-widen / write-pin RLS mode are
-     * available and only the transcription here is outstanding. When it lands,
-     * this refusal goes with it.
+     * <p>An emitted RLS policy names a PostgreSQL session variable; it does not call an
+     * accessor. At the pinned kernel {@code v0.11.0} {@code exeris.tenant_id} is named in
+     * SPI, Core and the TCK, while {@code exeris.shared_scope} is named only in
+     * {@code exeris-kernel-community}. The persistence driver is swappable, so a migration
+     * the consumer commits may not depend on one driver's internal literal. Kernel 0.12
+     * promotes both to constants on {@code ConnectionInterceptor}; this refusal is gated on
+     * that pin (B0), and on an SDK carrier naming the field that holds a row's shared-scope
+     * value — without one every row keeps the column's {@code ''} default and UNIVERSE is
+     * behaviourally TENANT.
      */
     private void errorReservedUniverseTier(TypeElement element) {
         messager.printMessage(
                 Diagnostic.Kind.ERROR,
                 DIAG_PREFIX + "@ExerisDomain.dataScope = DataScope.UNIVERSE is reserved and is "
-                        + "refused here rather than half-emitted. The kernel carrier "
-                        + "(sharedScopeKey, read-widen / write-pin RLS) exists, but the codegen "
-                        + "transcription for it does not, so this tier would emit the TENANT shape: "
+                        + "refused here rather than half-emitted. The session variable a "
+                        + "shared-scope policy must read is named only inside the Community "
+                        + "driver on this kernel pin, so there is nothing contracted to emit "
+                        + "against and this tier would fall back to the TENANT shape: "
                         + "an owner column, an owner-pinned policy, and a repository that binds "
                         + "getTenantId(). A shared-world row has no tenant property, so that build "
                         + "fails with 'cannot find symbol' inside generated code you are told not "

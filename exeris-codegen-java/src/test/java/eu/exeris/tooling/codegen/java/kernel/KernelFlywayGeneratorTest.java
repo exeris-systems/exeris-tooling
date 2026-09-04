@@ -159,10 +159,11 @@ class KernelFlywayGeneratorTest {
 
         GeneratedFile file = generator.generate(metadata);
 
-        // UNIVERSE is rows owned by a tenant but readable across tenants. Its
-        // kernel carrier (sharedScopeKey + the read-widen RLS mode) is not
-        // transcribed yet, so what ships is UNIVERSE minus the widening —
-        // strictly narrower than declared. Treating the tier as GLOBAL instead
+        // UNIVERSE is rows owned by a tenant but readable across tenants. The
+        // widening cannot be emitted on this kernel pin — the session variable a
+        // shared-scope policy reads is named only inside the Community driver at
+        // v0.11.0 — so what ships is UNIVERSE minus the widening, strictly
+        // narrower than declared. Treating the tier as GLOBAL instead
         // would drop the owner column and the policy and publish rows the
         // author scoped to an owner; that is the direction that must not fail.
         assertThat(file.content())

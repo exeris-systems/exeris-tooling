@@ -18,12 +18,10 @@ import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
  *
  * <p>The predicate is deliberately phrased as "not {@code GLOBAL}" rather than
  * "is {@code TENANT}". {@link DataScope#UNIVERSE} is rows owned by a tenant but
- * readable across tenants; its kernel carrier ({@code sharedScopeKey}, the
- * read-widen / write-pin RLS mode) is on the kernel 0.11 line. Until the carrier
- * is transcribed here, UNIVERSE emits the TENANT shape — which is UNIVERSE minus
- * the widening, i.e. strictly narrower than declared. Failing closed is the whole
- * point: an "is TENANT" test would send UNIVERSE down the GLOBAL path and publish
- * rows the author scoped to an owner.
+ * readable across tenants. Until it can be transcribed, UNIVERSE emits the TENANT
+ * shape — which is UNIVERSE minus the widening, i.e. strictly narrower than
+ * declared. Failing closed is the whole point: an "is TENANT" test would send
+ * UNIVERSE down the GLOBAL path and publish rows the author scoped to an owner.
  *
  * <p>Since 0.8.0 the <b>processor refuses</b> a UNIVERSE declaration outright (T29),
  * so the tier no longer arrives here from an annotated source. This branch stays
@@ -32,11 +30,14 @@ import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
  * of which goes through the processor's diagnostics. If UNIVERSE arrives by one of
  * those routes, narrower-than-declared is still the only safe answer.
  *
- * <p><b>This rationale used to say the pin was what blocked the transcription</b>
- * ("the kernel 0.11 line, which this repo does not pin yet"). U0 pinned kernel
- * {@code 0.11.0}, so only the transcription itself is outstanding. Corrected
- * because the sentence was the one a reader would trust before deciding whether
- * the work was reachable.
+ * <p>An emitted RLS policy names a PostgreSQL session variable; it does not call an
+ * accessor. At the pinned kernel {@code v0.11.0} {@code exeris.tenant_id} is named in
+ * SPI, Core and the TCK — so the tenant policy this class drives rests on a contract —
+ * while {@code exeris.shared_scope} is named only in {@code exeris-kernel-community},
+ * and the driver is swappable. Kernel 0.12 promotes both to constants on
+ * {@code ConnectionInterceptor}; the transcription is gated on that pin, and on an SDK
+ * carrier naming the field that holds a row's shared-scope value — without one every
+ * row keeps the column's {@code ''} default and UNIVERSE is behaviourally TENANT.
  *
  * <p><b>T29, closed in 0.8.0.</b> The gap was never that UNIVERSE under-delivers —
  * it is that on the archetypal UNIVERSE entity it does not build. A shared-world row

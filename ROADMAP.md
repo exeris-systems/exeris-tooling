@@ -870,9 +870,38 @@ each fix.
       than the record, and neither FE gate declared a `systemFields` block at all. The sample app
       now carries `Invoice`, which declares `id` *and* `primaryKeyField = "invoiceNo"` — pinning
       both halves of the real contract, the honoured overrides and the ignored one.
-- [ ] **C2 — `annotation.security.*`.** `@Encrypted` and `@RowLevelSecurity`; the latter overlaps the
-      RLS predicate `KernelFlywayGenerator` already drives from `dataScope`, so it needs a design
-      call, not just extraction.
+- [ ] **C2 — `annotation.security.*` (27 attributes). Not a design call — both halves are asks on
+      other repos.**
+
+      **`@Encrypted` (11 attributes, `@Target(FIELD)`) has no carrier.** `FieldMetadata` declares no
+      security component at all — no `encrypted`, no `pii`, no `maskInLogs`. By the S3 rule that puts
+      it with the saga and graph families, behind an SDK record change, not in the extractable set.
+      And a carrier alone would not be enough: the kernel's `crypto` package is **TLS transport
+      crypto** (`KernelCryptoProvider`, `TlsEngine`, the OpenSSL FFM bindings). There is no
+      field-level encryption-at-rest seam and no key registry to resolve `keyId` against, so an
+      emitter would have to invent a scheme — which tooling must not do for cryptography.
+
+      **`@RowLevelSecurity` (16 attributes, `@Target(TYPE)`) has no carrier either**, and the overlap
+      that motivated the design call is one value out of seven: `Policy.TENANT_ISOLATION` against
+      `DataScope.TENANT`, which is already emitted. `DomainMetadata` carries `dataScope`,
+      `tenantScoped`, `roles`, `permissions` and `sensitive`; none of the sixteen maps.
+
+      **The other five policy values are blocked at the kernel's Wall, not by a gap.** `OWNER`,
+      `TEAM`, `HIERARCHY`, `DEPARTMENT` and the typical `CUSTOM` predicate all need a principal
+      identity readable inside a PostgreSQL policy. The kernel publishes exactly two session
+      variables, both tenancy, and `StorageContext` exposes `isolationKey` / `schemaName` /
+      `dataSourceKey` / `sharedScopeKey` — no principal. Its attribute map is `String`-typed
+      deliberately: *"to enforce the 'Invisible Wall' — it is impossible to accidentally smuggle
+      identity or security objects (e.g. `PrincipalContext`) across the persistence boundary."*
+      A label may cross as a string, but no SPI contract turns one into a session variable, so an
+      emitted `OWNER` policy would read a variable nothing sets. `current_setting` returns NULL, the
+      policy matches no row, and the app builds green and returns empty result sets — invisible to
+      `javac`, to `ng build` and to every gate here.
+
+      So C2's actionable content is not extraction: it is a **kernel ask** (a contracted principal
+      session key, which the Wall may well refuse on purpose) and an **SDK ask** (carriers). What is
+      left that is ours — `readRoles` / `writeRoles` / `bypassRoles` — is role-based authorization,
+      the same subject as **T51**, so it belongs in that RFC rather than in a C2 slice of its own.
 - [ ] **Registry entries are unverified strings.** `INERT_ATTRIBUTES` and `UNREAD_NOTES` are keyed by
       hand-written `Annotation#attribute` names that nothing checks against the SDK. A typo does not
       fail a build — it silently disables the `-Aexeris.strict` warning for that attribute, forever,
@@ -2863,6 +2892,16 @@ of their premises are wrong and one large item is not blocked at all.
 | "ADR-074 takes a binary break on `HttpRequest` behind a bridge constructor" | **Overstated.** `javap` diff 0.11 → 0.12 shows only *additions*: `authority()`, `withAuthority(String)`, and a 6-arg constructor. The 5-arg constructor is retained, nothing is removed, so no consumer of ours breaks. `KernelTestSupportGenerator` is our only emitter that names `HttpRequest`, and it is unaffected |
 | "`@Saga.version`'s emitter half waits on the kernel" | **Ready.** `FlowDefinitionBuilder.version(int)` exists as a `default` method in `exeris-kernel-spi-0.12.0-SNAPSHOT`. The processor half shipped in 0.8.0, so this is one emitted call once the pin can move |
 | "Track C waits on an SDK record change" | **Unchanged, and the SDK cannot be pinned yet anyway.** The 0.12 annotation surface is *shape-identical* to 0.11 — same 51 annotation types, and a per-annotation element-count diff is empty — so no new extraction is owed. More practically: `exeris-sdk-source-model` and `-source-model-io` have **no 0.12 artefact** installed at all, only `annotations` / `parent` / `root`, so an SDK bump is not merely ungated-by-policy, it is currently impossible |
+
+The `UNIVERSE` transcription is gated on the 0.12 pin too. An emitted RLS policy names a
+PostgreSQL session variable, and at `v0.11.0` `exeris.shared_scope` is named only in
+`exeris-kernel-community` while `exeris.tenant_id` is named in SPI, Core and the TCK; the driver
+is swappable, so a migration the consumer commits may not rest on one driver's literal. 0.12
+promotes both to constants on `ConnectionInterceptor`, so slice B sits behind **B0** — plus one
+SDK ask, `@SharedScope` + `SystemFieldsMetadata.sharedScopeField`, which wants to land before
+SDK 0.12 cuts. The column itself is not the gap: `shared_scope TEXT NOT NULL DEFAULT ''` is
+canonically named and fail-safe, but with no field carrier the repository binds nothing on
+INSERT and every row keeps `''`.
 
 **Whole-SPI delta, for scope:** **five API types** added to `exeris-kernel-spi` between 0.11.0 and
 0.12.0-SNAPSHOT and **none removed** — `FaultOrigin`, `RequestBodyDecodeException`,
