@@ -870,9 +870,8 @@ each fix.
       than the record, and neither FE gate declared a `systemFields` block at all. The sample app
       now carries `Invoice`, which declares `id` *and* `primaryKeyField = "invoiceNo"` — pinning
       both halves of the real contract, the honoured overrides and the ignored one.
-- [ ] **C2 — `annotation.security.*` (27 attributes). Measured 2026-09-03, and it is not a design
-      call — both halves are asks on other repos.** This entry previously read "`@Encrypted` is
-      extraction-shaped; `@RowLevelSecurity` needs a design call". Neither half survived measurement.
+- [ ] **C2 — `annotation.security.*` (27 attributes). Not a design call — both halves are asks on
+      other repos.**
 
       **`@Encrypted` (11 attributes, `@Target(FIELD)`) has no carrier.** `FieldMetadata` declares no
       security component at all — no `encrypted`, no `pii`, no `maskInLogs`. By the S3 rule that puts
@@ -2894,56 +2893,15 @@ of their premises are wrong and one large item is not blocked at all.
 | "`@Saga.version`'s emitter half waits on the kernel" | **Ready.** `FlowDefinitionBuilder.version(int)` exists as a `default` method in `exeris-kernel-spi-0.12.0-SNAPSHOT`. The processor half shipped in 0.8.0, so this is one emitted call once the pin can move |
 | "Track C waits on an SDK record change" | **Unchanged, and the SDK cannot be pinned yet anyway.** The 0.12 annotation surface is *shape-identical* to 0.11 — same 51 annotation types, and a per-annotation element-count diff is empty — so no new extraction is owed. More practically: `exeris-sdk-source-model` and `-source-model-io` have **no 0.12 artefact** installed at all, only `annotations` / `parent` / `root`, so an SDK bump is not merely ungated-by-policy, it is currently impossible |
 
-**A fourth premise was wrong, and this one was written in five of our own files rather than in the
-plan: "the `UNIVERSE` transcription is unblocked at 0.11".** It is gated on the 0.12 pin.
-
-An emitted RLS policy does not read an accessor — it names a PostgreSQL session variable. Measured
-at the `v0.11.0` tag by grepping for each literal:
-
-| session variable | named in, at `v0.11.0` |
-|---|---|
-| `exeris.tenant_id` | SPI (`ConnectionInterceptor`, `PersistenceEngine`, `StorageContext`, `KernelProviders`), Core (`InterceptorRegistry`), TCK (`PersistenceIsolationLeakTck`), Community |
-| `exeris.shared_scope` | **Community only** (`RlsConnectionInterceptor` + two of its tests) — no SPI, no Core, no TCK |
-
-The persistence driver is swappable Community↔Enterprise, so the compile-and-emit surface is SPI +
-Core. That asymmetry is the whole answer: the tenant policy we already emit rests on a name three
-tiers publish, and a shared-scope policy would rest on one driver's internal literal baked into a
-migration the consumer commits. `0.12` promotes both to `ConnectionInterceptor.SESSION_KEY_TENANT_ID`
-and `SESSION_KEY_SHARED_SCOPE` — that promotion *is* the gate, so slice B belongs behind **B0**.
-
-`StorageContext.sharedScopeKey()` is genuinely on 0.11, and reading only it is how the claim spread.
-The accessor carries the value; it does not name the variable a policy reads. The TCK's
-`AbstractSharedScopeAccessMatrixTck` is on 0.11 too and asserts the *behaviour* through the SPI
-without pinning the variable name, so it does not close the gap either.
-
-A second half is missing independently of the pin, and it is a **small SDK ask that should land
-before SDK 0.12 cuts**. Measured against the kernel's own shared-scope integration test, the shape
-is fully specified and needs no invention:
-
-```sql
-shared_scope TEXT NOT NULL DEFAULT ''          -- '' means tenant-private
-USING (tenant_id = current_setting('exeris.tenant_id', true)
-       OR (NULLIF(current_setting('exeris.shared_scope', true), '') IS NOT NULL
-           AND shared_scope = current_setting('exeris.shared_scope', true)))
-WITH CHECK (tenant_id = current_setting('exeris.tenant_id', true))
-```
-
-The **column** is not the gap — it has a canonical name and a fail-safe default, so tooling can emit
-it the way it emits `tenant_id` / `deleted` / `version`. The gap is that **nothing lets an author say
-which field carries the row's shared-scope value**, so the emitted repository would bind nothing on
-INSERT, every row would keep `''`, and `UNIVERSE` would emit a column that leaves it behaviourally
-identical to `TENANT` — the emit-into-nothing failure mode again. The SDK's 953-line annotation
-surface has zero matches for "shared".
-
-The ask is one field annotation plus one component — `@SharedScope` and
-`SystemFieldsMetadata.sharedScopeField`, the exact shape of the nine that landed in C1 (#213).
-
-So slice B is one kernel pin plus one small SDK addition, not "the branch itself".
-
-Corrected in the same change: the processor's user-facing `javac` message, `DataScopeSupport`'s
-rationale, two `MIGRATION` paragraphs, the ADR-059 stub's slice B, and a Flyway test comment. The
-`exeris-docs` `adr-index.md` row for 059 carries the same claim and is cross-repo — flagged, not
-edited here.
+The `UNIVERSE` transcription is gated on the 0.12 pin too. An emitted RLS policy names a
+PostgreSQL session variable, and at `v0.11.0` `exeris.shared_scope` is named only in
+`exeris-kernel-community` while `exeris.tenant_id` is named in SPI, Core and the TCK; the driver
+is swappable, so a migration the consumer commits may not rest on one driver's literal. 0.12
+promotes both to constants on `ConnectionInterceptor`, so slice B sits behind **B0** — plus one
+SDK ask, `@SharedScope` + `SystemFieldsMetadata.sharedScopeField`, which wants to land before
+SDK 0.12 cuts. The column itself is not the gap: `shared_scope TEXT NOT NULL DEFAULT ''` is
+canonically named and fail-safe, but with no field carrier the repository binds nothing on
+INSERT and every row keeps `''`.
 
 **Whole-SPI delta, for scope:** **five API types** added to `exeris-kernel-spi` between 0.11.0 and
 0.12.0-SNAPSHOT and **none removed** — `FaultOrigin`, `RequestBodyDecodeException`,
@@ -2972,39 +2930,6 @@ emitted mapping should read it rather than re-derive it is a slice to measure, n
 **What still cannot be done:** pin either dependency. The rule is unchanged — no cross-repo
 `-SNAPSHOT` at a cut, and the tag's own POM must be final — so B0 waits for kernel `0.12.0` final,
 and the SDK bump additionally waits for the 0.12 line to publish a source model.
-
-### Maven Central at 0.9.0 — measured 2026-09-03, and this repo cannot publish there yet
-
-The intent is already in the POM and none of the machinery is. `distributionManagement` names
-`central` for both releases and snapshots, and the only related plugin configured is
-`maven-source-plugin`. There is **no** `maven-gpg-plugin`, **no** `central-publishing-maven-plugin`,
-**no** `maven-javadoc-plugin`, no release profile and no release workflow (`build.yml`,
-`claude-code-review.yml`, `claude.yml`). Central rejects an unsigned artefact and one without a
-javadoc jar, so a `deploy` today fails at the portal rather than at the build — which is the worse
-end to find out.
-
-**`exeris-kernel` is the reference and it is ahead of us**, per the cross-repo reference-first rule.
-Its `development/0.12.0` line carries a release profile with `maven-gpg-plugin` 3.2.8 and
-`central-publishing-maven-plugin` 0.11.0 (`autoPublish=false`, `waitUntil=validated` — a deployment
-sitting in the portal can be dropped, a published one never can), while its default
-`distributionManagement` stays on GitHub Packages. Two lessons are already written into its POM
-comments and are ours to copy rather than re-learn: the GPG passphrase reaches the build through the
-env var named by `actions/setup-java`'s `gpg-passphrase` input, not through POM configuration (a
-mismatch surfaces as `gpg: signing failed: No pinentry`, which names the wrong cause); and Central
-requires a sources **and** a javadoc jar per coordinate, which is what forced `exeris-kernel-tck`'s
-`Abstract*Tck` classes out of `src/test` into `src/main`.
-
-**The ordering is a hard constraint, not a preference.** A tooling artefact on Central declares
-`eu.exeris:exeris-sdk-*` and `eu.exeris:exeris-kernel-*` dependencies; a Central consumer can only
-resolve those if they are on Central too. So the chain is **kernel → SDK → tooling**, and
-`exeris-sdk` is at the same starting point we are — `distributionManagement` pointing at Central with
-no signing or publishing plugin and no release workflow. Its readiness is a prerequisite for ours.
-
-**One POM change belongs to the same slice:** this repo declares two `<repositories>` entries for
-GitHub Packages so the compile gate can resolve the kernel. A POM published to Central should not
-carry them — a consumer without a GitHub token gets an unresolvable build, and Central's validation
-flags the pattern. They can move into a profile that CI activates once kernel and SDK resolve from
-Central.
 
 ## Versioning policy
 

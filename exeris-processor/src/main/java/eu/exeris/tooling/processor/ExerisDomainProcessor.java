@@ -1205,38 +1205,24 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      * tier and the reason, is strictly better than a compile error two artefacts
      * downstream.
      *
-     * <p><b>The blocker is the session-variable name, and it is not on the pinned
-     * line.</b> An emitted RLS policy has to name the PostgreSQL session variable it
-     * reads. At kernel {@code v0.11.0} — the pin — {@code exeris.tenant_id} is named
-     * in SPI, Core and the TCK, so the tenant policy we already emit rests on a
-     * contract; {@code exeris.shared_scope} is named in {@code exeris-kernel-community}
-     * and nowhere else. The driver is swappable Community/Enterprise, so emitting it
-     * would bake one driver's internal literal into a migration the consumer commits.
-     * Kernel 0.12 promotes both to {@code ConnectionInterceptor.SESSION_KEY_TENANT_ID}
-     * and {@code SESSION_KEY_SHARED_SCOPE}, which is what makes the transcription
-     * emittable — so this refusal is gated on B0, the 0.12 pin.
-     *
-     * <p>A second half is missing independently of the pin, and it is not the column:
-     * {@code shared_scope TEXT NOT NULL DEFAULT ''} has a canonical name and a fail-safe
-     * default, so it emits like {@code tenant_id} does. What is missing is any way to
-     * declare <em>which field carries the row's shared-scope value</em> — so the emitted
-     * repository would bind nothing, every row would keep {@code ''}, and UNIVERSE would
-     * be behaviourally identical to TENANT. One SDK annotation plus one component.
-     *
-     * <p>{@code StorageContext.sharedScopeKey()} does exist on 0.11, and reading only
-     * that is how this repo came to say in five places that the gate was gone. The
-     * accessor carries the value; it does not name the variable an emitted policy
-     * reads.
+     * <p>An emitted RLS policy names a PostgreSQL session variable; it does not call an
+     * accessor. At the pinned kernel {@code v0.11.0} {@code exeris.tenant_id} is named in
+     * SPI, Core and the TCK, while {@code exeris.shared_scope} is named only in
+     * {@code exeris-kernel-community}. The persistence driver is swappable, so a migration
+     * the consumer commits may not depend on one driver's internal literal. Kernel 0.12
+     * promotes both to constants on {@code ConnectionInterceptor}; this refusal is gated on
+     * that pin (B0), and on an SDK carrier naming the field that holds a row's shared-scope
+     * value — without one every row keeps the column's {@code ''} default and UNIVERSE is
+     * behaviourally TENANT.
      */
     private void errorReservedUniverseTier(TypeElement element) {
         messager.printMessage(
                 Diagnostic.Kind.ERROR,
                 DIAG_PREFIX + "@ExerisDomain.dataScope = DataScope.UNIVERSE is reserved and is "
-                        + "refused here rather than half-emitted. The kernel carrier "
-                        + "(sharedScopeKey) exists, but the session variable an emitted policy "
-                        + "must read is named only inside the Community driver on this kernel pin, "
-                        + "so there is nothing contracted to emit against yet and this tier would "
-                        + "fall back to the TENANT shape: "
+                        + "refused here rather than half-emitted. The session variable a "
+                        + "shared-scope policy must read is named only inside the Community "
+                        + "driver on this kernel pin, so there is nothing contracted to emit "
+                        + "against and this tier would fall back to the TENANT shape: "
                         + "an owner column, an owner-pinned policy, and a repository that binds "
                         + "getTenantId(). A shared-world row has no tenant property, so that build "
                         + "fails with 'cannot find symbol' inside generated code you are told not "

@@ -490,9 +490,7 @@ because a one-word enum change makes it easier to do without noticing.
 `UNIVERSE` is accepted and **reserved**: it currently fails closed to the `TENANT` shape
 (owner column, owner index, owner-pinned RLS policy — UNIVERSE minus the cross-tenant
 read-widen) with a warning saying so. Do not declare it expecting cross-tenant reads yet.
-(As of 0.9.0 the tier is refused outright at the declaration — see the 0.8.0 train — and what
-gates the transcription is stated in the 0.9.0 train, not the `sharedScopeKey` carrier this
-paragraph originally named.)
+(As of the 0.8.0 train the tier is refused outright at the declaration.)
 
 ## 0.8.0 train — regeneration deltas
 
@@ -582,9 +580,10 @@ failing. It now fails at the declaration with a message that says why.
 silently giving you the `TENANT` shape. Change the declaration to `dataScope = DataScope.TENANT`,
 which is what you were getting. Emitted output is byte-identical.
 
-There is no way to obtain cross-tenant read-widening from this build yet. What gates it is
-measured in the 0.9.0 train below: the session variable an emitted policy must read is not named
-in kernel SPI, Core or the TCK on the pinned `0.11.0` line.
+There is no way to obtain cross-tenant read-widening from this build yet. An emitted RLS policy
+names a PostgreSQL session variable, and on the pinned `0.11.0` line the shared-scope one is named
+only inside the Community driver — not in SPI, Core or the TCK — so there is nothing contracted to
+emit against. Kernel 0.12 promotes it to a constant on `ConnectionInterceptor`.
 
 ### An unbound `MemoryAllocator` now answers 5xx instead of 400 (T43)
 
@@ -1183,37 +1182,6 @@ never-read warning, now with that reason.
 and no generator reads (`@TenantId.autoPopulate`, `@Version.useForETag`,
 `@SoftDelete.retentionPeriod`, …). Setting any of them changes no emitted output; the warning says
 so rather than letting the extraction hide it.
-
-### `dataScope = UNIVERSE` is gated on kernel 0.12, not on the 0.11 pin
-
-**No emitted output changes.** `UNIVERSE` is still refused at the declaration and the tenant tier is
-untouched. What changes is the reason five places in this repo gave for the refusal, including the
-`javac` message you would actually read.
-
-Those places said the kernel carrier had landed on the pinned `0.11.0` line and only tooling's
-transcription was outstanding. That was measured on `StorageContext.sharedScopeKey()`, which does
-exist on 0.11 — but an emitted RLS policy does not read an accessor, it names a PostgreSQL session
-variable. Measured at `v0.11.0`:
-
-| session variable | named in |
-|---|---|
-| `exeris.tenant_id` | kernel SPI (4 files), Core, TCK, Community |
-| `exeris.shared_scope` | Community only — no SPI, no Core, no TCK |
-
-The persistence driver is swappable Community/Enterprise, so a migration you commit may not depend
-on one driver's internal literal. That is why the tenant policy already emitted is sound and the
-shared-scope one is not yet emittable. Kernel 0.12 promotes both to
-`ConnectionInterceptor.SESSION_KEY_TENANT_ID` / `SESSION_KEY_SHARED_SCOPE`, which is what makes the
-transcription legitimate.
-
-A second half is missing independently of the pin. The shared-scope **column** is not it — it has a
-canonical name and a fail-safe default (`shared_scope TEXT NOT NULL DEFAULT ''`, where `''` means
-tenant-private), so it can be emitted the way `tenant_id` is. What is missing is any way to declare
-**which field carries the row's shared-scope value**, so the emitted repository would bind nothing
-and every row would keep `''` — leaving `UNIVERSE` behaviourally identical to `TENANT`.
-
-**If you were waiting on this:** nothing you can do changes, but the wait is longer than the docs
-said. Declare `dataScope = TENANT` for entities that really are partitioned by an owner.
 
 ---
 

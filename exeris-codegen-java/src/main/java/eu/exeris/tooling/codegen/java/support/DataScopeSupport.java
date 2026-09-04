@@ -30,25 +30,14 @@ import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
  * of which goes through the processor's diagnostics. If UNIVERSE arrives by one of
  * those routes, narrower-than-declared is still the only safe answer.
  *
- * <p><b>What blocks the transcription is the session-variable name.</b> An emitted
- * RLS policy has to name the PostgreSQL session variable it reads. Measured at the
- * pinned kernel {@code v0.11.0}: {@code exeris.tenant_id} is named in SPI, Core and
- * the TCK — so the tenant policy this class already drives rests on a contract —
- * while {@code exeris.shared_scope} is named in {@code exeris-kernel-community} and
- * in no SPI, Core or TCK file. The driver is swappable Community/Enterprise, so a
- * migration the consumer commits may not depend on one driver's internal literal.
- * Kernel 0.12 promotes both names to constants on {@code ConnectionInterceptor},
- * which is what makes the transcription emittable: it is gated on the 0.12 pin.
- *
- * <p>A second half is missing independently of the pin, and it is not the column:
- * {@code shared_scope TEXT NOT NULL DEFAULT ''} is canonically named and fail-safe.
- * What is missing is any way to declare which field carries a row's shared-scope
- * value, without which the emitted repository binds nothing and every row keeps
- * {@code ''} — UNIVERSE with a column and no widening.
- *
- * <p>{@code StorageContext.sharedScopeKey()} is on 0.11, and reading only that is
- * how this repo came to say in five places that the gate was gone. It carries the
- * value; it does not name the variable an emitted policy reads.
+ * <p>An emitted RLS policy names a PostgreSQL session variable; it does not call an
+ * accessor. At the pinned kernel {@code v0.11.0} {@code exeris.tenant_id} is named in
+ * SPI, Core and the TCK — so the tenant policy this class drives rests on a contract —
+ * while {@code exeris.shared_scope} is named only in {@code exeris-kernel-community},
+ * and the driver is swappable. Kernel 0.12 promotes both to constants on
+ * {@code ConnectionInterceptor}; the transcription is gated on that pin, and on an SDK
+ * carrier naming the field that holds a row's shared-scope value — without one every
+ * row keeps the column's {@code ''} default and UNIVERSE is behaviourally TENANT.
  *
  * <p><b>T29, closed in 0.8.0.</b> The gap was never that UNIVERSE under-delivers —
  * it is that on the archetypal UNIVERSE entity it does not build. A shared-world row
