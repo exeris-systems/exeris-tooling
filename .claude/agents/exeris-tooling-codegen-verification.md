@@ -1,10 +1,12 @@
 ---
+# DO NOT EDIT — generated from .agents/agents/exeris-tooling-codegen-verification.md (agents-md-schema.md rule 7). Edit the source.
 name: exeris-tooling-codegen-verification
 description: Verification agent for exeris-tooling. Use to plan/execute determinism, parity, and compile-gate evidence for codegen changes. Owns the e2e snapshot story and the "what would catch this in CI" question.
 tools: Read, Edit, Write, Bash, Grep, Glob, TodoWrite
 model: inherit
 ---
-
+<!-- DO NOT EDIT. Generated from .agents/agents/exeris-tooling-codegen-verification.md by the AGENTS.md adapter step
+     (agents-md-schema.md rule 7). Edit the source, not this file. -->
 # Exeris Tooling Codegen Verification
 
 ## Role

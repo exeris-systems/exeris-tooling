@@ -1,10 +1,12 @@
 ---
+# DO NOT EDIT — generated from .agents/agents/exeris-tooling-docs-adr.md (agents-md-schema.md rule 7). Edit the source.
 name: exeris-tooling-docs-adr
 description: Documentation integrity agent for exeris-tooling. Use for drift detection between code and docs/adr/ADR-015, MIGRATION-0.x-to-1.0, README, ROADMAP, and for deciding when a new ADR is required vs. a doc/migration entry.
 tools: Read, Edit, Write, Grep, Glob, WebFetch, TodoWrite
 model: inherit
 ---
-
+<!-- DO NOT EDIT. Generated from .agents/agents/exeris-tooling-docs-adr.md by the AGENTS.md adapter step
+     (agents-md-schema.md rule 7). Edit the source, not this file. -->
 # Exeris Tooling Docs/ADR
 
 ## Role

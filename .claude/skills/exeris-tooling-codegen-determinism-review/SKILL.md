@@ -1,8 +1,10 @@
 ---
+# DO NOT EDIT — generated from .agents/skills/exeris-tooling-codegen-determinism-review/SKILL.md (agents-md-schema.md rule 7). Edit the source.
 name: exeris-tooling-codegen-determinism-review
 description: Determinism gate for emitted code. Invoke before committing or opening a PR that edits anything under exeris-codegen-java/, exeris-codegen-core/, or exeris-codegen-ts/src/ — especially any *Generator.java, *-gen.ts, KernelScaffold, or OutputWriter — and when reviewing or addressing a review on such a change. Verifies the same DomainMetadata still yields byte-identical output: no Instant.now/System.currentTimeMillis, no UUID.randomUUID, no HashMap/HashSet iteration order leaking into emitted text, no locale-dependent String.format or case conversion.
 ---
-
+<!-- DO NOT EDIT. Generated from .agents/skills/exeris-tooling-codegen-determinism-review/SKILL.md by the AGENTS.md adapter step
+     (agents-md-schema.md rule 7). Edit the source, not this file. -->
 # Exeris Tooling Codegen Determinism Review
 
 ## Purpose
