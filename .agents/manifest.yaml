@@ -1,0 +1,57 @@
+# Composition and delivery metadata for this repository's agent material.
+# agents-md-schema.md rules 5 and 8: profiles and workflows compose by reference, and any imported
+# bundle is version-pinned. This repository imports nothing — the organisation bundle does not exist
+# as a published artefact yet, and a floating import would be a rule-8 violation, not a shortcut.
+version: 1
+repository: exeris-tooling
+imports: []
+
+policies:
+  - policies/codegen-determinism.md
+  - policies/committed-generated-code.md
+  - policies/consumer-build-contracts.md
+  - policies/domain-metadata-contract.md
+  - policies/emitter-parity.md
+  - policies/kernel-target-only.md
+  - policies/processor-build-time-only.md
+  - policies/scoped-bans.md
+
+references:
+  - references/build-and-testing.md
+  - references/cross-repo-dependencies.md
+  - references/pipeline-architecture.md
+
+skills:
+  - skills/exeris-tooling-adr-shape-gate
+  - skills/exeris-tooling-angular-v22-emission
+  - skills/exeris-tooling-codegen-determinism-review
+  - skills/exeris-tooling-consumer-build-contracts
+  - skills/exeris-tooling-detach-output-discipline
+  - skills/exeris-tooling-emitter-parity-review
+  - skills/exeris-tooling-kernel-target-discipline
+  - skills/exeris-tooling-processor-discipline-review
+  - skills/exeris-tooling-strict-audit-review
+  - skills/exeris-tooling-triage
+
+agents:
+  - agents/exeris-tooling-architect.md
+  - agents/exeris-tooling-codegen-verification.md
+  - agents/exeris-tooling-docs-adr.md
+  - agents/exeris-tooling-implementer.md
+  - agents/exeris-tooling-router.md
+
+workflows:
+  - workflows/codegen-determinism-audit.md
+  - workflows/consumer-build-contract-audit.md
+  - workflows/emitter-parity-audit.md
+  - workflows/processor-discipline-audit.md
+
+adapters:
+  claude:
+    target: .claude
+    generated: true
+    renderer: tools/agent-adapter-check/agent-adapter-render.sh
+    map:
+      skills: .claude/skills
+      agents: .claude/agents
+      workflows: .claude/commands
