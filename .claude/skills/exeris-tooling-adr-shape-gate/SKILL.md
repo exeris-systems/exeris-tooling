@@ -1,8 +1,10 @@
 ---
+# DO NOT EDIT — generated from .agents/skills/exeris-tooling-adr-shape-gate/SKILL.md (agents-md-schema.md rule 7). Edit the source.
 name: exeris-tooling-adr-shape-gate
 description: Decision-document shape gate. Invoke whenever the ask is to write an ADR, draft an RFC, "document this decision", record a design choice, or reserve an ADR number — before any drafting starts. Picks the right shape (Research vs RFC vs ADR) for the question, enforces number reservation in the central exeris-docs/adr-index.md, and blocks refactor-only or measurement-missing material from becoming an ADR (those belong in the PR description).
 ---
-
+<!-- DO NOT EDIT. Generated from .agents/skills/exeris-tooling-adr-shape-gate/SKILL.md by the AGENTS.md adapter step
+     (agents-md-schema.md rule 7). Edit the source, not this file. -->
 # Exeris Tooling ADR Shape Gate
 
 ## Purpose

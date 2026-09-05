@@ -1,8 +1,10 @@
 ---
+# DO NOT EDIT — generated from .agents/skills/exeris-tooling-angular-v22-emission/SKILL.md (agents-md-schema.md rule 7). Edit the source.
 name: exeris-tooling-angular-v22-emission
 description: Angular v22 emission gate for the TS side. Invoke before committing or opening a PR that edits any exeris-codegen-ts/src/generators/**/*-gen.ts or the emitted app scaffold (component, service, store, guard, form, list, detail, saga shapes) — and when reviewing or addressing a review on such a change. Keeps emitted Angular idioms on the v22 canon (Signal Forms, httpResource, dropped deprecations) and gates the phased A→B→C migration so emitted apps don't ship deprecated APIs.
 ---
-
+<!-- DO NOT EDIT. Generated from .agents/skills/exeris-tooling-angular-v22-emission/SKILL.md by the AGENTS.md adapter step
+     (agents-md-schema.md rule 7). Edit the source, not this file. -->
 # Exeris Tooling — Angular v22 Emission Discipline
 
 ## Purpose

@@ -1,10 +1,12 @@
 ---
+# DO NOT EDIT — generated from .agents/agents/exeris-tooling-implementer.md (agents-md-schema.md rule 7). Edit the source.
 name: exeris-tooling-implementer
 description: Delivery agent for exeris-tooling. Use to implement changes in the annotation processor, codegen-core infrastructure, Java emitters, and TS emitters while preserving the pipeline contract (DomainMetadata, determinism, kernel-target-only, Java/TS parity).
 tools: Read, Edit, Write, Bash, Grep, Glob, WebFetch, TodoWrite
 model: inherit
 ---
-
+<!-- DO NOT EDIT. Generated from .agents/agents/exeris-tooling-implementer.md by the AGENTS.md adapter step
+     (agents-md-schema.md rule 7). Edit the source, not this file. -->
 # Exeris Tooling Implementer
 
 ## Role

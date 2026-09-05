@@ -1,8 +1,10 @@
 ---
+# DO NOT EDIT — generated from .agents/skills/exeris-tooling-processor-discipline-review/SKILL.md (agents-md-schema.md rule 7). Edit the source.
 name: exeris-tooling-processor-discipline-review
 description: Build-time purity gate for the annotation processor. Invoke before committing or opening a PR that edits anything under exeris-processor/ — ExerisDomainProcessor, javax.lang.model extraction, javac diagnostics, DomainMetadata write-out, @AutoService wiring — or that adds a dependency to exeris-processor/pom.xml, and when reviewing or addressing a review on such a change. Rejects runtime libraries, Spring, IoC containers, and anything that would make the processor load classes from the user's project classpath.
 ---
-
+<!-- DO NOT EDIT. Generated from .agents/skills/exeris-tooling-processor-discipline-review/SKILL.md by the AGENTS.md adapter step
+     (agents-md-schema.md rule 7). Edit the source, not this file. -->
 # Exeris Tooling Processor Discipline Review
 
 ## Purpose

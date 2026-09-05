@@ -1,10 +1,12 @@
 ---
+# DO NOT EDIT — generated from .agents/agents/exeris-tooling-router.md (agents-md-schema.md rule 7). Edit the source.
 name: exeris-tooling-router
 description: Entry router for exeris-tooling. Use proactively for triage to classify a build-time pipeline task (processor / codegen-java / codegen-ts / e2e / docs) and recommend a specialist agent. Invoke when scope crosses modules or the right specialist is not obvious.
 tools: Read, Grep, Glob, WebFetch, TodoWrite
 model: inherit
 ---
-
+<!-- DO NOT EDIT. Generated from .agents/agents/exeris-tooling-router.md by the AGENTS.md adapter step
+     (agents-md-schema.md rule 7). Edit the source, not this file. -->
 # Exeris Tooling Router
 
 ## Role

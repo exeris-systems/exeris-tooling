@@ -1,8 +1,10 @@
 ---
+# DO NOT EDIT — generated from .agents/skills/exeris-tooling-strict-audit-review/SKILL.md (agents-md-schema.md rule 7). Edit the source.
 name: exeris-tooling-strict-audit-review
 description: INERT-registry hygiene gate for -Aexeris.strict. Invoke whenever a generator starts or stops reading an SDK annotation attribute, when exeris-sdk bumps its annotation surface, and before committing any edit to INERT_ATTRIBUTES or INERT_ANNOTATIONS in ExerisDomainProcessor — plus when reviewing or addressing a review on such a change. A registry entry left behind after a generator starts consuming the attribute emits a false "this has no effect" javac warning at the user's build.
 ---
-
+<!-- DO NOT EDIT. Generated from .agents/skills/exeris-tooling-strict-audit-review/SKILL.md by the AGENTS.md adapter step
+     (agents-md-schema.md rule 7). Edit the source, not this file. -->
 # Exeris Tooling Strict-Audit Review
 
 ## Purpose

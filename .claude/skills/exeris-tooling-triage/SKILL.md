@@ -1,8 +1,10 @@
 ---
+# DO NOT EDIT — generated from .agents/skills/exeris-tooling-triage/SKILL.md (agents-md-schema.md rule 7). Edit the source.
 name: exeris-tooling-triage
 description: Triage and execution plan for a new piece of exeris-tooling work. Invoke when starting a milestone slice or ticket in this repo ("start T-x", "next slice", "let's do G2", "begin work on 0.x"), when a request lands and the owning module is not yet obvious, or when a change looks like it spans exeris-processor / exeris-codegen-core / exeris-codegen-java / exeris-codegen-ts / exeris-codegen-maven-plugin / exeris-e2e-tests. Returns task class, scope, severity, primary risk against the pipeline contract, the agent sequence, and the must-pass validation gates. Skip for one-line single-file edits with an obvious owner.
 ---
-
+<!-- DO NOT EDIT. Generated from .agents/skills/exeris-tooling-triage/SKILL.md by the AGENTS.md adapter step
+     (agents-md-schema.md rule 7). Edit the source, not this file. -->
 # Exeris Tooling Triage
 
 ## Purpose

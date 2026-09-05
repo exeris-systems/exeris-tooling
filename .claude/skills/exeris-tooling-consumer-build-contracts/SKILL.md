@@ -1,8 +1,10 @@
 ---
+# DO NOT EDIT — generated from .agents/skills/exeris-tooling-consumer-build-contracts/SKILL.md (agents-md-schema.md rule 7). Edit the source.
 name: exeris-tooling-consumer-build-contracts
 description: Non-obvious contracts between exeris-tooling and the consumer's build. Invoke before editing any emitted log call, any Kernel*TestGenerator, KernelScaffold, CapTierWall, VerifyCapabilitiesMojo, or GenerateMojo — and when reviewing or addressing a review on such a change. Tooling emits no pom.xml, so every import and every API the emitted code touches is a silent requirement on the downstream app's build. Covers ADR-055 (cap-tier Wall scan), ADR-058 (generated-test channel), ADR-060 (System.Logger).
 ---
-
+<!-- DO NOT EDIT. Generated from .agents/skills/exeris-tooling-consumer-build-contracts/SKILL.md by the AGENTS.md adapter step
+     (agents-md-schema.md rule 7). Edit the source, not this file. -->
 # Consumer-Build Contracts
 
 ## Purpose
