@@ -68,6 +68,7 @@ nested:
 
 scripts:
   - tools/eval-consistency-check/eval-consistency-check.sh
+  - tools/hook-deny-check/hook-deny-check.sh
 
 renderer:
   source: exeris-systems/exeris-agents

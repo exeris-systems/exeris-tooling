@@ -47,6 +47,7 @@ hooks:
       - '(?:^|[|;&]\s*|\$\(\s*)(?:python3?\s+)?(?:\S*/)?agents_render\.py\b'
       - '(?:^|[|;&]\s*|\$\(\s*)(?:python3?\s+)?(?:\S*/)?agents_bundle\.py\b'
       - '(?:^|[|;&]\s*|\$\(\s*)(?:\S*/)?eval-consistency-check\.sh\b'
+      - '(?:^|[|;&]\s*|\$\(\s*)(?:\S*/)?hook-deny-check\.sh\b'
     record: guardrails-run
 
   - id: record-agent-edit
