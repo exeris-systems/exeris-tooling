@@ -31,7 +31,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li>the ADR-034 binding target FQN (regression pin);</li>
  *   <li>the ADR-045 composition-root retry wiring example — Javadoc-only,
  *       so no {@code eu.exeris.kernel.community.*} import couples the
- *       compiled surface (The Wall).</li>
+ *       compiled surface (The Wall);</li>
+ *   <li>the kernel ADR-074 peer-addressing guidance (K8) — also Javadoc-only,
+ *       so {@code HttpConfig} never becomes an import the compiled client does
+ *       not need.</li>
  * </ul>
  *
  * <p>The compile gate ({@code KernelCodegenCompileTest}) additionally proves
@@ -154,6 +157,36 @@ class KernelClientGeneratorTest {
         assertThat(file.content())
                 .doesNotContain("import eu.exeris.kernel.community")
                 .doesNotContain("import eu.exeris.kernel.spi.http.HttpRetryPolicy");
+    }
+
+    @Test
+    @DisplayName("K8 / kernel ADR-074: the composition-root example addresses the peer, and says what an unaddressed client does")
+    void generateEmitsPeerAddressingGuidance() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .build();
+
+        GeneratedFile file = generator.generate(metadata);
+
+        // On kernel 0.12 a CLIENT-mode HttpConfig(bindHost, port) is a listen address and is no
+        // longer dialled, with no signature change to say so: wiring copied from the 0.11 example
+        // compiles and is refused at the first request. The example must therefore carry the
+        // address, and the prose must name both remedies the kernel offers (the per-client view and
+        // the engine default) plus the key the refusal message names.
+        assertThat(file.content())
+                .contains("var client = new OrderClient(webClient.withAuthority(\"peer-host:8080\"));")
+                .contains("Addressing the peer (kernel ADR-074)")
+                .contains("{@code withAuthority(\"host:port\")}")
+                .contains("{@code http.client.defaultAuthority}")
+                .contains("{@code defaultAuthority} component of")
+                .contains("{@code HttpConfig} when the engine is built by hand")
+                .contains("are a listen address and are never dialled")
+                .doesNotContain("new OrderClient(webClient);");
+        // Javadoc text only: an import used by nothing but a comment would be a consumer-build
+        // requirement the compiled client does not have.
+        assertThat(file.content())
+                .doesNotContain("import eu.exeris.kernel.spi.http.HttpConfig")
+                .doesNotContain("import eu.exeris.kernel.spi.http.HttpRequest");
     }
 
     @Test
