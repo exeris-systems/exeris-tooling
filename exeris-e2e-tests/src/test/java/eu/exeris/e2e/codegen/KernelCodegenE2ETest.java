@@ -72,7 +72,8 @@ class KernelCodegenE2ETest {
                             ArtifactType.CONTROLLER,
                             ArtifactType.SERVICE,
                             ArtifactType.REPOSITORY,
-                            ArtifactType.DOMAIN_ERROR,
+                            ArtifactType.DOMAIN_ERROR,  // <Entity>NotFoundException (ADR-076)
+                            ArtifactType.DOMAIN_ERROR,  // <Entity>TenantMismatchException (ADR-XXX)
                             ArtifactType.EVENT,
                             ArtifactType.EVENT_HANDLER,
                             ArtifactType.GRAPH_SYNC,

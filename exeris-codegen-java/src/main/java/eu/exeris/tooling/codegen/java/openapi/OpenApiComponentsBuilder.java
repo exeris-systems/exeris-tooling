@@ -2,11 +2,14 @@ package eu.exeris.tooling.codegen.java.openapi;
 
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
+import eu.exeris.tooling.codegen.java.support.DataScopeSupport;
 import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.media.Schema;
 
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Builds OpenAPI components (schemas) from domain metadata.
@@ -27,15 +30,35 @@ public final class OpenApiComponentsBuilder {
         return components;
     }
 
+    /**
+     * The fields the server owns on write (ADR-XXX): a tenant-partitioned entity's owner and a
+     * UNIVERSE entity's {@code @SharedScope} key. The generated repository stamps both from the
+     * bound storage context, refuses a value that contradicts it, and never updates the owner; so
+     * the entity schema marks them {@code readOnly} and the create/update DTOs omit them — the same
+     * split the TypeScript emitter makes (its {@code systemFieldNames}), so the published contract
+     * and the generated client agree on what a request may carry.
+     */
+    private static Set<String> serverOwnedFields(DomainMetadata metadata) {
+        Set<String> owned = new LinkedHashSet<>();
+        DataScopeSupport.ownerFieldName(metadata).ifPresent(owned::add);
+        DataScopeSupport.sharedScopeField(metadata).ifPresent(field -> owned.add(field.name()));
+        return owned;
+    }
+
     private static Schema<?> buildEntitySchema(DomainMetadata metadata) {
         Schema<Object> schema = new Schema<>();
         schema.setType("object");
         schema.setDescription(metadata.description() != null ? metadata.description() : metadata.entityName() + " entity");
         Map<String, Schema> properties = new LinkedHashMap<>();
         properties.put("id", new Schema<String>().type("string").format("uuid").description("Unique identifier"));
+        Set<String> serverOwned = serverOwnedFields(metadata);
         if (metadata.hasFields()) {
             for (FieldMetadata field : metadata.fields()) {
-                properties.put(field.name(), buildFieldSchema(field));
+                Schema<?> fieldSchema = buildFieldSchema(field);
+                if (serverOwned.contains(field.name())) {
+                    fieldSchema.setReadOnly(true);
+                }
+                properties.put(field.name(), fieldSchema);
             }
         }
         properties.put("createdAt", new Schema<String>().type("string").format("date-time").description("Creation timestamp"));
@@ -50,9 +73,10 @@ public final class OpenApiComponentsBuilder {
         schema.setDescription("DTO for creating " + metadata.entityName());
         Map<String, Schema> properties = new LinkedHashMap<>();
         java.util.List<String> required = new java.util.ArrayList<>();
+        Set<String> serverOwned = serverOwnedFields(metadata);
         if (metadata.hasFields()) {
             for (FieldMetadata field : metadata.fields()) {
-                if (!field.readOnly() && !"id".equals(field.name())) {
+                if (!field.readOnly() && !"id".equals(field.name()) && !serverOwned.contains(field.name())) {
                     properties.put(field.name(), buildFieldSchema(field));
                     if (field.required()) required.add(field.name());
                 }
@@ -68,9 +92,10 @@ public final class OpenApiComponentsBuilder {
         schema.setType("object");
         schema.setDescription("DTO for updating " + metadata.entityName());
         Map<String, Schema> properties = new LinkedHashMap<>();
+        Set<String> serverOwned = serverOwnedFields(metadata);
         if (metadata.hasFields()) {
             for (FieldMetadata field : metadata.fields()) {
-                if (!field.readOnly() && !"id".equals(field.name())) {
+                if (!field.readOnly() && !"id".equals(field.name()) && !serverOwned.contains(field.name())) {
                     properties.put(field.name(), buildFieldSchema(field));
                 }
             }

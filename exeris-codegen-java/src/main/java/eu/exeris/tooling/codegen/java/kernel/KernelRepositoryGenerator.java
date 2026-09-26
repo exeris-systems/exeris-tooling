@@ -111,6 +111,10 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     static final String ACTING_TENANT_METHOD = "actingTenantId";
     /** Name of the emitted acting-shared-scope resolver — see {@link #buildActingSharedScope}. */
     static final String ACTING_SHARED_SCOPE_METHOD = "actingSharedScope";
+    /** Name of the emitted foreign-tenant refusal — see {@link #buildRefuseForeignTenant} (ADR-XXX). */
+    static final String REFUSE_FOREIGN_TENANT_METHOD = "refuseForeignTenant";
+    /** Name of the emitted foreign-shared-scope refusal — see {@link #buildRefuseForeignSharedScope}. */
+    static final String REFUSE_FOREIGN_SHARED_SCOPE_METHOD = "refuseForeignSharedScope";
     /** Emitted message constants, so the resolver's own body stays one readable line per step. */
     private static final String SYSTEM_SCOPE_FIELD = "TENANT_SCOPE_REQUIRED";
     private static final String NOT_A_UUID_FIELD = "TENANT_KEY_NOT_A_UUID";
@@ -311,9 +315,11 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                 .addMethod(buildMapRow(ctx));
 
         if (isTenantPartitioned(metadata)) {
-            repo.addMethod(buildActingTenantId(ctx));
+            repo.addMethod(buildActingTenantId(ctx))
+                    .addMethod(buildRefuseForeignTenant(ctx));
         }
-        sharedScopeColumn(ctx).ifPresent(column -> repo.addMethod(buildActingSharedScope(column)));
+        sharedScopeColumn(ctx).ifPresent(column -> repo.addMethod(buildActingSharedScope(column))
+                .addMethod(buildRefuseForeignSharedScope(ctx, column)));
 
         if (hasListField) {
             repo.addMethod(buildParseList())
@@ -692,9 +698,17 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
      *
      * <p>Filled only when absent, exactly like {@code id} one line above: {@code save} already has
      * a "fills what the caller left out" contract, and the tenant is the fourth system field it was
-     * not honouring. A <em>contradicted</em> tenant is deliberately left to the RLS
-     * {@code WITH CHECK} predicate — that is where the authority for it lives, and re-deciding it
-     * here would be a second implementation of a rule the database already enforces.
+     * not honouring.
+     *
+     * <p><b>A <em>contradicted</em> tenant is refused here (ADR-XXX)</b> — the statement after the
+     * stamp. Until 0.9.0 it was left to the RLS {@code WITH CHECK} predicate, on the reasoning that
+     * re-deciding it would be a second implementation of a rule the database enforces. That holds
+     * only where the database does enforce it: a superuser or {@code BYPASSRLS} role skips even a
+     * forced policy, an engine without row-level security has none, and where the policy does fire
+     * its violation reaches the handler's {@code catch (RuntimeException)} as a {@code 500} — a
+     * server fault reported for a request the caller got wrong. The refusal applies only while a
+     * tenant is bound; with none bound the row is left to the database exactly as before, so a
+     * seeder that writes owners explicitly keeps working.
      */
     private static void appendTenantStamp(MethodSpec.Builder method, Context ctx) {
         if (!isTenantPartitioned(ctx.metadata())) {
@@ -703,6 +717,56 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         Column tenant = systemColumn(ctx, ColumnKind.TENANT_ID);
         method.addStatement("if (entity.$L() == null) entity.$L($L())",
                 getterFor(tenant), setterFor(tenant), ACTING_TENANT_METHOD);
+        method.addStatement("$L(entity.$L())", REFUSE_FOREIGN_TENANT_METHOD, getterFor(tenant));
+    }
+
+    /**
+     * Emits the foreign-tenant refusal (ADR-XXX): a written row naming a tenant other than the
+     * bound one is refused with {@code <Entity>TenantMismatchException}, which the generated handler
+     * answers {@code 400}.
+     *
+     * <p>"Bound" means a {@code StorageContext} is bound <em>and</em> carries an isolation key. An
+     * unbound slot and the system scope both mean "no tenant to compare against", and the row is
+     * left to row-level security unchanged. It reads {@code STORAGE_CONTEXT.isBound()} before
+     * {@code storageContext()} for that reason: the request-scoped accessor throws on an unbound
+     * slot, and a refusal that only applies while a tenant is bound must not turn "none bound" into
+     * a failure. A non-UUID isolation key is the same deployment fault the stamp reports, and is
+     * reported the same way — never as the caller's.
+     */
+    private static MethodSpec buildRefuseForeignTenant(Context ctx) {
+        Column tenant = systemColumn(ctx, ColumnKind.TENANT_ID);
+        ClassName mismatch = KernelErrorGenerator.tenantMismatchType(ctx.metadata());
+        return MethodSpec.methodBuilder(REFUSE_FOREIGN_TENANT_METHOD)
+                .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+                .addParameter(UUID_TYPE, tenant.javaName())
+                .addJavadoc("Refuses a written row whose {@code $L} is not the tenant this request is\n",
+                        tenant.javaName())
+                .addJavadoc("bound to (ADR-XXX). With no tenant bound — no {@code StorageContext}, or\n")
+                .addJavadoc("the system scope — the row is left to row-level security, unchanged.\n")
+                .addJavadoc("\n")
+                .addJavadoc("@throws $T if a tenant is bound and {@code $L} names another\n",
+                        mismatch, tenant.javaName())
+                .addJavadoc("@throws IllegalStateException if the bound isolation key is not a UUID — a\n")
+                .addJavadoc("        deployment fault\n")
+                .beginControlFlow("if ($L == null || !$T.STORAGE_CONTEXT.isBound())",
+                        tenant.javaName(), KERNEL_PROVIDERS)
+                .addStatement("return")
+                .endControlFlow()
+                .addStatement("$T<$T> isolationKey = $T.storageContext().isolationKey()",
+                        OPTIONAL, String.class, KERNEL_PROVIDERS)
+                .beginControlFlow("if (isolationKey.isEmpty())")
+                .addStatement("return")
+                .endControlFlow()
+                .addStatement("$T bound", UUID_TYPE)
+                .beginControlFlow("try")
+                .addStatement("bound = $T.fromString(isolationKey.get())", UUID_TYPE)
+                .nextControlFlow("catch ($T e)", ILLEGAL_ARGUMENT_EXCEPTION)
+                .addStatement("throw new $T($L, e)", ILLEGAL_STATE_EXCEPTION, NOT_A_UUID_FIELD)
+                .endControlFlow()
+                .beginControlFlow("if (!bound.equals($L))", tenant.javaName())
+                .addStatement("throw new $T($L)", mismatch, tenant.javaName())
+                .endControlFlow()
+                .build();
     }
 
     /**
@@ -730,9 +794,44 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
      * tenant stamp beside it. A caller-supplied value is kept.
      */
     private static void appendSharedScopeStamp(MethodSpec.Builder method, Context ctx) {
-        sharedScopeColumn(ctx).ifPresent(column -> method.addStatement(
-                "if (entity.$L() == null) entity.$L($L())",
-                getterFor(column), setterFor(column), ACTING_SHARED_SCOPE_METHOD));
+        sharedScopeColumn(ctx).ifPresent(column -> method
+                .addStatement("if (entity.$L() == null) entity.$L($L())",
+                        getterFor(column), setterFor(column), ACTING_SHARED_SCOPE_METHOD)
+                .addStatement("$L(entity.$L())", REFUSE_FOREIGN_SHARED_SCOPE_METHOD, getterFor(column)));
+    }
+
+    /**
+     * Emits the foreign-shared-scope refusal — the tenant rule applied to the caller-writable
+     * {@code @SharedScope} field (ADR-XXX). A row tagged with a scope other than the bound one is
+     * refused with {@code <Entity>SharedScopeMismatchException}, answered {@code 400}. With no scope
+     * bound the caller's tag is kept, as before.
+     *
+     * <p>It compares against {@link #buildActingSharedScope}'s answer, so "bound" means exactly what
+     * the stamp means by it — a non-blank key on the bound context — and a non-UUID key for a UUID
+     * column is the same deployment fault there as here.
+     */
+    private static MethodSpec buildRefuseForeignSharedScope(Context ctx, Column column) {
+        boolean uuid = classifyDomainType(column.javaType()) == DomainTypeKind.UUID;
+        ClassName mismatch = KernelErrorGenerator.sharedScopeMismatchType(ctx.metadata());
+        return MethodSpec.methodBuilder(REFUSE_FOREIGN_SHARED_SCOPE_METHOD)
+                .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+                .addParameter(uuid ? UUID_TYPE : ClassName.get(String.class), column.javaName())
+                .addJavadoc("Refuses a written row whose {@code $L} is not the shared scope this request\n",
+                        column.javaName())
+                .addJavadoc("is bound to (ADR-XXX). With no scope bound, the caller's tag is kept.\n")
+                .addJavadoc("\n")
+                .addJavadoc("@throws $T if a scope is bound and {@code $L} names another\n",
+                        mismatch, column.javaName())
+                .beginControlFlow("if ($L == null)", column.javaName())
+                .addStatement("return")
+                .endControlFlow()
+                .addStatement("$T bound = $L()", uuid ? UUID_TYPE : ClassName.get(String.class),
+                        ACTING_SHARED_SCOPE_METHOD)
+                .beginControlFlow("if (bound != null && !bound.equals($L))", column.javaName())
+                .addStatement(uuid ? "throw new $T($L.toString())" : "throw new $T($L)",
+                        mismatch, column.javaName())
+                .endControlFlow()
+                .build();
     }
 
     /**
@@ -873,8 +972,17 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         sharedScope.ifPresent(column -> save.addJavadoc(", and a missing\n")
                 .addJavadoc("{@code $L} with the acting shared scope, if one is bound",
                         column.javaName()));
-        save.addJavadoc(" before the INSERT.\n")
-                .addStatement("if (entity.getId() == null) entity.setId($T.randomUUID())", UUID_TYPE);
+        save.addJavadoc(" before the INSERT.\n");
+        if (tenantPartitioned) {
+            save.addJavadoc("<p>While a tenant is bound, a row naming another tenant is refused with\n")
+                    .addJavadoc("{@link $T}", KernelErrorGenerator.tenantMismatchType(ctx.metadata()));
+            sharedScope.ifPresent(column -> save
+                    .addJavadoc(", and while a shared scope is bound, a row tagged with another is\n")
+                    .addJavadoc("refused with {@link $T}",
+                            KernelErrorGenerator.sharedScopeMismatchType(ctx.metadata())));
+            save.addJavadoc(" (ADR-XXX).\n");
+        }
+        save.addStatement("if (entity.getId() == null) entity.setId($T.randomUUID())", UUID_TYPE);
         if (ctx.metadata().audited()) {
             save.addStatement("$T now = $T.now()", INSTANT, INSTANT);
             save.addStatement("entity.$L(now)", setterFor(systemColumn(ctx, ColumnKind.CREATED_AT)));
@@ -899,12 +1007,41 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         return save.build();
     }
 
-    private MethodSpec buildUpdate(Context ctx) {
-        // SET clause: every column except id (id is in WHERE)
-        List<Column> updatable = ctx.columns().stream()
+    /**
+     * The columns an {@code UPDATE} writes, in bind order: every layout column except {@code id},
+     * which closes the WHERE clause, and except the owning tenant (ADR-XXX).
+     *
+     * <p>The owner is not written on update, so no update can move a row to another tenant — not
+     * with a tenant bound (where a foreign one is refused before this statement anyway), and not
+     * without one, where nothing else would stop it on an engine or role that row-level security
+     * does not bind. Dropping the column rather than refusing a change is deliberate: detecting a
+     * change needs the stored owner, which the repository only learns through a predicate that
+     * turns "you tried to move a row" into zero rows — a 404/409 that misreports a caller fault as a
+     * missing row. On a UNIVERSE table it also closes a hole in the policy the kernel documents:
+     * with {@code SET owner = self}, a partition-mate could re-own a shared row it can only read.
+     *
+     * <p>Shared with the repository-test emitter, whose WHERE-id index is one past this list.
+     */
+    static List<Column> updateColumns(DomainMetadata metadata) {
+        return updateColumns(columnLayout(metadata));
+    }
+
+    private static List<Column> updateColumns(List<Column> layout) {
+        return layout.stream()
                 .filter(c -> !"id".equals(c.sqlName()))
+                .filter(c -> c.kind() != ColumnKind.TENANT_ID)
                 .toList();
-        String setClause = String.join(", ", updatable.stream().map(c -> c.sqlName() + " = ?").toList());
+    }
+
+    private MethodSpec buildUpdate(Context ctx) {
+        // SET clause: every column except id (id is in WHERE) and the owner (ADR-XXX)
+        List<Column> updatable = updateColumns(ctx.columns());
+        // An entity with nothing to write — no domain field, no audit or version column, and the
+        // owner never written (ADR-XXX) — still needs a valid statement whose row count answers
+        // "did the row exist": SET id = id writes nothing and binds nothing.
+        String setClause = updatable.isEmpty()
+                ? "id = id"
+                : String.join(", ", updatable.stream().map(c -> c.sqlName() + " = ?").toList());
         boolean versioned = ctx.metadata().versioned();
         String whereClause = versioned
                 ? WHERE_ID_CLAUSE + " AND " + toSnakeCase(ctx.sys().version()) + " = ?" : WHERE_ID_CLAUSE;
@@ -949,11 +1086,15 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                 // sentence; without it, this paragraph would be a <p> with nothing before it.
                 update.addJavadoc("Updates the row identified by {@code id}.\n");
             }
-            update.addJavadoc("<p>A missing {@code $L} is filled with the acting tenant first: the\n",
-                            systemColumn(ctx, ColumnKind.TENANT_ID).javaName())
-                    .addJavadoc("SET list writes that column on every update, so a caller who built\n")
-                    .addJavadoc("the entity from a request body rather than from a read would\n")
-                    .addJavadoc("otherwise clear the row's owner.\n");
+            String tenantField = systemColumn(ctx, ColumnKind.TENANT_ID).javaName();
+            update.addJavadoc("<p>The owner is never written: {@code $L} is not in the SET list, so\n",
+                            tenantField)
+                    .addJavadoc("an update cannot move a row to another tenant (ADR-XXX). A missing\n")
+                    .addJavadoc("{@code $L} is filled with the acting tenant, so the returned entity\n",
+                            tenantField)
+                    .addJavadoc("names its owner, and while a tenant is bound a different one is\n")
+                    .addJavadoc("refused with {@link $T}.\n",
+                            KernelErrorGenerator.tenantMismatchType(ctx.metadata()));
         }
         sharedScopeColumn(ctx).ifPresent(column -> update
                 .addJavadoc("<p>A missing {@code $L} is filled with the acting shared scope in the same\n",

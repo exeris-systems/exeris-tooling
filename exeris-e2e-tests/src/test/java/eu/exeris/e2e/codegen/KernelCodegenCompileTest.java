@@ -295,7 +295,17 @@ class KernelCodegenCompileTest {
         assertThat(repository)
                 .as("non-vacuous: the code under compilation reads the kernel's shared-scope key")
                 .contains("sharedScopeKey()")
-                .contains("actingSharedScope()");
+                .contains("actingSharedScope()")
+                .contains("refuseForeignTenant(")
+                .contains("refuseForeignSharedScope(");
+        assertThat(generated)
+                .as("ADR-XXX: both caller-fault types are among the compiled sources")
+                .extracting(GeneratedFile::className)
+                .contains("SpeciesTenantMismatchException", "SpeciesSharedScopeMismatchException");
+        assertThat(generated.stream().filter(f -> f.className().equals("SpeciesHandler"))
+                .findFirst().orElseThrow().content())
+                .as("ADR-XXX: the multi-catch javac has to accept (disjoint types)")
+                .contains("catch (SpeciesTenantMismatchException | SpeciesSharedScopeMismatchException e)");
 
         List<GeneratedFile> applicationFiles = new KernelApplicationGenerator()
                 .generateAll(List.of(metadata), UNIVERSE_PACKAGE.replace(".domain", ""), false);

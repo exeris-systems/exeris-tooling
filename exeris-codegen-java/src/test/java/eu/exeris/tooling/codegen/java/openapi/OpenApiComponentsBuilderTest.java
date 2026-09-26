@@ -33,6 +33,66 @@ class OpenApiComponentsBuilderTest {
     }
 
     @Test
+    @DisplayName("ADR-XXX: the owner is readOnly on the entity and absent from both DTOs")
+    void ownerIsReadOnlyAndNotInTheDtos() {
+        DomainMetadata meta = DomainMetadata.builder("Order", "com.example.domain")
+                .dataScope(eu.exeris.sdk.sourcemodel.ast.DataScope.TENANT)
+                .fields(List.of(
+                        FieldMetadata.builder("orderNumber", "String").required(true).build(),
+                        FieldMetadata.builder("tenantId", "java.util.UUID").build()))
+                .build();
+
+        Components components = OpenApiComponentsBuilder.buildComponents(meta);
+
+        Schema<?> tenant = (Schema<?>) components.getSchemas().get("Order").getProperties().get("tenantId");
+        assertThat(tenant.getReadOnly()).isTrue();
+        Schema<?> number = (Schema<?>) components.getSchemas().get("Order").getProperties().get("orderNumber");
+        assertThat(number.getReadOnly()).isNull();
+        assertThat(components.getSchemas().get("OrderCreateDto").getProperties())
+                .containsKey("orderNumber").doesNotContainKey("tenantId");
+        assertThat(components.getSchemas().get("OrderUpdateDto").getProperties())
+                .containsKey("orderNumber").doesNotContainKey("tenantId");
+    }
+
+    @Test
+    @DisplayName("ADR-XXX: a renamed owner and a UNIVERSE shared-scope key are both server-owned")
+    void renamedOwnerAndSharedScopeAreReadOnly() {
+        DomainMetadata meta = DomainMetadata.builder("Species", "com.example.domain")
+                .dataScope(eu.exeris.sdk.sourcemodel.ast.DataScope.UNIVERSE)
+                .systemFields(new eu.exeris.sdk.sourcemodel.ast.SystemFieldsMetadata("id", "createdAt",
+                        "createdBy", "updatedAt", "updatedBy", "organizationId", "version", null, null,
+                        null, "worldId"))
+                .fields(List.of(
+                        FieldMetadata.builder("name", "String").build(),
+                        FieldMetadata.builder("organizationId", "java.util.UUID").build(),
+                        FieldMetadata.builder("worldId", "java.util.UUID").build()))
+                .build();
+
+        Components components = OpenApiComponentsBuilder.buildComponents(meta);
+
+        for (String owned : List.of("organizationId", "worldId")) {
+            Schema<?> field = (Schema<?>) components.getSchemas().get("Species").getProperties().get(owned);
+            assertThat(field.getReadOnly()).as(owned).isTrue();
+            assertThat(components.getSchemas().get("SpeciesCreateDto").getProperties()).doesNotContainKey(owned);
+            assertThat(components.getSchemas().get("SpeciesUpdateDto").getProperties()).doesNotContainKey(owned);
+        }
+    }
+
+    @Test
+    @DisplayName("ADR-XXX: a global entity's tenantId-named field is an ordinary, writable field")
+    void globalTenantIdFieldIsUntouched() {
+        DomainMetadata meta = DomainMetadata.builder("Order", "com.example.domain")
+                .fields(List.of(FieldMetadata.builder("tenantId", "java.util.UUID").build()))
+                .build();
+
+        Components components = OpenApiComponentsBuilder.buildComponents(meta);
+
+        Schema<?> tenant = (Schema<?>) components.getSchemas().get("Order").getProperties().get("tenantId");
+        assertThat(tenant.getReadOnly()).isNull();
+        assertThat(components.getSchemas().get("OrderCreateDto").getProperties()).containsKey("tenantId");
+    }
+
+    @Test
     @DisplayName("Entity schema: empty Builder-default description is kept verbatim (no \"<Entity> entity\" fallback fires)")
     void entitySchemaDescriptionKeptEmpty() {
         // Contrast with OpenApiTagsBuilder, which guards description on

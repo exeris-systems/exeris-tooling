@@ -7,7 +7,7 @@
  */
 
 import { outPath } from '../../core/paths.js';
-import type { DomainMetadata, FieldMetadata } from '../../models/domain-model.js';
+import { effectiveDataScope, type DomainMetadata, type FieldMetadata } from '../../models/domain-model.js';
 import { DslMapper } from '../../models/dsl-mapper.js';
 import { modelTypeName } from '../../models/model-naming.js';
 import type { GeneratorConfig } from '../../config.js';
@@ -306,6 +306,10 @@ export function systemFieldNames(metadata: DomainMetadata): string[] {
   } else {
     // Default system fields
     fields.push('version', 'createdAt', 'updatedAt');
+    // A tenant-partitioned entity's owner is server-owned whether or not it declares a
+    // systemFields block (ADR-XXX): the repository stamps it, refuses a foreign one and never
+    // updates it, and the emitted OpenAPI marks it readOnly and leaves it out of both DTOs.
+    if (effectiveDataScope(metadata) !== 'GLOBAL') fields.push('tenantId');
   }
 
   return [...new Set(fields)];

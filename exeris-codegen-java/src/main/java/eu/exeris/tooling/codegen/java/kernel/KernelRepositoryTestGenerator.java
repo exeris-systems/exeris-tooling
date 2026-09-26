@@ -84,6 +84,12 @@ public final class KernelRepositoryTestGenerator {
      * same literal serves a {@code UUID} and a {@code String} shared-scope field.
      */
     private static final String SCOPE_KEY = "00000000-0000-4000-8000-000000000003";
+    /**
+     * The row id the "update cannot move a row" case addresses — distinct from the foreign tenant
+     * it stages ({@link KernelTestSamples#FIXED_ID}), so "the foreign tenant is not among the
+     * binds" cannot be defeated by the WHERE-id bind carrying the same value.
+     */
+    private static final String MOVED_ROW_ID = "00000000-0000-4000-8000-000000000004";
     private static final String AS_TENANT = "asTenant";
 
     /**
@@ -148,21 +154,31 @@ public final class KernelRepositoryTestGenerator {
         }
 
         type.addMethod(roundTripTest(entityType, repositoryType, persistenceType, columns,
-                tenantScoped));
+                tenantScoped, sharedScope));
         type.addMethod(saveFillsIdTest(entityType, repositoryType, persistenceType, tenantScoped));
         if (tenantScoped) {
+            ClassName tenantMismatch = KernelErrorGenerator.tenantMismatchType(metadata);
+            Column tenant = tenantColumn(columns);
             type.addMethod(saveStampsTenantTest(entityType, repositoryType, persistenceType,
                     columns));
-            type.addMethod(saveKeepsCallerTenantTest(entityType, repositoryType, persistenceType,
-                    columns));
+            type.addMethod(saveAcceptsTheBoundTenantTest(entityType, repositoryType, persistenceType,
+                    columns, tenant));
+            type.addMethod(saveRefusesAForeignTenantTest(entityType, repositoryType, persistenceType,
+                    tenant, tenantMismatch));
+            type.addMethod(saveLeavesTheTenantToTheDatabaseWhenNoneIsBoundTest(entityType,
+                    repositoryType, persistenceType, columns, tenant));
+            type.addMethod(updateNeverWritesTheTenantTest(entityType, repositoryType, persistenceType,
+                    metadata, tenant));
         }
         if (sharedScope != null) {
             type.addMethod(saveStampsSharedScopeTest(entityType, repositoryType, persistenceType,
                     columns, sharedScope));
-            type.addMethod(saveKeepsCallerSharedScopeTest(entityType, repositoryType,
-                    persistenceType, sharedScope));
+            type.addMethod(saveRefusesAForeignSharedScopeTest(entityType, repositoryType,
+                    persistenceType, sharedScope, KernelErrorGenerator.sharedScopeMismatchType(metadata)));
+            type.addMethod(saveKeepsACallerSharedScopeWhenNoneIsBoundTest(entityType, repositoryType,
+                    persistenceType, columns, tenantColumn(columns), sharedScope));
         }
-        type.addMethod(updateBindsIdTest(entityType, repositoryType, persistenceType, columns,
+        type.addMethod(updateBindsIdTest(entityType, repositoryType, persistenceType, metadata,
                 tenantScoped));
         type.addMethod(findByIdEmptyTest(repositoryType, persistenceType));
         // ADR-076: update reports a versioned entity's zero-row outcome as a conflict, because
@@ -185,7 +201,7 @@ public final class KernelRepositoryTestGenerator {
     /** The central test — see the class Javadoc for why it is a round-trip and not a SQL check. */
     private MethodSpec roundTripTest(ClassName entityType, ClassName repositoryType,
                                      ClassName persistenceType, List<Column> columns,
-                                     boolean tenantScoped) {
+                                     boolean tenantScoped, Column sharedScope) {
         MethodSpec.Builder test = test("savedRowReadsBackColumnForColumn")
                 .addJavadoc("The INSERT's binds, replayed as the SELECT's row. Every column has to\n")
                 .addJavadoc("survive the trip: a bind index that drifts from its read index lands on\n")
@@ -196,7 +212,7 @@ public final class KernelRepositoryTestGenerator {
                 .addStatement("$T original = new $T()", entityType, entityType);
 
         for (Column column : columns) {
-            CodeBlock sample = stagedValue(column);
+            CodeBlock sample = stagedValue(column, sharedScope);
             if (sample != null) {
                 test.addStatement("original.$L($L)", KernelRepositoryGenerator.setterFor(column), sample);
             }
@@ -240,10 +256,12 @@ public final class KernelRepositoryTestGenerator {
      * one thing a reordering of {@code emitUpdateBinds} would silently break.
      */
     private MethodSpec updateBindsIdTest(ClassName entityType, ClassName repositoryType,
-                                         ClassName persistenceType, List<Column> columns,
+                                         ClassName persistenceType, DomainMetadata metadata,
                                          boolean tenantScoped) {
-        // SET list = columns minus id, so the WHERE id lands one slot past its last entry.
-        int whereIdIndex = columns.size() - 1;
+        // The WHERE id lands one slot past the SET list — every column except id and, on a
+        // tenant-partitioned entity, the owner (ADR-XXX). Read from the repository emitter's own
+        // derivation, so the two cannot disagree about where the list ends.
+        int whereIdIndex = KernelRepositoryGenerator.updateColumns(metadata).size();
         MethodSpec.Builder test = test("updateBindsTheIdAfterTheSetList")
                 .addStatement("$T persistence = new $T()", persistenceType, persistenceType)
                 .addStatement("$T repository = new $T(persistence)", repositoryType, repositoryType)
@@ -343,27 +361,99 @@ public final class KernelRepositoryTestGenerator {
     }
 
     /**
-     * The other half of the contract: filling is not overwriting.
-     *
-     * <p>Whether a caller-supplied tenant is one this deployment may write is the RLS
-     * {@code WITH CHECK} predicate's decision, not the repository's — re-deciding it here would be a
-     * second implementation of a rule the database already enforces, and the two would drift.
+     * ADR-XXX, the matching half: a tenant the caller set that <em>is</em> the bound one is written
+     * as given — refusing a contradiction is not refusing a caller who sends the owner at all.
      */
-    private MethodSpec saveKeepsCallerTenantTest(ClassName entityType, ClassName repositoryType,
-                                                 ClassName persistenceType, List<Column> columns) {
-        Column tenant = tenantColumn(columns);
-        return test("saveKeepsATenantTheCallerSet")
-                .addJavadoc("A tenant the caller set survives the save — the stamp fills a gap, it\n")
-                .addJavadoc("does not override an intent.\n")
+    private MethodSpec saveAcceptsTheBoundTenantTest(ClassName entityType, ClassName repositoryType,
+                                                     ClassName persistenceType, List<Column> columns,
+                                                     Column tenant) {
+        String getter = KernelRepositoryGenerator.getterFor(tenant);
+        return test("saveAcceptsATenantThatIsTheBoundOne")
+                .addStatement("$T persistence = new $T()", persistenceType, persistenceType)
+                .addStatement("$T repository = new $T(persistence)", repositoryType, repositoryType)
+                .addStatement("$T entity = new $T()", entityType, entityType)
+                .addStatement("entity.$L($T.fromString(TENANT_KEY))",
+                        KernelRepositoryGenerator.setterFor(tenant), UUID)
+                .addStatement("$L(() -> repository.save(entity))", AS_TENANT)
+                .addStatement("$T.assertThat(persistence.binds.get($L)).isEqualTo($T.fromString(TENANT_KEY))",
+                        ASSERTIONS, columns.indexOf(tenant), UUID)
+                .addStatement("$T.assertThat(entity.$L()).isEqualTo($T.fromString(TENANT_KEY))",
+                        ASSERTIONS, getter, UUID)
+                .build();
+    }
+
+    /**
+     * ADR-XXX, the refusal: with a tenant bound, a row naming another tenant is refused with the
+     * typed caller fault the handler answers 400 — before anything reaches the database, which is
+     * what makes it hold on a role or engine row-level security does not bind.
+     */
+    private MethodSpec saveRefusesAForeignTenantTest(ClassName entityType, ClassName repositoryType,
+                                                     ClassName persistenceType, Column tenant,
+                                                     ClassName tenantMismatch) {
+        return test("saveRefusesATenantThatIsNotTheBoundOne")
+                .addJavadoc("Refused in the repository, not left to the database: a superuser or\n")
+                .addJavadoc("BYPASSRLS role skips the policy, an engine without row-level security\n")
+                .addJavadoc("has none, and where the policy does fire its violation is reported as a\n")
+                .addJavadoc("server fault. Nothing is prepared, so nothing is bound.\n")
+                .addStatement("$T persistence = new $T()", persistenceType, persistenceType)
+                .addStatement("$T repository = new $T(persistence)", repositoryType, repositoryType)
+                .addStatement("$T entity = new $T()", entityType, entityType)
+                .addStatement("entity.$L($T.fromString($S))",
+                        KernelRepositoryGenerator.setterFor(tenant), UUID, KernelTestSamples.FIXED_ID)
+                .addStatement("$L(() -> $T.assertThatThrownBy(() -> repository.save(entity))"
+                                + ".isInstanceOf($T.class))",
+                        AS_TENANT, ASSERTIONS, tenantMismatch)
+                .addStatement("$T.assertThat(persistence.binds).isEmpty()", ASSERTIONS)
+                .build();
+    }
+
+    /**
+     * ADR-XXX, the unchanged half: with no tenant bound there is nothing to compare against, so a
+     * caller-supplied owner is written as given and row-level security decides, exactly as before —
+     * the path a seeder that writes owners explicitly depends on.
+     */
+    private MethodSpec saveLeavesTheTenantToTheDatabaseWhenNoneIsBoundTest(
+            ClassName entityType, ClassName repositoryType, ClassName persistenceType,
+            List<Column> columns, Column tenant) {
+        MethodSpec.Builder test = test("saveLeavesACallerTenantToTheDatabaseWhenNoneIsBound")
                 .addStatement("$T persistence = new $T()", persistenceType, persistenceType)
                 .addStatement("$T repository = new $T(persistence)", repositoryType, repositoryType)
                 .addStatement("$T entity = new $T()", entityType, entityType)
                 .addStatement("$T callerTenant = $T.fromString($S)", UUID, UUID,
                         KernelTestSamples.FIXED_ID)
-                .addStatement("entity.$L(callerTenant)", KernelRepositoryGenerator.setterFor(tenant))
-                .addStatement("$L(() -> repository.save(entity))", AS_TENANT)
+                .addStatement("entity.$L(callerTenant)", KernelRepositoryGenerator.setterFor(tenant));
+        return test.addComment("No asTenant(...): no StorageContext is bound around this write.")
+                .addStatement("repository.save(entity)")
                 .addStatement("$T.assertThat(entity.$L()).isEqualTo(callerTenant)",
                         ASSERTIONS, KernelRepositoryGenerator.getterFor(tenant))
+                .addStatement("$T.assertThat(persistence.binds.get($L)).isEqualTo(callerTenant)",
+                        ASSERTIONS, columns.indexOf(tenant))
+                .build();
+    }
+
+    /**
+     * ADR-XXX, the update half: an update cannot move a row to another tenant, because the owner is
+     * not in the SET list at all. Run with no tenant bound — the one case the refusal does not cover
+     * — so what is proven is the column's absence, not the refusal again.
+     */
+    private MethodSpec updateNeverWritesTheTenantTest(ClassName entityType, ClassName repositoryType,
+                                                      ClassName persistenceType, DomainMetadata metadata,
+                                                      Column tenant) {
+        int expectedBinds = KernelRepositoryGenerator.updateColumns(metadata).size() + 1
+                + (metadata.versioned() ? 1 : 0);
+        return test("updateNeverWritesTheTenantSoARowCannotMove")
+                .addJavadoc("The SET list carries every column except {@code id} and the owner, so\n")
+                .addJavadoc("the tenant a body names never reaches the UPDATE — with or without a\n")
+                .addJavadoc("tenant bound, on any engine.\n")
+                .addStatement("$T persistence = new $T()", persistenceType, persistenceType)
+                .addStatement("$T repository = new $T(persistence)", repositoryType, repositoryType)
+                .addStatement("$T entity = new $T()", entityType, entityType)
+                .addStatement("$T otherTenant = $T.fromString($S)", UUID, UUID, KernelTestSamples.FIXED_ID)
+                .addStatement("entity.$L(otherTenant)", KernelRepositoryGenerator.setterFor(tenant))
+                .addStatement("repository.update($T.fromString($S), entity)", UUID, MOVED_ROW_ID)
+                .addStatement("$T.assertThat(persistence.binds).hasSize($L)", ASSERTIONS, expectedBinds)
+                .addStatement("$T.assertThat(persistence.binds.values()).doesNotContain(otherTenant)",
+                        ASSERTIONS)
                 .build();
     }
 
@@ -392,21 +482,50 @@ public final class KernelRepositoryTestGenerator {
                 .build();
     }
 
-    /** The other half: a scope the caller set survives the save — filling is not overwriting. */
-    private MethodSpec saveKeepsCallerSharedScopeTest(ClassName entityType, ClassName repositoryType,
-                                                      ClassName persistenceType, Column sharedScope) {
-        return test("saveKeepsASharedScopeTheCallerSet")
-                .addJavadoc("A shared scope the caller set survives the save — the stamp fills a gap,\n")
-                .addJavadoc("it does not override an intent.\n")
+    /**
+     * ADR-XXX applied to the caller-writable shared-scope field: with a scope bound, a row tagged
+     * with another is refused with the typed caller fault, before anything is bound.
+     */
+    private MethodSpec saveRefusesAForeignSharedScopeTest(ClassName entityType, ClassName repositoryType,
+                                                          ClassName persistenceType, Column sharedScope,
+                                                          ClassName sharedScopeMismatch) {
+        return test("saveRefusesASharedScopeThatIsNotTheBoundOne")
                 .addStatement("$T persistence = new $T()", persistenceType, persistenceType)
                 .addStatement("$T repository = new $T(persistence)", repositoryType, repositoryType)
                 .addStatement("$T entity = new $T()", entityType, entityType)
                 .addStatement("entity.$L($L)", KernelRepositoryGenerator.setterFor(sharedScope),
                         KernelTestSamples.of(sharedScope.javaType()))
-                .addStatement("$L(() -> repository.save(entity))", AS_TENANT)
+                .addStatement("$L(() -> $T.assertThatThrownBy(() -> repository.save(entity))"
+                                + ".isInstanceOf($T.class))",
+                        AS_TENANT, ASSERTIONS, sharedScopeMismatch)
+                .addStatement("$T.assertThat(persistence.binds).isEmpty()", ASSERTIONS)
+                .build();
+    }
+
+    /**
+     * The other half: with no scope bound, a tag the caller set is kept — filling is not
+     * overwriting, and there is nothing to contradict.
+     */
+    private MethodSpec saveKeepsACallerSharedScopeWhenNoneIsBoundTest(
+            ClassName entityType, ClassName repositoryType, ClassName persistenceType,
+            List<Column> columns, Column tenant, Column sharedScope) {
+        return test("saveKeepsACallerSharedScopeWhenNoneIsBound")
+                .addJavadoc("No context is bound, so the owner is staged too: the tenant stamp needs a\n")
+                .addJavadoc("bound tenant to fill an absent one.\n")
+                .addStatement("$T persistence = new $T()", persistenceType, persistenceType)
+                .addStatement("$T repository = new $T(persistence)", repositoryType, repositoryType)
+                .addStatement("$T entity = new $T()", entityType, entityType)
+                .addStatement("entity.$L($T.fromString(TENANT_KEY))",
+                        KernelRepositoryGenerator.setterFor(tenant), UUID)
+                .addStatement("entity.$L($L)", KernelRepositoryGenerator.setterFor(sharedScope),
+                        KernelTestSamples.of(sharedScope.javaType()))
+                .addStatement("repository.save(entity)")
                 .addStatement("$T.assertThat(entity.$L()).isEqualTo($L)", ASSERTIONS,
                         KernelRepositoryGenerator.getterFor(sharedScope),
                         KernelTestSamples.of(sharedScope.javaType()))
+                .addStatement("$T.assertThat(persistence.binds.get($L)).isEqualTo(entity.$L())",
+                        ASSERTIONS, columns.indexOf(sharedScope),
+                        KernelRepositoryGenerator.getterFor(sharedScope))
                 .build();
     }
 
@@ -462,11 +581,22 @@ public final class KernelRepositoryTestGenerator {
      * {@code Instant.now()}, and the soft-delete flag because staging it {@code true} would say
      * something this test does not mean. Both are still asserted on the way back — the round-trip
      * covers every column, staged or not; staging only makes the comparison sharper.
+     *
+     * <p>The owner and a UNIVERSE entity's shared scope are staged as the <em>bound</em> values: the
+     * save runs inside that context, and a different value would be refused (ADR-XXX) before the
+     * round-trip had anything to read back. Both are values no other column is staged with, so a
+     * drifted index still lands on a mismatch.
      */
-    private CodeBlock stagedValue(Column column) {
+    private CodeBlock stagedValue(Column column, Column sharedScope) {
         if (column.kind() == ColumnKind.CREATED_AT || column.kind() == ColumnKind.UPDATED_AT
                 || column.kind() == ColumnKind.DELETED) {
             return null;
+        }
+        if (column.kind() == ColumnKind.TENANT_ID) {
+            return CodeBlock.of("$T.fromString(TENANT_KEY)", UUID);
+        }
+        if (column.equals(sharedScope)) {
+            return boundScope(sharedScope);
         }
         CodeBlock sample = KernelTestSamples.of(column.javaType());
         return KernelTestSamples.isNull(sample) ? null : sample;

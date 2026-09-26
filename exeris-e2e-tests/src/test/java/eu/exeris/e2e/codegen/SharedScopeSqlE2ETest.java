@@ -123,6 +123,34 @@ class SharedScopeSqlE2ETest {
     }
 
     @Test
+    @DisplayName("ADR-XXX: the repository refuses a foreign owner or scope, the handler answers 400, "
+            + "and the spec marks both fields readOnly")
+    void foreignOwnerOrScopeIsACallerFaultEndToEnd() throws IOException {
+        String handler = Files.readString(generated.resolve("com/world/handler/GalaxyPresenceHandler.java"));
+        String spec = Files.readString(generated.resolve("openapi/galaxy-presence-api.yaml"));
+
+        assertThat(repository)
+                .contains("refuseForeignTenant(entity.getOwnerTenantId());")
+                .contains("refuseForeignSharedScope(entity.getUniverseId());")
+                // The owner is written by the INSERT and never by the UPDATE.
+                .contains("INSERT INTO galaxy_presences (id, x, universe_id, owner_tenant_id)")
+                .contains("UPDATE galaxy_presences SET x = ?, universe_id = ? WHERE id = ?");
+        assertThat(handler)
+                .contains("catch (GalaxyPresenceTenantMismatchException | GalaxyPresenceSharedScopeMismatchException e)")
+                .contains("exchange.respond(HttpStatus.BAD_REQUEST);");
+        assertThat(Files.exists(generated.resolve("com/world/repository/GalaxyPresenceTenantMismatchException.java")))
+                .isTrue();
+        // Both server-owned fields, readOnly in the entity schema; the create DTO carries only x.
+        // (No `type:` key: the 3.1 writer emits none for any property — pre-existing, not this change.)
+        assertThat(spec)
+                .containsPattern("ownerTenantId:\\s+format: uuid\\s+readOnly: true")
+                .containsPattern("universeId:\\s+format: uuid\\s+readOnly: true");
+        String createDto = spec.substring(spec.indexOf("GalaxyPresenceCreateDto:"),
+                spec.indexOf("GalaxyPresenceUpdateDto:"));
+        assertThat(createDto).contains("x:").doesNotContain("ownerTenantId").doesNotContain("universeId");
+    }
+
+    @Test
     @DisplayName("a TENANT entity in the same build gets no widening migration")
     void tenantEntityGetsNoWidening() throws IOException {
         assertThat(migrationNames())

@@ -198,18 +198,39 @@ class KernelRepositoryTestGeneratorTest {
     }
 
     @Test
-    @DisplayName("T36: the stamp pair is emitted, keyed on a tenant no other value in the file shares")
-    void emitsTheStampPair() {
+    @DisplayName("T36: the stamp is emitted, keyed on a tenant no other value in the file shares")
+    void emitsTheStamp() {
         String source = generate(TENANT_ORDER);
 
         assertThat(source)
                 .contains("void saveStampsTheActingTenantWhenTheCallerLeftItUnset()")
-                .contains("void saveKeepsATenantTheCallerSet()")
                 // The bound tenant must differ from the UUID every other field is staged with,
                 // or the stamp test could not tell a value that came from the context apart from
                 // one that was already on the entity.
                 .contains("TENANT_KEY = \"00000000-0000-4000-8000-000000000002\"")
-                .contains("callerTenant = UUID.fromString(\"00000000-0000-4000-8000-000000000001\")");
+                // The round-trip stages the owner as the bound tenant: anything else is refused
+                // before there is a row to read back (ADR-XXX).
+                .contains("original.setTenantId(UUID.fromString(TENANT_KEY))");
+    }
+
+    @Test
+    @DisplayName("ADR-XXX: match, mismatch, unbound and update-cannot-move are each an emitted case")
+    void emitsTheMismatchedTenantCases() {
+        String source = generate(TENANT_ORDER);
+
+        assertThat(source)
+                .contains("void saveAcceptsATenantThatIsTheBoundOne()")
+                .contains("void saveRefusesATenantThatIsNotTheBoundOne()")
+                .contains("asTenant(() -> Assertions.assertThatThrownBy(() -> repository.save(entity))"
+                        + ".isInstanceOf(OrderTenantMismatchException.class))")
+                .contains("void saveLeavesACallerTenantToTheDatabaseWhenNoneIsBound()")
+                .contains("void updateNeverWritesTheTenantSoARowCannotMove()")
+                .contains("Assertions.assertThat(persistence.binds.values()).doesNotContain(otherTenant)")
+                // The WHERE id follows the SET list, which no longer carries the owner: orderNumber
+                // and quantity are the SET list, so the id binds at index 2.
+                .contains("Assertions.assertThat(persistence.binds.get(2)).isEqualTo(id)")
+                // The old "keeps whatever tenant the caller set" case contradicts the decision.
+                .doesNotContain("saveKeepsATenantTheCallerSet");
     }
 
     @Test
@@ -264,7 +285,10 @@ class KernelRepositoryTestGeneratorTest {
                 .contains("ImmutableStorageContext.shared(TENANT_KEY).withSharedScope(SCOPE_KEY)")
                 .contains("void saveStampsTheSharedScopeWhenTheCallerLeftItUnset()")
                 .contains("Assertions.assertThat(entity.getWorldId()).isEqualTo(UUID.fromString(SCOPE_KEY))")
-                .contains("void saveKeepsASharedScopeTheCallerSet()")
+                .contains("void saveRefusesASharedScopeThatIsNotTheBoundOne()")
+                .contains(".isInstanceOf(SpeciesSharedScopeMismatchException.class)")
+                .contains("void saveKeepsACallerSharedScopeWhenNoneIsBound()")
+                .contains("original.setWorldId(UUID.fromString(SCOPE_KEY))")
                 // The owner stamp pair still ships: a UNIVERSE row is owned.
                 .contains("void saveStampsTheActingTenantWhenTheCallerLeftItUnset()");
     }

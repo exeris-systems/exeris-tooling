@@ -10,6 +10,7 @@ import com.palantir.javapoet.TypeSpec;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
+import eu.exeris.tooling.codegen.java.support.DataScopeSupport;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
 import eu.exeris.tooling.codegen.java.support.NameCasing;
 
@@ -46,6 +47,13 @@ import java.util.Map;
  * {@code <} for {@code <=}, since the rule and the probe value come from the same metadata. See
  * {@link #addValidationTests} for why the accept case is doing two jobs at once.
  *
+ * <p>Tenant-partitioned entities: every route is dispatched inside a bound {@code StorageContext}
+ * ({@code asTenant(...)}), because the handler's T41 guard answers {@code 500} to a request that
+ * carries none. Until 0.9.0 these tests bound nothing, so every case of a tenant-partitioned entity's
+ * emitted handler test failed on that guard. Such an entity also gets the ADR-XXX cases: a write the
+ * repository refuses as naming a foreign tenant (or, on a UNIVERSE entity, a foreign shared scope)
+ * answers {@code 400}.
+ *
  * <h2>The service double</h2>
  * <p>A nested {@code Stub<Entity>Service} subclasses the generated service and overrides the three
  * methods under test. Subclassing rather than mocking is what keeps the dependency contract at
@@ -68,6 +76,13 @@ public final class KernelHandlerTestGenerator {
      * but it would make the generated test's own failure output differ run to run for no benefit.
      */
     private static final String FIXED_ID = "00000000-0000-4000-8000-000000000001";
+
+    /**
+     * The tenant a tenant-partitioned entity's handler tests dispatch under — the same literal the
+     * generated repository test binds, and deliberately not {@link #FIXED_ID}.
+     */
+    private static final String TENANT_KEY = "00000000-0000-4000-8000-000000000002";
+    private static final String AS_TENANT = "asTenant";
 
     private static final ClassName TEST = ClassName.get("org.junit.jupiter.api", "Test");
     private static final ClassName ASSERTIONS = ClassName.get("org.assertj.core.api", "Assertions");
@@ -134,17 +149,53 @@ public final class KernelHandlerTestGenerator {
                 KernelTestSupportGenerator.supportPackage(basePackage),
                 KernelTestSupportGenerator.RECORDING_REQUEST_BODY);
 
-        type.addMethod(getAllTest(entity, entityType, handlerType, exchangeType, stubType, basePath));
-        type.addMethod(getByIdFoundTest(entity, entityType, handlerType, exchangeType, stubType, basePath));
-        type.addMethod(getByIdAbsentTest(entity, handlerType, exchangeType, stubType, basePath));
-        type.addMethod(getByIdMalformedTest(entity, handlerType, exchangeType, stubType, basePath));
-        type.addMethod(deleteTest(entity, handlerType, exchangeType, stubType, basePath));
-        type.addMethod(deleteAbsentTest(handlerType, exchangeType, stubType, basePath));
-        type.addMethod(createMissingBodyTest(entity, handlerType, exchangeType, stubType, basePath));
-        type.addMethod(updateMalformedIdTest(entity, handlerType, exchangeType, stubType, basePath));
-        type.addMethod(updateMissingBodyTest(entity, handlerType, exchangeType, stubType, basePath));
+        // T41 guards every route of a tenant-partitioned entity on a bound StorageContext and
+        // answers 500 without one, so these tests dispatch the way a request arrives: with a tenant
+        // bound. Without it every case here failed on the guard for a reason none of them is about.
+        boolean tenantScoped = DataScopeSupport.isTenantPartitioned(metadata);
+        if (tenantScoped) {
+            type.addField(FieldSpec.builder(ClassName.get("eu.exeris.kernel.spi.security", "StorageContext"),
+                            "TENANT_SCOPE", Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                    .initializer("$T.shared($S)",
+                            ClassName.get("eu.exeris.kernel.spi.security", "ImmutableStorageContext"),
+                            TENANT_KEY)
+                    .build());
+        }
+
+        type.addMethod(getAllTest(entity, entityType, handlerType, exchangeType, stubType, basePath,
+                tenantScoped));
+        type.addMethod(getByIdFoundTest(entity, entityType, handlerType, exchangeType, stubType, basePath,
+                tenantScoped));
+        type.addMethod(getByIdAbsentTest(entity, handlerType, exchangeType, stubType, basePath,
+                tenantScoped));
+        type.addMethod(getByIdMalformedTest(entity, handlerType, exchangeType, stubType, basePath,
+                tenantScoped));
+        type.addMethod(deleteTest(entity, handlerType, exchangeType, stubType, basePath,
+                tenantScoped));
+        type.addMethod(deleteAbsentTest(handlerType, exchangeType, stubType, basePath,
+                tenantScoped));
+        type.addMethod(createMissingBodyTest(entity, handlerType, exchangeType, stubType, basePath,
+                tenantScoped));
+        type.addMethod(updateMalformedIdTest(entity, handlerType, exchangeType, stubType, basePath,
+                tenantScoped));
+        type.addMethod(updateMissingBodyTest(entity, handlerType, exchangeType, stubType, basePath,
+                tenantScoped));
         addValidationTests(type, metadata, entityType, handlerType, exchangeType, bodyType,
+                stubType, basePath, tenantScoped);
+        addCallerFaultTests(type, metadata, entityType, handlerType, exchangeType, bodyType,
                 stubType, basePath);
+        if (tenantScoped) {
+            type.addMethod(MethodSpec.methodBuilder(AS_TENANT)
+                    .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+                    .addParameter(Runnable.class, "dispatch")
+                    .addJavadoc("Runs {@code dispatch} with a tenant bound, the way the kernel's\n")
+                    .addJavadoc("SecurityInterceptor binds {@code STORAGE_CONTEXT} around a request to a\n")
+                    .addJavadoc("route that demands identity. The handler's tenant guard answers 500\n")
+                    .addJavadoc("without one (T41).\n")
+                    .addStatement("$T.where($T.STORAGE_CONTEXT, TENANT_SCOPE).run(dispatch)",
+                            SCOPED_VALUE, KERNEL_PROVIDERS)
+                    .build());
+        }
         type.addMethod(newHandlerFactory(metadata, handlerType, stubType, basePackage));
         // The bodyless routes never reach parseBody, so the allocator they hold is never
         // touched — but the handler still requires one, so they get a fresh double rather
@@ -212,20 +263,22 @@ public final class KernelHandlerTestGenerator {
     }
 
     private MethodSpec getAllTest(String entity, ClassName entityType, ClassName handlerType,
-                                  ClassName exchangeType, ClassName stubType, String basePath) {
+                                  ClassName exchangeType, ClassName stubType, String basePath,
+                                  boolean tenantScoped) {
         return test("handleGetAllRespondsOkWithTheServiceResult")
                 .addStatement("$T service = new $T()", stubType, stubType)
                 .addStatement("service.all = $T.of(new $T())", LIST, entityType)
                 .addStatement("$T handler = newHandler(service)", handlerType)
                 .addStatement("$T exchange = $T.get($S)", exchangeType, exchangeType, basePath)
-                .addStatement("handler.handleGetAll(exchange)")
+                .addStatement(invoke("handleGetAll", tenantScoped))
                 .addStatement("$T.assertThat(exchange.status()).isEqualTo($T.OK)", ASSERTIONS, HTTP_STATUS)
                 .addStatement("$T.assertThat(exchange.body()).isEqualTo(service.all)", ASSERTIONS)
                 .build();
     }
 
     private MethodSpec getByIdFoundTest(String entity, ClassName entityType, ClassName handlerType,
-                                        ClassName exchangeType, ClassName stubType, String basePath) {
+                                        ClassName exchangeType, ClassName stubType, String basePath,
+                                  boolean tenantScoped) {
         return test("handleGetByIdRespondsOkWhenTheEntityExists")
                 .addStatement("$T found = new $T()", entityType, entityType)
                 .addStatement("$T service = new $T()", stubType, stubType)
@@ -233,28 +286,30 @@ public final class KernelHandlerTestGenerator {
                 .addStatement("$T handler = newHandler(service)", handlerType)
                 .addStatement("$T exchange = $T.get($S).withPathParam($S, $S)",
                         exchangeType, exchangeType, basePath + "/" + FIXED_ID, "id", FIXED_ID)
-                .addStatement("handler.handleGetById(exchange)")
+                .addStatement(invoke("handleGetById", tenantScoped))
                 .addStatement("$T.assertThat(exchange.status()).isEqualTo($T.OK)", ASSERTIONS, HTTP_STATUS)
                 .addStatement("$T.assertThat(exchange.body()).isSameAs(found)", ASSERTIONS)
                 .build();
     }
 
     private MethodSpec getByIdAbsentTest(String entity, ClassName handlerType, ClassName exchangeType,
-                                         ClassName stubType, String basePath) {
+                                         ClassName stubType, String basePath,
+                                  boolean tenantScoped) {
         return test("handleGetByIdRespondsNotFoundWhenTheEntityIsAbsent")
                 .addStatement("$T service = new $T()", stubType, stubType)
                 .addStatement("service.byId = $T.empty()", OPTIONAL)
                 .addStatement("$T handler = newHandler(service)", handlerType)
                 .addStatement("$T exchange = $T.get($S).withPathParam($S, $S)",
                         exchangeType, exchangeType, basePath + "/" + FIXED_ID, "id", FIXED_ID)
-                .addStatement("handler.handleGetById(exchange)")
+                .addStatement(invoke("handleGetById", tenantScoped))
                 .addStatement("$T.assertThat(exchange.status()).isEqualTo($T.NOT_FOUND)",
                         ASSERTIONS, HTTP_STATUS)
                 .build();
     }
 
     private MethodSpec getByIdMalformedTest(String entity, ClassName handlerType, ClassName exchangeType,
-                                            ClassName stubType, String basePath) {
+                                            ClassName stubType, String basePath,
+                                  boolean tenantScoped) {
         return test("handleGetByIdRespondsBadRequestOnAMalformedId")
                 .addJavadoc("The id guard runs before the service is consulted, so a malformed path\n")
                 .addJavadoc("parameter must never reach it.\n")
@@ -262,7 +317,7 @@ public final class KernelHandlerTestGenerator {
                 .addStatement("$T handler = newHandler(service)", handlerType)
                 .addStatement("$T exchange = $T.get($S).withPathParam($S, $S)",
                         exchangeType, exchangeType, basePath + "/not-a-uuid", "id", "not-a-uuid")
-                .addStatement("handler.handleGetById(exchange)")
+                .addStatement(invoke("handleGetById", tenantScoped))
                 .addStatement("$T.assertThat(exchange.status()).isEqualTo($T.BAD_REQUEST)",
                         ASSERTIONS, HTTP_STATUS)
                 .addStatement("$T.assertThat(service.lookedUp).isNull()", ASSERTIONS)
@@ -270,7 +325,8 @@ public final class KernelHandlerTestGenerator {
     }
 
     private MethodSpec deleteTest(String entity, ClassName handlerType, ClassName exchangeType,
-                                  ClassName stubType, String basePath) {
+                                  ClassName stubType, String basePath,
+                                  boolean tenantScoped) {
         return test("handleDeleteRespondsNoContentAndDelegatesTheId")
                 .addJavadoc("The row is there — {@code rowExists} defaults true — so this is the\n")
                 .addJavadoc("delete that actually removes something. See the sibling test for the\n")
@@ -279,7 +335,7 @@ public final class KernelHandlerTestGenerator {
                 .addStatement("$T handler = newHandler(service)", handlerType)
                 .addStatement("$T exchange = $T.delete($S).withPathParam($S, $S)",
                         exchangeType, exchangeType, basePath + "/" + FIXED_ID, "id", FIXED_ID)
-                .addStatement("handler.handleDelete(exchange)")
+                .addStatement(invoke("handleDelete", tenantScoped))
                 .addStatement("$T.assertThat(exchange.status()).isEqualTo($T.NO_CONTENT)",
                         ASSERTIONS, HTTP_STATUS)
                 .addStatement("$T.assertThat(service.deleted).isEqualTo($T.fromString($S))",
@@ -293,7 +349,8 @@ public final class KernelHandlerTestGenerator {
      * real service propagates the repository's rejection.
      */
     private MethodSpec deleteAbsentTest(ClassName handlerType, ClassName exchangeType,
-                                        ClassName stubType, String basePath) {
+                                        ClassName stubType, String basePath,
+                                  boolean tenantScoped) {
         return test("handleDeleteRespondsNotFoundWhenNoRowMatched")
                 .addJavadoc("A {@code DELETE} of an id no row carries — including the second\n")
                 .addJavadoc("attempt of a retried delete, which matches nothing either.\n")
@@ -302,7 +359,7 @@ public final class KernelHandlerTestGenerator {
                 .addStatement("$T handler = newHandler(service)", handlerType)
                 .addStatement("$T exchange = $T.delete($S).withPathParam($S, $S)",
                         exchangeType, exchangeType, basePath + "/" + FIXED_ID, "id", FIXED_ID)
-                .addStatement("handler.handleDelete(exchange)")
+                .addStatement(invoke("handleDelete", tenantScoped))
                 .addStatement("$T.assertThat(exchange.status()).isEqualTo($T.NOT_FOUND)",
                         ASSERTIONS, HTTP_STATUS)
                 .addStatement("$T.assertThat(service.deleted).isNull()", ASSERTIONS)
@@ -310,14 +367,15 @@ public final class KernelHandlerTestGenerator {
     }
 
     private MethodSpec createMissingBodyTest(String entity, ClassName handlerType, ClassName exchangeType,
-                                             ClassName stubType, String basePath) {
+                                             ClassName stubType, String basePath,
+                                  boolean tenantScoped) {
         return test("handleCreateRespondsBadRequestWhenTheBodyIsMissing")
                 .addJavadoc("A bodyless {@code POST} is rejected by the body guard, before the\n")
                 .addJavadoc("service is consulted — so nothing is persisted on a malformed request.\n")
                 .addStatement("$T service = new $T()", stubType, stubType)
                 .addStatement("$T handler = newHandler(service)", handlerType)
                 .addStatement("$T exchange = $T.post($S)", exchangeType, exchangeType, basePath)
-                .addStatement("handler.handleCreate(exchange)")
+                .addStatement(invoke("handleCreate", tenantScoped))
                 .addStatement("$T.assertThat(exchange.status()).isEqualTo($T.BAD_REQUEST)",
                         ASSERTIONS, HTTP_STATUS)
                 .addStatement("$T.assertThat(service.saved).isNull()", ASSERTIONS)
@@ -325,7 +383,8 @@ public final class KernelHandlerTestGenerator {
     }
 
     private MethodSpec updateMalformedIdTest(String entity, ClassName handlerType, ClassName exchangeType,
-                                             ClassName stubType, String basePath) {
+                                             ClassName stubType, String basePath,
+                                  boolean tenantScoped) {
         return test("handleUpdateRespondsBadRequestOnAMalformedId")
                 .addJavadoc("The path-id guard runs before the body guard, so a malformed id is\n")
                 .addJavadoc("rejected without the body ever being read.\n")
@@ -333,7 +392,7 @@ public final class KernelHandlerTestGenerator {
                 .addStatement("$T handler = newHandler(service)", handlerType)
                 .addStatement("$T exchange = $T.put($S).withPathParam($S, $S)",
                         exchangeType, exchangeType, basePath + "/not-a-uuid", "id", "not-a-uuid")
-                .addStatement("handler.handleUpdate(exchange)")
+                .addStatement(invoke("handleUpdate", tenantScoped))
                 .addStatement("$T.assertThat(exchange.status()).isEqualTo($T.BAD_REQUEST)",
                         ASSERTIONS, HTTP_STATUS)
                 .addStatement("$T.assertThat(service.updatedId).isNull()", ASSERTIONS)
@@ -341,7 +400,8 @@ public final class KernelHandlerTestGenerator {
     }
 
     private MethodSpec updateMissingBodyTest(String entity, ClassName handlerType, ClassName exchangeType,
-                                             ClassName stubType, String basePath) {
+                                             ClassName stubType, String basePath,
+                                  boolean tenantScoped) {
         return test("handleUpdateRespondsBadRequestWhenTheBodyIsMissing")
                 .addJavadoc("A well-formed id is not enough: the body guard still rejects, and the\n")
                 .addJavadoc("service is never reached.\n")
@@ -349,7 +409,7 @@ public final class KernelHandlerTestGenerator {
                 .addStatement("$T handler = newHandler(service)", handlerType)
                 .addStatement("$T exchange = $T.put($S).withPathParam($S, $S)",
                         exchangeType, exchangeType, basePath + "/" + FIXED_ID, "id", FIXED_ID)
-                .addStatement("handler.handleUpdate(exchange)")
+                .addStatement(invoke("handleUpdate", tenantScoped))
                 .addStatement("$T.assertThat(exchange.status()).isEqualTo($T.BAD_REQUEST)",
                         ASSERTIONS, HTTP_STATUS)
                 .addStatement("$T.assertThat(service.updatedId).isNull()", ASSERTIONS)
@@ -386,24 +446,20 @@ public final class KernelHandlerTestGenerator {
     private void addValidationTests(TypeSpec.Builder type, DomainMetadata metadata,
                                     ClassName entityType, ClassName handlerType,
                                     ClassName exchangeType, ClassName bodyType, ClassName stubType,
-                                    String basePath) {
+                                    String basePath, boolean tenantScoped) {
         List<KernelValidationRules.FieldRules> rules =
                 KernelValidationRules.of(metadata.fields());
         if (rules.isEmpty()) {
             return;
         }
 
-        Map<String, CodeBlock> baseline = new LinkedHashMap<>();
-        for (KernelValidationRules.FieldRules fr : rules) {
-            CodeBlock value = baselineFor(fr);
-            if (value == null) {
-                return;
-            }
-            baseline.put(fr.field().name(), value);
+        Map<String, CodeBlock> baseline = baselineFor(rules);
+        if (baseline == null) {
+            return;
         }
 
         Scaffold scaffold = new Scaffold(entityType, handlerType, exchangeType, bodyType, stubType,
-                basePath, rules, baseline);
+                basePath, rules, baseline, tenantScoped);
 
         type.addMethod(scaffold.create("handleCreateRespondsCreatedWhenEveryRuleIsSatisfied",
                         null, null)
@@ -602,6 +658,60 @@ public final class KernelHandlerTestGenerator {
         };
     }
 
+    /**
+     * A valid value for every rule-carrying field, or {@code null} when one cannot be synthesized —
+     * a case staged with an invalid field would be rejected for the wrong reason and pass anyway.
+     */
+    private Map<String, CodeBlock> baselineFor(List<KernelValidationRules.FieldRules> rules) {
+        Map<String, CodeBlock> baseline = new LinkedHashMap<>();
+        for (KernelValidationRules.FieldRules fr : rules) {
+            CodeBlock value = baselineFor(fr);
+            if (value == null) {
+                return null;
+            }
+            baseline.put(fr.field().name(), value);
+        }
+        return baseline;
+    }
+
+    /**
+     * ADR-XXX: the caller-fault refusals — a write naming a foreign tenant, or on a UNIVERSE entity
+     * a foreign shared scope — answer {@code 400}, on both body-carrying routes.
+     *
+     * <p>The service double raises the same typed exception the repository does. What keeps the
+     * 400 from being vacuous — every guard ahead of the write also answers 400 — is the second
+     * assertion: {@code service.attempted} is the decoded entity, so the request passed the body
+     * guard and every {@code @Validation} rule and reached the write before it was refused.
+     * Skipped, like the validation cases, when a rule-carrying field has no synthesizable valid
+     * value.
+     */
+    private void addCallerFaultTests(TypeSpec.Builder type, DomainMetadata metadata,
+                                     ClassName entityType, ClassName handlerType,
+                                     ClassName exchangeType, ClassName bodyType, ClassName stubType,
+                                     String basePath) {
+        ClassName tenantMismatch = KernelErrorGenerator.tenantMismatchType(metadata);
+        if (tenantMismatch == null) {
+            return;
+        }
+        List<KernelValidationRules.FieldRules> rules = KernelValidationRules.of(metadata.fields());
+        Map<String, CodeBlock> baseline = baselineFor(rules);
+        if (baseline == null) {
+            return;
+        }
+        Scaffold scaffold = new Scaffold(entityType, handlerType, exchangeType, bodyType, stubType,
+                basePath, rules, baseline, true);
+        CodeBlock foreignTenant = CodeBlock.of("new $T($T.fromString($S))", tenantMismatch, UUID, FIXED_ID);
+        type.addMethod(scaffold.refused("handleCreateRespondsBadRequestForAForeignTenant",
+                "handleCreate", foreignTenant));
+        type.addMethod(scaffold.refused("handleUpdateRespondsBadRequestForAForeignTenant",
+                "handleUpdate", foreignTenant));
+        ClassName sharedScopeMismatch = KernelErrorGenerator.sharedScopeMismatchType(metadata);
+        if (sharedScopeMismatch != null) {
+            type.addMethod(scaffold.refused("handleCreateRespondsBadRequestForAForeignSharedScope",
+                    "handleCreate", CodeBlock.of("new $T($S)", sharedScopeMismatch, FIXED_ID)));
+        }
+    }
+
     /** Emits the shared body of a validation case; only the staged value and the assertions differ. */
     private final class Scaffold {
 
@@ -613,10 +723,12 @@ public final class KernelHandlerTestGenerator {
         private final String basePath;
         private final List<KernelValidationRules.FieldRules> rules;
         private final Map<String, CodeBlock> baseline;
+        private final boolean tenantScoped;
 
         Scaffold(ClassName entityType, ClassName handlerType, ClassName exchangeType,
                  ClassName bodyType, ClassName stubType, String basePath,
-                 List<KernelValidationRules.FieldRules> rules, Map<String, CodeBlock> baseline) {
+                 List<KernelValidationRules.FieldRules> rules, Map<String, CodeBlock> baseline,
+                 boolean tenantScoped) {
             this.entityType = entityType;
             this.handlerType = handlerType;
             this.exchangeType = exchangeType;
@@ -625,6 +737,28 @@ public final class KernelHandlerTestGenerator {
             this.basePath = basePath;
             this.rules = rules;
             this.baseline = baseline;
+            this.tenantScoped = tenantScoped;
+        }
+
+        /** A valid body the write refuses with {@code refusal} (ADR-XXX); see {@link #addCallerFaultTests}. */
+        MethodSpec refused(String name, String handlerMethod, CodeBlock refusal) {
+            MethodSpec.Builder m = test(name)
+                    .addJavadoc("A valid body naming an owner the caller does not act as is refused by\n")
+                    .addJavadoc("the repository with a typed caller fault, answered 400 (ADR-XXX) rather\n")
+                    .addJavadoc("than the 500 a bare exception gets.\n");
+            stage(m, null, null);
+            m.addStatement("service.refusal = $L", refusal);
+            if ("handleCreate".equals(handlerMethod)) {
+                m.addStatement("$T exchange = $T.post($S, body)", exchangeType, exchangeType, basePath);
+            } else {
+                m.addStatement("$T exchange = $T.put($S, body).withPathParam($S, $S)",
+                        exchangeType, exchangeType, basePath + "/" + FIXED_ID, "id", FIXED_ID);
+            }
+            run(m, handlerMethod);
+            return m.addStatement("$T.assertThat(exchange.status()).isEqualTo($T.BAD_REQUEST)",
+                            ASSERTIONS, HTTP_STATUS)
+                    .addStatement("$T.assertThat(service.attempted).isSameAs(decoded)", ASSERTIONS)
+                    .build();
         }
 
         MethodSpec.Builder create(String name, KernelValidationRules.FieldRules perturbed,
@@ -697,6 +831,13 @@ public final class KernelHandlerTestGenerator {
          * so the decoding context still gets exactly the instance this test staged.
          */
         private void run(MethodSpec.Builder m, String handlerMethod) {
+            if (tenantScoped) {
+                m.addStatement("$T.where($T.HTTP_REQUEST_BODY_DECODER_REGISTRY, body)\n"
+                                + ".where($T.STORAGE_CONTEXT, TENANT_SCOPE)\n"
+                                + ".run(() -> handler.$L(exchange))",
+                        SCOPED_VALUE, HTTP_KERNEL_PROVIDERS, KERNEL_PROVIDERS, handlerMethod);
+                return;
+            }
             m.addStatement("$T.where($T.HTTP_REQUEST_BODY_DECODER_REGISTRY, body)\n"
                             + ".run(() -> handler.$L(exchange))",
                     SCOPED_VALUE, HTTP_KERNEL_PROVIDERS, handlerMethod);
@@ -727,8 +868,10 @@ public final class KernelHandlerTestGenerator {
         // reports the pair as a conflict.
         ClassName notFound = KernelErrorGenerator.notFoundType(metadata);
         ClassName conflict = KernelErrorGenerator.versionConflictType(metadata);
+        // ADR-XXX: a tenant-partitioned repository also refuses a write naming a foreign tenant.
+        boolean refuses = KernelErrorGenerator.tenantMismatchType(metadata) != null;
 
-        return TypeSpec.classBuilder(stubType.simpleName())
+        TypeSpec.Builder stub = TypeSpec.classBuilder(stubType.simpleName())
                 .addModifiers(Modifier.STATIC, Modifier.FINAL)
                 .superclass(serviceType)
                 .addJavadoc("Records what the handler asked for and returns what the test staged.\n")
@@ -748,7 +891,18 @@ public final class KernelHandlerTestGenerator {
                         .addJavadoc("Whether the row a write addresses exists. Defaults true, so\n")
                         .addJavadoc("a test that says nothing is testing the path that found\n")
                         .addJavadoc("something; set it false to take the other branch.\n")
-                        .build())
+                        .build());
+        if (refuses) {
+            stub.addField(FieldSpec.builder(RuntimeException.class, "refusal")
+                            .addJavadoc("A caller-fault refusal {@code save} and {@code update} raise instead\n")
+                            .addJavadoc("of writing, the way the repository refuses a foreign tenant\n")
+                            .addJavadoc("(ADR-XXX). {@code null} — the default — writes.\n")
+                            .build())
+                    .addField(FieldSpec.builder(entityType, "attempted")
+                            .addJavadoc("The entity a refused write was handed.\n")
+                            .build());
+        }
+        return stub
                 .addMethod(MethodSpec.constructorBuilder()
                         .addStatement("super(($T) null)", repositoryType)
                         .build())
@@ -788,6 +942,7 @@ public final class KernelHandlerTestGenerator {
                         .addModifiers(Modifier.PUBLIC)
                         .returns(entityType)
                         .addParameter(entityType, "entity")
+                        .addCode(refusalCheck(refuses))
                         .beginControlFlow("if (entity.getId() == null)")
                         .addStatement("entity.setId($T.fromString($S))", UUID, FIXED_ID)
                         .endControlFlow()
@@ -800,6 +955,7 @@ public final class KernelHandlerTestGenerator {
                         .returns(entityType)
                         .addParameter(UUID, "id")
                         .addParameter(entityType, "entity")
+                        .addCode(refusalCheck(refuses))
                         .beginControlFlow("if (!rowExists)")
                         .addStatement("throw new $T(id)", conflict != null ? conflict : notFound)
                         .endControlFlow()
@@ -807,6 +963,28 @@ public final class KernelHandlerTestGenerator {
                         .addStatement("return entity")
                         .build())
                 .build();
+    }
+
+    /** The stub's "refuse instead of writing" branch (ADR-XXX), or nothing when it cannot refuse. */
+    private static CodeBlock refusalCheck(boolean refuses) {
+        if (!refuses) {
+            return CodeBlock.of("");
+        }
+        return CodeBlock.builder()
+                .beginControlFlow("if (refusal != null)")
+                .addStatement("this.attempted = entity")
+                .addStatement("throw refusal")
+                .endControlFlow()
+                .build();
+    }
+
+    /**
+     * The statement that dispatches one route: a bare call, or — for a tenant-partitioned entity —
+     * the same call inside {@code asTenant(...)}.
+     */
+    private static String invoke(String handlerMethod, boolean tenantScoped) {
+        String call = "handler." + handlerMethod + "(exchange)";
+        return tenantScoped ? AS_TENANT + "(() -> " + call + ")" : call;
     }
 
     private static MethodSpec.Builder test(String name) {

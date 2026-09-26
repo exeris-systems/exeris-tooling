@@ -627,6 +627,38 @@ describe('TypeGenerator — a UNIVERSE entity\'s sharedScopeField is server-owne
   });
 });
 
+describe('TypeGenerator — a tenant-partitioned owner is server-owned without a systemFields block (ADR-XXX)', () => {
+  const entity = (dataScope: 'GLOBAL' | 'TENANT') => domain({
+    entityName: 'Fleet',
+    dataScope,
+    fields: [
+      field({ name: 'id', type: 'UUID' }),
+      field({ name: 'name', type: 'String' }),
+      field({ name: 'tenantId', type: 'UUID' }),
+    ],
+  });
+
+  it('omits tenantId from the TENANT create schema and Create DTO — the OpenAPI marks it readOnly', () => {
+    const schema = new TypeGenerator().generateAggregate([entity('TENANT')], CTX)
+      .find(f => f.path === 'schemas/fleet.schema.ts')!.content;
+    const content = new TypeGenerator().generate(entity('TENANT'), CTX)!.content;
+    const createStart = content.indexOf('export interface FleetCreate {');
+    const createSlice = content.slice(createStart, content.indexOf('}', createStart));
+
+    expect(schema.slice(schema.indexOf('FleetCreateSchema'))).toContain('tenantId: true');
+    expect(createSlice).toContain('name?: string;');
+    expect(createSlice).not.toContain('tenantId');
+  });
+
+  it('keeps a GLOBAL entity\'s tenantId-named field writable — it is not an owner there', () => {
+    const content = new TypeGenerator().generate(entity('GLOBAL'), CTX)!.content;
+    const createStart = content.indexOf('export interface FleetCreate {');
+    const createSlice = content.slice(createStart, content.indexOf('}', createStart));
+
+    expect(createSlice).toContain('tenantId');
+  });
+});
+
 // ---------- generateTypes convenience ----------
 
 describe('generateTypes — top-level convenience function', () => {

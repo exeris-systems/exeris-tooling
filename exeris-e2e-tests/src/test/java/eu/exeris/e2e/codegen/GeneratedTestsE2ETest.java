@@ -153,7 +153,15 @@ class GeneratedTestsE2ETest {
                             DiscoverySelectors.selectClass(
                                     Class.forName("com.shop.repository.SpeciesRepositoryTest", true, appLoader)),
                             DiscoverySelectors.selectClass(
-                                    Class.forName("com.shop.saga.OrderSagaFlowTest", true, appLoader)))
+                                    Class.forName("com.shop.saga.OrderSagaFlowTest", true, appLoader)),
+                            // The tenant-partitioned and UNIVERSE handlers (ADR-XXX): the only
+                            // executed proof that a foreign tenant / shared scope answers 400
+                            // past every guard — and, since they now dispatch with a tenant bound,
+                            // that the T41 guard lets a bound request through.
+                            DiscoverySelectors.selectClass(
+                                    Class.forName("com.shop.handler.InvoiceHandlerTest", true, appLoader)),
+                            DiscoverySelectors.selectClass(
+                                    Class.forName("com.shop.handler.SpeciesHandlerTest", true, appLoader)))
                     .build();
 
             Launcher launcher = LauncherFactory.create();
@@ -181,11 +189,16 @@ class GeneratedTestsE2ETest {
             // the one T8 finder the fixture carries) + 7 repository cases for Order (the save/load
             // round-trip and the six paths around it) + 9 for Invoice — the entity that carries
             // every system column, and the only tenant-partitioned one here, so it alone gets the
-            // T36 pair proving save stamps an absent tenant and keeps one the caller set — + 11 for
-            // Species, the UNIVERSE entity: Invoice's nine minus the versioned/soft-delete nothing,
-            // plus the T29 B pair proving save stamps an absent shared scope and keeps one the
-            // caller set — + 4 saga cases.
-            assertThat(summary.getTestsSucceededCount()).isEqualTo(58);
+            // T36 stamp and the four ADR-XXX cases (bound tenant accepted, foreign tenant refused,
+            // unbound left to the database, update never writes the owner) = 12 — + 15 for Species,
+            // the UNIVERSE entity: the same 12 plus the T29 B stamp, the foreign-shared-scope refusal
+            // and the kept-when-unbound tag — + 4 saga cases — + 14 InvoiceHandlerTest cases (the 9
+            // bodyless/guard cases, 3 @Validation cases for its required reference, and the two
+            // ADR-XXX foreign-tenant 400s) + 15 SpeciesHandlerTest cases (the same, plus the
+            // foreign-shared-scope 400). Before ADR-XXX the two tenant-bearing handler tests were not
+            // run here, and would have failed: they bound no StorageContext, so the T41 guard
+            // answered 500 on every route.
+            assertThat(summary.getTestsSucceededCount()).isEqualTo(94);
         }
     }
 

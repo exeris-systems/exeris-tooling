@@ -1,6 +1,9 @@
 package eu.exeris.tooling.codegen.java.kernel;
 
+import eu.exeris.sdk.sourcemodel.ast.DataScope;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
+import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
+import eu.exeris.sdk.sourcemodel.ast.SystemFieldsMetadata;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import org.junit.jupiter.api.DisplayName;
@@ -86,6 +89,59 @@ class KernelErrorGeneratorTest {
         assertThat(KernelErrorGenerator.versionConflictType(order(true))).isNotNull();
         assertThat(KernelErrorGenerator.notFoundType(order(false)).simpleName())
                 .isEqualTo("OrderNotFoundException");
+    }
+
+    @Test
+    @DisplayName("ADR-XXX: a tenant-partitioned entity gets the caller-fault type for a foreign tenant")
+    void tenantPartitionedEntityGetsTheTenantMismatchType() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .dataScope(DataScope.TENANT).build();
+
+        List<GeneratedFile> files = generator.generateMultiple(metadata);
+
+        assertThat(files).extracting(GeneratedFile::className)
+                .containsExactly("OrderNotFoundException", "OrderTenantMismatchException");
+        assertThat(files.get(1).packageName()).isEqualTo("com.example.repository");
+        assertThat(files.get(1).content())
+                .contains("public class OrderTenantMismatchException extends RuntimeException")
+                .contains("public OrderTenantMismatchException(UUID tenantId)")
+                .contains("public UUID tenantId()")
+                .contains("{@code 400 Bad Request}")
+                .contains("private static final long serialVersionUID = 1L")
+                // Not a row fact: no id component borrowed from the ADR-076 shape.
+                .doesNotContain("public UUID id()");
+        assertThat(KernelErrorGenerator.tenantMismatchType(metadata).simpleName())
+                .isEqualTo("OrderTenantMismatchException");
+        assertThat(KernelErrorGenerator.sharedScopeMismatchType(metadata)).isNull();
+    }
+
+    @Test
+    @DisplayName("ADR-XXX: a UNIVERSE entity with a @SharedScope field also gets the shared-scope type")
+    void universeEntityGetsTheSharedScopeMismatchTypeToo() {
+        DomainMetadata metadata = DomainMetadata.builder("Species", "com.example.domain")
+                .dataScope(DataScope.UNIVERSE)
+                .systemFields(new SystemFieldsMetadata("id", "createdAt", "createdBy", "updatedAt",
+                        "updatedBy", "tenantId", "version", null, null, null, "worldId"))
+                .fields(List.of(FieldMetadata.builder("tenantId", "java.util.UUID").build(),
+                        FieldMetadata.builder("worldId", "java.util.UUID").build()))
+                .build();
+
+        List<GeneratedFile> files = generator.generateMultiple(metadata);
+
+        assertThat(files).extracting(GeneratedFile::className).containsExactly(
+                "SpeciesNotFoundException", "SpeciesTenantMismatchException",
+                "SpeciesSharedScopeMismatchException");
+        assertThat(files.get(2).content())
+                .contains("public SpeciesSharedScopeMismatchException(String sharedScope)")
+                .contains("public String sharedScope()");
+    }
+
+    @Test
+    @DisplayName("ADR-XXX: a global entity gets neither caller-fault type — it has no owner to contradict")
+    void globalEntityGetsNoMismatchType() {
+        assertThat(generator.generateMultiple(order(true))).extracting(GeneratedFile::className)
+                .noneMatch(name -> name.contains("Mismatch"));
+        assertThat(KernelErrorGenerator.tenantMismatchType(order(false))).isNull();
     }
 
     @Test

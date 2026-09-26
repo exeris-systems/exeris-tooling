@@ -287,6 +287,64 @@ class KernelHandlerTestGeneratorTest {
         assertThat(first).doesNotContain("UUID.randomUUID()");
     }
 
+    /** {@link #VALIDATED}, tenant-partitioned — the only difference the ADR-XXX emission keys on. */
+    private static final DomainMetadata TENANT_VALIDATED =
+            DomainMetadata.builder("Order", "com.example.domain").path("/orders")
+                    .dataScope(eu.exeris.sdk.sourcemodel.ast.DataScope.TENANT)
+                    .fields(java.util.List.of(
+                            FieldMetadata.builder("orderNumber", "String")
+                                    .required(true).minLength(3).maxLength(8).build(),
+                            FieldMetadata.builder("tenantId", "java.util.UUID").build()))
+                    .build();
+
+    @Test
+    @DisplayName("T41: a tenant-partitioned entity's routes are dispatched with a tenant bound")
+    void tenantPartitionedRoutesDispatchWithATenantBound() {
+        String source = new KernelHandlerTestGenerator().generate(TENANT_VALIDATED, "com.example").content();
+
+        assertThat(source)
+                .contains("TENANT_SCOPE = ImmutableStorageContext.shared(\"00000000-0000-4000-8000-000000000002\")")
+                .contains("asTenant(() -> handler.handleGetAll(exchange))")
+                .contains("asTenant(() -> handler.handleDelete(exchange))")
+                .contains(".where(KernelProviders.STORAGE_CONTEXT, TENANT_SCOPE)")
+                .contains("ScopedValue.where(KernelProviders.STORAGE_CONTEXT, TENANT_SCOPE).run(dispatch)")
+                .doesNotContain("\n    handler.handleGetAll(exchange);");
+    }
+
+    @Test
+    @DisplayName("ADR-XXX: a foreign tenant is refused 400 on both write routes, past every guard")
+    void emitsTheForeignTenantCases() {
+        String source = new KernelHandlerTestGenerator().generate(TENANT_VALIDATED, "com.example").content();
+
+        assertThat(source)
+                .contains("void handleCreateRespondsBadRequestForAForeignTenant()")
+                .contains("void handleUpdateRespondsBadRequestForAForeignTenant()")
+                .contains("service.refusal = new OrderTenantMismatchException(UUID.fromString(")
+                .contains("Assertions.assertThat(exchange.status()).isEqualTo(HttpStatus.BAD_REQUEST)")
+                // Non-vacuous: every guard ahead of the write also answers 400, so the case also
+                // proves the decoded entity reached the write.
+                .contains("Assertions.assertThat(service.attempted).isSameAs(decoded)")
+                // The double refuses the way the repository does, on both write methods.
+                .contains("RuntimeException refusal;")
+                .containsSubsequence("public Order save(Order entity)", "if (refusal != null)",
+                        "throw refusal;", "public Order update(UUID id, Order entity)",
+                        "if (refusal != null)", "throw refusal;")
+                .doesNotContain("ForeignSharedScope");
+    }
+
+    @Test
+    @DisplayName("ADR-XXX: a global entity's handler test is unchanged — no tenant scope, no refusal")
+    void globalEntityGetsNoTenantScaffold() {
+        String source = new KernelHandlerTestGenerator().generate(VALIDATED, "com.example").content();
+
+        assertThat(source)
+                .contains("handler.handleGetAll(exchange);")
+                .doesNotContain("asTenant")
+                .doesNotContain("TENANT_SCOPE")
+                .doesNotContain("refusal")
+                .doesNotContain("STORAGE_CONTEXT");
+    }
+
     @Test
     @DisplayName("rejects a domain package that does not end with '.domain'")
     void rejectsNonDomainPackage() {

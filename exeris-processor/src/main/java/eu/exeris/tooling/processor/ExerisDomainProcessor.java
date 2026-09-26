@@ -276,14 +276,17 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "reaches the schema and the repository. This attribute is not: "
                             + "SystemFieldsMetadata carries one field name per role and has no component "
                             + "for it, so setting it changes no emitted output. The generated repository "
-                            + "already stamps the tenant it writes (T36), unconditionally"),
+                            + "stamps an absent tenant from the bound StorageContext (T36) "
+                            + "unconditionally, so autoPopulate = false does not turn it off"),
             new InertAttribute("TenantId", "exposeInApi",
                     "the annotation's role — which field plays it — is extracted (C1) and "
                             + "reaches the schema and the repository. This attribute is not: "
                             + "SystemFieldsMetadata carries one field name per role and has no component "
-                            + "for it, so setting it changes no emitted output. Whether a tenant column "
-                            + "reaches the DTO is decided by the emitted type, which omits system fields "
-                            + "wholesale"),
+                            + "for it, so setting it changes no emitted output. The emitted OpenAPI marks "
+                            + "a tenant-partitioned entity's owner readOnly and leaves it out of the "
+                            + "create/update DTOs (ADR-XXX), and the TypeScript types omit it, whatever "
+                            + "this attribute says; the entity itself, owner included, is still what a "
+                            + "read answers with"),
             new InertAttribute("TenantId", "scopeUniqueConstraints",
                     "the annotation's role — which field plays it — is extracted (C1) and "
                             + "reaches the schema and the repository. This attribute is not: "
@@ -294,7 +297,10 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                     "the annotation's role — which field plays it — is extracted (C1) and "
                             + "reaches the schema and the repository. This attribute is not: "
                             + "SystemFieldsMetadata carries one field name per role and has no component "
-                            + "for it, so setting it changes no emitted output"),
+                            + "for it, so setting it changes no emitted output. The generated repository "
+                            + "refuses a write naming a tenant other than the bound one, and never "
+                            + "updates the owner (ADR-XXX), unconditionally — validateOnMutation = false "
+                            + "does not turn that off"),
             new InertAttribute("Version", "initialValue",
                     "the annotation's role — which field plays it — is extracted (C1) and "
                             + "reaches the schema and the repository. This attribute is not: "

@@ -65,6 +65,23 @@ public final class DataScopeSupport {
     }
 
     /**
+     * The Java name of the field that holds a row's owning tenant, for an entity whose rows have
+     * one: {@code systemFields.tenantIdField} when declared, else the canonical {@code tenantId} —
+     * the same resolution the repository binds through.
+     *
+     * @param metadata the entity metadata
+     * @return the owner field's name, or empty for a {@code GLOBAL} entity
+     */
+    public static Optional<String> ownerFieldName(DomainMetadata metadata) {
+        if (!isTenantPartitioned(metadata)) {
+            return Optional.empty();
+        }
+        SystemFieldsMetadata systemFields = metadata.systemFields();
+        String name = systemFields == null ? null : systemFields.tenantIdField();
+        return Optional.of(name == null || name.isBlank() ? "tenantId" : name);
+    }
+
+    /**
      * The {@code @SharedScope} field of a transcribable UNIVERSE entity: the column whose value
      * widens reads across the tenant's shared scope.
      *
