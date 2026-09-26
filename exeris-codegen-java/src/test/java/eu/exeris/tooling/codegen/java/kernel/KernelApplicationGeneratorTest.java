@@ -541,6 +541,88 @@ class KernelApplicationGeneratorTest {
     }
 
     @Test
+    @DisplayName("T48 slice C1: subscribers and saga flows are components — a memoised accessor "
+            + "and an overridable factory each, built from the boot-bound engines")
+    void subscribersAndSagaFlowsAreComposed() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        String components = components(gen.generateAll(List.of(orderWithEventsAndSaga()),
+                "com.example.foundation"));
+
+        assertThat(components)
+                .contains("private OrderEventSubscriber orderEventSubscriber;")
+                .contains("public OrderEventSubscriber orderEventSubscriber()")
+                .contains("protected OrderEventSubscriber createOrderEventSubscriber()")
+                .contains("return new OrderEventSubscriber(KernelProviders.eventEngine())")
+                // The flow's class name derives from @Saga(name) — the accessor follows it, so
+                // `ConstructionSaga extends ConstructionSagaFlow` installs by overriding
+                // createConstructionSagaFlow().
+                .contains("import com.example.saga.OrderFulfillmentFlow;")
+                .contains("public OrderFulfillmentFlow orderFulfillmentFlow()")
+                .contains("protected OrderFulfillmentFlow createOrderFulfillmentFlow()")
+                .contains("return new OrderFulfillmentFlow(KernelProviders.flowEngine())")
+                // A payload-bearing publisher takes the registry at composition, where it is bound.
+                .contains("return new OrderEventPublisher(KernelProviders.eventEngine(), "
+                        + "KernelProviders.eventPayloadCodecRegistry().orElse(null))");
+    }
+
+    @Test
+    @DisplayName("T48 slice C1: run() initializes every saga, then subscribes every subscriber — after "
+            + "the publishers, before either slot — and unsubscribes in reverse after the latch")
+    void sagasAndSubscribersAreStartedBeforeTheAppServes() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        DomainMetadata invoice = DomainMetadata.builder("Invoice", "com.example.domain")
+                .path("/invoices")
+                .events(List.of(eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata.simple("InvoiceIssued")))
+                .build();
+        String run = method(lifecycle(gen.generateAll(List.of(orderWithEventsAndSaga(), invoice),
+                "com.example.foundation")), "public void run()");
+
+        int publishers = run.indexOf("components.invoiceEventPublisher();");
+        int saga = run.indexOf("components.orderFulfillmentFlow().initialize();");
+        int orderSub = run.indexOf("components.orderEventSubscriber().subscribe();");
+        int invoiceSub = run.indexOf("components.invoiceEventSubscriber().subscribe();");
+        int componentsSlot = run.indexOf("componentsSlot.set(components);");
+        int latch = run.indexOf("shutdownLatch.await();");
+        int invoiceUnsub = run.indexOf("components.invoiceEventSubscriber().unsubscribe();");
+        int orderUnsub = run.indexOf("components.orderEventSubscriber().unsubscribe();");
+
+        assertThat(saga).as("the plan is registered at boot").isGreaterThan(publishers);
+        assertThat(orderSub).as("subscribe after every publisher registered its types")
+                .isGreaterThan(publishers).isGreaterThan(saga);
+        assertThat(invoiceSub).isGreaterThan(orderSub);
+        assertThat(componentsSlot).as("activation completes before the app serves")
+                .isGreaterThan(invoiceSub);
+        assertThat(invoiceUnsub).as("released after the latch").isGreaterThan(latch);
+        assertThat(orderUnsub).as("in reverse order").isGreaterThan(invoiceUnsub);
+    }
+
+    @Test
+    @DisplayName("T48 slice C1: an entity with neither events nor a saga adds no activation at all")
+    void nothingToStartEmitsNoActivation() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        DomainMetadata tag = DomainMetadata.builder("Tag", "com.example.domain").path("/tags").build();
+        List<GeneratedFile> files = gen.generateAll(List.of(tag), "com.example.foundation");
+
+        assertThat(lifecycle(files))
+                .doesNotContain(".initialize()")
+                .doesNotContain(".subscribe()")
+                .doesNotContain(".unsubscribe()");
+        assertThat(components(files))
+                .doesNotContain("EventSubscriber")
+                .doesNotContain("Flow");
+    }
+
+    private static DomainMetadata orderWithEventsAndSaga() {
+        return DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .fields(List.of(FieldMetadata.builder("total", "BigDecimal").build()))
+                .events(List.of(eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata.builder("OrderCreated")
+                        .payloadFields(List.of("total")).build()))
+                .sagaMetadata(eu.exeris.sdk.sourcemodel.ast.SagaMetadata.simple("OrderFulfillment"))
+                .build();
+    }
+
+    @Test
     @DisplayName("T23 slice B1: an app with no stream routes still binds an edge router — one "
             + "uniform shape — and emits no lazyStream helper")
     void appWithoutStreamRoutesBindsABareEdgeRouter() {

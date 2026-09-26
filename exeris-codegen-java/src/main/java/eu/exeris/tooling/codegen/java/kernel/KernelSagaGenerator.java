@@ -86,6 +86,14 @@ import java.util.stream.Collectors;
  * A declared version below 1 is refused at generation time, because the kernel
  * would refuse it at the saga's first {@code initialize()}.
  * <p>
+ * <b>Composition (T48 slice C1).</b> {@code RuntimeComponents} builds the flow
+ * through {@code create<Flow>()} — {@code sagaFlowType(...)} names the accessor — so a
+ * consumer's subclass is installed by overriding that factory, and
+ * {@code RuntimeLifecycle} calls {@code initialize()} at boot. That is load-bearing, not
+ * an optimisation: the kernel resumes a parked instance only on a registered plan
+ * version (ADR-064), and a plan compiled lazily by the first {@code schedule()} is
+ * never registered for an instance parked across a restart.
+ * <p>
  * The legacy generator's saga DSL (SagaBuilder / SagaEngine / step-name
  * pattern dispatch / nested {@code State} record) is dropped. The new
  * skeleton is much smaller; downstream consumers compose real saga

@@ -147,11 +147,19 @@ class GeneratedAppBootE2ETest {
     }
 
     @Test
-    @DisplayName("the emitted Application boots, composes inside the boot callback, and a stream "
-            + "opened through its edge router receives a frame published from a request thread")
+    @DisplayName("the emitted Application boots, composes inside the boot callback, starts its saga "
+            + "and subscriber, and a stream opened through its edge router receives a frame, with "
+            + "its payload, published from a request thread")
     void emittedApplicationServesAStreamFrame() throws Exception {
+        List<String> probe = probe();
+        probe.clear();
         try (BootedApplication app = BootedApplication.start(appLoader, BASE_PACKAGE + ".LiveApplication")) {
             int port = app.port();
+
+            // T48 slice C1: by the time the application answers anything, the saga plan is
+            // registered and the subscriber is receiving — in that order.
+            assertThat(probe).as("activation, before the handler slot was set")
+                    .containsExactly("saga:initialize:BeaconSaga", "subscriber:subscribe");
 
             // Respond-once traffic reaches the COMPOSED router — a hand-registered route, and a
             // generated handler whose path-id guard answers before any repository is touched.
@@ -167,9 +175,17 @@ class GeneratedAppBootE2ETest {
                         () -> RawHttp.request(port, "POST", "/ping"), FRAME_TIMEOUT);
 
                 assertThat(frame).as("the SSE frame the published event produced")
-                        .contains("event: BeaconPinged");
-                System.out.println("[T23 B1] SSE frame received over the generated edge router: " + frame);
+                        .contains("event: BeaconPinged")
+                        // T48 slice C1: the publisher captured the codec registry at composition, so
+                        // a publish from the request thread — where the kernel binds none — still
+                        // encodes. Resolved per publish, this line was `data: ` (empty).
+                        .contains("data: {\"label\":\"alpha\"}");
+                System.out.println("[T23 B1 / T48 C1] SSE frame received over the generated edge router: "
+                        + frame);
             }
+
+            // The generated subscriber, subscribed at boot, received the same event and payload.
+            awaitProbe(probe, "subscriber:received:{\"label\":\"alpha\"}");
 
             // The live view learns that its peer left only when it next emits — the stream SPI has
             // no liveness signal — and the kernel's shutdown drain waits for a busy stream up to 60s.
@@ -179,9 +195,27 @@ class GeneratedAppBootE2ETest {
                 Thread.sleep(100);
             }
         }
+
+        // ...and was released when the application stopped.
+        assertThat(probe).last().isEqualTo("subscriber:unsubscribe");
     }
 
     // ------------------------------------------------------------------ harness
+
+    @SuppressWarnings("unchecked")
+    private static List<String> probe() throws Exception {
+        return (List<String>) appLoader.loadClass(BASE_PACKAGE + ".LiveComponents").getField("PROBE").get(null);
+    }
+
+    private static void awaitProbe(List<String> probe, String expected) throws InterruptedException {
+        long deadline = System.nanoTime() + FRAME_TIMEOUT.toNanos();
+        while (!probe.contains(expected)) {
+            if (System.nanoTime() > deadline) {
+                throw new AssertionError("never recorded " + expected + "; recorded " + probe);
+            }
+            Thread.sleep(20);
+        }
+    }
 
     private static HttpHandler edgeRouter(AtomicReference<HttpHandler> handlerSlot,
                                           AtomicReference<Object> componentsSlot) throws Exception {
@@ -230,6 +264,8 @@ class GeneratedAppBootE2ETest {
                 import eu.exeris.sdk.annotation.DomainEvent;
                 import eu.exeris.sdk.annotation.ExerisDomain;
                 import eu.exeris.sdk.annotation.Field;
+                import eu.exeris.sdk.annotation.Saga;
+                import eu.exeris.sdk.annotation.SagaStep;
 
                 import java.util.UUID;
 
@@ -238,6 +274,8 @@ class GeneratedAppBootE2ETest {
                 // so the fixture needs no database table to produce an event.
                 @DomainEvent(name = "BeaconPinged", topic = "live.beacons", trigger = DomainEvent.Trigger.MANUAL,
                         includeFields = {"label"})
+                // T48 slice C1: a saga, so the boot must compile and register its plan.
+                @Saga(name = "BeaconSaga", timeout = "PT5M", maxRetries = 2)
                 public class Beacon {
 
                     private UUID id;
@@ -260,6 +298,10 @@ class GeneratedAppBootE2ETest {
                     public void setLabel(String label) {
                         this.label = label;
                     }
+
+                    @SagaStep(order = 0, name = "relay", service = "relay", command = "Relay")
+                    public void relay() {
+                    }
                 }
                 """);
         return sources;
@@ -280,11 +322,11 @@ class GeneratedAppBootE2ETest {
 
                 public class LiveApplication extends Application {
 
-                    // No graph, no crypto: the fixture needs http and the event bus. events pulls
-                    // persistence and memory by dependency closure.
+                    // No graph, no crypto: the fixture needs http, the event bus and the flow engine.
+                    // events and flow pull persistence and memory by dependency closure.
                     @Override
                     protected String subsystems() {
-                        return "http,events";
+                        return "http,events,flow";
                     }
 
                     @Override
@@ -298,14 +340,27 @@ class GeneratedAppBootE2ETest {
                 package eu.exeris.e2e.live;
 
                 import eu.exeris.e2e.live.domain.Beacon;
+                import eu.exeris.e2e.live.event.BeaconEventSubscriber;
+                import eu.exeris.e2e.live.saga.BeaconSagaFlow;
                 import eu.exeris.kernel.core.http.routing.HttpRouter;
+                import eu.exeris.kernel.spi.context.KernelProviders;
+                import eu.exeris.kernel.spi.events.EventDescriptor;
+                import eu.exeris.kernel.spi.events.EventPayload;
+                import eu.exeris.kernel.spi.flow.model.FlowExecutionPlan;
                 import eu.exeris.kernel.spi.http.HttpMethod;
                 import eu.exeris.kernel.spi.http.HttpStatus;
                 import eu.exeris.kernel.spi.persistence.TransactionalExecutor;
 
+                import java.lang.foreign.ValueLayout;
+                import java.nio.charset.StandardCharsets;
+                import java.util.List;
                 import java.util.UUID;
+                import java.util.concurrent.CopyOnWriteArrayList;
 
                 public class LiveComponents extends RuntimeComponents {
+
+                    /** What the application did, in order — read by the test through reflection. */
+                    public static final List<String> PROBE = new CopyOnWriteArrayList<>();
 
                     private static final UUID BEACON_ID = UUID.fromString("00000000-0000-0000-0000-0000000b0a1c");
 
@@ -325,6 +380,46 @@ class GeneratedAppBootE2ETest {
                             beaconEventPublisher().publishBeaconPingedEvent(BEACON_ID, beacon);
                             exchange.respond(HttpStatus.ACCEPTED);
                         });
+                    }
+
+                    // T48 slice C1: behaviour installed the way the seam intends — by overriding a
+                    // factory with a subclass of the generated type (Stellar's ConstructionSaga
+                    // extends ConstructionSagaFlow). Construction still uses the boot-bound engines.
+                    @Override
+                    protected BeaconSagaFlow createBeaconSagaFlow() {
+                        return new BeaconSagaFlow(KernelProviders.flowEngine()) {
+                            @Override
+                            public synchronized FlowExecutionPlan initialize() {
+                                FlowExecutionPlan plan = super.initialize();
+                                PROBE.add("saga:initialize:" + plan.definitionName());
+                                return plan;
+                            }
+                        };
+                    }
+
+                    @Override
+                    protected BeaconEventSubscriber createBeaconEventSubscriber() {
+                        return new BeaconEventSubscriber(KernelProviders.eventEngine()) {
+                            @Override
+                            public void subscribe() {
+                                super.subscribe();
+                                PROBE.add("subscriber:subscribe");
+                            }
+
+                            @Override
+                            public void unsubscribe() {
+                                super.unsubscribe();
+                                PROBE.add("subscriber:unsubscribe");
+                            }
+
+                            @Override
+                            protected void handleBeaconPingedEvent(EventDescriptor descriptor, EventPayload payload) {
+                                try (payload) {
+                                    PROBE.add("subscriber:received:" + new String(
+                                            payload.segment().toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8));
+                                }
+                            }
+                        };
                     }
                 }
                 """);

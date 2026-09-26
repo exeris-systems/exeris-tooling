@@ -650,7 +650,8 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .addJavadoc("Generated component factory — the seam where application logic\n")
                 .addJavadoc("enters the generated runtime.\n")
                 .addJavadoc("<p>{@link $T} asks this object for every repository,\n", lifecycleType)
-                .addJavadoc("service and handler it wires, instead of constructing them itself.\n")
+                .addJavadoc("service, handler, publisher, subscriber and saga flow it wires or\n")
+                .addJavadoc("starts, instead of constructing them itself.\n")
                 .addJavadoc("Each component has a {@code protected create*} factory carrying the\n")
                 .addJavadoc("default construction; override one, and every consumer of that\n")
                 .addJavadoc("component sees the replacement.\n")
@@ -721,8 +722,31 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
             String publisherName = entityLower + "EventPublisher";
             if (domain.hasEvents()) {
                 ClassName publisherType = ClassName.get(pkgs.event(), entity + "EventPublisher");
+                // T48 slice C1: a publisher that encodes payloads takes the codec registry here,
+                // inside the boot callback, where the kernel binds it. It publishes on the
+                // request thread, where the slot is unbound — resolved there, every payload
+                // shipped empty with only a DEBUG line to say so.
                 addComponent(type, publisherType, publisherName,
-                        CodeBlock.of("new $T($T.eventEngine())", publisherType, KERNEL_PROVIDERS));
+                        KernelEventGenerator.hasPayloadEvents(domain)
+                                ? CodeBlock.of("new $T($T.eventEngine(), $T.eventPayloadCodecRegistry().orElse(null))",
+                                        publisherType, KERNEL_PROVIDERS, KERNEL_PROVIDERS)
+                                : CodeBlock.of("new $T($T.eventEngine())", publisherType, KERNEL_PROVIDERS));
+                // T48 slice C1: the subscriber joins the seam (ADR-070 obligation 1), so a
+                // consumer installs behaviour by overriding this factory with a subclass whose
+                // handle<Event> methods do the work. RuntimeLifecycle subscribes it at boot.
+                ClassName subscriberType = ClassName.get(pkgs.event(), entity + "EventSubscriber");
+                addComponent(type, subscriberType, entityLower + "EventSubscriber",
+                        CodeBlock.of("new $T($T.eventEngine())", subscriberType, KERNEL_PROVIDERS));
+            }
+            // T48 slice C1: the saga flow joins the seam too — `ConstructionSaga extends
+            // ConstructionSagaFlow` is installed by overriding createConstructionSagaFlow().
+            // RuntimeLifecycle compiles its plan at boot: the kernel resumes a parked saga only on
+            // a registered plan version (ADR-064), so lazy compilation on the first schedule()
+            // would strand every instance parked before a restart.
+            ClassName sagaFlowType = KernelSagaGenerator.sagaFlowType(domain);
+            if (sagaFlowType != null) {
+                addComponent(type, sagaFlowType, sagaAccessor(sagaFlowType),
+                        CodeBlock.of("new $T($T.flowEngine())", sagaFlowType, KERNEL_PROVIDERS));
             }
             // T43-follow-up: KernelProviders.MEMORY_ALLOCATOR is resolved HERE and handed to the
             // handler, rather than read per request inside parseBody. This factory runs inside the
@@ -1079,9 +1103,10 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
         MethodSpec.Builder method = MethodSpec.methodBuilder("run")
                 .addModifiers(Modifier.PUBLIC)
                 .returns(TypeName.VOID)
-                .addJavadoc("Composes the application, publishes it to the components slot and the\n")
-                .addJavadoc("decorated router to the handler slot, and parks on a shutdown latch until\n")
-                .addJavadoc("the JVM exits.\n");
+                .addJavadoc("Composes the application, starts its saga plans and subscribers,\n")
+                .addJavadoc("publishes it to the components slot and the decorated router to the\n")
+                .addJavadoc("handler slot, and parks on a shutdown latch until the JVM exits; then\n")
+                .addJavadoc("releases the subscribers.\n");
 
         // T49: the per-entity Repository → Service → Handler chain is built by
         // RuntimeComponents, not here. Only the handlers need a local, because only they
@@ -1110,6 +1135,28 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                     .addComment("subscribes.");
             for (String publisher : publishers) {
                 method.addStatement("$L.$L()", COMPONENTS_FIELD, publisher);
+            }
+        }
+
+        // T48 slice C1: activation, before either slot opens the application. Sagas first: each
+        // initialize() compiles and registers its plan, which the kernel needs before it can
+        // resume a parked instance (ADR-064) — lazy compilation on the first schedule() would
+        // not happen for an instance parked across a restart. Subscribers second, after every
+        // publisher has registered its event types (above), since the bus refuses a
+        // subscription to an unregistered type.
+        List<String> sagas = sagaAccessors(domains);
+        List<String> subscribers = subscriberAccessors(domains);
+        if (!sagas.isEmpty()) {
+            method.addComment("Saga plans are compiled and registered at boot, not on first schedule():")
+                    .addComment("a parked saga resumes only on a registered plan version.");
+            for (String saga : sagas) {
+                method.addStatement("$L.$L().initialize()", COMPONENTS_FIELD, saga);
+            }
+        }
+        if (!subscribers.isEmpty()) {
+            method.addComment("Subscribers start receiving before the application serves anything.");
+            for (String subscriber : subscribers) {
+                method.addStatement("$L.$L().subscribe()", COMPONENTS_FIELD, subscriber);
             }
         }
 
@@ -1186,7 +1233,39 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .addStatement("$T.currentThread().interrupt()", THREAD)
                 .endControlFlow();
 
+        // T48 slice C1: subscribers stop receiving on the way out, in reverse order, before the
+        // boot callback returns and the kernel stops the event engine under them.
+        if (!subscribers.isEmpty()) {
+            method.addComment("Subscribers are released in reverse order before the kernel stops.");
+            for (int i = subscribers.size() - 1; i >= 0; i--) {
+                method.addStatement("$L.$L().unsubscribe()", COMPONENTS_FIELD, subscribers.get(i));
+            }
+        }
+
         return method.build();
+    }
+
+    /** The saga-flow accessors, in domain order — the order {@code run()} initializes them in. */
+    private List<String> sagaAccessors(List<DomainMetadata> domains) {
+        List<String> accessors = new ArrayList<>();
+        for (DomainMetadata domain : domains) {
+            ClassName sagaFlowType = KernelSagaGenerator.sagaFlowType(domain);
+            if (sagaFlowType != null) {
+                accessors.add(sagaAccessor(sagaFlowType));
+            }
+        }
+        return accessors;
+    }
+
+    /** The subscriber accessors, in domain order — subscribed in it, released in reverse. */
+    private List<String> subscriberAccessors(List<DomainMetadata> domains) {
+        return domains.stream().filter(DomainMetadata::hasEvents)
+                .map(d -> lowerFirst(d.entityName()) + "EventSubscriber").toList();
+    }
+
+    /** The {@code RuntimeComponents} accessor for a saga flow: its simple name, lower-camel. */
+    private String sagaAccessor(ClassName sagaFlowType) {
+        return lowerFirst(sagaFlowType.simpleName());
     }
 
     private String lowerFirst(String s) {
