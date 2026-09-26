@@ -453,7 +453,10 @@ A build that also carries `@CapabilityModule` metadata now emits a `CompositionC
 call site into `Application.run()`, inside the `KernelBootstrap.boot(...)` callback. Two
 consequences for such a build:
 
-- add `eu.exeris:exeris-sdk-composition-runtime` to the app's runtime classpath;
+- add `eu.exeris:exeris-sdk-composition-runtime` to the app's **compile** classpath — the emitted
+  `Application` imports `CompositionConductor`, so the generated tree does not compile without it
+  (Maven's default `compile` scope also puts it on the runtime classpath). *(Corrected 2026-09-26:
+  this line said "runtime classpath"; the failure it prevents is a `javac` error — T30.)*
 - make `cap-manifest.json` reachable at runtime. The default is the `exeris.capManifest`
   system property, falling back to `cap-manifest.json` in the working directory — the build
   writes the manifest at the codegen output root, which is a *source* root and never on the
@@ -1083,9 +1086,9 @@ the cast. A boxed `Boolean` field is unaffected; it was already correct.
 ### `RuntimeComponents` gains a `decorate` hook, and refuses one combination at boot (T49, ADR-070)
 
 `RuntimeComponents` now has `public HttpHandler decorate(HttpRouter router) { return router; }`, and
-`Application` publishes `components.decorate(router)` rather than the router itself. Override it to
-wrap the whole router once — a per-request scope, a tracing span, a request-id filter — instead of
-copying the generated bootstrap to get at the publish site.
+`RuntimeLifecycle` puts `components.decorate(router)` in the handler slot rather than the router
+itself. Override it to wrap the whole router once — a per-request scope, a tracing span, a
+request-id filter — instead of copying the generated bootstrap to get at the publish site.
 
 **A generated app that both wraps and streams now refuses to start.** The kernel resolves a stream
 only through `handler instanceof HttpRouter`, so any wrapper erases the type and every `streamRoute`
@@ -1093,6 +1096,15 @@ registers and then never matches, silently. If your domain declares `realTimeApi
 `@Action(streaming = true)`, `decorate` must return the router it was given; returning anything else
 throws `IllegalStateException` at boot with that explanation. This is a tooling guard over a kernel
 limitation, and it goes away when a stream can be resolved through a delegable interface.
+
+**Correction, 2026-09-26 — no stream route resolves on a real boot of the generated app, decorated or
+not (T23, reopened).** Returning the router unchanged does not make streams work. The kernel is bound
+to the forwarding handler `Application.run()` installs, never to what `decorate` returns, and it
+resolves a stream only when that handler is an `HttpRouter`. A streaming request therefore falls
+through to respond-once dispatch: a `realTimeApi` `GET <base>/stream` lands on the `<base>/{id}`
+route with `stream` as the id and answers `400`. Regenerating does not change this, and no emitted
+setting does; the fix is kernel-side (K9 in the dog-food log). The refusal above still fires; on the
+generated boot it protects nothing.
 
 ### `exeris-codegen-ts`: `GraphEdgeMetadata` and `GraphMetadata` change shape (#208)
 

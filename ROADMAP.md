@@ -920,7 +920,9 @@ the behavioural corpus rather than overlooked.
 The `T*` numbers in this file and the `T*` numbers in the Stellar-Tactics dog-food log
 (`dogfooding-findings.md`, in the showcase repo) are **one namespace**, not two. This file carries
 T1–T26 because that is as far as the backlog had been transcribed; the log continues to **T50**, and
-adds `V1–V3` (the `@View` emitter), `S1–S5` (SDK), `K1–K7` (kernel) and `D1–D3` (DX). Findings are
+adds `V1–V3` (the `@View` emitter), `S1–S5` (SDK), `K1–K7` (kernel) and `D1–D3` (DX). *(2026-09-26:
+the log now reaches **T52**, `S1–S6` and `K1–K9`; `V1–V3` and `D1–D3` are unchanged. The one `T*`
+past the log's end is this file's **T53**, which took the next free number.)* Findings are
 numbered *there*, by the consumer that hits them; this file records the tooling-owned subset and its
 disposition. That direction is deliberate — a finding is minted by whoever measures it, and tooling
 does not get to renumber somebody else's evidence.
@@ -976,7 +978,31 @@ never-invoked emitter start emitting, and its output did not build.
       **That exclusivity is a kernel ask, not a tooling limitation**, and it is the second finding
       (after T23 itself) to be caused by `instanceof` on a concrete router type. Worth raising
       upstream: a stream route that resolved through an interface a decorator could delegate would
-      remove the trade-off entirely. Original finding below.
+      remove the trade-off entirely.
+
+      **Correction, 2026-09-26 — the guard protects a property the generated boot does not have.**
+      The two paragraphs above assume that a stream-bearing app which leaves `decorate` alone serves
+      its streams. It does not (**T23, reopened** — entry below). The kernel is bound to the
+      `forwardingHandler` lambda `Application.run()` installs, never to what `RuntimeLifecycle` puts
+      in the slot, so `handler instanceof HttpRouter` fails on every real boot of the generated app,
+      decorated or not. The emitted guard (`KernelApplicationGenerator.java:961-975`) therefore
+      refuses a wrapper and buys nothing: it would bite only in a launcher that composes through
+      `RuntimeLifecycle` and then binds the slot's content as the server handler itself, which no
+      generated path does. The dog-food pays for it — both of its services stream, so
+      `DevTenantBinding` still sits in a copied bootstrap instead of in `decorate` (the log's K9).
+      The guard's message and the `decorate` Javadoc (`:769-773`) blame the wrapper for a failure
+      that happens without one.
+
+      **Planned change: the guard becomes a pass-through when the kernel resolves a stream through
+      an interface a wrapper can delegate** — K9's kernel ask, which also asks that the resolved
+      stream handler run inside the wrapper's scope, so a tenant bound for the request stays bound
+      for its stream. Until then, what tooling can honestly do is narrow: correct the emitted
+      wording (an emitted-output change, so it takes a MIGRATION note), and decide whether the
+      interim refusal stays. Keeping it blocks a wrapper to protect a property nobody has; dropping
+      it costs nothing today, and would have to come back if T23 were ever closed by a shape a
+      wrapper could erase again. That interim call is an architect decision, not this entry's. What
+      tooling cannot do is make a stream resolve on the generated boot — T23 records why binding the
+      router instance is not available to it. Original finding below.
 
       **T49 — the generated composition root is closed.** `KernelApplicationGenerator` emits
       `public final class RuntimeLifecycle` (`KernelApplicationGenerator.java:493-494` **in the
@@ -987,6 +1013,56 @@ never-invoked emitter start emitting, and its output did not build.
       *construction*, not just configuration: a saga needs the `FlowEngine`, a publisher the
       `EventEngine`. **Highest-leverage item in this list**: T48 and T50 are both downstream of it,
       and it is the difference between an app that serves CRUD and an app that runs.
+- [ ] **T23 — generated stream routes do not resolve on a real boot. Reopened 2026-09-26.** The
+      backlog table below had it shipped in 0.6.0 (#106). The dog-food measured it open on kernel
+      0.12, and the generator and kernel sources agree with the measurement.
+
+      **What 0.6.0 fixed, and what it left.** The original finding named *two* lambdas between the
+      router and the kernel — `RuntimeLifecycle` put `router::handle` in the handler slot, and
+      `Application` binds a `forwardingHandler` that reads the slot — and its needed-update asked for
+      both. 0.6.0 replaced the first with the router instance and left the second, which is the only
+      one the kernel ever holds. `Application.run()` binds `forwardingHandler` as
+      `HTTP_SERVER_HANDLER` (`KernelApplicationGenerator.java:378-387`, `:507`);
+      `CommunityHttpSubsystem.start()` reads that binding once and hands it to the engine; the stream
+      dispatcher (`CommunityHttpStreamDispatcher.resolveStreamHandler`) resolves only when the handler
+      it holds `instanceof HttpRouter`. A lambda never is, so every `streamRoute` misses and the
+      request falls through to respond-once dispatch. The log's measurement, on kernel 0.12 with the
+      generated galaxy router behind the forwarder's exact shape: `GET /era/stream` answers `400` —
+      it lands on the `/era/{id}` template with `stream` as the id — where the bare router answers
+      `200 text/event-stream`; `GET /deposits` is `200` either way.
+
+      **Why nothing caught it.** `KernelApplicationGeneratorTest` asserts emitted *text*: in
+      `RuntimeLifecycle`, `handlerSlot.set(handler)` and no `router::handle`
+      (`KernelApplicationGeneratorTest.java:159-167`); separately, that `Application` carries the
+      forwarding lambda (`:130`). Both are true. No test relates them, and none asks which object
+      reaches the http subsystem. `KernelCodegenCompileTest` compiles and does not boot;
+      `CapCompositionE2ETest` boots a kernel but reads the emitted `Application` as a file. The
+      dog-food's proof of closure (`GeneratedAppHttpBootTest.generatedBootServesStreamRoute`) handed
+      the router straight to `KernelBootstrapHttpEngineFixture`, which binds whatever it is given as
+      `HTTP_SERVER_HANDLER` — past the generated `Application` entirely. The missing guard is a real
+      boot of the emitted `Application` with a stream route; it does not exist in this repo.
+
+      **Tooling cannot close it by binding the router instead of the lambda.** The router does not
+      exist when the kernel reads the binding. `KernelBootstrap` runs the subsystems' `start()` —
+      where the http subsystem reads `HTTP_SERVER_HANDLER` — and only then the boot callback, and
+      composition has to run inside that callback because the factories resolve boot-bound
+      providers (`MEMORY_ALLOCATOR`, `eventEngine()`, the persistence engine — T43-follow-up,
+      ADR-070 obligation 4). Handing the engine a new handler afterwards is refused by contract
+      (`HttpServerEngine.setHandler` throws after `start()`, pinned by the kernel TCK), and the
+      forwarder cannot *be* a router: `HttpRouter` is `final` with a private constructor.
+
+      One shape stays open in principle and is recorded, not planned: route paths are known at
+      generation time, so `Application` could build an `HttpRouter` *before* boot whose generated
+      routes target late-bound slots, with `notFound(...)` forwarding to a second router that
+      carries the `configureRoutes` additions. It would serve generated streams but not
+      consumer-registered ones, and `decorate` could wrap only the fallthrough — both changes to
+      ADR-070 obligations 5 and 6, so it is an architect decision, not a fix to land under this
+      number. The fix the log names is the kernel half of **K9**: resolve through an interface a
+      forwarder or a wrapper can delegate.
+
+      **Knock-on:** EV1-stream's per-action driver and U7 are transport-complete and
+      kernel-unblocked, and stay unreachable on a generated boot until this closes. ADR-070 carries
+      a dated amendment; the 0.9.0 `decorate` MIGRATION entry carries a correction.
 - [x] **T48 — emitted event publishers are never invoked.** *Shipped 2026-08-27 (ADR-075).* The
       publisher is a component in `RuntimeComponents` and a constructor argument of
       `<Entity>Handler`; the processor extracts the trigger triple SDK 0.11.0 shipped; and
@@ -1004,7 +1080,12 @@ never-invoked emitter start emitting, and its output did not build.
       commit, since the transaction boundary is in the repository, so `FLAG_PERSISTENT` makes
       delivery durable but not the publish; and `FIELD_CHANGED` / `STATE_TRANSITION` / `SCHEDULED` /
       `MANUAL` / `SNAPSHOT` publish nothing, each needing a source of truth the handler does not
-      have. Original finding below.
+      have.
+
+      **The publish is where the composed chain stops — recorded 2026-09-26.** The log's T48 is
+      wider than this entry's title ("every saga is unreachable from the running application"), and
+      its saga half is still true: no generated code constructs a subscriber or a saga flow. Tracked
+      as **T48-follow-up**, the next entry. Original finding below.
 
       **T48 — emitted event publishers are never invoked.** `KernelServiceGenerator`'s javadoc
       (`KernelServiceGenerator.java:24-27`) says publishing is "intentionally out of scope" and that
@@ -1018,6 +1099,35 @@ never-invoked emitter start emitting, and its output did not build.
       remains, and the design question the seam does not answer is whether the publisher becomes a
       constructor argument of the generated service — changing every consumer's tree — or a
       generated decorator installed by the default factory.
+- [ ] **T48-follow-up — the generated application composes no subscriber and no saga.** Recorded
+      2026-09-26 from the log's T48, re-read against this tree. ADR-075 closed the publisher half;
+      from the bus onward nothing generated receives the event:
+
+      | Artefact | Emitted by | Constructed in the running app | Started in the running app |
+      |---|---|---|---|
+      | `<Entity>EventPublisher` | `KernelEventGenerator` | yes — `RuntimeComponents.create<Entity>EventPublisher()` (`KernelApplicationGenerator.java:689-694`) | invoked by the handler for `CREATE` / `UPDATE` / `DELETE` / a matching `ACTION` (`KernelHandlerGenerator.java:346-352`) |
+      | `<Entity>EventSubscriber` | `KernelEventHandlerGenerator` | **no** — no factory, no field | **no** — no emitted code calls `subscribe()` |
+      | `<Saga>Flow` | `KernelSagaGenerator` | **no** | **no** — only the emitted `<Saga>FlowTest` calls `schedule(...)` (`KernelSagaTestGenerator.java:132`) |
+
+      Two facts make it more than a missing factory. The subscriber would not start a saga if it
+      were composed: its default handlers log and close the payload, and the generator names saga
+      triggering "application-level wiring" (`KernelEventHandlerGenerator.java:47-51`). And nothing
+      the processor writes says which event starts which saga — `SagaMetadata.trigger` (`type` /
+      `source` / `topic`) exists in the SDK AST, and `extractSagaMetadata` does not read it
+      (`ExerisDomainProcessor.java:2456-2482`).
+
+      **Who composes subscribers and sagas is undecided**, and with the options still open it is an
+      RFC question, not an ADR. Three candidate owners:
+      - **the generated `RuntimeComponents`** — a `create*` factory per subscriber and per flow,
+        which ADR-070 obligation 1 already asks of any new emitted component type. Settles
+        construction and substitution, not the event→saga edge, which has no carrier.
+      - **the generated `Application` / `RuntimeLifecycle`** — subscribe and initialize at boot,
+        unsubscribe at shutdown. Owns lifecycle as well as wiring, and needs the same carrier.
+      - **the application** — today's behaviour made explicit: the artefacts stay unwired, the
+        emitted code says so, and the chain is completed in a `RuntimeComponents` subclass.
+
+      ADR-075 carries a dated amendment saying the chain is emitted end to end and composed only as
+      far as the publish.
 - [x] **T29 — `DataScope.UNIVERSE` fails the build on the one shape it describes.**
       *Shipped 2026-08-18.* The processor now refuses a `UNIVERSE` declaration with an ERROR
       naming what would have been emitted (the TENANT shape, binding `getTenantId()`), why it
@@ -1325,6 +1435,24 @@ never-invoked emitter start emitting, and its output did not build.
       jar. This is **T30 one phase later** and it fails worse. Tooling emits no `pom.xml`, so the
       honest options are a documented requirement or — smaller and better-timed — failing the *build*
       when a selected subsystem has no provider on the runtime classpath.
+- [ ] **T30 — an emitted import is a requirement on the consumer's compile classpath that nothing
+      declares.** Transcribed 2026-09-26; ADR-078 cross-referenced a T30 entry this file did not
+      have. Tooling emits no `pom.xml`, so every import the consumer's build does not already carry
+      must still resolve at their `javac` — and when it does not, `javac` names a package rather
+      than the artefact. The log's instance: a composed build's `Application` imports
+      `eu.exeris.sdk.composition.runtime.CompositionConductor` (`KernelApplicationGenerator.java:137-138`,
+      emitted only when `composed`), so `eu.exeris:exeris-sdk-composition-runtime` is a compile
+      requirement — and therefore a runtime one too — from 0.7.0 on.
+
+      **Mitigated, not closed.** ADR-060 removed the largest instance (slf4j), the emitted
+      `Application` Javadoc names the composition-runtime artefact, and so does the 0.7.0 MIGRATION
+      entry. Nothing yet makes the *failure* name the artefact. The runtime half of the same defect
+      is T50, closed by ADR-078; a check for this half would have to run before `compile`, which
+      `exeris:verify-runtime` (bound to `process-classes`) cannot. Two sites described it with the
+      wrong phase: the 0.7.0 MIGRATION line said "runtime classpath" (corrected 2026-09-26), and the
+      emitted `Application` Javadoc still lists the conductor under "Runtime classpath requirements"
+      (`KernelApplicationGenerator.java:473-483`) — an emitted-output fix, left for the change that
+      next touches that Javadoc.
 - [x] **T42 — the mesh has no generated frontend contract.** Types slice shipped 0.8.0 (ADR-048).
       `codegen-ts` was single-service by construction: one metadata directory in, one app out. A mesh
       consumer retyped the other service's vocabulary by hand across a language boundary with no
@@ -1779,10 +1907,43 @@ never-invoked emitter start emitting, and its output did not build.
   content-free diff on a committed L1 tree — but it is a per-bump cost, not the determinism violation
   first reported.
 
-**Not re-verified in this pass**, carried from the log and marked as such: T5 (system-field overrides
-ignored by the repository generator), T20b (the TS pruner does not remove cross-service orphans),
-T25/G6 (theme-variant binding for `@View`), T30 (emitted imports as undeclared build requirements —
-the general case behind T50).
+  **Re-checked 2026-09-26 against D9 — narrowed, not closed.** The keys the log saw moving were the
+  null-valued swagger `Schema` siblings, and D9 (0.8.0) stopped writing them: `Yaml31.mapper()`
+  omits unset fields (`OpenApiGenerator.java:49-51`). D9 did not give the remaining keys an order.
+  The model's maps are `LinkedHashMap`s filled in metadata order
+  (`OpenApiComponentsBuilder.java:22-70`), but property order on the swagger model classes is
+  whatever the serializer derives — the log traced it to reflective enumeration — and nothing in
+  this repo pins it: the mapper is taken unmodified, and whether swagger's own mixins fix an order
+  was not checked. `OpenApiGeneratorTest.emissionIsDeterministic` compares two emissions inside one
+  JVM, which by construction cannot see a cross-toolchain difference. What would close it: a
+  committed golden document compared on both CI rows (JDK 25 and 26, U2) — the existing matrix then
+  *is* the cross-toolchain check — and, if the rows disagree, an explicit order in the writer.
+
+**Re-verified 2026-09-26.** These four were carried from the log unchecked in the 2026-08-18 pass.
+Each now has the status the code settles, and every other mention in this file agrees with it:
+
+- **T5 — shipped (0.5.x), and it holds.** The repository resolves the tenant, created, updated,
+  soft-delete and version names from `SystemFieldsMetadata` (`KernelRepositoryGenerator.java:355-363`);
+  Flyway does the same for columns and the RLS predicate (`KernelFlywayGenerator.java:241-251`); the
+  processor fills the record from the `@ExerisDomain` overrides and, since C1, from the field-level
+  markers (`ExerisDomainProcessor.java:1589-1629`). The one override still without effect is
+  `primaryKeyField`, recorded under C1 — not a T5 regression.
+- **T20b — not a pruner defect; closed, with the residue case named.** The TS pruner deletes every
+  file the previous run recorded in `.exeris-codegen-manifest` that this run does not produce,
+  whatever made the entity leave (`exeris-codegen-ts/src/output/manifest.ts:27-67`, called on every
+  non-dry run at `src/index.ts:224-228`). `manifest.spec.ts` pins that case and its converse: a file
+  no manifest ever listed is never deleted, which is what protects hand-written files. The log's
+  orphans — `galaxy-presence.*` and the pre-#101 duplicate tree — fit the converse. *Inferred, not
+  measured*: we have not seen that tree's manifest history. The cost falls once, on a tree generated
+  before it carried a manifest.
+- **T25 — two of three asks closed by U1 (2026-06-28); the third is G6, open.** (a) The emitted
+  `styles.css` imports the ui-kit v4 token entry and carries no boilerplate theme
+  (`app-structure-gen.ts:748-777`). (b) The v4-dead `tailwind.config.js` was kept valid and wired to
+  the ui-kit v3 preset for v3 toolchains (`:716-736`) — though the emitted file does not itself say a
+  v4 build ignores it. (c) A token/theme binding for `@View` is **G6**, emitted today as a
+  `TODO(@View G6)` marker (`view-gen.ts:40,247`) and corpus-gated with the rest of the full emitter.
+- **T30 — open, with its own entry now** (above): mitigated by ADR-060 and the 0.7.0 MIGRATION line,
+  not closed.
 
 - [x] **T20d — a boolean form control held a string.** Shipped 0.9.0, and re-measuring it widened
       the finding. The log reports two `TS2352`s from a missing boolean branch in the submit-time
@@ -1936,7 +2097,7 @@ the general case behind T50).
 
       | Family | Count | What it needs |
       |---|---|---|
-      | `system.*` — `@PrimaryKey`, `@TenantId`, `@Version`, `@SoftDelete*`, `@Audit*` | 10 | nothing new; the columns are already emitted, just derived from `@ExerisDomain`'s override attributes instead of these markers (**T5 / C1**) |
+      | `system.*` — `@PrimaryKey`, `@TenantId`, `@Version`, `@SoftDelete*`, `@Audit*` | 10 | nothing new; the columns are already emitted, just derived from `@ExerisDomain`'s override attributes instead of these markers (**T5 / C1**). *2026-09-26: C1 shipped nine of the ten in 0.9.0 — the processor now reads them from the field; `@PrimaryKey` is held back on purpose, because no generator honours `primaryKeyField` (see C1). SDK 0.12 adds an eleventh marker, `@SharedScope`, which nothing reads yet; T29 slice B will* |
       | presentation — `@Tab`, `@UIGroup`, `@NavMenu` | 3 | frontend emission only, no kernel involvement |
       | behavioural — `@Derived`, `@Rule`, `@Rules`, `@EventHandler`, `@Projection` | 5 | pure emission + the events subsystem; design-gated, not capability-gated |
       | graph — `@GraphEdge`, `@GraphEdges`, `@GraphProperty`, `@GraphQuery` | 4 | `CommunityGraphSubsystem` + the existing `KernelGraphSyncGenerator` (**S3**) |
@@ -2027,19 +2188,19 @@ the general case behind T50).
 |---|---|:---:|---|
 | T1  | `@Action` endpoints advertised (OpenAPI + Angular) but no kernel route serves them — 404 | **High** | ✅ 0.6.0 (#92) |
 | T20 | Generated Angular frontend doesn't compile (`npm run build` fails) — two parallel TS emission paths; the `src/app` sourceRoot ships an empty enum stub that shadows the real `types/enums.ts`, so enum-typed code fails (TS2304/2305) | **High** (latent) | ✅ 0.6.0 (#101/#102; FE gate + POSIX-path determinism fix 2026-06-28) |
-| T23 | Stream-route boot-reachability — the generated `RuntimeLifecycle` published a `router::handle` lambda, erasing the `HttpRouter` type the kernel stream dispatcher resolves via `instanceof`, so every generated `streamRoute(...)` silently 404'd / fell back to respond-once on a real boot | **High** (latent) | ✅ 0.6.0 (folded into #106, ADR-044 Slice 2 — `handlerSlot.set(router)`; pinned by `KernelApplicationGeneratorTest`) |
+| T23 | Stream-route boot-reachability — the generated boot hands the kernel a lambda, not the `HttpRouter` the stream dispatcher resolves via `instanceof`, so every generated `streamRoute(...)` misses on a real boot and falls through to respond-once dispatch. Two lambdas were named: `RuntimeLifecycle`'s `router::handle` in the slot, and `Application`'s `forwardingHandler` bound as `HTTP_SERVER_HANDLER` | **High** | 🔴 **Reopened 2026-09-26.** 0.6.0 (#106) fixed the slot (`handlerSlot.set(router)`) and left the forwarder — the only handler the kernel reads; `KernelApplicationGeneratorTest` pins emitted text, not the bound object. Kernel-gated (K9); see the T23 entry in the T-namespace section |
 | T8  | No generated finders/indexes for FK + `filterable` fields → O(n) `findAll().filter()` everywhere | **High** | ✅ 2026-06-28 (finders + FK/filterable indexes; T9 constraints deferred) |
 | T10 | `@Validation` enforced client-side (Zod) but dropped server-side (handler/service/DB) | **High** | ✅ 0.6.0 (#103) |
-| T12 | N generated apps can't form a mesh — client is own-app/relative-host, saga step is local, no cross-app contract | **High** | **T42 (types) SHIPPED 0.8.0**, no kernel gate; client+registry 0.9.0 — split by ADR-048; the client half needs a final kernel 0.12 (ADR-074's binary break on `HttpRequest`) |
+| T12 | N generated apps can't form a mesh — client is own-app/relative-host, saga step is local, no cross-app contract | **High** | **T42 (types) SHIPPED 0.8.0**, no kernel gate; client+registry 0.9.0 — split by ADR-048; the client half needs a final kernel 0.12 — not for a binary break (the 2026-09-01 readiness measurement found `HttpRequest` additive, re-checked 2026-09-26), but because a peer-addressed client needs ADR-074's `defaultAuthority` / `withAuthority`, which exist only from 0.12 (K8) |
 | T17 | Capability-graph validation is closed-world per app — a legitimate cross-service `@Requires` hard-fails the build | **High** | **0.9.0** — ships with the client+registry slice per ADR-048 |
 | T26 | A `@ExerisDomain(versioned = true)` entity whose `version` field is the **wrapper** `Long` throws NPE on the first `save()` of a fresh entity: `buildColumnLayout` hardcodes the VERSION column's type as `Long` and the emitter binds it by unboxing (`stmt.bindLong(i, entity.getVersion())`), with no null guard — and no guard is possible while the column type is a constant, since a primitive `long version` field cannot be null-compared. `update()` has the same unboxing (`long expected = entity.getVersion()`). Every other nullable system column (`createdAt`/`updatedAt`) *is* guarded, so this is the one gap. Fix is to read the declared field type into the column instead of assuming, which makes it a repository-emitter change rather than a test one | **Medium** (latent; primitive-`long` entities were unaffected) | ✅ 0.7.x — found 2026-08-02 by the T2 slice-d system-column fixture, fixed the same day: both the version bind and `update()`'s expected-version read go through a boxed local with a null default, so a wrapper-typed field behaves exactly like the primitive it shadows. The e2e fixture keeps the **wrapper** declaration (a primitive would pass either way) and the generated repository test no longer pre-stages the version, which makes every consumer's emitted test a regression test for it |
 | T2  | Zero tests generated for the generated surface | Medium | 🔶 0.7.0 slices a–f — the **Java half is complete** (handler bodyless routes + body-route guards + service delegation + repository round-trip + saga wiring + `@Validation` boundary pairs, ADR-058); **FE spec slice → 0.8.0** |
-| T3  | Action identity = method name, not `@Action(name=…)` → bean-setter collisions | Medium | 0.5.x |
-| T4  | `@Relationship` target derived from field Java type, not `targetEntity` | Medium | 0.5.x |
-| T5  | System-field overrides (`tenantIdField`, …) ignored by the repository generator | Medium | 0.5.x |
+| T3  | Action identity = method name, not `@Action(name=…)` → bean-setter collisions | Medium | ✅ 0.5.x — `extractActionMetadata` takes `@Action(name=…)`, the method name only as a blank-value fallback (re-verified 2026-09-26) |
+| T4  | `@Relationship` target derived from field Java type, not `targetEntity` | Medium | ✅ 0.5.x — `resolveTargetEntity` prefers `targetEntity`, the field type only when it is absent or `void.class` (re-verified 2026-09-26) |
+| T5  | System-field overrides (`tenantIdField`, …) ignored by the repository generator | Medium | ✅ 0.5.x — repository + Flyway honour the overrides (re-verified 2026-09-26); `primaryKeyField` is the one still without effect, tracked under C1 |
 | T9  | Generated schema has no inter-entity foreign keys — zero referential integrity | Medium | ✅ 0.6.0 (constraints, with T8) + 0.7.0 (`relationshipType`/cascade extraction) |
 | T11 | No fidelity/strict mode — annotation attributes set but consumed by no generator fail silently | Medium | 0.5.x |
-| T13 | Codegen emits per-entity output but never prunes it — a removed/renamed entity breaks the build | Medium | 0.5.x |
+| T13 | Codegen emits per-entity output but never prunes it — a removed/renamed entity breaks the build | Medium | ✅ 0.5.x — `.exeris-codegen-manifest` pruner in both emitters, `CodegenPipeline` and the TS CLI (re-verified 2026-09-26) |
 | T18 | Capability validation × two-pass build deadlock; `mvn clean` + T13 prune wipes the committed L1 tree | Medium | ✅ 0.6.0 (#129 + `exeris:verify-capabilities` deferred-validation gate) |
 | T19 | Repository binds `Instant` as ISO string but DDL declares `TIMESTAMPTZ` — round-trip latent-broken on real Postgres | Medium | **Done 0.6.0** (native `bindInstant`/`getInstant`, kernel 0.10 SPI) |
 | T7  | TS app-structure seams — per-entity path vs `app.routes` import mismatch breaks the build; hardcoded title/redirect | Medium | ✅ 0.6.0 (routes fix + `--app-name` title/redirect, #120) |
@@ -2112,7 +2273,8 @@ the general case behind T50).
       "generated workspace compiles + `ng build` green" gate** — a
       `tsc --noEmit`/`ng build` over a generated sample, the FE analog of `KernelCodegenCompileTest`.
       (FE orphan-pruning — the other suspected FE-twin — is **already done**: the **T13** manifest pruner
-      runs on the TS CLI path, `index.ts:302`.) Surfaced by a larger multi-entity, multi-service frontend trial.
+      runs on the TS CLI path, `index.ts:302` — `:228` as of 2026-09-26, plus `:164` for a run with
+      no metadata.) Surfaced by a larger multi-entity, multi-service frontend trial.
 
 - [x] **T8 — Generate finders + FK/`filterable` indexes. DONE (2026-06-28).** Repositories exposed only
       `findById/findAll/save/update/deleteById/count`; every cross-aggregate lookup forced a
@@ -2405,7 +2567,7 @@ Proposals, highest return-on-effort first:
 
 | # | Proposal | Where the fix lives | Effort | Target |
 |---|---|---|:---:|---|
-| U1 | **Wire ui-kit into the generated app** — ✅ **DONE 2026-06-28.** Emitted `styles.css` now `@import "@exeris-systems/ui-kit/theme"` (the v4 `@theme` token entry); hardcoded `bg-indigo-600`/`hover:bg-indigo-700` etc. across the emitted templates → `bg-exeris-primary` token utilities (evidence-checked against `theme.css`); `@exeris-systems/ui-kit` added to the emitted `package.json`; `presets:[exerisPreset]` added to the (v4-vestigial) `tailwind.config.js` for v3 consumers; the boilerplate `.btn-primary`/`.input-field` + `bg-gray-100 text-gray-900` body removed. **Finding (B1 twin):** the generated app is Tailwind **v4**, whose ui-kit `@theme` entry ships **tokens only, not the `.exeris-*` component classes** (those are v3 `index.css`), and has **no neutral surface/text token** — so token utilities were used (not component classes) and neutral `gray-*` were left as standard Tailwind (no token to map to). Also added a configurable `appName` (CLI `--app-name`) replacing the hardcoded `'Exeris Foundation'` (closes the **T7/U5** title remainder). The tooling-side fix for dog-food finding **T25**. | codegen-ts (ui-kit is ready) | small | ✅ 2026-06-28 |
+| U1 | **Wire ui-kit into the generated app** — ✅ **DONE 2026-06-28.** Emitted `styles.css` now `@import "@exeris-systems/ui-kit/theme"` (the v4 `@theme` token entry); hardcoded `bg-indigo-600`/`hover:bg-indigo-700` etc. across the emitted templates → `bg-exeris-primary` token utilities (evidence-checked against `theme.css`); `@exeris-systems/ui-kit` added to the emitted `package.json`; `presets:[exerisPreset]` added to the (v4-vestigial) `tailwind.config.js` for v3 consumers; the boilerplate `.btn-primary`/`.input-field` + `bg-gray-100 text-gray-900` body removed. **Finding (B1 twin):** the generated app is Tailwind **v4**, whose ui-kit `@theme` entry ships **tokens only, not the `.exeris-*` component classes** (those are v3 `index.css`), and has **no neutral surface/text token** — so token utilities were used (not component classes) and neutral `gray-*` were left as standard Tailwind (no token to map to). Also added a configurable `appName` (CLI `--app-name`) replacing the hardcoded `'Exeris Foundation'` (closes the **T7/U5** title remainder). The tooling-side fix for dog-food finding **T25**'s first two asks (a neutral theme entry; the dead v4 config kept valid for v3) — its third, a `@View` token/theme binding, is **G6** and stays open (re-verified 2026-09-26). | codegen-ts (ui-kit is ready) | small | ✅ 2026-06-28 |
 | U2 | **Universal lists** — column types from metadata (enum→badge w/ `@UI.color`, number→`format`+align, bool→icon, date, FK→link/`displayField`, currency/percent from `dataType`); wire sort to headers (logic exists, only the `(click)` is missing); real filters for `filterable` fields (string/enum/date-range — today only bool + 2 fields); configurable `pageSize`; row actions | codegen-ts (+ processor emits `format`/`dataType`/`sortable`/`filterable`) | medium | 0.6.0 |
 | U3 | **Forms from metadata, not the Java type** — read `@UI.componentType` (textarea/select/date/slider/toggle/rich-text/file/color), `@UIGroup`→sections, `@Tab`→tabs, `gridSpan`→multi-column, `placeholder`/`helpText`, `@Relationship`→autocomplete picker (today a UUID FK = `type="text"`); fix type mapping (`long→number`, `UUID→picker`) | codegen-ts (+ processor + TS schema) | med–large | 0.6.0 |
 | U4 | **Fidelity end-to-end** — processor emits the full `uiMetadata` / per-field `UIFieldMetadata`, the TS Zod schema models it, and strict-mode (**T11**) warns when a `@UI` attribute is declared but dropped | processor + codegen-ts | medium | 0.6.0 (with T11) |
@@ -2871,6 +3033,8 @@ applies to pinning as much as to tagging. Four groups, by what blocks them —
   (`proxy.conf.js` with a `bypass`, verified against a real `ng serve`).
 - **Behind a final kernel 0.12:** the pin bump, `@Saga.version`'s emitter half, T12's client half +
   T17. **Not** the EV1-stream per-action driver — see the readiness measurement below.
+  *(2026-09-26: the pin bump and the `@Saga.version` emitter half are applied on the working branch
+  as **B0**, below — against pre-release 0.12 builds, so they still wait on the finals.)*
 - **Behind an SDK record change:** the `GraphEdgeMetadata` field/identity split, the six
   `@Saga.compensation*` attributes, `@SagaStep.waitForAll` / `.failFast`. Each is a carrier that does
   not exist; extracting into nothing is the failure mode 0.8.0 spent itself removing.
@@ -2879,6 +3043,30 @@ applies to pinning as much as to tagging. Four groups, by what blocks them —
 
 Also open and independent of all four: the missing `warnInertAttributes` call sites for `Saga` and
 `SagaStep`, and a comment naming the processor as the saga-step sorter.
+
+- [~] **B0 — the 0.12 pin bump. Applied on the working branch 2026-09-26; not final.**
+      `exeris.sdk.version` → `0.12.0-SNAPSHOT` (SDK `main`) and `exeris.kernel.version` → `0.12.0`
+      (kernel `development/0.12.0`, code cut 2026-09-03). Both are installed from source; neither is
+      on Maven Central. The dog-food measured this reactor green against that pair on 2026-09-25,
+      `KernelCodegenCompileTest` against kernel 0.12 included, with the S6 rider below as its only
+      source change. Three riders, each forced by the new line rather than chosen:
+      - **S6** — `SystemFieldsMetadata` grew a trailing `sharedScopeField`, a positional break with
+        no builder to route around it; the processor passes `null`. That is today's true value, not a
+        placeholder: nothing scans `@SharedScope` yet, and `UNIVERSE` is still refused at the
+        declaration (T29).
+      - **K8** — the generated `*Client` Javadoc shows the peer named through `defaultAuthority` or
+        `KernelWebClient.withAuthority`. Kernel ADR-074 made an unaddressed CLIENT request fail at its
+        first send without changing a signature, so the emitted Javadoc is the only place the
+        generated code can say it.
+      - **K5** — the generated `*SagaFlow` calls `.version(n)` on its `FlowDefinitionBuilder`,
+        carrying the `@Saga.version` the processor has extracted since 0.8.0 (S1's emitter half).
+      Rides along with no emitter change: T52's caller half (see T52).
+
+      **What makes it final:** both pins move to the `0.12.0` releases once kernel and SDK publish,
+      and only then can 0.9.0 be cut — no cross-repo SNAPSHOT at a cut, and the tag's own POM is
+      final (Versioning policy). Until then a consumer building this branch installs both from
+      source, and the SDK needs `-Djapicmp.skip=true` from a fresh clone because its semver baseline
+      is not on Central.
 
 ### 0.12 readiness — measured 2026-09-01, against the installed snapshots
 
@@ -2930,6 +3118,34 @@ emitted mapping should read it rather than re-derive it is a slice to measure, n
 **What still cannot be done:** pin either dependency. The rule is unchanged — no cross-repo
 `-SNAPSHOT` at a cut, and the tag's own POM must be final — so B0 waits for kernel `0.12.0` final,
 and the SDK bump additionally waits for the 0.12 line to publish a source model.
+
+#### Re-checked 2026-09-26, against the effective sources
+
+The table above was measured against installed snapshots on 2026-09-01 and stands as the record
+of what was true then. Re-read against kernel `0.12.0` (`development/0.12.0`, code cut 2026-09-03
+per its CHANGELOG) and SDK `main` (`0.12.0-SNAPSHOT`):
+
+| 2026-09-01 premise | 2026-09-26 |
+|---|---|
+| the EV1-stream per-action driver is unblocked at 0.11.0 | **Still unblocked, still unshipped** — `KernelActionStreamHandlerGenerator` still emits `keepAliveScaffold(...)` (`:185`). A new gate has appeared on the boot side rather than in the kernel's table: the generated `Application` resolves no stream route at all (**T23, reopened**), so the driver would be correct and unreachable until T23 closes |
+| ADR-074 is additive on `HttpRequest` | **Holds at the code cut.** `HttpRequest` is a six-component record with `authority` second, and keeps the five-argument constructor as an overload that delegates with `null`; `withAuthority` is `@since 0.12`. Only a record pattern over `HttpRequest` would break, and no emitter writes one. **What a signature diff cannot show is K8**: a CLIENT-mode `HttpConfig` built through the ten-argument overload has no default peer, so its first unaddressed request is refused. B0 answers it in the `*Client` Javadoc |
+| `@Saga.version`'s emitter half is ready | **Taken in B0.** `FlowDefinitionBuilder.version(int)` is a `default` method at `0.12.0` |
+| Track C unchanged; the SDK cannot be pinned | **Track C is still unchanged** — `GraphEdgeMetadata` is still `(name, targetLabel, relationType)`, and `SagaStepMetadata` carries no `waitForAll` / `failFast`. **Both reasons given for "cannot be pinned" are gone.** SDK `main` builds `exeris-sdk-source-model` and `-source-model-io` at `0.12.0-SNAPSHOT`, and both are in the local repository. The surface is no longer shape-identical to 0.11: **54 top-level annotation types, not 51** (`@RouteAccess`, `@Channel`, `@SharedScope`), with trailing AST components `DomainMetadata.routeAccess` / `.channel`, `ActionMetadata.routeAccess` and `SystemFieldsMetadata.sharedScopeField`, and `SchemaVersion.CURRENT` at `0.12.0`. All four are reserved SDK-side, and none has to be extracted for a 0.12 build to be correct. What remains is the rule, not the artefact: the SDK is still a SNAPSHOT |
+
+**`UNIVERSE`, re-read:** both halves it waited on have landed. `SESSION_KEY_TENANT_ID` and
+`SESSION_KEY_SHARED_SCOPE` are constants on `ConnectionInterceptor` at `0.12.0`, and the SDK ask
+shipped as `@SharedScope` (`eu.exeris.sdk.annotation.system`) + `SystemFieldsMetadata.sharedScopeField`.
+Slice B now waits only on this repo — the processor scanning `@SharedScope` (B0 writes `null`
+meanwhile), the repository binding the column, and lifting T29's refusal — plus B0 becoming final.
+
+**Whole-SPI delta, re-read:** not re-measured member by member (no `javap` pass this time). One
+addition the five-type count does not contain is visible at source: `eu.exeris.kernel.spi.websocket`,
+ten source files plus `package-info` (kernel ADR-084; the SDK CHANGELOG records it at tier
+`preview`). Treat "five added" as a lower bound for the final 0.12.0; "none removed" was not
+re-checked.
+
+**What still cannot be done, re-read:** the SDK's second blocker (no source model) is gone. The
+first — a final release, for both — is what B0 waits on.
 
 ## Versioning policy
 

@@ -1,6 +1,6 @@
 # ADR-075 — The generated event publisher is invoked from the generated handler
 
-- **Status:** ACCEPTED (2026-08-27)
+- **Status:** ACCEPTED (2026-08-27) · amended 2026-09-26 (Amendment 1 — the chain stops at the bus)
 - **Repo:** `exeris-tooling`
 - **Scope:** tooling / codegen pipeline
 - **Visibility:** public
@@ -71,7 +71,8 @@ events whose trigger it satisfies.**
 ### ✅ Positive Outcomes
 
 - The `@Action` → `@DomainEvent` → saga chain is generated end to end. An action that declares an
-  event now produces one.
+  event now produces one. *(Amendment 1, 2026-09-26: emitted end to end, composed only as far as the
+  publish — no subscriber or saga is constructed in the running application.)*
 - The publisher is reachable through the composition root, so a consumer can replace it without
   forking generated code — the ADR-070 exception is closed.
 - Nothing about the *emitted publisher* changed except its finality: the publish methods, the
@@ -117,3 +118,52 @@ events whose trigger it satisfies.**
 - **ADR-046** — the EV1 codec resolution inside the publisher, unchanged.
 - **ADR-058** — the generated-test emission channel; `RecordingEventEngine` is emitted under it.
 - **ADR-042** — the processor/`-io` lockstep; the reader read the triple first.
+
+---
+
+## Amendment 1 — the generated chain stops at the bus (2026-09-26)
+
+**Status:** Accepted *(corrects §Consequences "generated end to end"; the Decision is unchanged)*
+**Trigger:** the dog-food's T48 ("every saga is unreachable from the running application"), re-read
+against this tree after its 2026-09-25 re-review.
+
+### What
+
+Every link of the `@Action` → `@DomainEvent` → saga chain is *emitted*. The running application
+*composes* it only as far as the publish:
+
+| Link | Emitted by | Constructed in the running app | Invoked in the running app |
+|---|---|---|---|
+| handler action / CRUD method | `KernelHandlerGenerator` | `RuntimeComponents.create<Entity>Handler()` | served by its route |
+| `<Entity>EventPublisher` | `KernelEventGenerator` | `RuntimeComponents.create<Entity>EventPublisher()` | by the handler, for `CREATE` / `UPDATE` / `DELETE` / a matching `ACTION` (this ADR) |
+| `<Entity>EventSubscriber` | `KernelEventHandlerGenerator` | **never** — `RuntimeComponents` has no factory for it | **never** — no emitted code calls `subscribe()` |
+| `<Saga>Flow` | `KernelSagaGenerator` | **never** | **never** — `schedule(FlowContext)` is called only by the emitted `<Saga>FlowTest` |
+
+So a served action publishes, the event reaches the bus, and nothing in the generated application
+receives it. Two facts make the gap wider than a missing factory:
+
+1. **The subscriber would not start a saga if it were composed.** Its default handlers log and close
+   the payload; the generator removed the old `saga.start(...)` coupling and names saga triggering
+   "application-level wiring" (`KernelEventHandlerGenerator` class Javadoc).
+2. **Nothing tooling extracts says which event starts which saga.** `SagaMetadata.trigger`
+   (`type` / `source` / `topic`) exists in the SDK AST; the processor's `extractSagaMetadata` does
+   not read it.
+
+The trade-off stated above — a saga calling the service directly publishes nothing — is the other
+direction of the same edge, and is unchanged.
+
+### What this amendment does NOT decide
+
+**Who composes subscribers and sagas.** The options are open, so per the shape gate this is an RFC
+rather than an amendment. Candidate owners:
+
+- **the generated `RuntimeComponents`** — a `create*` factory per subscriber and per flow, as
+  ADR-070 obligation 1 already requires of a new emitted component type. Settles construction and
+  substitution; does not settle the event→saga edge, which has no carrier.
+- **the generated `Application` / `RuntimeLifecycle`** — subscribe and initialize at boot,
+  unsubscribe on shutdown. Owns the lifecycle as well as the wiring, and needs the same carrier.
+- **the application** — today's behaviour, made explicit: the artefacts stay unwired, the emitted
+  code says so, and the chain is completed in a `RuntimeComponents` subclass.
+
+Until that is decided, read this ADR's "end to end" as "emitted end to end, composed to the publish".
+Tracked as **T48-follow-up** in `ROADMAP.md`.

@@ -1,6 +1,6 @@
 # ADR-070 — Open the generated composition root: `RuntimeComponents`
 
-- **Status:** ACCEPTED (2026-08-18)
+- **Status:** ACCEPTED (2026-08-18) · amended 2026-09-26 (Amendment 1 — obligation 6)
 - **Repo:** `exeris-tooling`
 - **Scope:** tooling / codegen pipeline
 - **Visibility:** public
@@ -94,7 +94,8 @@ after every generated route is registered.
    route therefore **refuses to boot** when `decorate` returns a non-`HttpRouter`, naming both
    halves; an application that emits none carries no guard. This is a kernel constraint rather than
    a tooling choice: a stream resolved through an interface a decorator could delegate would remove
-   the trade-off, and that is the standing upstream ask.
+   the trade-off, and that is the standing upstream ask. *(Amendment 1, 2026-09-26: the converse
+   does not hold — an undecorated generated app serves no stream route either; T23.)*
 7. **The emitted `main()` says that it is not polymorphic.** `main` does `new Application().run()`,
    so a subclass overriding `components(...)` is *not* reached through it. The emitted javadoc states
    this and shows the subclass's own `main`. An extension hook whose obvious entry point silently
@@ -164,3 +165,36 @@ after every generated route is registered.
    `exeris-kernel-spi` / `-core` artifacts. Verified non-vacuous: emitting a wrong-arity constructor
    fails the gate at `RuntimeComponents.java`.
 3. Migration note lands in `docs/MIGRATION-0.x-to-1.0.md` under the 0.8.0 train.
+
+---
+
+## Amendment 1 — obligation 6's stream guard protects nothing on the generated boot (2026-09-26)
+
+**Status:** Accepted *(corrects the premise of obligation 6; the hook, its default and the guard are
+unchanged by this amendment)*
+**Trigger:** T23 reopened in `ROADMAP.md` — the dog-food's K9, widened on 2026-09-26.
+
+### What
+
+Obligation 6 says a wrapper and a stream route are mutually exclusive and that the emitted app
+enforces it. The exclusion is real. Its implied converse — that an app which leaves `decorate` alone
+serves its streams — is not. The kernel never sees what `decorate` returns: `Application.run()` binds
+its own `forwardingHandler` lambda as `HTTP_SERVER_HANDLER`, the http subsystem reads that binding
+once when it starts, and the dispatcher resolves a stream only for a handler that is an `HttpRouter`.
+On a real boot of the generated application no stream route resolves, decorated or not, so the
+boot-time refusal buys nothing. It would bite only in a launcher that composes through
+`RuntimeLifecycle` and binds the slot's content as the server handler itself.
+
+### Consequences recorded, not decided here
+
+- The guard's message and the `decorate` Javadoc attribute to a wrapper a failure that happens
+  without one. Correcting them changes emitted output and takes a MIGRATION note.
+- The standing upstream ask now fixes both halves: resolution through an interface a forwarder or a
+  wrapper can delegate, with the resolved stream handler run inside the wrapper's scope (K9). When it
+  exists, the guard becomes a pass-through.
+- Tooling cannot bind the composed router where the kernel reads it: the router is built inside the
+  boot callback after the subsystem has read its handler (obligation 4 is why it must be), a running
+  engine refuses a new handler by contract, and `HttpRouter` is `final`. A route table built *before*
+  boot with late-bound targets is possible in principle; it would change obligations 5 and 6, and it
+  is an open design question rather than part of this amendment.
+- Whether the refusal stays until K9 lands is an open call — see T49 and T23 in `ROADMAP.md`.
