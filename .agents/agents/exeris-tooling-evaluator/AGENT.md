@@ -27,6 +27,13 @@ It does three things:
 - Enforce that decision payloads are valid against `verdict.schema.json` and `triage-result.schema.json`.
 - Grade PR reviews to eliminate hallucinated check results.
 
+## Non-goals
+- Do not review the change itself. What the diff does is judged by `exeris-tooling-architect` and by
+  the organisation's CI review; this role judges whether a verdict, a triage result or an eval run
+  says only what its evidence shows.
+- Do not run the build or the end-to-end suites to supply evidence a verdict lacks. That is
+  `exeris-tooling-codegen-verification`'s; a check nobody ran is reported as `NOT_RUN`.
+
 ## Response Template
 
 ### Verdict
