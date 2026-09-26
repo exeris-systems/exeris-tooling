@@ -7,8 +7,19 @@
       "$ref": "../vendor/exeris-agents-2.1.0/schemas/handoff.base.schema.json"
     },
     {
-      "$defs": {
-        "agentRef": {
+      "properties": {
+        "from": {
+          "enum": [
+            "human",
+            "exeris-tooling-router",
+            "exeris-tooling-architect",
+            "exeris-tooling-implementer",
+            "exeris-tooling-codegen-verification",
+            "exeris-tooling-docs-adr",
+            "exeris-tooling-evaluator"
+          ]
+        },
+        "to": {
           "enum": [
             "human",
             "exeris-tooling-router",
