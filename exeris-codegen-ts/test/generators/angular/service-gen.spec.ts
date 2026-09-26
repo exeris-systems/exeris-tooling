@@ -1,7 +1,7 @@
 /**
  * Coverage for src/generators/angular/service-gen.ts — ServiceGenerator
  * emits an Angular service per domain with findAll / findById / create /
- * update / delete (+ softDelete/restore when softDelete=true) + custom
+ * update / delete (+ softDelete when softDelete=true) + custom
  * actions, plus a services/index.ts barrel for the cross-domain pass.
  *
  * Exercises:
@@ -9,7 +9,7 @@
  *     > /<kebab>s default
  *   - Filter interface fields built from filterable=true fields with
  *     "<tsType> | undefined" filterType
- *   - softDelete flag adds softDelete + restore methods
+ *   - softDelete flag adds a softDelete method on the served DELETE route
  *   - Custom actions: httpMethod GET vs POST/PATCH/DELETE body-shape;
  *     hasParams gate; default returnType 'void'; description fallback
  *   - buildZodType chain (minLength on string, maxLength append, format=
@@ -208,13 +208,17 @@ describe('ServiceGenerator Filter interface generation', () => {
 describe('ServiceGenerator softDelete branch', () => {
   const gen = new ServiceGenerator();
 
-  it('softDelete=true adds softDelete + restore methods', () => {
+  // The generated server serves no /archive and no /restore route. On a @SoftDelete entity its
+  // DELETE is the archive, so softDelete calls that; nothing un-sets the flag, so there is no
+  // restore() to emit (PATCH/PUT parity — see crud-route-parity.spec.ts).
+  it('softDelete=true adds softDelete on the served DELETE route, and no restore', () => {
     const content = gen.generate(domain({ entityName: 'Order', softDelete: true }), CTX)!.content;
 
     expect(content).toContain('softDelete(id: string): Observable<void>');
-    expect(content).toContain('restore(id: string): Observable<Order>');
-    expect(content).toContain('/${id}/archive');
-    expect(content).toContain('/${id}/restore');
+    expect(content).toContain('softDelete(id: string): Observable<void> {\n    return this.http.delete<void>(`${this.baseUrl}/${id}`);');
+    expect(content).not.toContain('restore(id: string)');
+    expect(content).not.toContain('/${id}/archive');
+    expect(content).not.toContain('/${id}/restore');
   });
 
   it('softDelete=false (default) omits softDelete + restore methods', () => {

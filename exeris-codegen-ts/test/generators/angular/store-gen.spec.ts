@@ -8,7 +8,7 @@
  *     isEmpty/hasActiveFilter/hasNextPage/hasPrevPage/state)
  *   - CRUD actions with optimistic update + rollback on error
  *   - Selection / filter / pagination / sort / state-management actions
- *   - Optional softDelete branch (archive + restore methods)
+ *   - Optional softDelete branch (archive method; no restore — nothing serves one)
  *   - Private helpers (getSearchableText / extractErrorMessage)
  *
  * Unique-to-store contracts pinned here:
@@ -369,23 +369,24 @@ describe('StoreGenerator systemFields.primaryKeyField alias propagation', () => 
   });
 });
 
-// ---------- softDelete branch (archive + restore) ----------
+// ---------- softDelete branch (archive) ----------
 
 describe('StoreGenerator softDelete branch', () => {
   const gen = new StoreGenerator();
 
-  it('softDelete=true adds archive + restore async methods routed through service.softDelete / service.restore', () => {
+  it('softDelete=true adds an archive async method routed through service.softDelete, and no restore', () => {
     const content = gen.generate(domain({ entityName: 'Order', softDelete: true }), CTX)!.content;
 
     expect(content).toContain('async archive(id: string): Promise<void> {');
-    expect(content).toContain('async restore(id: string): Promise<Order> {');
     // B3: service returns Observable — await must go through firstValueFrom to resolve the value.
     expect(content).toContain('await firstValueFrom(this.service.softDelete(id));');
-    expect(content).toContain('await firstValueFrom(this.service.restore(id));');
     expect(content).toContain("import { firstValueFrom } from 'rxjs';");
-    // archive removes from list; restore prepends.
+    // archive removes from list.
     expect(content).toContain('entities.filter(e => e.id !== id)');
-    expect(content).toContain('[restored, ...entities]');
+    // No restore: the generated server has no route that un-sets the soft-delete flag, and the
+    // service method this called PATCHed a path nothing serves (PATCH/PUT parity).
+    expect(content).not.toContain('async restore(');
+    expect(content).not.toContain('this.service.restore(');
   });
 
   it('softDelete=false (default) → no archive / no restore methods emitted', () => {

@@ -43,8 +43,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * version is pinned — deliberately not restated here, since a literal copy
  * goes stale on every kernel bump. The emitted {@code *Client}
  * binds the tier-neutral {@code eu.exeris.kernel.core.http.client.KernelWebClient}
- * facade (ADR-034), stood in at that FQN by a test stub in this module so the
- * gate compiles without pulling kernel-core.
+ * facade (ADR-034) and compiles against the real one from {@code exeris-kernel-core}. A
+ * test stub used to stand in at that FQN, from before kernel-core was on this classpath;
+ * it shadowed the real class, so a verb the facade does not have (a {@code put}, say) would
+ * have compiled here and failed in every consumer.
  *
  * <p>Run twice, once per bootstrap variant (G2): {@code composed=false} is the
  * cap-less application every release before 0.7.0 emitted; {@code composed=true}

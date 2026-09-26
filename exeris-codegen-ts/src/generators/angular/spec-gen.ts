@@ -210,10 +210,12 @@ export function generateServiceSpec(metadata: DomainMetadata, config: GeneratorC
   lines.push(`    request.flush({});`);
   lines.push(`  });`);
   lines.push('');
-  lines.push(`  it('updates with PATCH on the instance', () => {`);
+  // PUT: the verb the generated router serves update on. This line pinned PATCH — the wrong
+  // verb, asserted as the right one — which is how the client/server mismatch stayed green.
+  lines.push(`  it('updates with PUT on the instance', () => {`);
   lines.push(`    service.update('42', {} as never).subscribe();`);
   lines.push(`    const request = http.expectOne('${baseUrl}/42');`);
-  lines.push(`    expect(request.request.method).toBe('PATCH');`);
+  lines.push(`    expect(request.request.method).toBe('PUT');`);
   lines.push(`    request.flush({});`);
   lines.push(`  });`);
   lines.push('');
@@ -223,6 +225,15 @@ export function generateServiceSpec(metadata: DomainMetadata, config: GeneratorC
   lines.push(`    expect(request.request.method).toBe('DELETE');`);
   lines.push(`    request.flush(null);`);
   lines.push(`  });`);
+  if (metadata.softDelete) {
+    lines.push('');
+    lines.push(`  it('archives with DELETE on the instance', () => {`);
+    lines.push(`    service.softDelete('42').subscribe();`);
+    lines.push(`    const request = http.expectOne('${baseUrl}/42');`);
+    lines.push(`    expect(request.request.method).toBe('DELETE');`);
+    lines.push(`    request.flush(null);`);
+    lines.push(`  });`);
+  }
   lines.push(`});`);
   lines.push('');
 

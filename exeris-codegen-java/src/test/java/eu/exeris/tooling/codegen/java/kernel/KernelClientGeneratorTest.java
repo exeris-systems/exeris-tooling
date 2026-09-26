@@ -134,6 +134,24 @@ class KernelClientGeneratorTest {
     }
 
     @Test
+    @DisplayName("PATCH/PUT parity: update() says the generated router serves PUT and names the serving-side PATCH route")
+    void updateJavadocNamesTheUnservedVerbAndTheWorkaround() {
+        DomainMetadata metadata = DomainMetadata.builder("PurchaseOrder", "com.example.domain")
+                .path("/purchase-orders")
+                .build();
+
+        String content = generator.generate(metadata).content();
+
+        // KernelWebClient (kernel 0.12.0) has no put, so the emitted PATCH cannot be aligned on the
+        // router's PUT from this side. The Javadoc is the only place a consumer learns that, and the
+        // route it prints must name the entity's real path and RuntimeComponents accessor.
+        assertThat(content)
+                .contains("Not served by the generated server as emitted.")
+                .contains("routes.route(HttpMethod.PATCH, \"/purchase-orders/{id}\", "
+                        + "purchaseOrderHandler()::handleUpdate);");
+    }
+
+    @Test
     @DisplayName("ADR-045: constructor Javadoc carries the composition-root retry wiring example — Javadoc-only")
     void generateEmitsRetryCompositionRootExample() {
         DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")

@@ -107,6 +107,14 @@
             <scope>test</scope>
         </dependency>
 
+        <!-- CrudRouteParityE2ETest reads the OpenAPI paths as model objects, so the model types
+             are declared rather than relied on as codegen-java transitives. -->
+        <dependency>
+            <groupId>io.swagger.core.v3</groupId>
+            <artifactId>swagger-models</artifactId>
+            <scope>test</scope>
+        </dependency>
+
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
