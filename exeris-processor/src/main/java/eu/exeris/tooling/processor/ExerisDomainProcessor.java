@@ -246,6 +246,16 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "does not even reach the JSON. Deleting the attribute changes nothing: "
                             + "it has had a default since SDK 0.11.0, so it is no longer a value "
                             + "every author is forced to write (T44)"),
+            new InertAttribute("Action", "httpMethod",
+                    "it is extracted into ActionMetadata.httpMethod and no generator reads it: the "
+                            + "router serves every action on POST {domainPath}/{id}/actions/"
+                            + "{kebab-action-name} (a streaming action as a POST stream route), the "
+                            + "OpenAPI document publishes POST, and the TypeScript service POSTs. The "
+                            + "only readers are the page, table and metadata emitters in the dsl "
+                            + "package, which no production code path constructs. Serving another "
+                            + "verb changes the route and the published contract on both sides, so "
+                            + "it waits on a decision — the per-action GET spectate route, an "
+                            + "ADR-044 amendment — rather than being honoured silently"),
             new InertAttribute("Action", "permissions",
                     "the processor does not extract it, so ActionMetadata's permissions field is "
                             + "empty in every build — and nothing would read it if it were filled. "
@@ -348,14 +358,20 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                     "the annotation's role — which field plays it — is extracted (C1) and "
                             + "reaches the schema and the repository. This attribute is not: "
                             + "SystemFieldsMetadata carries one field name per role and has no component "
-                            + "for it, so setting it changes no emitted output. The emitted restore "
-                            + "clears the timestamp unconditionally"),
+                            + "for it, so setting it changes no emitted output. There is also nothing "
+                            + "for it to govern: no restore is emitted anywhere — no route, handler, "
+                            + "repository method or client un-sets the soft-delete flag (0.9.0 removed "
+                            + "the TypeScript restore(), which called a route nothing serves) — and "
+                            + "the emitted soft delete sets only the flag, never this column"),
             new InertAttribute("SoftDeletedBy", "clearOnRestore",
                     "the annotation's role — which field plays it — is extracted (C1) and "
                             + "reaches the schema and the repository. This attribute is not: "
                             + "SystemFieldsMetadata carries one field name per role and has no component "
-                            + "for it, so setting it changes no emitted output. The emitted restore "
-                            + "clears the actor unconditionally"),
+                            + "for it, so setting it changes no emitted output. There is also nothing "
+                            + "for it to govern: no restore is emitted anywhere — no route, handler, "
+                            + "repository method or client un-sets the soft-delete flag (0.9.0 removed "
+                            + "the TypeScript restore(), which called a route nothing serves) — and "
+                            + "the emitted soft delete sets only the flag, never this column"),
             new InertAttribute("AuditCreatedAt", "immutable",
                     "the annotation's role — which field plays it — is extracted (C1) and "
                             + "reaches the schema and the repository. This attribute is not: "
@@ -569,10 +585,17 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                     "the type-level @Graph is read and, since S3, so is @GraphEdge — this one is "
                             + "not, and GraphMetadata.queries is passed as an empty list"),
             new UnreadAnnotation("SagaTransition",
-                    "KernelSagaGenerator emits transitions as a strict linear chain over "
-                            + "SagaMetadata.steps() in declaration order and consults no transition "
-                            + "annotation, so a declared transition is discarded before it reaches "
-                            + "any generator"),
+                    "held back until 0.10 (decided 2026-09-26), and the gate is the kernel, not "
+                            + "a generator. Kernel 0.12's flow plan precomputes exactly one next "
+                            + "step per step — the \"default\"-tagged transition, else the first "
+                            + "declared one, else the following step — and never evaluates an "
+                            + "outcome or a condition tag: CONTINUE takes that one step, and FAIL "
+                            + "unwinds the compensation stack instead of following an edge. So "
+                            + "only an unguarded SUCCESS edge is expressible; a FAILURE, TIMEOUT or "
+                            + "COMPENSATED edge, a guard, or a second SUCCESS edge out of one step "
+                            + "is not. Until the kernel routes by outcome or tag (asked for), "
+                            + "KernelSagaGenerator chains SagaMetadata.steps() in declaration "
+                            + "order and a declared transition changes nothing"),
             new UnreadAnnotation("QueryParam",
                     "action parameters are extracted through @ActionParam only; a parameter "
                             + "carrying just this annotation reaches ActionMetadata as if it were "
@@ -1435,6 +1458,12 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             // ADR-042 baseline-trust fields here too — same treatment as @ExerisDomain,
             // so no exeris-metadata/*.json is left without a trust stamp.
             writeDomainMetadataWithTrust(sagaName, metadata, element);
+
+            // Under -Aexeris.strict, audit the type-level annotations here too. A standalone
+            // @Saga class is where the SDK documents @SagaTransition, and without this call its
+            // unread note could fire only on an @ExerisDomain entity that also carries @Saga.
+            auditAnnotations(element);
+
             note("Generated saga metadata for: " + sagaName);
         } catch (Exception e) {
             reportProcessingFailure(element, "Failed to process saga", e);

@@ -29,6 +29,7 @@ import javax.tools.JavaFileObject;
 import javax.tools.StandardLocation;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Optional;
 
 import static com.google.testing.compile.CompilationSubject.assertThat;
@@ -1857,6 +1858,56 @@ class ExerisDomainProcessorTest {
         }
 
         @Test
+        @DisplayName("warns on @SagaTransition and blames the kernel's flow plan, not the generator")
+        void strictWarnsOnSagaTransitionWithTheKernelReason() {
+            // The note used to say the generator discards transitions, which read as a tooling
+            // gap. Kernel 0.12 precomputes one next step per step and routes no outcome or tag,
+            // so only an unguarded SUCCESS edge could be compiled; the flip is deferred to 0.10.
+            // The fixture is a standalone @Saga class, the home the SDK documents for the
+            // annotation — before this change strict mode never audited such a class at all.
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Checkout",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.Saga;
+                    import eu.exeris.sdk.annotation.SagaStep;
+                    import eu.exeris.sdk.annotation.SagaTransition;
+
+                    @Saga(name = "Checkout")
+                    @SagaTransition(from = "reserve", to = "charge")
+                    public class Checkout {
+                        @SagaStep(order = 1, name = "reserve", service = "stock", command = "reserve")
+                        public void reserve() {
+                        }
+
+                        @SagaStep(order = 2, name = "charge", service = "billing", command = "charge")
+                        public void charge() {
+                        }
+                    }
+                    """
+            );
+
+            Compilation compilation = javac()
+                    .withOptions("-Aexeris.strict=true")
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(source);
+
+            assertThat(compilation).succeeded();
+            assertThat(hasUnreadWarningFor(compilation, "@SagaTransition")).isTrue();
+            List<String> transitionWarnings = compilation.warnings().stream()
+                    .map(d -> d.getMessage(null))
+                    .filter(m -> m != null && m.contains("@SagaTransition"))
+                    .toList();
+            assertThat(transitionWarnings).hasSize(1);
+            assertThat(transitionWarnings.getFirst())
+                    .contains("held back until 0.10")
+                    .contains("the gate is the kernel, not a generator")
+                    .contains("only an unguarded SUCCESS edge is expressible")
+                    .doesNotContain("discarded before it reaches any generator");
+        }
+
+        @Test
         @DisplayName("warns on @QueryParam — the action-parameter site C0 added")
         void strictWarnsOnUnreadParameterAnnotation() {
             JavaFileObject source = JavaFileObjects.forSourceString(
@@ -2350,7 +2401,7 @@ class ExerisDomainProcessorTest {
             // The registry is a list; the warnings come from warnInertAttributes call
             // sites. An entry whose annotation has no call site is unreachable and reads
             // as coverage while producing nothing — which is what @Action.path and
-            // @ExerisDomain.apiVersion did. This fixture sets all four registered
+            // @ExerisDomain.apiVersion did. This fixture sets all five registered
             // attributes at once, so a future entry added without its call site fails
             // here rather than going quiet.
             Compilation compilation = javac()
@@ -2360,12 +2411,36 @@ class ExerisDomainProcessorTest {
 
             assertThat(compilation).succeeded();
             assertThat(hasInertWarningFor(compilation, "@Action.path")).isTrue();
+            assertThat(hasInertWarningFor(compilation, "@Action.httpMethod")).isTrue();
             assertThat(hasInertWarningFor(compilation, "@ExerisDomain.apiVersion")).isTrue();
             assertThat(hasInertWarningFor(compilation, "@ActionParam.description")).isTrue();
             assertThat(hasInertWarningFor(compilation, "@ActionParam.required")).isTrue();
             assertThat(inertWarnings(compilation))
                     .as("one warning per registered inert attribute, no more")
-                    .isEqualTo(4);
+                    .isEqualTo(5);
+        }
+
+        @Test
+        @DisplayName("-Aexeris.strict reports @Action.httpMethod: every emitter serves and calls actions on POST")
+        void strictReportsActionHttpMethodWithTheVerbActuallyServed() {
+            // Extracted into ActionMetadata.httpMethod, read only by the dsl emitters no
+            // production path constructs: the router, the OpenAPI document and the TS service
+            // all use POST. Before this entry an author writing httpMethod = "GET" heard nothing.
+            Compilation compilation = javac()
+                    .withOptions("-Aexeris.strict=true")
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(everyInertAttributeSet());
+
+            assertThat(compilation).succeeded();
+            List<String> httpMethodWarnings = compilation.warnings().stream()
+                    .map(d -> d.getMessage(null))
+                    .filter(m -> m != null && m.contains("@Action.httpMethod"))
+                    .toList();
+            assertThat(httpMethodWarnings).hasSize(1);
+            assertThat(httpMethodWarnings.getFirst())
+                    .contains("no generator reads it")
+                    .contains("POST {domainPath}/{id}/actions/{kebab-action-name}")
+                    .contains("no production code path constructs");
         }
 
         @Test
@@ -2539,7 +2614,8 @@ class ExerisDomainProcessorTest {
 
                     @ExerisDomain(module = "core", path = "/orders", apiVersion = "v1")
                     public class Order {
-                        @Action(name = "approve", label = "Approve", path = "/{id}/approve")
+                        @Action(name = "approve", label = "Approve", path = "/{id}/approve",
+                                httpMethod = "GET")
                         public void approve(
                                 @ActionParam(label = "Reason",
                                         description = "Why this order is approved",
@@ -3390,6 +3466,44 @@ class ExerisDomainProcessorTest {
             assertThat(inertWarnings(compilation))
                     .as("@SoftDelete.retentionPeriod is extracted-but-unconsumed")
                     .isPositive();
+        }
+
+        @Test
+        @DisplayName("-Aexeris.strict says clearOnRestore has no restore to govern, not that one is emitted")
+        void strictSaysNoRestoreIsEmittedForClearOnRestore() {
+            // Both notes used to cite "the emitted restore". Nothing emits one: no route,
+            // handler, repository method or client un-sets the flag, and the TS restore() that
+            // PATCHed an unserved route is gone.
+            Compilation compilation = javac()
+                    .withOptions("-Aexeris.strict=true")
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(JavaFileObjects.forSourceString(
+                            "com.example.Order",
+                            """
+                            package com.example;
+
+                            import eu.exeris.sdk.annotation.ExerisDomain;
+                            import eu.exeris.sdk.annotation.system.SoftDelete;
+                            import eu.exeris.sdk.annotation.system.SoftDeleteTimestamp;
+                            import eu.exeris.sdk.annotation.system.SoftDeletedBy;
+
+                            @ExerisDomain(module = "sales", path = "/orders")
+                            public class Order {
+                                @SoftDelete private boolean archived;
+                                @SoftDeleteTimestamp(clearOnRestore = false) private String archivedAt;
+                                @SoftDeletedBy(clearOnRestore = false) private String archivedBy;
+                            }
+                            """));
+
+            assertThat(compilation).succeeded();
+            List<String> restoreNotes = compilation.warnings().stream()
+                    .map(d -> d.getMessage(null))
+                    .filter(m -> m != null && m.contains("clearOnRestore"))
+                    .toList();
+            assertThat(restoreNotes).hasSize(2);
+            assertThat(restoreNotes).allSatisfy(note -> assertThat(note)
+                    .contains("no restore is emitted anywhere")
+                    .doesNotContain("The emitted restore"));
         }
     }
 
