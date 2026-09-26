@@ -8,7 +8,7 @@
 | **Scope**       | per-repo (`tooling`)                                                                                                         |
 | **Owning Repo** | `exeris-tooling`                                                                                                             |
 | **Driven By**   | [ADR-024](https://github.com/exeris-systems/exeris-docs/blob/main/adr/ADR-024-capability-composition-model.md) validation predicate 4; the 2026-07-21 gateway-caps first-SKU implementation plan, item P1.3 (tooling 0.7.0 slice G1) |
-| **Compliance**  | [ADR-006 The Wall](https://github.com/exeris-systems/exeris-docs/blob/main/adr/ADR-006-spring-free-kernel-boundary.md), [ADR-015 Codegen Emission Strategy](ADR-015-codegen-emission-strategy.md), [ADR-023 licensing/detachment](https://github.com/exeris-systems/exeris-docs/blob/main/adr/ADR-023-capability-licensing-model.md) |
+| **Compliance**  | [ADR-006 The Wall](https://github.com/exeris-systems/exeris-docs/blob/main/adr/ADR-006-spring-free-kernel-boundary.md), [ADR-015 Codegen Emission Strategy](ADR-015-codegen-emission-strategy.md), [ADR-023 licensing/detachment](https://github.com/exeris-systems/exeris-docs/blob/main/adr/ADR-023-capability-licensing-taxonomy.md) |
 
 ## Context and Problem Statement
 
