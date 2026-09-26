@@ -155,6 +155,24 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     }
 
     /**
+     * Whether the emitted repository for {@code metadata} imports Jackson 3 — true exactly when a
+     * field is a {@code List<X>}, which is persisted as a JSON column (T30: a compile requirement
+     * the kernel SPI and core do not satisfy).
+     *
+     * <p>Recorded, not measured: the ADR-060-shaped alternative is to encode these columns through
+     * a kernel-provided codec instead, so the repository names no JSON library. That needs a
+     * measurement first — whether kernel 0.12 exposes a JSON codec usable outside HTTP and event
+     * bodies, and whether it round-trips a {@code List<X>} column byte-compatibly with what
+     * existing rows hold.
+     *
+     * @param metadata the entity
+     * @return whether the emitted repository imports {@code tools.jackson}
+     */
+    static boolean importsJackson(DomainMetadata metadata) {
+        return metadata.fields().stream().anyMatch(f -> listElementType(f.type()) != null);
+    }
+
+    /**
      * The element type of a {@code List}-typed field, in either spelling, or {@code null} when
      * the type is not a list.
      */
@@ -191,7 +209,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         String className = entity + "Repository";
         String table = KernelTableNaming.effectiveTable(metadata);
         List<FieldMetadata> fields = metadata.fields();
-        boolean hasListField = fields.stream().anyMatch(f -> listElementType(f.type()) != null);
+        boolean hasListField = importsJackson(metadata);
 
         ClassName entityType = ClassName.get(metadata.packageName(), entity);
         ClassName selfType = ClassName.get(packageName, className);
@@ -229,6 +247,14 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                             Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
                     .initializer("new $T()", OBJECT_MAPPER)
                     .build());
+            // T30: the import above is a compile requirement no emitted pom declares. Appended
+            // after DO NOT EDIT so a repository without a List<X> field regenerates unchanged.
+            repo.addJavadoc("<p>Compile requirement: {@code List<X>} fields are persisted as JSON\n")
+                    .addJavadoc("through Jackson 3 ({@code tools.jackson.databind} /\n")
+                    .addJavadoc("{@code tools.jackson.core}). Neither {@code exeris-kernel-spi} nor\n")
+                    .addJavadoc("{@code -core} depends on it; only the Community driver does, and a\n")
+                    .addJavadoc("driver on the runtime classpath alone does not put it on the compile\n")
+                    .addJavadoc("classpath. Declare {@code tools.jackson.core:jackson-databind}.\n");
         }
 
         if (isTenantPartitioned(metadata)) {

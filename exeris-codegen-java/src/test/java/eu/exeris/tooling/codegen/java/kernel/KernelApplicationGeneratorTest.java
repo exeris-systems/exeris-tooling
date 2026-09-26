@@ -222,6 +222,29 @@ class KernelApplicationGeneratorTest {
     }
 
     @Test
+    @DisplayName("T30: the Application Javadoc lists composition-runtime as a compile requirement, "
+            + "not a runtime one")
+    void compositionRuntimeIsNamedAsACompileRequirement() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        List<DomainMetadata> domains = List.of(DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders").build());
+
+        String composed = application(gen.generateAll(domains, "com.example.foundation", true));
+        String compile = composed.substring(composed.indexOf("Compile classpath requirements"),
+                composed.indexOf("Runtime classpath requirements"));
+        assertThat(compile)
+                .contains("{@code exeris-kernel-spi} and {@code -core}")
+                .contains("Composition adds {@code eu.exeris:exeris-sdk-composition-runtime}")
+                .contains("tools.jackson.databind");
+        assertThat(composed.substring(composed.indexOf("Runtime classpath requirements")))
+                .doesNotContain("composition-runtime");
+
+        assertThat(application(gen.generateAll(domains, "com.example.foundation", false)))
+                .contains("Compile classpath requirements")
+                .doesNotContain("composition-runtime");
+    }
+
+    @Test
     @DisplayName("G2: composition changes Application only — RuntimeLifecycle is byte-identical")
     void compositionLeavesTheRuntimeLifecycleUntouched() {
         KernelApplicationGenerator gen = new KernelApplicationGenerator();

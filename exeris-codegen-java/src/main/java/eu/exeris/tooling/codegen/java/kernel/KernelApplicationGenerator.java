@@ -469,19 +469,28 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                     .addJavadoc("{@link #subsystems()} or {@link #$L($T)}.\n",
                             COMPONENTS_METHOD, TRANSACTIONAL_EXECUTOR);
         }
+        // T30: every import in the generated tree is a requirement on the consumer's compile
+        // classpath that no emitted pom declares, so this Javadoc names them by phase.
         applicationType
-                .addJavadoc("<p>Runtime classpath requirements (in addition to\n")
-                .addJavadoc("{@code exeris-kernel-spi} / {@code -core}): a kernel persistence\n")
+                .addJavadoc("<p>Compile classpath requirements: the generated sources import\n")
+                .addJavadoc("{@code exeris-kernel-spi} and {@code -core}.\n");
+        if (composed) {
+            applicationType
+                    .addJavadoc("Composition adds {@code eu.exeris:exeris-sdk-composition-runtime}:\n")
+                    .addJavadoc("this class imports its boot conductor, so the tree does not compile\n")
+                    .addJavadoc("without it.\n");
+        }
+        applicationType
+                .addJavadoc("A repository for an entity with a {@code List<X>} field also imports\n")
+                .addJavadoc("Jackson 3 ({@code tools.jackson.databind} / {@code tools.jackson.core}),\n")
+                .addJavadoc("which the kernel SPI and core do not bring; that repository's Javadoc\n")
+                .addJavadoc("says so when it applies.\n")
+                .addJavadoc("<p>Runtime classpath requirements, in addition: a kernel persistence\n")
                 .addJavadoc("provider (Community driver with a configured PostgreSQL DataSource —\n")
                 .addJavadoc("bound by the kernel bootstrap, not by this generated code).\n")
                 .addJavadoc("<p>Generated code logs through {@link System.Logger}, so it adds no\n")
                 .addJavadoc("logging dependency of its own. To route it to a backend, put a\n")
                 .addJavadoc("{@link System.LoggerFinder} provider on the classpath.\n");
-        if (composed) {
-            applicationType
-                    .addJavadoc("Composition adds {@code eu.exeris:exeris-sdk-composition-runtime}\n")
-                    .addJavadoc("(the boot conductor).\n");
-        }
         applicationType
                 .addJavadoc("<p><b>DO NOT EDIT</b> - Regenerate from domain models.\n")
                 .addMethod(mainMethod)

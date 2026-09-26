@@ -102,6 +102,11 @@ class KernelRepositoryGeneratorTest {
                 .contains("private static String toJson")
                 // No Jackson 2 leakage.
                 .doesNotContain("com.fasterxml.jackson");
+        // T30: the import is a compile requirement nothing else declares, so the class says so.
+        assertThat(repo.content())
+                .contains("<p>Compile requirement: {@code List<X>} fields are persisted as JSON")
+                .contains("Declare {@code tools.jackson.core:jackson-databind}.");
+        assertThat(KernelRepositoryGenerator.importsJackson(metadata)).isTrue();
     }
 
     @Test
@@ -120,7 +125,9 @@ class KernelRepositoryGeneratorTest {
                 .doesNotContain("ObjectMapper")
                 .doesNotContain("TypeReference")
                 .doesNotContain("parseList")
-                .doesNotContain("toJson");
+                .doesNotContain("toJson")
+                .doesNotContain("Compile requirement");
+        assertThat(KernelRepositoryGenerator.importsJackson(metadata)).isFalse();
     }
 
     @Test
