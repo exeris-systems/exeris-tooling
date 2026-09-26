@@ -612,6 +612,64 @@ class KernelApplicationGeneratorTest {
                 .doesNotContain("Flow");
     }
 
+    @Test
+    @DisplayName("T51: RuntimeComponents publishes COMPOSITION_SCOPES and REQUEST_SCOPES, derived "
+            + "from the branches that emit each read, naming every reader")
+    void scopeListsAreDerivedFromTheEmission() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        DomainMetadata live = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .realTimeApi(true)
+                .fields(List.of(FieldMetadata.builder("total", "BigDecimal").build()))
+                .events(List.of(eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata.builder("OrderCreated")
+                        .payloadFields(List.of("total")).build()))
+                .sagaMetadata(eu.exeris.sdk.sourcemodel.ast.SagaMetadata.simple("OrderFulfillment"))
+                .build();
+        DomainMetadata ledger = DomainMetadata.builder("Ledger", "com.example.domain")
+                .path("/ledgers")
+                .dataScope(eu.exeris.sdk.sourcemodel.ast.DataScope.TENANT)
+                .build();
+        String components = components(gen.generateAll(List.of(live, ledger), "com.example.foundation"));
+
+        assertThat(components)
+                .contains("public static final List<ScopedValue<?>> COMPOSITION_SCOPES = List.of("
+                        + "KernelProviders.MEMORY_ALLOCATOR, KernelProviders.EVENT_ENGINE, "
+                        + "KernelProviders.FLOW_ENGINE);")
+                .contains("public static final List<ScopedValue<?>> REQUEST_SCOPES = List.of("
+                        + "HttpKernelProviders.HTTP_REQUEST_BODY_DECODER_REGISTRY, "
+                        + "KernelProviders.STORAGE_CONTEXT);")
+                // every reader named, from the same branch that emitted the read
+                .contains("{@link KernelProviders#MEMORY_ALLOCATOR} — read by "
+                        + "{@link #createOrderHandler()}, {@link #createLedgerHandler()}")
+                .contains("{@link KernelProviders#EVENT_ENGINE} — read by "
+                        + "{@link #createOrderEventPublisher()}, {@link #createOrderEventSubscriber()}, "
+                        + "{@link #createOrderStreamHandler()}")
+                .contains("{@link KernelProviders#FLOW_ENGINE} — read by {@link #createOrderFulfillmentFlow()}")
+                .contains("{@link KernelProviders#STORAGE_CONTEXT} — read by the tenant guard in "
+                        + "{@link LedgerHandler}, {@link LedgerRepository}{@code .actingTenantId()}")
+                // optional: named, not listed
+                .contains("Optional, and so not listed: {@link KernelProviders#EVENT_PAYLOAD_CODEC_REGISTRY}");
+    }
+
+    @Test
+    @DisplayName("T51: a global entity with no events, stream or saga lists only what it reads")
+    void scopeListsShrinkWithTheDomain() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        DomainMetadata tag = DomainMetadata.builder("Tag", "com.example.domain").path("/tags").build();
+
+        assertThat(components(gen.generateAll(List.of(tag), "com.example.foundation")))
+                .contains("COMPOSITION_SCOPES = List.of(KernelProviders.MEMORY_ALLOCATOR);")
+                .contains("REQUEST_SCOPES = List.of(HttpKernelProviders.HTTP_REQUEST_BODY_DECODER_REGISTRY);")
+                .doesNotContain("EVENT_ENGINE")
+                .doesNotContain("FLOW_ENGINE")
+                .doesNotContain("STORAGE_CONTEXT;")
+                .doesNotContain("Optional, and so not listed");
+        // No domain at all: nothing is read, and the lists say so.
+        assertThat(components(gen.generateAll(List.of(), "com.example.foundation")))
+                .contains("COMPOSITION_SCOPES = List.of();")
+                .contains("REQUEST_SCOPES = List.of();");
+    }
+
     private static DomainMetadata orderWithEventsAndSaga() {
         return DomainMetadata.builder("Order", "com.example.domain")
                 .path("/orders")

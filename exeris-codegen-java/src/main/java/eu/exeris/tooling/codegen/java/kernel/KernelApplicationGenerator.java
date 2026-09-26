@@ -7,9 +7,11 @@ import com.palantir.javapoet.MethodSpec;
 import com.palantir.javapoet.ParameterizedTypeName;
 import com.palantir.javapoet.TypeName;
 import com.palantir.javapoet.TypeSpec;
+import com.palantir.javapoet.WildcardTypeName;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
+import eu.exeris.tooling.codegen.java.support.DataScopeSupport;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
 import eu.exeris.tooling.codegen.java.support.KernelStreamScaffold;
 import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
@@ -20,6 +22,7 @@ import eu.exeris.sdk.sourcemodel.ast.RelationshipMetadata;
 import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -158,6 +161,41 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
     private static final String CAP_MANIFEST_METHOD = "capManifest";
     private static final String CAP_MANIFEST_FILE = "cap-manifest.json";
     private static final String CAP_MANIFEST_PROPERTY = "exeris.capManifest";
+
+    // T51: the two scope lists RuntimeComponents publishes.
+    private static final String COMPOSITION_SCOPES = "COMPOSITION_SCOPES";
+    private static final String REQUEST_SCOPES = "REQUEST_SCOPES";
+    private static final ClassName LIST = ClassName.get("java.util", "List");
+
+    /**
+     * Every kernel {@code ScopedValue} emitted code reads, and when it is read (T51). Declaration
+     * order is emission order, so the lists and their Javadoc are stable whatever order the
+     * domains arrive in.
+     */
+    private enum Scope {
+        /** Read by every handler factory — the T43-follow-up capture. */
+        MEMORY_ALLOCATOR(KERNEL_PROVIDERS, Phase.COMPOSITION),
+        /** Read by the publisher, subscriber and EV1 stream-handler factories. */
+        EVENT_ENGINE(KERNEL_PROVIDERS, Phase.COMPOSITION),
+        /** Read by the saga-flow factories. */
+        FLOW_ENGINE(KERNEL_PROVIDERS, Phase.COMPOSITION),
+        /** Read by payload-bearing publisher factories; unbound only empties payloads. */
+        EVENT_PAYLOAD_CODEC_REGISTRY(KERNEL_PROVIDERS, Phase.OPTIONAL_COMPOSITION),
+        /** Read by every handler's {@code parseBody}; bound per request by the kernel. */
+        HTTP_REQUEST_BODY_DECODER_REGISTRY(HTTP_KERNEL_PROVIDERS, Phase.REQUEST),
+        /** Read by the tenant guard and the tenant stamp of a tenant-partitioned entity. */
+        STORAGE_CONTEXT(KERNEL_PROVIDERS, Phase.REQUEST);
+
+        private final ClassName holder;
+        private final Phase phase;
+
+        Scope(ClassName holder, Phase phase) {
+            this.holder = holder;
+            this.phase = phase;
+        }
+    }
+
+    private enum Phase { COMPOSITION, OPTIONAL_COMPOSITION, REQUEST }
 
     @Override
     public GeneratedFile generate(DomainMetadata metadata) {
@@ -469,6 +507,14 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .addJavadoc("factory body may resolve any bound {@link $T} —\n", SCOPED_VALUE)
                 .addJavadoc("{@code KernelProviders.flowEngine()}, {@code KernelProviders.eventEngine()}\n")
                 .addJavadoc("and friends are all available by then.\n")
+                .addJavadoc("<p>Which ones the generated factories read is listed in\n")
+                .addJavadoc("{@link $T#$L}; what the generated code reads while serving\n",
+                        componentsType, COMPOSITION_SCOPES)
+                .addJavadoc("a request, in {@link $T#$L}. A harness that composes outside a\n",
+                        componentsType, REQUEST_SCOPES)
+                .addJavadoc("boot binds both, plus {@code KernelProviders.PERSISTENCE_ENGINE} if it\n")
+                .addJavadoc("keeps the default {@link #$L()}, the one reader of that scope.\n",
+                        TX_EXECUTOR_NAME)
                 .addStatement("return new $T($L)", componentsType, TX_EXECUTOR_NAME)
                 .build();
 
@@ -670,7 +716,10 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .addJavadoc("<p>Every factory runs on the boot thread inside the kernel boot\n")
                 .addJavadoc("callback, so a body may resolve any bound provider\n")
                 .addJavadoc("({@code KernelProviders.flowEngine()},\n")
-                .addJavadoc("{@code KernelProviders.eventEngine()}, …). Accessors memoise and are\n")
+                .addJavadoc("{@code KernelProviders.eventEngine()}, …); {@link #$L} lists the\n",
+                        COMPOSITION_SCOPES)
+                .addJavadoc("ones the generated factories read, and {@link #$L} the ones the\n", REQUEST_SCOPES)
+                .addJavadoc("generated code reads while serving a request. Accessors memoise and are\n")
                 .addJavadoc("deliberately unsynchronised: composition completes before the HTTP\n")
                 .addJavadoc("handler slot is set, so no request can observe a half-built graph.\n")
                 .addJavadoc("<p><b>DO NOT EDIT</b> - subclass instead; this file is regenerated\n")
@@ -692,6 +741,11 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .addJavadoc("{@link $T#$L()}.\n", applicationType, TX_EXECUTOR_NAME)
                 .addStatement("return $L", TX_EXECUTOR_NAME)
                 .build());
+
+        // T51: each branch below that emits a read of a kernel scope records its reader here, in
+        // the same statement's neighbourhood — so the published lists are derived from the
+        // emission, not restated beside it. EnumMap iterates in Scope order: deterministic.
+        Map<Scope, List<CodeBlock>> readers = new EnumMap<>(Scope.class);
 
         for (DomainMetadata domain : domains) {
             String entity = domain.entityName();
@@ -726,6 +780,10 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 // inside the boot callback, where the kernel binds it. It publishes on the
                 // request thread, where the slot is unbound — resolved there, every payload
                 // shipped empty with only a DEBUG line to say so.
+                read(readers, Scope.EVENT_ENGINE, factoryReference(publisherName));
+                if (KernelEventGenerator.hasPayloadEvents(domain)) {
+                    read(readers, Scope.EVENT_PAYLOAD_CODEC_REGISTRY, factoryReference(publisherName));
+                }
                 addComponent(type, publisherType, publisherName,
                         KernelEventGenerator.hasPayloadEvents(domain)
                                 ? CodeBlock.of("new $T($T.eventEngine(), $T.eventPayloadCodecRegistry().orElse(null))",
@@ -735,6 +793,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 // consumer installs behaviour by overriding this factory with a subclass whose
                 // handle<Event> methods do the work. RuntimeLifecycle subscribes it at boot.
                 ClassName subscriberType = ClassName.get(pkgs.event(), entity + "EventSubscriber");
+                read(readers, Scope.EVENT_ENGINE, factoryReference(entityLower + "EventSubscriber"));
                 addComponent(type, subscriberType, entityLower + "EventSubscriber",
                         CodeBlock.of("new $T($T.eventEngine())", subscriberType, KERNEL_PROVIDERS));
             }
@@ -745,6 +804,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
             // would strand every instance parked before a restart.
             ClassName sagaFlowType = KernelSagaGenerator.sagaFlowType(domain);
             if (sagaFlowType != null) {
+                read(readers, Scope.FLOW_ENGINE, factoryReference(sagaAccessor(sagaFlowType)));
                 addComponent(type, sagaFlowType, sagaAccessor(sagaFlowType),
                         CodeBlock.of("new $T($T.flowEngine())", sagaFlowType, KERNEL_PROVIDERS));
             }
@@ -757,6 +817,20 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
             // kernel's own CommunityBenchmarkRuntimeLifecycle uses, and it turns a wiring fault
             // into a boot failure instead of a 5xx on the first request with a body.
             CodeBlock allocator = CodeBlock.of("$T.MEMORY_ALLOCATOR.get()", KERNEL_PROVIDERS);
+            read(readers, Scope.MEMORY_ALLOCATOR, factoryReference(entityLower + "Handler"));
+            // Request scopes are read by the handler and repository emitters, under these same
+            // predicates: parseBody is emitted into every handler (KernelHandlerGenerator), and
+            // the tenant guard and acting-tenant stamp under isTenantPartitioned (the handler and
+            // repository generators both branch on it).
+            read(readers, Scope.HTTP_REQUEST_BODY_DECODER_REGISTRY,
+                    CodeBlock.of("{@link $T}{@code .parseBody}", handlerType));
+            if (DataScopeSupport.isTenantPartitioned(domain)) {
+                read(readers, Scope.STORAGE_CONTEXT,
+                        CodeBlock.of("the tenant guard in {@link $T}", handlerType));
+                read(readers, Scope.STORAGE_CONTEXT,
+                        CodeBlock.of("{@link $T}{@code .$L()}", repoType,
+                                KernelRepositoryGenerator.ACTING_TENANT_METHOD));
+            }
             if (KernelHandlerGenerator.publishesFromHandler(domain)) {
                 addComponent(type, handlerType, entityLower + "Handler",
                         CodeBlock.of("new $T($L(), $L, $L())",
@@ -776,6 +850,9 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
             // nothing and stays no-arg.
             if (domain.realTimeApi()) {
                 ClassName streamHandlerType = ClassName.get(pkgs.handler(), entity + "StreamHandler");
+                if (KernelStreamHandlerGenerator.hasProducer(domain)) {
+                    read(readers, Scope.EVENT_ENGINE, factoryReference(entityLower + "StreamHandler"));
+                }
                 addComponent(type, streamHandlerType, entityLower + "StreamHandler",
                         KernelStreamHandlerGenerator.hasProducer(domain)
                                 ? CodeBlock.of("new $T($T.eventEngine())", streamHandlerType, KERNEL_PROVIDERS)
@@ -792,6 +869,9 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 }
             }
         }
+
+        type.addField(compositionScopesField(readers, applicationType));
+        type.addField(requestScopesField(readers));
 
         type.addMethod(MethodSpec.methodBuilder(CONFIGURE_ROUTES_METHOD)
                 .addModifiers(Modifier.PUBLIC)
@@ -850,6 +930,117 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 KernelScaffold.render(basePackage, type.build()), ArtifactType.APPLICATION);
     }
 
+    /** Records that {@code reader} — a Javadoc fragment naming it — reads {@code scope}. */
+    private static void read(Map<Scope, List<CodeBlock>> readers, Scope scope, CodeBlock reader) {
+        readers.computeIfAbsent(scope, s -> new ArrayList<>()).add(reader);
+    }
+
+    /** The Javadoc reference to a component's factory, e.g. {@code {@link #createOrderHandler()}}. */
+    private static CodeBlock factoryReference(String componentName) {
+        return CodeBlock.of("{@link #$L()}", factoryName(componentName));
+    }
+
+    private static String factoryName(String componentName) {
+        return "create" + Character.toUpperCase(componentName.charAt(0)) + componentName.substring(1);
+    }
+
+    private static TypeName scopeListType() {
+        return ParameterizedTypeName.get(LIST,
+                ParameterizedTypeName.get(SCOPED_VALUE, WildcardTypeName.subtypeOf(Object.class)));
+    }
+
+    /** {@code List.of(K.A, K.B)} over the scopes of {@code phase} that something reads. */
+    private static CodeBlock scopeList(Map<Scope, List<CodeBlock>> readers, Phase phase) {
+        CodeBlock.Builder list = CodeBlock.builder().add("$T.of(", LIST);
+        boolean first = true;
+        for (Scope scope : readers.keySet()) {
+            if (scope.phase == phase) {
+                list.add(first ? "$T.$L" : ", $T.$L", scope.holder, scope.name());
+                first = false;
+            }
+        }
+        return list.add(")").build();
+    }
+
+    /** One Javadoc bullet per scope of {@code phase}: the scope, then every reader of it. */
+    private static CodeBlock scopeBullets(Map<Scope, List<CodeBlock>> readers, Phase phase) {
+        CodeBlock.Builder doc = CodeBlock.builder();
+        for (Map.Entry<Scope, List<CodeBlock>> entry : readers.entrySet()) {
+            Scope scope = entry.getKey();
+            if (scope.phase != phase) {
+                continue;
+            }
+            doc.add("  <li>{@link $T#$L} — read by ", scope.holder, scope.name());
+            doc.add(CodeBlock.join(entry.getValue(), ", "));
+            doc.add("</li>\n");
+        }
+        return doc.build();
+    }
+
+    /**
+     * Emits {@code RuntimeComponents.COMPOSITION_SCOPES} (T51): the scopes the generated
+     * factories on this class read, so a harness that composes outside a kernel boot learns the
+     * whole set at once instead of one failed boot at a time.
+     */
+    private static FieldSpec compositionScopesField(Map<Scope, List<CodeBlock>> readers,
+                                                    ClassName applicationType) {
+        FieldSpec.Builder field = FieldSpec.builder(scopeListType(), COMPOSITION_SCOPES,
+                        Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
+                .addJavadoc("The kernel scopes the generated factories on this class read while composing.\n")
+                .addJavadoc("<p>{@code KernelBootstrap.boot(...)} binds every one of them around the boot\n")
+                .addJavadoc("callback, which is where {@link $T#$L($T)} runs. A harness\n",
+                        applicationType, COMPONENTS_METHOD, TRANSACTIONAL_EXECUTOR)
+                .addJavadoc("composing outside a boot binds each — or overrides every factory that reads\n")
+                .addJavadoc("it:\n")
+                .addJavadoc("<ul>\n")
+                .addJavadoc(scopeBullets(readers, Phase.COMPOSITION))
+                .addJavadoc("</ul>\n");
+        List<CodeBlock> optional = readers.get(Scope.EVENT_PAYLOAD_CODEC_REGISTRY);
+        if (optional != null) {
+            field.addJavadoc("<p>Optional, and so not listed: {@link $T#$L}, read by\n",
+                            Scope.EVENT_PAYLOAD_CODEC_REGISTRY.holder, Scope.EVENT_PAYLOAD_CODEC_REGISTRY.name())
+                    .addJavadoc(CodeBlock.join(optional, ", "))
+                    .addJavadoc(". Unbound, those publishers encode nothing and every payload\n")
+                    .addJavadoc("publishes empty.\n");
+        }
+        return field
+                .addJavadoc("<p>Not read here: {@code KernelProviders.PERSISTENCE_ENGINE}, read only by\n")
+                .addJavadoc("{@link $T#$L()}'s default.\n", applicationType, TX_EXECUTOR_NAME)
+                .initializer(scopeList(readers, Phase.COMPOSITION))
+                .build();
+    }
+
+    /**
+     * Emits {@code RuntimeComponents.REQUEST_SCOPES} (T51): the scopes the generated code reads
+     * while serving a request — the ones a harness otherwise discovers one failed request at a
+     * time.
+     */
+    private static FieldSpec requestScopesField(Map<Scope, List<CodeBlock>> readers) {
+        FieldSpec.Builder field = FieldSpec.builder(scopeListType(), REQUEST_SCOPES,
+                        Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
+                .addJavadoc("The kernel scopes the generated code reads while serving a respond-once\n")
+                .addJavadoc("request:\n")
+                .addJavadoc("<ul>\n")
+                .addJavadoc(scopeBullets(readers, Phase.REQUEST))
+                .addJavadoc("</ul>\n");
+        if (readers.containsKey(Scope.HTTP_REQUEST_BODY_DECODER_REGISTRY)) {
+            field.addJavadoc("<p>The kernel's HTTP dispatcher binds {@code HTTP_REQUEST_BODY_DECODER_REGISTRY}\n")
+                    .addJavadoc("around every dispatch.\n");
+        }
+        if (readers.containsKey(Scope.STORAGE_CONTEXT)) {
+            field.addJavadoc("<p>{@code STORAGE_CONTEXT} is bound by the kernel's {@code SecurityInterceptor}\n")
+                    .addJavadoc("only for a route whose {@code HttpRoutePolicy} is not {@code permitAll()}, and\n")
+                    .addJavadoc("this application binds no policy (ADR-079) — so the deployment binds it,\n")
+                    .addJavadoc("typically in {@link #$L}, or declares a policy.\n", DECORATE_METHOD);
+        }
+        return field
+                .addJavadoc("<p>A stream route reads none of them: its handler took what it needs when it\n")
+                .addJavadoc("was composed, and the kernel binds neither a policy's context nor a session\n")
+                .addJavadoc("on a stream thread.\n")
+                .initializer(scopeList(readers, Phase.REQUEST))
+                .build();
+    }
+
     /**
      * Emits one component into {@code RuntimeComponents}: a private field, a public
      * memoising accessor, and the {@code protected create*} factory holding
@@ -857,7 +1048,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
      */
     private void addComponent(TypeSpec.Builder type, ClassName componentType,
                               String name, CodeBlock construction) {
-        String factory = "create" + Character.toUpperCase(name.charAt(0)) + name.substring(1);
+        String factory = factoryName(name);
 
         type.addField(FieldSpec.builder(componentType, name, Modifier.PRIVATE).build());
 

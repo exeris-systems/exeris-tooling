@@ -1,12 +1,11 @@
 package eu.exeris.e2e.boot;
 
-import eu.exeris.e2e.codegen.compile.ProcessorCompiler;
+import eu.exeris.e2e.codegen.compile.GeneratedTree;
 import eu.exeris.kernel.community.testkit.http.KernelBootstrapHttpEngineFixture;
 import eu.exeris.kernel.core.http.routing.HttpRouter;
 import eu.exeris.kernel.spi.http.HttpHandler;
 import eu.exeris.kernel.spi.http.HttpMethod;
 import eu.exeris.kernel.spi.http.HttpStatus;
-import eu.exeris.tooling.codegen.java.CodegenPipeline;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
@@ -14,22 +13,13 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import javax.tools.JavaCompiler;
-import javax.tools.ToolProvider;
-import java.io.ByteArrayOutputStream;
-import java.io.File;
 import java.io.IOException;
-import java.net.URL;
-import java.net.URLClassLoader;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -74,36 +64,19 @@ class GeneratedAppBootE2ETest {
     @TempDir
     static Path workspace;
 
-    private static URLClassLoader appLoader;
+    private static GeneratedTree app;
+    private static ClassLoader appLoader;
 
     @BeforeAll
     static void generateCompileAndLoad() throws IOException {
-        Path entityClasses = workspace.resolve("target/classes");
-        Path generated = workspace.resolve("src/main/generated/java");
-        Path harness = workspace.resolve("src/test/java");
-        Path appClasses = workspace.resolve("target/app-classes");
-
-        ProcessorCompiler.compile(workspace.resolve("src/main/java"), entityClasses, null, domainSources());
-        CodegenPipeline.createDefault().run(entityClasses.resolve("exeris-metadata"), generated, BASE_PACKAGE);
-
-        List<String> files = new ArrayList<>(javaSourcesUnder(generated));
-        for (Map.Entry<String, String> source : harnessSources().entrySet()) {
-            Path file = harness.resolve(source.getKey());
-            Files.createDirectories(file.getParent());
-            Files.writeString(file, source.getValue());
-            files.add(file.toString());
-        }
-        compile(files, appClasses, entityClasses);
-
-        appLoader = new URLClassLoader(
-                new URL[]{appClasses.toUri().toURL(), entityClasses.toUri().toURL()},
-                GeneratedAppBootE2ETest.class.getClassLoader());
+        app = GeneratedTree.build(workspace, BASE_PACKAGE, domainSources(), harnessSources());
+        appLoader = app.loader();
     }
 
     @AfterAll
     static void closeLoader() throws IOException {
-        if (appLoader != null) {
-            appLoader.close();
+        if (app != null) {
+            app.close();
         }
     }
 
@@ -222,32 +195,6 @@ class GeneratedAppBootE2ETest {
         Class<?> lifecycle = appLoader.loadClass(BASE_PACKAGE + ".RuntimeLifecycle");
         return (HttpHandler) lifecycle.getMethod("edgeRouter", AtomicReference.class, AtomicReference.class)
                 .invoke(null, handlerSlot, componentsSlot);
-    }
-
-    /**
-     * Compiles the emitted tree and the harness against the test classpath plus the entity the
-     * processor compiled. The ADR-058 contract classpath is {@code GeneratedTestsE2ETest}'s job;
-     * this test needs the kernel's runtime providers on the classpath anyway, to boot.
-     */
-    private static void compile(List<String> files, Path outputDir, Path entityClasses) throws IOException {
-        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
-        assertThat(compiler).as("a JDK (not a JRE) is required").isNotNull();
-        Files.createDirectories(outputDir);
-        List<String> args = new ArrayList<>(List.of(
-                "-d", outputDir.toString(),
-                "-classpath", System.getProperty("java.class.path") + File.pathSeparator + entityClasses,
-                "--release", "25",
-                "-nowarn"));
-        args.addAll(files);
-        ByteArrayOutputStream diagnostics = new ByteArrayOutputStream();
-        int rc = compiler.run(null, null, diagnostics, args.toArray(String[]::new));
-        assertThat(rc).as("emitted tree + harness must compile:%n%s", diagnostics).isZero();
-    }
-
-    private static List<String> javaSourcesUnder(Path root) throws IOException {
-        try (Stream<Path> tree = Files.walk(root)) {
-            return tree.filter(p -> p.toString().endsWith(".java")).map(Path::toString).sorted().toList();
-        }
     }
 
     /**
