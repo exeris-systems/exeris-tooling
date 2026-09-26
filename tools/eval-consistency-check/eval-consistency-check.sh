@@ -12,12 +12,17 @@ text = open(path, encoding="utf-8").read()
 cases = (yaml.safe_load(text) or {}).get("cases") or []
 fails = []
 
+def expected(case):
+    return ((case.get("expect") or {}).get("fields") or {})
+
 tagged = {c["id"] for c in cases if "negative" in (c.get("tags") or [])}
-# "asserts a refusal to escalate" — the answer the case expects is that the agent does NOT flag or escalate.
+# "asserts a refusal to escalate" — the answer the case expects is that the agent does NOT flag or
+# escalate: a verdict that lets the change through, or a triage that routes it to docs rather than
+# to an architect. Read from the expectation alone, never from the tag, or an untagged case could
+# not be told apart from one that asserts nothing.
 refusal = {c["id"] for c in cases
-           if ((c.get("expect") or {}).get("fields") or {}).get("decision") in ("ALLOW", "PASS", "APPROVE")
-           or ((c.get("expect") or {}).get("fields", {}).get("task_class") == "DOCS_ADR"
-               and "negative" in (c.get("tags") or []))}
+           if expected(c).get("decision") in ("ALLOW", "PASS", "APPROVE")
+           or expected(c).get("task_class") == "DOCS_ADR"}
 
 for cid in sorted(tagged - refusal):
     fails.append(f"'{cid}' is tagged negative but its expectation is not a refusal")
