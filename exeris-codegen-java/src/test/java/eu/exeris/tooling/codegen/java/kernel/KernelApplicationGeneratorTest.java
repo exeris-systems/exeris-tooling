@@ -237,13 +237,36 @@ class KernelApplicationGeneratorTest {
         assertThat(compile)
                 .contains("{@code exeris-kernel-spi} and {@code -core}")
                 .contains("Composition adds {@code eu.exeris:exeris-sdk-composition-runtime}")
-                .contains("tools.jackson.databind");
+                .doesNotContain("tools.jackson.databind");
         assertThat(composed.substring(composed.indexOf("Runtime classpath requirements")))
                 .doesNotContain("composition-runtime");
 
         assertThat(application(gen.generateAll(domains, "com.example.foundation", false)))
                 .contains("Compile classpath requirements")
                 .doesNotContain("composition-runtime");
+    }
+
+    @Test
+    @DisplayName("T30: the Application Javadoc names Jackson 3 only when a repository in the tree imports it")
+    void jacksonIsNamedOnlyWhenARepositoryImportsIt() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        DomainMetadata withoutList = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .fields(List.of(FieldMetadata.builder("total", "BigDecimal").build()))
+                .build();
+        DomainMetadata withList = DomainMetadata.builder("Tagged", "com.example.domain")
+                .path("/tagged")
+                .fields(List.of(FieldMetadata.builder("tags", "List<String>").build()))
+                .build();
+        assertThat(KernelRepositoryGenerator.importsJackson(withList)).isTrue();
+        assertThat(KernelRepositoryGenerator.importsJackson(withoutList)).isFalse();
+
+        assertThat(application(gen.generateAll(List.of(withoutList), "com.example.foundation", false)))
+                .doesNotContain("tools.jackson.databind");
+        assertThat(application(gen.generateAll(List.of(withoutList, withList),
+                        "com.example.foundation", false)))
+                .contains("Jackson 3 ({@code tools.jackson.databind} / {@code tools.jackson.core})")
+                .contains("that repository's Javadoc\n * names it.");
     }
 
     @Test

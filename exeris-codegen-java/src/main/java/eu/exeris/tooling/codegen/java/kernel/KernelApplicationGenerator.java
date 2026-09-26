@@ -154,7 +154,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
 
     // G2 (ADR-024, 2026-07-21 "Boot Conductor Call Site" amendment): the SKU-side
     // boot conductor. Emitted ONLY into a build that actually has a composition —
-    // see buildApplication(String, boolean).
+    // see buildApplication(String, boolean, boolean).
     private static final ClassName COMPOSITION_CONDUCTOR =
             ClassName.get("eu.exeris.sdk.composition.runtime", "CompositionConductor");
     private static final ClassName PATH = ClassName.get("java.nio.file", "Path");
@@ -233,7 +233,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
      *                 {@code @CapabilityModule}). When {@code true}, {@code Application}
      *                 drives the SDK boot conductor around the runtime lifecycle; when
      *                 {@code false} not a single conductor symbol is emitted — see
-     *                 {@link #buildApplication(String, boolean)}
+     *                 {@link #buildApplication(String, boolean, boolean)}
      * @return the three emitted files; always
      *         {@code [Application, RuntimeComponents, RuntimeLifecycle]}
      * @since 0.7.0
@@ -241,7 +241,9 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
     public List<GeneratedFile> generateAll(List<DomainMetadata> domains, String basePackage,
                                            boolean composed) {
         List<GeneratedFile> files = new ArrayList<>(3);
-        files.add(buildApplication(basePackage, composed));
+        // T30: the Jackson 3 sentence is emitted only when a repository in this tree imports it.
+        boolean importsJackson = domains.stream().anyMatch(KernelRepositoryGenerator::importsJackson);
+        files.add(buildApplication(basePackage, composed, importsJackson));
         files.add(buildRuntimeComponents(domains, basePackage));
         files.add(buildRuntimeLifecycle(domains, basePackage));
         return files;
@@ -390,7 +392,8 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
      * nothing to conduct, and emitting a conductor that would boot an empty (or missing)
      * manifest is inert wiring at best and a boot failure at worst.
      */
-    private GeneratedFile buildApplication(String basePackage, boolean composed) {
+    private GeneratedFile buildApplication(String basePackage, boolean composed,
+                                           boolean importsJackson) {
         ClassName selfType = ClassName.get(basePackage, "Application");
         ClassName lifecycleType = ClassName.get(basePackage, "RuntimeLifecycle");
         TypeName atomicHttpHandler = ParameterizedTypeName.get(ATOMIC_REFERENCE, HTTP_HANDLER);
@@ -549,11 +552,14 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                     .addJavadoc("this class imports its boot conductor, so the tree does not compile\n")
                     .addJavadoc("without it.\n");
         }
+        if (importsJackson) {
+            applicationType
+                    .addJavadoc("A repository for an entity with a {@code List<X>} field also imports\n")
+                    .addJavadoc("Jackson 3 ({@code tools.jackson.databind} / {@code tools.jackson.core}),\n")
+                    .addJavadoc("which the kernel SPI and core do not bring; that repository's Javadoc\n")
+                    .addJavadoc("names it.\n");
+        }
         applicationType
-                .addJavadoc("A repository for an entity with a {@code List<X>} field also imports\n")
-                .addJavadoc("Jackson 3 ({@code tools.jackson.databind} / {@code tools.jackson.core}),\n")
-                .addJavadoc("which the kernel SPI and core do not bring; that repository's Javadoc\n")
-                .addJavadoc("says so when it applies.\n")
                 .addJavadoc("<p>Runtime classpath requirements, in addition: a kernel persistence\n")
                 .addJavadoc("provider (Community driver with a configured PostgreSQL DataSource —\n")
                 .addJavadoc("bound by the kernel bootstrap, not by this generated code).\n")
