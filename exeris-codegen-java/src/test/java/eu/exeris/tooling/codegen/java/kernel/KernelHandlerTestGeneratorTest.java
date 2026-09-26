@@ -287,7 +287,7 @@ class KernelHandlerTestGeneratorTest {
         assertThat(first).doesNotContain("UUID.randomUUID()");
     }
 
-    /** {@link #VALIDATED}, tenant-partitioned — the only difference the ADR-XXX emission keys on. */
+    /** {@link #VALIDATED}, tenant-partitioned — the only difference the ADR-090 emission keys on. */
     private static final DomainMetadata TENANT_VALIDATED =
             DomainMetadata.builder("Order", "com.example.domain").path("/orders")
                     .dataScope(eu.exeris.sdk.sourcemodel.ast.DataScope.TENANT)
@@ -312,7 +312,7 @@ class KernelHandlerTestGeneratorTest {
     }
 
     @Test
-    @DisplayName("ADR-XXX: a foreign tenant is refused 400 on both write routes, past every guard")
+    @DisplayName("ADR-090: a foreign tenant is refused 400 on both write routes, past every guard")
     void emitsTheForeignTenantCases() {
         String source = new KernelHandlerTestGenerator().generate(TENANT_VALIDATED, "com.example").content();
 
@@ -333,7 +333,7 @@ class KernelHandlerTestGeneratorTest {
     }
 
     @Test
-    @DisplayName("ADR-XXX: a global entity's handler test is unchanged — no tenant scope, no refusal")
+    @DisplayName("ADR-090: a global entity's handler test is unchanged — no tenant scope, no refusal")
     void globalEntityGetsNoTenantScaffold() {
         String source = new KernelHandlerTestGenerator().generate(VALIDATED, "com.example").content();
 

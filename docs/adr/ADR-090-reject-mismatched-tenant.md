@@ -1,11 +1,9 @@
-# ADR-XXX — A write naming another tenant is refused with 400, not left to row-level security
+# ADR-090 — A write naming another tenant is refused with 400, not left to row-level security
 
-> **Number not reserved.** `ADR-XXX` is a placeholder. Tooling ADRs share the single namespace in
-> `exeris-docs/adr-index.md`, which is not writable from this change. Reserve a number there
-> **before merge**, then rename this file and replace every `ADR-XXX` in the tree:
-> `grep -rn 'ADR-XXX' .` (emitter Javadoc, emitted Javadoc and comments, tests, the ADR-059 stub).
-
-- **Status:** ACCEPTED (2026-09-26, founder decision on T36)
+- **Status:** ACCEPTED (2026-09-26, founder decision on T36) · **number pending registration** — 090 is
+  the next free number in `exeris-docs/adr-index.md` as of 2026-09-26 (its highest row is 089). The
+  reservation row has not landed there yet and must before this file merges (adr-conventions rule 2);
+  the founder files it, because this change cannot write to `exeris-docs`.
 - **Repo:** `exeris-tooling`
 - **Scope:** tooling / codegen pipeline — emitted repository, handler, OpenAPI, TypeScript types
 - **Visibility:** public

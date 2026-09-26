@@ -627,7 +627,7 @@ describe('TypeGenerator — a UNIVERSE entity\'s sharedScopeField is server-owne
   });
 });
 
-describe('TypeGenerator — a tenant-partitioned owner is server-owned without a systemFields block (ADR-XXX)', () => {
+describe('TypeGenerator — a tenant-partitioned owner is server-owned without a systemFields block (ADR-090)', () => {
   const entity = (dataScope: 'GLOBAL' | 'TENANT') => domain({
     entityName: 'Fleet',
     dataScope,

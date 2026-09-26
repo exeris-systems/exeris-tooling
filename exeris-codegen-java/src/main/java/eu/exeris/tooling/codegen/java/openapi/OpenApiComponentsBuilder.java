@@ -31,7 +31,7 @@ public final class OpenApiComponentsBuilder {
     }
 
     /**
-     * The fields the server owns on write (ADR-XXX): a tenant-partitioned entity's owner and a
+     * The fields the server owns on write (ADR-090): a tenant-partitioned entity's owner and a
      * UNIVERSE entity's {@code @SharedScope} key. The generated repository stamps both from the
      * bound storage context, refuses a value that contradicts it, and never updates the owner; so
      * the entity schema marks them {@code readOnly} and the create/update DTOs omit them — the same

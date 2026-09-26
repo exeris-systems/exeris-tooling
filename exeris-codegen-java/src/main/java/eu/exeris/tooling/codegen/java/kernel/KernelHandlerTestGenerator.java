@@ -50,7 +50,7 @@ import java.util.Map;
  * <p>Tenant-partitioned entities: every route is dispatched inside a bound {@code StorageContext}
  * ({@code asTenant(...)}), because the handler's T41 guard answers {@code 500} to a request that
  * carries none. Until 0.9.0 these tests bound nothing, so every case of a tenant-partitioned entity's
- * emitted handler test failed on that guard. Such an entity also gets the ADR-XXX cases: a write the
+ * emitted handler test failed on that guard. Such an entity also gets the ADR-090 cases: a write the
  * repository refuses as naming a foreign tenant (or, on a UNIVERSE entity, a foreign shared scope)
  * answers {@code 400}.
  *
@@ -675,7 +675,7 @@ public final class KernelHandlerTestGenerator {
     }
 
     /**
-     * ADR-XXX: the caller-fault refusals — a write naming a foreign tenant, or on a UNIVERSE entity
+     * ADR-090: the caller-fault refusals — a write naming a foreign tenant, or on a UNIVERSE entity
      * a foreign shared scope — answer {@code 400}, on both body-carrying routes.
      *
      * <p>The service double raises the same typed exception the repository does. What keeps the
@@ -740,11 +740,11 @@ public final class KernelHandlerTestGenerator {
             this.tenantScoped = tenantScoped;
         }
 
-        /** A valid body the write refuses with {@code refusal} (ADR-XXX); see {@link #addCallerFaultTests}. */
+        /** A valid body the write refuses with {@code refusal} (ADR-090); see {@link #addCallerFaultTests}. */
         MethodSpec refused(String name, String handlerMethod, CodeBlock refusal) {
             MethodSpec.Builder m = test(name)
                     .addJavadoc("A valid body naming an owner the caller does not act as is refused by\n")
-                    .addJavadoc("the repository with a typed caller fault, answered 400 (ADR-XXX) rather\n")
+                    .addJavadoc("the repository with a typed caller fault, answered 400 (ADR-090) rather\n")
                     .addJavadoc("than the 500 a bare exception gets.\n");
             stage(m, null, null);
             m.addStatement("service.refusal = $L", refusal);
@@ -868,7 +868,7 @@ public final class KernelHandlerTestGenerator {
         // reports the pair as a conflict.
         ClassName notFound = KernelErrorGenerator.notFoundType(metadata);
         ClassName conflict = KernelErrorGenerator.versionConflictType(metadata);
-        // ADR-XXX: a tenant-partitioned repository also refuses a write naming a foreign tenant.
+        // ADR-090: a tenant-partitioned repository also refuses a write naming a foreign tenant.
         boolean refuses = KernelErrorGenerator.tenantMismatchType(metadata) != null;
 
         TypeSpec.Builder stub = TypeSpec.classBuilder(stubType.simpleName())
@@ -896,7 +896,7 @@ public final class KernelHandlerTestGenerator {
             stub.addField(FieldSpec.builder(RuntimeException.class, "refusal")
                             .addJavadoc("A caller-fault refusal {@code save} and {@code update} raise instead\n")
                             .addJavadoc("of writing, the way the repository refuses a foreign tenant\n")
-                            .addJavadoc("(ADR-XXX). {@code null} — the default — writes.\n")
+                            .addJavadoc("(ADR-090). {@code null} — the default — writes.\n")
                             .build())
                     .addField(FieldSpec.builder(entityType, "attempted")
                             .addJavadoc("The entity a refused write was handed.\n")
@@ -965,7 +965,7 @@ public final class KernelHandlerTestGenerator {
                 .build();
     }
 
-    /** The stub's "refuse instead of writing" branch (ADR-XXX), or nothing when it cannot refuse. */
+    /** The stub's "refuse instead of writing" branch (ADR-090), or nothing when it cannot refuse. */
     private static CodeBlock refusalCheck(boolean refuses) {
         if (!refuses) {
             return CodeBlock.of("");

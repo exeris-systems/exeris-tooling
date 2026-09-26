@@ -209,12 +209,12 @@ class KernelRepositoryTestGeneratorTest {
                 // one that was already on the entity.
                 .contains("TENANT_KEY = \"00000000-0000-4000-8000-000000000002\"")
                 // The round-trip stages the owner as the bound tenant: anything else is refused
-                // before there is a row to read back (ADR-XXX).
+                // before there is a row to read back (ADR-090).
                 .contains("original.setTenantId(UUID.fromString(TENANT_KEY))");
     }
 
     @Test
-    @DisplayName("ADR-XXX: match, mismatch, unbound and update-cannot-move are each an emitted case")
+    @DisplayName("ADR-090: match, mismatch, unbound and update-cannot-move are each an emitted case")
     void emitsTheMismatchedTenantCases() {
         String source = generate(TENANT_ORDER);
 

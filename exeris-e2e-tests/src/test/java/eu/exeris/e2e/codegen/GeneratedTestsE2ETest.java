@@ -154,7 +154,7 @@ class GeneratedTestsE2ETest {
                                     Class.forName("com.shop.repository.SpeciesRepositoryTest", true, appLoader)),
                             DiscoverySelectors.selectClass(
                                     Class.forName("com.shop.saga.OrderSagaFlowTest", true, appLoader)),
-                            // The tenant-partitioned and UNIVERSE handlers (ADR-XXX): the only
+                            // The tenant-partitioned and UNIVERSE handlers (ADR-090): the only
                             // executed proof that a foreign tenant / shared scope answers 400
                             // past every guard — and, since they now dispatch with a tenant bound,
                             // that the T41 guard lets a bound request through.
@@ -189,13 +189,13 @@ class GeneratedTestsE2ETest {
             // the one T8 finder the fixture carries) + 7 repository cases for Order (the save/load
             // round-trip and the six paths around it) + 9 for Invoice — the entity that carries
             // every system column, and the only tenant-partitioned one here, so it alone gets the
-            // T36 stamp and the four ADR-XXX cases (bound tenant accepted, foreign tenant refused,
+            // T36 stamp and the four ADR-090 cases (bound tenant accepted, foreign tenant refused,
             // unbound left to the database, update never writes the owner) = 12 — + 15 for Species,
             // the UNIVERSE entity: the same 12 plus the T29 B stamp, the foreign-shared-scope refusal
             // and the kept-when-unbound tag — + 4 saga cases — + 14 InvoiceHandlerTest cases (the 9
             // bodyless/guard cases, 3 @Validation cases for its required reference, and the two
-            // ADR-XXX foreign-tenant 400s) + 15 SpeciesHandlerTest cases (the same, plus the
-            // foreign-shared-scope 400). Before ADR-XXX the two tenant-bearing handler tests were not
+            // ADR-090 foreign-tenant 400s) + 15 SpeciesHandlerTest cases (the same, plus the
+            // foreign-shared-scope 400). Before ADR-090 the two tenant-bearing handler tests were not
             // run here, and would have failed: they bound no StorageContext, so the T41 guard
             // answered 500 on every route.
             assertThat(summary.getTestsSucceededCount()).isEqualTo(94);

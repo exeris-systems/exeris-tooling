@@ -336,7 +336,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
     }
 
     /**
-     * The {@code catch} that answers a caller-fault write refusal with {@code 400} (ADR-XXX),
+     * The {@code catch} that answers a caller-fault write refusal with {@code 400} (ADR-090),
      * emitted ahead of the {@code RuntimeException} → 500 tail. Only on the routes that hand the
      * repository an entity to write — create, update and every action — and only for an entity
      * whose repository can raise one: {@code <Entity>TenantMismatchException} on a tenant-partitioned
@@ -532,7 +532,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         // catches is the row disappearing (or its version moving) between the read and the write.
         appendWriteRejectionCatch(method, metadata, true);
         // An action writes through the same service.update, so a partition-mate acting on a shared
-        // row it can read but not own is refused there, as the caller fault it is (ADR-XXX).
+        // row it can read but not own is refused there, as the caller fault it is (ADR-090).
         appendCallerFaultCatch(method, metadata);
         return appendServerErrorCatch(method,
                 "Failed to execute action " + action.name() + " on " + entityLower).build();
