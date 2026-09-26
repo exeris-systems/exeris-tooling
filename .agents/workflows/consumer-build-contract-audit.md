@@ -1,6 +1,15 @@
 ---
+name: consumer-build-contract-audit
 description: Audit emitted code for consumer-build requirements across logging, testing, and capability verification.
 argument-hint: Modified generators, scaffold, or PR diff
+steps:
+  - {skill: exeris-tooling-consumer-build-contracts}
+  - {agent: exeris-tooling-architect}
+  - {agent: exeris-tooling-codegen-verification}
+gates:
+  - test:eu.exeris.tooling.e2e.KernelCodegenCompileTest
+  - hook:guardrails-gate-on-stop
+  - ci:mvn verify
 ---
 
 Review emitted code against downstream consumer build constraints.

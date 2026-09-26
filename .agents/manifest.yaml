@@ -1,57 +1,133 @@
 # Composition and delivery metadata for this repository's agent material.
-# agents-md-schema.md rules 5 and 8: profiles and workflows compose by reference, and any imported
-# bundle is version-pinned. This repository imports nothing — the organisation bundle does not exist
-# as a published artefact yet, and a floating import would be a rule-8 violation, not a shortcut.
-version: 1
+# agents-md-schema.md rules 5, 7, 8 and 12: profiles and workflows compose by reference, provider
+# directories are generated, imports are version-pinned, and what a vendor cannot do is written
+# down rather than assumed.
+#
+# The check asserts this file and the filesystem agree in BOTH directions: every name here exists,
+# and every profile, skill and workflow on disk is named here.
+version: 2
 repository: exeris-tooling
-imports: []
 
-policies:
-  - policies/codegen-determinism.md
-  - policies/committed-generated-code.md
-  - policies/consumer-build-contracts.md
-  - policies/domain-metadata-contract.md
-  - policies/emitter-parity.md
-  - policies/kernel-target-only.md
-  - policies/processor-build-time-only.md
-  - policies/scoped-bans.md
-
-references:
-  - references/build-and-testing.md
-  - references/cross-repo-dependencies.md
-  - references/pipeline-architecture.md
-
-skills:
-  - skills/exeris-tooling-adr-shape-gate
-  - skills/exeris-tooling-angular-v22-emission
-  - skills/exeris-tooling-codegen-determinism-review
-  - skills/exeris-tooling-consumer-build-contracts
-  - skills/exeris-tooling-detach-output-discipline
-  - skills/exeris-tooling-emitter-parity-review
-  - skills/exeris-tooling-kernel-target-discipline
-  - skills/exeris-tooling-processor-discipline-review
-  - skills/exeris-tooling-strict-audit-review
-  - skills/exeris-tooling-triage
+imports:
+  - bundle: exeris-agents
+    version: 2.1.0
+    ref: abfdbe5336e3c29b807241b0bb00a6091cb42fea
+    sha256: sha256:7454a4e4f8682b664899225551dbf4e827e40a2c8889c989ff24e9ebdf2f960f
 
 agents:
-  - agents/exeris-tooling-architect.md
-  - agents/exeris-tooling-codegen-verification.md
-  - agents/exeris-tooling-docs-adr.md
-  - agents/exeris-tooling-implementer.md
-  - agents/exeris-tooling-router.md
+  - exeris-tooling-router
+  - exeris-tooling-architect
+  - exeris-tooling-implementer
+  - exeris-tooling-codegen-verification
+  - exeris-tooling-docs-adr
+  - exeris-tooling-evaluator
+
+skills:
+  - exeris-tooling-adr-shape-gate
+  - exeris-tooling-angular-v22-emission
+  - exeris-tooling-codegen-determinism-review
+  - exeris-tooling-consumer-build-contracts
+  - exeris-tooling-detach-output-discipline
+  - exeris-tooling-emitter-parity-review
+  - exeris-tooling-kernel-target-discipline
+  - exeris-tooling-processor-discipline-review
+  - exeris-tooling-strict-audit-review
+  - exeris-tooling-triage
 
 workflows:
-  - workflows/codegen-determinism-audit.md
-  - workflows/consumer-build-contract-audit.md
-  - workflows/emitter-parity-audit.md
-  - workflows/processor-discipline-audit.md
+  - codegen-determinism-audit
+  - consumer-build-contract-audit
+  - emitter-parity-audit
+  - processor-discipline-audit
+
+policies:
+  - codegen-determinism
+  - committed-generated-code
+  - consumer-build-contracts
+  - domain-metadata-contract
+  - emitter-parity
+  - kernel-target-only
+  - processor-build-time-only
+  - scoped-bans
+
+references:
+  - build-and-testing
+  - cross-repo-dependencies
+  - pipeline-architecture
+
+schemas:
+  - triage-result
+  - verdict
+  - handoff
+
+hooks: hooks/hooks.yaml
+evals: evals/scenarios.yaml
+
+nested:
+  - exeris-codegen-ts/AGENTS.md
+
+scripts:
+  - tools/eval-consistency-check/eval-consistency-check.sh
+
+renderer:
+  source: exeris-systems/exeris-agents
+  entrypoint: tools/agents_render.py
+  check: tools/agents_file_check.py
+  bundle: tools/agents_bundle.py
 
 adapters:
   claude:
     target: .claude
-    generated: true
-    renderer: tools/agent-adapter-check/agent-adapter-render.sh
-    map:
-      skills: .claude/skills
-      agents: .claude/agents
-      workflows: .claude/commands
+    agents: .claude/agents/{name}.md
+    skills: symlink
+    workflows: .claude/skills/{name}/SKILL.md
+    hooks: .claude/settings.json#hooks
+  copilot:
+    target: .github
+    agents: .github/agents/{name}.agent.md
+    skills: native
+    workflows: .github/prompts/{name}.prompt.md
+    hooks: .github/hooks/exeris.json
+    status: deferred
+  codex:
+    target: .codex
+    skills: native
+    hooks: .codex/hooks.json
+    status: deferred
+  gemini:
+    target: .gemini
+    skills: native
+    status: deferred
+  antigravity:
+    target: .agents
+    skills: native
+    hooks: .agents/hooks.json
+    status: deferred
+  cursor:
+    target: .cursor
+    skills: native
+    status: deferred
+
+degradations:
+  claude:
+    - no-canonical-capability-for-todo-tracking
+  copilot:
+    - stop-hook-warn-only
+    - no-role-profiles
+    - no-workflows
+  gemini: [stop-hook-warn-only, no-agent-scoped-hooks]
+  cursor: [stop-hook-warn-only]
+  antigravity:
+    - stop-hook-warn-only
+    - agent-selection-fails-silently
+  windows:
+    - skills-symlink-needs-copy-fallback
+
+provider-owned:
+  - .claude/settings.local.json
+  - .claude/README.md
+  - .claude/worktrees
+  - .github/workflows
+  - .github/dependabot.yml
+  - path: .claude/settings.json
+    generated-region: hooks

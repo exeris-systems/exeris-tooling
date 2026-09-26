@@ -1,0 +1,84 @@
+# Behaviour tests for this repository's roles — agents-md-schema.md rule 14.
+#
+# Three of these cases assert a REFUSAL to escalate, and they carry the `negative` tag so the count is
+# derivable rather than remembered — `--tags negative` selects exactly them.
+#
+# Three of the 3 are one half of a PAIR, and the pairing is the point: the same construct is a
+# defect or ordinary depending on where it sits.
+#
+#   Spring generator          multi-backend attempt -> REFUSE | kernel flow generator -> ALLOW
+#   processor runtime dep     violates build-time only -> REFUSE | JDK helper -> ALLOW
+#   MetadataLoader change     cross-module contract -> PIPELINE_SHAPE | ADR typo -> DOCS_ADR
+#
+version: 1
+
+defaults:
+  schema_dir: ../schemas
+  fixture_dir: fixtures
+
+cases:
+  - id: kernel-target-reject-spring-generator
+    agent: exeris-tooling-architect
+    fixture: add-spring-generator.md
+    prompt: "Review this proposal to add a Spring generator."
+    expect:
+      schema: verdict.schema.json
+      fields:
+        decision: REFUSE
+        scope_class: codegen-java
+    tags: [kernel-target, architect]
+
+  - id: kernel-target-permit-kernel-generator
+    agent: exeris-tooling-architect
+    fixture: add-flow-generator.md
+    prompt: "Review this proposal to add a kernel Flow generator."
+    expect:
+      schema: verdict.schema.json
+      fields:
+        decision: ALLOW
+        scope_class: codegen-java
+    tags: [kernel-target, architect, negative]
+
+  - id: processor-reject-runtime-dependency
+    agent: exeris-tooling-architect
+    fixture: processor-runtime-dep.md
+    prompt: "Review adding spring-core to exeris-processor."
+    expect:
+      schema: verdict.schema.json
+      fields:
+        decision: REFUSE
+        scope_class: processor
+    tags: [processor, architect]
+
+  - id: processor-permit-jdk-helper
+    agent: exeris-tooling-architect
+    fixture: processor-jdk-helper.md
+    prompt: "Review adding a JDK Types helper to exeris-processor."
+    expect:
+      schema: verdict.schema.json
+      fields:
+        decision: ALLOW
+        scope_class: processor
+    tags: [processor, architect, negative]
+
+  - id: router-triage-pipeline-shape
+    agent: exeris-tooling-router
+    fixture: change-metadataloader.md
+    prompt: "Triage this MetadataLoader contract change."
+    expect:
+      schema: triage-result.schema.json
+      fields:
+        task_class: PIPELINE_SHAPE
+        primary_agent: exeris-tooling-architect
+    tags: [router, triage]
+
+  - id: router-triage-docs-typo
+    agent: exeris-tooling-router
+    fixture: adr-typo.md
+    prompt: "Triage this typo fix in ADR-015."
+    expect:
+      schema: triage-result.schema.json
+      fields:
+        task_class: DOCS_ADR
+        primary_agent: exeris-tooling-docs-adr
+    tags: [router, triage, negative]

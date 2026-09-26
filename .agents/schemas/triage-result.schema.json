@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Triage result (exeris-tooling)",
+  "description": "What exeris-tooling-router hands to whoever runs next. Composed over the bundle base with task classes, roles, and validation gates narrowed to exeris-tooling and closed.",
+  "allOf": [
+    {
+      "$ref": "../vendor/exeris-agents-2.1.0/schemas/triage-result.base.schema.json"
+    },
+    {
+      "properties": {
+        "task_class": {
+          "enum": [
+            "PIPELINE_SHAPE",
+            "PROCESSOR_IMPLEMENTATION",
+            "GENERATOR_IMPLEMENTATION",
+            "VERIFICATION",
+            "DOCS_ADR",
+            "CROSS_BUILD",
+            "MULTI_DOMAIN"
+          ]
+        },
+        "primary_agent": {
+          "enum": [
+            "exeris-tooling-router",
+            "exeris-tooling-architect",
+            "exeris-tooling-implementer",
+            "exeris-tooling-codegen-verification",
+            "exeris-tooling-docs-adr",
+            "exeris-tooling-evaluator"
+          ]
+        },
+        "secondary_handoffs": {
+          "items": {
+            "$ref": "handoff.schema.json"
+          }
+        },
+        "validation_gates": {
+          "items": {
+            "allOf": [
+              {
+                "$ref": "../vendor/exeris-agents-2.1.0/schemas/triage-result.base.schema.json#/properties/validation_gates/items"
+              }
+            ],
+            "unevaluatedProperties": false
+          }
+        }
+      }
+    }
+  ],
+  "unevaluatedProperties": false
+}

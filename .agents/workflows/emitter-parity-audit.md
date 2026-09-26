@@ -1,6 +1,14 @@
 ---
+name: emitter-parity-audit
 description: Audit Java and TypeScript emitters to verify capability parity for shared domain metadata surfaces.
 argument-hint: Metadata changes, new annotations, or PR diff
+steps:
+  - {skill: exeris-tooling-emitter-parity-review}
+  - {agent: exeris-tooling-architect}
+  - {agent: exeris-tooling-codegen-verification}
+gates:
+  - test:eu.exeris.tooling.e2e.KernelCodegenE2ETest
+  - hook:guardrails-gate-on-stop
 ---
 
 Review emitter changes across Java and TypeScript for shared surface parity.

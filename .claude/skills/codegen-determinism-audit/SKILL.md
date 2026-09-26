@@ -1,0 +1,26 @@
+---
+name: codegen-determinism-audit
+description: Audit emitted code for determinism, verifying byte-identical output across runs and locales.
+disable-model-invocation: true
+---
+
+<!-- DO NOT EDIT. Generated from .agents/workflows/codegen-determinism-audit.md by agents_render.py
+     (exeris-systems/exeris-agents; agents-md-schema.md rule 7). Edit the source. -->
+Review generator changes against determinism invariants.
+
+Priorities:
+1. Time-of-day audit: reject `Instant.now()`, `System.currentTimeMillis()`, `LocalDate.now()`, `new Date()`.
+2. Randomness audit: reject `UUID.randomUUID()` and `Random` in emission paths.
+3. Collection order: verify maps and sets use sorted or deterministic iteration (`LinkedHashMap`, `TreeMap`, sorted lists).
+4. Locale safety: verify `Locale.ROOT` is used in `String.format` and case conversions.
+5. Path separators: verify forward slash (`/`) is used for emitted source paths.
+6. Regenerate test: propose or verify a regenerate-twice byte comparison (`diff -r`).
+
+Changed scope:
+$ARGUMENTS
+
+Please produce:
+- Affected generator / scaffold classes
+- Determinism findings by category
+- Verification test coverage
+- Final verdict: APPROVE / CONDITIONAL / REJECT

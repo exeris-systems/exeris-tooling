@@ -1,6 +1,14 @@
 ---
+name: codegen-determinism-audit
 description: Audit emitted code for determinism, verifying byte-identical output across runs and locales.
 argument-hint: Modified generator classes or PR diff
+steps:
+  - {skill: exeris-tooling-codegen-determinism-review}
+  - {agent: exeris-tooling-codegen-verification}
+gates:
+  - test:eu.exeris.tooling.e2e.KernelCodegenE2ETest
+  - hook:guardrails-gate-on-stop
+  - ci:mvn verify
 ---
 
 Review generator changes against determinism invariants.

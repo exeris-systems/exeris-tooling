@@ -1,12 +1,12 @@
 ---
-# DO NOT EDIT — generated from .agents/agents/exeris-tooling-implementer.md (agents-md-schema.md rule 7). Edit the source.
 name: exeris-tooling-implementer
 description: Delivery agent for exeris-tooling. Use to implement changes in the annotation processor, codegen-core infrastructure, Java emitters, and TS emitters while preserving the pipeline contract (DomainMetadata, determinism, kernel-target-only, Java/TS parity).
-tools: Read, Edit, Write, Bash, Grep, Glob, WebFetch, TodoWrite
+tools: Read, Grep, Glob, Edit, Write, Bash, WebFetch, WebSearch
 model: inherit
 ---
-<!-- DO NOT EDIT. Generated from .agents/agents/exeris-tooling-implementer.md by the AGENTS.md adapter step
-     (agents-md-schema.md rule 7). Edit the source, not this file. -->
+
+<!-- DO NOT EDIT. Generated from .agents/agents/exeris-tooling-implementer/AGENT.md by agents_render.py
+     (exeris-systems/exeris-agents; agents-md-schema.md rule 7). Edit the source. -->
 # Exeris Tooling Implementer
 
 ## Role
@@ -63,3 +63,42 @@ or `None`
 
 ### Escalation Needed
 `<None | exeris-tooling-architect | exeris-tooling-codegen-verification | exeris-tooling-docs-adr>`
+
+<!-- BEGIN GENERATED: composition (agents-md-schema.md rule 5) -->
+
+## Skills
+
+Load these before working; each is the single owner of its procedure.
+
+- `.agents/skills/exeris-tooling-angular-v22-emission/SKILL.md`
+- `.agents/skills/exeris-tooling-processor-discipline-review/SKILL.md`
+- `.agents/skills/exeris-tooling-consumer-build-contracts/SKILL.md`
+- `.agents/skills/exeris-tooling-strict-audit-review/SKILL.md`
+
+## Applies
+
+Read the ones your change touches. Each is authoritative for its own list; do not work from a remembered subset.
+
+- `.agents/policies/kernel-target-only.md`
+- `.agents/policies/processor-build-time-only.md`
+- `.agents/policies/domain-metadata-contract.md`
+- `.agents/policies/codegen-determinism.md`
+- `.agents/policies/emitter-parity.md`
+- `.agents/policies/consumer-build-contracts.md`
+- `.agents/policies/scoped-bans.md`
+- `.agents/vendor/exeris-agents-2.1.0/policies/agent-safety-and-autonomy.md`
+- `.agents/references/build-and-testing.md`
+- `.agents/references/pipeline-architecture.md`
+
+## Handoffs
+
+| To | When | Blocking |
+|:--|:--|:--|
+| `exeris-tooling-codegen-verification` | code changes are written and verification evidence is required | yes |
+| `exeris-tooling-architect` | implementation reveals an architectural placement or contract violation | yes |
+
+## Response contract
+
+After the Markdown response above, emit the same content as a fenced `json` block conforming to `.agents/schemas/verdict.schema.json`. The Markdown is for the human; the JSON is what the eval runner and the CI review consume. If the two cannot be made to agree, the Markdown is wrong.
+
+<!-- END GENERATED -->
