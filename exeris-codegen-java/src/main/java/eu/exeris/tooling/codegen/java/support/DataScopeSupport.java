@@ -31,13 +31,14 @@ import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
  * those routes, narrower-than-declared is still the only safe answer.
  *
  * <p>An emitted RLS policy names a PostgreSQL session variable; it does not call an
- * accessor. At the pinned kernel {@code v0.11.0} {@code exeris.tenant_id} is named in
- * SPI, Core and the TCK — so the tenant policy this class drives rests on a contract —
- * while {@code exeris.shared_scope} is named only in {@code exeris-kernel-community},
- * and the driver is swappable. Kernel 0.12 promotes both to constants on
- * {@code ConnectionInterceptor}; the transcription is gated on that pin, and on an SDK
- * carrier naming the field that holds a row's shared-scope value — without one every
- * row keeps the column's {@code ''} default and UNIVERSE is behaviourally TENANT.
+ * accessor. At kernel {@code v0.11.0} {@code exeris.shared_scope} was named only in
+ * {@code exeris-kernel-community}, and the driver is swappable. The pinned kernel 0.12
+ * promotes both variables to SPI constants on {@code ConnectionInterceptor}, and SDK 0.12
+ * ships the carrier naming the field that holds a row's shared-scope value
+ * ({@code SystemFieldsMetadata.sharedScopeField}). Both upstream gates are therefore
+ * open; the transcription waits on the processor filling that carrier (T29 slice B) —
+ * without it every row keeps the column's {@code ''} default and UNIVERSE is
+ * behaviourally TENANT.
  *
  * <p><b>T29, closed in 0.8.0.</b> The gap was never that UNIVERSE under-delivers —
  * it is that on the archetypal UNIVERSE entity it does not build. A shared-world row

@@ -1944,7 +1944,8 @@ class ExerisDomainProcessorTest {
         @Test
         @DisplayName("-Aexeris.strict warns on @ExerisDomain.primaryKeyField, the one system field nobody honours")
         void strictWarnsOnInertPrimaryKeyField() {
-            // SystemFieldsMetadata's other nine components are all read — Flyway's sysCol maps
+            // SystemFieldsMetadata's other nine extracted components are all read (the eleventh,
+            // SDK 0.12's sharedScopeField, is not extracted yet — T29 B) — Flyway's sysCol maps
             // tenantId, the audit stamps, the soft-delete trio and version; the repository
             // resolves five of them. The primary key is read by none: the schema emits
             // `id UUID PRIMARY KEY` unconditionally, the repository's clause is the constant

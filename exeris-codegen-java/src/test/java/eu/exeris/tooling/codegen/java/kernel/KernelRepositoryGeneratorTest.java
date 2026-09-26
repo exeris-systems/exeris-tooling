@@ -359,7 +359,7 @@ class KernelRepositoryGeneratorTest {
         SystemFieldsMetadata sf = new SystemFieldsMetadata(
                 "id", "createdAt", "createdBy",
                 "modifiedAt", "updatedBy", "orgId",
-                "rev", "deleted", null, null);
+                "rev", "deleted", null, null, null);
 
         DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
                 .tenantScoped(true).audited(true).softDelete(true).versioned(true)

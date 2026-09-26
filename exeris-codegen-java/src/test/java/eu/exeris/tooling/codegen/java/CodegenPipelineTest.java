@@ -345,8 +345,8 @@ class CodegenPipelineTest {
         void reportsMissingDriversForRealMetadata() throws IOException {
             writeDomain("Product", "");
             // Deliberately an element with classes and no META-INF/services — the measured shape
-            // of exeris-kernel-core-0.11.0.jar, which carries zero service registrations. That is
-            // what makes this gate non-vacuous rather than a formality.
+            // of exeris-kernel-core-0.11.0.jar and -0.12.0.jar, which carry zero service
+            // registrations. That is what makes this gate non-vacuous rather than a formality.
             Path coreLike = driverJar("core-like.jar");
 
             RuntimeDriverCheck.Result result =

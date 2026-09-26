@@ -17,61 +17,87 @@
 
     <properties>
         <!--
-          Released pins (U0). Nothing here may go back to a SNAPSHOT — a
-          cross-repo SNAPSHOT blocks cutting any release at all.
+          Pinned AHEAD of their releases (B0). The 0.12 line is unpublished on
+          both sides, and both pins are built from source: the SDK's `main` is
+          `0.12.0-SNAPSHOT`, and the kernel's `development/0.12.0` already
+          carries the final string `0.12.0` — code cut 2026-09-03, no `v0.12.0`
+          tag yet. A kernel `0.12.0` resolved before that tag is a pre-release
+          build that merely looks final; treat it as the SNAPSHOT it is.
 
-          SDK 0.11.0 (released 2026-08-26) needed no source change here because
-          it is additive on every record this repo reads: `ActionMetadata` grows
-          `schedule`, `FieldMetadata` grows `blob`, `DomainEventMetadata` grows
-          `trigger` / `actionName` / `fieldName`, and `BlobMetadata` +
-          `ScheduleMetadata` are new carriers. The processor extracts none of
-          them yet and no generator consumes them — reserved surface lands in
-          the SDK ahead of its processor slice by design.
+          This is a temporary exception to U0, not a relaxation of it. No
+          cross-repo SNAPSHOT may remain at a tooling cut (ROADMAP "Versioning
+          policy"), so both pins move to the final `0.12.0` releases once the
+          kernel and the SDK publish, and no tooling release is tagged before
+          they do.
 
-          One narrowing rides along and is invisible here: `@Action.path` moved
-          from `required` to `default`, so it is no longer present in every
-          annotation-value map. The attribute is registered inert either way
-          (T44), so `-Aexeris.strict` simply stops reporting it on actions that
-          never set it.
+          SDK 0.12 needed one source change here, and it is the SDK's record
+          policy working as written: a record grows by a trailing component,
+          and builders are the stable path. `DomainMetadata` (+ `routeAccess`,
+          `channel`) and `ActionMetadata` (+ `routeAccess`) are built through
+          their builders, so their growth cost nothing. `SystemFieldsMetadata`
+          (+ `sharedScopeField`, the `@SharedScope` carrier) has no builder and
+          is built positionally, so it took one trailing argument (Stellar
+          finding S6). The processor passes `null` there because it does not
+          scan `@SharedScope` yet (T29 slice B); the record is
+          `@JsonInclude(NON_NULL)`, so emitted metadata JSON is unchanged. The
+          `schemaVersion` the processor stamps follows `SchemaVersion.CURRENT`,
+          which is "0.12.0" in this jar. `@Channel`, `@RouteAccess` and
+          `@SharedScope` are new in 0.12 and extracted by nothing yet.
         -->
-        <exeris.sdk.version>0.11.0</exeris.sdk.version>
+        <exeris.sdk.version>0.12.0-SNAPSHOT</exeris.sdk.version>
         <!--
-          Kernel 0.11.0 — the line both SDK 0.10 and 0.11 pair with (the `sharedScopeKey`
-          carrier behind `DataScope.UNIVERSE`, consumed by ADR-059 slice B).
+          Kernel 0.12.0 — the line SDK 0.12 pairs with. Three of its additions
+          are what the emitters can now name, and why this pin moves at all:
 
-          Load-bearing for what comes next: 0.11.0 is the first kernel whose
-          distributed artifacts are class-file **major 69** with zero preview
-          stamps (kernel ADR-066). 0.10.2 was major 70 and `exeris-kernel-core`
-          carried 9 preview-stamped classes, which JDK 25 refuses outright — so
-          this bump is a hard prerequisite for the JDK-25 LTS descent (U1), not
-          merely adjacent to it. Verified by reading the jars, not the notes.
+          - `FlowDefinitionBuilder.version(int)` (a `default` method, ADR-064
+            amendment). The generated `*SagaFlow` can declare `@Saga.version`,
+            which it had nowhere to put on 0.11 (S1's emitter half, K5).
+          - `ConnectionInterceptor.SESSION_KEY_TENANT_ID` and
+            `SESSION_KEY_SHARED_SCOPE`. Both RLS session variables are SPI
+            contract now, not one driver's literal, which is what the
+            `DataScope.UNIVERSE` transcription was gated on. It is a tooling
+            slice from here (T29 slice B).
+          - ADR-074 peer addressing. A CLIENT-mode `HttpConfig`'s `bindHost` /
+            `port` are no longer dialled; the peer is `defaultAuthority`
+            (`http.client.defaultAuthority`) or `KernelWebClient.withAuthority`.
+            No signature moved, so client code that worked on 0.11 compiles
+            unchanged and fails at its first request. The emitted `*Client`
+            Javadoc says so (K8).
 
-          0.11.0 also ships as `eu.exeris.preview:*:0.11.0` (JDK 28 EA, Valhalla
-          `value record`). That line is deliberately NOT consumed here: the
-          emitted source is identical across both (of the 46 kernel types the
-          emitters name, only `EventBus` — javadoc-only — and `MemoryStats` —
-          the `value` modifier, transparent to a consumer — differ), so choosing
-          a line is a build-matrix question, never a codegen fork.
+          The ADR-066 baseline still holds, re-measured at B0: the spi, core,
+          community and community-testkit jars are all class-file major 69
+          with zero preview stamps. (0.10.2 had 9 preview-stamped classes in
+          core, which JDK 25 refuses; 0.11.0 was the first clean line.)
+
+          Take the `eu.exeris` coordinates, never `eu.exeris.preview` (the
+          JDK 28 EA Valhalla line). Choosing a line is a build-matrix question,
+          never a codegen fork: measured at 0.11.0, of the 46 kernel types the
+          emitters name only `EventBus` (Javadoc) and `MemoryStats` (the
+          `value` modifier) differ, and neither difference reaches a consumer.
         -->
-        <exeris.kernel.version>0.11.0</exeris.kernel.version>
+        <exeris.kernel.version>0.12.0</exeris.kernel.version>
 
         <auto-service.version>1.1.1</auto-service.version>
         <palantir.javapoet.version>0.15.0</palantir.javapoet.version>
         <!-- 2.18.9 closes the jackson-databind advisories Dependabot raises against
              2.18.x. Patch-level, no API change. -->
         <jackson.version>2.18.9</jackson.version>
-        <!-- 3.1.5 does two things at once, and the second is the one worth reading.
+        <!-- 3.2.2 is the Jackson 3 version kernel 0.12.0 pins (exeris-kernel-bom), and it
+             moves with the kernel pin (B0) for the reason this property exists. The comment
+             below claims this dep tracks "the same Jackson 3 line the Open-Core kernel
+             runtime uses". Management here also beats the kernel's own transitive version:
+             left at 3.1.5, the e2e classpath resolved `jackson-databind:3.1.5 - version
+             managed from 3.2.2`. G3 would then have executed kernel 0.12 classes on a
+             Jackson one minor older than they were built against, and the compile gate
+             would have checked emitted `tools.jackson.*` references against the wrong
+             minor.
 
-             It closes the tools.jackson advisories (everything <= 3.1.4 is affected).
-             It also ends a drift: this property said 3.0.4 while BOTH kernel 0.10.2 and
-             0.11.0 pin Jackson 3 at 3.1.1 — a whole minor apart. The comment below
-             claims this dep tracks "the same Jackson 3 line the Open-Core kernel runtime
-             uses", and that had quietly stopped being true, which means the compile gate
-             was checking emitted `tools.jackson.*` references against a different minor
-             than the kernel actually runs. Being patch-ahead of the kernel inside 3.1 is
-             the right posture for a security bump; being a minor behind was not a
-             posture at all. -->
-        <jackson3.version>3.1.5</jackson3.version>
+             Earlier history, same rule: 3.1.5 closed the tools.jackson advisories
+             (everything <= 3.1.4 is affected) and ended a drift where this said 3.0.4 while
+             kernel 0.10.2 and 0.11.0 pinned 3.1.1. Patch-ahead of the kernel inside its
+             minor is a posture for a security bump; a minor behind is not a posture at
+             all. -->
+        <jackson3.version>3.2.2</jackson3.version>
         <swagger-parser.version>2.1.45</swagger-parser.version>
         <!-- swagger-core carries the OpenAPI model types and the 3.1 mappers this module
              compiles against directly. It arrives transitively through swagger-parser, so
