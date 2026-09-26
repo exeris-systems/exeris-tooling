@@ -297,7 +297,7 @@ public final class KernelRepositoryTestGenerator {
         // field, so the assertion has to exclude "some other RuntimeException". A dedicated type
         // does that exactly, where "not found" only did it by coincidence of wording — and it is
         // the same type the handler catches to answer 404/409 rather than 500.
-        // Nothing is staged on the entity on purpose — on a versioned entity that also pins T26,
+        // Nothing is staged on the entity on purpose — on a versioned entity that also pins T54,
         // since update() reads the version off a freshly constructed instance.
         test.addStatement(write("$T.assertThatThrownBy(() -> repository.update($T.fromString($S), "
                         + "entity)).isInstanceOf($T.class)", tenantScoped),

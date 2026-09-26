@@ -92,7 +92,7 @@ import java.util.Map;
  * <em>is</em> an {@code HttpRouter}. The stream half of the route table is known at
  * generation time, so it is built before boot with late-bound targets; the
  * respond-once half is built where it always was, and can still be decorated.
- * <p>When the build also carries a capability composition (G2, 0.7.0), the
+ * <p>When the build also carries a capability composition (GC2, 0.7.0), the
  * {@code Application} boot callback additionally conducts that composition —
  * see {@link #generateAll(List, String, boolean)}. A build without capabilities
  * emits exactly what every release before 0.7.0 emitted.
@@ -152,7 +152,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
     private static final ClassName TRANSACTION_ORCHESTRATOR =
             ClassName.get("eu.exeris.kernel.core.persistence", "TransactionOrchestrator");
 
-    // G2 (ADR-024, 2026-07-21 "Boot Conductor Call Site" amendment): the SKU-side
+    // GC2 (ADR-024, 2026-07-21 "Boot Conductor Call Site" amendment): the SKU-side
     // boot conductor. Emitted ONLY into a build that actually has a composition —
     // see buildApplication(String, boolean, boolean).
     private static final ClassName COMPOSITION_CONDUCTOR =

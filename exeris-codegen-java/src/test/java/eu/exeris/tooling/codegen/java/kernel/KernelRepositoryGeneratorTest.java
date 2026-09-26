@@ -450,7 +450,7 @@ class KernelRepositoryGeneratorTest {
                 .contains("SELECT COUNT(*) FROM orders WHERE deleted = false")
                 // Optimistic-lock UPDATE adds AND version = ? on top of the audited SET clause.
                 .contains("AND version = ?")
-                // T26: the expected version is read into a boxed local and null-defaulted, so a
+                // T54: the expected version is read into a boxed local and null-defaulted, so a
                 // `Long version` field behaves like the `long` it shadows instead of NPE-ing.
                 .contains("Long currentVersion = entity.getVersion()")
                 .contains("long expectedVersion = currentVersion == null ? 0L : currentVersion")
@@ -532,7 +532,7 @@ class KernelRepositoryGeneratorTest {
                 .contains("long expectedVersion = currentVersion == null ? 0L : currentVersion")
                 .contains("entity.setVersion(expectedVersion + 1L)")
                 // Bind layout: [0]=order_number, [1]=version (new), [2]=id,
-                // [3]=expectedVersion (the optimistic-lock guard). T26: the version bind reads
+                // [3]=expectedVersion (the optimistic-lock guard). T54: the version bind reads
                 // through a boxed local too, so bindLong never unboxes a null.
                 .contains("Long versionValue = entity.getVersion()")
                 .contains("stmt.bindLong(1, versionValue == null ? 0L : versionValue)")

@@ -190,7 +190,7 @@ export type UIMetadata = z.infer<typeof UIMetadataSchema>;
 // whenever the annotation left them blank.
 //
 // @GraphEdge.direction has no component on GraphEdgeMetadata — one of the eleven attributes
-// with no carrier, recorded under S3 — so no metadata document carries it. Declaring it with
+// with no carrier, recorded under T57 — so no metadata document carries it. Declaring it with
 // a default would report OUTGOING for every edge, which is a direction the pipeline has never
 // been told.
 

@@ -22,7 +22,7 @@ jobs:
         # it catches source that stops compiling on a newer JDK, which a single row
         # would surface only downstream. Same shape as the SDK's matrix.
         #
-        # Branch protection now requires the 25 row (U2, 2026-08-18). The 26 row runs on
+        # Branch protection now requires the 25 row (UP2, 2026-08-18). The 26 row runs on
         # every PR and reports, but a red 26 does not block a merge — which is the point:
         # forward-compatibility is information, not a gate on the release-bearing line.
         java: ['25', '26']

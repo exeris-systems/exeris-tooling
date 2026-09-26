@@ -79,7 +79,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     /**
      * {@code java.lang.Long} — the boxed read of a version field. Deliberately the wrapper: the
      * entity may declare {@code version} either way, and a boxed local accepts both (a primitive
-     * autoboxes, a wrapper does not) while a primitive local would NPE on a null wrapper. See T26.
+     * autoboxes, a wrapper does not) while a primitive local would NPE on a null wrapper. See T54.
      */
     private static final ClassName BOXED_LONG = ClassName.get("java.lang", "Long");
 
@@ -1072,7 +1072,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
             update.addJavadoc("writing and rejects the update if no row matches the expected\n");
             update.addJavadoc("version (stale read).\n");
             Column versionColumn = systemColumn(ctx, ColumnKind.VERSION);
-            // T26: read into a boxed local first. The entity may declare `version` as `long` or as
+            // T54: read into a boxed local first. The entity may declare `version` as `long` or as
             // `Long`; assigning straight into a `long` NPEs on a null wrapper, and a null guard is
             // not expressible on a primitive. Boxing accepts both, and treating a null as 0 makes
             // a wrapper-typed field behave exactly like the primitive it shadows.
@@ -1290,7 +1290,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                     "if ($L.$L() == null) stmt.bindNull($L); else stmt.bindInstant($L, $L.$L());\n",
                     src, accessor, idx, idx, src, accessor);
             case DELETED -> body.addStatement("stmt.bindBoolean($L, $L.$L())", idx, src, accessor);
-            // T26: same boxing as update()'s expected-version read, for the same reason — a
+            // T54: same boxing as update()'s expected-version read, for the same reason — a
             // `Long version` on a freshly constructed entity is null, and bindLong takes a
             // primitive, so the unboxing threw before the row was ever written.
             case VERSION -> {

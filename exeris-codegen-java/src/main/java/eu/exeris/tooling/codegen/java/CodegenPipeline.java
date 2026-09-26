@@ -250,7 +250,7 @@ public final class CodegenPipeline {
                 }
             }
 
-            // G2: a build that carries capability metadata gets the boot-conductor call
+            // GC2: a build that carries capability metadata gets the boot-conductor call
             // site emitted into Application (ADR-024's 2026-07-21 amendment). Driven by the
             // metadata this run loaded, not by the manifest on disk — the manifest is
             // written further down (and on the deferred-failure path may be a preserved

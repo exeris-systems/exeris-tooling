@@ -24,7 +24,7 @@
           tag yet. A kernel `0.12.0` resolved before that tag is a pre-release
           build that merely looks final; treat it as the SNAPSHOT it is.
 
-          This is a temporary exception to U0, not a relaxation of it. No
+          This is a temporary exception to UP0, not a relaxation of it. No
           cross-repo SNAPSHOT may remain at a tooling cut (ROADMAP "Versioning
           policy"), so both pins move to the final `0.12.0` releases once the
           kernel and the SDK publish, and no tooling release is tagged before
@@ -51,7 +51,7 @@
 
           - `FlowDefinitionBuilder.version(int)` (a `default` method, ADR-064
             amendment). The generated `*SagaFlow` can declare `@Saga.version`,
-            which it had nowhere to put on 0.11 (S1's emitter half, K5).
+            which it had nowhere to put on 0.11 (T55's emitter half, K5).
           - `ConnectionInterceptor.SESSION_KEY_TENANT_ID` and
             `SESSION_KEY_SHARED_SCOPE`. Both RLS session variables are SPI
             contract now, not one driver's literal, which is what the
@@ -87,7 +87,7 @@
              below claims this dep tracks "the same Jackson 3 line the Open-Core kernel
              runtime uses". Management here also beats the kernel's own transitive version:
              left at 3.1.5, the e2e classpath resolved `jackson-databind:3.1.5 - version
-             managed from 3.2.2`. G3 would then have executed kernel 0.12 classes on a
+             managed from 3.2.2`. GC3 would then have executed kernel 0.12 classes on a
              Jackson one minor older than they were built against, and the compile gate
              would have checked emitted `tools.jackson.*` references against the wrong
              minor.
@@ -148,7 +148,7 @@
             </dependency>
             <!-- SDK boot conductor — not a codegen dependency (the emitter only
                  writes its FQN); needed on the e2e compile gate's test classpath
-                 so the G2 composed Application resolves CompositionConductor. -->
+                 so the GC2 composed Application resolves CompositionConductor. -->
             <dependency>
                 <groupId>eu.exeris</groupId>
                 <artifactId>exeris-sdk-composition-runtime</artifactId>
@@ -174,7 +174,7 @@
                 <version>${exeris.kernel.version}</version>
             </dependency>
 
-            <!-- Community driver + its test fixture — the G3 composition e2e boots a
+            <!-- Community driver + its test fixture — the GC3 composition e2e boots a
                  real kernel (http subsystem only) around the conductor run. -->
             <dependency>
                 <groupId>eu.exeris</groupId>

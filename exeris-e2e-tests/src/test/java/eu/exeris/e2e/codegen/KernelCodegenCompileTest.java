@@ -50,7 +50,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * it shadowed the real class, so a verb the facade does not have (a {@code put}, say) would
  * have compiled here and failed in every consumer.
  *
- * <p>Run twice, once per bootstrap variant (G2): {@code composed=false} is the
+ * <p>Run twice, once per bootstrap variant (GC2): {@code composed=false} is the
  * cap-less application every release before 0.7.0 emitted; {@code composed=true}
  * adds the SDK boot-conductor call site, compiled against the real
  * {@code exeris-sdk-composition-runtime} artifact.
@@ -226,7 +226,7 @@ class KernelCodegenCompileTest {
         // strategy. Run the Application generator separately so the
         // compile-gate verifies the full bootstrap stack resolves
         // against the real exeris-kernel-spi and -core artifacts.
-        // G2: the composed variant emits the boot-conductor call site, so this run also
+        // GC2: the composed variant emits the boot-conductor call site, so this run also
         // javac-compiles the try-with-resources against the real
         // eu.exeris.sdk.composition.runtime.CompositionConductor — including the fact that
         // its close() declares no checked exception (a boot(Runnable) lambda could not

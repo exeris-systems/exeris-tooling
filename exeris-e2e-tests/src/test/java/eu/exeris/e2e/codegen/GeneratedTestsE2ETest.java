@@ -113,7 +113,7 @@ class GeneratedTestsE2ETest {
     @DisplayName("K5: @Saga(version = 2) travels processor → metadata → emitted flow")
     void declaredSagaVersionReachesTheEmittedFlow() throws IOException {
         // The whole chain in one assertion: the processor has extracted @Saga.version since 0.8.0
-        // (S1), and KernelSagaGenerator now emits it. A drop anywhere along the way would leave the
+        // (T55), and KernelSagaGenerator now emits it. A drop anywhere along the way would leave the
         // flow at version 1, which compiles and resumes parked sagas on the wrong plan.
         assertThat(Files.readString(generatedMain.resolve("com/shop/saga/OrderSagaFlow.java")))
                 .contains("private static final int DEFINITION_VERSION = 2;")
@@ -449,7 +449,7 @@ class GeneratedTestsE2ETest {
                     private boolean deleted;
 
                     // Deliberately the WRAPPER, not `long`: this is the declaration that used to
-                    // NPE on the first save() of a fresh entity (T26), because the emitter bound
+                    // NPE on the first save() of a fresh entity (T54), because the emitter bound
                     // the version by unboxing. Keeping it boxed here is the regression test — a
                     // primitive would pass whether or not the fix is present.
                     @Field(label = "Version")

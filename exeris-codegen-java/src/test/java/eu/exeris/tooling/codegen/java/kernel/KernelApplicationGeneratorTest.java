@@ -174,7 +174,7 @@ class KernelApplicationGeneratorTest {
     }
 
     @Test
-    @DisplayName("G2: a composed build conducts the composition inside boot(...) — caps ready "
+    @DisplayName("GC2: a composed build conducts the composition inside boot(...) — caps ready "
             + "before the handler slot, drained after the latch")
     void composedApplicationDrivesTheBootConductor() {
         KernelApplicationGenerator gen = new KernelApplicationGenerator();
@@ -203,7 +203,7 @@ class KernelApplicationGeneratorTest {
     }
 
     @Test
-    @DisplayName("G2: no composition → not one conductor symbol is emitted (no inert wiring), "
+    @DisplayName("GC2: no composition → not one conductor symbol is emitted (no inert wiring), "
             + "and the two-argument overload is that cap-less default")
     void uncomposedApplicationCarriesNoConductorSymbol() {
         KernelApplicationGenerator gen = new KernelApplicationGenerator();
@@ -270,7 +270,7 @@ class KernelApplicationGeneratorTest {
     }
 
     @Test
-    @DisplayName("G2: composition changes Application only — RuntimeLifecycle is byte-identical")
+    @DisplayName("GC2: composition changes Application only — RuntimeLifecycle is byte-identical")
     void compositionLeavesTheRuntimeLifecycleUntouched() {
         KernelApplicationGenerator gen = new KernelApplicationGenerator();
         List<DomainMetadata> domains = List.of(DomainMetadata.builder("Order", "com.example.domain")
@@ -281,7 +281,7 @@ class KernelApplicationGeneratorTest {
     }
 
     @Test
-    @DisplayName("G2: composed emission is deterministic — byte-identical across runs")
+    @DisplayName("GC2: composed emission is deterministic — byte-identical across runs")
     void composedEmissionIsDeterministic() {
         KernelApplicationGenerator gen = new KernelApplicationGenerator();
         List<DomainMetadata> domains = List.of(

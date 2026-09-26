@@ -579,10 +579,10 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "T12 and the @View mesh binding sit on — so it is design-gated on a "
                             + "topology decision, not on an extractor"),
             new UnreadAnnotation("GraphProperty",
-                    "the type-level @Graph is read and, since S3, so is @GraphEdge — this one is "
+                    "the type-level @Graph is read and, since T57, so is @GraphEdge — this one is "
                             + "not, and GraphMetadata.properties is passed as null in consequence"),
             new UnreadAnnotation("GraphQuery",
-                    "the type-level @Graph is read and, since S3, so is @GraphEdge — this one is "
+                    "the type-level @Graph is read and, since T57, so is @GraphEdge — this one is "
                             + "not, and GraphMetadata.queries is passed as an empty list"),
             new UnreadAnnotation("SagaTransition",
                     "held back until 0.10 (decided 2026-09-26), and the gate is the kernel, not "
@@ -1696,7 +1696,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      * <p><b>Two refusals, both at the declaration.</b> Several fields carrying one role cannot be
      * compiled — {@code SystemFieldsMetadata} holds one name per role — and neither can an override
      * naming a different field than the annotation does. Accepting either would produce metadata
-     * that builds here and contradicts itself downstream, which is the shape S3 refused for a
+     * that builds here and contradicts itself downstream, which is the shape T57 refused for a
      * repeated {@code @GraphEdge}.
      *
      * <p><b>{@code @SharedScope} is recorded on a UNIVERSE entity only</b> — see
@@ -2517,14 +2517,14 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     /**
      * The entity's declared graph edges, from {@code @GraphEdge} on its fields.
      *
-     * <p><b>S3: this list was hardcoded to {@code List.of()}.</b> {@code GraphEdgeMetadata} exists,
+     * <p><b>T57: this list was hardcoded to {@code List.of()}.</b> {@code GraphEdgeMetadata} exists,
      * and {@code KernelGraphSyncGenerator} iterates {@code graph.edges()} to emit one
      * {@code GraphEdgeDescriptor} constant apiece — so the consumer was ready and the producer did
      * not exist. Every generated graph-sync artefact carried zero edges, in every build, whatever
      * the entity declared.
      *
      * <p>{@code @GraphEdge} is {@code @Repeatable(GraphEdges.class)}, so both the direct mirror and
-     * the synthesised container are read — the same shape S2 fixed for {@code @SagaStep}, and the
+     * the synthesised container are read — the same shape T56 fixed for {@code @SagaStep}, and the
      * same helper.
      *
      * <p>Order is field declaration order, which decides the order of the emitted constants. That
@@ -2685,7 +2685,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         if (values.containsKey("description")) builder.description((String) values.get("description"));
         if (values.containsKey("timeout")) builder.timeout((String) values.get("timeout"));
         if (values.containsKey("maxRetries")) builder.maxRetries(getInt(values, "maxRetries", 0));
-        // S1: `version` was never read, so SagaMetadata reported 1 for every saga and
+        // T55: `version` was never read, so SagaMetadata reported 1 for every saga and
         // `@Saga(version = 3)` produced a metadata document that contradicted its own source.
         // Correcting an existing field, not adding one — the record already declares it and the
         // TypeScript schema already mirrors it. Consumed since kernel 0.12 made it expressible:
@@ -2704,7 +2704,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     /**
      * The saga's steps, in {@code order}.
      *
-     * <p><b>S2: a repeated {@code @SagaStep} used to contribute nothing.</b> The annotation is
+     * <p><b>T56: a repeated {@code @SagaStep} used to contribute nothing.</b> The annotation is
      * {@code @Repeatable(SagaSteps.class)} and the container is public precisely so a step can be
      * repeated from any package — so repeating one is a supported authoring shape. But {@code javac}
      * replaces the repeats with the synthesised container, and a lookup for the exact type

@@ -694,7 +694,7 @@ class CodegenPipelineTest {
             // discovers lifecycle owners by reading this field and instantiating each non-null
             // FQN. A silent serialization drop would therefore surface as a SKU that boots with
             // zero lifecycle hooks — no initialize, no drain — rather than as a build failure.
-            // Pinned here because G2 (the emitted SKU bootstrap) is built directly on this field,
+            // Pinned here because GC2 (the emitted SKU bootstrap) is built directly on this field,
             // and because the manifest is serialized straight off CapabilityGraph, a path
             // independent of the CompositionStamp→CapManifest adapter used for the binding.
             writeCapabilityJson("Billing",
@@ -751,7 +751,7 @@ class CodegenPipelineTest {
         }
 
         @Test
-        @DisplayName("G2: a build with capabilities emits the boot-conductor call site into Application")
+        @DisplayName("GC2: a build with capabilities emits the boot-conductor call site into Application")
         void capabilitiesDriveTheConductorCallSite() throws IOException {
             writeDomainJson("Product.json", productDomain());
             writeCapabilityJson("Billing",
@@ -766,7 +766,7 @@ class CodegenPipelineTest {
         }
 
         @Test
-        @DisplayName("G2: a build with no capabilities emits no conductor symbol (no inert wiring)")
+        @DisplayName("GC2: a build with no capabilities emits no conductor symbol (no inert wiring)")
         void domainOnlyBuildEmitsNoConductor() throws IOException {
             writeDomainJson("Product.json", productDomain());
 

@@ -226,7 +226,7 @@ class ExerisDomainProcessorTest {
         }
 
         @Test
-        @DisplayName("S2: a repeated @SagaStep contributes its steps instead of vanishing")
+        @DisplayName("T56: a repeated @SagaStep contributes its steps instead of vanishing")
         void repeatedSagaStepIsExtracted() throws IOException {
             JavaFileObject source = JavaFileObjects.forSourceString(
                     "com.example.CheckoutSaga",
@@ -257,7 +257,7 @@ class ExerisDomainProcessorTest {
             String metadata = readContent(compilation.generatedFile(
                     StandardLocation.CLASS_OUTPUT, "exeris-metadata/CheckoutSaga.json").orElseThrow());
 
-            // Before S2 the first two were dropped: the lookup matched the exact type
+            // Before T56 the first two were dropped: the lookup matched the exact type
             // eu.exeris.sdk.annotation.SagaStep, which a synthesised container does not present.
             // The emitted flow was short by two steps, with no diagnostic anywhere.
             assertThat(metadata)
@@ -267,7 +267,7 @@ class ExerisDomainProcessorTest {
         }
 
         @Test
-        @DisplayName("S2: the container and a standalone step on the same class do not double-count")
+        @DisplayName("T56: the container and a standalone step on the same class do not double-count")
         void repeatedAndStandaloneStepsAreEachCountedOnce() throws IOException {
             JavaFileObject source = JavaFileObjects.forSourceString(
                     "com.example.CheckoutSaga",
@@ -307,7 +307,7 @@ class ExerisDomainProcessorTest {
         }
 
         @Test
-        @DisplayName("S1: @Saga.version reaches the metadata instead of always reporting 1")
+        @DisplayName("T55: @Saga.version reaches the metadata instead of always reporting 1")
         void sagaVersionIsExtracted() throws IOException {
             JavaFileObject source = JavaFileObjects.forSourceString(
                     "com.example.CheckoutSaga",
@@ -376,7 +376,7 @@ class ExerisDomainProcessorTest {
     class RelationshipAndGraphTests {
 
         @Test
-        @DisplayName("S3: @GraphEdge reaches graph.edges() instead of an always-empty list")
+        @DisplayName("T57: @GraphEdge reaches graph.edges() instead of an always-empty list")
         void graphEdgesAreExtracted() throws IOException {
             JavaFileObject source = JavaFileObjects.forSourceString(
                     "com.example.Order",
@@ -412,7 +412,7 @@ class ExerisDomainProcessorTest {
         }
 
         @Test
-        @DisplayName("S3: the target class supplies the label when targetLabel is not written")
+        @DisplayName("T57: the target class supplies the label when targetLabel is not written")
         void graphEdgeTargetClassSuppliesTheLabel() throws IOException {
             JavaFileObject source = JavaFileObjects.forSourceString(
                     "com.example.Order",
@@ -445,7 +445,7 @@ class ExerisDomainProcessorTest {
         }
 
         @Test
-        @DisplayName("S3: two @GraphEdge on one field are refused at the field, not two stages later")
+        @DisplayName("T57: two @GraphEdge on one field are refused at the field, not two stages later")
         void repeatedGraphEdgeOnOneFieldIsRefused() {
             JavaFileObject source = JavaFileObjects.forSourceString(
                     "com.example.Order",
@@ -483,7 +483,7 @@ class ExerisDomainProcessorTest {
         }
 
         @Test
-        @DisplayName("S3: an entity declaring no edge yields an empty list, never null")
+        @DisplayName("T57: an entity declaring no edge yields an empty list, never null")
         void graphWithoutEdgesYieldsAnEmptyList() throws IOException {
             JavaFileObject source = JavaFileObjects.forSourceString(
                     "com.example.Order",
@@ -2011,7 +2011,7 @@ class ExerisDomainProcessorTest {
         }
 
         @Test
-        @DisplayName("C0 + S3: @GraphEdge stops being reported the moment its extraction lands")
+        @DisplayName("C0 + T57: @GraphEdge stops being reported the moment its extraction lands")
         void strictIsQuietForAnAnnotationThatJustGainedAnExtraction() {
             JavaFileObject source = JavaFileObjects.forSourceString(
                     "com.example.Order",
@@ -2039,7 +2039,7 @@ class ExerisDomainProcessorTest {
             assertThat(compilation).succeeded();
             // The rule EXTRACTED_ANNOTATIONS states — "a new extraction must join the set in the
             // same change" — was written by C0 and broken by the very next change to touch it:
-            // S3 added the @GraphEdge extraction without updating the set, so strict mode told
+            // T57 added the @GraphEdge extraction without updating the set, so strict mode told
             // every author that a now-consumed annotation "has no effect on emitted output".
             // Caught in review. This is the guard that was missing.
             assertThat(hasUnreadWarningFor(compilation, "@GraphEdge"))

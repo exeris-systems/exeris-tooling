@@ -950,7 +950,7 @@ including entities whose routes never decode a body. An unwired allocator theref
 the point of the change — a wiring fault belongs at boot with the composition on the stack — but a
 boot failure that used to be a runtime 5xx can read as a regression if you do not know why.
 
-### A repeated `@SagaStep` now contributes its steps (S2)
+### A repeated `@SagaStep` now contributes its steps (T56, was S2)
 
 **What changed.** `@SagaStep` is `@Repeatable`. Repeating it on one method used to contribute
 **nothing** — `javac` replaces the repeats with the synthesised container, and the processor looked
@@ -961,14 +961,14 @@ steps it should always have had, which changes the generated orchestrator's tran
 already in flight resumes against a plan whose step list has changed — kernel ADR-062 makes that a
 drain-before-deploy situation, not a hot swap.
 
-### `@Saga(version = …)` reaches the metadata (S1, processor half)
+### `@Saga(version = …)` reaches the metadata (T55, was S1; processor half)
 
 `SagaMetadata.version` reported `1` for every saga regardless of what the annotation said. It now
 carries the declared value. **No emitted Java changes**: `FlowDefinitionBuilder` has no `version`
 setter on kernel 0.11.0, so the generator still emits no version. If you read the metadata JSON
 directly, the field stops contradicting your source.
 
-### `@GraphEdge` now reaches the emitted graph sync, and a repeat on one field is refused (S3)
+### `@GraphEdge` now reaches the emitted graph sync, and a repeat on one field is refused (T57, was S3)
 
 **What changed.** `GraphMetadata.edges` was a hardcoded empty list, so every generated graph-sync
 artefact carried zero edges whatever the entity declared. Edges are now extracted, and
@@ -987,7 +987,7 @@ own field.
 rather than the generator's `"Node"` fallback. Precedence is `targetLabel` → `target` simple name →
 `targetName`.
 
-### `-Aexeris.strict` reports eleven more annotations (C0, net of S3)
+### `-Aexeris.strict` reports eleven more annotations (C0, net of T57)
 
 **What changed.** Strict mode audited only *extracted-but-unconsumed* attributes, driven from the
 extraction call sites — so an annotation the processor never reads could not produce a warning by
@@ -1000,7 +1000,7 @@ whether it is reserved (design-gated, AST carriers exist) or simply unbuilt; the
 the difference.
 
 C0 itself opened sixteen: twelve annotations plus four `@Repeatable` containers, which report under
-their member's name. S3 then extracted `@GraphEdge` later in the same train, and its container went
+their member's name. T57 then extracted `@GraphEdge` later in the same train, and its container went
 quiet with it — so eleven is what a 0.8.0 consumer actually sees. An SDK annotation with no
 registered reason still reports, with a generic one; that is what makes the audit complete rather
 than a list somebody has to remember to extend.

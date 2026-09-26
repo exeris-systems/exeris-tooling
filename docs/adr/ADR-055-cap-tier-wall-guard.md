@@ -7,7 +7,7 @@
 | **Date**        | 2026-07-30                                                                                                                   |
 | **Scope**       | per-repo (`tooling`)                                                                                                         |
 | **Owning Repo** | `exeris-tooling`                                                                                                             |
-| **Driven By**   | [ADR-024](https://github.com/exeris-systems/exeris-docs/blob/main/adr/ADR-024-capability-composition-model.md) validation predicate 4; the 2026-07-21 gateway-caps first-SKU implementation plan, item P1.3 (tooling 0.7.0 slice G1) |
+| **Driven By**   | [ADR-024](https://github.com/exeris-systems/exeris-docs/blob/main/adr/ADR-024-capability-composition-model.md) validation predicate 4; the 2026-07-21 gateway-caps first-SKU implementation plan, item P1.3 (tooling 0.7.0 slice GC1) |
 | **Compliance**  | [ADR-006 The Wall](https://github.com/exeris-systems/exeris-docs/blob/main/adr/ADR-006-spring-free-kernel-boundary.md), [ADR-015 Codegen Emission Strategy](ADR-015-codegen-emission-strategy.md), [ADR-023 licensing/detachment](https://github.com/exeris-systems/exeris-docs/blob/main/adr/ADR-023-capability-licensing-taxonomy.md) |
 
 ## Context and Problem Statement
@@ -86,7 +86,7 @@ Every one of the five has its own isolating test in `CapTierWallTest`.
 ### No new dependency, and specifically not ASM
 
 `exeris-tooling` enforces JDK `[25,)`, so the Class-File API (JEP 484, final in JDK 24)
-is always available. (The range was `[26,27)` when this ADR was written; U1 widened it to
+is always available. (The range was `[26,27)` when this ADR was written; UP1 widened it to
 the JDK 25 LTS baseline on 2026-08-12. The conclusion is unchanged — JEP 484 predates
 both floors.) ASM appears in this repo only as a build-plugin-scoped override
 for `maven-plugin-plugin`'s descriptor scanner — it is *not* on the plugin's own classpath,
@@ -143,5 +143,5 @@ the platform now ships.
 
 1. **`CapTierWallTest` (codegen-core)** pins all five extraction sources with one isolating fixture each, plus the three boundaries, segment-exactness, own-vs-sibling internals, and determinism. The parameter-only and generic-argument fixtures are the regression tests against a pool-only implementation.
 2. **`VerifyCapabilitiesMojoTest.CapTierWallGuard`** pins the mojo control flow: run order versus graph validation, both skip toggles, the failure-type mapping, and the two readings of a gated-nothing outcome (a cap that was never scanned warns; a non-cap module stays silent).
-3. **G3 (the 0.7.0 e2e composition proof)** adds the end-to-end half: a Wall-violating sample cap that must fail a real build. Predicate 4's negative path is not considered fully covered until that lands.
+3. **GC3 (the 0.7.0 e2e composition proof)** adds the end-to-end half: a Wall-violating sample cap that must fail a real build. Predicate 4's negative path is not considered fully covered until that lands.
 4. **Migration:** nothing to migrate. No `exeris-caps-*` repository exists yet — this guard ships *before* the first cap, which is the only moment it can be introduced without a grandfathering window.

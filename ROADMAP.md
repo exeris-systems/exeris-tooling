@@ -132,8 +132,8 @@ cross-reference index, so it retains shipped items alongside open ones.
   FE gate. *Status (0.6.0): DEFERRED → 0.7.0* (release-cut decision 2026-07-02) — rides with the full
   Java `Kernel*TestGenerator`, so 0.7.0 delivers the generated-test story in one piece.
   *Superseded 2026-08-18: deferred again, to 0.8.0.* The "one piece" argument was made before the
-  gateway-caps track was folded into 0.7.0 and before U0/U1 arrived as forced upstream work; holding
-  a milestone whose stated goal (G0–G3) was complete, for a slice on the other side of the
+  gateway-caps track was folded into 0.7.0 and before UP0/UP1 arrived as forced upstream work; holding
+  a milestone whose stated goal (GC0–GC3) was complete, for a slice on the other side of the
   toolchain split, would have paid the delay for a symmetry no consumer can observe.
 - **T18** — build-safety: guard the T13 pruner on empty input (#129) + the capability-pass phase
   ordering (`exeris:verify-capabilities` fresh-metadata gate + deferred validation at
@@ -164,14 +164,14 @@ See the **Codegen completeness backlog** below for per-item detail.
 > (`exeris-sdk-composition-runtime`). Everything still open on the plan's critical path is
 > tooling-owned, which makes this milestone the gate on the whole gateway track.
 
-- [x] **G0 — release-pin bump.** SDK `0.8.0` → `0.9.0`, kernel `0.10.0` → `0.10.2`; CI SDK
-      checkout re-pinned to the `v0.9.0` tag. Prerequisite for G1–G3 (the conductor types must
+- [x] **GC0 (was G0) — release-pin bump.** SDK `0.8.0` → `0.9.0`, kernel `0.10.0` → `0.10.2`; CI SDK
+      checkout re-pinned to the `v0.9.0` tag. Prerequisite for GC1–GC3 (the conductor types must
       resolve). Carries two riders: the **ADR-054 lockstep** (drop the dead TS
       `ValidationMetadataSchema` — a never-consumed orphan whose Java counterpart was removed
       outright in SDK 0.9.0) and the `CapManifest.ModuleBody` adaptation for the trailing
       `lifecycleOwner` component added in 0.9.0 (binding-invariant — `CompositionBinding`
       canonicalizes `qualifiedName` + sorted `provides` only).
-- [x] **G1 — cap-tier Wall guard** (plan P1.3; ADR-024 validation predicate 4 — the last
+- [x] **GC1 (was G1) — cap-tier Wall guard** (plan P1.3; ADR-024 validation predicate 4 — the last
       unimplemented one). Bytecode import scan over `target/classes` wired into
       `exeris:verify-capabilities` at `process-classes`, gated on the module actually being a cap.
       Forbidden: `org.springframework.*`, `io.netty.*`, `reactor.*`, `jakarta.servlet.*`, kernel
@@ -185,7 +185,7 @@ See the **Codegen completeness backlog** below for per-item detail.
       argument appear only in a descriptor and a `Signature` attribute respectively), so the
       extraction surface — pool ∪ descriptors ∪ signatures ∪ annotations — is the load-bearing
       part rather than the forbidden-prefix list.
-- [x] **G2 — SKU bootstrap emitter.** `KernelApplicationGenerator` emits the conductor call site
+- [x] **GC2 (was G2) — SKU bootstrap emitter.** `KernelApplicationGenerator` emits the conductor call site
       inside `KernelBootstrap.boot(...)`, after `KERNEL READY`, per the shape pinned in
       `CompositionConductor`'s javadoc. The `@CapabilityLifecycle` → `cap-manifest.json`
       (`lifecycleOwner`) → conductor chain is already complete on the data side, so the emitter is
@@ -204,7 +204,7 @@ See the **Codegen completeness backlog** below for per-item detail.
       never on the runtime classpath. **Packaging it as a deployment artefact stays a SKU-scaffold
       concern** (Phase 5, alongside the ADR-053 canonical `composition.json` reader) — tooling owns
       the seam, not the deployment layout.
-- [x] **G3 — e2e composition proof** (plan P1.4; the plan's Phase-1 **exit gate**). Sample two-cap
+- [x] **GC3 (was G3) — e2e composition proof** (plan P1.4; the plan's Phase-1 **exit gate**). Sample two-cap
       composition → processor → `verify-capabilities` → kernel boot via
       `KernelBootstrapHttpEngineFixture` (`exeris-kernel-community-testkit`) → conductor run
       SKU-style after `KERNEL READY`; asserts verbatim `initOrder` and drain semantics. Negative
@@ -265,7 +265,7 @@ the authored-manifest schema in `exeris-sdk-composition-spec`), not this milesto
       **round-trip**, asserting runtime behaviour instead of text. Verified by perturbation:
       shifting `mapRow`'s indices by one makes the generated test fail. Still no database, driver or
       transaction. The gate runs it over two fixtures — a plain entity and one carrying every
-      system-column flag — and that second fixture immediately paid for itself by surfacing **T26**
+      system-column flag — and that second fixture immediately paid for itself by surfacing **T54**
       (a versioned entity with a wrapper `Long version` NPEs on its first `save()`). The
       gate **runs** the emitted tests through the JUnit Platform launcher instead of just compiling
       them; a test emitter whose output is never executed is the inert-output failure mode this repo
@@ -327,25 +327,25 @@ the authored-manifest schema in `exeris-sdk-composition-spec`), not this milesto
 completeness-table row saying otherwise were doc drift, corrected here. What was genuinely missing
 was that the constraints could never see a non-`MANY_TO_ONE` relationship or a cascade — the
 extraction fix above. The remaining backlog item already targeted at 0.7.0 before the gateway track
-was folded in is **T2** (the full test-emitter, Java + the FE spec slice); G0–G3 lead the milestone
+was folded in is **T2** (the full test-emitter, Java + the FE spec slice); GC0–GC3 lead the milestone
 because they gate the cap track, not because T2 was displaced. In the end T2 *was* split at the cut:
 the Java half shipped here, the FE spec slice moved to 0.8.0.
 
-### Upstream catch-up (U0–U3) — added 2026-08-12
+### Upstream catch-up (UP0–UP3) — added 2026-08-12
 
 Kernel 0.11.0 and SDK 0.10.0 both released, and both moved off the JDK this repo pins. The sequence
 below is **forced, not preferred**: 0.10.2 was class-file major 70 (and `exeris-kernel-core` carried
 9 preview-stamped classes), which JDK 25 refuses outright — so the pin bump has to land before the
 LTS descent can even compile. Verified by reading the jars.
 
-- [x] **U0 — release pins.** SDK `0.10.0-SNAPSHOT` → released `0.10.0`, kernel `0.10.2` → `0.11.0`;
+- [x] **UP0 (was U0) — release pins.** SDK `0.10.0-SNAPSHOT` → released `0.10.0`, kernel `0.10.2` → `0.11.0`;
       CI SDK checkout back from the moving `main` ref to the `v0.10.0` tag. A SNAPSHOT pin blocks
       cutting *any* release, so this is a release blocker rather than a convenience. Rider: SDK
       bumps `SchemaVersion.CURRENT` `0.9.0` → `0.10.0`, which the processor picks up for free (it
       stamps from `BaselineTrust.current(...)`, never the inlined constant) — consumers re-run
       codegen once, per ADR-042 skew. Behaviour-neutral by design and by result: 82 / 99 / 388 / 43
       / 24, unchanged.
-- [x] **U1 — JDK 25 LTS baseline.** Enforcer `[26,27)` → `[25,)`, `maven.compiler.release` 26 → 25,
+- [x] **UP1 (was U1) — JDK 25 LTS baseline.** Enforcer `[26,27)` → `[25,)`, `maven.compiler.release` 26 → 25,
       `@SupportedSourceVersion(RELEASE_26)` → an override returning `SourceVersion.latestSupported()`
       (a pinned constant would warn on a consumer compiling at release 28 on the preview line), the
       two hardcoded `--release 26` sites in `InMemoryJavaCompiler` + `GeneratedTestsE2ETest`, the
@@ -359,16 +359,16 @@ LTS descent can even compile. Verified by reading the jars.
       consumer's JVM refuses. Proven to fail by building at release 26. The ASM override on
       `maven-plugin-plugin` was re-measured and **stays**: plugin-tools 3.13.1 aborts on major 69
       too, not just 70.
-- [x] **U2 — CI matrix `['25','26']`**, 25 as the release-bearing row, copying the shape SDK 0.10.0
+- [x] **UP2 (was U2) — CI matrix `['25','26']`**, 25 as the release-bearing row, copying the shape SDK 0.10.0
       adopted. A third `eu.exeris.preview` row is *schedulable* (JDK 28 EA is publicly downloadable)
-      but deliberately not taken yet — see below. The matrix itself landed with U1 (#160); what
+      but deliberately not taken yet — see below. The matrix itself landed with UP1 (#160); what
       remained here was the half a workflow file cannot express — branch protection still required
       `mvn verify (JDK 26)`, so the row that gated merges was the *forward-compatibility* row and
       not the release-bearing one. Flipped to `mvn verify (JDK 25)` on 2026-08-18. The 26 row still
       runs and still reports; it no longer blocks. `ng build (generated sample app)` is **not** in
       the required list — the workflow comment claimed it was, which was never true and is corrected
       rather than made true, because adding a gate is a decision and not a doc-fix.
-- [x] **U3 — SDK pin `0.10.0` → `0.11.0`** (SDK released 2026-08-26). Same shape as U0 and the same
+- [x] **UP3 (was U3) — SDK pin `0.10.0` → `0.11.0`** (SDK released 2026-08-26). Same shape as UP0 and the same
       rider: SDK bumps `SchemaVersion.CURRENT` `0.10.0` → `0.11.0`, the processor picks it up for
       free (it stamps from `BaselineTrust.current(...)`, never the inlined constant), and consumers
       re-run codegen once per ADR-042 skew. Behaviour-neutral by design and by result: **83 / 99 /
@@ -441,7 +441,7 @@ Carrier populated, read by nobody. `@ExerisDomain` 11, `@SagaStep` 6, `@UI` 6, `
 least visible: a quiet `-Aexeris.strict` build says nothing about it, because strict audits
 *extracted-then-unconsumed* against its registries, not *carried-then-unread* wholesale.
 
-#### C1 — no kernel involvement (~220)
+#### C-none (was C1) — no kernel involvement (~220)
 
 Front-end, DDL and OpenAPI targets, whose only prerequisite is an SDK record component: `@UI` 29,
 `@ActionParam` 29, `@Validation` 24, `@Relationship` 20 (display half), `@NavMenu` 18,
@@ -453,7 +453,7 @@ Front-end, DDL and OpenAPI targets, whose only prerequisite is an SDK record com
 keys those predicates assume (`ConnectionInterceptor.SESSION_KEY_TENANT_ID`,
 `SESSION_KEY_SHARED_SCOPE`).
 
-#### C2 — the kernel expresses it; the AST is the gap
+#### C-kernel (was C2) — the kernel expresses it; the AST is the gap
 
 The kernel takes more than the AST carries, in two families:
 
@@ -467,13 +467,13 @@ The kernel takes more than the AST carries, in two families:
 Also here: `@Schedule` (cron / every / at) is fully available — `JobScheduler`, `JobDescriptor`,
 `JobTrigger`, `CronSyntax`; `EventTypeSpec(name, ordinal, persistent, ordered, topic)` covers
 `@DomainEvent.persistent`, `.orderingRequired` and `.topic`; and `FlowDefinitionBuilder.version(int)`
-is present at 0.12, which is S1's emitter half.
+is present at 0.12, which is T55's emitter half.
 
 `emitMetrics` and `metricPrefix` belong here rather than with the caps below: `TelemetrySink` and
 `TelemetryProvider` are SPI and an emitter can bind them. `PrometheusMetricsSink` is a Community
 driver — evidence that a sink exists at runtime, never a type emitted code may name.
 
-#### C3 — Tier 2 capability territory
+#### C-tier2 (was C3) — Tier 2 capability territory
 
 The kernel is not the owner. HLA §3.2 names one:
 
@@ -494,7 +494,7 @@ The kernel is not the owner. HLA §3.2 names one:
 exists. The distinction that matters is between a kernel ask and a product-roadmap item — only one
 of those is ours to file.
 
-#### C4 — kernel-shaped
+#### C-kernel-shaped (was C4) — kernel-shaped
 
 - **The saga shape.** `FlowDefinition(name, version, steps, timeoutNanos, maxRetries)` +
   `FlowStepDescriptor(stepId, name, action, compensation)` + `FlowTransitionDescriptor(fromStep,
@@ -555,7 +555,7 @@ entries in this file:
   **strings** through `BootstrapSelector.forNames(...)`, so it names `"storage"` rather than any
   driver type — which is what keeps the Community ↔ Enterprise swap intact. **Kernel ask K6 is
   answered.**
-- **`FlowDefinitionBuilder.version(int)`** — S1's emitter half is one call.
+- **`FlowDefinitionBuilder.version(int)`** — T55's emitter half is one call.
 - **T53's vocabulary**: `RouteRequirement.Execution{PROMPT, LONG_RUNNING}`, `abstain()` /
   `isAbstention()`, `Kind.ABSTAIN`, `HttpRoutePolicy.firstDeclared(List, RouteRequirement)`. The
   ordering rule is the kernel's; read it before the T53 RFC fixes the policy-table shape.
@@ -621,7 +621,7 @@ growing toward the surface. Founder call; this section exists so it is taken aga
       unconditional (an entity-free app is a real shape), and whether an override that *adds* a name
       must keep working, since that method is the documented extension point.
 
-### Annotation-surface debt (S, C) — inventoried 2026-08-12
+### Annotation-surface debt (T55–T57, C) — inventoried 2026-08-12
 
 An evidence survey against SDK 0.10.0 (matching on `eu.exeris.sdk.annotation.*` FQNs, since a
 word-grep false-positives on `Rule` / `EventHandler` / `GraphEdge` against our own and the kernel's
@@ -630,7 +630,7 @@ types) found the processor names **21 of ~44** annotations; the catalogue puts t
 the three-bucket measurement above — kept because its per-item entries carry the evidence behind
 each fix.
 
-- [~] **S1 — `@Saga.version` is never extracted.** *Processor half shipped 0.8.0; the emitter half
+- [~] **T55 (was S1) — `@Saga.version` is never extracted.** *Processor half shipped 0.8.0; the emitter half
       is kernel-gated on 0.12 and that gate was measured, not assumed.*
 
       `SagaMetadata` declares `int version` defaulting to 1 and nothing set it, so
@@ -655,7 +655,7 @@ each fix.
       plan's identity, a parked saga resumes on the exact version it parked under, and an unhosted
       version fails closed. **No `INERT_ATTRIBUTES` entry** — the cause is a missing upstream
       contract, which is exactly the carve-out C0 wrote into the registry Javadoc.
-- [x] **S2 — a repeated `@SagaStep` yielded zero steps.** *Shipped 0.8.0.* `@SagaStep` is
+- [x] **T56 (was S2) — a repeated `@SagaStep` yielded zero steps.** *Shipped 0.8.0.* `@SagaStep` is
       `@Repeatable(SagaSteps.class)` and the container is public precisely so a step can be repeated
       from any package — so repeating one is a supported authoring shape. But `javac` replaces the
       repeats with the synthesised container, and the lookup matched the exact type
@@ -668,7 +668,7 @@ each fix.
       already used for `@Provides.List`. A second test pins that they do not double-count: `javac`
       never presents both the direct mirror and the container on one element, and the fix reads both
       — an assumption worth a test rather than a comment.
-- [x] **S3 — `@GraphEdge` processor half.** *Shipped 0.8.0.* `extractGraphMetadata` built
+- [x] **T57 (was S3) — `@GraphEdge` processor half.** *Shipped 0.8.0.* `extractGraphMetadata` built
       `new GraphMetadata(label, null, List.of(), List.of())` — the edge list was a **literal
       empty**, so every generated graph-sync artefact carried zero edges in every build, whatever
       the entity declared. The consumer was ready and waiting: `KernelGraphSyncGenerator` iterates
@@ -676,7 +676,7 @@ each fix.
       already exercises it with a hand-built non-empty list. Only the producer was missing.
 
       `@GraphEdge` is `@Repeatable(GraphEdges.class)`, so both the direct mirror and the synthesised
-      container are read — the same shape S2 fixed for `@SagaStep`, through the same
+      container are read — the same shape T56 fixed for `@SagaStep`, through the same
       `forEachContained` helper. Third call site for it now.
 
       **The target label needed a precedence rule, and that is the one judgement call here.**
@@ -809,7 +809,7 @@ each fix.
       Whether declaring `@AuditCreatedAt` should *imply* `audited = true` is a separate decision,
       recorded rather than taken.
 
-      **Two refusals, both at the declaration**, on the S3 principle that metadata which builds here
+      **Two refusals, both at the declaration**, on the T57 principle that metadata which builds here
       and contradicts itself downstream is worse than a diagnostic: several fields carrying one role
       (the record holds one name per role), and an `@ExerisDomain` override naming a different field
       than the annotation does. The first reports **once per role, naming every field** — an author
@@ -874,7 +874,7 @@ each fix.
       other repos.**
 
       **`@Encrypted` (11 attributes, `@Target(FIELD)`) has no carrier.** `FieldMetadata` declares no
-      security component at all — no `encrypted`, no `pii`, no `maskInLogs`. By the S3 rule that puts
+      security component at all — no `encrypted`, no `pii`, no `maskInLogs`. By the T57 rule that puts
       it with the saga and graph families, behind an SDK record change, not in the extractable set.
       And a carrier alone would not be enough: the kernel's `crypto` package is **TLS transport
       crypto** (`KernelCryptoProvider`, `TlsEngine`, the OpenSSL FFM bindings). There is no
@@ -922,10 +922,47 @@ The `T*` numbers in this file and the `T*` numbers in the Stellar-Tactics dog-fo
 T1–T26 because that is as far as the backlog had been transcribed; the log continues to **T50**, and
 adds `V1–V3` (the `@View` emitter), `S1–S5` (SDK), `K1–K7` (kernel) and `D1–D3` (DX). *(2026-09-26:
 the log now reaches **T52**, `S1–S6` and `K1–K9`; `V1–V3` and `D1–D3` are unchanged. The one `T*`
-past the log's end is this file's **T53**, which took the next free number.)* Findings are
+past the log's end is this file's **T53**, which took the next free number.)* *(Later on 2026-09-26:
+"T1–T26" above overstated the overlap — this file's own T26 was a collision with the log's T26, not
+a transcription of it, and it is now **T54**. The `T*` numbers past the log's end are T53 and the
+four the numbering below assigned, T54–T57.)* Findings are
 numbered *there*, by the consumer that hits them; this file records the tooling-owned subset and its
 disposition. That direction is deliberate — a finding is minted by whoever measures it, and tooling
 does not get to renumber somebody else's evidence.
+
+#### Numbering — 2026-09-26
+
+Founder decision, 2026-09-26: **a finding keeps the number of whoever measured it first.** Five
+series in this file collided with IDs that the Stellar log, or this file itself, had already given to
+something else. In each case the later series moved. Old citations in merged PRs, commit messages,
+the log and earlier revisions of this file resolve through this table.
+
+| Was | Now | What it names | Collided with (kept its number) |
+|---|---|---|---|
+| T26 (tooling, 2026-08-02) | **T54** | a versioned entity with a wrapper `Long version` NPEs on its first `save()` | log T26 (`@Derived` / `@Rule`) |
+| S1 / S2 / S3 (tooling, 2026-08-12) | **T55 / T56 / T57** | `@Saga.version` never extracted / a repeated `@SagaStep` yielded zero steps / the `@GraphEdge` processor half | log S1–S6 (SDK findings) |
+| G0–G3 (0.7.0 gateway-caps slices) | **GC0–GC3** | release-pin bump / cap-tier Wall guard / SKU bootstrap emitter / e2e composition proof | Stellar corpus G1–G6 (`@View` binding gaps, 2026-06-25), as used by view-gen, RFC-2026-06-28 and ADR-047 |
+| U0–U3 (upstream catch-up, 2026-08-12) | **UP0–UP3** | release pins / JDK 25 LTS baseline / CI matrix / SDK 0.11.0 pin | this file's U1–U8 UI cluster (2026-06-28) |
+| C1–C4 (bucket headings, 2026-09-02) | **C-none / C-kernel / C-tier2 / C-kernel-shaped** | the no-carrier sub-buckets of the annotation-surface measurement | the C0–C2 items (2026-08-12) |
+
+**Unchanged:**
+- `S1–S6` wherever this file cites the log: the reconciliation paragraph above, and the Codegen
+  completeness backlog's pairings (T4↔S2, T5↔S1, T3↔S3).
+- `G1–G6` in every `@View` context, including the `TODO(@View G1)` markers view-gen emits.
+- `U1–U8`; the `C0`, `C1` and `C2` items; `B0`; `K*`, `V*`, `EV*`, `L*`; and `T20a–d`.
+- This file's `D4–D11` collide with nothing, because the log owns only `D1–D3`. The log's next DX
+  finding should take `D12`; that note is for the log to carry.
+
+**Where it landed:**
+- this file and `docs/MIGRATION-0.x-to-1.0.md`;
+- the ADR-015, 054, 055, 058, 059, 070 and 072 citations;
+- the code that cites these IDs: processor strict notes and Javadoc, generator comments, test display
+  names, and the BOM, e2e pom and CI workflow comments.
+
+No generated artefact carries any of these IDs, so emitted output is byte-identical. One text a user
+can see did change: the `-Aexeris.strict` notes for `@GraphProperty` and `@GraphQuery` now say "since
+T57". The Stellar log and its CLAUDE.md cite `U1` in both senses (ui-kit, and the JDK 25 descent), so
+they need their own cross-reference note. That text is theirs to edit.
 
 Everything below was **re-verified against this tree** rather than transcribed. The log is a good
 document and it says so itself: it records three occasions where it published an inferred cause as a
@@ -1146,7 +1183,7 @@ never-invoked emitter start emitting, and its output did not build.
       `getTenantId()` call, so the build fails with `cannot find symbol` inside generated code the
       consumer is told not to edit. Fix is a processor **ERROR** refusing the declaration, not a
       change of policy. (The stale "this repo does not pin 0.11 yet" rationale is corrected in the
-      same change; U0 pinned it.)
+      same change; UP0 pinned it.)
 - [x] **T43 — a missing binding is reported as the caller's bad request.** *Shipped 2026-08-18 —
       the refusal half. Two corrections to this entry came out of doing it, both below.*
       `parseBody` now bound-checks `MEMORY_ALLOCATOR` and throws `IllegalStateException` naming the
@@ -1916,7 +1953,7 @@ never-invoked emitter start emitting, and its output did not build.
   this repo pins it: the mapper is taken unmodified, and whether swagger's own mixins fix an order
   was not checked. `OpenApiGeneratorTest.emissionIsDeterministic` compares two emissions inside one
   JVM, which by construction cannot see a cross-toolchain difference. What would close it: a
-  committed golden document compared on both CI rows (JDK 25 and 26, U2) — the existing matrix then
+  committed golden document compared on both CI rows (JDK 25 and 26, UP2) — the existing matrix then
   *is* the cross-toolchain check — and, if the rows disagree, an explicit order in the writer.
 
 **Re-verified 2026-09-26.** These four were carried from the log unchecked in the 2026-08-18 pass.
@@ -2100,8 +2137,8 @@ Each now has the status the code settles, and every other mention in this file a
       | `system.*` — `@PrimaryKey`, `@TenantId`, `@Version`, `@SoftDelete*`, `@Audit*` | 10 | nothing new; the columns are already emitted, just derived from `@ExerisDomain`'s override attributes instead of these markers (**T5 / C1**). *2026-09-26: C1 shipped nine of the ten in 0.9.0 — the processor now reads them from the field; `@PrimaryKey` is held back on purpose, because no generator honours `primaryKeyField` (see C1). SDK 0.12 adds an eleventh marker, `@SharedScope`, which nothing reads yet; T29 slice B will* |
       | presentation — `@Tab`, `@UIGroup`, `@NavMenu` | 3 | frontend emission only, no kernel involvement |
       | behavioural — `@Derived`, `@Rule`, `@Rules`, `@EventHandler`, `@Projection` | 5 | pure emission + the events subsystem; design-gated, not capability-gated |
-      | graph — `@GraphEdge`, `@GraphEdges`, `@GraphProperty`, `@GraphQuery` | 4 | `CommunityGraphSubsystem` + the existing `KernelGraphSyncGenerator` (**S3**) |
-      | saga — `@SagaSteps`, `@SagaTransition`, `@SagaTransitions` | 3 | `CommunityFlowSubsystem`; `FlowDefinitionBuilder` already carries transitions (**S2**) |
+      | graph — `@GraphEdge`, `@GraphEdges`, `@GraphProperty`, `@GraphQuery` | 4 | `CommunityGraphSubsystem` + the existing `KernelGraphSyncGenerator` (**T57**) |
+      | saga — `@SagaSteps`, `@SagaTransition`, `@SagaTransitions` | 3 | `CommunityFlowSubsystem`; `FlowDefinitionBuilder` already carries transitions (**T56**) |
       | `security.*` — `@Encrypted`, `@RowLevelSecurity` | 2 | `CommunityCryptoSubsystem` exists; RLS overlaps the `dataScope`-driven predicate, so it is a design call (**C2**) |
       | `@QueryParam`, `@Schedule` | 2 | the HTTP layer and `CommunitySchedulingSubsystem`, both present — but `@Schedule` carries one open question that is not ours (below) |
       | `@EventSourced` | 1 | **re-measured 2026-08-18: not kernel-gated** — the replay SPI is on the pinned line; see below (**EV2**) |
@@ -2193,7 +2230,7 @@ Each now has the status the code settles, and every other mention in this file a
 | T10 | `@Validation` enforced client-side (Zod) but dropped server-side (handler/service/DB) | **High** | ✅ 0.6.0 (#103) |
 | T12 | N generated apps can't form a mesh — client is own-app/relative-host, saga step is local, no cross-app contract | **High** | **T42 (types) SHIPPED 0.8.0**, no kernel gate; client+registry 0.9.0 — split by ADR-048; the client half needs a final kernel 0.12 — not for a binary break (the 2026-09-01 readiness measurement found `HttpRequest` additive, re-checked 2026-09-26), but because a peer-addressed client needs ADR-074's `defaultAuthority` / `withAuthority`, which exist only from 0.12 (K8) |
 | T17 | Capability-graph validation is closed-world per app — a legitimate cross-service `@Requires` hard-fails the build | **High** | **0.9.0** — ships with the client+registry slice per ADR-048 |
-| T26 | A `@ExerisDomain(versioned = true)` entity whose `version` field is the **wrapper** `Long` throws NPE on the first `save()` of a fresh entity: `buildColumnLayout` hardcodes the VERSION column's type as `Long` and the emitter binds it by unboxing (`stmt.bindLong(i, entity.getVersion())`), with no null guard — and no guard is possible while the column type is a constant, since a primitive `long version` field cannot be null-compared. `update()` has the same unboxing (`long expected = entity.getVersion()`). Every other nullable system column (`createdAt`/`updatedAt`) *is* guarded, so this is the one gap. Fix is to read the declared field type into the column instead of assuming, which makes it a repository-emitter change rather than a test one | **Medium** (latent; primitive-`long` entities were unaffected) | ✅ 0.7.x — found 2026-08-02 by the T2 slice-d system-column fixture, fixed the same day: both the version bind and `update()`'s expected-version read go through a boxed local with a null default, so a wrapper-typed field behaves exactly like the primitive it shadows. The e2e fixture keeps the **wrapper** declaration (a primitive would pass either way) and the generated repository test no longer pre-stages the version, which makes every consumer's emitted test a regression test for it |
+| T54 | *(was T26)* A `@ExerisDomain(versioned = true)` entity whose `version` field is the **wrapper** `Long` throws NPE on the first `save()` of a fresh entity: `buildColumnLayout` hardcodes the VERSION column's type as `Long` and the emitter binds it by unboxing (`stmt.bindLong(i, entity.getVersion())`), with no null guard — and no guard is possible while the column type is a constant, since a primitive `long version` field cannot be null-compared. `update()` has the same unboxing (`long expected = entity.getVersion()`). Every other nullable system column (`createdAt`/`updatedAt`) *is* guarded, so this is the one gap. Fix is to read the declared field type into the column instead of assuming, which makes it a repository-emitter change rather than a test one | **Medium** (latent; primitive-`long` entities were unaffected) | ✅ 0.7.x — found 2026-08-02 by the T2 slice-d system-column fixture, fixed the same day: both the version bind and `update()`'s expected-version read go through a boxed local with a null default, so a wrapper-typed field behaves exactly like the primitive it shadows. The e2e fixture keeps the **wrapper** declaration (a primitive would pass either way) and the generated repository test no longer pre-stages the version, which makes every consumer's emitted test a regression test for it |
 | T2  | Zero tests generated for the generated surface | Medium | 🔶 0.7.0 slices a–f — the **Java half is complete** (handler bodyless routes + body-route guards + service delegation + repository round-trip + saga wiring + `@Validation` boundary pairs, ADR-058); **FE spec slice → 0.8.0** |
 | T3  | Action identity = method name, not `@Action(name=…)` → bean-setter collisions | Medium | ✅ 0.5.x — `extractActionMetadata` takes `@Action(name=…)`, the method name only as a blank-value fallback (re-verified 2026-09-26) |
 | T4  | `@Relationship` target derived from field Java type, not `targetEntity` | Medium | ✅ 0.5.x — `resolveTargetEntity` prefers `targetEntity`, the field type only when it is absent or `void.class` (re-verified 2026-09-26) |
@@ -2687,7 +2724,7 @@ Proposals, highest return-on-effort first:
       with one clear line at `validate`; README **Requirements** section moved up-front and rewritten
       ("Maven on JDK 26 — exactly", Node floors for generator vs generated app, released-pin resolution
       via GitHub Packages or the `v0.8.0` / 0.10.0 release tags).
-      *Superseded in 0.7.0 by U1:* the range widened to `[25,)` and the plugin's classes are v69. The
+      *Superseded in 0.7.0 by UP1:* the range widened to `[25,)` and the plugin's classes are v69. The
       failure mode D1 exists to catch is unchanged — only the floor moved, and it moved down.
 
 - [ ] **D2 — Document the two-pass first build.** The processor writes
@@ -2733,7 +2770,7 @@ Proposals, highest return-on-effort first:
       *the annotation's extraction path must call `warnInertAttributes` with the same simple name* —
       alongside the two it already stated.
 
-      Surfaced while pinning SDK 0.11.0 (U3). `@Action.path` gained a default there, which made its
+      Surfaced while pinning SDK 0.11.0 (UP3). `@Action.path` gained a default there, which made its
       registry note ("it has no default, so every author is required to write a path the server will not
       answer on") stale; writing the correction is what exposed that the warning carrying it could not
       fire. Worth naming as a class: this is D4's problem from the other end — D4 is about diagnostics a
@@ -3010,7 +3047,7 @@ and already compile-gated.
 **Shipped:** T42 (peer types, ADR-048) · the `generateDetails` / `generateEvents` / `generateSagas`
 wirings · T2 FE (the generated app tests itself, ADR-058) · C0 (strict mode audits the half it was
 structurally blind to) · T43-follow-up (the allocator is captured where its binding is live) ·
-S1 processor half · S2 · S3 · plus the CLI `--api-base` prefix fix.
+T55 processor half · T56 · T57 · plus the CLI `--api-base` prefix fix.
 
 **Two things the train taught, both recorded in the entries above.** A check that skips a pipeline
 stage can invert its answer — "no emitter reads X" is not "X has no effect", and that mistake cost
@@ -3059,7 +3096,7 @@ Also open and independent of all four: the missing `warnInertAttributes` call si
         first send without changing a signature, so the emitted Javadoc is the only place the
         generated code can say it.
       - **K5** — the generated `*SagaFlow` calls `.version(n)` on its `FlowDefinitionBuilder`,
-        carrying the `@Saga.version` the processor has extracted since 0.8.0 (S1's emitter half).
+        carrying the `@Saga.version` the processor has extracted since 0.8.0 (T55's emitter half).
       Rides along with no emitter change: T52's caller half (see T52).
 
       **What makes it final:** both pins move to the `0.12.0` releases once kernel and SDK publish,

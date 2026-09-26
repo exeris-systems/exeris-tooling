@@ -155,7 +155,7 @@ after every generated route is registered.
 - ADR-015 (Codegen emission strategy) — JavaPoet for Java emission; this generator stays compliant.
 - ADR-058 (Generated-test emission channel) — fixes the `public`/non-final/assignment-only shape of
   emitted services that this ADR makes installable.
-- ADR-024 / G2 boot-conductor call site — the composed variant threads the seam identically;
+- ADR-024 / GC2 boot-conductor call site — the composed variant threads the seam identically;
   `RuntimeComponents` is byte-identical with and without a composition.
 - `ROADMAP.md` — T49, and T48 / T50 downstream of it.
 - `exeris-benchmarks/targets/exeris-community-app/…/CommunityBenchmarkRuntimeLifecycle.java` — the

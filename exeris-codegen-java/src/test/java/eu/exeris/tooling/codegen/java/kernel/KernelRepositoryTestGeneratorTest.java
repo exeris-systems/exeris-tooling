@@ -140,7 +140,7 @@ class KernelRepositoryTestGeneratorTest {
     }
 
     @Test
-    @DisplayName("a versioned entity is NOT pre-staged — the update tests pin the T26 fix")
+    @DisplayName("a versioned entity is NOT pre-staged — the update tests pin the T54 fix")
     void doesNotStageAwayTheVersionNullPath() {
         DomainMetadata versioned = DomainMetadata.builder("Order", "com.example.domain")
                 .path("/orders")
@@ -149,7 +149,7 @@ class KernelRepositoryTestGeneratorTest {
                 .build();
 
         // update() reads the version off a freshly constructed entity. Staging it first would have
-        // hidden T26 (a wrapper `Long version` unboxed to null); leaving it unset is what makes
+        // hidden T54 (a wrapper `Long version` unboxed to null); leaving it unset is what makes
         // every consumer's generated test a regression test for that fix.
         assertThat(generate(versioned)).doesNotContain("entity.setVersion(");
     }
