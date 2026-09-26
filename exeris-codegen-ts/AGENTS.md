@@ -4,7 +4,7 @@ type: reference
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-09-12
+last-verified: 2026-09-26
 paths:
   - "exeris-codegen-ts/**"
 enforced-by:
@@ -28,16 +28,35 @@ It is built and tested independently from the Java Maven reactor.
 
 ## Operating contract
 
-1. **Angular v22 canon:** Emitted code strictly targets Angular v22+.
-   - Use Signal Forms (`formGroup`, `formControl`, signal-based state).
-   - Use `httpResource` / `rxResource` for reactive resource fetching.
-   - Zero deprecated APIs (no legacy `@Input()`/`@Output()` decorators where signal inputs/outputs apply).
+1. **Angular v22 is the target, reached in phases.** The phases are RFC-2026-06-18's, "Angular v22
+   Migration of the TS Emitter" under `docs/rfc/`, still a draft. What the emitters produce today:
+   - The emitted `package.json` pins Angular `^22.0.0`, and the application is zoneless.
+   - `detail-gen.ts` fetches through `rxResource`.
+   - `form-gen.ts` still emits Reactive Forms (`FormBuilder`, `Validators`).
+   - `service-gen.ts` still returns `Observable<T>` from `HttpClient`.
+
+   Moving services to `httpResource()`/`rxResource()` is the RFC's phase B. Moving forms to Signal
+   Forms is its phase C, which changes the emitted shape and carries an ADR of its own. New or
+   rewritten emission follows the RFC's guidelines. An existing emitter changes shape only in the
+   phase that owns the change.
+   - No deprecated APIs: no `@Input()`/`@Output()` decorators where signal inputs and outputs apply.
 2. **DomainMetadata sole contract:** Emitters consume `DomainMetadata` JSON only. Emitters must not
    assume or require direct access to Java compiler elements or classpath symbols.
 3. **Java/TS emitter parity:** Any field or feature present in `DomainMetadata` that is handled by
    `exeris-codegen-java` must be considered and matched with appropriate Angular artefacts.
 4. **Determinism:** Identical `DomainMetadata` input yields byte-identical TypeScript output.
    Sort object keys, imports, and component definitions deterministically.
+
+## Where this does not apply, and what it costs
+
+Not to the Java emitters or the annotation processor, which the root `AGENTS.md` governs, and not to
+the emitted application as a product of its own. These constraints judge the generator, and its
+output only as evidence of what the generator does.
+
+The cost is carried by consumers: they commit what this package emits. Every idiom change here
+rewrites files under their `src/app/generated/`, the default output path, and pinning the emission
+to Angular v22 means an application on an older Angular cannot build it. That is why a change of
+shape waits for the phase that owns it rather than riding along with an unrelated fix.
 
 ## Verification
 
