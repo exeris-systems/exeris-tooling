@@ -40,12 +40,11 @@ It is built and tested independently from the Java Maven reactor.
    rewritten emission follows the RFC's guidelines. An existing emitter changes shape only in the
    phase that owns the change.
    - No deprecated APIs: no `@Input()`/`@Output()` decorators where signal inputs and outputs apply.
-2. **DomainMetadata sole contract:** Emitters consume `DomainMetadata` JSON only. Emitters must not
-   assume or require direct access to Java compiler elements or classpath symbols.
-3. **Java/TS emitter parity:** Any field or feature present in `DomainMetadata` that is handled by
-   `exeris-codegen-java` must be considered and matched with appropriate Angular artefacts.
-4. **Determinism:** Identical `DomainMetadata` input yields byte-identical TypeScript output.
-   Sort object keys, imports, and component definitions deterministically.
+2. **The shared codegen rules hold here unchanged.** `DomainMetadata` is the only input
+   ([policy](../.agents/policies/domain-metadata-contract.md)), what one emitter handles the other
+   handles or says why not ([policy](../.agents/policies/emitter-parity.md)), and output is
+   byte-identical for identical input ([policy](../.agents/policies/codegen-determinism.md)). They are
+   authored once, in those policies; this file adds only what is TypeScript's.
 
 ## Where this does not apply, and what it costs
 
