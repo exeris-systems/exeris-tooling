@@ -383,7 +383,7 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
     }
 
     private String toSnakeCase(String camelCase) {
-        return camelCase.replaceAll("([a-z])([A-Z])", "$1_$2").toLowerCase();
+        return camelCase.replaceAll("([a-z])([A-Z])", "$1_$2").toLowerCase(java.util.Locale.ROOT);
     }
 
     private String mapJavaTypeToSql(String javaType) {

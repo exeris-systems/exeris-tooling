@@ -48,12 +48,12 @@ public final class FormDslGenerator {
 
     public void writeCreateFormTo(Path outputPath) throws IOException {
         Files.createDirectories(outputPath);
-        Files.writeString(outputPath.resolve(metadata.entityName().toLowerCase() + ".create-form.json"), generateCreateForm());
+        Files.writeString(outputPath.resolve(metadata.entityName().toLowerCase(Locale.ROOT) + ".create-form.json"), generateCreateForm());
     }
 
     public void writeEditFormTo(Path outputPath) throws IOException {
         Files.createDirectories(outputPath);
-        Files.writeString(outputPath.resolve(metadata.entityName().toLowerCase() + ".edit-form.json"), generateEditForm());
+        Files.writeString(outputPath.resolve(metadata.entityName().toLowerCase(Locale.ROOT) + ".edit-form.json"), generateEditForm());
     }
 
     private Map<String, Object> buildForm(String mode) {
@@ -299,7 +299,7 @@ public final class FormDslGenerator {
 
         // Format-based mapping
         if (field.format() != null) {
-            return switch (field.format().toLowerCase()) {
+            return switch (field.format().toLowerCase(Locale.ROOT)) {
                 case "email" -> "email-input";
                 case "phone", "tel" -> "phone-input";
                 case "url", "uri" -> "url-input";
@@ -362,7 +362,7 @@ public final class FormDslGenerator {
                     config.put("targetEntity", r.targetEntity());
                     config.put("displayField", r.displayField() != null ? r.displayField() : "name");
                     config.put("valueField", "id");
-                    config.put("searchEndpoint", "/api/" + r.targetEntity().toLowerCase() + "/search");
+                    config.put("searchEndpoint", "/api/" + r.targetEntity().toLowerCase(Locale.ROOT) + "/search");
                     config.put("minChars", 2);
                     config.put("maxResults", 20);
                     return config;

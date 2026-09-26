@@ -37,7 +37,7 @@ final class KernelTableNaming {
     static String effectiveTable(DomainMetadata metadata) {
         String override = metadata.tableName();
         if (override != null && !override.isBlank()) {
-            return override.trim().toLowerCase();
+            return override.trim().toLowerCase(java.util.Locale.ROOT);
         }
         return toSnakeCase(metadata.entityName()) + "s";
     }
@@ -73,6 +73,6 @@ final class KernelTableNaming {
     }
 
     private static String toSnakeCase(String camelCase) {
-        return camelCase.replaceAll("([a-z])([A-Z])", "$1_$2").toLowerCase();
+        return camelCase.replaceAll("([a-z])([A-Z])", "$1_$2").toLowerCase(java.util.Locale.ROOT);
     }
 }

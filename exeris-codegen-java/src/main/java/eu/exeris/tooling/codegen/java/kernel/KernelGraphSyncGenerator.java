@@ -15,6 +15,7 @@ import eu.exeris.sdk.sourcemodel.ast.GraphMetadata;
 
 import javax.lang.model.element.Modifier;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -249,7 +250,7 @@ public class KernelGraphSyncGenerator implements KernelArtifactGenerator {
 
     private String toSnakeCase(String s) {
         if (s == null || s.isBlank()) return "";
-        return s.replaceAll("([a-z])([A-Z])", "$1_$2").toLowerCase();
+        return s.replaceAll("([a-z])([A-Z])", "$1_$2").toLowerCase(Locale.ROOT);
     }
 
     @Override

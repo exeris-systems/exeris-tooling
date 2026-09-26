@@ -33,7 +33,7 @@ public final class TableDslGenerator {
 
     public void writeTo(Path outputPath) throws IOException {
         Files.createDirectories(outputPath);
-        Files.writeString(outputPath.resolve(metadata.entityName().toLowerCase() + ".table.json"), generate());
+        Files.writeString(outputPath.resolve(metadata.entityName().toLowerCase(Locale.ROOT) + ".table.json"), generate());
     }
 
     private Map<String, Object> buildTable() {
@@ -77,7 +77,7 @@ public final class TableDslGenerator {
         List<Map<String, Object>> actions = new ArrayList<>();
         actions.add(Map.of("name", "view", "label", "View", "icon", "eye", "action", "navigate", "target", metadata.effectivePath() + "/{id}"));
         actions.add(Map.of("name", "edit", "label", "Edit", "icon", "pencil", "action", "navigate", "target", metadata.effectivePath() + "/{id}/edit"));
-        actions.add(Map.of("name", "delete", "label", "Delete", "icon", "trash", "action", "delete", "confirm", true, "confirmMessage", "Are you sure you want to delete this " + metadata.entityName().toLowerCase() + "?"));
+        actions.add(Map.of("name", "delete", "label", "Delete", "icon", "trash", "action", "delete", "confirm", true, "confirmMessage", "Are you sure you want to delete this " + metadata.entityName().toLowerCase(Locale.ROOT) + "?"));
         if (metadata.hasActions()) {
             for (ActionMetadata action : metadata.actions()) {
                 Map<String, Object> a = new LinkedHashMap<>();

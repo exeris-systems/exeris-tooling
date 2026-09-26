@@ -1118,7 +1118,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     }
 
     private static String toSnakeCase(String camelCase) {
-        return camelCase.replaceAll("([a-z])([A-Z])", "$1_$2").toLowerCase();
+        return camelCase.replaceAll("([a-z])([A-Z])", "$1_$2").toLowerCase(java.util.Locale.ROOT);
     }
 
     private static String capitalize(String s) {
