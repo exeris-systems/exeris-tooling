@@ -290,7 +290,7 @@ describe('SystemFieldsMetadataSchema', () => {
   });
 
   it('keeps every component of a fully-populated SystemFieldsMetadata document', () => {
-    // The ten keys eu.exeris.sdk.sourcemodel.ast.SystemFieldsMetadata serialises. Four of them
+    // The eleven keys eu.exeris.sdk.sourcemodel.ast.SystemFieldsMetadata serialises. Four of them
     // had no matching declaration here before 0.9.0 — `primaryKeyField` was spelled `idField`,
     // `softDeleteTimestampField` was `deletedAtField`, and the other two soft-delete components
     // were absent — so a real document lost them to Zod's unknown-key stripping while
@@ -306,9 +306,31 @@ describe('SystemFieldsMetadataSchema', () => {
       softDeleteField: 'gone',
       softDeleteTimestampField: 'goneAt',
       softDeletedByField: 'goneBy',
+      // SDK 0.12 / T29 slice B — present on a UNIVERSE entity only.
+      sharedScopeField: 'worldId',
     };
 
     expect(SystemFieldsMetadataSchema.parse(wire)).toEqual(wire);
+  });
+
+  it('keeps sharedScopeField through a whole DomainMetadata document, and leaves it absent elsewhere', () => {
+    // A non-strict Zod object strips unknown keys, so an undeclared component would vanish here
+    // silently — the failure the ADR-059 stub warns about for exactly this carrier.
+    const universe = DomainMetadataSchema.parse({
+      entityName: 'Species',
+      packageName: 'com.shop.domain',
+      dataScope: 'UNIVERSE',
+      systemFields: { primaryKeyField: 'id', tenantIdField: 'organizationId', sharedScopeField: 'worldId' },
+    });
+    const tenant = DomainMetadataSchema.parse({
+      entityName: 'Order',
+      packageName: 'com.shop.domain',
+      dataScope: 'TENANT',
+      systemFields: { primaryKeyField: 'id', tenantIdField: 'tenantId' },
+    });
+
+    expect(universe.systemFields?.sharedScopeField).toBe('worldId');
+    expect(tenant.systemFields?.sharedScopeField).toBeUndefined();
   });
 
   it('omits the three soft-delete components that defaults() leaves null', () => {

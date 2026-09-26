@@ -77,6 +77,13 @@ public final class KernelRepositoryTestGenerator {
      * if both are the same UUID.
      */
     private static final String TENANT_KEY = "00000000-0000-4000-8000-000000000002";
+    /**
+     * The shared scope the generated tests bind for a UNIVERSE entity (T29 slice B). A fixed literal
+     * (determinism), distinct from both {@link #TENANT_KEY} and {@link KernelTestSamples#FIXED_ID},
+     * so a stamped scope cannot be mistaken for a staged value or for the owner. UUID-shaped, so the
+     * same literal serves a {@code UUID} and a {@code String} shared-scope field.
+     */
+    private static final String SCOPE_KEY = "00000000-0000-4000-8000-000000000003";
     private static final String AS_TENANT = "asTenant";
 
     /**
@@ -117,15 +124,27 @@ public final class KernelRepositoryTestGenerator {
                 .addJavadoc("<p><b>DO NOT EDIT</b> - Regenerate from domain models.\n");
 
         boolean tenantScoped = isTenantPartitioned(metadata);
+        Column sharedScope = KernelRepositoryGenerator.sharedScopeColumn(metadata, columns).orElse(null);
         if (tenantScoped) {
             type.addField(FieldSpec.builder(String.class, "TENANT_KEY",
-                                    Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
-                            .initializer("$S", TENANT_KEY)
-                            .build())
-                    .addField(FieldSpec.builder(STORAGE_CONTEXT, "TENANT_SCOPE",
-                                    Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
-                            .initializer("$T.shared(TENANT_KEY)", IMMUTABLE_STORAGE_CONTEXT)
-                            .build());
+                            Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                    .initializer("$S", TENANT_KEY)
+                    .build());
+            if (sharedScope != null) {
+                // A UNIVERSE write happens the way a request makes it: as an owner, inside the
+                // owner's shared scope — so the stamp has a scope to take.
+                type.addField(FieldSpec.builder(String.class, "SCOPE_KEY",
+                                Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                        .initializer("$S", SCOPE_KEY)
+                        .build());
+            }
+            type.addField(FieldSpec.builder(STORAGE_CONTEXT, "TENANT_SCOPE",
+                            Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                    .initializer(sharedScope != null
+                                    ? "$T.shared(TENANT_KEY).withSharedScope(SCOPE_KEY)"
+                                    : "$T.shared(TENANT_KEY)",
+                            IMMUTABLE_STORAGE_CONTEXT)
+                    .build());
         }
 
         type.addMethod(roundTripTest(entityType, repositoryType, persistenceType, columns,
@@ -136,6 +155,12 @@ public final class KernelRepositoryTestGenerator {
                     columns));
             type.addMethod(saveKeepsCallerTenantTest(entityType, repositoryType, persistenceType,
                     columns));
+        }
+        if (sharedScope != null) {
+            type.addMethod(saveStampsSharedScopeTest(entityType, repositoryType, persistenceType,
+                    columns, sharedScope));
+            type.addMethod(saveKeepsCallerSharedScopeTest(entityType, repositoryType,
+                    persistenceType, sharedScope));
         }
         type.addMethod(updateBindsIdTest(entityType, repositoryType, persistenceType, columns,
                 tenantScoped));
@@ -340,6 +365,60 @@ public final class KernelRepositoryTestGenerator {
                 .addStatement("$T.assertThat(entity.$L()).isEqualTo(callerTenant)",
                         ASSERTIONS, KernelRepositoryGenerator.getterFor(tenant))
                 .build();
+    }
+
+    /**
+     * Proves the shared-scope stamp (T29 slice B): a UNIVERSE row the caller left untagged takes the
+     * bound scope, and the tag reaches the INSERT at the column's own index — the same two-sided
+     * check as the tenant stamp, for the same reason.
+     */
+    private MethodSpec saveStampsSharedScopeTest(ClassName entityType, ClassName repositoryType,
+                                                 ClassName persistenceType, List<Column> columns,
+                                                 Column sharedScope) {
+        String getter = KernelRepositoryGenerator.getterFor(sharedScope);
+        return test("saveStampsTheSharedScopeWhenTheCallerLeftItUnset")
+                .addJavadoc("A row written inside a shared scope is readable across it only if it\n")
+                .addJavadoc("carries the scope's key — the shared-scope policy compares exactly that\n")
+                .addJavadoc("column. The caller leaving it unset is the ordinary path.\n")
+                .addStatement("$T persistence = new $T()", persistenceType, persistenceType)
+                .addStatement("$T repository = new $T(persistence)", repositoryType, repositoryType)
+                .addStatement("$T entity = new $T()", entityType, entityType)
+                .addStatement("$T.assertThat(entity.$L()).isNull()", ASSERTIONS, getter)
+                .addStatement("$L(() -> repository.save(entity))", AS_TENANT)
+                .addStatement("$T.assertThat(entity.$L()).isEqualTo($L)", ASSERTIONS, getter,
+                        boundScope(sharedScope))
+                .addStatement("$T.assertThat(persistence.binds.get($L)).isEqualTo(entity.$L())",
+                        ASSERTIONS, columns.indexOf(sharedScope), getter)
+                .build();
+    }
+
+    /** The other half: a scope the caller set survives the save — filling is not overwriting. */
+    private MethodSpec saveKeepsCallerSharedScopeTest(ClassName entityType, ClassName repositoryType,
+                                                      ClassName persistenceType, Column sharedScope) {
+        return test("saveKeepsASharedScopeTheCallerSet")
+                .addJavadoc("A shared scope the caller set survives the save — the stamp fills a gap,\n")
+                .addJavadoc("it does not override an intent.\n")
+                .addStatement("$T persistence = new $T()", persistenceType, persistenceType)
+                .addStatement("$T repository = new $T(persistence)", repositoryType, repositoryType)
+                .addStatement("$T entity = new $T()", entityType, entityType)
+                .addStatement("entity.$L($L)", KernelRepositoryGenerator.setterFor(sharedScope),
+                        KernelTestSamples.of(sharedScope.javaType()))
+                .addStatement("$L(() -> repository.save(entity))", AS_TENANT)
+                .addStatement("$T.assertThat(entity.$L()).isEqualTo($L)", ASSERTIONS,
+                        KernelRepositoryGenerator.getterFor(sharedScope),
+                        KernelTestSamples.of(sharedScope.javaType()))
+                .build();
+    }
+
+    /** The bound {@code SCOPE_KEY}, as the shared-scope field's own type. */
+    private static CodeBlock boundScope(Column sharedScope) {
+        return isUuid(sharedScope.javaType())
+                ? CodeBlock.of("$T.fromString(SCOPE_KEY)", UUID)
+                : CodeBlock.of("SCOPE_KEY");
+    }
+
+    private static boolean isUuid(String javaType) {
+        return "UUID".equals(javaType) || "java.util.UUID".equals(javaType);
     }
 
     /** Emits the tenant-binding helper the write tests run inside. */

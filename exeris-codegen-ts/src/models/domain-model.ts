@@ -273,6 +273,10 @@ export type SagaMetadata = z.infer<typeof SagaMetadataSchema>;
 // at all. The record carries @JsonInclude(NON_NULL), and `SystemFieldsMetadata.defaults()`
 // leaves the three soft-delete components null, so those are absent unless the entity overrides
 // them — hence .optional() on everything the defaults do not fill.
+//
+// `sharedScopeField` is the eleventh component (SDK 0.12, T29 slice B): the `@SharedScope` field of
+// a `dataScope = UNIVERSE` entity, absent on every other entity. Declared here so Zod's
+// unknown-key stripping does not drop it; `systemFieldNames` classifies it server-owned.
 export const SystemFieldsMetadataSchema = z.object({
   primaryKeyField: z.string().default('id'),
   createdAtField: z.string().optional(),
@@ -284,6 +288,7 @@ export const SystemFieldsMetadataSchema = z.object({
   softDeleteField: z.string().optional(),
   softDeleteTimestampField: z.string().optional(),
   softDeletedByField: z.string().optional(),
+  sharedScopeField: z.string().optional(),
 });
 
 export type SystemFieldsMetadata = z.infer<typeof SystemFieldsMetadataSchema>;

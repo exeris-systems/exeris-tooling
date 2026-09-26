@@ -23,6 +23,8 @@ import java.util.List;
  *   <li>{@link KernelGraphSyncGenerator} — graph-sync projection against {@code spi.graph.{GraphEngine, GraphSession}} + {@code spi.graph.model.{GraphNodeDescriptor, GraphEdgeDescriptor}}</li>
  *   <li>{@link KernelSagaGenerator} — saga skeleton against {@code spi.flow.{FlowEngine, FlowDefinitionBuilder}} + {@code spi.flow.model.{FlowExecutionPlan, FlowContext, FlowOutcome}}</li>
  *   <li>{@link KernelFlywayGenerator} — SQL migrations</li>
+ *   <li>{@link KernelSharedScopeMigrationGenerator} — the additive shared-scope read widening of a
+ *       {@code DataScope.UNIVERSE} entity (T29 slice B); nothing for any other entity</li>
  *   <li>{@link KernelOpenApiGenerator} — OpenAPI 3.1 YAML</li>
  *   <li>{@link KernelClientGenerator} — typed service-to-service HTTP client
  *       against the tier-neutral {@code core.http.client.KernelWebClient}
@@ -72,6 +74,7 @@ public class KernelGeneratorStrategy {
         registry.register(new KernelGraphSyncGenerator());
         registry.register(new KernelSagaGenerator());
         registry.register(new KernelFlywayGenerator());
+        registry.register(new KernelSharedScopeMigrationGenerator());
         registry.register(new KernelOpenApiGenerator());
         registry.register(new KernelClientGenerator());
     }

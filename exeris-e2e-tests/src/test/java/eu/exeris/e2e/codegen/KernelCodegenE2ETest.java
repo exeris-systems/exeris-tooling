@@ -2,11 +2,14 @@ package eu.exeris.e2e.codegen;
 
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
+import eu.exeris.sdk.sourcemodel.ast.DataScope;
 import eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
+import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 import eu.exeris.sdk.sourcemodel.ast.GraphEdgeMetadata;
 import eu.exeris.sdk.sourcemodel.ast.GraphMetadata;
 import eu.exeris.sdk.sourcemodel.ast.SagaMetadata;
+import eu.exeris.sdk.sourcemodel.ast.SystemFieldsMetadata;
 import eu.exeris.tooling.codegen.java.kernel.KernelGeneratorStrategy;
 import org.junit.jupiter.api.*;
 
@@ -21,6 +24,7 @@ class KernelCodegenE2ETest {
 
     private static DomainMetadata orderMetadata;
     private static DomainMetadata productMetadata;
+    private static DomainMetadata speciesMetadata;
 
     @BeforeAll
     static void setupMetadata() {
@@ -38,6 +42,19 @@ class KernelCodegenE2ETest {
         productMetadata = DomainMetadata.builder("Product", "com.shop.domain")
                 .path("/products")
                 .module("catalog")
+                .build();
+
+        // T29 slice B: owned by organizationId, readable across worldId.
+        speciesMetadata = DomainMetadata.builder("Species", "com.example.domain")
+                .path("/species")
+                .module("catalog")
+                .dataScope(DataScope.UNIVERSE)
+                .systemFields(new SystemFieldsMetadata("id", "createdAt", "createdBy", "updatedAt",
+                        "updatedBy", "organizationId", "version", null, null, null, "worldId"))
+                .fields(List.of(
+                        FieldMetadata.builder("name", "String").build(),
+                        FieldMetadata.builder("organizationId", "java.util.UUID").build(),
+                        FieldMetadata.builder("worldId", "java.util.UUID").build()))
                 .build();
     }
 
@@ -203,6 +220,33 @@ class KernelCodegenE2ETest {
                     .isEqualTo("ProductService");
             assertThat(files.stream().filter(f -> f.artifactType() == ArtifactType.REPOSITORY).findFirst().orElseThrow().className())
                     .isEqualTo("ProductRepository");
+        }
+
+        @Test
+        @DisplayName("T29 B: a UNIVERSE entity emits its TENANT-shaped CREATE plus one additive shared-scope migration")
+        void universeEntityEmitsTheWideningMigration() {
+            List<GeneratedFile> files = strategy.generate(speciesMetadata);
+
+            List<GeneratedFile> migrations = files.stream()
+                    .filter(f -> f.artifactType() == ArtifactType.CONFIGURATION)
+                    .toList();
+            assertThat(migrations).extracting(GeneratedFile::className)
+                    .containsExactly("V2416003__create_speciess", "V4416003__shared_scope_speciess");
+            assertThat(migrations.get(1).content())
+                    .contains("CREATE POLICY speciess_shared_scope_policy ON speciess FOR SELECT")
+                    .contains("USING (world_id = NULLIF(current_setting('exeris.shared_scope', true), '')::uuid);");
+            assertThat(files.stream().filter(f -> f.artifactType() == ArtifactType.REPOSITORY)
+                    .findFirst().orElseThrow().content())
+                    .contains("if (entity.getWorldId() == null) entity.setWorldId(actingSharedScope());");
+        }
+
+        @Test
+        @DisplayName("T29 B: the tenant-scoped and global fixtures emit no shared-scope migration")
+        void otherTiersEmitNoWideningMigration() {
+            assertThat(strategy.generate(orderMetadata)).extracting(GeneratedFile::className)
+                    .noneMatch(name -> name.contains("__shared_scope_"));
+            assertThat(strategy.generate(productMetadata)).extracting(GeneratedFile::className)
+                    .noneMatch(name -> name.contains("__shared_scope_"));
         }
     }
 }

@@ -123,6 +123,18 @@
             <scope>test</scope>
         </dependency>
 
+        <!-- T29 slice B: the opt-in @Tag("postgres") access matrix (SharedScopePostgresE2ETest)
+             applies the emitted migrations to a real PostgreSQL, and is skipped unless
+             -Dexeris.e2e.postgres.url is set. Test scope, in this module only, and deliberately
+             not in exeris-tooling-bom: a consumer importing the BOM should inherit no driver
+             opinion from tooling. 42.7.13 is the version exeris-kernel-bom 0.12.0 pins. -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <version>42.7.13</version>
+            <scope>test</scope>
+        </dependency>
+
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>

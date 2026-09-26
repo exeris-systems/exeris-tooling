@@ -1112,39 +1112,208 @@ class ExerisDomainProcessorTest {
             assertThat(compilation).hadWarningCount(0);
         }
 
+        /** A UNIVERSE entity whose body is {@code fields}, with the system annotations imported. */
+        private JavaFileObject universeItem(String fields) {
+            return JavaFileObjects.forSourceString(
+                    "com.example.Item",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Field;
+                    import eu.exeris.sdk.annotation.Validation;
+                    import eu.exeris.sdk.annotation.system.SharedScope;
+                    import eu.exeris.sdk.annotation.system.TenantId;
+                    import java.util.UUID;
+
+                    @ExerisDomain(module = "catalog", path = "/items",
+                            dataScope = ExerisDomain.DataScope.UNIVERSE)
+                    public class Item {
+                    %s
+                    }
+                    """.formatted(fields));
+        }
+
         @Test
-        @DisplayName("T29: UNIVERSE alone is refused at the declaration, not half-emitted")
-        void universeIsRefusedAtTheDeclaration() {
+        @DisplayName("T29 B: an owned UNIVERSE entity with a @SharedScope UUID compiles and carries the field")
+        void ownedUniverseWithSharedScopeIsTranscribed() throws IOException {
+            Compilation compilation = compileWithProcessor(universeItem("""
+                        @TenantId private UUID ownerTenantId;
+                        @SharedScope private UUID universeId;
+                    """));
+
+            // Until 0.9.0 every UNIVERSE declaration was refused outright. The refusal was right
+            // about the shape it guarded — a shared-world row with no owner cannot be written —
+            // and wrong about the tier: a UNIVERSE row IS owned (kernel ADR-012 §4b.2). This one
+            // names both columns, so it is transcribable and passes silently.
+            assertThat(compilation).succeededWithoutWarnings();
+            String metadata = readContent(compilation.generatedFile(
+                    StandardLocation.CLASS_OUTPUT, "exeris-metadata/Item.json").orElseThrow());
+            assertThat(metadata)
+                    .contains("\"dataScope\" : \"UNIVERSE\"")
+                    .contains("\"tenantIdField\" : \"ownerTenantId\"")
+                    .contains("\"sharedScopeField\" : \"universeId\"");
+        }
+
+        @Test
+        @DisplayName("T29 B: a String shared-scope key and the canonical tenantId owner are accepted too")
+        void stringSharedScopeWithCanonicalOwnerIsTranscribed() throws IOException {
+            Compilation compilation = compileWithProcessor(universeItem("""
+                        private UUID tenantId;
+                        @SharedScope private String worldKey;
+                    """));
+
+            assertThat(compilation).succeededWithoutWarnings();
+            String metadata = readContent(compilation.generatedFile(
+                    StandardLocation.CLASS_OUTPUT, "exeris-metadata/Item.json").orElseThrow());
+            assertThat(metadata)
+                    .contains("\"tenantIdField\" : \"tenantId\"")
+                    .contains("\"sharedScopeField\" : \"worldKey\"");
+        }
+
+        @Test
+        @DisplayName("T29 B: UNIVERSE with no @SharedScope field is refused — nothing would widen")
+        void universeWithoutSharedScopeIsRefused() {
+            Compilation compilation = compileWithProcessor(universeItem("""
+                        private UUID tenantId;
+                    """));
+
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorContaining("needs a field marked @SharedScope");
+            assertThat(compilation).hadErrorCount(1);
+        }
+
+        @Test
+        @DisplayName("T29 B: UNIVERSE with no owner is refused at the declaration, citing ADR-012 §4b.2")
+        void universeWithoutAnOwnerIsRefused() {
+            Compilation compilation = compileWithProcessor(universeItem("""
+                        @SharedScope private UUID universeId;
+                    """));
+
+            // T29's original failure: the repository binds the owner's accessor, so an ownerless
+            // UNIVERSE entity used to die with `cannot find symbol` inside generated code. The
+            // refusal now names the missing field and the kernel rule that makes it mandatory.
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorContaining("needs an owning tenant");
+            assertThat(compilation).hadErrorContaining("no field 'tenantId'");
+            assertThat(compilation).hadErrorContaining("ADR-012 §4b.2");
+            assertThat(compilation).hadErrorCount(1);
+        }
+
+        @Test
+        @DisplayName("T29 B: a @SharedScope field that is neither UUID nor String is refused")
+        void sharedScopeOfAnotherTypeIsRefused() {
+            Compilation compilation = compileWithProcessor(universeItem("""
+                        private UUID tenantId;
+                        @SharedScope private Long universeId;
+                    """));
+
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorContaining("of type java.lang.Long");
+            assertThat(compilation).hadErrorContaining("java.util.UUID or java.lang.String");
+        }
+
+        @Test
+        @DisplayName("T29 B: @SharedScope on the owner field itself is refused — two predicates, two columns")
+        void sharedScopeOnTheOwnerIsRefused() {
+            Compilation compilation = compileWithProcessor(universeItem("""
+                        @TenantId @SharedScope private UUID ownerTenantId;
+                    """));
+
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorContaining("also the owning tenant field");
+            assertThat(compilation).hadErrorCount(1);
+        }
+
+        @Test
+        @DisplayName("T29 B: a required @SharedScope field is refused — the stamp could never fill it")
+        void requiredSharedScopeIsRefused() {
+            Compilation compilation = compileWithProcessor(universeItem("""
+                        private UUID tenantId;
+                        @Field(label = "Universe", required = true) @SharedScope private UUID universeId;
+                    """));
+
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorContaining("@SharedScope field 'universeId' is required");
+        }
+
+        @Test
+        @DisplayName("T29 B: required-ness through the deprecated @Validation(required) is refused as well")
+        void deprecatedRequiredSharedScopeIsRefused() {
+            Compilation compilation = compileWithProcessor(universeItem("""
+                        private UUID tenantId;
+                        @Validation(required = true) @SharedScope private UUID universeId;
+                    """));
+
+            // The processor turns @Validation(required = true) into FieldMetadata.required, so it
+            // reaches the handler and the migration exactly like @Field(required = true) does.
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorContaining("@SharedScope field 'universeId' is required");
+        }
+
+        @Test
+        @DisplayName("T29 B: two @SharedScope fields hit the repeated-role refusal, once")
+        void repeatedSharedScopeIsRefusedOnce() {
+            Compilation compilation = compileWithProcessor(universeItem("""
+                        private UUID tenantId;
+                        @SharedScope private UUID universeId;
+                        @SharedScope private UUID otherUniverseId;
+                    """));
+
+            assertThat(compilation).failed();
+            assertThat(compilation)
+                    .hadErrorContaining("@SharedScope is declared on 2 fields ('universeId', 'otherUniverseId')");
+            // Not also "needs a field marked @SharedScope": the author declared two, not none.
+            assertThat(compilation).hadErrorCount(1);
+        }
+
+        @Test
+        @DisplayName("T29 B: @SharedScope on a TENANT entity warns and is not recorded — the JSON is unchanged")
+        void sharedScopeOffTheUniverseTierWarnsAndIsDropped() throws IOException {
             JavaFileObject source = JavaFileObjects.forSourceString(
                     "com.example.Item",
                     """
                     package com.example;
 
                     import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.system.SharedScope;
+                    import java.util.UUID;
 
                     @ExerisDomain(module = "catalog", path = "/items",
-                            dataScope = ExerisDomain.DataScope.UNIVERSE)
+                            dataScope = ExerisDomain.DataScope.TENANT)
                     public class Item {
+                        private UUID tenantId;
+                        @SharedScope private UUID universeId;
                     }
-                    """
-            );
+                    """);
 
             Compilation compilation = compileWithProcessor(source);
 
-            // Until 0.8.0 this was a WARNING and the build went on to emit the TENANT
-            // shape. On the archetypal UNIVERSE entity — the one above, a shared-world
-            // row with no tenant property — that shape binds entity.getTenantId() and
-            // the consumer's build died with `cannot find symbol` inside a generated
-            // file. The refusal lands on the declaration instead.
-            assertThat(compilation).failed();
-            assertThat(compilation)
-                    .hadErrorContaining("DataScope.UNIVERSE is reserved");
-            // The message has to be actionable on its own terms: what would have been
-            // emitted, why it breaks, and the one thing the author can do today.
-            assertThat(compilation).hadErrorContaining("getTenantId()");
-            assertThat(compilation).hadErrorContaining("Declare dataScope = TENANT");
-            assertThat(compilation)
-                    .hadErrorContaining("cross-tenant read-widening from this build yet");
+            assertThat(compilation).succeeded();
+            assertThat(compilation).hadWarningContaining("this entity is TENANT, so it has no effect");
+            // The marker was the only system annotation on the entity, so dropping it leaves no
+            // systemFields block at all — the document an unmarked twin produces.
+            String metadata = readContent(compilation.generatedFile(
+                    StandardLocation.CLASS_OUTPUT, "exeris-metadata/Item.json").orElseThrow());
+            assertThat(metadata).doesNotContain("sharedScopeField").doesNotContain("\"systemFields\"");
+        }
+
+        @Test
+        @DisplayName("T29 B: -Aexeris.strict no longer reports @SharedScope as never read")
+        void strictDoesNotReportSharedScopeAsNeverRead() {
+            Compilation compilation = javac()
+                    .withOptions("-Aexeris.strict=true")
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(universeItem("""
+                                @TenantId private UUID ownerTenantId;
+                                @SharedScope private UUID universeId;
+                            """));
+
+            assertThat(compilation).succeeded();
+            assertThat(compilation.warnings().stream()
+                    .map(d -> d.getMessage(null))
+                    .filter(m -> m != null && m.contains("SharedScope")))
+                    .isEmpty();
         }
 
         @Test

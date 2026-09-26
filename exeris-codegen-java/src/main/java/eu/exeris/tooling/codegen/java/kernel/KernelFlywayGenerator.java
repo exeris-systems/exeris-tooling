@@ -30,6 +30,12 @@ import java.util.Set;
  *       {@link eu.exeris.tooling.codegen.java.support.DataScopeSupport})</li>
  * </ul>
  *
+ * <p>A {@code UNIVERSE} entity's migration here is byte-identical to its {@code TENANT} twin's:
+ * its rows are owned, so the owner column, index and owner-pinned policy are exactly right. The
+ * read widening is a separate, additive migration emitted by
+ * {@link KernelSharedScopeMigrationGenerator}, so declaring the tier on an existing table is a new
+ * forward migration rather than an edit of one a database has already applied.
+ *
  * <h2>Row-Level Security</h2>
  * Three clauses in {@code RLS_TEMPLATE} look like belt-and-braces and are each load-bearing.
  * All three were found by applying these migrations to a real PostgreSQL for the first time;
@@ -44,9 +50,11 @@ import java.util.Set;
  *       {@code RlsConnectionInterceptor} issues {@code set_config('exeris.tenant_id', …)} on
  *       every isolation strategy. This generator previously named a key the kernel never
  *       published, which no policy could match, so a correctly-configured application saw no
- *       rows and could store none. The key is a cross-repo contract carried as a bare string
- *       literal on both sides — if the kernel ever exposes it as an SPI constant, emit that
- *       instead of transcribing it.</li>
+ *       rows and could store none. Since kernel 0.12 the key is an SPI constant,
+ *       {@code ConnectionInterceptor.SESSION_KEY_TENANT_ID}. It is still emitted as a literal —
+ *       this module has no kernel dependency, and SQL cannot reference a Java constant — and
+ *       {@code SharedScopeSqlE2ETest} pins the literal to the constant, so the two cannot drift
+ *       apart silently.</li>
  *   <li><b>{@code NULLIF(…, '')}</b> — {@code current_setting(key, true)} returns NULL only
  *       while the key has never been set in the session; after a {@code RESET} — what a
  *       connection pool does on hand-back — it returns the empty string, and {@code ''::uuid}
@@ -143,8 +151,35 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
     private static String migrationVersion(DomainMetadata metadata, String tableName) {
         boolean scoped = isTenantPartitioned(metadata) && !"tenants".equals(tableName);
         long tier = scoped ? 2L : 1L;
-        long discriminator = Math.floorMod(metadata.fullyQualifiedName().hashCode(), 1_000_000);
-        return "V" + (tier * 1_000_000L + discriminator);
+        return "V" + (tier * 1_000_000L + migrationDiscriminator(metadata));
+    }
+
+    /**
+     * The per-entity half of every migration version this entity owns: its CREATE (tier 1 or 2)
+     * and, for a UNIVERSE entity, its shared-scope migration (tier 4) carry the same six digits, so
+     * the two files of one table are recognisable as a pair. A stable FQN hash — see
+     * {@link #migrationVersion} for the collision note.
+     */
+    static long migrationDiscriminator(DomainMetadata metadata) {
+        return Math.floorMod(metadata.fullyQualifiedName().hashCode(), 1_000_000);
+    }
+
+    /**
+     * The SQL column name this generator gives a declared domain field. The shared-scope migration
+     * names its column through this, not through a derivation of its own: two derivations can
+     * disagree — a locale-sensitive case mapping on one side, a naming rule changed on the other —
+     * and the additive migration would then build a policy over a column the CREATE never made.
+     */
+    String domainColumn(String fieldName) {
+        return toSnakeCase(fieldName);
+    }
+
+    /**
+     * The SQL type this generator gives a declared domain field. The shared-scope policy casts the
+     * session setting to {@code uuid} exactly when the column is {@code UUID}, so it asks here.
+     */
+    String domainColumnType(String javaType) {
+        return mapJavaTypeToSql(javaType);
     }
 
     private List<String> buildColumns(DomainMetadata metadata) {

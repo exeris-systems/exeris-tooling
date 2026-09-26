@@ -241,6 +241,85 @@ class KernelRepositoryGeneratorTest {
                 .doesNotContain("KernelProviders");
     }
 
+    /** A UNIVERSE entity with an owner and a shared-scope key of {@code scopeType}. */
+    private static DomainMetadata universe(String scopeType, eu.exeris.sdk.sourcemodel.ast.DataScope tier,
+                                           String sharedScopeField) {
+        return DomainMetadata.builder("Species", "com.example.domain")
+                .dataScope(tier)
+                .systemFields(new SystemFieldsMetadata("id", "createdAt", "createdBy", "updatedAt",
+                        "updatedBy", "organizationId", "version", null, null, null, sharedScopeField))
+                .fields(List.of(
+                        FieldMetadata.builder("name", "String").build(),
+                        FieldMetadata.builder("organizationId", "java.util.UUID").build(),
+                        FieldMetadata.builder("worldId", scopeType).build()))
+                .build();
+    }
+
+    private GeneratedFile repositoryOf(DomainMetadata metadata) {
+        return strategy.generate(metadata).stream()
+                .filter(f -> f.artifactType() == ArtifactType.REPOSITORY)
+                .findFirst().orElseThrow();
+    }
+
+    @Test
+    @DisplayName("T29 B: both write paths tag an untagged UNIVERSE row with the acting shared scope (UUID key)")
+    void shouldStampTheActingSharedScopeOnWrites() {
+        String repo = repositoryOf(universe("java.util.UUID",
+                eu.exeris.sdk.sourcemodel.ast.DataScope.UNIVERSE, "worldId")).content();
+
+        String tenantStamp = "if (entity.getOrganizationId() == null) entity.setOrganizationId(actingTenantId());";
+        String scopeStamp = "if (entity.getWorldId() == null) entity.setWorldId(actingSharedScope());";
+        assertThat(repo)
+                // After the owner, in both write paths, each ahead of its own SQL.
+                .containsSubsequence(
+                        "public Species save(Species entity)", tenantStamp, scopeStamp, "INSERT INTO speciess",
+                        "public Species update(UUID id, Species entity)", tenantStamp, scopeStamp,
+                        "UPDATE speciess SET")
+                .contains("private static UUID actingSharedScope()")
+                // The fallback accessor, deliberately: no bound context means no scope, which is the
+                // narrower answer, where the tenant resolver must throw on the same condition.
+                .contains("KernelProviders.storageContextOrSystem().sharedScopeKey()")
+                .contains(".filter(key -> !key.isBlank())")
+                .contains("throw new IllegalStateException(SHARED_SCOPE_KEY_NOT_A_UUID, e);")
+                .contains("private static final String SHARED_SCOPE_KEY_NOT_A_UUID")
+                // The owner resolver is untouched by the widening.
+                .contains("KernelProviders.storageContext().isolationKey()");
+    }
+
+    @Test
+    @DisplayName("T29 B: a String shared-scope key is stamped as-is — no UUID parse, no parse-failure message")
+    void shouldStampAStringSharedScopeWithoutParsing() {
+        String repo = repositoryOf(universe("java.lang.String",
+                eu.exeris.sdk.sourcemodel.ast.DataScope.UNIVERSE, "worldId")).content();
+
+        assertThat(repo)
+                .contains("if (entity.getWorldId() == null) entity.setWorldId(actingSharedScope());")
+                .contains("private static String actingSharedScope()")
+                .contains("return KernelProviders.storageContextOrSystem().sharedScopeKey()")
+                .contains(".filter(key -> !key.isBlank()).orElse(null);")
+                .doesNotContain("SHARED_SCOPE_KEY_NOT_A_UUID");
+    }
+
+    @Test
+    @DisplayName("T29 B: no shared-scope stamp on a TENANT entity, nor on a UNIVERSE entity without the carrier")
+    void shouldNotStampASharedScopeOffTheUniverseTier() {
+        // A TENANT entity whose metadata carries the component anyway (hand-written JSON — the
+        // processor drops it) and a UNIVERSE entity that fails closed to TENANT.
+        String tenant = repositoryOf(universe("java.util.UUID",
+                eu.exeris.sdk.sourcemodel.ast.DataScope.TENANT, "worldId")).content();
+        String carrierless = repositoryOf(universe("java.util.UUID",
+                eu.exeris.sdk.sourcemodel.ast.DataScope.UNIVERSE, null)).content();
+
+        // Non-vacuous: shouldStampTheActingSharedScopeOnWrites proves the emitter writes these.
+        for (String repo : List.of(tenant, carrierless)) {
+            assertThat(repo)
+                    .contains("actingTenantId()")
+                    .doesNotContain("actingSharedScope")
+                    .doesNotContain("SHARED_SCOPE_KEY_NOT_A_UUID")
+                    .doesNotContain("storageContextOrSystem");
+        }
+    }
+
     @Test
     @DisplayName("Full feature flag matrix: tenantScoped + audited + softDelete + versioned all wire together")
     void shouldHandleFullFeatureMatrix() {

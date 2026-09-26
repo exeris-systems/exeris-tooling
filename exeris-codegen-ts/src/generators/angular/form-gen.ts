@@ -97,8 +97,13 @@ export class FormGenerator implements CodeGenerator {
       return ['active', 'onboardingStatus', 'onboardingStartedAt', 'onboardingCompletedAt', 'hierarchyLevel', 'parentTenantId', 'createdAt', 'updatedAt', 'deleted', 'version'].includes(name);
     };
 
+    // A UNIVERSE entity's shared-scope key is server-owned like its tenant (T29 slice B): the
+    // repository stamps it from the bound storage context, the create DTO omits it (type-gen's
+    // systemFieldNames), and the form therefore renders no control for it and never sends it.
+    const sharedScopeField = domain.systemFields?.sharedScopeField;
     const isSystemField = (name: string): boolean => {
-      return ['id', 'createdAt', 'updatedAt', 'createdBy', 'updatedBy', 'version', 'deleted', 'deletedAt', 'tenantId'].includes(name);
+      return ['id', 'createdAt', 'updatedAt', 'createdBy', 'updatedBy', 'version', 'deleted', 'deletedAt', 'tenantId'].includes(name)
+        || name === sharedScopeField;
     };
 
     const isEnumField = (field: FieldMetadata): boolean => {

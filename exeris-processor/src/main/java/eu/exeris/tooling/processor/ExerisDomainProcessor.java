@@ -404,11 +404,12 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "repository's to emit and is not built (T53)"),
             new InertAttribute("ExerisDomain", "primaryKeyField",
                     "it is extracted — SystemFieldsMetadata carries it — but it is the one "
-                            + "extracted component of that record no generator reads (the eleventh, "
-                            + "sharedScopeField, is not extracted at all yet). The other nine are all "
-                            + "honoured: KernelFlywayGenerator's sysCol maps tenantId, the four "
-                            + "audit stamps, the three soft-delete columns and version, and "
-                            + "KernelRepositoryGenerator resolves five of them. The primary key is "
+                            + "extracted component of that record no generator reads. The other ten "
+                            + "are all honoured: KernelFlywayGenerator's sysCol maps tenantId, the four "
+                            + "audit stamps, the three soft-delete columns and version, "
+                            + "KernelRepositoryGenerator resolves five of them, and a UNIVERSE "
+                            + "entity's sharedScopeField reaches its shared-scope migration and the "
+                            + "repository's stamp. The primary key is "
                             + "not among them anywhere. Flyway emits id UUID PRIMARY KEY "
                             + "unconditionally, the repository identifies every row through the "
                             + "constant WHERE id = ?, and every by-id handler binds the {id} path "
@@ -512,8 +513,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             "AuditUpdatedBy", "Bind", "Block", "CapabilityLifecycle", "CapabilityModule",
             "DomainEvent", "EventSourced", "ExerisDomain", "Field", "Graph", "GraphEdge",
             "InternalApi", "Provides", "Region", "Relationship", "Requires", "Saga", "SagaStep",
-            "SoftDelete", "SoftDeleteTimestamp", "SoftDeletedBy", "TenantId", "UI", "Validation",
-            "Version", "View");
+            "SharedScope", "SoftDelete", "SoftDeleteTimestamp", "SoftDeletedBy", "TenantId", "UI",
+            "Validation", "Version", "View");
 
     /**
      * Reasons for the annotations {@link #EXTRACTED_ANNOTATIONS} does not contain. Optional by
@@ -529,10 +530,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      */
     private static final List<UnreadAnnotation> UNREAD_NOTES = List.of(
             new UnreadAnnotation("PrimaryKey",
-                    "nine of the other ten annotation.system.* annotations are extracted (C1) and "
-                            + "their field names reach the schema and the repository; the tenth, "
-                            + "@SharedScope, is new in SDK 0.12 and waits on the UNIVERSE slice "
-                            + "(T29 B). This one is held "
+                    "the other ten annotation.system.* annotations are extracted — nine since C1, "
+                            + "@SharedScope since the UNIVERSE slice (T29 B) — and their field names "
+                            + "reach the schema and the repository. This one is held "
                             + "back on purpose: SystemFieldsMetadata.primaryKeyField is the single "
                             + "component no generator honours — KernelFlywayGenerator emits "
                             + "id UUID PRIMARY KEY unconditionally, the repository identifies rows "
@@ -1235,53 +1235,138 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                         + "which is deprecated for removal in SDK 1.0.0.");
     }
 
+    /** The {@code @SharedScope} marker, and the {@code SystemFieldsMetadata} component it fills. */
+    private static final String SHARED_SCOPE_FQN = "eu.exeris.sdk.annotation.system.SharedScope";
+    private static final String SHARED_SCOPE_ATTRIBUTE = "sharedScopeField";
+
     /**
-     * Refuses a {@code UNIVERSE} declaration at the declaration site (T29).
+     * Refuses a {@code UNIVERSE} declaration that cannot be transcribed, at the declaration site
+     * (T29 slice B). A transcribable one passes silently and is emitted: the TENANT shape for the
+     * owner, plus a shared-scope migration and a repository stamp for the {@code @SharedScope}
+     * column.
      *
-     * <p>This was a WARNING until 0.8.0, on the reasoning that the emitted TENANT
-     * shape is UNIVERSE minus the read-widen — strictly narrower than declared,
-     * never wider — so a warning was enough. Failing closed is still the right
-     * policy and {@code DataScopeSupport.isTenantPartitioned} keeps it: treating
-     * the tier as GLOBAL would drop the owner column and the policy altogether
-     * and publish rows the author scoped to an owner.
+     * <p><b>A UNIVERSE row is owned.</b> Kernel ADR-012 §4b.2 makes a shared-scope key without an
+     * isolation key unrepresentable, and the SDK's {@code @SharedScope} accompanies
+     * {@code @TenantId} rather than replacing it: reads widen across the shared scope, writes stay
+     * pinned to the owner. So this is not the 0.8.0 blanket refusal with a hole cut in it — every
+     * UNIVERSE entity still gets the owner column, the owner-pinned policy and the tenant stamp
+     * {@code DataScopeSupport.isTenantPartitioned} has always given it, and the checks below are
+     * exactly the ways a declaration can fail to name the two columns those predicates compare.
      *
-     * <p>What the warning missed is that the narrowing does not merely
-     * under-deliver — on the archetypal UNIVERSE entity it does not build. A
-     * shared-world row is precisely one with no tenant property, and the TENANT
-     * shape binds {@code entity.getTenantId()} in the emitted repository. So the
-     * author's reward for declaring the tier is {@code cannot find symbol}
-     * inside a generated file they are told not to edit, pointing at a getter
-     * they were never asked to write. A diagnostic at the declaration, naming the
-     * tier and the reason, is strictly better than a compile error two artefacts
-     * downstream.
+     * <p>Each refusal is one the emitted code would otherwise hit later and further from its
+     * cause:
+     * <ul>
+     *   <li><b>no {@code @SharedScope} field</b> — there is no column to widen reads on, and the
+     *       tier would be behaviourally TENANT while claiming otherwise;</li>
+     *   <li><b>no owner field</b> — the repository binds the owner's accessor, so the build would
+     *       fail with {@code cannot find symbol} inside a generated file (T29's original failure,
+     *       moved here permanently);</li>
+     *   <li><b>a type other than {@code UUID} or {@code String}</b> — the two types the SDK marker
+     *       supports and the two the policy can compare against a session setting;</li>
+     *   <li><b>the owner field carrying the marker</b> — one column cannot be both predicates;</li>
+     *   <li><b>{@code @Field(required = true)}</b> — the generated handler would answer 400 to a
+     *       body without it and the column would be {@code NOT NULL}, both before the repository's
+     *       stamp could fill it from the bound context.</li>
+     * </ul>
      *
-     * <p>An emitted RLS policy names a PostgreSQL session variable; it does not call an
-     * accessor. At kernel {@code v0.11.0} {@code exeris.shared_scope} was named only in
-     * {@code exeris-kernel-community}, and a migration the consumer commits may not depend on
-     * one swappable driver's internal literal. The pinned kernel 0.12 promotes both variables
-     * to SPI constants ({@code ConnectionInterceptor.SESSION_KEY_TENANT_ID} /
-     * {@code SESSION_KEY_SHARED_SCOPE}), and SDK 0.12 ships the carrier naming the field that
-     * holds a row's shared-scope value ({@code @SharedScope}, into
-     * {@code SystemFieldsMetadata.sharedScopeField}). So neither upstream gate stands any more:
-     * this refusal now waits on this processor alone, which does not scan {@code @SharedScope}
-     * yet (T29 slice B). Without that field every row would keep the column's {@code ''}
-     * default and UNIVERSE would be behaviourally TENANT.
+     * <p>Two fields carrying the marker are refused by {@link #resolveSystemFields}, like any
+     * repeated role, and are not reported a second time here.
      */
-    private void errorReservedUniverseTier(TypeElement element) {
-        messager.printMessage(
-                Diagnostic.Kind.ERROR,
-                DIAG_PREFIX + "@ExerisDomain.dataScope = DataScope.UNIVERSE is reserved and is "
-                        + "refused here rather than half-emitted. This processor does not read "
-                        + "@SharedScope yet, so nothing names the field that holds a row's "
-                        + "shared-scope value and this tier would fall back to the TENANT shape: "
-                        + "an owner column, an owner-pinned policy, and a repository that binds "
-                        + "getTenantId(). A shared-world row has no tenant property, so that build "
-                        + "fails with 'cannot find symbol' inside generated code you are told not "
-                        + "to edit. Declare dataScope = TENANT if the entity really is partitioned "
-                        + "by an owner (and give it a tenant property); there is no way to obtain "
-                        + "cross-tenant read-widening from this build yet. "
-                        + "See ADR-059 (docs/adr/ADR-059.link.md).",
-                element);
+    private void validateUniverseTier(TypeElement element, SystemFieldsMetadata systemFields) {
+        String ownerName = systemFields != null && systemFields.tenantIdField() != null
+                ? systemFields.tenantIdField() : "tenantId";
+        VariableElement owner = instanceField(element, ownerName);
+        if (owner == null) {
+            error(element, "@ExerisDomain(dataScope = DataScope.UNIVERSE) needs an owning tenant, "
+                    + "and this entity declares no field '" + ownerName + "'. A UNIVERSE row is owned "
+                    + "by a tenant and readable across its shared scope: reads widen, writes stay "
+                    + "pinned to the owner (kernel ADR-012 §4b.2 — a shared-scope key requires an "
+                    + "isolation key). Declare the owner field — 'private UUID tenantId;', or mark "
+                    + "the field that plays the role with @TenantId — beside the @SharedScope one.");
+        }
+
+        List<VariableElement> scopeCarriers = fieldsCarrying(element, SHARED_SCOPE_FQN);
+        if (scopeCarriers.isEmpty()) {
+            error(element, "@ExerisDomain(dataScope = DataScope.UNIVERSE) needs a field marked "
+                    + "@SharedScope: it is the column the generated policy compares against the "
+                    + "shared scope the kernel publishes, so without one nothing widens and the "
+                    + "tier would behave as TENANT. Mark the UUID or String field that holds the "
+                    + "row's shared-scope key with @SharedScope, or declare dataScope = TENANT.");
+            return;
+        }
+        if (scopeCarriers.size() > 1) {
+            return; // refused once already, by resolveSystemFields, naming every carrier
+        }
+
+        VariableElement scope = scopeCarriers.getFirst();
+        AnnotationMirror mirror = findAnnotation(scope, SHARED_SCOPE_FQN);
+        String type = scope.asType().toString();
+        if (!"java.util.UUID".equals(type) && !"java.lang.String".equals(type)) {
+            messager.printMessage(Diagnostic.Kind.ERROR,
+                    DIAG_PREFIX + "@SharedScope is on field '" + scope.getSimpleName() + "' of type "
+                            + type + ". The shared-scope key is compared with the session setting "
+                            + "the kernel publishes, which is a UUID or a string: declare the field "
+                            + "as java.util.UUID or java.lang.String.",
+                    scope, mirror);
+        }
+        if (scope.equals(owner)) {
+            messager.printMessage(Diagnostic.Kind.ERROR,
+                    DIAG_PREFIX + "@SharedScope is on '" + scope.getSimpleName() + "', which is also "
+                            + "the owning tenant field. They are two predicates over two columns — "
+                            + "the owner pins writes, the shared scope widens reads — so one field "
+                            + "cannot be both. Put @SharedScope on a separate field.",
+                    scope, mirror);
+        }
+        if (declaresRequired(scope)) {
+            messager.printMessage(Diagnostic.Kind.ERROR,
+                    DIAG_PREFIX + "@SharedScope field '" + scope.getSimpleName() + "' is required. "
+                            + "The generated repository fills an absent shared scope from the bound "
+                            + "StorageContext, but a required field is refused with 400 by the "
+                            + "generated handler and made NOT NULL by the migration, both before that "
+                            + "stamp can run. Drop required = true: a row with no shared scope is "
+                            + "simply owner-private.",
+                    scope, mirror);
+        }
+    }
+
+    /** The non-static field named {@code name} declared directly on {@code element}, or null. */
+    private static VariableElement instanceField(TypeElement element, String name) {
+        for (Element enclosed : element.getEnclosedElements()) {
+            if (enclosed.getKind() == ElementKind.FIELD
+                    && !enclosed.getModifiers().contains(Modifier.STATIC)
+                    && enclosed.getSimpleName().contentEquals(name)) {
+                return (VariableElement) enclosed;
+            }
+        }
+        return null;
+    }
+
+    /** The fields of {@code element} carrying the annotation {@code fqn}, in declaration order. */
+    private List<VariableElement> fieldsCarrying(TypeElement element, String fqn) {
+        List<VariableElement> carriers = new ArrayList<>();
+        for (Element enclosed : element.getEnclosedElements()) {
+            if (enclosed.getKind() == ElementKind.FIELD && findAnnotation(enclosed, fqn) != null) {
+                carriers.add((VariableElement) enclosed);
+            }
+        }
+        return carriers;
+    }
+
+    /**
+     * Whether the field would reach the metadata as {@code required}: {@code @Field(required =
+     * true)}, or the deprecated {@code @Validation(required = true)} on a field whose
+     * {@code @Field} does not say — the same precedence {@link #applyDeprecatedValidationFallbacks}
+     * applies.
+     */
+    private boolean declaresRequired(VariableElement field) {
+        AnnotationMirror fieldAnnotation = findAnnotation(field, "eu.exeris.sdk.annotation.Field");
+        Map<String, Object> fieldValues = fieldAnnotation == null
+                ? Map.of() : extractAnnotationValues(fieldAnnotation);
+        if (fieldValues.containsKey("required")) {
+            return getBoolean(fieldValues, "required", false);
+        }
+        AnnotationMirror validation = findAnnotation(field, "eu.exeris.sdk.annotation.Validation");
+        return validation != null && getBoolean(extractAnnotationValues(validation), "required", false);
     }
 
     /** Maps a {@code @Bind.Source} enum constant to the AST {@link BindSource}; null when unset. */
@@ -1471,13 +1556,6 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                 contradicted = true;
             }
         }
-        // T29: UNIVERSE is refused at the declaration. Still suppressed when the
-        // declaration is already contradicted — two errors about one line, the second
-        // describing an emission that a fixed declaration may never reach, is noise on
-        // top of an error the author has to fix first.
-        if (declaredScope == DataScope.UNIVERSE && !contradicted) {
-            errorReservedUniverseTier(element);
-        }
         if (values.containsKey("softDelete")) {
             builder.softDelete((Boolean) values.get("softDelete"));
         }
@@ -1519,7 +1597,14 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         // System fields, from two sources (T5 + C1). Only build a SystemFieldsMetadata when
         // something was actually declared; otherwise leave it null so the default-case JSON is
         // byte-identical to pre-T5 output (determinism invariant).
-        SystemFieldsMetadata systemFields = resolveSystemFields(values, element);
+        SystemFieldsMetadata systemFields = resolveSystemFields(values, element, declaredScope);
+        // T29 slice B: a UNIVERSE declaration is checked once its owner and shared-scope fields
+        // are resolved. Suppressed when the declaration is already contradicted — two errors
+        // about one line, the second describing an emission a fixed declaration may never reach,
+        // is noise on top of an error the author has to fix first.
+        if (declaredScope == DataScope.UNIVERSE && !contradicted) {
+            validateUniverseTier(element, systemFields);
+        }
         if (systemFields != null) {
             builder.systemFields(systemFields);
         }
@@ -1536,8 +1621,13 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     }
 
     /**
-     * The nine roles read from {@code annotation.system.*} (C1). Ordered, and iterated in this
-     * order, so a diagnostic sequence is stable across runs.
+     * The ten roles read from {@code annotation.system.*} — nine since C1, and {@code @SharedScope}
+     * since T29 slice B, appended last so every earlier diagnostic keeps its place. Ordered, and
+     * iterated in this order, so a diagnostic sequence is stable across runs.
+     *
+     * <p>{@code @SharedScope} has no {@code @ExerisDomain} override attribute, so its
+     * {@code sharedScopeField} lookup is always empty and the override-conflict refusal never
+     * fires for it; the repeated-carrier refusal applies exactly as it does to the other nine.
      *
      * <p><b>{@code @PrimaryKey} is deliberately absent.</b> Its component,
      * {@code SystemFieldsMetadata.primaryKeyField}, is the one no generator honours — the schema
@@ -1557,7 +1647,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             new SystemFieldRole("AuditCreatedAt", "createdAtField"),
             new SystemFieldRole("AuditCreatedBy", "createdByField"),
             new SystemFieldRole("AuditUpdatedAt", "updatedAtField"),
-            new SystemFieldRole("AuditUpdatedBy", "updatedByField"));
+            new SystemFieldRole("AuditUpdatedBy", "updatedByField"),
+            new SystemFieldRole("SharedScope", SHARED_SCOPE_ATTRIBUTE));
 
     /**
      * Which field plays each system role, from the two sources that can say so: a
@@ -1572,8 +1663,12 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      * naming a different field than the annotation does. Accepting either would produce metadata
      * that builds here and contradicts itself downstream, which is the shape S3 refused for a
      * repeated {@code @GraphEdge}.
+     *
+     * <p><b>{@code @SharedScope} is recorded on a UNIVERSE entity only</b> — see
+     * {@link #dropSharedScopeOffTheUniverseTier}.
      */
-    private SystemFieldsMetadata resolveSystemFields(Map<String, Object> values, TypeElement element) {
+    private SystemFieldsMetadata resolveSystemFields(Map<String, Object> values, TypeElement element,
+                                                     DataScope declaredScope) {
         Map<String, String> declared = new LinkedHashMap<>();
 
         for (SystemFieldRole role : SYSTEM_FIELD_ROLES) {
@@ -1619,7 +1714,40 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             declared.put(role.overrideAttribute(), annotated);
         }
 
+        dropSharedScopeOffTheUniverseTier(declared, values, element, declaredScope);
         return extractSystemFieldsOverrides(values, declared);
+    }
+
+    /**
+     * Removes a {@code @SharedScope} role from anything but a UNIVERSE entity, with a warning on the
+     * marker.
+     *
+     * <p>The marker names the column a UNIVERSE policy widens reads on, and no other tier emits
+     * such a policy, so on a GLOBAL or TENANT entity it does nothing. Recording it anyway would put
+     * a {@code sharedScopeField} into the metadata of an entity that declares no shared tier, which
+     * the SDK record documents as never happening; dropping it keeps that entity's JSON
+     * byte-identical to what it was before this processor read the marker at all. UNIVERSE is
+     * reachable only through an explicit {@code dataScope} — the deprecated boolean cannot say it —
+     * so the declared tier is the whole test.
+     */
+    private void dropSharedScopeOffTheUniverseTier(Map<String, String> declared, Map<String, Object> values,
+                                                   TypeElement element, DataScope declaredScope) {
+        String field = declared.get(SHARED_SCOPE_ATTRIBUTE);
+        if (field == null || declaredScope == DataScope.UNIVERSE) {
+            return;
+        }
+        declared.remove(SHARED_SCOPE_ATTRIBUTE);
+        DataScope tier = declaredScope != null
+                ? declaredScope
+                : fallbackTier(Boolean.TRUE.equals(values.get("tenantScoped")));
+        // Exactly one carrier: a repeated marker was refused above and never reached `declared`.
+        VariableElement carrier = fieldsCarrying(element, SHARED_SCOPE_FQN).getFirst();
+        messager.printMessage(Diagnostic.Kind.WARNING,
+                DIAG_PREFIX + "@SharedScope on '" + field + "' marks the column a DataScope.UNIVERSE "
+                        + "policy widens reads on; this entity is " + tier + ", so it has no effect "
+                        + "and is not recorded. Declare dataScope = DataScope.UNIVERSE (the entity "
+                        + "also needs its owning tenant field), or remove the marker.",
+                carrier, findAnnotation(carrier, SHARED_SCOPE_FQN));
     }
 
     /** {@code 'a', 'b', 'c'} — the fields carrying one role, in declaration order. */
@@ -1653,6 +1781,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         String createdByField = resolved(declared, values, "createdByField", d.createdByField());
         String updatedAtField = resolved(declared, values, "updatedAtField", d.updatedAtField());
         String updatedByField = resolved(declared, values, "updatedByField", d.updatedByField());
+        // T29 slice B. Present only on a UNIVERSE entity (dropSharedScopeOffTheUniverseTier), and
+        // null otherwise — the SDK record's own contract, which NON_NULL keeps off the wire.
+        String sharedScopeField = declared.get(SHARED_SCOPE_ATTRIBUTE);
 
         // Did the user explicitly override anything (other than the implicit
         // primaryKeyField="id" annotation default)? primaryKeyField counts only
@@ -1674,14 +1805,11 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             return null;
         }
 
-        // The trailing null is sharedScopeField (SDK 0.12, the @SharedScope carrier). This processor
-        // does not scan @SharedScope yet — that is T29 slice B, and until it lands UNIVERSE is refused
-        // at the declaration (errorReservedUniverseTier), so no emitted artefact could consume it.
-        // NON_NULL on the record keeps it out of the JSON, so the metadata document is unchanged.
         return new SystemFieldsMetadata(
                 primaryKeyField, createdAtField, createdByField,
                 updatedAtField, updatedByField, tenantIdField,
-                versionField, softDeleteField, softDeleteTimestampField, softDeletedByField, null);
+                versionField, softDeleteField, softDeleteTimestampField, softDeletedByField,
+                sharedScopeField);
     }
 
     private static String nonBlankOr(String value, String fallback) {

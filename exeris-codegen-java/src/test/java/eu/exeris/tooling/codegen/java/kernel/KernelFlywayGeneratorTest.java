@@ -149,7 +149,7 @@ class KernelFlywayGeneratorTest {
     }
 
     @Test
-    @DisplayName("ADR-059: UNIVERSE fails closed to the tenant-partitioned shape, never to GLOBAL")
+    @DisplayName("ADR-059: UNIVERSE without the shared-scope carrier fails closed to the tenant-partitioned shape")
     void dataScopeUniverseFailsClosed() {
         DomainMetadata metadata = DomainMetadata.builder("CatalogItem", "eu.exeris.app.domain")
                 .dataScope(DataScope.UNIVERSE)
@@ -159,18 +159,51 @@ class KernelFlywayGeneratorTest {
 
         GeneratedFile file = generator.generate(metadata);
 
-        // UNIVERSE is rows owned by a tenant but readable across tenants. The
-        // widening is not emitted yet — nothing fills the shared-scope field
-        // carrier until T29 slice B — so what ships is UNIVERSE minus the
-        // widening, strictly narrower than declared. Treating the tier as GLOBAL instead
-        // would drop the owner column and the policy and publish rows the
-        // author scoped to an owner; that is the direction that must not fail.
+        // UNIVERSE is rows owned by a tenant and readable across its shared scope. This metadata
+        // names no sharedScopeField — the processor refuses that, but -io or plugin JSON does not
+        // pass through the processor — so the widening has no column and must not be emitted:
+        // what ships is the owner-private TENANT shape, strictly narrower than declared (and
+        // KernelSharedScopeMigrationGenerator emits nothing). Treating the tier as GLOBAL would
+        // drop the owner column and the policy and publish rows the author scoped to an owner;
+        // that is the direction that must not fail.
         assertThat(file.content())
                 .contains("tenant_id UUID NOT NULL")
                 .doesNotContain("REFERENCES tenants(id)")
                 .contains("ENABLE ROW LEVEL SECURITY")
-                .contains("FORCE ROW LEVEL SECURITY");
+                .contains("FORCE ROW LEVEL SECURITY")
+                .doesNotContain("shared_scope");
         assertThat(file.className()).startsWith("V2");
+        assertThat(new KernelSharedScopeMigrationGenerator().generate(metadata)).isNull();
+    }
+
+    @Test
+    @DisplayName("T29 B: a transcribable UNIVERSE entity's CREATE migration is byte-identical to its TENANT twin")
+    void universeCreateMigrationEqualsItsTenantTwin() {
+        List<FieldMetadata> fields = List.of(
+                FieldMetadata.builder("sku", "String").build(),
+                FieldMetadata.builder("ownerTenantId", "java.util.UUID").build(),
+                FieldMetadata.builder("universeId", "java.util.UUID").build());
+        SystemFieldsMetadata owner = new SystemFieldsMetadata("id", "createdAt", "createdBy",
+                "updatedAt", "updatedBy", "ownerTenantId", "version", null, null, null, null);
+        SystemFieldsMetadata ownerAndScope = new SystemFieldsMetadata("id", "createdAt", "createdBy",
+                "updatedAt", "updatedBy", "ownerTenantId", "version", null, null, null, "universeId");
+        DomainMetadata universe = DomainMetadata.builder("CatalogItem", "eu.exeris.app.domain")
+                .dataScope(DataScope.UNIVERSE).systemFields(ownerAndScope).fields(fields).build();
+        DomainMetadata tenant = DomainMetadata.builder("CatalogItem", "eu.exeris.app.domain")
+                .dataScope(DataScope.TENANT).systemFields(owner).fields(fields).build();
+
+        GeneratedFile universeFile = generator.generate(universe);
+        GeneratedFile tenantFile = generator.generate(tenant);
+
+        // The tier bit must never move this file: a TENANT table that becomes UNIVERSE would
+        // otherwise edit a migration a database has already applied (Flyway checksum failure).
+        // The read widening lives in its own additive migration instead.
+        assertThat(universeFile.className()).isEqualTo(tenantFile.className());
+        assertThat(universeFile.content()).isEqualTo(tenantFile.content());
+        assertThat(universeFile.content())
+                .contains("owner_tenant_id UUID NOT NULL")
+                .contains("universe_id UUID")
+                .contains("CREATE POLICY catalog_items_tenant_policy");
     }
 
     @Test

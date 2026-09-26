@@ -11,6 +11,7 @@ import com.palantir.javapoet.TypeVariableName;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
+import eu.exeris.tooling.codegen.java.support.DataScopeSupport;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import static eu.exeris.tooling.codegen.java.support.DataScopeSupport.isTenantPartitioned;
@@ -23,6 +24,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -92,9 +94,10 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
             ClassName.get(SPI_PERSISTENCE_PKG, "RowCursor");
 
     /**
-     * {@code KernelProviders} — the SPI's ambient-context accessor. The repository reads exactly one
-     * thing from it: the acting tenant, when a tenant-partitioned row arrives with no owner set
-     * (T36). Already a compile-time requirement of every emitted repository via
+     * {@code KernelProviders} — the SPI's ambient-context accessor. The repository reads the bound
+     * {@code StorageContext} from it and nothing else: the acting tenant, when a tenant-partitioned
+     * row arrives with no owner set (T36), and on a UNIVERSE entity the acting shared scope (T29
+     * slice B). Already a compile-time requirement of every emitted repository via
      * {@code TransactionalExecutor}, so this adds no dependency to the consumer's build.
      */
     private static final ClassName KERNEL_PROVIDERS =
@@ -106,9 +109,12 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
 
     /** Name of the emitted acting-tenant resolver — see {@link #buildActingTenantId}. */
     static final String ACTING_TENANT_METHOD = "actingTenantId";
+    /** Name of the emitted acting-shared-scope resolver — see {@link #buildActingSharedScope}. */
+    static final String ACTING_SHARED_SCOPE_METHOD = "actingSharedScope";
     /** Emitted message constants, so the resolver's own body stays one readable line per step. */
     private static final String SYSTEM_SCOPE_FIELD = "TENANT_SCOPE_REQUIRED";
     private static final String NOT_A_UUID_FIELD = "TENANT_KEY_NOT_A_UUID";
+    private static final String SHARED_SCOPE_NOT_A_UUID_FIELD = "SHARED_SCOPE_KEY_NOT_A_UUID";
 
     private static final ClassName OBJECT_MAPPER =
             ClassName.get("tools.jackson.databind", "ObjectMapper");
@@ -271,6 +277,14 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                                     + "its RLS policy, so a non-UUID key matches no row on read "
                                     + "either. This is a deployment fault, not a malformed request."));
         }
+        if (sharedScopeColumn(ctx).filter(c -> classifyDomainType(c.javaType()) == DomainTypeKind.UUID)
+                .isPresent()) {
+            repo.addField(messageField(SHARED_SCOPE_NOT_A_UUID_FIELD,
+                    "The bound StorageContext's shared-scope key is not a UUID. The generated "
+                            + "shared-scope migration for this table casts that session key to uuid "
+                            + "inside its RLS policy, so a non-UUID key fails every read of the table. "
+                            + "This is a deployment fault, not a malformed request."));
+        }
 
         repo.addField(FieldSpec.builder(TRANSACTIONAL_EXECUTOR, "executor",
                         Modifier.PRIVATE, Modifier.FINAL).build())
@@ -299,6 +313,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         if (isTenantPartitioned(metadata)) {
             repo.addMethod(buildActingTenantId(ctx));
         }
+        sharedScopeColumn(ctx).ifPresent(column -> repo.addMethod(buildActingSharedScope(column)));
 
         if (hasListField) {
             repo.addMethod(buildParseList())
@@ -690,6 +705,94 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                 getterFor(tenant), setterFor(tenant), ACTING_TENANT_METHOD);
     }
 
+    /**
+     * The layout column of a UNIVERSE entity's {@code @SharedScope} field (T29 slice B); empty for
+     * every other entity. It is an ordinary domain column — bound and read through
+     * {@link #classifyDomainType} like any UUID or String field — and only the stamp is special.
+     */
+    private static Optional<Column> sharedScopeColumn(Context ctx) {
+        return sharedScopeColumn(ctx.metadata(), ctx.columns());
+    }
+
+    /**
+     * {@link #sharedScopeColumn(Context)} over an explicit layout — shared with the repository-test
+     * emitter, so its assertions index the column this repository binds.
+     */
+    static Optional<Column> sharedScopeColumn(DomainMetadata metadata, List<Column> columns) {
+        return DataScopeSupport.sharedScopeField(metadata).flatMap(field -> columns.stream()
+                .filter(c -> c.kind() == ColumnKind.DOMAIN && c.javaName().equals(field.name()))
+                .findFirst());
+    }
+
+    /**
+     * Emits the shared-scope stamp, for a UNIVERSE entity only (T29 slice B): a row the caller left
+     * untagged is tagged with the acting shared scope, the same fill-if-absent contract as the
+     * tenant stamp beside it. A caller-supplied value is kept.
+     */
+    private static void appendSharedScopeStamp(MethodSpec.Builder method, Context ctx) {
+        sharedScopeColumn(ctx).ifPresent(column -> method.addStatement(
+                "if (entity.$L() == null) entity.$L($L())",
+                getterFor(column), setterFor(column), ACTING_SHARED_SCOPE_METHOD));
+    }
+
+    /**
+     * Emits the acting-shared-scope resolver: the tag stamped on a UNIVERSE row whose caller left
+     * the shared-scope field unset.
+     *
+     * <p><b>It reads {@code storageContextOrSystem()}, where the tenant resolver deliberately reads
+     * {@code storageContext()}.</b> The asymmetry follows the failure each one guards. A row with no
+     * owner cannot be written at all — the owner-pinned policy refuses it — so an unbound context is
+     * worth an exception naming the wiring. A row with no shared scope is simply owner-private: the
+     * narrower of the two answers, and a perfectly writable row. Throwing here would break exactly
+     * the writes the tenant rule keeps working — a seeder that sets the owner explicitly and binds no
+     * context — while falling back cannot widen anything, because the system context carries no
+     * shared scope.
+     *
+     * <p>A blank key is treated as absent: the kernel publishes the absent key as {@code ''}, and the
+     * policy's {@code NULLIF} reads {@code ''} as "no scope", so a row stamped {@code ''} would be one
+     * no session could ever widen onto. A non-UUID key for a UUID column is an
+     * {@code IllegalStateException} for the same reason as the tenant resolver's: the policy casts it,
+     * so it is a deployment fault, and escaping as {@code IllegalArgumentException} would be misread
+     * as the caller's.
+     */
+    private static MethodSpec buildActingSharedScope(Column column) {
+        boolean uuid = classifyDomainType(column.javaType()) == DomainTypeKind.UUID;
+        MethodSpec.Builder resolver = MethodSpec.methodBuilder(ACTING_SHARED_SCOPE_METHOD)
+                .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+                .returns(uuid ? UUID_TYPE : ClassName.get(String.class))
+                .addJavadoc("The acting shared scope — the tag stamped on a written row when the\n")
+                .addJavadoc("caller left {@code $L} unset.\n", column.javaName())
+                .addJavadoc("\n")
+                .addJavadoc("<p>This is the bound {@code StorageContext}'s shared-scope key, which is\n")
+                .addJavadoc("also what the kernel publishes as {@code exeris.shared_scope} and what\n")
+                .addJavadoc("this table's shared-scope policy compares against. No bound context, or\n")
+                .addJavadoc("one that declares no scope, leaves the row owner-private.\n")
+                .addJavadoc("\n")
+                .addJavadoc("@return the acting shared scope, or {@code null} when none is bound\n");
+        if (!uuid) {
+            return resolver
+                    .addStatement("return $T.storageContextOrSystem().sharedScopeKey()$W"
+                                    + ".filter(key -> !key.isBlank()).orElse(null)",
+                            KERNEL_PROVIDERS)
+                    .build();
+        }
+        return resolver
+                .addJavadoc("@throws IllegalStateException if the bound shared-scope key is not a UUID —\n")
+                .addJavadoc("        a deployment fault\n")
+                .addStatement("$T<$T> sharedScopeKey = $T.storageContextOrSystem().sharedScopeKey()$W"
+                                + ".filter(key -> !key.isBlank())",
+                        OPTIONAL, String.class, KERNEL_PROVIDERS)
+                .beginControlFlow("if (sharedScopeKey.isEmpty())")
+                .addStatement("return null")
+                .endControlFlow()
+                .beginControlFlow("try")
+                .addStatement("return $T.fromString(sharedScopeKey.get())", UUID_TYPE)
+                .nextControlFlow("catch ($T e)", ILLEGAL_ARGUMENT_EXCEPTION)
+                .addStatement("throw new $T($L, e)", ILLEGAL_STATE_EXCEPTION, SHARED_SCOPE_NOT_A_UUID_FIELD)
+                .endControlFlow()
+                .build();
+    }
+
     /** A {@code private static final String} in the emitted class, so a long diagnostic message
      *  does not push the statement that throws it off the readable width. */
     private static FieldSpec messageField(String name, String message) {
@@ -755,6 +858,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                 .addJavadoc("Inserts {@code entity}. <b>Mutates the input:</b> a missing\n")
                 .addJavadoc("{@code id} is filled with a random UUID");
         boolean tenantPartitioned = isTenantPartitioned(ctx.metadata());
+        Optional<Column> sharedScope = sharedScopeColumn(ctx);
         if (ctx.metadata().audited()) {
             // "and" belongs to whichever clause ends the list, so it moves when a tenant
             // clause follows this one.
@@ -762,10 +866,13 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                 .addJavadoc("{@code updatedAt} are stamped with {@code Instant.now()}");
         }
         if (tenantPartitioned) {
-            save.addJavadoc(", and a missing\n")
+            save.addJavadoc(sharedScope.isPresent() ? ", a missing\n" : ", and a missing\n")
                 .addJavadoc("{@code $L} is filled with the acting tenant",
                         systemColumn(ctx, ColumnKind.TENANT_ID).javaName());
         }
+        sharedScope.ifPresent(column -> save.addJavadoc(", and a missing\n")
+                .addJavadoc("{@code $L} with the acting shared scope, if one is bound",
+                        column.javaName()));
         save.addJavadoc(" before the INSERT.\n")
                 .addStatement("if (entity.getId() == null) entity.setId($T.randomUUID())", UUID_TYPE);
         if (ctx.metadata().audited()) {
@@ -774,6 +881,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
             save.addStatement("entity.$L(now)", setterFor(systemColumn(ctx, ColumnKind.UPDATED_AT)));
         }
         appendTenantStamp(save, ctx);
+        appendSharedScopeStamp(save, ctx);
         save.addStatement(SQL_VAR_STMT, sql);
 
         CodeBlock.Builder body = CodeBlock.builder()
@@ -820,6 +928,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                     setterFor(systemColumn(ctx, ColumnKind.UPDATED_AT)), INSTANT);
         }
         appendTenantStamp(update, ctx);
+        appendSharedScopeStamp(update, ctx);
         if (versioned) {
             update.addJavadoc("Optimistic-lock update. The caller-supplied {@code entity.version}\n");
             update.addJavadoc("is the <i>expected</i> row version; this method increments it before\n");
@@ -846,6 +955,11 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                     .addJavadoc("the entity from a request body rather than from a read would\n")
                     .addJavadoc("otherwise clear the row's owner.\n");
         }
+        sharedScopeColumn(ctx).ifPresent(column -> update
+                .addJavadoc("<p>A missing {@code $L} is filled with the acting shared scope in the same\n",
+                        column.javaName())
+                .addJavadoc("way. The SET list writes that column too, so when no scope is bound a body\n")
+                .addJavadoc("without it leaves the row owner-private.\n"));
         update.addStatement(SQL_VAR_STMT, sql);
         update.addStatement("long[] rowsAffected = {0L}");
 

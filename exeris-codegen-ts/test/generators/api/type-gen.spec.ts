@@ -589,6 +589,44 @@ describe('TypeGenerator system-field resolution (exercised via .omit set in the 
   });
 });
 
+// ---------- T29 slice B: the shared-scope key is server-owned ----------
+
+describe('TypeGenerator — a UNIVERSE entity\'s sharedScopeField is server-owned', () => {
+  const universe = () => domain({
+    entityName: 'Species',
+    dataScope: 'UNIVERSE',
+    systemFields: { primaryKeyField: 'id', tenantIdField: 'organizationId', sharedScopeField: 'worldId' },
+    fields: [
+      field({ name: 'id', type: 'UUID' }),
+      field({ name: 'name', type: 'String' }),
+      field({ name: 'organizationId', type: 'UUID' }),
+      field({ name: 'worldId', type: 'UUID' }),
+    ],
+  });
+
+  it('is omitted from the create schema, exactly like the tenant field', () => {
+    const files = new TypeGenerator().generateAggregate([universe()], CTX);
+    const schema = files.find(f => f.path === 'schemas/species.schema.ts')!.content;
+    const createSchema = schema.slice(schema.indexOf('SpeciesCreateSchema'));
+
+    expect(createSchema).toContain('worldId: true');
+    expect(createSchema).toContain('organizationId: true');
+  });
+
+  it('is absent from the Create DTO interface, while the entity interface still carries it', () => {
+    const content = new TypeGenerator().generate(universe(), CTX)!.content;
+    const createStart = content.indexOf('export interface SpeciesCreate {');
+    const createSlice = content.slice(createStart, content.indexOf('}', createStart));
+    const entityStart = content.indexOf('export interface Species {');
+    const entitySlice = content.slice(entityStart, content.indexOf('}', entityStart));
+
+    expect(createSlice).toContain('name?: string;');
+    expect(createSlice).not.toContain('worldId');
+    expect(createSlice).not.toContain('organizationId');
+    expect(entitySlice).toContain('worldId');
+  });
+});
+
 // ---------- generateTypes convenience ----------
 
 describe('generateTypes — top-level convenience function', () => {

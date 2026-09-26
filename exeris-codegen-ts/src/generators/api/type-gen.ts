@@ -283,6 +283,10 @@ export function buildZodType(field: FieldMetadata): string {
 /**
  * The fields the server owns: the id, plus whatever the entity's `systemFields` block
  * declares (or the `version`/`createdAt`/`updatedAt` default when it declares none).
+ *
+ * A UNIVERSE entity's `sharedScopeField` is server-owned exactly like its `tenantIdField`: the
+ * generated repository stamps it from the bound storage context, and the emitted OpenAPI marks it
+ * read-only, so the create/update DTOs never carry it (T29 slice B).
  */
 export function systemFieldNames(metadata: DomainMetadata): string[] {
   const fields = ['id'];
@@ -298,6 +302,7 @@ export function systemFieldNames(metadata: DomainMetadata): string[] {
     if (sf.softDeleteField) fields.push(sf.softDeleteField);
     if (sf.softDeleteTimestampField) fields.push(sf.softDeleteTimestampField);
     if (sf.softDeletedByField) fields.push(sf.softDeletedByField);
+    if (sf.sharedScopeField) fields.push(sf.sharedScopeField);
   } else {
     // Default system fields
     fields.push('version', 'createdAt', 'updatedAt');

@@ -100,6 +100,7 @@ class GeneratedTestsE2ETest {
         assertThat(generatedTests.resolve("com/shop/service/OrderServiceTest.java")).exists();
         assertThat(generatedTests.resolve("com/shop/repository/OrderRepositoryTest.java")).exists();
         assertThat(generatedTests.resolve("com/shop/repository/InvoiceRepositoryTest.java")).exists();
+        assertThat(generatedTests.resolve("com/shop/repository/SpeciesRepositoryTest.java")).exists();
         assertThat(generatedTests.resolve("com/shop/testsupport/RecordingHttpExchange.java")).exists();
         assertThat(generatedTests.resolve("com/shop/testsupport/RecordingPersistence.java")).exists();
         assertThat(generatedTests.resolve("com/shop/testsupport/RecordingRequestBody.java")).exists();
@@ -146,6 +147,11 @@ class GeneratedTestsE2ETest {
                             // that the tenant/audit/soft-delete/version bind-read pairs line up.
                             DiscoverySelectors.selectClass(
                                     Class.forName("com.shop.repository.InvoiceRepositoryTest", true, appLoader)),
+                            // The UNIVERSE entity (T29 slice B): the only executed proof that the
+                            // shared-scope stamp reads the bound StorageContext's scope and that the
+                            // tagged column lands at its own bind index.
+                            DiscoverySelectors.selectClass(
+                                    Class.forName("com.shop.repository.SpeciesRepositoryTest", true, appLoader)),
                             DiscoverySelectors.selectClass(
                                     Class.forName("com.shop.saga.OrderSagaFlowTest", true, appLoader)))
                     .build();
@@ -175,9 +181,11 @@ class GeneratedTestsE2ETest {
             // the one T8 finder the fixture carries) + 7 repository cases for Order (the save/load
             // round-trip and the six paths around it) + 9 for Invoice — the entity that carries
             // every system column, and the only tenant-partitioned one here, so it alone gets the
-            // T36 pair proving save stamps an absent tenant and keeps one the caller set — + 4
-            // saga cases.
-            assertThat(summary.getTestsSucceededCount()).isEqualTo(47);
+            // T36 pair proving save stamps an absent tenant and keeps one the caller set — + 11 for
+            // Species, the UNIVERSE entity: Invoice's nine minus the versioned/soft-delete nothing,
+            // plus the T29 B pair proving save stamps an absent shared scope and keeps one the
+            // caller set — + 4 saga cases.
+            assertThat(summary.getTestsSucceededCount()).isEqualTo(58);
         }
     }
 
@@ -488,6 +496,70 @@ class GeneratedTestsE2ETest {
 
                     public void setVersion(Long version) {
                         this.version = version;
+                    }
+                }
+                """);
+        // T29 slice B: owned by organizationId, readable across worldId. The system block is left
+        // out on purpose (no audited/versioned/softDelete), so the only system columns in its
+        // layout are the owner and — as a plain domain column — the shared-scope key.
+        sources.put("com/shop/domain/Species.java",
+                """
+                package com.shop.domain;
+
+                import eu.exeris.sdk.annotation.ExerisDomain;
+                import eu.exeris.sdk.annotation.Field;
+                import eu.exeris.sdk.annotation.system.SharedScope;
+                import eu.exeris.sdk.annotation.system.TenantId;
+
+                import java.util.UUID;
+
+                @ExerisDomain(module = "catalog", path = "/species",
+                        dataScope = ExerisDomain.DataScope.UNIVERSE)
+                public class Species {
+
+                    private UUID id;
+
+                    @Field(label = "Name", required = true)
+                    private String name;
+
+                    @Field(label = "Organization")
+                    @TenantId
+                    private UUID organizationId;
+
+                    @Field(label = "World")
+                    @SharedScope
+                    private UUID worldId;
+
+                    public UUID getId() {
+                        return id;
+                    }
+
+                    public void setId(UUID id) {
+                        this.id = id;
+                    }
+
+                    public String getName() {
+                        return name;
+                    }
+
+                    public void setName(String name) {
+                        this.name = name;
+                    }
+
+                    public UUID getOrganizationId() {
+                        return organizationId;
+                    }
+
+                    public void setOrganizationId(UUID organizationId) {
+                        this.organizationId = organizationId;
+                    }
+
+                    public UUID getWorldId() {
+                        return worldId;
+                    }
+
+                    public void setWorldId(UUID worldId) {
+                        this.worldId = worldId;
                     }
                 }
                 """);

@@ -3,6 +3,7 @@ package eu.exeris.e2e.codegen;
 import eu.exeris.e2e.codegen.compile.InMemoryJavaCompiler;
 import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
 import eu.exeris.sdk.sourcemodel.ast.ActionParamMetadata;
+import eu.exeris.sdk.sourcemodel.ast.DataScope;
 import eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
@@ -11,6 +12,7 @@ import eu.exeris.sdk.sourcemodel.ast.GraphMetadata;
 import eu.exeris.sdk.sourcemodel.ast.RelationshipMetadata;
 import eu.exeris.sdk.sourcemodel.ast.SagaMetadata;
 import eu.exeris.sdk.sourcemodel.ast.SagaStepMetadata;
+import eu.exeris.sdk.sourcemodel.ast.SystemFieldsMetadata;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.java.kernel.KernelApplicationGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelGeneratorStrategy;
@@ -237,6 +239,100 @@ class KernelCodegenCompileTest {
                 .addSource(DOMAIN_PACKAGE + "." + ENTITY_NAME, sourceEntity())
                 .addSource(DOMAIN_PACKAGE + ".OrderStatus", sourceStatusEnum());
 
+        for (GeneratedFile file : generated) {
+            if ("java".equals(file.extension())) {
+                compiler.addSource(file.packageName() + "." + file.className(), file.content());
+            }
+        }
+        for (GeneratedFile file : applicationFiles) {
+            if ("java".equals(file.extension())) {
+                compiler.addSource(file.packageName() + "." + file.className(), file.content());
+            }
+        }
+
+        InMemoryJavaCompiler.Result result = compiler.compile();
+        assertThat(result.success())
+                .as("javac output:%n%s", result.renderErrors())
+                .isTrue();
+    }
+
+    private static final String UNIVERSE_PACKAGE = "eu.exeris.e2e.universeapp.domain";
+
+    /**
+     * T29 slice B: a {@code DataScope.UNIVERSE} entity — an owner plus a {@code @SharedScope} key —
+     * through the full strategy and the composition root. The shared-scope stamp is the first
+     * emitted code to call {@code StorageContext.sharedScopeKey()} and
+     * {@code KernelProviders.storageContextOrSystem()}, so javac against the real kernel SPI is the
+     * proof those calls exist with the shape the emitter assumes. Both key types, because the
+     * emitted resolver differs: a UUID key is parsed (and a parse failure wrapped), a String one is
+     * returned as bound.
+     */
+    @ParameterizedTest(name = "sharedScope={0}")
+    @ValueSource(strings = {"java.util.UUID", "java.lang.String"})
+    @DisplayName("T29 B: a UNIVERSE entity's artefacts compile against the kernel SPI, for both key types")
+    void universeArtifactsCompile(String scopeType) {
+        DomainMetadata metadata = DomainMetadata.builder("Species", UNIVERSE_PACKAGE)
+                .path("/species")
+                .module("catalog")
+                .dataScope(DataScope.UNIVERSE)
+                .audited(true)
+                .versioned(true)
+                .systemFields(new SystemFieldsMetadata("id", "createdAt", "createdBy", "updatedAt",
+                        "updatedBy", "organizationId", "version", null, null, null, "worldId"))
+                .fields(List.of(
+                        FieldMetadata.builder("name", "String").required(true).build(),
+                        FieldMetadata.builder("organizationId", "java.util.UUID").build(),
+                        FieldMetadata.builder("worldId", scopeType).filterable(true).build()))
+                .build();
+
+        List<GeneratedFile> generated = new KernelGeneratorStrategy().generate(metadata);
+        assertThat(generated)
+                .as("the additive shared-scope migration is part of the emitted set")
+                .anyMatch(f -> f.className().contains("__shared_scope_speciess"));
+        String repository = generated.stream()
+                .filter(f -> f.className().equals("SpeciesRepository"))
+                .findFirst().orElseThrow().content();
+        assertThat(repository)
+                .as("non-vacuous: the code under compilation reads the kernel's shared-scope key")
+                .contains("sharedScopeKey()")
+                .contains("actingSharedScope()");
+
+        List<GeneratedFile> applicationFiles = new KernelApplicationGenerator()
+                .generateAll(List.of(metadata), UNIVERSE_PACKAGE.replace(".domain", ""), false);
+
+        String javaScopeType = scopeType.substring(scopeType.lastIndexOf('.') + 1);
+        InMemoryJavaCompiler compiler = new InMemoryJavaCompiler()
+                .addSource(UNIVERSE_PACKAGE + ".Species", """
+                        package %s;
+
+                        import java.time.Instant;
+                        import java.util.UUID;
+
+                        public class Species {
+                            private UUID id;
+                            private String name;
+                            private UUID organizationId;
+                            private %s worldId;
+                            private Instant createdAt;
+                            private Instant updatedAt;
+                            private long version;
+
+                            public UUID getId() { return id; }
+                            public void setId(UUID id) { this.id = id; }
+                            public String getName() { return name; }
+                            public void setName(String name) { this.name = name; }
+                            public UUID getOrganizationId() { return organizationId; }
+                            public void setOrganizationId(UUID organizationId) { this.organizationId = organizationId; }
+                            public %s getWorldId() { return worldId; }
+                            public void setWorldId(%s worldId) { this.worldId = worldId; }
+                            public Instant getCreatedAt() { return createdAt; }
+                            public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
+                            public Instant getUpdatedAt() { return updatedAt; }
+                            public void setUpdatedAt(Instant updatedAt) { this.updatedAt = updatedAt; }
+                            public long getVersion() { return version; }
+                            public void setVersion(long version) { this.version = version; }
+                        }
+                        """.formatted(UNIVERSE_PACKAGE, javaScopeType, javaScopeType, javaScopeType));
         for (GeneratedFile file : generated) {
             if ("java".equals(file.extension())) {
                 compiler.addSource(file.packageName() + "." + file.className(), file.content());
