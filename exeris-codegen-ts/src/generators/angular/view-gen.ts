@@ -32,12 +32,20 @@
  *                   generated service by `ref`
  *   ACTION        → a click handler stub calling the named action
  * Bindings OUT of slice 1 — emitted as clearly-commented TODO passthroughs (never
- * faked), each referencing the corpus gap it belongs to:
+ * faked), each referencing the corpus gap it belongs to. Classified by the bind
+ * SOURCE, never by which attributes happen to be set:
  *   PROJECTION beyond a named read     → TODO(@View G1)
- *   parameterised / relational via expression (G1) → TODO(@View G1)
- *   STREAM source (G2)                 → TODO(@View G2)
+ *   a data source (ENTITY / PROJECTION / ACTION / SLOT) with an expression
+ *                                      → TODO(@View G1) (parameterised / relational)
+ *   STREAM source (G2)                 → nothing to emit: BindSource has no STREAM
+ *                                        constant, so no metadata can ask for one
+ *                                        (an SDK record change comes first)
  *   mesh binding (G3)                  → TODO(@View G3)
  *   token / theme binding (G6)         → TODO(@View G6)
+ * Wrong attributes: STATIC / NONE draws from nothing, so an expression / language /
+ * path (or a ref, outside a SLOT block, where ref names the slot) on it is ignored.
+ * That emits a comment naming them and pointing at @Block(props) — the processor
+ * warns at the @Bind declaration too.
  *
  * @author Exeris Team
  * @since 0.8.0
@@ -62,6 +70,31 @@ function effectiveType(node: ComponentNodeMetadata): BlockType {
 /** The effective bind source — the declared one, or the SDK's NONE default. */
 function effectiveSource(binding: BindingMetadata | undefined): string {
   return binding?.source ?? 'NONE';
+}
+
+/** STATIC and NONE both mean "draws from nothing": the node is authored content. */
+function isStaticSource(source: string): boolean {
+  return source === 'STATIC' || source === 'NONE';
+}
+
+/**
+ * The attributes a STATIC / NONE binding carries that it cannot use, as `[name, value]` pairs in a
+ * fixed order. `ref` is exempt on a SLOT block, where it names the slot whatever the source.
+ */
+function wrongAttributesOnStatic(
+  source: string,
+  type: BlockType,
+  binding: BindingMetadata | undefined,
+): Array<[string, string]> {
+  if (!binding || !isStaticSource(source)) {
+    return [];
+  }
+  const found: Array<[string, string]> = [];
+  if (binding.ref && type !== 'SLOT') found.push(['ref', binding.ref]);
+  if (binding.path) found.push(['path', binding.path]);
+  if (binding.expression) found.push(['expression', binding.expression]);
+  if (binding.language) found.push(['language', binding.language]);
+  return found;
 }
 
 /** Indentation helper — two spaces per level, deterministic. */
@@ -232,11 +265,25 @@ function renderNode(node: ComponentNodeMetadata, level: number, itemVar?: string
   const source = effectiveSource(node.binding);
   const binding = node.binding;
 
+  // --- Diagnostics, classified by bind SOURCE ---
+  //
+  // These used to key on which attributes were set: any `expression` was blamed on G1 and any
+  // `language` was called a G2 STREAM. So `@Bind(source = STATIC, expression = …)` rendered no
+  // value and blamed a relational read (G1) nobody asked for, and a SpEL-tagged binding was
+  // reported as a stream, which BindSource cannot even express. STATIC / NONE draws from nothing:
+  // the attributes are the author's mistake, and the comment says where the content belongs.
+  const wrongAttrs = wrongAttributesOnStatic(source, type, binding);
+  if (wrongAttrs.length > 0) {
+    const named = wrongAttrs.map(([k, v]) => `${k}="${escapeAttr(v)}"`).join(' ');
+    lines.push(`${pad}<!-- @View: wrong attribute — @Bind(source = ${source}) draws from nothing, so ${named} ${wrongAttrs.length === 1 ? 'is' : 'are'} ignored; authored content belongs in @Block(props) -->`);
+  }
+
   // --- OUT bindings: a clearly-commented TODO passthrough (never faked) ---
-  // expression-carrying bindings are the G1 parameterised/relational fork; a
-  // PROJECTION beyond a named read, STREAM, mesh and token/theme are G1/G2/G3/G6.
-  if (binding?.expression) {
-    lines.push(`${pad}<!-- TODO(@View G1): parameterised/relational binding via expression="${escapeAttr(binding.expression)}" is out of slice 1; emit a real read once the SKU corpus fixes the @Bind(via=…) shape -->`);
+  // an expression on a data source is the G1 parameterised/relational fork; a
+  // PROJECTION beyond a named read, mesh and token/theme are G1/G3/G6.
+  if (binding?.expression && !isStaticSource(source)) {
+    const lang = binding.language ? ` language="${escapeAttr(binding.language)}"` : '';
+    lines.push(`${pad}<!-- TODO(@View G1): parameterised/relational binding via expression="${escapeAttr(binding.expression)}"${lang} is out of slice 1; emit a real read once the SKU corpus fixes the @Bind(via=…) shape -->`);
   }
   if (source === 'PROJECTION') {
     // A named projection read is the most a slice-1 emitter can honour; anything
@@ -245,9 +292,6 @@ function renderNode(node: ComponentNodeMetadata, level: number, itemVar?: string
   }
   if (source === 'SLOT') {
     lines.push(`${pad}<!-- TODO(@View G6): SLOT/host-fill binding is the token/theme + composition fork; emitted as an ng-content host slot below -->`);
-  }
-  if (binding?.language) {
-    lines.push(`${pad}<!-- TODO(@View G2): STREAM/expression language="${escapeAttr(binding.language)}" binding is out of slice 1 (pairs with the SSE emitter, ADR-044) -->`);
   }
 
   // --- CUSTOM: the named customType selector element (escape hatch) ---
@@ -281,7 +325,7 @@ function renderNode(node: ComponentNodeMetadata, level: number, itemVar?: string
   const dataBlock = ` data-block="${type}"`;
 
   // Authored / literal content for STATIC / NONE: render props text if present.
-  const propsText = (source === 'STATIC' || source === 'NONE') && node.props ? node.props : null;
+  const propsText = isStaticSource(source) && node.props ? node.props : null;
 
   // ENTITY: a signal read off the generated STORE.
   //

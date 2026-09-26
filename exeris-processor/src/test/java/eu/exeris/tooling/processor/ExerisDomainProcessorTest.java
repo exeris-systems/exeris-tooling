@@ -2817,6 +2817,80 @@ class ExerisDomainProcessorTest {
                     .as("strict mode must NOT name @View as inert — it is now consumed by the codegen-ts emitter")
                     .isZero();
         }
+
+        @Test
+        @DisplayName("@Bind(STATIC/NONE) carrying ref/path/expression/language warns at the @Bind; a SLOT block's ref and a data source's expression do not")
+        void staticBindWithDataAttributesWarnsAtTheDeclaration() {
+            // view-gen used to blame an expression on the G1 relational gap and a language on a G2
+            // stream whatever the source. STATIC / NONE draws from nothing, so those attributes are
+            // an author mistake — diagnosed here, where the author can fix it, not only in a comment
+            // in the emitted template.
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.view.WrongAttrs",
+                    """
+                    package com.example.view;
+
+                    import eu.exeris.sdk.annotation.View;
+                    import eu.exeris.sdk.annotation.Region;
+                    import eu.exeris.sdk.annotation.Block;
+                    import eu.exeris.sdk.annotation.Block.BlockType;
+                    import eu.exeris.sdk.annotation.Bind;
+                    import eu.exeris.sdk.annotation.Bind.Source;
+
+                    @View(name = "WrongAttrs")
+                    public final class WrongAttrs {
+                        @Region(slot = "main")
+                        Main main;
+
+                        static final class Main {
+                            @Block(type = BlockType.HERO, props = "Welcome")
+                            @Bind(source = Source.STATIC, expression = "greeting of user")
+                            String staticWithExpression;
+
+                            // source defaults to NONE: a forgotten source = ENTITY.
+                            @Block(type = BlockType.CARD)
+                            @Bind(ref = "Order", path = "total")
+                            String noneWithRefAndPath;
+
+                            // On a SLOT block the ref names the slot, whatever the source.
+                            @Block(type = BlockType.SLOT)
+                            @Bind(ref = "aside")
+                            String slot;
+
+                            // A data source with an expression is the G1 gap, not a mistake.
+                            @Block(type = BlockType.LIST)
+                            @Bind(source = Source.ENTITY, ref = "Order", expression = "lines of current")
+                            String entityWithExpression;
+                        }
+                    }
+                    """);
+
+            Compilation compilation = javac()
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(source);
+
+            assertThat(compilation).succeeded();
+            java.util.List<String> wrongAttr = compilation.warnings().stream()
+                    .map(d -> d.getMessage(null))
+                    .filter(m -> m != null && m.contains("draws from nothing"))
+                    .toList();
+            assertThat(wrongAttr).containsExactly(
+                    "[Exeris] @Bind(source = STATIC) draws from nothing, so its expression is ignored "
+                            + "and this node renders no bound value. Put authored content in "
+                            + "@Block(props), or bind data with source = ENTITY, PROJECTION or ACTION.",
+                    "[Exeris] @Bind(source = NONE) draws from nothing, so its ref, path are ignored "
+                            + "and this node renders no bound value. Put authored content in "
+                            + "@Block(props), or bind data with source = ENTITY, PROJECTION or ACTION.");
+
+            // The well-formed fixture stays silent.
+            Compilation clean = javac()
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(productLandingFixture());
+            assertThat(clean.warnings().stream()
+                    .map(d -> d.getMessage(null))
+                    .filter(m -> m != null && m.contains("draws from nothing")))
+                    .isEmpty();
+        }
     }
 
     @Nested

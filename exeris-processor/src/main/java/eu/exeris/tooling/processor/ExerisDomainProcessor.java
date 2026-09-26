@@ -1039,7 +1039,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                 } else if (bind != null) {
                     // @Bind without @Block → a leaf binding node. No declared
                     // BlockType, so the record's CONTAINER default applies on read.
-                    components.add(ComponentNodeMetadata.leaf(null, bindingOf(bind)));
+                    components.add(ComponentNodeMetadata.leaf(null, bindingOf(member, bind, null)));
                 }
             }
             return components;
@@ -1065,7 +1065,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         BlockType type = blockType(values.get("type"));
         String customType = blankToNull(getString(values, "customType", null));
         String props = blankToNull(getString(values, "props", null));
-        BindingMetadata binding = bind != null ? bindingOf(bind) : null;
+        BindingMetadata binding = bind != null ? bindingOf(member, bind, type) : null;
 
         TypeElement memberType = declaredTypeElement(member.asType());
         List<ComponentNodeMetadata> children = memberType != null
@@ -1075,15 +1075,62 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         return new ComponentNodeMetadata(type, customType, binding, props, children, null);
     }
 
-    /** Builds a {@link BindingMetadata} from a {@code @Bind} mirror; blanks → null. */
-    private BindingMetadata bindingOf(AnnotationMirror bind) {
+    /**
+     * Builds a {@link BindingMetadata} from a {@code @Bind} mirror; blanks → null. Warns at the
+     * {@code @Bind} when a source that draws from nothing carries attributes it cannot use.
+     */
+    private BindingMetadata bindingOf(Element member, AnnotationMirror bind, BlockType blockType) {
         Map<String, Object> values = extractAnnotationValues(bind);
-        return new BindingMetadata(
+        BindingMetadata binding = new BindingMetadata(
                 bindSource(values.get("source")),
                 blankToNull(getString(values, "ref", null)),
                 blankToNull(getString(values, "path", null)),
                 blankToNull(getString(values, "expression", null)),
                 blankToNull(getString(values, "language", null)));
+        warnWrongAttributesOnStaticBind(member, bind, blockType, binding);
+        return binding;
+    }
+
+    /**
+     * {@code @Bind(source = STATIC)} and {@code NONE} draw from nothing, so a {@code ref}, {@code path},
+     * {@code expression} or {@code language} on one is ignored and the node renders no bound value.
+     * {@code ref} is exempt on a {@code SLOT} block, where it names the slot whatever the source.
+     *
+     * <p>The TypeScript view emitter used to classify these by which attribute was set rather than
+     * by source: an {@code expression} was reported as the G1 relational gap and a {@code language}
+     * as a G2 stream, which {@code BindSource} cannot express. It now emits a wrong-attribute comment
+     * instead; this is the same diagnosis where the author can act on it, at the declaration.
+     * Not strict-gated: this is a mistake in the source, not an unconsumed attribute.
+     */
+    private void warnWrongAttributesOnStaticBind(Element member, AnnotationMirror bind,
+                                                 BlockType blockType, BindingMetadata binding) {
+        BindSource source = binding.effectiveSource();
+        if (source != BindSource.STATIC && source != BindSource.NONE) {
+            return;
+        }
+        List<String> ignored = new ArrayList<>();
+        if (binding.ref() != null && blockType != BlockType.SLOT) {
+            ignored.add("ref");
+        }
+        if (binding.path() != null) {
+            ignored.add("path");
+        }
+        if (binding.expression() != null) {
+            ignored.add("expression");
+        }
+        if (binding.language() != null) {
+            ignored.add("language");
+        }
+        if (ignored.isEmpty()) {
+            return;
+        }
+        messager.printMessage(
+                Diagnostic.Kind.WARNING,
+                DIAG_PREFIX + "@Bind(source = " + source + ") draws from nothing, so its "
+                        + String.join(", ", ignored) + (ignored.size() == 1 ? " is" : " are")
+                        + " ignored and this node renders no bound value. Put authored content in "
+                        + "@Block(props), or bind data with source = ENTITY, PROJECTION or ACTION.",
+                member, bind);
     }
 
     /**

@@ -154,8 +154,8 @@ describe('generateView — component shape', () => {
   });
 });
 
-describe('generateView — OUT binding markers (G1/G2/G6)', () => {
-  it('expression-carrying binding → TODO(@View G1)', () => {
+describe('generateView — OUT binding markers (G1/G6), classified by source', () => {
+  it('an expression on a data source (ENTITY) → TODO(@View G1)', () => {
     const view = ViewMetadataSchema.parse({
       name: 'ExprView',
       regions: [{ slot: 'main', components: [
@@ -166,15 +166,20 @@ describe('generateView — OUT binding markers (G1/G2/G6)', () => {
     expect(f.content).toContain('TODO(@View G1): parameterised/relational binding via expression');
   });
 
-  it('STREAM/expression language → TODO(@View G2)', () => {
+  it('the G1 marker carries the expression language; a language is never read as a STREAM (G2)', () => {
+    // This case used to pin `language: 'sse'` → "TODO(@View G2) STREAM". BindSource has no STREAM
+    // constant, so no metadata can ask for G2; a language only tags the expression it rides with.
     const view = ViewMetadataSchema.parse({
-      name: 'StreamView',
+      name: 'LangView',
       regions: [{ slot: 'main', components: [
+        { type: 'LIST', binding: { source: 'ENTITY', ref: 'Order', expression: 'lines.sum(l -> l.qty)', language: 'spel' } },
         { type: 'LIST', binding: { source: 'ENTITY', ref: 'Tick', language: 'sse' } },
       ] }],
     });
     const f = generateView(view, DEFAULT_CONFIG);
-    expect(f.content).toContain('TODO(@View G2)');
+    expect(f.content).toContain('expression="lines.sum(l -&gt; l.qty)" language="spel" is out of slice 1');
+    expect(f.content).not.toContain('G2');
+    expect(f.content).not.toContain('STREAM');
   });
 
   it('SLOT binding → ng-content host slot + TODO(@View G6)', () => {
@@ -187,6 +192,46 @@ describe('generateView — OUT binding markers (G1/G2/G6)', () => {
     const f = generateView(view, DEFAULT_CONFIG);
     expect(f.content).toContain('<ng-content select="[slot=aside]"></ng-content>');
     expect(f.content).toContain('TODO(@View G6)');
+  });
+});
+
+describe('generateView — STATIC / NONE with data attributes (wrong-attribute diagnosis)', () => {
+  const render = (component: Record<string, unknown>) =>
+    generateView(ViewMetadataSchema.parse({
+      name: 'WrongAttr',
+      regions: [{ slot: 'main', components: [component] }],
+    }), DEFAULT_CONFIG).content;
+
+  it('STATIC + expression: names the ignored attribute, points at @Block(props), blames no gap', () => {
+    const content = render({ type: 'HERO', binding: { source: 'STATIC', expression: 'greeting of user' }, props: 'Welcome' });
+    expect(content).toContain('<!-- @View: wrong attribute — @Bind(source = STATIC) draws from nothing, so expression="greeting of user" is ignored; authored content belongs in @Block(props) -->');
+    expect(content).not.toContain('TODO(@View G1)');
+    // The authored props still render — the wrong attribute does not blank the node.
+    expect(content).toContain('Welcome');
+  });
+
+  it('STATIC + language alone is a wrong attribute, not a stream', () => {
+    const content = render({ type: 'CARD', binding: { source: 'STATIC', language: 'spel' } });
+    expect(content).toContain('so language="spel" is ignored');
+    expect(content).not.toContain('G2');
+  });
+
+  it('NONE (the default source) + ref + path: both named, in a fixed order', () => {
+    const content = render({ type: 'CARD', binding: { ref: 'Order', path: 'total' } });
+    expect(content).toContain('@Bind(source = NONE) draws from nothing, so ref="Order" path="total" are ignored');
+    // Not mistaken for an ENTITY read.
+    expect(content).not.toContain('Store');
+  });
+
+  it('a SLOT block keeps its ref — there it names the slot, whatever the source', () => {
+    const content = render({ type: 'SLOT', binding: { ref: 'aside' } });
+    expect(content).toContain('<ng-content select="[slot=aside]"></ng-content>');
+    expect(content).not.toContain('wrong attribute');
+  });
+
+  it('a plain STATIC binding emits no diagnosis at all', () => {
+    const content = render({ type: 'HERO', binding: { source: 'STATIC' }, props: 'Welcome' });
+    expect(content).not.toContain('<!--');
   });
 });
 
