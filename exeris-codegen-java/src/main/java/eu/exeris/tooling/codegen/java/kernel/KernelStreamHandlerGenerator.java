@@ -42,8 +42,9 @@ import java.util.List;
  * {@code @DomainEvent}:
  * <ul>
  *   <li><b>EV1 producer</b> (the entity has {@code @DomainEvent}s) — the handler
- *       subscribes to each event on the kernel bus
- *       ({@code KernelProviders.eventEngine().bus()}) and projects it into a named
+ *       subscribes to each event on the bus of the {@code EventEngine} it is
+ *       constructed with (captured by {@code RuntimeComponents} at composition, never
+ *       resolved on the stream thread) and projects it into a named
  *       {@code StreamEvent} ({@code event:} = the raw {@code @DomainEvent(name)},
  *       {@code data:} = the codec-encoded payload JSON the publisher already emits,
  *       ADR-046), draining onto the stream's virtual thread until the client
@@ -78,7 +79,9 @@ import java.util.List;
  * <p>The route is registered collection-level
  * ({@code GET {base}/stream}) by {@link KernelApplicationGenerator} via the
  * router's typed {@code streamRoute(method, path, handler)}, distinct from the
- * respond-once {@code route(...)}.
+ * respond-once {@code route(...)} — on the pre-boot edge router
+ * ({@code RuntimeLifecycle.edgeRouter}), because that is the only router the kernel's
+ * stream dispatcher ever sees (T23).
  *
  * @implNote Emission is JavaPoet-based (ADR-015), routed through
  * {@link KernelScaffold} like the other Java emitters.
@@ -102,6 +105,22 @@ public class KernelStreamHandlerGenerator implements KernelArtifactGenerator {
     @Override
     public boolean supports(DomainMetadata metadata) {
         return metadata.realTimeApi();
+    }
+
+    /**
+     * Whether the entity's stream handler is the EV1 producer — and therefore takes an
+     * {@code EventEngine} by constructor — rather than the no-arg keep-alive fallback.
+     *
+     * <p>Shared with {@link KernelApplicationGenerator}, which emits the matching
+     * {@code RuntimeComponents} factory: the factory and the constructor are produced by
+     * two generators, and one predicate is what keeps their arities from drifting.
+     *
+     * @param metadata the entity
+     * @return {@code true} when the entity is {@code realTimeApi} and declares at least one
+     *         {@code @DomainEvent}
+     */
+    public static boolean hasProducer(DomainMetadata metadata) {
+        return metadata.realTimeApi() && metadata.hasEvents();
     }
 
     @Override
@@ -142,6 +161,7 @@ public class KernelStreamHandlerGenerator implements KernelArtifactGenerator {
                             HTTP_STREAM_EXCHANGE)
                     .addJavadoc("<p><b>DO NOT EDIT</b> - Regenerate from domain model.\n")
                     .addFields(KernelStreamScaffold.producerFields(selfType))
+                    .addMethod(KernelStreamScaffold.producerConstructor())
                     .addMethod(buildProducerHandleMethod(entity, bindings));
         } else {
             streamHandler

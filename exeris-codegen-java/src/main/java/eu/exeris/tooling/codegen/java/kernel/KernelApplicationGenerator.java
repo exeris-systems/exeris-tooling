@@ -11,6 +11,7 @@ import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
+import eu.exeris.tooling.codegen.java.support.KernelStreamScaffold;
 import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
 import eu.exeris.tooling.codegen.java.support.NameCasing;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
@@ -45,12 +46,14 @@ import java.util.Map;
  * <p>
  * Emitted files (in the project base package):
  * <ul>
- *   <li>{@code Application.java} — {@code main()} entry. Builds a
- *       forwarding {@link eu.exeris.kernel.spi.http.HttpHandler},
+ *   <li>{@code Application.java} — {@code main()} entry. Builds the edge
+ *       {@link eu.exeris.kernel.core.http.routing.HttpRouter} through
+ *       {@code RuntimeLifecycle.edgeRouter(handlerSlot, componentsSlot)},
  *       binds it via {@code ScopedValue.where(HTTP_SERVER_HANDLER)},
  *       and drives {@code KernelBootstrap.builder().selector(
  *       BootstrapSelector.forNames(subsystems())).build().boot(() -> new
- *       RuntimeLifecycle(handlerSlot, transactionalExecutor()).run())}.
+ *       RuntimeLifecycle(handlerSlot, componentsSlot,
+ *       components(transactionalExecutor())).run())}.
  *       The {@code transactionalExecutor()} method is {@code protected}
  *       so consumers can subclass and substitute a custom
  *       {@link eu.exeris.kernel.spi.persistence.TransactionalExecutor}; the
@@ -67,15 +70,25 @@ import java.util.Map;
  *       Before it existed the emitted services were {@code public} and
  *       non-final — extensible by design — with nowhere to plug the
  *       extension in.</li>
- *   <li>{@code RuntimeLifecycle.java} — Receives the
- *       {@code RuntimeComponents}, takes each declared entity's
- *       {@code *Handler} from it, builds an
- *       {@link eu.exeris.kernel.core.http.routing.HttpRouter} with the
- *       five canonical CRUD routes per entity (GET-all / GET-by-id /
- *       POST-create / PUT-update / DELETE), sets the forwarding handler
- *       slot, and parks on a {@link java.util.concurrent.CountDownLatch}
- *       until the JVM shuts down.</li>
+ *   <li>{@code RuntimeLifecycle.java} — Owns the two route tables. Its static
+ *       {@code edgeRouter(...)} builds, before boot, the router the kernel actually
+ *       holds: every generated stream route, each resolving its handler from the
+ *       composed {@code RuntimeComponents} when a stream opens, plus a
+ *       {@code notFound} that forwards everything else to the handler slot. Its
+ *       {@code run()} receives the {@code RuntimeComponents}, takes each declared
+ *       entity's {@code *Handler} from it, builds the respond-once
+ *       {@link eu.exeris.kernel.core.http.routing.HttpRouter} with the five canonical
+ *       CRUD routes per entity (GET-all / GET-by-id / POST-create / PUT-update /
+ *       DELETE) plus one per action, publishes the components and then the
+ *       (decorated) router, and parks on a
+ *       {@link java.util.concurrent.CountDownLatch} until the JVM shuts down.</li>
  * </ul>
+ * <p>Why two routers (T23): the http subsystem reads {@code HTTP_SERVER_HANDLER} once,
+ * when it starts, which is before the boot callback in which composition must run
+ * (ADR-070 obligation 4); and the kernel resolves a stream only on a handler that
+ * <em>is</em> an {@code HttpRouter}. The stream half of the route table is known at
+ * generation time, so it is built before boot with late-bound targets; the
+ * respond-once half is built where it always was, and can still be decorated.
  * <p>When the build also carries a capability composition (G2, 0.7.0), the
  * {@code Application} boot callback additionally conducts that composition —
  * see {@link #generateAll(List, String, boolean)}. A build without capabilities
@@ -99,6 +112,11 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
     private static final String COMPONENTS_FIELD = "components";
     private static final String CONFIGURE_ROUTES_METHOD = "configureRoutes";
     private static final String DECORATE_METHOD = "decorate";
+    // T23 (slice B1): the pre-boot edge router and the slot its stream targets read.
+    private static final String EDGE_ROUTER_METHOD = "edgeRouter";
+    private static final String LAZY_STREAM_METHOD = "lazyStream";
+    private static final String HANDLER_SLOT = "handlerSlot";
+    private static final String COMPONENTS_SLOT = "componentsSlot";
 
     private static final ClassName ATOMIC_REFERENCE =
             ClassName.get("java.util.concurrent.atomic", "AtomicReference");
@@ -116,14 +134,14 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
             ClassName.get("eu.exeris.kernel.spi.bootstrap", "BootstrapSelector");
     private static final ClassName HTTP_HANDLER =
             ClassName.get("eu.exeris.kernel.spi.http", "HttpHandler");
-    private static final ClassName ILLEGAL_STATE_EXCEPTION =
-            ClassName.get("java.lang", "IllegalStateException");
     private static final ClassName HTTP_KERNEL_PROVIDERS =
             ClassName.get("eu.exeris.kernel.spi.http", "HttpKernelProviders");
     private static final ClassName HTTP_METHOD =
             ClassName.get("eu.exeris.kernel.spi.http", "HttpMethod");
     private static final ClassName HTTP_ROUTER =
             ClassName.get("eu.exeris.kernel.core.http.routing", "HttpRouter");
+    private static final ClassName HTTP_STREAM_HANDLER = KernelStreamScaffold.HTTP_STREAM_HANDLER;
+    private static final ClassName FUNCTION = ClassName.get("java.util.function", "Function");
     private static final ClassName KERNEL_PROVIDERS =
             ClassName.get("eu.exeris.kernel.spi.context", "KernelProviders");
     private static final ClassName TRANSACTIONAL_EXECUTOR =
@@ -323,7 +341,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
      * {@code start()} runs every cap's {@code initialize} + {@code ready} <em>before</em>
      * {@link #buildRuntimeLifecycle(List, String) RuntimeLifecycle} sets the handler slot,
      * so no request is served against a half-initialized composition (until the slot is set
-     * the forwarding handler answers {@code SERVICE_UNAVAILABLE}). On the way out the
+     * the edge router answers {@code SERVICE_UNAVAILABLE}). On the way out the
      * try-with-resources closes <em>after</em> {@code run()} returns from its shutdown latch
      * and <em>before</em> {@code boot(...)} returns — caps drain and terminate in reverse
      * {@code initOrder}, then the kernel stops. That is the SKU-entrypoint-driven shutdown
@@ -338,6 +356,8 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
         ClassName selfType = ClassName.get(basePackage, "Application");
         ClassName lifecycleType = ClassName.get(basePackage, "RuntimeLifecycle");
         TypeName atomicHttpHandler = ParameterizedTypeName.get(ATOMIC_REFERENCE, HTTP_HANDLER);
+        TypeName atomicComponents = ParameterizedTypeName.get(ATOMIC_REFERENCE,
+                ClassName.get(basePackage, COMPONENTS_TYPE_NAME));
 
         MethodSpec mainMethod = MethodSpec.methodBuilder("main")
                 .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -360,13 +380,22 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
         MethodSpec.Builder run = MethodSpec.methodBuilder("run")
                 .addModifiers(Modifier.PUBLIC)
                 .returns(TypeName.VOID)
-                .addJavadoc("Application entry point. Boots the Kernel under a forwarding\n")
-                .addJavadoc("HTTP handler bound via {@link $T} and hands control to\n", SCOPED_VALUE)
-                .addJavadoc("{@link $T}.\n", lifecycleType)
+                .addJavadoc("Application entry point. Boots the Kernel under the edge router\n")
+                .addJavadoc("{@link $T#$L} builds, bound via {@link $T}, and hands\n",
+                        lifecycleType, EDGE_ROUTER_METHOD, SCOPED_VALUE)
+                .addJavadoc("control to {@link $T}.\n", lifecycleType)
+                .addJavadoc("<p>The edge router is built before boot because the kernel reads its\n")
+                .addJavadoc("server handler once, when the http subsystem starts — ahead of the boot\n")
+                .addJavadoc("callback in which the components are composed — and resolves a stream\n")
+                .addJavadoc("only on a handler that is an {@code HttpRouter}. It carries the\n")
+                .addJavadoc("generated stream routes, which read the components from\n")
+                .addJavadoc("{@code componentsSlot}, and forwards every other request to\n")
+                .addJavadoc("{@code handlerSlot}.\n")
                 .addJavadoc("<p>While {@link $T#run()} is still composing the per-entity\n", lifecycleType)
                 .addJavadoc("wiring (between bootstrap completion and the moment the\n")
-                .addJavadoc("handler slot is set), inbound requests respond\n")
-                .addJavadoc("{@link $T#SERVICE_UNAVAILABLE} rather than being silently dropped.\n", HTTP_STATUS);
+                .addJavadoc("handler slot is set), respond-once requests respond\n")
+                .addJavadoc("{@link $T#SERVICE_UNAVAILABLE} rather than being silently dropped,\n", HTTP_STATUS)
+                .addJavadoc("and a stream opened in that window is closed at once.\n");
         if (composed) {
             run.addJavadoc("<p>This build has a capability composition, so the boot callback\n")
                     .addJavadoc("also drives the {@link $T}: every cap is\n", COMPOSITION_CONDUCTOR)
@@ -375,16 +404,10 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                     .addJavadoc("shutdown latch releases — before the kernel itself stops.\n");
         }
         MethodSpec runMethod = run
-                .addStatement("$T handlerSlot = new $T<>()", atomicHttpHandler, ATOMIC_REFERENCE)
-                .addStatement("$T forwardingHandler = exchange -> {\n"
-                                + "    $T h = handlerSlot.get();\n"
-                                + "    if (h != null) {\n"
-                                + "        h.handle(exchange);\n"
-                                + "    } else {\n"
-                                + "        exchange.respond($T.SERVICE_UNAVAILABLE);\n"
-                                + "    }\n"
-                                + "}",
-                        HTTP_HANDLER, HTTP_HANDLER, HTTP_STATUS)
+                .addStatement("$T $L = new $T<>()", atomicHttpHandler, HANDLER_SLOT, ATOMIC_REFERENCE)
+                .addStatement("$T $L = new $T<>()", atomicComponents, COMPONENTS_SLOT, ATOMIC_REFERENCE)
+                .addStatement("$T edgeRouter = $T.$L($L, $L)", HTTP_ROUTER, lifecycleType,
+                        EDGE_ROUTER_METHOD, HANDLER_SLOT, COMPONENTS_SLOT)
                 .beginControlFlow("try")
                 .addCode(bootBlock(lifecycleType, composed))
                 .nextControlFlow("catch ($T e)", RUNTIME_EXCEPTION)
@@ -513,7 +536,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
      */
     private CodeBlock bootBlock(ClassName lifecycleType, boolean composed) {
         CodeBlock.Builder block = CodeBlock.builder()
-                .add("$T.where($T.HTTP_SERVER_HANDLER, forwardingHandler).call(() -> {\n",
+                .add("$T.where($T.HTTP_SERVER_HANDLER, edgeRouter).call(() -> {\n",
                         SCOPED_VALUE, HTTP_KERNEL_PROVIDERS)
                 .indent()
                 .add("$T.builder()\n", KERNEL_BOOTSTRAP)
@@ -526,13 +549,13 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
             block.add("    .boot(() -> {\n")
                     .add("        try ($T conductor = $T.from($L()).start()) {\n",
                             COMPOSITION_CONDUCTOR, COMPOSITION_CONDUCTOR, CAP_MANIFEST_METHOD)
-                    .add("            new $T(handlerSlot, $L($L())).run();\n",
-                            lifecycleType, COMPONENTS_METHOD, TX_EXECUTOR_NAME)
+                    .add("            new $T($L, $L, $L($L())).run();\n",
+                            lifecycleType, HANDLER_SLOT, COMPONENTS_SLOT, COMPONENTS_METHOD, TX_EXECUTOR_NAME)
                     .add("        }\n")
                     .add("    });\n");
         } else {
-            block.add("    .boot(() -> new $T(handlerSlot, $L($L())).run());\n",
-                    lifecycleType, COMPONENTS_METHOD, TX_EXECUTOR_NAME);
+            block.add("    .boot(() -> new $T($L, $L, $L($L())).run());\n",
+                    lifecycleType, HANDLER_SLOT, COMPONENTS_SLOT, COMPONENTS_METHOD, TX_EXECUTOR_NAME);
         }
         return block.add("return null;\n")
                 .unindent()
@@ -719,13 +742,20 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                         CodeBlock.of("new $T($L(), $L)", handlerType, serviceName, allocator));
             }
 
-            // ADR-043 Slice 1 / ADR-044 Slice 2: the SSE stream handlers are no-arg today,
-            // but they go through the same seam so that a consumer overriding one does not
-            // have to know which handlers happen to take constructor arguments.
+            // ADR-043 Slice 1 / ADR-044 Slice 2: the SSE stream handlers go through the same
+            // seam so that a consumer overriding one does not have to know which handlers take
+            // constructor arguments. The EV1 producer takes its EventEngine here (T23 slice B1),
+            // for the reason the handler takes its allocator: its handle() runs on the stream's
+            // own thread, where the kernel binds MEMORY_ALLOCATOR and the decoder registry and
+            // nothing else, so KernelProviders.eventEngine() read there would throw after the
+            // response head was already on the wire. The keep-alive fallback subscribes to
+            // nothing and stays no-arg.
             if (domain.realTimeApi()) {
                 ClassName streamHandlerType = ClassName.get(pkgs.handler(), entity + "StreamHandler");
                 addComponent(type, streamHandlerType, entityLower + "StreamHandler",
-                        CodeBlock.of("new $T()", streamHandlerType));
+                        KernelStreamHandlerGenerator.hasProducer(domain)
+                                ? CodeBlock.of("new $T($T.eventEngine())", streamHandlerType, KERNEL_PROVIDERS)
+                                : CodeBlock.of("new $T()", streamHandlerType));
             }
             for (ActionMetadata action : domain.actions()) {
                 if (action.streaming()) {
@@ -756,6 +786,13 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .addJavadoc("    routes.route(HttpMethod.POST, \"/checkout\", new CheckoutHandler(saga)::handle);\n")
                 .addJavadoc("}\n")
                 .addJavadoc("}</pre>\n")
+                .addJavadoc("<p><b>Respond-once routes only.</b> This builder becomes the router in the\n")
+                .addJavadoc("handler slot, which the kernel reaches through the edge router's\n")
+                .addJavadoc("{@code notFound} and never asks to resolve a stream. A {@code streamRoute}\n")
+                .addJavadoc("registered here therefore never matches on a real boot; the generated\n")
+                .addJavadoc("stream routes are registered on {@link $T#$L} instead. Resolving a\n",
+                        lifecycleType, EDGE_ROUTER_METHOD)
+                .addJavadoc("hand-registered stream through a forwarding handler is a kernel change (K9).\n")
                 .addComment("No generated body — override to register hand-written routes.")
                 .build());
 
@@ -763,9 +800,10 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .addModifiers(Modifier.PUBLIC)
                 .returns(HTTP_HANDLER)
                 .addParameter(HTTP_ROUTER, "router")
-                .addJavadoc("Wraps the built router before it is bound as the server handler.\n")
+                .addJavadoc("Wraps the built router before it is put in the handler slot.\n")
                 .addJavadoc("<p>Called by {@link $T} with the router {@code build()} returned;\n", lifecycleType)
-                .addJavadoc("whatever this returns is what the kernel serves. The default returns the\n")
+                .addJavadoc("whatever this returns is what every respond-once request reaches, through\n")
+                .addJavadoc("the edge router's {@code notFound}. The default returns the\n")
                 .addJavadoc("router unchanged. Override to install a per-request concern the generated\n")
                 .addJavadoc("code does not own — binding a tenant, a decoder registry, an allocator:\n")
                 .addJavadoc("<pre>{@code\n")
@@ -775,11 +813,12 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .addJavadoc("            .run(() -> router.handle(exchange));\n")
                 .addJavadoc("}\n")
                 .addJavadoc("}</pre>\n")
-                .addJavadoc("<p><b>A wrapper gives up streaming.</b> The kernel dispatcher resolves a\n")
-                .addJavadoc("stream route only when the bound handler <em>is</em> an {@link $T}\n", HTTP_ROUTER)
-                .addJavadoc("({@code handler instanceof HttpRouter}), so any wrapper erases that type and\n")
-                .addJavadoc("every {@code streamRoute} silently falls back to respond-once. An application\n")
-                .addJavadoc("that emits stream routes refuses to boot rather than serve that state.\n")
+                .addJavadoc("<p><b>Applies to respond-once routes.</b> Stream routes resolve on the edge\n")
+                .addJavadoc("router {@link $T#$L} builds before boot, and run outside\n",
+                        lifecycleType, EDGE_ROUTER_METHOD)
+                .addJavadoc("this wrapper: a scope bound here is not bound for a stream. Any wrapper is\n")
+                .addJavadoc("safe to return — the kernel never sees this object's type, so wrapping it\n")
+                .addJavadoc("cannot erase a stream route.\n")
                 .addStatement("return router")
                 .build());
 
@@ -819,54 +858,230 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .build());
     }
 
+    /**
+     * One generated stream route: registered on the edge router, and served by a
+     * {@code RuntimeComponents} accessor that {@code run()} forces before publishing the
+     * components.
+     *
+     * @param method   {@code "GET"} (entity live view) or {@code "POST"} (streaming action)
+     * @param path     the route template, byte-identical to what the respond-once router used
+     * @param accessor the {@code RuntimeComponents} accessor returning the stream handler
+     */
+    private record StreamRoute(String method, String path, String accessor) {}
+
+    /**
+     * Every stream route the application emits, in emission order: per entity, its
+     * {@code @Action(streaming)} routes in declaration order, then its
+     * {@code realTimeApi} live view. The same order the respond-once router registered them
+     * in before T23 slice B1 moved them, so the regenerated table reads the same.
+     */
+    private List<StreamRoute> streamRoutes(List<DomainMetadata> domains) {
+        List<StreamRoute> routes = new ArrayList<>();
+        for (DomainMetadata domain : domains) {
+            String entityLower = lowerFirst(domain.entityName());
+            String basePath = domain.effectivePath();
+            // ADR-044 Slice 2 (axis 3c): a @Action(streaming) action is served at the SAME path
+            // a respond-once action would use, as a stream route only.
+            for (ActionMetadata action : domain.actions()) {
+                if (action.streaming()) {
+                    routes.add(new StreamRoute("POST",
+                            basePath + "/{id}/actions/" + NameCasing.kebab(action.name()),
+                            entityLower + NameCasing.pascal(action.name()) + "StreamHandler"));
+                }
+            }
+            // ADR-043 Slice 1: collection-level SSE live view, GET {base}/stream, no custom
+            // headers (TS EventSource).
+            if (domain.realTimeApi()) {
+                routes.add(new StreamRoute("GET", basePath + "/stream", entityLower + "StreamHandler"));
+            }
+        }
+        return routes;
+    }
+
     private GeneratedFile buildRuntimeLifecycle(List<DomainMetadata> domains, String basePackage) {
         ClassName selfType = ClassName.get(basePackage, "RuntimeLifecycle");
         ClassName componentsType = ClassName.get(basePackage, COMPONENTS_TYPE_NAME);
         TypeName atomicHttpHandler = ParameterizedTypeName.get(ATOMIC_REFERENCE, HTTP_HANDLER);
+        TypeName atomicComponents = ParameterizedTypeName.get(ATOMIC_REFERENCE, componentsType);
+        List<StreamRoute> streamRoutes = streamRoutes(domains);
 
         TypeSpec.Builder type = KernelScaffold.publicClass("RuntimeLifecycle")
                 .addModifiers(Modifier.FINAL)
                 .addJavadoc("Generated runtime-lifecycle wiring.\n")
-                .addJavadoc("<p>Takes each entity's Handler from {@link $T}, builds\n", componentsType)
-                .addJavadoc("an {@link $T} with the canonical CRUD routes per entity,\n", HTTP_ROUTER)
-                .addJavadoc("offers the same builder to {@link $T#$L($T.Builder)},\n",
+                .addJavadoc("<p>Owns both route tables. {@link #$L} builds, before boot, the\n",
+                        EDGE_ROUTER_METHOD)
+                .addJavadoc("router the kernel holds: the generated stream routes plus a fallthrough\n")
+                .addJavadoc("to the handler slot. {@link #run()} takes each entity's Handler from\n")
+                .addJavadoc("{@link $T}, builds an {@link $T} with the canonical\n", componentsType, HTTP_ROUTER)
+                .addJavadoc("CRUD routes per entity, offers the same builder to\n")
+                .addJavadoc("{@link $T#$L($T.Builder)}, publishes the components and\n",
                         componentsType, CONFIGURE_ROUTES_METHOD, HTTP_ROUTER)
-                .addJavadoc("sets the forwarding handler slot, and parks the JVM on a\n")
-                .addJavadoc("shutdown latch.\n")
+                .addJavadoc("then the decorated router, and parks the JVM on a shutdown latch.\n")
                 .addJavadoc("<p>Construction of the Repository → Service → Handler chain lives in\n")
                 .addJavadoc("{@link $T}, which is where it can be overridden.\n", componentsType)
                 .addJavadoc("<p><b>DO NOT EDIT</b> - Regenerate from domain models.\n")
                 .addField(KernelScaffold.loggerField(selfType))
-                .addField(FieldSpec.builder(atomicHttpHandler, "handlerSlot",
+                .addField(FieldSpec.builder(atomicHttpHandler, HANDLER_SLOT,
+                        Modifier.PRIVATE, Modifier.FINAL).build())
+                .addField(FieldSpec.builder(atomicComponents, COMPONENTS_SLOT,
                         Modifier.PRIVATE, Modifier.FINAL).build())
                 .addField(FieldSpec.builder(componentsType, COMPONENTS_FIELD,
                         Modifier.PRIVATE, Modifier.FINAL).build());
 
         type.addMethod(MethodSpec.constructorBuilder()
                 .addModifiers(Modifier.PUBLIC)
-                .addParameter(atomicHttpHandler, "handlerSlot")
+                .addParameter(atomicHttpHandler, HANDLER_SLOT)
+                .addParameter(atomicComponents, COMPONENTS_SLOT)
                 .addParameter(componentsType, COMPONENTS_FIELD)
-                .addStatement("this.handlerSlot = handlerSlot")
+                .addJavadoc("@param $L receives the decorated respond-once router; the edge router\n",
+                        HANDLER_SLOT)
+                .addJavadoc("       built by {@link #$L} forwards to it\n", EDGE_ROUTER_METHOD)
+                .addJavadoc("@param $L receives {@code $L} once every stream target is built;\n",
+                        COMPONENTS_SLOT, COMPONENTS_FIELD)
+                .addJavadoc("       the edge router's stream routes read it\n")
+                .addJavadoc("@param $L the composed application\n", COMPONENTS_FIELD)
+                .addStatement("this.$L = $L", HANDLER_SLOT, HANDLER_SLOT)
+                .addStatement("this.$L = $L", COMPONENTS_SLOT, COMPONENTS_SLOT)
                 .addStatement("this.$L = $L", COMPONENTS_FIELD, COMPONENTS_FIELD)
                 .build());
 
-        type.addMethod(buildRunMethod(domains, basePackage));
+        // The 0.8.0 shape, kept so a hand-rolled launcher written against it still compiles.
+        // It gets what it had — respond-once routes through its own forwarding handler — and
+        // still no streams: the slot below is one no edge router reads.
+        type.addMethod(MethodSpec.constructorBuilder()
+                .addModifiers(Modifier.PUBLIC)
+                .addParameter(atomicHttpHandler, HANDLER_SLOT)
+                .addParameter(componentsType, COMPONENTS_FIELD)
+                .addJavadoc("The pre-0.9.0 shape, kept for hand-rolled launchers.\n")
+                .addJavadoc("<p>Publishes the components to a slot nothing reads, so an application\n")
+                .addJavadoc("composed this way serves no generated stream route. Bind\n")
+                .addJavadoc("{@link #$L($T, $T)} as the server handler and use\n",
+                        EDGE_ROUTER_METHOD, ATOMIC_REFERENCE, ATOMIC_REFERENCE)
+                .addJavadoc("{@link #RuntimeLifecycle($T, $T, $T)} to serve them.\n",
+                        ATOMIC_REFERENCE, ATOMIC_REFERENCE, componentsType)
+                .addJavadoc("@param $L receives the decorated respond-once router\n", HANDLER_SLOT)
+                .addJavadoc("@param $L the composed application\n", COMPONENTS_FIELD)
+                .addStatement("this($L, new $T<>(), $L)", HANDLER_SLOT, ATOMIC_REFERENCE, COMPONENTS_FIELD)
+                .build());
+
+        type.addMethod(buildEdgeRouterMethod(streamRoutes, atomicHttpHandler, atomicComponents, componentsType));
+        type.addMethod(buildRunMethod(domains, streamRoutes));
+        if (!streamRoutes.isEmpty()) {
+            type.addMethod(buildLazyStreamMethod(atomicComponents, componentsType));
+        }
 
         return new GeneratedFile(basePackage, "RuntimeLifecycle",
                 KernelScaffold.render(basePackage, type.build()), ArtifactType.APPLICATION);
     }
 
-    private MethodSpec buildRunMethod(List<DomainMetadata> domains, String basePackage) {
-        // Whether any streamRoute(...) is registered below. Decides only whether the decorate
-        // hook's return is type-checked at boot — see the guard at the handler-slot publish.
-        boolean hasStreamRoutes = domains.stream().anyMatch(d ->
-                d.realTimeApi() || d.actions().stream().anyMatch(ActionMetadata::streaming));
+    /**
+     * Emits {@code RuntimeLifecycle.edgeRouter(handlerSlot, componentsSlot)} — the router
+     * {@code Application} binds as {@code HTTP_SERVER_HANDLER} (T23, slice B1).
+     *
+     * <p>It has to exist before boot: the http subsystem reads its handler once, at
+     * {@code start()}, and a running engine refuses a new one. It has to <em>be</em> an
+     * {@code HttpRouter}: the kernel's stream dispatcher resolves a stream only through
+     * {@code handler instanceof HttpRouter}. Both hold for a router built from the stream
+     * routes, which are known at generation time, with targets that read the components
+     * composed later inside the boot callback. Composition itself does not move — the T51
+     * scopes it reads are bound only there.
+     *
+     * <p>Emitted for every application, with or without stream routes: one uniform shape,
+     * and with none it behaves exactly as the forwarding lambda it replaces.
+     */
+    private MethodSpec buildEdgeRouterMethod(List<StreamRoute> streamRoutes, TypeName atomicHttpHandler,
+                                             TypeName atomicComponents, ClassName componentsType) {
+        MethodSpec.Builder method = MethodSpec.methodBuilder(EDGE_ROUTER_METHOD)
+                .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+                .returns(HTTP_ROUTER)
+                .addParameter(atomicHttpHandler, HANDLER_SLOT)
+                .addParameter(atomicComponents, COMPONENTS_SLOT)
+                .addJavadoc("Builds the router the application binds as the kernel's server handler.\n")
+                .addJavadoc("<p>Built before boot, because the kernel reads its server handler once, when\n")
+                .addJavadoc("the http subsystem starts — ahead of the boot callback in which\n")
+                .addJavadoc("{@link $T} is composed. It carries every generated stream\n", componentsType)
+                .addJavadoc("route, because the kernel resolves a stream only on a handler that is an\n")
+                .addJavadoc("{@link $T}; each route reads its handler from {@code $L}\n", HTTP_ROUTER, COMPONENTS_SLOT)
+                .addJavadoc("when a stream opens. Every other request falls through {@code notFound} to\n")
+                .addJavadoc("whatever {@code $L} holds — the router {@link #run()} builds, as\n", HANDLER_SLOT)
+                .addJavadoc("{@link $T#$L} returned it — and is answered\n", componentsType, DECORATE_METHOD)
+                .addJavadoc("{@link $T#SERVICE_UNAVAILABLE} while that slot is empty.\n", HTTP_STATUS)
+                .addJavadoc("<p>A stream opened before {@code $L} is set is closed at once: its\n", COMPONENTS_SLOT)
+                .addJavadoc("response head is written before any handler runs, so it cannot be refused\n")
+                .addJavadoc("with a status.\n")
+                .addJavadoc("<p>A hand-rolled launcher binds this too, and shares both slots with the\n")
+                .addJavadoc("lifecycle it composes:\n")
+                .addJavadoc("<pre>{@code\n")
+                .addJavadoc("var handlerSlot = new AtomicReference<HttpHandler>();\n")
+                .addJavadoc("var componentsSlot = new AtomicReference<$L>();\n", COMPONENTS_TYPE_NAME)
+                .addJavadoc("ScopedValue.where(HttpKernelProviders.HTTP_SERVER_HANDLER,\n")
+                .addJavadoc("        RuntimeLifecycle.$L(handlerSlot, componentsSlot)).call(() -> {\n",
+                        EDGE_ROUTER_METHOD)
+                .addJavadoc("    KernelBootstrap.builder().selector(selector).build().boot(() ->\n")
+                .addJavadoc("            new RuntimeLifecycle(handlerSlot, componentsSlot, components).run());\n")
+                .addJavadoc("    return null;\n")
+                .addJavadoc("});\n")
+                .addJavadoc("}</pre>\n")
+                .addJavadoc("@param $L the slot {@link #run()} fills with the decorated respond-once router\n",
+                        HANDLER_SLOT)
+                .addJavadoc("@param $L the slot {@link #run()} fills with the composed components\n",
+                        COMPONENTS_SLOT)
+                .addJavadoc("@return the edge router; bind it as {@code HTTP_SERVER_HANDLER}\n")
+                .addStatement("$T.Builder edge = $T.builder()", HTTP_ROUTER, HTTP_ROUTER);
+        for (StreamRoute route : streamRoutes) {
+            method.addStatement("edge.streamRoute($T.$L, $S, $L($L, $T::$L))",
+                    HTTP_METHOD, route.method(), route.path(), LAZY_STREAM_METHOD, COMPONENTS_SLOT,
+                    componentsType, route.accessor());
+        }
+        return method
+                .addStatement("return edge.notFound(exchange -> {\n"
+                                + "    $T handler = $L.get();\n"
+                                + "    if (handler != null) {\n"
+                                + "        handler.handle(exchange);\n"
+                                + "    } else {\n"
+                                + "        exchange.respond($T.SERVICE_UNAVAILABLE);\n"
+                                + "    }\n"
+                                + "}).build()",
+                        HTTP_HANDLER, HANDLER_SLOT, HTTP_STATUS)
+                .build();
+    }
 
+    /**
+     * Emits the {@code lazyStream} helper the edge router's stream routes share — only when
+     * there is a stream route to use it.
+     */
+    private MethodSpec buildLazyStreamMethod(TypeName atomicComponents, ClassName componentsType) {
+        TypeName target = ParameterizedTypeName.get(FUNCTION, componentsType, HTTP_STREAM_HANDLER);
+        return MethodSpec.methodBuilder(LAZY_STREAM_METHOD)
+                .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+                .returns(HTTP_STREAM_HANDLER)
+                .addParameter(atomicComponents, COMPONENTS_SLOT)
+                .addParameter(target, "target")
+                .addJavadoc("A stream route target that resolves its handler from the composed\n")
+                .addJavadoc("components when a stream opens.\n")
+                .addJavadoc("<p>{@link #run()} forces every target accessor before it sets\n")
+                .addJavadoc("{@code $L}, so {@code target} only ever reads a memoised\n", COMPONENTS_SLOT)
+                .addJavadoc("field here — construction never runs on a stream thread, where the\n")
+                .addJavadoc("boot-scope providers a factory reads are not bound.\n")
+                .addStatement("return exchange -> {\n"
+                                + "    $T components = $L.get();\n"
+                                + "    if (components == null) {\n"
+                                + "        exchange.close();\n"
+                                + "        return;\n"
+                                + "    }\n"
+                                + "    target.apply(components).handle(exchange);\n"
+                                + "}",
+                        componentsType, COMPONENTS_SLOT)
+                .build();
+    }
+
+    private MethodSpec buildRunMethod(List<DomainMetadata> domains, List<StreamRoute> streamRoutes) {
         MethodSpec.Builder method = MethodSpec.methodBuilder("run")
                 .addModifiers(Modifier.PUBLIC)
                 .returns(TypeName.VOID)
-                .addJavadoc("Composes the application, sets the forwarding HTTP handler,\n")
-                .addJavadoc("and parks on a shutdown latch until the JVM exits.\n");
+                .addJavadoc("Composes the application, publishes it to the components slot and the\n")
+                .addJavadoc("decorated router to the handler slot, and parks on a shutdown latch until\n")
+                .addJavadoc("the JVM exits.\n");
 
         // T49: the per-entity Repository → Service → Handler chain is built by
         // RuntimeComponents, not here. Only the handlers need a local, because only they
@@ -875,41 +1090,47 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
         for (DomainMetadata domain : domains) {
             String entity = domain.entityName();
             String entityLower = lowerFirst(entity);
-            String handlerPkg = infraPackages(domain).handler();
-
-            ClassName handlerType = ClassName.get(handlerPkg, entity + "Handler");
-
+            ClassName handlerType = ClassName.get(infraPackages(domain).handler(), entity + "Handler");
             method.addStatement("$T $LHandler = $L.$LHandler()",
                     handlerType, entityLower, COMPONENTS_FIELD, entityLower);
-            // ADR-043 Slice 1: instantiate the per-entity SSE live-view stream
-            // handler when @ExerisDomain(realTimeApi). Emitted by
-            // KernelStreamHandlerGenerator into the same .handler package.
-            if (domain.realTimeApi()) {
-                ClassName streamHandlerType = ClassName.get(handlerPkg, entity + "StreamHandler");
-                method.addStatement("$T $LStreamHandler = $L.$LStreamHandler()",
-                        streamHandlerType, entityLower, COMPONENTS_FIELD, entityLower);
-            }
-            // ADR-044 Slice 2: instantiate one per-action SSE stream handler per
-            // @Action(streaming) action (no-arg, like the Slice-1 handler). Emitted
-            // by KernelActionStreamHandlerGenerator into the same .handler package,
-            // named <Entity><ActionPascal>StreamHandler.
-            for (ActionMetadata action : domain.actions()) {
-                if (action.streaming()) {
-                    String actionPascal = NameCasing.pascal(action.name());
-                    ClassName actionStreamHandlerType =
-                            ClassName.get(handlerPkg, entity + actionPascal + "StreamHandler");
-                    method.addStatement("$T $L$LStreamHandler = $L.$L$LStreamHandler()",
-                            actionStreamHandlerType, entityLower, actionPascal,
-                            COMPONENTS_FIELD, entityLower, actionPascal);
-                }
+        }
+
+        // Event types. A publisher registers its entity's event types with the engine's registry
+        // when it is constructed, and the kernel bus refuses a subscription to a type nobody has
+        // registered (InMemoryEventBus.subscribe → EventBusException.subscriptionRejected). A
+        // handler that publishes builds its publisher above; an entity whose events are all
+        // published elsewhere (MANUAL, STATE_TRANSITION, SCHEDULED, …) had nothing building it,
+        // so its live-view stream was refused on every open. Built here, before anything can
+        // subscribe.
+        List<String> publishers = domains.stream().filter(DomainMetadata::hasEvents)
+                .map(d -> lowerFirst(d.entityName()) + "EventPublisher").toList();
+        if (!publishers.isEmpty()) {
+            method.addComment("Event types are registered by constructing each publisher; the bus refuses")
+                    .addComment("a subscription to an unregistered type, so they are built before anything")
+                    .addComment("subscribes.");
+            for (String publisher : publishers) {
+                method.addStatement("$L.$L()", COMPONENTS_FIELD, publisher);
             }
         }
 
-        // Router build
+        // T23 slice B1: the stream handlers are served by the edge router, which reaches them
+        // through their accessors. Forcing each accessor here builds it on the boot thread,
+        // inside the kernel scope its factory reads, before componentsSlot publishes the
+        // object — so the unsynchronised memo field is written once, here, and a stream thread
+        // only ever reads it.
+        if (!streamRoutes.isEmpty()) {
+            method.addComment("Stream route targets, served by edgeRouter(...): built now, on the boot")
+                    .addComment("thread, so no factory ever runs on a stream thread.");
+            for (StreamRoute route : streamRoutes) {
+                method.addStatement("$L.$L()", COMPONENTS_FIELD, route.accessor());
+            }
+        }
+
+        // Respond-once router. Stream routes are not registered here: the kernel never asks this
+        // router to resolve a stream, because it only ever holds the edge router.
         method.addStatement("$T.Builder routerBuilder = $T.builder()", HTTP_ROUTER, HTTP_ROUTER);
         for (DomainMetadata domain : domains) {
-            String entity = domain.entityName();
-            String entityLower = lowerFirst(entity);
+            String entityLower = lowerFirst(domain.entityName());
             String basePath = domain.effectivePath();
             method.addStatement("routerBuilder.route($T.GET, $S, $LHandler::handleGetAll)",
                     HTTP_METHOD, basePath, entityLower);
@@ -924,31 +1145,14 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
             // T1: one route per @Action, matching the OpenAPI path byte-for-byte
             // ({basePath}/{id}/actions/{kebab(name)}, POST — OpenAPI emits POST for
             // every action). The handler method name mirrors KernelHandlerGenerator's
-            // "handle" + pascal(name).
-            //
-            // ADR-044 Slice 2 (axis 3c): a @Action(streaming) action is registered at
-            // the SAME path but via the router's typed streamRoute(POST, ...) — the
-            // request opens the stream (resolves to an HttpStreamExchange, never an
-            // HttpExchange). A streaming action gets the streamRoute ONLY, not the
-            // respond-once route(...) too.
+            // "handle" + pascal(name). A @Action(streaming) action has no respond-once
+            // route at all; its stream route is on the edge router.
             for (ActionMetadata action : domain.actions()) {
-                String actionPath = basePath + "/{id}/actions/" + NameCasing.kebab(action.name());
-                String actionPascal = NameCasing.pascal(action.name());
-                if (action.streaming()) {
-                    method.addStatement("routerBuilder.streamRoute($T.POST, $S, $L$LStreamHandler::handle)",
-                            HTTP_METHOD, actionPath, entityLower, actionPascal);
-                } else {
+                if (!action.streaming()) {
                     method.addStatement("routerBuilder.route($T.POST, $S, $LHandler::$L)",
-                            HTTP_METHOD, actionPath, entityLower, "handle" + actionPascal);
+                            HTTP_METHOD, basePath + "/{id}/actions/" + NameCasing.kebab(action.name()),
+                            entityLower, "handle" + NameCasing.pascal(action.name()));
                 }
-            }
-            // ADR-043 Slice 1: collection-level SSE live-view route. Uses the
-            // router's typed streamRoute(...), distinct from route(...) — a
-            // streaming route resolves to an HttpStreamExchange, never an
-            // HttpExchange. GET {base}/stream, no custom headers (TS EventSource).
-            if (domain.realTimeApi()) {
-                method.addStatement("routerBuilder.streamRoute($T.GET, $S, $LStreamHandler::handle)",
-                        HTTP_METHOD, basePath + "/stream", entityLower);
             }
         }
         // T49: the consumer's routes are registered after every generated one and before
@@ -956,33 +1160,16 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
         // a generated one.
         method.addStatement("$L.$L(routerBuilder)", COMPONENTS_FIELD, CONFIGURE_ROUTES_METHOD);
         method.addStatement("$T router = routerBuilder.build()", HTTP_ROUTER);
-        // Publish the HttpRouter INSTANCE, not a `router::handle` method-ref.
-        // The kernel stream dispatcher resolves a streaming route only when the
-        // bound handler IS an HttpRouter (`handler instanceof HttpRouter` →
-        // router.resolveStream(...)); a method-ref lambda erases that type, so
-        // every generated streamRoute(...) registration (Slice 1 entity-level +
-        // Slice 2 per-action) would silently fall back to respond-once / 404 on
-        // a real boot. HttpRouter implements HttpHandler, so the forwarding
-        // slot's respond-once dispatch is byte-for-byte identical either way.
         // T49 residual: the consumer's one chance to wrap the router before it is served.
-        // Whatever decorate(...) returns is what the kernel gets.
+        // Whatever decorate(...) returns is what every respond-once request reaches. No type
+        // guard: the kernel holds the edge router, never this object, so a wrapper here cannot
+        // erase a stream route (the pre-B1 guard protected nothing in any reachable state).
         method.addStatement("$T handler = $L.$L(router)", HTTP_HANDLER, COMPONENTS_FIELD, DECORATE_METHOD);
-        if (hasStreamRoutes) {
-            // A wrapper erases the HttpRouter type the dispatcher tests for, so wrapping and
-            // streaming are mutually exclusive until the kernel resolves streams through
-            // something a wrapper can carry. Refused at boot: registration succeeds either
-            // way, so the alternative is an app whose every stream route 404s (T23).
-            method.beginControlFlow("if (!(handler instanceof $T))", HTTP_ROUTER)
-                    .addStatement("throw new $T($S)", ILLEGAL_STATE_EXCEPTION,
-                            "RuntimeComponents.decorate(...) returned a wrapper, but this application "
-                                    + "emits stream routes. The kernel dispatcher resolves a stream only "
-                                    + "when the bound handler is an HttpRouter, so every streamRoute would "
-                                    + "register and then never match. Return the router unchanged, or "
-                                    + "remove @ExerisDomain(realTimeApi) / @Action(streaming) from this "
-                                    + "application.")
-                    .endControlFlow();
-        }
-        method.addStatement("handlerSlot.set(handler)");
+        // Components before handler: once the handler slot is set the application is serving,
+        // and its streams are part of what it serves. The other order would leave a window in
+        // which respond-once routes answer and every stream closes on open.
+        method.addStatement("$L.set($L)", COMPONENTS_SLOT, COMPONENTS_FIELD);
+        method.addStatement("$L.set(handler)", HANDLER_SLOT);
         // The entity count is known at generation time, so it is baked into the literal rather
         // than passed as a parameter — one fewer MessageFormat call at runtime, same output.
         method.addStatement("LOG.log($T.INFO, $S)", KernelScaffold.LOGGER_LEVEL,

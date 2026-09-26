@@ -125,9 +125,13 @@ class KernelApplicationGeneratorTest {
                 .contains("BootstrapSelector.forNames(subsystems().split")
                 .doesNotContain("SUBSYSTEMS.split")
                 .contains("protected String subsystems()")
-                .contains(".boot(() -> new RuntimeLifecycle(handlerSlot, "
+                .contains(".boot(() -> new RuntimeLifecycle(handlerSlot, componentsSlot, "
                         + "components(transactionalExecutor())).run())")
-                .contains("exchange.respond(HttpStatus.SERVICE_UNAVAILABLE)")
+                // T23 slice B1: the kernel is handed the edge router, built before boot; the
+                // forwarding lambda it replaces is gone, and so is its 503 (now in the router).
+                .contains("HttpRouter edgeRouter = RuntimeLifecycle.edgeRouter(handlerSlot, componentsSlot)")
+                .contains("ScopedValue.where(HttpKernelProviders.HTTP_SERVER_HANDLER, edgeRouter)")
+                .doesNotContain("forwardingHandler")
                 // T49: the seam that lets a consumer install their own components.
                 .contains("protected RuntimeComponents components(TransactionalExecutor "
                         + "transactionalExecutor)")
@@ -156,15 +160,13 @@ class KernelApplicationGeneratorTest {
                 .contains("routerBuilder.route(HttpMethod.GET, \"/orders\", orderHandler::handleGetAll)")
                 .contains("routerBuilder.route(HttpMethod.POST, \"/orders\", orderHandler::handleCreate)")
                 .contains("routerBuilder.route(HttpMethod.PUT, \"/orders/{id}\", orderHandler::handleUpdate)")
-                // T23: the HttpRouter INSTANCE reaches the slot (not a router::handle
-                // lambda) so the kernel stream dispatcher's `instanceof HttpRouter`
-                // sees it and streamRoute(...) registrations resolve on a real boot.
-                // It now arrives via the T49 decorate hook, whose default returns the
-                // router unchanged — so the property holds by default, and an app that
-                // streams refuses a wrapper at boot rather than losing it silently.
+                // The respond-once router reaches the slot through the T49 decorate hook. The
+                // slot is what the edge router's notFound forwards to — 503 while it is empty.
                 .contains("HttpHandler handler = components.decorate(router)")
                 .contains("handlerSlot.set(handler)")
                 .doesNotContain("handlerSlot.set(router::handle)")
+                .contains("public static HttpRouter edgeRouter(AtomicReference<HttpHandler> handlerSlot,")
+                .contains("exchange.respond(HttpStatus.SERVICE_UNAVAILABLE)")
                 .contains("CountDownLatch shutdownLatch = new CountDownLatch(1)")
                 .contains("Runtime.getRuntime().addShutdownHook")
                 .doesNotContain("import javax.sql")
@@ -190,10 +192,10 @@ class KernelApplicationGeneratorTest {
                 // both still inside boot(...), i.e. after KERNEL READY and before the kernel
                 // stops. That ordering is the whole point of the call site (ADR-024).
                 .contains("try (CompositionConductor conductor = CompositionConductor.from(capManifest()).start())")
-                .contains("new RuntimeLifecycle(handlerSlot, "
+                .contains("new RuntimeLifecycle(handlerSlot, componentsSlot, "
                         + "components(transactionalExecutor())).run();")
                 // ...and NOT the bare, unconducted boot line.
-                .doesNotContain(".boot(() -> new RuntimeLifecycle(handlerSlot, "
+                .doesNotContain(".boot(() -> new RuntimeLifecycle(handlerSlot, componentsSlot, "
                         + "components(transactionalExecutor())).run())")
                 .contains("protected Path capManifest()")
                 .contains("import java.nio.file.Path")
@@ -217,7 +219,7 @@ class KernelApplicationGeneratorTest {
                 .doesNotContain("capManifest")
                 .doesNotContain("cap-manifest.json")
                 .doesNotContain("java.nio.file.Path")
-                .contains(".boot(() -> new RuntimeLifecycle(handlerSlot, "
+                .contains(".boot(() -> new RuntimeLifecycle(handlerSlot, componentsSlot, "
                         + "components(transactionalExecutor())).run())");
     }
 
@@ -340,23 +342,28 @@ class KernelApplicationGeneratorTest {
     }
 
     @Test
-    @DisplayName("T49 residual: an app with stream routes refuses a wrapper at boot rather than "
-            + "serving one whose every stream route 404s (T23)")
-    void streamBearingAppRefusesAWrappingDecorator() {
+    @DisplayName("T23 slice B1: a stream-bearing app takes any wrapper — the decorate guard is gone, "
+            + "because the kernel never holds what decorate returns")
+    void streamBearingAppCarriesNoDecorateGuard() {
         KernelApplicationGenerator gen = new KernelApplicationGenerator();
         DomainMetadata live = DomainMetadata.builder("GalacticEra", "com.example.domain")
                 .path("/era").realTimeApi(true).build();
         List<GeneratedFile> files = gen.generateAll(List.of(live), "com.example.foundation");
 
-        String lifecycle = lifecycle(files);
-        // The kernel resolves a stream only via `handler instanceof HttpRouter`, so any
-        // wrapper erases the type and every streamRoute registers and then never matches.
-        // Registration succeeding either way is exactly why T23 needed a real boot to find.
-        assertThat(lifecycle)
-                .contains("routerBuilder.streamRoute(")
-                .contains("if (!(handler instanceof HttpRouter))")
-                .contains("throw new IllegalStateException")
-                .contains("emits stream routes");
+        // The pre-B1 guard refused a non-HttpRouter from decorate in a streaming app. It never
+        // protected anything: the kernel held Application's forwarding lambda, and now holds the
+        // edge router — in no reachable state is the object decorate returns the one the stream
+        // dispatcher tests with `instanceof HttpRouter`.
+        assertThat(lifecycle(files))
+                .contains("edge.streamRoute(")
+                .doesNotContain("instanceof HttpRouter")
+                .doesNotContain("IllegalStateException")
+                .doesNotContain("emits stream routes");
+        // The decorate Javadoc says what now holds instead of the refusal.
+        assertThat(components(files))
+                .contains("Applies to respond-once routes.")
+                .contains("{@link RuntimeLifecycle#edgeRouter}")
+                .doesNotContain("A wrapper gives up streaming");
     }
 
     @Test
@@ -411,17 +418,175 @@ class KernelApplicationGeneratorTest {
 
         assertThat(components(files))
                 .contains("protected OrderStreamHandler createOrderStreamHandler()")
+                // No @DomainEvent → the keep-alive fallback, which subscribes to nothing.
                 .contains("return new OrderStreamHandler()")
                 .contains("protected OrderTrackShipmentStreamHandler "
                         + "createOrderTrackShipmentStreamHandler()")
                 .contains("return new OrderTrackShipmentStreamHandler()");
 
+        // T23 slice B1: the stream handlers are served by the edge router through their
+        // accessors, so run() only forces them — no local, no route of its own.
         assertThat(lifecycle(files))
-                .contains("OrderStreamHandler orderStreamHandler = components.orderStreamHandler()")
-                .contains("OrderTrackShipmentStreamHandler orderTrackShipmentStreamHandler = "
-                        + "components.orderTrackShipmentStreamHandler()")
+                .contains("components.orderStreamHandler();")
+                .contains("components.orderTrackShipmentStreamHandler();")
+                .doesNotContain("OrderStreamHandler orderStreamHandler = ")
                 // The lifecycle calls `new` on nothing the pipeline generated.
                 .doesNotContain("= new Order");
+    }
+
+    @Test
+    @DisplayName("T23 slice B1: the EV1 producer stream handler takes its EventEngine from the "
+            + "factory, captured at composition — never resolved on the stream thread")
+    void producerStreamHandlerTakesItsEngineAtComposition() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        DomainMetadata order = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .realTimeApi(true)
+                .events(List.of(eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata.simple("OrderCreated")))
+                .build();
+
+        // Resolved inside the boot callback, where EVENT_ENGINE is bound. The stream thread
+        // binds only MEMORY_ALLOCATOR and the decoder registry.
+        assertThat(components(gen.generateAll(List.of(order), "com.example.foundation")))
+                .contains("return new OrderStreamHandler(KernelProviders.eventEngine())");
+    }
+
+    @Test
+    @DisplayName("T23 slice B1: stream routes live on the pre-boot edge router, each resolving its "
+            + "handler from componentsSlot; run() registers none")
+    void streamRoutesAreRegisteredOnTheEdgeRouterNotInRun() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        DomainMetadata live = DomainMetadata.builder("GalacticEra", "com.example.domain")
+                .path("/era").realTimeApi(true)
+                .actions(List.of(ActionMetadata.builder("trackRift").streaming(true).build()))
+                .build();
+        String lifecycle = lifecycle(gen.generateAll(List.of(live), "com.example.foundation"));
+
+        String edge = method(lifecycle, "public static HttpRouter edgeRouter(");
+        assertThat(edge)
+                .contains("AtomicReference<HttpHandler> handlerSlot")
+                .contains("AtomicReference<RuntimeComponents> componentsSlot")
+                // the same paths the respond-once router used to carry, byte for byte
+                .contains("edge.streamRoute(HttpMethod.GET, \"/era/stream\", "
+                        + "lazyStream(componentsSlot, RuntimeComponents::galacticEraStreamHandler))")
+                .contains("edge.streamRoute(HttpMethod.POST, \"/era/{id}/actions/track-rift\", "
+                        + "lazyStream(componentsSlot, RuntimeComponents::galacticEraTrackRiftStreamHandler))")
+                // everything else falls through to the slot, 503 while it is empty
+                .contains("return edge.notFound(exchange -> {")
+                .contains("HttpHandler handler = handlerSlot.get();")
+                .contains("exchange.respond(HttpStatus.SERVICE_UNAVAILABLE);");
+
+        assertThat(method(lifecycle, "public void run()"))
+                .doesNotContain("streamRoute")
+                .doesNotContain("track-rift");
+
+        // The lazy target closes a stream opened before the components exist — its head is
+        // already written, so no status can refuse it.
+        assertThat(method(lifecycle, "private static HttpStreamHandler lazyStream("))
+                .contains("RuntimeComponents components = componentsSlot.get();")
+                .contains("exchange.close();")
+                .contains("target.apply(components).handle(exchange);");
+    }
+
+    @Test
+    @DisplayName("T23 slice B1: run() forces every stream target, then sets componentsSlot, then "
+            + "handlerSlot — so a served app never closes a stream for want of components")
+    void componentsSlotIsSetAfterStreamTargetsAndBeforeTheHandlerSlot() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        DomainMetadata live = DomainMetadata.builder("GalacticEra", "com.example.domain")
+                .path("/era").realTimeApi(true).build();
+        String run = method(lifecycle(gen.generateAll(List.of(live), "com.example.foundation")),
+                "public void run()");
+
+        int forced = run.indexOf("components.galacticEraStreamHandler();");
+        int decorate = run.indexOf("HttpHandler handler = components.decorate(router)");
+        int components = run.indexOf("componentsSlot.set(components);");
+        int handler = run.indexOf("handlerSlot.set(handler);");
+
+        assertThat(forced).as("the stream target is built on the boot thread").isGreaterThan(-1);
+        assertThat(components)
+                .as("published only once every stream target is memoised")
+                .isGreaterThan(forced)
+                .isGreaterThan(decorate);
+        assertThat(handler)
+                .as("the handler slot opens the app; its streams must already resolve")
+                .isGreaterThan(components);
+    }
+
+    @Test
+    @DisplayName("T23 slice B1: run() builds every publisher before any stream target — the bus "
+            + "refuses a subscription to an event type no publisher has registered yet")
+    void publishersAreBuiltBeforeAnythingSubscribes() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        // STATE_TRANSITION is published by no handler method (ADR-075), so no handler factory
+        // builds this publisher — the shape of the dog-food's GalacticEra /era/stream.
+        DomainMetadata era = DomainMetadata.builder("GalacticEra", "com.example.domain")
+                .path("/era").realTimeApi(true)
+                .events(List.of(eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata.builder("EraTurned")
+                        .trigger(eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata.Trigger.STATE_TRANSITION)
+                        .build()))
+                .build();
+        DomainMetadata tag = DomainMetadata.builder("Tag", "com.example.domain").path("/tags").build();
+        String run = method(lifecycle(gen.generateAll(List.of(era, tag), "com.example.foundation")),
+                "public void run()");
+
+        int publisher = run.indexOf("components.galacticEraEventPublisher();");
+        int streamTarget = run.indexOf("components.galacticEraStreamHandler();");
+        int published = run.indexOf("componentsSlot.set(components);");
+        assertThat(publisher).as("the publisher is built at composition").isGreaterThan(-1);
+        assertThat(streamTarget).isGreaterThan(publisher);
+        assertThat(published).isGreaterThan(publisher);
+        // An entity with no events has no publisher to build.
+        assertThat(run).doesNotContain("tagEventPublisher");
+    }
+
+    @Test
+    @DisplayName("T23 slice B1: an app with no stream routes still binds an edge router — one "
+            + "uniform shape — and emits no lazyStream helper")
+    void appWithoutStreamRoutesBindsABareEdgeRouter() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        DomainMetadata order = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders").build();
+        String lifecycle = lifecycle(gen.generateAll(List.of(order), "com.example.foundation"));
+
+        assertThat(method(lifecycle, "public static HttpRouter edgeRouter("))
+                .doesNotContain("streamRoute")
+                .contains("return edge.notFound(");
+        assertThat(lifecycle)
+                .doesNotContain("lazyStream")
+                .doesNotContain("import eu.exeris.kernel.spi.http.HttpStreamHandler")
+                .doesNotContain("import java.util.function.Function")
+                .doesNotContain("Stream route targets");
+    }
+
+    @Test
+    @DisplayName("T23 slice B1: the 0.8.0 two-argument constructor still compiles against a "
+            + "hand-rolled launcher, delegating with a slot nothing reads")
+    void legacyConstructorDelegates() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        DomainMetadata order = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders").build();
+        String lifecycle = lifecycle(gen.generateAll(List.of(order), "com.example.foundation"));
+
+        assertThat(lifecycle)
+                .contains("public RuntimeLifecycle(AtomicReference<HttpHandler> handlerSlot,\n"
+                        + "            AtomicReference<RuntimeComponents> componentsSlot, "
+                        + "RuntimeComponents components)")
+                .contains("public RuntimeLifecycle(AtomicReference<HttpHandler> handlerSlot,\n"
+                        + "            RuntimeComponents components)")
+                .contains("this(handlerSlot, new AtomicReference<>(), components);");
+    }
+
+    /**
+     * The body of the member whose declaration starts with {@code signature}: from there to the
+     * next line that closes a class-level member (four-space indent). Enough for emitted code,
+     * whose formatting JavaPoet fixes.
+     */
+    private static String method(String source, String signature) {
+        int start = source.indexOf(signature);
+        assertThat(start).as("member %s is emitted", signature).isGreaterThan(-1);
+        int end = source.indexOf("\n    }\n", start);
+        return source.substring(start, end);
     }
 
     @Test
@@ -493,12 +658,14 @@ class KernelApplicationGeneratorTest {
 
         String content = lifecycle.content();
         assertThat(content)
-                // per-action stream handler taken from the T49 seam (constructed no-arg there)
-                .contains("OrderTrackShipmentStreamHandler orderTrackShipmentStreamHandler = "
-                        + "components.orderTrackShipmentStreamHandler()")
-                // registered via the typed streamRoute(...), POST, at the action path
-                .contains("routerBuilder.streamRoute(HttpMethod.POST, "
-                        + "\"/orders/{id}/actions/track-shipment\", orderTrackShipmentStreamHandler::handle)")
+                // per-action stream handler taken from the T49 seam (constructed no-arg there),
+                // forced on the boot thread
+                .contains("components.orderTrackShipmentStreamHandler();")
+                // registered via the typed streamRoute(...), POST, at the action path — on the
+                // edge router since T23 slice B1
+                .contains("edge.streamRoute(HttpMethod.POST, "
+                        + "\"/orders/{id}/actions/track-shipment\", "
+                        + "lazyStream(componentsSlot, RuntimeComponents::orderTrackShipmentStreamHandler))")
                 // non-streaming action keeps its respond-once route
                 .contains("routerBuilder.route(HttpMethod.POST, \"/orders/{id}/actions/cancel\", "
                         + "orderHandler::handleCancel)");

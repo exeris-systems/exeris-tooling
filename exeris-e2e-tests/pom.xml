@@ -93,6 +93,14 @@
             <artifactId>exeris-kernel-community-testkit</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- T23 slice B1: GeneratedAppBootE2ETest boots the EMITTED Application with the events
+             subsystem (for the SSE producer's bus) — which pulls persistence by dependency
+             closure, and persistence needs a driver. In-memory H2, one database per run. -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>test</scope>
+        </dependency>
 
         <!-- Jackson 3 (tools.jackson) on the test classpath, for the emitted
              REPOSITORY, not the handler: KernelRepositoryGenerator persists

@@ -119,6 +119,13 @@
         <compile-testing.version>0.21.0</compile-testing.version>
         <json-schema-validator.version>1.5.4</json-schema-validator.version>
         <approvaltests.version>24.16.0</approvaltests.version>
+        <!-- The JDBC driver the kernel testkit's persistence needs when the e2e suite boots the
+             EMITTED Application with the events/flow subsystems (T23 slice B1, T48 slice C1):
+             both declare dependsOn("persistence"), and the testkit deliberately ships no driver.
+             Same version exeris-kernel-community pins for its own H2 tests (0.12.0 pom), so the
+             kernel's persistence has been exercised on exactly this driver. Test scope only —
+             emitted code never names it. -->
+        <h2.version>2.3.232</h2.version>
     </properties>
 
     <dependencyManagement>
@@ -300,6 +307,12 @@
                 <groupId>com.approvaltests</groupId>
                 <artifactId>approvaltests</artifactId>
                 <version>${approvaltests.version}</version>
+                <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>com.h2database</groupId>
+                <artifactId>h2</artifactId>
+                <version>${h2.version}</version>
                 <scope>test</scope>
             </dependency>
         </dependencies>
