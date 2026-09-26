@@ -109,6 +109,17 @@ class GeneratedTestsE2ETest {
     }
 
     @Test
+    @DisplayName("K5: @Saga(version = 2) travels processor → metadata → emitted flow")
+    void declaredSagaVersionReachesTheEmittedFlow() throws IOException {
+        // The whole chain in one assertion: the processor has extracted @Saga.version since 0.8.0
+        // (S1), and KernelSagaGenerator now emits it. A drop anywhere along the way would leave the
+        // flow at version 1, which compiles and resumes parked sagas on the wrong plan.
+        assertThat(Files.readString(generatedMain.resolve("com/shop/saga/OrderSagaFlow.java")))
+                .contains("private static final int DEFINITION_VERSION = 2;")
+                .contains("builder.version(DEFINITION_VERSION);");
+    }
+
+    @Test
     @DisplayName("each tree owns its own T13 manifest, so pruning one can never touch the other")
     void eachRootHasItsOwnManifest() {
         assertThat(generatedMain.resolve(".exeris-codegen-manifest")).exists();
@@ -279,8 +290,10 @@ class GeneratedTestsE2ETest {
                 @DomainEvent(name = "OrderPlaced", trigger = DomainEvent.Trigger.CREATE, topic = "orders.placed")
                 // Three steps, one of them compensating: enough for the emitted saga test to have
                 // a transition chain to check (a single-step saga has none) and a compensation
-                // branch to exercise.
-                @Saga(name = "OrderSaga", timeout = "PT30M", maxRetries = 3)
+                // branch to exercise. version = 2 (K5) makes the emitted initialize() call
+                // FlowDefinitionBuilder.version(int), a default that throws unless overridden,
+                // so the four saga cases below only pass if RecordingFlow records it.
+                @Saga(name = "OrderSaga", version = 2, timeout = "PT30M", maxRetries = 3)
                 public class Order {
 
                     private UUID id;

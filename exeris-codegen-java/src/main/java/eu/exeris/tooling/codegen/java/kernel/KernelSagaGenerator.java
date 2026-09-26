@@ -61,6 +61,31 @@ import java.util.stream.Collectors;
  * {@code static final long TIMEOUT_NANOS}; {@code maxRetries} comes
  * directly from the metadata.
  * <p>
+ * <b>Plan version (kernel ADR-064, Stellar K5).</b> A saga that declares
+ * {@code @Saga(version = n)} with {@code n > 1} gets a
+ * {@code private static final int DEFINITION_VERSION = n} and a
+ * {@code builder.version(DEFINITION_VERSION)} call straight after
+ * {@code newDefinition(DEFINITION_NAME)}, since {@code (name, version)} is the
+ * plan's identity in the kernel's catalog. This uses
+ * {@code FlowDefinitionBuilder.version(int)}, which exists from kernel 0.12.
+ * A saga at version 1 (the annotation default, and
+ * {@code FlowDefinition.INITIAL_VERSION}) emits neither, and there are three
+ * reasons for that:
+ * <ul>
+ *   <li>it is the version an unversioned builder already produces, so the
+ *       omission loses nothing: the plan identity is the same;</li>
+ *   <li>every saga that declares no version keeps byte-identical output, so
+ *       a consumer's committed tree does not churn for a no-op;</li>
+ *   <li>{@code version(int)} is a {@code default} method that <em>throws</em>
+ *       on a builder that does not override it. Emitting it unconditionally
+ *       would break every saga on an out-of-tree engine, including the ones
+ *       that never asked for a version. Emitting it only when declared confines
+ *       that failure to where it is wanted: such an engine cannot host a
+ *       version-3 plan and should say so rather than build version 1.</li>
+ * </ul>
+ * A declared version below 1 is refused at generation time, because the kernel
+ * would refuse it at the saga's first {@code initialize()}.
+ * <p>
  * The legacy generator's saga DSL (SagaBuilder / SagaEngine / step-name
  * pattern dispatch / nested {@code State} record) is dropped. The new
  * skeleton is much smaller; downstream consumers compose real saga
@@ -86,6 +111,14 @@ public class KernelSagaGenerator implements KernelArtifactGenerator {
     private static final ClassName FLOW_OUTCOME =
             ClassName.get("eu.exeris.kernel.spi.flow.model", "FlowOutcome");
 
+    /**
+     * The version a definition carries when its builder is never told one — the kernel's
+     * {@code FlowDefinition.INITIAL_VERSION}, restated because this module names kernel types
+     * only as emitted text and has no compile dependency on the SPI. Also the SDK default of
+     * {@code @Saga.version} and of {@code SagaMetadata.version}.
+     */
+    private static final int INITIAL_VERSION = 1;
+
     @Override
     public GeneratedFile generate(DomainMetadata metadata) {
         if (!metadata.isSaga() || metadata.sagaMetadata() == null) {
@@ -102,6 +135,9 @@ public class KernelSagaGenerator implements KernelArtifactGenerator {
         String sagaName = definitionName(metadata);
         String className = selfType.simpleName();
 
+        assertSupportedVersion(entity, sagaName, saga.version());
+        boolean versioned = saga.version() != INITIAL_VERSION;
+
         String timeoutIso = saga.timeout() != null && !saga.timeout().isBlank()
                 ? saga.timeout() : "PT30M";
         int maxRetries = saga.maxRetries() > 0 ? saga.maxRetries() : 3;
@@ -117,7 +153,23 @@ public class KernelSagaGenerator implements KernelArtifactGenerator {
                 .addField(FieldSpec.builder(String.class, "DEFINITION_NAME",
                                 Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
                         .initializer("$S", sagaName)
-                        .build())
+                        .build());
+
+        // Only a declared version reaches the emitted source — see the class Javadoc for why
+        // version 1 emits nothing. Sits beside DEFINITION_NAME because the two are one identity.
+        if (versioned) {
+            builder.addField(FieldSpec.builder(TypeName.INT, "DEFINITION_VERSION",
+                            Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                    .addJavadoc("From {@code @Saga(version = $L)}. With {@link #DEFINITION_NAME} it is\n",
+                            saga.version())
+                    .addJavadoc("this plan's identity in the kernel plan catalog (ADR-064): a parked\n")
+                    .addJavadoc("instance resumes only on the version it parked under, and moving it\n")
+                    .addJavadoc("across versions takes a registered migration.\n")
+                    .initializer("$L", saga.version())
+                    .build());
+        }
+
+        builder
                 .addField(FieldSpec.builder(TypeName.LONG, "TIMEOUT_NANOS",
                                 Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
                         .initializer("$T.parse($S).toNanos()", DURATION, timeoutIso)
@@ -137,7 +189,7 @@ public class KernelSagaGenerator implements KernelArtifactGenerator {
                 .addStatement("this.flowEngine = flowEngine")
                 .build());
 
-        builder.addMethod(buildInitialize(steps));
+        builder.addMethod(buildInitialize(steps, versioned));
         builder.addMethod(buildSchedule());
 
         for (SagaStepMetadata step : steps) {
@@ -191,7 +243,7 @@ public class KernelSagaGenerator implements KernelArtifactGenerator {
                 : List.of(SagaStepMetadata.simple("process", 0, null));
     }
 
-    private MethodSpec buildInitialize(List<SagaStepMetadata> steps) {
+    private MethodSpec buildInitialize(List<SagaStepMetadata> steps, boolean versioned) {
         MethodSpec.Builder method = MethodSpec.methodBuilder("initialize")
                 .addModifiers(Modifier.PUBLIC, Modifier.SYNCHRONIZED)
                 .returns(FLOW_EXECUTION_PLAN)
@@ -206,6 +258,9 @@ public class KernelSagaGenerator implements KernelArtifactGenerator {
                 .endControlFlow()
                 .addStatement("$T builder = flowEngine.plans().newDefinition(DEFINITION_NAME)",
                         FLOW_DEFINITION_BUILDER);
+        if (versioned) {
+            method.addStatement("builder.version(DEFINITION_VERSION)");
+        }
 
         for (SagaStepMetadata step : steps) {
             String stepName = step.name();
@@ -278,6 +333,27 @@ public class KernelSagaGenerator implements KernelArtifactGenerator {
 
     private boolean hasCompensation(SagaStepMetadata step) {
         return step.compensation() != null && !step.compensation().isBlank();
+    }
+
+    /**
+     * Refuses a declared plan version below {@link #INITIAL_VERSION}. The kernel numbers versions
+     * from 1 so that 0 can mean "this snapshot predates versioning" on its resume path, and it
+     * refuses anything lower both in {@code FlowDefinitionBuilder.version(int)} and in the
+     * {@code FlowDefinition} constructor. Emitting the value anyway would compile and then fail
+     * at the saga's first {@code initialize()}, far from the declaration. The processor passes
+     * {@code @Saga.version} through unchecked, and metadata can also arrive as JSON from outside
+     * the processor, so this is the one place every path goes through.
+     */
+    private void assertSupportedVersion(String entity, String sagaName, int version) {
+        if (version < INITIAL_VERSION) {
+            throw new IllegalArgumentException(
+                    "Saga '" + sagaName + "' on entity '" + entity + "' declares version " + version
+                            + ", but kernel plan versions start at " + INITIAL_VERSION
+                            + " (FlowDefinition.INITIAL_VERSION, ADR-064), so the emitted flow "
+                            + "would be refused at its first initialize(). Declare "
+                            + "@Saga(version = n) with n >= " + INITIAL_VERSION
+                            + ", or omit it for version " + INITIAL_VERSION + ".");
+        }
     }
 
     /**

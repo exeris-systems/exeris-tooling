@@ -2478,8 +2478,10 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         // S1: `version` was never read, so SagaMetadata reported 1 for every saga and
         // `@Saga(version = 3)` produced a metadata document that contradicted its own source.
         // Correcting an existing field, not adding one — the record already declares it and the
-        // TypeScript schema already mirrors it. What no generator can do with it yet is a separate,
-        // kernel-gated question; see the ROADMAP entry.
+        // TypeScript schema already mirrors it. Consumed since kernel 0.12 made it expressible:
+        // KernelSagaGenerator emits builder.version(n) for any n other than 1 (K5), and refuses
+        // n < 1. Passed through unchecked here on purpose — the generator is the one place both
+        // this path and metadata JSON from outside the processor reach.
         if (values.containsKey(VERSION_ATTRIBUTE)) builder.version(getInt(values, VERSION_ATTRIBUTE, 1));
 
         // Extract saga steps from methods

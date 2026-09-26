@@ -461,6 +461,15 @@ public final class KernelTestSupportGenerator {
      * <p>{@code build()} returns {@code null} deliberately. What a saga test asserts is what the
      * builder was <em>told</em>, and the recorded call lists carry strictly more of that than the
      * built {@code FlowDefinition} would; nothing under test reads the definition back.
+     *
+     * <p>{@code version(int)} is overridden and recorded, not left to the interface. It is a
+     * {@code default} that <em>throws</em> for a builder that does not override it, which is the
+     * kernel's correct answer for an engine that cannot host versions. A saga declaring
+     * {@code @Saga(version = n)} emits that call (K5), so a double inheriting the default would
+     * fail every such saga's test at {@code initialize()}. The recorded version is also what
+     * {@code definitionVersion()} answers, since this object plays the plan as well. Emitted
+     * unconditionally because the double is project-wide and cannot know whether any saga
+     * declares a version, and because a hand-written test may drive it with any saga.
      */
     public GeneratedFile generateFlow(String basePackage) {
         String packageName = supportPackage(basePackage);
@@ -502,6 +511,11 @@ public final class KernelTestSupportGenerator {
                         .build())
                 .addField(FieldSpec.builder(TypeName.LONG, "timeoutNanos", Modifier.PUBLIC).build())
                 .addField(FieldSpec.builder(TypeName.INT, "maxRetries", Modifier.PUBLIC).build())
+                .addField(FieldSpec.builder(TypeName.INT, "definitionVersion", Modifier.PUBLIC)
+                        .initializer("$T.INITIAL_VERSION", FLOW_DEFINITION)
+                        .addJavadoc("The version the saga declared through {@code version(int)}; the\n")
+                        .addJavadoc("kernel's initial version when it declared none.\n")
+                        .build())
                 .addField(FieldSpec.builder(TypeName.INT, "compiled", Modifier.PUBLIC)
                         .addJavadoc("How many times a definition was compiled — 1 proves lazy init is idempotent.\n")
                         .build())
@@ -569,6 +583,12 @@ public final class KernelTestSupportGenerator {
                 .addStatement("this.maxRetries = maxRetries")
                 .addStatement("return this")
                 .build());
+        type.addMethod(override("version")
+                .returns(DEFINITION_BUILDER)
+                .addParameter(TypeName.INT, "version")
+                .addStatement("this.definitionVersion = version")
+                .addStatement("return this")
+                .build());
         type.addMethod(returning("build", FLOW_DEFINITION, "null"));
 
         // --- FlowScheduler
@@ -582,6 +602,7 @@ public final class KernelTestSupportGenerator {
 
         // --- FlowExecutionPlan (definitionName() is shared with FlowContext)
         type.addMethod(returning("definitionName", ClassName.get(String.class), "definitionName"));
+        type.addMethod(returning("definitionVersion", TypeName.INT, "definitionVersion"));
         type.addMethod(returning("stepCount", TypeName.INT, "steps.size()"));
         type.addMethod(returning("timeoutDurationNanos", TypeName.LONG, "timeoutNanos"));
         type.addMethod(unsupported("stepAt", FLOW_STEP_DESCRIPTOR, "stepIndex",

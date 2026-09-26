@@ -153,7 +153,28 @@ class KernelCodegenE2ETest {
                     .contains("flowEngine.plans().newDefinition(DEFINITION_NAME)")
                     .contains("flowEngine.plans().compile(builder.build())")
                     .contains("flowEngine.scheduler().schedule(initialize(), context)")
-                    .contains("return FlowOutcome.CONTINUE");
+                    .contains("return FlowOutcome.CONTINUE")
+                    // K5: an undeclared version is version 1, which the builder produces by
+                    // itself — no call, so pre-K5 sagas regenerate byte-identical.
+                    .doesNotContain("DEFINITION_VERSION")
+                    .doesNotContain(".version(");
+        }
+
+        @Test
+        @DisplayName("K5: a declared @Saga.version becomes the plan's version through FlowDefinitionBuilder.version(int)")
+        void versionedSagaDeclaresItsPlanVersion() {
+            DomainMetadata versioned = DomainMetadata.builder("Order", "com.example.domain")
+                    .path("/orders")
+                    .sagaMetadata(SagaMetadata.builder("OrderSaga").version(4).build())
+                    .build();
+
+            String sagaFlow = strategy.generate(versioned).stream()
+                    .filter(f -> f.artifactType() == ArtifactType.SAGA)
+                    .findFirst().orElseThrow().content();
+            assertThat(sagaFlow)
+                    .contains("private static final int DEFINITION_VERSION = 4;")
+                    .contains("FlowDefinitionBuilder builder = flowEngine.plans().newDefinition(DEFINITION_NAME);\n"
+                            + "        builder.version(DEFINITION_VERSION);");
         }
 
         @Test

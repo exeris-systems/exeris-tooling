@@ -201,6 +201,11 @@ class KernelCodegenCompileTest {
                         List.of(new GraphEdgeMetadata("tenantId", "Tenant", "OWNED_BY")),
                         List.of()))
                 .sagaMetadata(SagaMetadata.builder("OrderFulfillment")
+                        // K5: a declared version > 1 emits builder.version(DEFINITION_VERSION),
+                        // so javac proves the call against the real FlowDefinitionBuilder. The
+                        // method exists from kernel 0.12, so this line is also what fails the
+                        // gate if the kernel pin ever drops back below it.
+                        .version(2)
                         .timeout("PT45M")
                         .maxRetries(5)
                         .steps(List.of(

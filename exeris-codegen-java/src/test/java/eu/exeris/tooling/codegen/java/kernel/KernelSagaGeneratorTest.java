@@ -9,6 +9,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -149,5 +150,110 @@ class KernelSagaGeneratorTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Saga step method-name collision")
                 .hasMessageContaining("compensateFoo");
+    }
+
+    // --- K5 / kernel ADR-064: @Saga.version reaches the flow definition ------------------------
+
+    @Test
+    @DisplayName("K5: a saga at the default version 1 emits no version — byte-identical to an explicit version(1)")
+    void unversionedSagaEmitsNoVersion() {
+        // Version 1 is FlowDefinition.INITIAL_VERSION, what an unversioned builder produces anyway.
+        // Emitting nothing keeps every saga written before K5 byte-identical, and keeps the call
+        // off engines whose builder does not override the throwing default.
+        String byDefault = sagaFlow(sagaVersioned(null));
+        String explicitOne = sagaFlow(sagaVersioned(1));
+
+        assertThat(explicitOne).isEqualTo(byDefault);
+        assertThat(byDefault)
+                .doesNotContain("DEFINITION_VERSION")
+                .doesNotContain(".version(")
+                .contains("FlowDefinitionBuilder builder = flowEngine.plans().newDefinition(DEFINITION_NAME);");
+    }
+
+    @Test
+    @DisplayName("K5: a declared version > 1 emits DEFINITION_VERSION and builder.version(...) before the plan is compiled")
+    void versionedSagaDeclaresItsVersion() {
+        String flow = sagaFlow(sagaVersioned(3));
+
+        assertThat(flow)
+                .contains("private static final int DEFINITION_VERSION = 3;")
+                .contains("From {@code @Saga(version = 3)}")
+                .contains("builder.version(DEFINITION_VERSION);");
+        // The identity pair sits together, and the version is told to the builder after it exists
+        // and before build() — a call placed after build() would compile and version nothing.
+        assertThat(flow.indexOf("DEFINITION_VERSION = 3"))
+                .isGreaterThan(flow.indexOf("DEFINITION_NAME = \"OrderFulfillment\""))
+                .isLessThan(flow.indexOf("TIMEOUT_NANOS ="));
+        assertThat(flow.indexOf("builder.version(DEFINITION_VERSION);"))
+                .isGreaterThan(flow.indexOf("newDefinition(DEFINITION_NAME);"))
+                .isLessThan(flow.indexOf("builder.step("))
+                .isLessThan(flow.indexOf("compile(builder.build())"));
+    }
+
+    @Test
+    @DisplayName("K5: declaring a version is purely additive — the field and the call, nothing else moves")
+    void versionIsPurelyAdditive() {
+        List<String> unversioned = sagaFlow(sagaVersioned(null)).lines().toList();
+        List<String> versioned = sagaFlow(sagaVersioned(7)).lines().toList();
+
+        // Walk the versioned flow in order, consuming the unversioned one as a subsequence: every
+        // line that does not advance it was added. Order-aware, so a moved or rewritten line shows
+        // up as both an unconsumed original and an extra rather than hiding behind a set match.
+        List<String> added = new ArrayList<>();
+        int next = 0;
+        for (String line : versioned) {
+            if (next < unversioned.size() && line.equals(unversioned.get(next))) {
+                next++;
+            } else {
+                added.add(line);
+            }
+        }
+        assertThat(next)
+                .as("every line of the unversioned flow survives, in order")
+                .isEqualTo(unversioned.size());
+        assertThat(added).containsExactly(
+                "    /**",
+                "     * From {@code @Saga(version = 7)}. With {@link #DEFINITION_NAME} it is",
+                "     * this plan's identity in the kernel plan catalog (ADR-064): a parked",
+                "     * instance resumes only on the version it parked under, and moving it",
+                "     * across versions takes a registered migration.",
+                "     */",
+                "    private static final int DEFINITION_VERSION = 7;",
+                "",
+                "        builder.version(DEFINITION_VERSION);");
+    }
+
+    @Test
+    @DisplayName("K5: a version below 1 is refused at generation time, not at the saga's first initialize()")
+    void versionBelowOneIsRefused() {
+        assertThatThrownBy(() -> strategy.generate(sagaVersioned(0)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Saga 'OrderFulfillment' on entity 'Order' declares version 0")
+                .hasMessageContaining("FlowDefinition.INITIAL_VERSION");
+        assertThatThrownBy(() -> strategy.generate(sagaVersioned(-2)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("declares version -2");
+    }
+
+    /** The two-step saga from {@link #shouldGenerateSagaFlow()}; {@code null} leaves the builder default. */
+    private static DomainMetadata sagaVersioned(Integer version) {
+        SagaMetadata.Builder saga = SagaMetadata.builder("OrderFulfillment")
+                .steps(List.of(
+                        SagaStepMetadata.builder("reserve-inventory", 0)
+                                .compensation("restoreInventory")
+                                .build(),
+                        SagaStepMetadata.simple("send-email", 1, null)));
+        if (version != null) {
+            saga.version(version);
+        }
+        return DomainMetadata.builder("Order", "com.example.domain")
+                .sagaMetadata(saga.build())
+                .build();
+    }
+
+    private String sagaFlow(DomainMetadata metadata) {
+        return strategy.generate(metadata).stream()
+                .filter(f -> f.artifactType() == ArtifactType.SAGA)
+                .findFirst().orElseThrow().content();
     }
 }
