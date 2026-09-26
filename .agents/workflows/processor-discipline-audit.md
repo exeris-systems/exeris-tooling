@@ -1,6 +1,15 @@
 ---
+name: processor-discipline-audit
 description: Audit annotation processor changes for classpath isolation and compiler contract compliance.
 argument-hint: Modified processor classes or PR diff
+steps:
+  - {skill: exeris-tooling-processor-discipline-review}
+  - {agent: exeris-tooling-implementer}
+  - {agent: exeris-tooling-codegen-verification}
+gates:
+  - test:eu.exeris.tooling.e2e.KernelCodegenCompileTest
+  - hook:guardrails-gate-on-stop
+  - ci:mvn verify
 ---
 
 Review annotation processor changes against build-time isolation constraints.

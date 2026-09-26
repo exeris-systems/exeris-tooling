@@ -4,7 +4,7 @@ type: reference
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-09-05
+last-verified: 2026-09-26
 ---
 
 # exeris-tooling
@@ -108,11 +108,8 @@ line, and an agent does not open pull requests or file issues unattended. Contri
 ## Provider adapters
 
 [`.claude/`](.claude) holds Claude Code adapters generated from `.agents/`, each carrying a
-do-not-edit marker naming its source. Rewrite them with `tools/agent-adapter-check/agent-adapter-render.sh`
-and verify with `tools/agent-adapter-check/agent-adapter-check.sh`; never edit an adapter directly.
-[`CLAUDE.md`](CLAUDE.md) points here.
+do-not-edit marker naming its source, plus provider-owned configuration. **This repository carries
+no renderer**: one implementation, shared, lives in `exeris-systems/exeris-agents` and is pinned —
+mechanics in [`.claude/README.md`](.claude/README.md). Never edit an adapter directly; an adapter that
+differs from its source fails CI. [`CLAUDE.md`](CLAUDE.md) points here.
 
-## Auto-memory
-
-Persistent memory for this workspace lives at `~/.claude/projects/-home-arkstack-exeris-systems-exeris-tooling/memory/`.
-Use it for process feedback and user preferences, never project facts.

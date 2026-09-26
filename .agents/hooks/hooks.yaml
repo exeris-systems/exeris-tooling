@@ -1,0 +1,72 @@
+# Canonical hook definitions — the L0 layer of ADR-085 §J, authored once here and rendered to each
+# vendor's hook file by the shared renderer. agents-md-schema.md rule 12.
+version: 1
+
+state-dir: .agents-state          # git-ignored; session state is keyed per session
+
+hooks:
+  # ── deny ────────────────────────────────────────────────────────────────────────────────────
+  - id: deny-irreversible
+    event: pre-tool
+    tool: shell
+    decision: deny
+    reason: >-
+      agent-safety-and-autonomy.md §1 (shared bundle policy, vendored under .agents/vendor/):
+      irreversible or outward-facing action.
+    match:
+      # Force push
+      - 'git\s+push\b[^|;&]*(--force(?!-with-lease)|--mirror|\s-[a-zA-Z]*f[a-zA-Z]*(\s|$))'
+      # Protected branches
+      - 'git\s+push\b[^|;&]*\s\+?(main|master|development/\S+)(\s|$)'
+      - 'git\s+push\b[^|;&]*\s\+?[^\s:]*:(refs/heads/)?(main|master|development/)'
+      - 'git\s+push\b[^|;&]*\s--(all|tags)\b'
+      - 'git\s+push\b[^|;&]*--delete\b'
+      # Tag creation
+      - 'git\s+tag\s+(?!-(l|-list|n\d*|-contains|-no-contains|v|-verify|-points-at|-merged|-no-merged)\b)(-[a-zA-Z]+\s+)*\S'
+      - 'git\s+branch\s+-[dD]\b'
+      - 'git\s+reset\s+--hard\b'
+      - 'git\s+clean\s+-[a-zA-Z]*[fd][a-zA-Z]*\b'
+      - 'git\s+worktree\s+remove\b'
+      # Publish operations
+      - '(^|[|;&]\s*)npm\s+(publish|unpublish|deprecate)\b'
+      - '(^|[|;&]\s*)(yarn|pnpm)\s+publish\b'
+      - 'mvn\b[^|;&]*\s(deploy|release:(prepare|perform))\b'
+      - '(^|[|;&]\s*)docker\s+push\b'
+      - '(^|[|;&]\s*)gh\s+release\s+(create|delete|upload)\b'
+      - '(^|[|;&]\s*)gh\s+pr\s+(merge|close)\b'
+      - '(^|[|;&]\s*)gh\s+repo\s+(delete|archive|rename)\b'
+      - '(^|[|;&]\s*)gh\s+repo\s+edit\b[^|;&]*--visibility\b'
+
+  # ── record ──────────────────────────────────────────────────────────────────────────────────
+  - id: record-guardrail-run
+    event: post-tool
+    tool: shell
+    decision: allow
+    match:
+      - '(?:^|[|;&]\s*|\$\(\s*)(?:python3?\s+)?(?:\S*/)?agents_file_check\.py\b'
+      - '(?:^|[|;&]\s*|\$\(\s*)(?:python3?\s+)?(?:\S*/)?agents_render\.py\b'
+      - '(?:^|[|;&]\s*|\$\(\s*)(?:python3?\s+)?(?:\S*/)?agents_bundle\.py\b'
+      - '(?:^|[|;&]\s*|\$\(\s*)(?:\S*/)?eval-consistency-check\.sh\b'
+      - '(?:^|[|;&]\s*|\$\(\s*)(?:\S*/)?hook-deny-check\.sh\b'
+    record: guardrails-run
+
+  - id: record-agent-edit
+    event: post-tool
+    tool: edit
+    decision: allow
+    paths:
+      - '.agents/**'
+      - 'AGENTS.md'
+    record: agent-layer-edited
+
+  # ── gate ────────────────────────────────────────────────────────────────────────────────────
+  - id: guardrails-gate-on-stop
+    event: stop
+    decision: block-or-allow
+    degrade: warn
+    rules:
+      - when-edited: ['.agents/**', 'AGENTS.md']
+        requires: ['agents_file_check.py']
+        reason: >-
+          standards/agents-md-schema.md: the agent layer changed without the agent-file check.
+          Run it, and regenerate the adapters rather than editing them.

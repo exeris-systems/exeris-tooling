@@ -28,3 +28,11 @@ replay_pid*.log
 
 # Claude
 .claude/worktrees/
+
+# Agents
+.agents-state/
+
+# The eval runner's report. A run is evidence for one pull request, not repository content, and it
+# carries a timestamp that would make every run a diff.
+working-notes/eval-report.json
+

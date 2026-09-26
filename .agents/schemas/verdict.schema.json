@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Review verdict (exeris-tooling)",
+  "description": "The bundle's shape, narrowed to exeris-tooling reviewing roles and scope vocabulary, with each composite object closed per bundle 2.0.0 closer discipline.",
+  "allOf": [
+    {
+      "$ref": "../vendor/exeris-agents-2.1.0/schemas/verdict.base.schema.json"
+    },
+    {
+      "properties": {
+        "agent": {
+          "enum": [
+            "exeris-tooling-evaluator",
+            "exeris-tooling-architect",
+            "exeris-tooling-implementer",
+            "exeris-tooling-codegen-verification",
+            "exeris-tooling-docs-adr"
+          ]
+        },
+        "scope_class": {
+          "enum": [
+            "processor",
+            "codegen-core",
+            "codegen-java",
+            "codegen-ts",
+            "maven-plugin",
+            "e2e-tests",
+            "docs-only"
+          ]
+        },
+        "findings": {
+          "items": {
+            "allOf": [
+              {
+                "$ref": "../vendor/exeris-agents-2.1.0/schemas/verdict.base.schema.json#/properties/findings/items"
+              }
+            ],
+            "unevaluatedProperties": false
+          }
+        },
+        "checks_run": {
+          "items": {
+            "allOf": [
+              {
+                "$ref": "../vendor/exeris-agents-2.1.0/schemas/verdict.base.schema.json#/properties/checks_run/items"
+              }
+            ],
+            "unevaluatedProperties": false
+          }
+        },
+        "handoffs": {
+          "items": {
+            "allOf": [
+              {
+                "$ref": "../vendor/exeris-agents-2.1.0/schemas/verdict.base.schema.json#/properties/handoffs/items"
+              }
+            ],
+            "unevaluatedProperties": false
+          }
+        }
+      }
+    }
+  ],
+  "unevaluatedProperties": false
+}
