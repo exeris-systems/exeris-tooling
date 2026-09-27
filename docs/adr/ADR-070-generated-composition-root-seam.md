@@ -1,3 +1,12 @@
+---
+title: "ADR-070 — Open the generated composition root: `RuntimeComponents`"
+type: adr
+visibility: public
+owning-repo: exeris-tooling
+status: active
+slug: adr/ADR-070
+---
+
 # ADR-070 — Open the generated composition root: `RuntimeComponents`
 
 - **Status:** ACCEPTED (2026-08-18) · amended 2026-09-26 (Amendment 1 — obligation 6; Amendment 2 — edge router, subscribers and flows, scope lists)

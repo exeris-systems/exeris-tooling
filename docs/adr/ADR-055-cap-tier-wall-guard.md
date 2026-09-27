@@ -1,3 +1,12 @@
+---
+title: "ADR-055: Enforce the Cap-Tier Wall by Scanning Bytecode in the Tooling Pipeline"
+type: adr
+visibility: public
+owning-repo: exeris-tooling
+status: active
+slug: adr/ADR-055
+---
+
 # ADR-055: Enforce the Cap-Tier Wall by Scanning Bytecode in the Tooling Pipeline
 
 | Attribute       | Value                                                                                                                        |

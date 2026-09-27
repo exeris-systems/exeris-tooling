@@ -1,3 +1,12 @@
+---
+title: "ADR-090 — A write naming another tenant is refused with 400, not left to row-level security"
+type: adr
+visibility: public
+owning-repo: exeris-tooling
+status: active
+slug: adr/ADR-090
+---
+
 # ADR-090 — A write naming another tenant is refused with 400, not left to row-level security
 
 - **Status:** ACCEPTED (2026-09-26, founder decision on T36) · **number pending registration** — 090 is

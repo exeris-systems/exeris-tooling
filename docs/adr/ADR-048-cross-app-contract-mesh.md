@@ -1,3 +1,12 @@
+---
+title: "ADR-048 — A peer's contract is a dependency, and its types are the first thing worth generating from it"
+type: adr
+visibility: public
+owning-repo: exeris-tooling
+status: active
+slug: adr/ADR-048
+---
+
 # ADR-048 — A peer's contract is a dependency, and its types are the first thing worth generating from it
 
 - **Status:** ACCEPTED (2026-08-28) · amended 2026-09-26 (Amendment 1 — §6's client-slice gate is additive, not a binary break)

@@ -1,3 +1,12 @@
+---
+title: "ADR-015 — Codegen Emission Strategy: JavaPoet for Java, Text Blocks for SQL/YAML"
+type: adr
+visibility: public
+owning-repo: exeris-tooling
+status: active
+slug: adr/ADR-015
+---
+
 # ADR-015 — Codegen Emission Strategy: JavaPoet for Java, Text Blocks for SQL/YAML
 
 **Status:** Accepted *(merged 2026-05-09 in #12)*

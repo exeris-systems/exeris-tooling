@@ -1,3 +1,12 @@
+---
+title: "ADR-058 — Generated tests: emission channel and dependency contract"
+type: adr
+visibility: public
+owning-repo: exeris-tooling
+status: active
+slug: adr/ADR-058
+---
+
 # ADR-058 — Generated tests: emission channel and dependency contract
 
 - **Status:** ACCEPTED (2026-07-31)

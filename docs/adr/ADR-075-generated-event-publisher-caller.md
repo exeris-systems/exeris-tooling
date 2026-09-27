@@ -1,3 +1,12 @@
+---
+title: "ADR-075 — The generated event publisher is invoked from the generated handler"
+type: adr
+visibility: public
+owning-repo: exeris-tooling
+status: active
+slug: adr/ADR-075
+---
+
 # ADR-075 — The generated event publisher is invoked from the generated handler
 
 - **Status:** ACCEPTED (2026-08-27) · amended 2026-09-26 (Amendment 1 — the chain stops at the bus; Amendment 2 — subscribers and flows composed, payloads encoded)
