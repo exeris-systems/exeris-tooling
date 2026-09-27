@@ -630,9 +630,19 @@ types) found the processor names **21 of ~44** annotations; the catalogue puts t
 the three-bucket measurement above — kept because its per-item entries carry the evidence behind
 each fix.
 
-- [~] **T55 (was S1) — `@Saga.version` is never extracted.** *Processor half shipped 0.8.0; the emitter half
-      is kernel-gated on 0.12 and that gate was measured, not assumed.*
+- [x] **T55 (was S1) — `@Saga.version` is never extracted.** *Processor half shipped 0.8.0; emitter
+      half shipped 0.9.0 on the B0 pin (K5).* `KernelSagaGenerator` emits `private static final int
+      DEFINITION_VERSION = n` and `builder.version(DEFINITION_VERSION)` for any declared version other
+      than 1, and refuses a version below 1 at generation time. Version 1 emits nothing: it is
+      `FlowDefinition.INITIAL_VERSION`, so the plan identity is unchanged, every unversioned saga
+      regenerates byte-identical, and the throwing `default` of `FlowDefinitionBuilder.version(int)`
+      never reaches an out-of-tree engine for a saga that did not ask for a version. The emitted
+      `RecordingFlow` test double overrides `version(int)`. The compile gate and
+      `GeneratedTestsE2ETest` both run a versioned saga. Still open upstream: on SDK `main` the `-io`
+      reader does not read `@Saga.version`, so metadata produced through it is always version 1. The
+      reader fix is on the SDK's 0.12 working branch and arrives with it.
 
+      **History — the processor half (0.8.0), and the 0.11 measurement that held the emitter back.**
       `SagaMetadata` declares `int version` defaulting to 1 and nothing set it, so
       `@Saga(version = 3)` produced a metadata document contradicting its own source. The processor
       now reads it — a correction to an existing field, not a new one: the record already declares
@@ -739,6 +749,28 @@ each fix.
       *Counting note.* Earlier entries and PR bodies in this train said "115 processor"; that is
       Codegen Core. The modules are Annotation Processor 107, Codegen Core 115, Codegen Java 429,
       Maven Plugin 53, E2E 28. The totals were real and the label was wrong.
+- [ ] **`@SagaTransition` — the flip is deferred to 0.10 (founder decision 2026-09-26).** "Flipping"
+      it means processor extraction into `SagaMetadata.transitions` and the SDK `-io` reader landing
+      together (ADR-042 lockstep), then `KernelSagaGenerator` emitting the declared edges instead of
+      today's linear chain. The annotation and its carrier have existed since SDK 0.9.0; the gate is
+      the kernel. Kernel 0.12's flow plan (`CoreFlowPlanFactory`) precomputes exactly one next step
+      per step — the `"default"`-tagged transition, else the first declared one, else the following
+      step — and the runtime never evaluates a condition tag. Of `FlowOutcome`'s four values,
+      `CONTINUE` takes that one precomputed step, `COMPLETE` and `PARK` take none, and `FAIL` unwinds
+      the compensation stack rather than following an edge. So only an unguarded SUCCESS edge
+      (back-edges and self-loops included) is expressible; a FAILURE, TIMEOUT or COMPENSATED edge, a
+      guard, or a second SUCCESS edge out of one step is not.
+
+      The architect weighed a partial flip in 0.9.0 — compile the SUCCESS edges, refuse the rest at
+      the declaration — against leaving it unread, and recommended the partial flip only if the SDK
+      reader could land in lockstep before SDK 0.12 is cut. The costs it listed: that lockstep
+      against an unreleased SDK, the annotation's own Javadoc examples becoming build errors, and a
+      change to the saga-test generator's linear-chain assertion. The founder deferred it to 0.10. The
+      processor's strict-mode note now names the kernel as the gate (it used to blame the
+      generator), and a standalone `@Saga` class — the annotation's documented home — is audited at
+      all. **Kernel ask:** outcome/tag routing for saga transitions. The L6 row of
+      [`docs/generation-expansion-plan.md`](docs/generation-expansion-plan.md), which said the
+      annotation did not exist, is corrected.
 - [x] **C0 — strict mode audited the wrong half, and that is why the list above exists.** *Shipped
       0.8.0.* `-Aexeris.strict` reported only *extracted-but-unconsumed*, from two hand-maintained
       denylists driven by the extraction call sites. That made it structurally blind exactly where
@@ -924,8 +956,9 @@ adds `V1–V3` (the `@View` emitter), `S1–S5` (SDK), `K1–K7` (kernel) and `D
 the log now reaches **T52**, `S1–S6` and `K1–K9`; `V1–V3` and `D1–D3` are unchanged. The one `T*`
 past the log's end is this file's **T53**, which took the next free number.)* *(Later on 2026-09-26:
 "T1–T26" above overstated the overlap — this file's own T26 was a collision with the log's T26, not
-a transcription of it, and it is now **T54**. The `T*` numbers past the log's end are T53 and the
-four the numbering below assigned, T54–T57.)* Findings are
+a transcription of it, and it is now **T54**. The `T*` numbers past the log's end are T53, the
+four the numbering below assigned (T54–T57), and **T58**, PATCH/PUT parity, which took the next
+free number after them.)* Findings are
 numbered *there*, by the consumer that hits them; this file records the tooling-owned subset and its
 disposition. That direction is deliberate — a finding is minted by whoever measures it, and tooling
 does not get to renumber somebody else's evidence.
@@ -1039,7 +1072,12 @@ never-invoked emitter start emitting, and its output did not build.
       it costs nothing today, and would have to come back if T23 were ever closed by a shape a
       wrapper could erase again. That interim call is an architect decision, not this entry's. What
       tooling cannot do is make a stream resolve on the generated boot — T23 records why binding the
-      router instance is not available to it. Original finding below.
+      router instance is not available to it.
+
+      **Resolved 2026-09-26 (ADR-070 Amendment 2):** the guard is deleted; `decorate` applies to
+      respond-once routes and streams resolve on the edge router, outside the wrapper. What tooling
+      could not do was bind the *composed* router; T23's slice B1 binds one built before boot
+      instead. Original finding below.
 
       **T49 — the generated composition root is closed.** `KernelApplicationGenerator` emits
       `public final class RuntimeLifecycle` (`KernelApplicationGenerator.java:493-494` **in the
@@ -1050,9 +1088,24 @@ never-invoked emitter start emitting, and its output did not build.
       *construction*, not just configuration: a saga needs the `FlowEngine`, a publisher the
       `EventEngine`. **Highest-leverage item in this list**: T48 and T50 are both downstream of it,
       and it is the difference between an app that serves CRUD and an app that runs.
-- [ ] **T23 — generated stream routes do not resolve on a real boot. Reopened 2026-09-26.** The
-      backlog table below had it shipped in 0.6.0 (#106). The dog-food measured it open on kernel
-      0.12, and the generator and kernel sources agree with the measurement.
+- [x] **T23 — generated stream routes resolve on a real boot. Re-closed in tooling 2026-09-26
+      (slice B1, ADR-070 Amendment 2).** `Application` now binds `RuntimeLifecycle.edgeRouter(
+      handlerSlot, componentsSlot)` — an `HttpRouter` built before boot from the stream routes, which
+      are known at generation time, each resolving its handler from `componentsSlot` when a stream
+      opens; `notFound` forwards everything else to the composed (and decorated) router in
+      `handlerSlot`, `503` while empty. Composition stays inside the boot callback. The `decorate`
+      guard is deleted. `GeneratedAppBootE2ETest` boots the emitted `Application.run()` on kernel
+      0.12.0 and reads a frame (`event: BeaconPinged` / `data: {"label":"alpha"}`), not just the head;
+      restoring the forwarding lambda brings back the measured `400`. Two latent defects it surfaced
+      are fixed with it: the EV1 stream handler read `KernelProviders.eventEngine()` on the stream
+      thread (now constructor-injected), and an entity whose events no handler publishes never built
+      its publisher, so the bus rejected every live-view subscription (publishers are now built at
+      boot). **Still kernel-side (K9, narrowed):** a `streamRoute` registered in `configureRoutes`
+      does not resolve, and `decorate`'s scope does not cover streams. Reopening history below.
+
+      **Reopened 2026-09-26, before B1 — kept as measured.** The backlog table below had it shipped
+      in 0.6.0 (#106). The dog-food measured it open on kernel 0.12, and the generator and kernel
+      sources agree with the measurement.
 
       **What 0.6.0 fixed, and what it left.** The original finding named *two* lambdas between the
       router and the kernel — `RuntimeLifecycle` put `router::handle` in the handler slot, and
@@ -1095,11 +1148,15 @@ never-invoked emitter start emitting, and its output did not build.
       consumer-registered ones, and `decorate` could wrap only the fallthrough — both changes to
       ADR-070 obligations 5 and 6, so it is an architect decision, not a fix to land under this
       number. The fix the log names is the kernel half of **K9**: resolve through an interface a
-      forwarder or a wrapper can delegate.
+      forwarder or a wrapper can delegate. *(Taken later the same day as slice B1, with the
+      architect's call on obligations 5 and 6 — see the header and ADR-070 Amendment 2. Only the
+      consumer-registered half is left to K9.)*
 
       **Knock-on:** EV1-stream's per-action driver and U7 are transport-complete and
       kernel-unblocked, and stay unreachable on a generated boot until this closes. ADR-070 carries
-      a dated amendment; the 0.9.0 `decorate` MIGRATION entry carries a correction.
+      a dated amendment; the 0.9.0 `decorate` MIGRATION entry carries a correction. *(After B1 both
+      are reachable: the edge router carries every generated stream route, per-action ones included.
+      The per-action producer itself is still a keep-alive loop.)*
 - [x] **T48 — emitted event publishers are never invoked.** *Shipped 2026-08-27 (ADR-075).* The
       publisher is a component in `RuntimeComponents` and a constructor argument of
       `<Entity>Handler`; the processor extracts the trigger triple SDK 0.11.0 shipped; and
@@ -1136,9 +1193,21 @@ never-invoked emitter start emitting, and its output did not build.
       remains, and the design question the seam does not answer is whether the publisher becomes a
       constructor argument of the generated service — changing every consumer's tree — or a
       generated decorator installed by the default factory.
-- [ ] **T48-follow-up — the generated application composes no subscriber and no saga.** Recorded
-      2026-09-26 from the log's T48, re-read against this tree. ADR-075 closed the publisher half;
-      from the bus onward nothing generated receives the event:
+- [x] **T48-follow-up, slice C1 — subscribers and saga flows are composed and started. Shipped
+      2026-09-26 (ADR-075 Amendment 2).** `RuntimeComponents` gains `create<Entity>EventSubscriber()`
+      and `create<Flow>()`; `RuntimeLifecycle.run()` calls `initialize()` on every saga (the plan is
+      registered at boot — ADR-064 resumes a parked saga only on a registered version) and
+      `subscribe()` on every subscriber before the app serves, `unsubscribe()` in reverse after the
+      latch. Payload-bearing publishers capture the event codec registry at composition; resolved per
+      publish on the request thread, every payload had shipped empty (measured: `data: ` → `data:
+      {"label":"alpha"}`). **Open — slice C2 (declared `@Saga(trigger = EVENT)` → `FlowEngine
+      .registerChoreographyMapper`):** blocked on SDK `Saga.TriggerType` / `SagaMetadata.TriggerType`
+      alignment and on unpinned duplicate-`Start` semantics in the kernel choreography TCK (both in
+      the ask lists under 0.9.0 sequencing).
+
+      **The follow-up as recorded, before C1.** Recorded 2026-09-26 from the log's T48, re-read
+      against this tree. ADR-075 closed the publisher half; from the bus onward nothing generated
+      receives the event:
 
       | Artefact | Emitted by | Constructed in the running app | Started in the running app |
       |---|---|---|---|
@@ -1163,6 +1232,10 @@ never-invoked emitter start emitting, and its output did not build.
       - **the application** — today's behaviour made explicit: the artefacts stay unwired, the
         emitted code says so, and the chain is completed in a `RuntimeComponents` subclass.
 
+      *(Decided later the same day: the first two together — construction in `RuntimeComponents`,
+      activation in `RuntimeLifecycle` — which is slice C1 above. The event→saga edge still has no
+      carrier; that is slice C2.)*
+
       ADR-075 carries a dated amendment saying the chain is emitted end to end and composed only as
       far as the publish.
 - [x] **T29 — `DataScope.UNIVERSE` fails the build on the one shape it describes.**
@@ -1184,6 +1257,40 @@ never-invoked emitter start emitting, and its output did not build.
       consumer is told not to edit. Fix is a processor **ERROR** refusing the declaration, not a
       change of policy. (The stale "this repo does not pin 0.11 yet" rationale is corrected in the
       same change; UP0 pinned it.)
+- [x] **T29 slice B — `DataScope.UNIVERSE` is transcribed.** *Shipped 2026-09-26 on the B0 pins
+      (kernel 0.12.0, SDK 0.12.0-SNAPSHOT).* **Premise correction first:** a UNIVERSE row is *owned*.
+      Kernel ADR-012 §4b.2 makes a shared-scope key without an isolation key unrepresentable, and SDK
+      `@SharedScope` accompanies `@TenantId` rather than replacing it — so T29's "a shared-world row
+      has no tenant property" was wrong about the tier, and the 0.8.0 refusal was replaced by precise
+      checks at the declaration, not deleted: exactly one `@SharedScope` field, `UUID` or `String`,
+      not `required`, not the owner field — and a declared owner field.
+      `DataScopeSupport.isTenantPartitioned` keeps answering "not GLOBAL", which is now simply
+      correct.
+      - The processor scans `@SharedScope` into `SystemFieldsMetadata.sharedScopeField`, on a
+        UNIVERSE entity only (any other tier: a warning, no carrier, byte-identical JSON). Joins
+        `EXTRACTED_ANNOTATIONS`.
+      - The CREATE migration stays byte-identical to the TENANT twin; the widening is a separate,
+        additive `V4<nnnnnn>__shared_scope_<table>.sql` (`KernelSharedScopeMigrationGenerator`), so
+        TENANT→UNIVERSE is a forward migration, never an edit of an applied one.
+      - **The policy is an additive `FOR SELECT` policy, not the kernel's single `FOR ALL`
+        reference.** Measured on PostgreSQL 16 as a `NOSUPERUSER NOBYPASSRLS` non-owner: the
+        reference shape let a tenant delete and re-own a partition-mate's shared row (1 row each),
+        because a `FOR ALL` `USING` also governs UPDATE/DELETE. The additive shape reads identically
+        and refuses both (0 rows).
+      - The repository stamps an absent shared scope from the bound `StorageContext` on
+        INSERT/UPDATE.
+      - TS: zod declares `sharedScopeField`; it is server-owned in `systemFieldNames` and the form.
+      - Tests: processor rules, generator snapshots, compile gate for UUID + String keys against
+        kernel 0.12, `SharedScopeSqlE2ETest` (session-key drift guard against the kernel constants),
+        `GeneratedTestsE2ETest`, and an opt-in `@Tag("postgres")` access matrix
+        (`SharedScopePostgresE2ETest`, `-Dexeris.e2e.postgres.url`).
+      - Open, kernel-owned: the reference `WITH CHECK` does not pin the scope tag (k1); ADR-090
+        refuses a foreign tag for a bound request. Kernel asks: adopt the per-command policy shape in
+        the `RlsConnectionInterceptor` Javadoc; add a mutation-denial cell to
+        `AbstractSharedScopeAccessMatrixTck` and make its keys UUID-capable. SDK ask: the
+        `DataScope.UNIVERSE`, `ExerisDomain.dataScope` and `@SharedScope` Javadoc still say
+        "refused" / "RESERVED" / "no owner". Both are carried in the ask lists under 0.9.0
+        sequencing.
 - [x] **T43 — a missing binding is reported as the caller's bad request.** *Shipped 2026-08-18 —
       the refusal half. Two corrections to this entry came out of doing it, both below.*
       `parseBody` now bound-checks `MEMORY_ALLOCATOR` and throws `IllegalStateException` naming the
@@ -1323,6 +1430,25 @@ never-invoked emitter start emitting, and its output did not build.
       trap: forget it and the write is refused by the RLS `WITH CHECK`, reported as a security
       violation rather than the omission it is. Either stamp it from the ambient `StorageContext` or
       say in the emitted javadoc that the caller owns it — silence is the worst of the three.
+- [x] **T36, decided — a write naming another tenant answers 400, and the owner is never updated.**
+      *Founder decision 2026-09-26; [ADR-090](docs/adr/ADR-090-reject-mismatched-tenant.md), its
+      number still to be registered in `exeris-docs/adr-index.md`. Reverses the 0.8.0 rationale
+      above.* Leaving a contradicted tenant to RLS held only where RLS holds: a
+      `SUPERUSER`/`BYPASSRLS` role skips even a forced policy, a non-RLS engine has none, and where
+      the policy fires its violation reached `catch (RuntimeException)` as a 500 for a caller's
+      mistake. And the `UPDATE … SET` list carried the owner — on a UNIVERSE table, a takeover.
+      - With a tenant bound (a `StorageContext` with an isolation key), `save`/`update` refuse a
+        foreign owner with `<Entity>TenantMismatchException`; the handler answers **400** on create,
+        update and every action. With none bound, nothing changes — RLS decides, seeders keep
+        working.
+      - The owner is dropped from the `UPDATE … SET` list: no update can move a row, on any engine.
+      - Same rule for a UNIVERSE entity's caller-writable `@SharedScope` field
+        (`<Entity>SharedScopeMismatchException`, 400); that field stays updatable.
+      - OpenAPI: owner (and scope field) `readOnly: true`, absent from the DTOs; TS DTOs match.
+      - Required role model documented: `NOSUPERUSER`, `NOBYPASSRLS`, non-owner or `FORCE`d tables.
+      - Found on the way: a tenant-partitioned entity's emitted handler test bound no tenant, so
+        every case failed on the T41 guard (500); it now dispatches with one, and
+        `GeneratedTestsE2ETest` runs it.
 - [x] **T40 — an entity named `Component` breaks its own generated Angular code.** Shipped 0.8.0.
       The finding named `form-gen.ts:141,144` and guessed at the blast radius — "`Directive`,
       `Injectable`, `Pipe`, `Input`, `Output`, `Signal` and `Type` are the same shape". Generating
@@ -1418,7 +1544,16 @@ never-invoked emitter start emitting, and its output did not build.
       claims above. Wiring means first removing the timestamp. What must not persist is the third
       state, where the code exists, is tested, and is cited in diagnostics as though it ran.
 
-- [ ] **T51 — a hand-wired composition inherits an unpublished list of required scopes.** The log's
+- [x] **T51 — the required scopes are published. Shipped 2026-09-26.** `RuntimeComponents
+      .COMPOSITION_SCOPES` (`MEMORY_ALLOCATOR`, `EVENT_ENGINE`, `FLOW_ENGINE`, each only when read)
+      and `REQUEST_SCOPES` (`HTTP_REQUEST_BODY_DECODER_REGISTRY`, and `STORAGE_CONTEXT` for
+      tenant-partitioned entities) are derived from the branches that emit each read, with Javadoc
+      naming every reader; the optional `EVENT_PAYLOAD_CODEC_REGISTRY` is named, not listed.
+      Stream threads now read nothing (B1/C1 capture at composition). `ScopeLedgerE2ETest` scans five
+      generated corpora for every `(Http)?KernelProviders` read and fails in both directions when the
+      derivation drifts. Original finding below.
+
+      **T51 — a hand-wired composition inherits an unpublished list of required scopes.** The log's
       T51, recorded here for the first time on 2026-09-01 (this file previously used the number for
       something else — see the T52 entry above). Generated code reads `ScopedValue`s the kernel binds
       during `KernelBootstrap.boot(...)`. A test or tool that composes `RuntimeLifecycle` directly —
@@ -1490,6 +1625,68 @@ never-invoked emitter start emitting, and its output did not build.
       emitted `Application` Javadoc still lists the conductor under "Runtime classpath requirements"
       (`KernelApplicationGenerator.java:473-483`) — an emitted-output fix, left for the change that
       next touches that Javadoc.
+
+      **2026-09-26: emitted half done.** The `Application` Javadoc has a "Compile classpath
+      requirements" paragraph naming kernel-spi/-core and, for a composed build,
+      `exeris-sdk-composition-runtime` (the conductor import); "Runtime classpath requirements" lists
+      only the persistence provider — the Javadoc fix the paragraph above left open. A second
+      instance was found: a repository for an entity with a `List<X>` field imports Jackson 3
+      (`tools.jackson.databind` / `.core`), which kernel SPI and core do not bring — only
+      `exeris-kernel-community` does, and a runtime-scoped driver does not reach the compile
+      classpath. That repository's Javadoc now says so (`KernelRepositoryGenerator.importsJackson`),
+      and the `Application` Javadoc names Jackson 3 only when a repository in the tree imports it:
+      `generateAll` computes the same predicate and hands it to `buildApplication`, so a tree with no
+      `List<X>` field names no dependency it does not have. Recorded, not measured: encode `List<X>`
+      columns through a kernel codec (the ADR-060 shape) — needs a check that kernel 0.12 exposes a
+      JSON codec usable outside HTTP/event bodies and that it round-trips existing rows. Still open:
+      nothing makes the *failure* name the artefact.
+- [ ] **T58 — PATCH/PUT parity: a generated client's update never reached a generated server.**
+      Numbered 2026-09-26, the next free T after the renumbering. Measured the same day. The
+      generated router serves update on `PUT` and the OpenAPI document publishes `PUT`
+      (`OpenApiPathsBuilder`), but the generated TypeScript service and Java client sent `PATCH`; the
+      kernel router matches methods exactly, so the request fell through to the not-found handler.
+      The emitted TS service spec pinned `PATCH`. TS `softDelete`/`restore` PATCHed `/{id}/archive`
+      and `/{id}/restore`, which nothing serves.
+
+      **TS half shipped (0.9.0 train, 2026-09-26):** update sends `PUT`; `softDelete` sends `DELETE
+      {base}/{id}` (on a `@SoftDelete` entity that route is the archive); `restore()` is removed from
+      the service and the store — no route, handler or repository method un-sets the flag. The
+      emitted spec asserts `PUT`. **Gate:** `exeris-e2e-tests` `contract/crud-routes.json` is the one
+      route table both builds test against — `CrudRouteParityE2ETest` (router, OpenAPI, Java client)
+      and `crud-route-parity.spec.ts` (TS service, emitted spec). The e2e `KernelWebClient` stub,
+      which shadowed the real facade in the compile gate, is gone.
+
+      **Java half open — blocked on the kernel.** `KernelWebClient` (kernel 0.12.0) has
+      `get/getList/post/patch/delete` and no `put`, so the generated `*Client.update` still sends
+      `PATCH`; its Javadoc says so and prints the serving-side route (`routes.route(HttpMethod.PATCH,
+      "<base>/{id}", <entity>Handler()::handleUpdate)` in `RuntimeComponents.configureRoutes`). The
+      parity test pins the exemption and fails once the facade gains `put`. Kernel ask:
+      `KernelWebClient.put` ("Kernel asks from this train"). Alternative, an architect decision:
+      serve a `PATCH` alias on the router and publish it in OpenAPI. Blocks the T12 client slice
+      until one lands. Also open: the TS `<Entity>Update` is `Partial<Create>` while the server's
+      update is a full replacement — a partial body over `PUT` nulls the omitted columns.
+- [x] **Locale determinism — shipped 0.9.0 (2026-09-26).** Nineteen `toLowerCase()` calls in
+      codegen-java used the JVM default locale. Under `tr-TR`: table `ınvoices`, column `item_ıd`,
+      `ınvoice-api.yaml`, and an `InvalidPathException` writing `V…__create_lıne_ıtems.sql` on a
+      non-UTF-8 path encoding. All now pass `Locale.ROOT`; `LocaleIndependenceTest` generates the
+      main tree, the test tree and the DSL files under ROOT and `tr-TR` and requires identical
+      bytes. Processor, codegen-core, maven plugin and codegen-ts had no site. **Upstream remainder
+      (SDK):** `DomainMetadata.effectivePath()` / `effectiveTableName()` and
+      `FieldMetadata.effectiveColumnName()` lower-case with the default locale on SDK `main`; tooling
+      reads `effectivePath()` for every route, so under `tr-TR` an entity with no declared `path` is
+      served at `/ınvoices` while the TS service calls `/invoices`. Pinned by
+      `sdkDefaultPathIsNotYetLocaleSafe`. The SDK's 0.12 working branch fixes all three under
+      `Locale.ROOT`, so the pin flips when tooling builds against it (the SDK follow-up block under
+      0.9.0 sequencing).
+- [ ] **Stream endpoints carry no tenant guard — found by reading 2026-09-26, not yet measured, so
+      not yet numbered.** The tenant guard (T41, extended past CRUD to actions by T45) is emitted into
+      no stream handler, and the entity-level EV1 producer subscribes to the event bus with no filter
+      (`KernelStreamScaffold`) while kernel `EventDescriptor` carries no tenant. So
+      `realTimeApi = true` on a TENANT entity would send every tenant's events to every subscriber.
+      The architect's proposed direction, an ADR-044 amendment: guard plus an RLS `findById` for
+      per-action streams, and a processor ERROR for `realTimeApi` on a TENANT entity until the
+      kernel carries an isolation key on events. The dog-food is unaffected (`GalacticEra` is
+      GLOBAL). Reproduce it before it takes a number.
 - [x] **T42 — the mesh has no generated frontend contract.** Types slice shipped 0.8.0 (ADR-048).
       `codegen-ts` was single-service by construction: one metadata directory in, one app out. A mesh
       consumer retyped the other service's vocabulary by hand across a language boundary with no
@@ -2225,10 +2422,11 @@ Each now has the status the code settles, and every other mention in this file a
 |---|---|:---:|---|
 | T1  | `@Action` endpoints advertised (OpenAPI + Angular) but no kernel route serves them — 404 | **High** | ✅ 0.6.0 (#92) |
 | T20 | Generated Angular frontend doesn't compile (`npm run build` fails) — two parallel TS emission paths; the `src/app` sourceRoot ships an empty enum stub that shadows the real `types/enums.ts`, so enum-typed code fails (TS2304/2305) | **High** (latent) | ✅ 0.6.0 (#101/#102; FE gate + POSIX-path determinism fix 2026-06-28) |
-| T23 | Stream-route boot-reachability — the generated boot hands the kernel a lambda, not the `HttpRouter` the stream dispatcher resolves via `instanceof`, so every generated `streamRoute(...)` misses on a real boot and falls through to respond-once dispatch. Two lambdas were named: `RuntimeLifecycle`'s `router::handle` in the slot, and `Application`'s `forwardingHandler` bound as `HTTP_SERVER_HANDLER` | **High** | 🔴 **Reopened 2026-09-26.** 0.6.0 (#106) fixed the slot (`handlerSlot.set(router)`) and left the forwarder — the only handler the kernel reads; `KernelApplicationGeneratorTest` pins emitted text, not the bound object. Kernel-gated (K9); see the T23 entry in the T-namespace section |
+| T23 | Stream-route boot-reachability — the generated boot hands the kernel a lambda, not the `HttpRouter` the stream dispatcher resolves via `instanceof`, so every generated `streamRoute(...)` misses on a real boot and falls through to respond-once dispatch. Two lambdas were named: `RuntimeLifecycle`'s `router::handle` in the slot, and `Application`'s `forwardingHandler` bound as `HTTP_SERVER_HANDLER` | **High** | ✅ **Re-closed 2026-09-26 in tooling (B1).** `Application` binds a pre-boot edge `HttpRouter` (`RuntimeLifecycle.edgeRouter`); `GeneratedAppBootE2ETest` reads an SSE frame over a real boot. Residual K9: `configureRoutes` stream routes; scope around streams. *(Reopened earlier the same day: 0.6.0 (#106) fixed the slot and left the forwarder, the only handler the kernel reads; see the T23 entry in the T-namespace section.)* |
 | T8  | No generated finders/indexes for FK + `filterable` fields → O(n) `findAll().filter()` everywhere | **High** | ✅ 2026-06-28 (finders + FK/filterable indexes; T9 constraints deferred) |
 | T10 | `@Validation` enforced client-side (Zod) but dropped server-side (handler/service/DB) | **High** | ✅ 0.6.0 (#103) |
-| T12 | N generated apps can't form a mesh — client is own-app/relative-host, saga step is local, no cross-app contract | **High** | **T42 (types) SHIPPED 0.8.0**, no kernel gate; client+registry 0.9.0 — split by ADR-048; the client half needs a final kernel 0.12 — not for a binary break (the 2026-09-01 readiness measurement found `HttpRequest` additive, re-checked 2026-09-26), but because a peer-addressed client needs ADR-074's `defaultAuthority` / `withAuthority`, which exist only from 0.12 (K8) |
+| T12 | N generated apps can't form a mesh — client is own-app/relative-host, saga step is local, no cross-app contract | **High** | **T42 (types) SHIPPED 0.8.0**, no kernel gate; client+registry 0.9.0 — split by ADR-048; the client half needs a final kernel 0.12 — not for a binary break (the 2026-09-01 readiness measurement found `HttpRequest` additive, re-checked 2026-09-26), but because a peer-addressed client needs ADR-074's `defaultAuthority` / `withAuthority`, which exist only from 0.12 (K8) — and because its update must first reach the generated server (T58: `KernelWebClient` has no `put`) |
+| T58 | PATCH/PUT parity — the generated router serves update on `PUT` (and OpenAPI publishes `PUT`) while the generated TS service and Java client sent `PATCH`, so a generated client's update never reached a generated server | **High** | 🔶 TS half shipped 0.9.0 (2026-09-26, cross-build `crud-routes.json` gate); Java half blocked on kernel `KernelWebClient.put` |
 | T17 | Capability-graph validation is closed-world per app — a legitimate cross-service `@Requires` hard-fails the build | **High** | **0.9.0** — ships with the client+registry slice per ADR-048 |
 | T54 | *(was T26)* A `@ExerisDomain(versioned = true)` entity whose `version` field is the **wrapper** `Long` throws NPE on the first `save()` of a fresh entity: `buildColumnLayout` hardcodes the VERSION column's type as `Long` and the emitter binds it by unboxing (`stmt.bindLong(i, entity.getVersion())`), with no null guard — and no guard is possible while the column type is a constant, since a primitive `long version` field cannot be null-compared. `update()` has the same unboxing (`long expected = entity.getVersion()`). Every other nullable system column (`createdAt`/`updatedAt`) *is* guarded, so this is the one gap. Fix is to read the declared field type into the column instead of assuming, which makes it a repository-emitter change rather than a test one | **Medium** (latent; primitive-`long` entities were unaffected) | ✅ 0.7.x — found 2026-08-02 by the T2 slice-d system-column fixture, fixed the same day: both the version bind and `update()`'s expected-version read go through a boxed local with a null default, so a wrapper-typed field behaves exactly like the primitive it shadows. The e2e fixture keeps the **wrapper** declaration (a primitive would pass either way) and the generated repository test no longer pre-stages the version, which makes every consumer's emitted test a regression test for it |
 | T2  | Zero tests generated for the generated surface | Medium | 🔶 0.7.0 slices a–f — the **Java half is complete** (handler bodyless routes + body-route guards + service delegation + repository round-trip + saga wiring + `@Validation` boundary pairs, ADR-058); **FE spec slice → 0.8.0** |
@@ -2241,7 +2439,7 @@ Each now has the status the code settles, and every other mention in this file a
 | T18 | Capability validation × two-pass build deadlock; `mvn clean` + T13 prune wipes the committed L1 tree | Medium | ✅ 0.6.0 (#129 + `exeris:verify-capabilities` deferred-validation gate) |
 | T19 | Repository binds `Instant` as ISO string but DDL declares `TIMESTAMPTZ` — round-trip latent-broken on real Postgres | Medium | **Done 0.6.0** (native `bindInstant`/`getInstant`, kernel 0.10 SPI) |
 | T7  | TS app-structure seams — per-entity path vs `app.routes` import mismatch breaks the build; hardcoded title/redirect | Medium | ✅ 0.6.0 (routes fix + `--app-name` title/redirect, #120) |
-| T6  | Naive English pluralization (`colony → colonys`) in SQL tables + Angular routes | Low | 0.5.x |
+| T6  | Naive English pluralization (`colony → colonys`) in SQL tables + Angular routes | Low | Override honoured 0.5.x; default plural sequenced after SDK 0.12 reaches SDK `main` — the `tableName` extraction must land before 0.9.0 is released (see "Follow SDK 0.12.0") |
 
 ### High severity
 
@@ -2571,6 +2769,11 @@ Each now has the status the code settles, and every other mention in this file a
       *TS half — deferred to **T7**:* the Angular route/label pluralisation lives in the
       app-structure generator T7 is already reworking, and there is no serialized route override on
       the TS side yet, so the TS half rides with that 0.6.0 change.
+      *2026-09-26:* the SDK half landed on SDK 0.12's working branch. That branch adds
+      `@ExerisDomain.tableName`, and makes `effectiveTableName()` the snake-cased English plural. The
+      tooling half is three changes, sequenced after that branch reaches SDK `main`, and the
+      `tableName` extraction must land before 0.9.0 is released ("Follow SDK 0.12.0", under 0.9.0
+      sequencing).
 
 ### UI fidelity & theming (`exeris-codegen-ts`)
 
@@ -2635,6 +2838,14 @@ Proposals, highest return-on-effort first:
       **codegen-ts (DONE):** a `ViewMetadataSchema` (recursive, mirrors the SDK records), `view_*.json` discovery in `index.ts` (mirrors `enum_*`), and a `ViewGenerator` (`generators/angular/view-gen.ts`) emitting one **standalone, OnPush, signal-first** component per view under `pages/<kebab>.component.ts` + a lazy route. `BlockType`→element mapping (HERO/CARD/GRID/LIST/CONTAINER/RICH_TEXT/NAV/IMAGE/SLOT/CUSTOM/FORM), ui-kit token utilities (U1). Bindings honoured: `STATIC`/`NONE` (authored), `ENTITY` (`inject(<Ref>Service)` + signal read), `ACTION` (click handler stub). Route assembly threads views into `app.routes.ts` (PAGE-first default redirect + sidebar links). Verified end-to-end (real CLI on a `view_*.json` → faithful component).
       **Inert-honesty:** `@View` is consumed via the Java∪TS union (the codegen-ts ViewGenerator), so it is **not** registered in `INERT_ANNOTATIONS` — the processor extraction + the generator land together (the strict test asserts `@View` is not flagged).
       **Gated / follow-ups (the full emitter):** **G1** parameterised/relational binding (the corpus's defining "X of the current Y" — currently `expression` is a TODO passthrough) · **G2** `STREAM` source (pairs with ADR-044) · **G3** mesh binding (T12) · **G6** token/theme binding · leaf-field `FORM` emission ([ADR-047 — the `@UI`→`@View` leaf-facet migration](docs/adr/ADR-047-view-leaf-field-facet-and-ui-subsumption.md)) · the `@UI`→`@View` unification. Build of the *full* emitter stays gated on the Headless CMS SKU corpus (RFC condition 2); a downstream dog-food app's view-IR corpus is the early validating stand-in.
+- [x] **`@View` STATIC misdiagnosis — shipped 0.9.0 (2026-09-26).** view-gen classified bindings
+      by attribute: any `expression` → `TODO(@View G1)`, any `language` → `TODO(@View G2) STREAM`,
+      whatever the source. Now by source: STATIC/NONE carrying `ref`/`path`/`expression`/`language`
+      emits a wrong-attribute comment pointing at `@Block(props)` (`ref` exempt on a SLOT block,
+      where it names the slot), and the processor warns at the `@Bind`; an expression on a data
+      source keeps the G1 marker, with its language. The language-keyed G2 branch is deleted —
+      `BindSource` has no STREAM constant, so G2 has nothing to emit until the SDK record changes.
+      G1/G2 themselves unchanged.
 
 ### Events & event sourcing
 
@@ -3061,7 +3272,8 @@ results, and a line-number citation that expired between being measured and bein
 
 0.9.0's defining property is that a large share of it is not this repo's to unblock: neither
 `exeris-kernel` nor `exeris-sdk` has a final `0.12.0`, and the no-cross-repo-SNAPSHOT rule below
-applies to pinning as much as to tagging. Four groups, by what blocks them —
+applies to pinning as much as to tagging *(2026-09-26: B0 pins ahead of both finals as a declared,
+temporary exception; the rule binds the cut)*. Four groups, by what blocks them —
 
 - **No external gate:** D10 (whose *resolution* is a T53 question — do not settle it before that
   RFC), the `npm start` proxy prefix, C1, C2, T53. The TS `GraphEdgeMetadataSchema` parity gap, two
@@ -3071,12 +3283,16 @@ applies to pinning as much as to tagging. Four groups, by what blocks them —
 - **Behind a final kernel 0.12:** the pin bump, `@Saga.version`'s emitter half, T12's client half +
   T17. **Not** the EV1-stream per-action driver — see the readiness measurement below.
   *(2026-09-26: the pin bump and the `@Saga.version` emitter half are applied on the working branch
-  as **B0**, below — against pre-release 0.12 builds, so they still wait on the finals.)*
+  as **B0**, below — against pre-release 0.12 builds, so they still wait on the finals. T12's client
+  half also waits on T58's Java half: the generated client's update has to reach the generated
+  server, and `KernelWebClient` has no `put`.)*
 - **Behind an SDK record change:** the `GraphEdgeMetadata` field/identity split, the six
   `@Saga.compensation*` attributes, `@SagaStep.waitForAll` / `.failFast`. Each is a carrier that does
   not exist; extracting into nothing is the failure mode 0.8.0 spent itself removing.
 - **Behind a kernel contract:** `@SagaStep.parallel` — the reason it stays out of `INERT_ATTRIBUTES`
-  is recorded at that registry, so nobody adds it in good faith.
+  is recorded at that registry, so nobody adds it in good faith. And, since 2026-09-26,
+  `@SagaTransition`: the kernel routes no outcome or tag, so the flip is deferred to 0.10 (its entry
+  under the annotation-surface debt).
 
 Also open and independent of all four: the missing `warnInertAttributes` call sites for `Saga` and
 `SagaStep`, and a comment naming the processor as the saga-step sorter.
@@ -3090,20 +3306,119 @@ Also open and independent of all four: the missing `warnInertAttributes` call si
       - **S6** — `SystemFieldsMetadata` grew a trailing `sharedScopeField`, a positional break with
         no builder to route around it; the processor passes `null`. That is today's true value, not a
         placeholder: nothing scans `@SharedScope` yet, and `UNIVERSE` is still refused at the
-        declaration (T29).
+        declaration (T29). *Later the same day, T29 slice B made the processor scan
+        `@SharedScope`: a UNIVERSE entity now carries `sharedScopeField`, every other entity still
+        writes `null`, and its JSON is unchanged. SDK 0.12's working branch restores the
+        ten-argument constructor and adds `SystemFieldsMetadata.builder()`, so the positional break
+        goes away when that branch reaches SDK `main`.*
       - **K8** — the generated `*Client` Javadoc shows the peer named through `defaultAuthority` or
         `KernelWebClient.withAuthority`. Kernel ADR-074 made an unaddressed CLIENT request fail at its
         first send without changing a signature, so the emitted Javadoc is the only place the
         generated code can say it.
       - **K5** — the generated `*SagaFlow` calls `.version(n)` on its `FlowDefinitionBuilder`,
         carrying the `@Saga.version` the processor has extracted since 0.8.0 (T55's emitter half).
-      Rides along with no emitter change: T52's caller half (see T52).
+      Rides along with no emitter change: T52's caller half (see T52). Carried with the pins and
+      invisible to emitted code: Jackson 3 `3.1.5` → `3.2.2`, the kernel's own pin (left at 3.1.5,
+      the BOM forced the kernel down a minor on the e2e classpath), and the CI SDK checkout moved
+      from `v0.11.0` to `main`, the only ref that builds `0.12.0-SNAPSHOT`.
 
       **What makes it final:** both pins move to the `0.12.0` releases once kernel and SDK publish,
       and only then can 0.9.0 be cut — no cross-repo SNAPSHOT at a cut, and the tag's own POM is
       final (Versioning policy). Until then a consumer building this branch installs both from
       source, and the SDK needs `-Djapicmp.skip=true` from a fresh clone because its semver baseline
-      is not on Central.
+      is not on Central. *(SDK 0.12's working branch makes japicmp an opt-in `-Psemver` gate, so the
+      flag goes once that branch merges; see the SDK follow-up block below.)*
+
+### Kernel asks from this train — 2026-09-26
+
+Each is recorded where it was measured; this is the one list to hand to the kernel.
+
+- **K9, narrowed.** T23 slice B1 made generated streams resolve on a real boot without the kernel.
+  What is left needs it. A `streamRoute` registered in `configureRoutes` still does not resolve,
+  because only the edge router is asked to resolve streams. And a scope bound in `decorate` is not
+  bound for a stream, which runs on the edge router outside the wrapper. Both want stream resolution
+  through an SPI that a forwarder or a wrapper can delegate. That needs an SPI return type: today's
+  match type, `HttpRouter.StreamMatch`, lives in core.
+- **`KernelWebClient.put`** (T58). The facade has `get/getList/post/patch/delete`, so the generated
+  Java `*Client` cannot send the verb the generated router serves for update.
+- **The reference RLS policy admits cross-tenant `DELETE` and re-own of shared rows** (T29 slice
+  B). Measured on PostgreSQL 16 as a `NOSUPERUSER NOBYPASSRLS` non-owner. With the single `FOR ALL`
+  shape the `RlsConnectionInterceptor` Javadoc gives, a tenant deleted a partition-mate's shared row,
+  and re-owned it with `UPDATE … SET owner = self` (1 row each), because a `FOR ALL` policy's
+  `USING` also governs `UPDATE` and `DELETE`. Ask: adopt the per-command shape tooling now emits (the
+  owner-pinned policy for writes, plus an additive `FOR SELECT` widening). Add a mutation-denial
+  cell to `AbstractSharedScopeAccessMatrixTck`, and make its keys UUID-capable. Related and still
+  open: the reference `WITH CHECK` does not pin the shared-scope tag, pending a ruling on ADR-012
+  §4b.4 (k1).
+- **Outcome/tag routing for saga transitions** (`@SagaTransition`, deferred to 0.10). The plan
+  precomputes one next step per step, and no outcome or condition tag selects an edge.
+- **Duplicate-`Start` semantics in the choreography TCK** (T48 slice C2). What a second `Start`
+  for a running correlation does is unpinned, and C2 would register choreography mappers against
+  it.
+- **A boot-time check that the persistence role is `NOSUPERUSER NOBYPASSRLS`** (ADR-090). Either
+  attribute makes every policy inert, and only the kernel or the driver owns the connection.
+
+### SDK asks from this train — 2026-09-26
+
+- **Align `Saga.TriggerType` with `SagaMetadata.TriggerType`** (T48 slice C2). The annotation
+  declares `COMMAND`, `EVENT`, `SCHEDULE`, `HTTP` and `MANUAL`. The AST it maps onto declares
+  `EVENT`, `SCHEDULED`, `MANUAL` and `API`. So `COMMAND` has no counterpart, and two names differ.
+  C2 cannot compile a declared trigger until the two agree.
+- **The `DataScope.UNIVERSE`, `ExerisDomain.dataScope` and `@SharedScope` Javadoc** still say
+  "refused", "RESERVED" and "no owner". Tooling transcribes the tier since T29 slice B, and a
+  UNIVERSE row is owned (kernel ADR-012 §4b.2).
+- Also noticed: `@TenantId`'s Javadoc describes `autoPopulate`, `validateOnMutation` and
+  `exposeInApi` as working switches, and generated code honours none of them (ADR-090, and the
+  strict-mode notes). `@SagaTransition`'s Javadoc says extraction is pending tooling, but the gate
+  is the kernel.
+
+### Follow SDK 0.12.0 — open, sequenced after the SDK branch merges to SDK `main`
+
+SDK 0.12 landed on the SDK's working branch on 2026-09-26. It brings the S6 compatibility
+constructors and `SystemFieldsMetadata.builder()`, T38, T6, and an opt-in semver gate. It is **not
+on SDK `main` yet**, and tooling CI builds the SDK from `main` (B0). So nothing below can land here
+first: a tooling change that needs the branch would turn this build red. Every item is open.
+
+- [ ] **T6 — table and route plurals.** The SDK's `effectiveTableName()` returns `tableName` when
+      set, and otherwise the snake-cased English `pluralName()` under `Locale.ROOT`. The SDK's `-io`
+      reader already reads `@ExerisDomain.tableName`. Three tooling changes:
+      1. **Extract `@ExerisDomain.tableName` into `DomainMetadata.tableName`**, replacing the
+         processor's "no tableName attribute" comment. **This must land before tooling's 0.9.0
+         release.** The SDK reader already reads the attribute, so a 0.9.0 processor that does not
+         would ship the released pair diverged: the K5 shape, an ADR-042 divergence.
+      2. **`KernelTableNaming` delegates its default to `DomainMetadata.effectiveTableName()`**
+         instead of `toSnakeCase(entityName) + "s"`. The processor warns once per entity whose
+         default changes, naming the override that keeps the old table:
+         `Colony: default table changes from 'colonys' to 'colonies'; set @ExerisDomain(tableName =
+         "colonys") to keep the existing table and migration`. Entities whose plural is a bare "s"
+         are unchanged; only consonant+y and s/x/z/ch/sh endings move. The override is already
+         lower-cased under `Locale.ROOT`, since the locale fix.
+      3. **`exeris-codegen-ts` `app-structure-gen.ts` takes the same plural rule** for Angular route
+         segments, porting `pluralName()` (+es after s/x/z/ch/sh, consonant+y → ies, else +s) in
+         place of `entityName.endsWith('s') ? entityName : entityName + 's'`. Server routes do not
+         move, because `@ExerisDomain.path` is required. Only metadata built without a path sees
+         `effectivePath()`'s new plural.
+- [ ] **T38 — keep reading `@ExerisDomain.apiVersion` through 0.x, and remove it at 1.0.** SDK
+      0.12 deprecates it for removal, with no replacement, together with `DomainMetadata.apiVersion()`
+      and `DomainMetadata.Builder.apiVersion(String)`. Keep the read and its `INERT_ATTRIBUTES` entry
+      through the window. The processor's `builder.apiVersion(...)` and `KernelClientGeneratorTest`'s
+      `.apiVersion("v2")` will draw javac `[removal]` warnings: suppress each one at the call, with a
+      one-line reason, and no wider. At the 1.0.0 pin, delete the read, the inert entry, and the
+      `apiVersion` field in `exeris-codegen-ts` `domain-model.ts`.
+- [ ] **S6 — nothing is forced.** SDK 0.12 keeps `SystemFieldsMetadata(10)`, `DomainMetadata(39)`
+      and `ActionMetadata(17)` as delegating constructors, and this repo already passes the eleventh
+      `SystemFieldsMetadata` argument. Optional and recommended: build the record with
+      `SystemFieldsMetadata.builder()` in `extractSystemFieldsOverrides`. The builder names each of
+      the eleven same-typed `String` components instead of relying on their order.
+- [ ] **Semver gate.** On the SDK branch, japicmp runs only under `-Psemver`. Drop
+      `-Djapicmp.skip=true` and its comment from `.github/workflows/build.yml` (the "Install
+      exeris-sdk to local Maven repo" step). Leaving it is harmless.
+- [ ] **The locale pin flips.** The branch lower-cases `effectivePath()`, `effectiveTableName()` and
+      `effectiveColumnName()` under `Locale.ROOT`, so `LocaleIndependenceTest
+      .sdkDefaultPathIsNotYetLocaleSafe` fails against it, by design. Invert that test, and drop the
+      explicit paths from its fixture so the main case covers the defaulted route.
+- [ ] **The `-io` reader reads `@Saga.version`** on the branch (K5's SDK half), which closes T55's
+      last open line.
 
 ### 0.12 readiness — measured 2026-09-01, against the installed snapshots
 
@@ -3152,9 +3467,19 @@ emitted mapping should read it rather than re-derive it is a slice to measure, n
   route plausibly wants. Worth reading before the T53 RFC fixes the URL-to-policy table's shape,
   because it changes what a row in that table can say.
 
-**What still cannot be done:** pin either dependency. The rule is unchanged — no cross-repo
-`-SNAPSHOT` at a cut, and the tag's own POM must be final — so B0 waits for kernel `0.12.0` final,
-and the SDK bump additionally waits for the 0.12 line to publish a source model.
+**B0 landed ahead of the releases.** *(This paragraph was replaced on 2026-09-26. It said that B0
+had to wait for a final kernel `0.12.0` and for a 0.12 source model. B0 did not wait; what waits is
+the 0.9.0 cut.)* The BOM pins SDK `0.12.0-SNAPSHOT` and kernel `0.12.0`, both built from source.
+The kernel's `development/0.12.0` carries the final version string without a `v0.12.0` tag. This is
+a standing exception to UP0, not a change to it: no tooling release is cut while either pin is
+pre-release, and both move to the final `0.12.0` once kernel and SDK publish. Until then, CI builds
+the SDK from `main`. What B0 unblocked:
+- T55's emitter half (shipped);
+- the ADR-074 note in the emitted `*Client` (K8, shipped);
+- T29 slice B, shipped the same day: the processor scans `@SharedScope` (see T29).
+
+Both upstream gates that slice B named, the SPI session-key constants and the SDK carrier, are
+available.
 
 #### Re-checked 2026-09-26, against the effective sources
 
@@ -3174,6 +3499,7 @@ per its CHANGELOG) and SDK `main` (`0.12.0-SNAPSHOT`):
 shipped as `@SharedScope` (`eu.exeris.sdk.annotation.system`) + `SystemFieldsMetadata.sharedScopeField`.
 Slice B now waits only on this repo — the processor scanning `@SharedScope` (B0 writes `null`
 meanwhile), the repository binding the column, and lifting T29's refusal — plus B0 becoming final.
+*(All three shipped later the same day as T29 slice B.)*
 
 **Whole-SPI delta, re-read:** not re-measured member by member (no `javap` pass this time). One
 addition the five-type count does not contain is visible at source: `eu.exeris.kernel.spi.websocket`,
@@ -3182,7 +3508,7 @@ ten source files plus `package-info` (kernel ADR-084; the SDK CHANGELOG records 
 re-checked.
 
 **What still cannot be done, re-read:** the SDK's second blocker (no source model) is gone. The
-first — a final release, for both — is what B0 waits on.
+first, a final release for both, is what the 0.9.0 cut waits on. B0 itself is applied ahead of it.
 
 ## Versioning policy
 

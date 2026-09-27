@@ -24,7 +24,8 @@
           tag yet. A kernel `0.12.0` resolved before that tag is a pre-release
           build that merely looks final; treat it as the SNAPSHOT it is.
 
-          This is a temporary exception to UP0, not a relaxation of it. No
+          This is a temporary exception to UP0, not a relaxation of it. Both
+          pins are pre-release, and both must be final at the cut: no
           cross-repo SNAPSHOT may remain at a tooling cut (ROADMAP "Versioning
           policy"), so both pins move to the final `0.12.0` releases once the
           kernel and the SDK publish, and no tooling release is tagged before
@@ -37,12 +38,16 @@
           their builders, so their growth cost nothing. `SystemFieldsMetadata`
           (+ `sharedScopeField`, the `@SharedScope` carrier) has no builder and
           is built positionally, so it took one trailing argument (Stellar
-          finding S6). The processor passes `null` there because it does not
-          scan `@SharedScope` yet (T29 slice B); the record is
-          `@JsonInclude(NON_NULL)`, so emitted metadata JSON is unchanged. The
-          `schemaVersion` the processor stamps follows `SchemaVersion.CURRENT`,
-          which is "0.12.0" in this jar. `@Channel`, `@RouteAccess` and
-          `@SharedScope` are new in 0.12 and extracted by nothing yet.
+          finding S6). SDK 0.12's working branch restores the ten-argument
+          constructor and adds a builder; neither is on SDK `main` yet. The
+          processor fills that argument only for a `DataScope.UNIVERSE` entity,
+          from its `@SharedScope` field (T29 slice B), and passes `null`
+          everywhere else; the record is `@JsonInclude(NON_NULL)`, so every
+          other entity's metadata JSON is unchanged. The `schemaVersion` the
+          processor stamps follows `SchemaVersion.CURRENT`, which is "0.12.0" in
+          this jar. `@Channel`, `@RouteAccess` and `@SharedScope` are new in
+          0.12; `@SharedScope` is extracted (T29 slice B), and the other two by
+          nothing yet.
         -->
         <exeris.sdk.version>0.12.0-SNAPSHOT</exeris.sdk.version>
         <!--
@@ -55,8 +60,9 @@
           - `ConnectionInterceptor.SESSION_KEY_TENANT_ID` and
             `SESSION_KEY_SHARED_SCOPE`. Both RLS session variables are SPI
             contract now, not one driver's literal, which is what the
-            `DataScope.UNIVERSE` transcription was gated on. It is a tooling
-            slice from here (T29 slice B).
+            `DataScope.UNIVERSE` transcription was gated on. T29 slice B shipped
+            on this pin, and its session-key literal is checked against the
+            kernel constant.
           - ADR-074 peer addressing. A CLIENT-mode `HttpConfig`'s `bindHost` /
             `port` are no longer dialled; the peer is `defaultAuthority`
             (`http.client.defaultAuthority`) or `KernelWebClient.withAuthority`.

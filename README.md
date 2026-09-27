@@ -22,8 +22,9 @@ migrations, sagas, and corresponding Angular/TypeScript frontend artifacts.
   on the resolution path. Neither is released yet, so `main` pins ahead of both. The
   pins move to the final `0.12.0` releases once they publish, and no tooling release
   is cut before that. Build both from source: `exeris-sdk` at `main`
-  (`mvn install -Djapicmp.skip=true` — its semver baseline is not on Central) and
-  `exeris-kernel` at `development/0.12.0`. GitHub Packages credentials also resolve
+  (`mvn install -Djapicmp.skip=true` — its semver baseline is not on Central; the
+  flag becomes unnecessary once SDK 0.12's working branch, which makes japicmp an
+  opt-in `-Psemver` gate, reaches `main`) and `exeris-kernel` at `development/0.12.0`. GitHub Packages credentials also resolve
   the kernel. Take the **`eu.exeris`** kernel coordinates, not `eu.exeris.preview`
   — the preview line is JDK 28 EA with `--enable-preview`, and nothing generated here
   differs between them.

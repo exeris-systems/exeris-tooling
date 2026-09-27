@@ -1049,13 +1049,40 @@ requires them.
 
 ## 0.9.0 train — regeneration deltas
 
-### Dependency floor (unchanged)
+### Dependency floor (hard, pre-release)
 
-**Neither pin moves in this train.** `exeris.sdk.version` and `exeris.kernel.version` both stay at
-`0.11.0`, so the metadata schema stamp stays at `0.11.0` too and no re-run is forced by a skew
-check. Everything below is a change to what the generators emit, not to what they are built against.
+*(Replaced 2026-09-26. This entry first said "Neither pin moves in this train"; B0 moved both.)*
 
-The 0.12 lines exist only as snapshots. When they cut finals, that bump is its own entry.
+The BOM moves to **`eu.exeris:exeris-sdk-*:0.12.0-SNAPSHOT`** and **`eu.exeris:exeris-kernel-*:0.12.0`**,
+and neither is published yet. Build the SDK from `main`, with `-Djapicmp.skip=true` from a fresh
+clone, because its semver baseline `0.11.0` is not on Maven Central. Build the kernel from
+`development/0.12.0`. A tooling release is not cut until both are final.
+
+**The metadata schema stamp moves `0.11.0` → `0.12.0`.** SDK 0.12 moves `SchemaVersion.CURRENT`, so
+a baseline stamped `0.11.0` reads as schema skew (ADR-042). Re-run codegen once after upgrading.
+Otherwise the emitted metadata JSON changes only for a `UNIVERSE` entity. SDK 0.12's
+`SystemFieldsMetadata.sharedScopeField` is filled only there (T29 slice B, below) and is omitted when
+null, so every `GLOBAL` and `TENANT` entity's JSON is byte-identical.
+
+**Two regeneration deltas come from the pins, and both depend on what you declare:**
+- A saga with `@Saga(version = n)`, `n > 1`, now emits `DEFINITION_VERSION` and
+  `builder.version(DEFINITION_VERSION)`. Your plan is registered as `(name, n)` rather than
+  `(name, 1)`, so instances parked before the upgrade resume only if version 1 is still hosted, or
+  through a registered migration (kernel ADR-064). Sagas without a version regenerate
+  byte-identical, because the call is emitted only for a version other than 1. So an engine whose
+  builder keeps the throwing `default` of `version(int)` is reached only by a saga that asked for a
+  version. A declared version below 1 now fails generation.
+- With `exeris.tests` on, `RecordingFlow` gains `definitionVersion` and overrides `version(int)` and
+  `definitionVersion()`.
+
+**Kernel 0.12 changes what a CLIENT-mode `HttpConfig(bindHost, port, …)` means (ADR-074):** it is no
+longer dialled. Address the peer with `KernelWebClient.withAuthority("host:port")` or the
+`http.client.defaultAuthority` key, or an unaddressed request is refused at its first call. The
+emitted `*Client` Javadoc now shows this, and every emitted `*Client` changes by Javadoc only.
+
+**`dataScope = UNIVERSE` is no longer refused outright.** See the T29 slice B entry below. B0 first
+reworded the refusal to name the missing `@SharedScope` read. Slice B, later in the same train,
+replaced the refusal with precise checks at the declaration.
 
 ### A missing request-body decoder now answers 500 and says so (T52)
 
@@ -1105,6 +1132,9 @@ through to respond-once dispatch: a `realTimeApi` `GET <base>/stream` lands on t
 route with `stream` as the id and answers `400`. Regenerating does not change this, and no emitted
 setting does; the fix is kernel-side (K9 in the dog-food log). The refusal above still fires; on the
 generated boot it protects nothing.
+
+**Superseded later in the same train — the refusal is gone (T23 slice B1).** See "Stream routes
+resolve on a real boot; `Application` binds an edge router" below.
 
 ### `exeris-codegen-ts`: `GraphEdgeMetadata` and `GraphMetadata` change shape (#208)
 
@@ -1195,6 +1225,237 @@ and no generator reads (`@TenantId.autoPopulate`, `@Version.useForETag`,
 `@SoftDelete.retentionPeriod`, …). Setting any of them changes no emitted output; the warning says
 so rather than letting the extraction hide it.
 
+### Stream routes resolve on a real boot; `Application` binds an edge router (T23, ADR-070 Amendment 2)
+
+`Application.run()` no longer binds a forwarding lambda. It builds
+`RuntimeLifecycle.edgeRouter(handlerSlot, componentsSlot)`, an `HttpRouter` carrying every
+generated stream route, and binds that as `HTTP_SERVER_HANDLER`. Respond-once requests fall through
+its `notFound` to the router `RuntimeLifecycle.run()` composes, exactly as before.
+
+**Regenerated diff:** `Application`, `RuntimeLifecycle` and `RuntimeComponents` change. Every EV1
+live-view `<Entity>StreamHandler` (an entity with `realTimeApi` and a `@DomainEvent`) gains an
+`EventEngine` constructor parameter. `RuntimeLifecycle` gains a three-argument constructor
+`(handlerSlot, componentsSlot, components)` and a static `edgeRouter(...)`, and `run()` no longer
+registers stream routes.
+
+**If you only regenerate, streams now work.** `GET <base>/stream` opens an SSE stream instead of
+answering `400`.
+
+**`decorate` no longer refuses a wrapper.** It applies to respond-once routes. Stream routes resolve
+on the edge router and run outside it, so a scope bound in `decorate` is not bound for a stream
+(kernel K9).
+
+**A `streamRoute` you register in `configureRoutes` still does not resolve.** That router is never
+asked to resolve a stream. Resolving hand-registered streams needs the kernel (K9).
+
+**Hand-rolled launchers** (a copied `Application.run()`, a dev server, an integration harness)
+switch to the edge router and share both slots:
+
+    var handlerSlot = new AtomicReference<HttpHandler>();
+    var componentsSlot = new AtomicReference<RuntimeComponents>();
+    ScopedValue.where(HttpKernelProviders.HTTP_SERVER_HANDLER,
+            RuntimeLifecycle.edgeRouter(handlerSlot, componentsSlot)).call(() -> {
+        KernelBootstrap.builder().selector(selector).build().boot(() ->
+                new RuntimeLifecycle(handlerSlot, componentsSlot, components).run());
+        return null;
+    });
+
+The two-argument constructor still compiles, and still serves no stream. A launcher that bound the
+handler slot's content directly as the server handler *did* get streams before this train, and
+loses them now: bind `edgeRouter(...)` instead.
+
+### Subscribers and saga flows are composed and started at boot (T48 slice C1, ADR-075 Amendment 2)
+
+`RuntimeComponents` gains `create<Entity>EventSubscriber()` and `create<Flow>()`. The accessor is
+the flow's class name, lower-camel. `RuntimeLifecycle.run()` builds every publisher, then calls
+`initialize()` on every saga flow and `subscribe()` on every subscriber before it serves, and
+`unsubscribe()` in reverse after shutdown. Install a saga or subscriber subclass by overriding its
+factory, for example `createConstructionSagaFlow()` returning
+`new ConstructionSaga(KernelProviders.flowEngine())`.
+
+**A regenerated app now needs, at boot, the subsystems its domain uses:** `flow` for any `@Saga`,
+and `events` for any `@DomainEvent`. Omitting one used to leave those artefacts silently unused. It
+now fails the boot.
+
+**Harnesses that compose outside a kernel boot** must now also bind `KernelProviders.EVENT_ENGINE`
+and `FLOW_ENGINE`, or override every subscriber, flow and EV1 stream-handler factory. The
+`RuntimeComponents` scope lists entry below has the full list.
+
+### Payload-bearing event publishers encode their payloads (T48 slice C1)
+
+A publisher whose events carry `payloadFields` now takes the `EventPayloadCodecRegistry` at
+construction. `RuntimeComponents` passes `KernelProviders.eventPayloadCodecRegistry().orElse(null)`
+from inside the boot callback. Before, the publisher resolved the registry per publish on the
+request thread, where the kernel binds none, and **every payload was published empty**. Subscribers
+and SSE clients now receive the declared payload. The one-argument constructor remains, and
+captures whatever registry is bound where it is called.
+
+### `RuntimeComponents` lists the kernel scopes the generated code reads (T51)
+
+`RuntimeComponents.COMPOSITION_SCOPES` lists what the generated factories read while composing;
+`KernelBootstrap.boot(...)` binds them. `REQUEST_SCOPES` lists what the generated code reads while
+serving a request: `HTTP_REQUEST_BODY_DECODER_REGISTRY`, which the kernel binds per request, and
+`STORAGE_CONTEXT` for tenant-partitioned entities, which your deployment binds. Each list's Javadoc
+names every reader.
+
+This is additive, so there is nothing to do unless you compose outside a boot. If you do, bind
+`COMPOSITION_SCOPES` (or override their readers) and supply `REQUEST_SCOPES` per request.
+
+### `dataScope = UNIVERSE` is transcribed — it needs an owner and a `@SharedScope` field, and adds a V4 migration (T29 slice B)
+
+A `UNIVERSE` declaration is no longer refused outright. It compiles when the entity names both
+columns the tier needs:
+
+    @ExerisDomain(module = "universe", path = "/presences", dataScope = ExerisDomain.DataScope.UNIVERSE)
+    public class GalaxyPresence {
+        @Field(label = "Owner")    @TenantId    private UUID ownerTenantId;  // writes stay pinned here
+        @Field(label = "Universe") @SharedScope private UUID universeId;     // reads widen across this
+    }
+
+**A UNIVERSE row is owned** (kernel ADR-012 §4b.2). An entity with no owner field is still refused,
+now with a message naming the missing field. That is the shape the 0.8.0 refusal called "a
+shared-world row". Also refused:
+- no `@SharedScope` field;
+- a `@SharedScope` field that is not `UUID`/`String`;
+- a `@SharedScope` field that is the owner field;
+- a `@SharedScope` field that is `required`. The repository fills it, and `required` would make
+  the handler answer 400 and the column `NOT NULL` first.
+
+Rows that should belong to nobody (NPCs, neutral objects) need a designated system owner tenant.
+
+**What is emitted:**
+- the CREATE migration — byte-identical to what `dataScope = TENANT` emits (owner column, owner
+  index, `FORCE ROW LEVEL SECURITY`, owner-pinned `<table>_tenant_policy`);
+- a **new** migration `V4<nnnnnn>__shared_scope_<table>.sql` (same six digits as the CREATE): an
+  index on the shared-scope column and one additive `FOR SELECT` policy,
+  `<col> = NULLIF(current_setting('exeris.shared_scope', true), '')` (cast `::uuid` for a UUID
+  column). It widens reads only — a partition-mate can read a row, never update or delete it;
+- a repository that fills an absent shared-scope field from the bound `StorageContext` on
+  save/update.
+
+**Byte-stable** for every GLOBAL and TENANT entity. A `@SharedScope` marker on a non-UNIVERSE entity
+now draws a warning and is ignored.
+
+**Existing databases:**
+- **TENANT → UNIVERSE:** the CREATE migration is unchanged and V4 applies forward. If the
+  `@SharedScope` field is new, the CREATE migration gains a column — as with any added field, the
+  generator emits no `ALTER`: add the column by hand (`ALTER TABLE <t> ADD COLUMN <col> UUID`) and
+  `flyway repair`, or declare the field before the first migration.
+- **GLOBAL → UNIVERSE:** the CREATE migration moves from tier `V1…` to `V2…` and the V1 file is
+  pruned; Flyway reports V1 missing and the V2 `CREATE POLICY` fails on the absent owner column. Use
+  a fresh database or a hand-written migration (same limitation as GLOBAL → TENANT).
+- **UNIVERSE → TENANT:** V4 is pruned, its policy stays in the database — drop it by hand:
+  `DROP POLICY IF EXISTS <table>_shared_scope_policy ON <table>;`.
+- **Detached (L2) apps:** hand-write the V4 migration from the shape above.
+
+**Runtime prerequisite (not emitted):** a request widens only if its `StorageContext` carries a
+shared-scope key. That key comes from the kernel's `SecurityInterceptor` on a non-`permitAll` route
+with `IdentityStorageMapping` shared-scope enforcement (claim `x-exeris-shared-scope`), or from a
+deployment wrapper. Without one, reads are owner-only and new rows are owner-private, so it fails
+closed.
+
+### A write naming another tenant now answers `400`, and an update no longer writes the owner (T36, ADR-090)
+
+On a tenant-partitioned entity (TENANT and UNIVERSE), while a tenant is bound:
+- a `POST`, `PUT` or action whose entity names a **different** tenant is refused by the repository
+  with `<Entity>TenantMismatchException` and answered **400**. It used to reach the database and,
+  under RLS, come back as a **500**; on a bypassing role or a non-RLS engine it used to succeed;
+- on a UNIVERSE entity, a row tagged with a different shared scope than the bound one is refused the
+  same way (`<Entity>SharedScopeMismatchException`, 400).
+
+With **no** tenant bound, nothing changes: the owner you set is written and row-level security
+decides.
+
+**The owner column is no longer in the `UPDATE … SET` list**, so an update cannot move a row to
+another tenant. If you relied on `update(...)` to re-own a row, do it with a hand-written statement.
+An entity with nothing else to update emits `UPDATE … SET id = id WHERE id = ?` (a field-less GLOBAL
+entity emitted an invalid empty `SET` list before).
+
+**Contract changes:** the emitted OpenAPI marks the owner (and a UNIVERSE entity's shared-scope
+field) `readOnly: true` and removes them from `…CreateDto` / `…UpdateDto`. The TypeScript `…Create`
+types and schemas omit `tenantId` for tenant-partitioned entities, even without a `systemFields`
+block. Sending the bound tenant anyway is harmless; sending another one is now a 400.
+
+**Regenerated code:** one new type per tenant-partitioned entity, and two per UNIVERSE entity with a
+`@SharedScope` field, in the `.repository` package. Generated repository tests replace
+`saveKeepsATenantTheCallerSet` with four cases (accepted / refused / unbound / update never writes
+the owner). Generated handler tests of tenant-partitioned entities now dispatch with a tenant bound
+(they failed with 500 on every case before) and gain the 400 cases.
+
+**Database role:** the remaining isolation still rests on RLS. Connect as `NOSUPERUSER NOBYPASSRLS`,
+not as the table owner (or keep tables `FORCE`d, as the generated migrations do).
+
+### Generated clients update with the verb the server serves (T58, PATCH/PUT parity)
+
+- **TypeScript service:** `update(id, data)` now sends `PUT {base}/{id}`. It sent `PATCH`, which no
+  generated server answered. `softDelete(id)` now sends `DELETE {base}/{id}`, which on a
+  `@SoftDelete` entity is the archive. `restore(id)` is removed from `<Entity>Service` and
+  `<Entity>Store`: it PATCHed a route nothing serves. A call site that used it now fails at `tsc`
+  instead of at runtime. There is no generated replacement, because nothing on the server un-sets
+  the soft-delete flag.
+- **Emitted service spec:** asserts `PUT` for update, and adds an archive case for soft-delete
+  entities.
+- **Java `*Client`:** unchanged on the wire. `update` still sends `PATCH`, because `KernelWebClient`
+  has no `put`, and its Javadoc now says so. To make it reach a generated server, add this to the
+  *serving* application:
+  ```java
+  @Override public void configureRoutes(HttpRouter.Builder routes) {
+      routes.route(HttpMethod.PATCH, "/orders/{id}", orderHandler()::handleUpdate);
+  }
+  ```
+- A hand-written TS client that copied the generated `PATCH` should switch to `PUT`.
+
+### `@View`: wrong attributes on STATIC/NONE bindings are diagnosed
+
+`@Bind(source = STATIC)` or `NONE` carrying `ref`, `path`, `expression` or `language` now produces a
+compiler warning at the `@Bind` and a wrong-attribute comment in the emitted template. It used to
+produce a `TODO(@View G1)` or `TODO(@View G2)` marker. Authored text belongs in `@Block(props)`; to
+bind data use `source = ENTITY`, `PROJECTION` or `ACTION`. `TODO(@View G2)` is no longer emitted at
+all.
+
+### Compile-classpath requirements are named in the emitted Javadoc (T30)
+
+The regenerated `Application.java` Javadoc separates compile requirements from runtime ones. If an
+entity has a `List<X>` field, its repository imports Jackson 3. Declare
+`tools.jackson.core:jackson-databind` at compile scope: the Community driver brings it only
+transitively, and a runtime-scoped driver does not reach `javac`. Such a repository's Javadoc says
+so, and the `Application` Javadoc names Jackson 3 only when a repository in the tree imports it. No
+code change.
+
+### Generation no longer depends on the JVM locale
+
+Tables, columns, OpenAPI file names and DSL identifiers are lower-cased with `Locale.ROOT`. A build
+that ran under a locale such as `tr-TR` and committed `ınvoices`-style names will regenerate them
+with a plain `i`, new migration file names included. Rename the applied migrations or keep the old
+output. Entities without a declared `path` still depend on the SDK's `effectivePath()` locale
+handling. That is fixed on SDK 0.12's working branch but not yet on SDK `main`, so declare `path`
+explicitly if you build under such a locale.
+
+### Announced, not on this branch yet: SDK 0.12.0 follow-ups (T6, T38, S6)
+
+These land after SDK 0.12's working branch merges to SDK `main`, because tooling CI builds the SDK
+from `main`. The T6 extraction lands before 0.9.0 is released. Nothing below is emitted by this
+branch; it is listed here so the 0.9.0 regeneration brings no surprise.
+
+- **Default table names will follow the English plural (T6).** Today a table is the snake-cased
+  entity name plus "s" (`colonys`, `technologys`, `reassemblys`). It will come from the SDK's
+  `DomainMetadata.effectiveTableName()` instead: `colonies`, `technologies`, `reassemblies`,
+  `boxes`, `statuses`. Every entity whose plural is a plain "s" keeps its table and its migration
+  file name byte-for-byte. For the others, on an existing database, the generated repository and
+  the Flyway migration will name a table that does not exist yet. The processor will warn once for
+  each such entity, with the exact value that keeps the old name:
+
+      @ExerisDomain(module = "empire", path = "/colonies", tableName = "colonys")
+
+  `@ExerisDomain.tableName` (SDK 0.12.0) is also how you name an irregular or pre-existing table
+  (`tableName = "people"`). Angular route segments move the same way; server routes do not.
+- **`@ExerisDomain.apiVersion` is deprecated (SDK 0.12.0).** It never reached an emitted artifact,
+  and javac will warn where it is set once the pinned SDK carries the deprecation. Delete it; if you
+  need a versioned route, write it in `path`. It is removed at 1.0.0.
+- **SDK 0.12.0 needs no source change for S6.** `SystemFieldsMetadata`, `DomainMetadata` and
+  `ActionMetadata` keep their 0.11.0 constructors. Code that builds `SystemFieldsMetadata`
+  positionally may switch to `SystemFieldsMetadata.builder()`.
+
 ---
 
 ## Reference
@@ -1208,3 +1469,4 @@ so rather than letting the extraction hide it.
 - [ADR-076 — A write against a row that is not there answers 404, not 500](adr/ADR-076-write-rejection-status.md)
 - [ADR-078 — The build fails when the generated application has no driver to run on](adr/ADR-078-runtime-driver-gate.md)
 - [ADR-079 — The emitted OpenAPI describes no authentication](adr/ADR-079-emitted-openapi-authentication-claim.md)
+- [ADR-090 — A write naming another tenant is refused with 400, not left to row-level security](adr/ADR-090-reject-mismatched-tenant.md)
