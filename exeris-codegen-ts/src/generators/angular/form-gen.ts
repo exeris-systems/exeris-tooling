@@ -50,11 +50,9 @@ export class FormGenerator implements CodeGenerator {
       return value.replace(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase());
     };
 
-    // T20d: which fields carry a boolean DTO type. Keyed off DslMapper for the same
-    // reason isNumericField is (see below) — the three sites that used to test the
-    // literal 'java.lang.Boolean' all missed a *primitive* `boolean`, whose DTO type is
-    // `boolean` just the same. That one omission produced a text input for a checkbox
-    // field, a '' seed, and a `string | null` -> `boolean` cast (TS2352).
+    // Which fields carry a boolean DTO type. Keyed off DslMapper for the same reason
+    // isNumericField is (see below): a test on the literal 'java.lang.Boolean' misses a
+    // primitive `boolean`, whose DTO type is `boolean` just the same.
     const isBooleanField = (field: FieldMetadata): boolean => {
       const ts = DslMapper.mapType(field.type).tsType;
       return ts === 'boolean' || ts === 'boolean | null';
@@ -75,12 +73,10 @@ export class FormGenerator implements CodeGenerator {
       return 'text';
     };
 
-    // T20c: which create fields carry a numeric DTO type. Reactive-form controls
-    // are seeded with '' (string), so getRawValue() is statically string-typed
-    // even though <input type="number"> yields a number at runtime — casting that
-    // straight to a numeric *Create/*Update DTO field is TS2352 (string→number).
-    // We coerce these fields explicitly on submit so the payload is both
-    // type-correct and semantically a number.
+    // Which create fields carry a numeric DTO type. Reactive-form controls are seeded
+    // with '' (string), so getRawValue() is statically string-typed even though
+    // <input type="number"> yields a number at runtime. We coerce these fields explicitly
+    // on submit so the payload is both type-correct and semantically a number.
     //
     // The predicate MUST mirror the DTO type emitted by type-gen, i.e.
     // DslMapper's tsType — NOT a hand-rolled java-type list. BigDecimal/BigInteger
@@ -115,10 +111,9 @@ export class FormGenerator implements CodeGenerator {
     };
 
     const getEnumTypeFromField = (field: FieldMetadata): string | null => {
-      // Always the SIMPLE enum name — the FQN (e.g. "com.shop.OrderStatus") is what
-      // the metadata carries, but it can't be a TS identifier or an import binding,
-      // so strip the package (mirrors type-gen / service-gen). (T20: form-gen used
-      // the FQN verbatim → "import { com.shop.OrderStatus }" + "com.shop.OrderStatusValues".)
+      // Always the simple enum name — the FQN (e.g. "com.shop.OrderStatus") is what
+      // the metadata carries, but it must be stripped to the simple name for use as
+      // a TS identifier in imports and type references (mirrors type-gen / service-gen).
       const raw = field.enumType ?? (isEnumField(field) ? field.type : null);
       if (!raw) return null;
       const parts = raw.split('.');
@@ -336,8 +331,8 @@ export class FormGenerator implements CodeGenerator {
     lines.push('');
     const numericCreateFields = createFields.filter(isNumericField);
     if (numericCreateFields.length > 0) {
-      // T20c: coerce string-typed numeric controls to numbers so the payload
-      // matches the *Create/*Update DTO (kills the string→number TS2352 cast).
+      // Coerce string-typed numeric controls to numbers so the payload matches
+      // the *Create/*Update DTO type.
       lines.push('    const raw = this.form.getRawValue();');
       lines.push('    const data = {');
       lines.push('      ...raw,');

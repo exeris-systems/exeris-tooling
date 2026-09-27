@@ -4,24 +4,20 @@
  * Emits, per entity declaring `@Saga`, a signal-based state machine that tracks a saga run for
  * display: the declared steps in order, their status, progress, and screen-reader announcements.
  *
- * <b>The emitted machine carries no transport, deliberately.</b> Until this generator was wired
- * (0.8.0) it emitted an `HttpClient` bound to `/api/v1/sagas/&lt;entity&gt;` with `/start`,
- * `/{id}/cancel`, `/{id}/retry` and `/{id}/status`, plus a 1-second polling loop. No layer of
- * this stack serves that contract: `KernelApplicationGenerator` registers no saga route (its own
- * Javadoc hands saga routing to the consumer), `KernelOpenApiGenerator` documents no saga path,
- * and the kernel flow SPI has no per-execution handle at all — `FlowEngine` exposes
+ * <b>The emitted machine carries no transport, deliberately.</b> No layer of this stack serves a
+ * saga contract: `KernelApplicationGenerator` registers no saga route (its own Javadoc hands saga
+ * routing to the consumer), `KernelOpenApiGenerator` documents no saga path, and the kernel flow
+ * SPI has no per-execution handle at all — `FlowEngine` exposes
  * `plans/scheduler/registry/capabilities/stats`, with no execution id, status read, cancel or
- * retry. Emitting a client for it would have shipped four dead URLs into every generated app and
- * polled a 404 once a second. So the transitions are local and the consumer drives them from
- * whatever it does serve — the TS analogue of the ADR-070 composition-root seam.
+ * retry. A client for it would ship dead URLs into every generated app. So the transitions are
+ * local and the consumer drives them from whatever it does serve — the TS analogue of the ADR-070
+ * composition-root seam.
  *
- * <b>No `$localize` in emitted output.</b> Fourteen `$localize` sites (announcements, the
- * unknown-error fallback, and one per declared step) failed `ng build` with `TS2304` the moment
- * the flag was honoured: `$localize` is a global that exists only once the consumer adds
- * `@angular/localize` and a polyfills entry, and the emitted app declares `"polyfills": []`.
- * Emitting a symbol that requires an undeclared consumer dependency is the rule ADR-060 settled
- * on the Java side for slf4j; `store-gen.ts` recorded it for the TS side and `detail-gen` and
- * `event-gen` followed.
+ * <b>No `$localize` in emitted output.</b> Announcements do not use `$localize` tagged
+ * templates. `$localize` is a global that exists only when the consumer adds `@angular/localize`
+ * and a polyfills entry, but the emitted app declares `"polyfills": []`. Emitting code that
+ * silently requires an undeclared consumer dependency violates ADR-060 (the rule applied to
+ * slf4j on the Java side; `store-gen.ts` and `detail-gen` and `event-gen` record it for TS).
  *
  * @author Exeris Team
  * @since 0.3.0
@@ -38,8 +34,7 @@ import { tsSingleQuoted } from './ts-literal.js';
 /**
  * The class name the emitted state machine binds, or null for a domain that declares no saga.
  *
- * Exported because the barrel needs the same answer and deriving it twice is how `routePlural`
- * came to disagree with itself (T40 follow-up, #192).
+ * Exported because the barrel needs the same answer, and deriving it twice lets the two disagree.
  */
 export function sagaMachineName(domain: DomainMetadata): string | null {
   if (!domain.sagaMetadata) return null;

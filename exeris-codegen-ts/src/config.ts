@@ -66,15 +66,12 @@ export const GeneratorConfigSchema = z.object({
    *
    *  Defaults to '' so the emitted client requests exactly what the emitted server serves:
    *  KernelApplicationGenerator registers routes at the entity's path and the OpenAPI document
-   *  publishes the same, with no prefix. This defaulted to '/api' — combined with the apiVersion
-   *  segment below, every generated Angular service requested /api/v1/<path> and 404'd against the
-   *  router it was generated alongside. The knob stays for deployments that really do sit behind a
-   *  gateway at /api; the default no longer assumes one. */
+   *  publishes the same, with no prefix. The knob exists for deployments that sit behind a
+   *  gateway at /api; the default assumes no such gateway. */
   apiBasePath: z.string().default(''),
 
   /** Human-readable application name — drives the emitted app title,
-   *  route titles, sidebar logo text, and scaffold package.json name.
-   *  (T7/U5: was the hardcoded 'Exeris Foundation' in app-structure-gen.) */
+   *  route titles, sidebar logo text, and scaffold package.json name. */
   appName: z.string().default('Exeris Foundation'),
 
   /** Backend strategy — kernel-target-only (single supported target) */
@@ -150,14 +147,9 @@ export const DEFAULT_CONFIG: GeneratorConfig = {
  * `loadConfig` merges overrides with a spread, so a key that is always PRESENT always wins,
  * whatever its value. Commander fills every option that declares a default — and every option
  * here does, `--no-*` booleans included, where "absent" and "explicitly true" are the same value.
- * Building the override object unconditionally therefore made the whole of `exeris-codegen.json`
- * inert for these fields: whatever it declared was overwritten by a CLI default the user never
- * typed.
- *
- * That was not only a config-file bug. `apiBasePath` had drifted — `config.ts` deliberately
- * defaults it to `''` so the emitted client requests what the emitted server serves, while this
- * CLI still declared `'/api'` — and because the CLI default always won, every app generated
- * through `exeris-gen` shipped a frontend calling `/api/<path>` at a router serving `/<path>`.
+ * An override object built from every option would make `exeris-codegen.json` inert for these
+ * fields — whatever it declared would be overwritten by a CLI default the user never typed — so
+ * only passed flags are included.
  *
  * `wasPassed` is commander's `getOptionValueSource(key) === 'cli'`, injected rather than imported
  * so this stays unit-testable without building a `Command`. Anything not passed is omitted, not

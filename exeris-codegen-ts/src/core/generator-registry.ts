@@ -305,10 +305,8 @@ export function createGeneratorContext(
     generateStores: config.generateStores ?? true,
     generateSagas: config.generateSagas ?? true,
     generateEvents: config.generateEvents ?? true,
-    // '' — the same default config.ts declares, for the same reason (#191): the emitted
-    // router serves the entity path with no prefix. This filled '/api' instead, so every
-    // caller that omitted the key — which is every test in this package — generated against
-    // a prefix the shipped default never produces.
+    // '' — the same default config.ts declares: the emitted router serves the entity path
+    // with no prefix, so the client must request the same path.
     apiBasePath: config.apiBasePath ?? '',
     overwrite: config.overwrite ?? false,
     dryRun: config.dryRun ?? false,

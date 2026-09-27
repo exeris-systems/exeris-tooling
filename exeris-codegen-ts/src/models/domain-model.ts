@@ -121,9 +121,8 @@ export const DomainEventMetadataSchema = z.object({
   trigger: z.string().optional(),
   actionName: z.string().optional(),
   fieldName: z.string().optional(),
-  // Legacy/never-populated: the AST never carried inline FieldMetadata on events
-  // (the original parity bug read this). Kept optional for backward-compat; the
-  // generator now reads payloadFields instead.
+  // The AST does not carry inline FieldMetadata on events; the generator reads
+  // payloadFields instead. Kept optional for backward compatibility.
   fields: z.array(FieldMetadataSchema).default([]),
 });
 
@@ -267,16 +266,13 @@ export type SagaMetadata = z.infer<typeof SagaMetadataSchema>;
 // ============================================================================
 
 // Mirrors eu.exeris.sdk.sourcemodel.ast.SystemFieldsMetadata, component for component.
-// Six of the ten names already agreed; four did not, and the producer's spelling wins:
-// `primaryKeyField` (was `idField` here) and `softDeleteTimestampField` (was `deletedAtField`)
-// are the record's names, and `softDeleteField` / `softDeletedByField` had no declaration here
-// at all. The record carries @JsonInclude(NON_NULL), and `SystemFieldsMetadata.defaults()`
-// leaves the three soft-delete components null, so those are absent unless the entity overrides
-// them — hence .optional() on everything the defaults do not fill.
+// The record carries @JsonInclude(NON_NULL), and `SystemFieldsMetadata.defaults()` leaves the
+// three soft-delete components null, so those are absent unless the entity overrides them —
+// hence .optional() on everything the defaults do not fill.
 //
-// `sharedScopeField` is the eleventh component: the `@SharedScope` field of
-// a `dataScope = UNIVERSE` entity, absent on every other entity. Declared here so Zod's
-// unknown-key stripping does not drop it; `systemFieldNames` classifies it server-owned.
+// `sharedScopeField` is the `@SharedScope` field of a `dataScope = UNIVERSE` entity, absent
+// on every other entity. Declared here so Zod's unknown-key stripping does not drop it;
+// `systemFieldNames` classifies it server-owned.
 export const SystemFieldsMetadataSchema = z.object({
   primaryKeyField: z.string().default('id'),
   createdAtField: z.string().optional(),

@@ -4,11 +4,9 @@
  * step tracking, accessibility announcements, and computed progress
  * estimation.
  *
- * The transport assertions this file used to carry are gone with the transport (0.8.0). They
- * pinned a client for `/api/v1/sagas/<entity>` — a contract no emitted route serves, no emitted
- * OpenAPI document lists, and the kernel flow SPI cannot back — plus the 1-second poll against
- * it. The `emits no transport` block below pins their absence instead, so re-adding a fetch is
- * a red test rather than a silent regression.
+ * The generated saga emits no HTTP transport: no emitted route or OpenAPI document serves a
+ * saga endpoint, and the kernel flow SPI cannot back one. The `emits no transport` block pins
+ * that, so re-adding a fetch is a red test rather than a silent regression.
  *
  * Unique-to-saga-gen contracts pinned:
  *   - artifactType=SAGA, supportedBackends=[] (all backends)

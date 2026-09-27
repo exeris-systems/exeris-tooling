@@ -255,12 +255,8 @@ export class KernelStrategy implements BackendStrategy {
   }
 
   transformPath(basePath: string, entityPath: string): string {
-    // No apiVersion segment. This used to read `${basePath}/${config.apiVersion}${entityPath}`,
-    // the same false premise the service, client and SSE emitters each carried and each had
-    // fixed. Nothing outside this file's own tests reaches this method today, which is exactly
-    // why it is worth correcting rather than leaving: it is named "path transformation for the
-    // backend contract", so it is where someone would look to reuse the logic — and reusing the
-    // old form would reintroduce a defect that took four commits to remove.
+    // No apiVersion segment. The router registers the entity path with no version prefix,
+    // so the path transformation must match: `${basePath}${entityPath}`.
     return `${basePath}${entityPath}`;
   }
 

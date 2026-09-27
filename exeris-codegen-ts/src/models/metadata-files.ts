@@ -1,13 +1,9 @@
 /**
  * Finding and parsing the processor's `exeris-metadata/*.json` corpus.
  *
- * Lifted out of the CLI when the peer-types slice (T42, ADR-048) needed to read a
- * *peer's* metadata. ADR-048 §1 decides there is exactly one input model — a published
- * contract artifact, with peers-in-one-build as its degenerate same-build case — so the
- * peer path reads its metadata through this function rather than through a second
- * parallel one. That is the difference between the slice and the shortcut ROADMAP's T42
- * originally proposed: not "a second metadata directory", the same directory shape read
- * by the same loader.
+ * The metadata loader handles both local and peer metadata (ADR-048 §1): a published
+ * contract artifact and the degenerate same-build case. The same directory shape is
+ * read by the same loader function.
  *
  * @author Exeris Team
  * @since 0.8.0
@@ -38,9 +34,9 @@ export type OnMetadataFile = (family: 'domain' | 'enum' | 'view', file: string) 
  * Every `*.json` under `inputPath`, recursively. A file path is returned as-is when it
  * is itself a `.json`; a non-JSON file and a missing path both yield none.
  *
- * Order is `readdirSync` order — the order the local generation path has always used.
- * Callers that need a stable order across machines (a *published* artifact is unpacked
- * by different tools onto different filesystems) sort the result themselves.
+ * Order is `readdirSync` order (filesystem order). Callers that need stable order across
+ * machines (a *published* artifact unpacked by different tools onto different filesystems)
+ * sort the result themselves.
  */
 export function findMetadataFiles(inputPath: string): string[] {
   if (!existsSync(inputPath)) {

@@ -164,9 +164,8 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`          <h3 class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-4">System Information</h3>`);
     lines.push(`          <dl class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">`);
     lines.push(`            <div><dt class="text-gray-400">ID</dt><dd class="font-mono text-gray-600 dark:text-gray-300">{{ entity()?.${idField} }}</dd></div>`);
-    // Only for entities that actually DECLARE them. These were emitted unconditionally, so an
-    // entity without the fields produced `TS2339: Property 'createdAt' does not exist` — which
-    // nothing caught while this generator was wired to no one.
+    // Only for entities that actually declare system fields. The @if guard prevents type errors
+    // when fields are absent.
     for (const stamp of timestampFields(domain)) {
       lines.push(`            @if (entity()?.${stamp.name}) { <div><dt class="text-gray-400">${stamp.label}</dt><dd>{{ entity()?.${stamp.name} | date:'medium' }}</dd></div> }`);
     }

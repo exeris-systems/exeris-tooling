@@ -3,12 +3,11 @@
  * BackendStrategy implementation, the singleton registry, and the
  * convenience functions.
  *
- * Spring/Quarkus/Micronaut/Vanilla strategies were removed under the
- * kernel-target-only discipline (hard-constraint #1); BackendType is now a
- * one-member union ('KERNEL'). Tests assert observable contract: the values
- * flowing through getClientConfig / getDefaultHeaders / transformPath /
- * mapError / getRetryConfig / getRealTimeConfig must match what downstream
- * code-emitters depend on.
+ * BackendType is a one-member union ('KERNEL'), under the kernel-target-only
+ * discipline (hard-constraint #1). Tests assert observable
+ * contract: the values flowing through getClientConfig / getDefaultHeaders /
+ * transformPath / mapError / getRetryConfig / getRealTimeConfig must match
+ * what downstream code-emitters depend on.
  */
 
 import { describe, expect, it, beforeEach } from 'vitest';
@@ -105,7 +104,7 @@ describe('KernelStrategy specifics — RLS headers + HTTP/3 + correlation', () =
   const kernel = new KernelStrategy();
 
   it('uses HTTP/3 and still carries an apiVersion in config — which no path consumes', () => {
-    // The field remains on ClientConfig; what changed is that nothing folds it into a URL.
+    // The field remains on ClientConfig but does not fold into the URL.
     // See transformPath below and ExerisDomainProcessor.INERT_ATTRIBUTES.
     const config = kernel.getClientConfig();
     expect(config.useHttp3).toBe(true);
@@ -122,8 +121,8 @@ describe('KernelStrategy specifics — RLS headers + HTTP/3 + correlation', () =
   });
 
   it('transformPath emits no version segment — the router serves none', () => {
-    // Asserted the opposite until the emitters were aligned. Kept as an assertion rather than
-    // deleted with the behaviour, because this is the shape a future reuse would copy.
+    // The router serves no version segment, so transformPath adds none. Kept as an assertion
+    // because this is the shape a future reuse would copy.
     expect(kernel.transformPath('/api', '/orders')).toBe('/api/orders');
   });
 
