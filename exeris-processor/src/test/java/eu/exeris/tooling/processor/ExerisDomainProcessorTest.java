@@ -29,6 +29,7 @@ import javax.tools.JavaFileObject;
 import javax.tools.StandardLocation;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Optional;
 
 import static com.google.testing.compile.CompilationSubject.assertThat;
@@ -225,7 +226,7 @@ class ExerisDomainProcessorTest {
         }
 
         @Test
-        @DisplayName("S2: a repeated @SagaStep contributes its steps instead of vanishing")
+        @DisplayName("T56: a repeated @SagaStep contributes its steps instead of vanishing")
         void repeatedSagaStepIsExtracted() throws IOException {
             JavaFileObject source = JavaFileObjects.forSourceString(
                     "com.example.CheckoutSaga",
@@ -256,9 +257,9 @@ class ExerisDomainProcessorTest {
             String metadata = readContent(compilation.generatedFile(
                     StandardLocation.CLASS_OUTPUT, "exeris-metadata/CheckoutSaga.json").orElseThrow());
 
-            // Before S2 the first two were dropped: the lookup matched the exact type
-            // eu.exeris.sdk.annotation.SagaStep, which a synthesised container does not present.
-            // The emitted flow was short by two steps, with no diagnostic anywhere.
+            // The first two are repeats. A lookup that matched only the exact type
+            // eu.exeris.sdk.annotation.SagaStep, which a synthesised container does not present,
+            // would drop them, and the emitted flow would be short by two steps with no diagnostic.
             assertThat(metadata)
                     .contains("\"reserve\"")
                     .contains("\"charge\"")
@@ -266,7 +267,7 @@ class ExerisDomainProcessorTest {
         }
 
         @Test
-        @DisplayName("S2: the container and a standalone step on the same class do not double-count")
+        @DisplayName("T56: the container and a standalone step on the same class do not double-count")
         void repeatedAndStandaloneStepsAreEachCountedOnce() throws IOException {
             JavaFileObject source = JavaFileObjects.forSourceString(
                     "com.example.CheckoutSaga",
@@ -306,7 +307,7 @@ class ExerisDomainProcessorTest {
         }
 
         @Test
-        @DisplayName("S1: @Saga.version reaches the metadata instead of always reporting 1")
+        @DisplayName("T55: @Saga.version reaches the metadata instead of always reporting 1")
         void sagaVersionIsExtracted() throws IOException {
             JavaFileObject source = JavaFileObjects.forSourceString(
                     "com.example.CheckoutSaga",
@@ -375,7 +376,7 @@ class ExerisDomainProcessorTest {
     class RelationshipAndGraphTests {
 
         @Test
-        @DisplayName("S3: @GraphEdge reaches graph.edges() instead of an always-empty list")
+        @DisplayName("T57: @GraphEdge reaches graph.edges() instead of an always-empty list")
         void graphEdgesAreExtracted() throws IOException {
             JavaFileObject source = JavaFileObjects.forSourceString(
                     "com.example.Order",
@@ -411,7 +412,7 @@ class ExerisDomainProcessorTest {
         }
 
         @Test
-        @DisplayName("S3: the target class supplies the label when targetLabel is not written")
+        @DisplayName("T57: the target class supplies the label when targetLabel is not written")
         void graphEdgeTargetClassSuppliesTheLabel() throws IOException {
             JavaFileObject source = JavaFileObjects.forSourceString(
                     "com.example.Order",
@@ -444,7 +445,7 @@ class ExerisDomainProcessorTest {
         }
 
         @Test
-        @DisplayName("S3: two @GraphEdge on one field are refused at the field, not two stages later")
+        @DisplayName("T57: two @GraphEdge on one field are refused at the field, not two stages later")
         void repeatedGraphEdgeOnOneFieldIsRefused() {
             JavaFileObject source = JavaFileObjects.forSourceString(
                     "com.example.Order",
@@ -482,7 +483,7 @@ class ExerisDomainProcessorTest {
         }
 
         @Test
-        @DisplayName("S3: an entity declaring no edge yields an empty list, never null")
+        @DisplayName("T57: an entity declaring no edge yields an empty list, never null")
         void graphWithoutEdgesYieldsAnEmptyList() throws IOException {
             JavaFileObject source = JavaFileObjects.forSourceString(
                     "com.example.Order",
@@ -1112,39 +1113,207 @@ class ExerisDomainProcessorTest {
             assertThat(compilation).hadWarningCount(0);
         }
 
+        /** A UNIVERSE entity whose body is {@code fields}, with the system annotations imported. */
+        private JavaFileObject universeItem(String fields) {
+            return JavaFileObjects.forSourceString(
+                    "com.example.Item",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Field;
+                    import eu.exeris.sdk.annotation.Validation;
+                    import eu.exeris.sdk.annotation.system.SharedScope;
+                    import eu.exeris.sdk.annotation.system.TenantId;
+                    import java.util.UUID;
+
+                    @ExerisDomain(module = "catalog", path = "/items",
+                            dataScope = ExerisDomain.DataScope.UNIVERSE)
+                    public class Item {
+                    %s
+                    }
+                    """.formatted(fields));
+        }
+
         @Test
-        @DisplayName("T29: UNIVERSE alone is refused at the declaration, not half-emitted")
-        void universeIsRefusedAtTheDeclaration() {
+        @DisplayName("T29 B: an owned UNIVERSE entity with a @SharedScope UUID compiles and carries the field")
+        void ownedUniverseWithSharedScopeIsTranscribed() throws IOException {
+            Compilation compilation = compileWithProcessor(universeItem("""
+                        @TenantId private UUID ownerTenantId;
+                        @SharedScope private UUID universeId;
+                    """));
+
+            // A UNIVERSE row is owned (kernel ADR-012 §4b.2): a shared-world row with no owner
+            // cannot be written. This one names both columns, so it is transcribable and passes
+            // silently.
+            assertThat(compilation).succeededWithoutWarnings();
+            String metadata = readContent(compilation.generatedFile(
+                    StandardLocation.CLASS_OUTPUT, "exeris-metadata/Item.json").orElseThrow());
+            assertThat(metadata)
+                    .contains("\"dataScope\" : \"UNIVERSE\"")
+                    .contains("\"tenantIdField\" : \"ownerTenantId\"")
+                    .contains("\"sharedScopeField\" : \"universeId\"");
+        }
+
+        @Test
+        @DisplayName("T29 B: a String shared-scope key and the canonical tenantId owner are accepted too")
+        void stringSharedScopeWithCanonicalOwnerIsTranscribed() throws IOException {
+            Compilation compilation = compileWithProcessor(universeItem("""
+                        private UUID tenantId;
+                        @SharedScope private String worldKey;
+                    """));
+
+            assertThat(compilation).succeededWithoutWarnings();
+            String metadata = readContent(compilation.generatedFile(
+                    StandardLocation.CLASS_OUTPUT, "exeris-metadata/Item.json").orElseThrow());
+            assertThat(metadata)
+                    .contains("\"tenantIdField\" : \"tenantId\"")
+                    .contains("\"sharedScopeField\" : \"worldKey\"");
+        }
+
+        @Test
+        @DisplayName("T29 B: UNIVERSE with no @SharedScope field is refused — nothing would widen")
+        void universeWithoutSharedScopeIsRefused() {
+            Compilation compilation = compileWithProcessor(universeItem("""
+                        private UUID tenantId;
+                    """));
+
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorContaining("needs a field marked @SharedScope");
+            assertThat(compilation).hadErrorCount(1);
+        }
+
+        @Test
+        @DisplayName("T29 B: UNIVERSE with no owner is refused at the declaration, citing ADR-012 §4b.2")
+        void universeWithoutAnOwnerIsRefused() {
+            Compilation compilation = compileWithProcessor(universeItem("""
+                        @SharedScope private UUID universeId;
+                    """));
+
+            // The repository binds the owner's accessor, so an ownerless UNIVERSE entity would
+            // fail with `cannot find symbol` inside generated code. The refusal names the missing
+            // field and the kernel rule that makes it mandatory.
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorContaining("needs an owning tenant");
+            assertThat(compilation).hadErrorContaining("no field 'tenantId'");
+            assertThat(compilation).hadErrorContaining("ADR-012 §4b.2");
+            assertThat(compilation).hadErrorCount(1);
+        }
+
+        @Test
+        @DisplayName("T29 B: a @SharedScope field that is neither UUID nor String is refused")
+        void sharedScopeOfAnotherTypeIsRefused() {
+            Compilation compilation = compileWithProcessor(universeItem("""
+                        private UUID tenantId;
+                        @SharedScope private Long universeId;
+                    """));
+
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorContaining("of type java.lang.Long");
+            assertThat(compilation).hadErrorContaining("java.util.UUID or java.lang.String");
+        }
+
+        @Test
+        @DisplayName("T29 B: @SharedScope on the owner field itself is refused — two predicates, two columns")
+        void sharedScopeOnTheOwnerIsRefused() {
+            Compilation compilation = compileWithProcessor(universeItem("""
+                        @TenantId @SharedScope private UUID ownerTenantId;
+                    """));
+
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorContaining("also the owning tenant field");
+            assertThat(compilation).hadErrorCount(1);
+        }
+
+        @Test
+        @DisplayName("T29 B: a required @SharedScope field is refused — the stamp could never fill it")
+        void requiredSharedScopeIsRefused() {
+            Compilation compilation = compileWithProcessor(universeItem("""
+                        private UUID tenantId;
+                        @Field(label = "Universe", required = true) @SharedScope private UUID universeId;
+                    """));
+
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorContaining("@SharedScope field 'universeId' is required");
+        }
+
+        @Test
+        @DisplayName("T29 B: required-ness through the deprecated @Validation(required) is refused as well")
+        void deprecatedRequiredSharedScopeIsRefused() {
+            Compilation compilation = compileWithProcessor(universeItem("""
+                        private UUID tenantId;
+                        @Validation(required = true) @SharedScope private UUID universeId;
+                    """));
+
+            // The processor turns @Validation(required = true) into FieldMetadata.required, so it
+            // reaches the handler and the migration exactly like @Field(required = true) does.
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorContaining("@SharedScope field 'universeId' is required");
+        }
+
+        @Test
+        @DisplayName("T29 B: two @SharedScope fields hit the repeated-role refusal, once")
+        void repeatedSharedScopeIsRefusedOnce() {
+            Compilation compilation = compileWithProcessor(universeItem("""
+                        private UUID tenantId;
+                        @SharedScope private UUID universeId;
+                        @SharedScope private UUID otherUniverseId;
+                    """));
+
+            assertThat(compilation).failed();
+            assertThat(compilation)
+                    .hadErrorContaining("@SharedScope is declared on 2 fields ('universeId', 'otherUniverseId')");
+            // Not also "needs a field marked @SharedScope": the author declared two, not none.
+            assertThat(compilation).hadErrorCount(1);
+        }
+
+        @Test
+        @DisplayName("T29 B: @SharedScope on a TENANT entity warns and is not recorded — the JSON is unchanged")
+        void sharedScopeOffTheUniverseTierWarnsAndIsDropped() throws IOException {
             JavaFileObject source = JavaFileObjects.forSourceString(
                     "com.example.Item",
                     """
                     package com.example;
 
                     import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.system.SharedScope;
+                    import java.util.UUID;
 
                     @ExerisDomain(module = "catalog", path = "/items",
-                            dataScope = ExerisDomain.DataScope.UNIVERSE)
+                            dataScope = ExerisDomain.DataScope.TENANT)
                     public class Item {
+                        private UUID tenantId;
+                        @SharedScope private UUID universeId;
                     }
-                    """
-            );
+                    """);
 
             Compilation compilation = compileWithProcessor(source);
 
-            // Until 0.8.0 this was a WARNING and the build went on to emit the TENANT
-            // shape. On the archetypal UNIVERSE entity — the one above, a shared-world
-            // row with no tenant property — that shape binds entity.getTenantId() and
-            // the consumer's build died with `cannot find symbol` inside a generated
-            // file. The refusal lands on the declaration instead.
-            assertThat(compilation).failed();
-            assertThat(compilation)
-                    .hadErrorContaining("DataScope.UNIVERSE is reserved");
-            // The message has to be actionable on its own terms: what would have been
-            // emitted, why it breaks, and the one thing the author can do today.
-            assertThat(compilation).hadErrorContaining("getTenantId()");
-            assertThat(compilation).hadErrorContaining("Declare dataScope = TENANT");
-            assertThat(compilation)
-                    .hadErrorContaining("cross-tenant read-widening from this build yet");
+            assertThat(compilation).succeeded();
+            assertThat(compilation).hadWarningContaining("this entity is TENANT, so it has no effect");
+            // The marker was the only system annotation on the entity, so dropping it leaves no
+            // systemFields block at all — the document an unmarked twin produces.
+            String metadata = readContent(compilation.generatedFile(
+                    StandardLocation.CLASS_OUTPUT, "exeris-metadata/Item.json").orElseThrow());
+            assertThat(metadata).doesNotContain("sharedScopeField").doesNotContain("\"systemFields\"");
+        }
+
+        @Test
+        @DisplayName("T29 B: -Aexeris.strict no longer reports @SharedScope as never read")
+        void strictDoesNotReportSharedScopeAsNeverRead() {
+            Compilation compilation = javac()
+                    .withOptions("-Aexeris.strict=true")
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(universeItem("""
+                                @TenantId private UUID ownerTenantId;
+                                @SharedScope private UUID universeId;
+                            """));
+
+            assertThat(compilation).succeeded();
+            assertThat(compilation.warnings().stream()
+                    .map(d -> d.getMessage(null))
+                    .filter(m -> m != null && m.contains("SharedScope")))
+                    .isEmpty();
         }
 
         @Test
@@ -1688,6 +1857,55 @@ class ExerisDomainProcessorTest {
         }
 
         @Test
+        @DisplayName("warns on @SagaTransition and blames the kernel's flow plan, not the generator")
+        void strictWarnsOnSagaTransitionWithTheKernelReason() {
+            // The gap is the kernel's, not the generator's: the kernel precomputes one next step
+            // per step and routes no outcome or tag, so only an unguarded SUCCESS edge could be
+            // compiled. The fixture is a standalone @Saga class, the home the SDK documents for
+            // the annotation, which strict mode audits too.
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Checkout",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.Saga;
+                    import eu.exeris.sdk.annotation.SagaStep;
+                    import eu.exeris.sdk.annotation.SagaTransition;
+
+                    @Saga(name = "Checkout")
+                    @SagaTransition(from = "reserve", to = "charge")
+                    public class Checkout {
+                        @SagaStep(order = 1, name = "reserve", service = "stock", command = "reserve")
+                        public void reserve() {
+                        }
+
+                        @SagaStep(order = 2, name = "charge", service = "billing", command = "charge")
+                        public void charge() {
+                        }
+                    }
+                    """
+            );
+
+            Compilation compilation = javac()
+                    .withOptions("-Aexeris.strict=true")
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(source);
+
+            assertThat(compilation).succeeded();
+            assertThat(hasUnreadWarningFor(compilation, "@SagaTransition")).isTrue();
+            List<String> transitionWarnings = compilation.warnings().stream()
+                    .map(d -> d.getMessage(null))
+                    .filter(m -> m != null && m.contains("@SagaTransition"))
+                    .toList();
+            assertThat(transitionWarnings).hasSize(1);
+            assertThat(transitionWarnings.getFirst())
+                    .contains("held back, and the gate is the kernel")
+                    .contains("the gate is the kernel, not a generator")
+                    .contains("only an unguarded SUCCESS edge is expressible")
+                    .doesNotContain("discarded before it reaches any generator");
+        }
+
+        @Test
         @DisplayName("warns on @QueryParam — the action-parameter site C0 added")
         void strictWarnsOnUnreadParameterAnnotation() {
             JavaFileObject source = JavaFileObjects.forSourceString(
@@ -1791,7 +2009,7 @@ class ExerisDomainProcessorTest {
         }
 
         @Test
-        @DisplayName("C0 + S3: @GraphEdge stops being reported the moment its extraction lands")
+        @DisplayName("C0 + T57: @GraphEdge stops being reported the moment its extraction lands")
         void strictIsQuietForAnAnnotationThatJustGainedAnExtraction() {
             JavaFileObject source = JavaFileObjects.forSourceString(
                     "com.example.Order",
@@ -1817,11 +2035,9 @@ class ExerisDomainProcessorTest {
                     .compile(source);
 
             assertThat(compilation).succeeded();
-            // The rule EXTRACTED_ANNOTATIONS states — "a new extraction must join the set in the
-            // same change" — was written by C0 and broken by the very next change to touch it:
-            // S3 added the @GraphEdge extraction without updating the set, so strict mode told
-            // every author that a now-consumed annotation "has no effect on emitted output".
-            // Caught in review. This is the guard that was missing.
+            // Guards the rule EXTRACTED_ANNOTATIONS states — "a new extraction must join the set in
+            // the same change". An extraction missing from the set makes strict mode tell every
+            // author that a consumed annotation "has no effect on emitted output".
             assertThat(hasUnreadWarningFor(compilation, "@GraphEdge"))
                     .as("no unread warning for an annotation the processor now reads")
                     .isFalse();
@@ -1944,8 +2160,8 @@ class ExerisDomainProcessorTest {
         @Test
         @DisplayName("-Aexeris.strict warns on @ExerisDomain.primaryKeyField, the one system field nobody honours")
         void strictWarnsOnInertPrimaryKeyField() {
-            // SystemFieldsMetadata's other nine extracted components are all read (the eleventh,
-            // sharedScopeField, is not extracted) — Flyway's sysCol maps
+            // SystemFieldsMetadata's other ten components are all read (sharedScopeField by a
+            // UNIVERSE entity's shared-scope migration and stamp) — Flyway's sysCol maps
             // tenantId, the audit stamps, the soft-delete trio and version; the repository
             // resolves five of them. The primary key is read by none: the schema emits
             // `id UUID PRIMARY KEY` unconditionally, the repository's clause is the constant
@@ -2181,7 +2397,7 @@ class ExerisDomainProcessorTest {
             // The registry is a list; the warnings come from warnInertAttributes call
             // sites. An entry whose annotation has no call site is unreachable and reads
             // as coverage while producing nothing — which is what @Action.path and
-            // @ExerisDomain.apiVersion did. This fixture sets all four registered
+            // @ExerisDomain.apiVersion did. This fixture sets all five registered
             // attributes at once, so a future entry added without its call site fails
             // here rather than going quiet.
             Compilation compilation = javac()
@@ -2191,12 +2407,36 @@ class ExerisDomainProcessorTest {
 
             assertThat(compilation).succeeded();
             assertThat(hasInertWarningFor(compilation, "@Action.path")).isTrue();
+            assertThat(hasInertWarningFor(compilation, "@Action.httpMethod")).isTrue();
             assertThat(hasInertWarningFor(compilation, "@ExerisDomain.apiVersion")).isTrue();
             assertThat(hasInertWarningFor(compilation, "@ActionParam.description")).isTrue();
             assertThat(hasInertWarningFor(compilation, "@ActionParam.required")).isTrue();
             assertThat(inertWarnings(compilation))
                     .as("one warning per registered inert attribute, no more")
-                    .isEqualTo(4);
+                    .isEqualTo(5);
+        }
+
+        @Test
+        @DisplayName("-Aexeris.strict reports @Action.httpMethod: every emitter serves and calls actions on POST")
+        void strictReportsActionHttpMethodWithTheVerbActuallyServed() {
+            // Extracted into ActionMetadata.httpMethod, read only by the dsl emitters no
+            // production path constructs: the router, the OpenAPI document and the TS service
+            // all use POST. Without this entry an author writing httpMethod = "GET" hears nothing.
+            Compilation compilation = javac()
+                    .withOptions("-Aexeris.strict=true")
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(everyInertAttributeSet());
+
+            assertThat(compilation).succeeded();
+            List<String> httpMethodWarnings = compilation.warnings().stream()
+                    .map(d -> d.getMessage(null))
+                    .filter(m -> m != null && m.contains("@Action.httpMethod"))
+                    .toList();
+            assertThat(httpMethodWarnings).hasSize(1);
+            assertThat(httpMethodWarnings.getFirst())
+                    .contains("no generator reads it")
+                    .contains("POST {domainPath}/{id}/actions/{kebab-action-name}")
+                    .contains("no production code path constructs");
         }
 
         @Test
@@ -2370,7 +2610,8 @@ class ExerisDomainProcessorTest {
 
                     @ExerisDomain(module = "core", path = "/orders", apiVersion = "v1")
                     public class Order {
-                        @Action(name = "approve", label = "Approve", path = "/{id}/approve")
+                        @Action(name = "approve", label = "Approve", path = "/{id}/approve",
+                                httpMethod = "GET")
                         public void approve(
                                 @ActionParam(label = "Reason",
                                         description = "Why this order is approved",
@@ -2817,6 +3058,79 @@ class ExerisDomainProcessorTest {
                     .as("strict mode must NOT name @View as inert — it is now consumed by the codegen-ts emitter")
                     .isZero();
         }
+
+        @Test
+        @DisplayName("@Bind(STATIC/NONE) carrying ref/path/expression/language warns at the @Bind; a SLOT block's ref and a data source's expression do not")
+        void staticBindWithDataAttributesWarnsAtTheDeclaration() {
+            // STATIC / NONE draws from nothing, so an expression or a language on it is an author
+            // mistake, not the G1 relational gap or a G2 stream — diagnosed here, where the author
+            // can fix it, not only in a comment in the emitted template.
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.view.WrongAttrs",
+                    """
+                    package com.example.view;
+
+                    import eu.exeris.sdk.annotation.View;
+                    import eu.exeris.sdk.annotation.Region;
+                    import eu.exeris.sdk.annotation.Block;
+                    import eu.exeris.sdk.annotation.Block.BlockType;
+                    import eu.exeris.sdk.annotation.Bind;
+                    import eu.exeris.sdk.annotation.Bind.Source;
+
+                    @View(name = "WrongAttrs")
+                    public final class WrongAttrs {
+                        @Region(slot = "main")
+                        Main main;
+
+                        static final class Main {
+                            @Block(type = BlockType.HERO, props = "Welcome")
+                            @Bind(source = Source.STATIC, expression = "greeting of user")
+                            String staticWithExpression;
+
+                            // source defaults to NONE: a forgotten source = ENTITY.
+                            @Block(type = BlockType.CARD)
+                            @Bind(ref = "Order", path = "total")
+                            String noneWithRefAndPath;
+
+                            // On a SLOT block the ref names the slot, whatever the source.
+                            @Block(type = BlockType.SLOT)
+                            @Bind(ref = "aside")
+                            String slot;
+
+                            // A data source with an expression is the G1 gap, not a mistake.
+                            @Block(type = BlockType.LIST)
+                            @Bind(source = Source.ENTITY, ref = "Order", expression = "lines of current")
+                            String entityWithExpression;
+                        }
+                    }
+                    """);
+
+            Compilation compilation = javac()
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(source);
+
+            assertThat(compilation).succeeded();
+            java.util.List<String> wrongAttr = compilation.warnings().stream()
+                    .map(d -> d.getMessage(null))
+                    .filter(m -> m != null && m.contains("draws from nothing"))
+                    .toList();
+            assertThat(wrongAttr).containsExactly(
+                    "[Exeris] @Bind(source = STATIC) draws from nothing, so its expression is ignored "
+                            + "and this node renders no bound value. Put authored content in "
+                            + "@Block(props), or bind data with source = ENTITY, PROJECTION or ACTION.",
+                    "[Exeris] @Bind(source = NONE) draws from nothing, so its ref, path are ignored "
+                            + "and this node renders no bound value. Put authored content in "
+                            + "@Block(props), or bind data with source = ENTITY, PROJECTION or ACTION.");
+
+            // The well-formed fixture stays silent.
+            Compilation clean = javac()
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(productLandingFixture());
+            assertThat(clean.warnings().stream()
+                    .map(d -> d.getMessage(null))
+                    .filter(m -> m != null && m.contains("draws from nothing")))
+                    .isEmpty();
+        }
     }
 
     @Nested
@@ -3147,6 +3461,43 @@ class ExerisDomainProcessorTest {
             assertThat(inertWarnings(compilation))
                     .as("@SoftDelete.retentionPeriod is extracted-but-unconsumed")
                     .isPositive();
+        }
+
+        @Test
+        @DisplayName("-Aexeris.strict says clearOnRestore has no restore to govern, not that one is emitted")
+        void strictSaysNoRestoreIsEmittedForClearOnRestore() {
+            // Nothing emits a restore: no route, handler, repository method or client un-sets the
+            // flag, so neither note may cite one.
+            Compilation compilation = javac()
+                    .withOptions("-Aexeris.strict=true")
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(JavaFileObjects.forSourceString(
+                            "com.example.Order",
+                            """
+                            package com.example;
+
+                            import eu.exeris.sdk.annotation.ExerisDomain;
+                            import eu.exeris.sdk.annotation.system.SoftDelete;
+                            import eu.exeris.sdk.annotation.system.SoftDeleteTimestamp;
+                            import eu.exeris.sdk.annotation.system.SoftDeletedBy;
+
+                            @ExerisDomain(module = "sales", path = "/orders")
+                            public class Order {
+                                @SoftDelete private boolean archived;
+                                @SoftDeleteTimestamp(clearOnRestore = false) private String archivedAt;
+                                @SoftDeletedBy(clearOnRestore = false) private String archivedBy;
+                            }
+                            """));
+
+            assertThat(compilation).succeeded();
+            List<String> restoreNotes = compilation.warnings().stream()
+                    .map(d -> d.getMessage(null))
+                    .filter(m -> m != null && m.contains("clearOnRestore"))
+                    .toList();
+            assertThat(restoreNotes).hasSize(2);
+            assertThat(restoreNotes).allSatisfy(note -> assertThat(note)
+                    .contains("no restore is emitted anywhere")
+                    .doesNotContain("The emitted restore"));
         }
     }
 

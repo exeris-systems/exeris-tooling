@@ -245,6 +245,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         appendPublishCalls(method, metadata, DomainEventMetadata.Trigger.CREATE, null,
                 "saved.getId()", "saved");
         method.addStatement("exchange.respond($T.CREATED, saved)", HTTP_STATUS);
+        appendCallerFaultCatch(method, metadata);
         return appendServerErrorCatch(method, "Failed to create " + entityLower).build();
     }
 
@@ -260,6 +261,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                 "id", "updated");
         method.addStatement("exchange.respond($T.OK, updated)", HTTP_STATUS);
         appendWriteRejectionCatch(method, metadata, true);
+        appendCallerFaultCatch(method, metadata);
         return appendServerErrorCatch(method, "Failed to update " + entityLower).build();
     }
 
@@ -331,6 +333,35 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         // that path logs nothing either. A missing row is not an event the server owns.
         method.nextControlFlow("catch ($T e)", KernelErrorGenerator.notFoundType(metadata))
                 .addStatement("exchange.respond($T.NOT_FOUND)", HTTP_STATUS);
+    }
+
+    /**
+     * The {@code catch} that answers a caller-fault write refusal with {@code 400} (ADR-090),
+     * emitted ahead of the {@code RuntimeException} → 500 tail. Only on the routes that hand the
+     * repository an entity to write — create, update and every action — and only for an entity
+     * whose repository can raise one: {@code <Entity>TenantMismatchException} on a tenant-partitioned
+     * entity, joined by {@code <Entity>SharedScopeMismatchException} on a UNIVERSE entity with a
+     * {@code @SharedScope} field.
+     *
+     * <p>400, and neither 403 nor 409. The body named a tenant (or a shared scope) the caller does
+     * not act as, and repeating it unchanged fails the same way — the kernel's
+     * {@code FaultOrigin.CALLER}, which the ADR-036 §2 mapping answers 4xx. 403 would claim an
+     * authorization model the emitted application does not have (ADR-079), and 409 already means a
+     * version conflict (ADR-076). No log, like the 404 beside it: a malformed request is not an event
+     * the server owns.
+     */
+    private static void appendCallerFaultCatch(MethodSpec.Builder method, DomainMetadata metadata) {
+        ClassName tenantMismatch = KernelErrorGenerator.tenantMismatchType(metadata);
+        if (tenantMismatch == null) {
+            return;
+        }
+        ClassName sharedScopeMismatch = KernelErrorGenerator.sharedScopeMismatchType(metadata);
+        if (sharedScopeMismatch == null) {
+            method.nextControlFlow("catch ($T e)", tenantMismatch);
+        } else {
+            method.nextControlFlow("catch ($T | $T e)", tenantMismatch, sharedScopeMismatch);
+        }
+        method.addStatement("exchange.respond($T.BAD_REQUEST)", HTTP_STATUS);
     }
 
     /**
@@ -500,6 +531,9 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         // The findById above already answered 404 for an id that was never there; what this
         // catches is the row disappearing (or its version moving) between the read and the write.
         appendWriteRejectionCatch(method, metadata, true);
+        // An action writes through the same service.update, so a partition-mate acting on a shared
+        // row it can read but not own is refused there, as the caller fault it is (ADR-090).
+        appendCallerFaultCatch(method, metadata);
         return appendServerErrorCatch(method,
                 "Failed to execute action " + action.name() + " on " + entityLower).build();
     }

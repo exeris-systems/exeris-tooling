@@ -152,6 +152,74 @@ class KernelHandlerGeneratorTest {
     }
 
     @Test
+    @DisplayName("ADR-090: a foreign tenant answers 400 on create, update and action — never on delete")
+    void shouldAnswerBadRequestForAForeignTenant() {
+        GeneratedFile handler = handlerFor(DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .tenantScoped(true)
+                .fields(List.of(FieldMetadata.simple("amount", "java.math.BigDecimal")))
+                .actions(List.of(eu.exeris.sdk.sourcemodel.ast.ActionMetadata.builder("approve")
+                        .methodName("approve").build()))
+                .build());
+
+        assertThat(handler.content())
+                .contains("import com.example.repository.OrderTenantMismatchException");
+        // Contiguous blocks, for the reason shouldAnswerNotFoundForAnAbsentRow gives: each typed
+        // catch sits ahead of the RuntimeException tail of its own method.
+        assertThat(noIndent(handler.content()))
+                .contains("""
+                        exchange.respond(HttpStatus.CREATED, saved);
+                        } catch (OrderTenantMismatchException e) {
+                        exchange.respond(HttpStatus.BAD_REQUEST);
+                        } catch (RuntimeException e) {""")
+                .contains("""
+                        exchange.respond(HttpStatus.OK, updated);
+                        } catch (OrderNotFoundException e) {
+                        exchange.respond(HttpStatus.NOT_FOUND);
+                        } catch (OrderTenantMismatchException e) {
+                        exchange.respond(HttpStatus.BAD_REQUEST);
+                        } catch (RuntimeException e) {""")
+                .contains("""
+                        service.delete(id);
+                        exchange.respond(HttpStatus.NO_CONTENT);
+                        } catch (OrderNotFoundException e) {
+                        exchange.respond(HttpStatus.NOT_FOUND);
+                        } catch (RuntimeException e) {""");
+        // Create, update and the one action: three catches, none on delete.
+        assertThat(handler.content().split("catch \\(OrderTenantMismatchException e\\)", -1)).hasSize(4);
+    }
+
+    @Test
+    @DisplayName("ADR-090: a UNIVERSE entity catches both caller-fault types in one clause")
+    void shouldAnswerBadRequestForAForeignSharedScope() {
+        GeneratedFile handler = handlerFor(DomainMetadata.builder("Species", "com.example.domain")
+                .path("/species")
+                .dataScope(eu.exeris.sdk.sourcemodel.ast.DataScope.UNIVERSE)
+                .systemFields(new eu.exeris.sdk.sourcemodel.ast.SystemFieldsMetadata("id", "createdAt",
+                        "createdBy", "updatedAt", "updatedBy", "tenantId", "version", null, null, null,
+                        "worldId"))
+                .fields(List.of(FieldMetadata.simple("tenantId", "java.util.UUID"),
+                        FieldMetadata.simple("worldId", "java.util.UUID")))
+                .build());
+
+        assertThat(noIndent(handler.content())).contains("""
+                exchange.respond(HttpStatus.CREATED, saved);
+                } catch (SpeciesTenantMismatchException | SpeciesSharedScopeMismatchException e) {
+                exchange.respond(HttpStatus.BAD_REQUEST);""");
+    }
+
+    @Test
+    @DisplayName("ADR-090: a global entity's handler catches no caller-fault type")
+    void globalHandlerCatchesNoMismatch() {
+        GeneratedFile handler = handlerFor(DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .fields(List.of(FieldMetadata.simple("amount", "java.math.BigDecimal")))
+                .build());
+
+        assertThat(handler.content()).doesNotContain("MismatchException");
+    }
+
+    @Test
     @DisplayName("D7/ADR-076: a versioned update answers 409, because it cannot tell a missing "
             + "row from a stale version — but its delete still answers 404")
     void shouldAnswerConflictForAVersionedUpdate() {

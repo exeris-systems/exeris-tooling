@@ -177,6 +177,21 @@ class KernelTestSupportGeneratorTest {
     }
 
     @Test
+    @DisplayName("K5: the flow double records version(int) instead of inheriting the SPI default that throws")
+    void flowDoubleRecordsTheDefinitionVersion() {
+        // FlowDefinitionBuilder.version(int) is a default that throws UnsupportedOperationException
+        // for a builder that does not override it. A saga with @Saga(version = n > 1) emits the
+        // call, so without this override its generated test would die in initialize(). The double
+        // also plays the plan, so definitionVersion() answers what the builder was told.
+        assertThat(new KernelTestSupportGenerator().generateFlow("com.example").content())
+                .contains("public int definitionVersion = FlowDefinition.INITIAL_VERSION;")
+                .contains("public FlowDefinitionBuilder version(int version) {\n"
+                        + "        this.definitionVersion = version;\n"
+                        + "        return this;")
+                .contains("public int definitionVersion() {\n        return definitionVersion;");
+    }
+
+    @Test
     @DisplayName("the flow double's build() returns null — the recorded calls carry more than it would")
     void flowDoubleDoesNotFakeTheDefinition() {
         // Nothing under test reads the FlowDefinition back; what a saga test asserts is what the

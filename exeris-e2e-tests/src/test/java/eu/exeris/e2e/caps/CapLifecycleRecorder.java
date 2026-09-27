@@ -4,7 +4,7 @@ import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
- * Ordered event log the G3 sample caps write to as the conductor drives them.
+ * Ordered event log the sample caps write to as the conductor drives them.
  *
  * <p>Lives on the <b>test</b> classpath on purpose. The sample caps are compiled into a temp
  * directory and loaded by a child {@code URLClassLoader}; parent-first delegation means those

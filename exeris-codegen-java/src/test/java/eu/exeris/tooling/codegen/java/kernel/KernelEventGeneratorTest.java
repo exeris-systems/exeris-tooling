@@ -67,6 +67,9 @@ class KernelEventGeneratorTest {
                         + "1393336469, \"orders.shipped\")")
                 .contains("EventTypeSpec.ofPersistent(\"OrderCreatedEvent\", 1195226144)")
                 .contains("public OrderEventPublisher(EventEngine eventEngine)")
+                // No payload anywhere → nothing to encode, so no registry is held or taken.
+                .doesNotContain("EventPayloadCodecRegistry")
+                .doesNotContain("KernelProviders")
                 .contains("publishOrderCreatedEvent(UUID streamId)")
                 .contains("publishOrderShippedEvent(UUID streamId)")
                 .contains("eventEngine.bus().publish(descriptor, EventPayload.empty())")
@@ -105,9 +108,21 @@ class KernelEventGeneratorTest {
                 // the boolean field uses the `isX()` accessor (B3), not `getX()`.
                 .contains("publishOrderCreatedEvent(UUID streamId, Order entity)")
                 .contains("new OrderCreatedEventPayload(entity.getTotal(), entity.isActive())")
-                // ADR-046 "site B" — resolve the codec via the provider slot, encode.
-                .contains("KernelProviders.eventPayloadCodecRegistry()")
-                .contains("resolve(payloadType, EventCodecContext.JSON)")
+                // ADR-046 "site B" — resolve the codec from the registry captured at
+                // construction, never from the provider slot per publish: a
+                // publish runs on the request thread, where the kernel binds no registry.
+                .contains("private final EventPayloadCodecRegistry codecRegistry;")
+                .contains("public OrderEventPublisher(EventEngine eventEngine, "
+                        + "EventPayloadCodecRegistry codecRegistry)")
+                .contains("this.codecRegistry = codecRegistry;")
+                .contains("private EventPayload encodePayload(")
+                .contains("if (codecRegistry == null)")
+                .contains("EventPayloadCodec codec = codecRegistry.resolve(payloadType, EventCodecContext.JSON)")
+                // The one-argument constructor captures at construction too.
+                .contains("public OrderEventPublisher(EventEngine eventEngine) {\n"
+                        + "        this(eventEngine, KernelProviders.eventPayloadCodecRegistry().orElse(null));")
+                .doesNotContain("private static EventPayload encodePayload(")
+                .doesNotContain("Optional<EventPayloadCodecRegistry> registry")
                 .contains("codec.encode(payload, EventCodecContext.json(")
                 // Fallback to empty payload + producer-side codec-resolution JFR.
                 .contains("return EventPayload.empty()")
@@ -115,6 +130,35 @@ class KernelEventGeneratorTest {
                 // The Wall: no driver / Jackson symbol leaks into the generated publisher.
                 .doesNotContain("tools.jackson")
                 .doesNotContain("CommunityJsonEventPayloadCodec");
+    }
+
+    @Test
+    @DisplayName("T48 slice C1: hasPayloadEvents is the predicate the RuntimeComponents factory "
+            + "shares — redaction to nothing counts as no payload")
+    void hasPayloadEventsMatchesTheConstructorShape() {
+        DomainMetadata payload = DomainMetadata.builder("Order", "com.example.domain")
+                .fields(List.of(FieldMetadata.builder("total", "BigDecimal").build()))
+                .events(List.of(DomainEventMetadata.builder("OrderCreated")
+                        .payloadFields(List.of("total")).build()))
+                .build();
+        DomainMetadata allSensitive = DomainMetadata.builder("Order", "com.example.domain")
+                .fields(List.of(FieldMetadata.builder("secret", "String").build()))
+                .events(List.of(DomainEventMetadata.builder("OrderCreated")
+                        .payloadFields(List.of("secret")).sensitiveFields(List.of("secret")).build()))
+                .build();
+
+        assertThat(KernelEventGenerator.hasPayloadEvents(payload)).isTrue();
+        assertThat(KernelEventGenerator.hasPayloadEvents(allSensitive)).isFalse();
+        assertThat(KernelEventGenerator.hasPayloadEvents(
+                DomainMetadata.builder("Tag", "com.example.domain").build())).isFalse();
+        assertThat(publisherOf(allSensitive)).doesNotContain("EventPayloadCodecRegistry codecRegistry");
+        assertThat(publisherOf(payload)).contains("EventPayloadCodecRegistry codecRegistry)");
+    }
+
+    private String publisherOf(DomainMetadata metadata) {
+        return strategy.generate(metadata).stream()
+                .filter(f -> f.artifactType() == ArtifactType.EVENT)
+                .findFirst().orElseThrow().content();
     }
 
     @Test

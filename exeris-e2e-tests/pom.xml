@@ -46,8 +46,8 @@
             <artifactId>exeris-codegen-java</artifactId>
         </dependency>
 
-        <!-- G3 starts from annotated sources, so the real annotation processor runs
-             inside the test's javac invocation rather than being simulated. -->
+        <!-- The cap-composition e2e starts from annotated sources, so the real annotation
+             processor runs inside the test's javac invocation rather than being simulated. -->
         <dependency>
             <groupId>eu.exeris.tooling</groupId>
             <artifactId>exeris-processor</artifactId>
@@ -71,7 +71,7 @@
             <scope>test</scope>
         </dependency>
 
-        <!-- SDK boot conductor (G2): the compile gate emits a composed
+        <!-- SDK boot conductor: the compile gate emits a composed
              Application whose boot callback drives CompositionConductor —
              javac needs the real type, not a stub. -->
         <dependency>
@@ -80,7 +80,7 @@
             <scope>test</scope>
         </dependency>
 
-        <!-- G3: a real kernel around the conductor run — the community driver supplies the
+        <!-- A real kernel around the conductor run — the community driver supplies the
              HTTP provider, the testkit fixture boots it on a loopback port (http subsystem
              only; no database is involved). -->
         <dependency>
@@ -91,6 +91,14 @@
         <dependency>
             <groupId>eu.exeris</groupId>
             <artifactId>exeris-kernel-community-testkit</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- GeneratedAppBootE2ETest boots the EMITTED Application with the events
+             subsystem (for the SSE producer's bus) — which pulls persistence by dependency
+             closure, and persistence needs a driver. In-memory H2, one database per run. -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
             <scope>test</scope>
         </dependency>
 
@@ -104,6 +112,26 @@
         <dependency>
             <groupId>tools.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- CrudRouteParityE2ETest reads the OpenAPI paths as model objects, so the model types
+             are declared rather than relied on as codegen-java transitives. -->
+        <dependency>
+            <groupId>io.swagger.core.v3</groupId>
+            <artifactId>swagger-models</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- The opt-in @Tag("postgres") access matrix (SharedScopePostgresE2ETest)
+             applies the emitted migrations to a real PostgreSQL, and is skipped unless
+             -Dexeris.e2e.postgres.url is set. Test scope, in this module only, and deliberately
+             not in exeris-tooling-bom: a consumer importing the BOM should inherit no driver
+             opinion from tooling. 42.7.13 is the version exeris-kernel-bom 0.12.0 pins. -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <version>42.7.13</version>
             <scope>test</scope>
         </dependency>
 

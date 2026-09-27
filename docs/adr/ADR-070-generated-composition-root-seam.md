@@ -1,6 +1,6 @@
 # ADR-070 — Open the generated composition root: `RuntimeComponents`
 
-- **Status:** ACCEPTED (2026-08-18)
+- **Status:** ACCEPTED (2026-08-18) · amended 2026-09-26 (Amendment 1 — obligation 6; Amendment 2 — edge router, subscribers and flows, scope lists)
 - **Repo:** `exeris-tooling`
 - **Scope:** tooling / codegen pipeline
 - **Visibility:** public
@@ -67,7 +67,9 @@ after every generated route is registered.
 1. **Three members per component.** Each generated `*Repository`, `*Service`, `*Handler` and SSE
    `*StreamHandler` gets a `private` field, a `public` memoising accessor, and a
    `protected create*()` factory holding the default construction. A new emitted component type is
-   added to this seam in the same change that introduces it.
+   added to this seam in the same change that introduces it. *(Amendment 2, 2026-09-26: subscribers
+   and saga flows join the seam, and a value a component needs later is captured here, never read on
+   a request or stream thread.)*
 2. **Defaults resolve dependencies through the accessor, never a field or a local.**
    `createOrderService()` emits `new OrderService(orderRepository())`. This is what makes a single
    override propagate: replace the repository and the untouched service factory picks it up.
@@ -76,10 +78,12 @@ after every generated route is registered.
 4. **`Application#components(TransactionalExecutor)` is the installation point**, and the boot
    callback threads it: `new RuntimeLifecycle(handlerSlot, components(transactionalExecutor())).run()`.
    Being inside `KernelBootstrap.boot(...)` is load-bearing — it is what lets a factory body call
-   `KernelProviders.flowEngine()` / `eventEngine()`.
+   `KernelProviders.flowEngine()` / `eventEngine()`. *(Amendment 2, 2026-09-26: the callback now
+   threads a second slot, and the kernel holds a router built before boot — see Amendment 2.)*
 5. **`configureRoutes(HttpRouter.Builder)` runs after every generated route and before `build()`.**
    A hand-written route can add to the table; it can never silently displace a generated one.
-   Enforced by an ordering assertion, not by convention.
+   Enforced by an ordering assertion, not by convention. *(Amendment 2, 2026-09-26: respond-once
+   routes only — a `streamRoute` registered here does not resolve.)*
 6. **`decorate(HttpRouter)` runs between `build()` and the handler slot.** *(Added 0.9.0 — the
    T49 residual.)* Whatever it returns is what the kernel serves; the default returns the router
    unchanged. It is the sibling of obligation 5 — same object, one line later — and exists because
@@ -94,7 +98,10 @@ after every generated route is registered.
    route therefore **refuses to boot** when `decorate` returns a non-`HttpRouter`, naming both
    halves; an application that emits none carries no guard. This is a kernel constraint rather than
    a tooling choice: a stream resolved through an interface a decorator could delegate would remove
-   the trade-off, and that is the standing upstream ask.
+   the trade-off, and that is the standing upstream ask. *(Amendment 1, 2026-09-26: the converse
+   does not hold — an undecorated generated app serves no stream route either; T23.)* *(Amendment 2,
+   2026-09-26: the refusal is removed. Streams resolve on the pre-boot edge router, outside the
+   wrapper, so a wrapper and a stream route no longer exclude each other.)*
 7. **The emitted `main()` says that it is not polymorphic.** `main` does `new Application().run()`,
    so a subclass overriding `components(...)` is *not* reached through it. The emitted javadoc states
    this and shows the subclass's own `main`. An extension hook whose obvious entry point silently
@@ -148,7 +155,7 @@ after every generated route is registered.
 - ADR-015 (Codegen emission strategy) — JavaPoet for Java emission; this generator stays compliant.
 - ADR-058 (Generated-test emission channel) — fixes the `public`/non-final/assignment-only shape of
   emitted services that this ADR makes installable.
-- ADR-024 / G2 boot-conductor call site — the composed variant threads the seam identically;
+- ADR-024 / GC2 boot-conductor call site — the composed variant threads the seam identically;
   `RuntimeComponents` is byte-identical with and without a composition.
 - `ROADMAP.md` — T49, and T48 / T50 downstream of it.
 - `exeris-benchmarks/targets/exeris-community-app/…/CommunityBenchmarkRuntimeLifecycle.java` — the
@@ -164,3 +171,179 @@ after every generated route is registered.
    `exeris-kernel-spi` / `-core` artifacts. Verified non-vacuous: emitting a wrong-arity constructor
    fails the gate at `RuntimeComponents.java`.
 3. Migration note lands in `docs/MIGRATION-0.x-to-1.0.md` under the 0.8.0 train.
+
+---
+
+## Amendment 1 — obligation 6's stream guard protects nothing on the generated boot (2026-09-26)
+
+**Status:** Accepted *(corrects the premise of obligation 6; the hook, its default and the guard are
+unchanged by this amendment)*
+**Trigger:** T23 reopened in `ROADMAP.md` — the dog-food's K9, widened on 2026-09-26.
+
+### What
+
+Obligation 6 says a wrapper and a stream route are mutually exclusive and that the emitted app
+enforces it. The exclusion is real. Its implied converse — that an app which leaves `decorate` alone
+serves its streams — is not. The kernel never sees what `decorate` returns: `Application.run()` binds
+its own `forwardingHandler` lambda as `HTTP_SERVER_HANDLER`, the http subsystem reads that binding
+once when it starts, and the dispatcher resolves a stream only for a handler that is an `HttpRouter`.
+On a real boot of the generated application no stream route resolves, decorated or not, so the
+boot-time refusal buys nothing. It would bite only in a launcher that composes through
+`RuntimeLifecycle` and binds the slot's content as the server handler itself.
+
+### Consequences recorded, not decided here
+
+- The guard's message and the `decorate` Javadoc attribute to a wrapper a failure that happens
+  without one. Correcting them changes emitted output and takes a MIGRATION note.
+- The standing upstream ask now fixes both halves: resolution through an interface a forwarder or a
+  wrapper can delegate, with the resolved stream handler run inside the wrapper's scope (K9). When it
+  exists, the guard becomes a pass-through.
+- Tooling cannot bind the composed router where the kernel reads it: the router is built inside the
+  boot callback after the subsystem has read its handler (obligation 4 is why it must be), a running
+  engine refuses a new handler by contract, and `HttpRouter` is `final`. A route table built *before*
+  boot with late-bound targets is possible in principle; it would change obligations 5 and 6, and it
+  is an open design question rather than part of this amendment.
+- Whether the refusal stays until K9 lands is an open call — see T49 and T23 in `ROADMAP.md`.
+
+---
+
+## Amendment 2 — the kernel holds a router built before boot; subscribers, flows and the scope lists join the seam (2026-09-26)
+
+**Status:** Accepted *(changes obligations 1, 4, 5 and 6; decides the open question Amendment 1
+recorded. The seam's shape — `RuntimeComponents` constructs, `RuntimeLifecycle` drives — is
+unchanged.)*
+**Trigger:** T23 slice B1, T48 slice C1 and T51, from the architect review of 2026-09-26 (after B0
+pinned kernel 0.12.0).
+
+### What
+
+**Obligation 4 — two slots, and the kernel is handed an `HttpRouter`.** `Application.run()` no
+longer binds a forwarding lambda. It builds `RuntimeLifecycle.edgeRouter(handlerSlot,
+componentsSlot)` before boot and binds that as `HTTP_SERVER_HANDLER`. The edge router carries every
+generated stream route: `GET <base>/stream` for `realTimeApi`, and `POST <base>/{id}/actions/<kebab>`
+for `@Action(streaming)`. Each target resolves its handler from `componentsSlot` when a stream
+opens, and closes a stream opened before the components exist. Its `notFound` forwards every other
+request to `handlerSlot`, and answers `503` while that slot is empty. The boot callback threads
+`new RuntimeLifecycle(handlerSlot, componentsSlot, components(transactionalExecutor())).run()`.
+**Composition does not move.** It stays inside the callback, because that is the only place the
+scopes it reads are bound. The 0.8.0 two-argument constructor remains, delegating with a
+`componentsSlot` nothing reads.
+
+It works because the stream half of the route table is known at generation time, and building an
+`HttpRouter` reads no `ScopedValue`. The http subsystem therefore gets the one handler type the stream
+dispatcher resolves (`handler instanceof HttpRouter`), at the one moment it reads its handler
+(`start()`, before the boot callback). With no stream routes the edge router is exactly the lambda it
+replaced. It is emitted for every application, one shape for all.
+
+**The order inside `run()`** is fixed, and each step exists for a measured reason:
+
+1. **Every publisher is built.** A publisher registers its event types when it is constructed, and
+   the kernel bus rejects a subscription to an unregistered type. An entity whose events no handler
+   publishes (`MANUAL`, `STATE_TRANSITION`, …) previously had no publisher built at all, so its live
+   view was rejected on every open.
+2. **Every saga's `initialize()`, then every subscriber's `subscribe()`** (T48 slice C1; ADR-075
+   Amendment 2).
+3. **Every stream-route target accessor is forced** on the boot thread, so no factory ever runs on a
+   stream thread. The unsynchronised memo field is written once, before it is published.
+4. The respond-once router is built, `configureRoutes` runs, `decorate` wraps it.
+5. **`componentsSlot` is set, then `handlerSlot`.** Once the handler slot is set the app is serving,
+   and its streams must already resolve.
+6. The shutdown latch releases, and the subscribers are unsubscribed in reverse order.
+
+**Obligation 5 — `configureRoutes` is respond-once only.** The kernel never asks the handler-slot
+router to resolve a stream, so a `streamRoute` registered there does not match. That was already true
+on the generated boot (Amendment 1); the emitted Javadoc now says so.
+
+**Obligation 6 — the guard is removed.** `decorate` applies to respond-once routes. Stream routes
+resolve on the edge router and run outside the wrapper, and the kernel never sees what `decorate`
+returns, so returning any wrapper is safe. That replaces "a wrapper and a stream route are mutually
+exclusive, and the emitted app enforces it". The refusal protected nothing in any reachable state:
+before this amendment the kernel held a lambda, and now it holds the edge router.
+
+**Obligation 1 — two more component kinds, and one capture rule.** `<Entity>EventSubscriber` and
+`<Saga>Flow` get the three members (T48 slice C1). The flow's accessor follows its class name, so a
+subclass such as `ConstructionSaga extends ConstructionSagaFlow` installs by overriding
+`createConstructionSagaFlow()`. Two existing factories now capture what their component used to read
+later:
+
+- the EV1 stream handler takes its `EventEngine`, because the stream thread binds only the
+  allocator and the decoder registry;
+- a payload-bearing publisher takes the `EventPayloadCodecRegistry`, because the request thread
+  binds none.
+
+The rule, stated once: **a value a component needs later is captured at composition.** It is never
+read on a request or stream thread unless the kernel binds it there.
+
+**The seam publishes what it reads (T51).** `RuntimeComponents.COMPOSITION_SCOPES` and
+`REQUEST_SCOPES` are `List<ScopedValue<?>>`, derived from the branches that emit each read, with
+Javadoc naming every reader:
+
+- composition: `MEMORY_ALLOCATOR`, `EVENT_ENGINE`, `FLOW_ENGINE`;
+- request: `HTTP_REQUEST_BODY_DECODER_REGISTRY`, and `STORAGE_CONTEXT` for tenant-partitioned
+  entities.
+
+`EVENT_PAYLOAD_CODEC_REGISTRY` is optional, so the Javadoc names it without listing it.
+`PERSISTENCE_ENGINE` is read only by `Application.transactionalExecutor()`'s default. A harness that
+composes outside a boot binds the first list, or overrides the factories that read it, and supplies
+the second per request.
+
+### Why this shape
+
+Amendment 1 named it: "a route table built *before* boot with late-bound targets is possible in
+principle; it would change obligations 5 and 6." Two alternatives were rejected:
+
+- **Binding the composed router earlier.** Composition would have to leave the boot callback, and it
+  reads scopes that are bound only there.
+- **Waiting for the kernel (K9).** Correct, but blocked on another repository, while the generated
+  boot served no stream at all.
+
+### What remains for the kernel (K9, narrowed)
+
+1. **A `streamRoute` a consumer registers in `configureRoutes`.** It needs stream resolution through
+   an SPI interface a forwarding handler can delegate. With one, the edge router's miss path would ask
+   the handler slot, and hand-registered streams would resolve too. The SPI needs its own
+   return type: `HttpRouter.StreamMatch` is in core, and the SPI cannot name it.
+2. **Scope around streams.** A tenant a `decorate` wrapper binds for a request is not bound for a
+   stream. The kernel ask is to run the resolved stream handler inside the wrapper's scope. A tooling
+   stop-gap is possible without it: a `decorateStream(HttpStreamHandler)` hook, since
+   `HttpStreamExchange.request()` exposes the headers.
+3. **Not a kernel ask, recorded for completeness.** A stream opened while the app is composing gets
+   `200` and an immediate close, not `503`, because the stream engine writes the response head
+   before any handler runs.
+
+### Consequences
+
+- **[+] Stream routes resolve on a real boot of the generated `Application`.**
+  `GeneratedAppBootE2ETest` boots it on kernel 0.12.0 (http + events + flow, H2), opens
+  `/beacons/stream`, and reads a published frame:
+  `event: BeaconPinged` / `data: {"label":"alpha"}`. The test was checked for vacuity. Restoring the
+  forwarding lambda brings back the measured `400`. Reading the engine on the stream thread brings
+  back `NoSuchElementException: ScopedValue not bound`.
+- **[+] A streaming application can use `decorate`**, which is what the dog-food's
+  `DevTenantBinding` needed. Its tenant does not yet reach stream handlers (K9 item 2).
+- **[+] Subscribers and saga flows are constructed, substitutable and started** by the generated
+  application.
+- **[-] Every consumer's three bootstrap files regenerate** (0.x allows it). `RuntimeLifecycle` gains
+  a constructor and a static method. `run()` no longer registers stream routes.
+- **[-] Launchers that bound the handler-slot router directly lose generated streams.** This is the
+  one launcher shape that had them, such as the dog-food's `GeneratedAppHttpBootTest`, and it
+  switches to `edgeRouter(...)` with the three-argument constructor.
+- **[-] Composing outside a boot needs more scopes.** It now needs `EVENT_ENGINE` for an EV1 stream
+  handler and for every subscriber, and `FLOW_ENGINE` for every saga, or overrides of those
+  factories. `COMPOSITION_SCOPES` lists them.
+- **[-] Missing subsystems now fail at boot.** A regenerated app that declares `@Saga` without
+  `flow` in `subsystems()`, or events without `events`, fails there instead of never running them.
+
+### Engineering Protocol (additions)
+
+1. `KernelApplicationGeneratorTest`: the edge router's shape and fallthrough. No guard. Stream routes
+   are on `edgeRouter` and not in `run()`. Publishers, sagas and subscribers start in order, before
+   `componentsSlot`, which is set before `handlerSlot`. Unsubscribe runs in reverse. The scope lists
+   and the readers they name.
+2. `GeneratedAppBootE2ETest`, two tests. The emitted `Application.run()` on a real kernel (the frame
+   above, activation order, subscriber delivery, unsubscribe on stop). `edgeRouter(...)` on
+   `KernelBootstrapHttpEngineFixture` (`503` and close-on-open while composing, then forwarding).
+3. `ScopeLedgerE2ETest`: every `(Http)?KernelProviders` read in five generated corpora is listed or
+   allowlisted, and every listed scope is read in its phase. It fails in both directions when the
+   derivation drifts.
+4. `KernelCodegenCompileTest` compiles all of it against `exeris-kernel-spi` / `-core` 0.12.0.

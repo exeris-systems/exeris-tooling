@@ -3,6 +3,7 @@ package eu.exeris.e2e.codegen;
 import eu.exeris.e2e.codegen.compile.InMemoryJavaCompiler;
 import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
 import eu.exeris.sdk.sourcemodel.ast.ActionParamMetadata;
+import eu.exeris.sdk.sourcemodel.ast.DataScope;
 import eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
@@ -11,6 +12,7 @@ import eu.exeris.sdk.sourcemodel.ast.GraphMetadata;
 import eu.exeris.sdk.sourcemodel.ast.RelationshipMetadata;
 import eu.exeris.sdk.sourcemodel.ast.SagaMetadata;
 import eu.exeris.sdk.sourcemodel.ast.SagaStepMetadata;
+import eu.exeris.sdk.sourcemodel.ast.SystemFieldsMetadata;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.java.kernel.KernelApplicationGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelGeneratorStrategy;
@@ -43,10 +45,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * version is pinned — deliberately not restated here, since a literal copy
  * goes stale on every kernel bump. The emitted {@code *Client}
  * binds the tier-neutral {@code eu.exeris.kernel.core.http.client.KernelWebClient}
- * facade (ADR-034), stood in at that FQN by a test stub in this module so the
- * gate compiles without pulling kernel-core.
+ * facade (ADR-034) and compiles against the real one from {@code exeris-kernel-core}. A
+ * test stub at that FQN would shadow the real class, so a verb the facade does not have (a
+ * {@code put}, say) would compile here and fail in every consumer.
  *
- * <p>Run twice, once per bootstrap variant (G2): {@code composed=false} is the
+ * <p>Run twice, once per bootstrap variant: {@code composed=false} is the
  * cap-less application every release before 0.7.0 emitted; {@code composed=true}
  * adds the SDK boot-conductor call site, compiled against the real
  * {@code exeris-sdk-composition-runtime} artifact.
@@ -201,6 +204,11 @@ class KernelCodegenCompileTest {
                         List.of(new GraphEdgeMetadata("tenantId", "Tenant", "OWNED_BY")),
                         List.of()))
                 .sagaMetadata(SagaMetadata.builder("OrderFulfillment")
+                        // A declared version > 1 emits builder.version(DEFINITION_VERSION),
+                        // so javac proves the call against the real FlowDefinitionBuilder. The
+                        // method exists from kernel 0.12, so this line is also what fails the
+                        // gate if the kernel pin ever drops back below it.
+                        .version(2)
                         .timeout("PT45M")
                         .maxRetries(5)
                         .steps(List.of(
@@ -217,7 +225,7 @@ class KernelCodegenCompileTest {
         // strategy. Run the Application generator separately so the
         // compile-gate verifies the full bootstrap stack resolves
         // against the real exeris-kernel-spi and -core artifacts.
-        // G2: the composed variant emits the boot-conductor call site, so this run also
+        // The composed variant emits the boot-conductor call site, so this run also
         // javac-compiles the try-with-resources against the real
         // eu.exeris.sdk.composition.runtime.CompositionConductor — including the fact that
         // its close() declares no checked exception (a boot(Runnable) lambda could not
@@ -230,6 +238,110 @@ class KernelCodegenCompileTest {
                 .addSource(DOMAIN_PACKAGE + "." + ENTITY_NAME, sourceEntity())
                 .addSource(DOMAIN_PACKAGE + ".OrderStatus", sourceStatusEnum());
 
+        for (GeneratedFile file : generated) {
+            if ("java".equals(file.extension())) {
+                compiler.addSource(file.packageName() + "." + file.className(), file.content());
+            }
+        }
+        for (GeneratedFile file : applicationFiles) {
+            if ("java".equals(file.extension())) {
+                compiler.addSource(file.packageName() + "." + file.className(), file.content());
+            }
+        }
+
+        InMemoryJavaCompiler.Result result = compiler.compile();
+        assertThat(result.success())
+                .as("javac output:%n%s", result.renderErrors())
+                .isTrue();
+    }
+
+    private static final String UNIVERSE_PACKAGE = "eu.exeris.e2e.universeapp.domain";
+
+    /**
+     * A {@code DataScope.UNIVERSE} entity — an owner plus a {@code @SharedScope} key —
+     * through the full strategy and the composition root. The shared-scope stamp is the first
+     * emitted code to call {@code StorageContext.sharedScopeKey()} and
+     * {@code KernelProviders.storageContextOrSystem()}, so javac against the real kernel SPI is the
+     * proof those calls exist with the shape the emitter assumes. Both key types, because the
+     * emitted resolver differs: a UUID key is parsed (and a parse failure wrapped), a String one is
+     * returned as bound.
+     */
+    @ParameterizedTest(name = "sharedScope={0}")
+    @ValueSource(strings = {"java.util.UUID", "java.lang.String"})
+    @DisplayName("T29 B: a UNIVERSE entity's artefacts compile against the kernel SPI, for both key types")
+    void universeArtifactsCompile(String scopeType) {
+        DomainMetadata metadata = DomainMetadata.builder("Species", UNIVERSE_PACKAGE)
+                .path("/species")
+                .module("catalog")
+                .dataScope(DataScope.UNIVERSE)
+                .audited(true)
+                .versioned(true)
+                .systemFields(new SystemFieldsMetadata("id", "createdAt", "createdBy", "updatedAt",
+                        "updatedBy", "organizationId", "version", null, null, null, "worldId"))
+                .fields(List.of(
+                        FieldMetadata.builder("name", "String").required(true).build(),
+                        FieldMetadata.builder("organizationId", "java.util.UUID").build(),
+                        FieldMetadata.builder("worldId", scopeType).filterable(true).build()))
+                .build();
+
+        List<GeneratedFile> generated = new KernelGeneratorStrategy().generate(metadata);
+        assertThat(generated)
+                .as("the additive shared-scope migration is part of the emitted set")
+                .anyMatch(f -> f.className().contains("__shared_scope_speciess"));
+        String repository = generated.stream()
+                .filter(f -> f.className().equals("SpeciesRepository"))
+                .findFirst().orElseThrow().content();
+        assertThat(repository)
+                .as("non-vacuous: the code under compilation reads the kernel's shared-scope key")
+                .contains("sharedScopeKey()")
+                .contains("actingSharedScope()")
+                .contains("refuseForeignTenant(")
+                .contains("refuseForeignSharedScope(");
+        assertThat(generated)
+                .as("ADR-090: both caller-fault types are among the compiled sources")
+                .extracting(GeneratedFile::className)
+                .contains("SpeciesTenantMismatchException", "SpeciesSharedScopeMismatchException");
+        assertThat(generated.stream().filter(f -> f.className().equals("SpeciesHandler"))
+                .findFirst().orElseThrow().content())
+                .as("ADR-090: the multi-catch javac has to accept (disjoint types)")
+                .contains("catch (SpeciesTenantMismatchException | SpeciesSharedScopeMismatchException e)");
+
+        List<GeneratedFile> applicationFiles = new KernelApplicationGenerator()
+                .generateAll(List.of(metadata), UNIVERSE_PACKAGE.replace(".domain", ""), false);
+
+        String javaScopeType = scopeType.substring(scopeType.lastIndexOf('.') + 1);
+        InMemoryJavaCompiler compiler = new InMemoryJavaCompiler()
+                .addSource(UNIVERSE_PACKAGE + ".Species", """
+                        package %s;
+
+                        import java.time.Instant;
+                        import java.util.UUID;
+
+                        public class Species {
+                            private UUID id;
+                            private String name;
+                            private UUID organizationId;
+                            private %s worldId;
+                            private Instant createdAt;
+                            private Instant updatedAt;
+                            private long version;
+
+                            public UUID getId() { return id; }
+                            public void setId(UUID id) { this.id = id; }
+                            public String getName() { return name; }
+                            public void setName(String name) { this.name = name; }
+                            public UUID getOrganizationId() { return organizationId; }
+                            public void setOrganizationId(UUID organizationId) { this.organizationId = organizationId; }
+                            public %s getWorldId() { return worldId; }
+                            public void setWorldId(%s worldId) { this.worldId = worldId; }
+                            public Instant getCreatedAt() { return createdAt; }
+                            public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
+                            public Instant getUpdatedAt() { return updatedAt; }
+                            public void setUpdatedAt(Instant updatedAt) { this.updatedAt = updatedAt; }
+                            public long getVersion() { return version; }
+                            public void setVersion(long version) { this.version = version; }
+                        }
+                        """.formatted(UNIVERSE_PACKAGE, javaScopeType, javaScopeType, javaScopeType));
         for (GeneratedFile file : generated) {
             if ("java".equals(file.extension())) {
                 compiler.addSource(file.packageName() + "." + file.className(), file.content());

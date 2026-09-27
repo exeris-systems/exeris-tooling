@@ -34,26 +34,29 @@
           component, and builders are the stable path. `DomainMetadata` and
           `ActionMetadata` are built through their builders. `SystemFieldsMetadata`
           has no builder on SDK `main` and is built positionally; its eleventh
-          component, `sharedScopeField` (the `@SharedScope` carrier), is `null`
-          on every record this processor builds, because `DataScope.UNIVERSE`
-          is refused at the declaration, and `@JsonInclude(NON_NULL)` keeps it
-          off the wire. The `schemaVersion`
+          component, `sharedScopeField` (the `@SharedScope` carrier), is filled
+          only for a `DataScope.UNIVERSE` entity and is `null` everywhere else,
+          which `@JsonInclude(NON_NULL)` keeps off the wire. The `schemaVersion`
           the processor stamps follows `SchemaVersion.CURRENT`. `@Channel` and
           `@RouteAccess` are read by nothing yet.
         -->
         <exeris.sdk.version>0.12.0-SNAPSHOT</exeris.sdk.version>
         <!--
-          Kernel 0.12.0 — the line SDK 0.12 pairs with. It is the first line that
-          carries three surfaces the Java emitters build on:
+          Kernel 0.12.0 — the line SDK 0.12 pairs with, and the floor for three
+          things the emitters name:
 
           - `FlowDefinitionBuilder.version(int)` (a `default` method, ADR-064
-            amendment), the kernel half of a declared `@Saga.version`.
+            amendment), which the generated `*SagaFlow` calls for a declared
+            `@Saga.version`.
           - `ConnectionInterceptor.SESSION_KEY_TENANT_ID` and
             `SESSION_KEY_SHARED_SCOPE`, the RLS session variables as SPI
-            contract rather than one driver's literal.
+            contract rather than one driver's literal. The emitted migrations
+            name them as literals, and `SharedScopeSqlE2ETest` checks each
+            literal against its constant.
           - ADR-074 peer addressing. A CLIENT-mode `HttpConfig`'s `bindHost` /
             `port` are never dialled; the peer is `defaultAuthority`
-            (`http.client.defaultAuthority`) or `KernelWebClient.withAuthority`.
+            (`http.client.defaultAuthority`) or `KernelWebClient.withAuthority`,
+            as the emitted `*Client` Javadoc says.
 
           The ADR-066 baseline holds: the spi, core, community and
           community-testkit jars are class-file major 69 with zero preview
@@ -102,6 +105,13 @@
         <compile-testing.version>0.21.0</compile-testing.version>
         <json-schema-validator.version>1.5.4</json-schema-validator.version>
         <approvaltests.version>24.16.0</approvaltests.version>
+        <!-- The JDBC driver the kernel testkit's persistence needs when the e2e suite boots the
+             EMITTED Application with the events/flow subsystems: both declare
+             dependsOn("persistence"), and the testkit deliberately ships no driver. Same
+             version the pinned exeris-kernel-community uses for its own H2 tests, so the
+             kernel's persistence has been exercised on exactly this driver. Test scope only —
+             emitted code never names it. -->
+        <h2.version>2.3.232</h2.version>
     </properties>
 
     <dependencyManagement>
@@ -283,6 +293,12 @@
                 <groupId>com.approvaltests</groupId>
                 <artifactId>approvaltests</artifactId>
                 <version>${approvaltests.version}</version>
+                <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>com.h2database</groupId>
+                <artifactId>h2</artifactId>
+                <version>${h2.version}</version>
                 <scope>test</scope>
             </dependency>
         </dependencies>

@@ -37,7 +37,7 @@ public final class EntitySchemaGenerator {
 
     private Map<String, Object> buildSchema() {
         Map<String, Object> schema = new LinkedHashMap<>();
-        schema.put("$id", "https://exeris.eu/schemas/" + metadata.entityName().toLowerCase());
+        schema.put("$id", "https://exeris.eu/schemas/" + metadata.entityName().toLowerCase(Locale.ROOT));
         schema.put("$schema", "https://json-schema.org/draft/2020-12/schema");
         schema.put("title", metadata.entityName());
         schema.put("type", "object");

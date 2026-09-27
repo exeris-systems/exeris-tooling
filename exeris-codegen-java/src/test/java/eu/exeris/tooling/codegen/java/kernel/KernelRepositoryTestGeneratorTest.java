@@ -1,7 +1,9 @@
 package eu.exeris.tooling.codegen.java.kernel;
 
+import eu.exeris.sdk.sourcemodel.ast.DataScope;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
+import eu.exeris.sdk.sourcemodel.ast.SystemFieldsMetadata;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import org.junit.jupiter.api.DisplayName;
@@ -138,7 +140,7 @@ class KernelRepositoryTestGeneratorTest {
     }
 
     @Test
-    @DisplayName("a versioned entity is NOT pre-staged — the update tests pin the T26 fix")
+    @DisplayName("a versioned entity is NOT pre-staged — the update tests pin the T54 fix")
     void doesNotStageAwayTheVersionNullPath() {
         DomainMetadata versioned = DomainMetadata.builder("Order", "com.example.domain")
                 .path("/orders")
@@ -147,8 +149,8 @@ class KernelRepositoryTestGeneratorTest {
                 .build();
 
         // update() reads the version off a freshly constructed entity. Staging it first would have
-        // hidden T26 (a wrapper `Long version` unboxed to null); leaving it unset is what makes
-        // every consumer's generated test a regression test for that fix.
+        // hidden the null-version NPE (a wrapper `Long version` unboxed to null); leaving it unset
+        // is what makes every consumer's generated test a regression test for the boxed read.
         assertThat(generate(versioned)).doesNotContain("entity.setVersion(");
     }
 
@@ -196,18 +198,39 @@ class KernelRepositoryTestGeneratorTest {
     }
 
     @Test
-    @DisplayName("T36: the stamp pair is emitted, keyed on a tenant no other value in the file shares")
-    void emitsTheStampPair() {
+    @DisplayName("T36: the stamp is emitted, keyed on a tenant no other value in the file shares")
+    void emitsTheStamp() {
         String source = generate(TENANT_ORDER);
 
         assertThat(source)
                 .contains("void saveStampsTheActingTenantWhenTheCallerLeftItUnset()")
-                .contains("void saveKeepsATenantTheCallerSet()")
                 // The bound tenant must differ from the UUID every other field is staged with,
                 // or the stamp test could not tell a value that came from the context apart from
                 // one that was already on the entity.
                 .contains("TENANT_KEY = \"00000000-0000-4000-8000-000000000002\"")
-                .contains("callerTenant = UUID.fromString(\"00000000-0000-4000-8000-000000000001\")");
+                // The round-trip stages the owner as the bound tenant: anything else is refused
+                // before there is a row to read back (ADR-090).
+                .contains("original.setTenantId(UUID.fromString(TENANT_KEY))");
+    }
+
+    @Test
+    @DisplayName("ADR-090: match, mismatch, unbound and update-cannot-move are each an emitted case")
+    void emitsTheMismatchedTenantCases() {
+        String source = generate(TENANT_ORDER);
+
+        assertThat(source)
+                .contains("void saveAcceptsATenantThatIsTheBoundOne()")
+                .contains("void saveRefusesATenantThatIsNotTheBoundOne()")
+                .contains("asTenant(() -> Assertions.assertThatThrownBy(() -> repository.save(entity))"
+                        + ".isInstanceOf(OrderTenantMismatchException.class))")
+                .contains("void saveLeavesACallerTenantToTheDatabaseWhenNoneIsBound()")
+                .contains("void updateNeverWritesTheTenantSoARowCannotMove()")
+                .contains("Assertions.assertThat(persistence.binds.values()).doesNotContain(otherTenant)")
+                // The WHERE id follows the SET list, which does not carry the owner: orderNumber
+                // and quantity are the SET list, so the id binds at index 2.
+                .contains("Assertions.assertThat(persistence.binds.get(2)).isEqualTo(id)")
+                // A "keeps whatever tenant the caller set" case would contradict ADR-090.
+                .doesNotContain("saveKeepsATenantTheCallerSet");
     }
 
     @Test
@@ -236,6 +259,58 @@ class KernelRepositoryTestGeneratorTest {
                 .contains("import eu.exeris.kernel.spi.security.ImmutableStorageContext;")
                 .doesNotContain("org.mockito")
                 .doesNotContain("org.easymock");
+    }
+
+    /** A UNIVERSE entity — owner plus a shared-scope key of {@code scopeType}. */
+    private static DomainMetadata universeSpecies(String scopeType) {
+        return DomainMetadata.builder("Species", "com.example.domain")
+                .dataScope(DataScope.UNIVERSE)
+                .systemFields(new SystemFieldsMetadata("id", "createdAt", "createdBy", "updatedAt",
+                        "updatedBy", "organizationId", "version", null, null, null, "worldId"))
+                .fields(List.of(
+                        FieldMetadata.builder("name", "String").build(),
+                        FieldMetadata.builder("organizationId", "java.util.UUID").build(),
+                        FieldMetadata.builder("worldId", scopeType).build()))
+                .build();
+    }
+
+    @Test
+    @DisplayName("T29 B: a UNIVERSE entity's writes run as an owner inside a shared scope, and the scope stamp is tested")
+    void universeEntityBindsASharedScopeAndTestsItsStamp() {
+        String source = generate(universeSpecies("java.util.UUID"));
+
+        assertThat(source)
+                // A fixed literal, distinct from the bound tenant and from every staged UUID.
+                .contains("SCOPE_KEY = \"00000000-0000-4000-8000-000000000003\"")
+                .contains("ImmutableStorageContext.shared(TENANT_KEY).withSharedScope(SCOPE_KEY)")
+                .contains("void saveStampsTheSharedScopeWhenTheCallerLeftItUnset()")
+                .contains("Assertions.assertThat(entity.getWorldId()).isEqualTo(UUID.fromString(SCOPE_KEY))")
+                .contains("void saveRefusesASharedScopeThatIsNotTheBoundOne()")
+                .contains(".isInstanceOf(SpeciesSharedScopeMismatchException.class)")
+                .contains("void saveKeepsACallerSharedScopeWhenNoneIsBound()")
+                .contains("original.setWorldId(UUID.fromString(SCOPE_KEY))")
+                // The owner stamp pair ships too: a UNIVERSE row is owned.
+                .contains("void saveStampsTheActingTenantWhenTheCallerLeftItUnset()");
+    }
+
+    @Test
+    @DisplayName("T29 B: a String shared-scope key is compared as the bound string itself")
+    void stringSharedScopeIsComparedAsAString() {
+        assertThat(generate(universeSpecies("java.lang.String")))
+                .contains("Assertions.assertThat(entity.getWorldId()).isEqualTo(SCOPE_KEY)")
+                .doesNotContain("UUID.fromString(SCOPE_KEY)");
+    }
+
+    @Test
+    @DisplayName("T29 B: a TENANT entity's tests carry none of the shared-scope scaffold")
+    void tenantEntityGetsNoSharedScopeScaffold() {
+        // Non-vacuous: universeEntityBindsASharedScopeAndTestsItsStamp proves the same emitter
+        // writes these for a UNIVERSE entity. Also the byte-stability guard for TENANT output.
+        assertThat(generate(TENANT_ORDER))
+                .contains("ImmutableStorageContext.shared(TENANT_KEY);")
+                .doesNotContain("SCOPE_KEY")
+                .doesNotContain("withSharedScope")
+                .doesNotContain("SharedScope");
     }
 
     @Test

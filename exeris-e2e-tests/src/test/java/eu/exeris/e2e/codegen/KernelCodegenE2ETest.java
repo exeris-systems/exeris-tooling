@@ -2,11 +2,14 @@ package eu.exeris.e2e.codegen;
 
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
+import eu.exeris.sdk.sourcemodel.ast.DataScope;
 import eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
+import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 import eu.exeris.sdk.sourcemodel.ast.GraphEdgeMetadata;
 import eu.exeris.sdk.sourcemodel.ast.GraphMetadata;
 import eu.exeris.sdk.sourcemodel.ast.SagaMetadata;
+import eu.exeris.sdk.sourcemodel.ast.SystemFieldsMetadata;
 import eu.exeris.tooling.codegen.java.kernel.KernelGeneratorStrategy;
 import org.junit.jupiter.api.*;
 
@@ -21,6 +24,7 @@ class KernelCodegenE2ETest {
 
     private static DomainMetadata orderMetadata;
     private static DomainMetadata productMetadata;
+    private static DomainMetadata speciesMetadata;
 
     @BeforeAll
     static void setupMetadata() {
@@ -39,6 +43,19 @@ class KernelCodegenE2ETest {
                 .path("/products")
                 .module("catalog")
                 .build();
+
+        // Owned by organizationId, readable across worldId.
+        speciesMetadata = DomainMetadata.builder("Species", "com.example.domain")
+                .path("/species")
+                .module("catalog")
+                .dataScope(DataScope.UNIVERSE)
+                .systemFields(new SystemFieldsMetadata("id", "createdAt", "createdBy", "updatedAt",
+                        "updatedBy", "organizationId", "version", null, null, null, "worldId"))
+                .fields(List.of(
+                        FieldMetadata.builder("name", "String").build(),
+                        FieldMetadata.builder("organizationId", "java.util.UUID").build(),
+                        FieldMetadata.builder("worldId", "java.util.UUID").build()))
+                .build();
     }
 
     @Nested
@@ -55,7 +72,8 @@ class KernelCodegenE2ETest {
                             ArtifactType.CONTROLLER,
                             ArtifactType.SERVICE,
                             ArtifactType.REPOSITORY,
-                            ArtifactType.DOMAIN_ERROR,
+                            ArtifactType.DOMAIN_ERROR,  // <Entity>NotFoundException (ADR-076)
+                            ArtifactType.DOMAIN_ERROR,  // <Entity>TenantMismatchException (ADR-090)
                             ArtifactType.EVENT,
                             ArtifactType.EVENT_HANDLER,
                             ArtifactType.GRAPH_SYNC,
@@ -153,7 +171,28 @@ class KernelCodegenE2ETest {
                     .contains("flowEngine.plans().newDefinition(DEFINITION_NAME)")
                     .contains("flowEngine.plans().compile(builder.build())")
                     .contains("flowEngine.scheduler().schedule(initialize(), context)")
-                    .contains("return FlowOutcome.CONTINUE");
+                    .contains("return FlowOutcome.CONTINUE")
+                    // An undeclared version is version 1, which the builder produces by itself —
+                    // no call, so a saga that declares no version regenerates byte-identical.
+                    .doesNotContain("DEFINITION_VERSION")
+                    .doesNotContain(".version(");
+        }
+
+        @Test
+        @DisplayName("K5: a declared @Saga.version becomes the plan's version through FlowDefinitionBuilder.version(int)")
+        void versionedSagaDeclaresItsPlanVersion() {
+            DomainMetadata versioned = DomainMetadata.builder("Order", "com.example.domain")
+                    .path("/orders")
+                    .sagaMetadata(SagaMetadata.builder("OrderSaga").version(4).build())
+                    .build();
+
+            String sagaFlow = strategy.generate(versioned).stream()
+                    .filter(f -> f.artifactType() == ArtifactType.SAGA)
+                    .findFirst().orElseThrow().content();
+            assertThat(sagaFlow)
+                    .contains("private static final int DEFINITION_VERSION = 4;")
+                    .contains("FlowDefinitionBuilder builder = flowEngine.plans().newDefinition(DEFINITION_NAME);\n"
+                            + "        builder.version(DEFINITION_VERSION);");
         }
 
         @Test
@@ -182,6 +221,33 @@ class KernelCodegenE2ETest {
                     .isEqualTo("ProductService");
             assertThat(files.stream().filter(f -> f.artifactType() == ArtifactType.REPOSITORY).findFirst().orElseThrow().className())
                     .isEqualTo("ProductRepository");
+        }
+
+        @Test
+        @DisplayName("T29 B: a UNIVERSE entity emits its TENANT-shaped CREATE plus one additive shared-scope migration")
+        void universeEntityEmitsTheWideningMigration() {
+            List<GeneratedFile> files = strategy.generate(speciesMetadata);
+
+            List<GeneratedFile> migrations = files.stream()
+                    .filter(f -> f.artifactType() == ArtifactType.CONFIGURATION)
+                    .toList();
+            assertThat(migrations).extracting(GeneratedFile::className)
+                    .containsExactly("V2416003__create_speciess", "V4416003__shared_scope_speciess");
+            assertThat(migrations.get(1).content())
+                    .contains("CREATE POLICY speciess_shared_scope_policy ON speciess FOR SELECT")
+                    .contains("USING (world_id = NULLIF(current_setting('exeris.shared_scope', true), '')::uuid);");
+            assertThat(files.stream().filter(f -> f.artifactType() == ArtifactType.REPOSITORY)
+                    .findFirst().orElseThrow().content())
+                    .contains("if (entity.getWorldId() == null) entity.setWorldId(actingSharedScope());");
+        }
+
+        @Test
+        @DisplayName("T29 B: the tenant-scoped and global fixtures emit no shared-scope migration")
+        void otherTiersEmitNoWideningMigration() {
+            assertThat(strategy.generate(orderMetadata)).extracting(GeneratedFile::className)
+                    .noneMatch(name -> name.contains("__shared_scope_"));
+            assertThat(strategy.generate(productMetadata)).extracting(GeneratedFile::className)
+                    .noneMatch(name -> name.contains("__shared_scope_"));
         }
     }
 }

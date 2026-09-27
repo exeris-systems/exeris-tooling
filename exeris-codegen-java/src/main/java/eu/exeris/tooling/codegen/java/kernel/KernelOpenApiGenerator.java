@@ -6,6 +6,7 @@ import eu.exeris.tooling.codegen.java.openapi.OpenApiGenerator;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 
 import java.io.IOException;
+import java.util.Locale;
 
 /**
  * Kernel OpenAPI Generator.
@@ -51,7 +52,7 @@ public class KernelOpenApiGenerator implements KernelArtifactGenerator {
     }
 
     private String toKebabCase(String str) {
-        return str.replaceAll("([a-z])([A-Z])", "$1-$2").toLowerCase();
+        return str.replaceAll("([a-z])([A-Z])", "$1-$2").toLowerCase(Locale.ROOT);
     }
 
     @Override

@@ -100,12 +100,24 @@ class GeneratedTestsE2ETest {
         assertThat(generatedTests.resolve("com/shop/service/OrderServiceTest.java")).exists();
         assertThat(generatedTests.resolve("com/shop/repository/OrderRepositoryTest.java")).exists();
         assertThat(generatedTests.resolve("com/shop/repository/InvoiceRepositoryTest.java")).exists();
+        assertThat(generatedTests.resolve("com/shop/repository/SpeciesRepositoryTest.java")).exists();
         assertThat(generatedTests.resolve("com/shop/testsupport/RecordingHttpExchange.java")).exists();
         assertThat(generatedTests.resolve("com/shop/testsupport/RecordingPersistence.java")).exists();
         assertThat(generatedTests.resolve("com/shop/testsupport/RecordingRequestBody.java")).exists();
         assertThat(generatedMain.resolve("com/shop/handler/OrderHandlerTest.java")).doesNotExist();
         assertThat(generatedMain.resolve("com/shop/service/OrderServiceTest.java")).doesNotExist();
         assertThat(generatedMain.resolve("com/shop/handler/OrderHandler.java")).exists();
+    }
+
+    @Test
+    @DisplayName("K5: @Saga(version = 2) travels processor → metadata → emitted flow")
+    void declaredSagaVersionReachesTheEmittedFlow() throws IOException {
+        // The whole chain in one assertion: the processor extracts @Saga.version, and
+        // KernelSagaGenerator emits it. A drop anywhere along the way would leave the
+        // flow at version 1, which compiles and resumes parked sagas on the wrong plan.
+        assertThat(Files.readString(generatedMain.resolve("com/shop/saga/OrderSagaFlow.java")))
+                .contains("private static final int DEFINITION_VERSION = 2;")
+                .contains("builder.version(DEFINITION_VERSION);");
     }
 
     @Test
@@ -135,8 +147,21 @@ class GeneratedTestsE2ETest {
                             // that the tenant/audit/soft-delete/version bind-read pairs line up.
                             DiscoverySelectors.selectClass(
                                     Class.forName("com.shop.repository.InvoiceRepositoryTest", true, appLoader)),
+                            // The UNIVERSE entity: the only executed proof that the
+                            // shared-scope stamp reads the bound StorageContext's scope and that the
+                            // tagged column lands at its own bind index.
                             DiscoverySelectors.selectClass(
-                                    Class.forName("com.shop.saga.OrderSagaFlowTest", true, appLoader)))
+                                    Class.forName("com.shop.repository.SpeciesRepositoryTest", true, appLoader)),
+                            DiscoverySelectors.selectClass(
+                                    Class.forName("com.shop.saga.OrderSagaFlowTest", true, appLoader)),
+                            // The tenant-partitioned and UNIVERSE handlers (ADR-090): the only
+                            // executed proof that a foreign tenant / shared scope answers 400
+                            // past every guard — and, since they dispatch with a tenant bound,
+                            // that the tenant guard lets a bound request through.
+                            DiscoverySelectors.selectClass(
+                                    Class.forName("com.shop.handler.InvoiceHandlerTest", true, appLoader)),
+                            DiscoverySelectors.selectClass(
+                                    Class.forName("com.shop.handler.SpeciesHandlerTest", true, appLoader)))
                     .build();
 
             Launcher launcher = LauncherFactory.create();
@@ -164,9 +189,14 @@ class GeneratedTestsE2ETest {
             // the one T8 finder the fixture carries) + 7 repository cases for Order (the save/load
             // round-trip and the six paths around it) + 9 for Invoice — the entity that carries
             // every system column, and the only tenant-partitioned one here, so it alone gets the
-            // T36 pair proving save stamps an absent tenant and keeps one the caller set — + 4
-            // saga cases.
-            assertThat(summary.getTestsSucceededCount()).isEqualTo(47);
+            // tenant stamp and the four ADR-090 cases (bound tenant accepted, foreign tenant refused,
+            // unbound left to the database, update never writes the owner) = 12 — + 15 for Species,
+            // the UNIVERSE entity: the same 12 plus the shared-scope stamp, the foreign-shared-scope refusal
+            // and the kept-when-unbound tag — + 4 saga cases — + 14 InvoiceHandlerTest cases (the 9
+            // bodyless/guard cases, 3 @Validation cases for its required reference, and the two
+            // ADR-090 foreign-tenant 400s) + 15 SpeciesHandlerTest cases (the same, plus the
+            // foreign-shared-scope 400).
+            assertThat(summary.getTestsSucceededCount()).isEqualTo(94);
         }
     }
 
@@ -279,8 +309,10 @@ class GeneratedTestsE2ETest {
                 @DomainEvent(name = "OrderPlaced", trigger = DomainEvent.Trigger.CREATE, topic = "orders.placed")
                 // Three steps, one of them compensating: enough for the emitted saga test to have
                 // a transition chain to check (a single-step saga has none) and a compensation
-                // branch to exercise.
-                @Saga(name = "OrderSaga", timeout = "PT30M", maxRetries = 3)
+                // branch to exercise. version = 2 makes the emitted initialize() call
+                // FlowDefinitionBuilder.version(int), a default that throws unless overridden,
+                // so the four saga cases below only pass if RecordingFlow records it.
+                @Saga(name = "OrderSaga", version = 2, timeout = "PT30M", maxRetries = 3)
                 public class Order {
 
                     private UUID id;
@@ -414,10 +446,10 @@ class GeneratedTestsE2ETest {
                     @Field(label = "Deleted")
                     private boolean deleted;
 
-                    // Deliberately the WRAPPER, not `long`: this is the declaration that used to
-                    // NPE on the first save() of a fresh entity (T26), because the emitter bound
-                    // the version by unboxing. Keeping it boxed here is the regression test — a
-                    // primitive would pass whether or not the fix is present.
+                    // Deliberately the WRAPPER, not `long`: a `Long version` is null on a fresh
+                    // entity, so an emitter that bound the version by unboxing would NPE on the
+                    // first save(). Keeping it boxed here is the regression test — a primitive
+                    // would pass whether or not the boxed read is present.
                     @Field(label = "Version")
                     private Long version;
 
@@ -475,6 +507,70 @@ class GeneratedTestsE2ETest {
 
                     public void setVersion(Long version) {
                         this.version = version;
+                    }
+                }
+                """);
+        // Owned by organizationId, readable across worldId. The system block is left
+        // out on purpose (no audited/versioned/softDelete), so the only system columns in its
+        // layout are the owner and — as a plain domain column — the shared-scope key.
+        sources.put("com/shop/domain/Species.java",
+                """
+                package com.shop.domain;
+
+                import eu.exeris.sdk.annotation.ExerisDomain;
+                import eu.exeris.sdk.annotation.Field;
+                import eu.exeris.sdk.annotation.system.SharedScope;
+                import eu.exeris.sdk.annotation.system.TenantId;
+
+                import java.util.UUID;
+
+                @ExerisDomain(module = "catalog", path = "/species",
+                        dataScope = ExerisDomain.DataScope.UNIVERSE)
+                public class Species {
+
+                    private UUID id;
+
+                    @Field(label = "Name", required = true)
+                    private String name;
+
+                    @Field(label = "Organization")
+                    @TenantId
+                    private UUID organizationId;
+
+                    @Field(label = "World")
+                    @SharedScope
+                    private UUID worldId;
+
+                    public UUID getId() {
+                        return id;
+                    }
+
+                    public void setId(UUID id) {
+                        this.id = id;
+                    }
+
+                    public String getName() {
+                        return name;
+                    }
+
+                    public void setName(String name) {
+                        this.name = name;
+                    }
+
+                    public UUID getOrganizationId() {
+                        return organizationId;
+                    }
+
+                    public void setOrganizationId(UUID organizationId) {
+                        this.organizationId = organizationId;
+                    }
+
+                    public UUID getWorldId() {
+                        return worldId;
+                    }
+
+                    public void setWorldId(UUID worldId) {
+                        this.worldId = worldId;
                     }
                 }
                 """);
