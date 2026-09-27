@@ -214,5 +214,5 @@ break:
 - The T17 manifest shape: how peer bindings are recorded, and their exclusion from `initOrder` and
   `contentBinding`. That needs its own amendment before T17 ships. The architect review adds one
   constraint on it: it must not raise `cap-manifest.json`'s `schemaVersion`, because the SDK boot
-  check (`CompositionStampAssertion.KNOWN_SCHEMA_VERSION = 2`) refuses anything above 2.
+  check (`KNOWN_SCHEMA_VERSION = 2` in `CompositionStampAssertion`) refuses anything above 2.
 - The saga remote-dispatch body, which stays gated as §6 says.
