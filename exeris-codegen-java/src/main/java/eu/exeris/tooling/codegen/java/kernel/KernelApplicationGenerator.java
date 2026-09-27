@@ -903,7 +903,8 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .addJavadoc("registered here therefore never matches on a real boot; the generated\n")
                 .addJavadoc("stream routes are registered on {@link $T#$L} instead. Resolving a\n",
                         lifecycleType, EDGE_ROUTER_METHOD)
-                .addJavadoc("hand-registered stream through a forwarding handler is a kernel change (K9).\n")
+                .addJavadoc("hand-registered stream through a forwarding handler needs a kernel change\n")
+                .addJavadoc("(ADR-070, Amendment 2).\n")
                 .addComment("No generated body — override to register hand-written routes.")
                 .build());
 
@@ -1173,7 +1174,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .addModifiers(Modifier.PUBLIC)
                 .addParameter(atomicHttpHandler, HANDLER_SLOT)
                 .addParameter(componentsType, COMPONENTS_FIELD)
-                .addJavadoc("The pre-0.9.0 shape, kept for hand-rolled launchers.\n")
+                .addJavadoc("For a hand-rolled launcher that binds its own server handler.\n")
                 .addJavadoc("<p>Publishes the components to a slot nothing reads, so an application\n")
                 .addJavadoc("composed this way serves no generated stream route. Bind\n")
                 .addJavadoc("{@link #$L($T, $T)} as the server handler and use\n",

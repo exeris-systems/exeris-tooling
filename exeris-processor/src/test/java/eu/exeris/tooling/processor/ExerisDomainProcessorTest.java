@@ -1899,7 +1899,7 @@ class ExerisDomainProcessorTest {
                     .toList();
             assertThat(transitionWarnings).hasSize(1);
             assertThat(transitionWarnings.getFirst())
-                    .contains("held back until 0.10")
+                    .contains("held back, and the gate is the kernel")
                     .contains("the gate is the kernel, not a generator")
                     .contains("only an unguarded SUCCESS edge is expressible")
                     .doesNotContain("discarded before it reaches any generator");

@@ -191,7 +191,7 @@ public final class KernelHandlerTestGenerator {
                     .addJavadoc("Runs {@code dispatch} with a tenant bound, the way the kernel's\n")
                     .addJavadoc("SecurityInterceptor binds {@code STORAGE_CONTEXT} around a request to a\n")
                     .addJavadoc("route that demands identity. The handler's tenant guard answers 500\n")
-                    .addJavadoc("without one (T41).\n")
+                    .addJavadoc("without one.\n")
                     .addStatement("$T.where($T.STORAGE_CONTEXT, TENANT_SCOPE).run(dispatch)",
                             SCOPED_VALUE, KERNEL_PROVIDERS)
                     .build());

@@ -286,7 +286,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "reaches the schema and the repository. This attribute is not: "
                             + "SystemFieldsMetadata carries one field name per role and has no component "
                             + "for it, so setting it changes no emitted output. The generated repository "
-                            + "stamps an absent tenant from the bound StorageContext (T36) "
+                            + "stamps an absent tenant from the bound StorageContext "
                             + "unconditionally, so autoPopulate = false does not turn it off"),
             new InertAttribute("TenantId", "exposeInApi",
                     "the annotation's role — which field plays it — is extracted (C1) and "
@@ -360,8 +360,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "SystemFieldsMetadata carries one field name per role and has no component "
                             + "for it, so setting it changes no emitted output. There is also nothing "
                             + "for it to govern: no restore is emitted anywhere — no route, handler, "
-                            + "repository method or client un-sets the soft-delete flag (0.9.0 removed "
-                            + "the TypeScript restore(), which called a route nothing serves) — and "
+                            + "repository method or client un-sets the soft-delete flag — and "
                             + "the emitted soft delete sets only the flag, never this column"),
             new InertAttribute("SoftDeletedBy", "clearOnRestore",
                     "the annotation's role — which field plays it — is extracted (C1) and "
@@ -369,8 +368,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "SystemFieldsMetadata carries one field name per role and has no component "
                             + "for it, so setting it changes no emitted output. There is also nothing "
                             + "for it to govern: no restore is emitted anywhere — no route, handler, "
-                            + "repository method or client un-sets the soft-delete flag (0.9.0 removed "
-                            + "the TypeScript restore(), which called a route nothing serves) — and "
+                            + "repository method or client un-sets the soft-delete flag — and "
                             + "the emitted soft delete sets only the flag, never this column"),
             new InertAttribute("AuditCreatedAt", "immutable",
                     "the annotation's role — which field plays it — is extracted (C1) and "
@@ -474,8 +472,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             new InertAnnotation("eu.exeris.sdk.annotation.EventSourced", "EventSourced",
                     "event-sourcing emission is not yet implemented, so the extracted "
                             + "EventSourcedMetadata reaches no generator (see ROADMAP EV2). This "
-                            + "is a tooling gap, NOT a kernel gate: every kernel line this repo "
-                            + "has pinned since 0.11.0 ships both halves — EventStreamReader."
+                            + "is a tooling gap, NOT a kernel gate: the kernel line this repo "
+                            + "pins ships both halves — EventStreamReader."
                             + "replayFromVersion(StreamId, long) is the replayable per-aggregate "
                             + "read and EventStreamAppender.append(StreamId, expectedVersion, ...) "
                             + "the optimistic-concurrency write, with JDBC and Kafka Community "
@@ -552,9 +550,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      */
     private static final List<UnreadAnnotation> UNREAD_NOTES = List.of(
             new UnreadAnnotation("PrimaryKey",
-                    "the other ten annotation.system.* annotations are extracted — nine since C1, "
-                            + "@SharedScope since the UNIVERSE slice (T29 B) — and their field names "
-                            + "reach the schema and the repository. This one is held "
+                    "the other ten annotation.system.* annotations are extracted and their "
+                            + "field names reach the schema and the repository. This one is held "
                             + "back on purpose: SystemFieldsMetadata.primaryKeyField is the single "
                             + "component no generator honours — KernelFlywayGenerator emits "
                             + "id UUID PRIMARY KEY unconditionally, the repository identifies rows "
@@ -579,21 +576,21 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "T12 and the @View mesh binding sit on — so it is design-gated on a "
                             + "topology decision, not on an extractor"),
             new UnreadAnnotation("GraphProperty",
-                    "the type-level @Graph is read and, since T57, so is @GraphEdge — this one is "
+                    "the type-level @Graph and the field-level @GraphEdge are read — this one is "
                             + "not, and GraphMetadata.properties is passed as null in consequence"),
             new UnreadAnnotation("GraphQuery",
-                    "the type-level @Graph is read and, since T57, so is @GraphEdge — this one is "
+                    "the type-level @Graph and the field-level @GraphEdge are read — this one is "
                             + "not, and GraphMetadata.queries is passed as an empty list"),
             new UnreadAnnotation("SagaTransition",
-                    "held back until 0.10 (decided 2026-09-26), and the gate is the kernel, not "
-                            + "a generator. Kernel 0.12's flow plan precomputes exactly one next "
+                    "held back, and the gate is the kernel, not "
+                            + "a generator. The kernel's flow plan precomputes exactly one next "
                             + "step per step — the \"default\"-tagged transition, else the first "
                             + "declared one, else the following step — and never evaluates an "
                             + "outcome or a condition tag: CONTINUE takes that one step, and FAIL "
                             + "unwinds the compensation stack instead of following an edge. So "
                             + "only an unguarded SUCCESS edge is expressible; a FAILURE, TIMEOUT or "
                             + "COMPENSATED edge, a guard, or a second SUCCESS edge out of one step "
-                            + "is not. Until the kernel routes by outcome or tag (asked for), "
+                            + "is not. Until the kernel routes by outcome or tag, "
                             + "KernelSagaGenerator chains SagaMetadata.steps() in declaration "
                             + "order and a declared transition changes nothing"),
             new UnreadAnnotation("QueryParam",
