@@ -404,7 +404,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "repository's to emit and is not built (T53)"),
             new InertAttribute("ExerisDomain", "primaryKeyField",
                     "it is extracted — SystemFieldsMetadata carries it — but it is the one "
-                            + "component of that record no generator reads. The other nine are all "
+                            + "extracted component of that record no generator reads (the eleventh, "
+                            + "sharedScopeField, is not extracted). The other nine are all "
                             + "honoured: KernelFlywayGenerator's sysCol maps tenantId, the four "
                             + "audit stamps, the three soft-delete columns and version, and "
                             + "KernelRepositoryGenerator resolves five of them. The primary key is "
@@ -450,8 +451,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             new InertAnnotation("eu.exeris.sdk.annotation.EventSourced", "EventSourced",
                     "event-sourcing emission is not yet implemented, so the extracted "
                             + "EventSourcedMetadata reaches no generator (see ROADMAP EV2). This "
-                            + "is a tooling gap, NOT a kernel gate: the kernel line this repo "
-                            + "pins (0.11.0) ships both halves — EventStreamReader."
+                            + "is a tooling gap, NOT a kernel gate: the pinned kernel "
+                            + "ships both halves — EventStreamReader."
                             + "replayFromVersion(StreamId, long) is the replayable per-aggregate "
                             + "read and EventStreamAppender.append(StreamId, expectedVersion, ...) "
                             + "the optimistic-concurrency write, with JDBC and Kafka Community "
@@ -528,8 +529,10 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      */
     private static final List<UnreadAnnotation> UNREAD_NOTES = List.of(
             new UnreadAnnotation("PrimaryKey",
-                    "the other nine annotation.system.* annotations are extracted (C1) and their "
-                            + "field names reach the schema and the repository. This one is held "
+                    "nine of the other ten annotation.system.* annotations are extracted and "
+                            + "their field names reach the schema and the repository; the tenth, "
+                            + "@SharedScope, is not read, because DataScope.UNIVERSE is refused "
+                            + "(ROADMAP T29 slice B). This one is held "
                             + "back on purpose: SystemFieldsMetadata.primaryKeyField is the single "
                             + "component no generator honours — KernelFlywayGenerator emits "
                             + "id UUID PRIMARY KEY unconditionally, the repository identifies rows "
@@ -1206,23 +1209,22 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      * downstream.
      *
      * <p>An emitted RLS policy names a PostgreSQL session variable; it does not call an
-     * accessor. At the pinned kernel {@code v0.11.0} {@code exeris.tenant_id} is named in
-     * SPI, Core and the TCK, while {@code exeris.shared_scope} is named only in
-     * {@code exeris-kernel-community}. The persistence driver is swappable, so a migration
-     * the consumer commits may not depend on one driver's internal literal. Kernel 0.12
-     * promotes both to constants on {@code ConnectionInterceptor}; this refusal is gated on
-     * that pin (B0), and on an SDK carrier naming the field that holds a row's shared-scope
-     * value — without one every row keeps the column's {@code ''} default and UNIVERSE is
-     * behaviourally TENANT.
+     * accessor. The pinned kernel names both variables as SPI constants
+     * ({@code ConnectionInterceptor.SESSION_KEY_TENANT_ID} / {@code SESSION_KEY_SHARED_SCOPE}),
+     * so a migration the consumer commits depends on a contract, not on one swappable driver's
+     * literal. The SDK carries the field that holds a row's shared-scope value
+     * ({@code @SharedScope}, into {@code SystemFieldsMetadata.sharedScopeField}). This processor
+     * does not scan {@code @SharedScope} (ROADMAP T29 slice B), which is the one reason for this
+     * refusal: without that field every row would keep the column's {@code ''} default and
+     * UNIVERSE would be behaviourally TENANT.
      */
     private void errorReservedUniverseTier(TypeElement element) {
         messager.printMessage(
                 Diagnostic.Kind.ERROR,
                 DIAG_PREFIX + "@ExerisDomain.dataScope = DataScope.UNIVERSE is reserved and is "
-                        + "refused here rather than half-emitted. The session variable a "
-                        + "shared-scope policy must read is named only inside the Community "
-                        + "driver on this kernel pin, so there is nothing contracted to emit "
-                        + "against and this tier would fall back to the TENANT shape: "
+                        + "refused here rather than half-emitted. This processor does not read "
+                        + "@SharedScope yet, so nothing names the field that holds a row's "
+                        + "shared-scope value and this tier would fall back to the TENANT shape: "
                         + "an owner column, an owner-pinned policy, and a repository that binds "
                         + "getTenantId(). A shared-world row has no tenant property, so that build "
                         + "fails with 'cannot find symbol' inside generated code you are told not "
@@ -1623,10 +1625,13 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             return null;
         }
 
+        // The trailing null is sharedScopeField, the @SharedScope carrier. This processor does not
+        // scan @SharedScope, and UNIVERSE is refused at the declaration (errorReservedUniverseTier),
+        // so no emitted artefact consumes it. NON_NULL on the record keeps it out of the JSON.
         return new SystemFieldsMetadata(
                 primaryKeyField, createdAtField, createdByField,
                 updatedAtField, updatedByField, tenantIdField,
-                versionField, softDeleteField, softDeleteTimestampField, softDeletedByField);
+                versionField, softDeleteField, softDeleteTimestampField, softDeletedByField, null);
     }
 
     private static String nonBlankOr(String value, String fallback) {

@@ -22,7 +22,7 @@ jobs:
         # it catches source that stops compiling on a newer JDK, which a single row
         # would surface only downstream. Same shape as the SDK's matrix.
         #
-        # Branch protection now requires the 25 row (U2, 2026-08-18). The 26 row runs on
+        # Branch protection requires the 25 row. The 26 row runs on
         # every PR and reports, but a red 26 does not block a merge — which is the point:
         # forward-compatibility is information, not a gate on the release-bearing line.
         java: ['25', '26']
@@ -37,15 +37,16 @@ jobs:
       # so this ref decides which SDK version lands in the local repo, and it
       # must match exeris.sdk.version in the BOM.
       #
-      # Back on an immutable tag ref (U0). The `main` tracking this carried for
-      # the ADR-059 data-scope slice was an accepted cost while 0.10.0 was
-      # uncut — a moving ref lets an unrelated SDK commit turn this build red —
-      # and it ends with the release, not with the slice.
-      - name: Checkout exeris-sdk (v0.11.0 — matches exeris.sdk.version in the BOM)
+      # Tracking `main`: the BOM pins 0.12.0-SNAPSHOT, and `main` is the only
+      # ref that builds it. The cost is that a moving ref lets an unrelated SDK
+      # commit turn this build red, and it ends with the release: when the SDK
+      # tags v0.12.0, this returns to `ref: v0.12.0` in the same change that pins
+      # the final version. No tooling release is cut while this says `main`.
+      - name: Checkout exeris-sdk (main — 0.12.0-SNAPSHOT, matches exeris.sdk.version in the BOM)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: exeris-systems/exeris-sdk
-          ref: v0.11.0
+          ref: main
           path: exeris-sdk
 
       - name: Set up JDK ${{ matrix.java }}
@@ -82,11 +83,13 @@ jobs:
 
       - name: mvn -B verify (exeris-tooling)
         working-directory: exeris-tooling
-        # No -U, and now for the simplest possible reason: every cross-repo pin
-        # is a release. The kernel deps resolve from GitHub Packages at 0.11.0
-        # and the SDK is built from the v0.11.0 tag into the local repo by the
-        # step above. Both are immutable, so a forced update check has nothing
-        # to find. -U belongs back only if a SNAPSHOT ever arrives over the wire.
+        # No -U. The SDK SNAPSHOT is built into the local repo by the step above
+        # rather than fetched, so there is no remote SNAPSHOT to re-check. The
+        # kernel resolves from GitHub Packages at 0.12.0, a release-shaped
+        # coordinate that the kernel's CI publishes once from development/0.12.0
+        # and never overwrites. It is a pre-release until the kernel tags
+        # v0.12.0 (see the BOM). -U belongs back only if a SNAPSHOT ever arrives
+        # over the wire.
         run: mvn -B -ntp verify
         env:
           GITHUB_ACTOR: ${{ github.actor }}
