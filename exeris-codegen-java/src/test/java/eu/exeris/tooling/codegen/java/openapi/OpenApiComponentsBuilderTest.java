@@ -33,7 +33,7 @@ class OpenApiComponentsBuilderTest {
     }
 
     @Test
-    @DisplayName("ADR-090: the owner is readOnly on the entity and absent from both DTOs")
+    @DisplayName("the owner is readOnly on the entity and absent from both DTOs")
     void ownerIsReadOnlyAndNotInTheDtos() {
         DomainMetadata meta = DomainMetadata.builder("Order", "com.example.domain")
                 .dataScope(eu.exeris.sdk.sourcemodel.ast.DataScope.TENANT)
@@ -55,7 +55,7 @@ class OpenApiComponentsBuilderTest {
     }
 
     @Test
-    @DisplayName("ADR-090: a renamed owner and a UNIVERSE shared-scope key are both server-owned")
+    @DisplayName("a renamed owner and a UNIVERSE shared-scope key are both server-owned")
     void renamedOwnerAndSharedScopeAreReadOnly() {
         DomainMetadata meta = DomainMetadata.builder("Species", "com.example.domain")
                 .dataScope(eu.exeris.sdk.sourcemodel.ast.DataScope.UNIVERSE)
@@ -79,7 +79,7 @@ class OpenApiComponentsBuilderTest {
     }
 
     @Test
-    @DisplayName("ADR-090: a global entity's tenantId-named field is an ordinary, writable field")
+    @DisplayName("a global entity's tenantId-named field is an ordinary, writable field")
     void globalTenantIdFieldIsUntouched() {
         DomainMetadata meta = DomainMetadata.builder("Order", "com.example.domain")
                 .fields(List.of(FieldMetadata.builder("tenantId", "java.util.UUID").build()))

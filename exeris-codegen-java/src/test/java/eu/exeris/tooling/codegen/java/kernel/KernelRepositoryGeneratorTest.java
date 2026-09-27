@@ -242,7 +242,7 @@ class KernelRepositoryGeneratorTest {
     }
 
     @Test
-    @DisplayName("ADR-090: both write paths refuse a foreign tenant while one is bound, after the stamp")
+    @DisplayName("both write paths refuse a foreign tenant while one is bound, after the stamp")
     void shouldRefuseAForeignTenantOnWrites() {
         DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
                 .tenantScoped(true)
@@ -272,7 +272,7 @@ class KernelRepositoryGeneratorTest {
     }
 
     @Test
-    @DisplayName("ADR-090: the owner is not in the UPDATE SET list — no update can move a row")
+    @DisplayName("the owner is not in the UPDATE SET list — no update can move a row")
     void shouldNeverUpdateTheOwner() {
         DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
                 .tenantScoped(true)
@@ -297,7 +297,7 @@ class KernelRepositoryGeneratorTest {
     }
 
     @Test
-    @DisplayName("ADR-090: an entity with nothing to update still emits valid SQL — SET id = id, no binds")
+    @DisplayName("an entity with nothing to update still emits valid SQL — SET id = id, no binds")
     void shouldEmitAValidUpdateWhenNothingIsWritable() {
         // Owner-only (the owner is never written on update) and field-less global: both have an
         // empty SET list.
@@ -314,7 +314,7 @@ class KernelRepositoryGeneratorTest {
     }
 
     @Test
-    @DisplayName("ADR-090: a UNIVERSE entity refuses a foreign shared scope too; a global entity refuses nothing")
+    @DisplayName("a UNIVERSE entity refuses a foreign shared scope too; a global entity refuses nothing")
     void shouldRefuseAForeignSharedScopeOnAUniverseEntityOnly() {
         String universe = repositoryOf(universe("java.util.UUID",
                 eu.exeris.sdk.sourcemodel.ast.DataScope.UNIVERSE, "worldId")).content();

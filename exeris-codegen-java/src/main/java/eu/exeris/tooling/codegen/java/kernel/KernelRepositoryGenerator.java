@@ -111,7 +111,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     static final String ACTING_TENANT_METHOD = "actingTenantId";
     /** Name of the emitted acting-shared-scope resolver — see {@link #buildActingSharedScope}. */
     static final String ACTING_SHARED_SCOPE_METHOD = "actingSharedScope";
-    /** Name of the emitted foreign-tenant refusal — see {@link #buildRefuseForeignTenant} (ADR-090). */
+    /** Name of the emitted foreign-tenant refusal — see {@link #buildRefuseForeignTenant}. */
     static final String REFUSE_FOREIGN_TENANT_METHOD = "refuseForeignTenant";
     /** Name of the emitted foreign-shared-scope refusal — see {@link #buildRefuseForeignSharedScope}. */
     static final String REFUSE_FOREIGN_SHARED_SCOPE_METHOD = "refuseForeignSharedScope";
@@ -703,8 +703,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
      * without row-level security has none, and where the policy does fire its violation reaches the
      * handler's {@code catch (RuntimeException)} as a {@code 500} — a server fault reported for a
      * request the caller got wrong. The refusal applies only while a tenant is bound; with none bound
-     * the row is left to the database, so a seeder that writes owners explicitly keeps working. See
-     * ADR-090.
+     * the row is left to the database, so a seeder that writes owners explicitly keeps working.
      */
     private static void appendTenantStamp(MethodSpec.Builder method, Context ctx) {
         if (!isTenantPartitioned(ctx.metadata())) {
@@ -717,7 +716,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     }
 
     /**
-     * Emits the foreign-tenant refusal (ADR-090): a written row naming a tenant other than the
+     * Emits the foreign-tenant refusal: a written row naming a tenant other than the
      * bound one is refused with {@code <Entity>TenantMismatchException}, which the generated handler
      * answers {@code 400}.
      *
@@ -737,7 +736,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                 .addParameter(UUID_TYPE, tenant.javaName())
                 .addJavadoc("Refuses a written row whose {@code $L} is not the tenant this request is\n",
                         tenant.javaName())
-                .addJavadoc("bound to (ADR-090). With no tenant bound — no {@code StorageContext}, or\n")
+                .addJavadoc("bound to. With no tenant bound — no {@code StorageContext}, or\n")
                 .addJavadoc("the system scope — the row is left to row-level security, unchanged.\n")
                 .addJavadoc("\n")
                 .addJavadoc("@throws $T if a tenant is bound and {@code $L} names another\n",
@@ -798,7 +797,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
 
     /**
      * Emits the foreign-shared-scope refusal — the tenant rule applied to the caller-writable
-     * {@code @SharedScope} field (ADR-090). A row tagged with a scope other than the bound one is
+     * {@code @SharedScope} field. A row tagged with a scope other than the bound one is
      * refused with {@code <Entity>SharedScopeMismatchException}, answered {@code 400}. With no scope
      * bound the caller's tag is kept.
      *
@@ -814,7 +813,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                 .addParameter(uuid ? UUID_TYPE : ClassName.get(String.class), column.javaName())
                 .addJavadoc("Refuses a written row whose {@code $L} is not the shared scope this request\n",
                         column.javaName())
-                .addJavadoc("is bound to (ADR-090). With no scope bound, the caller's tag is kept.\n")
+                .addJavadoc("is bound to. With no scope bound, the caller's tag is kept.\n")
                 .addJavadoc("\n")
                 .addJavadoc("@throws $T if a scope is bound and {@code $L} names another\n",
                         mismatch, column.javaName())
@@ -976,7 +975,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                     .addJavadoc(", and while a shared scope is bound, a row tagged with another is\n")
                     .addJavadoc("refused with {@link $T}",
                             KernelErrorGenerator.sharedScopeMismatchType(ctx.metadata())));
-            save.addJavadoc(" (ADR-090).\n");
+            save.addJavadoc(".\n");
         }
         save.addStatement("if (entity.getId() == null) entity.setId($T.randomUUID())", UUID_TYPE);
         if (ctx.metadata().audited()) {
@@ -1005,7 +1004,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
 
     /**
      * The columns an {@code UPDATE} writes, in bind order: every layout column except {@code id},
-     * which closes the WHERE clause, and except the owning tenant (ADR-090).
+     * which closes the WHERE clause, and except the owning tenant.
      *
      * <p>The owner is not written on update, so no update can move a row to another tenant — not
      * with a tenant bound (where a foreign one is refused before this statement anyway), and not
@@ -1030,10 +1029,10 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     }
 
     private MethodSpec buildUpdate(Context ctx) {
-        // SET clause: every column except id (id is in WHERE) and the owner (ADR-090)
+        // SET clause: every column except id (id is in WHERE) and the owner
         List<Column> updatable = updateColumns(ctx.columns());
         // An entity with nothing to write — no domain field, no audit or version column, and the
-        // owner never written (ADR-090) — still needs a valid statement whose row count answers
+        // owner never written — still needs a valid statement whose row count answers
         // "did the row exist": SET id = id writes nothing and binds nothing.
         String setClause = updatable.isEmpty()
                 ? "id = id"
@@ -1085,7 +1084,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
             String tenantField = systemColumn(ctx, ColumnKind.TENANT_ID).javaName();
             update.addJavadoc("<p>The owner is never written: {@code $L} is not in the SET list, so\n",
                             tenantField)
-                    .addJavadoc("an update cannot move a row to another tenant (ADR-090). A missing\n")
+                    .addJavadoc("an update cannot move a row to another tenant. A missing\n")
                     .addJavadoc("{@code $L} is filled with the acting tenant, so the returned entity\n",
                             tenantField)
                     .addJavadoc("names its owner, and while a tenant is bound a different one is\n")

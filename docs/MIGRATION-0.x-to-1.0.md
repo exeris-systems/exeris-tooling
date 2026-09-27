@@ -1363,7 +1363,7 @@ with `IdentityStorageMapping` shared-scope enforcement (claim `x-exeris-shared-s
 deployment wrapper. Without one, reads are owner-only and new rows are owner-private, so it fails
 closed.
 
-### A write naming another tenant now answers `400`, and an update no longer writes the owner (T36, ADR-090)
+### A write naming another tenant now answers `400`, and an update no longer writes the owner (T36)
 
 On a tenant-partitioned entity (TENANT and UNIVERSE), while a tenant is bound:
 - a `POST`, `PUT` or action whose entity names a **different** tenant is refused by the repository
@@ -1478,4 +1478,3 @@ branch; it is listed here so the 0.9.0 regeneration brings no surprise.
 - [ADR-076 — A write against a row that is not there answers 404, not 500](adr/ADR-076-write-rejection-status.md)
 - [ADR-078 — The build fails when the generated application has no driver to run on](adr/ADR-078-runtime-driver-gate.md)
 - [ADR-079 — The emitted OpenAPI describes no authentication](adr/ADR-079-emitted-openapi-authentication-claim.md)
-- [ADR-090 — A write naming another tenant is refused with 400, not left to row-level security](adr/ADR-090-reject-mismatched-tenant.md)

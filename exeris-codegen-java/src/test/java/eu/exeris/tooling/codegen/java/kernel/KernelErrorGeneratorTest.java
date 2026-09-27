@@ -92,7 +92,7 @@ class KernelErrorGeneratorTest {
     }
 
     @Test
-    @DisplayName("ADR-090: a tenant-partitioned entity gets the caller-fault type for a foreign tenant")
+    @DisplayName("a tenant-partitioned entity gets the caller-fault type for a foreign tenant")
     void tenantPartitionedEntityGetsTheTenantMismatchType() {
         DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
                 .dataScope(DataScope.TENANT).build();
@@ -116,7 +116,7 @@ class KernelErrorGeneratorTest {
     }
 
     @Test
-    @DisplayName("ADR-090: a UNIVERSE entity with a @SharedScope field also gets the shared-scope type")
+    @DisplayName("a UNIVERSE entity with a @SharedScope field also gets the shared-scope type")
     void universeEntityGetsTheSharedScopeMismatchTypeToo() {
         DomainMetadata metadata = DomainMetadata.builder("Species", "com.example.domain")
                 .dataScope(DataScope.UNIVERSE)
@@ -137,7 +137,7 @@ class KernelErrorGeneratorTest {
     }
 
     @Test
-    @DisplayName("ADR-090: a global entity gets neither caller-fault type — it has no owner to contradict")
+    @DisplayName("a global entity gets neither caller-fault type — it has no owner to contradict")
     void globalEntityGetsNoMismatchType() {
         assertThat(generator.generateMultiple(order(true))).extracting(GeneratedFile::className)
                 .noneMatch(name -> name.contains("Mismatch"));
