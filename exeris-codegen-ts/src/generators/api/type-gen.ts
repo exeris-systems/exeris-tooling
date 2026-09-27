@@ -307,7 +307,7 @@ export function systemFieldNames(metadata: DomainMetadata): string[] {
     // Default system fields
     fields.push('version', 'createdAt', 'updatedAt');
     // A tenant-partitioned entity's owner is server-owned whether or not it declares a
-    // systemFields block (ADR-090): the repository stamps it, refuses a foreign one and never
+    // systemFields block: the repository stamps it, refuses a foreign one and never
     // updates it, and the emitted OpenAPI marks it readOnly and leaves it out of both DTOs.
     if (effectiveDataScope(metadata) !== 'GLOBAL') fields.push('tenantId');
   }
