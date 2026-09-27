@@ -635,8 +635,7 @@ ${this.generateSearchableFieldAccess(searchableFields)}
 
   private generateSoftDeleteMethods(idField: string): string {
     // archive() only. There is no restore(): the generated server has no route, handler or
-    // repository method that un-sets the soft-delete flag, so the service method it called
-    // PATCHed a path nothing serves and has been removed (service-gen).
+    // repository method that un-sets the soft-delete flag.
     return `
   // ═══════════════════════════════════════════════════════════════════════════
   // Actions - Soft Delete

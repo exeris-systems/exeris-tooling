@@ -306,7 +306,7 @@ describe('SystemFieldsMetadataSchema', () => {
       softDeleteField: 'gone',
       softDeleteTimestampField: 'goneAt',
       softDeletedByField: 'goneBy',
-      // SDK 0.12 / T29 slice B — present on a UNIVERSE entity only.
+      // Present on a UNIVERSE entity only.
       sharedScopeField: 'worldId',
     };
 

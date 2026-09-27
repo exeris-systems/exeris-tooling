@@ -1,11 +1,9 @@
 /**
  * PATCH/PUT parity — the TypeScript half of a cross-emitter check.
  *
- * The generated service sent PATCH for update while the generated kernel router served PUT, and the
- * kernel router matches methods exactly, so no generated front end could update anything. Its
- * `archive`/`restore` PATCHed paths nothing serves at all. Each emitter had tests; each test
- * asserted what its own emitter wrote — the emitted service spec pinned PATCH — and nothing held
- * one artefact's verb against another's.
+ * The kernel router matches methods exactly, so a generated service call on a verb or path the
+ * generated router does not serve fails every time. A test that asserts only what its own emitter
+ * wrote cannot see that; this one holds one artefact's verbs against another's.
  *
  * The router, the OpenAPI document and the Java client are built by Maven, this package by npm,
  * and the two never run together. So the route table lives in one committed file that both sides

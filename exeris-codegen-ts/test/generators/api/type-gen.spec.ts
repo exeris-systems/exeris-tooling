@@ -589,7 +589,7 @@ describe('TypeGenerator system-field resolution (exercised via .omit set in the 
   });
 });
 
-// ---------- T29 slice B: the shared-scope key is server-owned ----------
+// ---------- the shared-scope key is server-owned ----------
 
 describe('TypeGenerator — a UNIVERSE entity\'s sharedScopeField is server-owned', () => {
   const universe = () => domain({

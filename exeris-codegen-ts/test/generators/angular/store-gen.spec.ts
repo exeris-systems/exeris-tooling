@@ -383,8 +383,8 @@ describe('StoreGenerator softDelete branch', () => {
     expect(content).toContain("import { firstValueFrom } from 'rxjs';");
     // archive removes from list.
     expect(content).toContain('entities.filter(e => e.id !== id)');
-    // No restore: the generated server has no route that un-sets the soft-delete flag, and the
-    // service method this called PATCHed a path nothing serves (PATCH/PUT parity).
+    // No restore: the generated server has no route that un-sets the soft-delete flag (PATCH/PUT
+    // parity).
     expect(content).not.toContain('async restore(');
     expect(content).not.toContain('this.service.restore(');
   });

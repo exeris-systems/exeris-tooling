@@ -286,7 +286,7 @@ export function buildZodType(field: FieldMetadata): string {
  *
  * A UNIVERSE entity's `sharedScopeField` is server-owned exactly like its `tenantIdField`: the
  * generated repository stamps it from the bound storage context, and the emitted OpenAPI marks it
- * read-only, so the create/update DTOs never carry it (T29 slice B).
+ * read-only, so the create/update DTOs never carry it.
  */
 export function systemFieldNames(metadata: DomainMetadata): string[] {
   const fields = ['id'];

@@ -167,8 +167,8 @@ describe('generateView — OUT binding markers (G1/G6), classified by source', (
   });
 
   it('the G1 marker carries the expression language; a language is never read as a STREAM (G2)', () => {
-    // This case used to pin `language: 'sse'` → "TODO(@View G2) STREAM". BindSource has no STREAM
-    // constant, so no metadata can ask for G2; a language only tags the expression it rides with.
+    // BindSource has no STREAM constant, so no metadata can ask for G2; a language only tags the
+    // expression it rides with.
     const view = ViewMetadataSchema.parse({
       name: 'LangView',
       regions: [{ slot: 'main', components: [

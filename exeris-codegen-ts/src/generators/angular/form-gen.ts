@@ -97,7 +97,7 @@ export class FormGenerator implements CodeGenerator {
       return ['active', 'onboardingStatus', 'onboardingStartedAt', 'onboardingCompletedAt', 'hierarchyLevel', 'parentTenantId', 'createdAt', 'updatedAt', 'deleted', 'version'].includes(name);
     };
 
-    // A UNIVERSE entity's shared-scope key is server-owned like its tenant (T29 slice B): the
+    // A UNIVERSE entity's shared-scope key is server-owned like its tenant: the
     // repository stamps it from the bound storage context, the create DTO omits it (type-gen's
     // systemFieldNames), and the form therefore renders no control for it and never sends it.
     const sharedScopeField = domain.systemFields?.sharedScopeField;

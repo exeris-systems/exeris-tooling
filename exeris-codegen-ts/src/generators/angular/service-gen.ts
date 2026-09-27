@@ -292,8 +292,8 @@ export class ServiceGenerator implements CodeGenerator {
     lines.push(`  }`);
     lines.push(``);
     // PUT, because that is the verb the generated kernel router serves update on and the one
-    // the OpenAPI document publishes; the kernel router matches methods exactly, so the PATCH
-    // this used to send never reached a generated server. Pinned against the router by
+    // the OpenAPI document publishes; the kernel router matches methods exactly, so any other
+    // verb would never reach a generated server. Pinned against the router by
     // crud-route-parity.spec.ts (shared contract: exeris-e2e-tests contract/crud-routes.json).
     lines.push(`  update(id: string, data: ${modelName}Update): Observable<${modelName}> {`);
     lines.push(`    return this.http.put<${modelName}>(\`\${this.baseUrl}/\${id}\`, data);`);
@@ -306,7 +306,7 @@ export class ServiceGenerator implements CodeGenerator {
     // The generated server has no archive and no restore route. On a @SoftDelete entity its
     // DELETE is the archive — the emitted repository sets the flag instead of removing the row —
     // so softDelete calls that. There is no restore to call: no route, handler or repository
-    // method un-sets the flag, so the method that PATCHed a /restore path nothing serves is gone.
+    // method un-sets the flag.
     if (softDelete) {
       lines.push(``);
       lines.push(`  /** Archives the row: on this entity the server's DELETE sets the soft-delete flag. */`);

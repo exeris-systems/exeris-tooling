@@ -267,11 +267,10 @@ function renderNode(node: ComponentNodeMetadata, level: number, itemVar?: string
 
   // --- Diagnostics, classified by bind SOURCE ---
   //
-  // These used to key on which attributes were set: any `expression` was blamed on G1 and any
-  // `language` was called a G2 STREAM. So `@Bind(source = STATIC, expression = …)` rendered no
-  // value and blamed a relational read (G1) nobody asked for, and a SpEL-tagged binding was
-  // reported as a stream, which BindSource cannot even express. STATIC / NONE draws from nothing:
-  // the attributes are the author's mistake, and the comment says where the content belongs.
+  // Keyed on the source, never on which attributes are set. STATIC / NONE draws from nothing:
+  // its attributes are the author's mistake, and the comment says where the content belongs. An
+  // `expression` is the G1 relational fork only on a data source, and a `language` alone is no
+  // stream — BindSource has no STREAM constant to express one.
   const wrongAttrs = wrongAttributesOnStatic(source, type, binding);
   if (wrongAttrs.length > 0) {
     const named = wrongAttrs.map(([k, v]) => `${k}="${escapeAttr(v)}"`).join(' ');
