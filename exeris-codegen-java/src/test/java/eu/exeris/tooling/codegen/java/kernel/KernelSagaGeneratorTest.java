@@ -152,14 +152,14 @@ class KernelSagaGeneratorTest {
                 .hasMessageContaining("compensateFoo");
     }
 
-    // --- K5 / kernel ADR-064: @Saga.version reaches the flow definition ------------------------
+    // --- kernel ADR-064: @Saga.version reaches the flow definition -----------------------------
 
     @Test
     @DisplayName("K5: a saga at the default version 1 emits no version — byte-identical to an explicit version(1)")
     void unversionedSagaEmitsNoVersion() {
         // Version 1 is FlowDefinition.INITIAL_VERSION, what an unversioned builder produces anyway.
-        // Emitting nothing keeps every saga written before K5 byte-identical, and keeps the call
-        // off engines whose builder does not override the throwing default.
+        // Emitting nothing keeps every saga that declares no version byte-identical, and keeps the
+        // call off engines whose builder does not override the throwing default.
         String byDefault = sagaFlow(sagaVersioned(null));
         String explicitOne = sagaFlow(sagaVersioned(1));
 

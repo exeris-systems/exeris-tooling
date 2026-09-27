@@ -149,8 +149,8 @@ class KernelRepositoryTestGeneratorTest {
                 .build();
 
         // update() reads the version off a freshly constructed entity. Staging it first would have
-        // hidden T54 (a wrapper `Long version` unboxed to null); leaving it unset is what makes
-        // every consumer's generated test a regression test for that fix.
+        // hidden the null-version NPE (a wrapper `Long version` unboxed to null); leaving it unset
+        // is what makes every consumer's generated test a regression test for the boxed read.
         assertThat(generate(versioned)).doesNotContain("entity.setVersion(");
     }
 
@@ -226,10 +226,10 @@ class KernelRepositoryTestGeneratorTest {
                 .contains("void saveLeavesACallerTenantToTheDatabaseWhenNoneIsBound()")
                 .contains("void updateNeverWritesTheTenantSoARowCannotMove()")
                 .contains("Assertions.assertThat(persistence.binds.values()).doesNotContain(otherTenant)")
-                // The WHERE id follows the SET list, which no longer carries the owner: orderNumber
+                // The WHERE id follows the SET list, which does not carry the owner: orderNumber
                 // and quantity are the SET list, so the id binds at index 2.
                 .contains("Assertions.assertThat(persistence.binds.get(2)).isEqualTo(id)")
-                // The old "keeps whatever tenant the caller set" case contradicts the decision.
+                // A "keeps whatever tenant the caller set" case would contradict ADR-090.
                 .doesNotContain("saveKeepsATenantTheCallerSet");
     }
 
@@ -261,7 +261,7 @@ class KernelRepositoryTestGeneratorTest {
                 .doesNotContain("org.easymock");
     }
 
-    /** A UNIVERSE entity — owner plus a shared-scope key of {@code scopeType} (T29 slice B). */
+    /** A UNIVERSE entity — owner plus a shared-scope key of {@code scopeType}. */
     private static DomainMetadata universeSpecies(String scopeType) {
         return DomainMetadata.builder("Species", "com.example.domain")
                 .dataScope(DataScope.UNIVERSE)
@@ -289,7 +289,7 @@ class KernelRepositoryTestGeneratorTest {
                 .contains(".isInstanceOf(SpeciesSharedScopeMismatchException.class)")
                 .contains("void saveKeepsACallerSharedScopeWhenNoneIsBound()")
                 .contains("original.setWorldId(UUID.fromString(SCOPE_KEY))")
-                // The owner stamp pair still ships: a UNIVERSE row is owned.
+                // The owner stamp pair ships too: a UNIVERSE row is owned.
                 .contains("void saveStampsTheActingTenantWhenTheCallerLeftItUnset()");
     }
 

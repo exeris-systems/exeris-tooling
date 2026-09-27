@@ -61,13 +61,13 @@ import java.util.stream.Collectors;
  * {@code static final long TIMEOUT_NANOS}; {@code maxRetries} comes
  * directly from the metadata.
  * <p>
- * <b>Plan version (kernel ADR-064, Stellar K5).</b> A saga that declares
+ * <b>Plan version (kernel ADR-064).</b> A saga that declares
  * {@code @Saga(version = n)} with {@code n > 1} gets a
  * {@code private static final int DEFINITION_VERSION = n} and a
  * {@code builder.version(DEFINITION_VERSION)} call straight after
  * {@code newDefinition(DEFINITION_NAME)}, since {@code (name, version)} is the
  * plan's identity in the kernel's catalog. This uses
- * {@code FlowDefinitionBuilder.version(int)}, which exists from kernel 0.12.
+ * {@code FlowDefinitionBuilder.version(int)}, which needs kernel 0.12 or later.
  * A saga at version 1 (the annotation default, and
  * {@code FlowDefinition.INITIAL_VERSION}) emits neither, and there are three
  * reasons for that:
@@ -86,7 +86,7 @@ import java.util.stream.Collectors;
  * A declared version below 1 is refused at generation time, because the kernel
  * would refuse it at the saga's first {@code initialize()}.
  * <p>
- * <b>Composition (T48 slice C1).</b> {@code RuntimeComponents} builds the flow
+ * <b>Composition.</b> {@code RuntimeComponents} builds the flow
  * through {@code create<Flow>()} — {@code sagaFlowType(...)} names the accessor — so a
  * consumer's subclass is installed by overriding that factory, and
  * {@code RuntimeLifecycle} calls {@code initialize()} at boot. That is load-bearing, not

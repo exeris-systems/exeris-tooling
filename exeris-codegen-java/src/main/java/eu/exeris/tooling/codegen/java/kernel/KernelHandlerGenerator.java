@@ -344,7 +344,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
      * {@code @SharedScope} field.
      *
      * <p>400, and neither 403 nor 409. The body named a tenant (or a shared scope) the caller does
-     * not act as, and repeating it unchanged fails the same way — kernel 0.12's
+     * not act as, and repeating it unchanged fails the same way — the kernel's
      * {@code FaultOrigin.CALLER}, which the ADR-036 §2 mapping answers 4xx. 403 would claim an
      * authorization model the emitted application does not have (ADR-079), and 409 already means a
      * version conflict (ADR-076). No log, like the 404 beside it: a malformed request is not an event

@@ -44,7 +44,7 @@ class KernelCodegenE2ETest {
                 .module("catalog")
                 .build();
 
-        // T29 slice B: owned by organizationId, readable across worldId.
+        // Owned by organizationId, readable across worldId.
         speciesMetadata = DomainMetadata.builder("Species", "com.example.domain")
                 .path("/species")
                 .module("catalog")
@@ -172,8 +172,8 @@ class KernelCodegenE2ETest {
                     .contains("flowEngine.plans().compile(builder.build())")
                     .contains("flowEngine.scheduler().schedule(initialize(), context)")
                     .contains("return FlowOutcome.CONTINUE")
-                    // K5: an undeclared version is version 1, which the builder produces by
-                    // itself — no call, so pre-K5 sagas regenerate byte-identical.
+                    // An undeclared version is version 1, which the builder produces by itself —
+                    // no call, so a saga that declares no version regenerates byte-identical.
                     .doesNotContain("DEFINITION_VERSION")
                     .doesNotContain(".version(");
         }

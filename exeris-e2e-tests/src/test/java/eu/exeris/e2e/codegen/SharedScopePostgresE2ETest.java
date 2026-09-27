@@ -29,7 +29,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * The shared-scope access matrix, run against a real PostgreSQL over the migrations the pipeline
- * actually emits (T29 slice B). <b>Opt-in</b>: skipped unless {@code -Dexeris.e2e.postgres.url} names
+ * actually emits. <b>Opt-in</b>: skipped unless {@code -Dexeris.e2e.postgres.url} names
  * a JDBC URL (credentials included) for a role that may create a schema and a role — this
  * repository's CI has no PostgreSQL, and H2 implements no row-level security, so no in-process
  * engine could make these cells mean anything.

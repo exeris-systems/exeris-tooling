@@ -29,7 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * GC3 — the cap-composition exit gate for Phase 1 of the gateway-caps plan (P1.4).
+ * The cap-composition exit gate for Phase 1 of the gateway-caps plan (P1.4).
  *
  * <p>Every other capability test in this repo starts from hand-built
  * {@code CapabilityModuleDescriptor}s or hand-written {@code capability_*.json}. This one starts
@@ -270,7 +270,7 @@ class CapCompositionE2ETest {
      * The sample SKU: two caps with a real {@code @Requires} edge (so the order is derived, not
      * declared), one shared service contract, one cap-private internal type, and one
      * {@code @ExerisDomain} entity — the domain is what makes the build emit an {@code Application}
-     * at all, which is where the GC2 conductor call site lands.
+     * at all, which is where the conductor call site lands.
      */
     private static Map<String, String> sampleSku() {
         Map<String, String> sources = new LinkedHashMap<>();

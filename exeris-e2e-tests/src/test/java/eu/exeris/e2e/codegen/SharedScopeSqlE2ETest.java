@@ -20,7 +20,7 @@ import java.util.stream.Stream;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Annotation → SQL and repository for {@code DataScope.UNIVERSE} (T29 slice B): an owned entity
+ * Annotation → SQL and repository for {@code DataScope.UNIVERSE}: an owned entity
  * with a {@code @SharedScope} field goes through the real processor and the real pipeline, and the
  * three artefacts the tier touches are read back from disk.
  *
@@ -30,7 +30,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>It also carries the one guard that can only live here. The migrations name two PostgreSQL
  * session settings as string literals, because SQL cannot reference a Java constant and
- * {@code exeris-codegen-java} has no kernel dependency. Since kernel 0.12 both names are SPI
+ * {@code exeris-codegen-java} has no kernel dependency. Both names are SPI
  * constants on {@code ConnectionInterceptor}, and this module has the kernel SPI on its test
  * classpath — so the literal the generator writes is compared with the constant the kernel
  * publishes. A policy naming a key the runtime never sets fails in the worst way: every read
@@ -141,7 +141,7 @@ class SharedScopeSqlE2ETest {
         assertThat(Files.exists(generated.resolve("com/world/repository/GalaxyPresenceTenantMismatchException.java")))
                 .isTrue();
         // Both server-owned fields, readOnly in the entity schema; the create DTO carries only x.
-        // (No `type:` key: the 3.1 writer emits none for any property — pre-existing, not this change.)
+        // (No `type:` key: the 3.1 writer emits none for any property.)
         assertThat(spec)
                 .containsPattern("ownerTenantId:\\s+format: uuid\\s+readOnly: true")
                 .containsPattern("universeId:\\s+format: uuid\\s+readOnly: true");
@@ -178,7 +178,7 @@ class SharedScopeSqlE2ETest {
     /** The annotated sources — shared with {@link SharedScopePostgresE2ETest}, which applies their SQL. */
     static Map<String, String> sources() {
         Map<String, String> sources = new LinkedHashMap<>();
-        // Stellar's GalaxyPresence, reshaped the way ADR-012 §4b.2 requires: an owner beside the
+        // A shared-world presence, shaped the way ADR-012 §4b.2 requires: an owner beside the
         // shared-scope key.
         sources.put("com/world/domain/GalaxyPresence.java",
                 """

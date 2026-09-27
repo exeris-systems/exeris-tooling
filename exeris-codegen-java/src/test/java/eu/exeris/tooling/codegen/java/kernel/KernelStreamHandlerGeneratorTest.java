@@ -64,7 +64,7 @@ class KernelStreamHandlerGeneratorTest {
         assertThat(content)
                 .contains("implements HttpStreamHandler")
                 .contains("public void handle(HttpStreamExchange exchange)")
-                // T23 slice B1: the engine arrives by constructor, captured by RuntimeComponents
+                // The engine arrives by constructor, captured by RuntimeComponents
                 // at composition. handle() runs on the stream's own thread, where the kernel
                 // binds no EVENT_ENGINE, so reading KernelProviders there would throw after the
                 // response head was already written. Still acquired inside try so a failed

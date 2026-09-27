@@ -35,19 +35,19 @@ import javax.lang.model.element.Modifier;
  * documentation only — plain Javadoc text, never an import — so the generated
  * source stays tier-neutral (The Wall).
  *
- * <p>Peer addressing (kernel ADR-074, Stellar K8) is the same kind of concern and gets the same
+ * <p>Peer addressing (kernel ADR-074) is the same kind of concern and gets the same
  * treatment. The emitted client names no address, because the peer is deployment data and not
  * domain metadata. The constructor Javadoc shows the caller binding one with
- * {@code KernelWebClient.withAuthority(host:port)} (kernel 0.12), or configuring the engine's
+ * {@code KernelWebClient.withAuthority(host:port)}, or configuring the engine's
  * default ({@code http.client.defaultAuthority} / {@code HttpConfig.defaultAuthority}). It
- * matters because on 0.12 a CLIENT-mode {@code HttpConfig}'s {@code bindHost}/{@code port} is
- * no longer dialled. That changed no signature, so wiring that worked on 0.11 compiles unchanged
- * and is refused at its first request.
+ * matters because a CLIENT-mode {@code HttpConfig}'s {@code bindHost}/{@code port} is a listen
+ * address and is never dialled, so wiring that sets only those compiles and is refused at its
+ * first request.
  *
  * <p>Update is the one verb this client cannot align with the generated server. The router
  * serves update on {@code PUT} and the OpenAPI document publishes {@code PUT}, but
- * {@code KernelWebClient} (kernel 0.12.0) offers no {@code put}, so the emitted {@code update}
- * still sends {@code PATCH} and its Javadoc prints the serving-side route that makes it reach.
+ * {@code KernelWebClient} offers no {@code put}, so the emitted {@code update}
+ * sends {@code PATCH} and its Javadoc prints the serving-side route that makes it reach.
  * {@code CrudRouteParityE2ETest} holds every other client call to the router's routes and fails
  * once the facade gains {@code put}.
  *
@@ -121,10 +121,10 @@ public class KernelClientGenerator implements KernelArtifactGenerator {
         // HttpRetryPolicy appear as plain Javadoc text (no $T) so no import —
         // and no tier identity — lands in the compiled surface (The Wall).
         //
-        // K8 / kernel ADR-074: the same example has to address the peer. A CLIENT-mode
-        // HttpConfig(bindHost, port) dialled that address on 0.11; on 0.12 it is a listen
-        // address only, and the compatibility constructor builds a client with no peer, so
-        // code that compiled on 0.11 compiles unchanged and fails at its first request.
+        // Kernel ADR-074: the same example has to address the peer. A CLIENT-mode
+        // HttpConfig(bindHost, port) is a listen address only, and the compatibility constructor
+        // builds a client with no peer, so code that sets only those compiles and fails at its
+        // first request.
         // HttpConfig and the config key are plain text for the same reason as the retry
         // types: an import used only by Javadoc would be a consumer-build requirement that
         // nothing in the compiled surface needs.
@@ -232,7 +232,7 @@ public class KernelClientGenerator implements KernelArtifactGenerator {
         // PATCH/PUT parity. The generated router serves update on PUT only, the OpenAPI document
         // publishes PUT, and the kernel router matches methods exactly — so this PATCH falls
         // through to the router's not-found handler. It stays PATCH because KernelWebClient
-        // (kernel 0.12.0) has get/getList/post/patch/delete and no put: there is no call this
+        // has get/getList/post/patch/delete and no put: there is no call this
         // client can make that sends the verb the server serves. The emitted Javadoc says so,
         // with the one-route workaround on the serving side, and CrudRouteParityE2ETest pins the
         // exemption — it fails the day the facade gains put(...), which is the cue to switch.

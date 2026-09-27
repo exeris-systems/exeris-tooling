@@ -465,7 +465,7 @@ public final class KernelTestSupportGenerator {
      * <p>{@code version(int)} is overridden and recorded, not left to the interface. It is a
      * {@code default} that <em>throws</em> for a builder that does not override it, which is the
      * kernel's correct answer for an engine that cannot host versions. A saga declaring
-     * {@code @Saga(version = n)} emits that call (K5), so a double inheriting the default would
+     * {@code @Saga(version = n)} emits that call, so a double inheriting the default would
      * fail every such saga's test at {@code initialize()}. The recorded version is also what
      * {@code definitionVersion()} answers, since this object plays the plan as well. Emitted
      * unconditionally because the double is project-wide and cannot know whether any saga

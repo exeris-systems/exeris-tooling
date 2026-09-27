@@ -33,9 +33,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p><b>Why Turkish.</b> It is the locale where {@code String.toLowerCase()} without an argument
  * visibly breaks identifiers: {@code 'I'} lower-cases to dotless {@code 'ı'} (U+0131), so a default
- * table for {@code Invoice} came out as {@code ınvoices}, and {@code itemId} as the column
- * {@code item_ıd}. Every such call in the emitters now passes {@code Locale.ROOT}. This test is what
- * keeps it that way: it runs the whole production pipeline — main tree, generated-test tree, and the
+ * table for {@code Invoice} would come out as {@code ınvoices}, and {@code itemId} as the column
+ * {@code item_ıd}. Every such call in the emitters passes {@code Locale.ROOT}, and this test keeps it
+ * that way: it runs the whole production pipeline — main tree, generated-test tree, and the
  * DSL emitters — once under {@link Locale#ROOT} and once under {@code tr-TR}, and requires the two
  * output trees to be identical file for file and byte for byte.
  *

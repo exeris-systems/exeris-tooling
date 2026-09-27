@@ -33,18 +33,16 @@ import static org.assertj.core.api.Assertions.assertThat;
  * One entity's CRUD surface, read out of every Java artefact that states it, and held against the
  * route contract in {@code contract/crud-routes.json}.
  *
- * <p><b>The defect this exists for.</b> The generated Java client and the generated TypeScript
- * service sent {@code PATCH} for update while the generated router served {@code PUT}, and the
- * kernel router matches methods exactly — so no generated client's update ever reached a
- * generated server. Every artefact had its own test, and each test asserted what its own emitter
- * wrote: the emitted TypeScript spec even pinned {@code PATCH}. Nothing compared one artefact's
- * verb with another's. This test does, for the three Java-side artefacts (router, OpenAPI,
- * client), and {@code crud-route-parity.spec.ts} in {@code exeris-codegen-ts} does the same for
- * the TypeScript service against the same contract file — the only way to link two builds that
- * never run together.
+ * <p><b>Why.</b> The kernel router matches methods exactly, so a generated client call on a verb
+ * the generated router does not serve never reaches a generated server — and a test that asserts
+ * only what its own emitter wrote cannot see that. This test compares one artefact's verbs with
+ * another's, for the three Java-side artefacts (router, OpenAPI, client), and
+ * {@code crud-route-parity.spec.ts} in {@code exeris-codegen-ts} does the same for the TypeScript
+ * service against the same contract file — the only way to link two builds that never run
+ * together.
  *
- * <p><b>The one exemption, and what retires it.</b> The Java client still sends {@code PATCH}:
- * {@code KernelWebClient} at kernel 0.12.0 has no {@code put} verb, so there is no call it can make
+ * <p><b>The one exemption, and what retires it.</b> The Java client sends {@code PATCH}:
+ * {@code KernelWebClient} has no {@code put} verb, so there is no call it can make
  * that the router serves. {@link #javaClientCallsOnlyServedRoutes()} asserts that fact as well as
  * the exemption, so the day the facade gains {@code put(...)} this test fails and says to switch.
  */

@@ -24,13 +24,12 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * T23 slice B1 — the emitted application's stream routes resolve on a <b>real</b> kernel boot.
+ * The emitted application's stream routes resolve on a <b>real</b> kernel boot.
  *
- * <p>T23 was closed once (0.6.0) on the strength of assertions about emitted <em>text</em>, and
- * reopened when the dog-food found that the object the kernel actually holds — the forwarding
- * lambda {@code Application.run()} bound — is never an {@code HttpRouter}, so the stream dispatcher
- * never resolved a single generated stream route. The guard that was missing, in ROADMAP's own
- * words, is "a real boot of the emitted {@code Application} with a stream route". This is it:
+ * <p>Assertions about emitted <em>text</em> cannot show this. What decides it is the object the
+ * kernel actually holds as its server handler: the stream dispatcher resolves a stream only when
+ * that object is an {@code HttpRouter}. So the emitted {@code Application} is booted, with a stream
+ * route:
  *
  * <pre>
  *   @ExerisDomain(realTimeApi) + @DomainEvent source
@@ -42,10 +41,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * </pre>
  *
  * <p><b>A frame, not a head.</b> The SSE response head is written by the kernel's stream engine
- * <em>before</em> the handler runs. Asserting only the head is how the dog-food's own test passed
- * over a stream handler that would have thrown on its first line — it read
- * {@code KernelProviders.eventEngine()} on the stream thread, where the kernel binds no engine. So
- * the boot test here publishes an event and reads the frame it produces.
+ * <em>before</em> the handler runs, so a test that asserts only the head passes over a stream
+ * handler that throws on its first line — one that reads {@code KernelProviders.eventEngine()} on
+ * the stream thread, where the kernel binds no engine. So the boot test here publishes an event and
+ * reads the frame it produces.
  *
  * <p>Two tests, because two properties need two harnesses. The fixture test drives
  * {@code RuntimeLifecycle.edgeRouter(...)} with slots the test controls, which is the only way to
@@ -88,8 +87,8 @@ class GeneratedAppBootE2ETest {
         AtomicReference<Object> componentsSlot = new AtomicReference<>();
         HttpHandler edge = edgeRouter(handlerSlot, componentsSlot);
 
-        // The property T23 turns on: the kernel's stream dispatcher resolves a stream only through
-        // `handler instanceof HttpRouter`. The forwarding lambda this replaces never was one.
+        // The property this turns on: the kernel's stream dispatcher resolves a stream only through
+        // `handler instanceof HttpRouter`.
         assertThat(edge).isInstanceOf(HttpRouter.class);
         HttpRouter router = (HttpRouter) edge;
         assertThat(router.resolveStream(HttpMethod.GET, "/beacons/stream")).isNotNull();
@@ -129,7 +128,7 @@ class GeneratedAppBootE2ETest {
         try (BootedApplication app = BootedApplication.start(appLoader, BASE_PACKAGE + ".LiveApplication")) {
             int port = app.port();
 
-            // T48 slice C1: by the time the application answers anything, the saga plan is
+            // By the time the application answers anything, the saga plan is
             // registered and the subscriber is receiving — in that order.
             assertThat(probe).as("activation, before the handler slot was set")
                     .containsExactly("saga:initialize:BeaconSaga", "subscriber:subscribe");
@@ -149,9 +148,9 @@ class GeneratedAppBootE2ETest {
 
                 assertThat(frame).as("the SSE frame the published event produced")
                         .contains("event: BeaconPinged")
-                        // T48 slice C1: the publisher captured the codec registry at composition, so
-                        // a publish from the request thread — where the kernel binds none — still
-                        // encodes. Resolved per publish, this line was `data: ` (empty).
+                        // The publisher captured the codec registry at composition, so a publish
+                        // from the request thread — where the kernel binds none — encodes. Resolved
+                        // per publish, this line would be `data: ` (empty).
                         .contains("data: {\"label\":\"alpha\"}");
                 System.out.println("[T23 B1 / T48 C1] SSE frame received over the generated edge router: "
                         + frame);
@@ -199,8 +198,8 @@ class GeneratedAppBootE2ETest {
 
     /**
      * One live entity: {@code realTimeApi} (so a stream route is emitted) with one
-     * {@code @DomainEvent} carrying a payload (so the stream handler is the EV1 producer, whose
-     * engine was the latent defect, and the publisher encodes a payload).
+     * {@code @DomainEvent} carrying a payload (so the stream handler is the EV1 producer, which
+     * takes its engine by constructor, and the publisher encodes a payload).
      */
     private static Map<String, String> domainSources() {
         Map<String, String> sources = new LinkedHashMap<>();
@@ -221,7 +220,7 @@ class GeneratedAppBootE2ETest {
                 // so the fixture needs no database table to produce an event.
                 @DomainEvent(name = "BeaconPinged", topic = "live.beacons", trigger = DomainEvent.Trigger.MANUAL,
                         includeFields = {"label"})
-                // T48 slice C1: a saga, so the boot must compile and register its plan.
+                // A saga, so the boot must compile and register its plan.
                 @Saga(name = "BeaconSaga", timeout = "PT5M", maxRetries = 2)
                 public class Beacon {
 
@@ -329,9 +328,8 @@ class GeneratedAppBootE2ETest {
                         });
                     }
 
-                    // T48 slice C1: behaviour installed the way the seam intends — by overriding a
-                    // factory with a subclass of the generated type (Stellar's ConstructionSaga
-                    // extends ConstructionSagaFlow). Construction still uses the boot-bound engines.
+                    // Behaviour installed the way the seam intends — by overriding a factory with a
+                    // subclass of the generated type. Construction still uses the boot-bound engines.
                     @Override
                     protected BeaconSagaFlow createBeaconSagaFlow() {
                         return new BeaconSagaFlow(KernelProviders.flowEngine()) {

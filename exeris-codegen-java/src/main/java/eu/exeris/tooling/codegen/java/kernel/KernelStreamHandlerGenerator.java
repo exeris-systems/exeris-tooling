@@ -81,7 +81,7 @@ import java.util.List;
  * router's typed {@code streamRoute(method, path, handler)}, distinct from the
  * respond-once {@code route(...)} — on the pre-boot edge router
  * ({@code RuntimeLifecycle.edgeRouter}), because that is the only router the kernel's
- * stream dispatcher ever sees (T23).
+ * stream dispatcher ever sees.
  *
  * @implNote Emission is JavaPoet-based (ADR-015), routed through
  * {@link KernelScaffold} like the other Java emitters.

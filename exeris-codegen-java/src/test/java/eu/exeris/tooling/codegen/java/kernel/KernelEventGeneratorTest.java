@@ -109,7 +109,7 @@ class KernelEventGeneratorTest {
                 .contains("publishOrderCreatedEvent(UUID streamId, Order entity)")
                 .contains("new OrderCreatedEventPayload(entity.getTotal(), entity.isActive())")
                 // ADR-046 "site B" — resolve the codec from the registry captured at
-                // construction (T48 slice C1), never from the provider slot per publish: a
+                // construction, never from the provider slot per publish: a
                 // publish runs on the request thread, where the kernel binds no registry.
                 .contains("private final EventPayloadCodecRegistry codecRegistry;")
                 .contains("public OrderEventPublisher(EventEngine eventEngine, "
@@ -118,7 +118,7 @@ class KernelEventGeneratorTest {
                 .contains("private EventPayload encodePayload(")
                 .contains("if (codecRegistry == null)")
                 .contains("EventPayloadCodec codec = codecRegistry.resolve(payloadType, EventCodecContext.JSON)")
-                // The 0.8.0 one-argument shape survives, capturing at construction too.
+                // The one-argument constructor captures at construction too.
                 .contains("public OrderEventPublisher(EventEngine eventEngine) {\n"
                         + "        this(eventEngine, KernelProviders.eventPayloadCodecRegistry().orElse(null));")
                 .doesNotContain("private static EventPayload encodePayload(")

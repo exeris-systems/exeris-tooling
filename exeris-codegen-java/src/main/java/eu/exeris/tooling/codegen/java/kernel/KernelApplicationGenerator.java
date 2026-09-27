@@ -86,13 +86,14 @@ import java.util.Map;
  *       (decorated) router, and parks on a
  *       {@link java.util.concurrent.CountDownLatch} until the JVM shuts down.</li>
  * </ul>
- * <p>Why two routers (T23): the http subsystem reads {@code HTTP_SERVER_HANDLER} once,
+ * <p>Why two routers: the http subsystem reads {@code HTTP_SERVER_HANDLER} once,
  * when it starts, which is before the boot callback in which composition must run
  * (ADR-070 obligation 4); and the kernel resolves a stream only on a handler that
  * <em>is</em> an {@code HttpRouter}. The stream half of the route table is known at
  * generation time, so it is built before boot with late-bound targets; the
- * respond-once half is built where it always was, and can still be decorated.
- * <p>When the build also carries a capability composition (GC2, 0.7.0), the
+ * respond-once half is built in {@code run()}, where it can be decorated.
+ * See ADR-070, Amendment 2.
+ * <p>When the build also carries a capability composition, the
  * {@code Application} boot callback additionally conducts that composition —
  * see {@link #generateAll(List, String, boolean)}. A build without capabilities
  * emits exactly what every release before 0.7.0 emitted.
@@ -115,7 +116,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
     private static final String COMPONENTS_FIELD = "components";
     private static final String CONFIGURE_ROUTES_METHOD = "configureRoutes";
     private static final String DECORATE_METHOD = "decorate";
-    // T23 (slice B1): the pre-boot edge router and the slot its stream targets read.
+    // The pre-boot edge router and the slot its stream targets read.
     private static final String EDGE_ROUTER_METHOD = "edgeRouter";
     private static final String LAZY_STREAM_METHOD = "lazyStream";
     private static final String HANDLER_SLOT = "handlerSlot";
@@ -152,7 +153,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
     private static final ClassName TRANSACTION_ORCHESTRATOR =
             ClassName.get("eu.exeris.kernel.core.persistence", "TransactionOrchestrator");
 
-    // GC2 (ADR-024, 2026-07-21 "Boot Conductor Call Site" amendment): the SKU-side
+    // ADR-024 ("Boot Conductor Call Site" amendment): the SKU-side
     // boot conductor. Emitted ONLY into a build that actually has a composition —
     // see buildApplication(String, boolean, boolean).
     private static final ClassName COMPOSITION_CONDUCTOR =
@@ -162,18 +163,18 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
     private static final String CAP_MANIFEST_FILE = "cap-manifest.json";
     private static final String CAP_MANIFEST_PROPERTY = "exeris.capManifest";
 
-    // T51: the two scope lists RuntimeComponents publishes.
+    // The two scope lists RuntimeComponents publishes.
     private static final String COMPOSITION_SCOPES = "COMPOSITION_SCOPES";
     private static final String REQUEST_SCOPES = "REQUEST_SCOPES";
     private static final ClassName LIST = ClassName.get("java.util", "List");
 
     /**
-     * Every kernel {@code ScopedValue} emitted code reads, and when it is read (T51). Declaration
+     * Every kernel {@code ScopedValue} emitted code reads, and when it is read. Declaration
      * order is emission order, so the lists and their Javadoc are stable whatever order the
      * domains arrive in.
      */
     private enum Scope {
-        /** Read by every handler factory — the T43-follow-up capture. */
+        /** Read by every handler factory, which passes it to the handler's constructor. */
         MEMORY_ALLOCATOR(KERNEL_PROVIDERS, Phase.COMPOSITION),
         /** Read by the publisher, subscriber and EV1 stream-handler factories. */
         EVENT_ENGINE(KERNEL_PROVIDERS, Phase.COMPOSITION),
@@ -241,7 +242,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
     public List<GeneratedFile> generateAll(List<DomainMetadata> domains, String basePackage,
                                            boolean composed) {
         List<GeneratedFile> files = new ArrayList<>(3);
-        // T30: the Jackson 3 sentence is emitted only when a repository in this tree imports it.
+        // The Jackson 3 sentence is emitted only when a repository in this tree imports it.
         boolean importsJackson = domains.stream().anyMatch(KernelRepositoryGenerator::importsJackson);
         files.add(buildApplication(basePackage, composed, importsJackson));
         files.add(buildRuntimeComponents(domains, basePackage));
@@ -541,7 +542,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                     .addJavadoc("{@link #subsystems()} or {@link #$L($T)}.\n",
                             COMPONENTS_METHOD, TRANSACTIONAL_EXECUTOR);
         }
-        // T30: every import in the generated tree is a requirement on the consumer's compile
+        // Every import in the generated tree is a requirement on the consumer's compile
         // classpath that no emitted pom declares, so this Javadoc names them by phase.
         applicationType
                 .addJavadoc("<p>Compile classpath requirements: the generated sources import\n")
@@ -748,7 +749,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .addStatement("return $L", TX_EXECUTOR_NAME)
                 .build());
 
-        // T51: each branch below that emits a read of a kernel scope records its reader here, in
+        // Each branch below that emits a read of a kernel scope records its reader here, in
         // the same statement's neighbourhood — so the published lists are derived from the
         // emission, not restated beside it. EnumMap iterates in Scope order: deterministic.
         Map<Scope, List<CodeBlock>> readers = new EnumMap<>(Scope.class);
@@ -782,10 +783,10 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
             String publisherName = entityLower + "EventPublisher";
             if (domain.hasEvents()) {
                 ClassName publisherType = ClassName.get(pkgs.event(), entity + "EventPublisher");
-                // T48 slice C1: a publisher that encodes payloads takes the codec registry here,
-                // inside the boot callback, where the kernel binds it. It publishes on the
-                // request thread, where the slot is unbound — resolved there, every payload
-                // shipped empty with only a DEBUG line to say so.
+                // A publisher that encodes payloads takes the codec registry here, inside the
+                // boot callback, where the kernel binds it. It publishes on the request thread,
+                // where the slot is unbound: resolved there, the registry would be absent and
+                // every payload would publish empty, with only a DEBUG line to say so.
                 read(readers, Scope.EVENT_ENGINE, factoryReference(publisherName));
                 if (KernelEventGenerator.hasPayloadEvents(domain)) {
                     read(readers, Scope.EVENT_PAYLOAD_CODEC_REGISTRY, factoryReference(publisherName));
@@ -795,7 +796,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                                 ? CodeBlock.of("new $T($T.eventEngine(), $T.eventPayloadCodecRegistry().orElse(null))",
                                         publisherType, KERNEL_PROVIDERS, KERNEL_PROVIDERS)
                                 : CodeBlock.of("new $T($T.eventEngine())", publisherType, KERNEL_PROVIDERS));
-                // T48 slice C1: the subscriber joins the seam (ADR-070 obligation 1), so a
+                // The subscriber joins the seam (ADR-070 obligation 1), so a
                 // consumer installs behaviour by overriding this factory with a subclass whose
                 // handle<Event> methods do the work. RuntimeLifecycle subscribes it at boot.
                 ClassName subscriberType = ClassName.get(pkgs.event(), entity + "EventSubscriber");
@@ -803,8 +804,8 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 addComponent(type, subscriberType, entityLower + "EventSubscriber",
                         CodeBlock.of("new $T($T.eventEngine())", subscriberType, KERNEL_PROVIDERS));
             }
-            // T48 slice C1: the saga flow joins the seam too — `ConstructionSaga extends
-            // ConstructionSagaFlow` is installed by overriding createConstructionSagaFlow().
+            // The saga flow joins the seam too: a hand-written `<Name>Saga extends
+            // <Name>SagaFlow` is installed by overriding create<Name>SagaFlow().
             // RuntimeLifecycle compiles its plan at boot: the kernel resumes a parked saga only on
             // a registered plan version (ADR-064), so lazy compilation on the first schedule()
             // would strand every instance parked before a restart.
@@ -848,7 +849,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
 
             // ADR-043 Slice 1 / ADR-044 Slice 2: the SSE stream handlers go through the same
             // seam so that a consumer overriding one does not have to know which handlers take
-            // constructor arguments. The EV1 producer takes its EventEngine here (T23 slice B1),
+            // constructor arguments. The EV1 producer takes its EventEngine here,
             // for the reason the handler takes its allocator: its handle() runs on the stream's
             // own thread, where the kernel binds MEMORY_ALLOCATOR and the decoder registry and
             // nothing else, so KernelProviders.eventEngine() read there would throw after the
@@ -984,7 +985,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
     }
 
     /**
-     * Emits {@code RuntimeComponents.COMPOSITION_SCOPES} (T51): the scopes the generated
+     * Emits {@code RuntimeComponents.COMPOSITION_SCOPES}: the scopes the generated
      * factories on this class read, so a harness that composes outside a kernel boot learns the
      * whole set at once instead of one failed boot at a time.
      */
@@ -1017,7 +1018,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
     }
 
     /**
-     * Emits {@code RuntimeComponents.REQUEST_SCOPES} (T51): the scopes the generated code reads
+     * Emits {@code RuntimeComponents.REQUEST_SCOPES}: the scopes the generated code reads
      * while serving a request — the ones a harness otherwise discovers one failed request at a
      * time.
      */
@@ -1085,7 +1086,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
      * components.
      *
      * @param method   {@code "GET"} (entity live view) or {@code "POST"} (streaming action)
-     * @param path     the route template, byte-identical to what the respond-once router used
+     * @param path     the route template
      * @param accessor the {@code RuntimeComponents} accessor returning the stream handler
      */
     private record StreamRoute(String method, String path, String accessor) {}
@@ -1093,8 +1094,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
     /**
      * Every stream route the application emits, in emission order: per entity, its
      * {@code @Action(streaming)} routes in declaration order, then its
-     * {@code realTimeApi} live view. The same order the respond-once router registered them
-     * in before T23 slice B1 moved them, so the regenerated table reads the same.
+     * {@code realTimeApi} live view.
      */
     private List<StreamRoute> streamRoutes(List<DomainMetadata> domains) {
         List<StreamRoute> routes = new ArrayList<>();
@@ -1166,9 +1166,9 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .addStatement("this.$L = $L", COMPONENTS_FIELD, COMPONENTS_FIELD)
                 .build());
 
-        // The 0.8.0 shape, kept so a hand-rolled launcher written against it still compiles.
-        // It gets what it had — respond-once routes through its own forwarding handler — and
-        // still no streams: the slot below is one no edge router reads.
+        // The two-argument constructor, for a hand-rolled launcher that binds its own forwarding
+        // handler. Such a launcher serves respond-once routes only: the components slot below is
+        // one no edge router reads.
         type.addMethod(MethodSpec.constructorBuilder()
                 .addModifiers(Modifier.PUBLIC)
                 .addParameter(atomicHttpHandler, HANDLER_SLOT)
@@ -1197,18 +1197,18 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
 
     /**
      * Emits {@code RuntimeLifecycle.edgeRouter(handlerSlot, componentsSlot)} — the router
-     * {@code Application} binds as {@code HTTP_SERVER_HANDLER} (T23, slice B1).
+     * {@code Application} binds as {@code HTTP_SERVER_HANDLER} (ADR-070, Amendment 2).
      *
      * <p>It has to exist before boot: the http subsystem reads its handler once, at
      * {@code start()}, and a running engine refuses a new one. It has to <em>be</em> an
      * {@code HttpRouter}: the kernel's stream dispatcher resolves a stream only through
      * {@code handler instanceof HttpRouter}. Both hold for a router built from the stream
      * routes, which are known at generation time, with targets that read the components
-     * composed later inside the boot callback. Composition itself does not move — the T51
-     * scopes it reads are bound only there.
+     * composed later inside the boot callback. Composition itself stays inside the callback,
+     * because the kernel scopes it reads are bound only there.
      *
      * <p>Emitted for every application, with or without stream routes: one uniform shape,
-     * and with none it behaves exactly as the forwarding lambda it replaces.
+     * and with none it behaves exactly as a forwarding handler.
      */
     private MethodSpec buildEdgeRouterMethod(List<StreamRoute> streamRoutes, TypeName atomicHttpHandler,
                                              TypeName atomicComponents, ClassName componentsType) {
@@ -1321,9 +1321,9 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
         // when it is constructed, and the kernel bus refuses a subscription to a type nobody has
         // registered (InMemoryEventBus.subscribe → EventBusException.subscriptionRejected). A
         // handler that publishes builds its publisher above; an entity whose events are all
-        // published elsewhere (MANUAL, STATE_TRANSITION, SCHEDULED, …) had nothing building it,
-        // so its live-view stream was refused on every open. Built here, before anything can
-        // subscribe.
+        // published elsewhere (MANUAL, STATE_TRANSITION, SCHEDULED, …) has no handler to build
+        // it, and without this its live-view stream would be refused on every open. Built here,
+        // before anything can subscribe.
         List<String> publishers = domains.stream().filter(DomainMetadata::hasEvents)
                 .map(d -> lowerFirst(d.entityName()) + "EventPublisher").toList();
         if (!publishers.isEmpty()) {
@@ -1335,7 +1335,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
             }
         }
 
-        // T48 slice C1: activation, before either slot opens the application. Sagas first: each
+        // Activation, before either slot opens the application. Sagas first: each
         // initialize() compiles and registers its plan, which the kernel needs before it can
         // resume a parked instance (ADR-064) — lazy compilation on the first schedule() would
         // not happen for an instance parked across a restart. Subscribers second, after every
@@ -1357,7 +1357,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
             }
         }
 
-        // T23 slice B1: the stream handlers are served by the edge router, which reaches them
+        // The stream handlers are served by the edge router, which reaches them
         // through their accessors. Forcing each accessor here builds it on the boot thread,
         // inside the kernel scope its factory reads, before componentsSlot publishes the
         // object — so the unsynchronised memo field is written once, here, and a stream thread
@@ -1407,7 +1407,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
         // T49 residual: the consumer's one chance to wrap the router before it is served.
         // Whatever decorate(...) returns is what every respond-once request reaches. No type
         // guard: the kernel holds the edge router, never this object, so a wrapper here cannot
-        // erase a stream route (the pre-B1 guard protected nothing in any reachable state).
+        // erase a stream route.
         method.addStatement("$T handler = $L.$L(router)", HTTP_HANDLER, COMPONENTS_FIELD, DECORATE_METHOD);
         // Components before handler: once the handler slot is set the application is serving,
         // and its streams are part of what it serves. The other order would leave a window in
@@ -1430,7 +1430,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .addStatement("$T.currentThread().interrupt()", THREAD)
                 .endControlFlow();
 
-        // T48 slice C1: subscribers stop receiving on the way out, in reverse order, before the
+        // Subscribers stop receiving on the way out, in reverse order, before the
         // boot callback returns and the kernel stops the event engine under them.
         if (!subscribers.isEmpty()) {
             method.addComment("Subscribers are released in reverse order before the kernel stops.");

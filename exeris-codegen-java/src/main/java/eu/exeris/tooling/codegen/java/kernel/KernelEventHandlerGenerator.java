@@ -50,13 +50,13 @@ import javax.lang.model.element.Modifier;
  * once the saga generator lands, kept symmetric with how
  * {@link KernelServiceGenerator} no longer auto-publishes from {@code save()}.
  * <p>
- * Composition and lifecycle (T48 slice C1): {@code RuntimeComponents} builds the
+ * Composition and lifecycle: {@code RuntimeComponents} builds the
  * subscriber through {@code create<Entity>EventSubscriber()}, which a consumer
  * overrides to install a subclass with real handlers, and {@code RuntimeLifecycle}
  * calls {@code subscribe()} at boot — after every publisher has
  * registered its event types, before the application serves — and
  * {@code unsubscribe()} after its shutdown latch. Which event starts which saga is
- * still not generated (slice C2 waits on an SDK trigger-enum alignment).
+ * not generated; that waits on an SDK trigger-enum alignment.
  *
  * @implNote Emission is JavaPoet-based (ADR-015).
  *

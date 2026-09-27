@@ -15,9 +15,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Golden snapshots for the additive shared-scope migration of a {@code DataScope.UNIVERSE} entity
- * (T29 slice B). SQL has no compiler to lean on, so the snapshot is the regression gate; the
- * PostgreSQL semantics it relies on are argued in the generator's Javadoc and measured by the opt-in
+ * Golden snapshots for the additive shared-scope migration of a {@code DataScope.UNIVERSE} entity.
+ * SQL has no compiler to lean on, so the snapshot is the regression gate; the PostgreSQL
+ * semantics it relies on are argued in the generator's Javadoc and exercised by the opt-in
  * {@code SharedScopePostgresE2ETest}.
  */
 @DisplayName("KernelSharedScopeMigrationGenerator SQL Snapshot")
@@ -25,7 +25,7 @@ class KernelSharedScopeMigrationGeneratorTest {
 
     private final KernelSharedScopeMigrationGenerator generator = new KernelSharedScopeMigrationGenerator();
 
-    /** Stellar's shape: an owner and a UUID shared-scope key. */
+    /** The archetypal shape: an owner and a UUID shared-scope key. */
     private static DomainMetadata galaxyPresence(String scopeType, String scopeField) {
         return DomainMetadata.builder("GalaxyPresence", "dev.arkstack.universe.domain")
                 .dataScope(DataScope.UNIVERSE)
@@ -87,10 +87,10 @@ class KernelSharedScopeMigrationGeneratorTest {
     void onlyWidensReads() {
         String sql = generator.generate(galaxyPresence("java.util.UUID", "universeId")).content();
 
-        // The kernel's single FOR ALL reference policy, applied to PostgreSQL 16 as a non-owner
-        // NOSUPERUSER NOBYPASSRLS role, let a tenant delete and re-own a partition-mate's shared
-        // row: a FOR ALL USING also decides what UPDATE and DELETE may target. Keeping the owner
-        // policy and adding a SELECT-only one widens reads identically and admits none of that.
+        // The kernel's single FOR ALL reference policy would let a tenant delete and re-own a
+        // partition-mate's shared row: a FOR ALL USING also decides what UPDATE and DELETE may
+        // target. Keeping the owner policy and adding a SELECT-only one widens reads identically and
+        // admits none of that.
         assertThat(sql)
                 .contains("FOR SELECT")
                 .doesNotContain("WITH CHECK")

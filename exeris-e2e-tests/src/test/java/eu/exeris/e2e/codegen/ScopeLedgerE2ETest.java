@@ -29,7 +29,7 @@ import java.util.stream.Stream;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * T51 — the scope lists {@code RuntimeComponents} publishes agree with what the generated code
+ * The scope lists {@code RuntimeComponents} publishes agree with what the generated code
  * actually reads, in both directions.
  *
  * <p>{@code COMPOSITION_SCOPES} and {@code REQUEST_SCOPES} exist so a harness composing outside a

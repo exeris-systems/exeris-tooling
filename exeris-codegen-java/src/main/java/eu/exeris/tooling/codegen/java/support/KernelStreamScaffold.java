@@ -168,8 +168,8 @@ public final class KernelStreamScaffold {
      * there — {@code EVENT_ENGINE} is a boot-scope binding, so the read would throw
      * {@code NoSuchElementException} after the response head had already been
      * written. {@code RuntimeComponents} resolves the engine inside the boot
-     * callback, where it is bound — the same shape the handler's
-     * {@code MemoryAllocator} has had since T43.
+     * callback, where it is bound — the same shape as the handler's
+     * constructor-injected {@code MemoryAllocator}.
      */
     public static MethodSpec producerConstructor() {
         return MethodSpec.constructorBuilder()

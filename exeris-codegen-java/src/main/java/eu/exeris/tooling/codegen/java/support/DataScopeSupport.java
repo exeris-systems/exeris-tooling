@@ -36,7 +36,7 @@ import java.util.Optional;
  *
  * <h2>Metadata that did not come through the processor</h2>
  * <p>The processor refuses a UNIVERSE declaration that names no {@code @SharedScope} field
- * or no owner (T29 slice B), so from an annotated source the carrier is always filled.
+ * or no owner, so from an annotated source the carrier is always filled.
  * Metadata also reaches the emitters from the {@code -io} reader and from
  * {@code exeris-codegen-maven-plugin} reading metadata JSON, neither of which goes through
  * the processor's diagnostics. A UNIVERSE entity without the carrier therefore fails

@@ -32,7 +32,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li>the ADR-045 composition-root retry wiring example — Javadoc-only,
  *       so no {@code eu.exeris.kernel.community.*} import couples the
  *       compiled surface (The Wall);</li>
- *   <li>the kernel ADR-074 peer-addressing guidance (K8) — also Javadoc-only,
+ *   <li>the kernel ADR-074 peer-addressing guidance — also Javadoc-only,
  *       so {@code HttpConfig} never becomes an import the compiled client does
  *       not need.</li>
  * </ul>
@@ -142,7 +142,7 @@ class KernelClientGeneratorTest {
 
         String content = generator.generate(metadata).content();
 
-        // KernelWebClient (kernel 0.12.0) has no put, so the emitted PATCH cannot be aligned on the
+        // KernelWebClient has no put, so the emitted PATCH cannot be aligned on the
         // router's PUT from this side. The Javadoc is the only place a consumer learns that, and the
         // route it prints must name the entity's real path and RuntimeComponents accessor.
         assertThat(content)
@@ -186,9 +186,9 @@ class KernelClientGeneratorTest {
 
         GeneratedFile file = generator.generate(metadata);
 
-        // On kernel 0.12 a CLIENT-mode HttpConfig(bindHost, port) is a listen address and is no
-        // longer dialled, with no signature change to say so: wiring copied from the 0.11 example
-        // compiles and is refused at the first request. The example must therefore carry the
+        // A CLIENT-mode HttpConfig(bindHost, port) is a listen address and is never dialled, and no
+        // signature says so: wiring that sets only those compiles and is refused at the first
+        // request. The example must therefore carry the
         // address, and the prose must name both remedies the kernel offers (the per-client view and
         // the engine default) plus the key the refusal message names.
         assertThat(file.content())

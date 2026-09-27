@@ -345,7 +345,7 @@ class CodegenPipelineTest {
         void reportsMissingDriversForRealMetadata() throws IOException {
             writeDomain("Product", "");
             // Deliberately an element with classes and no META-INF/services — the measured shape
-            // of exeris-kernel-core-0.11.0.jar and -0.12.0.jar, which carry zero service
+            // of the exeris-kernel-core jar, which carries zero service
             // registrations. That is what makes this gate non-vacuous rather than a formality.
             Path coreLike = driverJar("core-like.jar");
 
@@ -694,7 +694,7 @@ class CodegenPipelineTest {
             // discovers lifecycle owners by reading this field and instantiating each non-null
             // FQN. A silent serialization drop would therefore surface as a SKU that boots with
             // zero lifecycle hooks — no initialize, no drain — rather than as a build failure.
-            // Pinned here because GC2 (the emitted SKU bootstrap) is built directly on this field,
+            // Pinned here because the emitted SKU bootstrap is built directly on this field,
             // and because the manifest is serialized straight off CapabilityGraph, a path
             // independent of the CompositionStamp→CapManifest adapter used for the binding.
             writeCapabilityJson("Billing",

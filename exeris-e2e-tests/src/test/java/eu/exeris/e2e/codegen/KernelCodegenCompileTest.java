@@ -46,11 +46,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * goes stale on every kernel bump. The emitted {@code *Client}
  * binds the tier-neutral {@code eu.exeris.kernel.core.http.client.KernelWebClient}
  * facade (ADR-034) and compiles against the real one from {@code exeris-kernel-core}. A
- * test stub used to stand in at that FQN, from before kernel-core was on this classpath;
- * it shadowed the real class, so a verb the facade does not have (a {@code put}, say) would
- * have compiled here and failed in every consumer.
+ * test stub at that FQN would shadow the real class, so a verb the facade does not have (a
+ * {@code put}, say) would compile here and fail in every consumer.
  *
- * <p>Run twice, once per bootstrap variant (GC2): {@code composed=false} is the
+ * <p>Run twice, once per bootstrap variant: {@code composed=false} is the
  * cap-less application every release before 0.7.0 emitted; {@code composed=true}
  * adds the SDK boot-conductor call site, compiled against the real
  * {@code exeris-sdk-composition-runtime} artifact.
@@ -205,7 +204,7 @@ class KernelCodegenCompileTest {
                         List.of(new GraphEdgeMetadata("tenantId", "Tenant", "OWNED_BY")),
                         List.of()))
                 .sagaMetadata(SagaMetadata.builder("OrderFulfillment")
-                        // K5: a declared version > 1 emits builder.version(DEFINITION_VERSION),
+                        // A declared version > 1 emits builder.version(DEFINITION_VERSION),
                         // so javac proves the call against the real FlowDefinitionBuilder. The
                         // method exists from kernel 0.12, so this line is also what fails the
                         // gate if the kernel pin ever drops back below it.
@@ -226,7 +225,7 @@ class KernelCodegenCompileTest {
         // strategy. Run the Application generator separately so the
         // compile-gate verifies the full bootstrap stack resolves
         // against the real exeris-kernel-spi and -core artifacts.
-        // GC2: the composed variant emits the boot-conductor call site, so this run also
+        // The composed variant emits the boot-conductor call site, so this run also
         // javac-compiles the try-with-resources against the real
         // eu.exeris.sdk.composition.runtime.CompositionConductor — including the fact that
         // its close() declares no checked exception (a boot(Runnable) lambda could not
@@ -259,7 +258,7 @@ class KernelCodegenCompileTest {
     private static final String UNIVERSE_PACKAGE = "eu.exeris.e2e.universeapp.domain";
 
     /**
-     * T29 slice B: a {@code DataScope.UNIVERSE} entity — an owner plus a {@code @SharedScope} key —
+     * A {@code DataScope.UNIVERSE} entity — an owner plus a {@code @SharedScope} key —
      * through the full strategy and the composition root. The shared-scope stamp is the first
      * emitted code to call {@code StorageContext.sharedScopeKey()} and
      * {@code KernelProviders.storageContextOrSystem()}, so javac against the real kernel SPI is the

@@ -24,7 +24,7 @@ import java.util.List;
  *   <li>{@link KernelSagaGenerator} — saga skeleton against {@code spi.flow.{FlowEngine, FlowDefinitionBuilder}} + {@code spi.flow.model.{FlowExecutionPlan, FlowContext, FlowOutcome}}</li>
  *   <li>{@link KernelFlywayGenerator} — SQL migrations</li>
  *   <li>{@link KernelSharedScopeMigrationGenerator} — the additive shared-scope read widening of a
- *       {@code DataScope.UNIVERSE} entity (T29 slice B); nothing for any other entity</li>
+ *       {@code DataScope.UNIVERSE} entity; nothing for any other entity</li>
  *   <li>{@link KernelOpenApiGenerator} — OpenAPI 3.1 YAML</li>
  *   <li>{@link KernelClientGenerator} — typed service-to-service HTTP client
  *       against the tier-neutral {@code core.http.client.KernelWebClient}

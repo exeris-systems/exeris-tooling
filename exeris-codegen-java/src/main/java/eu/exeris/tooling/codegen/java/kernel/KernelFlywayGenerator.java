@@ -50,8 +50,8 @@ import java.util.Set;
  *       {@code RlsConnectionInterceptor} issues {@code set_config('exeris.tenant_id', …)} on
  *       every isolation strategy. This generator previously named a key the kernel never
  *       published, which no policy could match, so a correctly-configured application saw no
- *       rows and could store none. Since kernel 0.12 the key is an SPI constant,
- *       {@code ConnectionInterceptor.SESSION_KEY_TENANT_ID}. It is still emitted as a literal —
+ *       rows and could store none. The key is an SPI constant,
+ *       {@code ConnectionInterceptor.SESSION_KEY_TENANT_ID}. It is emitted as a literal —
  *       this module has no kernel dependency, and SQL cannot reference a Java constant — and
  *       {@code SharedScopeSqlE2ETest} pins the literal to the constant, so the two cannot drift
  *       apart silently.</li>

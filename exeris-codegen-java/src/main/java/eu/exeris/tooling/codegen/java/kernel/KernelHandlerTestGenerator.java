@@ -48,9 +48,8 @@ import java.util.Map;
  * {@link #addValidationTests} for why the accept case is doing two jobs at once.
  *
  * <p>Tenant-partitioned entities: every route is dispatched inside a bound {@code StorageContext}
- * ({@code asTenant(...)}), because the handler's T41 guard answers {@code 500} to a request that
- * carries none. Until 0.9.0 these tests bound nothing, so every case of a tenant-partitioned entity's
- * emitted handler test failed on that guard. Such an entity also gets the ADR-090 cases: a write the
+ * ({@code asTenant(...)}), because the handler's tenant guard answers {@code 500} to a request that
+ * carries none. Such an entity also gets the ADR-090 cases: a write the
  * repository refuses as naming a foreign tenant (or, on a UNIVERSE entity, a foreign shared scope)
  * answers {@code 400}.
  *
@@ -149,9 +148,10 @@ public final class KernelHandlerTestGenerator {
                 KernelTestSupportGenerator.supportPackage(basePackage),
                 KernelTestSupportGenerator.RECORDING_REQUEST_BODY);
 
-        // T41 guards every route of a tenant-partitioned entity on a bound StorageContext and
-        // answers 500 without one, so these tests dispatch the way a request arrives: with a tenant
-        // bound. Without it every case here failed on the guard for a reason none of them is about.
+        // The tenant guard covers every route of a tenant-partitioned entity: it wants a bound
+        // StorageContext and answers 500 without one, so these tests dispatch the way a request
+        // arrives, with a tenant bound. Without it every case here would fail on the guard, for a
+        // reason none of them is about.
         boolean tenantScoped = DataScopeSupport.isTenantPartitioned(metadata);
         if (tenantScoped) {
             type.addField(FieldSpec.builder(ClassName.get("eu.exeris.kernel.spi.security", "StorageContext"),

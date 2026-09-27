@@ -257,9 +257,9 @@ class ExerisDomainProcessorTest {
             String metadata = readContent(compilation.generatedFile(
                     StandardLocation.CLASS_OUTPUT, "exeris-metadata/CheckoutSaga.json").orElseThrow());
 
-            // Before T56 the first two were dropped: the lookup matched the exact type
-            // eu.exeris.sdk.annotation.SagaStep, which a synthesised container does not present.
-            // The emitted flow was short by two steps, with no diagnostic anywhere.
+            // The first two are repeats. A lookup that matched only the exact type
+            // eu.exeris.sdk.annotation.SagaStep, which a synthesised container does not present,
+            // would drop them, and the emitted flow would be short by two steps with no diagnostic.
             assertThat(metadata)
                     .contains("\"reserve\"")
                     .contains("\"charge\"")
@@ -1143,10 +1143,9 @@ class ExerisDomainProcessorTest {
                         @SharedScope private UUID universeId;
                     """));
 
-            // Until 0.9.0 every UNIVERSE declaration was refused outright. The refusal was right
-            // about the shape it guarded — a shared-world row with no owner cannot be written —
-            // and wrong about the tier: a UNIVERSE row IS owned (kernel ADR-012 §4b.2). This one
-            // names both columns, so it is transcribable and passes silently.
+            // A UNIVERSE row is owned (kernel ADR-012 §4b.2): a shared-world row with no owner
+            // cannot be written. This one names both columns, so it is transcribable and passes
+            // silently.
             assertThat(compilation).succeededWithoutWarnings();
             String metadata = readContent(compilation.generatedFile(
                     StandardLocation.CLASS_OUTPUT, "exeris-metadata/Item.json").orElseThrow());
@@ -1191,9 +1190,9 @@ class ExerisDomainProcessorTest {
                         @SharedScope private UUID universeId;
                     """));
 
-            // T29's original failure: the repository binds the owner's accessor, so an ownerless
-            // UNIVERSE entity used to die with `cannot find symbol` inside generated code. The
-            // refusal now names the missing field and the kernel rule that makes it mandatory.
+            // The repository binds the owner's accessor, so an ownerless UNIVERSE entity would
+            // fail with `cannot find symbol` inside generated code. The refusal names the missing
+            // field and the kernel rule that makes it mandatory.
             assertThat(compilation).failed();
             assertThat(compilation).hadErrorContaining("needs an owning tenant");
             assertThat(compilation).hadErrorContaining("no field 'tenantId'");
@@ -1860,11 +1859,10 @@ class ExerisDomainProcessorTest {
         @Test
         @DisplayName("warns on @SagaTransition and blames the kernel's flow plan, not the generator")
         void strictWarnsOnSagaTransitionWithTheKernelReason() {
-            // The note used to say the generator discards transitions, which read as a tooling
-            // gap. Kernel 0.12 precomputes one next step per step and routes no outcome or tag,
-            // so only an unguarded SUCCESS edge could be compiled; the flip is deferred to 0.10.
-            // The fixture is a standalone @Saga class, the home the SDK documents for the
-            // annotation — before this change strict mode never audited such a class at all.
+            // The gap is the kernel's, not the generator's: the kernel precomputes one next step
+            // per step and routes no outcome or tag, so only an unguarded SUCCESS edge could be
+            // compiled. The fixture is a standalone @Saga class, the home the SDK documents for
+            // the annotation, which strict mode audits too.
             JavaFileObject source = JavaFileObjects.forSourceString(
                     "com.example.Checkout",
                     """
@@ -2037,11 +2035,9 @@ class ExerisDomainProcessorTest {
                     .compile(source);
 
             assertThat(compilation).succeeded();
-            // The rule EXTRACTED_ANNOTATIONS states — "a new extraction must join the set in the
-            // same change" — was written by C0 and broken by the very next change to touch it:
-            // T57 added the @GraphEdge extraction without updating the set, so strict mode told
-            // every author that a now-consumed annotation "has no effect on emitted output".
-            // Caught in review. This is the guard that was missing.
+            // Guards the rule EXTRACTED_ANNOTATIONS states — "a new extraction must join the set in
+            // the same change". An extraction missing from the set makes strict mode tell every
+            // author that a consumed annotation "has no effect on emitted output".
             assertThat(hasUnreadWarningFor(compilation, "@GraphEdge"))
                     .as("no unread warning for an annotation the processor now reads")
                     .isFalse();
@@ -2164,8 +2160,8 @@ class ExerisDomainProcessorTest {
         @Test
         @DisplayName("-Aexeris.strict warns on @ExerisDomain.primaryKeyField, the one system field nobody honours")
         void strictWarnsOnInertPrimaryKeyField() {
-            // SystemFieldsMetadata's other nine extracted components are all read (the eleventh,
-            // SDK 0.12's sharedScopeField, is not extracted yet — T29 B) — Flyway's sysCol maps
+            // SystemFieldsMetadata's other ten components are all read (sharedScopeField by a
+            // UNIVERSE entity's shared-scope migration and stamp) — Flyway's sysCol maps
             // tenantId, the audit stamps, the soft-delete trio and version; the repository
             // resolves five of them. The primary key is read by none: the schema emits
             // `id UUID PRIMARY KEY` unconditionally, the repository's clause is the constant
@@ -2425,7 +2421,7 @@ class ExerisDomainProcessorTest {
         void strictReportsActionHttpMethodWithTheVerbActuallyServed() {
             // Extracted into ActionMetadata.httpMethod, read only by the dsl emitters no
             // production path constructs: the router, the OpenAPI document and the TS service
-            // all use POST. Before this entry an author writing httpMethod = "GET" heard nothing.
+            // all use POST. Without this entry an author writing httpMethod = "GET" hears nothing.
             Compilation compilation = javac()
                     .withOptions("-Aexeris.strict=true")
                     .withProcessors(new ExerisDomainProcessor())
@@ -3066,10 +3062,9 @@ class ExerisDomainProcessorTest {
         @Test
         @DisplayName("@Bind(STATIC/NONE) carrying ref/path/expression/language warns at the @Bind; a SLOT block's ref and a data source's expression do not")
         void staticBindWithDataAttributesWarnsAtTheDeclaration() {
-            // view-gen used to blame an expression on the G1 relational gap and a language on a G2
-            // stream whatever the source. STATIC / NONE draws from nothing, so those attributes are
-            // an author mistake — diagnosed here, where the author can fix it, not only in a comment
-            // in the emitted template.
+            // STATIC / NONE draws from nothing, so an expression or a language on it is an author
+            // mistake, not the G1 relational gap or a G2 stream — diagnosed here, where the author
+            // can fix it, not only in a comment in the emitted template.
             JavaFileObject source = JavaFileObjects.forSourceString(
                     "com.example.view.WrongAttrs",
                     """
@@ -3471,9 +3466,8 @@ class ExerisDomainProcessorTest {
         @Test
         @DisplayName("-Aexeris.strict says clearOnRestore has no restore to govern, not that one is emitted")
         void strictSaysNoRestoreIsEmittedForClearOnRestore() {
-            // Both notes used to cite "the emitted restore". Nothing emits one: no route,
-            // handler, repository method or client un-sets the flag, and the TS restore() that
-            // PATCHed an unserved route is gone.
+            // Nothing emits a restore: no route, handler, repository method or client un-sets the
+            // flag, so neither note may cite one.
             Compilation compilation = javac()
                     .withOptions("-Aexeris.strict=true")
                     .withProcessors(new ExerisDomainProcessor())

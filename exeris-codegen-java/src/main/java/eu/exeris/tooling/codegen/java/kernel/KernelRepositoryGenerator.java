@@ -79,7 +79,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     /**
      * {@code java.lang.Long} — the boxed read of a version field. Deliberately the wrapper: the
      * entity may declare {@code version} either way, and a boxed local accepts both (a primitive
-     * autoboxes, a wrapper does not) while a primitive local would NPE on a null wrapper. See T54.
+     * autoboxes, a wrapper does not) while a primitive local would NPE on a null wrapper.
      */
     private static final ClassName BOXED_LONG = ClassName.get("java.lang", "Long");
 
@@ -96,8 +96,8 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     /**
      * {@code KernelProviders} — the SPI's ambient-context accessor. The repository reads the bound
      * {@code StorageContext} from it and nothing else: the acting tenant, when a tenant-partitioned
-     * row arrives with no owner set (T36), and on a UNIVERSE entity the acting shared scope (T29
-     * slice B). Already a compile-time requirement of every emitted repository via
+     * row arrives with no owner set, and on a UNIVERSE entity the acting shared scope. Already a
+     * compile-time requirement of every emitted repository via
      * {@code TransactionalExecutor}, so this adds no dependency to the consumer's build.
      */
     private static final ClassName KERNEL_PROVIDERS =
@@ -166,14 +166,11 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
 
     /**
      * Whether the emitted repository for {@code metadata} imports Jackson 3 — true exactly when a
-     * field is a {@code List<X>}, which is persisted as a JSON column (T30: a compile requirement
-     * the kernel SPI and core do not satisfy).
+     * field is a {@code List<X>}, which is persisted as a JSON column — a compile requirement
+     * the kernel SPI and core do not satisfy.
      *
-     * <p>Recorded, not measured: the ADR-060-shaped alternative is to encode these columns through
-     * a kernel-provided codec instead, so the repository names no JSON library. That needs a
-     * measurement first — whether kernel 0.12 exposes a JSON codec usable outside HTTP and event
-     * bodies, and whether it round-trips a {@code List<X>} column byte-compatibly with what
-     * existing rows hold.
+     * <p>The ADR-060-shaped alternative — encoding these columns through a kernel-provided codec, so
+     * the repository names no JSON library — is an open question tracked in {@code ROADMAP.md}.
      *
      * @param metadata the entity
      * @return whether the emitted repository imports {@code tools.jackson}
@@ -257,8 +254,8 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                             Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
                     .initializer("new $T()", OBJECT_MAPPER)
                     .build());
-            // T30: the import above is a compile requirement no emitted pom declares. Appended
-            // after DO NOT EDIT so a repository without a List<X> field regenerates unchanged.
+            // The import above is a compile requirement no emitted pom declares. Appended after
+            // DO NOT EDIT, and only for an entity with a List<X> field.
             repo.addJavadoc("<p>Compile requirement: {@code List<X>} fields are persisted as JSON\n")
                     .addJavadoc("through Jackson 3 ({@code tools.jackson.databind} /\n")
                     .addJavadoc("{@code tools.jackson.core}). Neither {@code exeris-kernel-spi} nor\n")
@@ -700,15 +697,14 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
      * a "fills what the caller left out" contract, and the tenant is the fourth system field it was
      * not honouring.
      *
-     * <p><b>A <em>contradicted</em> tenant is refused here (ADR-090)</b> — the statement after the
-     * stamp. Until 0.9.0 it was left to the RLS {@code WITH CHECK} predicate, on the reasoning that
-     * re-deciding it would be a second implementation of a rule the database enforces. That holds
-     * only where the database does enforce it: a superuser or {@code BYPASSRLS} role skips even a
-     * forced policy, an engine without row-level security has none, and where the policy does fire
-     * its violation reaches the handler's {@code catch (RuntimeException)} as a {@code 500} — a
-     * server fault reported for a request the caller got wrong. The refusal applies only while a
-     * tenant is bound; with none bound the row is left to the database exactly as before, so a
-     * seeder that writes owners explicitly keeps working.
+     * <p><b>A <em>contradicted</em> tenant is refused here</b> — the statement after the stamp —
+     * rather than left to the RLS {@code WITH CHECK} predicate alone, because the database does not
+     * always enforce it: a superuser or {@code BYPASSRLS} role skips even a forced policy, an engine
+     * without row-level security has none, and where the policy does fire its violation reaches the
+     * handler's {@code catch (RuntimeException)} as a {@code 500} — a server fault reported for a
+     * request the caller got wrong. The refusal applies only while a tenant is bound; with none bound
+     * the row is left to the database, so a seeder that writes owners explicitly keeps working. See
+     * ADR-090.
      */
     private static void appendTenantStamp(MethodSpec.Builder method, Context ctx) {
         if (!isTenantPartitioned(ctx.metadata())) {
@@ -770,7 +766,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     }
 
     /**
-     * The layout column of a UNIVERSE entity's {@code @SharedScope} field (T29 slice B); empty for
+     * The layout column of a UNIVERSE entity's {@code @SharedScope} field; empty for
      * every other entity. It is an ordinary domain column — bound and read through
      * {@link #classifyDomainType} like any UUID or String field — and only the stamp is special.
      */
@@ -789,7 +785,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     }
 
     /**
-     * Emits the shared-scope stamp, for a UNIVERSE entity only (T29 slice B): a row the caller left
+     * Emits the shared-scope stamp, for a UNIVERSE entity only: a row the caller left
      * untagged is tagged with the acting shared scope, the same fill-if-absent contract as the
      * tenant stamp beside it. A caller-supplied value is kept.
      */
@@ -804,7 +800,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
      * Emits the foreign-shared-scope refusal — the tenant rule applied to the caller-writable
      * {@code @SharedScope} field (ADR-090). A row tagged with a scope other than the bound one is
      * refused with {@code <Entity>SharedScopeMismatchException}, answered {@code 400}. With no scope
-     * bound the caller's tag is kept, as before.
+     * bound the caller's tag is kept.
      *
      * <p>It compares against {@link #buildActingSharedScope}'s answer, so "bound" means exactly what
      * the stamp means by it — a non-blank key on the bound context — and a non-UUID key for a UUID
@@ -1072,7 +1068,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
             update.addJavadoc("writing and rejects the update if no row matches the expected\n");
             update.addJavadoc("version (stale read).\n");
             Column versionColumn = systemColumn(ctx, ColumnKind.VERSION);
-            // T54: read into a boxed local first. The entity may declare `version` as `long` or as
+            // Read into a boxed local first. The entity may declare `version` as `long` or as
             // `Long`; assigning straight into a `long` NPEs on a null wrapper, and a null guard is
             // not expressible on a primitive. Boxing accepts both, and treating a null as 0 makes
             // a wrapper-typed field behave exactly like the primitive it shadows.
@@ -1290,9 +1286,9 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                     "if ($L.$L() == null) stmt.bindNull($L); else stmt.bindInstant($L, $L.$L());\n",
                     src, accessor, idx, idx, src, accessor);
             case DELETED -> body.addStatement("stmt.bindBoolean($L, $L.$L())", idx, src, accessor);
-            // T54: same boxing as update()'s expected-version read, for the same reason — a
+            // Same boxing as update()'s expected-version read, for the same reason — a
             // `Long version` on a freshly constructed entity is null, and bindLong takes a
-            // primitive, so the unboxing threw before the row was ever written.
+            // primitive, so unboxing it would throw before the row is written.
             case VERSION -> {
                 String local = col.javaName() + "Value";
                 body.addStatement("$T $L = $L.$L()", BOXED_LONG, local, src, accessor);

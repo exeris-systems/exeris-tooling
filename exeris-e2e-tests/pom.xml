@@ -46,8 +46,8 @@
             <artifactId>exeris-codegen-java</artifactId>
         </dependency>
 
-        <!-- GC3 starts from annotated sources, so the real annotation processor runs
-             inside the test's javac invocation rather than being simulated. -->
+        <!-- The cap-composition e2e starts from annotated sources, so the real annotation
+             processor runs inside the test's javac invocation rather than being simulated. -->
         <dependency>
             <groupId>eu.exeris.tooling</groupId>
             <artifactId>exeris-processor</artifactId>
@@ -71,7 +71,7 @@
             <scope>test</scope>
         </dependency>
 
-        <!-- SDK boot conductor (GC2): the compile gate emits a composed
+        <!-- SDK boot conductor: the compile gate emits a composed
              Application whose boot callback drives CompositionConductor —
              javac needs the real type, not a stub. -->
         <dependency>
@@ -80,7 +80,7 @@
             <scope>test</scope>
         </dependency>
 
-        <!-- GC3: a real kernel around the conductor run — the community driver supplies the
+        <!-- A real kernel around the conductor run — the community driver supplies the
              HTTP provider, the testkit fixture boots it on a loopback port (http subsystem
              only; no database is involved). -->
         <dependency>
@@ -93,7 +93,7 @@
             <artifactId>exeris-kernel-community-testkit</artifactId>
             <scope>test</scope>
         </dependency>
-        <!-- T23 slice B1: GeneratedAppBootE2ETest boots the EMITTED Application with the events
+        <!-- GeneratedAppBootE2ETest boots the EMITTED Application with the events
              subsystem (for the SSE producer's bus) — which pulls persistence by dependency
              closure, and persistence needs a driver. In-memory H2, one database per run. -->
         <dependency>
@@ -123,7 +123,7 @@
             <scope>test</scope>
         </dependency>
 
-        <!-- T29 slice B: the opt-in @Tag("postgres") access matrix (SharedScopePostgresE2ETest)
+        <!-- The opt-in @Tag("postgres") access matrix (SharedScopePostgresE2ETest)
              applies the emitted migrations to a real PostgreSQL, and is skipped unless
              -Dexeris.e2e.postgres.url is set. Test scope, in this module only, and deliberately
              not in exeris-tooling-bom: a consumer importing the BOM should inherit no driver
@@ -159,17 +159,12 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
-                    <!-- No preview flag. GC3 EXECUTES kernel classes rather than only compiling
-                         against them, which is why one was here: kernel 0.10.2 shipped
-                         preview-stamped classes (9 of them in exeris-kernel-core), and a
-                         preview-stamped class will not load without it.
-
-                         Kernel 0.11.0 ships none — measured, 0 stamps across spi/core/community/
-                         community-testkit at class-file major 69 (kernel ADR-066). So the UP0 pin
-                         bump removed this flag's only reason to exist, and it goes with it rather
-                         than lingering behind a comment that stopped being true. Re-measured at
-                         the 0.12.0 pin (B0): still 0 stamps across the same four jars, all
-                         major 69. -->
+                    <!-- No preview flag. The cap-composition e2e EXECUTES kernel classes rather
+                         than only compiling against them, and a preview-stamped class will not
+                         load without the flag. None is needed while the pinned kernel's spi, core,
+                         community and community-testkit jars carry zero preview stamps at
+                         class-file major 69 (kernel ADR-066), and adding it would pin the suite to
+                         one exact JDK. -->
                     <argLine>@{argLine}</argLine>
                 </configuration>
             </plugin>

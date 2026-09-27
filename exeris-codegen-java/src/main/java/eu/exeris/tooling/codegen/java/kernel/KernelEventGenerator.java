@@ -85,7 +85,7 @@ import javax.lang.model.element.Modifier;
  * {@link eu.exeris.kernel.spi.context.KernelProviders#eventPayloadCodecRegistry()} —
  * because the publish runs on the request thread, and the kernel binds
  * {@code EVENT_PAYLOAD_CODEC_REGISTRY} only in its boot scope: resolved per publish,
- * the slot was always empty there and every payload shipped empty (T48 slice C1). When
+ * the slot would always be empty there and every payload would ship empty. When
  * no registry was bound at construction or no codec supports the payload, it falls back to
  * {@link eu.exeris.kernel.spi.events.EventPayload#empty()} (the latter emitting a
  * producer-side codec-resolution-failure JFR). Redaction is the publisher's job,
@@ -218,11 +218,11 @@ public class KernelEventGenerator implements KernelArtifactGenerator {
     }
 
     /**
-     * The two constructors of a payload-bearing publisher (T48 slice C1): the canonical one
-     * takes the codec registry, and the one-argument form — the 0.8.0 shape, which the emitted
-     * handler test and hand-written code call — captures whatever registry is bound where it
-     * is constructed. Either way the registry is read once, at construction, never per
-     * publish: a publish runs on the request thread, where the kernel binds none.
+     * The two constructors of a payload-bearing publisher: the canonical one takes the codec
+     * registry, and the one-argument form, which the emitted handler test and hand-written code
+     * call, captures whatever registry is bound where it is constructed. Either way the registry
+     * is read once, at construction, never per publish: a publish runs on the request thread,
+     * where the kernel binds none.
      */
     private void addPayloadConstructors(TypeSpec.Builder publisher, String entity) {
         publisher.addField(FieldSpec.builder(EVENT_PAYLOAD_CODEC_REGISTRY, CODEC_REGISTRY_FIELD,

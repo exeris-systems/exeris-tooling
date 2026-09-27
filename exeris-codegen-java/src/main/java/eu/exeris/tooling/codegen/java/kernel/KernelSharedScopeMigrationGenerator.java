@@ -10,7 +10,7 @@ import java.util.Optional;
 
 /**
  * Emits the shared-scope read widening of a {@code DataScope.UNIVERSE} entity as its own Flyway
- * migration (T29 slice B, ADR-059 obligation 5).
+ * migration (ADR-059 obligation 5).
  *
  * <p>A UNIVERSE row is owned by a tenant and readable by every tenant sharing its scope (kernel
  * ADR-012 §4b). {@link KernelFlywayGenerator} already emits everything the ownership half needs —
@@ -24,19 +24,19 @@ import java.util.Optional;
  * <p>The reference policy in the kernel's {@code RlsConnectionInterceptor} Javadoc is one
  * {@code FOR ALL} policy whose {@code USING} is widened and whose {@code WITH CHECK} is pinned to the
  * owner. In PostgreSQL a {@code FOR ALL} policy's {@code USING} also decides which rows
- * {@code UPDATE} and {@code DELETE} may target, and {@code DELETE} consults nothing else. Applied to a
- * real PostgreSQL 16 as a non-owner {@code NOSUPERUSER NOBYPASSRLS} role, that shape let a tenant
- * <b>delete</b> a partition-mate's shared row, and <b>take it over</b> with
- * {@code UPDATE … SET owner = self} — both "cross-tenant mutation", which ADR-012 §4b.4 puts out of
- * scope and the kernel's own access-matrix TCK says must stay a denial.
+ * {@code UPDATE} and {@code DELETE} may target, and {@code DELETE} consults nothing else. For a
+ * non-owner {@code NOSUPERUSER NOBYPASSRLS} role that shape lets a tenant <b>delete</b> a
+ * partition-mate's shared row, and <b>take it over</b> with {@code UPDATE … SET owner = self} —
+ * both "cross-tenant mutation", which ADR-012 §4b.4 puts out of scope and the kernel's own
+ * access-matrix TCK says must stay a denial.
  *
  * <p>Permissive policies are OR-ed per command. Keeping the owner-only {@code FOR ALL} policy and
  * adding a {@code FOR SELECT} one widens reads by exactly the reference's read predicate —
  * {@code owner = tenant OR scope = shared scope} — while {@code INSERT}, {@code UPDATE} and
- * {@code DELETE} keep seeing only the owner predicate. Measured on the same database: every read
- * cell identical to the reference; the delete, the takeover and a plain content overwrite of a
- * partition-mate's row each affect zero rows. It is also the smaller change — nothing the table's
- * own migration created is dropped.
+ * {@code DELETE} keep seeing only the owner predicate: every read cell matches the reference, and
+ * the delete, the takeover and a plain content overwrite of a partition-mate's row each affect zero
+ * rows ({@code SharedScopePostgresE2ETest} holds the matrix). It is also the smaller change —
+ * nothing the table's own migration created is dropped. See ADR-059.
  *
  * <h2>Why a separate file</h2>
  * <ul>
@@ -47,7 +47,7 @@ import java.util.Optional;
  *       {@code V4<nnnnnn>__shared_scope_<table>.sql} — so it sorts after every CREATE and after the
  *       project's {@code V3000000} foreign-key migration, and pairs visibly with its table.</li>
  *   <li>It is tracked by the output manifest like any emitted file, so reverting the tier prunes it
- *       on the next run (T13). The policy it created stays in a database that applied it; that is
+ *       on the next run. The policy it created stays in a database that applied it; that is
  *       a hand-written {@code DROP POLICY}, as the MIGRATION guide says.</li>
  * </ul>
  *
@@ -58,9 +58,9 @@ import java.util.Optional;
  *       {@code ''} as well. It must match no row, and {@code ''::uuid} would raise on every read.
  *       {@code col = NULL} is never true, so an absent scope widens nothing and an untagged row stays
  *       owner-private — the reference's explicit {@code IS NOT NULL} guard is subsumed.</li>
- *   <li><b>{@code exeris.shared_scope}</b> — {@code ConnectionInterceptor.SESSION_KEY_SHARED_SCOPE}
- *       since kernel 0.12. Emitted as a literal (this module has no kernel dependency) and pinned to
- *       the constant by {@code SharedScopeSqlE2ETest}.</li>
+ *   <li><b>{@code exeris.shared_scope}</b> — the kernel's
+ *       {@code ConnectionInterceptor.SESSION_KEY_SHARED_SCOPE}. Emitted as a literal (this module
+ *       has no kernel dependency) and pinned to the constant by {@code SharedScopeSqlE2ETest}.</li>
  *   <li><b>The column name and its SQL type come from {@link KernelFlywayGenerator}</b>, the same
  *       helpers that wrote the {@code CREATE TABLE}, so the policy can never name a column, or cast
  *       to a type, the table does not have.</li>

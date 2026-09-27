@@ -78,7 +78,7 @@ public final class KernelRepositoryTestGenerator {
      */
     private static final String TENANT_KEY = "00000000-0000-4000-8000-000000000002";
     /**
-     * The shared scope the generated tests bind for a UNIVERSE entity (T29 slice B). A fixed literal
+     * The shared scope the generated tests bind for a UNIVERSE entity. A fixed literal
      * (determinism), distinct from both {@link #TENANT_KEY} and {@link KernelTestSamples#FIXED_ID},
      * so a stamped scope cannot be mistaken for a staged value or for the owner. UUID-shaped, so the
      * same literal serves a {@code UUID} and a {@code String} shared-scope field.
@@ -297,8 +297,8 @@ public final class KernelRepositoryTestGenerator {
         // field, so the assertion has to exclude "some other RuntimeException". A dedicated type
         // does that exactly, where "not found" only did it by coincidence of wording — and it is
         // the same type the handler catches to answer 404/409 rather than 500.
-        // Nothing is staged on the entity on purpose — on a versioned entity that also pins T54,
-        // since update() reads the version off a freshly constructed instance.
+        // Nothing is staged on the entity on purpose — on a versioned entity that also pins the
+        // null-version read, since update() reads the version off a freshly constructed instance.
         test.addStatement(write("$T.assertThatThrownBy(() -> repository.update($T.fromString($S), "
                         + "entity)).isInstanceOf($T.class)", tenantScoped),
                 ASSERTIONS, UUID, KernelTestSamples.FIXED_ID, rejectionType);
@@ -409,7 +409,7 @@ public final class KernelRepositoryTestGenerator {
 
     /**
      * ADR-090, the unchanged half: with no tenant bound there is nothing to compare against, so a
-     * caller-supplied owner is written as given and row-level security decides, exactly as before —
+     * caller-supplied owner is written as given and row-level security decides —
      * the path a seeder that writes owners explicitly depends on.
      */
     private MethodSpec saveLeavesTheTenantToTheDatabaseWhenNoneIsBoundTest(
@@ -458,7 +458,7 @@ public final class KernelRepositoryTestGenerator {
     }
 
     /**
-     * Proves the shared-scope stamp (T29 slice B): a UNIVERSE row the caller left untagged takes the
+     * Proves the shared-scope stamp: a UNIVERSE row the caller left untagged takes the
      * bound scope, and the tag reaches the INSERT at the column's own index — the same two-sided
      * check as the tenant stamp, for the same reason.
      */

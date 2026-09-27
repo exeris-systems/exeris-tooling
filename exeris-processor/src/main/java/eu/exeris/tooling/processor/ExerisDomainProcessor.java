@@ -1125,10 +1125,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      * {@code expression} or {@code language} on one is ignored and the node renders no bound value.
      * {@code ref} is exempt on a {@code SLOT} block, where it names the slot whatever the source.
      *
-     * <p>The TypeScript view emitter used to classify these by which attribute was set rather than
-     * by source: an {@code expression} was reported as the G1 relational gap and a {@code language}
-     * as a G2 stream, which {@code BindSource} cannot express. It now emits a wrong-attribute comment
-     * instead; this is the same diagnosis where the author can act on it, at the declaration.
+     * <p>The TypeScript view emitter makes the same diagnosis by source, in a wrong-attribute comment
+     * on the emitted node; this reports it where the author can act on it, at the declaration.
      * Not strict-gated: this is a mistake in the source, not an unconsumed attribute.
      */
     private void warnWrongAttributesOnStaticBind(Element member, AnnotationMirror bind,
@@ -1269,18 +1267,18 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     private static final String SHARED_SCOPE_ATTRIBUTE = "sharedScopeField";
 
     /**
-     * Refuses a {@code UNIVERSE} declaration that cannot be transcribed, at the declaration site
-     * (T29 slice B). A transcribable one passes silently and is emitted: the TENANT shape for the
+     * Refuses a {@code UNIVERSE} declaration that cannot be transcribed, at the declaration site.
+     * A transcribable one passes silently and is emitted: the TENANT shape for the
      * owner, plus a shared-scope migration and a repository stamp for the {@code @SharedScope}
      * column.
      *
      * <p><b>A UNIVERSE row is owned.</b> Kernel ADR-012 §4b.2 makes a shared-scope key without an
      * isolation key unrepresentable, and the SDK's {@code @SharedScope} accompanies
      * {@code @TenantId} rather than replacing it: reads widen across the shared scope, writes stay
-     * pinned to the owner. So this is not the 0.8.0 blanket refusal with a hole cut in it — every
-     * UNIVERSE entity still gets the owner column, the owner-pinned policy and the tenant stamp
-     * {@code DataScopeSupport.isTenantPartitioned} has always given it, and the checks below are
-     * exactly the ways a declaration can fail to name the two columns those predicates compare.
+     * pinned to the owner. So every UNIVERSE entity gets the owner column, the owner-pinned policy
+     * and the tenant stamp {@code DataScopeSupport.isTenantPartitioned} gives it, and the checks
+     * below are exactly the ways a declaration can fail to name the two columns those predicates
+     * compare.
      *
      * <p>Each refusal is one the emitted code would otherwise hit later and further from its
      * cause:
@@ -1288,8 +1286,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      *   <li><b>no {@code @SharedScope} field</b> — there is no column to widen reads on, and the
      *       tier would be behaviourally TENANT while claiming otherwise;</li>
      *   <li><b>no owner field</b> — the repository binds the owner's accessor, so the build would
-     *       fail with {@code cannot find symbol} inside a generated file (T29's original failure,
-     *       moved here permanently);</li>
+     *       fail with {@code cannot find symbol} inside a generated file;</li>
      *   <li><b>a type other than {@code UUID} or {@code String}</b> — the two types the SDK marker
      *       supports and the two the policy can compare against a session setting;</li>
      *   <li><b>the owner field carrying the marker</b> — one column cannot be both predicates;</li>
@@ -1633,7 +1630,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         // something was actually declared; otherwise leave it null so the default-case JSON is
         // byte-identical to pre-T5 output (determinism invariant).
         SystemFieldsMetadata systemFields = resolveSystemFields(values, element, declaredScope);
-        // T29 slice B: a UNIVERSE declaration is checked once its owner and shared-scope fields
+        // A UNIVERSE declaration is checked once its owner and shared-scope fields
         // are resolved. Suppressed when the declaration is already contradicted — two errors
         // about one line, the second describing an emission a fixed declaration may never reach,
         // is noise on top of an error the author has to fix first.
@@ -1656,9 +1653,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     }
 
     /**
-     * The ten roles read from {@code annotation.system.*} — nine since C1, and {@code @SharedScope}
-     * since T29 slice B, appended last so every earlier diagnostic keeps its place. Ordered, and
-     * iterated in this order, so a diagnostic sequence is stable across runs.
+     * The ten roles read from {@code annotation.system.*}. Ordered, and iterated in this order, so a
+     * diagnostic sequence is stable across runs.
      *
      * <p>{@code @SharedScope} has no {@code @ExerisDomain} override attribute, so its
      * {@code sharedScopeField} lookup is always empty and the override-conflict refusal never
@@ -1696,8 +1692,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      * <p><b>Two refusals, both at the declaration.</b> Several fields carrying one role cannot be
      * compiled — {@code SystemFieldsMetadata} holds one name per role — and neither can an override
      * naming a different field than the annotation does. Accepting either would produce metadata
-     * that builds here and contradicts itself downstream, which is the shape T57 refused for a
-     * repeated {@code @GraphEdge}.
+     * that builds here and contradicts itself downstream, which is also why a repeated
+     * {@code @GraphEdge} is refused.
      *
      * <p><b>{@code @SharedScope} is recorded on a UNIVERSE entity only</b> — see
      * {@link #dropSharedScopeOffTheUniverseTier}.
@@ -1760,8 +1756,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      * <p>The marker names the column a UNIVERSE policy widens reads on, and no other tier emits
      * such a policy, so on a GLOBAL or TENANT entity it does nothing. Recording it anyway would put
      * a {@code sharedScopeField} into the metadata of an entity that declares no shared tier, which
-     * the SDK record documents as never happening; dropping it keeps that entity's JSON
-     * byte-identical to what it was before this processor read the marker at all. UNIVERSE is
+     * the SDK record documents as never happening. UNIVERSE is
      * reachable only through an explicit {@code dataScope} — the deprecated boolean cannot say it —
      * so the declared tier is the whole test.
      */
@@ -1816,7 +1811,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         String createdByField = resolved(declared, values, "createdByField", d.createdByField());
         String updatedAtField = resolved(declared, values, "updatedAtField", d.updatedAtField());
         String updatedByField = resolved(declared, values, "updatedByField", d.updatedByField());
-        // T29 slice B. Present only on a UNIVERSE entity (dropSharedScopeOffTheUniverseTier), and
+        // Present only on a UNIVERSE entity (dropSharedScopeOffTheUniverseTier), and
         // null otherwise — the SDK record's own contract, which NON_NULL keeps off the wire.
         String sharedScopeField = declared.get(SHARED_SCOPE_ATTRIBUTE);
 
@@ -2517,14 +2512,12 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     /**
      * The entity's declared graph edges, from {@code @GraphEdge} on its fields.
      *
-     * <p><b>T57: this list was hardcoded to {@code List.of()}.</b> {@code GraphEdgeMetadata} exists,
-     * and {@code KernelGraphSyncGenerator} iterates {@code graph.edges()} to emit one
-     * {@code GraphEdgeDescriptor} constant apiece — so the consumer was ready and the producer did
-     * not exist. Every generated graph-sync artefact carried zero edges, in every build, whatever
-     * the entity declared.
+     * <p>{@code KernelGraphSyncGenerator} iterates {@code graph.edges()} to emit one
+     * {@code GraphEdgeDescriptor} constant apiece, so this list is the whole of what reaches the
+     * generated graph sync: an edge not extracted here is one the artefact never carries.
      *
      * <p>{@code @GraphEdge} is {@code @Repeatable(GraphEdges.class)}, so both the direct mirror and
-     * the synthesised container are read — the same shape T56 fixed for {@code @SagaStep}, and the
+     * the synthesised container are read — the same shape as {@code @SagaStep}, and the
      * same helper.
      *
      * <p>Order is field declaration order, which decides the order of the emitted constants. That
@@ -2685,11 +2678,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         if (values.containsKey("description")) builder.description((String) values.get("description"));
         if (values.containsKey("timeout")) builder.timeout((String) values.get("timeout"));
         if (values.containsKey("maxRetries")) builder.maxRetries(getInt(values, "maxRetries", 0));
-        // T55: `version` was never read, so SagaMetadata reported 1 for every saga and
-        // `@Saga(version = 3)` produced a metadata document that contradicted its own source.
-        // Correcting an existing field, not adding one — the record already declares it and the
-        // TypeScript schema already mirrors it. Consumed since kernel 0.12 made it expressible:
-        // KernelSagaGenerator emits builder.version(n) for any n other than 1 (K5), and refuses
+        // `version` is read so that `@Saga(version = 3)` yields a metadata document that agrees
+        // with its source; the record declares the field and the TypeScript schema mirrors it.
+        // KernelSagaGenerator emits builder.version(n) for any n other than 1, and refuses
         // n < 1. Passed through unchecked here on purpose — the generator is the one place both
         // this path and metadata JSON from outside the processor reach.
         if (values.containsKey(VERSION_ATTRIBUTE)) builder.version(getInt(values, VERSION_ATTRIBUTE, 1));
@@ -2704,14 +2695,12 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     /**
      * The saga's steps, in {@code order}.
      *
-     * <p><b>T56: a repeated {@code @SagaStep} used to contribute nothing.</b> The annotation is
+     * <p><b>A repeated {@code @SagaStep} contributes every repeat.</b> The annotation is
      * {@code @Repeatable(SagaSteps.class)} and the container is public precisely so a step can be
-     * repeated from any package — so repeating one is a supported authoring shape. But {@code javac}
+     * repeated from any package — so repeating one is a supported authoring shape. {@code javac}
      * replaces the repeats with the synthesised container, and a lookup for the exact type
-     * {@code eu.exeris.sdk.annotation.SagaStep} then finds nothing: every step on that method was
-     * dropped, silently, and the emitted flow was short by however many the author wrote. The SDK's
-     * own {@code SagaSteps} javadoc records the same finding — "repeating a step compiles, and is
-     * then dropped". Both shapes are read here now, through the container helper the capability
+     * {@code eu.exeris.sdk.annotation.SagaStep} alone would find nothing and drop every step on that
+     * method silently. Both shapes are read here, through the container helper the capability
      * extraction already uses for {@code @Provides.List}.
      */
     private List<SagaStepMetadata> extractSagaSteps(TypeElement element) {
