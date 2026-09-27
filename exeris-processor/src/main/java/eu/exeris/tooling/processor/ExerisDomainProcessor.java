@@ -964,11 +964,10 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             writeMetadata("view_" + name,
                     new ViewJson(name, packageName, qualifiedName, view));
 
-            // T11 / RFC-2026-06-28 §4: @View is now CONSUMED by the codegen-ts
+            // RFC-2026-06-28 §4: @View is now consumed by the codegen-ts
             // presentation-IR emitter (view-gen), so it is no longer in
-            // INERT_ANNOTATIONS — a @View-only compilation under -Aexeris.strict
-            // emits no inert warning for @View. The call stays so any *other* inert
-            // annotation on a @View type is still honestly flagged (Java∪TS union).
+            // INERT_ANNOTATIONS. The call audits any *other* inert
+            // annotation on a @View type (Java∪TS union).
             auditAnnotations(element);
 
             note("Generated view metadata for: " + name);
@@ -1519,8 +1518,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             builder.internalApi(internalApi);
         }
 
-        // T11: under -Aexeris.strict, flag type-level annotations that are
-        // extracted above but consumed by no generator (e.g. @EventSourced).
+        // Under -Aexeris.strict, flag type-level annotations that are
+        // extracted but consumed by no generator (e.g. @EventSourced).
         auditAnnotations(element);
 
         return builder.build();
@@ -1619,13 +1618,13 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             builder.searchConfig((String) values.get("searchConfig"));
         }
 
-        // @ExerisDomain has no tableName attribute (see exeris-sdk-
-        // annotations) — the previous containsKey("tableName") check
-        // was unreachable and was removed in PR #45.
+        // No tableName is read: @ExerisDomain on the pinned SDK declares no tableName
+        // attribute (see exeris-sdk-annotations).
 
-        // System fields, from two sources (T5 + C1). Only build a SystemFieldsMetadata when
-        // something was actually declared; otherwise leave it null so the default-case JSON is
-        // byte-identical to pre-T5 output (determinism invariant).
+        // System fields come from two sources: annotation.system.* markers on fields and
+        // @ExerisDomain override attributes. Only build a SystemFieldsMetadata when
+        // something was declared; otherwise leave it null so the default-case JSON stays
+        // byte-identical (determinism invariant).
         SystemFieldsMetadata systemFields = resolveSystemFields(values, element, declaredScope);
         // A UNIVERSE declaration is checked once its owner and shared-scope fields
         // are resolved. Suppressed when the declaration is already contradicted — two errors
@@ -1679,9 +1678,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             new SystemFieldRole("SharedScope", SHARED_SCOPE_ATTRIBUTE));
 
     /**
-     * Which field plays each system role, from the two sources that can say so: a
-     * {@code annotation.system} annotation on the field itself (C1) and the matching
-     * {@code @ExerisDomain} override attribute (T5).
+     * Which field plays each system role, from two sources: a
+     * {@code annotation.system} annotation on the field itself, and the matching
+     * {@code @ExerisDomain} override attribute.
      *
      * <p>Returns {@code null} when neither source declared anything, so the record stays absent and
      * the emitted JSON is byte-identical to the default case.
@@ -1872,7 +1871,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             // Detect and collect enum types
             collectEnumType(field.asType());
 
-            // D6: the inert-annotation sweep sits in the loop, NOT inside
+            // The inert-annotation sweep sits in the loop, NOT inside
             // extractFieldMetadata — that extractor is reached only when @Field is
             // present, and a field-level inert annotation on a field without @Field
             // is a real shape (@Blob describes a byte carrier, not a column). The
@@ -2067,9 +2066,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
 
             ExecutableElement method = (ExecutableElement) enclosed;
 
-            // D6: in the loop rather than in extractActionMetadata, for the reason
-            // spelled out at the field sweep — a method-level inert annotation must
-            // not have its reachability decided by whether @Action is also present.
+            // In the loop rather than in extractActionMetadata, for the reason spelled out
+            // at the field sweep — a method-level inert annotation must not have its
+            // reachability decided by whether @Action is also present.
             auditAnnotations(method);
 
             AnnotationMirror actionAnnotation = findAnnotation(method, "eu.exeris.sdk.annotation.Action");
@@ -2086,21 +2085,19 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         Map<String, Object> values = extractAnnotationValues(annotation);
         warnInertAttributes("Action", values, method, annotation);
 
-        // T3: action identity is the @Action(name=…) attribute (required on the SDK
-        // annotation, so always present), NOT the method name. Reading the method
-        // name made a @Action(name="approve") on a bean-setter-shaped method (e.g.
-        // void setFormation(Formation)) collide with the generated setter. Fall back
-        // to the method name only defensively, if a blank name ever reaches here.
+        // Action identity is the @Action(name=…) attribute, not the method name.
+        // This decouples the action identity from bean-accessor-shaped method names
+        // that might otherwise collide with generated setters. Fall back to the
+        // method name defensively if a blank name reaches here.
         String declaredName = getString(values, "name", null);
         String name = (declaredName != null && !declaredName.isBlank())
                 ? declaredName
                 : method.getSimpleName().toString();
 
         ActionMetadata.Builder builder = ActionMetadata.builder(name)
-                // T1: carry the real JVM method name so the handler generator can emit a
-                // server-side dispatch that invokes the actual aggregate method. Distinct
-                // from `name` (the @Action(name=…) identity), which T3 decoupled and may
-                // differ (e.g. renamed to dodge a bean-accessor collision).
+                // Carry the real JVM method name so the handler generator can emit
+                // server-side dispatch to the actual aggregate method. This is distinct
+                // from `name` (the @Action identity), which may differ.
                 .methodName(method.getSimpleName().toString());
 
         // @Action attribute surface (see exeris-sdk-annotations Action.java).
@@ -2114,7 +2111,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         if (values.containsKey("httpMethod")) builder.httpMethod((String) values.get("httpMethod"));
         if (values.containsKey("async")) builder.async((Boolean) values.get("async"));
 
-        // ADR-044 Slice 2: the per-action streaming driver. @Action(streaming=true)
+        // ADR-044: the per-action streaming driver. @Action(streaming=true)
         // (boolean, default false) + @Action(streamEventType=…) (String, default "")
         // are verified live against exeris-sdk-annotations Action.java, like the
         // attributes above. They drive KernelActionStreamHandlerGenerator (one
@@ -2125,16 +2122,15 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         if (values.containsKey("streamEventType")) builder.streamEventType((String) values.get("streamEventType"));
         // NOTE: @Action(realTimeUpdates) is deliberately NOT extracted here. It is a
         // separate "subscribe-to-progress" affordance (response shape vs. progress
-        // channel) with no generator consumer in Slice 2 — extracting it would only
-        // create an inert ActionMetadata attribute. Out of Slice-2 scope; add the
-        // extraction in the same change that introduces its consumer.
+        // channel) with no generator consumer. Extracting it would only create an inert
+        // ActionMetadata attribute; add extraction when the consumer exists.
 
         // Extract parameters
         List<ActionParamMetadata> params = new ArrayList<>();
         for (VariableElement param : method.getParameters()) {
             // Outside the @ActionParam gate, for the reason the field and method sweeps give:
-            // @QueryParam on an otherwise-unannotated parameter is precisely the shape C0 exists
-            // to report, and gating the audit on @ActionParam would hide it.
+            // @QueryParam on an otherwise-unannotated parameter is exactly the shape the strict
+            // audit reports, and gating the audit on @ActionParam would hide it.
             auditAnnotations(param);
 
             AnnotationMirror paramAnnotation = findAnnotation(param, "eu.exeris.sdk.annotation.ActionParam");
@@ -2202,10 +2198,10 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                 String eventName = nestedClass.getSimpleName().toString();
                 String topic = values.containsKey("topic") ? (String) values.get("topic") : null;
                 String description = values.containsKey("description") ? (String) values.get("description") : null;
-                // EV1: the inner-class event form resolves payload/sensitive fields
-                // against the ENCLOSING entity's @Field list, exactly like the
-                // class-level form (extractSingleEventMetadata) — it must not silently
-                // drop EV1 payloads just because the event is declared as a nested class.
+                // The inner-class event form resolves payload/sensitive fields
+                // against the enclosing entity's @Field list, exactly like the
+                // class-level form — it must not silently drop payloads just
+                // because the event is declared as a nested class.
                 List<String> payloadFields = resolvePayloadFields(values, element);
                 List<String> sensitiveFields = getStringArray(values, "sensitiveFields");
                 events.add(DomainEventMetadata.builder(eventName)
@@ -2227,11 +2223,10 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     private DomainEventMetadata extractSingleEventMetadata(AnnotationMirror eventAnnotation, TypeElement element) {
         Map<String, Object> values = extractAnnotationValues(eventAnnotation);
 
-        // TODO(T11-strict): no warnInertAttributes("DomainEvent", values, ...) call yet,
-        // so -Aexeris.strict cannot audit unconsumed @DomainEvent attributes (the
-        // @Field / @ActionParam paths do). Add one once the consumed-attribute set is
-        // settled (name/topic/description/trigger/action/field/includeFields/
-        // excludeFields/sensitiveFields).
+        // TODO(T11-strict): add a warnInertAttributes("DomainEvent", ...) call so -Aexeris.strict
+        // can audit unconsumed @DomainEvent attributes like @Field and @ActionParam do.
+        // Awaits settling the consumed-attribute set (name/topic/description/trigger/
+        // action/field/includeFields/excludeFields/sensitiveFields).
         String name = values.containsKey("name") ? (String) values.get("name") : null;
         if (name == null || name.isBlank()) {
             // Derive from trigger type
@@ -2242,11 +2237,11 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         String topic = values.containsKey("topic") ? (String) values.get("topic") : null;
         String description = values.containsKey("description") ? (String) values.get("description") : null;
 
-        // EV1: resolve the payload field subset + sensitive fields. Shared semantics
+        // Resolve the payload field subset + sensitive fields. Shared semantics
         // with SourceModelReader.resolvePayloadFields (ADR-042 lock-step).
-        // TODO(EV1): includeComputed / includePreviousValues are intentionally NOT
+        // TODO(EV1): includeComputed / includePreviousValues are intentionally not
         // contributing to payloadFields yet — there is no computed-field source in
-        // the persisted @Field list; revisit when the computed-field surface lands.
+        // the persisted @Field list; revisit when that surface lands.
         List<String> payloadFields = resolvePayloadFields(values, element);
         List<String> sensitiveFields = getStringArray(values, "sensitiveFields");
 
@@ -2263,14 +2258,14 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     }
 
     /**
-     * EV2 (T48): {@code @DomainEvent.trigger} as an AST value rather than a suffix input.
+     * Extracts {@code @DomainEvent.trigger} as an AST value rather than a suffix input.
      *
      * <p>Note the asymmetry with the name derivation above, which defaults an absent
      * trigger to {@code CREATE} because all it needs is a suffix. Here an absent trigger
      * stays {@code null}, because the AST component makes a claim downstream: {@code null}
-     * means "this baseline predates EV2 extraction", which is a different statement from
-     * "fires on CREATE". Same rule the {@code -io} reader already applies
-     * (ADR-042 lock-step; the reader took this one first).
+     * means "this baseline predates trigger extraction", which differs from
+     * "fires on CREATE". Same rule the {@code -io} reader applies
+     * (ADR-042 lock-step).
      *
      * <p>An unrecognised constant also yields {@code null} rather than a guess. The
      * annotation's enum cannot hold a value this switch does not know without an SDK
@@ -2412,8 +2407,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                 }
                 // @Relationship carries cascade as two booleans; the AST carries a JPA-shaped
                 // enum, and KernelApplicationGenerator#deletePolicy reads ALL/REMOVE as
-                // ON DELETE CASCADE. Without this the FK constraints emitted by T9 were always
-                // RESTRICT and cascadeDelete was a no-op.
+                // ON DELETE CASCADE, so a declared cascadeDelete reaches the emitted FK constraint.
                 boolean cascadeDelete = Boolean.TRUE.equals(values.get("cascadeDelete"));
                 boolean cascadeUpdate = Boolean.TRUE.equals(values.get("cascadeUpdate"));
                 if (cascadeDelete || cascadeUpdate) {
@@ -2434,12 +2428,12 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     }
 
     /**
-     * T4: prefer the explicit {@code @Relationship(targetEntity = Foo.class)} over the
+     * Prefers explicit {@code @Relationship(targetEntity = Foo.class)} over the
      * field's Java type. The attribute is required on the SDK annotation, so it is
-     * normally present as a {@link TypeMirror}; reading the field type instead made the
-     * annotation only work on entity-typed fields and recorded {@code UUID} as the
-     * target for the explicit-UUID-FK style ({@code @Relationship UUID ownerId}). Fall
-     * back to the field type only when the attribute is absent or {@code void.class}.
+     * normally present as a {@link TypeMirror}. Reading the field type instead would make
+     * the annotation work only on entity-typed fields, and would record {@code UUID} as the
+     * target for the explicit-UUID-FK style ({@code @Relationship UUID ownerId}). Falls back
+     * to the field type only when the attribute is absent or {@code void.class}.
      */
     private String resolveTargetEntity(Map<String, Object> values, VariableElement field) {
         Object declared = values.get("targetEntity");

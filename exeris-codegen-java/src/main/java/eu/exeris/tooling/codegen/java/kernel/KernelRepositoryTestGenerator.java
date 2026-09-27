@@ -292,11 +292,10 @@ public final class KernelRepositoryTestGenerator {
                 .addStatement("persistence.rowsAffected = 0L")
                 .addStatement("$T repository = new $T(persistence)", repositoryType, repositoryType)
                 .addStatement("$T entity = new $T()", entityType, entityType);
-        // The type, not a message substring (ADR-076). The substring was here for a reason worth
-        // keeping: isInstanceOf(RuntimeException) alone would also pass on an NPE from an unstaged
-        // field, so the assertion has to exclude "some other RuntimeException". A dedicated type
-        // does that exactly, where "not found" only did it by coincidence of wording — and it is
-        // the same type the handler catches to answer 404/409 rather than 500.
+        // The type, not a message substring (ADR-076). isInstanceOf(RuntimeException) alone
+        // would also pass on an NPE from an unstaged field; checking the dedicated type excludes
+        // "some other RuntimeException". This is the same type the handler catches to answer
+        // 404/409 rather than 500.
         // Nothing is staged on the entity on purpose — on a versioned entity that also pins the
         // null-version read, since update() reads the version off a freshly constructed instance.
         test.addStatement(write("$T.assertThatThrownBy(() -> repository.update($T.fromString($S), "

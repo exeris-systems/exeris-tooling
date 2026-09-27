@@ -135,13 +135,7 @@ public final class OpenApiPathsBuilder {
      * parse or a body to decode, {@code 404} needs an id to miss, and {@code 409} is raised only by
      * the write path of a versioned entity — where it replaces {@code 404} rather than joining it,
      * because that update matches on {@code id} and version together and reports the pair.
-     *
-     * <p>Two corrections are recorded in this shape. Until ADR-076 the spec declared {@code 404}
-     * and not {@code 500} while the handler answered {@code 500} and not {@code 404} for an absent
-     * row. Until ADR-079 one set served every operation: the collection {@code GET} and the create
-     * {@code POST} declared a {@code 404} they have no id to produce, the collection {@code GET}
-     * declared a {@code 400} it has nothing to reject, and every operation declared a {@code 401}
-     * no emitted route can reach.
+     * ADR-076 fixes the status for an absent row, and ADR-079 the per-operation sets.
      */
     private static final class Responses {
 

@@ -806,8 +806,8 @@ public final class KernelHandlerTestGenerator {
         /** Builds the decoded entity: every rule-carrying field valid, bar the one under test. */
         private void stage(MethodSpec.Builder m, KernelValidationRules.FieldRules perturbed,
                            CodeBlock value) {
-            // `body` is declared before the handler: since T43-follow-up the handler takes the
-            // allocator at construction, and it must be the same double this test stages.
+            // `body` is declared before the handler: the handler takes the allocator at
+            // construction, and it must be the same double this test stages.
             m.addStatement("$T service = new $T()", stubType, stubType)
                     .addStatement("$T body = new $T()", bodyType, bodyType)
                     .addStatement("$T handler = newHandler(service, body)", handlerType)
@@ -824,9 +824,8 @@ public final class KernelHandlerTestGenerator {
         /**
          * Runs the handler with the decoder-registry slot bound.
          *
-         * <p>The {@code MEMORY_ALLOCATOR} slot used to be bound here too, and is not any more:
-         * T43-follow-up made the allocator a constructor argument, so the handler no longer reads
-         * that {@code ScopedValue} and binding it would be setup nothing consumes. The same
+         * <p>The {@code MEMORY_ALLOCATOR} slot is not bound here: the handler takes the allocator
+         * as a constructor argument and does not read that {@code ScopedValue}. The same
          * {@code RecordingRequestBody} the registry returns is what {@code newHandler} was given,
          * so the decoding context still gets exactly the instance this test staged.
          */
@@ -934,9 +933,8 @@ public final class KernelHandlerTestGenerator {
                 //
                 // save fills an absent id, because the real repository does — the generated
                 // service test asserts exactly that ("save returns the repository's result, not
-                // the argument it was handed"). A double that skipped it under-specified the
-                // contract harmlessly until T48 gave the handler a caller for saved.getId(); it
-                // then produced a 500 from a null id that production never sees.
+                // the argument it was handed"). The handler reads saved.getId(), so a double
+                // that skipped it would answer 500 from a null id production never sees.
                 .addMethod(MethodSpec.methodBuilder("save")
                         .addAnnotation(Override.class)
                         .addModifiers(Modifier.PUBLIC)

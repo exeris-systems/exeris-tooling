@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Derives the kernel SPIs an emitted application needs a provider for (T50, ADR-078).
+ * Derives the kernel SPIs an emitted application needs a provider for (ADR-078).
  *
  * <h2>Driven by what was emitted, not by the subsystem name list</h2>
  * The emitted {@code Application.subsystems()} returns a fixed comma-separated string, and a

@@ -83,7 +83,7 @@ class CodegenPipelineTest {
                 CapabilityModuleMetadata.builder().provides(provides).requires(requires).build());
     }
 
-    /** Same, with a {@code @CapabilityLifecycle} owner attached (SDK 0.9.0's trailing component). */
+    /** Same, with a {@code @CapabilityLifecycle} owner attached. */
     private CapabilityModuleDescriptor desc(String qName,
                                             List<ProvidesMetadata> provides,
                                             List<RequiresMetadata> requires,
@@ -148,8 +148,8 @@ class CodegenPipelineTest {
         @Test
         @DisplayName("zero domains writes nothing and prunes nothing — a committed test tree survives")
         void zeroDomainsIsANoOp() throws IOException {
-            // Same T18 reasoning as the main tree: empty metadata is overwhelmingly a masked
-            // compile failure, and pruning on it would delete a committed generated-test tree.
+            // Empty metadata is overwhelmingly a masked compile failure, and pruning on it would
+            // delete a committed generated-test tree.
             Path owned = testOutputDir.resolve("com/shop/handler/ProductHandlerTest.java");
             Files.createDirectories(owned.getParent());
             Files.writeString(owned, "class ProductHandlerTest {}");
@@ -344,7 +344,7 @@ class CodegenPipelineTest {
         @DisplayName("the whole path: real metadata in, a real classpath scanned, a verdict out")
         void reportsMissingDriversForRealMetadata() throws IOException {
             writeDomain("Product", "");
-            // Deliberately an element with classes and no META-INF/services — the measured shape
+            // Deliberately an element with classes and no META-INF/services — matching the shape
             // of the pinned exeris-kernel-core jar, which carries zero service registrations.
             // That is what makes this gate non-vacuous rather than a formality.
             Path coreLike = driverJar("core-like.jar");
@@ -690,13 +690,12 @@ class CodegenPipelineTest {
         @Test
         @DisplayName("a @CapabilityLifecycle owner round-trips into cap-manifest.json (the conductor's discovery input)")
         void manifestCarriesLifecycleOwner() throws IOException {
-            // cap-manifest.json is the contract with the SDK 0.9.0 CompositionConductor: it
-            // discovers lifecycle owners by reading this field and instantiating each non-null
-            // FQN. A silent serialization drop would therefore surface as a SKU that boots with
-            // zero lifecycle hooks — no initialize, no drain — rather than as a build failure.
-            // Pinned here because the emitted SKU bootstrap is built directly on this field,
-            // and because the manifest is serialized straight off CapabilityGraph, a path
-            // independent of the CompositionStamp→CapManifest adapter used for the binding.
+            // cap-manifest.json is the contract with the CompositionConductor: it discovers
+            // lifecycle owners by reading this field and instantiating each non-null FQN.
+            // A silent serialization drop would surface as a SKU that boots with zero lifecycle
+            // hooks — no initialize, no drain — rather than as a build failure. The emitted SKU
+            // bootstrap is built directly on this field, and the manifest is serialized straight
+            // off CapabilityGraph, independent of the CompositionStamp→CapManifest adapter.
             writeCapabilityJson("Billing",
                     desc("com.app.Billing", List.of(ProvidesMetadata.of("com.api.PaymentApi", "1.0")),
                             List.of(), "com.app.BillingLifecycle"));

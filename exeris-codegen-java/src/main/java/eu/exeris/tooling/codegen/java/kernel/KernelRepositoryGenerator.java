@@ -224,8 +224,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         TypeName listOfEntity = ParameterizedTypeName.get(LIST_TYPE, entityType);
 
         // Effective system-field java names (T5 overrides; defaults when no
-        // @ExerisDomain override was written). For the default case these are
-        // byte-identical to the previously hardcoded literals.
+        // @ExerisDomain override was written).
         SystemFieldNames sys = resolveSystemFieldNames(metadata);
 
         // Stable column layout — both SELECT clauses and mapRow consume it
@@ -390,8 +389,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     /**
      * Effective java field names for the system fields the repository emits
      * (T5). Resolved from {@link DomainMetadata#systemFields()} when present,
-     * else the canonical defaults. Defaults are deliberately the same literals
-     * the generator hardcoded before T5, so default-case output is unchanged.
+     * else the canonical defaults.
      */
     record SystemFieldNames(String tenantId, String createdAt, String updatedAt,
                                     String deleted, String version) {}

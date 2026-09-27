@@ -113,9 +113,8 @@ public final class TableDslGenerator {
         if (type.contains("LocalDate") && !type.contains("DateTime")) return "date-range";
         if (type.contains("DateTime") || type.contains("Instant")) return "datetime-range";
         // Numeric range — covers every primitive + boxed numeric Java type
-        // we map elsewhere as "number" in DslTypeMapper. double / float
-        // were previously absent and silently fell through to "text",
-        // breaking the range-filter contract.
+        // DslTypeMapper maps as "number", double / float / BigDecimal included:
+        // a type missing here falls through to "text" and breaks the range filter.
         if (type.contains("int") || type.contains("Integer")
                 || type.contains("long") || type.contains("Long")
                 || type.contains("double") || type.contains("Double")

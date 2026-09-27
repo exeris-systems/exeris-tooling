@@ -316,9 +316,8 @@ class ExerisDomainProcessorGapsTest {
     // ---------- bugfix round-trips (computedFrom + @EventSourced SDK alignment) ----------
 
     /**
-     * Two pre-existing data-loss bugs flagged in #45's review and fixed
-     * in this PR. Both were caused by drift between the SDK annotation
-     * surface and the processor's read-side assumptions:
+     * Two data-loss bugs in annotation surface drift between SDK and processor
+     * read-side assumptions:
      *
      * <ul>
      *   <li>{@code @Field.computedFrom} array values were silently dropped

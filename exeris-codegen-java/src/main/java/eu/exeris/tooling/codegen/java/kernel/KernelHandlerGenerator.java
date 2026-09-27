@@ -197,8 +197,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
 
         // Both the by-id CRUD routes and the action routes capture the entity id as
         // the {id} path-template variable, so a single helper reads it from
-        // exchange.pathParams() (kernel 0.10 boot-path, PR #224) — no raw-path string
-        // surgery, and no separate action-aware extractor.
+        // exchange.pathParams() — no raw-path string surgery, and no separate action-aware extractor.
         if (tenantPartitioned) {
             handlerBuilder.addMethod(buildRespondTenantUnbound(entityLower));
         }
@@ -282,7 +281,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         // rowsAffected == 0 (KernelRepositoryGenerator#buildDeleteById), and the service
         // delegates straight to it. So a DELETE on an absent id — including a retried one,
         // since the second call affects no rows — leaves this try block through the
-        // not-found catch below and answers 404 (ADR-076; it answered 500 until then).
+        // not-found catch below and answers 404 (ADR-076).
         // Every statement after service.delete(id), publish calls included, is reachable
         // only when a row was actually removed. The isPresent() check on the payload path
         // is defensive against a race between the read and the delete, not the thing that
@@ -471,10 +470,10 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
      *  an action decodes its own {@code @ActionParam} record and invokes an entity method,
      *  it does not accept the field-shaped create/update body those rules describe.
      *
-     *  <p>The tenant guard IS applied, and was missing until finding T45. An action loads the
-     *  aggregate through the same service the CRUD routes use, so with no tenant bound row-level
-     *  security hides the row and the handler answers 404 — telling a caller the entity does not
-     *  exist when it does and the real fault is missing wiring. That is the same undiagnosable
+     *  <p>The tenant guard IS applied. An action loads the aggregate through the same
+     *  service the CRUD routes use, so with no tenant bound row-level security hides the row
+     *  and the handler answers 404 — telling a caller the entity does not exist when it does
+     *  and the real fault is missing wiring. That is the same undiagnosable
      *  answer T41 was opened for, wearing a different status code, so it gets the same refusal. */
     private MethodSpec buildActionHandler(ActionMetadata action, ClassName entityType,
                                           TypeName optionalOfEntity, ClassName selfType,
@@ -772,11 +771,10 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
     }
 
     /** Reads the entity {@code id} from the {@code {id}} path-template variable the
-     *  kernel router captures into {@code exchange.pathParams()} (kernel 0.10
-     *  boot-path, PR #224). Falls back to {@code ""} (→ a 400 at {@code UUID.fromString})
-     *  when the variable is absent, so a mis-registered route fails closed rather than
-     *  NPEing. Replaces the prior raw-path {@code lastIndexOf('/')} surgery and the
-     *  separate action-aware extractor. */
+     *  kernel router captures into {@code exchange.pathParams()}. Falls back to {@code ""}
+     *  (→ a 400 at {@code UUID.fromString}) when the variable is absent, so a mis-registered
+     *  route fails closed rather than NPEing. One extractor serves the by-id CRUD routes and
+     *  the action routes alike; there is no raw-path string surgery. */
     private MethodSpec buildExtractPathId() {
         return MethodSpec.methodBuilder("extractPathId")
                 .addModifiers(Modifier.PRIVATE)
@@ -828,19 +826,13 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                 // re-throws unchanged so the intentional 5xx mappings survive per
                 // ADR-036 §2 — they must NOT be downgraded to 400.
                 //
-                // T43: "or the allocator" used to be in that list of intended 400s, and
-                // it was wrong. MEMORY_ALLOCATOR is a ScopedValue; .get() on an unbound
-                // one throws NoSuchElementException, a RuntimeException, so a missing
-                // runtime binding was reported to the caller as "Invalid request body" —
-                // a deployment fault blamed on a request whose body was never read. T43
-                // made that honest with a bound-check and a 5xx.
-                //
-                // T43-follow-up removes the failure instead of reporting it. The check and
-                // the .get() are gone from here because there is nothing left to check: the
-                // allocator arrives as a constructor argument, captured by RuntimeComponents
-                // inside the bootstrap callback where the ScopedValue binding is live.
-                // Reading it here could only ever have failed — the request runs on a virtual
-                // thread started with Thread.ofVirtual().start(), which inherits no
+                // The allocator is not read here. It arrives as a constructor argument,
+                // captured by RuntimeComponents inside the bootstrap callback where the
+                // MEMORY_ALLOCATOR ScopedValue binding is live. Reading that ScopedValue here
+                // would always fail, and the NoSuchElementException from an unbound .get()
+                // would reach the RuntimeException mapping as "Invalid request body" — a
+                // deployment fault blamed on a request whose body was never read. The request
+                // runs on a virtual thread started with Thread.ofVirtual().start(), which inherits no
                 // ScopedValue binding (only StructuredTaskScope forks do), and the kernel
                 // documents that start as its one deliberate exception to the STS mandate.
                 .beginControlFlow("try")

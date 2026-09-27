@@ -18,10 +18,9 @@ import java.util.Locale;
  *       by {@code KernelHandlerGenerator}; both derive {@code <X>} from this one method.</li>
  * </ul>
  *
- * <p>Previously each generator carried its own byte-identical copy; a future divergence would
- * only surface as a generated-code compile failure (route reference to a missing method) or a
- * silent 404 (route/path mismatch). Centralising removes that coupling risk and pins the
- * transforms under one test.
+ * <p>Centralising removes coupling risk where divergence would surface as a
+ * generated-code compile failure (route reference to a missing method) or a
+ * silent 404 (route/path mismatch), and pins the transforms under one test.
  *
  * <p>Both transforms are locale-independent ({@link Locale#ROOT}) to honour the determinism
  * constraint — same metadata, byte-identical output, regardless of the build machine's locale.

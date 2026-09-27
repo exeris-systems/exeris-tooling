@@ -584,8 +584,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
 
     /**
      * The {@code KernelBootstrap.boot(...)} chain. The composed variant wraps the runtime
-     * lifecycle in a try-with-resources over the conductor; the plain variant is byte-for-byte
-     * what every release before 0.7.0 emitted.
+     * lifecycle in a try-with-resources over the conductor.
      */
     private CodeBlock bootBlock(ClassName lifecycleType, boolean composed) {
         CodeBlock.Builder block = CodeBlock.builder()
@@ -668,13 +667,6 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
 
     /**
      * Emits {@code RuntimeComponents} — the open half of the composition root (T49).
-     *
-     * <p>Before this existed, {@code RuntimeLifecycle} constructed every repository,
-     * service and handler with an inline {@code new}, and {@code Application} exposed only
-     * infrastructure hooks ({@code subsystems()}, {@code transactionalExecutor()},
-     * {@code capManifest()}). A consumer could write {@code MyOrderService extends
-     * OrderService} — the emitted service is deliberately {@code public} and non-final so
-     * that they can (ADR-058) — and then had nowhere to install it.
      *
      * <p>Each component gets three members: a private field, a {@code public} memoising
      * accessor, and a {@code protected create*} factory holding the default

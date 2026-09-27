@@ -21,10 +21,10 @@ import java.util.TreeSet;
  *   <li>File headers with generation metadata</li>
  *   <li>Output-tree ownership: tracks every file it writes and, on
  *       {@link #pruneOrphansAndWriteManifest()}, deletes files emitted by a
- *       previous run that this run no longer produces (T13)</li>
+ *       previous run that this run no longer produces</li>
  * </ul>
  *
- * <h2>Generation owns its output tree (T13)</h2>
+ * <h2>Generation owns its output tree</h2>
  * Each run records the relative path of every file it writes. A manifest
  * ({@value #MANIFEST_NAME}) under the output directory persists that set across
  * runs. On the next run, any path that was in the previous manifest but is not
@@ -138,7 +138,7 @@ public final class OutputWriter {
     /**
      * Counts the files a {@link #pruneOrphansAndWriteManifest()} call would
      * delete right now — the previous-manifest paths this run did not re-emit —
-     * <b>without</b> deleting anything. Backs the T18 masked-compile-failure
+     * <b>without</b> deleting anything. Backs the masked-compile-failure
      * guard: a run that would orphan files it generated nothing to replace is
      * almost always a build that failed before the annotation processor emitted
      * metadata, not an intentional teardown — wiping the committed tree on that
@@ -167,10 +167,10 @@ public final class OutputWriter {
      * the previous run owns (listed in the prior manifest) that still exists on
      * disk is preserved — anything else is a no-op, so ownership is never
      * claimed over a user-authored file or a file that is already gone. Backs
-     * the T18(a) deferred capability validation: on a possibly-stale-metadata
-     * graph failure the pipeline keeps the prior {@code cap-manifest.json} in
-     * place rather than emitting from an unresolvable graph or letting the
-     * prune remove it.
+     * the deferred capability validation: on a possibly-stale-metadata graph
+     * failure the pipeline keeps the prior {@code cap-manifest.json} in place
+     * rather than emitting from an unresolvable graph or letting the prune
+     * remove it.
      *
      * @param relativePath forward-slash relative path within the output directory
      * @return {@code true} if the file was preserved (previously owned and present)
@@ -195,7 +195,7 @@ public final class OutputWriter {
     /**
      * Deletes files this tool emitted on a previous run that the current run did
      * not re-emit (orphans), prunes any directories left empty by that removal,
-     * and writes the manifest of the current run's files (T13).
+     * and writes the manifest of the current run's files.
      *
      * <p>Safe by construction: only paths listed in the previous manifest are
      * eligible for deletion, so user-authored files (never in the manifest) are

@@ -352,8 +352,7 @@ class KernelHandlerGeneratorTest {
                 .contains("handleCreate(HttpExchange exchange)")
                 .contains("handleUpdate(HttpExchange exchange)")
                 .contains("handleDelete(HttpExchange exchange)")
-                // kernel 0.10 boot-path (#224): the {id} path var is read from
-                // pathParams(), replacing the raw-path lastIndexOf string surgery
+                // The {id} path var is read from pathParams(), not raw-path string surgery
                 .contains("exchange.pathParams().getOrDefault(\"id\", \"\")")
                 .doesNotContain("lastIndexOf")
                 .contains("exchange.respond(HttpStatus.OK")

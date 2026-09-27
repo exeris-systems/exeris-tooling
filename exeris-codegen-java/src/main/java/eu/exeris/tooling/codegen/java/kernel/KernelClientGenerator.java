@@ -280,28 +280,15 @@ public class KernelClientGenerator implements KernelArtifactGenerator {
      * The base path the generated client requests — which must be the path the generated
      * <em>server</em> serves, because these two are the only pair in the suite that talk to each other.
      *
-     * <p>This used to prepend {@code /api/<apiVersion>}. Nothing else emitted that prefix:
-     * {@code KernelApplicationGenerator} registers routes at {@link DomainMetadata#effectivePath()}
-     * and the OpenAPI document publishes the same, so the generated client could not reach the
-     * generated router at all — every cross-service call answered 404. It stayed invisible because
-     * the client and the router had never been run against each other; an in-process binding
-     * bypasses both.
+     * <p><b>Open design question:</b> {@code @ExerisDomain.apiVersion} reaches no emitted artifact.
+     * The server serves routes at {@link DomainMetadata#effectivePath()}, and this client requests
+     * the same, aligning with the OpenAPI document. Serving {@code /api/<version>/…} instead would
+     * change every emitted route. Until the design is settled, {@code apiVersion} is inert and
+     * declared in {@code ExerisDomainProcessor.INERT_ATTRIBUTES}.
      *
-     * <p>Aligning the client on {@code effectivePath()} is the smaller of the two possible
-     * corrections and the one two of the three artifacts already agreed on.
-     *
-     * <p><b>Open design question this exposes.</b> {@code @ExerisDomain.apiVersion} reaches no
-     * emitted artifact — the server never served a versioned route, so the attribute has no
-     * destination. Serving {@code /api/<version>/…} from the router and the OpenAPI document instead
-     * is a defensible answer and arguably the better API, but it changes every emitted route and the
-     * published contract with it, so it is a decision to take deliberately rather than a bug to fix
-     * here. Until it is taken, {@code apiVersion} is inert, and it is now declared so in
-     * {@code ExerisDomainProcessor.INERT_ATTRIBUTES}.
-     *
-     * <p>That claim was premature when first written here: two TypeScript emitters
-     * ({@code stream-client-gen}, {@code action-stream-client-gen}) were still folding the version
-     * into their SSE routes, so declaring the attribute inert then would have produced a false
-     * "no effect" warning. They were aligned in the same batch; the registry entry followed.
+     * <p>The TypeScript stream clients ({@code stream-client-gen}, {@code action-stream-client-gen})
+     * request the same unversioned routes, which is what keeps that registry entry from being a
+     * false "no effect" warning.
      */
     private String buildApiPath(DomainMetadata metadata) {
         // effectivePath() is the SDK-canonical derivation shared by every other generator (OpenAPI,

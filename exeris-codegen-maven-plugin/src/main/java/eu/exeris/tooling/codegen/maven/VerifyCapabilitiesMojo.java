@@ -16,8 +16,8 @@ import java.io.UncheckedIOException;
 import java.nio.file.Path;
 
 /**
- * {@code exeris:verify-capabilities} — the authoritative capability-graph gate
- * (T18(a)), validated against <b>fresh</b> processor output.
+ * {@code exeris:verify-capabilities} — the authoritative capability-graph gate,
+ * validated against <b>fresh</b> processor output.
  *
  * <p>Bound to {@code process-classes}, i.e. immediately <em>after</em> the
  * {@code compile} phase in which the annotation processor (re)emits
