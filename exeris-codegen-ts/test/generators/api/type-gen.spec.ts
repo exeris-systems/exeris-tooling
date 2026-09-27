@@ -589,6 +589,76 @@ describe('TypeGenerator system-field resolution (exercised via .omit set in the 
   });
 });
 
+// ---------- the shared-scope key is server-owned ----------
+
+describe('TypeGenerator — a UNIVERSE entity\'s sharedScopeField is server-owned', () => {
+  const universe = () => domain({
+    entityName: 'Species',
+    dataScope: 'UNIVERSE',
+    systemFields: { primaryKeyField: 'id', tenantIdField: 'organizationId', sharedScopeField: 'worldId' },
+    fields: [
+      field({ name: 'id', type: 'UUID' }),
+      field({ name: 'name', type: 'String' }),
+      field({ name: 'organizationId', type: 'UUID' }),
+      field({ name: 'worldId', type: 'UUID' }),
+    ],
+  });
+
+  it('is omitted from the create schema, exactly like the tenant field', () => {
+    const files = new TypeGenerator().generateAggregate([universe()], CTX);
+    const schema = files.find(f => f.path === 'schemas/species.schema.ts')!.content;
+    const createSchema = schema.slice(schema.indexOf('SpeciesCreateSchema'));
+
+    expect(createSchema).toContain('worldId: true');
+    expect(createSchema).toContain('organizationId: true');
+  });
+
+  it('is absent from the Create DTO interface, while the entity interface still carries it', () => {
+    const content = new TypeGenerator().generate(universe(), CTX)!.content;
+    const createStart = content.indexOf('export interface SpeciesCreate {');
+    const createSlice = content.slice(createStart, content.indexOf('}', createStart));
+    const entityStart = content.indexOf('export interface Species {');
+    const entitySlice = content.slice(entityStart, content.indexOf('}', entityStart));
+
+    expect(createSlice).toContain('name?: string;');
+    expect(createSlice).not.toContain('worldId');
+    expect(createSlice).not.toContain('organizationId');
+    expect(entitySlice).toContain('worldId');
+  });
+});
+
+describe('TypeGenerator — a tenant-partitioned owner is server-owned without a systemFields block (ADR-090)', () => {
+  const entity = (dataScope: 'GLOBAL' | 'TENANT') => domain({
+    entityName: 'Fleet',
+    dataScope,
+    fields: [
+      field({ name: 'id', type: 'UUID' }),
+      field({ name: 'name', type: 'String' }),
+      field({ name: 'tenantId', type: 'UUID' }),
+    ],
+  });
+
+  it('omits tenantId from the TENANT create schema and Create DTO — the OpenAPI marks it readOnly', () => {
+    const schema = new TypeGenerator().generateAggregate([entity('TENANT')], CTX)
+      .find(f => f.path === 'schemas/fleet.schema.ts')!.content;
+    const content = new TypeGenerator().generate(entity('TENANT'), CTX)!.content;
+    const createStart = content.indexOf('export interface FleetCreate {');
+    const createSlice = content.slice(createStart, content.indexOf('}', createStart));
+
+    expect(schema.slice(schema.indexOf('FleetCreateSchema'))).toContain('tenantId: true');
+    expect(createSlice).toContain('name?: string;');
+    expect(createSlice).not.toContain('tenantId');
+  });
+
+  it('keeps a GLOBAL entity\'s tenantId-named field writable — it is not an owner there', () => {
+    const content = new TypeGenerator().generate(entity('GLOBAL'), CTX)!.content;
+    const createStart = content.indexOf('export interface FleetCreate {');
+    const createSlice = content.slice(createStart, content.indexOf('}', createStart));
+
+    expect(createSlice).toContain('tenantId');
+  });
+});
+
 // ---------- generateTypes convenience ----------
 
 describe('generateTypes — top-level convenience function', () => {

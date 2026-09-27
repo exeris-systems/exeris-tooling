@@ -189,10 +189,10 @@ export type UIMetadata = z.infer<typeof UIMetadataSchema>;
 // GraphMetadata.properties as null today, and an edge's targetLabel / relationType are null
 // whenever the annotation left them blank.
 //
-// @GraphEdge.direction has no component on GraphEdgeMetadata — one of the eleven attributes
-// with no carrier, recorded under S3 — so no metadata document carries it. Declaring it with
-// a default would report OUTGOING for every edge, which is a direction the pipeline has never
-// been told.
+// @GraphEdge.direction has no component on GraphEdgeMetadata — one of the attributes with no
+// carrier listed in ROADMAP's annotation-surface debt — so no metadata document carries it.
+// Declaring it with a default would report OUTGOING for every edge, which is a direction the
+// pipeline has never been told.
 
 export const GraphPropertyMetadataSchema = z.object({
   name: z.string(),
@@ -273,6 +273,10 @@ export type SagaMetadata = z.infer<typeof SagaMetadataSchema>;
 // at all. The record carries @JsonInclude(NON_NULL), and `SystemFieldsMetadata.defaults()`
 // leaves the three soft-delete components null, so those are absent unless the entity overrides
 // them — hence .optional() on everything the defaults do not fill.
+//
+// `sharedScopeField` is the eleventh component: the `@SharedScope` field of
+// a `dataScope = UNIVERSE` entity, absent on every other entity. Declared here so Zod's
+// unknown-key stripping does not drop it; `systemFieldNames` classifies it server-owned.
 export const SystemFieldsMetadataSchema = z.object({
   primaryKeyField: z.string().default('id'),
   createdAtField: z.string().optional(),
@@ -284,6 +288,7 @@ export const SystemFieldsMetadataSchema = z.object({
   softDeleteField: z.string().optional(),
   softDeleteTimestampField: z.string().optional(),
   softDeletedByField: z.string().optional(),
+  sharedScopeField: z.string().optional(),
 });
 
 export type SystemFieldsMetadata = z.infer<typeof SystemFieldsMetadataSchema>;

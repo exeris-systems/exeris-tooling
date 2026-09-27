@@ -420,7 +420,7 @@ export class ${entityName}Store {
     }
   }
 
-${softDelete ? this.generateSoftDeleteMethods(entityName, idField) : ''}
+${softDelete ? this.generateSoftDeleteMethods(idField) : ''}
 
   // ═══════════════════════════════════════════════════════════════════════════
   // Actions - Selection
@@ -633,8 +633,9 @@ ${this.generateSearchableFieldAccess(searchableFields)}
     ).join('\n');
   }
 
-  private generateSoftDeleteMethods(entityName: string, idField: string): string {
-    const modelName = modelTypeName(entityName);
+  private generateSoftDeleteMethods(idField: string): string {
+    // archive() only. There is no restore(): the generated server has no route, handler or
+    // repository method that un-sets the soft-delete flag.
     return `
   // ═══════════════════════════════════════════════════════════════════════════
   // Actions - Soft Delete
@@ -657,29 +658,6 @@ ${this.generateSearchableFieldAccess(searchableFields)}
       if (this._selected()?.${idField} === id) {
         this._selected.set(null);
       }
-    } catch (err) {
-      this._error.set(this.extractErrorMessage(err));
-      throw err;
-    } finally {
-      this._saving.set(false);
-    }
-  }
-
-  /**
-   * Restore a soft-deleted entity.
-   */
-  async restore(id: string): Promise<${modelName}> {
-    this._saving.set(true);
-    this._error.set(null);
-
-    try {
-      const restored = await firstValueFrom(this.service.restore(id));
-      
-      // Add back to list
-      this._entities.update(entities => [restored, ...entities]);
-      this._totalElements.update(n => n + 1);
-      
-      return restored;
     } catch (err) {
       this._error.set(this.extractErrorMessage(err));
       throw err;
