@@ -22,7 +22,7 @@ jobs:
         # it catches source that stops compiling on a newer JDK, which a single row
         # would surface only downstream. Same shape as the SDK's matrix.
         #
-        # Branch protection now requires the 25 row (UP2, 2026-08-18). The 26 row runs on
+        # Branch protection requires the 25 row. The 26 row runs on
         # every PR and reports, but a red 26 does not block a merge — which is the point:
         # forward-compatibility is information, not a gate on the release-bearing line.
         java: ['25', '26']
@@ -37,10 +37,9 @@ jobs:
       # so this ref decides which SDK version lands in the local repo, and it
       # must match exeris.sdk.version in the BOM.
       #
-      # Tracking `main` again, for B0: the BOM pins 0.12.0-SNAPSHOT, and `main`
-      # is the only ref that builds it. The cost is the one the ADR-059 slice
-      # already paid while 0.10.0 was uncut — a moving ref lets an unrelated SDK
-      # commit turn this build red — and it ends with the release: when the SDK
+      # Tracking `main`: the BOM pins 0.12.0-SNAPSHOT, and `main` is the only
+      # ref that builds it. The cost is that a moving ref lets an unrelated SDK
+      # commit turn this build red, and it ends with the release: when the SDK
       # tags v0.12.0, this returns to `ref: v0.12.0` in the same change that pins
       # the final version. No tooling release is cut while this says `main`.
       - name: Checkout exeris-sdk (main — 0.12.0-SNAPSHOT, matches exeris.sdk.version in the BOM)
@@ -88,7 +87,7 @@ jobs:
         # rather than fetched, so there is no remote SNAPSHOT to re-check. The
         # kernel resolves from GitHub Packages at 0.12.0, a release-shaped
         # coordinate that the kernel's CI publishes once from development/0.12.0
-        # and never overwrites. It is still a pre-release until the kernel tags
+        # and never overwrites. It is a pre-release until the kernel tags
         # v0.12.0 (see the BOM). -U belongs back only if a SNAPSHOT ever arrives
         # over the wire.
         run: mvn -B -ntp verify

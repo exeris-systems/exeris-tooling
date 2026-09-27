@@ -3321,6 +3321,9 @@ Also open and independent of all four: the missing `warnInertAttributes` call si
       invisible to emitted code: Jackson 3 `3.1.5` → `3.2.2`, the kernel's own pin (left at 3.1.5,
       the BOM forced the kernel down a minor on the e2e classpath), and the CI SDK checkout moved
       from `v0.11.0` to `main`, the only ref that builds `0.12.0-SNAPSHOT`.
+      The ADR-066 baseline was re-read at this pin: the spi, core, community and community-testkit
+      jars are all class-file major 69 with zero preview stamps, as at 0.11.0 (0.10.2 had 9 in core),
+      so the e2e surefire JVM stays without `--enable-preview`.
 
       **What makes it final:** both pins move to the `0.12.0` releases once kernel and SDK publish,
       and only then can 0.9.0 be cut — no cross-repo SNAPSHOT at a cut, and the tag's own POM is

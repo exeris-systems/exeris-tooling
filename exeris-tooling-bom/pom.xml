@@ -17,69 +17,56 @@
 
     <properties>
         <!--
-          Pinned AHEAD of their releases (B0). The 0.12 line is unpublished on
-          both sides, and both pins are built from source: the SDK's `main` is
-          `0.12.0-SNAPSHOT`, and the kernel's `development/0.12.0` already
-          carries the final string `0.12.0` — code cut 2026-09-03, no `v0.12.0`
-          tag yet. A kernel `0.12.0` resolved before that tag is a pre-release
-          build that merely looks final; treat it as the SNAPSHOT it is.
+          Pinned ahead of their releases. Both pins are built from source: the
+          SDK's `main` is `0.12.0-SNAPSHOT`, and the kernel's
+          `development/0.12.0` carries the final string `0.12.0` with no
+          `v0.12.0` tag. A kernel `0.12.0` resolved before that tag is a
+          pre-release build that merely looks final; treat it as the SNAPSHOT
+          it is.
 
-          This is a temporary exception to UP0, not a relaxation of it. Both
-          pins are pre-release, and both must be final at the cut: no
-          cross-repo SNAPSHOT may remain at a tooling cut (ROADMAP "Versioning
-          policy"), so both pins move to the final `0.12.0` releases once the
-          kernel and the SDK publish, and no tooling release is tagged before
-          they do.
+          This is a temporary exception to the released-pins rule, not a
+          relaxation of it: no cross-repo SNAPSHOT may remain at a tooling cut
+          (ROADMAP "Versioning policy"), so both pins move to the final
+          `0.12.0` releases once the kernel and the SDK publish, and no tooling
+          release is tagged before they do.
 
-          SDK 0.12 needed one source change here, and it is the SDK's record
-          policy working as written: a record grows by a trailing component,
-          and builders are the stable path. `DomainMetadata` (+ `routeAccess`,
-          `channel`) and `ActionMetadata` (+ `routeAccess`) are built through
-          their builders, so their growth cost nothing. `SystemFieldsMetadata`
-          (+ `sharedScopeField`, the `@SharedScope` carrier) has no builder and
-          is built positionally, so it took one trailing argument (Stellar
-          finding S6). SDK 0.12's working branch restores the ten-argument
-          constructor and adds a builder; neither is on SDK `main` yet. The
-          processor fills that argument only for a `DataScope.UNIVERSE` entity,
-          from its `@SharedScope` field (T29 slice B), and passes `null`
-          everywhere else; the record is `@JsonInclude(NON_NULL)`, so every
-          other entity's metadata JSON is unchanged. The `schemaVersion` the
-          processor stamps follows `SchemaVersion.CURRENT`, which is "0.12.0" in
-          this jar. `@Channel`, `@RouteAccess` and `@SharedScope` are new in
-          0.12; `@SharedScope` is extracted (T29 slice B), and the other two by
-          nothing yet.
+          How this repo reads SDK 0.12's records: a record grows by a trailing
+          component, and builders are the stable path. `DomainMetadata` and
+          `ActionMetadata` are built through their builders. `SystemFieldsMetadata`
+          has no builder on SDK `main` and is built positionally; its eleventh
+          component, `sharedScopeField` (the `@SharedScope` carrier), is filled
+          only for a `DataScope.UNIVERSE` entity and is `null` everywhere else,
+          which `@JsonInclude(NON_NULL)` keeps off the wire. The `schemaVersion`
+          the processor stamps follows `SchemaVersion.CURRENT`. `@Channel` and
+          `@RouteAccess` are read by nothing yet.
         -->
         <exeris.sdk.version>0.12.0-SNAPSHOT</exeris.sdk.version>
         <!--
-          Kernel 0.12.0 — the line SDK 0.12 pairs with. Three of its additions
-          are what the emitters can now name, and why this pin moves at all:
+          Kernel 0.12.0 — the line SDK 0.12 pairs with, and the floor for three
+          things the emitters name:
 
           - `FlowDefinitionBuilder.version(int)` (a `default` method, ADR-064
-            amendment). The generated `*SagaFlow` can declare `@Saga.version`,
-            which it had nowhere to put on 0.11 (T55's emitter half, K5).
+            amendment), which the generated `*SagaFlow` calls for a declared
+            `@Saga.version`.
           - `ConnectionInterceptor.SESSION_KEY_TENANT_ID` and
-            `SESSION_KEY_SHARED_SCOPE`. Both RLS session variables are SPI
-            contract now, not one driver's literal, which is what the
-            `DataScope.UNIVERSE` transcription was gated on. T29 slice B shipped
-            on this pin, and its session-key literal is checked against the
-            kernel constant.
+            `SESSION_KEY_SHARED_SCOPE`, the RLS session variables as SPI
+            contract rather than one driver's literal. The emitted migrations
+            name them as literals, and `SharedScopeSqlE2ETest` checks each
+            literal against its constant.
           - ADR-074 peer addressing. A CLIENT-mode `HttpConfig`'s `bindHost` /
-            `port` are no longer dialled; the peer is `defaultAuthority`
-            (`http.client.defaultAuthority`) or `KernelWebClient.withAuthority`.
-            No signature moved, so client code that worked on 0.11 compiles
-            unchanged and fails at its first request. The emitted `*Client`
-            Javadoc says so (K8).
+            `port` are never dialled; the peer is `defaultAuthority`
+            (`http.client.defaultAuthority`) or `KernelWebClient.withAuthority`,
+            as the emitted `*Client` Javadoc says.
 
-          The ADR-066 baseline still holds, re-measured at B0: the spi, core,
-          community and community-testkit jars are all class-file major 69
-          with zero preview stamps. (0.10.2 had 9 preview-stamped classes in
-          core, which JDK 25 refuses; 0.11.0 was the first clean line.)
+          The ADR-066 baseline holds: the spi, core, community and
+          community-testkit jars are class-file major 69 with zero preview
+          stamps.
 
           Take the `eu.exeris` coordinates, never `eu.exeris.preview` (the
           JDK 28 EA Valhalla line). Choosing a line is a build-matrix question,
-          never a codegen fork: measured at 0.11.0, of the 46 kernel types the
-          emitters name only `EventBus` (Javadoc) and `MemoryStats` (the
-          `value` modifier) differ, and neither difference reaches a consumer.
+          never a codegen fork: of the kernel types the emitters name, only
+          `EventBus` (Javadoc) and `MemoryStats` (the `value` modifier) differ,
+          and neither difference reaches a consumer.
         -->
         <exeris.kernel.version>0.12.0</exeris.kernel.version>
 
@@ -88,21 +75,14 @@
         <!-- 2.18.9 closes the jackson-databind advisories Dependabot raises against
              2.18.x. Patch-level, no API change. -->
         <jackson.version>2.18.9</jackson.version>
-        <!-- 3.2.2 is the Jackson 3 version kernel 0.12.0 pins (exeris-kernel-bom), and it
-             moves with the kernel pin (B0) for the reason this property exists. The comment
-             below claims this dep tracks "the same Jackson 3 line the Open-Core kernel
-             runtime uses". Management here also beats the kernel's own transitive version:
-             left at 3.1.5, the e2e classpath resolved `jackson-databind:3.1.5 - version
-             managed from 3.2.2`. GC3 would then have executed kernel 0.12 classes on a
-             Jackson one minor older than they were built against, and the compile gate
-             would have checked emitted `tools.jackson.*` references against the wrong
-             minor.
-
-             Earlier history, same rule: 3.1.5 closed the tools.jackson advisories
-             (everything <= 3.1.4 is affected) and ended a drift where this said 3.0.4 while
-             kernel 0.10.2 and 0.11.0 pinned 3.1.1. Patch-ahead of the kernel inside its
-             minor is a posture for a security bump; a minor behind is not a posture at
-             all. -->
+        <!-- The Jackson 3 version the pinned kernel pins (exeris-kernel-bom); it moves with
+             the kernel pin. The comment below says this dep tracks "the same Jackson 3 line
+             the Open-Core kernel runtime uses", and management here beats the kernel's own
+             transitive version, so a value a minor behind the kernel would run kernel classes
+             in the e2e suite on an older Jackson than they were built against, and the compile
+             gate would check emitted `tools.jackson.*` references against the wrong minor.
+             Patch-ahead of the kernel inside its minor is acceptable for a security bump; a
+             minor behind is not. -->
         <jackson3.version>3.2.2</jackson3.version>
         <swagger-parser.version>2.1.45</swagger-parser.version>
         <!-- swagger-core carries the OpenAPI model types and the 3.1 mappers this module
@@ -126,9 +106,9 @@
         <json-schema-validator.version>1.5.4</json-schema-validator.version>
         <approvaltests.version>24.16.0</approvaltests.version>
         <!-- The JDBC driver the kernel testkit's persistence needs when the e2e suite boots the
-             EMITTED Application with the events/flow subsystems (T23 slice B1, T48 slice C1):
-             both declare dependsOn("persistence"), and the testkit deliberately ships no driver.
-             Same version exeris-kernel-community pins for its own H2 tests (0.12.0 pom), so the
+             EMITTED Application with the events/flow subsystems: both declare
+             dependsOn("persistence"), and the testkit deliberately ships no driver. Same
+             version the pinned exeris-kernel-community uses for its own H2 tests, so the
              kernel's persistence has been exercised on exactly this driver. Test scope only —
              emitted code never names it. -->
         <h2.version>2.3.232</h2.version>
@@ -154,7 +134,7 @@
             </dependency>
             <!-- SDK boot conductor — not a codegen dependency (the emitter only
                  writes its FQN); needed on the e2e compile gate's test classpath
-                 so the GC2 composed Application resolves CompositionConductor. -->
+                 so the composed Application resolves CompositionConductor. -->
             <dependency>
                 <groupId>eu.exeris</groupId>
                 <artifactId>exeris-sdk-composition-runtime</artifactId>
@@ -180,7 +160,7 @@
                 <version>${exeris.kernel.version}</version>
             </dependency>
 
-            <!-- Community driver + its test fixture — the GC3 composition e2e boots a
+            <!-- Community driver + its test fixture — the cap-composition e2e boots a
                  real kernel (http subsystem only) around the conductor run. -->
             <dependency>
                 <groupId>eu.exeris</groupId>
