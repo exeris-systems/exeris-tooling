@@ -298,12 +298,12 @@ class KernelCodegenCompileTest {
                 .contains("refuseForeignTenant(")
                 .contains("refuseForeignSharedScope(");
         assertThat(generated)
-                .as("ADR-090: both caller-fault types are among the compiled sources")
+                .as("both caller-fault types are among the compiled sources")
                 .extracting(GeneratedFile::className)
                 .contains("SpeciesTenantMismatchException", "SpeciesSharedScopeMismatchException");
         assertThat(generated.stream().filter(f -> f.className().equals("SpeciesHandler"))
                 .findFirst().orElseThrow().content())
-                .as("ADR-090: the multi-catch javac has to accept (disjoint types)")
+                .as("the multi-catch javac has to accept (disjoint types)")
                 .contains("catch (SpeciesTenantMismatchException | SpeciesSharedScopeMismatchException e)");
 
         List<GeneratedFile> applicationFiles = new KernelApplicationGenerator()

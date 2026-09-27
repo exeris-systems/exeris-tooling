@@ -49,7 +49,7 @@ class OpenApiGeneratorTest {
     }
 
     @Test
-    @DisplayName("ADR-090: the emitted YAML publishes the owner as readOnly, and it parses back that way")
+    @DisplayName("the emitted YAML publishes the owner as readOnly, and it parses back that way")
     void ownerIsReadOnlyInTheEmittedDocument() throws IOException {
         DomainMetadata meta = DomainMetadata.builder("Order", "com.example.domain")
                 .path("/orders")

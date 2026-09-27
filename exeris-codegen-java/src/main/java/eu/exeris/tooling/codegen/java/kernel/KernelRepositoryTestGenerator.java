@@ -259,7 +259,7 @@ public final class KernelRepositoryTestGenerator {
                                          ClassName persistenceType, DomainMetadata metadata,
                                          boolean tenantScoped) {
         // The WHERE id lands one slot past the SET list — every column except id and, on a
-        // tenant-partitioned entity, the owner (ADR-090). Read from the repository emitter's own
+        // tenant-partitioned entity, the owner. Read from the repository emitter's own
         // derivation, so the two cannot disagree about where the list ends.
         int whereIdIndex = KernelRepositoryGenerator.updateColumns(metadata).size();
         MethodSpec.Builder test = test("updateBindsTheIdAfterTheSetList")
@@ -360,7 +360,7 @@ public final class KernelRepositoryTestGenerator {
     }
 
     /**
-     * ADR-090, the matching half: a tenant the caller set that <em>is</em> the bound one is written
+     * Foreign-tenant refusal, the matching half: a tenant the caller set that <em>is</em> the bound one is written
      * as given — refusing a contradiction is not refusing a caller who sends the owner at all.
      */
     private MethodSpec saveAcceptsTheBoundTenantTest(ClassName entityType, ClassName repositoryType,
@@ -382,7 +382,7 @@ public final class KernelRepositoryTestGenerator {
     }
 
     /**
-     * ADR-090, the refusal: with a tenant bound, a row naming another tenant is refused with the
+     * Foreign-tenant refusal, the refusal: with a tenant bound, a row naming another tenant is refused with the
      * typed caller fault the handler answers 400 — before anything reaches the database, which is
      * what makes it hold on a role or engine row-level security does not bind.
      */
@@ -407,7 +407,7 @@ public final class KernelRepositoryTestGenerator {
     }
 
     /**
-     * ADR-090, the unchanged half: with no tenant bound there is nothing to compare against, so a
+     * Foreign-tenant refusal, the unchanged half: with no tenant bound there is nothing to compare against, so a
      * caller-supplied owner is written as given and row-level security decides —
      * the path a seeder that writes owners explicitly depends on.
      */
@@ -431,7 +431,7 @@ public final class KernelRepositoryTestGenerator {
     }
 
     /**
-     * ADR-090, the update half: an update cannot move a row to another tenant, because the owner is
+     * Foreign-tenant refusal, the update half: an update cannot move a row to another tenant, because the owner is
      * not in the SET list at all. Run with no tenant bound — the one case the refusal does not cover
      * — so what is proven is the column's absence, not the refusal again.
      */
@@ -482,7 +482,7 @@ public final class KernelRepositoryTestGenerator {
     }
 
     /**
-     * ADR-090 applied to the caller-writable shared-scope field: with a scope bound, a row tagged
+     * The foreign-tenant refusal applied to the caller-writable shared-scope field: with a scope bound, a row tagged
      * with another is refused with the typed caller fault, before anything is bound.
      */
     private MethodSpec saveRefusesAForeignSharedScopeTest(ClassName entityType, ClassName repositoryType,
@@ -582,7 +582,7 @@ public final class KernelRepositoryTestGenerator {
      * covers every column, staged or not; staging only makes the comparison sharper.
      *
      * <p>The owner and a UNIVERSE entity's shared scope are staged as the <em>bound</em> values: the
-     * save runs inside that context, and a different value would be refused (ADR-090) before the
+     * save runs inside that context, and a different value would be refused before the
      * round-trip had anything to read back. Both are values no other column is staged with, so a
      * drifted index still lands on a mismatch.
      */

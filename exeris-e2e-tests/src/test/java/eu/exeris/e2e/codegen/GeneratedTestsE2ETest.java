@@ -154,7 +154,7 @@ class GeneratedTestsE2ETest {
                                     Class.forName("com.shop.repository.SpeciesRepositoryTest", true, appLoader)),
                             DiscoverySelectors.selectClass(
                                     Class.forName("com.shop.saga.OrderSagaFlowTest", true, appLoader)),
-                            // The tenant-partitioned and UNIVERSE handlers (ADR-090): the only
+                            // The tenant-partitioned and UNIVERSE handlers: the only
                             // executed proof that a foreign tenant / shared scope answers 400
                             // past every guard — and, since they dispatch with a tenant bound,
                             // that the tenant guard lets a bound request through.
@@ -189,12 +189,12 @@ class GeneratedTestsE2ETest {
             // the one T8 finder the fixture carries) + 7 repository cases for Order (the save/load
             // round-trip and the six paths around it) + 9 for Invoice — the entity that carries
             // every system column, and the only tenant-partitioned one here, so it alone gets the
-            // tenant stamp and the four ADR-090 cases (bound tenant accepted, foreign tenant refused,
+            // tenant stamp and the four foreign-tenant cases (bound tenant accepted, foreign tenant refused,
             // unbound left to the database, update never writes the owner) = 12 — + 15 for Species,
             // the UNIVERSE entity: the same 12 plus the shared-scope stamp, the foreign-shared-scope refusal
             // and the kept-when-unbound tag — + 4 saga cases — + 14 InvoiceHandlerTest cases (the 9
             // bodyless/guard cases, 3 @Validation cases for its required reference, and the two
-            // ADR-090 foreign-tenant 400s) + 15 SpeciesHandlerTest cases (the same, plus the
+            // foreign-tenant 400s) + 15 SpeciesHandlerTest cases (the same, plus the
             // foreign-shared-scope 400).
             assertThat(summary.getTestsSucceededCount()).isEqualTo(94);
         }

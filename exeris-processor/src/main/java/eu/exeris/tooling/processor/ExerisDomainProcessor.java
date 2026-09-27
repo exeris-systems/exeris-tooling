@@ -294,7 +294,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "SystemFieldsMetadata carries one field name per role and has no component "
                             + "for it, so setting it changes no emitted output. The emitted OpenAPI marks "
                             + "a tenant-partitioned entity's owner readOnly and leaves it out of the "
-                            + "create/update DTOs (ADR-090), and the TypeScript types omit it, whatever "
+                            + "create/update DTOs, and the TypeScript types omit it, whatever "
                             + "this attribute says; the entity itself, owner included, is still what a "
                             + "read answers with"),
             new InertAttribute("TenantId", "scopeUniqueConstraints",
@@ -309,7 +309,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "SystemFieldsMetadata carries one field name per role and has no component "
                             + "for it, so setting it changes no emitted output. The generated repository "
                             + "refuses a write naming a tenant other than the bound one, and never "
-                            + "updates the owner (ADR-090), unconditionally — validateOnMutation = false "
+                            + "updates the owner, unconditionally — validateOnMutation = false "
                             + "does not turn that off"),
             new InertAttribute("Version", "initialValue",
                     "the annotation's role — which field plays it — is extracted (C1) and "

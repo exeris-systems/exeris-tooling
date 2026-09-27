@@ -123,7 +123,7 @@ class SharedScopeSqlE2ETest {
     }
 
     @Test
-    @DisplayName("ADR-090: the repository refuses a foreign owner or scope, the handler answers 400, "
+    @DisplayName("the repository refuses a foreign owner or scope, the handler answers 400, "
             + "and the spec marks both fields readOnly")
     void foreignOwnerOrScopeIsACallerFaultEndToEnd() throws IOException {
         String handler = Files.readString(generated.resolve("com/world/handler/GalaxyPresenceHandler.java"));
