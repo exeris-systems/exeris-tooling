@@ -209,12 +209,12 @@ class KernelRepositoryTestGeneratorTest {
                 // one that was already on the entity.
                 .contains("TENANT_KEY = \"00000000-0000-4000-8000-000000000002\"")
                 // The round-trip stages the owner as the bound tenant: anything else is refused
-                // before there is a row to read back (ADR-090).
+                // before there is a row to read back.
                 .contains("original.setTenantId(UUID.fromString(TENANT_KEY))");
     }
 
     @Test
-    @DisplayName("ADR-090: match, mismatch, unbound and update-cannot-move are each an emitted case")
+    @DisplayName("match, mismatch, unbound and update-cannot-move are each an emitted case")
     void emitsTheMismatchedTenantCases() {
         String source = generate(TENANT_ORDER);
 
@@ -229,7 +229,7 @@ class KernelRepositoryTestGeneratorTest {
                 // The WHERE id follows the SET list, which does not carry the owner: orderNumber
                 // and quantity are the SET list, so the id binds at index 2.
                 .contains("Assertions.assertThat(persistence.binds.get(2)).isEqualTo(id)")
-                // A "keeps whatever tenant the caller set" case would contradict ADR-090.
+                // A "keeps whatever tenant the caller set" case would contradict the refusal.
                 .doesNotContain("saveKeepsATenantTheCallerSet");
     }
 

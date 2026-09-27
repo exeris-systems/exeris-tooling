@@ -1284,8 +1284,8 @@ never-invoked emitter start emitting, and its output did not build.
         kernel 0.12, `SharedScopeSqlE2ETest` (session-key drift guard against the kernel constants),
         `GeneratedTestsE2ETest`, and an opt-in `@Tag("postgres")` access matrix
         (`SharedScopePostgresE2ETest`, `-Dexeris.e2e.postgres.url`).
-      - Open, kernel-owned: the reference `WITH CHECK` does not pin the scope tag (k1); ADR-090
-        refuses a foreign tag for a bound request. Kernel asks: adopt the per-command policy shape in
+      - Open, kernel-owned: the reference `WITH CHECK` does not pin the scope tag (k1); the
+        generated repository refuses a foreign tag for a bound request (T36). Kernel asks: adopt the per-command policy shape in
         the `RlsConnectionInterceptor` Javadoc; add a mutation-denial cell to
         `AbstractSharedScopeAccessMatrixTck` and make its keys UUID-capable. SDK ask: the
         `DataScope.UNIVERSE`, `ExerisDomain.dataScope` and `@SharedScope` Javadoc still say
@@ -1431,8 +1431,8 @@ never-invoked emitter start emitting, and its output did not build.
       violation rather than the omission it is. Either stamp it from the ambient `StorageContext` or
       say in the emitted javadoc that the caller owns it — silence is the worst of the three.
 - [x] **T36, decided — a write naming another tenant answers 400, and the owner is never updated.**
-      *Founder decision 2026-09-26; [ADR-090](docs/adr/ADR-090-reject-mismatched-tenant.md), its
-      number still to be registered in `exeris-docs/adr-index.md`. Reverses the 0.8.0 rationale
+      *Founder decision 2026-09-26. The 400 is the kernel's rule for a caller fault (kernel
+      ADR-083, `FaultOrigin.CALLER`); tooling only raises the refusal. Reverses the 0.8.0 rationale
       above.* Leaving a contradicted tenant to RLS held only where RLS holds: a
       `SUPERUSER`/`BYPASSRLS` role skips even a forced policy, a non-RLS engine has none, and where
       the policy fires its violation reached `catch (RuntimeException)` as a 500 for a caller's
@@ -3358,7 +3358,7 @@ Each is recorded where it was measured; this is the one list to hand to the kern
 - **Duplicate-`Start` semantics in the choreography TCK** (T48 slice C2). What a second `Start`
   for a running correlation does is unpinned, and C2 would register choreography mappers against
   it.
-- **A boot-time check that the persistence role is `NOSUPERUSER NOBYPASSRLS`** (ADR-090). Either
+- **A boot-time check that the persistence role is `NOSUPERUSER NOBYPASSRLS`** (T36). Either
   attribute makes every policy inert, and only the kernel or the driver owns the connection.
 
 ### SDK asks from this train — 2026-09-26
@@ -3371,7 +3371,7 @@ Each is recorded where it was measured; this is the one list to hand to the kern
   "refused", "RESERVED" and "no owner". Tooling transcribes the tier since T29 slice B, and a
   UNIVERSE row is owned (kernel ADR-012 §4b.2).
 - Also noticed: `@TenantId`'s Javadoc describes `autoPopulate`, `validateOnMutation` and
-  `exposeInApi` as working switches, and generated code honours none of them (ADR-090, and the
+  `exposeInApi` as working switches, and generated code honours none of them (T36, and the
   strict-mode notes). `@SagaTransition`'s Javadoc says extraction is pending tooling, but the gate
   is the kernel.
 
