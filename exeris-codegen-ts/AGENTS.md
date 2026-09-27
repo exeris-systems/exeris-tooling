@@ -4,7 +4,7 @@ type: reference
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-09-26
+last-verified: 2026-09-27
 paths:
   - "exeris-codegen-ts/**"
 enforced-by:
@@ -28,18 +28,12 @@ It is built and tested independently from the Java Maven reactor.
 
 ## Operating contract
 
-1. **Angular v22 is the target, reached in phases.** The phases are RFC-2026-06-18's, "Angular v22
-   Migration of the TS Emitter" under `docs/rfc/`, still a draft. What the emitters produce today:
-   - The emitted `package.json` pins Angular `^22.0.0`, and the application is zoneless.
-   - `detail-gen.ts` fetches through `rxResource`.
-   - `form-gen.ts` still emits Reactive Forms (`FormBuilder`, `Validators`).
-   - `service-gen.ts` still returns `Observable<T>` from `HttpClient`.
-
-   Moving services to `httpResource()`/`rxResource()` is the RFC's phase B. Moving forms to Signal
-   Forms is its phase C, which changes the emitted shape and carries an ADR of its own. New or
-   rewritten emission follows the RFC's guidelines. An existing emitter changes shape only in the
-   phase that owns the change.
-   - No deprecated APIs: no `@Input()`/`@Output()` decorators where signal inputs and outputs apply.
+1. **Angular v22 is the target, reached in phases.** The phases, where the emitters stand in them,
+   and which idioms to emit or stop emitting are the
+   [`exeris-tooling-angular-v22-emission`](../.agents/skills/exeris-tooling-angular-v22-emission/SKILL.md)
+   skill's, applied before any change to a generator or the emitted scaffold. Its rationale is
+   RFC-2026-06-18, "Angular v22 Migration of the TS Emitter", still a draft. No deprecated API is
+   emitted: no `@Input()`/`@Output()` decorators where signal inputs and outputs apply.
 2. **The shared codegen rules hold here unchanged.** `DomainMetadata` is the only input
    ([policy](../.agents/policies/domain-metadata-contract.md)), what one emitter handles the other
    handles or says why not ([policy](../.agents/policies/emitter-parity.md)), and output is
