@@ -1,3 +1,12 @@
+---
+title: "Migration: 0.x → 1.0"
+type: migration-guide
+visibility: public
+owning-repo: exeris-tooling
+status: active
+last-verified: 2026-09-26
+---
+
 # Migration: 0.x → 1.0
 
 This document describes one-time differences downstream consumers will see when they regenerate against the `exeris-tooling` 0.x lineage that includes the [ADR-015](adr/ADR-015-codegen-emission-strategy.md) emission-strategy migration. Skim this once per consumer; nothing here is recurring.

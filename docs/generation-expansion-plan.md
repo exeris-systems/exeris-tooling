@@ -1,3 +1,12 @@
+---
+title: "Generation-expansion plan — wiring the shipped-but-inert SDK records into the pipeline"
+type: design-note
+visibility: public
+owning-repo: exeris-tooling
+status: active
+last-verified: 2026-06-28
+---
+
 # Generation-expansion plan — wiring the shipped-but-inert SDK records into the pipeline
 
 Settled 2026-06-28 by a design panel (3 lensed proposals — pipeline-architect / contract-steward / delivery-pm — → adversarial synthesis), all facts re-verified against the repos. Companion to [`generation-coverage-audit.md`](generation-coverage-audit.md). This is the coordination spine; waves marked **founder review** are not auto-executed.
