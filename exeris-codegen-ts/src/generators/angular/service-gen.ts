@@ -116,7 +116,7 @@ export class ServiceGenerator implements CodeGenerator {
     const kebabName = DslMapper.toKebabCase(entityName);
 
     // The emitted service must request what the emitted server serves. The router registers the
-    // entity's path with no version segment, and the OpenAPI document publishes the same. Therefore,
+    // entity's path with no version segment and the OpenAPI document publishes the same, so
     // apiVersion is deliberately NOT folded into the URL here. Default fallback: /{entity}s
     // (pluralized entity name).
     const apiPath = serviceApiPath(metadata);

@@ -27,7 +27,7 @@ import { tsSingleQuoted } from './ts-literal.js';
  * to their dependencies and to `polyfills` in `angular.json` — but the emitted app declares
  * `"polyfills": []` and has no such dependency. Tooling emits no dependency the consumer did not
  * ask for, so emitted code that silently requires one violates ADR-060 (the rule applied to
- * slf4j on the Java side, and the one `store-gen` and `detail-gen` record).
+ * slf4j on the Java side, and the one `store-gen` records).
  */
 export class EventHandlerGenerator implements CodeGenerator {
   readonly name = 'EventHandlerGenerator';

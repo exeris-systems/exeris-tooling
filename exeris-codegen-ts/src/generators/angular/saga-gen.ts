@@ -17,7 +17,7 @@
  * templates. `$localize` is a global that exists only when the consumer adds `@angular/localize`
  * and a polyfills entry, but the emitted app declares `"polyfills": []`. Emitting code that
  * silently requires an undeclared consumer dependency violates ADR-060 (the rule applied to
- * slf4j on the Java side; `store-gen.ts` and `detail-gen` and `event-gen` record it for TS).
+ * slf4j on the Java side; `store-gen.ts` and `event-gen` record it for TS).
  *
  * @author Exeris Team
  * @since 0.3.0
