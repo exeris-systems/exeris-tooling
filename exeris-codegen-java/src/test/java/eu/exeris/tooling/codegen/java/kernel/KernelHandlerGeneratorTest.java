@@ -152,7 +152,7 @@ class KernelHandlerGeneratorTest {
     }
 
     @Test
-    @DisplayName("ADR-090: a foreign tenant answers 400 on create, update and action — never on delete")
+    @DisplayName("a foreign tenant answers 400 on create, update and action — never on delete")
     void shouldAnswerBadRequestForAForeignTenant() {
         GeneratedFile handler = handlerFor(DomainMetadata.builder("Order", "com.example.domain")
                 .path("/orders")
@@ -190,7 +190,7 @@ class KernelHandlerGeneratorTest {
     }
 
     @Test
-    @DisplayName("ADR-090: a UNIVERSE entity catches both caller-fault types in one clause")
+    @DisplayName("a UNIVERSE entity catches both caller-fault types in one clause")
     void shouldAnswerBadRequestForAForeignSharedScope() {
         GeneratedFile handler = handlerFor(DomainMetadata.builder("Species", "com.example.domain")
                 .path("/species")
@@ -209,7 +209,7 @@ class KernelHandlerGeneratorTest {
     }
 
     @Test
-    @DisplayName("ADR-090: a global entity's handler catches no caller-fault type")
+    @DisplayName("a global entity's handler catches no caller-fault type")
     void globalHandlerCatchesNoMismatch() {
         GeneratedFile handler = handlerFor(DomainMetadata.builder("Order", "com.example.domain")
                 .path("/orders")
