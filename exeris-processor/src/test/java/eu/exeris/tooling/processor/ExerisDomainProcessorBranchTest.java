@@ -107,8 +107,8 @@ class ExerisDomainProcessorBranchTest {
         }
 
         @Test
-        @DisplayName("The deprecated apiVersion still reaches the metadata JSON, and javac warns it is marked for removal")
-        void deprecatedApiVersionFlowsThroughWithARemovalWarning() throws IOException {
+        @DisplayName("The deprecated apiVersion does not reach the metadata JSON, and javac warns it is marked for removal")
+        void deprecatedApiVersionIsNotCarried() throws IOException {
             // apiVersion is @Deprecated(forRemoval = true) in the SDK, so javac warns
             // wherever an author writes it. That is why it is not in the matrix above,
             // which holds every other attribute to zero warnings.
@@ -130,7 +130,7 @@ class ExerisDomainProcessorBranchTest {
                     "apiVersion() in eu.exeris.sdk.annotation.ExerisDomain has been deprecated and marked for removal");
 
             assertThat(metadataFor(compilation, "Versioned"))
-                    .contains("\"apiVersion\" : \"v2\"");
+                    .doesNotContain("\"v2\"");
         }
     }
 

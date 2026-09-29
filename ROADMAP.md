@@ -4,7 +4,7 @@ type: roadmap
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-09-26
+last-verified: 2026-09-29
 ---
 
 # Exeris Tooling — Roadmap to 1.0.0 GA
@@ -2940,6 +2940,8 @@ emitted mapping should read it rather than re-derive it is a slice to measure, n
 at `0.12.0-SNAPSHOT` and kernel `development/0.12.0` — so tooling compiles against the 0.12 train.
 The cut rule is unchanged — no cross-repo `-SNAPSHOT` at a cut, and the tag's own POM must be final
 — so the 0.9.0 cut waits for both final releases, and the pins move to them in that change.
+SDK 0.12 deprecates `@ExerisDomain.apiVersion` for removal (T38), and with B0 the processor stops
+reading it.
 
 ## Versioning policy
 
