@@ -1449,9 +1449,9 @@ which SDK 0.12 also lower-cases with `Locale.ROOT`.
 ### `@ExerisDomain.apiVersion` no longer reaches the metadata (T38)
 
 SDK 0.12.0 deprecates the attribute for removal at 1.0.0, with no replacement: no emitted route,
-document or client ever carried a version segment. The processor no longer reads it, so the
-metadata's `apiVersion` is the SDK default, `"v1"`, whatever the source sets. No generator read it,
-so no emitted file changes.
+document or client ever carried a version segment. The processor no longer reads it, and SDK 0.12.0
+fills no default for it, so the metadata JSON carries no `apiVersion`. No generator read it, so no
+emitted file changes.
 
 A source that still sets it compiles with javac's `[removal]` warning, and under `-Aexeris.strict`
 with the inert-attribute warning as well. Delete it. A versioned route is spelled in `path`
