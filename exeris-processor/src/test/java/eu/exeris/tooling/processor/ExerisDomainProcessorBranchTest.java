@@ -62,7 +62,6 @@ class ExerisDomainProcessorBranchTest {
                         path = "/all-attrs",
                         aggregate = "Order",
                         description = "Maximum-attribute fixture",
-                        apiVersion = "v2",
                         restApi = false,
                         graphqlApi = true,
                         realTimeApi = true,
@@ -91,7 +90,6 @@ class ExerisDomainProcessorBranchTest {
                     .contains("\"path\" : \"/all-attrs\"")
                     .contains("\"aggregate\" : \"Order\"")
                     .contains("\"description\" : \"Maximum-attribute fixture\"")
-                    .contains("\"apiVersion\" : \"v2\"")
                     .contains("\"restApi\" : false")
                     .contains("\"graphqlApi\" : true")
                     .contains("\"realTimeApi\" : true")
@@ -106,6 +104,33 @@ class ExerisDomainProcessorBranchTest {
                     .contains("\"cacheRegion\" : \"orders\"")
                     .contains("\"fullTextSearch\" : true")
                     .contains("\"searchConfig\" : \"english\"");
+        }
+
+        @Test
+        @DisplayName("The deprecated apiVersion does not reach the metadata JSON, and javac warns it is marked for removal")
+        void deprecatedApiVersionIsNotCarried() throws IOException {
+            // apiVersion is @Deprecated(forRemoval = true) in the SDK, so javac warns
+            // wherever an author writes it. That is why it is not in the matrix above,
+            // which holds every other attribute to zero warnings.
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Versioned",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+
+                    @ExerisDomain(module = "sales", path = "/versioned", apiVersion = "v2")
+                    public class Versioned {}
+                    """
+            );
+
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).succeeded();
+            assertThat(compilation).hadWarningContaining(
+                    "apiVersion() in eu.exeris.sdk.annotation.ExerisDomain has been deprecated and marked for removal");
+
+            assertThat(metadataFor(compilation, "Versioned"))
+                    .doesNotContain("\"v2\"");
         }
     }
 
