@@ -3324,8 +3324,8 @@ Also open and independent of all four: the missing `warnInertAttributes` call si
       One rider is chosen rather than forced:
       - **T38** — the processor stops reading `@ExerisDomain.apiVersion`, which SDK 0.12 deprecates
         for removal with no replacement (founder decision 2026-09-29). No generator read it, so no
-        emitted file changes; the metadata carries the SDK default `"v1"`. The `INERT_ATTRIBUTES`
-        entry stays while the attribute exists.
+        emitted file changes; with SDK 0.12.0 the metadata carries no `apiVersion`. The
+        `INERT_ATTRIBUTES` entry stays while the attribute exists.
       Rides along with no emitter change: T52's caller half (see T52). Carried with the pins and
       invisible to emitted code: Jackson 3 `3.1.5` → `3.2.2`, the kernel's own pin (left at 3.1.5,
       the BOM forced the kernel down a minor on the e2e classpath), and the CI SDK checkout moved
@@ -3410,11 +3410,13 @@ opt-in semver gate.
          `effectivePath()`'s new plural.
 - [x] **T38 — the processor no longer reads `@ExerisDomain.apiVersion` (B0).** SDK 0.12 deprecates
       it for removal, with no replacement, together with `DomainMetadata.apiVersion()` and
-      `DomainMetadata.Builder.apiVersion(String)`. The metadata carries the SDK default, and a source
-      that sets the attribute draws javac's `[removal]` warning. What remains for the 1.0.0 pin:
-      delete the `INERT_ATTRIBUTES` entry and the `apiVersion` field in `exeris-codegen-ts`
-      `domain-model.ts`, and `KernelClientGeneratorTest`'s `.apiVersion("v2")` case, which pins that
-      a value arriving through the SDK's `-io` reader still reaches no client path.
+      `DomainMetadata.Builder.apiVersion(String)`. No SDK producer carries it either
+      (exeris-sdk#156): the `-io` reader leaves it unread and the builder has no default, so the
+      metadata has no `apiVersion`. The TS emitter's environment files drop it too
+      (exeris-tooling#224). A source that sets the attribute draws javac's `[removal]` warning. What
+      remains for the 1.0.0 pin: delete the `INERT_ATTRIBUTES` entry, the `apiVersion` field in
+      `exeris-codegen-ts` `domain-model.ts`, and `KernelClientGeneratorTest`'s `.apiVersion("v2")`
+      case, which pins that a value a caller sets reaches no client path.
 - [ ] **S6 — nothing is forced.** SDK 0.12 keeps `SystemFieldsMetadata(10)`, `DomainMetadata(39)`
       and `ActionMetadata(17)` as delegating constructors, and this repo already passes the eleventh
       `SystemFieldsMetadata` argument. Optional and recommended: build the record with
