@@ -3,11 +3,12 @@
  * BackendStrategy implementation, the singleton registry, and the
  * convenience functions.
  *
- * BackendType is a one-member union ('KERNEL'), under the kernel-target-only
- * discipline (hard-constraint #1). Tests assert observable
- * contract: the values flowing through getClientConfig / getDefaultHeaders /
- * transformPath / mapError / getRetryConfig / getRealTimeConfig must match
- * what downstream code-emitters depend on.
+ * Spring/Quarkus/Micronaut/Vanilla strategies were removed under the
+ * kernel-target-only discipline (hard-constraint #1); BackendType is now a
+ * one-member union ('KERNEL'). Tests assert observable contract: the values
+ * flowing through getClientConfig / getDefaultHeaders / transformPath /
+ * mapError / getRetryConfig / getRealTimeConfig must match what downstream
+ * code-emitters depend on.
  */
 
 import { describe, expect, it, beforeEach } from 'vitest';
@@ -43,7 +44,6 @@ describe('KernelStrategy — BackendStrategy contract', () => {
     expect(config.useFetch).toBe(true);
     expect(config.timeout).toBeGreaterThan(0);
     expect(['include', 'same-origin', 'omit']).toContain(config.credentials);
-    expect(config.apiVersion).toBeTruthy();
   });
 
   it('includes Content-Type and Accept JSON headers by default', () => {
@@ -103,12 +103,11 @@ describe('KernelStrategy — BackendStrategy contract', () => {
 describe('KernelStrategy specifics — RLS headers + HTTP/3 + correlation', () => {
   const kernel = new KernelStrategy();
 
-  it('uses HTTP/3 and still carries an apiVersion in config — which no path consumes', () => {
-    // The field remains on ClientConfig but does not fold into the URL.
-    // See transformPath below and ExerisDomainProcessor.INERT_ATTRIBUTES.
+  it('uses HTTP/3, and its config carries no apiVersion', () => {
+    // No emitted path has a version segment (see transformPath below), so the strategy states none.
     const config = kernel.getClientConfig();
     expect(config.useHttp3).toBe(true);
-    expect(config.apiVersion).toBe('v1');
+    expect(config).not.toHaveProperty('apiVersion');
   });
 
   it('propagates every RLS / observability header when the full TenantContext is supplied', () => {
@@ -121,8 +120,8 @@ describe('KernelStrategy specifics — RLS headers + HTTP/3 + correlation', () =
   });
 
   it('transformPath emits no version segment — the router serves none', () => {
-    // The router serves no version segment, so transformPath adds none. Kept as an assertion
-    // because this is the shape a future reuse would copy.
+    // Asserted the opposite until the emitters were aligned. Kept as an assertion rather than
+    // deleted with the behaviour, because this is the shape a future reuse would copy.
     expect(kernel.transformPath('/api', '/orders')).toBe('/api/orders');
   });
 
