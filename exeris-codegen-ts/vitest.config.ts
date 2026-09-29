@@ -188,8 +188,6 @@ export default defineConfig({
         //     final '/api' fallback — every registered strategy in
         //     backend-strategy.ts sets baseUrl='/api', so the second
         //     `||` never trips.
-        //   - `clientConfig.apiVersion ?? 'v1'` fallback — every
-        //     strategy sets apiVersion='v1'.
         // Each of those would need either a TS-bypassing fake or a
         // strategy mutation to exercise; both would test the shim,
         // not the orchestrator. The test file documents this in the

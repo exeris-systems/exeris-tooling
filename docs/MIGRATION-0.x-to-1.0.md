@@ -1173,6 +1173,14 @@ Separately, `createGeneratorContext` filled `apiBasePath` with `/api` when a cal
 contradicting the schema default. **Only programmatic callers are affected** — the CLI and config
 paths always pass a resolved value.
 
+### `exeris-codegen-ts`: the environment files no longer carry `apiVersion` (T38)
+
+The emitted `environment.ts` and `environment.development.ts` drop `apiVersion: 'v1'`. No emitted
+service, store or client read it, because none of them requests a version segment, and SDK 0.12.0
+deprecates `@ExerisDomain.apiVersion` for removal. `environment.development.ts` is regenerated.
+`environment.ts` is written only when it is absent, so an existing app keeps the key there until
+you delete it. If your own code reads `environment.apiVersion`, remove the read.
+
 ### `exeris-codegen-ts`: the app barrel gains a Stores section (#210)
 
 `src/app/index.ts` now exports `<Entity>Store` and the `<Entity>StoreState` type for every visible

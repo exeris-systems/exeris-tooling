@@ -44,7 +44,6 @@ describe('KernelStrategy — BackendStrategy contract', () => {
     expect(config.useFetch).toBe(true);
     expect(config.timeout).toBeGreaterThan(0);
     expect(['include', 'same-origin', 'omit']).toContain(config.credentials);
-    expect(config.apiVersion).toBeTruthy();
   });
 
   it('includes Content-Type and Accept JSON headers by default', () => {
@@ -104,12 +103,11 @@ describe('KernelStrategy — BackendStrategy contract', () => {
 describe('KernelStrategy specifics — RLS headers + HTTP/3 + correlation', () => {
   const kernel = new KernelStrategy();
 
-  it('uses HTTP/3 and still carries an apiVersion in config — which no path consumes', () => {
-    // The field remains on ClientConfig; what changed is that nothing folds it into a URL.
-    // See transformPath below and ExerisDomainProcessor.INERT_ATTRIBUTES.
+  it('uses HTTP/3, and its config carries no apiVersion', () => {
+    // No emitted path has a version segment (see transformPath below), so the strategy states none.
     const config = kernel.getClientConfig();
     expect(config.useHttp3).toBe(true);
-    expect(config.apiVersion).toBe('v1');
+    expect(config).not.toHaveProperty('apiVersion');
   });
 
   it('propagates every RLS / observability header when the full TenantContext is supplied', () => {

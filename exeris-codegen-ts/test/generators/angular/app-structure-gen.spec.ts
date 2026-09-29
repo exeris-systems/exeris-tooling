@@ -29,9 +29,8 @@
  *   - generateBarrelExport: Page/PageRequest exported ONLY ONCE
  *     (from the first domain's service), other domains export bare
  *     {Service, Filter}.
- *   - resolveApiSettings: apiBasePath wins when truthy; falls back to
- *     strategy.getClientConfig().baseUrl when empty/missing; apiVersion
- *     always comes from the strategy.
+ *   - resolveApiSettings: environment.apiUrl is config.apiBasePath, and
+ *     the environment files carry no apiVersion.
  *
  * Conventions:
  *   - Domains/fields are built through Zod parse so we lean on the
@@ -492,10 +491,11 @@ describe('generateAppStructure — resolveApiSettings', () => {
     expect(env.content).toContain("apiUrl: ''");
   });
 
-  it('always pulls apiVersion from the strategy (KERNEL → "v1")', () => {
+  it('emits no apiVersion: no emitted service or client has a version segment', () => {
     const files = generateAppStructure([], [], cfg());
-    const env = fileAt(files, 'src/environments/environment.ts')!;
-    expect(env.content).toContain("apiVersion: 'v1'");
+    for (const path of ['src/environments/environment.ts', 'src/environments/environment.development.ts']) {
+      expect(fileAt(files, path)!.content).not.toContain('apiVersion');
+    }
   });
 });
 

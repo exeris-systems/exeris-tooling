@@ -39,8 +39,6 @@ export interface ClientConfig {
   timeout: number;
   /** Credentials mode */
   credentials: 'include' | 'same-origin' | 'omit';
-  /** API version prefix */
-  apiVersion: string;
 }
 
 export interface TenantContext {
@@ -224,7 +222,6 @@ export class KernelStrategy implements BackendStrategy {
       useHttp3: true,
       timeout: 30000,
       credentials: 'include',
-      apiVersion: 'v1',
     };
   }
 
