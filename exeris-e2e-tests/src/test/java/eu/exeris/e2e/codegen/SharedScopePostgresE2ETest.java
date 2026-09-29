@@ -34,10 +34,10 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * repository's CI has no PostgreSQL, and H2 implements no row-level security, so no in-process
  * engine could make these cells mean anything.
  *
- * <pre>{@code
+ * {@snippet lang="shell" :
  * mvn -pl exeris-e2e-tests -am test -Dtest=SharedScopePostgresE2ETest \
  *     -Dexeris.e2e.postgres.url='jdbc:postgresql://localhost:5432/postgres?user=postgres&password=…'
- * }</pre>
+ * }
  *
  * <p>The kernel's {@code AbstractSharedScopeAccessMatrixTck} cannot be bound verbatim: its keys are
  * non-UUID text ({@code "tenant-a"}, {@code "world-alpha"}), while every emitted tenant column is a
