@@ -4,7 +4,7 @@ type: migration-guide
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-09-26
+last-verified: 2026-09-29
 ---
 
 # Migration: 0.x → 1.0
@@ -1063,9 +1063,8 @@ requires them.
 *(Replaced 2026-09-26. This entry first said "Neither pin moves in this train"; B0 moved both.)*
 
 The BOM moves to **`eu.exeris:exeris-sdk-*:0.12.0-SNAPSHOT`** and **`eu.exeris:exeris-kernel-*:0.12.0`**,
-and neither is published yet. Build the SDK from `main`, with `-Djapicmp.skip=true` from a fresh
-clone, because its semver baseline `0.11.0` is not on Maven Central. Build the kernel from
-`development/0.12.0`. A tooling release is not cut until both are final.
+and neither is published yet. Build the SDK from `main` and the kernel from `development/0.12.0`.
+A tooling release is not cut until both are final.
 
 **The metadata schema stamp moves `0.11.0` → `0.12.0`.** SDK 0.12 moves `SchemaVersion.CURRENT`, so
 a baseline stamped `0.11.0` reads as schema skew (ADR-042). Re-run codegen once after upgrading.
@@ -1436,34 +1435,41 @@ code change.
 Tables, columns, OpenAPI file names and DSL identifiers are lower-cased with `Locale.ROOT`. A build
 that ran under a locale such as `tr-TR` and committed `ınvoices`-style names will regenerate them
 with a plain `i`, new migration file names included. Rename the applied migrations or keep the old
-output. Entities without a declared `path` still depend on the SDK's `effectivePath()` locale
-handling. That is fixed on SDK 0.12's working branch but not yet on SDK `main`, so declare `path`
-explicitly if you build under such a locale.
+output. A route for an entity without a declared `path` comes from the SDK's `effectivePath()`,
+which SDK 0.12 also lower-cases with `Locale.ROOT`.
 
-### Announced, not on this branch yet: SDK 0.12.0 follow-ups (T6, T38, S6)
+### `@ExerisDomain.apiVersion` no longer reaches the metadata (T38)
 
-These land after SDK 0.12's working branch merges to SDK `main`, because tooling CI builds the SDK
-from `main`. The T6 extraction lands before 0.9.0 is released. Nothing below is emitted by this
-branch; it is listed here so the 0.9.0 regeneration brings no surprise.
+SDK 0.12.0 deprecates the attribute for removal at 1.0.0, with no replacement: no emitted route,
+document or client ever carried a version segment. The processor no longer reads it, so the
+metadata's `apiVersion` is the SDK default, `"v1"`, whatever the source sets. No generator read it,
+so no emitted file changes.
 
-- **Default table names will follow the English plural (T6).** Today a table is the snake-cased
-  entity name plus "s" (`colonys`, `technologys`, `reassemblys`). It will come from the SDK's
-  `DomainMetadata.effectiveTableName()` instead: `colonies`, `technologies`, `reassemblies`,
-  `boxes`, `statuses`. Every entity whose plural is a plain "s" keeps its table and its migration
-  file name byte-for-byte. For the others, on an existing database, the generated repository and
-  the Flyway migration will name a table that does not exist yet. The processor will warn once for
-  each such entity, with the exact value that keeps the old name:
+A source that still sets it compiles with javac's `[removal]` warning, and under `-Aexeris.strict`
+with the inert-attribute warning as well. Delete it. A versioned route is spelled in `path`
+(`path = "/v2/orders"`).
 
-      @ExerisDomain(module = "empire", path = "/colonies", tableName = "colonys")
+### SDK 0.12.0 needs no source change for S6
 
-  `@ExerisDomain.tableName` (SDK 0.12.0) is also how you name an irregular or pre-existing table
-  (`tableName = "people"`). Angular route segments move the same way; server routes do not.
-- **`@ExerisDomain.apiVersion` is deprecated (SDK 0.12.0).** It never reached an emitted artifact,
-  and javac will warn where it is set once the pinned SDK carries the deprecation. Delete it; if you
-  need a versioned route, write it in `path`. It is removed at 1.0.0.
-- **SDK 0.12.0 needs no source change for S6.** `SystemFieldsMetadata`, `DomainMetadata` and
-  `ActionMetadata` keep their 0.11.0 constructors. Code that builds `SystemFieldsMetadata`
-  positionally may switch to `SystemFieldsMetadata.builder()`.
+`SystemFieldsMetadata`, `DomainMetadata` and `ActionMetadata` keep their 0.11.0 constructors. Code
+that builds `SystemFieldsMetadata` positionally may switch to `SystemFieldsMetadata.builder()`.
+
+### Announced, not on this branch yet: default table names follow the English plural (T6)
+
+SDK 0.12.0 carries T6, and tooling's half lands before 0.9.0 is released. Nothing below is emitted
+by this branch; it is listed here so the 0.9.0 regeneration brings no surprise.
+
+Today a table is the snake-cased entity name plus "s" (`colonys`, `technologys`, `reassemblys`). It
+will come from the SDK's `DomainMetadata.effectiveTableName()` instead: `colonies`, `technologies`,
+`reassemblies`, `boxes`, `statuses`. Every entity whose plural is a plain "s" keeps its table and
+its migration file name byte-for-byte. For the others, on an existing database, the generated
+repository and the Flyway migration will name a table that does not exist yet. The processor will
+warn once for each such entity, with the exact value that keeps the old name:
+
+    @ExerisDomain(module = "empire", path = "/colonies", tableName = "colonys")
+
+`@ExerisDomain.tableName` (SDK 0.12.0) is also how you name an irregular or pre-existing table
+(`tableName = "people"`). Angular route segments move the same way; server routes do not.
 
 ---
 

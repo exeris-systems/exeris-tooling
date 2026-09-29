@@ -408,13 +408,10 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "for it, so setting it changes no emitted output. The emitted INSERT stamps "
                             + "both actors"),
             new InertAttribute("ExerisDomain", "apiVersion",
-                    "no emitted artifact carries a version segment: the router registers routes at "
-                            + "the entity path, the OpenAPI document publishes the same, and the Java "
-                            + "client and every TypeScript client were aligned onto it. Emitting "
-                            + "/api/{version}/{path} from the router instead is a defensible API "
-                            + "decision, but it changes every route and the published contract, so it "
-                            + "is a decision to take rather than a default to assume. Until it is "
-                            + "taken, setting this attribute has no effect on output"),
+                    "it is deprecated for removal, with no replacement, and the processor does not "
+                            + "carry it into the metadata. No emitted artifact has a version segment: "
+                            + "the router, the OpenAPI document and every generated client serve and "
+                            + "request the entity at its path. A versioned route is spelled in path"),
             new InertAttribute("ExerisDomain", "permissions",
                     "the processor does not extract it, so DomainMetadata's permissions field — "
                             + "which exists, and is mirrored in the TypeScript model — is empty in "
@@ -1543,9 +1540,6 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         }
         if (values.containsKey("description")) {
             builder.description((String) values.get("description"));
-        }
-        if (values.containsKey("apiVersion")) {
-            builder.apiVersion((String) values.get("apiVersion"));
         }
 
         // API Configuration

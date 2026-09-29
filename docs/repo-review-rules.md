@@ -4,7 +4,7 @@ type: reference
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-09-26
+last-verified: 2026-09-27
 ---
 
 # Review rules for `exeris-tooling`
@@ -73,8 +73,11 @@ judge those, and they are not restated here: a rule in two places drifts in one 
 generated sample application or the emitted code as a product of its own; the rules above judge the
 emitters, and the output only as evidence of what an emitter does.
 
-The cost is that T1 to T7 are prose a reviewer applies, not a program. This repository hands the
-review no `repo-checks` output, so the tests the policies name — `KernelCodegenCompileTest`,
-`GeneratedTestsE2ETest`, the determinism regeneration — are evidence only through the build checks
-on the pull request, which the reviewer cannot read. A rule the reviewer could only check by running
-a test is reported as unchecked, not as passing.
+The cost is that T1 to T7 are prose a reviewer applies, not a program. The review is handed
+`repo-checks` output for the two scripts `.agents/manifest.yaml` names: `hook-deny-check.sh`, which
+runs the deny hook against the commands it must refuse and let through, and
+`eval-consistency-check.sh`, which holds `scenarios.yaml`'s `negative` tags to its cases. The tests
+the policies name — `KernelCodegenCompileTest`, `GeneratedTestsE2ETest`, the determinism
+regeneration — run only in the build checks on the pull request, which the reviewer cannot read. A
+rule the reviewer could only check by running one of those tests is reported as unchecked, not as
+passing.
