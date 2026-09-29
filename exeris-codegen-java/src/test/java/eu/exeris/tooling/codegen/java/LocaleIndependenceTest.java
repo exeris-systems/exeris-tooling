@@ -40,10 +40,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * output trees to be identical file for file and byte for byte.
  *
  * <p>The fixture's names are chosen to put an upper-case {@code I} through every lower-casing site:
- * a default table ({@code Invoice}), an explicit override ({@code LINE_ITEMS}), a snake-cased column
- * ({@code itemId}), a relationship target, graph-sync table names, the OpenAPI file name, and a
- * {@code format} the form DSL switches on ({@code EMAIL}, which lower-cases to {@code emaıl} in
- * Turkish and misses its branch).
+ * a default table and route ({@code Invoice}), an explicit override ({@code LINE_ITEMS}), a
+ * snake-cased column ({@code itemId}), a relationship target, graph-sync table names, the OpenAPI
+ * file name, and a {@code format} the form DSL switches on ({@code EMAIL}, which lower-cases to
+ * {@code emaıl} in Turkish and misses its branch).
  *
  * <p>The default locale is JVM-global, so this sets and restores all three categories in
  * {@code finally}; the build runs tests single-threaded per fork.
@@ -79,32 +79,12 @@ class LocaleIndependenceTest {
         assertThat(root.keySet()).anyMatch(p -> p.contains("create_line_items"));
         assertThat(root.keySet()).anyMatch(p -> p.endsWith("invoice-api.yaml"));
         assertThat(root.keySet()).anyMatch(p -> p.endsWith("invoice.create-form.json"));
+        assertThat(root.values().stream().map(b -> new String(b, java.nio.charset.StandardCharsets.UTF_8)))
+                .as("the defaulted route")
+                .anyMatch(s -> s.contains("\"/invoices\""));
         // No dotless i (U+0131) anywhere, in either run.
         assertThat(root.values().stream().map(b -> new String(b, java.nio.charset.StandardCharsets.UTF_8)))
                 .noneMatch(s -> s.indexOf('\u0131') >= 0);
-    }
-
-    @Test
-    @DisplayName("known SDK gap, pinned: DomainMetadata.effectivePath() lower-cases a defaulted path with the default locale")
-    void sdkDefaultPathIsNotYetLocaleSafe() {
-        // Every generator takes the route from the SDK's effectivePath(), and its fallback is
-        // "/" + kebab(entityName) + "s" through a locale-less toLowerCase(). Under tr-TR an entity
-        // with no declared path is served at /ınvoices, while the TypeScript service (JS
-        // toLowerCase is locale-independent) calls /invoices. Tooling does not shadow SDK records,
-        // so the fix is upstream; this assertion fails the day it lands — then drop the explicit
-        // paths from fixture() so the main test covers the defaulted route too.
-        DomainMetadata undeclared = DomainMetadata.builder("Invoice", "com.shop.domain").build();
-        Locale saved = Locale.getDefault();
-        String path;
-        try {
-            Locale.setDefault(TURKISH);
-            path = undeclared.effectivePath();
-        } finally {
-            Locale.setDefault(saved);
-        }
-        assertThat(path)
-                .as("SDK effectivePath() is locale-safe now: remove the explicit paths from fixture()")
-                .isEqualTo("/\u0131nvoices");
     }
 
     private static Map<String, byte[]> generateUnder(Locale locale, Path metadataDir, Path out) throws IOException {
@@ -144,11 +124,9 @@ class LocaleIndependenceTest {
     }
 
     private static List<DomainMetadata> fixture() {
-        // Explicit paths: the defaulted path is derived by the SDK's DomainMetadata.effectivePath(),
-        // which is not locale-safe yet — see sdkDefaultPathIsNotYetLocaleSafe().
+        // No explicit paths: every route comes from the SDK's DomainMetadata.effectivePath().
         DomainMetadata invoice = DomainMetadata.builder("Invoice", "com.shop.domain")
                 .module("billing")
-                .path("/invoices")
                 .dataScope(DataScope.TENANT)
                 .audited(true)
                 .versioned(true)
@@ -175,7 +153,6 @@ class LocaleIndependenceTest {
                 .build();
         DomainMetadata lineItem = DomainMetadata.builder("LineItem", "com.shop.domain")
                 .module("billing")
-                .path("/line-items")
                 .tableName("LINE_ITEMS")
                 .fields(List.of(
                         FieldMetadata.builder("id", "java.util.UUID").required(true).build(),

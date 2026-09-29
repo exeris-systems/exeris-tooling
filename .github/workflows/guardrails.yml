@@ -83,6 +83,18 @@ jobs:
       # severity tags and verdict schema. Read at the BASE commit, never at the pull request's ref:
       # a pull request does not write the rules it is judged by.
       repo-routine: docs/repo-review-rules.md
+      # The scripts the agent manifest names under `scripts:`, run by CI because the reviewer may not
+      # run them. Their output is evidence for T1–T7 and the agent layer, not a gate: a failure here
+      # reaches the verdict through the reviewer, and the job stays green. PyYAML first, because the
+      # hook dispatcher denies every command when it cannot parse `hooks.yaml`, and the deny check
+      # would then report every allowed command as refused. Each script runs whatever the one before
+      # it did, and the exit code the reviewer reads is non-zero if any of them failed.
+      repo-checks: >-
+        pip install --quiet pyyaml;
+        rc=0;
+        bash tools/hook-deny-check/hook-deny-check.sh || rc=1;
+        bash tools/eval-consistency-check/eval-consistency-check.sh || rc=1;
+        exit $rc
       # One model run per part, composed into one verdict and one comment. `pr` and `repo` run on
       # every pull request; `docs`, `records`, `code-docs` and `code` where the diff has their
       # files. A part that leaves no verdict makes the check red.

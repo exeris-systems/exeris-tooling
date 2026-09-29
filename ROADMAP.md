@@ -4,7 +4,7 @@ type: roadmap
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-09-26
+last-verified: 2026-09-29
 ---
 
 # Exeris Tooling — Roadmap to 1.0.0 GA
@@ -647,9 +647,8 @@ each fix.
       regenerates byte-identical, and the throwing `default` of `FlowDefinitionBuilder.version(int)`
       never reaches an out-of-tree engine for a saga that did not ask for a version. The emitted
       `RecordingFlow` test double overrides `version(int)`. The compile gate and
-      `GeneratedTestsE2ETest` both run a versioned saga. Still open upstream: on SDK `main` the `-io`
-      reader does not read `@Saga.version`, so metadata produced through it is always version 1. The
-      reader fix is on the SDK's 0.12 working branch and arrives with it.
+      `GeneratedTestsE2ETest` both run a versioned saga. The SDK's `-io` reader reads `@Saga.version`
+      too (SDK `main`, exeris-sdk#150), so metadata from either build path carries the version.
 
       **History — the processor half (0.8.0), and the 0.11 measurement that held the emitter back.**
       `SagaMetadata` declares `int version` defaulting to 1 and nothing set it, so
@@ -1679,14 +1678,11 @@ never-invoked emitter start emitting, and its output did not build.
       `ınvoice-api.yaml`, and an `InvalidPathException` writing `V…__create_lıne_ıtems.sql` on a
       non-UTF-8 path encoding. All now pass `Locale.ROOT`; `LocaleIndependenceTest` generates the
       main tree, the test tree and the DSL files under ROOT and `tr-TR` and requires identical
-      bytes. Processor, codegen-core, maven plugin and codegen-ts had no site. **Upstream remainder
-      (SDK):** `DomainMetadata.effectivePath()` / `effectiveTableName()` and
-      `FieldMetadata.effectiveColumnName()` lower-case with the default locale on SDK `main`; tooling
-      reads `effectivePath()` for every route, so under `tr-TR` an entity with no declared `path` is
-      served at `/ınvoices` while the TS service calls `/invoices`. Pinned by
-      `sdkDefaultPathIsNotYetLocaleSafe`. The SDK's 0.12 working branch fixes all three under
-      `Locale.ROOT`, so the pin flips when tooling builds against it (the SDK follow-up block under
-      0.9.0 sequencing).
+      bytes. Processor, codegen-core, maven plugin and codegen-ts had no site. The SDK half:
+      `DomainMetadata.effectivePath()` / `effectiveTableName()` and
+      `FieldMetadata.effectiveColumnName()` lower-case under `Locale.ROOT` on SDK `main`
+      (exeris-sdk#150). `LocaleIndependenceTest`'s fixture declares no `path`, so the defaulted
+      route, which every generator reads through `effectivePath()`, is covered too.
 - [ ] **Stream endpoints carry no tenant guard — found by reading 2026-09-26, not yet measured, so
       not yet numbered.** The tenant guard (T41, extended past CRUD to actions by T45) is emitted into
       no stream handler, and the entity-level EV1 producer subscribes to the event bus with no filter
@@ -2778,11 +2774,10 @@ Each now has the status the code settles, and every other mention in this file a
       *TS half — deferred to **T7**:* the Angular route/label pluralisation lives in the
       app-structure generator T7 is already reworking, and there is no serialized route override on
       the TS side yet, so the TS half rides with that 0.6.0 change.
-      *2026-09-26:* the SDK half landed on SDK 0.12's working branch. That branch adds
-      `@ExerisDomain.tableName`, and makes `effectiveTableName()` the snake-cased English plural. The
-      tooling half is three changes, sequenced after that branch reaches SDK `main`, and the
-      `tableName` extraction must land before 0.9.0 is released ("Follow SDK 0.12.0", under 0.9.0
-      sequencing).
+      *SDK half:* on SDK `main` (exeris-sdk#150). It adds `@ExerisDomain.tableName`, and makes
+      `effectiveTableName()` the snake-cased English plural. The tooling half is three changes, and
+      the `tableName` extraction must land before 0.9.0 is released ("Follow SDK 0.12.0", under
+      0.9.0 sequencing).
 
 ### UI fidelity & theming (`exeris-codegen-ts`)
 
@@ -3317,15 +3312,20 @@ Also open and independent of all four: the missing `warnInertAttributes` call si
         placeholder: nothing scans `@SharedScope` yet, and `UNIVERSE` is still refused at the
         declaration (T29). *Later the same day, T29 slice B made the processor scan
         `@SharedScope`: a UNIVERSE entity now carries `sharedScopeField`, every other entity still
-        writes `null`, and its JSON is unchanged. SDK 0.12's working branch restores the
+        writes `null`, and its JSON is unchanged. SDK `main` (exeris-sdk#150) restores the
         ten-argument constructor and adds `SystemFieldsMetadata.builder()`, so the positional break
-        goes away when that branch reaches SDK `main`.*
+        is gone.*
       - **K8** — the generated `*Client` Javadoc shows the peer named through `defaultAuthority` or
         `KernelWebClient.withAuthority`. Kernel ADR-074 made an unaddressed CLIENT request fail at its
         first send without changing a signature, so the emitted Javadoc is the only place the
         generated code can say it.
       - **K5** — the generated `*SagaFlow` calls `.version(n)` on its `FlowDefinitionBuilder`,
         carrying the `@Saga.version` the processor has extracted since 0.8.0 (T55's emitter half).
+      One rider is chosen rather than forced:
+      - **T38** — the processor stops reading `@ExerisDomain.apiVersion`, which SDK 0.12 deprecates
+        for removal with no replacement (founder decision 2026-09-29). No generator read it, so no
+        emitted file changes; the metadata carries the SDK default `"v1"`. The `INERT_ATTRIBUTES`
+        entry stays while the attribute exists.
       Rides along with no emitter change: T52's caller half (see T52). Carried with the pins and
       invisible to emitted code: Jackson 3 `3.1.5` → `3.2.2`, the kernel's own pin (left at 3.1.5,
       the BOM forced the kernel down a minor on the e2e classpath), and the CI SDK checkout moved
@@ -3337,9 +3337,8 @@ Also open and independent of all four: the missing `warnInertAttributes` call si
       **What makes it final:** both pins move to the `0.12.0` releases once kernel and SDK publish,
       and only then can 0.9.0 be cut — no cross-repo SNAPSHOT at a cut, and the tag's own POM is
       final (Versioning policy). Until then a consumer building this branch installs both from
-      source, and the SDK needs `-Djapicmp.skip=true` from a fresh clone because its semver baseline
-      is not on Central. *(SDK 0.12's working branch makes japicmp an opt-in `-Psemver` gate, so the
-      flag goes once that branch merges; see the SDK follow-up block below.)*
+      source. SDK `main` builds from a fresh clone with no flag, because japicmp runs only under
+      `-Psemver` there.
 
 ### Kernel asks from this train — 2026-09-26
 
@@ -3384,12 +3383,11 @@ Each is recorded where it was measured; this is the one list to hand to the kern
   strict-mode notes). `@SagaTransition`'s Javadoc says extraction is pending tooling, but the gate
   is the kernel.
 
-### Follow SDK 0.12.0 — open, sequenced after the SDK branch merges to SDK `main`
+### Follow SDK 0.12.0
 
-SDK 0.12 landed on the SDK's working branch on 2026-09-26. It brings the S6 compatibility
-constructors and `SystemFieldsMetadata.builder()`, T38, T6, and an opt-in semver gate. It is **not
-on SDK `main` yet**, and tooling CI builds the SDK from `main` (B0). So nothing below can land here
-first: a tooling change that needs the branch would turn this build red. Every item is open.
+SDK 0.12 is on SDK `main` since 2026-09-29 (exeris-sdk#150), which is what tooling CI builds (B0).
+It brings the S6 compatibility constructors and `SystemFieldsMetadata.builder()`, T38, T6, and an
+opt-in semver gate.
 
 - [ ] **T6 — table and route plurals.** The SDK's `effectiveTableName()` returns `tableName` when
       set, and otherwise the snake-cased English `pluralName()` under `Locale.ROOT`. The SDK's `-io`
@@ -3410,26 +3408,25 @@ first: a tooling change that needs the branch would turn this build red. Every i
          place of `entityName.endsWith('s') ? entityName : entityName + 's'`. Server routes do not
          move, because `@ExerisDomain.path` is required. Only metadata built without a path sees
          `effectivePath()`'s new plural.
-- [ ] **T38 — keep reading `@ExerisDomain.apiVersion` through 0.x, and remove it at 1.0.** SDK
-      0.12 deprecates it for removal, with no replacement, together with `DomainMetadata.apiVersion()`
-      and `DomainMetadata.Builder.apiVersion(String)`. Keep the read and its `INERT_ATTRIBUTES` entry
-      through the window. The processor's `builder.apiVersion(...)` and `KernelClientGeneratorTest`'s
-      `.apiVersion("v2")` will draw javac `[removal]` warnings: suppress each one at the call, with a
-      one-line reason, and no wider. At the 1.0.0 pin, delete the read, the inert entry, and the
-      `apiVersion` field in `exeris-codegen-ts` `domain-model.ts`.
+- [x] **T38 — the processor no longer reads `@ExerisDomain.apiVersion` (B0).** SDK 0.12 deprecates
+      it for removal, with no replacement, together with `DomainMetadata.apiVersion()` and
+      `DomainMetadata.Builder.apiVersion(String)`. The metadata carries the SDK default, and a source
+      that sets the attribute draws javac's `[removal]` warning. What remains for the 1.0.0 pin:
+      delete the `INERT_ATTRIBUTES` entry and the `apiVersion` field in `exeris-codegen-ts`
+      `domain-model.ts`, and `KernelClientGeneratorTest`'s `.apiVersion("v2")` case, which pins that
+      a value arriving through the SDK's `-io` reader still reaches no client path.
 - [ ] **S6 — nothing is forced.** SDK 0.12 keeps `SystemFieldsMetadata(10)`, `DomainMetadata(39)`
       and `ActionMetadata(17)` as delegating constructors, and this repo already passes the eleventh
       `SystemFieldsMetadata` argument. Optional and recommended: build the record with
       `SystemFieldsMetadata.builder()` in `extractSystemFieldsOverrides`. The builder names each of
       the eleven same-typed `String` components instead of relying on their order.
-- [ ] **Semver gate.** On the SDK branch, japicmp runs only under `-Psemver`. Drop
+- [ ] **Semver gate.** On SDK `main`, japicmp runs only under `-Psemver`. Drop
       `-Djapicmp.skip=true` and its comment from `.github/workflows/build.yml` (the "Install
       exeris-sdk to local Maven repo" step). Leaving it is harmless.
-- [ ] **The locale pin flips.** The branch lower-cases `effectivePath()`, `effectiveTableName()` and
-      `effectiveColumnName()` under `Locale.ROOT`, so `LocaleIndependenceTest
-      .sdkDefaultPathIsNotYetLocaleSafe` fails against it, by design. Invert that test, and drop the
-      explicit paths from its fixture so the main case covers the defaulted route.
-- [ ] **The `-io` reader reads `@Saga.version`** on the branch (K5's SDK half), which closes T55's
+- [x] **The locale pin flips.** SDK `main` lower-cases `effectivePath()`, `effectiveTableName()` and
+      `effectiveColumnName()` under `Locale.ROOT`. The pin test is gone, and `LocaleIndependenceTest`'s
+      fixture declares no `path`, so the main case covers the defaulted route.
+- [x] **The `-io` reader reads `@Saga.version`** on SDK `main` (K5's SDK half), which closes T55's
       last open line.
 
 ### 0.12 readiness — measured 2026-09-01, against the installed snapshots
