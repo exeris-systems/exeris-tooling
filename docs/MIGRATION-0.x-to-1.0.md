@@ -1,3 +1,12 @@
+---
+title: "Migration: 0.x → 1.0"
+type: migration-guide
+visibility: public
+owning-repo: exeris-tooling
+status: active
+last-verified: 2026-09-29
+---
+
 # Migration: 0.x → 1.0
 
 This document describes one-time differences downstream consumers will see when they regenerate against the `exeris-tooling` 0.x lineage that includes the [ADR-015](adr/ADR-015-codegen-emission-strategy.md) emission-strategy migration. Skim this once per consumer; nothing here is recurring.
@@ -1182,6 +1191,17 @@ never-read warning, now with that reason.
 and no generator reads (`@TenantId.autoPopulate`, `@Version.useForETag`,
 `@SoftDelete.retentionPeriod`, …). Setting any of them changes no emitted output; the warning says
 so rather than letting the extraction hide it.
+
+### `@ExerisDomain.apiVersion` no longer reaches the metadata (T38)
+
+SDK 0.12.0 deprecates the attribute for removal at 1.0.0, with no replacement: no emitted route,
+document or client ever carried a version segment. The processor no longer reads it, and SDK 0.12.0
+fills no default for it, so the metadata JSON carries no `apiVersion`. No generator read it, so no
+emitted file changes.
+
+A source that still sets it compiles with javac's `[removal]` warning, and under `-Aexeris.strict`
+with the inert-attribute warning as well. Delete it. A versioned route is spelled in `path`
+(`path = "/v2/orders"`).
 
 ---
 

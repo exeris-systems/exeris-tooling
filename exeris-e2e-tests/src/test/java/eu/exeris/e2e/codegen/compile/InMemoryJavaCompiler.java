@@ -77,8 +77,8 @@ public final class InMemoryJavaCompiler {
 
         // Must match the reactor's maven.compiler.release: the gate compiles emitted
         // code against the real kernel SPI, so it has to be the release a consumer
-        // actually gets. No --enable-preview — kernel 0.11.0 ships no preview-stamped
-        // classes, and adding it back would re-pin this to one exact JDK.
+        // actually gets. No --enable-preview — the pinned kernel ships no preview-stamped
+        // classes, and the flag would pin this to one exact JDK.
         List<String> options = List.of("--release", "25");
 
         boolean success = compiler

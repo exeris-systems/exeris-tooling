@@ -18,13 +18,17 @@ migrations, sagas, and corresponding Angular/TypeScript frontend artifacts.
 - Maven 3.9+ (enforced alongside the JDK rule).
 - Node 18+ to build `exeris-codegen-ts`; the **generated** Angular v22 app targets
   Node 22+.
-- Released `eu.exeris:exeris-sdk-*:0.11.0` and `eu.exeris:exeris-kernel-*:0.11.0`
-  artifacts on the resolution path: either GitHub Packages credentials, or a local
-  `mvn install` from the matching release tags (`exeris-sdk` at `v0.11.0`,
-  `exeris-kernel` at `v0.11.0` — repo `main` branches have moved past the
-  pins and will not satisfy them). Take the **`eu.exeris`** kernel coordinates,
-  not `eu.exeris.preview` — 0.11.0 publishes both, and the preview line is JDK 28 EA
-  with `--enable-preview`. Nothing generated here differs between them.
+- `eu.exeris:exeris-sdk-*:0.12.0-SNAPSHOT` and `eu.exeris:exeris-kernel-*:0.12.0`
+  on the resolution path. Neither is released yet, so `main` pins ahead of both. The
+  pins move to the final `0.12.0` releases once they publish, and no tooling release
+  is cut before that. Build both from source: `exeris-sdk` at `main`
+  (`mvn install`; an SDK checkout that still runs japicmp by default, rather than
+  behind its opt-in `semver` profile, also needs `-Djapicmp.skip=true`, because its
+  semver baseline is not on Central) and
+  `exeris-kernel` at `development/0.12.0`. GitHub Packages credentials also resolve
+  the kernel. Take the **`eu.exeris`** kernel coordinates, not `eu.exeris.preview`
+  — the preview line is JDK 28 EA with `--enable-preview`, and nothing generated here
+  differs between them.
 
 ## Pipeline
 

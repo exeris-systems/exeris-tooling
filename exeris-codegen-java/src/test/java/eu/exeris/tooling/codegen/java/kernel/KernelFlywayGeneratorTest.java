@@ -160,10 +160,9 @@ class KernelFlywayGeneratorTest {
         GeneratedFile file = generator.generate(metadata);
 
         // UNIVERSE is rows owned by a tenant but readable across tenants. The
-        // widening cannot be emitted on this kernel pin — the session variable a
-        // shared-scope policy reads is named only inside the Community driver at
-        // v0.11.0 — so what ships is UNIVERSE minus the widening, strictly
-        // narrower than declared. Treating the tier as GLOBAL instead
+        // widening is not emitted — no metadata carries the shared-scope field
+        // (ROADMAP T29 slice B) — so what ships is UNIVERSE minus the widening,
+        // strictly narrower than declared. Treating the tier as GLOBAL instead
         // would drop the owner column and the policy and publish rows the
         // author scoped to an owner; that is the direction that must not fail.
         assertThat(file.content())
@@ -245,7 +244,7 @@ class KernelFlywayGeneratorTest {
         SystemFieldsMetadata sf = new SystemFieldsMetadata(
                 "id", "createdAt", "createdBy",
                 "modifiedAt", "updatedBy", "orgId",
-                "rev", "deleted", null, null);
+                "rev", "deleted", null, null, null);
 
         DomainMetadata metadata = DomainMetadata.builder("Order", "eu.exeris.app.domain")
                 .tenantScoped(true).audited(true).softDelete(true).versioned(true)
@@ -278,7 +277,7 @@ class KernelFlywayGeneratorTest {
         SystemFieldsMetadata sf = new SystemFieldsMetadata(
                 "id", "createdAt", "authorId",
                 "updatedAt", "editorId", "tenantId",
-                "version", "deleted", "removedAt", "removedBy");
+                "version", "deleted", "removedAt", "removedBy", null);
 
         DomainMetadata metadata = DomainMetadata.builder("Order", "eu.exeris.app.domain")
                 .audited(true).softDelete(true)

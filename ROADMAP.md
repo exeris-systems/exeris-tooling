@@ -1,3 +1,12 @@
+---
+title: "Exeris Tooling — Roadmap to 1.0.0 GA"
+type: roadmap
+visibility: public
+owning-repo: exeris-tooling
+status: active
+last-verified: 2026-09-29
+---
+
 # Exeris Tooling — Roadmap to 1.0.0 GA
 
 The tooling layer is the **build-time pipeline**: annotation processor reads
@@ -2927,9 +2936,12 @@ emitted mapping should read it rather than re-derive it is a slice to measure, n
   route plausibly wants. Worth reading before the T53 RFC fixes the URL-to-policy table's shape,
   because it changes what a row in that table can say.
 
-**What still cannot be done:** pin either dependency. The rule is unchanged — no cross-repo
-`-SNAPSHOT` at a cut, and the tag's own POM must be final — so B0 waits for kernel `0.12.0` final,
-and the SDK bump additionally waits for the 0.12 line to publish a source model.
+**Pinned ahead of the releases:** B0 pins both before they publish, built from source — SDK `main`
+at `0.12.0-SNAPSHOT` and kernel `development/0.12.0` — so tooling compiles against the 0.12 train.
+The cut rule is unchanged — no cross-repo `-SNAPSHOT` at a cut, and the tag's own POM must be final
+— so the 0.9.0 cut waits for both final releases, and the pins move to them in that change.
+SDK 0.12 deprecates `@ExerisDomain.apiVersion` for removal (T38), and with B0 the processor stops
+reading it.
 
 ## Versioning policy
 

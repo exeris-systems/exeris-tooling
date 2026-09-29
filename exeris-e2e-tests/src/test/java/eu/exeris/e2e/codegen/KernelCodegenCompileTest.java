@@ -38,7 +38,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * (ADR-036) {@code spi.http.HttpRequestBodyDecoder*} / {@code HttpRequestDecodingContext},
  * and (ADR-043) the streaming SPI {@code spi.http.HttpStreamHandler} /
  * {@code HttpStreamExchange} / {@code StreamEvent}; the real
- * released {@code exeris-kernel-spi} artifact (plus Jackson 3) is on the test
+ * {@code exeris-kernel-spi} artifact (plus Jackson 3) is on the test
  * classpath via {@code exeris-tooling-bom}, which is the single place the
  * version is pinned — deliberately not restated here, since a literal copy
  * goes stale on every kernel bump. The emitted {@code *Client}
