@@ -24,8 +24,19 @@ per-shape generators.
 - Adding or rewriting a generator shape during Phase A / B / C.
 - Reviewing a PR that changes emitted Angular idioms.
 
+## Where the emitters stand
+- The emitted `package.json` pins Angular `^22.0.0`, `typescript ~6.0.0`, Node `>=22.0.0` and the
+  `@angular/build` builder; `app.config.ts` is zoneless and carries no `withFetch()`. Phase A and B1
+  are in.
+- `detail-gen.ts` fetches through `rxResource`.
+- `service-gen.ts` still returns `Observable<T>` from `HttpClient`: Phase B's remaining step.
+- `form-gen.ts` still emits Reactive Forms (`FormBuilder`, `Validators`): Phase C.
+
+New or rewritten emission follows the canon below. An existing generator changes shape only in the
+phase that owns the change.
+
 ## Phase gate (which changes belong to which PR)
-- **Phase A — compat bump (urgent, ~1 PR, no component/form shape change):** scaffold pins
+- **Phase A — compat bump (no component/form shape change):** scaffold pins
   `@angular/* ^21→^22`, `typescript ~5.9→~6` (v22 *requires* TS 6 and drops 5.9), Node engine 20→22;
   **drop `withFetch()`** (fetch is default in v22). This still diffs `app.config.ts` providers +
   `package.json` pins — "no shape change" means no component/form shape change, not a zero-diff PR.
