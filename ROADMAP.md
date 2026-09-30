@@ -2778,6 +2778,19 @@ Each now has the status the code settles, and every other mention in this file a
       (`DslMapper.pluralName`) for Angular route segments, labels and the derived-path fallbacks.
       Details under "Follow SDK 0.12.0".
 
+### codegen-ts track — contract parity with the emitted backend
+
+`@exeris/codegen-ts` has its own version line and its own plan:
+[`docs/codegen-ts-track-plan.md`](docs/codegen-ts-track-plan.md). It measures what the front reads
+from `DomainMetadata` against what the Java side acts on (`versioned`, `relationships`, `audited`:
+read by Java, by no TS generator), and stages the catch-up — 0 a parity gate, 1 contract parity,
+2 backend-less emission, 3 the ADR-047 leaf facet and the U-cluster below, 4 tests and the npmjs
+release.
+
+- [ ] **Stage 1 — contract parity.** PR-A0 the emitted edit route edits (today it creates) · PR-A `versioned` write (the `…Update` DTO drops the version,
+      so every update after a row's first answers 409) · PR-B ADR-076 status mapping · PR-C
+      `audited` panel · PR-D `MANY_TO_ONE` UUID-FK link. Route guards stay with **T53**.
+
 ### UI fidelity & theming (`exeris-codegen-ts`)
 
 Three layers diverge: the SDK *declares* a rich UI contract, the pipeline *carries* only a thin
@@ -2811,10 +2824,10 @@ Proposals, highest return-on-effort first:
 | # | Proposal | Where the fix lives | Effort | Target |
 |---|---|---|:---:|---|
 | U1 | **Wire ui-kit into the generated app** — ✅ **DONE 2026-06-28.** Emitted `styles.css` now `@import "@exeris-systems/ui-kit/theme"` (the v4 `@theme` token entry); hardcoded `bg-indigo-600`/`hover:bg-indigo-700` etc. across the emitted templates → `bg-exeris-primary` token utilities (evidence-checked against `theme.css`); `@exeris-systems/ui-kit` added to the emitted `package.json`; `presets:[exerisPreset]` added to the (v4-vestigial) `tailwind.config.js` for v3 consumers; the boilerplate `.btn-primary`/`.input-field` + `bg-gray-100 text-gray-900` body removed. **Finding (B1 twin):** the generated app is Tailwind **v4**, whose ui-kit `@theme` entry ships **tokens only, not the `.exeris-*` component classes** (those are v3 `index.css`), and has **no neutral surface/text token** — so token utilities were used (not component classes) and neutral `gray-*` were left as standard Tailwind (no token to map to). Also added a configurable `appName` (CLI `--app-name`) replacing the hardcoded `'Exeris Foundation'` (closes the **T7/U5** title remainder). The tooling-side fix for dog-food finding **T25**'s first two asks (a neutral theme entry; the dead v4 config kept valid for v3) — its third, a `@View` token/theme binding, is **G6** and stays open (re-verified 2026-09-26). | codegen-ts (ui-kit is ready) | small | ✅ 2026-06-28 |
-| U2 | **Universal lists** — column types from metadata (enum→badge w/ `@UI.color`, number→`format`+align, bool→icon, date, FK→link/`displayField`, currency/percent from `dataType`); wire sort to headers (logic exists, only the `(click)` is missing); real filters for `filterable` fields (string/enum/date-range — today only bool + 2 fields); configurable `pageSize`; row actions | codegen-ts (+ processor emits `format`/`dataType`/`sortable`/`filterable`) | medium | 0.6.0 |
-| U3 | **Forms from metadata, not the Java type** — read `@UI.componentType` (textarea/select/date/slider/toggle/rich-text/file/color), `@UIGroup`→sections, `@Tab`→tabs, `gridSpan`→multi-column, `placeholder`/`helpText`, `@Relationship`→autocomplete picker (today a UUID FK = `type="text"`); fix type mapping (`long→number`, `UUID→picker`) | codegen-ts (+ processor + TS schema) | med–large | 0.6.0 |
-| U4 | **Fidelity end-to-end** — processor emits the full `uiMetadata` / per-field `UIFieldMetadata`, the TS Zod schema models it, and strict-mode (**T11**) warns when a `@UI` attribute is declared but dropped | processor + codegen-ts | medium | 0.6.0 (with T11) |
-| U5 | **Configurable detail / branding** — sections/tabs in the detail view, related-entity panels; app name/titles/icons from metadata (today a hardcoded `"Exeris Foundation"` + an emoji-by-entity-name map) | codegen-ts | small–med | 0.6.0 (extends **T7**) |
+| U2 | **Universal lists** — column types from metadata (enum→badge w/ `@UI.color`, number→`format`+align, bool→icon, date, FK→link/`displayField`, currency/percent from `dataType`); wire sort to headers (logic exists, only the `(click)` is missing); real filters for `filterable` fields (string/enum/date-range — today only bool + 2 fields); configurable `pageSize`; row actions | codegen-ts (+ processor emits `format`/`dataType`/`sortable`/`filterable`) | medium | codegen-ts track, stage 3 |
+| U3 | **Forms from metadata, not the Java type** — read `@UI.componentType` (textarea/select/date/slider/toggle/rich-text/file/color), `@UIGroup`→sections, `@Tab`→tabs, `gridSpan`→multi-column, `placeholder`/`helpText`, `@Relationship`→autocomplete picker (today a UUID FK = `type="text"`); fix type mapping (`long→number`, `UUID→picker`) | codegen-ts (+ processor + TS schema) | med–large | codegen-ts track, stage 3 |
+| U4 | **Fidelity end-to-end** — processor emits the full `uiMetadata` / per-field `UIFieldMetadata`, the TS Zod schema models it, and strict-mode (**T11**) warns when a `@UI` attribute is declared but dropped | processor + codegen-ts | medium | codegen-ts track, stage 3 |
+| U5 | **Configurable detail / branding** — sections/tabs in the detail view, related-entity panels; app name/titles/icons from metadata (today a hardcoded `"Exeris Foundation"` + an emoji-by-entity-name map) | codegen-ts | small–med | codegen-ts track, stage 3 |
 | U6 | **New view shapes** — dashboard/cards/kanban/calendar from `@Projection`, charts from `@Graph` (deferred), master-detail, inline-edit, bulk-actions | SDK (light) + codegen-ts | large | 0.7.0–0.9.0 |
 | U7 | **Live-view** (e.g. a battle preview) — a round stream pushed to the client. Transport SHIPPED (ADR-043/044 — Slice 1 #104 + Slice 2 #106: `HttpStreamHandler` + `streamRoute` + `EventSource`/RxJS clients); the **entity-level** producer now binds the `@DomainEvent` bus (real feed, #125) — the **per-action** driver stays a keep-alive scaffold (open slice) | ~~kernel (K2, done)~~ → codegen-java/-ts (**EV1-stream**) + kernel (stream-route `{id}` templates, v0.11 ask) | large | entity-level feed shipped 0.6.0 (#125); per-action driver still scaffold → 0.7.0 (kernel-gated, see EV1-stream) |
 | U8 | **Genuinely missing in the SDK** — custom-component registration (plugin), per-role field visibility (RLS-aware), i18n labels, icon-set abstraction | SDK + codegen-ts | large | SDK-led |
