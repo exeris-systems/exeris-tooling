@@ -2792,7 +2792,7 @@ read by Java, by no TS generator), and stages the catch-up — 0 a parity gate, 
 2 backend-less emission, 3 the ADR-047 leaf facet and the U-cluster below, 4 tests and the npmjs
 release.
 
-- [ ] **Stage 1 — contract parity.** PR-A `versioned` write (the `…Update` DTO drops the version,
+- [ ] **Stage 1 — contract parity.** PR-A0 the emitted edit route edits (today it creates) · PR-A `versioned` write (the `…Update` DTO drops the version,
       so every update after a row's first answers 409) · PR-B ADR-076 status mapping · PR-C
       `audited` panel · PR-D `MANY_TO_ONE` UUID-FK link. Route guards stay with **T53**.
 

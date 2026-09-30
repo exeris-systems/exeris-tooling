@@ -62,11 +62,12 @@ already moved to *read*.
 ### Stage 1 — contract parity with the emitted backend
 
 Scope follows the emitted Java (`KernelHandlerGenerator`, `KernelRepositoryGenerator`,
-`OpenApiPathsBuilder`). All four items are **SHARED** surfaces: the
+`OpenApiPathsBuilder`). A–D are **SHARED** surfaces: the
 Java side already acts on the field; the TS side catches up to it.
 
 | PR | item | shape |
 |---|---|---|
+| **A0** | the edit route edits | `<plural>/:id/edit` loads the form, but the router binds `:id` to an input the form does not declare: the form stays in create mode, empty, and submitting it creates a row. The form takes the `id` input, loads the entity through `rxResource`, derives edit mode from it, and navigates after save or cancel when routed. Prerequisite of A: without it no emitted page reaches the update path. |
 | **A** | `versioned` write | When `versioned`, the `…Update` schema and DTO keep the version field; the edit form carries the loaded entity's version and sends it; a 409 surfaces as a conflict with a reload of the current row. Create is unchanged (the server owns the initial version). The version key comes from `systemFields.versionField` on the `versioned` flag, not from the hard-coded default list. Visible change to the emitted `…Update` type → MIGRATION note. |
 | **B** | status mapping | One emitted `http-error` helper maps the statuses the emitted handler answers (400 / 404 / 409 / 500 — ADR-036, ADR-076 — plus status 0 for an unreachable server) to user-facing messages; detail's resource `error()`, list's `error.set(err.message)`, the store and saga `err.message` paths and the two `alert()` delete paths go through it. **Status only** — the backend sends no error body. |
 | **C** | `audited` panel | The detail view's audit panel renders on `audited` (the Java side adds exactly `createdAt` / `updatedAt`, named by `systemFields`), and shows the version on `versioned`. The hard-coded system-name lists in `detail-gen` / `form-gen` give way to `systemFields`. |
