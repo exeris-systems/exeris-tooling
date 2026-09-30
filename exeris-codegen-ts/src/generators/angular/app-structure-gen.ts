@@ -849,6 +849,7 @@ function generateEnvironmentFile(params: { production: boolean; apiUrl: string; 
 export const environment = {
   production: ${production},
   apiUrl: '${apiUrl}',
+  /** @deprecated No generated code reads it. exeris-tooling 0.10.0 stops emitting it. */
   apiVersion: '${apiVersion}',
 } as const;
 `;

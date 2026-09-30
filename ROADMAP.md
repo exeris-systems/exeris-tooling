@@ -4,7 +4,7 @@ type: roadmap
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-09-29
+last-verified: 2026-09-30
 ---
 
 # Exeris Tooling — Roadmap to 1.0.0 GA
@@ -1452,7 +1452,9 @@ never-invoked emitter start emitting, and its output did not build.
       - The owner is dropped from the `UPDATE … SET` list: no update can move a row, on any engine.
       - Same rule for a UNIVERSE entity's caller-writable `@SharedScope` field
         (`<Entity>SharedScopeMismatchException`, 400); that field stays updatable.
-      - OpenAPI: owner (and scope field) `readOnly: true`, absent from the DTOs; TS DTOs match.
+      - OpenAPI: owner (and scope field) `readOnly: true`, absent from the DTOs. TS DTOs match,
+        except that the owner of an entity with no `systemFields` block stays in them for one
+        release, marked deprecated (see "Removals due in 0.10.0").
       - Required role model documented: `NOSUPERUSER`, `NOBYPASSRLS`, non-owner or `FORCE`d tables.
       - Found on the way: a tenant-partitioned entity's emitted handler test bound no tenant, so
         every case failed on the T41 guard (500); it now dispatches with one, and
@@ -1657,10 +1659,12 @@ never-invoked emitter start emitting, and its output did not build.
       and `/{id}/restore`, which nothing serves.
 
       **TS half shipped (0.9.0 train, 2026-09-26):** update sends `PUT`; `softDelete` sends `DELETE
-      {base}/{id}` (on a `@SoftDelete` entity that route is the archive); `restore()` is removed from
-      the service and the store — no route, handler or repository method un-sets the flag. The
-      emitted spec asserts `PUT`. **Gate:** `exeris-e2e-tests` `contract/crud-routes.json` is the one
-      route table both builds test against — `CrudRouteParityE2ETest` (router, OpenAPI, Java client)
+      {base}/{id}` (on a `@SoftDelete` entity that route is the archive). No route, handler or
+      repository method un-sets the flag, so `restore()` on the service and the store is deprecated
+      for one release: it sends no request and fails with that reason, and 0.10.0 stops emitting it
+      (see "Removals due in 0.10.0"). The emitted spec asserts `PUT`. **Gate:** `exeris-e2e-tests`
+      `contract/crud-routes.json` is the one route table both builds test against —
+      `CrudRouteParityE2ETest` (router, OpenAPI, Java client)
       and `crud-route-parity.spec.ts` (TS service, emitted spec). The e2e `KernelWebClient` stub,
       which shadowed the real facade in the compile gate, is gone.
 
@@ -3412,8 +3416,9 @@ opt-in semver gate.
       it for removal, with no replacement, together with `DomainMetadata.apiVersion()` and
       `DomainMetadata.Builder.apiVersion(String)`. No SDK producer carries it either
       (exeris-sdk#156): the `-io` reader leaves it unread and the builder has no default, so the
-      metadata has no `apiVersion`. The TS emitter's environment files drop it too
-      (exeris-tooling#224). A source that sets the attribute draws javac's `[removal]` warning. What
+      metadata has no `apiVersion`. The TS emitter's environment files mark their `apiVersion`
+      deprecated (exeris-tooling#224) and 0.10.0 stops emitting it (see "Removals due in 0.10.0").
+      A source that sets the attribute draws javac's `[removal]` warning. What
       remains for the 1.0.0 pin: delete the `INERT_ATTRIBUTES` entry, the `apiVersion` field in
       `exeris-codegen-ts` `domain-model.ts`, and `KernelClientGeneratorTest`'s `.apiVersion("v2")`
       case, which pins that a value a caller sets reaches no client path.
@@ -3520,6 +3525,20 @@ re-checked.
 
 **What still cannot be done, re-read:** the SDK's second blocker (no source model) is gone. The
 first, a final release for both, is what the 0.9.0 cut waits on. B0 itself is applied ahead of it.
+
+### Removals due in 0.10.0
+
+Each of these is deprecated in 0.9.0 and kept for that one release, so an app regenerated on 0.9.0
+keeps compiling where it still uses one. 0.10.0 removes them.
+- [ ] **`restore()` on a soft-delete entity's `<Entity>Service` and `<Entity>Store` (T58).** Delete
+      its emission from `service-gen.ts` and `store-gen.ts`, the conditional `throwError` import,
+      and `RESTORE_UNSUPPORTED`.
+- [ ] **`tenantId` in the DTOs of a tenant-partitioned entity with no `systemFields` block (T36).**
+      Delete `deprecatedDtoOwner` and `DEPRECATED_OWNER_DOC`, and add the owner to
+      `systemFieldNames`' no-block branch, so the `…Create`/`…Update` types and the create schema
+      omit it as the OpenAPI does.
+- [ ] **`apiVersion` in the emitted environment files (T38).** Delete it from
+      `generateEnvironmentFile`, `resolveApiSettings` and the KERNEL strategy's `ClientConfig`.
 
 ## Versioning policy
 

@@ -497,6 +497,15 @@ describe('generateAppStructure — resolveApiSettings', () => {
     const env = fileAt(files, 'src/environments/environment.ts')!;
     expect(env.content).toContain("apiVersion: 'v1'");
   });
+
+  it('marks apiVersion deprecated in both environment files: no generated code reads it', () => {
+    const files = generateAppStructure([], [], cfg());
+    for (const path of ['src/environments/environment.ts', 'src/environments/environment.development.ts']) {
+      expect(fileAt(files, path)!.content).toContain(
+        "  /** @deprecated No generated code reads it. exeris-tooling 0.10.0 stops emitting it. */\n  apiVersion: 'v1',",
+      );
+    }
+  });
 });
 
 // ---------- hidden-domain skip-skip ----------

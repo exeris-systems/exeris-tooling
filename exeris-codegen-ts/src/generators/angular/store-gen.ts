@@ -33,6 +33,7 @@ import type { GeneratorConfig } from '../../config.js';
 import type { CodeGenerator, GeneratedFile, GeneratorContext } from '../../core/generator-registry.js';
 import type { BackendType } from '../../core/backend-strategy.js';
 import { DslMapper } from '../../models/dsl-mapper.js';
+import { RESTORE_UNSUPPORTED } from './service-gen.js';
 
 export class StoreGenerator implements CodeGenerator {
   readonly name = 'StoreGenerator';
@@ -634,6 +635,9 @@ ${this.generateSearchableFieldAccess(searchableFields)}
   }
 
   private generateSoftDeleteMethods(entityName: string, idField: string): string {
+    // The generated server has no route, handler or repository method that un-sets the
+    // soft-delete flag. restore() stays for one release, deprecated, so a call site keeps
+    // compiling; it reaches no service call, sets the error and rejects. 0.10.0 stops emitting it.
     const modelName = modelTypeName(entityName);
     return `
   // ═══════════════════════════════════════════════════════════════════════════
@@ -666,26 +670,13 @@ ${this.generateSearchableFieldAccess(searchableFields)}
   }
 
   /**
-   * Restore a soft-deleted entity.
+   * @deprecated The server has no route that restores an archived row, so this calls nothing,
+   * sets the error and rejects with that reason. exeris-tooling 0.10.0 stops emitting it.
    */
   async restore(id: string): Promise<${modelName}> {
-    this._saving.set(true);
-    this._error.set(null);
-
-    try {
-      const restored = await firstValueFrom(this.service.restore(id));
-      
-      // Add back to list
-      this._entities.update(entities => [restored, ...entities]);
-      this._totalElements.update(n => n + 1);
-      
-      return restored;
-    } catch (err) {
-      this._error.set(this.extractErrorMessage(err));
-      throw err;
-    } finally {
-      this._saving.set(false);
-    }
+    const message = \`${entityName}Store.restore(\${id}): ${RESTORE_UNSUPPORTED}\`;
+    this._error.set(message);
+    throw new Error(message);
   }
 `;
   }

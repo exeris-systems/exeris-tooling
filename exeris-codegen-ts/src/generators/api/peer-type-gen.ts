@@ -36,7 +36,14 @@ import { modelTypeName } from '../../models/model-naming.js';
 import type { GeneratorConfig } from '../../config.js';
 import type { PeerContract } from '../../peers/peer-contract.js';
 import { generateEnumTypes } from './enum-module-gen.js';
-import { buildZodType, collectEnumTypes, createDtoFields, systemFieldNames } from './type-gen.js';
+import {
+  buildZodType,
+  collectEnumTypes,
+  createDtoFields,
+  DEPRECATED_OWNER_DOC,
+  deprecatedDtoOwner,
+  systemFieldNames,
+} from './type-gen.js';
 
 /** An emitted file, in the same (path, content) shape the orchestrator composes. */
 export interface PeerOutputFile {
@@ -111,9 +118,11 @@ function peerInterface(peerName: string, metadata: DomainMetadata): string {
   }
   lines.push('}', '');
 
+  const deprecatedOwner = deprecatedDtoOwner(metadata);
   lines.push(`export interface ${typeName}Create {`);
   for (const field of createDtoFields(metadata)) {
     const optional = field.required ? '' : '?';
+    if (field.name === deprecatedOwner) lines.push(DEPRECATED_OWNER_DOC);
     lines.push(`  ${field.name}${optional}: ${DslMapper.mapType(field.type).tsType};`);
   }
   lines.push('}', '');

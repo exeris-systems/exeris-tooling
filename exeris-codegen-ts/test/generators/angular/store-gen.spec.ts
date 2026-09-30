@@ -8,7 +8,7 @@
  *     isEmpty/hasActiveFilter/hasNextPage/hasPrevPage/state)
  *   - CRUD actions with optimistic update + rollback on error
  *   - Selection / filter / pagination / sort / state-management actions
- *   - Optional softDelete branch (archive + restore methods)
+ *   - Optional softDelete branch (archive method; restore deprecated — nothing serves one)
  *   - Private helpers (getSearchableText / extractErrorMessage)
  *
  * Unique-to-store contracts pinned here:
@@ -21,6 +21,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { StoreGenerator, generateStore } from '../../../src/generators/angular/store-gen.js';
+import { RESTORE_UNSUPPORTED } from '../../../src/generators/angular/service-gen.js';
 import {
   createGeneratorContext,
   type GeneratorContext,
@@ -369,23 +370,37 @@ describe('StoreGenerator systemFields.primaryKeyField alias propagation', () => 
   });
 });
 
-// ---------- softDelete branch (archive + restore) ----------
+// ---------- softDelete branch (archive) ----------
 
 describe('StoreGenerator softDelete branch', () => {
   const gen = new StoreGenerator();
 
-  it('softDelete=true adds archive + restore async methods routed through service.softDelete / service.restore', () => {
+  it('softDelete=true adds an archive async method routed through service.softDelete', () => {
     const content = gen.generate(domain({ entityName: 'Order', softDelete: true }), CTX)!.content;
 
     expect(content).toContain('async archive(id: string): Promise<void> {');
-    expect(content).toContain('async restore(id: string): Promise<Order> {');
     // B3: service returns Observable — await must go through firstValueFrom to resolve the value.
     expect(content).toContain('await firstValueFrom(this.service.softDelete(id));');
-    expect(content).toContain('await firstValueFrom(this.service.restore(id));');
     expect(content).toContain("import { firstValueFrom } from 'rxjs';");
-    // archive removes from list; restore prepends.
+    // archive removes from list.
     expect(content).toContain('entities.filter(e => e.id !== id)');
-    expect(content).toContain('[restored, ...entities]');
+  });
+
+  // The generated server has no route that un-sets the soft-delete flag (PATCH/PUT parity), so
+  // restore() stays one release, deprecated: it calls nothing, sets the error and rejects.
+  it('softDelete=true keeps restore() deprecated: no service call, the error set, a rejection', () => {
+    const content = gen.generate(domain({ entityName: 'Order', softDelete: true }), CTX)!.content;
+    const restore = content.slice(content.indexOf('async restore('));
+
+    expect(content).toContain('exeris-tooling 0.10.0 stops emitting it.');
+    expect(restore).toContain(
+      'async restore(id: string): Promise<Order> {\n'
+      + `    const message = \`OrderStore.restore(\${id}): ${RESTORE_UNSUPPORTED}\`;\n`
+      + '    this._error.set(message);\n'
+      + '    throw new Error(message);\n'
+      + '  }',
+    );
+    expect(content).not.toContain('this.service.restore(');
   });
 
   it('softDelete=false (default) → no archive / no restore methods emitted', () => {
