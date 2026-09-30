@@ -17,8 +17,6 @@ import java.util.*;
 
 /**
  * Generates OpenAPI 3.1 specifications from domain metadata.
- * <p>
- * Migrated from {@code com.corelio.sdk.generator.openapi.OpenApiGenerator}.
  *
  * @author Exeris Team
  * @since 0.1.0

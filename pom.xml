@@ -122,9 +122,7 @@
              a per-module 85% line + 80% branch rule — the relaxed branch
              reflects unreachable defensive null guards at the javac
              boundary; see exeris-processor/pom.xml for the rationale.
-             No plugin-level excludes: the earlier CodegenMain.class
-             exclude was retired once the CLI shell was split into
-             CliArgs + CodegenPipeline + a one-line main(). -->
+             No plugin-level excludes are needed. -->
         <jacoco.version>0.8.14</jacoco.version>
 
         <!-- Maven plugin development (exeris-codegen-maven-plugin, 0.3.0):
@@ -170,9 +168,7 @@
             <!-- D1: fail fast with one clear line when Maven runs on too old a JVM,
                  instead of the opaque classworlds UnsupportedClassVersionError realm
                  dump you get at plugin load, long before maven.compiler.release
-                 matters. Open-ended — the range was only exact while this build
-                 compiled with preview, which javac rejects for a non-current
-                 release. -->
+                 matters. The range is open-ended at [25,) (25 or newer). -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-enforcer-plugin</artifactId>

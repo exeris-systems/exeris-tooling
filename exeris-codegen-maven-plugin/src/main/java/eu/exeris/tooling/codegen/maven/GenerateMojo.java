@@ -34,12 +34,12 @@ import java.nio.file.Path;
  * even on a from-scratch checkout.) A run that finds no metadata logs a warning
  * and writes nothing — it is not an error.
  *
- * <p><b>Capability validation (T18(a)).</b> The same two-pass reality means the
+ * <p><b>Capability validation.</b> The same two-pass reality means the
  * {@code capability_*.json} this goal reads is always the <em>previous</em>
- * build's output. Historically a capability-graph failure hard-failed here —
- * before the processor could refresh the metadata — so a {@code @Requires} fix
- * (e.g. adding {@code optional=true}) could never take effect: the build died
- * on the stale file it was about to replace. When this project also binds the
+ * build's output. A capability-graph failure that hard-failed here — before the
+ * processor can refresh the metadata — would stop a {@code @Requires} fix
+ * (e.g. adding {@code optional=true}) from ever taking effect: the build would die
+ * on the stale file it is about to replace. So when this project also binds the
  * {@code verify-capabilities} goal of this plugin (the authoritative
  * post-{@code compile} gate) at its default {@code process-classes} phase or
  * later, a graph failure here degrades to a WARNING and the fail-closed
@@ -60,7 +60,7 @@ import java.nio.file.Path;
  * }</pre>
  * and never {@code mvn clean compile} in one shot on a metadata-less tree —
  * seed the metadata first with {@code mvn compile -Dexeris.codegen.skip=true},
- * then build normally (the T18(b) guard refuses the wipe otherwise).
+ * then build normally (the masked-compile guard refuses the wipe otherwise).
  *
  * <p>This mojo is a thin Maven shell: all emission lives in
  * {@link CodegenPipeline} (in {@code exeris-codegen-java}). The
@@ -100,7 +100,7 @@ public class GenerateMojo extends AbstractMojo {
     boolean allowEmpty;
 
     /**
-     * Emit the generated tests for the generated code (T2, ADR-058). Opt-in, because what those
+     * Emit the generated tests for the generated code (ADR-058). Opt-in, because what those
      * tests import is a contract on <em>this</em> project's build: tooling emits no {@code pom.xml},
      * so switching this on means adding <b>JUnit 5 and AssertJ</b> (test scope) — and nothing else;
      * the doubles are emitted rather than mocked precisely so no third library is imposed.
@@ -111,7 +111,7 @@ public class GenerateMojo extends AbstractMojo {
     /**
      * Target root for the generated tests. Separate from {@link #outputDir} on purpose: a test
      * under the main root would compile into the application artefact and put JUnit on its runtime
-     * classpath. It gets its own T13 manifest, so pruning one tree can never reach the other.
+     * classpath. Each tree owns its own manifest, so pruning one tree never affects the other.
      */
     @Parameter(property = "exeris.testOutputDir",
             defaultValue = "${project.basedir}/src/test/generated/java")
@@ -165,12 +165,10 @@ public class GenerateMojo extends AbstractMojo {
             // Skipping *generation* is not skipping the committed tree. Under the L1
             // model the generated sources are checked in and hand-written code compiles
             // against them, so the roots must stay on the compile path or javac cannot
-            // see types that are sitting right there on disk. This matters most on the
-            // one path that is documented to use the flag: the T18 recipe
-            // `mvn compile -Dexeris.codegen.skip=true` seeds metadata for the
-            // generate-sources/compile phase inversion, and before this it turned a
-            // "refusing to wipe the committed tree" failure into a "cannot find symbol"
-            // one for every consumer with glue over generated types.
+            // see types that are sitting right there on disk. This matters most when
+            // seeding metadata: `mvn compile -Dexeris.codegen.skip=true` prepares the
+            // two-pass build, and without registering the roots javac would fail to find
+            // types even though they exist on disk.
             registerSourceRoots();
             if (generateTests) {
                 registerTestSourceRoot();
@@ -178,10 +176,10 @@ public class GenerateMojo extends AbstractMojo {
             return;
         }
 
-        // T18(a): defer a capability-graph failure to the post-compile gate ONLY
-        // when that gate is provably bound in this project — leniency on the
-        // stale generate-sources input is sound exactly when the fresh-input
-        // hard-fail is guaranteed to run later in the same build.
+        // Defer a capability-graph failure to the post-compile gate ONLY when that gate
+        // is provably bound in this project — leniency on the stale generate-sources
+        // input is sound exactly when the fresh-input hard-fail is guaranteed to run
+        // later in the same build.
         boolean deferCapabilityFailure = verifyCapabilitiesBound();
         if (deferCapabilityFailure) {
             getLog().debug("verify-capabilities is bound — a capability-graph failure at "
@@ -237,9 +235,10 @@ public class GenerateMojo extends AbstractMojo {
     }
 
     /**
-     * T2/ADR-058. Runs after main emission and registers a <em>test</em> compile source root — the
-     * same unconditional-registration reasoning as above: a committed generated-test tree from a
-     * prior run must stay on the test-compile path even when this run wrote nothing.
+     * ADR-058 (generated tests). Runs after main emission and registers a <em>test</em> compile
+     * source root — the same unconditional-registration reasoning as above: a committed
+     * generated-test tree from a prior run must stay on the test-compile path even when this run
+     * wrote nothing.
      */
     private void generateTests() throws MojoExecutionException, MojoFailureException {
         if (!generateTests) {

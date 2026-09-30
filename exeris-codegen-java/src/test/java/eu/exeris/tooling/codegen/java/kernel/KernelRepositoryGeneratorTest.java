@@ -175,8 +175,8 @@ class KernelRepositoryGeneratorTest {
                 // update() stamps only updatedAt automatically; createdAt is null-guarded.
                 .contains("entity.setUpdatedAt(Instant.now())")
                 // tenant_id binds via bindUuid; audited timestamps via native bindInstant,
-                // null-guarded with bindNull (T19 — kernel 0.10 SPI; TIMESTAMPTZ ↔ Instant
-                // through the driver, no ISO-String round-trip).
+                // null-guarded with bindNull; TIMESTAMPTZ ↔ Instant through the driver,
+                // no ISO-String round-trip.
                 .contains("stmt.bindUuid(2, entity.getTenantId())")
                 .contains("if (entity.getCreatedAt() == null) stmt.bindNull(3); else stmt.bindInstant(3, entity.getCreatedAt());")
                 .contains("if (entity.getUpdatedAt() == null) stmt.bindNull(4); else stmt.bindInstant(4, entity.getUpdatedAt());")

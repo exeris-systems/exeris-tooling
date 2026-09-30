@@ -352,8 +352,7 @@ class KernelHandlerGeneratorTest {
                 .contains("handleCreate(HttpExchange exchange)")
                 .contains("handleUpdate(HttpExchange exchange)")
                 .contains("handleDelete(HttpExchange exchange)")
-                // kernel 0.10 boot-path (#224): the {id} path var is read from
-                // pathParams(), replacing the raw-path lastIndexOf string surgery
+                // The {id} path var is read from pathParams(), not raw-path string surgery
                 .contains("exchange.pathParams().getOrDefault(\"id\", \"\")")
                 .doesNotContain("lastIndexOf")
                 .contains("exchange.respond(HttpStatus.OK")
@@ -382,9 +381,9 @@ class KernelHandlerGeneratorTest {
                 .contains("import eu.exeris.kernel.spi.http.HttpRequestBodyDecoderRegistry")
                 .contains("import eu.exeris.kernel.spi.http.HttpRequestDecodingContext")
                 .contains("import eu.exeris.kernel.spi.http.HttpKernelProviders")
-                // KernelProviders is no longer imported here for this path: T43-follow-up moved
-                // the MEMORY_ALLOCATOR read out of the handler and into RuntimeComponents, and
-                // that was the handler's only use of it on the plain CRUD shape.
+                // No KernelProviders import on this path: RuntimeComponents reads
+                // MEMORY_ALLOCATOR and passes the allocator to the handler's constructor, and
+                // the plain CRUD handler has no other use for KernelProviders.
                 .contains("import eu.exeris.kernel.spi.memory.MemoryAllocator")
                 .contains("httpRequestBodyDecoderRegistry()")
                 .contains("registry.resolve(type, contentType)")

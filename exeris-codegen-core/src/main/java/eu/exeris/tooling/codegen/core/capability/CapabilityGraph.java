@@ -58,7 +58,7 @@ public record CapabilityGraph(
      * migration note for {@code cap-manifest.json} consumers (e.g. the T12 registry,
      * and the platform composition runtime that asserts {@link CompositionStamp}).
      *
-     * <p>v2 (0.6.0) adds the ADR-024 {@link CompositionStamp} (validated verdict +
+     * <p>v2 introduces the ADR-024 {@link CompositionStamp} (validated verdict +
      * composition version + content binding) the platform composition runtime asserts.
      */
     public static final int SCHEMA_VERSION = 2;

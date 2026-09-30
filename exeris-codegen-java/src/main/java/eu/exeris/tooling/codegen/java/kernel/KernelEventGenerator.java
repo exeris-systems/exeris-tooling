@@ -134,12 +134,12 @@ public class KernelEventGenerator implements KernelArtifactGenerator {
 
         KernelEventSupport.assertDistinctEventNames(metadata);
 
-        // Not final because T48 made the publisher a component of RuntimeComponents, and
-        // that seam's contract is that a consumer may override create<Entity>EventPublisher()
+        // Not final because the publisher is a component of RuntimeComponents, and that
+        // seam's contract is that a consumer may override create<Entity>EventPublisher()
         // and "call super to decorate the default rather than replace it" — which a final
-        // class forecloses. Same public/non-final contract the generated service carries, and
-        // for the same reason. (NOT for the emitted test: that constructs the real publisher
-        // over a RecordingEventEngine and doubles the collaborator, not the publisher.)
+        // class forecloses. Same public/non-final contract the generated service carries.
+        // (NOT for the emitted test: that constructs the real publisher over a
+        // RecordingEventEngine and doubles the collaborator, not the publisher.)
         TypeSpec.Builder publisher = KernelScaffold.publicClass(className)
                 .addJavadoc("Generated domain-event publisher for $L.\n", entity)
                 .addJavadoc("<p>Publishes events through the Open-Core SPI\n")

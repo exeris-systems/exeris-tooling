@@ -77,9 +77,9 @@ class GenerateMojoTest {
         assertThat(calls.get(0).metadataDir()).isEqualTo(mojo.metadataDir.toPath());
         assertThat(calls.get(0).outputDir()).isEqualTo(mojo.outputDir.toPath());
         assertThat(calls.get(0).basePackage()).isEqualTo("com.shop");
-        // T18: the masked-compile-failure guard is ON by default (allowEmpty=false)
+        // The masked-compile-failure guard is ON by default (allowEmpty=false)
         assertThat(calls.get(0).allowEmpty()).isFalse();
-        // T18(a): no verify-capabilities gate bound → strict capability validation
+        // No verify-capabilities gate bound → strict capability validation
         assertThat(calls.get(0).deferCapabilityFailure()).isFalse();
         assertThat(mojo.project.getCompileSourceRoots())
                 .contains(mojo.outputDir.getAbsolutePath());
@@ -126,7 +126,7 @@ class GenerateMojoTest {
 
         assertThat(calls).isEmpty();
         // Skipping generation must not un-register the committed L1 tree: hand-written
-        // code compiles against it, and the documented T18 recipe
+        // code compiles against it, and the seeding recipe
         // (`mvn compile -Dexeris.codegen.skip=true`) is exactly this path.
         assertThat(mojo.project.getCompileSourceRoots())
                 .contains(mojo.outputDir.getAbsolutePath());
@@ -206,7 +206,7 @@ class GenerateMojoTest {
                 .doesNotContain(mojo.outputDir.getAbsolutePath());
     }
 
-    // --- T18(a): defer capability failure iff the verify-capabilities gate is bound ---
+    // --- defer capability failure iff the verify-capabilities gate is bound ---
 
     @Test
     @DisplayName("verify-capabilities bound in this plugin → deferCapabilityFailure=true")

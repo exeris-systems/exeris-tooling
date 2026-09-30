@@ -53,8 +53,8 @@ class VerifyRuntimeMojoTest {
 
         assertThatThrownBy(mojo::execute)
                 .isInstanceOf(MojoFailureException.class)
-                // The whole point of the goal: T50's complaint was that the failure named a
-                // subsystem where the missing thing is a jar.
+                // The whole point of the goal: surface the missing artifact, not the
+                // subsystem that would fail to start.
                 .hasMessageContaining(RequiredDrivers.suggestedArtifact())
                 .hasMessageContaining(SUBSYSTEM)
                 .hasMessageContaining(PERSISTENCE)

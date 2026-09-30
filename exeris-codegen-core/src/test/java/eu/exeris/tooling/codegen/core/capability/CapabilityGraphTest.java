@@ -24,7 +24,7 @@ class CapabilityGraphTest {
                 CapabilityModuleMetadata.builder().provides(provides).requires(requires).build());
     }
 
-    /** Same, with a {@code @CapabilityLifecycle} owner attached (SDK 0.9.0's trailing component). */
+    /** Same, with a {@code @CapabilityLifecycle} owner attached. */
     private static CapabilityModuleDescriptor module(String qName,
                                                      List<ProvidesMetadata> provides,
                                                      List<RequiresMetadata> requires,
@@ -227,7 +227,7 @@ class CapabilityGraphTest {
     @Test
     @DisplayName("an unversioned @Provides binds as 'service@' — never the literal 'service@null'")
     void unversionedProvideHasNoNullSuffix() {
-        // ProvidesMetadata.of(service) → version == null (review: the @null-suffix bug)
+        // ProvidesMetadata.of(service) → version == null
         CapabilityGraph graph = CapabilityGraph.build(List.of(module("com.app.Mod",
                 List.of(ProvidesMetadata.of("com.api.Svc")), List.of())));
 
@@ -264,11 +264,11 @@ class CapabilityGraphTest {
     @Test
     @DisplayName("the @CapabilityLifecycle owner is binding-invariant — it rides the manifest, never the hash")
     void lifecycleOwnerIsBindingInvariant() {
-        // SDK 0.9.0 added lifecycleOwner as a trailing CapManifest.ModuleBody component, and the
-        // producer adapter (CompositionStamp.toSpecModule) now passes it through. The shared
+        // The @CapabilityLifecycle owner is binding-invariant — the producer adapter
+        // (CompositionStamp.toSpecModule) passes it through, but the shared
         // CompositionBinding canonicalizes qualifiedName + sorted provides ONLY, so attaching or
-        // changing a lifecycle owner must leave the hash put — otherwise adopting 0.9.0 would
-        // false-fail the boot assertion of every already-deployed manifest.
+        // changing a lifecycle owner must leave the hash put — otherwise a manifest stamped
+        // without an owner would false-fail the boot assertion once one is recorded.
         //
         // Reuses the golden fixture from contentBindingMatchesSpecGoldenVector with owners bolted
         // on: asserting the *unchanged external constant* is what makes this a real invariance
