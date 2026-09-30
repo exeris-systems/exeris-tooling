@@ -75,7 +75,8 @@ class ExerisDomainProcessorBranchTest {
                         cacheTtl = "PT5M",
                         cacheRegion = "orders",
                         fullTextSearch = true,
-                        searchConfig = "english"
+                        searchConfig = "english",
+                        tableName = "all_attrs"
                     )
                     public class AllAttrs {}
                     """
@@ -103,7 +104,8 @@ class ExerisDomainProcessorBranchTest {
                     .contains("\"cacheTtl\" : \"PT5M\"")
                     .contains("\"cacheRegion\" : \"orders\"")
                     .contains("\"fullTextSearch\" : true")
-                    .contains("\"searchConfig\" : \"english\"");
+                    .contains("\"searchConfig\" : \"english\"")
+                    .contains("\"tableName\" : \"all_attrs\"");
         }
 
         @Test
@@ -320,7 +322,7 @@ class ExerisDomainProcessorBranchTest {
         @DisplayName("Every @Field attribute the processor reads (label / description / required / unique / indexed / searchable / sortable / filterable / readOnly / inCreate / inUpdate / computed / computedFrom) flows into metadata")
         void everyFieldAttributeFlowsThrough() throws IOException {
             JavaFileObject source = JavaFileObjects.forSourceString(
-                    "com.example.FieldAttrs",
+                    "com.example.FieldAttrFixture",
                     """
                     package com.example;
 
@@ -328,7 +330,7 @@ class ExerisDomainProcessorBranchTest {
                     import eu.exeris.sdk.annotation.Field;
 
                     @ExerisDomain(module = "sales", path = "/field-attrs")
-                    public class FieldAttrs {
+                    public class FieldAttrFixture {
 
                         @Field(
                             label = "Display Name",
@@ -354,7 +356,7 @@ class ExerisDomainProcessorBranchTest {
             Compilation compilation = compileWithProcessor(source);
             assertThat(compilation).succeededWithoutWarnings();
 
-            String json = metadataFor(compilation, "FieldAttrs");
+            String json = metadataFor(compilation, "FieldAttrFixture");
             assertThat(json)
                     .contains("\"displayName\" : \"Display Name\"")
                     .contains("\"description\" : \"Customer-visible name\"")
@@ -387,7 +389,7 @@ class ExerisDomainProcessorBranchTest {
         @DisplayName("Every @Action attribute the processor reads (description / httpMethod / async) flows into metadata")
         void everyActionAttributeFlowsThrough() throws IOException {
             JavaFileObject source = JavaFileObjects.forSourceString(
-                    "com.example.ActionAttrs",
+                    "com.example.ActionAttrFixture",
                     """
                     package com.example;
 
@@ -395,7 +397,7 @@ class ExerisDomainProcessorBranchTest {
                     import eu.exeris.sdk.annotation.Action;
 
                     @ExerisDomain(module = "sales", path = "/action-attrs")
-                    public class ActionAttrs {
+                    public class ActionAttrFixture {
 
                         @Action(
                             name = "approve",
@@ -413,7 +415,7 @@ class ExerisDomainProcessorBranchTest {
             Compilation compilation = compileWithProcessor(source);
             assertThat(compilation).succeededWithoutWarnings();
 
-            String json = metadataFor(compilation, "ActionAttrs");
+            String json = metadataFor(compilation, "ActionAttrFixture");
             assertThat(json)
                     .contains("\"description\" : \"Mark the order as approved\"")
                     .contains("\"httpMethod\" : \"POST\"")
@@ -429,7 +431,7 @@ class ExerisDomainProcessorBranchTest {
         @DisplayName("@DomainEvent with no explicit name derives \"<Entity><Suffix>Event\" from the trigger enum")
         void triggerSuffixMappingDerivesEventName() throws IOException {
             JavaFileObject source = JavaFileObjects.forSourceString(
-                    "com.example.TriggerSuffixes",
+                    "com.example.TriggerProbe",
                     """
                     package com.example;
 
@@ -447,25 +449,25 @@ class ExerisDomainProcessorBranchTest {
                             topic = "ts.action")
                     @DomainEvent(trigger = Trigger.STATE_TRANSITION,
                             stateTransition = "OPEN->CLOSED", topic = "ts.state")
-                    public class TriggerSuffixes {}
+                    public class TriggerProbe {}
                     """
             );
 
             Compilation compilation = compileWithProcessor(source);
             assertThat(compilation).succeededWithoutWarnings();
 
-            String json = metadataFor(compilation, "TriggerSuffixes");
+            String json = metadataFor(compilation, "TriggerProbe");
             // Suffix mappings from triggerToEventSuffix() — every case
             // branch in the switch fires once.
             assertThat(json)
-                    .contains("\"TriggerSuffixesCreatedEvent\"")
-                    .contains("\"TriggerSuffixesUpdatedEvent\"")
-                    .contains("\"TriggerSuffixesDeletedEvent\"")
-                    .contains("\"TriggerSuffixesChangedEvent\"")
-                    .contains("\"TriggerSuffixesActionEvent\"")
+                    .contains("\"TriggerProbeCreatedEvent\"")
+                    .contains("\"TriggerProbeUpdatedEvent\"")
+                    .contains("\"TriggerProbeDeletedEvent\"")
+                    .contains("\"TriggerProbeChangedEvent\"")
+                    .contains("\"TriggerProbeActionEvent\"")
                     // STATE_TRANSITION (and other unmapped triggers) fall
                     // through to the generic "Event" suffix.
-                    .contains("\"TriggerSuffixesEvent\"");
+                    .contains("\"TriggerProbeEvent\"");
         }
     }
 
@@ -549,7 +551,7 @@ class ExerisDomainProcessorBranchTest {
         @DisplayName("@EventSourced(streamPrefix = …) flows into aggregateType; snapshotThreshold omitted → SDK default 50")
         void eventSourcedDefaults() throws IOException {
             JavaFileObject source = JavaFileObjects.forSourceString(
-                    "com.example.ESOnly",
+                    "com.example.EsLedger",
                     """
                     package com.example;
 
@@ -558,14 +560,14 @@ class ExerisDomainProcessorBranchTest {
 
                     @ExerisDomain(module = "events", path = "/es-only")
                     @EventSourced(streamPrefix = "ESOnly")
-                    public class ESOnly {}
+                    public class EsLedger {}
                     """
             );
 
             Compilation compilation = compileWithProcessor(source);
             assertThat(compilation).succeededWithoutWarnings();
 
-            String json = metadataFor(compilation, "ESOnly");
+            String json = metadataFor(compilation, "EsLedger");
             // The processor translates the SDK annotation surface
             // (streamPrefix / snapshotThreshold) into the SDK metadata
             // model field names (aggregateType / snapshotEvery). User

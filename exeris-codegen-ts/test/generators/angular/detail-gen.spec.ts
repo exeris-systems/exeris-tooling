@@ -546,11 +546,16 @@ describe('DetailGenerator — post-delete navigation', () => {
       .toContain("this.router.navigate(['/orders'])");
   });
 
-  // The route table uses routePlural, which does NOT append a second 's'. detail-gen appended
-  // one unconditionally, so a successful delete left the user on a URL with no matching route.
-  it('does not double the s for an entity whose name already ends in one', () => {
+  // The route table uses routePlural, the SDK plural; navigating anywhere else after a delete
+  // leaves the user on a URL with no matching route.
+  it('navigates to the SDK plural for an entity whose name ends in s', () => {
     const content = generateDetail(entity('Address'), DEFAULT_CONFIG).content;
-    expect(content).toContain("this.router.navigate(['/address'])");
+    expect(content).toContain("this.router.navigate(['/addresses'])");
     expect(content).not.toContain('addresss');
+  });
+
+  it('navigates to the ies plural for a consonant + y entity', () => {
+    expect(generateDetail(entity('Colony'), DEFAULT_CONFIG).content)
+      .toContain("this.router.navigate(['/colonies'])");
   });
 });

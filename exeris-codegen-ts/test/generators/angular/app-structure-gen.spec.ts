@@ -16,16 +16,14 @@
  *     (sub-generators return null on internalApi.hidden); schema still
  *     emits (local placeholder always returns content).
  *   - Pluraliser (two seams): nav label / browser-tab title go
- *     through labelPlural(entityName) (camelcase + `endsWith('s')`
- *     guard); URL paths + sidebar router-link target go through
- *     routePlural(entityName) (kebab-cased, same guard). Both
- *     seams must suppress the trailing 's' for entities already
- *     ending in 's' (e.g. `News`) so we don't get `Newss`
- *     in the tab title or `/newss` in the URL.
+ *     through labelPlural(entityName); URL paths + sidebar router-link
+ *     target go through routePlural(entityName) (kebab-cased). Both
+ *     take DslMapper.pluralName, the SDK's pluralName() rule, so
+ *     `Colony` → `Colonies` / `colonies` and `Box` → `Boxes` / `boxes`.
  *   - getEntityIcon: each known entity name → its emoji; unknown →
  *     default '📁'.
  *   - generateAppRoutes: empty domains → redirectTo: ''; non-empty →
- *     first domain's kebab + 's'.
+ *     first domain's routePlural.
  *   - generateBarrelExport: Page/PageRequest exported ONLY ONCE
  *     (from the first domain's service), other domains export bare
  *     {Service, Filter}.
@@ -414,32 +412,34 @@ describe('generateAppStructure — multi-domain wiring', () => {
 // ---------- nav label pluralisation + entity-icon table ----------
 
 describe('generateAppStructure — nav label pluralisation', () => {
-  it('does NOT append a second "s" to entity names already ending in "s" (label AND route AND sidebar link AND list-page tab title)', () => {
-    const files = generateAppStructure([domain({ entityName: 'News' })], [], cfg());
+  it('takes the SDK plural for label, route, sidebar link, redirect and list-page tab title', () => {
+    const files = generateAppStructure([domain({ entityName: 'Colony' })], [], cfg());
     const comp = fileAt(files, 'src/app/app.component.ts')!;
     const routes = fileAt(files, 'src/app/app.routes.ts')!;
-    // Label stays bare.
-    expect(comp.content).toContain('News\n            </a>');
-    expect(comp.content).not.toContain('Newss');
-    // Route path uses routePlural → no double-s.
-    expect(routes.content).toContain("path: 'news'");
-    expect(routes.content).toContain("path: 'news/new'");
-    expect(routes.content).toContain("path: 'news/:id'");
-    expect(routes.content).not.toContain('newss');
-    // Sidebar router-link target stays in sync with the route path.
-    expect(comp.content).toContain('routerLink="/news"');
-    expect(comp.content).not.toContain('routerLink="/newss"');
-    // And the default redirect for the first domain follows the
-    // same plural rule.
-    expect(routes.content).toContain("redirectTo: 'news'");
-    // The list-page browser-tab title also uses labelPlural — the
-    // /new and /:id titles use the bare singular "News" and stay
-    // unaffected, but the list page would otherwise render
-    // "Newss - Exeris Foundation" in the tab + history.
-    expect(routes.content).toContain("title: 'News - Exeris Foundation'");
-    expect(routes.content).toContain("title: 'New News - Exeris Foundation'");
-    expect(routes.content).toContain("title: 'Edit News - Exeris Foundation'");
-    expect(routes.content).not.toContain('Newss');
+    expect(comp.content).toContain('Colonies\n            </a>');
+    expect(routes.content).toContain("path: 'colonies'");
+    expect(routes.content).toContain("path: 'colonies/new'");
+    expect(routes.content).toContain("path: 'colonies/:id'");
+    expect(routes.content).toContain("path: 'colonies/:id/edit'");
+    expect(comp.content).toContain('routerLink="/colonies"');
+    expect(routes.content).toContain("redirectTo: 'colonies'");
+    expect(routes.content).toContain("title: 'Colonies - Exeris Foundation'");
+    // The /new, /:id and /:id/edit titles use the singular.
+    expect(routes.content).toContain("title: 'New Colony - Exeris Foundation'");
+    expect(routes.content).toContain("title: 'Edit Colony - Exeris Foundation'");
+    expect(routes.content).not.toContain('colonys');
+    expect(comp.content).not.toContain('Colonys');
+  });
+
+  it('adds es after s, x, z, ch and sh — an already-plural name included', () => {
+    const files = generateAppStructure(
+      ['Address', 'Box', 'Branch', 'News'].map((entityName) => domain({ entityName })), [], cfg());
+    const routes = fileAt(files, 'src/app/app.routes.ts')!;
+    for (const segment of ['addresses', 'boxes', 'branches', 'newses']) {
+      expect(routes.content).toContain(`path: '${segment}'`);
+    }
+    expect(routes.content).not.toContain("path: 'address'");
+    expect(routes.content).not.toContain("path: 'news'");
   });
 
   it('appends "s" to entity names not already plural', () => {

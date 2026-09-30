@@ -2449,7 +2449,7 @@ Each now has the status the code settles, and every other mention in this file a
 | T18 | Capability validation × two-pass build deadlock; `mvn clean` + T13 prune wipes the committed L1 tree | Medium | ✅ 0.6.0 (#129 + `exeris:verify-capabilities` deferred-validation gate) |
 | T19 | Repository binds `Instant` as ISO string but DDL declares `TIMESTAMPTZ` — round-trip latent-broken on real Postgres | Medium | **Done 0.6.0** (native `bindInstant`/`getInstant`, kernel 0.10 SPI) |
 | T7  | TS app-structure seams — per-entity path vs `app.routes` import mismatch breaks the build; hardcoded title/redirect | Medium | ✅ 0.6.0 (routes fix + `--app-name` title/redirect, #120) |
-| T6  | Naive English pluralization (`colony → colonys`) in SQL tables + Angular routes | Low | Override honoured 0.5.x; default plural sequenced after SDK 0.12 reaches SDK `main` — the `tableName` extraction must land before 0.9.0 is released (see "Follow SDK 0.12.0") |
+| T6  | Naive English pluralization (`colony → colonys`) in SQL tables + Angular routes | Low | ✅ 0.9.0 — tables take the SDK `effectiveTableName()`, the processor extracts `@ExerisDomain.tableName` and warns where a default table moves, Angular routes take the SDK plural (see "Follow SDK 0.12.0") |
 
 ### High severity
 
@@ -2767,22 +2767,17 @@ Each now has the status the code settles, and every other mention in this file a
 
 ### Low severity
 
-- [~] **T6 — Real pluralization (or honour overrides).** `colony → colonys` in both
-      `V*__create_colonys.sql` and the Angular route `path: 'colonys'`; `construction_order` works only
+- [x] **T6 — Real pluralization (or honour overrides).** `colony → colonys` in both
+      `V*__create_colonys.sql` and the Angular route `path: 'colonys'`; `construction_order` worked only
       by luck.
-      *Java half — done (0.5.x):* a shared `KernelTableNaming.effectiveTable` honours the
-      `DomainMetadata.tableName` override and is the single source for the repository `TABLE`, the
-      Flyway `CREATE TABLE`, and the migration filename (previously each generator pluralised
-      independently — they could drift). Default case is unchanged (`toSnakeCase(name)+"s"`); real
-      irregular pluralisation (`colony→colonies`) lives in the SDK `DomainMetadata.pluralName()` and
-      is SDK-side.
-      *TS half — deferred to **T7**:* the Angular route/label pluralisation lives in the
-      app-structure generator T7 is already reworking, and there is no serialized route override on
-      the TS side yet, so the TS half rides with that 0.6.0 change.
-      *SDK half:* on SDK `main` (exeris-sdk#150). It adds `@ExerisDomain.tableName`, and makes
-      `effectiveTableName()` the snake-cased English plural. The tooling half is three changes, and
-      the `tableName` extraction must land before 0.9.0 is released ("Follow SDK 0.12.0", under
-      0.9.0 sequencing).
+      *Done (0.9.0):* `KernelTableNaming.effectiveTable` is the single source for the repository
+      `TABLE`, the Flyway `CREATE TABLE` and migration filename, the foreign-key targets, the
+      shared-scope migration and the graph-sync node descriptor. Its default is the SDK's
+      `DomainMetadata.effectiveTableName()` (snake-cased `pluralName()`); an explicit
+      `@ExerisDomain.tableName` wins, trimmed and lower-cased. The processor extracts `tableName` and
+      warns once per entity whose default table moves. `exeris-codegen-ts` takes the same plural
+      (`DslMapper.pluralName`) for Angular route segments, labels and the derived-path fallbacks.
+      Details under "Follow SDK 0.12.0".
 
 ### codegen-ts track — contract parity with the emitted backend
 
@@ -3463,6 +3458,8 @@ Each is recorded where it was measured; this is the one list to hand to the kern
 
 ### SDK asks from this train — 2026-09-26
 
+- **`ExerisDomain.tableName`'s Javadoc and the `-io` reader's comment** say the tooling processor
+  does not extract the attribute. From 0.9.0 it does (T6).
 - **Align `Saga.TriggerType` with `SagaMetadata.TriggerType`** (T48 slice C2). The annotation
   declares `COMMAND`, `EVENT`, `SCHEDULE`, `HTTP` and `MANUAL`. The AST it maps onto declares
   `EVENT`, `SCHEDULED`, `MANUAL` and `API`. So `COMMAND` has no counterpart, and two names differ.
@@ -3481,7 +3478,7 @@ SDK 0.12 is on SDK `main` since 2026-09-29 (exeris-sdk#150), which is what tooli
 It brings the S6 compatibility constructors and `SystemFieldsMetadata.builder()`, T38, T6, and an
 opt-in semver gate.
 
-- [ ] **T6 — table and route plurals.** The SDK's `effectiveTableName()` returns `tableName` when
+- [x] **T6 — table and route plurals.** The SDK's `effectiveTableName()` returns `tableName` when
       set, and otherwise the snake-cased English `pluralName()` under `Locale.ROOT`. The SDK's `-io`
       reader already reads `@ExerisDomain.tableName`. Three tooling changes:
       1. **Extract `@ExerisDomain.tableName` into `DomainMetadata.tableName`**, replacing the
@@ -3500,6 +3497,13 @@ opt-in semver gate.
          place of `entityName.endsWith('s') ? entityName : entityName + 's'`. Server routes do not
          move, because `@ExerisDomain.path` is required. Only metadata built without a path sees
          `effectivePath()`'s new plural.
+      *Done:* all three. The processor stores `tableName` as written (blank derives, as in the
+      `-io` reader). `KernelGraphSyncGenerator`'s node descriptor, which derived its own
+      `+ "s"` table, now reads `KernelTableNaming` too. On the TS side `DslMapper.pluralName` is the
+      port; `routePlural`, the nav/title labels, the list heading fallback and the derived-path
+      fallbacks of the service and both stream clients go through it. `tableName` was already
+      optional in the TS `DomainMetadataSchema`; no TS emitter reads it, because the table is a
+      server-only concept.
 - [x] **T38 — the processor no longer reads `@ExerisDomain.apiVersion` (B0).** SDK 0.12 deprecates
       it for removal, with no replacement, together with `DomainMetadata.apiVersion()` and
       `DomainMetadata.Builder.apiVersion(String)`. No SDK producer carries it either
@@ -3639,6 +3643,9 @@ and it is what a `@View` front end is generated from. **`@Channel` emission** is
 
 Each of these is deprecated in 0.9.0 and kept for that one release, so an app regenerated on 0.9.0
 keeps compiling where it still uses one. 0.10.0 removes them.
+- [ ] **The default-table-change warning (T6).** It exists for the 0.8 → 0.9 regeneration, and it
+      warns on every build of an entity whose derived table moved, including in a project that never
+      had the old table. Delete `warnDefaultTableChange` and its tests.
 - [ ] **`restore()` on a soft-delete entity's `<Entity>Service` and `<Entity>Store` (T58).** Delete
       its emission from `service-gen.ts` and `store-gen.ts`, the conditional `throwError` import,
       and `RESTORE_UNSUPPORTED`.
