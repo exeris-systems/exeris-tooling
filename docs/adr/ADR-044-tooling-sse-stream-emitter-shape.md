@@ -1,3 +1,12 @@
+---
+title: "ADR-044 — Fix the Tooling SSE Stream Emitter Shape"
+type: adr
+visibility: public
+owning-repo: exeris-tooling
+status: active
+slug: adr/ADR-044
+---
+
 # ADR-044: Fix the Tooling SSE Stream Emitter Shape — Two Drivers, Named-Event Client, Domain-Event-Bus Producer Seam
 
 | Attribute       | Value                                                                                                  |
