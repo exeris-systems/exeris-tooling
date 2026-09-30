@@ -74,14 +74,19 @@ function template(urlExpression: string): string {
     .replace(/`$/, '');
 }
 
-/** Every `name(...): Observable<…> {` method of the emitted service and the HTTP call it makes. */
+/** Every `name(...): Observable<…> {` method of the emitted service and its body. */
+function serviceMethods(content: string): Array<{ method: string; body: string }> {
+  const methodRe = /^ {2}(\w+)\([^)]*\): Observable<.*> \{\n([\s\S]*?)\n {2}\}$/gm;
+  return [...content.matchAll(methodRe)].map(m => ({ method: m[1], body: m[2] }));
+}
+
+/** The HTTP call each request-issuing method makes, as a contract endpoint. */
 function serviceCalls(content: string): Array<{ method: string; endpoint: string }> {
   const calls: Array<{ method: string; endpoint: string }> = [];
-  const methodRe = /^ {2}(\w+)\([^)]*\): Observable<.*> \{\n([\s\S]*?)\n {2}\}$/gm;
-  for (const m of content.matchAll(methodRe)) {
-    const call = /this\.http\.(\w+)<.*?>\((this\.baseUrl|`[^`]*`)/.exec(m[2]);
-    expect(call, `HTTP call in ${m[1]}`).not.toBeNull();
-    calls.push({ method: m[1], endpoint: `${call![1].toUpperCase()} ${template(call![2])}` });
+  for (const { method, body } of serviceMethods(content).filter(m => m.method !== 'restore')) {
+    const call = /this\.http\.(\w+)<.*?>\((this\.baseUrl|`[^`]*`)/.exec(body);
+    expect(call, `HTTP call in ${method}`).not.toBeNull();
+    calls.push({ method, endpoint: `${call![1].toUpperCase()} ${template(call![2])}` });
   }
   return calls;
 }
@@ -92,6 +97,10 @@ describe('CRUD route parity — generated TypeScript service vs the generated ro
 
   it('finds every service method that issues a request', () => {
     expect(calls.map(c => c.method)).toEqual(Object.keys(SERVICE_OPERATION));
+  });
+
+  it('finds no other method but the deprecated restore()', () => {
+    expect(serviceMethods(service).map(m => m.method).sort()).toEqual([...Object.keys(SERVICE_OPERATION), 'restore'].sort());
   });
 
   it.each(Object.entries(SERVICE_OPERATION))('%s calls a route the router serves for %s', (method, operation) => {
@@ -105,8 +114,12 @@ describe('CRUD route parity — generated TypeScript service vs the generated ro
     expect(service).not.toContain('this.http.patch');
   });
 
-  it('emits no restore(): nothing on the server un-sets the soft-delete flag', () => {
-    expect(service).not.toMatch(/\brestore\(/);
+  // Nothing on the server un-sets the soft-delete flag, so restore() has no route to call. It stays
+  // one release, deprecated, and issues no request at all.
+  it('restore() calls no route: it issues no request', () => {
+    const restore = serviceMethods(service).find(m => m.method === 'restore')!;
+    expect(restore.body).not.toContain('this.http');
+    expect(restore.body).toMatch(/^ {4}return throwError\(/);
   });
 });
 
