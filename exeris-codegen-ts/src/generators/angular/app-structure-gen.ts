@@ -307,8 +307,7 @@ function generateAppRoutes(domains: DomainMetadata[], appName: string, views: Vi
     const titlePlural = labelPlural(domain.entityName);
     // Route shape is dictated by what the emitted LIST already links to, not by preference:
     // `[item.id]` is labelled "View" and `[item.id, 'edit']` is labelled "Edit" (list-gen.ts).
-    // Before detail-gen was wired, `:id` loaded the FORM — so "View" opened an editor — and
-    // `:id/edit` matched nothing at all, because this table carries no wildcard route.
+    // `:id` loads the detail view, `:id/edit` loads the form; this table has no wildcard route.
     routes.push(`\n  {\n    path: '${plural}',\n    loadComponent: () => import('./components/${kebab}-list.component')\n      .then(m => m.${domain.entityName}ListComponent),\n    title: '${titlePlural} - ${tsSingleQuoted(appName)}'\n  },\n  {\n    path: '${plural}/new',\n    loadComponent: () => import('./components/${kebab}-form.component')\n      .then(m => m.${domain.entityName}FormComponent),\n    title: 'New ${domain.entityName} - ${tsSingleQuoted(appName)}'\n  },\n  {\n    path: '${plural}/:id',\n    loadComponent: () => import('./components/${kebab}-detail.component')\n      .then(m => m.${domain.entityName}DetailComponent),\n    title: '${domain.entityName} - ${tsSingleQuoted(appName)}'\n  },\n  {\n    path: '${plural}/:id/edit',\n    loadComponent: () => import('./components/${kebab}-form.component')\n      .then(m => m.${domain.entityName}FormComponent),\n    title: 'Edit ${domain.entityName} - ${tsSingleQuoted(appName)}'\n  },`);
   }
 
@@ -358,16 +357,9 @@ export const routes: Routes = [
  * The app barrel — every generated symbol a consumer's own code can reach without knowing
  * internal paths.
  *
- * <p><b>Every section is gated on the flag that gates its emission.</b> The barrel used to export
- * unconditionally while the orchestrator honoured `generateServices` / `generateForms` /
- * `generateLists` / `generateDetails` / `generateZod` / `generateEvents`, so turning any of them
- * off produced `export ... from './x'` pointing at a file that was never written — `ng build`
- * `TS2307`. Measured with a one-entity project: `--no-forms`, `--no-lists`, `--no-services`,
- * `--no-zod` and `--no-details` each left one dangling export, and `--no-events` left three.
- *
- * <p>`barrel-resolves.spec` asserts the general invariant — every specifier the barrel names is a
- * path some generator actually emitted, for every combination of these flags — rather than
- * re-checking each shape by hand, so a future section joins the gate on its own.
+ * <p><b>Every section is gated on the flag that gates its emission.</b> When a flag is off,
+ * no exports for that section are emitted — the barrel never references files that were not
+ * generated. The `barrel-resolves.spec` asserts this invariant for every combination of flags.
  */
 function generateBarrelExport(
   visibleDomains: DomainMetadata[],
@@ -670,7 +662,7 @@ function generateTsConfigApp(config: GeneratorConfig): string {
 }
 
 /**
- * The `test` architect target — `@angular/build:unit-test` on Vitest (founder-ruled 2026-07-31).
+ * The `test` architect target — `@angular/build:unit-test` on Vitest.
  * Emitted only under `generateTests`, so an app that did not ask for tests keeps the scaffold it
  * had before this slice existed.
  */
@@ -791,9 +783,8 @@ function generateProxyConfig(): string {
 }
 
 function generateNpmrc(): string {
-  // @exeris-systems/ui-kit is published to GitHub Packages (interim home — it will
-  // move to the public npm registry later). Resolve the @exeris-systems scope from
-  // there. GitHub Packages requires auth even for reads: add a token with
+  // @exeris-systems/ui-kit is published to GitHub Packages. Resolve the @exeris-systems
+  // scope from there. GitHub Packages requires auth even for reads: add a token with
   // read:packages to your global ~/.npmrc, e.g.
   //   //npm.pkg.github.com/:_authToken=YOUR_GITHUB_TOKEN
   return `@exeris-systems:registry=https://npm.pkg.github.com
@@ -858,11 +849,6 @@ export const environment = {
 /**
  * `environment.apiUrl` states the prefix the emitted services actually use, which is
  * `config.apiBasePath` and nothing else — `service-gen` interpolates that value directly.
- *
- * It used to read `config.apiBasePath || clientConfig.baseUrl || '/api'`. `apiBasePath` carries
- * a schema default of `''`, so `||` skipped the configured value precisely when it was the
- * default and fell through to the strategy's `/api`: every emitted `environment.ts` published a
- * prefix its own services had never requested.
  */
 function resolveApiSettings(config: GeneratorConfig): { apiUrl: string; apiVersion: string } {
   const strategy = getStrategy(config.backend);

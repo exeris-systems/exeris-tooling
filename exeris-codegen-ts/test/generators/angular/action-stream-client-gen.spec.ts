@@ -91,8 +91,7 @@ describe('ActionStreamClientGenerator.generate — route + transport parity', ()
   });
 
   it('apiVersion is NOT folded into the action-stream URL — the router serves no version segment', () => {
-    // Same miss as the entity-level stream client: the fixtures leave apiVersion unset,
-    // so nothing ever rendered the versioned path this emitter used to produce.
+    // The router serves no version segment, so the emitted URL contains none.
     const d = domain({
       entityName: 'Order',
       actions: [streamingAction],

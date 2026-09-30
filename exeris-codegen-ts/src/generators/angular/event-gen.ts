@@ -22,17 +22,12 @@ import { tsSingleQuoted } from './ts-literal.js';
 
 
 /**
- * <b>No `$localize` in emitted output.</b> Three announcer strings used `$localize` tagged
- * templates. `$localize` is a global that exists only once the consumer adds `@angular/localize`
- * to their dependencies and to `polyfills` in `angular.json` — and the app this tool emits
- * declares `"polyfills": []` and no such dependency, so every emitted event handler failed
- * `ng build` with `TS2304: Cannot find name '$localize'`. Tooling emits no dependency the
- * consumer did not ask for, so an emitted symbol that requires one is an undeclared requirement
- * on their build — the rule ADR-060 applied to slf4j on the Java side, and the one `store-gen`
- * and `detail-gen` already record.
- *
- * <p>This surfaced only when the generator was first wired into the orchestrator: it had been
- * exported and invoked by nobody, so its output had never been built.
+ * <b>No `$localize` in emitted output.</b> The announcer strings do not use `$localize` tagged
+ * templates. `$localize` is a global that exists only when the consumer adds `@angular/localize`
+ * to their dependencies and to `polyfills` in `angular.json` — but the emitted app declares
+ * `"polyfills": []` and has no such dependency. Tooling emits no dependency the consumer did not
+ * ask for, so emitted code that silently requires one violates ADR-060 (the rule applied to
+ * slf4j on the Java side, and the one `store-gen` records).
  */
 export class EventHandlerGenerator implements CodeGenerator {
   readonly name = 'EventHandlerGenerator';
@@ -266,12 +261,9 @@ ${events.map(e => `      case '${e.name}':
 
   private generateEventInterfaces(events: DomainEventMetadata[], domain: DomainMetadata): string {
     const entityName = domain.entityName;
-    // EV1 parity fix: the event carries the RESOLVED payload field NAMES
-    // (event.payloadFields, entity-declaration order) — NOT inline FieldMetadata.
-    // Resolve each name's type against domain.fields (the generator has the
-    // domain in scope) so the emitted <Entity><Event>Payload interface is real
-    // and typed. (Previously this read event.fields, which the AST never carries
-    // → every payload interface was empty: a live parity bug.)
+    // The event carries the RESOLVED payload field NAMES (event.payloadFields, entity-declaration
+    // order). Resolve each name's type against domain.fields so the emitted <Entity><Event>Payload
+    // interface is real and typed.
     const fieldByName = new Map(domain.fields.map(f => [f.name, f] as const));
 
     // The Payload + Event interfaces MUST be entity-prefixed —

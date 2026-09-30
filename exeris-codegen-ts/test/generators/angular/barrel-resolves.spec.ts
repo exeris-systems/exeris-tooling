@@ -2,19 +2,14 @@
  * The app barrel must never name a file no generator emitted.
  *
  * `src/app/index.ts` re-exports the whole generated surface, while the orchestrator gates each
- * shape on its own config flag. The barrel used to export unconditionally, so turning any flag
- * off produced `export ... from './x'` against a file that was never written — `ng build`
- * `TS2307`. Measured on a one-entity project before the fix: `--no-forms`, `--no-lists`,
- * `--no-services`, `--no-zod` and `--no-details` each left one dangling export; `--no-events`
- * left three.
+ * shape on its own config flag. Turning any flag off must not produce `export ... from './x'`
+ * against a file that was never written — that would cause `ng build` TS2307.
  *
  * This asserts the INVARIANT rather than the six known shapes, so a section added later is
  * covered without anyone remembering to extend a list.
  *
- * <p>The `generateStores` case was vacuous until 0.9.0 — the barrel had no Stores section, so it
- * asserted nothing either way. It is now the guard it was kept for: the section is emitted and
- * gated, and pointing its specifier at a file the store generator does not write fails eight of
- * these thirteen cases.
+ * The Stores section is emitted and gated like every other optional generator; if the flag is
+ * off, the barrel must not reference it.
  */
 
 import { describe, expect, it } from 'vitest';

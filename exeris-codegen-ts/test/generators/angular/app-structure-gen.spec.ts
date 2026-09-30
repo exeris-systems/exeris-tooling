@@ -484,9 +484,8 @@ describe('generateAppStructure — resolveApiSettings', () => {
   });
 
   it('publishes the empty default rather than the strategy baseUrl', () => {
-    // The fall-through to KERNEL's '/api' was the bug: apiBasePath's schema default is '',
-    // so `||` skipped the configured value exactly when it held that default and environment.ts
-    // announced a prefix the emitted services never request.
+    // When apiBasePath is empty (the schema default), environment.ts publishes
+    // an empty apiUrl so emitted services request no prefix.
     const files = generateAppStructure([], [], cfg({ apiBasePath: '' }));
     const env = fileAt(files, 'src/environments/environment.ts')!;
     expect(env.content).toContain("apiUrl: ''");
@@ -517,9 +516,9 @@ describe('generateAppStructure — hidden-domain handling', () => {
       [],
       cfg(),
     );
-    // T20: generateAppStructure no longer emits any per-entity artefact — neither
-    // for visible nor hidden domains. The per-entity tree (and the hidden-domain
-    // skip) lives in the orchestrator's buildGeneratedFiles, covered in orchestrator.spec.
+    // generateAppStructure emits no per-entity artefact, for visible or hidden domains.
+    // The per-entity tree (and the hidden-domain skip) lives in the orchestrator's
+    // buildGeneratedFiles, covered in orchestrator.spec.
     expect(fileAt(files, 'src/app/components/order-form.component.ts')).toBeUndefined();
     expect(fileAt(files, 'src/app/components/order-list.component.ts')).toBeUndefined();
     expect(fileAt(files, 'src/app/services/order.service.ts')).toBeUndefined();

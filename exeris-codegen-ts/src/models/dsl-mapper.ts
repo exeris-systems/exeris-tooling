@@ -543,13 +543,8 @@ export class DslMapper {
    * here matches the kernel route + OpenAPI path byte-for-byte.
    */
   /**
-   * The plural path segment an entity's routes live under.
-   *
-   * One authority on purpose: `app-structure-gen` builds the route TABLE from this, and
-   * `detail-gen` navigates to it after a delete. Those two had drifted — detail-gen appended
-   * `s` unconditionally, so an entity already ending in `s` (`Address`, `Status`) got
-   * `/addresss`, a URL the table never declares. That is the same "link target vs. route table"
-   * defect this generator was wired to fix, one path over.
+   * The plural path segment an entity's routes live under. Entities ending in `s`
+   * (`Address`, `Status`) receive no additional `s` to avoid duplicates like `/addresss`.
    */
   static routePlural(entityName: string): string {
     const kebab = DslMapper.toKebabCase(entityName);

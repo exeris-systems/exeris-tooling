@@ -1,10 +1,8 @@
 /**
  * Coverage for src/models/metadata-files.ts — the metadata scan + family split.
  *
- * This code ran only inside the CLI until the peer-types slice (T42) needed it, so it had
- * never been under test: the recursive scan, the `enum_` / `view_` / domain split, and the
- * single-entity vs. multi-domain wrapper branch were all covered only by whether a full
- * generation run happened to work.
+ * Covers the recursive scan, the `enum_` / `view_` / domain split, and the
+ * single-entity vs. multi-domain wrapper branch.
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';

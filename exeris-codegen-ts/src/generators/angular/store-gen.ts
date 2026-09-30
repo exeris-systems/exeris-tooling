@@ -9,19 +9,13 @@
  * - Filter/search support
  * - Optimistic updates
  *
- * <p><b>No `$localize` in emitted output.</b> The fallback error message used to be an
- * `$localize` tagged template. `$localize` is a global that only exists once the consumer
- * adds `@angular/localize` to their devDependencies and to `polyfills` in `angular.json` —
- * and the app this tool emits declares `"polyfills": []` and no such dependency, so every
- * emitted store failed `ng build` with `TS2304: Cannot find name '$localize'`. Tooling emits
- * no `package.json` dependency the consumer did not ask for, so an emitted symbol that
- * requires one is an undeclared requirement on their build — the same rule ADR-060 applied
- * to slf4j on the Java side. Nothing else in the emitted app is internationalised; making it
- * so is a deliberate change (polyfill + dependency + locale config), not a side effect of a
- * fallback string.
- *
- * <p>This surfaced only when the generator was first wired into the orchestrator: it had been
- * exported and invoked by nobody, so its output had never been built.
+ * <p><b>No `$localize` in emitted output.</b> The fallback error message does not use
+ * `$localize` tagged templates. `$localize` is a global that only exists when the consumer
+ * adds `@angular/localize` to their devDependencies and to `polyfills` in `angular.json`,
+ * but the emitted app declares `"polyfills": []`. Tooling emits no dependency the consumer
+ * did not ask for, so code that silently requires an undeclared dependency violates ADR-060
+ * (the rule applied to slf4j on the Java side). Nothing else in the emitted app is
+ * internationalised; making it so is a deliberate change, not a side effect.
  *
  * @author Exeris Team
  * @since 0.3.0

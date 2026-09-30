@@ -152,10 +152,8 @@ export function viewRoutePath(view: ViewMetadata): string {
 /**
  * The exported route-array const name for a view (`<camel>Routes`).
  *
- * `toMethodName`, not `toCamelCase`: a view name is an author-chosen identity and kebab by
- * convention, and `toCamelCase` only lower-cases the first character (it assumes already-camel entity
- * input). It therefore returned `commander-roster` unchanged and emitted
- * `export const commander-rosterRoutes`, which does not parse.
+ * Uses `toMethodName`, not `toCamelCase`: a view name is author-chosen kebab by convention,
+ * and `toCamelCase` only lower-cases the first character. Ensures the exported const parses.
  */
 export function viewRouteConstName(view: ViewMetadata): string {
   return `${DslMapper.toMethodName(view.name)}Routes`;
@@ -328,16 +326,9 @@ function renderNode(node: ComponentNodeMetadata, level: number, itemVar?: string
 
   // ENTITY: a signal read off the generated STORE.
   //
-  // This used to emit `<entity>Service.current()`, which no generator produces: `service-gen` emits
-  // RxJS `findAll` / `findById` / `create` / `update` / `delete`, with no `current()` and no signal at
-  // all. `store-gen` is the signal-first surface this comment always described — `<Entity>Store`
-  // exposes `entities` (a readonly signal of the collection) and `selected` (the single). Two
-  // generators in one package had disagreed about the contract, and `tsc` could not see it because the
-  // call lives inside a template string; only an AOT build would have caught it.
-  //
-  // A LIST binds the collection and iterates; anything else reads the selected row. Emitting the
-  // collection without iterating it was the other half of the same hole — a `<ul>` whose children were
-  // rendered once, so a roster showed one row.
+  // `store-gen` is the signal-first surface: `<Entity>Store` exposes `entities` (a readonly
+  // signal of the collection) and `selected` (the single entity). A LIST binds the collection
+  // and iterates; anything else reads the selected row.
   const isCollection = type === 'LIST' || type === 'GRID';
   let entityRead: string | null = null;
   let iteration: { open: string; close: string; item: string } | null = null;
@@ -351,8 +342,7 @@ function renderNode(node: ComponentNodeMetadata, level: number, itemVar?: string
         item,
       };
     } else if (binding.path) {
-      // Inside a @for, the row IS the loop variable — reading the store's `selected` there would
-      // render the same row in every iteration, which is the bug this fix exists to remove.
+      // Inside a @for, the row IS the loop variable — never read the store's `selected`.
       entityRead = itemVar
         ? `{{ ${itemVar}.${binding.path} }}`
         : `{{ ${field}.selected()?.${binding.path} }}`;

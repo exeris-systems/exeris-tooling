@@ -8,6 +8,6 @@
 // Core generators
 export * from './type-gen.js';
 
-// New generators (v0.4.0)
+// Additional generators
 export { generateEnums, EnumGenerator } from './enum-gen.js';
 export { generateQueryBuilder, QueryBuilderGenerator } from './query-builder-gen.js';

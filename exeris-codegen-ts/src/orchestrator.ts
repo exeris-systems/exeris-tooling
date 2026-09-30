@@ -1,15 +1,14 @@
 /**
  * Codegen orchestrator — the pure "metadata → OutputFile[]" step.
  *
- * Extracted from the CLI (`index.ts`) so the composition is unit-testable without
- * filesystem I/O (the TS analog of the Java `CodegenPipeline` seam). The CLI loads
- * metadata + writes files; this module decides *what* gets emitted *where*.
+ * The composition is separate from filesystem I/O so it is unit-testable (the TS analog
+ * of the Java `CodegenPipeline` seam). The CLI loads metadata + writes files; this module
+ * decides *what* gets emitted *where*.
  *
  * T20 invariant enforced here: the per-entity artefacts and the enum module are the
  * canonical app source and are emitted by the REAL generators under the Angular
  * sourceRoot `src/app/` — exactly one tree. `generateAppStructure` contributes the
- * scaffold only; it must not re-emit per-entity files or a stub enum module (that
- * second, stub-tainted tree was the T20 build break).
+ * scaffold only; it must not re-emit per-entity files or a stub enum module.
  *
  * @author Exeris Team
  * @since 0.6.0
@@ -103,36 +102,24 @@ export function buildGeneratedFiles(
       const list = generateList(domain, config);
       if (list) appTree.push(list);
     }
-    // Detail views. `generateDetails` has defaulted to true since the flag was added and nothing
-    // read it, so `DetailGenerator` emitted nothing — while the emitted LIST already linked to the
-    // routes a detail component owns: `[item.id]` labelled "View", and `[item.id, 'edit']` for
-    // Edit. Neither worked. `{plural}/:id` loaded the edit form (so "View" opened an editor), and
-    // `{plural}/:id/edit` matched no route at all, since the emitted table has no wildcard.
+    // Detail view component: read/edit for a single entity instance.
     if (config.generateDetails) {
       appTree.push(generateDetail(domain, config));
     }
-    // Signal stores. `generateStores` has defaulted to true since the flag was added, and nothing
-    // read it — `StoreGenerator` was exported from the Angular barrel and invoked by no one, so the
-    // signal-first surface the config promises was never emitted. That is what led view-gen to bind
-    // `<entity>Service.current()`, a method the RxJS service does not have: the author was reaching
-    // for a store that the pipeline silently dropped.
+    // Signal store: reactive entity state (signal-first).
     if (config.generateStores) {
       appTree.push(generateStore(domain, config));
     }
 
-    // Saga UI state machines. `generateSagas` was the last flag declared, defaulted true and read
-    // by nothing, so no generated app ever received the one artefact that knows a saga's step
-    // names, labels, order and compensations — a consumer had to retype the flow the processor
-    // already extracted. Emitted only for an entity that declares `@Saga`.
+    // Saga UI state machine: multi-step transactional workflow. Emitted only when an entity
+    // declares `@Saga`.
     if (config.generateSagas) {
       const saga = generateSaga(domain, config);
       if (saga) appTree.push(saga);
     }
 
-    // Domain-event handlers. `generateEvents` has defaulted to true since the flag was added and
-    // nothing read it, so no generated app could observe its own domain events — the emitted
-    // publisher's counterpart on the front end simply did not exist. Two call sites, not one:
-    // the per-entity handler here, and the shared event bus below, which several entities share.
+    // Domain-event handler: listen to and react to domain events published by this entity.
+    // (The shared event bus is emitted separately below for entities that declare events.)
     if (config.generateEvents) {
       const handler = eventGenerator.generate(domain, ctx);
       if (handler) appTree.push(handler);

@@ -1,9 +1,7 @@
 /**
  * Escaping helper shared by the Angular emitters.
  *
- * Extracted when `saga-gen` became the fourth emitter to need it: `event-gen`, `detail-gen` and
- * `app-structure-gen` each carried a byte-identical private copy. Strong-default #2 (shared
- * scaffold, not copy-paste) applies to the TS side too.
+ * Strong-default #2 (shared scaffold, not copy-paste) applies to the TS side.
  *
  * @author Exeris Team
  * @since 0.8.0

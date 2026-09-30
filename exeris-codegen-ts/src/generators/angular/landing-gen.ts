@@ -33,14 +33,6 @@ function escapeHtml(value: string): string {
  * Registered alongside DetailGenerator under the DETAIL artifact type
  * — both are intentionally active at the same time; see the registry
  * spec ("DETAIL artifact type has TWO generators registered").
- *
- * The earlier shape of this file imported `BackendGenerator`,
- * `CodegenContext` and `DomainEntity` — none of which exist in the
- * current SDK / core surface. They were pre-existing tsc errors that
- * stage 4d kept out of the per-file coverage gate; stage 4e (this PR)
- * realigns the imports against the actual exports and the current
- * `FieldMetadata` Zod schema (flat `defaultValue` / `displayName`,
- * not a `properties: Record<string, unknown>` bag and no `label`).
  */
 export class LandingPageGenerator implements CodeGenerator {
     readonly name = 'LandingPageGenerator';
@@ -62,14 +54,9 @@ export class LandingPageGenerator implements CodeGenerator {
     private generateComponent(entity: DomainMetadata): GeneratedFile {
         const properties = entity.fields.map((f: FieldMetadata) => {
             const val = f.defaultValue ?? '';
-            // Escape characters that would break out of the surrounding
-            // double-quoted TS string literal we emit on the next line.
-            // The earlier `'\"'` replacement was a no-op (CodeQL
-            // js/identity-replacement, GHSA-tracked alert #1): inside a
-            // single-quoted JS string `'\"'` is just `'"'`, so
-            // `.replaceAll('"', '\"')` replaced `"` with itself. The fix
-            // uses `'\\"'` (= 2-char sequence `\"`), which is the actual
-            // escape that survives into the emitted TS source.
+            // Escape characters that would break out of the surrounding double-quoted
+            // TS string literal. The sequence `'\\"'` (a 2-char escape for `"`) survives
+            // into the emitted source.
             const safeVal = String(val).replaceAll('"', '\\"').replaceAll('\n', '\\n');
             return `  ${f.name} = "${safeVal}";`;
         }).join('\n');

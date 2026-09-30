@@ -24,7 +24,6 @@ import { findMetadataFiles, loadMetadataFamilies } from './models/metadata-files
 import { loadPeerContracts, type PeerContract } from './peers/peer-contract.js';
 import { buildGeneratedFiles } from './orchestrator.js';
 
-// Import new generators (v0.3.0)
 import { getStrategy } from './core/backend-strategy.js';
 
 const VERSION = '0.3.0';

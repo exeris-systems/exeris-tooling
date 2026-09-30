@@ -1,13 +1,6 @@
 /**
- * The enum module (`types/enums.ts`) — one emitter, two callers.
- *
- * Lifted out of `orchestrator.ts` unchanged when the peer-types slice (T42, ADR-048)
- * needed the same emitter for a peer's own enum module. Leaving it in the orchestrator
- * would have made the peer generator import the module that imports it; the alternative —
- * a second enum emitter for peers — is the drift this repository already carries once
- * (`enum-gen.ts` emits an enum module nothing composes) and is not worth carrying twice.
- *
- * `orchestrator.ts` re-exports both symbols, so existing importers are unaffected.
+ * The enum module (`types/enums.ts`) — one emitter shared by orchestrator and peer-types
+ * (ADR-048). `orchestrator.ts` re-exports both symbols, so existing importers are unaffected.
  *
  * @author Exeris Team
  * @since 0.8.0
