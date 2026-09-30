@@ -36,18 +36,18 @@ public final class PageDslGenerator {
 
     public void writeListPageTo(Path outputPath) throws IOException {
         Files.createDirectories(outputPath);
-        Files.writeString(outputPath.resolve(metadata.entityName().toLowerCase() + ".list-page.json"), generateListPage());
+        Files.writeString(outputPath.resolve(metadata.entityName().toLowerCase(Locale.ROOT) + ".list-page.json"), generateListPage());
     }
 
     public void writeDetailPageTo(Path outputPath) throws IOException {
         Files.createDirectories(outputPath);
-        Files.writeString(outputPath.resolve(metadata.entityName().toLowerCase() + ".detail-page.json"), generateDetailPage());
+        Files.writeString(outputPath.resolve(metadata.entityName().toLowerCase(Locale.ROOT) + ".detail-page.json"), generateDetailPage());
     }
 
     private Map<String, Object> buildListPage() {
         Map<String, Object> page = new LinkedHashMap<>();
         page.put("$type", "page");
-        page.put("id", metadata.entityName().toLowerCase() + "-list");
+        page.put("id", metadata.entityName().toLowerCase(Locale.ROOT) + "-list");
         page.put("title", metadata.pluralName() != null ? metadata.pluralName() : metadata.entityName() + "s");
         page.put("entity", metadata.entityName());
         page.put("layout", "list");
@@ -55,14 +55,14 @@ public final class PageDslGenerator {
             Map.of("label", "Home", "path", "/"),
             Map.of("label", metadata.entityName(), "path", metadata.effectivePath())
         ));
-        page.put("components", List.of(Map.of("$ref", metadata.entityName().toLowerCase() + ".table.json")));
+        page.put("components", List.of(Map.of("$ref", metadata.entityName().toLowerCase(Locale.ROOT) + ".table.json")));
         return page;
     }
 
     private Map<String, Object> buildDetailPage() {
         Map<String, Object> page = new LinkedHashMap<>();
         page.put("$type", "page");
-        page.put("id", metadata.entityName().toLowerCase() + "-detail");
+        page.put("id", metadata.entityName().toLowerCase(Locale.ROOT) + "-detail");
         page.put("title", metadata.entityName() + " Details");
         page.put("entity", metadata.entityName());
         page.put("layout", "detail");
@@ -73,7 +73,7 @@ public final class PageDslGenerator {
         ));
         page.put("headerActions", buildHeaderActions());
         page.put("sections", List.of(
-            Map.of("title", "General Information", "$ref", metadata.entityName().toLowerCase() + ".schema.json"),
+            Map.of("title", "General Information", "$ref", metadata.entityName().toLowerCase(Locale.ROOT) + ".schema.json"),
             Map.of("title", "Audit Information", "collapsed", true, "fields", List.of(
                 Map.of("name", "createdAt", "label", "Created At", "type", "datetime"),
                 Map.of("name", "updatedAt", "label", "Updated At", "type", "datetime")

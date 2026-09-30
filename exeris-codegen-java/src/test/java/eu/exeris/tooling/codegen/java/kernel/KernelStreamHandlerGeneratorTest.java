@@ -64,10 +64,17 @@ class KernelStreamHandlerGeneratorTest {
         assertThat(content)
                 .contains("implements HttpStreamHandler")
                 .contains("public void handle(HttpStreamExchange exchange)")
-                // bus reached via the ScopedValue accessor, not a constructed engine;
-                // acquired inside try so a failed acquisition still runs close()
+                // The engine arrives by constructor, captured by RuntimeComponents
+                // at composition. handle() runs on the stream's own thread, where the kernel
+                // binds no EVENT_ENGINE, so reading KernelProviders there would throw after the
+                // response head was already written. Still acquired inside try so a failed
+                // acquisition runs close().
+                .contains("private final EventEngine eventEngine;")
+                .contains("public OrderStreamHandler(EventEngine eventEngine)")
+                .contains("this.eventEngine = eventEngine;")
                 .contains("EventBus bus = null")
-                .contains("bus = KernelProviders.eventEngine().bus()")
+                .contains("bus = eventEngine.bus()")
+                .doesNotContain("KernelProviders")
                 .contains("if (bus != null)")
                 // bounded hand-off (No-Waste-Compute, ADR-043 obligation 4)
                 .contains("STREAM_BUFFER_CAPACITY = 256")
@@ -104,10 +111,29 @@ class KernelStreamHandlerGeneratorTest {
                 .contains("KEEPALIVE_INTERVAL_MILLIS = 15000L")
                 .contains("StreamEvent.of(\"keep-alive\", \"\")")
                 .contains("exchange.close()")
-                // no producer machinery
+                // no producer machinery — and so no engine to take: the keep-alive handler keeps
+                // its implicit no-arg constructor
                 .doesNotContain("bus.subscribe")
+                .doesNotContain("EventEngine")
+                .doesNotContain("public OrderStreamHandler(")
                 .doesNotContain("KernelProviders.eventEngine()")
                 .doesNotContain("text/event-stream");
+    }
+
+    @Test
+    @DisplayName("hasProducer: realTimeApi with a @DomainEvent, and nothing else — the predicate the "
+            + "RuntimeComponents factory shares")
+    void hasProducerMatchesTheEmittedShape() {
+        DomainMetadata producer = order().events(List.of(DomainEventMetadata.simple("OrderCreated"))).build();
+        DomainMetadata keepAlive = order().build();
+        DomainMetadata notStreaming = DomainMetadata.builder("Order", "com.example.domain")
+                .events(List.of(DomainEventMetadata.simple("OrderCreated"))).build();
+
+        assertThat(KernelStreamHandlerGenerator.hasProducer(producer)).isTrue();
+        assertThat(gen.generate(producer).content()).contains("(EventEngine eventEngine)");
+        assertThat(KernelStreamHandlerGenerator.hasProducer(keepAlive)).isFalse();
+        assertThat(gen.generate(keepAlive).content()).doesNotContain("EventEngine");
+        assertThat(KernelStreamHandlerGenerator.hasProducer(notStreaming)).isFalse();
     }
 
     @Test

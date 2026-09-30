@@ -3,6 +3,7 @@ package eu.exeris.tooling.codegen.java.support;
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.FieldSpec;
+import com.palantir.javapoet.MethodSpec;
 import com.palantir.javapoet.ParameterizedTypeName;
 import com.palantir.javapoet.TypeName;
 
@@ -53,10 +54,11 @@ public final class KernelStreamScaffold {
     public static final ClassName THREAD = ClassName.get("java.lang", "Thread");
 
     // --- EV1 producer SPI (ADR-043 stream + ADR-046 codec) ------------------
-    /** {@code eu.exeris.kernel.spi.context.KernelProviders} — the ScopedValue
-     *  accessor surface; {@code eventEngine().bus()} reaches the event bus. */
-    public static final ClassName KERNEL_PROVIDERS =
-            ClassName.get("eu.exeris.kernel.spi.context", "KernelProviders");
+    /** {@code eu.exeris.kernel.spi.events.EventEngine} — handed to the producer
+     *  handler's constructor by {@code RuntimeComponents}; {@code bus()} reaches the
+     *  event bus. */
+    public static final ClassName EVENT_ENGINE =
+            ClassName.get("eu.exeris.kernel.spi.events", "EventEngine");
     /** {@code eu.exeris.kernel.spi.events.EventBus} — {@code subscribe(name, handler)}
      *  / {@code unsubscribe(token)}. */
     public static final ClassName EVENT_BUS =
@@ -136,10 +138,11 @@ public final class KernelStreamScaffold {
     }
 
     /**
-     * The {@code LOG} field plus the {@code STREAM_BUFFER_CAPACITY} constant the
-     * producer body ({@link #eventProducerScaffold(List)}) reads. No keep-alive
-     * constants — the producer never sleeps. {@code selfType} is the generated
-     * class's own {@link ClassName}.
+     * The {@code LOG} field, the {@code STREAM_BUFFER_CAPACITY} constant and the
+     * {@code eventEngine} field the producer body ({@link #eventProducerScaffold(List)})
+     * reads. No keep-alive constants — the producer never sleeps. {@code selfType} is
+     * the generated class's own {@link ClassName}; pair with
+     * {@link #producerConstructor()}.
      */
     public static List<FieldSpec> producerFields(ClassName selfType) {
         return List.of(
@@ -149,7 +152,33 @@ public final class KernelStreamScaffold {
                         .initializer("$L", STREAM_BUFFER_CAPACITY)
                         .addJavadoc("Bounded hand-off between the bus dispatch thread and this\n"
                                 + "stream's virtual thread; drop-on-full keeps No-Waste-Compute.\n")
+                        .build(),
+                FieldSpec.builder(EVENT_ENGINE, "eventEngine", Modifier.PRIVATE, Modifier.FINAL)
                         .build());
+    }
+
+    /**
+     * The producer handler's constructor: takes the {@code EventEngine} its body
+     * subscribes on.
+     *
+     * <p>Constructor-injected rather than read from
+     * {@code KernelProviders.eventEngine()} inside {@code handle}, because
+     * {@code handle} runs on the stream's own thread, and the Community stream
+     * dispatcher binds only the allocator and the request-body decoder registry
+     * there — {@code EVENT_ENGINE} is a boot-scope binding, so the read would throw
+     * {@code NoSuchElementException} after the response head had already been
+     * written. {@code RuntimeComponents} resolves the engine inside the boot
+     * callback, where it is bound — the same shape as the handler's
+     * constructor-injected {@code MemoryAllocator}.
+     */
+    public static MethodSpec producerConstructor() {
+        return MethodSpec.constructorBuilder()
+                .addModifiers(Modifier.PUBLIC)
+                .addParameter(EVENT_ENGINE, "eventEngine")
+                .addJavadoc("@param eventEngine the engine whose bus this handler subscribes on;\n")
+                .addJavadoc("       captured at composition, never resolved on the stream thread\n")
+                .addStatement("this.eventEngine = eventEngine")
+                .build();
     }
 
     /**
@@ -208,6 +237,8 @@ public final class KernelStreamScaffold {
                 .add("// data: field, so they pass through without a decode round-trip.\n")
                 .add("// bus is acquired INSIDE try so a failed acquisition still runs the\n")
                 .add("// finally teardown (close()); the null guard keeps it self-contained.\n")
+                .add("// The engine is the one captured at composition: this method runs on\n")
+                .add("// the stream's own thread, where the kernel binds no EVENT_ENGINE.\n")
                 .addStatement("$T bus = null", EVENT_BUS)
                 .add("// Bounded hand-off: the subscribe callback runs on a bus dispatch\n")
                 .add("// virtual thread, but emit(...) must run on THIS stream's VT (it\n")
@@ -215,7 +246,7 @@ public final class KernelStreamScaffold {
                 .addStatement("$T queue = new $T<>(STREAM_BUFFER_CAPACITY)", queueType, ARRAY_BLOCKING_QUEUE)
                 .addStatement("$T tokens = new $T<>()", tokenListType, ARRAY_LIST)
                 .beginControlFlow("try")
-                .addStatement("bus = $T.eventEngine().bus()", KERNEL_PROVIDERS);
+                .addStatement("bus = eventEngine.bus()");
 
         for (StreamEventBinding b : bindings) {
             body.add("tokens.add(bus.subscribe($S, (descriptor, payload) -> {\n", b.subscribeName());

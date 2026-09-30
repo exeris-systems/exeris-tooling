@@ -1,3 +1,12 @@
+---
+title: "Generation-expansion plan — wiring the shipped-but-inert SDK records into the pipeline"
+type: design-note
+visibility: public
+owning-repo: exeris-tooling
+status: active
+last-verified: 2026-06-28
+---
+
 # Generation-expansion plan — wiring the shipped-but-inert SDK records into the pipeline
 
 Settled 2026-06-28 by a design panel (3 lensed proposals — pipeline-architect / contract-steward / delivery-pm — → adversarial synthesis), all facts re-verified against the repos. Companion to [`generation-coverage-audit.md`](generation-coverage-audit.md). This is the coordination spine; waves marked **founder review** are not auto-executed.
@@ -15,7 +24,7 @@ Not horizontal ("extract all five record families in one pass"). The processor e
 | **L3 EV1 `@DomainEvent` payload** | **RFC-FIRST** (Wave 2) | **corrected:** `DomainEventMetadata` is the bare 4-tuple `(name,topic,description,aggregateType)` — payload fields NOT on the AST → real additive grow; `KernelEventGenerator` hardcodes `EventPayload.empty()` | yes (after grow) | none | yes |
 | **L4 grown `@Projection`** | **DEFER** (placement ADR) | `@Target(TYPE)` separate classes → entity-list-vs-own-family unsettled; consumes event payloads → behind EV1 | yes | none | partial (verify `ProjectionEngine` SPI-vs-core) |
 | **L5 `@Derived`/`@Rule`** | **DEFER** (RFC→ADR) | needs a SpEL→Java/SQL expression strategy — a new correctness-critical subsystem, XL | yes (if extracted) | none | partial (overlaps T10 CHECK) |
-| **L6 `@SagaTransition`+`StepKind`** | **BLOCKED → SDK-RFC** | **verified:** `@SagaTransition` annotation does NOT exist; `@SagaStep` has no `kind()`. Net-new public surface on a 1.0-bound API | yes (after SDK) | none | flow SPI exists |
+| **L6 `@SagaTransition`+`StepKind`** | ~~**BLOCKED → SDK-RFC**~~ **DEFERRED → 0.10, kernel-gated** (2026-09-26) | ~~**verified:** `@SagaTransition` annotation does NOT exist; `@SagaStep` has no `kind()`. Net-new public surface on a 1.0-bound API~~ **Stale since SDK 0.9.0 (corrected 2026-09-26):** SDK 0.9.0 shipped both — the repeatable `@SagaTransition(from, to, on, guard)` with its `SagaMetadata.transitions` carrier, and `@SagaStep.kind()` — so the SDK half is done and the gate moved to the kernel. Kernel 0.12's flow plan precomputes one next step per step (the `"default"`-tagged transition, else the first declared one, else the following step) and evaluates no outcome or condition tag; `FAIL` unwinds compensation rather than following an edge. Only an unguarded SUCCESS edge is expressible. Founder decision 2026-09-26: the flip is deferred to 0.10, and outcome/tag routing is recorded as a kernel ask | yes (after SDK) | none | flow SPI exists; outcome routing does not |
 | **L7 `@EventSourced` (EV2)** | **BLOCKED (out)** | **verified:** `EventStore` is a transactional outbox (`append`/`pollPending`/`markPublished`), NOT an aggregate store | no | keep entry | **no — SPI gap** |
 | **L8 `@View` G1** | **DEFER** (own track) | corpus-gated (RFC-2026-06-28); front-only facet to `view_*.json`, not a `DomainMetadata` list | no (own path) | n/a | n/a |
 
@@ -24,13 +33,13 @@ Not horizontal ("extract all five record families in one pass"). The processor e
 - **Wave 1A — L1 `@Field.dataType` (the reference loop).** Processor extract + INERT removal → SDK `-io` reader mirror → Java∪TS emitter (TS `currency`/`percent`/`url` formatter; additive `domain-model.ts` `dataType`) + reader↔processor parity test. Repos: `exeris-tooling/{exeris-processor,exeris-codegen-ts,exeris-codegen-java}` + **`exeris-sdk/exeris-sdk-source-model-io`** (same train). **Safe-autonomous** (no ADR). *(In progress.)*
 - **Wave 1B — L2 `@EventHandler` — HALTED before implementation (2026-06-28), reclassified.** Grounding it in the real annotation showed `@EventHandler`'s homes are `@Projection`/`@Saga` (see the disposition note + risk 3), so it is **not** a clean standalone generator — folded into **L4** (projection) and the saga path. No code landed; the finding is recorded. *(This is the vertical-slice discipline working as intended: each lever is grounded before it is built.)*
 - **Wave 2 — L3 EV1 payload.** RFC (payload serialization + `sensitiveFields` redaction) → SDK `DomainEventMetadata` grow (`AstJsonRoundTripTest`) → processor extract → reader catch-up → `KernelEventGenerator` payload-projecting publish → reconcile the **live parity bug** at `event-gen.ts:264` (consumes `event.fields` Java never emits). **Founder review.**
-- **Wave 3+ — Deferred.** L4 (after EV1 + placement ADR + engine SPI check), L6 (after SDK `@SagaTransition` RFC), L5 (after expression-eval RFC→ADR), L8 (own corpus-gated track). **Founder review.**
+- **Wave 3+ — Deferred.** L4 (after EV1 + placement ADR + engine SPI check), L6 (after SDK `@SagaTransition` RFC — *2026-09-26: the SDK half shipped in 0.9.0; L6 now waits on kernel outcome/tag routing, targeted at 0.10*), L5 (after expression-eval RFC→ADR), L8 (own corpus-gated track). **Founder review.**
 
 ## ADR/RFC obligations (per tooling/SDK CLAUDE.md triggers)
 - **ADR — L2 (bundled with L4)** — per the Wave-1B finding, the `@EventHandler` consumer is a `@Projection`-reaction / `@Saga`-trigger concern, **not** a standalone `*Reactions` generator family; folded into the L4 projection ADR + the saga path (carries the same `-io` mirror + Java∪TS parity statement). No separate L2 ADR.
 - **RFC(-light) — L3 EV1** AST grow governed by the SDK Jackson wire-format contract review; settles payload format + `sensitiveFields` redaction + publish-overload shape.
 - **ADR — L4** projection placement (entity-list vs `projection_*.json`) + `ProjectionEngine` SPI-vs-core.
-- **SDK RFC — L6** net-new `@SagaTransition` + additive `@SagaStep.kind()`; resolve overlap with `effectiveKind()` (covers INVOKE/COMPENSATE, not AWAIT_*).
+- **SDK RFC — L6** net-new `@SagaTransition` + additive `@SagaStep.kind()`; resolve overlap with `effectiveKind()` (covers INVOKE/COMPENSATE, not AWAIT_*). *(Discharged SDK-side: both surfaces shipped in SDK 0.9.0. What L6 waits on now is kernel outcome/tag routing — see the L6 row, 2026-09-26.)*
 - **ADR — L5** SpEL→Java/SQL transpilation target split + determinism/safety contract.
 
 ## Risks / open questions

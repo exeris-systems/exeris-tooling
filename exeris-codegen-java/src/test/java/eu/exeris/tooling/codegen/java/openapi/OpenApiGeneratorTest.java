@@ -49,6 +49,28 @@ class OpenApiGeneratorTest {
     }
 
     @Test
+    @DisplayName("the emitted YAML publishes the owner as readOnly, and it parses back that way")
+    void ownerIsReadOnlyInTheEmittedDocument() throws IOException {
+        DomainMetadata meta = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .dataScope(eu.exeris.sdk.sourcemodel.ast.DataScope.TENANT)
+                .fields(List.of(
+                        FieldMetadata.builder("orderNumber", "String").build(),
+                        FieldMetadata.builder("tenantId", "java.util.UUID").build()))
+                .build();
+
+        String yaml = generator.generateYaml(meta);
+
+        assertThat(yaml).contains("readOnly: true");
+        OpenAPI parsed = new OpenAPIV3Parser().readContents(yaml).getOpenAPI();
+        io.swagger.v3.oas.models.media.Schema<?> tenant = (io.swagger.v3.oas.models.media.Schema<?>)
+                parsed.getComponents().getSchemas().get("Order").getProperties().get("tenantId");
+        assertThat(tenant.getReadOnly()).isTrue();
+        assertThat(parsed.getComponents().getSchemas().get("OrderCreateDto").getProperties())
+                .doesNotContainKey("tenantId");
+    }
+
+    @Test
     @DisplayName("generate(metadata) writes <entity>-api.yaml under the output directory")
     void generateWritesFile() throws IOException {
         DomainMetadata meta = DomainMetadata.builder("Order", "com.example.domain")

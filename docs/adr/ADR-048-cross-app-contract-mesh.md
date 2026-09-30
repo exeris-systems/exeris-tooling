@@ -1,6 +1,15 @@
+---
+title: "ADR-048 — A peer's contract is a dependency, and its types are the first thing worth generating from it"
+type: adr
+visibility: public
+owning-repo: exeris-tooling
+status: active
+slug: adr/ADR-048
+---
+
 # ADR-048 — A peer's contract is a dependency, and its types are the first thing worth generating from it
 
-- **Status:** ACCEPTED (2026-08-28)
+- **Status:** ACCEPTED (2026-08-28) · amended 2026-09-26 (Amendment 1 — §6's client-slice gate is additive, not a binary break)
 - **Repo:** `exeris-tooling`
 - **Scope:** tooling / codegen (pipeline input shape)
 - **Visibility:** public
@@ -107,7 +116,7 @@ the same failure mode as the inert emitted machinery recorded in D10, D11 and th
 | Slice | Contents | Gate |
 |---|---|---|
 | **Types (T42)** | peer DTOs only, namespaced per peer | none from the kernel — `DomainMetadata` in, types out |
-| **Client + registry (T12 / T17)** | peer remote-client; open-world resolution so a peer-provided `@Requires` resolves instead of hard-failing | a **final** kernel 0.12 — ADR-074 takes a binary break on `HttpRequest`, a `stable` carrier, behind a bridge constructor |
+| **Client + registry (T12 / T17)** | peer remote-client; open-world resolution so a peer-provided `@Requires` resolves instead of hard-failing | a **final** kernel 0.12 — ADR-074 takes a binary break on `HttpRequest`, a `stable` carrier, behind a bridge constructor *(amended 2026-09-26: measured additive, not a break — see Amendment 1)* |
 | **Saga remote-dispatch body** | command dispatch + park on the peer's `@DomainEvent`s | T1 command surface, SDK **S5** |
 
 The RFC originally called the client slice "kernel-free, ships now" — true only because the kernel
@@ -142,7 +151,8 @@ the RFC pins it. A Java peer-DTO emitter without a client would generate records
 - **Per-consumer copies mean N copies of the same peer DTO across N apps.** Accepted for the same
   reason the pipeline emits per-app trees at all; a shared package is a distribution decision.
 - **The client slice inherits a binary break.** ADR-074's bridge constructor keeps existing call
-  sites compiling, but the pin move is a real cut in the release order.
+  sites compiling, but the pin move is a real cut in the release order. *(Amended 2026-09-26 —
+  Amendment 1: there is no binary break. The pin move is still a cut, for a behavioural reason.)*
 
 ### 📋 What is NOT in scope
 
@@ -165,3 +175,44 @@ the RFC pins it. A Java peer-DTO emitter without a client would generate records
   compile — the `ng build` gate, not a substring assertion, per T40's lesson.
 - A v1 peer artifact must fail the build with a message naming the peer and the floor.
 - Determinism: peers sorted by declared name; entities in the order the local path already uses.
+
+## Amendment 1 — the client slice's gate is additive, not a binary break (2026-09-26)
+
+**Trigger:** the ROADMAP's 0.12 readiness measurement (2026-09-01, a `javap` diff of
+`exeris-kernel-spi` 0.11.0 → 0.12.0-SNAPSHOT), re-checked on 2026-09-26 against kernel `0.12.0`
+(`development/0.12.0`, code cut 2026-09-03), and the architect review of the same day.
+
+### What
+
+§6 said the client + registry slice is gated on "a **final** kernel 0.12 — ADR-074 takes a binary
+break on `HttpRequest`, a `stable` carrier, behind a bridge constructor". The Trade-offs said "the
+client slice inherits a binary break". Measured, there is no binary break:
+
+- `HttpRequest` gained `authority()`, `withAuthority(String)` and a six-argument constructor. The
+  five-argument constructor is kept as an overload that delegates with `null`, and nothing was
+  removed. Only a record pattern over `HttpRequest` would break, and no emitter writes one.
+- `KernelWebClient.withAuthority(String)` is `@since 0.12`, an addition.
+
+What ADR-074 does change is **behaviour, not binary shape**. A CLIENT-mode `HttpConfig` built
+through the ten-argument overload no longer dials its `bindHost`/`port`, so an unaddressed request
+is refused at its first send (K8). No signature diff shows that, which is why the emitted `*Client`
+Javadoc now carries it (B0).
+
+### What the gate is now
+
+The client slice still waits on a **final** kernel 0.12, for two reasons, and neither is a binary
+break:
+
+1. It needs ADR-074's addressing surface (`HttpRequest.authority`, `KernelWebClient.withAuthority`).
+   That surface exists only from 0.12, and a tooling cut takes no pre-release pin.
+2. The generated client's `update` has to reach the generated server first (T58). The router serves
+   `PUT`, and `KernelWebClient` 0.12.0 has no `put`. The fix is a kernel ask, or an architect
+   decision to serve a `PATCH` alias.
+
+### What this amendment does NOT decide
+
+- The T17 manifest shape: how peer bindings are recorded, and their exclusion from `initOrder` and
+  `contentBinding`. That needs its own amendment before T17 ships. The architect review adds one
+  constraint on it: it must not raise `cap-manifest.json`'s `schemaVersion`, because the SDK boot
+  check (`KNOWN_SCHEMA_VERSION = 2` in `CompositionStampAssertion`) refuses anything above 2.
+- The saga remote-dispatch body, which stays gated as §6 says.

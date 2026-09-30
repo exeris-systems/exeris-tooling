@@ -56,7 +56,8 @@ import javax.lang.model.element.Modifier;
  *       need explicit ordinal allocation can wrap the generated
  *       publisher or extend {@code DomainEventMetadata} to carry an
  *       explicit ordinal.</li>
- *   <li>Constructor takes an {@code EventEngine}, registers every spec
+ *   <li>Constructor takes an {@code EventEngine} (and, when an event carries a
+ *       payload, the codec registry — below), registers every spec
  *       with {@code eventEngine.registry()}. Per the SPI contract
  *       {@code register(EventTypeSpec)} is idempotent for identical
  *       specs — no defensive {@code catch} is needed; any exception
@@ -76,11 +77,16 @@ import javax.lang.model.element.Modifier;
  * <b>EV1 payloads (ADR-046).</b> For an event with {@code payloadFields}, the
  * publisher builds a nested redacted {@code <Event>Payload} record (its declared
  * {@code payloadFields} minus {@code sensitiveFields}) from the aggregate's
- * getters, resolves an {@code EventPayloadCodec} via
- * {@link eu.exeris.kernel.spi.context.KernelProviders#eventPayloadCodecRegistry()}
- * ("site B" resolution, default content-type {@code application/json}), and
- * publishes the encoded {@code EventPayload}. When the slot is unbound or no codec
- * supports the payload, it falls back to
+ * getters, resolves an {@code EventPayloadCodec} from the
+ * {@code EventPayloadCodecRegistry} it was constructed with ("site B" resolution,
+ * default content-type {@code application/json}), and publishes the encoded
+ * {@code EventPayload}. The registry is captured at construction — by
+ * {@code RuntimeComponents}, inside the boot callback, from
+ * {@link eu.exeris.kernel.spi.context.KernelProviders#eventPayloadCodecRegistry()} —
+ * because the publish runs on the request thread, and the kernel binds
+ * {@code EVENT_PAYLOAD_CODEC_REGISTRY} only in its boot scope: resolved per publish,
+ * the slot would always be empty there and every payload would ship empty. When
+ * no registry was bound at construction or no codec supports the payload, it falls back to
  * {@link eu.exeris.kernel.spi.events.EventPayload#empty()} (the latter emitting a
  * producer-side codec-resolution-failure JFR). Redaction is the publisher's job,
  * applied before encode; the generated code names only SPI symbols (never a codec
@@ -110,9 +116,9 @@ public class KernelEventGenerator implements KernelArtifactGenerator {
             ClassName.get("eu.exeris.kernel.spi.events.codec", "EventPayloadCodecRegistry");
     private static final ClassName EVENT_CODEC_CONTEXT =
             ClassName.get("eu.exeris.kernel.spi.events.codec", "EventCodecContext");
-    private static final ClassName OPTIONAL = ClassName.get("java.util", "Optional");
     private static final ClassName JFR_EVENT = ClassName.get("jdk.jfr", "Event");
     private static final String ENCODE_HELPER = "encodePayload";
+    private static final String CODEC_REGISTRY_FIELD = "codecRegistry";
     private static final String JFR_EVENT_NAME = "CodecUnresolvedEvent";
 
     @Override
@@ -151,12 +157,16 @@ public class KernelEventGenerator implements KernelArtifactGenerator {
         publisher.addField(FieldSpec.builder(EVENT_ENGINE, "eventEngine",
                         Modifier.PRIVATE, Modifier.FINAL).build());
 
-        publisher.addMethod(MethodSpec.constructorBuilder()
-                .addModifiers(Modifier.PUBLIC)
-                .addParameter(EVENT_ENGINE, "eventEngine")
-                .addStatement("this.eventEngine = eventEngine")
-                .addStatement("registerEventTypes()")
-                .build());
+        if (hasPayloadEvents(metadata)) {
+            addPayloadConstructors(publisher, entity);
+        } else {
+            publisher.addMethod(MethodSpec.constructorBuilder()
+                    .addModifiers(Modifier.PUBLIC)
+                    .addParameter(EVENT_ENGINE, "eventEngine")
+                    .addStatement("this.eventEngine = eventEngine")
+                    .addStatement("registerEventTypes()")
+                    .build());
+        }
 
         boolean anyPayload = false;
         for (DomainEventMetadata event : metadata.events()) {
@@ -182,6 +192,68 @@ public class KernelEventGenerator implements KernelArtifactGenerator {
 
         return new GeneratedFile(packageName, className,
                 KernelScaffold.render(packageName, publisher.build()), ArtifactType.EVENT);
+    }
+
+    /**
+     * Whether any of the entity's events carries a payload — and so whether its publisher
+     * encodes, holds a codec registry, and takes one by constructor.
+     *
+     * <p>Shared with {@link KernelApplicationGenerator}, which emits the matching
+     * {@code RuntimeComponents} factory: the constructor and its call site come from two
+     * generators, and one predicate keeps their arities in step.
+     *
+     * @param metadata the entity
+     * @return {@code true} when at least one {@code @DomainEvent} resolves a non-empty payload
+     */
+    public static boolean hasPayloadEvents(DomainMetadata metadata) {
+        if (!metadata.hasEvents()) {
+            return false;
+        }
+        for (DomainEventMetadata event : metadata.events()) {
+            if (!payloadFields(event, metadata).isEmpty()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * The two constructors of a payload-bearing publisher: the canonical one takes the codec
+     * registry, and the one-argument form, which the emitted handler test and hand-written code
+     * call, captures whatever registry is bound where it is constructed. Either way the registry
+     * is read once, at construction, never per publish: a publish runs on the request thread,
+     * where the kernel binds none.
+     */
+    private void addPayloadConstructors(TypeSpec.Builder publisher, String entity) {
+        publisher.addField(FieldSpec.builder(EVENT_PAYLOAD_CODEC_REGISTRY, CODEC_REGISTRY_FIELD,
+                        Modifier.PRIVATE, Modifier.FINAL)
+                .addJavadoc("Captured at construction; {@code null} when none was bound there, in which\n")
+                .addJavadoc("case every payload publishes empty (see {@link #$L}).\n", ENCODE_HELPER)
+                .build());
+
+        publisher.addMethod(MethodSpec.constructorBuilder()
+                .addModifiers(Modifier.PUBLIC)
+                .addParameter(EVENT_ENGINE, "eventEngine")
+                .addJavadoc("Captures the codec registry bound where this publisher is constructed.\n")
+                .addJavadoc("<p>Inside the kernel boot callback — where {@code RuntimeComponents}\n")
+                .addJavadoc("composes — that is the kernel's registry. Anywhere else it is usually\n")
+                .addJavadoc("none, and $L's payloads then publish empty.\n", entity)
+                .addJavadoc("@param eventEngine the engine to register event types with and publish on\n")
+                .addStatement("this(eventEngine, $T.eventPayloadCodecRegistry().orElse(null))", KERNEL_PROVIDERS)
+                .build());
+
+        publisher.addMethod(MethodSpec.constructorBuilder()
+                .addModifiers(Modifier.PUBLIC)
+                .addParameter(EVENT_ENGINE, "eventEngine")
+                .addParameter(EVENT_PAYLOAD_CODEC_REGISTRY, CODEC_REGISTRY_FIELD)
+                .addJavadoc("@param eventEngine the engine to register event types with and publish on\n")
+                .addJavadoc("@param $L the ADR-046 codec registry payloads are encoded with;\n",
+                        CODEC_REGISTRY_FIELD)
+                .addJavadoc("       {@code null} publishes every payload empty\n")
+                .addStatement("this.eventEngine = eventEngine")
+                .addStatement("this.$L = $L", CODEC_REGISTRY_FIELD, CODEC_REGISTRY_FIELD)
+                .addStatement("registerEventTypes()")
+                .build());
     }
 
     private FieldSpec buildEventTypeSpec(String entity, DomainEventMetadata event) {
@@ -328,30 +400,29 @@ public class KernelEventGenerator implements KernelArtifactGenerator {
     }
 
     /** Shared helper resolving the ADR-046 codec ("site B") and encoding the payload.
-     *  Falls back to {@link EventPayload#empty()} when the slot is unbound or no codec
+     *  Falls back to {@link EventPayload#empty()} when no registry was captured or no codec
      *  supports the payload; the null-resolve branch emits the codec-resolution JFR. */
     private MethodSpec buildEncodePayloadHelper(ClassName selfType) {
         ClassName jfrEvent = selfType.nestedClass(JFR_EVENT_NAME);
         TypeName classWildcard = ParameterizedTypeName.get(
                 ClassName.get("java.lang", "Class"), WildcardTypeName.subtypeOf(Object.class));
-        TypeName optionalRegistry = ParameterizedTypeName.get(OPTIONAL, EVENT_PAYLOAD_CODEC_REGISTRY);
         return MethodSpec.methodBuilder(ENCODE_HELPER)
-                .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+                .addModifiers(Modifier.PRIVATE)
                 .returns(EVENT_PAYLOAD)
                 .addParameter(classWildcard, "payloadType")
                 .addParameter(ClassName.get("java.lang", "Object"), "payload")
                 .addParameter(ClassName.get("java.lang", "String"), "eventName")
-                .addJavadoc("Resolves the ADR-046 event-payload codec from the kernel provider slot\n")
-                .addJavadoc("and encodes the payload; empty payload when no codec is configured.\n")
-                .addStatement("$T registry = $T.eventPayloadCodecRegistry()", optionalRegistry, KERNEL_PROVIDERS)
-                .beginControlFlow("if (registry.isEmpty())")
+                .addJavadoc("Resolves the ADR-046 event-payload codec from the registry captured at\n")
+                .addJavadoc("construction and encodes the payload; empty payload when there is none.\n")
+                .beginControlFlow("if ($L == null)", CODEC_REGISTRY_FIELD)
                 .addStatement("LOG.log($T.DEBUG, $S, payloadType.getName(), eventName)",
                         KernelScaffold.LOGGER_LEVEL,
-                        "No event-payload codec registry bound for {0} ({1}); publishing empty payload")
+                        "No event-payload codec registry was bound when this publisher was "
+                                + "constructed, for {0} ({1}); publishing empty payload")
                 .addStatement("return $T.empty()", EVENT_PAYLOAD)
                 .endControlFlow()
-                .addStatement("$T codec = registry.get().resolve(payloadType, $T.JSON)",
-                        EVENT_PAYLOAD_CODEC, EVENT_CODEC_CONTEXT)
+                .addStatement("$T codec = $L.resolve(payloadType, $T.JSON)",
+                        EVENT_PAYLOAD_CODEC, CODEC_REGISTRY_FIELD, EVENT_CODEC_CONTEXT)
                 .beginControlFlow("if (codec == null)")
                 .addStatement("$T jfr = new $T()", jfrEvent, jfrEvent)
                 .beginControlFlow("if (jfr.isEnabled())")

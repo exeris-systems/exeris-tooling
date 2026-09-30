@@ -125,9 +125,13 @@ class KernelApplicationGeneratorTest {
                 .contains("BootstrapSelector.forNames(subsystems().split")
                 .doesNotContain("SUBSYSTEMS.split")
                 .contains("protected String subsystems()")
-                .contains(".boot(() -> new RuntimeLifecycle(handlerSlot, "
+                .contains(".boot(() -> new RuntimeLifecycle(handlerSlot, componentsSlot, "
                         + "components(transactionalExecutor())).run())")
-                .contains("exchange.respond(HttpStatus.SERVICE_UNAVAILABLE)")
+                // The kernel is handed the edge router, built before boot; no forwarding lambda is
+                // bound, and the 503 lives in the router.
+                .contains("HttpRouter edgeRouter = RuntimeLifecycle.edgeRouter(handlerSlot, componentsSlot)")
+                .contains("ScopedValue.where(HttpKernelProviders.HTTP_SERVER_HANDLER, edgeRouter)")
+                .doesNotContain("forwardingHandler")
                 // T49: the seam that lets a consumer install their own components.
                 .contains("protected RuntimeComponents components(TransactionalExecutor "
                         + "transactionalExecutor)")
@@ -156,15 +160,13 @@ class KernelApplicationGeneratorTest {
                 .contains("routerBuilder.route(HttpMethod.GET, \"/orders\", orderHandler::handleGetAll)")
                 .contains("routerBuilder.route(HttpMethod.POST, \"/orders\", orderHandler::handleCreate)")
                 .contains("routerBuilder.route(HttpMethod.PUT, \"/orders/{id}\", orderHandler::handleUpdate)")
-                // T23: the HttpRouter INSTANCE reaches the slot (not a router::handle
-                // lambda) so the kernel stream dispatcher's `instanceof HttpRouter`
-                // sees it and streamRoute(...) registrations resolve on a real boot.
-                // It now arrives via the T49 decorate hook, whose default returns the
-                // router unchanged — so the property holds by default, and an app that
-                // streams refuses a wrapper at boot rather than losing it silently.
+                // The respond-once router reaches the slot through the decorate hook. The
+                // slot is what the edge router's notFound forwards to — 503 while it is empty.
                 .contains("HttpHandler handler = components.decorate(router)")
                 .contains("handlerSlot.set(handler)")
                 .doesNotContain("handlerSlot.set(router::handle)")
+                .contains("public static HttpRouter edgeRouter(AtomicReference<HttpHandler> handlerSlot,")
+                .contains("exchange.respond(HttpStatus.SERVICE_UNAVAILABLE)")
                 .contains("CountDownLatch shutdownLatch = new CountDownLatch(1)")
                 .contains("Runtime.getRuntime().addShutdownHook")
                 .doesNotContain("import javax.sql")
@@ -172,7 +174,7 @@ class KernelApplicationGeneratorTest {
     }
 
     @Test
-    @DisplayName("G2: a composed build conducts the composition inside boot(...) — caps ready "
+    @DisplayName("GC2: a composed build conducts the composition inside boot(...) — caps ready "
             + "before the handler slot, drained after the latch")
     void composedApplicationDrivesTheBootConductor() {
         KernelApplicationGenerator gen = new KernelApplicationGenerator();
@@ -190,10 +192,10 @@ class KernelApplicationGeneratorTest {
                 // both still inside boot(...), i.e. after KERNEL READY and before the kernel
                 // stops. That ordering is the whole point of the call site (ADR-024).
                 .contains("try (CompositionConductor conductor = CompositionConductor.from(capManifest()).start())")
-                .contains("new RuntimeLifecycle(handlerSlot, "
+                .contains("new RuntimeLifecycle(handlerSlot, componentsSlot, "
                         + "components(transactionalExecutor())).run();")
                 // ...and NOT the bare, unconducted boot line.
-                .doesNotContain(".boot(() -> new RuntimeLifecycle(handlerSlot, "
+                .doesNotContain(".boot(() -> new RuntimeLifecycle(handlerSlot, componentsSlot, "
                         + "components(transactionalExecutor())).run())")
                 .contains("protected Path capManifest()")
                 .contains("import java.nio.file.Path")
@@ -201,7 +203,7 @@ class KernelApplicationGeneratorTest {
     }
 
     @Test
-    @DisplayName("G2: no composition → not one conductor symbol is emitted (no inert wiring), "
+    @DisplayName("GC2: no composition → not one conductor symbol is emitted (no inert wiring), "
             + "and the two-argument overload is that cap-less default")
     void uncomposedApplicationCarriesNoConductorSymbol() {
         KernelApplicationGenerator gen = new KernelApplicationGenerator();
@@ -217,12 +219,58 @@ class KernelApplicationGeneratorTest {
                 .doesNotContain("capManifest")
                 .doesNotContain("cap-manifest.json")
                 .doesNotContain("java.nio.file.Path")
-                .contains(".boot(() -> new RuntimeLifecycle(handlerSlot, "
+                .contains(".boot(() -> new RuntimeLifecycle(handlerSlot, componentsSlot, "
                         + "components(transactionalExecutor())).run())");
     }
 
     @Test
-    @DisplayName("G2: composition changes Application only — RuntimeLifecycle is byte-identical")
+    @DisplayName("T30: the Application Javadoc lists composition-runtime as a compile requirement, "
+            + "not a runtime one")
+    void compositionRuntimeIsNamedAsACompileRequirement() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        List<DomainMetadata> domains = List.of(DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders").build());
+
+        String composed = application(gen.generateAll(domains, "com.example.foundation", true));
+        String compile = composed.substring(composed.indexOf("Compile classpath requirements"),
+                composed.indexOf("Runtime classpath requirements"));
+        assertThat(compile)
+                .contains("{@code exeris-kernel-spi} and {@code -core}")
+                .contains("Composition adds {@code eu.exeris:exeris-sdk-composition-runtime}")
+                .doesNotContain("tools.jackson.databind");
+        assertThat(composed.substring(composed.indexOf("Runtime classpath requirements")))
+                .doesNotContain("composition-runtime");
+
+        assertThat(application(gen.generateAll(domains, "com.example.foundation", false)))
+                .contains("Compile classpath requirements")
+                .doesNotContain("composition-runtime");
+    }
+
+    @Test
+    @DisplayName("T30: the Application Javadoc names Jackson 3 only when a repository in the tree imports it")
+    void jacksonIsNamedOnlyWhenARepositoryImportsIt() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        DomainMetadata withoutList = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .fields(List.of(FieldMetadata.builder("total", "BigDecimal").build()))
+                .build();
+        DomainMetadata withList = DomainMetadata.builder("Tagged", "com.example.domain")
+                .path("/tagged")
+                .fields(List.of(FieldMetadata.builder("tags", "List<String>").build()))
+                .build();
+        assertThat(KernelRepositoryGenerator.importsJackson(withList)).isTrue();
+        assertThat(KernelRepositoryGenerator.importsJackson(withoutList)).isFalse();
+
+        assertThat(application(gen.generateAll(List.of(withoutList), "com.example.foundation", false)))
+                .doesNotContain("tools.jackson.databind");
+        assertThat(application(gen.generateAll(List.of(withoutList, withList),
+                        "com.example.foundation", false)))
+                .contains("Jackson 3 ({@code tools.jackson.databind} / {@code tools.jackson.core})")
+                .contains("that repository's Javadoc\n * names it.");
+    }
+
+    @Test
+    @DisplayName("GC2: composition changes Application only — RuntimeLifecycle is byte-identical")
     void compositionLeavesTheRuntimeLifecycleUntouched() {
         KernelApplicationGenerator gen = new KernelApplicationGenerator();
         List<DomainMetadata> domains = List.of(DomainMetadata.builder("Order", "com.example.domain")
@@ -233,7 +281,7 @@ class KernelApplicationGeneratorTest {
     }
 
     @Test
-    @DisplayName("G2: composed emission is deterministic — byte-identical across runs")
+    @DisplayName("GC2: composed emission is deterministic — byte-identical across runs")
     void composedEmissionIsDeterministic() {
         KernelApplicationGenerator gen = new KernelApplicationGenerator();
         List<DomainMetadata> domains = List.of(
@@ -317,23 +365,27 @@ class KernelApplicationGeneratorTest {
     }
 
     @Test
-    @DisplayName("T49 residual: an app with stream routes refuses a wrapper at boot rather than "
-            + "serving one whose every stream route 404s (T23)")
-    void streamBearingAppRefusesAWrappingDecorator() {
+    @DisplayName("T23 slice B1: a stream-bearing app takes any wrapper — the decorate guard is gone, "
+            + "because the kernel never holds what decorate returns")
+    void streamBearingAppCarriesNoDecorateGuard() {
         KernelApplicationGenerator gen = new KernelApplicationGenerator();
         DomainMetadata live = DomainMetadata.builder("GalacticEra", "com.example.domain")
                 .path("/era").realTimeApi(true).build();
         List<GeneratedFile> files = gen.generateAll(List.of(live), "com.example.foundation");
 
-        String lifecycle = lifecycle(files);
-        // The kernel resolves a stream only via `handler instanceof HttpRouter`, so any
-        // wrapper erases the type and every streamRoute registers and then never matches.
-        // Registration succeeding either way is exactly why T23 needed a real boot to find.
-        assertThat(lifecycle)
-                .contains("routerBuilder.streamRoute(")
-                .contains("if (!(handler instanceof HttpRouter))")
-                .contains("throw new IllegalStateException")
-                .contains("emits stream routes");
+        // decorate may return any wrapper in a streaming app: the kernel holds the edge router, so
+        // the object decorate returns is never the one the stream dispatcher tests with
+        // `instanceof HttpRouter`, and a guard on it would protect nothing.
+        assertThat(lifecycle(files))
+                .contains("edge.streamRoute(")
+                .doesNotContain("instanceof HttpRouter")
+                .doesNotContain("IllegalStateException")
+                .doesNotContain("emits stream routes");
+        // The decorate Javadoc says what a wrapper applies to.
+        assertThat(components(files))
+                .contains("Applies to respond-once routes.")
+                .contains("{@link RuntimeLifecycle#edgeRouter}")
+                .doesNotContain("A wrapper gives up streaming");
     }
 
     @Test
@@ -388,17 +440,315 @@ class KernelApplicationGeneratorTest {
 
         assertThat(components(files))
                 .contains("protected OrderStreamHandler createOrderStreamHandler()")
+                // No @DomainEvent → the keep-alive fallback, which subscribes to nothing.
                 .contains("return new OrderStreamHandler()")
                 .contains("protected OrderTrackShipmentStreamHandler "
                         + "createOrderTrackShipmentStreamHandler()")
                 .contains("return new OrderTrackShipmentStreamHandler()");
 
+        // The stream handlers are served by the edge router through their
+        // accessors, so run() only forces them — no local, no route of its own.
         assertThat(lifecycle(files))
-                .contains("OrderStreamHandler orderStreamHandler = components.orderStreamHandler()")
-                .contains("OrderTrackShipmentStreamHandler orderTrackShipmentStreamHandler = "
-                        + "components.orderTrackShipmentStreamHandler()")
+                .contains("components.orderStreamHandler();")
+                .contains("components.orderTrackShipmentStreamHandler();")
+                .doesNotContain("OrderStreamHandler orderStreamHandler = ")
                 // The lifecycle calls `new` on nothing the pipeline generated.
                 .doesNotContain("= new Order");
+    }
+
+    @Test
+    @DisplayName("T23 slice B1: the EV1 producer stream handler takes its EventEngine from the "
+            + "factory, captured at composition — never resolved on the stream thread")
+    void producerStreamHandlerTakesItsEngineAtComposition() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        DomainMetadata order = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .realTimeApi(true)
+                .events(List.of(eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata.simple("OrderCreated")))
+                .build();
+
+        // Resolved inside the boot callback, where EVENT_ENGINE is bound. The stream thread
+        // binds only MEMORY_ALLOCATOR and the decoder registry.
+        assertThat(components(gen.generateAll(List.of(order), "com.example.foundation")))
+                .contains("return new OrderStreamHandler(KernelProviders.eventEngine())");
+    }
+
+    @Test
+    @DisplayName("T23 slice B1: stream routes live on the pre-boot edge router, each resolving its "
+            + "handler from componentsSlot; run() registers none")
+    void streamRoutesAreRegisteredOnTheEdgeRouterNotInRun() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        DomainMetadata live = DomainMetadata.builder("GalacticEra", "com.example.domain")
+                .path("/era").realTimeApi(true)
+                .actions(List.of(ActionMetadata.builder("trackRift").streaming(true).build()))
+                .build();
+        String lifecycle = lifecycle(gen.generateAll(List.of(live), "com.example.foundation"));
+
+        String edge = method(lifecycle, "public static HttpRouter edgeRouter(");
+        assertThat(edge)
+                .contains("AtomicReference<HttpHandler> handlerSlot")
+                .contains("AtomicReference<RuntimeComponents> componentsSlot")
+                // every generated stream path, byte for byte
+                .contains("edge.streamRoute(HttpMethod.GET, \"/era/stream\", "
+                        + "lazyStream(componentsSlot, RuntimeComponents::galacticEraStreamHandler))")
+                .contains("edge.streamRoute(HttpMethod.POST, \"/era/{id}/actions/track-rift\", "
+                        + "lazyStream(componentsSlot, RuntimeComponents::galacticEraTrackRiftStreamHandler))")
+                // everything else falls through to the slot, 503 while it is empty
+                .contains("return edge.notFound(exchange -> {")
+                .contains("HttpHandler handler = handlerSlot.get();")
+                .contains("exchange.respond(HttpStatus.SERVICE_UNAVAILABLE);");
+
+        assertThat(method(lifecycle, "public void run()"))
+                .doesNotContain("streamRoute")
+                .doesNotContain("track-rift");
+
+        // The lazy target closes a stream opened before the components exist — its head is
+        // already written, so no status can refuse it.
+        assertThat(method(lifecycle, "private static HttpStreamHandler lazyStream("))
+                .contains("RuntimeComponents components = componentsSlot.get();")
+                .contains("exchange.close();")
+                .contains("target.apply(components).handle(exchange);");
+    }
+
+    @Test
+    @DisplayName("T23 slice B1: run() forces every stream target, then sets componentsSlot, then "
+            + "handlerSlot — so a served app never closes a stream for want of components")
+    void componentsSlotIsSetAfterStreamTargetsAndBeforeTheHandlerSlot() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        DomainMetadata live = DomainMetadata.builder("GalacticEra", "com.example.domain")
+                .path("/era").realTimeApi(true).build();
+        String run = method(lifecycle(gen.generateAll(List.of(live), "com.example.foundation")),
+                "public void run()");
+
+        int forced = run.indexOf("components.galacticEraStreamHandler();");
+        int decorate = run.indexOf("HttpHandler handler = components.decorate(router)");
+        int components = run.indexOf("componentsSlot.set(components);");
+        int handler = run.indexOf("handlerSlot.set(handler);");
+
+        assertThat(forced).as("the stream target is built on the boot thread").isGreaterThan(-1);
+        assertThat(components)
+                .as("published only once every stream target is memoised")
+                .isGreaterThan(forced)
+                .isGreaterThan(decorate);
+        assertThat(handler)
+                .as("the handler slot opens the app; its streams must already resolve")
+                .isGreaterThan(components);
+    }
+
+    @Test
+    @DisplayName("T23 slice B1: run() builds every publisher before any stream target — the bus "
+            + "refuses a subscription to an event type no publisher has registered yet")
+    void publishersAreBuiltBeforeAnythingSubscribes() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        // STATE_TRANSITION is published by no handler method (ADR-075), so no handler factory
+        // builds this publisher, and only run() registers its event types.
+        DomainMetadata era = DomainMetadata.builder("GalacticEra", "com.example.domain")
+                .path("/era").realTimeApi(true)
+                .events(List.of(eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata.builder("EraTurned")
+                        .trigger(eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata.Trigger.STATE_TRANSITION)
+                        .build()))
+                .build();
+        DomainMetadata tag = DomainMetadata.builder("Tag", "com.example.domain").path("/tags").build();
+        String run = method(lifecycle(gen.generateAll(List.of(era, tag), "com.example.foundation")),
+                "public void run()");
+
+        int publisher = run.indexOf("components.galacticEraEventPublisher();");
+        int streamTarget = run.indexOf("components.galacticEraStreamHandler();");
+        int published = run.indexOf("componentsSlot.set(components);");
+        assertThat(publisher).as("the publisher is built at composition").isGreaterThan(-1);
+        assertThat(streamTarget).isGreaterThan(publisher);
+        assertThat(published).isGreaterThan(publisher);
+        // An entity with no events has no publisher to build.
+        assertThat(run).doesNotContain("tagEventPublisher");
+    }
+
+    @Test
+    @DisplayName("T48 slice C1: subscribers and saga flows are components — a memoised accessor "
+            + "and an overridable factory each, built from the boot-bound engines")
+    void subscribersAndSagaFlowsAreComposed() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        String components = components(gen.generateAll(List.of(orderWithEventsAndSaga()),
+                "com.example.foundation"));
+
+        assertThat(components)
+                .contains("private OrderEventSubscriber orderEventSubscriber;")
+                .contains("public OrderEventSubscriber orderEventSubscriber()")
+                .contains("protected OrderEventSubscriber createOrderEventSubscriber()")
+                .contains("return new OrderEventSubscriber(KernelProviders.eventEngine())")
+                // The flow's class name derives from @Saga(name) — the accessor follows it, so a
+                // subclass of OrderFulfillmentFlow installs by overriding
+                // createOrderFulfillmentFlow().
+                .contains("import com.example.saga.OrderFulfillmentFlow;")
+                .contains("public OrderFulfillmentFlow orderFulfillmentFlow()")
+                .contains("protected OrderFulfillmentFlow createOrderFulfillmentFlow()")
+                .contains("return new OrderFulfillmentFlow(KernelProviders.flowEngine())")
+                // A payload-bearing publisher takes the registry at composition, where it is bound.
+                .contains("return new OrderEventPublisher(KernelProviders.eventEngine(), "
+                        + "KernelProviders.eventPayloadCodecRegistry().orElse(null))");
+    }
+
+    @Test
+    @DisplayName("T48 slice C1: run() initializes every saga, then subscribes every subscriber — after "
+            + "the publishers, before either slot — and unsubscribes in reverse after the latch")
+    void sagasAndSubscribersAreStartedBeforeTheAppServes() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        DomainMetadata invoice = DomainMetadata.builder("Invoice", "com.example.domain")
+                .path("/invoices")
+                .events(List.of(eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata.simple("InvoiceIssued")))
+                .build();
+        String run = method(lifecycle(gen.generateAll(List.of(orderWithEventsAndSaga(), invoice),
+                "com.example.foundation")), "public void run()");
+
+        int publishers = run.indexOf("components.invoiceEventPublisher();");
+        int saga = run.indexOf("components.orderFulfillmentFlow().initialize();");
+        int orderSub = run.indexOf("components.orderEventSubscriber().subscribe();");
+        int invoiceSub = run.indexOf("components.invoiceEventSubscriber().subscribe();");
+        int componentsSlot = run.indexOf("componentsSlot.set(components);");
+        int latch = run.indexOf("shutdownLatch.await();");
+        int invoiceUnsub = run.indexOf("components.invoiceEventSubscriber().unsubscribe();");
+        int orderUnsub = run.indexOf("components.orderEventSubscriber().unsubscribe();");
+
+        assertThat(saga).as("the plan is registered at boot").isGreaterThan(publishers);
+        assertThat(orderSub).as("subscribe after every publisher registered its types")
+                .isGreaterThan(publishers).isGreaterThan(saga);
+        assertThat(invoiceSub).isGreaterThan(orderSub);
+        assertThat(componentsSlot).as("activation completes before the app serves")
+                .isGreaterThan(invoiceSub);
+        assertThat(invoiceUnsub).as("released after the latch").isGreaterThan(latch);
+        assertThat(orderUnsub).as("in reverse order").isGreaterThan(invoiceUnsub);
+    }
+
+    @Test
+    @DisplayName("T48 slice C1: an entity with neither events nor a saga adds no activation at all")
+    void nothingToStartEmitsNoActivation() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        DomainMetadata tag = DomainMetadata.builder("Tag", "com.example.domain").path("/tags").build();
+        List<GeneratedFile> files = gen.generateAll(List.of(tag), "com.example.foundation");
+
+        assertThat(lifecycle(files))
+                .doesNotContain(".initialize()")
+                .doesNotContain(".subscribe()")
+                .doesNotContain(".unsubscribe()");
+        assertThat(components(files))
+                .doesNotContain("EventSubscriber")
+                .doesNotContain("Flow");
+    }
+
+    @Test
+    @DisplayName("T51: RuntimeComponents publishes COMPOSITION_SCOPES and REQUEST_SCOPES, derived "
+            + "from the branches that emit each read, naming every reader")
+    void scopeListsAreDerivedFromTheEmission() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        DomainMetadata live = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .realTimeApi(true)
+                .fields(List.of(FieldMetadata.builder("total", "BigDecimal").build()))
+                .events(List.of(eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata.builder("OrderCreated")
+                        .payloadFields(List.of("total")).build()))
+                .sagaMetadata(eu.exeris.sdk.sourcemodel.ast.SagaMetadata.simple("OrderFulfillment"))
+                .build();
+        DomainMetadata ledger = DomainMetadata.builder("Ledger", "com.example.domain")
+                .path("/ledgers")
+                .dataScope(eu.exeris.sdk.sourcemodel.ast.DataScope.TENANT)
+                .build();
+        String components = components(gen.generateAll(List.of(live, ledger), "com.example.foundation"));
+
+        assertThat(components)
+                .contains("public static final List<ScopedValue<?>> COMPOSITION_SCOPES = List.of("
+                        + "KernelProviders.MEMORY_ALLOCATOR, KernelProviders.EVENT_ENGINE, "
+                        + "KernelProviders.FLOW_ENGINE);")
+                .contains("public static final List<ScopedValue<?>> REQUEST_SCOPES = List.of("
+                        + "HttpKernelProviders.HTTP_REQUEST_BODY_DECODER_REGISTRY, "
+                        + "KernelProviders.STORAGE_CONTEXT);")
+                // every reader named, from the same branch that emitted the read
+                .contains("{@link KernelProviders#MEMORY_ALLOCATOR} — read by "
+                        + "{@link #createOrderHandler()}, {@link #createLedgerHandler()}")
+                .contains("{@link KernelProviders#EVENT_ENGINE} — read by "
+                        + "{@link #createOrderEventPublisher()}, {@link #createOrderEventSubscriber()}, "
+                        + "{@link #createOrderStreamHandler()}")
+                .contains("{@link KernelProviders#FLOW_ENGINE} — read by {@link #createOrderFulfillmentFlow()}")
+                .contains("{@link KernelProviders#STORAGE_CONTEXT} — read by the tenant guard in "
+                        + "{@link LedgerHandler}, {@link LedgerRepository}{@code .actingTenantId()}")
+                // optional: named, not listed
+                .contains("Optional, and so not listed: {@link KernelProviders#EVENT_PAYLOAD_CODEC_REGISTRY}");
+    }
+
+    @Test
+    @DisplayName("T51: a global entity with no events, stream or saga lists only what it reads")
+    void scopeListsShrinkWithTheDomain() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        DomainMetadata tag = DomainMetadata.builder("Tag", "com.example.domain").path("/tags").build();
+
+        assertThat(components(gen.generateAll(List.of(tag), "com.example.foundation")))
+                .contains("COMPOSITION_SCOPES = List.of(KernelProviders.MEMORY_ALLOCATOR);")
+                .contains("REQUEST_SCOPES = List.of(HttpKernelProviders.HTTP_REQUEST_BODY_DECODER_REGISTRY);")
+                .doesNotContain("EVENT_ENGINE")
+                .doesNotContain("FLOW_ENGINE")
+                .doesNotContain("STORAGE_CONTEXT;")
+                .doesNotContain("Optional, and so not listed");
+        // No domain at all: nothing is read, and the lists say so.
+        assertThat(components(gen.generateAll(List.of(), "com.example.foundation")))
+                .contains("COMPOSITION_SCOPES = List.of();")
+                .contains("REQUEST_SCOPES = List.of();");
+    }
+
+    private static DomainMetadata orderWithEventsAndSaga() {
+        return DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .fields(List.of(FieldMetadata.builder("total", "BigDecimal").build()))
+                .events(List.of(eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata.builder("OrderCreated")
+                        .payloadFields(List.of("total")).build()))
+                .sagaMetadata(eu.exeris.sdk.sourcemodel.ast.SagaMetadata.simple("OrderFulfillment"))
+                .build();
+    }
+
+    @Test
+    @DisplayName("T23 slice B1: an app with no stream routes still binds an edge router — one "
+            + "uniform shape — and emits no lazyStream helper")
+    void appWithoutStreamRoutesBindsABareEdgeRouter() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        DomainMetadata order = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders").build();
+        String lifecycle = lifecycle(gen.generateAll(List.of(order), "com.example.foundation"));
+
+        assertThat(method(lifecycle, "public static HttpRouter edgeRouter("))
+                .doesNotContain("streamRoute")
+                .contains("return edge.notFound(");
+        assertThat(lifecycle)
+                .doesNotContain("lazyStream")
+                .doesNotContain("import eu.exeris.kernel.spi.http.HttpStreamHandler")
+                .doesNotContain("import java.util.function.Function")
+                .doesNotContain("Stream route targets");
+    }
+
+    @Test
+    @DisplayName("T23 slice B1: the 0.8.0 two-argument constructor still compiles against a "
+            + "hand-rolled launcher, delegating with a slot nothing reads")
+    void legacyConstructorDelegates() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        DomainMetadata order = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders").build();
+        String lifecycle = lifecycle(gen.generateAll(List.of(order), "com.example.foundation"));
+
+        assertThat(lifecycle)
+                .contains("public RuntimeLifecycle(AtomicReference<HttpHandler> handlerSlot,\n"
+                        + "            AtomicReference<RuntimeComponents> componentsSlot, "
+                        + "RuntimeComponents components)")
+                .contains("public RuntimeLifecycle(AtomicReference<HttpHandler> handlerSlot,\n"
+                        + "            RuntimeComponents components)")
+                .contains("this(handlerSlot, new AtomicReference<>(), components);");
+    }
+
+    /**
+     * The body of the member whose declaration starts with {@code signature}: from there to the
+     * next line that closes a class-level member (four-space indent). Enough for emitted code,
+     * whose formatting JavaPoet fixes.
+     */
+    private static String method(String source, String signature) {
+        int start = source.indexOf(signature);
+        assertThat(start).as("member %s is emitted", signature).isGreaterThan(-1);
+        int end = source.indexOf("\n    }\n", start);
+        return source.substring(start, end);
     }
 
     @Test
@@ -470,12 +820,15 @@ class KernelApplicationGeneratorTest {
 
         String content = lifecycle.content();
         assertThat(content)
-                // per-action stream handler taken from the T49 seam (constructed no-arg there)
-                .contains("OrderTrackShipmentStreamHandler orderTrackShipmentStreamHandler = "
-                        + "components.orderTrackShipmentStreamHandler()")
-                // registered via the typed streamRoute(...), POST, at the action path
-                .contains("routerBuilder.streamRoute(HttpMethod.POST, "
-                        + "\"/orders/{id}/actions/track-shipment\", orderTrackShipmentStreamHandler::handle)")
+                // per-action stream handler taken from the RuntimeComponents seam (constructed
+                // no-arg there),
+                // forced on the boot thread
+                .contains("components.orderTrackShipmentStreamHandler();")
+                // registered via the typed streamRoute(...), POST, at the action path — on the
+                // edge router
+                .contains("edge.streamRoute(HttpMethod.POST, "
+                        + "\"/orders/{id}/actions/track-shipment\", "
+                        + "lazyStream(componentsSlot, RuntimeComponents::orderTrackShipmentStreamHandler))")
                 // non-streaming action keeps its respond-once route
                 .contains("routerBuilder.route(HttpMethod.POST, \"/orders/{id}/actions/cancel\", "
                         + "orderHandler::handleCancel)");

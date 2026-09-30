@@ -1,0 +1,11 @@
+{
+  "description": "The routes the generated kernel router registers for one entity, as (method, path template). {base} is DomainMetadata.effectivePath(); {action} is kebab(@Action name). CrudRouteParityE2ETest (exeris-e2e-tests) proves the generated router and the OpenAPI document serve exactly these and that the generated Java client calls only these; crud-route-parity.spec.ts (exeris-codegen-ts) proves the generated TypeScript service calls only these. The two builds never run together, so this file is the one place they meet: change it only together with the router.",
+  "routes": [
+    { "operation": "list",   "method": "GET",    "path": "{base}" },
+    { "operation": "create", "method": "POST",   "path": "{base}" },
+    { "operation": "get",    "method": "GET",    "path": "{base}/{id}" },
+    { "operation": "update", "method": "PUT",    "path": "{base}/{id}" },
+    { "operation": "delete", "method": "DELETE", "path": "{base}/{id}" },
+    { "operation": "action", "method": "POST",   "path": "{base}/{id}/actions/{action}" }
+  ]
+}

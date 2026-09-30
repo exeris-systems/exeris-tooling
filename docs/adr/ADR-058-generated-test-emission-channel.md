@@ -1,3 +1,12 @@
+---
+title: "ADR-058 — Generated tests: emission channel and dependency contract"
+type: adr
+visibility: public
+owning-repo: exeris-tooling
+status: active
+slug: adr/ADR-058
+---
+
 # ADR-058 — Generated tests: emission channel and dependency contract
 
 - **Status:** ACCEPTED (2026-07-31)
@@ -137,7 +146,7 @@ mode this repo rejects elsewhere: a wrong expected status would ship silently.
 > The gate runs the round-trip for two fixtures, not one: a plain entity and a second carrying every
 > system-column flag (`tenantScoped` / `audited` / `softDelete` / `versioned`), because those columns
 > are appended after the domain ones and each has its own accessor rule. That second fixture paid for
-> itself on the first run — it surfaced ROADMAP finding **T26**, an NPE in generated *main* code when
+> itself on the first run — it surfaced ROADMAP finding **T54**, an NPE in generated *main* code when
 > a versioned entity declares `Long version` rather than `long`. The emitter fix is out of this
 > slice's scope (the column type is a constant, so no null guard is expressible without reading the
 > declared field type), but it is exactly the class of defect this channel exists to find, and it was

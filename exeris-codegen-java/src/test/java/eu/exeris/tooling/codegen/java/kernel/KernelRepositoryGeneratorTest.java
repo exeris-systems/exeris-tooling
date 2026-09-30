@@ -102,6 +102,11 @@ class KernelRepositoryGeneratorTest {
                 .contains("private static String toJson")
                 // No Jackson 2 leakage.
                 .doesNotContain("com.fasterxml.jackson");
+        // The import is a compile requirement nothing else declares, so the class says so.
+        assertThat(repo.content())
+                .contains("<p>Compile requirement: {@code List<X>} fields are persisted as JSON")
+                .contains("Declare {@code tools.jackson.core:jackson-databind}.");
+        assertThat(KernelRepositoryGenerator.importsJackson(metadata)).isTrue();
     }
 
     @Test
@@ -120,7 +125,9 @@ class KernelRepositoryGeneratorTest {
                 .doesNotContain("ObjectMapper")
                 .doesNotContain("TypeReference")
                 .doesNotContain("parseList")
-                .doesNotContain("toJson");
+                .doesNotContain("toJson")
+                .doesNotContain("Compile requirement");
+        assertThat(KernelRepositoryGenerator.importsJackson(metadata)).isFalse();
     }
 
     @Test
@@ -235,6 +242,190 @@ class KernelRepositoryGeneratorTest {
     }
 
     @Test
+    @DisplayName("both write paths refuse a foreign tenant while one is bound, after the stamp")
+    void shouldRefuseAForeignTenantOnWrites() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .tenantScoped(true)
+                .fields(List.of(FieldMetadata.builder("orderNumber", "String").build()))
+                .build();
+
+        String repo = repositoryOf(metadata).content();
+
+        String stamp = "if (entity.getTenantId() == null) entity.setTenantId(actingTenantId());";
+        String refusal = "refuseForeignTenant(entity.getTenantId());";
+        assertThat(repo)
+                .containsSubsequence(
+                        "public Order save(Order entity)", stamp, refusal, "INSERT INTO orders",
+                        "public Order update(UUID id, Order entity)", stamp, refusal, "UPDATE orders SET")
+                .contains("private static void refuseForeignTenant(UUID tenantId)")
+                // "None bound" must stay a no-op: the slot is tested before the throwing accessor.
+                .containsSubsequence(
+                        "if (tenantId == null || !KernelProviders.STORAGE_CONTEXT.isBound())",
+                        "return;",
+                        "Optional<String> isolationKey = KernelProviders.storageContext().isolationKey();",
+                        "if (isolationKey.isEmpty())",
+                        "return;",
+                        "bound = UUID.fromString(isolationKey.get());",
+                        "throw new IllegalStateException(TENANT_KEY_NOT_A_UUID, e);",
+                        "if (!bound.equals(tenantId))",
+                        "throw new OrderTenantMismatchException(tenantId);");
+    }
+
+    @Test
+    @DisplayName("the owner is not in the UPDATE SET list — no update can move a row")
+    void shouldNeverUpdateTheOwner() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .tenantScoped(true)
+                .audited(true)
+                .versioned(true)
+                .fields(List.of(FieldMetadata.builder("orderNumber", "String").build()))
+                .build();
+
+        String repo = repositoryOf(metadata).content();
+
+        // The INSERT writes it; the UPDATE does not, and its binds close on id and version
+        // straight after updated_at.
+        assertThat(repo)
+                .contains("INSERT INTO orders (id, order_number, tenant_id, created_at, updated_at, version)")
+                .contains("UPDATE orders SET order_number = ?, created_at = ?, updated_at = ?, version = ? "
+                        + "WHERE id = ? AND version = ?")
+                .doesNotContain("tenant_id = ?")
+                .containsSubsequence("stmt.bindUuid(4, id);", "stmt.bindLong(5, expectedVersion);");
+        assertThat(KernelRepositoryGenerator.updateColumns(metadata))
+                .extracting(KernelRepositoryGenerator.Column::sqlName)
+                .containsExactly("order_number", "created_at", "updated_at", "version");
+    }
+
+    @Test
+    @DisplayName("an entity with nothing to update still emits valid SQL — SET id = id, no binds")
+    void shouldEmitAValidUpdateWhenNothingIsWritable() {
+        // Owner-only (the owner is never written on update) and field-less global: both have an
+        // empty SET list.
+        for (boolean tenantScoped : new boolean[]{true, false}) {
+            String repo = repositoryOf(DomainMetadata.builder("Marker", "com.example.domain")
+                    .tenantScoped(tenantScoped).build()).content();
+
+            assertThat(repo)
+                    .contains("UPDATE markers SET id = id WHERE id = ?")
+                    .containsSubsequence("public Marker update(UUID id, Marker entity)",
+                            "stmt.bindUuid(0, id);", "rowsAffected[0] = stmt.executeUpdate();")
+                    .doesNotContain("SET  WHERE");
+        }
+    }
+
+    @Test
+    @DisplayName("a UNIVERSE entity refuses a foreign shared scope too; a global entity refuses nothing")
+    void shouldRefuseAForeignSharedScopeOnAUniverseEntityOnly() {
+        String universe = repositoryOf(universe("java.util.UUID",
+                eu.exeris.sdk.sourcemodel.ast.DataScope.UNIVERSE, "worldId")).content();
+        String universeString = repositoryOf(universe("java.lang.String",
+                eu.exeris.sdk.sourcemodel.ast.DataScope.UNIVERSE, "worldId")).content();
+        String global = repositoryOf(DomainMetadata.builder("Order", "com.example.domain")
+                .fields(List.of(FieldMetadata.builder("orderNumber", "String").build()))
+                .build()).content();
+
+        assertThat(universe)
+                .containsSubsequence(
+                        "public Species save(Species entity)",
+                        "refuseForeignTenant(entity.getOrganizationId());",
+                        "if (entity.getWorldId() == null) entity.setWorldId(actingSharedScope());",
+                        "refuseForeignSharedScope(entity.getWorldId());",
+                        "INSERT INTO speciess")
+                .contains("private static void refuseForeignSharedScope(UUID worldId)")
+                .containsSubsequence("UUID bound = actingSharedScope();",
+                        "if (bound != null && !bound.equals(worldId))",
+                        "throw new SpeciesSharedScopeMismatchException(worldId.toString());")
+                // The shared scope stays writable on update (the owner may move its row between
+                // scopes); the owner does not.
+                .contains("UPDATE speciess SET name = ?, world_id = ? WHERE id = ?");
+        assertThat(universeString)
+                .contains("private static void refuseForeignSharedScope(String worldId)")
+                .contains("throw new SpeciesSharedScopeMismatchException(worldId);");
+        assertThat(global)
+                .doesNotContain("refuseForeign")
+                .doesNotContain("MismatchException");
+    }
+
+    /** A UNIVERSE entity with an owner and a shared-scope key of {@code scopeType}. */
+    private static DomainMetadata universe(String scopeType, eu.exeris.sdk.sourcemodel.ast.DataScope tier,
+                                           String sharedScopeField) {
+        return DomainMetadata.builder("Species", "com.example.domain")
+                .dataScope(tier)
+                .systemFields(new SystemFieldsMetadata("id", "createdAt", "createdBy", "updatedAt",
+                        "updatedBy", "organizationId", "version", null, null, null, sharedScopeField))
+                .fields(List.of(
+                        FieldMetadata.builder("name", "String").build(),
+                        FieldMetadata.builder("organizationId", "java.util.UUID").build(),
+                        FieldMetadata.builder("worldId", scopeType).build()))
+                .build();
+    }
+
+    private GeneratedFile repositoryOf(DomainMetadata metadata) {
+        return strategy.generate(metadata).stream()
+                .filter(f -> f.artifactType() == ArtifactType.REPOSITORY)
+                .findFirst().orElseThrow();
+    }
+
+    @Test
+    @DisplayName("T29 B: both write paths tag an untagged UNIVERSE row with the acting shared scope (UUID key)")
+    void shouldStampTheActingSharedScopeOnWrites() {
+        String repo = repositoryOf(universe("java.util.UUID",
+                eu.exeris.sdk.sourcemodel.ast.DataScope.UNIVERSE, "worldId")).content();
+
+        String tenantStamp = "if (entity.getOrganizationId() == null) entity.setOrganizationId(actingTenantId());";
+        String scopeStamp = "if (entity.getWorldId() == null) entity.setWorldId(actingSharedScope());";
+        assertThat(repo)
+                // After the owner, in both write paths, each ahead of its own SQL.
+                .containsSubsequence(
+                        "public Species save(Species entity)", tenantStamp, scopeStamp, "INSERT INTO speciess",
+                        "public Species update(UUID id, Species entity)", tenantStamp, scopeStamp,
+                        "UPDATE speciess SET")
+                .contains("private static UUID actingSharedScope()")
+                // The fallback accessor, deliberately: no bound context means no scope, which is the
+                // narrower answer, where the tenant resolver must throw on the same condition.
+                .contains("KernelProviders.storageContextOrSystem().sharedScopeKey()")
+                .contains(".filter(key -> !key.isBlank())")
+                .contains("throw new IllegalStateException(SHARED_SCOPE_KEY_NOT_A_UUID, e);")
+                .contains("private static final String SHARED_SCOPE_KEY_NOT_A_UUID")
+                // The owner resolver is untouched by the widening.
+                .contains("KernelProviders.storageContext().isolationKey()");
+    }
+
+    @Test
+    @DisplayName("T29 B: a String shared-scope key is stamped as-is — no UUID parse, no parse-failure message")
+    void shouldStampAStringSharedScopeWithoutParsing() {
+        String repo = repositoryOf(universe("java.lang.String",
+                eu.exeris.sdk.sourcemodel.ast.DataScope.UNIVERSE, "worldId")).content();
+
+        assertThat(repo)
+                .contains("if (entity.getWorldId() == null) entity.setWorldId(actingSharedScope());")
+                .contains("private static String actingSharedScope()")
+                .contains("return KernelProviders.storageContextOrSystem().sharedScopeKey()")
+                .contains(".filter(key -> !key.isBlank()).orElse(null);")
+                .doesNotContain("SHARED_SCOPE_KEY_NOT_A_UUID");
+    }
+
+    @Test
+    @DisplayName("T29 B: no shared-scope stamp on a TENANT entity, nor on a UNIVERSE entity without the carrier")
+    void shouldNotStampASharedScopeOffTheUniverseTier() {
+        // A TENANT entity whose metadata carries the component anyway (hand-written JSON — the
+        // processor drops it) and a UNIVERSE entity that fails closed to TENANT.
+        String tenant = repositoryOf(universe("java.util.UUID",
+                eu.exeris.sdk.sourcemodel.ast.DataScope.TENANT, "worldId")).content();
+        String carrierless = repositoryOf(universe("java.util.UUID",
+                eu.exeris.sdk.sourcemodel.ast.DataScope.UNIVERSE, null)).content();
+
+        // Non-vacuous: shouldStampTheActingSharedScopeOnWrites proves the emitter writes these.
+        for (String repo : List.of(tenant, carrierless)) {
+            assertThat(repo)
+                    .contains("actingTenantId()")
+                    .doesNotContain("actingSharedScope")
+                    .doesNotContain("SHARED_SCOPE_KEY_NOT_A_UUID")
+                    .doesNotContain("storageContextOrSystem");
+        }
+    }
+
+    @Test
     @DisplayName("Full feature flag matrix: tenantScoped + audited + softDelete + versioned all wire together")
     void shouldHandleFullFeatureMatrix() {
         DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
@@ -259,7 +450,7 @@ class KernelRepositoryGeneratorTest {
                 .contains("SELECT COUNT(*) FROM orders WHERE deleted = false")
                 // Optimistic-lock UPDATE adds AND version = ? on top of the audited SET clause.
                 .contains("AND version = ?")
-                // T26: the expected version is read into a boxed local and null-defaulted, so a
+                // The expected version is read into a boxed local and null-defaulted, so a
                 // `Long version` field behaves like the `long` it shadows instead of NPE-ing.
                 .contains("Long currentVersion = entity.getVersion()")
                 .contains("long expectedVersion = currentVersion == null ? 0L : currentVersion")
@@ -341,7 +532,7 @@ class KernelRepositoryGeneratorTest {
                 .contains("long expectedVersion = currentVersion == null ? 0L : currentVersion")
                 .contains("entity.setVersion(expectedVersion + 1L)")
                 // Bind layout: [0]=order_number, [1]=version (new), [2]=id,
-                // [3]=expectedVersion (the optimistic-lock guard). T26: the version bind reads
+                // [3]=expectedVersion (the optimistic-lock guard). The version bind reads
                 // through a boxed local too, so bindLong never unboxes a null.
                 .contains("Long versionValue = entity.getVersion()")
                 .contains("stmt.bindLong(1, versionValue == null ? 0L : versionValue)")

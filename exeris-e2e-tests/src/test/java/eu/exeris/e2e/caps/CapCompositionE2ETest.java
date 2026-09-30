@@ -29,7 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * G3 — the cap-composition exit gate for Phase 1 of the gateway-caps plan (P1.4).
+ * The cap-composition exit gate for Phase 1 of the gateway-caps plan (P1.4).
  *
  * <p>Every other capability test in this repo starts from hand-built
  * {@code CapabilityModuleDescriptor}s or hand-written {@code capability_*.json}. This one starts
@@ -64,7 +64,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 @Tag("e2e")
 @Tag("caps")
-@DisplayName("G3 — cap composition e2e: annotations → processor → verify-capabilities → kernel → conductor")
+@DisplayName("GC3 — cap composition e2e: annotations → processor → verify-capabilities → kernel → conductor")
 class CapCompositionE2ETest {
 
     private static final String VAULT = "eu.exeris.caps.vault.VaultModule";
@@ -142,7 +142,7 @@ class CapCompositionE2ETest {
     }
 
     @Test
-    @DisplayName("G2: the emitted Application of a composed build carries the conductor call site")
+    @DisplayName("GC2: the emitted Application of a composed build carries the conductor call site")
     void emittedApplicationCarriesTheConductorCallSite() throws IOException {
         assertThat(Files.readString(generatedDir.resolve("eu/exeris/sku/gateway/Application.java")))
                 .contains("import eu.exeris.sdk.composition.runtime.CompositionConductor")
@@ -270,7 +270,7 @@ class CapCompositionE2ETest {
      * The sample SKU: two caps with a real {@code @Requires} edge (so the order is derived, not
      * declared), one shared service contract, one cap-private internal type, and one
      * {@code @ExerisDomain} entity — the domain is what makes the build emit an {@code Application}
-     * at all, which is where the G2 conductor call site lands.
+     * at all, which is where the conductor call site lands.
      */
     private static Map<String, String> sampleSku() {
         Map<String, String> sources = new LinkedHashMap<>();

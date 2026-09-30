@@ -35,6 +35,22 @@ import javax.lang.model.element.Modifier;
  * documentation only — plain Javadoc text, never an import — so the generated
  * source stays tier-neutral (The Wall).
  *
+ * <p>Peer addressing (kernel ADR-074) is the same kind of concern and gets the same
+ * treatment. The emitted client names no address, because the peer is deployment data and not
+ * domain metadata. The constructor Javadoc shows the caller binding one with
+ * {@code KernelWebClient.withAuthority(host:port)}, or configuring the engine's
+ * default ({@code http.client.defaultAuthority} / {@code HttpConfig.defaultAuthority}). It
+ * matters because a CLIENT-mode {@code HttpConfig}'s {@code bindHost}/{@code port} is a listen
+ * address and is never dialled, so wiring that sets only those compiles and is refused at its
+ * first request.
+ *
+ * <p>Update is the one verb this client cannot align with the generated server. The router
+ * serves update on {@code PUT} and the OpenAPI document publishes {@code PUT}, but
+ * {@code KernelWebClient} offers no {@code put}, so the emitted {@code update}
+ * sends {@code PATCH} and its Javadoc prints the serving-side route that makes it reach.
+ * {@code CrudRouteParityE2ETest} holds every other client call to the router's routes and fails
+ * once the facade gains {@code put}.
+ *
  * @implNote Emission is JavaPoet-based (ADR-015).
  *
  * @see "docs/adr/ADR-034.link.md — link stub; kernel-side
@@ -77,6 +93,8 @@ public class KernelClientGenerator implements KernelArtifactGenerator {
                 .addJavadoc("\n")
                 .addJavadoc("<p>Uses {@link $T} for service-to-service communication\n", WEB_CLIENT)
                 .addJavadoc("with automatic JSON serialization and Virtual Thread support.\n")
+                .addJavadoc("Requests go to the peer the injected client addresses, which this\n")
+                .addJavadoc("class never names (kernel ADR-074) — see the constructor.\n")
                 .addJavadoc("\n")
                 .addJavadoc("@see $T\n", WEB_CLIENT)
                 .addField(FieldSpec.builder(String.class, "BASE_PATH",
@@ -89,7 +107,7 @@ public class KernelClientGenerator implements KernelArtifactGenerator {
                 .addMethod(buildFindAllPaged(entity, entityType, listOfEntity))
                 .addMethod(buildFindAll(entity, entityType, listOfEntity))
                 .addMethod(buildCreate(entity, entityType))
-                .addMethod(buildUpdate(entity, entityType))
+                .addMethod(buildUpdate(entity, entityType, apiPath))
                 .addMethod(buildDelete(entity))
                 .build();
 
@@ -102,22 +120,45 @@ public class KernelClientGenerator implements KernelArtifactGenerator {
         // KernelWebClient, never per-entity. CommunityHttpRetryPolicy and
         // HttpRetryPolicy appear as plain Javadoc text (no $T) so no import —
         // and no tier identity — lands in the compiled surface (The Wall).
+        //
+        // Kernel ADR-074: the same example has to address the peer. A CLIENT-mode
+        // HttpConfig(bindHost, port) is a listen address only, and the compatibility constructor
+        // builds a client with no peer, so code that sets only those compiles and fails at its
+        // first request.
+        // HttpConfig and the config key are plain text for the same reason as the retry
+        // types: an import used only by Javadoc would be a consumer-build requirement that
+        // nothing in the compiled surface needs.
         return MethodSpec.constructorBuilder()
                 .addJavadoc("Creates a new $L.\n", className)
                 .addJavadoc("\n")
                 .addJavadoc("<p>Composition-root example (ADR-045): construct one shared\n")
                 .addJavadoc("{@link $T} with a retry policy and every generated client\n", WEB_CLIENT)
-                .addJavadoc("inherits retry semantics — no per-entity retry configuration:\n")
+                .addJavadoc("inherits retry semantics — no per-entity retry configuration —\n")
+                .addJavadoc("then address the peer that serves this API:\n")
                 .addJavadoc("<pre>{@code\n")
                 .addJavadoc("var webClient = new KernelWebClient(engine, allocator,\n")
                 .addJavadoc("        requestEncoders, responseDecoders,\n")
                 .addJavadoc("        HttpClientRequestEnricher.noop(),\n")
                 .addJavadoc("        new eu.exeris.kernel.community.http.CommunityHttpRetryPolicy());\n")
-                .addJavadoc("var client = new $L(webClient);\n", className)
+                .addJavadoc("var client = new $L(webClient.withAuthority(\"peer-host:8080\"));\n",
+                        className)
                 .addJavadoc("}</pre>\n")
                 .addJavadoc("The policy parameter is opt-in — the shorter {@code KernelWebClient}\n")
                 .addJavadoc("constructors delegate to {@code HttpRetryPolicy.none()}, keeping the\n")
                 .addJavadoc("no-implicit-retry default (ADR-026).\n")
+                .addJavadoc("\n")
+                .addJavadoc("<p>Addressing the peer (kernel ADR-074): every path this client\n")
+                .addJavadoc("requests is relative to the peer the injected client addresses.\n")
+                .addJavadoc("Bind one per client with {@code withAuthority(\"host:port\")}, as\n")
+                .addJavadoc("above, so one engine serves several peers; or give the client engine\n")
+                .addJavadoc("a default peer through the {@code http.client.defaultAuthority}\n")
+                .addJavadoc("configuration key, or the {@code defaultAuthority} component of\n")
+                .addJavadoc("{@code HttpConfig} when the engine is built by hand. The port is\n")
+                .addJavadoc("required. A CLIENT-mode {@code HttpConfig}'s {@code bindHost} and\n")
+                .addJavadoc("{@code port} are a listen address and are never dialled: with neither\n")
+                .addJavadoc("set, a request is refused rather than sent (the Community engine\n")
+                .addJavadoc("throws {@code IllegalStateException} naming\n")
+                .addJavadoc("{@code http.client.defaultAuthority}).\n")
                 .addJavadoc("\n")
                 .addJavadoc("@param client the web client (injected from CompositionRoot)\n")
                 .addModifiers(Modifier.PUBLIC)
@@ -187,9 +228,30 @@ public class KernelClientGenerator implements KernelArtifactGenerator {
                 .build();
     }
 
-    private MethodSpec buildUpdate(String entity, ClassName entityType) {
+    private MethodSpec buildUpdate(String entity, ClassName entityType, String apiPath) {
+        // PATCH/PUT parity. The generated router serves update on PUT only, the OpenAPI document
+        // publishes PUT, and the kernel router matches methods exactly — so this PATCH falls
+        // through to the router's not-found handler. It stays PATCH because KernelWebClient
+        // has get/getList/post/patch/delete and no put: there is no call this
+        // client can make that sends the verb the server serves. The emitted Javadoc says so,
+        // with the one-route workaround on the serving side, and CrudRouteParityE2ETest pins the
+        // exemption — it fails the day the facade gains put(...), which is the cue to switch.
         return MethodSpec.methodBuilder("update")
                 .addJavadoc("Updates an existing $L.\n", entity)
+                .addJavadoc("\n")
+                .addJavadoc("<p><b>Not served by the generated server as emitted.</b> The generated\n")
+                .addJavadoc("router serves this update on {@code PUT}, and this method sends\n")
+                .addJavadoc("{@code PATCH}, because {@link $T} has no {@code put} verb yet. Until it\n",
+                        WEB_CLIENT)
+                .addJavadoc("does, the serving application must route {@code PATCH} to the same\n")
+                .addJavadoc("handler from its {@code RuntimeComponents}:\n")
+                .addJavadoc("{@snippet :\n")
+                .addJavadoc("@Override public void configureRoutes(HttpRouter.Builder routes) {\n")
+                .addJavadoc("    routes.route(HttpMethod.PATCH, \"$L/{id}\", $LHandler()::handleUpdate);\n",
+                        apiPath, Character.toLowerCase(entity.charAt(0)) + entity.substring(1))
+                .addJavadoc("}\n")
+                .addJavadoc("}\n")
+                .addJavadoc("Without it the request is answered by the router's not-found handler.\n")
                 .addJavadoc("\n")
                 .addJavadoc("@param id the entity ID\n")
                 .addJavadoc("@param entity the entity with updated data\n")
