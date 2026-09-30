@@ -137,8 +137,9 @@ search over the experimental `debounced()`.
 
 ## Dependencies on other work
 
-- **T6 (TS half)** reworks the route plural (`DslMapper.routePlural`). PR-B's and PR-D's links
-  consume it — keep to the existing function and rebase after T6 lands.
+- **T6** makes `DslMapper.routePlural` the kebab-cased SDK plural (`pluralName`), so the
+  front's routes match `effectivePath()`. PR-A0's navigation and PR-D's links call that function
+  rather than pluralising on their own.
 - **`@RouteAccess`** extraction on the Java side will add `routeAccess` to the metadata JSON; the
   Zod schema strips unknown keys silently, so the same change owes the `domain-model.ts` field.
 - **T53** owns authorization for both emitters.
