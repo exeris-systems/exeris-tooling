@@ -3296,10 +3296,10 @@ application a starter instead of a hand-written POM, and cut on the final 0.12 p
 is not in 0.9.0: it moves to 0.10.0 (below), after the kernel and the SDK are on Central.
 
 **1. SDK 0.12 catch-up**
-- [ ] **T6** — `@ExerisDomain.tableName` extraction, `KernelTableNaming` on `effectiveTableName()`,
+- [x] **T6** — `@ExerisDomain.tableName` extraction, `KernelTableNaming` on `effectiveTableName()`,
       and the same plural rule for TS route segments (see "Follow SDK 0.12.0"). Must land before the
       cut.
-- [ ] **`@RouteAccess`, minimum: the refusal, not the extraction.** Refuse `PUBLIC` together with a
+- [x] **`@RouteAccess`, minimum: the refusal, not the extraction.** Refuse `PUBLIC` together with a
       non-empty `permissions` on the same element at compile time. The SDK annotation names that
       refusal as tooling's job, because a permit-all route binds no `PrincipalContext` and a scope
       check on it can never pass. Nothing is written to `DomainMetadata.routeAccess` /
