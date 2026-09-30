@@ -250,10 +250,9 @@ class GeneratedTestsE2ETest {
                 // What the generated main code binds.
                 codeSourceOf("eu.exeris.kernel.spi.http.HttpExchange"),
                 codeSourceOf("eu.exeris.kernel.core.bootstrap.KernelBootstrap"),
-                // No slf4j anchor, deliberately. Generated code used to bind org.slf4j, which
-                // reaches an app only through the kernel's driver tier; it now logs through
-                // java.lang.System.Logger. Its absence here is the enforcement: if an emitter
-                // reintroduced the facade, these sources would stop compiling.
+                // Generated code uses java.lang.System.Logger, not org.slf4j. The absence of
+                // an slf4j anchor here is the enforcement: an emitter that reintroduced the
+                // facade would fail compilation.
                 // What the generated tests may import — ADR-058 §2.
                 codeSourceOf("org.junit.jupiter.api.Test"),
                 codeSourceOf("org.assertj.core.api.Assertions"),

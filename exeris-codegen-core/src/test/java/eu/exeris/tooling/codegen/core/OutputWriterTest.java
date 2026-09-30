@@ -99,7 +99,7 @@ class OutputWriterTest {
         assertThat(Files.readAllBytes(file)).containsExactly(payload);
     }
 
-    // --- T13: output-tree ownership (manifest + orphan pruning) ---
+    // --- output-tree ownership (manifest + orphan pruning) ---
 
     @Test
     @DisplayName("pruneOrphansAndWriteManifest writes a sorted manifest of this run's files")
@@ -188,7 +188,7 @@ class OutputWriterTest {
                 .containsExactly("# Exeris Tooling generated-output manifest - DO NOT EDIT MANUALLY");
     }
 
-    // --- T18(a): preserve — keep a previously-owned file across the prune ---
+    // --- preserve — keep a previously-owned file across the prune ---
 
     @Test
     @DisplayName("preserve keeps a previously-owned file byte-untouched across the prune and re-records it")

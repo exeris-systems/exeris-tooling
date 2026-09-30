@@ -94,13 +94,11 @@
         <swagger-core.version>2.2.52</swagger-core.version>
 
         <junit.version>5.11.4</junit.version>
-        <!-- 3.27.7 closes GHSA-rqfh-9r24-8c9r — XXE in isXmlEqualTo when
+        <!-- 3.27.7 is the floor: it closes GHSA-rqfh-9r24-8c9r — XXE in isXmlEqualTo when
              parsing untrusted XML. We do not use isXmlEqualTo anywhere
              in the test suite (`grep -r isXmlEqualTo` → zero hits), so
              the vulnerability is structurally non-exploitable here; the
-             bump is purely to close the Dependabot alert and keep the
-             dep line on a patched version. Patch-level bump (3.27.3 →
-             3.27.7), no API change. -->
+             pin keeps the dep line on a patched version. -->
         <assertj.version>3.27.7</assertj.version>
         <compile-testing.version>0.21.0</compile-testing.version>
         <json-schema-validator.version>1.5.4</json-schema-validator.version>
@@ -222,10 +220,9 @@
                  verifies emitted repositories' tools.jackson.* references
                  (List<X> JSON-column persistence via ObjectMapper / TypeReference,
                  see KernelRepositoryGenerator) resolve against the same Jackson 3
-                 line the Open-Core kernel runtime uses. Handlers no longer
-                 reference it — ADR-036 moved request-body decode to the
-                 HttpRequestBodyDecoder SPI. Not pulled by production tooling
-                 modules. -->
+                 line the Open-Core kernel runtime uses. Only repositories reference
+                 it; handlers use the HttpRequestBodyDecoder SPI (per ADR-036).
+                 Not pulled by production tooling modules. -->
             <dependency>
                 <groupId>tools.jackson.core</groupId>
                 <artifactId>jackson-databind</artifactId>

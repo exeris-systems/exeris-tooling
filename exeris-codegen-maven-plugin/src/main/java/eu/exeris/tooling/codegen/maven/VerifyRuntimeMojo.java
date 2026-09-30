@@ -19,7 +19,7 @@ import java.util.List;
 
 /**
  * {@code exeris:verify-runtime} — fails the build when the emitted application has no kernel
- * driver to run on (T50, ADR-078).
+ * driver to run on (ADR-078).
  *
  * <p>{@code Application.main()} boots subsystems <em>by name</em>, and every provider behind
  * those names arrives from a runtime driver artefact. Tooling emits no {@code pom.xml}, so

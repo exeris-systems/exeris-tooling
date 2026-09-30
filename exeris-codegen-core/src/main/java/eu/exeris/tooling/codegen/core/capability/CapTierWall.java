@@ -29,7 +29,7 @@ import java.util.stream.Stream;
  * private package, or a sibling cap's {@code internal} package.
  *
  * <h2>Why bytecode and not sources</h2>
- * <p>Founder-ruled (2026-07-29). A source scan sees only the files the cap itself
+ * <p>A source scan sees only the files the cap itself
  * declares, so it is blind to the case that actually bites in practice: a forbidden
  * type arriving through a <em>dependency</em> change. Bytecode is the artefact that
  * ships, so it is the artefact the Wall must hold. It also means the guard needs no

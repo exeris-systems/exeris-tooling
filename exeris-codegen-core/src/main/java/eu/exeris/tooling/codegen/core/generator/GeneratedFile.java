@@ -20,7 +20,7 @@ public record GeneratedFile(
     String extension
 ) {
     /**
-     * Constructor with default .java extension for backward compatibility.
+     * Constructor with default .java extension.
      */
     public GeneratedFile(String packageName, String className, String content, KernelArtifactGenerator.ArtifactType artifactType) {
         this(packageName, className, content, artifactType, "java");

@@ -28,14 +28,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Closes the remaining coverage gaps in {@link FormDslGenerator} that
  * {@link FormDslGeneratorTest} and {@link FormDslGeneratorBranchTest}
- * leave behind. Targets the surfaces that were measured at 0% coverage
- * in the per-method JaCoCo report (buildSelectConfig,
- * buildAutocompleteConfig, the writeXxxFormTo file-I/O wrappers) plus
- * the remaining branch holes in buildGroup, buildGridRows row-overflow,
- * buildLayoutConfig small-column case, humanize null/empty inputs,
- * isExcludedField hidden path, buildRelationshipAutocomplete
- * displayField override, getFieldUIOverride null-fieldOverrides path,
- * and buildForm validationSummary suppression.
+ * leave behind. Targets surfaces with zero coverage in the per-method
+ * JaCoCo report (buildSelectConfig, buildAutocompleteConfig, the
+ * writeXxxFormTo file-I/O wrappers) plus remaining branch holes in
+ * buildGroup, buildGridRows row-overflow, buildLayoutConfig small-column
+ * case, humanize null/empty inputs, isExcludedField hidden path,
+ * buildRelationshipAutocomplete displayField override, getFieldUIOverride
+ * null-fieldOverrides path, and buildForm validationSummary suppression.
  */
 @DisplayName("FormDslGenerator — remaining coverage gaps")
 class FormDslGeneratorGapsTest {

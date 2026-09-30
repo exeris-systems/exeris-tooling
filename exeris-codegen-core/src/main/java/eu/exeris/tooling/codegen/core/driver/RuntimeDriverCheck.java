@@ -13,7 +13,7 @@ import java.util.zip.ZipFile;
 
 /**
  * Reads a runtime classpath and reports which kernel service-provider registrations are
- * absent from it (T50, ADR-078).
+ * absent from it (ADR-078).
  *
  * <h2>Why a resource scan and not a class load</h2>
  * Kernel providers are discovered at boot by {@link java.util.ServiceLoader}, so a provider
@@ -31,8 +31,8 @@ import java.util.zip.ZipFile;
  *
  * <p>The check is nonetheless non-vacuous, and that is measurable rather than assumed:
  * {@code exeris-kernel-core} registers <b>no</b> {@code META-INF/services} entries at all in
- * its main artefact, so an application built against SPI + Core alone — the exact shape T50
- * describes — fails here rather than at boot.
+ * its main artefact, so an application built against SPI + Core alone fails here rather than
+ * at boot.
  *
  * @since 0.8.0
  */

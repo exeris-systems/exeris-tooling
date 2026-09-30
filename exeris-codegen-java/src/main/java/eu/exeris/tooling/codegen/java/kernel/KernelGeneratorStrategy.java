@@ -33,14 +33,10 @@ import java.util.List;
  *       {@code WebClientException.isNotFound()}</li>
  * </ul>
  *
- * <p>{@link KernelClientGenerator} was unparked once ADR-034 landed the
- * convenience {@code KernelWebClient} facade
- * ({@code get/post/patch/delete(path, [body,] Class<T>)}) in
- * {@code eu.exeris.kernel.core.http.client}. That facade is the entity-typed
- * surface the generator always targeted, so no tooling-side {@code HttpEntityCodec}
- * collaborator was needed — registration only. (A prior unpark attempt, PR #60,
- * was reverted because it bound to a non-existent {@code CommunityWebClient};
- * ADR-034's tier-neutral facade is the correct binding target.)
+ * <p>{@link KernelClientGenerator} binds to the tier-neutral {@code KernelWebClient}
+ * facade in {@code eu.exeris.kernel.core.http.client} (ADR-034). Its
+ * {@code get/post/patch/delete(path, [body,] Class<T>)} methods are the entity-typed surface
+ * the generator targets, so no tooling-side {@code HttpEntityCodec} collaborator is needed.
  *
  * <h2>Project-wide (invoked separately by {@code CodegenPipeline})</h2>
  * <p>{@link KernelApplicationGenerator} is <b>not</b> part of the

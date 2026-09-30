@@ -10,15 +10,13 @@ import java.util.Optional;
 /**
  * The one place emitters ask what an entity's data-scope tier means for output.
  *
- * <p>Before ADR-059 every generator read {@code DomainMetadata.tenantScoped()}
- * directly. That boolean is now deprecated for removal in SDK 1.0.0 and, more
- * to the point, it is no longer the whole answer: an author can declare
- * {@code dataScope = TENANT} without ever writing {@code tenantScoped = true},
- * and a generator still reading the raw boolean would emit a table with no
- * owner column, no RLS policy and no owner index — a silent loss of tenancy
- * rather than a build error. Every such read goes through
- * {@link DomainMetadata#effectiveDataScope()}, and the emitters ask that
- * question here so there is exactly one place to change.
+ * <p>{@code DomainMetadata.tenantScoped()} is deprecated for removal in SDK 1.0.0 and is not the
+ * whole answer (ADR-059): an author can declare {@code dataScope = TENANT} without ever writing
+ * {@code tenantScoped = true}, and a generator still reading the raw boolean
+ * would emit a table with no owner column, no RLS policy and no owner index —
+ * a silent loss of tenancy rather than a build error. Every such read goes
+ * through {@link DomainMetadata#effectiveDataScope()}, and the emitters ask
+ * that question here so there is exactly one place to change.
  *
  * <h2>Two questions, because a UNIVERSE row is owned</h2>
  * <p>{@link #isTenantPartitioned} asks whether rows have an owning tenant, and is

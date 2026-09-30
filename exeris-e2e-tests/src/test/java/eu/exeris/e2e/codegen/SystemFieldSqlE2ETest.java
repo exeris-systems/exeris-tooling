@@ -21,11 +21,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Annotation → SQL for {@code annotation.system.*} (C1): the field an annotation is declared on is
  * the column the schema names.
  *
- * <p>Sibling of {@link RelationshipSqlE2ETest} and written for the same reason. Until C1 the nine
- * field-level system annotations reached nothing: {@code DomainMetadata.systemFields} was populated
- * only from {@code @ExerisDomain}'s remote override attributes, so annotating a field said nothing
- * about the emitted schema. Processor tests assert the metadata JSON and generator tests run on
- * hand-built metadata, which leaves this seam covered by neither.
+ * <p>Sibling of {@link RelationshipSqlE2ETest} and written for the same reason. Processor tests
+ * assert the emitted metadata JSON and generator tests run on hand-built metadata, which leaves
+ * this integration seam uncovered by either.
  *
  * <p><b>The annotations rename a column; they do not add one.</b> Whether the audit, soft-delete
  * and version columns exist at all is decided by {@code @ExerisDomain(audited/softDelete/versioned)}

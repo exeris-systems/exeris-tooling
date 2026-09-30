@@ -23,8 +23,7 @@ import java.lang.System.Logger.Level;
  * from {@link #runOrPrintError(String[], PrintStream)} into a
  * {@code System.exit} call — so the exit translation is the ONLY uncovered
  * line (the testable surface lives on {@code runOrPrintError}, exercised by
- * {@code CodegenMainTest}). JaCoCo measures this class normally; the
- * earlier {@code CodegenMain.class} plugin exclude is removed.
+ * {@code CodegenMainTest}). JaCoCo measures this class normally.
  *
  * <h2>Usage:</h2>
  * <pre>
