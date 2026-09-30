@@ -13,6 +13,7 @@ import type { GeneratorConfig } from '../../config.js';
 import type { CodeGenerator, GeneratedFile, GeneratorContext } from '../../core/generator-registry.js';
 import type { BackendType } from '../../core/backend-strategy.js';
 import { outPath } from '../../core/paths.js';
+import { updateVersionField } from '../api/type-gen.js';
 
 export { GeneratedFile };
 
@@ -97,9 +98,21 @@ export class FormGenerator implements CodeGenerator {
     // repository stamps it from the bound storage context, the create DTO omits it (type-gen's
     // systemFieldNames), and the form therefore renders no control for it and never sends it.
     const sharedScopeField = domain.systemFields?.sharedScopeField;
+    // A versioned entity's lock field is never a control: the edit form holds the loaded
+    // entity's value aside and sends it with the update (type-gen's updateVersionField names it).
+    const version = updateVersionField(domain);
+    // The expression reading the version off a loaded entity. When the metadata does not declare
+    // the field, the entity interface has no such property, so it is read through a narrowing cast.
+    const readVersion = (entityExpr: string): string => {
+      const name = version!.name;
+      return version!.declared
+        ? `${entityExpr}.${name} ?? null`
+        : `(${entityExpr} as unknown as { ${name}?: number }).${name} ?? null`;
+    };
     const isSystemField = (name: string): boolean => {
       return ['id', 'createdAt', 'updatedAt', 'createdBy', 'updatedBy', 'version', 'deleted', 'deletedAt', 'tenantId'].includes(name)
-        || name === sharedScopeField;
+        || name === sharedScopeField
+        || name === version?.name;
     };
 
     const isEnumField = (field: FieldMetadata): boolean => {
@@ -253,6 +266,16 @@ export class FormGenerator implements CodeGenerator {
       lines.push('      </div>');
     }
 
+    if (version) {
+      // The server answers a stale update with 409 and no body; the only recovery is to load
+      // the row as it now stands, which also picks up its current version.
+      lines.push('      @if (conflict()) {');
+      lines.push('        <div role="alert" data-testid="conflict-message" class="rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-200">');
+      lines.push('          <p>This record was changed by someone else. Reload to see the latest version.</p>');
+      lines.push('          <button type="button" (click)="reload()" data-testid="reload-button" class="mt-2 rounded-md bg-white px-3 py-1.5 text-sm font-medium text-amber-800 shadow-sm border border-amber-300 hover:bg-amber-100 dark:bg-gray-800 dark:text-amber-200 dark:border-amber-700">Reload</button>');
+      lines.push('        </div>');
+      lines.push('      }');
+    }
     lines.push('      <div class="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">');
     lines.push('        <button type="button" (click)="onCancel()" data-testid="cancel-button" class="rounded-md bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm border border-gray-300 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600">Cancel</button>');
     lines.push('        <button type="submit" [disabled]="form.invalid || saving() || (editMode() && !current())" data-testid="submit-button" class="rounded-md bg-exeris-primary px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-exeris-primary-hover disabled:opacity-50">');
@@ -304,6 +327,13 @@ export class FormGenerator implements CodeGenerator {
     lines.push('');
     lines.push('  readonly saving = signal(false);');
     lines.push('  readonly error = signal<string | null>(null);');
+    if (version) {
+      lines.push('  readonly conflict = signal(false);');
+      lines.push('');
+      lines.push(`  /** The ${version.name} the edited entity was loaded at; the update sends it back as the expected version. */`);
+      const versionType = version.tsType.endsWith('| null') ? version.tsType : `${version.tsType} | null`;
+      lines.push(`  private readonly loadedVersion = signal<${versionType}>(null);`);
+    }
     lines.push('');
     lines.push('  readonly form = this.fb.group({');
     for (const f of createFields) {
@@ -352,6 +382,9 @@ export class FormGenerator implements CodeGenerator {
     lines.push('      const entity = this.current();');
     lines.push('      if (entity && this.editMode()) {');
     lines.push('        this.form.patchValue(entity as any);');
+    if (version) {
+      lines.push(`        this.loadedVersion.set(${readVersion('entity')});`);
+    }
     lines.push('      }');
     lines.push('    });');
     lines.push('  }');
@@ -369,6 +402,7 @@ export class FormGenerator implements CodeGenerator {
     lines.push('');
     lines.push('    this.saving.set(true);');
     lines.push('    this.error.set(null);');
+    if (version) lines.push('    this.conflict.set(false);');
     lines.push('');
     const numericCreateFields = createFields.filter(isNumericField);
     if (numericCreateFields.length > 0) {
@@ -384,7 +418,10 @@ export class FormGenerator implements CodeGenerator {
     } else {
       lines.push('    const data = this.form.getRawValue();');
     }
-    lines.push(`    const request$ = this.editMode() && current ? this.service.update(String(current.${idField}), data as ${modelName}Update) : this.service.create(data as ${modelName}Create);`);
+    const updatePayload = version
+      ? `{ ...data, ${version.name}: this.loadedVersion() } as ${modelName}Update`
+      : `data as ${modelName}Update`;
+    lines.push(`    const request$ = this.editMode() && current ? this.service.update(String(current.${idField}), ${updatePayload}) : this.service.create(data as ${modelName}Create);`);
     lines.push('');
     lines.push('    request$.subscribe({');
     lines.push('      next: (result) => {');
@@ -396,6 +433,12 @@ export class FormGenerator implements CodeGenerator {
     lines.push('      },');
     lines.push('      error: (err) => {');
     lines.push('        this.saving.set(false);');
+    if (version) {
+      lines.push("        if (this.editMode() && err?.status === 409) {");
+      lines.push('          this.conflict.set(true);');
+      lines.push('          return;');
+      lines.push('        }');
+    }
     lines.push("        this.error.set(err?.message ?? 'An error occurred');");
     lines.push('      },');
     lines.push('    });');
@@ -410,7 +453,30 @@ export class FormGenerator implements CodeGenerator {
     lines.push('    }');
     lines.push('  }');
     lines.push('');
-    lines.push('  reload(): void { this.entityResource.reload(); }');
+    if (!version) {
+      lines.push('  reload(): void { this.entityResource.reload(); }');
+    } else {
+      // A form loaded by id reloads its resource, and the patch effect picks up the fresh
+      // values and version. A host-supplied entity has no resource behind it, so the row is
+      // fetched directly.
+      lines.push('  /** Loads the row as it now stands, replacing the edited values and the expected version. */');
+      lines.push('  reload(): void {');
+      lines.push('    this.conflict.set(false);');
+      lines.push('    if (this.id() !== undefined) {');
+      lines.push('      this.entityResource.reload();');
+      lines.push('      return;');
+      lines.push('    }');
+      lines.push('    const current = this.current();');
+      lines.push('    if (!current) return;');
+      lines.push(`    this.service.findById(String(current.${idField})).subscribe({`);
+      lines.push('      next: (fresh) => {');
+      lines.push('        this.form.reset(fresh as any);');
+      lines.push(`        this.loadedVersion.set(${readVersion('fresh')});`);
+      lines.push('      },');
+      lines.push("      error: (err) => this.error.set(err?.message ?? 'An error occurred'),");
+      lines.push('    });');
+      lines.push('  }');
+    }
 
     // Generate compute methods for computed fields
     for (const cf of computedFields) {

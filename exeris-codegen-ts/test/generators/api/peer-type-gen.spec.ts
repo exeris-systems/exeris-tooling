@@ -164,3 +164,15 @@ describe('peerRoot', () => {
     expect(peerRoot('billing')).toBe('peers/billing');
   });
 });
+
+describe('generatePeerTypes — versioned peer entity', () => {
+  const versioned: PeerContract = { ...billing, domains: [DomainMetadataSchema.parse({ ...order, versioned: true })] };
+
+  it('the peer Update type and schema carry the version, as the local emitter does', () => {
+    const files = generatePeerTypes(versioned, { ...DEFAULT_CONFIG, generateZod: true });
+    expect(byPath(files, 'types/order.types.ts'))
+      .toContain('export type OrderUpdate = Partial<OrderCreate> & { version: number | null };');
+    expect(byPath(files, 'schemas/order.schema.ts'))
+      .toContain('export const OrderUpdateSchema = OrderCreateSchema.partial().extend({ version: z.number().nullable() });');
+  });
+});
