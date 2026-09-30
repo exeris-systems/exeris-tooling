@@ -15,8 +15,9 @@
  * format-driven inputType override + the textarea promotion for long
  * strings.
  *
- * The three formatting helpers (humanize / toKebabCase / toCamelCase) get
- * focused one-liner tests.
+ * The formatting helpers (humanize / toKebabCase / toCamelCase) get
+ * focused one-liner tests, and the plural helpers (pluralName / routePlural)
+ * a table of the SDK rule's cases.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -395,6 +396,46 @@ describe('DslMapper.toKebabCase', () => {
 
   it('all-lowercase passes through unchanged', () => {
     expect(DslMapper.toKebabCase('order')).toBe('order');
+  });
+});
+
+describe('DslMapper.pluralName — the SDK DomainMetadata.pluralName() rule', () => {
+  it.each([
+    ['Order', 'Orders'],
+    ['ConstructionOrder', 'ConstructionOrders'],
+    ['Colony', 'Colonies'],
+    ['Technology', 'Technologies'],
+    ['Key', 'Keys'],
+    ['Day', 'Days'],
+    ['Box', 'Boxes'],
+    ['Quiz', 'Quizes'],
+    ['Status', 'Statuses'],
+    ['Address', 'Addresses'],
+    ['Branch', 'Branches'],
+    ['Wish', 'Wishes'],
+    ['News', 'Newses'],
+    ['Person', 'Persons'],
+    ['Y', 'Ys'],
+  ])('%s → %s', (entityName, plural) => {
+    expect(DslMapper.pluralName(entityName)).toBe(plural);
+  });
+
+  it('an empty name yields an empty plural', () => {
+    expect(DslMapper.pluralName('')).toBe('');
+  });
+});
+
+describe('DslMapper.routePlural — the segment effectivePath() derives', () => {
+  it.each([
+    ['Order', 'orders'],
+    ['ConstructionOrder', 'construction-orders'],
+    ['Colony', 'colonies'],
+    ['OrderLineItem', 'order-line-items'],
+    ['Box', 'boxes'],
+    ['Address', 'addresses'],
+    ['Key', 'keys'],
+  ])('%s → %s', (entityName, segment) => {
+    expect(DslMapper.routePlural(entityName)).toBe(segment);
   });
 });
 

@@ -1343,6 +1343,118 @@ class ExerisDomainProcessorTest {
     }
 
     @Nested
+    @DisplayName("1.1.8 @ExerisDomain.tableName and the derived table")
+    class TableNameTests {
+
+        private JavaFileObject entity(String name, String extraAttributes) {
+            return JavaFileObjects.forSourceString(
+                    "com.example." + name,
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+
+                    @ExerisDomain(module = "empire", path = "/things"%s)
+                    public class %s {
+                    }
+                    """.formatted(extraAttributes, name));
+        }
+
+        private List<String> tableWarnings(Compilation compilation) {
+            return compilation.warnings().stream()
+                    .map(d -> d.getMessage(null))
+                    .filter(m -> m != null && m.contains("default table changes"))
+                    .toList();
+        }
+
+        @Test
+        @DisplayName("tableName reaches the metadata as written")
+        void tableNameIsExtracted() throws IOException {
+            Compilation compilation = compileWithProcessor(entity("Colony", ", tableName = \"colonys\""));
+
+            assertThat(compilation).succeededWithoutWarnings();
+            assertThat(readMetadataRoot(compilation, "Colony").path("tableName").asText())
+                    .isEqualTo("colonys");
+        }
+
+        @Test
+        @DisplayName("an unset tableName stays off the metadata's explicit value")
+        void unsetTableNameIsNotInvented() throws IOException {
+            Compilation compilation = compileWithProcessor(entity("Order", ""));
+
+            assertThat(compilation).succeededWithoutWarnings();
+            String tableName = readMetadataRoot(compilation, "Order").path("tableName").asText("");
+            assertThat(tableName).isEmpty();
+        }
+
+        @ParameterizedTest(name = "{0}: {1} → {2}")
+        @org.junit.jupiter.params.provider.CsvSource({
+                "Colony, colonys, colonies",
+                "Box, boxs, boxes",
+                "Address, addresss, addresses",
+                "Branch, branchs, branches",
+                "StarSystem, star_systems, star_systems",
+        })
+        @DisplayName("warns once for an entity whose default table moves, naming the override")
+        void warnsWhenTheDefaultTableMoves(String name, String oldTable, String newTable) {
+            Compilation compilation = compileWithProcessor(entity(name, ""));
+
+            assertThat(compilation).succeeded();
+            List<String> warnings = tableWarnings(compilation);
+            if (oldTable.equals(newTable)) {
+                assertThat(warnings).isEmpty();
+                return;
+            }
+            assertThat(warnings).containsExactly(
+                    "[Exeris] " + name + ": default table changes from '" + oldTable + "' to '"
+                            + newTable + "'; set @ExerisDomain(tableName = \"" + oldTable
+                            + "\") to keep the existing table and migration");
+        }
+
+        @ParameterizedTest(name = "{0}")
+        @ValueSource(strings = {"Order", "ConstructionOrder", "Key", "Day"})
+        @DisplayName("stays quiet when the plural is a plain s")
+        void quietWhenThePluralIsPlainS(String name) {
+            Compilation compilation = compileWithProcessor(entity(name, ""));
+
+            assertThat(compilation).succeededWithoutWarnings();
+        }
+
+        @Test
+        @DisplayName("stays quiet when tableName is set")
+        void quietWhenOverridden() {
+            Compilation compilation = compileWithProcessor(
+                    entity("Colony", ", tableName = \"colonies\""));
+
+            assertThat(compilation).succeededWithoutWarnings();
+        }
+
+        @Test
+        @DisplayName("a blank tableName derives the table, so the warning still fires")
+        void blankTableNameStillWarns() {
+            Compilation compilation = compileWithProcessor(entity("Colony", ", tableName = \"  \""));
+
+            assertThat(compilation).succeeded();
+            assertThat(tableWarnings(compilation)).hasSize(1);
+        }
+
+        @Test
+        @DisplayName("-Aexeris.strict does not report tableName as inert or unread")
+        void strictDoesNotReportTableName() {
+            Compilation compilation = javac()
+                    .withOptions("-Aexeris.strict=true")
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(entity("Colony", ", tableName = \"colonys\""));
+
+            assertThat(compilation).succeeded();
+            assertThat(compilation.warnings().stream()
+                    .map(d -> d.getMessage(null))
+                    .filter(m -> m != null && m.contains("tableName")))
+                    .isEmpty();
+        }
+    }
+
+    @Nested
     @DisplayName("1.1.6 Deprecated @Validation read-and-warn (SDK 0.2.x → 1.0.0)")
     class DeprecatedValidationFallbackTests {
 

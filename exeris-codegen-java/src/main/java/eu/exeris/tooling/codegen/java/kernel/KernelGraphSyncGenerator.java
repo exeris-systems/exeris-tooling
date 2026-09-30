@@ -15,7 +15,6 @@ import eu.exeris.sdk.sourcemodel.ast.GraphMetadata;
 
 import javax.lang.model.element.Modifier;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -89,11 +88,8 @@ public class KernelGraphSyncGenerator implements KernelArtifactGenerator {
         GraphMetadata graph = metadata.graphMetadata();
         String entity = metadata.entityName();
         String nodeLabel = graph.label() != null ? graph.label() : entity;
-        // Naive pluralisation — same default as KernelFlywayGenerator's table
-        // name. Irregular plurals (Category → categories, Address → addresses)
-        // are not handled here; downstream consumers that need explicit table
-        // names should extend GraphMetadata with a sourceTable override.
-        String sourceTable = toSnakeCase(entity) + "s";
+        // The table the repository and the migration name, so the node descriptor points at it.
+        String sourceTable = KernelTableNaming.effectiveTable(metadata);
 
         boolean hasEdges = graph.edges() != null && !graph.edges().isEmpty();
         if (hasEdges) {
@@ -246,11 +242,6 @@ public class KernelGraphSyncGenerator implements KernelArtifactGenerator {
             sb.append(Character.toUpperCase(c));
         }
         return sb.toString();
-    }
-
-    private String toSnakeCase(String s) {
-        if (s == null || s.isBlank()) return "";
-        return s.replaceAll("([a-z])([A-Z])", "$1_$2").toLowerCase(Locale.ROOT);
     }
 
     @Override

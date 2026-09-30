@@ -163,8 +163,7 @@ export class ActionStreamClientGenerator implements CodeGenerator {
    * streamed to a path nothing serves.
    */
   private actionPath(domain: DomainMetadata, action: ActionMetadata, context: GeneratorContext): string {
-    const kebabEntity = DslMapper.toKebabCase(domain.entityName);
-    const pathSegment = domain.path ?? `/${kebabEntity}s`;
+    const pathSegment = domain.path ?? `/${DslMapper.routePlural(domain.entityName)}`;
     const apiPath = domain.apiPath ?? pathSegment;
     const kebabAction = DslMapper.toKebabCase(action.name);
     return `${context.config.apiBasePath}${apiPath}/${'${id}'}/actions/${kebabAction}`;

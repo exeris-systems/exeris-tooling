@@ -232,9 +232,9 @@ class KernelCodegenE2ETest {
                     .filter(f -> f.artifactType() == ArtifactType.CONFIGURATION)
                     .toList();
             assertThat(migrations).extracting(GeneratedFile::className)
-                    .containsExactly("V2416003__create_speciess", "V4416003__shared_scope_speciess");
+                    .containsExactly("V2416003__create_specieses", "V4416003__shared_scope_specieses");
             assertThat(migrations.get(1).content())
-                    .contains("CREATE POLICY speciess_shared_scope_policy ON speciess FOR SELECT")
+                    .contains("CREATE POLICY specieses_shared_scope_policy ON specieses FOR SELECT")
                     .contains("USING (world_id = NULLIF(current_setting('exeris.shared_scope', true), '')::uuid);");
             assertThat(files.stream().filter(f -> f.artifactType() == ArtifactType.REPOSITORY)
                     .findFirst().orElseThrow().content())
