@@ -1,3 +1,11 @@
+---
+title: "RFC-2026-06-05: Reattach Edit-Safety and Provenance"
+type: rfc
+visibility: public
+owning-repo: exeris-tooling
+status: draft
+---
+
 # RFC-2026-06-05: How should `exeris:reattach` detect in-file edits to generated code without losing them?
 
 | Field            | Value                                                                                     |

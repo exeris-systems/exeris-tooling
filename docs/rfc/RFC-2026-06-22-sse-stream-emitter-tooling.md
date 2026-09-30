@@ -1,3 +1,11 @@
+---
+title: "RFC-2026-06-22: Tooling SSE Stream Emitter Shape"
+type: rfc
+visibility: public
+owning-repo: exeris-tooling
+status: active
+---
+
 # RFC-2026-06-22: What shape should the tooling SSE stream emitter take, now that kernel 0.10 lands the streaming primitive?
 
 | Field             | Value                                                                                                                                  |

@@ -1,3 +1,11 @@
+---
+title: "RFC-2026-06-28: Presentation View Emitter Shape"
+type: rfc
+visibility: public
+owning-repo: exeris-tooling
+status: draft
+---
+
 # RFC-2026-06-28: What shape should the tooling `@View` presentation emitter take, now that the SDK ships the reserved presentation IR?
 
 | Field             | Value                                                                 |

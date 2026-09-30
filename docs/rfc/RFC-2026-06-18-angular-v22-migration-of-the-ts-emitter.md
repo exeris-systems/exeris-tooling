@@ -1,3 +1,11 @@
+---
+title: "RFC-2026-06-18: Angular v22 Migration of the TS Emitter"
+type: rfc
+visibility: public
+owning-repo: exeris-tooling
+status: draft
+---
+
 # RFC-2026-06-18: How far should the TypeScript emitter adopt Angular v22, and on what migration path?
 
 | Field             | Value                                                                                      |

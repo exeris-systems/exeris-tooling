@@ -1,3 +1,11 @@
+---
+title: "RFC-2026-06-25: Angular Presentation Emitter Shape"
+type: rfc
+visibility: public
+owning-repo: exeris-tooling
+status: draft
+---
+
 # RFC-2026-06-25: What shape should the tooling Angular 22 presentation emitter take, now that the SDK seeds the `@View`/`ViewMetadata` presentation IR?
 
 | Field             | Value                                                                                                                                  |

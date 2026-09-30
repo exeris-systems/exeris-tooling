@@ -7,7 +7,7 @@
 | **Date**        | 2026-06-24                                                                                              |
 | **Scope**       | per-repo (`exeris-tooling`); `tooling/codegen`                                                          |
 | **Owning Repo** | `exeris-tooling`                                                                                        |
-| **Driven By**   | [RFC-2026-06-22](../rfc/RFC-2026-06-22%20SSE%20Stream%20Emitter%20%28tooling%29.md) (the four-axis option comparison) — ratifies its recommendation; **consumes** kernel [ADR-043](ADR-043.link.md) |
+| **Driven By**   | [RFC-2026-06-22](../rfc/RFC-2026-06-22-sse-stream-emitter-tooling.md) (the four-axis option comparison) — ratifies its recommendation; **consumes** kernel [ADR-043](ADR-043.link.md) |
 | **Compliance**  | [ADR-015](ADR-015-codegen-emission-strategy.md) (emission strategy: JavaPoet for Java, text for text, shared scaffold); hard-constraint #1 (single Exeris-kernel target), #3 (deterministic codegen), strong-default #4 (Java/TS emitter parity) |
 
 ## Context and Problem Statement
@@ -69,7 +69,7 @@ This ratifies RFC-2026-06-22's recommendation across all four axes and resolves 
 - [ADR-043](ADR-043.link.md) (Kernel HTTP Streaming SPI) — the primitive this emitter binds to; owns the wire format and the fail-closed mid-stream-expiry obligation.
 - [ADR-040](https://github.com/exeris-systems/exeris-kernel/blob/main/docs/adr/ADR-040-identity-provider-spi.md) (Identity Provider SPI) — makes stream auth a kernel-edge concern (obligation 6); **ACCEPTED** (kernel v0.10 cycle); the authoritative copy reaches `main` with the kernel 0.10 release, like ADR-043's content.
 - [ADR-015](ADR-015-codegen-emission-strategy.md) (Codegen Emission Strategy) — JavaPoet/text-block/shared-scaffold rules the stream generators follow.
-- [RFC-2026-06-22](../rfc/RFC-2026-06-22%20SSE%20Stream%20Emitter%20%28tooling%29.md) — the four-axis option comparison this ADR ratifies (incl. the resolved review follow-ups).
+- [RFC-2026-06-22](../rfc/RFC-2026-06-22-sse-stream-emitter-tooling.md) — the four-axis option comparison this ADR ratifies (incl. the resolved review follow-ups).
 - `KernelStreamHandlerGenerator.java`, `stream-client-gen.ts` — the Slice-1 implementations of obligations 1–6.
 
 ## Engineering Protocol
