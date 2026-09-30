@@ -33,6 +33,7 @@ export const RESERVED_MODULE_IDENTIFIERS: ReadonlySet<string> = new Set([
   'Validators',
   // @angular/router
   // Identifiers that the emitters import.
+  'ActivatedRoute',
   'Router',
   'RouterLink',
   'RouterLinkActive',
