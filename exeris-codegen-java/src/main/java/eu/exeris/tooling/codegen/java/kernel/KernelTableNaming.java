@@ -2,44 +2,40 @@ package eu.exeris.tooling.codegen.java.kernel;
 
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 
+import java.util.Locale;
+
 /**
  * Single source of truth for the SQL table name a kernel entity maps to.
  *
- * <p>Used by both {@link KernelRepositoryGenerator} (the {@code TABLE} field and
- * all emitted SQL) and {@link KernelFlywayGenerator} (the {@code CREATE TABLE}
- * and the migration filename). Keeping the derivation here guarantees the
- * repository and the migration always agree on the table name — previously each
- * generator computed {@code toSnakeCase(entityName) + "s"} independently (T6).
+ * <p>Every emitter that names the table reads it here — the repository's {@code TABLE} field and
+ * SQL, the Flyway {@code CREATE TABLE} and migration filename, the foreign-key targets, the
+ * shared-scope migration and the graph-sync node descriptor — so they cannot disagree.
  *
- * <p><b>Determinism:</b> when no {@code tableName} override is present this
- * returns exactly {@code toSnakeCase(entityName) + "s"} — byte-identical to the
- * pre-T6 derivation. Note this intentionally differs from
- * {@link DomainMetadata#effectiveTableName()} (which drops the trailing
- * {@code "s"}); switching to that method would change default output and is
- * therefore avoided.
+ * <p>The default is the SDK's {@link DomainMetadata#effectiveTableName()}: the snake-cased
+ * English plural of the entity name ({@code Order} → {@code orders}, {@code ConstructionOrder}
+ * → {@code construction_orders}, {@code Colony} → {@code colonies}, {@code Box} →
+ * {@code boxes}). The processor warns for an entity whose derived table differs from
+ * {@code toSnakeCase(entityName) + "s"}, naming the override that keeps the existing table.
  */
 final class KernelTableNaming {
 
     private KernelTableNaming() {}
 
     /**
-     * Effective SQL table name: the explicit {@code @ExerisDomain} table-name
-     * override when present and non-blank, otherwise the snake-cased,
-     * naively-pluralised entity name.
+     * Effective SQL table name: the explicit {@code @ExerisDomain.tableName} override when present
+     * and non-blank, otherwise {@link DomainMetadata#effectiveTableName()}.
      *
-     * <p>The override is trimmed and lower-cased: this matches the default path
-     * (always lower-case via {@code toSnakeCase}), keeps the emitted migration
-     * filename predictable ({@code V…__create_<table>.sql}), and avoids surprises
-     * on case-sensitive engines (PostgreSQL folds unquoted identifiers to
-     * lower-case, MySQL and others do not). A genuinely mixed-case, quoted table
-     * name is out of scope for 0.5.x.
+     * <p>The override is trimmed and lower-cased under {@link Locale#ROOT}, so every table name
+     * this returns is lower-case: the migration filename ({@code V…__create_<table>.sql}) stays
+     * predictable, and the name is the same on PostgreSQL, which folds unquoted identifiers to
+     * lower-case, as on engines that do not. A mixed-case, quoted table name is not supported.
      */
     static String effectiveTable(DomainMetadata metadata) {
         String override = metadata.tableName();
         if (override != null && !override.isBlank()) {
-            return override.trim().toLowerCase(java.util.Locale.ROOT);
+            return override.trim().toLowerCase(Locale.ROOT);
         }
-        return toSnakeCase(metadata.entityName()) + "s";
+        return metadata.effectiveTableName();
     }
 
     /**
@@ -73,6 +69,6 @@ final class KernelTableNaming {
     }
 
     private static String toSnakeCase(String camelCase) {
-        return camelCase.replaceAll("([a-z])([A-Z])", "$1_$2").toLowerCase(java.util.Locale.ROOT);
+        return camelCase.replaceAll("([a-z])([A-Z])", "$1_$2").toLowerCase(Locale.ROOT);
     }
 }

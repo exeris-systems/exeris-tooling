@@ -54,7 +54,7 @@ export { GeneratedFile };
  * registers, so client and server agree by construction.
  */
 export function serviceApiPath(metadata: DomainMetadata): string {
-  return metadata.apiPath ?? metadata.path ?? `/${DslMapper.toKebabCase(metadata.entityName)}s`;
+  return metadata.apiPath ?? metadata.path ?? `/${DslMapper.routePlural(metadata.entityName)}`;
 }
 
 /**
@@ -123,8 +123,8 @@ export class ServiceGenerator implements CodeGenerator {
 
     // The emitted service must request what the emitted server serves. The router registers the
     // entity's path with no version segment and the OpenAPI document publishes the same, so
-    // apiVersion is deliberately NOT folded into the URL here. Default fallback: /{entity}s
-    // (pluralized entity name).
+    // apiVersion is deliberately NOT folded into the URL here. Without a declared path the
+    // fallback is the kebab-cased plural, the segment effectivePath() derives.
     const apiPath = serviceApiPath(metadata);
 
     // Collect enum types for imports (fields + action params — T20a)

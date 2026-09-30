@@ -108,8 +108,7 @@ export class StreamClientGenerator implements CodeGenerator {
    * must not include that version in the client's route.
    */
   private streamUrl(domain: DomainMetadata, context: GeneratorContext): string {
-    const kebabName = DslMapper.toKebabCase(domain.entityName);
-    const pathSegment = domain.path ?? `/${kebabName}s`;
+    const pathSegment = domain.path ?? `/${DslMapper.routePlural(domain.entityName)}`;
     const apiPath = domain.apiPath ?? pathSegment;
     return `${context.config.apiBasePath}${apiPath}/stream`;
   }

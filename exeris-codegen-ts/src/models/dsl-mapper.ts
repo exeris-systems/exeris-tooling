@@ -535,6 +535,44 @@ export class DslMapper {
   }
 
   /**
+   * The English plural of an entity name, keeping its case — the SDK's
+   * `DomainMetadata.pluralName()`, character for character, so a derived route here
+   * agrees with the derived table and route on the Java side:
+   *
+   * - ends in `s`, `x`, `z`, `ch` or `sh` → `+es` (`Status` → `Statuses`, `Box` → `Boxes`);
+   * - ends in a consonant followed by `y` → `ies` (`Colony` → `Colonies`); a vowel before
+   *   the `y` takes a plain `s` (`Key` → `Keys`);
+   * - anything else → `+s`.
+   *
+   * Nothing else is known: an irregular noun gets the regular ending (`Person` → `Persons`)
+   * and a name that is already plural gets another (`News` → `Newses`). An empty name
+   * yields `''`.
+   */
+  static pluralName(entityName: string): string {
+    if (!entityName) {
+      return '';
+    }
+    if (entityName.endsWith('s') || entityName.endsWith('x') || entityName.endsWith('z')
+        || entityName.endsWith('ch') || entityName.endsWith('sh')) {
+      return `${entityName}es`;
+    }
+    if (entityName.endsWith('y') && entityName.length > 1
+        && !'aeiou'.includes(entityName.charAt(entityName.length - 2))) {
+      return `${entityName.slice(0, -1)}ies`;
+    }
+    return `${entityName}s`;
+  }
+
+  /**
+   * The plural path segment an entity's routes live under: the kebab-cased
+   * {@link pluralName}, the segment the SDK's `effectivePath()` derives
+   * (`Order` → `orders`, `Colony` → `colonies`, `Address` → `addresses`).
+   */
+  static routePlural(entityName: string): string {
+    return DslMapper.toKebabCase(DslMapper.pluralName(entityName));
+  }
+
+  /**
    * Convert entity name to kebab-case for file names.
    *
    * ASCII-only by design: mirrors the Java `NameCasing.kebab` (which uses
@@ -542,15 +580,6 @@ export class DslMapper {
    * the default `toLowerCase()` and `Locale.ROOT` agree, so the URL segment produced
    * here matches the kernel route + OpenAPI path byte-for-byte.
    */
-  /**
-   * The plural path segment an entity's routes live under. Entities ending in `s`
-   * (`Address`, `Status`) receive no additional `s` to avoid duplicates like `/addresss`.
-   */
-  static routePlural(entityName: string): string {
-    const kebab = DslMapper.toKebabCase(entityName);
-    return entityName.endsWith('s') ? kebab : `${kebab}s`;
-  }
-
   static toKebabCase(name: string): string {
     return name
       .replace(/([a-z])([A-Z])/g, '$1-$2')
