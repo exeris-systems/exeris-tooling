@@ -105,6 +105,11 @@ public class ExerisDomainProcessor extends AbstractProcessor {
 
     private static final String SAGA_STEPS_FQN = "eu.exeris.sdk.annotation.SagaSteps";
 
+    /** {@code @RouteAccess}, and the {@code @Action} it is read beside. */
+    private static final String ROUTE_ACCESS_FQN = "eu.exeris.sdk.annotation.RouteAccess";
+
+    private static final String ACTION_FQN = "eu.exeris.sdk.annotation.Action";
+
     /** Package every SDK annotation lives under, including the {@code capability} sub-package. */
     private static final String SDK_ANNOTATION_PACKAGE = "eu.exeris.sdk.annotation.";
 
@@ -499,7 +504,15 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "identity: JobScheduler.submit(...) captures the ambient "
                             + "PrincipalContext and StorageContext at submission and fails a job "
                             + "closed at dispatch when neither is bound, and a declared schedule has "
-                            + "no submission event to capture from. See docs/adr/ADR-072.link.md"));
+                            + "no submission event to capture from. See docs/adr/ADR-072.link.md"),
+            new InertAnnotation(ROUTE_ACCESS_FQN, "RouteAccess",
+                    "it is validated at compile time — PUBLIC beside a non-empty permissions, "
+                            + "declared or inherited from the type, is refused — but it is not "
+                            + "compiled into a route policy: no generator emits a URL-to-policy "
+                            + "table, so every generated route is registered exactly as if the "
+                            + "annotation were absent, and DomainMetadata / ActionMetadata carry no "
+                            + "routeAccess. The transcription onto the kernel's HttpRoutePolicy is "
+                            + "T53, scheduled for 0.10.0"));
 
     /**
      * Every SDK annotation this processor extracts, by simple name. <strong>C0: this set is the
@@ -1255,6 +1268,85 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                         + "which is deprecated for removal in SDK 1.0.0.");
     }
 
+    /**
+     * Refuses {@code @RouteAccess(PUBLIC)} on a route that also declares permissions.
+     *
+     * <p>A permit-all route runs its handler with no principal bound, so a scope check on it can
+     * never be satisfied: the pair is a contradiction, not a redundancy. {@code @RouteAccess}
+     * resolves nearest-declaration-first — a method-level declaration beside {@code @Action}
+     * overrides the type-level one — so the check runs against the level each route actually
+     * gets:
+     * <ul>
+     *   <li>the entity: its own {@code @RouteAccess} against {@code @ExerisDomain.permissions};</li>
+     *   <li>an action with its own {@code @RouteAccess}: that one against
+     *       {@code @Action.permissions};</li>
+     *   <li>an action without one: the entity's level, inherited, against
+     *       {@code @Action.permissions}.</li>
+     * </ul>
+     *
+     * <p>Only the refusal is implemented. The level is not carried into {@code DomainMetadata} or
+     * {@code ActionMetadata} and reaches no generated route, which {@link #INERT_ANNOTATIONS}
+     * reports under {@code -Aexeris.strict}.
+     */
+    private void validateRouteAccess(TypeElement element, AnnotationMirror domainAnnotation) {
+        AnnotationMirror typeAccess = findAnnotation(element, ROUTE_ACCESS_FQN);
+        boolean typeIsPublic = isPublicRoute(typeAccess);
+        if (typeIsPublic && domainAnnotation != null
+                && declaresPermissions(extractAnnotationValues(domainAnnotation))) {
+            messager.printMessage(Diagnostic.Kind.ERROR,
+                    DIAG_PREFIX + "@RouteAccess(PUBLIC) on '" + element.getSimpleName()
+                            + "' contradicts its @ExerisDomain.permissions. A public route runs "
+                            + "with no principal bound, so a permission on it can never be "
+                            + "satisfied. Drop the permissions, or declare "
+                            + "@RouteAccess(AUTHENTICATED).",
+                    element, typeAccess);
+        }
+
+        for (Element enclosed : element.getEnclosedElements()) {
+            if (enclosed.getKind() != ElementKind.METHOD) {
+                continue;
+            }
+            AnnotationMirror action = findAnnotation(enclosed, ACTION_FQN);
+            if (action == null || !declaresPermissions(extractAnnotationValues(action))) {
+                continue;
+            }
+            AnnotationMirror methodAccess = findAnnotation(enclosed, ROUTE_ACCESS_FQN);
+            if (methodAccess != null) {
+                if (isPublicRoute(methodAccess)) {
+                    messager.printMessage(Diagnostic.Kind.ERROR,
+                            DIAG_PREFIX + "@RouteAccess(PUBLIC) on action method '"
+                                    + enclosed.getSimpleName() + "' contradicts its "
+                                    + "@Action.permissions. A public route runs with no principal "
+                                    + "bound, so a permission on it can never be satisfied. Drop "
+                                    + "the permissions, or declare @RouteAccess(AUTHENTICATED).",
+                            enclosed, methodAccess);
+                }
+            } else if (typeIsPublic) {
+                messager.printMessage(Diagnostic.Kind.ERROR,
+                        DIAG_PREFIX + "action method '" + enclosed.getSimpleName()
+                                + "' declares @Action.permissions but no @RouteAccess of its own, "
+                                + "so it inherits @RouteAccess(PUBLIC) from type '"
+                                + element.getSimpleName() + "' and its route is public. A public "
+                                + "route runs with no principal bound, so a permission on it can "
+                                + "never be satisfied. Drop the permissions, or declare "
+                                + "@RouteAccess(AUTHENTICATED) on the method.",
+                        enclosed, action);
+            }
+        }
+    }
+
+    /** Whether {@code routeAccess} is present and declares {@code Level.PUBLIC}. */
+    private boolean isPublicRoute(AnnotationMirror routeAccess) {
+        return routeAccess != null
+                && "PUBLIC".equals(enumConstantName(
+                        extractAnnotationValues(routeAccess).get(VALUE_ELEMENT)));
+    }
+
+    /** Whether an explicit {@code permissions} attribute names at least one permission. */
+    private static boolean declaresPermissions(Map<String, Object> values) {
+        return values.get("permissions") instanceof List<?> permissions && !permissions.isEmpty();
+    }
+
     /** The {@code @SharedScope} marker, and the {@code SystemFieldsMetadata} component it fills. */
     private static final String SHARED_SCOPE_FQN = "eu.exeris.sdk.annotation.system.SharedScope";
     private static final String SHARED_SCOPE_ATTRIBUTE = "sharedScopeField";
@@ -1514,6 +1606,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         if (internalApi != null) {
             builder.internalApi(internalApi);
         }
+
+        validateRouteAccess(element, domainAnnotation);
 
         // Under -Aexeris.strict, flag type-level annotations that are
         // extracted but consumed by no generator (e.g. @EventSourced).

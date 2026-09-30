@@ -2107,6 +2107,211 @@ class ExerisDomainProcessorTest {
     }
 
     @Nested
+    @DisplayName("@RouteAccess — PUBLIC beside permissions is refused, the level is not extracted")
+    class RouteAccessTests {
+
+        private static final String CONTRADICTION = "a permission on it can never be satisfied";
+
+        private JavaFileObject order(String typeAnnotations, String domainExtras, String methods) {
+            return JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.Action;
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.RouteAccess;
+
+                    @ExerisDomain(module = "sales", path = "/orders"%s)
+                    %s
+                    public class Order {
+                    %s
+                    }
+                    """.formatted(domainExtras, typeAnnotations, methods));
+        }
+
+        private long errorsContaining(Compilation compilation, String fragment) {
+            return compilation.errors().stream()
+                    .filter(d -> d.getMessage(null).contains(fragment))
+                    .count();
+        }
+
+        @Test
+        @DisplayName("a: type-level PUBLIC with @ExerisDomain.permissions is a build error")
+        void publicTypeWithDomainPermissionsIsRejected() {
+            Compilation compilation = compileWithProcessor(order(
+                    "@RouteAccess(RouteAccess.Level.PUBLIC)",
+                    ", permissions = {\"order:read\"}",
+                    ""));
+
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorContaining(
+                    "[Exeris] @RouteAccess(PUBLIC) on 'Order' contradicts its "
+                            + "@ExerisDomain.permissions");
+            assertThat(compilation).hadErrorContaining(CONTRADICTION);
+            assertThat(compilation).hadErrorContaining(
+                    "Drop the permissions, or declare @RouteAccess(AUTHENTICATED)");
+            assertThat(compilation.errors()).hasSize(1);
+        }
+
+        @Test
+        @DisplayName("b: method-level PUBLIC with @Action.permissions is a build error")
+        void publicMethodWithActionPermissionsIsRejected() {
+            Compilation compilation = compileWithProcessor(order("", "", """
+                        @RouteAccess(RouteAccess.Level.PUBLIC)
+                        @Action(name = "approve", label = "Approve", permissions = {"order:approve"})
+                        public void approve() {
+                        }
+                    """));
+
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorContaining(
+                    "[Exeris] @RouteAccess(PUBLIC) on action method 'approve' contradicts its "
+                            + "@Action.permissions");
+            assertThat(compilation).hadErrorContaining(
+                    "Drop the permissions, or declare @RouteAccess(AUTHENTICATED)");
+            assertThat(compilation.errors()).hasSize(1);
+        }
+
+        @Test
+        @DisplayName("a + c: domain permissions and an inheriting action each draw their own error")
+        void publicTypeAndInheritingActionAreRejectedSeparately() {
+            Compilation compilation = compileWithProcessor(order(
+                    "@RouteAccess(RouteAccess.Level.PUBLIC)",
+                    ", permissions = {\"order:read\"}", """
+                        @Action(name = "approve", label = "Approve", permissions = {"order:approve"})
+                        public void approve() {
+                        }
+                    """));
+
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorContaining(
+                    "@RouteAccess(PUBLIC) on 'Order' contradicts its @ExerisDomain.permissions");
+            assertThat(compilation).hadErrorContaining(
+                    "action method 'approve' declares @Action.permissions but no @RouteAccess");
+            assertThat(compilation.errors()).hasSize(2);
+        }
+
+        @Test
+        @DisplayName("c: an action with permissions inheriting type-level PUBLIC is a build error")
+        void actionInheritingPublicWithPermissionsIsRejected() {
+            Compilation compilation = compileWithProcessor(order(
+                    "@RouteAccess(RouteAccess.Level.PUBLIC)", "", """
+                        @Action(name = "approve", label = "Approve", permissions = {"order:approve"})
+                        public void approve() {
+                        }
+
+                        @Action(name = "view", label = "View")
+                        public void view() {
+                        }
+                    """));
+
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorContaining(
+                    "[Exeris] action method 'approve' declares @Action.permissions but no "
+                            + "@RouteAccess of its own, so it inherits @RouteAccess(PUBLIC) from "
+                            + "type 'Order' and its route is public");
+            assertThat(compilation).hadErrorContaining(
+                    "Drop the permissions, or declare @RouteAccess(AUTHENTICATED) on the method");
+            assertThat(errorsContaining(compilation, CONTRADICTION))
+                    .as("only the action with permissions is refused, not its public sibling")
+                    .isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("AUTHENTICATED beside permissions, at both targets, compiles")
+        void authenticatedWithPermissionsCompiles() {
+            Compilation compilation = compileWithProcessor(order(
+                    "@RouteAccess(RouteAccess.Level.AUTHENTICATED)",
+                    ", permissions = {\"order:read\"}", """
+                        @RouteAccess(RouteAccess.Level.AUTHENTICATED)
+                        @Action(name = "approve", label = "Approve", permissions = {"order:approve"})
+                        public void approve() {
+                        }
+                    """));
+
+            assertThat(compilation).succeeded();
+        }
+
+        @Test
+        @DisplayName("PUBLIC without permissions, at both targets, compiles")
+        void publicWithoutPermissionsCompiles() {
+            Compilation compilation = compileWithProcessor(order(
+                    "@RouteAccess(RouteAccess.Level.PUBLIC)", "", """
+                        @RouteAccess(RouteAccess.Level.PUBLIC)
+                        @Action(name = "login", label = "Log in")
+                        public void login() {
+                        }
+
+                        @Action(name = "ping", label = "Ping", permissions = {})
+                        public void ping() {
+                        }
+                    """));
+
+            assertThat(compilation).succeeded();
+        }
+
+        @Test
+        @DisplayName("a method-level AUTHENTICATED overrides a type-level PUBLIC, so its permissions stand")
+        void methodLevelAuthenticatedOverridesTypeLevelPublic() {
+            Compilation compilation = compileWithProcessor(order(
+                    "@RouteAccess(RouteAccess.Level.PUBLIC)", "", """
+                        @RouteAccess(RouteAccess.Level.AUTHENTICATED)
+                        @Action(name = "approve", label = "Approve", permissions = {"order:approve"})
+                        public void approve() {
+                        }
+                    """));
+
+            assertThat(compilation).succeeded();
+        }
+
+        @Test
+        @DisplayName("the level is not written into the metadata JSON")
+        void routeAccessDoesNotReachTheMetadata() throws IOException {
+            Compilation compilation = compileWithProcessor(order(
+                    "@RouteAccess(RouteAccess.Level.PUBLIC)", "", """
+                        @RouteAccess(RouteAccess.Level.AUTHENTICATED)
+                        @Action(name = "approve", label = "Approve")
+                        public void approve() {
+                        }
+                    """));
+
+            assertThat(compilation).succeeded();
+            String metadata = readContent(compilation.generatedFile(
+                    StandardLocation.CLASS_OUTPUT, "exeris-metadata/Order.json").orElseThrow());
+            assertThat(metadata).doesNotContain("routeAccess");
+        }
+
+        @Test
+        @DisplayName("-Aexeris.strict reports @RouteAccess as inert at the type and the method, "
+                + "never as unread")
+        void strictReportsRouteAccessAtBothTargets() {
+            Compilation compilation = javac()
+                    .withOptions("-Aexeris.strict=true")
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(order("@RouteAccess(RouteAccess.Level.PUBLIC)", "", """
+                        @RouteAccess(RouteAccess.Level.AUTHENTICATED)
+                        @Action(name = "approve", label = "Approve")
+                        public void approve() {
+                        }
+                    """));
+
+            assertThat(compilation).succeeded();
+            assertThat(compilation.warnings().stream()
+                    .map(d -> d.getMessage(null))
+                    .filter(m -> m.contains("@RouteAccess is set but no code generator consumes it"))
+                    .filter(m -> m.contains("validated at compile time"))
+                    .filter(m -> m.contains("not compiled into a route policy"))
+                    .count())
+                    .isEqualTo(2);
+            assertThat(compilation.warnings().stream()
+                    .map(d -> d.getMessage(null))
+                    .noneMatch(m -> m.contains("@RouteAccess is set but this processor never reads it")))
+                    .isTrue();
+        }
+    }
+
+    @Nested
     @DisplayName("Processor minors — -Aexeris.strict inert-attribute audit (T11)")
     class StrictModeInertAttributeTests {
 
@@ -2486,9 +2691,15 @@ class ExerisDomainProcessorTest {
             assertThat(hasInertWarningFor(compilation, "@EventSourced")).isTrue();
             assertThat(hasInertWarningFor(compilation, "@Blob")).isTrue();
             assertThat(hasInertWarningFor(compilation, "@Schedule")).isTrue();
+            assertThat(compilation.warnings().stream()
+                    .filter(d -> d.getMessage(null).contains("@RouteAccess is set but no code "
+                            + "generator consumes it"))
+                    .count())
+                    .as("@RouteAccess reported at both of its targets, the type and the method")
+                    .isEqualTo(2);
             assertThat(inertWarnings(compilation))
-                    .as("one warning per registered inert annotation, no more")
-                    .isEqualTo(3);
+                    .as("one warning per registered inert annotation occurrence, no more")
+                    .isEqualTo(5);
         }
 
         @Test
@@ -2544,10 +2755,12 @@ class ExerisDomainProcessorTest {
                     import eu.exeris.sdk.annotation.Blob;
                     import eu.exeris.sdk.annotation.EventSourced;
                     import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.RouteAccess;
                     import eu.exeris.sdk.annotation.Schedule;
 
                     @ExerisDomain(module = "core", path = "/documents")
                     @EventSourced
+                    @RouteAccess(RouteAccess.Level.AUTHENTICATED)
                     public class Document {
                         @Blob
                         private byte[] content;
@@ -2555,6 +2768,11 @@ class ExerisDomainProcessorTest {
                         @Schedule(cron = "0 0 * * *")
                         @Action(name = "archive", label = "Archive")
                         public void archive() {
+                        }
+
+                        @RouteAccess(RouteAccess.Level.PUBLIC)
+                        @Action(name = "preview", label = "Preview")
+                        public void preview() {
                         }
                     }
                     """
