@@ -512,7 +512,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "table, so every generated route is registered exactly as if the "
                             + "annotation were absent, and DomainMetadata / ActionMetadata carry no "
                             + "routeAccess. The transcription onto the kernel's HttpRoutePolicy is "
-                            + "T53, scheduled for 0.10.0"));
+                            + "T53, tracked in ROADMAP.md"));
 
     /**
      * Every SDK annotation this processor extracts, by simple name. <strong>C0: this set is the

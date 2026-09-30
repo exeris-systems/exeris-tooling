@@ -1485,7 +1485,7 @@ third shape, declare it on the method. A source that never uses `@RouteAccess` i
 The annotation is not compiled into a route policy yet. Every generated route is registered as
 if it were absent, the metadata JSON carries no `routeAccess`, and no emitted file changes. Under
 `-Aexeris.strict` each occurrence, on an entity or a method, draws the inert-annotation warning.
-The transcription onto the kernel's `HttpRoutePolicy` is T53, planned for 0.10.0.
+The transcription onto the kernel's `HttpRoutePolicy` is T53, tracked in `ROADMAP.md`.
 
 ### SDK 0.12.0 needs no source change for S6
 
