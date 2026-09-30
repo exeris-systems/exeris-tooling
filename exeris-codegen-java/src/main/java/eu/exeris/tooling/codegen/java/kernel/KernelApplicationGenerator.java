@@ -1225,7 +1225,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .addJavadoc("with a status.\n")
                 .addJavadoc("<p>A hand-rolled launcher binds this too, and shares both slots with the\n")
                 .addJavadoc("lifecycle it composes:\n")
-                .addJavadoc("<pre>{@code\n")
+                .addJavadoc("{@snippet :\n")
                 .addJavadoc("var handlerSlot = new AtomicReference<HttpHandler>();\n")
                 .addJavadoc("var componentsSlot = new AtomicReference<$L>();\n", COMPONENTS_TYPE_NAME)
                 .addJavadoc("ScopedValue.where(HttpKernelProviders.HTTP_SERVER_HANDLER,\n")
@@ -1235,7 +1235,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .addJavadoc("            new RuntimeLifecycle(handlerSlot, componentsSlot, components).run());\n")
                 .addJavadoc("    return null;\n")
                 .addJavadoc("});\n")
-                .addJavadoc("}</pre>\n")
+                .addJavadoc("}\n")
                 .addJavadoc("@param $L the slot {@link #run()} fills with the decorated respond-once router\n",
                         HANDLER_SLOT)
                 .addJavadoc("@param $L the slot {@link #run()} fills with the composed components\n",
