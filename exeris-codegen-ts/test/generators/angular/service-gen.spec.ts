@@ -21,7 +21,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { ServiceGenerator, generateService } from '../../../src/generators/angular/service-gen.js';
+import { RESTORE_UNSUPPORTED, ServiceGenerator, generateService } from '../../../src/generators/angular/service-gen.js';
 import {
   createGeneratorContext,
   type GeneratorContext,
@@ -209,16 +209,29 @@ describe('ServiceGenerator softDelete branch', () => {
   const gen = new ServiceGenerator();
 
   // The generated server serves no /archive and no /restore route. On a @SoftDelete entity its
-  // DELETE is the archive, so softDelete calls that; nothing un-sets the flag, so there is no
-  // restore() to emit (PATCH/PUT parity — see crud-route-parity.spec.ts).
-  it('softDelete=true adds softDelete on the served DELETE route, and no restore', () => {
+  // DELETE is the archive, so softDelete calls that (PATCH/PUT parity — see
+  // crud-route-parity.spec.ts). Nothing un-sets the flag, so restore() stays one release,
+  // deprecated: it sends no request and fails with the reason.
+  it('softDelete=true adds softDelete on the served DELETE route', () => {
     const content = gen.generate(domain({ entityName: 'Order', softDelete: true }), CTX)!.content;
 
     expect(content).toContain('softDelete(id: string): Observable<void>');
     expect(content).toContain('softDelete(id: string): Observable<void> {\n    return this.http.delete<void>(`${this.baseUrl}/${id}`);');
-    expect(content).not.toContain('restore(id: string)');
     expect(content).not.toContain('/${id}/archive');
     expect(content).not.toContain('/${id}/restore');
+  });
+
+  it('softDelete=true keeps restore() deprecated: no request, an error that names the reason', () => {
+    const content = gen.generate(domain({ entityName: 'Order', softDelete: true }), CTX)!.content;
+    const restore = content.slice(content.indexOf('   * @deprecated'), content.indexOf('restore(id: string)') + 200);
+
+    expect(content).toContain("import { Observable, throwError } from 'rxjs';");
+    expect(restore).toContain('exeris-tooling 0.10.0 stops emitting it.');
+    expect(content).toContain(
+      'restore(id: string): Observable<Order> {\n'
+      + `    return throwError(() => new Error(\`OrderService.restore(\${id}): ${RESTORE_UNSUPPORTED}\`));\n`
+      + '  }',
+    );
   });
 
   it('softDelete=false (default) omits softDelete + restore methods', () => {
@@ -227,6 +240,7 @@ describe('ServiceGenerator softDelete branch', () => {
     expect(content).not.toContain('softDelete(id: string)');
     expect(content).not.toContain('restore(id: string)');
     expect(content).not.toContain('archive');
+    expect(content).toContain("import { Observable } from 'rxjs';");
   });
 });
 

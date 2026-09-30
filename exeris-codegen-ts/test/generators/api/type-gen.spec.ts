@@ -12,7 +12,9 @@
 
 import { describe, expect, it } from 'vitest';
 import {
+  DEPRECATED_OWNER_DOC,
   TypeGenerator,
+  deprecatedDtoOwner,
   generateTypes,
 } from '../../../src/generators/api/type-gen.js';
 import {
@@ -627,7 +629,7 @@ describe('TypeGenerator — a UNIVERSE entity\'s sharedScopeField is server-owne
   });
 });
 
-describe('TypeGenerator — a tenant-partitioned owner is server-owned without a systemFields block', () => {
+describe('TypeGenerator — a tenant-partitioned owner without a systemFields block is deprecated in the DTOs', () => {
   const entity = (dataScope: 'GLOBAL' | 'TENANT') => domain({
     entityName: 'Fleet',
     dataScope,
@@ -637,25 +639,40 @@ describe('TypeGenerator — a tenant-partitioned owner is server-owned without a
       field({ name: 'tenantId', type: 'UUID' }),
     ],
   });
+  const createSliceOf = (content: string) => {
+    const start = content.indexOf('export interface FleetCreate {');
+    return content.slice(start, content.indexOf('}', start));
+  };
 
-  it('omits tenantId from the TENANT create schema and Create DTO — the OpenAPI marks it readOnly', () => {
+  // The server owns it (stamped, a foreign one refused with 400, never updated), but a call
+  // site may still set it, so it stays one release and says so; 0.10.0 drops it.
+  it('keeps tenantId in the TENANT Create DTO and create schema, marked deprecated', () => {
     const schema = new TypeGenerator().generateAggregate([entity('TENANT')], CTX)
       .find(f => f.path === 'schemas/fleet.schema.ts')!.content;
-    const content = new TypeGenerator().generate(entity('TENANT'), CTX)!.content;
-    const createStart = content.indexOf('export interface FleetCreate {');
-    const createSlice = content.slice(createStart, content.indexOf('}', createStart));
+    const createSlice = createSliceOf(new TypeGenerator().generate(entity('TENANT'), CTX)!.content);
 
-    expect(schema.slice(schema.indexOf('FleetCreateSchema'))).toContain('tenantId: true');
+    expect(schema.slice(schema.indexOf('FleetCreateSchema'))).not.toContain('tenantId: true');
     expect(createSlice).toContain('name?: string;');
-    expect(createSlice).not.toContain('tenantId');
+    expect(createSlice).toContain(`${DEPRECATED_OWNER_DOC}\n  tenantId?: string;`);
   });
 
-  it('keeps a GLOBAL entity\'s tenantId-named field writable — it is not an owner there', () => {
-    const content = new TypeGenerator().generate(entity('GLOBAL'), CTX)!.content;
-    const createStart = content.indexOf('export interface FleetCreate {');
-    const createSlice = content.slice(createStart, content.indexOf('}', createStart));
+  it('leaves a GLOBAL entity\'s tenantId-named field writable and unmarked — it is not an owner there', () => {
+    const createSlice = createSliceOf(new TypeGenerator().generate(entity('GLOBAL'), CTX)!.content);
 
-    expect(createSlice).toContain('tenantId');
+    expect(createSlice).toContain('  tenantId?: string;');
+    expect(createSlice).not.toContain('@deprecated');
+  });
+
+  it('names no deprecated owner once a systemFields block names the owner — that one is omitted', () => {
+    const declared = domain({
+      entityName: 'Fleet',
+      dataScope: 'TENANT',
+      systemFields: { primaryKeyField: 'id', tenantIdField: 'tenantId' },
+      fields: [field({ name: 'id', type: 'UUID' }), field({ name: 'tenantId', type: 'UUID' })],
+    });
+
+    expect(deprecatedDtoOwner(declared)).toBeUndefined();
+    expect(createSliceOf(new TypeGenerator().generate(declared, CTX)!.content)).not.toContain('tenantId');
   });
 });
 
