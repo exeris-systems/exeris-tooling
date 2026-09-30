@@ -23,6 +23,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { FormGenerator, generateForm } from '../../../src/generators/angular/form-gen.js';
+import { DslMapper } from '../../../src/models/dsl-mapper.js';
 import {
   createGeneratorContext,
   type GeneratorContext,
@@ -91,7 +92,9 @@ describe('FormGenerator emitted content — top-level structure', () => {
   it('imports Angular core + FormBuilder + Validators + service + entity types', () => {
     const content = gen.generate(domain({ entityName: 'Order' }), CTX)!.content;
 
-    expect(content).toContain("import { Component, ChangeDetectionStrategy, input, output, signal, effect, inject } from '@angular/core';");
+    expect(content).toContain("import { Component, ChangeDetectionStrategy, input, output, signal, computed, effect, inject } from '@angular/core';");
+    expect(content).toContain("import { rxResource } from '@angular/core/rxjs-interop';");
+    expect(content).toContain("import { ActivatedRoute, Router } from '@angular/router';");
     expect(content).toContain("import { FormsModule, ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';");
     expect(content).toContain("import { Order, OrderCreate, OrderUpdate, OrderService } from '../services/order.service';");
   });
@@ -117,14 +120,14 @@ describe('FormGenerator emitted content — top-level structure', () => {
     expect(content).toContain('readonly form = this.fb.group({');
   });
 
-  it('onSubmit dispatches to service.create or service.update depending on mode()', () => {
+  it('onSubmit dispatches to service.update in edit mode and service.create otherwise', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
       fields: [field({ name: 'orderNumber', type: 'String' })],
     }), CTX)!.content;
 
-    expect(content).toContain("this.mode() === 'create' ? this.service.create(data as OrderCreate)");
-    expect(content).toContain('this.service.update(String(this.entity()!.id), data as OrderUpdate)');
+    expect(content).toContain('const request$ = this.editMode() && current ? this.service.update(String(current.id), data as OrderUpdate) : this.service.create(data as OrderCreate);');
+    expect(content).not.toContain("this.mode() === 'create'");
   });
 
   it('dispatches the update on id even when primaryKeyField names something else', () => {
@@ -137,8 +140,8 @@ describe('FormGenerator emitted content — top-level structure', () => {
       systemFields: { primaryKeyField: 'uuid' },
     }), CTX)!.content;
 
-    expect(content).toContain('this.entity()!.id');
-    expect(content).not.toContain('this.entity()!.uuid');
+    expect(content).toContain('String(current.id)');
+    expect(content).not.toContain('current.uuid');
   });
 });
 
@@ -777,5 +780,81 @@ describe('FormGenerator @Field.dataType input-type mapping', () => {
     }), CTX)!.content;
 
     expect(content).toContain('id="note" data-testid="field-note" type="text"');
+  });
+});
+
+// ---------- routed edit: the form loads its entity from the :id route parameter ----------
+
+describe('FormGenerator — routed by id', () => {
+  const gen = new FormGenerator();
+  const content = gen.generate(domain({
+    entityName: 'Address',
+    fields: [field({ name: 'street', type: 'String' })],
+  }), CTX)!.content;
+
+  it('declares an optional id input for withComponentInputBinding to bind from :id', () => {
+    expect(content).toContain('readonly id = input<string | undefined>();');
+  });
+
+  it('loads the entity by id through rxResource with the params/stream keys', () => {
+    expect(content).toContain('private readonly entityResource = rxResource({');
+    expect(content).toContain('params: () => this.id(),');
+    expect(content).toContain('stream: ({ params }) => this.service.findById(params),');
+  });
+
+  it('prefers the entity input over the loaded entity, and derives edit mode from the id', () => {
+    expect(content).toContain('readonly current = computed<Address | null>(() => this.entity() ?? this.entityResource.value() ?? null);');
+    expect(content).toContain("readonly editMode = computed(() => this.id() !== undefined || this.mode() === 'edit');");
+    expect(content).toContain("{{ editMode() ? 'Update' : 'Create' }} Address");
+  });
+
+  it('patches the form from the effective entity', () => {
+    expect(content).toContain('const entity = this.current();');
+    expect(content).toContain('if (entity && this.editMode()) {');
+  });
+
+  it('never submits an edit before the entity is loaded', () => {
+    expect(content).toContain('if (this.editMode() && !current) {');
+    expect(content).toContain('[disabled]="form.invalid || saving() || (editMode() && !current())"');
+  });
+
+  it('shows the by-id load state', () => {
+    expect(content).toContain('@if (isLoading()) {');
+    expect(content).toContain('} @else if (loadError()) {');
+    expect(content).toContain('readonly isLoading = computed(() => this.entityResource.isLoading());');
+    expect(content).toContain('reload(): void { this.entityResource.reload(); }');
+  });
+});
+
+describe('FormGenerator — navigation when the form is the routed page', () => {
+  const gen = new FormGenerator();
+  const content = gen.generate(domain({ entityName: 'Address' }), CTX)!.content;
+
+  it('detects routing by its activated route naming this component', () => {
+    expect(content).toContain('private readonly routed = inject(ActivatedRoute, { optional: true })?.component === AddressFormComponent;');
+  });
+
+  // The segment is whatever the route table uses, so the form cannot drift from app.routes.ts.
+  const plural = DslMapper.routePlural('Address');
+
+  it('navigates to the detail route after save, on the route table plural', () => {
+    expect(content).toContain('this.saved.emit(result);');
+    expect(content).toContain(`void this.router.navigate(['/${plural}', String(result.id)]);`);
+  });
+
+  it('cancel emits, then returns to the detail when editing and to the list otherwise', () => {
+    expect(content).toContain('(click)="onCancel()"');
+    expect(content).not.toContain('(click)="cancelled.emit()"');
+    expect(content).toContain('this.cancelled.emit();');
+    expect(content).toContain(`void this.router.navigate(id !== undefined ? ['/${plural}', id] : ['/${plural}']);`);
+  });
+
+  it('keeps navigation behind the routed check so an embedding host drives the next step', () => {
+    expect(content.match(/if \(this\.routed\) \{/g)).toHaveLength(2);
+  });
+
+  it('uses a regular plural for an entity not ending in s', () => {
+    const order = gen.generate(domain({ entityName: 'OrderLine' }), CTX)!.content;
+    expect(order).toContain("void this.router.navigate(['/order-lines', String(result.id)]);");
   });
 });

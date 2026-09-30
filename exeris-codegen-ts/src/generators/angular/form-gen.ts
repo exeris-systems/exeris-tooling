@@ -157,9 +157,13 @@ export class FormGenerator implements CodeGenerator {
     lines.push(' * Uses Angular 22 standalone components + signals');
     lines.push(' */');
     lines.push('');
-    lines.push("import { Component, ChangeDetectionStrategy, input, output, signal, effect, inject } from '@angular/core';");
+    const plural = DslMapper.routePlural(entityName);
+
+    lines.push("import { Component, ChangeDetectionStrategy, input, output, signal, computed, effect, inject } from '@angular/core';");
+    lines.push("import { rxResource } from '@angular/core/rxjs-interop';");
     lines.push("import { CommonModule } from '@angular/common';");
     lines.push("import { FormsModule, ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';");
+    lines.push("import { ActivatedRoute, Router } from '@angular/router';");
     lines.push(`import { ${modelName}, ${modelName}Create, ${modelName}Update, ${entityName}Service } from '../services/${kebabName}.service';`);
 
     // Collect enum types used in create fields
@@ -183,6 +187,17 @@ export class FormGenerator implements CodeGenerator {
     lines.push('  imports: [CommonModule, FormsModule, ReactiveFormsModule],');
     lines.push('  changeDetection: ChangeDetectionStrategy.OnPush,');
     lines.push('  template: `');
+    // Loading and error of the by-id load mirror the detail view's markup.
+    lines.push('    @if (isLoading()) {');
+    lines.push('      <div class="animate-pulse space-y-4 mb-6" role="status" aria-label="Loading...">');
+    lines.push('        <div class="h-4 bg-gray-200 dark:bg-gray-700 rounded w-1/2"></div>');
+    lines.push('      </div>');
+    lines.push('    } @else if (loadError()) {');
+    lines.push('      <div role="alert" class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-6 mb-6">');
+    lines.push('        <p class="text-red-700 dark:text-red-300">{{ loadError() }}</p>');
+    lines.push('        <button type="button" (click)="reload()" class="mt-4 text-sm font-medium text-red-600">Try again</button>');
+    lines.push('      </div>');
+    lines.push('    }');
     lines.push('    <form [formGroup]="form" (ngSubmit)="onSubmit()" class="space-y-6">');
 
     for (const f of createFields.sort((a, b) => (a.order ?? 999) - (b.order ?? 999))) {
@@ -239,9 +254,9 @@ export class FormGenerator implements CodeGenerator {
     }
 
     lines.push('      <div class="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">');
-    lines.push('        <button type="button" (click)="cancelled.emit()" data-testid="cancel-button" class="rounded-md bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm border border-gray-300 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600">Cancel</button>');
-    lines.push('        <button type="submit" [disabled]="form.invalid || saving()" data-testid="submit-button" class="rounded-md bg-exeris-primary px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-exeris-primary-hover disabled:opacity-50">');
-    lines.push(`          @if (saving()) { Saving... } @else { {{ mode() === 'create' ? 'Create' : 'Update' }} ${entityName} }`);
+    lines.push('        <button type="button" (click)="onCancel()" data-testid="cancel-button" class="rounded-md bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm border border-gray-300 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600">Cancel</button>');
+    lines.push('        <button type="submit" [disabled]="form.invalid || saving() || (editMode() && !current())" data-testid="submit-button" class="rounded-md bg-exeris-primary px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-exeris-primary-hover disabled:opacity-50">');
+    lines.push(`          @if (saving()) { Saving... } @else { {{ editMode() ? 'Update' : 'Create' }} ${entityName} }`);
     lines.push('        </button>');
     lines.push('      </div>');
     lines.push('    </form>');
@@ -251,6 +266,11 @@ export class FormGenerator implements CodeGenerator {
     lines.push(`export class ${entityName}FormComponent {`);
     lines.push('  private readonly fb = inject(FormBuilder);');
     lines.push(`  private readonly service = inject(${entityName}Service);`);
+    lines.push('  private readonly router = inject(Router);');
+    // The form is a page when its activated route's component is this class; embedded in a
+    // host template it sees the host's route instead (or none), and leaves the next step to
+    // the host listening on `saved` / `cancelled`.
+    lines.push(`  private readonly routed = inject(ActivatedRoute, { optional: true })?.component === ${entityName}FormComponent;`);
     lines.push('');
 
     // Generate enum arrays
@@ -262,6 +282,22 @@ export class FormGenerator implements CodeGenerator {
 
     lines.push(`  readonly mode = input<'create' | 'edit'>('create');`);
     lines.push(`  readonly entity = input<${modelName} | null>(null);`);
+    // Bound from the `:id` route parameter by withComponentInputBinding on the edit route.
+    lines.push('  readonly id = input<string | undefined>();');
+    lines.push('');
+    lines.push('  private readonly entityResource = rxResource({');
+    lines.push('    params: () => this.id(),');
+    lines.push('    stream: ({ params }) => this.service.findById(params),');
+    lines.push('  });');
+    lines.push('');
+    // An embedding host's `entity` wins over the by-id load; an `id` always means edit.
+    lines.push(`  readonly current = computed<${modelName} | null>(() => this.entity() ?? this.entityResource.value() ?? null);`);
+    lines.push("  readonly editMode = computed(() => this.id() !== undefined || this.mode() === 'edit');");
+    lines.push('  readonly isLoading = computed(() => this.entityResource.isLoading());');
+    lines.push('  readonly loadError = computed(() => {');
+    lines.push('    const err = this.entityResource.error();');
+    lines.push('    return err instanceof Error ? err.message : err ? String(err) : null;');
+    lines.push('  });');
     lines.push('');
     lines.push(`  readonly saved = output<${modelName}>();`);
     lines.push('  readonly cancelled = output<void>();');
@@ -313,8 +349,8 @@ export class FormGenerator implements CodeGenerator {
     }
 
     lines.push('    effect(() => {');
-    lines.push('      const entity = this.entity();');
-    lines.push('      if (entity && this.mode() === "edit") {');
+    lines.push('      const entity = this.current();');
+    lines.push('      if (entity && this.editMode()) {');
     lines.push('        this.form.patchValue(entity as any);');
     lines.push('      }');
     lines.push('    });');
@@ -323,6 +359,11 @@ export class FormGenerator implements CodeGenerator {
     lines.push('  onSubmit(): void {');
     lines.push('    if (this.form.invalid) {');
     lines.push('      this.form.markAllAsTouched();');
+    lines.push('      return;');
+    lines.push('    }');
+    // Edit mode without a loaded entity would overwrite a row it never read.
+    lines.push('    const current = this.current();');
+    lines.push('    if (this.editMode() && !current) {');
     lines.push('      return;');
     lines.push('    }');
     lines.push('');
@@ -343,12 +384,15 @@ export class FormGenerator implements CodeGenerator {
     } else {
       lines.push('    const data = this.form.getRawValue();');
     }
-    lines.push(`    const request$ = this.mode() === 'create' ? this.service.create(data as ${modelName}Create) : this.service.update(String(this.entity()!.${idField}), data as ${modelName}Update);`);
+    lines.push(`    const request$ = this.editMode() && current ? this.service.update(String(current.${idField}), data as ${modelName}Update) : this.service.create(data as ${modelName}Create);`);
     lines.push('');
     lines.push('    request$.subscribe({');
     lines.push('      next: (result) => {');
     lines.push('        this.saving.set(false);');
     lines.push('        this.saved.emit(result);');
+    lines.push('        if (this.routed) {');
+    lines.push(`          void this.router.navigate(['/${plural}', String(result.${idField})]);`);
+    lines.push('        }');
     lines.push('      },');
     lines.push('      error: (err) => {');
     lines.push('        this.saving.set(false);');
@@ -356,6 +400,17 @@ export class FormGenerator implements CodeGenerator {
     lines.push('      },');
     lines.push('    });');
     lines.push('  }');
+    lines.push('');
+    lines.push('  onCancel(): void {');
+    lines.push('    this.cancelled.emit();');
+    lines.push('    if (this.routed) {');
+    // Back to the entity being edited, or to the list when nothing was.
+    lines.push('      const id = this.id();');
+    lines.push(`      void this.router.navigate(id !== undefined ? ['/${plural}', id] : ['/${plural}']);`);
+    lines.push('    }');
+    lines.push('  }');
+    lines.push('');
+    lines.push('  reload(): void { this.entityResource.reload(); }');
 
     // Generate compute methods for computed fields
     for (const cf of computedFields) {

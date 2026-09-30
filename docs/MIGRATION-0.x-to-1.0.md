@@ -1431,6 +1431,29 @@ not as the table owner (or keep tables `FORCE`d, as the generated migrations do)
   ```
 - A hand-written TS client that copied the generated `PATCH` should switch to `PUT`.
 
+### `exeris-codegen-ts`: the edit route edits, and a routed form navigates
+
+The emitted app routes `/<plural>/:id/edit` to `<Entity>FormComponent`, but the form had no input
+for the `:id` parameter. On that route it opened empty in create mode, and submitting it POSTed a
+new row. The regenerated `<entity>-form.component.ts` changes as follows:
+
+- **New `id` input** (`input<string | undefined>()`), which `withComponentInputBinding()` fills from
+  `:id`. When it is set, the form loads the entity through `rxResource` and `service.findById`,
+  and shows a loading state and a retryable error while it does.
+- **Edit mode also follows the route.** `editMode` is true when `id` is set or `mode` is `'edit'`.
+  The entity it edits (`current`) is the `entity` input when a host supplies one, and otherwise
+  the loaded entity. `update` sends `current.id`. Submit is disabled in edit mode until an entity
+  is present, so the form never overwrites a row it has not read.
+- **Save and cancel navigate when the form is the routed page.** A form counts as routed when its
+  `ActivatedRoute.component` is the form itself. After a save it goes to `/<plural>/<id>`. Cancel
+  goes back to that detail page when editing, and to `/<plural>` when creating. The form still
+  emits `saved` and `cancelled` in every case. Embedded in a host's template, the form sees the
+  host's route, so it does not navigate, and `[mode]` / `[entity]` bindings work as before.
+
+`app.routes.ts` is unchanged, so an existing app picks this up by regenerating only the form
+component. A domain entity named `ActivatedRoute` now takes the `ActivatedRouteModel` type name,
+like any entity whose name the emitted app already imports.
+
 ### `@View`: wrong attributes on STATIC/NONE bindings are diagnosed
 
 `@Bind(source = STATIC)` or `NONE` carrying `ref`, `path`, `expression` or `language` now produces a
