@@ -131,15 +131,13 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
      * unscoped ones; within a tier the order is a stable FQN hash. A {@code tenants}
      * table, if the consumer declares one, is pinned to tier 1 regardless of its flags.
      *
-     * <p>The tiering originally existed to order a {@code REFERENCES tenants(id)} FK
-     * ahead of its target. That FK is no longer emitted — it referenced a table no
-     * generator produces, which made the schema inapplicable to an empty database —
-     * so this generator currently emits <em>no</em> cross-table references and the
-     * ordering is not load-bearing today. It is retained deliberately: it costs
-     * nothing, keeps filenames stable for already-committed migrations, and is the
-     * hook the FK work (T9) will need. <b>T9 must revisit it</b> — a general
-     * inter-entity FK needs dependency-ordered versions, which two tiers cannot
-     * express.
+     * <p>This generator emits <em>no</em> cross-table references, so the ordering
+     * is not load-bearing. A {@code REFERENCES tenants(id)} FK is not emitted: it
+     * would point at a table no generator produces, and the schema would not apply
+     * to an empty database. The tiering is kept deliberately: it costs nothing,
+     * keeps filenames stable for already-committed migrations, and is the hook the
+     * FK work (T9) needs. <b>T9 must revisit it</b> — a general inter-entity FK
+     * needs dependency-ordered versions, which two tiers cannot express.
      *
      * <p><b>Collision:</b> the discriminator space is 1,000,000 per tier. For
      * realistic models (far fewer than ~1,000 entities per tier) collisions are

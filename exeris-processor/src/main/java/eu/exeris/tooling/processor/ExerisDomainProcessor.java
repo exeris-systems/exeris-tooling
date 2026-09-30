@@ -459,8 +459,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      * {@code @EventSourced} entry in the same change.
      *
      * <p>{@code @View} is also <em>absent</em> (RFC-2026-06-28 §4): the codegen-ts
-     * presentation-IR emitter (the {@code view-gen} ViewGenerator) now consumes
-     * {@code view_*.json}, so {@code @View} is no longer inert. Consumption is the
+     * presentation-IR emitter (the {@code view-gen} ViewGenerator) consumes
+     * {@code view_*.json}, so {@code @View} is not inert. Consumption is the
      * Java∪TS union; an annotation read by the TS emitter is NOT inert even though
      * no Java generator touches it (views are a front-only facet — there is no Java
      * emitter counterpart, by construction).
@@ -961,10 +961,10 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             writeMetadata("view_" + name,
                     new ViewJson(name, packageName, qualifiedName, view));
 
-            // RFC-2026-06-28 §4: @View is now consumed by the codegen-ts
-            // presentation-IR emitter (view-gen), so it is no longer in
-            // INERT_ANNOTATIONS. The call audits any *other* inert
-            // annotation on a @View type (Java∪TS union).
+            // RFC-2026-06-28 §4: the codegen-ts presentation-IR emitter
+            // (view-gen) consumes @View, so it is not in INERT_ANNOTATIONS.
+            // The call audits any *other* inert annotation on a @View type
+            // (Java∪TS union).
             auditAnnotations(element);
 
             note("Generated view metadata for: " + name);
