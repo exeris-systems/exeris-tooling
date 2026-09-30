@@ -516,9 +516,9 @@ describe('generateAppStructure — hidden-domain handling', () => {
       [],
       cfg(),
     );
-    // T20: generateAppStructure no longer emits any per-entity artefact — neither
-    // for visible nor hidden domains. The per-entity tree (and the hidden-domain
-    // skip) lives in the orchestrator's buildGeneratedFiles, covered in orchestrator.spec.
+    // generateAppStructure emits no per-entity artefact, for visible or hidden domains.
+    // The per-entity tree (and the hidden-domain skip) lives in the orchestrator's
+    // buildGeneratedFiles, covered in orchestrator.spec.
     expect(fileAt(files, 'src/app/components/order-form.component.ts')).toBeUndefined();
     expect(fileAt(files, 'src/app/components/order-list.component.ts')).toBeUndefined();
     expect(fileAt(files, 'src/app/services/order.service.ts')).toBeUndefined();
