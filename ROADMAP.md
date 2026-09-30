@@ -3628,7 +3628,11 @@ first, a final release for both, is what the 0.9.0 cut waits on. B0 itself is ap
       half (on `KernelWebClient.put`), unless one lands in 0.9.0 by its gate opening early.
 - [ ] The removals below.
 
-**`@exeris/codegen-ts` → npmjs** has its own plan. The TS side is further behind than the Java side,
+**Not placed in a milestone**, because the next step belongs to another repository: C2
+(`@Encrypted` / `@RowLevelSecurity`, two asks on the kernel and the SDK) and `@SagaStep.parallel`
+(a kernel contract for concurrent flow steps). Each gets a milestone when its upstream half lands.
+
+**`@exeris/codegen-ts` → npmjs** has its own plan ([`docs/codegen-ts-track-plan.md`](docs/codegen-ts-track-plan.md)). The TS side is further behind than the Java side,
 and it is what a `@View` front end is generated from. **`@Channel` emission** is 0.12.0.
 
 ### Removals due in 0.10.0
