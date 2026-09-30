@@ -2413,8 +2413,9 @@ Each now has the status the code settles, and every other mention in this file a
 - [ ] `exeris-codegen-maven-plugin` API frozen (mojo parameters, lifecycle phase semantics)
 - [ ] `KernelArtifactGenerator` SPI frozen (third-party generators can plug in)
 - [ ] `MIGRATION-0.x-to-1.0.md`
-- [ ] Maven Central release (processor + codegen-core + codegen-java + plugin)
-- [ ] npm registry release for `@exeris/codegen-ts`
+- [ ] Maven Central release (processor + codegen-core + codegen-java + plugin) — first published in
+      0.10.0
+- [ ] npm registry release for `@exeris/codegen-ts` (npmjs; its own plan)
 
 ---
 
@@ -3161,7 +3162,8 @@ Proposals, highest return-on-effort first:
       runs once the nulls are gone, and whether any downstream consumer (the TS client, a
       generator a user points at it) reads a field that is currently emitted as explicit `null`.
 
-- [ ] **T53 — five layers of an authorization story, none of them joined.** Split out of D8, then
+- [ ] **T53 — five layers of an authorization story, none of them joined.** *Scheduled: 0.10.0.*
+      Split out of D8, then
       re-measured on 2026-08-28 because D8's own account of it was wrong. *Renumbered from T51 on
       2026-09-01: the log had already minted T51 and T52, and the reconciliation rule below says
       tooling does not renumber somebody else's evidence — so ours is the one that moves.* The declaration is not
@@ -3198,7 +3200,8 @@ Proposals, highest return-on-effort first:
       declared rather than invented. Restoring ADR-079's security block is the last step, not the
       first.
 
-- [ ] **D10 — the TS side has a bearer-token code path that reaches no emitted output.** Surfaced by
+- [ ] **D10 — the TS side has a bearer-token code path that reaches no emitted output.**
+      *Scheduled: 0.10.0, with T53.* Surfaced by
       the review of the D8 PR and verified: `KernelStrategy.getDefaultHeaders`
       (`exeris-codegen-ts/src/core/backend-strategy.ts:231`) sets
       `` headers['Authorization'] = `Bearer ${context.accessToken}` `` at `:251`, and the method is
@@ -3278,13 +3281,85 @@ results, and a line-number citation that expired between being measured and bein
 
 ## 0.9.0 sequencing
 
+### Scope — set 2026-09-30
+
+0.9.0 has no date; its scope is what closes it. **Catch up with SDK 0.12 and kernel 0.12, give an
+application a starter instead of a hand-written POM, and cut on the final 0.12 pins.** Maven Central
+is not in 0.9.0: it moves to 0.10.0 (below), after the kernel and the SDK are on Central.
+
+**1. SDK 0.12 catch-up**
+- [ ] **T6** — `@ExerisDomain.tableName` extraction, `KernelTableNaming` on `effectiveTableName()`,
+      and the same plural rule for TS route segments (see "Follow SDK 0.12.0"). Must land before the
+      cut.
+- [ ] **`@RouteAccess`, minimum: the refusal, not the extraction.** Refuse `PUBLIC` together with a
+      non-empty `permissions` on the same element at compile time. The SDK annotation names that
+      refusal as tooling's job, because a permit-all route binds no `PrincipalContext` and a scope
+      check on it can never pass. Nothing is written to `DomainMetadata.routeAccess` /
+      `ActionMetadata.routeAccess`: the SDK `-io` reader does not read them (ADR-042, the reader
+      reads what the processor writes), so a 0.9.0 processor that wrote them would ship the pair
+      diverged. `@RouteAccess` gets an `INERT_ANNOTATIONS` entry until T53 compiles it into
+      `RouteRequirement` in 0.10.0, together with the reader half.
+- [ ] **`@Channel`, registered as reserved.** An `INERT_ANNOTATIONS` entry, so `-Aexeris.strict`
+      reports that it has no effect yet. The WebSocket emitter over kernel ADR-084 is 0.12.0 scope.
+- [ ] S6 (`SystemFieldsMetadata.builder()`) and the semver-gate flag, under "Follow SDK 0.12.0".
+
+**2. Kernel 0.12 catch-up**
+- [ ] The MIGRATION notes issue #227 still owes: `crypto.tls.client.trustFile`, the
+      `UnscopedRequestSession` JFR event, no stream route over h2, and the `StreamMatch` package move.
+      Plus the `@Blob` inert reason, which still names a kernel gate, and MIGRATION's
+      `eu.exeris.kernel:exeris-kernel-community` coordinate, whose groupId is `eu.exeris`.
+- [ ] The EV1-stream per-action driver: `KernelActionStreamHandlerGenerator` still emits
+      `keepAliveScaffold(...)`, and nothing gates it since T23 slice B1.
+- [ ] `SUBSYSTEMS` derived from `DomainMetadata` ("Every generated app boots three subsystems it may
+      never use").
+- [ ] Measure whether the emitted error mapping should read `ExerisKernelException.faultOrigin()`
+      rather than re-derive CALLER vs SYSTEM (0.12 readiness, below).
+
+**3. Application starter**
+
+A consumer application writes its whole build by hand today: the SDK annotations, kernel SPI and Core
+at compile scope, a runtime driver, a JDBC driver, conditionally Jackson 3 and the composition
+runtime, the processor on `annotationProcessorPaths`, and the plugin with three goals bound to the
+right phases. No end-to-end application POM exists anywhere in the ecosystem, and the Maven plugin
+itself has no end-to-end test: `exeris-e2e-tests` drives the pipeline in-process.
+`exeris-tooling-bom` cannot serve as a starter: its parent is the reactor root, it pins build-internal
+libraries (JavaPoet, swagger, Jackson 2, H2) and it manages neither the plugin nor a driver.
+- [ ] **ADR first.** ADR-078 lists "emitting a `pom.xml` or a dependency fragment" as out of scope.
+      A starter the consumer opts into is not emitted, but it changes that ADR's premise that tooling
+      does not own the consumer's build. Reserve the number in `exeris-docs/adr-index.md`.
+- [ ] **`exeris-app-bom`**: the tooling + kernel + SDK triple that is known to work together, the
+      kernel's Jackson 3 line, and the plugin. Tooling releases last, so its version names the pair.
+- [ ] **`exeris-app-parent`**: imports the BOM. Sets `release 25` and the JDK/Maven enforcer rules,
+      puts the processor on `annotationProcessorPaths`, and binds `generate` + `verify-capabilities` +
+      `verify-runtime`. Adds a `<resource>` for the migrations and OpenAPI that are generated under
+      the `src/main/generated/java` source root, which Maven does not copy to the classpath.
+- [ ] **`exeris-app-starter`** (packaging `pom`): SDK annotations, kernel SPI + Core, the community
+      driver at runtime, the composition runtime, Jackson 3. The JDBC driver stays the application's.
+- [ ] None of the three is parented on `exeris-tooling-root`, so no internal pin reaches a consumer.
+- [ ] **A `maven-invoker-plugin` fixture application** built on the parent and the starter. It is the
+      Maven plugin's first end-to-end test, and it fails when an emitter starts importing something
+      the starter does not carry.
+- [ ] README quick start, D2 (the two-pass first build) and D3 (committed L1 for hand-written glue).
+- [ ] **Deploy to GitHub Packages on a release tag.** CI deploys nothing today. Once the kernel and
+      SDK 0.12.0 finals are on Central, only tooling's own coordinates need a token, until 0.10.0.
+
+**4. Alongside, no gate:** the `npm start` proxy prefix (`proxy.conf.js` with a `bypass`), the
+`warnInertAttributes` call sites for `Saga` / `SagaStep`, codegen-ts lint in CI (`npm run lint` has no `eslint.config.*` and is not in `build.yml`), and the delete-or-wire
+decision for the `dsl` package, `KernelStrategy.generateClientCode` and `getRealTimeConfig`.
+
+**5. The cut:** kernel `0.12.0` and SDK `0.12.0` final → pins move → release PR at `0.9.0` → tag →
+deploy → `0.10.0-SNAPSHOT` (Versioning policy).
+
+### Gate groups, carried forward (placement: Scope above and 0.10.0)
+
 0.9.0's defining property is that a large share of it is not this repo's to unblock: neither
 `exeris-kernel` nor `exeris-sdk` has a final `0.12.0`, and the no-cross-repo-SNAPSHOT rule below
 applies to pinning as much as to tagging *(2026-09-26: B0 pins ahead of both finals as a declared,
 temporary exception; the rule binds the cut)*. Four groups, by what blocks them —
 
 - **No external gate:** D10 (whose *resolution* is a T53 question — do not settle it before that
-  RFC), the `npm start` proxy prefix, C1, C2, T53. The TS `GraphEdgeMetadataSchema` parity gap, two
+  RFC), the `npm start` proxy prefix, C1, C2, T53. *(2026-09-30: D10 and T53 are 0.10.0; C1 shipped
+  as #213; C2 is two asks on other repos; the proxy prefix is in 0.9.0's scope.)* The TS `GraphEdgeMetadataSchema` parity gap, two
   of the three residual `/api` sites and the `<Entity>Store` barrel question shipped from this
   group; the proxy prefix now carries its measurement and the one shape left open to it
   (`proxy.conf.js` with a `bypass`, verified against a real `ng serve`).
@@ -3526,6 +3601,23 @@ re-checked.
 **What still cannot be done, re-read:** the SDK's second blocker (no source model) is gone. The
 first, a final release for both, is what the 0.9.0 cut waits on. B0 itself is applied ahead of it.
 
+## 0.10.0 — scope set 2026-09-30
+
+- [ ] **Maven Central.** A `release` profile with `maven-gpg-plugin` and
+      `central-publishing-maven-plugin`, a javadoc jar for every published module (the Maven plugin
+      included), `exeris-e2e-tests` and `exeris-coverage-aggregate` kept out of the deploy, and no
+      GitHub Packages `<repositories>` in a published POM. Tag-triggered release workflow. The kernel
+      0.12 release profile is the reference. Order: kernel → SDK → tooling, since a tooling POM on
+      Central declares both.
+- [ ] **T53 in full** (RFC, then ADR): `@RouteAccess` + `permissions` compiled into `RouteRequirement`. D10 resolves
+      with it.
+- [ ] Track C (SDK record changes), `@SagaTransition`, T12 + T17, `@PrimaryKey`, D4 and T58's Java
+      half (on `KernelWebClient.put`), unless one lands in 0.9.0 by its gate opening early.
+- [ ] The removals below.
+
+**`@exeris/codegen-ts` → npmjs** has its own plan. The TS side is further behind than the Java side,
+and it is what a `@View` front end is generated from. **`@Channel` emission** is 0.12.0.
+
 ### Removals due in 0.10.0
 
 Each of these is deprecated in 0.9.0 and kept for that one release, so an app regenerated on 0.9.0
@@ -3549,7 +3641,7 @@ keeps compiling where it still uses one. 0.10.0 removes them.
   and `v0.6.0` were both tagged with the reactor still at `X-SNAPSHOT`, which no sibling repo does
   (`exeris-sdk` `v0.10.0` → `0.10.0`, `exeris-kernel` `v0.11.0` → `0.11.0`). A tag pointing at a
   mutable coordinate is a tag nobody can resolve. The cut is: release PR sets the final version →
-  tag that commit → a follow-up PR opens the next cycle at `X+1-SNAPSHOT`. Separately and still
+  tag that commit → deploy (GitHub Packages; Maven Central from 0.10.0) → a follow-up PR opens the next cycle at `X+1-SNAPSHOT`. Separately and still
   binding: no cross-repo dependency may be a SNAPSHOT at a cut — release upstream first, pin the
   final, then tag.
 
