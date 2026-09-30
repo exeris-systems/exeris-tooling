@@ -267,8 +267,7 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`  onDelete(): void {`);
     lines.push(`    if (confirm('Are you sure you want to delete this ${displayName.toLowerCase()}?')) {`);
     lines.push(`      this.service.delete(this.id()).subscribe({`);
-    // The route table's own plural, not `kebab + 's'`: an entity ending in `s` routes to
-    // `/address`, and the naive form navigated to `/addresss` — a URL nothing declares.
+    // The route table's own plural, so the navigation target is a route the table declares.
     lines.push(`        next: () => this.router.navigate(['/${DslMapper.routePlural(entityName)}']),`);
     lines.push(`        error: (err) => alert('Failed to delete'),`);
     lines.push(`      });`);

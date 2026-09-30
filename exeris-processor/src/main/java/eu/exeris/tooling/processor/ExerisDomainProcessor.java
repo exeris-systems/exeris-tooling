@@ -1519,7 +1519,39 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         // extracted but consumed by no generator (e.g. @EventSourced).
         auditAnnotations(element);
 
-        return builder.build();
+        DomainMetadata metadata = builder.build();
+        if (domainAnnotation != null) {
+            warnDefaultTableChange(element, metadata);
+        }
+        return metadata;
+    }
+
+    /**
+     * Warns when the derived table differs from the one {@code toSnakeCase(entityName) + "s"}
+     * gives, naming the {@code tableName} value that keeps the existing table. The derived name
+     * comes from {@link DomainMetadata#effectiveTableName()}, whose plural moves only names that
+     * end in a consonant plus {@code y} or in {@code s}, {@code x}, {@code z}, {@code ch} or
+     * {@code sh}; every other entity derives the same table under both rules and draws nothing.
+     * An entity that sets {@code tableName} has chosen its table and draws nothing either.
+     */
+    private void warnDefaultTableChange(TypeElement element, DomainMetadata metadata) {
+        String override = metadata.tableName();
+        if (override != null && !override.isBlank()) {
+            return;
+        }
+        String entityName = metadata.entityName();
+        String plainPlural = entityName.replaceAll("([a-z])([A-Z])", "$1_$2")
+                .toLowerCase(Locale.ROOT) + "s";
+        String derived = metadata.effectiveTableName();
+        if (plainPlural.equals(derived)) {
+            return;
+        }
+        messager.printMessage(
+                Diagnostic.Kind.WARNING,
+                DIAG_PREFIX + entityName + ": default table changes from '" + plainPlural
+                        + "' to '" + derived + "'; set @ExerisDomain(tableName = \"" + plainPlural
+                        + "\") to keep the existing table and migration",
+                element);
     }
 
     private void extractDomainAnnotationValues(
@@ -1612,8 +1644,11 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             builder.searchConfig((String) values.get("searchConfig"));
         }
 
-        // No tableName is read: @ExerisDomain on the pinned SDK declares no tableName
-        // attribute (see exeris-sdk-annotations).
+        // Database. Stored as written, like the SDK's -io reader: a blank value means "derive
+        // it", and DomainMetadata.effectiveTableName() is the one place that applies that rule.
+        if (values.containsKey("tableName")) {
+            builder.tableName((String) values.get("tableName"));
+        }
 
         // System fields come from two sources: annotation.system.* markers on fields and
         // @ExerisDomain override attributes. Only build a SystemFieldsMetadata when

@@ -91,6 +91,11 @@ describe('StreamClientGenerator.generate — route parity with the kernel handle
     expect(content).not.toContain('/v1/');
   });
 
+  it('without a path, derives the segment the way effectivePath() does', () => {
+    const d = domain({ entityName: 'Colony', realTimeApi: true });
+    expect(gen.generate(d, CTX)!.content).toContain(`private readonly streamUrl = '/colonies/stream';`);
+  });
+
   it('explicit apiPath still wins over the derived path', () => {
     const d = domain({
       entityName: 'Order',

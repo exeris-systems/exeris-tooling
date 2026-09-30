@@ -50,7 +50,7 @@ export class ListGenerator implements CodeGenerator {
     const modelName = modelTypeName(entityName);
     const kebabName = DslMapper.toKebabCase(entityName);
     const displayName = metadata.displayName ?? entityName;
-    const pluralName = metadata.pluralName ?? `${entityName}s`;
+    const pluralName = metadata.pluralName ?? DslMapper.pluralName(entityName);
 
     // The literal 'id', deliberately, not systemFields.primaryKeyField. Nothing in the pipeline
     // honours that override: KernelFlywayGenerator emits `id UUID PRIMARY KEY` unconditionally,

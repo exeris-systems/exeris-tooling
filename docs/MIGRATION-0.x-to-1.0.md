@@ -1472,22 +1472,53 @@ with the inert-attribute warning as well. Delete it. A versioned route is spelle
 `SystemFieldsMetadata`, `DomainMetadata` and `ActionMetadata` keep their 0.11.0 constructors. Code
 that builds `SystemFieldsMetadata` positionally may switch to `SystemFieldsMetadata.builder()`.
 
-### Announced, not on this branch yet: default table names follow the English plural (T6)
+### Default table names and Angular routes follow the English plural (T6)
 
-SDK 0.12.0 carries T6, and tooling's half lands before 0.9.0 is released. Nothing below is emitted
-by this branch; it is listed here so the 0.9.0 regeneration brings no surprise.
+A table used to be the snake-cased entity name plus "s". It now comes from the SDK's
+`DomainMetadata.effectiveTableName()`, the snake-cased `pluralName()`:
 
-Today a table is the snake-cased entity name plus "s" (`colonys`, `technologys`, `reassemblys`). It
-will come from the SDK's `DomainMetadata.effectiveTableName()` instead: `colonies`, `technologies`,
-`reassemblies`, `boxes`, `statuses`. Every entity whose plural is a plain "s" keeps its table and
-its migration file name byte-for-byte. For the others, on an existing database, the generated
-repository and the Flyway migration will name a table that does not exist yet. The processor will
-warn once for each such entity, with the exact value that keeps the old name:
+| Entity name ends in | Rule | Example (old → new) |
+|---|---|---|
+| `s`, `x`, `z`, `ch`, `sh` | `+es` | `boxs` → `boxes`, `statuss` → `statuses`, `addresss` → `addresses`, `branchs` → `branches` |
+| consonant + `y` | `y` → `ies` | `colonys` → `colonies`, `technologys` → `technologies`, `reassemblys` → `reassemblies` |
+| anything else, vowel + `y` included | `+s` | `orders`, `construction_orders`, `keys` — unchanged |
+
+Every entity whose plural is a plain "s" keeps its table and its migration file byte-for-byte. For
+an entity that moves, the repository's SQL, the `CREATE TABLE`, the migration file name
+(`V…__create_colonies.sql`; the version number does not change), the foreign keys that point at
+it, a UNIVERSE entity's shared-scope migration and a graph-sync node descriptor all name the new
+table. On an existing database that table does not exist yet.
+
+The processor warns once for each such entity, with the value that keeps the old name:
+
+    warning: [Exeris] Colony: default table changes from 'colonys' to 'colonies'; set @ExerisDomain(tableName = "colonys") to keep the existing table and migration
+
+To keep the existing table and the migration that created it, set the attribute:
 
     @ExerisDomain(module = "empire", path = "/colonies", tableName = "colonys")
 
-`@ExerisDomain.tableName` (SDK 0.12.0) is also how you name an irregular or pre-existing table
-(`tableName = "people"`). Angular route segments move the same way; server routes do not.
+The processor now reads `@ExerisDomain.tableName` (SDK 0.12.0) into `DomainMetadata.tableName`,
+and an entity that sets it draws no warning. The value is trimmed and lower-cased. It is also how
+an irregular or pre-existing table is named (`tableName = "people"`). A blank value derives the
+name.
+
+The warning is not behind a flag, and it also fires in a project that never had the old table, for
+example for a new `Box` or `Status` entity. A build compiled with `-Werror` fails on it. Set
+`tableName` to either name to silence it (`"boxes"` takes the new one). 0.10.0 removes the warning.
+
+Taking the new name on an existing database is a schema change of its own. The regenerated
+`CREATE` migration keeps its version but changes its description and its content, and Flyway's
+validation rejects both for an applied migration. It takes renaming the table
+(`ALTER TABLE colonys RENAME TO colonies`) and repairing the schema history (`flyway repair`), so
+keep the old name through `tableName` unless the database is disposable.
+
+`exeris-codegen-ts` takes the same plural (`DslMapper.pluralName`). The Angular route segments,
+sidebar links, default redirect, nav labels and list-page titles move: `colonys` → `colonies`,
+`address` → `addresses`, `news` → `newses`. A name that is already plural gets a second ending,
+because the rule is the SDK's and knows no irregular nouns. Bookmarks to the old client-side
+routes stop resolving. Server routes do not move, because `@ExerisDomain.path` is required; only
+a service or stream client built from metadata with no `path` falls back to the derived segment,
+and that fallback now matches the SDK's `effectivePath()`.
 
 ---
 
