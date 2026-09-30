@@ -10,7 +10,6 @@
  * The emitted text is a constant: no metadata reaches it, so it is byte-identical across runs
  * and across apps.
  *
- * @author Exeris Team
  * @since 0.9.0
  */
 
