@@ -151,15 +151,19 @@ describe('ServiceGenerator apiPath construction precedence', () => {
     expect(baseUrlFor({ path: '/orders' })).toBe('/orders');
   });
 
-  it('neither apiPath nor path → /<kebab>s default', () => {
+  it('neither apiPath nor path → the kebab-cased SDK plural, as effectivePath() derives', () => {
     expect(baseUrlFor({})).toBe('/orders');
   });
 
-  it('default pluralization uses kebab + s (for multi-word entityName too)', () => {
-    expect(baseUrlFor({})).toBe('/orders');
-    const olUrl = gen.generate(domain({ entityName: 'OrderLine' }), CTX)!.content
+  it.each([
+    ['OrderLine', '/order-lines'],
+    ['Colony', '/colonies'],
+    ['Box', '/boxes'],
+    ['Address', '/addresses'],
+  ])('default plural of %s is %s', (entityName, expected) => {
+    const url = gen.generate(domain({ entityName }), CTX)!.content
       .match(/baseUrl = '([^']+)'/)![1];
-    expect(olUrl).toBe('/order-lines');
+    expect(url).toBe(expected);
   });
 });
 

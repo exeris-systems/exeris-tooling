@@ -177,14 +177,11 @@ export const appConfig: ApplicationConfig = {
 `;
 }
 
-// Pluralisation helpers. Two seams need plurals — display labels
-// (sidebar text, browser-tab title) and URL paths. Both must
-// suppress the trailing 's' when the entity name already ends in 's'
-// (e.g. `News`), otherwise we get `Newss` in the tab title or
-// `/newss` in the URL. The display side keeps the original casing;
-// the route side kebab-cases first.
+// Two seams need plurals: display labels (sidebar text, browser-tab title) and URL paths.
+// Both take DslMapper.pluralName, the SDK's rule; the display side keeps the original
+// casing and the route side kebab-cases it.
 function labelPlural(entityName: string): string {
-  return entityName.endsWith('s') ? entityName : entityName + 's';
+  return DslMapper.pluralName(entityName);
 }
 
 /** Delegates to the single authority — see DslMapper.routePlural. */

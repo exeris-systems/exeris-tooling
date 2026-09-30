@@ -330,14 +330,14 @@ class KernelRepositoryGeneratorTest {
                         "refuseForeignTenant(entity.getOrganizationId());",
                         "if (entity.getWorldId() == null) entity.setWorldId(actingSharedScope());",
                         "refuseForeignSharedScope(entity.getWorldId());",
-                        "INSERT INTO speciess")
+                        "INSERT INTO specieses")
                 .contains("private static void refuseForeignSharedScope(UUID worldId)")
                 .containsSubsequence("UUID bound = actingSharedScope();",
                         "if (bound != null && !bound.equals(worldId))",
                         "throw new SpeciesSharedScopeMismatchException(worldId.toString());")
                 // The shared scope stays writable on update (the owner may move its row between
                 // scopes); the owner does not.
-                .contains("UPDATE speciess SET name = ?, world_id = ? WHERE id = ?");
+                .contains("UPDATE specieses SET name = ?, world_id = ? WHERE id = ?");
         assertThat(universeString)
                 .contains("private static void refuseForeignSharedScope(String worldId)")
                 .contains("throw new SpeciesSharedScopeMismatchException(worldId);");
@@ -377,9 +377,9 @@ class KernelRepositoryGeneratorTest {
         assertThat(repo)
                 // After the owner, in both write paths, each ahead of its own SQL.
                 .containsSubsequence(
-                        "public Species save(Species entity)", tenantStamp, scopeStamp, "INSERT INTO speciess",
+                        "public Species save(Species entity)", tenantStamp, scopeStamp, "INSERT INTO specieses",
                         "public Species update(UUID id, Species entity)", tenantStamp, scopeStamp,
-                        "UPDATE speciess SET")
+                        "UPDATE specieses SET")
                 .contains("private static UUID actingSharedScope()")
                 // The fallback accessor, deliberately: no bound context means no scope, which is the
                 // narrower answer, where the tenant resolver must throw on the same condition.

@@ -287,7 +287,7 @@ class KernelCodegenCompileTest {
         List<GeneratedFile> generated = new KernelGeneratorStrategy().generate(metadata);
         assertThat(generated)
                 .as("the additive shared-scope migration is part of the emitted set")
-                .anyMatch(f -> f.className().contains("__shared_scope_speciess"));
+                .anyMatch(f -> f.className().contains("__shared_scope_specieses"));
         String repository = generated.stream()
                 .filter(f -> f.className().equals("SpeciesRepository"))
                 .findFirst().orElseThrow().content();
