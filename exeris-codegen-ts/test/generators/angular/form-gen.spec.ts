@@ -858,3 +858,74 @@ describe('FormGenerator — navigation when the form is the routed page', () => 
     expect(order).toContain("void this.router.navigate(['/order-lines', String(result.id)]);");
   });
 });
+
+// ---------- versioned: the edit sends the loaded version; a 409 is a conflict ----------
+
+describe('FormGenerator — versioned entity', () => {
+  const gen = new FormGenerator();
+  const fields = [
+    field({ name: 'id', type: 'java.util.UUID' }),
+    field({ name: 'name', type: 'String' }),
+    field({ name: 'version', type: 'java.lang.Long' }),
+  ];
+  const versioned = gen.generate(domain({ entityName: 'Order', versioned: true, fields }), CTX)!.content;
+  const unversioned = gen.generate(domain({ entityName: 'Order', fields }), CTX)!.content;
+
+  it('holds the loaded entity version aside, never as a control', () => {
+    expect(versioned).toContain('private readonly loadedVersion = signal<number | null>(null);');
+    expect(versioned).toContain('this.loadedVersion.set(entity.version ?? null);');
+    expect(versioned).not.toContain('formControlName="version"');
+    expect(versioned).not.toContain('    version: [');
+  });
+
+  it('sends the loaded version on update, and leaves the create payload alone', () => {
+    expect(versioned).toContain(
+      'this.editMode() && current ? '
+      + 'this.service.update(String(current.id), { ...data, version: this.loadedVersion() } as OrderUpdate) : '
+      + 'this.service.create(data as OrderCreate);',
+    );
+  });
+
+  it('turns a 409 on update into a conflict with a reload of the current row', () => {
+    expect(versioned).toContain('readonly conflict = signal(false);');
+    expect(versioned).toContain('if (this.editMode() && err?.status === 409) {');
+    expect(versioned).toContain('This record was changed by someone else. Reload to see the latest version.');
+    expect(versioned).toContain('(click)="reload()"');
+    // Loaded by id: the resource reloads and the patch effect takes the fresh version.
+    expect(versioned).toContain('this.entityResource.reload();\n      return;');
+    // Host-supplied entity: fetched directly.
+    expect(versioned).toContain('this.service.findById(String(current.id)).subscribe({');
+    expect(versioned).toContain('this.form.reset(fresh as any);');
+    expect(versioned).toContain('this.loadedVersion.set(fresh.version ?? null);');
+  });
+
+  it('keys the version on systemFields.versionField', () => {
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      versioned: true,
+      fields: [field({ name: 'id', type: 'java.util.UUID' }), field({ name: 'rev', type: 'long' })],
+      systemFields: { versionField: 'rev' } as DomainMetadata['systemFields'],
+    }), CTX)!.content;
+    expect(content).not.toContain('formControlName="rev"');
+    expect(content).toContain('private readonly loadedVersion = signal<number | null>(null);');
+    expect(content).toContain('{ ...data, rev: this.loadedVersion() } as OrderUpdate');
+  });
+
+  it('reads an undeclared version field through a narrowing cast', () => {
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      versioned: true,
+      fields: [field({ name: 'id', type: 'java.util.UUID' }), field({ name: 'name', type: 'String' })],
+    }), CTX)!.content;
+    expect(content).toContain('this.loadedVersion.set((entity as unknown as { version?: number }).version ?? null);');
+  });
+
+  it('an unversioned entity emits no version payload or conflict state', () => {
+    expect(unversioned).toContain('this.service.update(String(current.id), data as OrderUpdate)');
+    expect(unversioned).not.toContain('loadedVersion');
+    expect(unversioned).not.toContain('conflict');
+    expect(unversioned).not.toContain('409');
+    // reload() still exists: it retries a failed by-id load, and only re-fetches the resource.
+    expect(unversioned).toContain('reload(): void { this.entityResource.reload(); }');
+  });
+});

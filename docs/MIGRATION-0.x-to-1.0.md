@@ -1454,6 +1454,28 @@ new row. The regenerated `<entity>-form.component.ts` changes as follows:
 component. A domain entity named `ActivatedRoute` now takes the `ActivatedRouteModel` type name,
 like any entity whose name the emitted app already imports.
 
+### `exeris-codegen-ts`: a versioned entity's update carries its version
+
+On an `@ExerisDomain(versioned = true)` entity, the generated repository reads the version in the
+`PUT` body as the version the edit was loaded at, and answers `409` when the row has moved on. The
+emitted front end never sent it, so the server read it as `0`: the first update of a row succeeded
+and every later one was refused.
+
+**For a versioned entity only**, regeneration changes three things. Unversioned entities emit
+byte-for-byte what they did.
+
+- **`<Entity>Update` requires the version field** (named by `systemFields.versionField`, else
+  `version`), typed as the entity declares it:
+  `export type OrderUpdate = Partial<OrderCreate> & { version: number | null };`.
+  `OrderUpdateSchema` gains the same key through `.extend(…)`. `<Entity>Create` is unchanged, because
+  the server owns the initial version. **A call site that builds an `<Entity>Update` by hand no longer
+  compiles until it passes the version of the row it loaded.**
+- **The edit form sends the version it loaded** with the update. The field is never a form control;
+  before this, a version field renamed through `systemFields.versionField` rendered as an editable
+  input.
+- **A `409` on update shows a conflict message with a Reload button**, which fetches the row as it
+  now stands and resets the form to it, including its current version.
+
 ### `@View`: wrong attributes on STATIC/NONE bindings are diagnosed
 
 `@Bind(source = STATIC)` or `NONE` carrying `ref`, `path`, `expression` or `language` now produces a

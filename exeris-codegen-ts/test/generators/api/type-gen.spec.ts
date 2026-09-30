@@ -702,3 +702,70 @@ describe('generateTypes — top-level convenience function', () => {
     expect(files[0].content).toContain('export interface Order {');
   });
 });
+
+// ---------- versioned: the update carries the optimistic-lock version ----------
+
+describe('TypeGenerator — versioned update DTO and schema', () => {
+  const gen = new TypeGenerator();
+  const ctx = createGeneratorContext({ generateZod: true });
+
+  function emit(overrides: Partial<DomainMetadata>): { types: string; schema: string } {
+    const metadata = domain({
+      entityName: 'Thing',
+      fields: [
+        field({ name: 'id', type: 'UUID' }),
+        field({ name: 'name', type: 'String' }),
+        field({ name: 'version', type: 'java.lang.Long' }),
+      ],
+      ...overrides,
+    });
+    return {
+      types: gen.generate(metadata, ctx)!.content,
+      schema: gen.generateAggregate([metadata], ctx).find(f => f.path === 'schemas/thing.schema.ts')!.content,
+    };
+  }
+
+  it('a versioned entity requires the version on update, typed as the entity declares it', () => {
+    const { types, schema } = emit({ versioned: true });
+    expect(types).toContain('export type ThingUpdate = Partial<ThingCreate> & { version: number | null };');
+    expect(schema).toContain('export const ThingUpdateSchema = ThingCreateSchema.partial().extend({ version: z.number().nullable() });');
+  });
+
+  it('the create DTO and schema still leave the version out (the server owns the initial one)', () => {
+    const { types, schema } = emit({ versioned: true });
+    const start = types.indexOf('export interface ThingCreate {');
+    const create = types.slice(start, types.indexOf('}', start));
+    expect(create).not.toContain('version');
+    expect(schema).toContain('ThingCreateSchema = ThingSchema.omit({\n  id: true,\n  version: true,\n});');
+  });
+
+  it('honours systemFields.versionField as the key', () => {
+    const { types, schema } = emit({
+      versioned: true,
+      fields: [field({ name: 'id', type: 'UUID' }), field({ name: 'rev', type: 'long' })],
+      systemFields: { versionField: 'rev' } as DomainMetadata['systemFields'],
+    });
+    expect(types).toContain('export type ThingUpdate = Partial<ThingCreate> & { rev: number };');
+    expect(schema).toContain('.partial().extend({ rev: z.number() });');
+    // T20: `rev` is a key of ThingSchema, so it is omitted from create; `version` is not, so it is not.
+    expect(schema).toContain('  rev: true,');
+    expect(schema).not.toContain('  version: true,');
+  });
+
+  it('an undeclared version field still goes on the update, as a number', () => {
+    const { types, schema } = emit({
+      versioned: true,
+      fields: [field({ name: 'id', type: 'UUID' }), field({ name: 'name', type: 'String' })],
+    });
+    expect(types).toContain('export type ThingUpdate = Partial<ThingCreate> & { version: number };');
+    expect(schema).toContain('.partial().extend({ version: z.number() });');
+    expect(schema).not.toContain('  version: true,');
+  });
+
+  it('an unversioned entity keeps the plain partial update', () => {
+    const { types, schema } = emit({ versioned: false });
+    expect(types).toContain('export type ThingUpdate = Partial<ThingCreate>;');
+    expect(schema).toContain('export const ThingUpdateSchema = ThingCreateSchema.partial();');
+    expect(schema).not.toContain('.extend(');
+  });
+});

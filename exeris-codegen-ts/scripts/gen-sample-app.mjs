@@ -127,6 +127,20 @@ const domains = [
       softDeletedByField: 'archivedBy',
     },
   }),
+  // Named for the optimistic lock: the only versioned fixture entity. Its edit form holds the
+  // loaded version, sends it with the update and turns a 409 into a reload — code emitted for no
+  // unversioned entity, so without this the build never compiles it. The version field is named
+  // through systemFields to pin that the key comes from there, not from the literal `version`.
+  d({
+    entityName: 'Ticket',
+    versioned: true,
+    fields: [
+      { name: 'id', type: 'java.util.UUID' },
+      { name: 'title', type: 'String', required: true },
+      { name: 'revision', type: 'java.lang.Long' },
+    ],
+    systemFields: { versionField: 'revision' },
+  }),
 ];
 const enums = [{
   name: 'OrderStatus',

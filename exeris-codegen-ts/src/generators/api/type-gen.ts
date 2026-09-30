@@ -116,8 +116,9 @@ export class TypeGenerator implements CodeGenerator {
     lines.push(`}`);
     lines.push(``);
 
-    // Update DTO (all fields optional, excluding lifecycle and read-only)
-    lines.push(`export type ${interfaceName}Update = Partial<${interfaceName}Create>;`);
+    // Update DTO (all fields optional, excluding lifecycle and read-only; a versioned entity
+    // additionally requires its optimistic-lock version)
+    lines.push(...updateDtoDeclaration(interfaceName, metadata));
     lines.push(``);
 
     // Filter type
@@ -195,7 +196,7 @@ export class TypeGenerator implements CodeGenerator {
     lines.push(``);
 
     // Update schema
-    lines.push(`export const ${interfaceName}UpdateSchema = ${interfaceName}CreateSchema.partial();`);
+    lines.push(updateSchemaDeclaration(interfaceName, metadata));
 
     return {
       path: outPath('schemas', `${kebabName}.schema.ts`),
@@ -311,6 +312,59 @@ export function systemFieldNames(metadata: DomainMetadata): string[] {
   }
 
   return [...new Set(fields)];
+}
+
+/** The optimistic-lock field a versioned entity's update carries. */
+export interface UpdateVersionField {
+  /** The property name: `systemFields.versionField`, or `version` when the entity names none. */
+  name: string;
+  /** The TS type, mirroring the entity interface's type for the field (`number` when undeclared). */
+  tsType: string;
+  /** The Zod expression, mirroring the entity schema's base type for the field (no `.optional()`). */
+  zodType: string;
+  /** Whether the entity declares the field, i.e. whether the entity interface carries it. */
+  declared: boolean;
+}
+
+/**
+ * The version an update of a `versioned` entity must send, or `undefined` for an unversioned one.
+ *
+ * The generated repository reads the version in the PUT body as the version the edit was loaded
+ * at, increments it, and matches `WHERE version = ?`; zero rows is a 409. The server owns the
+ * initial version, so the create DTO never carries the field, but the update DTO must: without it
+ * the server takes the expected version as 0 and every update after the first is refused.
+ */
+export function updateVersionField(metadata: DomainMetadata): UpdateVersionField | undefined {
+  if (!metadata.versioned) return undefined;
+  const name = metadata.systemFields?.versionField || 'version';
+  const field = metadata.fields.find((f) => f.name === name);
+  if (!field) return { name, tsType: 'number', zodType: 'z.number()', declared: false };
+  const mapping = DslMapper.mapType(field.type);
+  return { name, tsType: mapping.tsType, zodType: mapping.zodType, declared: true };
+}
+
+/**
+ * The `…Update` type declaration: the create DTO made partial, plus the required version on a
+ * versioned entity. Shared by the local and the peer emitter so the two cannot drift.
+ */
+export function updateDtoDeclaration(typeName: string, metadata: DomainMetadata): string[] {
+  const version = updateVersionField(metadata);
+  if (!version) return [`export type ${typeName}Update = Partial<${typeName}Create>;`];
+  return [
+    `/** The version this edit was loaded at: the server refuses the update with 409 when the row has moved on. */`,
+    `export type ${typeName}Update = Partial<${typeName}Create> & { ${version.name}: ${version.tsType} };`,
+  ];
+}
+
+/**
+ * The `…UpdateSchema` declaration, kept in step with `updateDtoDeclaration`: the create schema
+ * made partial, extended with the required version on a versioned entity.
+ */
+export function updateSchemaDeclaration(typeName: string, metadata: DomainMetadata): string {
+  const version = updateVersionField(metadata);
+  return version
+    ? `export const ${typeName}UpdateSchema = ${typeName}CreateSchema.partial().extend({ ${version.name}: ${version.zodType} });`
+    : `export const ${typeName}UpdateSchema = ${typeName}CreateSchema.partial();`;
 }
 
 /**
