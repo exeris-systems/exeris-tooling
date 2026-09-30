@@ -99,12 +99,12 @@ export function buildGeneratedFiles(
       if (form) appTree.push(form);
     }
     if (config.generateLists) {
-      const list = generateList(domain, config);
+      const list = generateList(domain, config, domains);
       if (list) appTree.push(list);
     }
     // Detail view component: read/edit for a single entity instance.
     if (config.generateDetails) {
-      appTree.push(generateDetail(domain, config));
+      appTree.push(generateDetail(domain, config, domains));
     }
     // Signal store: reactive entity state (signal-first).
     if (config.generateStores) {

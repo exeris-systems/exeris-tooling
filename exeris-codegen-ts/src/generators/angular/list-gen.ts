@@ -18,6 +18,7 @@ import type { GeneratorConfig } from '../../config.js';
 import type { CodeGenerator, GeneratedFile, GeneratorContext } from '../../core/generator-registry.js';
 import type { BackendType } from '../../core/backend-strategy.js';
 import { outPath } from '../../core/paths.js';
+import { foreignKeyLinks } from './relationship-links.js';
 
 export { GeneratedFile };
 
@@ -65,6 +66,7 @@ export class ListGenerator implements CodeGenerator {
       ? metadata.uiMetadata.listColumns
       : this.getDefaultListColumns(metadata);
 
+    const fkLinks = foreignKeyLinks(metadata, context.allDomains);
     const listColumns = listColumnNames
       .map((name) => metadata.fields.find((f) => f.name === name))
       .filter(Boolean)
@@ -77,6 +79,7 @@ export class ListGenerator implements CodeGenerator {
           format: field!.format,
           dataType: field!.dataType,
           sortable: field!.sortable,
+          link: fkLinks.get(field!.name),
         };
       });
 
@@ -277,7 +280,14 @@ export class ListGenerator implements CodeGenerator {
     // Data cells
     for (const col of listColumns) {
       lines.push(`                    <td class="whitespace-nowrap px-6 py-4 text-sm text-gray-900 dark:text-gray-100">`);
-      if (col.type === 'Boolean') {
+      if (col.link) {
+        // A foreign key links to the target's detail page; an empty one renders as any other cell.
+        lines.push(`                      @if (item.${col.name}) {`);
+        lines.push(`                        <a [routerLink]="['${col.link}', item.${col.name}]" [attr.data-testid]="'link-${col.name}-' + item.${idField}" class="font-mono text-exeris-primary hover:text-exeris-primary-hover hover:underline">{{ item.${col.name} }}</a>`);
+        lines.push(`                      } @else {`);
+        lines.push(`                        {{ item.${col.name} }}`);
+        lines.push(`                      }`);
+      } else if (col.type === 'Boolean') {
         lines.push(`                      @if (item.${col.name}) {`);
         lines.push(`                        <span class="inline-flex items-center rounded-full bg-green-50 px-2 py-1 text-xs font-medium text-green-700 ring-1 ring-inset ring-green-600/20 dark:bg-green-900/20 dark:text-green-400 dark:ring-green-500/20">Yes</span>`);
         lines.push(`                      } @else {`);
@@ -500,9 +510,13 @@ export class ListGenerator implements CodeGenerator {
   }
 }
 
-export function generateList(metadata: DomainMetadata, config: GeneratorConfig): GeneratedFile | null {
+export function generateList(
+  metadata: DomainMetadata,
+  config: GeneratorConfig,
+  allDomains: DomainMetadata[] = [metadata],
+): GeneratedFile | null {
   const generator = new ListGenerator();
-  const context: GeneratorContext = { config, backend: config.backend ?? 'KERNEL', allDomains: [metadata], enums: [] };
+  const context: GeneratorContext = { config, backend: config.backend ?? 'KERNEL', allDomains, enums: [] };
   return generator.generate(metadata, context);
 }
 

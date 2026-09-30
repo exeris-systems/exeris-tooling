@@ -29,7 +29,7 @@ const d = (o) => DomainMetadataSchema.parse({ packageName: 'com.shop', ...o });
 
 // Exercises the full surface: an enum-typed field (types/schemas/form select),
 // @Action endpoints incl. one with an enum param (service action method imports),
-// a second plain entity, and a relationship-ish UUID FK.
+// a second plain entity, and a MANY_TO_ONE UUID foreign key.
 const domains = [
   d({
     entityName: 'Order',
@@ -48,6 +48,10 @@ const domains = [
       // The wrapper was always handled; the primitive is the one that fell through.
       { name: 'expedited', type: 'boolean' },
     ],
+    // The foreign key renders as a routerLink to the target's detail page in the list cell and
+    // the detail row. The target is qualified, as the processor's fallback can record it, so the
+    // build also covers the simple-name resolution.
+    relationships: [{ name: 'productId', targetEntity: 'com.shop.Product', type: 'MANY_TO_ONE' }],
     // Domain events drive the per-entity handler AND the shared event bus. Without one in the
     // fixture, neither half of the event generator is ever built.
     events: [
