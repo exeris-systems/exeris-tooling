@@ -61,7 +61,7 @@ describe('MANY_TO_ONE UUID foreign key', () => {
     expect(list).toContain(`@if (item.categoryId) {`);
     expect(list).toContain(`<a [routerLink]="['${CATEGORY_ROUTE}', item.categoryId]"`);
     expect(list).toContain(`>{{ item.categoryId }}</a>`);
-    // An empty foreign key renders as the plain cell did.
+    // An empty foreign key renders as an unlinked cell.
     expect(list).toMatch(/\} @else \{\n\s+\{\{ item\.categoryId \}\}\n\s+\}/);
   });
 
