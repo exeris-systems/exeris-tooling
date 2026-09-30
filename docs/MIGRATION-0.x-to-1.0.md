@@ -1532,6 +1532,26 @@ A source that still sets it compiles with javac's `[removal]` warning, and under
 with the inert-attribute warning as well. Delete it. A versioned route is spelled in `path`
 (`path = "/v2/orders"`).
 
+### `@RouteAccess(PUBLIC)` beside `permissions` is a compile error
+
+SDK 0.12.0 adds `@RouteAccess(Level.PUBLIC | AUTHENTICATED)` on an entity or on an `@Action` method;
+the method-level declaration overrides the entity's. A public route runs with no principal bound, so
+a permission on it can never be satisfied. The processor now refuses the pair with an `[Exeris]`
+error in three shapes:
+
+- `@RouteAccess(PUBLIC)` on the entity and a non-empty `@ExerisDomain(permissions = …)`;
+- `@RouteAccess(PUBLIC)` on an action method and a non-empty `@Action(permissions = …)`;
+- a non-empty `@Action(permissions = …)` on a method with no `@RouteAccess` of its own, under an
+  entity declared `@RouteAccess(PUBLIC)`. The method inherits PUBLIC.
+
+To fix one, drop the permissions, or declare `@RouteAccess(AUTHENTICATED)` on that element. In the
+third shape, declare it on the method. A source that never uses `@RouteAccess` is unaffected.
+
+The annotation is not compiled into a route policy yet. Every generated route is registered as
+if it were absent, the metadata JSON carries no `routeAccess`, and no emitted file changes. Under
+`-Aexeris.strict` each occurrence, on an entity or a method, draws the inert-annotation warning.
+The transcription onto the kernel's `HttpRoutePolicy` is T53, tracked in `ROADMAP.md`.
+
 ### SDK 0.12.0 needs no source change for S6
 
 `SystemFieldsMetadata`, `DomainMetadata` and `ActionMetadata` keep their 0.11.0 constructors. Code
