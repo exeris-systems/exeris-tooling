@@ -9,7 +9,7 @@ description: Angular v22 emission gate for the TS side. Invoke before committing
 Keep what `exeris-codegen-ts` **emits** aligned with the Angular v22 canon while the phased
 migration is in flight. This skill is self-contained — the operative canon (phase gate +
 emit/stop quick-reference below) lives here. The fuller rationale and verified v22 facts live in
-the working RFC at `docs/rfc/RFC-2026-06-18 Angular v22 Migration of the TS Emitter.md` (an
+the working RFC at `docs/rfc/RFC-2026-06-18-angular-v22-migration-of-the-ts-emitter.md` (an
 intentionally untracked local draft until accepted — same treatment as the reattach RFC; once
 accepted it becomes the authoritative ADR, which a fresh checkout will have). Treat this skill as the procedure that
 applies the canon and the boundary that catches drift; defer to the ADR if/when it lands.
@@ -83,7 +83,7 @@ reshape into the version bump).
   state this explicitly in the PR. Defer to `exeris-tooling-emitter-parity-review`.
 - **No experimental-by-default:** WebMCP and any Angular *experimental* API ship behind a config flag, off.
 - **Single source:** if the v22 idiom canon shifts, update the RFC
-  (`docs/rfc/RFC-2026-06-18 …`, and the resulting ADR), then this skill — not the reverse.
+  (`docs/rfc/RFC-2026-06-18-angular-v22-migration-of-the-ts-emitter.md`, and the resulting ADR), then this skill — not the reverse.
 
 ## Output Template
 1. **Files touched** (which `*-gen.ts` / scaffold)

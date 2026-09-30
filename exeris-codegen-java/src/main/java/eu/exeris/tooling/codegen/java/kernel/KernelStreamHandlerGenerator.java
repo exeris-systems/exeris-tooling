@@ -88,7 +88,7 @@ import java.util.List;
  *
  * @see "docs/adr/ADR-043.link.md — cross-repo stub; kernel-side authoritative
  *      copy owns the streaming SPI."
- * @see "docs/rfc/RFC-2026-06-22 SSE Stream Emitter (tooling).md — Slice 1."
+ * @see "docs/rfc/RFC-2026-06-22-sse-stream-emitter-tooling.md — Slice 1."
  *
  * @author Exeris Team
  * @since 0.6.0

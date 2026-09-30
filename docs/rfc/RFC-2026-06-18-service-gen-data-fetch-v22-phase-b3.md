@@ -1,9 +1,17 @@
-# DESIGN-2026-06-18: service-gen data-fetch under v22 (Phase B3)
+---
+title: "RFC-2026-06-18: Service-Gen Data-Fetch Under Angular v22"
+type: rfc
+visibility: public
+owning-repo: exeris-tooling
+status: draft
+---
+
+# RFC-2026-06-18: service-gen data-fetch under v22 (Phase B3)
 
 | Field | Value |
 |:--|:--|
 | **Status** | DRAFT (design note, local — feeds the v22 RFC / Phase B3) |
-| **Parent** | `RFC-2026-06-18 Angular v22 Migration of the TS Emitter` |
+| **Parent** | [RFC-2026-06-18](RFC-2026-06-18-angular-v22-migration-of-the-ts-emitter.md) |
 | **Scope** | `exeris-codegen-ts` emitters: `service-gen`, `store-gen`, `list-gen`, `detail-gen` |
 | **Decision needed** | How should the emitted data-fetch layer consume the service under v22 — and does the service contract change? |
 

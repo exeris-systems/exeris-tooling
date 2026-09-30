@@ -1,3 +1,11 @@
+---
+title: "RFC-2026-06-29: Cross-App Contract Mesh"
+type: rfc
+visibility: public
+owning-repo: exeris-tooling
+status: active
+---
+
 # RFC-2026-06-29: What shape should the tooling cross-app contract mesh take, now that each app already emits a closed-world capability/contract surface?
 
 | Field             | Value                                                                 |
