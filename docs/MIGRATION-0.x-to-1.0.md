@@ -1476,6 +1476,34 @@ byte-for-byte what they did.
 - **A `409` on update shows a conflict message with a Reload button**, which fetches the row as it
   now stands and resets the form to it, including its current version.
 
+### `exeris-codegen-ts`: failed requests show a message per status, and delete no longer uses `alert()`
+
+The generated handler answers a failed request with a status and no body: `400` for malformed or
+rejected input, `404` for an absent row, `409` for a stale version, `500` for anything the server
+could not complete. The emitted front end showed the raw `HttpErrorResponse` text instead, and a
+failed delete opened a browser `alert()`.
+
+An app with at least one visible entity now gets one more file, **`src/app/core/http-error.ts`**,
+exporting `httpErrorMessage(err, { entity?, action? })` and the `HttpErrorAction` /
+`HttpErrorContext` types. It maps status `0` (server unreachable), `400`, `404`, `409` and `5xx` to
+a fixed English sentence, and any other failure to a generic one; it never shows the error's own
+text. A zero-entity app emits exactly what it did. Every emitted error display goes through it:
+
+- **Detail:** the load error, and a failed delete, which now shows a `role="alert"` banner
+  (`deleteError` signal, `data-testid="delete-error"`) instead of `alert()`.
+- **List:** the page-load error, and a failed delete, shown the same way.
+- **Form:** the by-id load error, and the submit error, which is now rendered
+  (`data-testid="submit-error"`); before this the `error` signal was set and never shown. A
+  versioned entity's `409` still shows the conflict message first.
+- **Store:** `error()` carries the mapped message. The private `extractErrorMessage` now takes the
+  action.
+- **Saga:** the public `extractErrorMessage(err)` returns the mapped message, so a string fed to
+  `failToStart` reads the same way.
+
+A domain entity named `HttpErrorResponse` or `HttpErrorAction` now takes the `…Model` type name.
+Code that matched on the old raw messages (`'Failed to load data'`, `'An error occurred'`,
+`'An unknown error occurred'`) has to match on the new sentences or, better, on the status.
+
 ### `@View`: wrong attributes on STATIC/NONE bindings are diagnosed
 
 `@Bind(source = STATIC)` or `NONE` carrying `ref`, `path`, `expression` or `language` now produces a
