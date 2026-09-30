@@ -13,7 +13,7 @@ import type { GeneratorConfig } from '../../config.js';
 import type { CodeGenerator, GeneratedFile, GeneratorContext } from '../../core/generator-registry.js';
 import type { BackendType } from '../../core/backend-strategy.js';
 import { outPath } from '../../core/paths.js';
-import { updateVersionField } from '../api/type-gen.js';
+import { updateVersionField, viewSystemFieldNames } from '../api/type-gen.js';
 
 export { GeneratedFile };
 
@@ -94,10 +94,6 @@ export class FormGenerator implements CodeGenerator {
       return ['active', 'onboardingStatus', 'onboardingStartedAt', 'onboardingCompletedAt', 'hierarchyLevel', 'parentTenantId', 'createdAt', 'updatedAt', 'deleted', 'version'].includes(name);
     };
 
-    // A UNIVERSE entity's shared-scope key is server-owned like its tenant: the
-    // repository stamps it from the bound storage context, the create DTO omits it (type-gen's
-    // systemFieldNames), and the form therefore renders no control for it and never sends it.
-    const sharedScopeField = domain.systemFields?.sharedScopeField;
     // A versioned entity's lock field is never a control: the edit form holds the loaded
     // entity's value aside and sends it with the update (type-gen's updateVersionField names it).
     const version = updateVersionField(domain);
@@ -109,11 +105,11 @@ export class FormGenerator implements CodeGenerator {
         ? `${entityExpr}.${name} ?? null`
         : `(${entityExpr} as unknown as { ${name}?: number }).${name} ?? null`;
     };
-    const isSystemField = (name: string): boolean => {
-      return ['id', 'createdAt', 'updatedAt', 'createdBy', 'updatedBy', 'version', 'deleted', 'deletedAt', 'tenantId'].includes(name)
-        || name === sharedScopeField
-        || name === version?.name;
-    };
+    // No control for a system field (type-gen's viewSystemFieldNames). That includes a UNIVERSE
+    // entity's shared-scope key, which is server-owned like its tenant: the repository stamps it
+    // from the bound storage context and the create DTO omits it, so the form never sends it.
+    const systemNames = viewSystemFieldNames(domain);
+    const isSystemField = (name: string): boolean => systemNames.includes(name);
 
     const isEnumField = (field: FieldMetadata): boolean => {
       // Check explicit enumType first

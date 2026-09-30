@@ -2,8 +2,8 @@
  * Coverage for src/generators/angular/detail-gen.ts — DetailGenerator
  * emits an Angular 21 standalone component with Signal-based state +
  * the `rxResource()` API for data fetching. Exercises:
- *   - getSystemFieldNames merge (default set + idField alias + every
- *     optional systemFields.* propagation)
+ *   - system-field filtering (type-gen's viewSystemFieldNames) and the
+ *     system panel (audit stamps on `audited`, version on `versioned`)
  *   - getDisplayType matrix (enum / boolean / date / datetime / number /
  *     text fallback)
  *   - isEnumType heuristic (suffix Status/Type/Role/State + known-types
@@ -557,5 +557,85 @@ describe('DetailGenerator — post-delete navigation', () => {
   it('navigates to the ies plural for a consonant + y entity', () => {
     expect(generateDetail(entity('Colony'), DEFAULT_CONFIG).content)
       .toContain("this.router.navigate(['/colonies'])");
+  });
+});
+
+describe('DetailGenerator — system panel', () => {
+  const parse = (o: Record<string, unknown>) =>
+    DomainMetadataSchema.parse({ packageName: 'com.shop', entityName: 'Ticket', ...o });
+  const id = { name: 'id', type: 'java.util.UUID' };
+  const title = { name: 'title', type: 'String' };
+
+  it('renders the id only for an entity that is neither audited nor versioned and declares no stamp', () => {
+    const content = generateDetail(parse({ fields: [id, title] }), DEFAULT_CONFIG).content;
+    expect(content).toContain('System Information');
+    expect(content).toContain('{{ entity()?.id }}');
+    expect(content).not.toContain('<dt class="text-gray-400">Created</dt>');
+    expect(content).not.toContain('<dt class="text-gray-400">Version</dt>');
+    expect(content).not.toContain('systemInfo');
+    expect(content).not.toContain('DatePipe');
+  });
+
+  it('renders the stamps of an audited entity that does not declare them, through a narrowing cast', () => {
+    const content = generateDetail(parse({ audited: true, fields: [id, title] }), DEFAULT_CONFIG).content;
+    expect(content).toContain(
+      'readonly systemInfo = computed(() => this.entity() as unknown as { createdAt?: string; updatedAt?: string } | null);',
+    );
+    expect(content).toContain("@if (systemInfo()?.createdAt) { <div><dt class=\"text-gray-400\">Created</dt><dd>{{ systemInfo()?.createdAt | date:'medium' }}</dd></div> }");
+    expect(content).toContain("@if (systemInfo()?.updatedAt) { <div><dt class=\"text-gray-400\">Updated</dt><dd>{{ systemInfo()?.updatedAt | date:'medium' }}</dd></div> }");
+    expect(content).toContain('imports: [CommonModule, RouterModule, DatePipe],');
+    expect(content).not.toContain('entity()?.createdAt');
+  });
+
+  it('names the stamps through systemFields on an audited entity', () => {
+    const content = generateDetail(parse({
+      audited: true,
+      systemFields: { createdAtField: 'openedAt', updatedAtField: 'touchedAt' },
+      fields: [id, title, { name: 'openedAt', type: 'java.time.Instant' }],
+    }), DEFAULT_CONFIG).content;
+    // Declared: read off the entity. Undeclared: read off the cast.
+    expect(content).toContain("{{ entity()?.openedAt | date:'medium' }}");
+    expect(content).toContain("{{ systemInfo()?.touchedAt | date:'medium' }}");
+    expect(content).toContain('this.entity() as unknown as { touchedAt?: string } | null');
+    expect(content).not.toContain('createdAt');
+    expect(content).not.toContain('updatedAt');
+    // A declared stamp leaves the field table for the panel.
+    expect(content).not.toContain("name: 'openedAt' as keyof Ticket");
+  });
+
+  it('renders the version of a versioned entity, keyed on systemFields.versionField', () => {
+    const content = generateDetail(parse({
+      versioned: true,
+      systemFields: { versionField: 'revision' },
+      fields: [id, title, { name: 'revision', type: 'java.lang.Long' }],
+    }), DEFAULT_CONFIG).content;
+    expect(content).toContain('@if (entity()?.revision != null) { <div><dt class="text-gray-400">Version</dt><dd class="font-mono text-gray-600 dark:text-gray-300">{{ entity()?.revision }}</dd></div> }');
+    expect(content).not.toContain("name: 'revision' as keyof Ticket");
+    expect(content).not.toContain('systemInfo');
+    expect(content).not.toContain('DatePipe');
+  });
+
+  it('reads an undeclared version through the cast', () => {
+    const content = generateDetail(parse({ versioned: true, fields: [id, title] }), DEFAULT_CONFIG).content;
+    expect(content).toContain('this.entity() as unknown as { version?: number } | null');
+    expect(content).toContain('@if (systemInfo()?.version != null)');
+  });
+
+  it('orders the rows id, created, updated, version', () => {
+    const content = generateDetail(parse({ audited: true, versioned: true, fields: [id, title] }), DEFAULT_CONFIG).content;
+    const at = (s: string) => content.indexOf(s);
+    expect(at('{{ entity()?.id }}')).toBeLessThan(at('>Created</dt>'));
+    expect(at('>Created</dt>')).toBeLessThan(at('>Updated</dt>'));
+    expect(at('>Updated</dt>')).toBeLessThan(at('>Version</dt>'));
+    expect(content).toContain('{ createdAt?: string; updatedAt?: string; version?: number }');
+  });
+
+  it('shows a declared stamp an unaudited entity carries, as before', () => {
+    const content = generateDetail(parse({
+      fields: [id, title, { name: 'createdAt', type: 'java.time.Instant' }],
+    }), DEFAULT_CONFIG).content;
+    expect(content).toContain("@if (entity()?.createdAt) { <div><dt class=\"text-gray-400\">Created</dt><dd>{{ entity()?.createdAt | date:'medium' }}</dd></div> }");
+    expect(content).not.toContain('Updated</dt>');
+    expect(content).not.toContain('systemInfo');
   });
 });

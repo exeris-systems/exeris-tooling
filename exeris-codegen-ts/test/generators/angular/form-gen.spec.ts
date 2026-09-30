@@ -929,3 +929,43 @@ describe('FormGenerator — versioned entity', () => {
     expect(unversioned).toContain('reload(): void { this.entityResource.reload(); }');
   });
 });
+
+// ---------- system fields: one classification, from systemFields and the flags ----------
+
+describe('FormGenerator — system fields follow systemFields and the flags', () => {
+  const gen = new FormGenerator();
+
+  it('renders no control for the audit stamps an audited entity renames', () => {
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      audited: true,
+      systemFields: { createdAtField: 'openedAt', updatedAtField: 'touchedAt' },
+      fields: [
+        field({ name: 'openedAt', type: 'java.time.Instant' }),
+        field({ name: 'touchedAt', type: 'java.time.Instant' }),
+        field({ name: 'orderNumber', type: 'String' }),
+      ],
+    }), CTX)!.content;
+    expect(content).not.toContain('data-testid="field-openedAt"');
+    expect(content).not.toContain('data-testid="field-touchedAt"');
+    expect(content).toContain('data-testid="field-orderNumber"');
+  });
+
+  it('renders no control for the soft-delete fields a systemFields block names', () => {
+    const content = gen.generate(domain({
+      entityName: 'Invoice',
+      softDelete: true,
+      systemFields: { softDeleteField: 'archived', softDeleteTimestampField: 'archivedAt', softDeletedByField: 'archivedBy' },
+      fields: [
+        field({ name: 'archived', type: 'boolean' }),
+        field({ name: 'archivedAt', type: 'java.time.Instant' }),
+        field({ name: 'archivedBy', type: 'String' }),
+        field({ name: 'amount', type: 'java.math.BigDecimal' }),
+      ],
+    }), CTX)!.content;
+    for (const name of ['archived', 'archivedAt', 'archivedBy']) {
+      expect(content).not.toContain(`data-testid="field-${name}"`);
+    }
+    expect(content).toContain('data-testid="field-amount"');
+  });
+});
