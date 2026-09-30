@@ -162,5 +162,38 @@ check(
   ].join('\n'),
 );
 
+// (4) A versioned entity: its Update type and Update schema both require the version. The
+// consumer checks the two agree in both directions, so a type that drops the version while the
+// schema keeps it (or the reverse) fails here rather than at the first 409.
+check(
+  'versioned-update',
+  [DomainMetadataSchema.parse({
+    packageName: 'com.shop',
+    entityName: 'Ticket',
+    versioned: true,
+    fields: [
+      { name: 'id', type: 'java.util.UUID' },
+      { name: 'title', type: 'String' },
+      { name: 'version', type: 'java.lang.Long' },
+    ],
+  })],
+  [],
+  [],
+  [
+    "import type { z } from 'zod';",
+    "import type { TicketUpdate } from './types';",
+    "import { TicketUpdateSchema } from './schemas';",
+    '',
+    'type Parsed = z.infer<typeof TicketUpdateSchema>;',
+    'export const fromSchema = (p: Parsed): TicketUpdate => p;',
+    'export const toSchema = (u: TicketUpdate): Parsed => u;',
+    '',
+    '// The version is required: an update without it must not type-check.',
+    "// @ts-expect-error — `version` is missing",
+    "export const missing: TicketUpdate = { title: 'x' };",
+    '',
+  ].join('\n'),
+);
+
 rmSync(join(pkgRoot, '.verify-tmp'), { recursive: true, force: true });
-console.log('✓ Generated frontend data layer type-checks (with-enums + zero-enums + two-peers-same-entity).');
+console.log('✓ Generated frontend data layer type-checks (with-enums + zero-enums + two-peers-same-entity + versioned-update).');

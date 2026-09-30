@@ -43,6 +43,8 @@ import {
   DEPRECATED_OWNER_DOC,
   deprecatedDtoOwner,
   systemFieldNames,
+  updateDtoDeclaration,
+  updateSchemaDeclaration,
 } from './type-gen.js';
 
 /** An emitted file, in the same (path, content) shape the orchestrator composes. */
@@ -127,7 +129,7 @@ function peerInterface(peerName: string, metadata: DomainMetadata): string {
   }
   lines.push('}', '');
 
-  lines.push(`export type ${typeName}Update = Partial<${typeName}Create>;`);
+  lines.push(...updateDtoDeclaration(typeName, metadata));
 
   return lines.join('\n');
 }
@@ -158,7 +160,7 @@ function peerZodSchema(peerName: string, metadata: DomainMetadata): string {
   }
   lines.push('});', '');
 
-  lines.push(`export const ${typeName}UpdateSchema = ${typeName}CreateSchema.partial();`);
+  lines.push(updateSchemaDeclaration(typeName, metadata));
 
   return lines.join('\n');
 }
