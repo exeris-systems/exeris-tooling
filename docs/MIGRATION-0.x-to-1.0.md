@@ -4,7 +4,7 @@ type: migration-guide
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-09-29
+last-verified: 2026-09-30
 ---
 
 # Migration: 0.x → 1.0
@@ -1173,6 +1173,16 @@ Separately, `createGeneratorContext` filled `apiBasePath` with `/api` when a cal
 contradicting the schema default. **Only programmatic callers are affected** — the CLI and config
 paths always pass a resolved value.
 
+### `exeris-codegen-ts`: `environment.apiVersion` is deprecated (T38)
+
+The emitted `environment.ts` and `environment.development.ts` still carry `apiVersion: 'v1'`, now
+marked `@deprecated`. No emitted service, store or client reads it, because none of them requests a
+version segment, and SDK 0.12.0 deprecates `@ExerisDomain.apiVersion` for removal. **0.10.0 stops
+emitting the key.** If your own code reads `environment.apiVersion`, your editor now shows the read
+as deprecated; remove it before 0.10.0, when the regenerated `environment.development.ts` stops
+carrying it. `environment.ts` is written only when it is absent, so an existing app keeps the key
+there until you delete it.
+
 ### `exeris-codegen-ts`: the app barrel gains a Stores section (#210)
 
 `src/app/index.ts` now exports `<Entity>Store` and the `<Entity>StoreState` type for every visible
@@ -1380,9 +1390,16 @@ An entity with nothing else to update emits `UPDATE … SET id = id WHERE id = ?
 entity emitted an invalid empty `SET` list before).
 
 **Contract changes:** the emitted OpenAPI marks the owner (and a UNIVERSE entity's shared-scope
-field) `readOnly: true` and removes them from `…CreateDto` / `…UpdateDto`. The TypeScript `…Create`
-types and schemas omit `tenantId` for tenant-partitioned entities, even without a `systemFields`
-block. Sending the bound tenant anyway is harmless; sending another one is now a 400.
+field) `readOnly: true` and removes them from `…CreateDto` / `…UpdateDto`. On the TypeScript side:
+- An owner named by a `systemFields` block (a `@TenantId` field, or `tenantIdField`) is omitted
+  from the `…Create` type and schema, as before.
+- A tenant-partitioned entity with no `systemFields` block keeps `tenantId` in its `…Create` and
+  `…Update` types and its create schema for one more release, marked `@deprecated`. **0.10.0
+  omits it.** Stop setting it on create and update calls.
+- A UNIVERSE entity's shared-scope field is omitted from the `…Create` type and schema. 0.8.0
+  refuses a UNIVERSE declaration, so no app built on it has the field to set.
+
+Sending the bound tenant anyway is harmless; sending another one is now a 400.
 
 **Regenerated code:** one new type per tenant-partitioned entity, and two per UNIVERSE entity with a
 `@SharedScope` field, in the `.repository` package. Generated repository tests replace
@@ -1397,10 +1414,11 @@ not as the table owner (or keep tables `FORCE`d, as the generated migrations do)
 
 - **TypeScript service:** `update(id, data)` now sends `PUT {base}/{id}`. It sent `PATCH`, which no
   generated server answered. `softDelete(id)` now sends `DELETE {base}/{id}`, which on a
-  `@SoftDelete` entity is the archive. `restore(id)` is removed from `<Entity>Service` and
-  `<Entity>Store`: it PATCHed a route nothing serves. A call site that used it now fails at `tsc`
-  instead of at runtime. There is no generated replacement, because nothing on the server un-sets
-  the soft-delete flag.
+  `@SoftDelete` entity is the archive. `restore(id)` on `<Entity>Service` and `<Entity>Store` is
+  deprecated. It PATCHed a route nothing serves, so it always failed. Now it fails without a
+  request: the service's Observable errors and the store sets its error and rejects, each with a
+  message that says why. **0.10.0 stops emitting it.** There is no generated replacement, because
+  nothing on the server un-sets the soft-delete flag, so remove the call.
 - **Emitted service spec:** asserts `PUT` for update, and adds an archive case for soft-delete
   entities.
 - **Java `*Client`:** unchanged on the wire. `update` still sends `PATCH`, because `KernelWebClient`

@@ -318,6 +318,31 @@ describe('FormGenerator field filtering for createFields', () => {
     expect(content).toContain('data-testid="field-orderNumber"');
   });
 
+  it('excludes a UNIVERSE entity\'s sharedScopeField — server-owned, stamped by the repository (T29 slice B)', () => {
+    const universe = gen.generate(domain({
+      entityName: 'Species',
+      dataScope: 'UNIVERSE',
+      systemFields: { primaryKeyField: 'id', tenantIdField: 'tenantId', sharedScopeField: 'worldId' },
+      fields: [
+        field({ name: 'tenantId', type: 'java.util.UUID' }),
+        field({ name: 'worldId', type: 'java.util.UUID' }),
+        field({ name: 'name', type: 'String' }), // visible
+      ],
+    }), CTX)!.content;
+    // The same field on an entity that declares no shared tier is an ordinary field.
+    const plain = gen.generate(domain({
+      entityName: 'Species',
+      fields: [
+        field({ name: 'worldId', type: 'java.util.UUID' }),
+        field({ name: 'name', type: 'String' }),
+      ],
+    }), CTX)!.content;
+
+    expect(universe).not.toContain('data-testid="field-worldId"');
+    expect(universe).toContain('data-testid="field-name"');
+    expect(plain).toContain('data-testid="field-worldId"');
+  });
+
   it('excludes lifecycle fields (active, onboardingStatus, parentTenantId, deleted, ...)', () => {
     const content = gen.generate(domain({
       entityName: 'Tenant',

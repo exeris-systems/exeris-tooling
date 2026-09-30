@@ -57,6 +57,12 @@ export function serviceApiPath(metadata: DomainMetadata): string {
   return metadata.apiPath ?? metadata.path ?? `/${DslMapper.toKebabCase(metadata.entityName)}s`;
 }
 
+/**
+ * Why the deprecated `restore()` of a soft-delete entity's service and store fails. One string for
+ * both, so the store's rejection and the service's error read the same.
+ */
+export const RESTORE_UNSUPPORTED = 'the generated server has no route that restores an archived row';
+
 export class ServiceGenerator implements CodeGenerator {
   readonly name = 'ServiceGenerator';
   readonly artifactType = 'SERVICE' as const;
@@ -207,7 +213,8 @@ export class ServiceGenerator implements CodeGenerator {
     lines.push(``);
     lines.push(`import { Injectable, inject } from '@angular/core';`);
     lines.push(`import { HttpClient, HttpParams } from '@angular/common/http';`);
-    lines.push(`import { Observable } from 'rxjs';`);
+    // throwError feeds the deprecated restore() below, emitted only on a soft-delete entity.
+    lines.push(softDelete ? `import { Observable, throwError } from 'rxjs';` : `import { Observable } from 'rxjs';`);
     lines.push(``);
 
     // Import types from types file
@@ -291,22 +298,36 @@ export class ServiceGenerator implements CodeGenerator {
     lines.push(`    return this.http.post<${modelName}>(this.baseUrl, data);`);
     lines.push(`  }`);
     lines.push(``);
+    // PUT, because that is the verb the generated kernel router serves update on and the one
+    // the OpenAPI document publishes; the kernel router matches methods exactly, so any other
+    // verb would never reach a generated server. Pinned against the router by
+    // crud-route-parity.spec.ts (shared contract: exeris-e2e-tests contract/crud-routes.json).
     lines.push(`  update(id: string, data: ${modelName}Update): Observable<${modelName}> {`);
-    lines.push(`    return this.http.patch<${modelName}>(\`\${this.baseUrl}/\${id}\`, data);`);
+    lines.push(`    return this.http.put<${modelName}>(\`\${this.baseUrl}/\${id}\`, data);`);
     lines.push(`  }`);
     lines.push(``);
     lines.push(`  delete(id: string): Observable<void> {`);
     lines.push(`    return this.http.delete<void>(\`\${this.baseUrl}/\${id}\`);`);
     lines.push(`  }`);
 
+    // The generated server has no archive and no restore route. On a @SoftDelete entity its
+    // DELETE is the archive — the emitted repository sets the flag instead of removing the row —
+    // so softDelete calls that. There is no restore to call: no route, handler or repository
+    // method un-sets the flag. restore() stays for one release, deprecated, so a call site keeps
+    // compiling; it sends no request and fails with the reason. 0.10.0 stops emitting it.
     if (softDelete) {
       lines.push(``);
+      lines.push(`  /** Archives the row: on this entity the server's DELETE sets the soft-delete flag. */`);
       lines.push(`  softDelete(id: string): Observable<void> {`);
-      lines.push(`    return this.http.patch<void>(\`\${this.baseUrl}/\${id}/archive\`, {});`);
+      lines.push(`    return this.http.delete<void>(\`\${this.baseUrl}/\${id}\`);`);
       lines.push(`  }`);
       lines.push(``);
+      lines.push(`  /**`);
+      lines.push(`   * @deprecated The server has no route that restores an archived row, so this sends no request`);
+      lines.push(`   * and fails with that reason. exeris-tooling 0.10.0 stops emitting it.`);
+      lines.push(`   */`);
       lines.push(`  restore(id: string): Observable<${modelName}> {`);
-      lines.push(`    return this.http.patch<${modelName}>(\`\${this.baseUrl}/\${id}/restore\`, {});`);
+      lines.push(`    return throwError(() => new Error(\`${entityName}Service.restore(\${id}): ${RESTORE_UNSUPPORTED}\`));`);
       lines.push(`  }`);
     }
 

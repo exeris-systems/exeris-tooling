@@ -12,7 +12,9 @@
 
 import { describe, expect, it } from 'vitest';
 import {
+  DEPRECATED_OWNER_DOC,
   TypeGenerator,
+  deprecatedDtoOwner,
   generateTypes,
 } from '../../../src/generators/api/type-gen.js';
 import {
@@ -586,6 +588,91 @@ describe('TypeGenerator system-field resolution (exercised via .omit set in the 
     for (const f of ['rev', 'ct', 'ut', 'cb', 'ub', 'tid', 'gone', 'dt', 'db']) {
       expect(schema).toContain(`${f}: true`);
     }
+  });
+});
+
+// ---------- the shared-scope key is server-owned ----------
+
+describe('TypeGenerator — a UNIVERSE entity\'s sharedScopeField is server-owned', () => {
+  const universe = () => domain({
+    entityName: 'Species',
+    dataScope: 'UNIVERSE',
+    systemFields: { primaryKeyField: 'id', tenantIdField: 'organizationId', sharedScopeField: 'worldId' },
+    fields: [
+      field({ name: 'id', type: 'UUID' }),
+      field({ name: 'name', type: 'String' }),
+      field({ name: 'organizationId', type: 'UUID' }),
+      field({ name: 'worldId', type: 'UUID' }),
+    ],
+  });
+
+  it('is omitted from the create schema, exactly like the tenant field', () => {
+    const files = new TypeGenerator().generateAggregate([universe()], CTX);
+    const schema = files.find(f => f.path === 'schemas/species.schema.ts')!.content;
+    const createSchema = schema.slice(schema.indexOf('SpeciesCreateSchema'));
+
+    expect(createSchema).toContain('worldId: true');
+    expect(createSchema).toContain('organizationId: true');
+  });
+
+  it('is absent from the Create DTO interface, while the entity interface still carries it', () => {
+    const content = new TypeGenerator().generate(universe(), CTX)!.content;
+    const createStart = content.indexOf('export interface SpeciesCreate {');
+    const createSlice = content.slice(createStart, content.indexOf('}', createStart));
+    const entityStart = content.indexOf('export interface Species {');
+    const entitySlice = content.slice(entityStart, content.indexOf('}', entityStart));
+
+    expect(createSlice).toContain('name?: string;');
+    expect(createSlice).not.toContain('worldId');
+    expect(createSlice).not.toContain('organizationId');
+    expect(entitySlice).toContain('worldId');
+  });
+});
+
+describe('TypeGenerator — a tenant-partitioned owner without a systemFields block is deprecated in the DTOs', () => {
+  const entity = (dataScope: 'GLOBAL' | 'TENANT') => domain({
+    entityName: 'Fleet',
+    dataScope,
+    fields: [
+      field({ name: 'id', type: 'UUID' }),
+      field({ name: 'name', type: 'String' }),
+      field({ name: 'tenantId', type: 'UUID' }),
+    ],
+  });
+  const createSliceOf = (content: string) => {
+    const start = content.indexOf('export interface FleetCreate {');
+    return content.slice(start, content.indexOf('}', start));
+  };
+
+  // The server owns it (stamped, a foreign one refused with 400, never updated), but a call
+  // site may still set it, so it stays one release and says so; 0.10.0 drops it.
+  it('keeps tenantId in the TENANT Create DTO and create schema, marked deprecated', () => {
+    const schema = new TypeGenerator().generateAggregate([entity('TENANT')], CTX)
+      .find(f => f.path === 'schemas/fleet.schema.ts')!.content;
+    const createSlice = createSliceOf(new TypeGenerator().generate(entity('TENANT'), CTX)!.content);
+
+    expect(schema.slice(schema.indexOf('FleetCreateSchema'))).not.toContain('tenantId: true');
+    expect(createSlice).toContain('name?: string;');
+    expect(createSlice).toContain(`${DEPRECATED_OWNER_DOC}\n  tenantId?: string;`);
+  });
+
+  it('leaves a GLOBAL entity\'s tenantId-named field writable and unmarked — it is not an owner there', () => {
+    const createSlice = createSliceOf(new TypeGenerator().generate(entity('GLOBAL'), CTX)!.content);
+
+    expect(createSlice).toContain('  tenantId?: string;');
+    expect(createSlice).not.toContain('@deprecated');
+  });
+
+  it('names no deprecated owner once a systemFields block names the owner — that one is omitted', () => {
+    const declared = domain({
+      entityName: 'Fleet',
+      dataScope: 'TENANT',
+      systemFields: { primaryKeyField: 'id', tenantIdField: 'tenantId' },
+      fields: [field({ name: 'id', type: 'UUID' }), field({ name: 'tenantId', type: 'UUID' })],
+    });
+
+    expect(deprecatedDtoOwner(declared)).toBeUndefined();
+    expect(createSliceOf(new TypeGenerator().generate(declared, CTX)!.content)).not.toContain('tenantId');
   });
 });
 

@@ -207,6 +207,20 @@ describe('generateServiceSpec', () => {
     expect(content).toContain("http.expectOne('/custom/42')");
   });
 
+  it('asserts PUT for update — the verb the generated router serves, not PATCH', () => {
+    const content = generateServiceSpec(idOnly, DEFAULT_CONFIG).content;
+    expect(content).toContain("it('updates with PUT on the instance'");
+    expect(content).toContain("expect(request.request.method).toBe('PUT');");
+    expect(content).not.toContain('PATCH');
+  });
+
+  it('asserts softDelete as DELETE on the instance, only for a soft-delete entity', () => {
+    const soft = generateServiceSpec(entity([{ name: 'id', type: 'java.util.UUID' }], { softDelete: true }), DEFAULT_CONFIG).content;
+    expect(soft).toContain("it('archives with DELETE on the instance'");
+    expect(soft).toContain("service.softDelete('42').subscribe();");
+    expect(generateServiceSpec(idOnly, DEFAULT_CONFIG).content).not.toContain('softDelete');
+  });
+
   it('verifies no request was left outstanding', () => {
     expect(generateServiceSpec(idOnly, DEFAULT_CONFIG).content).toContain('afterEach(() => http.verify());');
   });
