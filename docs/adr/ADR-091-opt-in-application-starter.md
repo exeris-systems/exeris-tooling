@@ -292,7 +292,8 @@ with no Java entities of its own therefore still needs metadata from somewhere.
 1. **Backend.** The three Maven modules of this ADR, unchanged.
 2. **Frontend only.** An npm starter on the `@exeris/codegen-ts` side. Its metadata source is the
    backend's **published contract artifact** as ADR-048 defines it: the peer's `cap-manifest.json`
-   plus its full `DomainMetadata`, `schemaVersion` floor 2, resolved by coordinate. A hand-maintained
+   plus its full `DomainMetadata`, with the `cap-manifest.json` `schemaVersion` floor 2
+   (ADR-048 §1), resolved by coordinate. A hand-maintained
    local directory of metadata JSON is not a supported source, because nothing would keep it in step
    with the backend it describes. The starter's name and shape belong to the codegen-ts plan.
 3. **Backend + frontend.** An opt-in addition to `exeris-app-parent` that runs the TypeScript
