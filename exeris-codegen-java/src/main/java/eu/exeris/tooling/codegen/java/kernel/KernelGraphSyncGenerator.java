@@ -211,6 +211,12 @@ public class KernelGraphSyncGenerator implements KernelArtifactGenerator {
                 .build();
     }
 
+    /**
+     * An edge's name is the name of the field that declares it, and it is both the edge's identity
+     * and the source of the entity getter. A field therefore carries at most one edge, which the
+     * processor enforces at the declaration; metadata that repeats a name was not produced by it,
+     * and is refused here rather than emitted as two constants sharing one getter.
+     */
     private void assertDistinctEdgeNames(String entity, GraphMetadata graph) {
         List<String> duplicates = graph.edges().stream()
                 .map(GraphEdgeMetadata::name)
@@ -223,7 +229,8 @@ public class KernelGraphSyncGenerator implements KernelArtifactGenerator {
         if (!duplicates.isEmpty()) {
             throw new IllegalArgumentException(
                     "Duplicate edge names on entity '" + entity + "': " + duplicates
-                            + ". Each @GraphEdge must declare a unique name.");
+                            + ". An edge is named by the field that declares it, so each field may "
+                            + "carry at most one @GraphEdge.");
         }
     }
 
