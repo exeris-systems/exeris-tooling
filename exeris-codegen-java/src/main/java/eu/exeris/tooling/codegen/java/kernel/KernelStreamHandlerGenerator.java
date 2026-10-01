@@ -79,9 +79,9 @@ import java.util.List;
  * <p>The route is registered collection-level
  * ({@code GET {base}/stream}) by {@link KernelApplicationGenerator} via the
  * router's typed {@code streamRoute(method, path, handler)}, distinct from the
- * respond-once {@code route(...)} — on the pre-boot edge router
- * ({@code RuntimeLifecycle.edgeRouter}), because that is the only router the kernel's
- * stream dispatcher ever sees.
+ * respond-once {@code route(...)}, on the router {@code RuntimeLifecycle.run()}
+ * composes; the kernel reaches it through {@code StreamRouteResolver} on the edge
+ * handler.
  *
  * @implNote Emission is JavaPoet-based (ADR-015), routed through
  * {@link KernelScaffold} like the other Java emitters.

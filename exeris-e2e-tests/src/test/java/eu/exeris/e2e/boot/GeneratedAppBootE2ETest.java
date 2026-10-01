@@ -6,6 +6,10 @@ import eu.exeris.kernel.core.http.routing.HttpRouter;
 import eu.exeris.kernel.spi.http.HttpHandler;
 import eu.exeris.kernel.spi.http.HttpMethod;
 import eu.exeris.kernel.spi.http.HttpStatus;
+import eu.exeris.kernel.spi.http.HttpStreamExchange;
+import eu.exeris.kernel.spi.http.HttpStreamHandler;
+import eu.exeris.kernel.spi.http.StreamEvent;
+import eu.exeris.kernel.spi.http.StreamRouteResolver;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
@@ -22,14 +26,16 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * The emitted application's stream routes resolve on a <b>real</b> kernel boot.
  *
  * <p>Assertions about emitted <em>text</em> cannot show this. What decides it is the object the
- * kernel actually holds as its server handler: the stream dispatcher resolves a stream only when
- * that object is an {@code HttpRouter}. So the emitted {@code Application} is booted, with a stream
- * route:
+ * kernel actually holds as its server handler: the stream dispatcher resolves a stream only through
+ * that object's {@code StreamRouteResolver}, so every wrapper between the kernel and the router has
+ * to carry stream resolution through. So the emitted {@code Application} is booted, with a stream
+ * route, a {@code decorate} wrapper and a stream route registered in {@code configureRoutes}:
  *
  * <pre>
  *   @ExerisDomain(realTimeApi) + @DomainEvent source
@@ -46,11 +52,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * the stream thread, where the kernel binds no engine. So the boot test here publishes an event and
  * reads the frame it produces.
  *
- * <p>Two tests, because two properties need two harnesses. The fixture test drives
- * {@code RuntimeLifecycle.edgeRouter(...)} with slots the test controls, which is the only way to
- * observe the composing window (503, close-on-open) deterministically. The boot test runs the
- * emitted {@code Application.run()} end to end, which is the only way to prove the edge router is
- * what the kernel is handed and that composition inside the boot callback feeds it.
+ * <p>Two harnesses, because two properties need them. The fixture test drives
+ * {@code RuntimeLifecycle.edgeHandler(...)} with a slot the test controls, which is the only way to
+ * observe the composing window (503 for a stream open too) deterministically. The boot tests run
+ * the emitted {@code Application.run()} end to end, which is the only way to prove the edge handler
+ * is what the kernel is handed and that composition inside the boot callback feeds it: with a
+ * {@code decorate} wrapper that resolves streams, and with the two compositions it refuses.
  */
 @Tag("e2e")
 @Tag("boot")
@@ -80,48 +87,77 @@ class GeneratedAppBootE2ETest {
     }
 
     @Test
-    @DisplayName("edgeRouter(...) on a real kernel: an HttpRouter that resolves the stream, 503 and "
-            + "close-on-open while composing, then respond-once traffic reaches the handler slot")
-    void edgeRouterHoldsItsContractOnARealKernel() throws Exception {
+    @DisplayName("edgeHandler(...) on a real kernel: 503 for every request, a stream open included, "
+            + "while composing; then streams resolve through the slot's StreamRouteResolver")
+    void edgeHandlerHoldsItsContractOnARealKernel() throws Exception {
         AtomicReference<HttpHandler> handlerSlot = new AtomicReference<>();
-        AtomicReference<Object> componentsSlot = new AtomicReference<>();
-        HttpHandler edge = edgeRouter(handlerSlot, componentsSlot);
+        HttpHandler edge = edgeHandler(handlerSlot);
 
-        // The property this turns on: the kernel's stream dispatcher resolves a stream only through
-        // `handler instanceof HttpRouter`.
-        assertThat(edge).isInstanceOf(HttpRouter.class);
-        HttpRouter router = (HttpRouter) edge;
-        assertThat(router.resolveStream(HttpMethod.GET, "/beacons/stream")).isNotNull();
-        assertThat(router.resolveStream(HttpMethod.GET, "/beacons")).isNull();
+        // The property this turns on: the kernel's stream dispatcher resolves a stream only
+        // through `handler instanceof StreamRouteResolver`.
+        assertThat(edge).isInstanceOf(StreamRouteResolver.class).isNotInstanceOf(HttpRouter.class);
+        assertThat(((StreamRouteResolver) edge).resolveStream(HttpMethod.GET, "/beacons/stream"))
+                .as("nothing resolves while the slot is empty").isNull();
 
         try (KernelBootstrapHttpEngineFixture kernel = new KernelBootstrapHttpEngineFixture()) {
             kernel.start(edge);
             int port = kernel.boundPort();
 
-            // Composing — both slots empty. A respond-once request is refused, not dropped...
+            // Composing — the slot is empty. A respond-once request is refused, not dropped, and
+            // so is a stream open: no stream resolves, so it is answered like any request.
             assertThat(RawHttp.request(port, "GET", "/beacons")).startsWith("HTTP/1.1 503");
-
-            // ...and a stream route resolves AS a stream, then closes: the head is written before
-            // any handler runs, so a status cannot refuse it.
             try (SseConnection sse = SseConnection.open(port, "/beacons/stream")) {
-                assertThat(sse.head()).startsWith("HTTP/1.1 200").containsIgnoringCase("text/event-stream");
-                assertThat(sse.awaitServerClose(FRAME_TIMEOUT))
-                        .as("closed by the server, with no frame, while nothing is composed")
-                        .isEmpty();
+                assertThat(sse.head()).startsWith("HTTP/1.1 503");
             }
 
-            // The handler slot filled: respond-once traffic reaches it through notFound, whatever
-            // its path — including one the stream route's prefix shares.
-            handlerSlot.set(exchange -> exchange.respond(HttpStatus.NO_CONTENT));
+            // A router in the slot: its stream routes resolve through the edge, with their path
+            // parameters, and everything else reaches its respond-once table.
+            handlerSlot.set(HttpRouter.builder()
+                    .streamRoute(HttpMethod.GET, "/echo/{name}/stream",
+                            exchange -> exchange.emit(StreamEvent.of("echo", exchange.pathParams().get("name"))))
+                    .notFound(exchange -> exchange.respond(HttpStatus.NO_CONTENT))
+                    .build());
+            try (SseConnection sse = SseConnection.open(port, "/echo/alpha/stream")) {
+                assertThat(sse.head()).startsWith("HTTP/1.1 200").containsIgnoringCase("text/event-stream");
+                assertThat(sse.awaitFrame(() -> { }, FRAME_TIMEOUT))
+                        .containsExactly("event: echo", "data: alpha");
+            }
             assertThat(RawHttp.request(port, "GET", "/beacons")).startsWith("HTTP/1.1 204");
-            assertThat(RawHttp.request(port, "POST", "/beacons/stream-not")).startsWith("HTTP/1.1 204");
+
+            // A handler in the slot that is not a resolver erases the stream table behind it —
+            // the kernel's contract, and the reason run() refuses one when it has stream routes.
+            HttpRouter router = HttpRouter.builder()
+                    .streamRoute(HttpMethod.GET, "/echo/{name}/stream", exchange -> { })
+                    .notFound(exchange -> exchange.respond(HttpStatus.NO_CONTENT))
+                    .build();
+            handlerSlot.set(router::handle);
+            assertThat(RawHttp.request(port, "GET", "/echo/alpha/stream")).startsWith("HTTP/1.1 204");
+        }
+
+        // The emitted requireStreamRoute(...) looks a generated template route up by its own
+        // template string, so a template has to match itself: "{id}" is a non-empty segment.
+        HttpStreamHandlerProbe generated = new HttpStreamHandlerProbe();
+        assertThat(HttpRouter.builder()
+                .streamRoute(HttpMethod.POST, "/beacons/{id}/actions/track", generated)
+                .build()
+                .resolveStream(HttpMethod.POST, "/beacons/{id}/actions/track"))
+                .isNotNull()
+                .extracting(match -> match.handler()).isSameAs(generated);
+    }
+
+    /** A stream handler with an identity of its own, so a lookup can be checked for it. */
+    private static final class HttpStreamHandlerProbe implements HttpStreamHandler {
+        @Override
+        public void handle(HttpStreamExchange exchange) {
+            // never opened
         }
     }
 
     @Test
     @DisplayName("the emitted Application boots, composes inside the boot callback, starts its saga "
-            + "and subscriber, and a stream opened through its edge router receives a frame, with "
-            + "its payload, published from a request thread")
+            + "and subscriber; through a decorate wrapper that resolves streams, a generated stream "
+            + "receives a frame published from a request thread, and a configureRoutes stream runs "
+            + "inside the wrapper's binding")
     void emittedApplicationServesAStreamFrame() throws Exception {
         List<String> probe = probe();
         probe.clear();
@@ -134,9 +170,19 @@ class GeneratedAppBootE2ETest {
                     .containsExactly("saga:initialize:BeaconSaga", "subscriber:subscribe");
 
             // Respond-once traffic reaches the COMPOSED router — a hand-registered route, and a
-            // generated handler whose path-id guard answers before any repository is touched.
+            // generated handler whose path-id guard answers before any repository is touched —
+            // through the decorate wrapper, which binds TAG for it.
             assertThat(RawHttp.request(port, "GET", "/probe")).startsWith("HTTP/1.1 200");
             assertThat(RawHttp.request(port, "GET", "/beacons/not-a-uuid")).startsWith("HTTP/1.1 400");
+            assertThat(RawHttp.request(port, "GET", "/tag")).startsWith("HTTP/1.1 200");
+
+            // A stream registered in configureRoutes resolves, and the wrapper's binding and the
+            // captured path parameter both reach it.
+            try (SseConnection sse = SseConnection.open(port, "/tagged/alpha/stream")) {
+                assertThat(sse.head()).startsWith("HTTP/1.1 200").containsIgnoringCase("text/event-stream");
+                assertThat(sse.awaitFrame(() -> { }, FRAME_TIMEOUT))
+                        .containsExactly("event: tagged", "data: tenant-7:alpha");
+            }
 
             try (SseConnection sse = SseConnection.open(port, "/beacons/stream")) {
                 assertThat(sse.head()).startsWith("HTTP/1.1 200").containsIgnoringCase("text/event-stream");
@@ -152,7 +198,7 @@ class GeneratedAppBootE2ETest {
                         // from the request thread — where the kernel binds none — encodes. Resolved
                         // per publish, this line would be `data: ` (empty).
                         .contains("data: {\"label\":\"alpha\"}");
-                System.out.println("[T23 B1 / T48 C1] SSE frame received over the generated edge router: "
+                System.out.println("[K9 / T48 C1] SSE frame received through the decorate wrapper: "
                         + frame);
             }
 
@@ -172,6 +218,46 @@ class GeneratedAppBootE2ETest {
         assertThat(probe).last().isEqualTo("subscriber:unsubscribe");
     }
 
+    @Test
+    @DisplayName("a decorate wrapper that does not resolve streams is refused at boot in an application "
+            + "with stream routes, naming the wrapper's class and the cure")
+    void wrapperThatResolvesNoStreamsIsRefused() {
+        assertThatThrownBy(() -> BootedApplication.start(appLoader, BASE_PACKAGE + ".PlainWrapApplication"))
+                .isInstanceOf(AssertionError.class)
+                .hasMessageContaining("exited during boot")
+                .rootCause()
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("RuntimeComponents.decorate returned eu.exeris.e2e.live.PlainWrapper,")
+                .hasMessageContaining("does not implement StreamRouteResolver")
+                .hasMessageContaining("Implement StreamRouteResolver on the wrapper and delegate resolveStream "
+                        + "to the router");
+    }
+
+    @Test
+    @DisplayName("a decorate wrapper that is a StreamRouteResolver but resolves no stream for a "
+            + "generated route is refused at boot, naming its class and the route")
+    void resolverThatHidesAGeneratedStreamIsRefused() {
+        assertThatThrownBy(() -> BootedApplication.start(appLoader, BASE_PACKAGE + ".NullResolverApplication"))
+                .isInstanceOf(AssertionError.class)
+                .hasMessageContaining("exited during boot")
+                .rootCause()
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("RuntimeComponents.decorate returned eu.exeris.e2e.live.NullResolver, "
+                        + "which resolves no stream for GET /beacons/stream");
+    }
+
+    @Test
+    @DisplayName("a configureRoutes stream route at a generated stream path is refused at boot, "
+            + "naming the path, rather than replacing the generated route")
+    void streamRouteAtAGeneratedPathIsRefused() {
+        assertThatThrownBy(() -> BootedApplication.start(appLoader, BASE_PACKAGE + ".DisplacingApplication"))
+                .isInstanceOf(AssertionError.class)
+                .hasMessageContaining("exited during boot")
+                .rootCause()
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("GET /beacons/stream is a generated stream route");
+    }
+
     // ------------------------------------------------------------------ harness
 
     @SuppressWarnings("unchecked")
@@ -189,11 +275,10 @@ class GeneratedAppBootE2ETest {
         }
     }
 
-    private static HttpHandler edgeRouter(AtomicReference<HttpHandler> handlerSlot,
-                                          AtomicReference<Object> componentsSlot) throws Exception {
+    private static HttpHandler edgeHandler(AtomicReference<HttpHandler> handlerSlot) throws Exception {
         Class<?> lifecycle = appLoader.loadClass(BASE_PACKAGE + ".RuntimeLifecycle");
-        return (HttpHandler) lifecycle.getMethod("edgeRouter", AtomicReference.class, AtomicReference.class)
-                .invoke(null, handlerSlot, componentsSlot);
+        return (HttpHandler) lifecycle.getMethod("edgeHandler", AtomicReference.class)
+                .invoke(null, handlerSlot);
     }
 
     /**
@@ -255,7 +340,11 @@ class GeneratedAppBootE2ETest {
 
     /**
      * What a consumer writes around the emitted tree: an {@code Application} subclass with its own
-     * subsystem list and its own {@code RuntimeComponents} (ADR-070 obligations 4 and 7). The
+     * subsystem list and its own {@code RuntimeComponents} (ADR-070 obligations 4 and 7), a
+     * {@code decorate} wrapper that binds {@code TAG} and resolves streams by delegating, and a
+     * stream route of its own. {@code PlainWrapApplication} swaps in a wrapper that is not a
+     * resolver, {@code NullResolverApplication} a resolver that resolves nothing, and
+     * {@code DisplacingApplication} a stream at a generated path; all three must be refused. The
      * emitted {@code Application.run()} is not overridden — it is the thing under test.
      */
     private static Map<String, String> harnessSources() {
@@ -293,8 +382,10 @@ class GeneratedAppBootE2ETest {
                 import eu.exeris.kernel.spi.events.EventDescriptor;
                 import eu.exeris.kernel.spi.events.EventPayload;
                 import eu.exeris.kernel.spi.flow.model.FlowExecutionPlan;
+                import eu.exeris.kernel.spi.http.HttpHandler;
                 import eu.exeris.kernel.spi.http.HttpMethod;
                 import eu.exeris.kernel.spi.http.HttpStatus;
+                import eu.exeris.kernel.spi.http.StreamEvent;
                 import eu.exeris.kernel.spi.persistence.TransactionalExecutor;
 
                 import java.lang.foreign.ValueLayout;
@@ -307,6 +398,9 @@ class GeneratedAppBootE2ETest {
 
                     /** What the application did, in order — read by the test through reflection. */
                     public static final List<String> PROBE = new CopyOnWriteArrayList<>();
+
+                    /** Bound by the decorate wrapper; a route and a stream report whether it was. */
+                    public static final ScopedValue<String> TAG = ScopedValue.newInstance();
 
                     private static final UUID BEACON_ID = UUID.fromString("00000000-0000-0000-0000-0000000b0a1c");
 
@@ -326,6 +420,18 @@ class GeneratedAppBootE2ETest {
                             beaconEventPublisher().publishBeaconPingedEvent(BEACON_ID, beacon);
                             exchange.respond(HttpStatus.ACCEPTED);
                         });
+                        routes.route(HttpMethod.GET, "/tag",
+                                exchange -> exchange.respond(TAG.isBound() ? HttpStatus.OK : HttpStatus.CONFLICT));
+                        // A stream of the consumer's own, beside the generated ones.
+                        routes.streamRoute(HttpMethod.GET, "/tagged/{name}/stream",
+                                exchange -> exchange.emit(StreamEvent.of("tagged",
+                                        (TAG.isBound() ? TAG.get() : "unbound") + ":"
+                                                + exchange.pathParams().get("name"))));
+                    }
+
+                    @Override
+                    public HttpHandler decorate(HttpRouter router) {
+                        return new TagBinding(router, "tenant-7");
                     }
 
                     // Behaviour installed the way the seam intends — by overriding a factory with a
@@ -363,6 +469,147 @@ class GeneratedAppBootE2ETest {
                                     PROBE.add("subscriber:received:" + new String(
                                             payload.segment().toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8));
                                 }
+                            }
+                        };
+                    }
+                }
+                """);
+        sources.put("eu/exeris/e2e/live/TagBinding.java",
+                """
+                package eu.exeris.e2e.live;
+
+                import eu.exeris.kernel.core.http.routing.HttpRouter;
+                import eu.exeris.kernel.spi.http.HttpExchange;
+                import eu.exeris.kernel.spi.http.HttpHandler;
+                import eu.exeris.kernel.spi.http.HttpMethod;
+                import eu.exeris.kernel.spi.http.HttpStreamHandler;
+                import eu.exeris.kernel.spi.http.StreamMatch;
+                import eu.exeris.kernel.spi.http.StreamRouteResolver;
+
+                /** The wrapper shape the decorate Javadoc shows: it binds around requests and streams. */
+                public record TagBinding(HttpRouter router, String tag) implements HttpHandler, StreamRouteResolver {
+
+                    @Override
+                    public void handle(HttpExchange exchange) {
+                        ScopedValue.where(LiveComponents.TAG, tag).run(() -> router.handle(exchange));
+                    }
+
+                    @Override
+                    public StreamMatch resolveStream(HttpMethod method, String path) {
+                        StreamMatch match = router.resolveStream(method, path);
+                        if (match == null) {
+                            return null;
+                        }
+                        HttpStreamHandler route = match.handler();
+                        return new StreamMatch(exchange -> ScopedValue.where(LiveComponents.TAG, tag)
+                                .run(() -> route.handle(exchange)), match.params());
+                    }
+                }
+                """);
+        sources.put("eu/exeris/e2e/live/PlainWrapApplication.java",
+                """
+                package eu.exeris.e2e.live;
+
+                import eu.exeris.kernel.core.http.routing.HttpRouter;
+                import eu.exeris.kernel.spi.http.HttpHandler;
+                import eu.exeris.kernel.spi.persistence.TransactionalExecutor;
+
+                /** The same application behind a decorate wrapper that is not a StreamRouteResolver. */
+                public class PlainWrapApplication extends LiveApplication {
+
+                    @Override
+                    protected RuntimeComponents components(TransactionalExecutor transactionalExecutor) {
+                        return new LiveComponents(transactionalExecutor) {
+                            @Override
+                            public HttpHandler decorate(HttpRouter router) {
+                                return new PlainWrapper(router);
+                            }
+                        };
+                    }
+                }
+                """);
+        sources.put("eu/exeris/e2e/live/PlainWrapper.java",
+                """
+                package eu.exeris.e2e.live;
+
+                import eu.exeris.kernel.core.http.routing.HttpRouter;
+                import eu.exeris.kernel.spi.http.HttpExchange;
+                import eu.exeris.kernel.spi.http.HttpHandler;
+
+                /** Binds TAG around requests, and resolves no streams. */
+                public record PlainWrapper(HttpRouter router) implements HttpHandler {
+
+                    @Override
+                    public void handle(HttpExchange exchange) {
+                        ScopedValue.where(LiveComponents.TAG, "tenant-7").run(() -> router.handle(exchange));
+                    }
+                }
+                """);
+        sources.put("eu/exeris/e2e/live/DisplacingApplication.java",
+                """
+                package eu.exeris.e2e.live;
+
+                import eu.exeris.kernel.core.http.routing.HttpRouter;
+                import eu.exeris.kernel.spi.http.HttpMethod;
+                import eu.exeris.kernel.spi.persistence.TransactionalExecutor;
+
+                /** Registers a stream of its own at the path the generated live view serves. */
+                public class DisplacingApplication extends LiveApplication {
+
+                    @Override
+                    protected RuntimeComponents components(TransactionalExecutor transactionalExecutor) {
+                        return new LiveComponents(transactionalExecutor) {
+                            @Override
+                            public void configureRoutes(HttpRouter.Builder routes) {
+                                super.configureRoutes(routes);
+                                routes.streamRoute(HttpMethod.GET, "/beacons/stream", exchange -> { });
+                            }
+                        };
+                    }
+                }
+                """);
+        sources.put("eu/exeris/e2e/live/NullResolver.java",
+                """
+                package eu.exeris.e2e.live;
+
+                import eu.exeris.kernel.core.http.routing.HttpRouter;
+                import eu.exeris.kernel.spi.http.HttpExchange;
+                import eu.exeris.kernel.spi.http.HttpHandler;
+                import eu.exeris.kernel.spi.http.HttpMethod;
+                import eu.exeris.kernel.spi.http.StreamMatch;
+                import eu.exeris.kernel.spi.http.StreamRouteResolver;
+
+                /** A resolver by type that resolves nothing. */
+                public record NullResolver(HttpRouter router) implements HttpHandler, StreamRouteResolver {
+
+                    @Override
+                    public void handle(HttpExchange exchange) {
+                        router.handle(exchange);
+                    }
+
+                    @Override
+                    public StreamMatch resolveStream(HttpMethod method, String path) {
+                        return null;
+                    }
+                }
+                """);
+        sources.put("eu/exeris/e2e/live/NullResolverApplication.java",
+                """
+                package eu.exeris.e2e.live;
+
+                import eu.exeris.kernel.core.http.routing.HttpRouter;
+                import eu.exeris.kernel.spi.http.HttpHandler;
+                import eu.exeris.kernel.spi.persistence.TransactionalExecutor;
+
+                /** The same application behind a resolver that hides every stream. */
+                public class NullResolverApplication extends LiveApplication {
+
+                    @Override
+                    protected RuntimeComponents components(TransactionalExecutor transactionalExecutor) {
+                        return new LiveComponents(transactionalExecutor) {
+                            @Override
+                            public HttpHandler decorate(HttpRouter router) {
+                                return new NullResolver(router);
                             }
                         };
                     }
