@@ -666,8 +666,9 @@ the inert-annotation sweep only inspected type-level annotations, and `@Blob` is
 `@Schedule` is `@Target(METHOD)`.
 
 Expect one warning per `@Blob` field and one per `@Schedule` method. Each names why the annotation is
-inert and where the transcription is gated — `@Blob` on the kernel (no bootable storage subsystem,
-and blob storage is post-1.0 kernel-side), `@Schedule` on the identity a declared job runs as. See
+inert and what keeps it so — `@Blob` on tooling alone (no extraction and no generator; kernel 0.12
+boots the `storage` subsystem, opt-in through `storage.blob.provider`), `@Schedule` on the identity
+a declared job runs as. See
 [`adr/ADR-072.link.md`](adr/ADR-072.link.md).
 
 **Not** a signal to remove them from your sources: unlike `@Action.path`, these are a reserved
@@ -808,7 +809,7 @@ Crypto is **not** required, though the default `subsystems()` names it — no em
 uses it.
 
 **How to satisfy it.** Add a runtime driver to the module that runs the generated application:
-`eu.exeris.kernel:exeris-kernel-community` in the open-core tree. Enterprise and third-party
+`eu.exeris:exeris-kernel-community` in the open-core tree. Enterprise and third-party
 drivers register the same SPIs and satisfy the check equally.
 
 **Opt-out.** `-Dexeris.verifyRuntime.skip=true` degrades the verdict to a WARNING — intended for a
@@ -1557,6 +1558,39 @@ A domain entity named `HttpErrorResponse` or `HttpErrorAction` now takes the `�
 Code that matched on the old raw messages (`'Failed to load data'`, `'An error occurred'`,
 `'An unknown error occurred'`) has to match on the new sentences or, better, on the status.
 
+### `exeris-codegen-ts`: SSE stream clients for every stream route the backend serves
+
+The generated kernel application serves `GET {base}/stream` for an `@ExerisDomain(realTimeApi = true)`
+entity and `POST {base}/{id}/actions/{kebab}` as a stream for each `@Action(streaming = true)`. The
+emitted front end now has a client for each, whenever services are generated (`generateServices`,
+the default) and the entity is `GLOBAL`. An app with neither emits exactly what it did.
+
+- **No stream client for a tenant-partitioned entity** (`dataScope` `TENANT` or `UNIVERSE`, or the
+  deprecated `tenantScoped: true`). The generated stream routes carry no tenant guard and the
+  live-view producer subscribes to the event bus unfiltered, so such a stream would deliver every
+  tenant's events to every subscriber. The clients are emitted once the server guards the route.
+  A streaming action on such an entity therefore has no front-end entry point at all: it has no
+  stream client, and no service method either (below).
+
+- **`src/app/services/<entity>.stream.ts`** — `<Entity>StreamClient` for a `realTimeApi` entity,
+  plus `services/streams.index.ts`. `stream()` returns `Observable<MessageEvent<string>>` over a
+  native `EventSource` (`withCredentials: true`). Every frame the handler sends is named, so the
+  client registers one listener per `@DomainEvent` name (`STREAM_EVENT_TYPES`; the entity name +
+  `Event` for a blank name); `type` is the event name and `data` the payload JSON. The
+  `keep-alive` heartbeat is not delivered, so an entity with no `@DomainEvent` gets a stream that
+  emits nothing. A server-side close is followed by the browser's own reconnect; the Observable
+  errors only when the `EventSource` gives up (`readyState` `CLOSED`).
+- **`src/app/services/<entity>.action-streams.ts`** — one `<Entity><Action>StreamClient` per
+  streaming action, plus `services/stream-types.ts` (the shared `StreamFrame { event, data }`) and
+  `services/action-streams.index.ts`. `stream(id)` opens the route with `fetch` (`POST`,
+  `credentials: 'include'`, no body) and emits each parsed frame, the heartbeat included; a field
+  value loses exactly one leading space, so payload whitespace is kept.
+- **The app barrel** (`src/app/index.ts`) gains an `// SSE stream clients` section re-exporting
+  whichever of the two sub-barrels exist.
+- **A streaming action loses its service method.** The kernel serves that path as a stream only,
+  so `<Entity>Service.<action>(id, …)` is no longer emitted for it; call the action stream client
+  instead. Non-streaming actions are unchanged.
+
 ### `@View`: wrong attributes on STATIC/NONE bindings are diagnosed
 
 `@Bind(source = STATIC)` or `NONE` carrying `ref`, `path`, `expression` or `language` now produces a
@@ -1680,6 +1714,62 @@ because the rule is the SDK's and knows no irregular nouns. Bookmarks to the old
 routes stop resolving. Server routes do not move, because `@ExerisDomain.path` is required; only
 a service or stream client built from metadata with no `path` falls back to the derived segment,
 and that fallback now matches the SDK's `effectivePath()`.
+
+### Kernel 0.12: a generated client verifies the TLS server it calls (`crypto.tls.client.trustFile`)
+
+No emitted file changes. On kernel 0.12 the Community TLS client verifies the server's certificate
+chain against the PEM file named by `crypto.tls.client.trustFile`, else against OpenSSL's default
+trust, and checks the certificate's subject alternative names against the host it dialled (kernel
+ADR-074 Amendment A1). A generated `*Client` whose peer presents a self-signed or private-CA
+certificate now fails the handshake with `EX-NET-2001` before any request byte is sent.
+
+**What to do:** set `crypto.tls.client.trustFile` to a PEM file holding that CA. A file that is not
+readable is refused with `EX-NET-2002`. No setting keeps TLS and skips verification. Generated code
+sets neither key, so this is deployment configuration only.
+
+### Kernel 0.12: a public request that reaches persistence without a tenant is recorded (`UnscopedRequestSession`)
+
+No emitted file changes, and nothing starts failing. Kernel 0.12 emits the JFR event
+`eu.exeris.kernel.security.UnscopedRequestSession` (fields `method`, `path`, `readOnly`) once for
+every `permitAll()` request whose persistence session was opened for a storage context that declares
+no tenant. The event type is enabled by default.
+
+The emitted application binds no `HttpRoutePolicy` (ADR-079), so the kernel treats every generated
+route as `permitAll()`. A tenant-scoped handler refuses a request with no `STORAGE_CONTEXT` before it
+reaches the repository, so it records nothing. A `GLOBAL` entity's handler does not refuse, so
+**every request to a `GLOBAL` entity's route that reaches its repository records one event.** Stream
+routes and `LONG_RUNNING` routes are not covered.
+
+**To stop a route being reported**, do one of:
+- bind an `HttpRoutePolicy` (`HttpKernelProviders.HTTP_ROUTE_POLICY`) that requires
+  `authenticated()` for it;
+- bind a `KernelProviders.STORAGE_CONTEXT` that carries a tenant around its handler;
+- disable the event type in your JFR settings, which hides it for every route.
+
+### Kernel 0.12: no stream route is served over HTTP/2
+
+No emitted file changes. The kernel resolves a stream route only on its HTTP/1.1 path; an `h2`
+request to a stream route is served respond-once instead. The Community default for
+`http.maxVersion` is `HTTP_2`, so a browser `EventSource` against TLS that the kernel terminates
+negotiates `h2` and does not stream. This reaches every generated stream route: a `realTimeApi`
+`GET <base>/stream` and every `@Action(streaming = true)` route.
+
+**What to do:** terminate TLS upstream of the kernel, or, without TLS, set
+`http.maxVersion=HTTP_1_1`. Under kernel-terminated TLS the ALPN selection does not honour
+`http.maxVersion` (exeris-systems/exeris-kernel#533), so that key is not a workaround there. The
+Enterprise HTTP engine serves no stream route at all.
+
+### Kernel 0.12: `StreamMatch` moved from `HttpRouter` into the SPI
+
+Kernel 0.11's nested `eu.exeris.kernel.core.http.routing.HttpRouter.StreamMatch` is now the
+top-level record `eu.exeris.kernel.spi.http.StreamMatch` (`preview`, `@since 0.12`), and
+`HttpRouter#resolveStream(HttpMethod, String)` returns it. Generated code names neither, so no
+emitted file changes.
+
+**What to do:** hand-written code that names `HttpRouter.StreamMatch` changes its import to
+`eu.exeris.kernel.spi.http.StreamMatch`. Code that calls `HttpRouter#resolveStream` without naming
+the type compiles unchanged, but must be recompiled against kernel 0.12: the method's return type
+changed, so a class compiled against 0.11 fails to link.
 
 ---
 

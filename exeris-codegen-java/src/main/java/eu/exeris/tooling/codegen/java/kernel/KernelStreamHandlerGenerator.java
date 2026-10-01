@@ -62,9 +62,9 @@ import java.util.List;
  * the publisher registered the event under (an internal routing key, via
  * {@link eu.exeris.tooling.codegen.java.support.KernelEventSupport#eventName}); the
  * SSE {@code event:} wire-name is the <em>raw</em> event name — the vocabulary the
- * TS {@code EventHandler} discriminates on. The TS client's per-name
- * {@code addEventListener} wiring (the named frames the native {@code EventSource}
- * {@code onmessage} does not see) is the matching follow-up on the TS emitter.
+ * TS {@code EventHandler} discriminates on. The TS live-view client registers one
+ * {@code addEventListener} per such name, because the native {@code EventSource}
+ * {@code onmessage} does not see named frames.
  *
  * <h2>Kernel-target discipline (hard constraint #1)</h2>
  * <p>The handler stays on the SPI: no {@code text/event-stream} literal and no

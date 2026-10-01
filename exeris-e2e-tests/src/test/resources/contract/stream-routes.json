@@ -1,0 +1,7 @@
+{
+  "description": "The SSE stream routes the generated kernel application registers, as (method, path template). live-view is served for @ExerisDomain(realTimeApi = true); action-stream for each @Action(streaming = true), which then has no respond-once route. {base} is DomainMetadata.effectivePath(); {action} is kebab(@Action name). StreamRouteParityE2ETest (exeris-e2e-tests) proves the generated application registers exactly these through streamRoute(...); stream-route-parity.spec.ts (exeris-codegen-ts) proves the generated TypeScript stream clients open exactly these. Change it only together with the application generator.",
+  "routes": [
+    { "operation": "live-view",     "method": "GET",  "path": "{base}/stream" },
+    { "operation": "action-stream", "method": "POST", "path": "{base}/{id}/actions/{action}" }
+  ]
+}

@@ -489,13 +489,14 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             new InertAnnotation("eu.exeris.sdk.annotation.Blob", "Blob",
                     "the processor does not extract it and no generator consumes it, so the field "
                             + "is emitted exactly as if the annotation were absent. The design-time "
-                            + "surface is reserved (ADR-072) and the transcription is additionally "
-                            + "kernel-gated: Application.main() boots subsystems by name and there "
-                            + "is no CommunityStorageSubsystem to name, a name alone would not be "
-                            + "enough anyway (two Community blob drivers share a priority, and an "
-                            + "unset selection key with more than one provider present is a startup "
-                            + "failure by design), and the kernel has scheduled that subsystem "
-                            + "post-1.0. See docs/adr/ADR-072.link.md (K6)"),
+                            + "surface is reserved (ADR-072). The kernel line this repo pins boots "
+                            + "blob storage as the subsystem named \"storage\" and binds "
+                            + "KernelProviders.BLOB_STORE. "
+                            + "Two things a transcription must carry: the driver is chosen by the "
+                            + "storage.blob.provider id, never by priority (both Community drivers "
+                            + "register at the same one), so the deployment names it; and with that "
+                            + "key unset storage is off and BLOB_STORE is unbound, so generated "
+                            + "code may not assume a store. Tracked in ROADMAP.md (K6)"),
             new InertAnnotation("eu.exeris.sdk.annotation.Schedule", "Schedule",
                     "the processor does not extract it and no generator consumes it, so the "
                             + "annotated method is emitted exactly as if the annotation were absent. "
