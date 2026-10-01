@@ -54,14 +54,28 @@ covered. The TS line therefore needs its own criterion (stage 0, proposed).
 Each stage is independently shippable; within a stage, one pull request per item, each green on
 its own. Stages 0–2 have no external gate and need no new ADR.
 
-### Stage 0 — a gate that keeps parity honest
+### Stage 0 — a gate that keeps parity honest — shipped
 
-A test in `exeris-codegen-ts` that walks the fields of `DomainMetadataSchema` and requires each to
-be in exactly one state: **read** by a TS generator, **`JAVA_ONLY`** with a one-line reason, or
-**`RESERVED`** (no consumer on either side yet). A new field fails the build until it is
-classified. Proposed as the TS line's GA criterion — not yet in the ROADMAP's 1.0 list: 1.0 means no field the backend acts on is silently
-ignored by the front. Scheduled after stage 1 so it lands against a table with the stage-1 fields
-already moved to *read*.
+`src/models/contract-coverage.ts` classifies every `DomainMetadataSchema` field, and
+`test/contract/contract-coverage.spec.ts` measures what the TS generators actually read by running
+the orchestrator over proxied metadata. Four states:
+
+- **`READ`** — a TS generator reads it;
+- **`JAVA_ONLY`** — only the Java side acts on it, and the front has nothing to do with it;
+- **`RESERVED`** — no emitter on either side acts on it yet;
+- **`GAP`** — the Java side acts on it and the front owes a counterpart it does not emit yet.
+
+The last three carry a reason. A field added to the schema, or one a generator starts or stops
+reading, fails the build until it is classified. At the end of stage 1: 18 `READ`, 4 `JAVA_ONLY`,
+14 `RESERVED`, 1 `GAP`.
+
+**Proposed TS 1.0 criterion: no field in `GAP`** — no field the backend acts on is silently ignored
+by the front. Not yet in the ROADMAP's 1.0 list.
+
+**The one `GAP`: `realTimeApi`.** The Java side emits the SSE stream handler and route; the TS
+stream clients (`stream-client-gen`, `action-stream-client-gen`) are registered but the
+orchestrator the CLI runs never composes them. `guard-gen` and `query-builder-gen` are uncomposed
+the same way. Composing the stream clients is the next parity item (stage 4, with EV1-stream).
 
 ### Stage 1 — contract parity with the emitted backend — shipped
 
@@ -113,7 +127,8 @@ ADR-worthy.
 
 ### Stage 4 — remaining parity, tests, release
 
-- The per-action stream driver (EV1-stream), unblocked on the pinned kernel.
+- Compose the TS stream clients (closes the `realTimeApi` GAP), then the per-action stream driver
+  (EV1-stream), unblocked on the pinned kernel.
 - Test-emitter coverage: `spec-gen` covers 2 of 18 TS emitters.
 - `npm run lint` cannot run (no `eslint.config.*`) and is not in CI.
 - **A stability decision for the TS output.** ADR-015's output-stability contract covers
