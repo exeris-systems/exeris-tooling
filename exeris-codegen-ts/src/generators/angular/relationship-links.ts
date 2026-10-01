@@ -8,9 +8,6 @@
  *
  * Entity-typed relationship fields, and ONE_TO_ONE / ONE_TO_MANY / MANY_TO_MANY relationships,
  * produce no link: their serialised value is not a bare id.
- *
- * @author Exeris Team
- * @since 0.9.0
  */
 
 import type { DomainMetadata } from '../../models/domain-model.js';
