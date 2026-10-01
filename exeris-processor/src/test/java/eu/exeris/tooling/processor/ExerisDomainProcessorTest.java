@@ -19,16 +19,22 @@ import com.google.testing.compile.JavaFileObjects;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import java.util.stream.Stream;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
+import javax.tools.JavaCompiler;
 import javax.tools.JavaFileObject;
+import javax.tools.StandardJavaFileManager;
 import javax.tools.StandardLocation;
+import javax.tools.ToolProvider;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
 
@@ -477,9 +483,97 @@ class ExerisDomainProcessorTest {
             assertThat(compilation).failed();
             assertThat(compilation).hadErrorContaining("@GraphEdge is declared 2 times on field 'partyId'");
             assertThat(compilation).hadErrorContaining("OWNED_BY, BILLED_TO");
-            // The generator's own message tells the author to "declare a unique name" on an
-            // annotation that has no name attribute. This one names the real limitation.
             assertThat(compilation).hadErrorContaining("separate identity component");
+            assertThat(compilation).hadErrorCount(1);
+        }
+
+        @Test
+        @DisplayName("a direct @GraphEdge beside a hand-written @GraphEdges is refused once, and no edge is extracted")
+        void directGraphEdgeBesideContainerIsRefused() throws IOException {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "parity.EdgesMixed",
+                    """
+                    package parity;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Graph;
+                    import eu.exeris.sdk.annotation.GraphEdge;
+                    import eu.exeris.sdk.annotation.GraphEdges;
+                    import java.util.UUID;
+
+                    @ExerisDomain(module = "m", path = "/p")
+                    @Graph
+                    public class EdgesMixed {
+                        @GraphEdge(type = "DIRECT")
+                        @GraphEdges({@GraphEdge(type = "CONTAINED")})
+                        private UUID mixed;
+                    }
+                    """
+            );
+
+            Compilation compilation = compileWithProcessor(source);
+
+            // Legal Java (JLS 9.7.5 forbids the container only beside two or more direct
+            // annotations), but two edges on one field all the same.
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorCount(1);
+            assertThat(compilation).hadErrorContaining("@GraphEdge is declared 2 times on field 'mixed'");
+            assertThat(compilation).hadErrorContaining("DIRECT, CONTAINED");
+
+            // compile-testing withholds generated files from a failed compilation, but the
+            // processor still writes the document; read it from a plain javac run.
+            JsonNode root = new ObjectMapper().readTree(
+                    metadataWrittenDespiteErrors(source, "EdgesMixed", tempDir));
+            assertThat(root.path("graphMetadata").path("edges")).isEmpty();
+        }
+
+        @TempDir
+        Path tempDir;
+
+        private String metadataWrittenDespiteErrors(JavaFileObject source, String entity, Path out)
+                throws IOException {
+            JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+            try (StandardJavaFileManager files = compiler.getStandardFileManager(null, null, null)) {
+                files.setLocationFromPaths(StandardLocation.CLASS_OUTPUT, List.of(out));
+                JavaCompiler.CompilationTask task = compiler.getTask(null, files,
+                        diagnostic -> { },
+                        List.of("-proc:only", "-classpath", System.getProperty("java.class.path")),
+                        null, List.of(source));
+                task.setProcessors(List.of(new ExerisDomainProcessor()));
+                task.call();
+            }
+            return Files.readString(out.resolve("exeris-metadata").resolve(entity + ".json"));
+        }
+
+        @Test
+        @DisplayName("a hand-written @GraphEdges holding one edge extracts that edge")
+        void singleElementContainerExtractsOneEdge() throws IOException {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Graph;
+                    import eu.exeris.sdk.annotation.GraphEdge;
+                    import eu.exeris.sdk.annotation.GraphEdges;
+
+                    @ExerisDomain(module = "sales", path = "/orders")
+                    @Graph(nodeClass = "Order")
+                    public class Order {
+                        @GraphEdges({@GraphEdge(type = "OWNED_BY", targetLabel = "User")})
+                        private String ownerId;
+                    }
+                    """
+            );
+
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).succeeded();
+
+            JsonNode edges = readMetadataRoot(compilation, "Order").path("graphMetadata").path("edges");
+            assertThat(edges).hasSize(1);
+            assertThat(edges.get(0).path("name").asText()).isEqualTo("ownerId");
+            assertThat(edges.get(0).path("relationType").asText()).isEqualTo("OWNED_BY");
         }
 
         @Test

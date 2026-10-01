@@ -1613,6 +1613,21 @@ if it were absent, the metadata JSON carries no `routeAccess`, and no emitted fi
 `-Aexeris.strict` each occurrence, on an entity or a method, draws the inert-annotation warning.
 The transcription onto the kernel's `HttpRoutePolicy` is T53, tracked in `ROADMAP.md`.
 
+### A `@GraphEdge` beside a hand-written `@GraphEdges` is a compile error
+
+A field may carry one graph edge. The processor already refused two `@GraphEdge` on one field, but
+it counted the direct annotation and a hand-written `@GraphEdges` container separately, so
+
+```java
+@GraphEdge(type = "DIRECT")
+@GraphEdges({@GraphEdge(type = "CONTAINED")})
+private UUID mixed;
+```
+
+compiled, and generation then failed with `Duplicate edge names`. The two are now counted together,
+and this declaration draws the same `[Exeris] @GraphEdge is declared 2 times on field 'mixed'` error
+at the field. To fix it, declare each edge on its own field.
+
 ### SDK 0.12.0 needs no source change for S6
 
 `SystemFieldsMetadata`, `DomainMetadata` and `ActionMetadata` keep their 0.11.0 constructors. Code
