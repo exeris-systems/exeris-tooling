@@ -135,15 +135,19 @@ const domains = [
   // loaded version, sends it with the update and turns a 409 into a reload — code emitted for no
   // unversioned entity, so without this the build never compiles it. The version field is named
   // through systemFields to pin that the key comes from there, not from the literal `version`.
+  // It is also the only audited fixture entity, with both stamps renamed and left undeclared: the
+  // detail view's system panel then reads them through a narrowing cast, the one panel shape no
+  // other entity produces.
   d({
     entityName: 'Ticket',
     versioned: true,
+    audited: true,
     fields: [
       { name: 'id', type: 'java.util.UUID' },
       { name: 'title', type: 'String', required: true },
       { name: 'revision', type: 'java.lang.Long' },
     ],
-    systemFields: { versionField: 'revision' },
+    systemFields: { versionField: 'revision', createdAtField: 'openedAt', updatedAtField: 'touchedAt' },
   }),
 ];
 const enums = [{
