@@ -9,7 +9,7 @@ slug: adr/ADR-091
 
 # ADR-091 — Publish an opt-in application starter, so a consumer does not hand-write its build
 
-- **Status:** ACCEPTED (2026-09-30)
+- **Status:** ACCEPTED (2026-09-30) · amended 2026-10-01 (Amendment 1 — backend, frontend and backend + frontend)
 - **Deciders:** the founder (scope); `exeris-tooling` (module layout)
 - **Repo:** `exeris-tooling`
 - **Scope:** tooling / build (consumer-build contract)
@@ -276,3 +276,32 @@ other build file.**
 5. **The README quick start** documents both consumption routes, the plugin block for the BOM route,
    and the two-pass first build (D2).
 6. Migration owner: `exeris-tooling`, target 0.9.0.
+
+## Amendment 1 — Backend, frontend, or both (2026-10-01)
+
+- **Status:** ACCEPTED (2026-10-01). Decided by the founder.
+- **Amends:** the *What is NOT in scope* entry "The TypeScript / npm side". The npm packaging stays a
+  separate deliverable. What this amendment adds is how a consumer chooses between the three shapes
+  an Exeris application takes. Obligations 1–7 and the Engineering Protocol are unchanged.
+
+A generated application is a backend, a frontend, or both. The Maven starter decided above covers
+the first. The other two need the TypeScript emitter, which reads `DomainMetadata` JSON and never
+Java sources (`exeris-gen generate --input`, default `target/classes/exeris-metadata`). A frontend
+with no Java entities of its own therefore still needs metadata from somewhere.
+
+1. **Backend.** The three Maven modules of this ADR, unchanged.
+2. **Frontend only.** An npm starter on the `@exeris/codegen-ts` side. Its metadata source is the
+   backend's **published contract artifact** as ADR-048 defines it: the peer's `cap-manifest.json`
+   plus its full `DomainMetadata`, `schemaVersion` floor 2, resolved by coordinate. A hand-maintained
+   local directory of metadata JSON is not a supported source, because nothing would keep it in step
+   with the backend it describes. The starter's name and shape belong to the codegen-ts plan.
+3. **Backend + frontend.** An opt-in addition to `exeris-app-parent` that runs the TypeScript
+   emitter on the build's own `target/classes/exeris-metadata` after the processor has written it.
+   This is ADR-048's degenerate same-build case: the same JSON on the same path, never a second input
+   model. It is off unless the application asks for it, so a backend-only build is byte-for-byte the
+   build obligations 1–7 describe. The mechanism (activation, and which Maven plugin runs Node) is an
+   implementation choice recorded with its pull request.
+
+**Gate.** Shapes 2 and 3 depend on `@exeris/codegen-ts` being published to npmjs (codegen-ts track
+plan, Stage 4). Shape 1 does not, and ships first. Each later shape brings its own fixture, as
+obligation 7 does for the backend.

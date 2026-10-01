@@ -140,6 +140,9 @@ ADR-worthy.
 - The generated header comments carry Javadoc-only tags (`@author`, `@since`) in `.ts` doc comments
   across the emitters; one sweep, separate from feature work.
 - First npmjs publication of `@exeris/codegen-ts`.
+- The frontend-only starter (ADR-091 Amendment 1): an npm starter whose metadata source is a
+  backend's published contract artifact (ADR-048). The backend + frontend opt-in in
+  `exeris-app-parent` also waits for this publication.
 
 `graphMetadata` stays **JAVA_ONLY**: its one consumer is server-side graph sync. A graph
 *view* is a presentation feature and enters through `@View`, not through this field.
