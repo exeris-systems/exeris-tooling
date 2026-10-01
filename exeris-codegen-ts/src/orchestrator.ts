@@ -9,9 +9,6 @@
  * canonical app source and are emitted by the REAL generators under the Angular
  * sourceRoot `src/app/` — exactly one tree. `generateAppStructure` contributes the
  * scaffold only; it must not re-emit per-entity files or a stub enum module.
- *
- * @author Exeris Team
- * @since 0.6.0
  */
 
 import type { DomainMetadata, ViewMetadata } from './models/domain-model.js';
@@ -20,6 +17,8 @@ import { createGeneratorContext } from './core/generator-registry.js';
 import { generateTypes, TypeGenerator } from './generators/api/type-gen.js';
 import { generateEnumTypes, type EnumMetadataForGen } from './generators/api/enum-module-gen.js';
 import { generateService } from './generators/angular/service-gen.js';
+import { StreamClientGenerator } from './generators/angular/stream-client-gen.js';
+import { ActionStreamClientGenerator } from './generators/angular/action-stream-client-gen.js';
 import { generateForm } from './generators/angular/form-gen.js';
 import { generateList } from './generators/angular/list-gen.js';
 import { generateDetail } from './generators/angular/detail-gen.js';
@@ -49,7 +48,7 @@ export { generateEnumTypes, type EnumMetadataForGen } from './generators/api/enu
 
 /**
  * Compose the full set of files to write from parsed metadata. Per-entity output
- * (types + Zod schemas + services + form/list components), the enum module, and
+ * (types + Zod schemas + services and SSE stream clients + form/list components), the enum module, and
  * the per-view page components / routes are re-rooted under `src/app/` (the
  * Angular sourceRoot); the scaffold is appended as-is.
  *
@@ -78,6 +77,8 @@ export function buildGeneratedFiles(
   // and would give the two halves different views of the domain set.
   const ctx = createGeneratorContext(config, domains);
   const eventGenerator = new EventHandlerGenerator();
+  const streamClientGenerator = new StreamClientGenerator();
+  const actionStreamClientGenerator = new ActionStreamClientGenerator();
 
   // The per-entity tree — emitted by the real generators, then re-rooted to src/app.
   const appTree: OutputFile[] = [];
@@ -94,6 +95,14 @@ export function buildGeneratedFiles(
     if (config.generateServices) {
       const service = generateService(domain, config);
       if (service) appTree.push(service);
+      // SSE clients, one per stream route the kernel application serves: the live view at
+      // GET {base}/stream for a realTimeApi entity, and POST {base}/{id}/actions/{kebab} for each
+      // streaming action. Each generator returns null for an entity with no such route, and for
+      // a tenant-partitioned entity, whose stream routes carry no tenant guard.
+      const streamClient = streamClientGenerator.generate(domain, ctx);
+      if (streamClient) appTree.push(streamClient);
+      const actionStreamClient = actionStreamClientGenerator.generate(domain, ctx);
+      if (actionStreamClient) appTree.push(actionStreamClient);
     }
     if (config.generateForms) {
       const form = generateForm(domain, config);
@@ -144,6 +153,13 @@ export function buildGeneratedFiles(
   // sagas import. An app with no entity has nothing that imports it and gets none.
   if (needsHttpErrorHelper(domains, config)) {
     appTree.push(generateHttpErrorHelper());
+  }
+
+  // The stream-client barrels, and the StreamFrame module the action stream clients share.
+  // Both generators return nothing when no visible entity has a stream route.
+  if (config.generateServices) {
+    appTree.push(...streamClientGenerator.generateAggregate(domains, ctx));
+    appTree.push(...actionStreamClientGenerator.generateAggregate(domains, ctx));
   }
 
   // The event bus is app-wide: one service every entity's handler imports, emitted only when
