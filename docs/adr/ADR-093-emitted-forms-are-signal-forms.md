@@ -125,6 +125,26 @@ marked stable in the Angular major the emitted `package.json` pins.**
 - **Field-level `@UI` hints** (`componentType`, `placeholder`, `helpText`, sections) — they reach the
   form through the 1.x leaf facet (ADR-047).
 
+### 🚫 Non-Goals
+
+- A form DSL or form configuration of our own on top of Signal Forms; the emitted code uses the
+  Angular API directly.
+- Keeping a Reactive Forms emission path in parallel; there is one form shape.
+- Supporting a hand-edited emitted form across regeneration; detached files (L2) are the consumer's.
+
+### ⚠️ Risks and Assumptions
+
+- **Assumes:** `form()`, the schema validators, `[formField]` and `submit()` in
+  `@angular/forms/signals` stay stable across the Angular majors the emitted app pins.
+- **Assumes:** every control the field-render model resolves has a Signal Forms binding — native
+  inputs, `select`, checkbox, date — without a custom control wrapper.
+- **Reversed by:** Angular deprecating or reshaping the Signal Forms API in a way the emitter cannot
+  follow within one major, or a control the render model needs that Signal Forms cannot bind
+  without a custom control layer — either would reopen the form shape.
+- **Risk:** the rewrite touches the densest spec cluster and the routed-edit, version and conflict
+  logic; a regression there passes the substring specs if a spec pinned the old shape rather than
+  the behaviour. The existing behavioural specs are kept and re-pointed, not deleted.
+
 ## Alternatives considered
 
 - **Keep Reactive Forms.** Rejected: it leaves the one non-signal surface in the emitted app, and

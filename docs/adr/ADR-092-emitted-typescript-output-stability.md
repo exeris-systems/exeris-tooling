@@ -148,6 +148,20 @@ to its emitted output is classified against the surface below; this ADR is the o
 - Snapshot testing of emitted output as a gate; the substring specs and the determinism check stay
   the test surface.
 
+### ⚠️ Risks and Assumptions
+
+- **Assumes:** the TS package consumes the metadata JSON written by the same release's processor;
+  the TS line never needs to read metadata from a processor of another version.
+- **Assumes:** the TS side and the Maven artefacts release on the same cadence often enough that a
+  version bump with no TS change costs consumers nothing beyond a regeneration.
+- **Reversed by:** a consumer population that pins the TS package independently of the processor
+  (for example, a studio that regenerates fronts from stored metadata of many tooling versions), or
+  a TS release cadence that has to diverge from the reactor's — either would bring back a separate
+  version line with a published compatibility matrix.
+- **Risk:** the emitted-surface definition is enforced by review and MIGRATION discipline, not by a
+  tool; a breaking change classified `additive` reaches consumers unannounced. The header guard and
+  the stage-0 contract-coverage gate are the only automated parts.
+
 ## Alternatives considered
 
 - **An independent TS version line** (the package keeps its own semver). Rejected: the package reads
