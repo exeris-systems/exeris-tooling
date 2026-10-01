@@ -96,7 +96,7 @@ other build file.**
      `org.junit.jupiter.api` and `org.assertj.core.api` alone — so an application declares it only
      to boot a kernel in tests it writes itself.
    - It manages nothing else: no JavaPoet, swagger, Jackson 2, H2, compile-testing, JUnit or
-     AssertJ entry.
+     AssertJ entry. *(Amended: see Amendment 2.)*
    - Release order is kernel → SDK → tooling, so the tooling version is the last of the three to be
      fixed and names the triple. A tooling release whose BOM names a `-SNAPSHOT` kernel or SDK
      version violates this obligation.
@@ -112,7 +112,7 @@ other build file.**
    - `maven-surefire-plugin` at 3.2.5 or later (the version the reactor uses, `pom.xml:154-155`),
      configured to run JUnit 5, the runner the generated-test channel requires (ADR-058).
    - It blanks `url`, `licenses`, `developers` and `scm` (the `spring-boot-starter-parent`
-     precedent), so a consumer's effective POM does not claim Exeris's project metadata as its own.
+     precedent), so a consumer's effective POM does not claim Exeris's project metadata as its own. *(Amended: see Amendment 2.)*
    - It inherits from `exeris-app-bom` rather than importing it, because properties of an imported
      BOM do not reach `<build><pluginManagement>` (`pom.xml:111-114` records this for the reactor
      itself); inheritance carries the plugin version.
@@ -121,7 +121,7 @@ other build file.**
    - `exeris-sdk-annotations` (`provided`), `exeris-kernel-spi` and `exeris-kernel-core` (`compile`),
      `exeris-kernel-community` (`runtime`), `exeris-sdk-composition-runtime` (`compile`), and
      Jackson 3 `jackson-databind` (`compile`). Jackson 3 and the composition runtime are `compile`
-     because emitted **main** code imports them.
+     because emitted **main** code imports them. *(Amended: see Amendment 2.)*
    - `exeris-kernel-community` is the **default** driver, not the only one. An application on another
      driver (for example an enterprise one) excludes it from `exeris-app-starter` and declares its
      own; `exeris:verify-runtime` checks for registered providers, not for a particular artefact, so
