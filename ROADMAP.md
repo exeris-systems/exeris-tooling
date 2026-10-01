@@ -1110,6 +1110,9 @@ never-invoked emitter start emitting, and its output did not build.
       its publisher, so the bus rejected every live-view subscription (publishers are now built at
       boot). **Still kernel-side (K9, narrowed):** a `streamRoute` registered in `configureRoutes`
       does not resolve, and `decorate`'s scope does not cover streams. Reopening history below.
+      *K9 consumed (ADR-070 Amendment 3): `edgeHandler(handlerSlot)` replaces `edgeRouter`; a
+      `configureRoutes` stream resolves, a delegating `decorate` wrapper covers streams, and a wrapper
+      that would hide one fails the boot. It lands with the pin move to the final kernel 0.12.0.*
 
       **Reopened 2026-09-26, before B1 — kept as measured.** The backlog table below had it shipped
       in 0.6.0 (#106). The dog-food measured it open on kernel 0.12, and the generator and kernel
@@ -3333,7 +3336,7 @@ needed.)*
       never use").
 - [ ] Measure whether the emitted error mapping should read `ExerisKernelException.faultOrigin()`
       rather than re-derive CALLER vs SYSTEM (0.12 readiness, below).
-- [ ] **K9, consumed.** Kernel 0.12 ships `StreamRouteResolver` (`@since 0.12`), an SPI through which
+- [x] **K9, consumed** (ADR-070 Amendment 3; lands with the final kernel 0.12.0 pin). Kernel 0.12 ships `StreamRouteResolver` (`@since 0.12`), an SPI through which
       a handler that wraps or forwards a router delegates stream resolution. `StreamMatch` moved from
       core into the SPI. This removes the reason `decorate` and stream routes are mutually exclusive
       (T49, ADR-070 obligation 6): the emitted app refuses to boot on that combination today. It also
@@ -3472,7 +3475,9 @@ Also open and independent of all four: the missing `warnInertAttributes` call si
 
 Each is recorded where it was measured; this is the one list to hand to the kernel.
 
-- **K9, narrowed.** T23 slice B1 made generated streams resolve on a real boot without the kernel.
+- **K9, narrowed** — *answered by kernel 0.12's `StreamRouteResolver` and consumed (ADR-070
+  Amendment 3). What remains is a new ask: reject a duplicate exact stream registration, and expose
+  "serves any stream" on a built router.* T23 slice B1 made generated streams resolve on a real boot without the kernel.
   What is left needs it. A `streamRoute` registered in `configureRoutes` still does not resolve,
   because only the edge router is asked to resolve streams. And a scope bound in `decorate` is not
   bound for a stream, which runs on the edge router outside the wrapper. Both want stream resolution
