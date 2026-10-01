@@ -79,7 +79,12 @@ class KernelTestSupportGeneratorTest {
                 // HttpRequestDecodingContext rejects a null one.
                 .contains("MemoryAllocator {")
                 .contains("public Object next")
-                .contains("return next");
+                .contains("return next")
+                // A staged failure is thrown by the decode, ahead of the staged result, so a
+                // handler test can drive each decode-failure answer.
+                .contains("public RuntimeException failure")
+                .containsSubsequence("this.decodedType = targetType", "if (failure != null)",
+                        "throw failure;", "return next");
     }
 
     @Test
