@@ -1969,6 +1969,71 @@ class ExerisDomainProcessorTest {
         }
 
         @Test
+        @DisplayName("warns on @Channel with the reserved-surface reason, once, as unread")
+        void strictWarnsOnChannelAsReserved() {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Article",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.Channel;
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+
+                    @ExerisDomain(module = "cms", path = "/articles")
+                    @Channel(messageType = "ArticleEdit")
+                    public class Article {
+                    }
+                    """
+            );
+
+            Compilation compilation = javac()
+                    .withOptions("-Aexeris.strict=true")
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(source);
+
+            assertThat(compilation).succeeded();
+            assertThat(hasUnreadWarningFor(compilation, "@Channel")).isTrue();
+            List<String> channelWarnings = compilation.warnings().stream()
+                    .map(d -> d.getMessage(null))
+                    .filter(m -> m != null && m.contains("@Channel"))
+                    .toList();
+            assertThat(channelWarnings).hasSize(1);
+            assertThat(channelWarnings.getFirst())
+                    .contains("no generator opens a WebSocket endpoint")
+                    .contains("DomainMetadata carries no channel")
+                    .doesNotContain("no extraction exists for it in ExerisDomainProcessor");
+        }
+
+        @Test
+        @DisplayName("Default build stays quiet on @Channel")
+        void defaultBuildDoesNotWarnOnChannel() {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Article",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.Channel;
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+
+                    @ExerisDomain(module = "cms", path = "/articles")
+                    @Channel
+                    public class Article {
+                    }
+                    """
+            );
+
+            Compilation compilation = javac()
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(source);
+
+            assertThat(compilation).succeeded();
+            assertThat(compilation.warnings().stream()
+                    .map(d -> d.getMessage(null))
+                    .noneMatch(m -> m != null && m.contains("@Channel")))
+                    .isTrue();
+        }
+
+        @Test
         @DisplayName("warns on @SagaTransition and blames the kernel's flow plan, not the generator")
         void strictWarnsOnSagaTransitionWithTheKernelReason() {
             // The gap is the kernel's, not the generator's: the kernel precomputes one next step
