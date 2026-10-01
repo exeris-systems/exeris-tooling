@@ -13,9 +13,6 @@
  * while nothing reads its body, is deliberate — accepting a manifest-less directory would
  * ship exactly the input model ADR-048 rejects, and taking it back later would break every
  * consumer that had adopted it.
- *
- * @author Exeris Team
- * @since 0.8.0
  */
 
 import { existsSync, readFileSync, statSync } from 'node:fs';

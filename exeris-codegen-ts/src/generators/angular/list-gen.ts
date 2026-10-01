@@ -6,9 +6,6 @@
  * - Animations - row transitions
  * - SSR/Hydration - @defer with @placeholder
  * - Tailwind CSS - styling
- *
- * @author Exeris Team
- * @since 0.2.0
  */
 
 import type { DomainMetadata } from '../../models/domain-model.js';

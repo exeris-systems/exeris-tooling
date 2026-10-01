@@ -4,7 +4,7 @@
  * Emits, per entity declaring `@Saga`, a signal-based state machine that tracks a saga run for
  * display: the declared steps in order, their status, progress, and screen-reader announcements.
  *
- * <b>The emitted machine carries no transport, deliberately.</b> No layer of this stack serves a
+ * **The emitted machine carries no transport, deliberately.** No layer of this stack serves a
  * saga contract: `KernelApplicationGenerator` registers no saga route (its own Javadoc hands saga
  * routing to the consumer), `KernelOpenApiGenerator` documents no saga path, and the kernel flow
  * SPI has no per-execution handle at all — `FlowEngine` exposes
@@ -13,14 +13,11 @@
  * local and the consumer drives them from whatever it does serve — the TS analogue of the ADR-070
  * composition-root seam.
  *
- * <b>No `$localize` in emitted output.</b> Announcements do not use `$localize` tagged
+ * **No `$localize` in emitted output.** Announcements do not use `$localize` tagged
  * templates. `$localize` is a global that exists only when the consumer adds `@angular/localize`
  * and a polyfills entry, but the emitted app declares `"polyfills": []`. Emitting code that
  * silently requires an undeclared consumer dependency violates ADR-060 (the rule applied to
  * slf4j on the Java side; `store-gen.ts` and `event-gen` record it for TS).
- *
- * @author Exeris Team
- * @since 0.3.0
  */
 
 import type { DomainMetadata, SagaMetadata, SagaStepMetadata } from '../../models/domain-model.js';

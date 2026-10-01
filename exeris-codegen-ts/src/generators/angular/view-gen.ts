@@ -46,9 +46,6 @@
  * path (or a ref, outside a SLOT block, where ref names the slot) on it is ignored.
  * That emits a comment naming them and pointing at @Block(props) — the processor
  * warns at the @Bind declaration too.
- *
- * @author Exeris Team
- * @since 0.8.0
  */
 
 import type {

@@ -3,9 +3,6 @@
  *
  * Handles conversion of Java domain types (BigDecimal, Instant, UUID, etc.)
  * to their TypeScript equivalents and generates appropriate Angular form controls.
- *
- * @author Exeris Team
- * @since 0.2.0
  */
 
 import type { FieldMetadata } from './domain-model.js';

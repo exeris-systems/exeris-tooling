@@ -2,9 +2,6 @@
  * Configuration module for Exeris TypeScript Code Generator.
  *
  * Loads configuration from CLI arguments, environment variables, or config file.
- *
- * @author Exeris Team
- * @since 0.2.0
  */
 
 import { existsSync, readFileSync } from 'node:fs';

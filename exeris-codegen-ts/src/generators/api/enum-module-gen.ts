@@ -1,9 +1,6 @@
 /**
  * The enum module (`types/enums.ts`) — one emitter shared by orchestrator and peer-types
  * (ADR-048). `orchestrator.ts` re-exports both symbols, so existing importers are unaffected.
- *
- * @author Exeris Team
- * @since 0.8.0
  */
 
 export interface EnumMetadataForGen {
