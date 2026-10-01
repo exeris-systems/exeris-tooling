@@ -100,6 +100,9 @@ class KernelGraphSyncGeneratorTest {
         assertThatThrownBy(() -> strategy.generate(metadata))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Duplicate edge names")
-                .hasMessageContaining("ownerId");
+                .hasMessageContaining("ownerId")
+                // @GraphEdge has no name attribute; the remedy is one edge per field.
+                .hasMessageContaining("each field may carry at most one @GraphEdge")
+                .hasMessageNotContaining("declare a unique name");
     }
 }
