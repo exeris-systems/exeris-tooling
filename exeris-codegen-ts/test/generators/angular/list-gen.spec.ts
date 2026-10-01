@@ -535,3 +535,35 @@ describe('generateList — top-level convenience function', () => {
     expect(file!.path).toBe('components/order-list.component.ts');
   });
 });
+
+describe('ListGenerator default columns follow the system-field classification', () => {
+  const gen = new ListGenerator();
+  const columnNamesIn = (content: string): string[] =>
+    [...content.matchAll(/<span>([A-Z][A-Za-z0-9 ]*)<\/span>/g)].map((m) => m[1]);
+
+  it('leaves out the audit stamps an audited entity names through systemFields', () => {
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      audited: true,
+      systemFields: { createdAtField: 'openedAt', updatedAtField: 'touchedAt' },
+      fields: [
+        field({ name: 'openedAt', type: 'Instant' }),
+        field({ name: 'touchedAt', type: 'Instant' }),
+        field({ name: 'orderNumber', type: 'String' }),
+      ],
+    }), CTX)!.content;
+    expect(columnNamesIn(content)).toEqual(['Order Number']);
+  });
+
+  it('keeps a field an unaudited entity with a systemFields block does not name', () => {
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      systemFields: { versionField: 'revision' },
+      fields: [
+        field({ name: 'createdBy', type: 'String' }),
+        field({ name: 'orderNumber', type: 'String' }),
+      ],
+    }), CTX)!.content;
+    expect(columnNamesIn(content)).toEqual(['Created By', 'Order Number']);
+  });
+});

@@ -314,6 +314,46 @@ export function systemFieldNames(metadata: DomainMetadata): string[] {
   return [...new Set(fields)];
 }
 
+/**
+ * The audit stamp names: `systemFields.createdAtField` / `updatedAtField`, or `createdAt` /
+ * `updatedAt` when the entity names none (a blank name falls back too). These are the properties
+ * the generated repository stamps on every row of an `audited` entity, whether or not the entity
+ * declares them as fields.
+ */
+export function auditFieldNames(metadata: DomainMetadata): { createdAt: string; updatedAt: string } {
+  const sf = metadata.systemFields;
+  return {
+    createdAt: sf?.createdAtField || 'createdAt',
+    updatedAt: sf?.updatedAtField || 'updatedAt',
+  };
+}
+
+/**
+ * The fields the emitted views treat as system fields: no form control, no row in the detail
+ * view's field table, no default list column. The detail view's system panel shows the id, the
+ * audit stamps and the version instead.
+ *
+ * It is `systemFieldNames` plus what the flags make server-owned (the audit stamps on `audited`,
+ * the version on `versioned`, the soft-delete flag on `softDelete`), plus `tenantId`, which the
+ * views never render whatever the block says. An entity without a `systemFields` block also keeps
+ * the conventional names (`createdBy`, `updatedBy`, `deleted`, `deletedAt`), since without a block
+ * nothing names its system fields otherwise. The order is stable: `systemFieldNames` first, then
+ * the additions in the order listed.
+ */
+export function viewSystemFieldNames(metadata: DomainMetadata): string[] {
+  const names = systemFieldNames(metadata);
+  if (metadata.audited) {
+    const audit = auditFieldNames(metadata);
+    names.push(audit.createdAt, audit.updatedAt);
+  }
+  const version = updateVersionField(metadata);
+  if (version) names.push(version.name);
+  if (metadata.softDelete) names.push(metadata.systemFields?.softDeleteField || 'deleted');
+  names.push('tenantId');
+  if (!metadata.systemFields) names.push('createdBy', 'updatedBy', 'deleted', 'deletedAt');
+  return [...new Set(names)];
+}
+
 /** The optimistic-lock field a versioned entity's update carries. */
 export interface UpdateVersionField {
   /** The property name: `systemFields.versionField`, or `version` when the entity names none. */

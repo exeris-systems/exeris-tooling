@@ -19,6 +19,7 @@ import type { GeneratorConfig } from '../../config.js';
 import type { BackendType } from '../../core/backend-strategy.js';
 import { outPath } from '../../core/paths.js';
 import { tsSingleQuoted } from './ts-literal.js';
+import { auditFieldNames, updateVersionField, viewSystemFieldNames } from '../api/type-gen.js';
 
 export class DetailGenerator implements CodeGenerator {
   readonly name = 'DetailGenerator';
@@ -56,7 +57,7 @@ export class DetailGenerator implements CodeGenerator {
     // honours it, and the emitted app would then request the wrong identifier.
     const idField = 'id';
 
-    const systemFieldNames = this.getSystemFieldNames(domain);
+    const systemFieldNames = viewSystemFieldNames(domain);
     const displayFields = fields.filter(f => !systemFieldNames.includes(f.name) && !f.hidden);
     const enumTypes = this.collectEnumTypes(fields);
 
@@ -77,7 +78,9 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`  input,`);
     lines.push(`} from '@angular/core';`);
     lines.push(`import { rxResource } from '@angular/core/rxjs-interop';`);
-    const stamps = timestampFields(domain);
+    const panelRows = systemPanelRows(domain);
+    const stamps = panelRows.filter((row) => row.kind === 'date');
+    const undeclaredRows = panelRows.filter((row) => !row.declared);
     // DatePipe is only imported when something renders a date: Angular reports an unused
     // standalone import against the template.
     lines.push(stamps.length > 0
@@ -169,10 +172,16 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`          <h3 class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-4">System Information</h3>`);
     lines.push(`          <dl class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">`);
     lines.push(`            <div><dt class="text-gray-400">ID</dt><dd class="font-mono text-gray-600 dark:text-gray-300">{{ entity()?.${idField} }}</dd></div>`);
-    // Only for entities that actually declare system fields. The @if guard prevents type errors
-    // when fields are absent.
-    for (const stamp of timestampFields(domain)) {
-      lines.push(`            @if (entity()?.${stamp.name}) { <div><dt class="text-gray-400">${stamp.label}</dt><dd>{{ entity()?.${stamp.name} | date:'medium' }}</dd></div> }`);
+    // A row the entity interface does not declare is read off systemInfo(), the narrowing cast
+    // emitted below, so the template type-checks under strictTemplates.
+    for (const row of panelRows) {
+      const read = `${row.declared ? 'entity()' : 'systemInfo()'}?.${row.name}`;
+      if (row.kind === 'date') {
+        lines.push(`            @if (${read}) { <div><dt class="text-gray-400">${row.label}</dt><dd>{{ ${read} | date:'medium' }}</dd></div> }`);
+      } else {
+        // A version of 0 is a value, so the guard is a null check rather than truthiness.
+        lines.push(`            @if (${read} != null) { <div><dt class="text-gray-400">${row.label}</dt><dd class="font-mono text-gray-600 dark:text-gray-300">{{ ${read} }}</dd></div> }`);
+      }
     }
     lines.push(`          </dl>`);
     lines.push(`        </section>`);
@@ -187,6 +196,13 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(``);
     lines.push(`  readonly id = input.required<string>();`);
     lines.push(`  readonly displayFields = DISPLAY_FIELDS;`);
+    if (undeclaredRows.length > 0) {
+      const members = undeclaredRows
+        .map((row) => `${row.name}?: ${row.kind === 'date' ? 'string' : 'number'}`)
+        .join('; ');
+      lines.push(`  /** The server-owned fields the ${modelName} interface does not declare, read through a narrowing cast. */`);
+      lines.push(`  readonly systemInfo = computed(() => this.entity() as unknown as { ${members} } | null);`);
+    }
     lines.push(``);
     lines.push(`  private readonly entityResource = rxResource({`);
     lines.push(`    params: () => this.id(),`);
@@ -285,17 +301,6 @@ export class DetailGenerator implements CodeGenerator {
     return lines.join('\n');
   }
 
-  private getSystemFieldNames(domain: DomainMetadata): string[] {
-    const fields = ['id', 'version', 'createdAt', 'updatedAt', 'createdBy', 'updatedBy', 'tenantId', 'deletedAt', 'deleted'];
-    const sf = domain.systemFields;
-    if (sf) {
-      if (sf.versionField) fields.push(sf.versionField);
-      if (sf.createdAtField) fields.push(sf.createdAtField);
-      if (sf.updatedAtField) fields.push(sf.updatedAtField);
-    }
-    return [...new Set(fields)];
-  }
-
   private getDisplayType(field: FieldMetadata): string {
     const type = field.type;
     if (field.enumType || this.isEnumType(type)) return 'enum';
@@ -331,21 +336,37 @@ export class DetailGenerator implements CodeGenerator {
   }
 }
 
+/** A row of the detail view's system panel, after the id. */
+interface SystemPanelRow {
+  name: string;
+  label: string;
+  kind: 'date' | 'number';
+  /** Whether the entity interface carries the property; an undeclared one is read through a cast. */
+  declared: boolean;
+}
+
 /**
- * The audit timestamps this entity actually declares, with the label the detail view shows.
- * `systemFields` may rename them, so the declared field list is the authority rather than the
- * conventional names.
+ * The audit stamps and the version the system panel shows, in that order.
+ *
+ * An `audited` entity always shows both stamps under the names `auditFieldNames` resolves: the
+ * generated repository writes them on every row whether or not the entity declares them. On any
+ * other entity a stamp shows only when the entity declares it and it is a system field, so a field
+ * the field table leaves out appears here instead of nowhere. A `versioned` entity shows its version.
  */
-function timestampFields(metadata: DomainMetadata): Array<{ name: string; label: string }> {
+function systemPanelRows(metadata: DomainMetadata): SystemPanelRow[] {
   const declared = new Set(metadata.fields.map((f) => f.name));
-  const sf = metadata.systemFields;
-  const candidates: Array<{ name: string | undefined; label: string }> = [
-    { name: sf?.createdAtField ?? 'createdAt', label: 'Created' },
-    { name: sf?.updatedAtField ?? 'updatedAt', label: 'Updated' },
-  ];
-  return candidates
-    .filter((c): c is { name: string; label: string } => !!c.name && declared.has(c.name))
-    .map((c) => ({ name: c.name, label: c.label }));
+  const system = viewSystemFieldNames(metadata);
+  const audit = auditFieldNames(metadata);
+  const rows: SystemPanelRow[] = [];
+  const stamps: Array<[string, string]> = [[audit.createdAt, 'Created'], [audit.updatedAt, 'Updated']];
+  for (const [name, label] of stamps) {
+    if (metadata.audited || (declared.has(name) && system.includes(name))) {
+      rows.push({ name, label, kind: 'date', declared: declared.has(name) });
+    }
+  }
+  const version = updateVersionField(metadata);
+  if (version) rows.push({ name: version.name, label: 'Version', kind: 'number', declared: version.declared });
+  return rows;
 }
 
 export function generateDetail(metadata: DomainMetadata, config: GeneratorConfig): GeneratedFile {

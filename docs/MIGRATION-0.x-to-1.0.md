@@ -4,7 +4,7 @@ type: migration-guide
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-09-30
+last-verified: 2026-10-01
 ---
 
 # Migration: 0.x → 1.0
@@ -1475,6 +1475,37 @@ byte-for-byte what they did.
   input.
 - **A `409` on update shows a conflict message with a Reload button**, which fetches the row as it
   now stands and resets the form to it, including its current version.
+
+### `exeris-codegen-ts`: the detail view's system panel follows `audited`, `versioned` and `systemFields`
+
+The generated repository stamps `createdAt` / `updatedAt` on every row of an
+`@ExerisDomain(audited = true)` entity (named by `systemFields.createdAtField` / `updatedAtField`,
+else the defaults), whether or not the entity declares them as fields. The emitted detail view keyed
+its "System Information" panel on declared field names instead, so an audited entity that inherits
+its stamps showed neither.
+
+- **The panel shows the stamps on every audited entity**, under the `systemFields` names. A stamp
+  the entity does not declare is read through a typed cast (`systemInfo`), because the
+  `<Entity>` interface carries only declared fields. **It shows the version on a versioned
+  entity**, named by `systemFields.versionField`, else `version`. The id row is unchanged. An entity
+  that is neither audited nor versioned still shows a declared `createdAt` / `updatedAt` as before,
+  and a panel with the id alone when it declares neither.
+- **The form, the detail field table and the default list columns share one system-field set**:
+  the `systemFields` block, plus the audit stamps on `audited`, the version on `versioned`, the
+  soft-delete flag on `softDelete`, and `tenantId`. An entity **without** a `systemFields` block
+  keeps the conventional names (`version`, `createdAt`, `updatedAt`, `createdBy`, `updatedBy`,
+  `deleted`, `deletedAt`, `tenantId`): its form, field table and list columns regenerate
+  unchanged, except that the default list columns now leave out a field named `deleted`, as the form
+  and the field table already did.
+- **An entity with a `systemFields` block now hides what the block names, and only that.** The
+  soft-delete fields it names (`softDeleteField`, `softDeleteTimestampField`, `softDeletedByField`)
+  leave the form, the detail field table and the default list columns: they were rendered as
+  editable controls although the create and update DTOs omit them. Conversely, a field the block
+  does **not** name is an ordinary field and appears in the form, the detail view and the default
+  list columns. A block the processor writes names every key but the soft-delete trio, so in
+  practice this reaches a field named `deletedAt`, or `deleted` on an entity without `softDelete`.
+  The form still leaves out `createdAt`, `updatedAt`, `version` and `deleted` under any name
+  mapping, as the create DTO does.
 
 ### `exeris-codegen-ts`: failed requests show a message per status, and delete no longer uses `alert()`
 
