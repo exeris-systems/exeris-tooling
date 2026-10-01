@@ -9,9 +9,6 @@
  * - angular.json
  * - tsconfig.json
  * - tailwind.config.js
- *
- * @author Exeris Team
- * @since 0.2.0
  */
 
 import type { DomainMetadata, ViewMetadata } from '../../models/domain-model.js';
@@ -27,6 +24,8 @@ import {
 } from './view-gen.js';
 import { tsSingleQuoted } from './ts-literal.js';
 import { sagaMachineName } from './saga-gen.js';
+import { hasLiveViewClient } from './stream-client-gen.js';
+import { hasActionStreamClients } from './action-stream-client-gen.js';
 
 export interface GeneratedFile {
   path: string;
@@ -354,7 +353,7 @@ export const routes: Routes = [
  * The app barrel — every generated symbol a consumer's own code can reach without knowing
  * internal paths.
  *
- * <p><b>Every section is gated on the flag that gates its emission.</b> When a flag is off,
+ * Every section is gated on the flag that gates its emission. When a flag is off,
  * no exports for that section are emitted — the barrel never references files that were not
  * generated. The `barrel-resolves.spec` asserts this invariant for every combination of flags.
  */
@@ -406,6 +405,20 @@ function generateBarrelExport(
       } else {
         exports.push(`export { ${domain.entityName}Service, ${model}Filter } from './services/${kebab}.service';`);
       }
+    }
+  }
+
+  // SSE stream clients, emitted beside the services for each stream route the kernel
+  // application serves on a GLOBAL entity (the predicates say why no other). Each sub-barrel exists only when some entity has such a route, and
+  // the per-file names (`<Entity>StreamClient`, `<Entity><Action>StreamClient`, the one
+  // shared `StreamFrame`) are distinct, so starring them is unambiguous.
+  if (config.generateServices) {
+    const liveView = visibleDomains.some(hasLiveViewClient);
+    const actionStreams = visibleDomains.some(hasActionStreamClients);
+    if (liveView || actionStreams) {
+      exports.push("", "// SSE stream clients");
+      if (liveView) exports.push("export * from './services/streams.index';");
+      if (actionStreams) exports.push("export * from './services/action-streams.index';");
     }
   }
 

@@ -1695,7 +1695,8 @@ never-invoked emitter start emitting, and its output did not build.
       The architect's proposed direction, an ADR-044 amendment: guard plus an RLS `findById` for
       per-action streams, and a processor ERROR for `realTimeApi` on a TENANT entity until the
       kernel carries an isolation key on events. The dog-food is unaffected (`GalacticEra` is
-      GLOBAL). Reproduce it before it takes a number.
+      GLOBAL). Reproduce it before it takes a number. Until it is fixed, `exeris-codegen-ts` emits
+      no stream client for a tenant-partitioned (`TENANT` or `UNIVERSE`) entity.
 - [x] **T42 — the mesh has no generated frontend contract.** Types slice shipped 0.8.0 (ADR-048).
       `codegen-ts` was single-service by construction: one metadata directory in, one app out. A mesh
       consumer retyped the other service's vocabulary by hand across a language boundary with no
@@ -2791,9 +2792,11 @@ release.
       carries its version (#236) · ADR-076 status mapping (#239) · `audited` panel (#240) ·
       `MANY_TO_ONE` UUID-FK link (#238). Route guards stay with **T53**.
 - [x] **Stage 0 — parity gate.** Every `DomainMetadataSchema` field is `READ`, `JAVA_ONLY`,
-      `RESERVED` or `GAP`, measured at generation time. One `GAP`: `realTimeApi`.
-- [ ] **`realTimeApi` parity** — the orchestrator composes the TS stream clients the Java side's
-      SSE routes serve.
+      `RESERVED` or `GAP`, measured at generation time. No field is in `GAP`.
+- [x] **`realTimeApi` parity** — the orchestrator composes the TS stream clients the Java side's
+      SSE routes serve: the live-view client listens for each `@DomainEvent` by name, a streaming
+      action gets its stream client and no respond-once service method, and
+      `contract/stream-routes.json` pins the routes on both sides.
 - [ ] **TS output-stability ADR** — ADR-015 covers codegen-core and codegen-java only; needed before
       the first npm publication.
 
@@ -3358,16 +3361,16 @@ needed.)*
 A consumer application writes its whole build by hand today: the SDK annotations, kernel SPI and Core
 at compile scope, a runtime driver, a JDBC driver, conditionally Jackson 3 and the composition
 runtime, the processor on `annotationProcessorPaths`, and the plugin with three goals bound to the
-right phases. No end-to-end application POM exists anywhere in the ecosystem, and the Maven plugin
+right phases. No POM in the ecosystem declares that whole set (the `exeris-caps-*` POMs bind
+`generate` and `verify-capabilities`, but neither `verify-runtime` nor a driver), and the Maven plugin
 itself has no end-to-end test: `exeris-e2e-tests` drives the pipeline in-process.
 `exeris-tooling-bom` cannot serve as a starter: its parent is the reactor root, it pins build-internal
 libraries (JavaPoet, swagger, Jackson 2, H2) and it manages neither the plugin nor a driver.
-- [ ] **ADR first.** ADR-078 lists "emitting a `pom.xml` or a dependency fragment" as out of scope.
-      A starter the consumer opts into is not emitted, but it changes that ADR's premise that tooling
-      does not own the consumer's build. Reserve the number in `exeris-docs/adr-index.md`.
+- [x] **ADR first.** ADR-091 (reserved in `exeris-docs/adr-index.md`) records the module layout and
+      the obligations; ADR-078's premise is narrowed, not superseded.
 - [ ] **`exeris-app-bom`**: the tooling + kernel + SDK triple that is known to work together, the
       kernel's Jackson 3 line, and the plugin. Tooling releases last, so its version names the pair.
-- [ ] **`exeris-app-parent`**: imports the BOM. Sets `release 25` and the JDK/Maven enforcer rules,
+- [ ] **`exeris-app-parent`**: inherits `exeris-app-bom` (ADR-091 obligation 4). Sets `release 25` and the JDK/Maven enforcer rules,
       puts the processor on `annotationProcessorPaths`, and binds `generate` + `verify-capabilities` +
       `verify-runtime`. Adds a `<resource>` for the migrations and OpenAPI that are generated under
       the `src/main/generated/java` source root, which Maven does not copy to the classpath.

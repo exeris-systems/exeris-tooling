@@ -362,6 +362,107 @@ describe('buildGeneratedFiles — domain events', () => {
 });
 
 // ---------------------------------------------------------------------------
+// SSE stream clients: one per stream route the kernel application serves —
+// GET {base}/stream for a realTimeApi entity, POST {base}/{id}/actions/{kebab} for
+// a streaming action — emitted beside the services.
+// ---------------------------------------------------------------------------
+
+describe('buildGeneratedFiles — SSE stream clients', () => {
+  const plain = domain({
+    entityName: 'Order',
+    fields: [{ name: 'id', type: 'java.util.UUID' }],
+    events: [{ name: 'OrderPlaced', payloadFields: ['id'] }],
+    actions: [{ name: 'cancel' }],
+  });
+  const live = domain({ ...plain, realTimeApi: true });
+  const streaming = domain({ ...plain, actions: [{ name: 'cancel' }, { name: 'track', streaming: true }] });
+  const at = (files: { path: string; content: string }[], p: string) =>
+    files.find((f) => f.path === p)?.content ?? '';
+  const STREAM_FILES = [
+    'src/app/services/order.stream.ts',
+    'src/app/services/streams.index.ts',
+    'src/app/services/order.action-streams.ts',
+    'src/app/services/stream-types.ts',
+    'src/app/services/action-streams.index.ts',
+  ];
+
+  it('emits the live-view client and its barrel for a realTimeApi entity', () => {
+    const paths = buildGeneratedFiles([live], [], DEFAULT_CONFIG).map((f) => f.path);
+    expect(paths).toContain('src/app/services/order.stream.ts');
+    expect(paths).toContain('src/app/services/streams.index.ts');
+    expect(paths).not.toContain('src/app/services/order.action-streams.ts');
+  });
+
+  it('emits the action stream client, its shared frame type and its barrel for a streaming action', () => {
+    const paths = buildGeneratedFiles([streaming], [], DEFAULT_CONFIG).map((f) => f.path);
+    expect(paths).toContain('src/app/services/order.action-streams.ts');
+    expect(paths).toContain('src/app/services/stream-types.ts');
+    expect(paths).toContain('src/app/services/action-streams.index.ts');
+    expect(paths).not.toContain('src/app/services/order.stream.ts');
+  });
+
+  it('emits no stream client for an entity with no stream route', () => {
+    const paths = buildGeneratedFiles([plain], [], DEFAULT_CONFIG).map((f) => f.path);
+    expect(paths.filter((p) => STREAM_FILES.includes(p))).toEqual([]);
+  });
+
+  it('emits no stream client when generateServices is false', () => {
+    const paths = buildGeneratedFiles([live, domain({ ...streaming, entityName: 'Shipment' })], [], {
+      ...DEFAULT_CONFIG,
+      generateServices: false,
+    }).map((f) => f.path);
+    expect(paths.some((p) => p.includes('stream'))).toBe(false);
+  });
+
+  it('leaves every other file byte-identical: realTimeApi adds its client and one barrel section', () => {
+    const before = buildGeneratedFiles([plain], [], DEFAULT_CONFIG);
+    const after = buildGeneratedFiles([live], [], DEFAULT_CONFIG);
+    const changed = after
+      .filter((f) => before.find((b) => b.path === f.path)?.content !== f.content)
+      .map((f) => f.path);
+    expect(changed).toEqual(['src/app/services/order.stream.ts', 'src/app/services/streams.index.ts', 'src/app/index.ts']);
+    expect(before.every((b) => after.some((f) => f.path === b.path))).toBe(true);
+  });
+
+  it('exports the stream clients from the app barrel only when they exist', () => {
+    expect(at(buildGeneratedFiles([live], [], DEFAULT_CONFIG), 'src/app/index.ts'))
+      .toContain("export * from './services/streams.index';");
+    expect(at(buildGeneratedFiles([streaming], [], DEFAULT_CONFIG), 'src/app/index.ts'))
+      .toContain("export * from './services/action-streams.index';");
+    expect(at(buildGeneratedFiles([plain], [], DEFAULT_CONFIG), 'src/app/index.ts')).not.toContain('stream');
+  });
+
+  // Stream routes carry no tenant guard, so a tenant-partitioned entity gets no stream client.
+  it.each([
+    ['TENANT', { dataScope: 'TENANT' }],
+    ['UNIVERSE', { dataScope: 'UNIVERSE' }],
+    ['legacy tenantScoped', { tenantScoped: true }],
+  ] as const)('emits no stream client and no barrel section for a %s entity', (_label, scope) => {
+    const partitioned = domain({ ...plain, ...scope, realTimeApi: true, actions: [{ name: 'track', streaming: true }] });
+    const files = buildGeneratedFiles([partitioned], [], DEFAULT_CONFIG);
+    expect(files.filter((f) => f.path.includes('stream')).map((f) => f.path)).toEqual([]);
+    expect(at(files, 'src/app/index.ts')).not.toContain('stream');
+    // Still served as a stream only, so no respond-once service method either.
+    expect(at(files, 'src/app/services/order.service.ts')).not.toContain('/actions/track`');
+  });
+
+  it('keeps the stream clients of a GLOBAL entity beside a tenant-partitioned one', () => {
+    const tenant = domain({ ...live, entityName: 'Invoice', dataScope: 'TENANT' });
+    const paths = buildGeneratedFiles([live, tenant], [], DEFAULT_CONFIG).map((f) => f.path);
+    expect(paths).toContain('src/app/services/order.stream.ts');
+    expect(paths).not.toContain('src/app/services/invoice.stream.ts');
+  });
+
+  // The kernel serves a streaming action as a stream only (no respond-once route), so the
+  // service must not call that path expecting a JSON body.
+  it('gives a streaming action no respond-once service method', () => {
+    const service = at(buildGeneratedFiles([streaming], [], DEFAULT_CONFIG), 'src/app/services/order.service.ts');
+    expect(service).toContain('/actions/cancel`');
+    expect(service).not.toContain('/actions/track`');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // T2 FE spec slice (0.8.0, ADR-058). Opt-in: `generateTests` defaults to false,
 // because turning it on also puts a runner and two devDependencies into the
 // consumer's package.json.

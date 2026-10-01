@@ -2,9 +2,6 @@
  * TypeScript models mapping Java DomainMetadata structure from exeris-processor.
  * These interfaces define the contract between Java annotation processor output
  * and TypeScript code generators.
- *
- * @author Exeris Team
- * @since 0.2.0
  */
 
 import { z } from 'zod';
@@ -568,6 +565,15 @@ export function effectiveDataScope(
   metadata: Pick<DomainMetadata, 'dataScope' | 'tenantScoped'>
 ): 'GLOBAL' | 'TENANT' | 'UNIVERSE' {
   return metadata.dataScope ?? (metadata.tenantScoped ? 'TENANT' : 'GLOBAL');
+}
+
+/**
+ * Whether the entity's rows have an owning tenant — the TS twin of the Java side's
+ * `DataScopeSupport.isTenantPartitioned`. True for `TENANT` and for `UNIVERSE`, whose rows are
+ * owned too (a UNIVERSE row is readable across its owner's shared scope, never by every tenant).
+ */
+export function isTenantPartitioned(metadata: Pick<DomainMetadata, 'dataScope' | 'tenantScoped'>): boolean {
+  return effectiveDataScope(metadata) !== 'GLOBAL';
 }
 
 /**

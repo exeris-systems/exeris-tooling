@@ -1,6 +1,15 @@
+---
+title: "ADR-078 — The build fails when the generated application has no driver to run on"
+type: adr
+visibility: public
+owning-repo: exeris-tooling
+status: active
+slug: adr/ADR-078
+---
+
 # ADR-078 — The build fails when the generated application has no driver to run on
 
-- **Status:** ACCEPTED (2026-08-27)
+- **Status:** ACCEPTED (2026-08-27, amended 2026-10-01)
 - **Repo:** `exeris-tooling`
 - **Scope:** tooling / build (consumer-build contract)
 - **Visibility:** public
@@ -148,3 +157,13 @@ floor `CapTierWall` keeps for its class-file scan (ADR-055).
 Core-shaped element that registers nothing. The gate was then perturbed: removing the archive
 entry check (so every SPI counts as found) fails `reportsEverySpiWhenNoDriverIsPresent` and
 `reportsOnlyTheMissingHalf` — the two tests that encode the T50 shape and its partial case.
+
+## Amendments
+
+### 2026-10-01 — the driver coordinate
+
+*Positive Outcomes* quotes the gate's message as "add `eu.exeris.kernel:exeris-kernel-community`".
+That coordinate does not exist: the kernel publishes the Community driver as
+`eu.exeris:exeris-kernel-community` (and `eu.exeris.preview:exeris-kernel-community` on the preview
+line). `RequiredDrivers.suggestedArtifact()` names `eu.exeris:exeris-kernel-community`, which is the
+coordinate the gate tells a consumer to add. The decision is unchanged.

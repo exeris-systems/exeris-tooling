@@ -56,6 +56,8 @@ class VerifyRuntimeMojoTest {
                 // The whole point of the goal: surface the missing artifact, not the
                 // subsystem that would fail to start.
                 .hasMessageContaining(RequiredDrivers.suggestedArtifact())
+                // The coordinate the kernel publishes the Community driver under.
+                .hasMessageContaining("eu.exeris:exeris-kernel-community")
                 .hasMessageContaining(SUBSYSTEM)
                 .hasMessageContaining(PERSISTENCE)
                 .hasMessageContaining("2 of 2")
