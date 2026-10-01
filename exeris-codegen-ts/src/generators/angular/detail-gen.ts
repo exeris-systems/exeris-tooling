@@ -47,6 +47,7 @@ export class DetailGenerator implements CodeGenerator {
     const modelName = modelTypeName(entityName);
     const kebab = DslMapper.toKebabCase(entityName);
     const displayName = domain.displayName ?? entityName;
+    const noun = tsSingleQuoted(displayName.toLowerCase());
     // The literal 'id', deliberately, not systemFields.primaryKeyField. Nothing in the pipeline
     // honours that override: KernelFlywayGenerator emits `id UUID PRIMARY KEY` unconditionally,
     // KernelRepositoryGenerator's WHERE clause is the constant " WHERE id = ?", every by-id
@@ -84,6 +85,7 @@ export class DetailGenerator implements CodeGenerator {
       : `import { CommonModule } from '@angular/common';`);
     lines.push(`import { RouterModule, Router } from '@angular/router';`);
     lines.push(`import { ${entityName}Service } from '../services/${kebab}.service';`);
+    lines.push(`import { httpErrorMessage } from '../core/http-error';`);
     lines.push(`import type { ${modelName} } from '../types/${kebab}.types';`);
 
     if (enumTypes.length > 0) {
@@ -134,6 +136,9 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`          <button (click)="reload()" class="mt-4 text-sm font-medium text-red-600">Try again</button>`);
     lines.push(`        </div>`);
     lines.push(`      } @else if (entity()) {`);
+    lines.push(`        @if (deleteError()) {`);
+    lines.push(`          <div role="alert" data-testid="delete-error" class="mb-6 rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">{{ deleteError() }}</div>`);
+    lines.push(`        }`);
     lines.push(`        <header class="mb-8 flex items-center justify-between">`);
     lines.push(`          <h1 id="detail-title" class="text-2xl font-bold text-gray-900 dark:text-white">{{ getTitle() }}</h1>`);
     lines.push(`          <nav class="flex gap-3">`);
@@ -192,8 +197,9 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`  readonly isLoading = computed(() => this.entityResource.isLoading());`);
     lines.push(`  readonly error = computed(() => {`);
     lines.push(`    const err = this.entityResource.error();`);
-    lines.push(`    return err instanceof Error ? err.message : err ? String(err) : null;`);
+    lines.push(`    return err ? httpErrorMessage(err, { entity: '${noun}', action: 'load' }) : null;`);
     lines.push(`  });`);
+    lines.push(`  readonly deleteError = signal<string | null>(null);`);
     lines.push(``);
 
     for (const enumType of enumTypes) {
@@ -266,10 +272,11 @@ export class DetailGenerator implements CodeGenerator {
 
     lines.push(`  onDelete(): void {`);
     lines.push(`    if (confirm('Are you sure you want to delete this ${displayName.toLowerCase()}?')) {`);
+    lines.push(`      this.deleteError.set(null);`);
     lines.push(`      this.service.delete(this.id()).subscribe({`);
     // The route table's own plural, so the navigation target is a route the table declares.
     lines.push(`        next: () => this.router.navigate(['/${DslMapper.routePlural(entityName)}']),`);
-    lines.push(`        error: (err) => alert('Failed to delete'),`);
+    lines.push(`        error: (err) => this.deleteError.set(httpErrorMessage(err, { entity: '${noun}', action: 'delete' })),`);
     lines.push(`      });`);
     lines.push(`    }`);
     lines.push(`  }`);
