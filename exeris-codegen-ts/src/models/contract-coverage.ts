@@ -40,10 +40,7 @@ export const CONTRACT_COVERAGE = {
   module: { state: 'RESERVED', reason: 'Carried from @ExerisDomain; no emitter reads it.' },
   restApi: { state: 'RESERVED', reason: 'Neither emitter gates on it: REST routes and clients are emitted for every visible entity.' },
   graphqlApi: { state: 'RESERVED', reason: 'No GraphQL surface is emitted on either side.' },
-  realTimeApi: {
-    state: 'GAP',
-    reason: 'Java emits the SSE stream handler and route; the TS stream clients (stream-client-gen, action-stream-client-gen) are registered but the orchestrator does not compose them.',
-  },
+  realTimeApi: { state: 'READ' },
   internalClient: { state: 'RESERVED', reason: 'Carried from @ExerisDomain; no emitter reads it.' },
   dataScope: { state: 'READ' },
   tenantScoped: { state: 'READ' },

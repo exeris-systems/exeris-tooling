@@ -1558,6 +1558,39 @@ A domain entity named `HttpErrorResponse` or `HttpErrorAction` now takes the `�
 Code that matched on the old raw messages (`'Failed to load data'`, `'An error occurred'`,
 `'An unknown error occurred'`) has to match on the new sentences or, better, on the status.
 
+### `exeris-codegen-ts`: SSE stream clients for every stream route the backend serves
+
+The generated kernel application serves `GET {base}/stream` for an `@ExerisDomain(realTimeApi = true)`
+entity and `POST {base}/{id}/actions/{kebab}` as a stream for each `@Action(streaming = true)`. The
+emitted front end now has a client for each, whenever services are generated (`generateServices`,
+the default) and the entity is `GLOBAL`. An app with neither emits exactly what it did.
+
+- **No stream client for a tenant-partitioned entity** (`dataScope` `TENANT` or `UNIVERSE`, or the
+  deprecated `tenantScoped: true`). The generated stream routes carry no tenant guard and the
+  live-view producer subscribes to the event bus unfiltered, so such a stream would deliver every
+  tenant's events to every subscriber. The clients are emitted once the server guards the route.
+  A streaming action on such an entity therefore has no front-end entry point at all: it has no
+  stream client, and no service method either (below).
+
+- **`src/app/services/<entity>.stream.ts`** — `<Entity>StreamClient` for a `realTimeApi` entity,
+  plus `services/streams.index.ts`. `stream()` returns `Observable<MessageEvent<string>>` over a
+  native `EventSource` (`withCredentials: true`). Every frame the handler sends is named, so the
+  client registers one listener per `@DomainEvent` name (`STREAM_EVENT_TYPES`; the entity name +
+  `Event` for a blank name); `type` is the event name and `data` the payload JSON. The
+  `keep-alive` heartbeat is not delivered, so an entity with no `@DomainEvent` gets a stream that
+  emits nothing. A server-side close is followed by the browser's own reconnect; the Observable
+  errors only when the `EventSource` gives up (`readyState` `CLOSED`).
+- **`src/app/services/<entity>.action-streams.ts`** — one `<Entity><Action>StreamClient` per
+  streaming action, plus `services/stream-types.ts` (the shared `StreamFrame { event, data }`) and
+  `services/action-streams.index.ts`. `stream(id)` opens the route with `fetch` (`POST`,
+  `credentials: 'include'`, no body) and emits each parsed frame, the heartbeat included; a field
+  value loses exactly one leading space, so payload whitespace is kept.
+- **The app barrel** (`src/app/index.ts`) gains an `// SSE stream clients` section re-exporting
+  whichever of the two sub-barrels exist.
+- **A streaming action loses its service method.** The kernel serves that path as a stream only,
+  so `<Entity>Service.<action>(id, …)` is no longer emitted for it; call the action stream client
+  instead. Non-streaming actions are unchanged.
+
 ### `@View`: wrong attributes on STATIC/NONE bindings are diagnosed
 
 `@Bind(source = STATIC)` or `NONE` carrying `ref`, `path`, `expression` or `language` now produces a
