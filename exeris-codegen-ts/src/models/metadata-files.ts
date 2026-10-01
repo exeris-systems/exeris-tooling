@@ -4,9 +4,6 @@
  * The metadata loader handles both local and peer metadata (ADR-048 §1): a published
  * contract artifact and the degenerate same-build case. The same directory shape is
  * read by the same loader function.
- *
- * @author Exeris Team
- * @since 0.8.0
  */
 
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';

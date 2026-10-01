@@ -8,9 +8,6 @@
  * - Toast notifications
  * - Screen reader announcements (a11y)
  * - i18n-ready messages
- *
- * @author Exeris Team
- * @since 0.3.0
  */
 
 import type { DomainMetadata, DomainEventMetadata } from '../../models/domain-model.js';
@@ -22,7 +19,7 @@ import { tsSingleQuoted } from './ts-literal.js';
 
 
 /**
- * <b>No `$localize` in emitted output.</b> The announcer strings do not use `$localize` tagged
+ * **No `$localize` in emitted output.** The announcer strings do not use `$localize` tagged
  * templates. `$localize` is a global that exists only when the consumer adds `@angular/localize`
  * to their dependencies and to `polyfills` in `angular.json` — but the emitted app declares
  * `"polyfills": []` and has no such dependency. Tooling emits no dependency the consumer did not

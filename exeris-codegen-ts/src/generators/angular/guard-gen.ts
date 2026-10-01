@@ -5,9 +5,6 @@
  * - Permission-based access control
  * - Role-based access control
  * - Authentication checks
- *
- * @author Exeris Team
- * @since 0.4.0
  */
 
 import type { DomainMetadata, ActionMetadata, CodeGenerator, GeneratedFile, GeneratorContext } from '../../core/generator-registry.js';

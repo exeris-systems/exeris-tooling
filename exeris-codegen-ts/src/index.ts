@@ -9,9 +9,6 @@
  *   exeris-gen generate --input <path> --output <path>
  *   exeris-gen init
  *   exeris-gen --help
- *
- * @author Exeris Team
- * @since 0.3.0
  */
 
 import { Command } from 'commander';
