@@ -94,7 +94,7 @@ floor `CapTierWall` keeps for its class-file scan (ADR-055).
 ### ✅ Positive Outcomes
 
 - The failure moves from start-up to `mvn verify`, and from "subsystem `persistence` failed to
-  start" to "add `eu.exeris.kernel:exeris-kernel-community`".
+  start" to "add `eu.exeris:exeris-kernel-community`".
 - It is precise rather than binary: a classpath with a partial driver set is told *which* SPIs
   are unregistered.
 - It costs one resource lookup per classpath element, and stops early once every required SPI
