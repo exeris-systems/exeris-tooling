@@ -22,6 +22,7 @@
         src/main/java and stops regeneration (L2 detachment). A thin Maven shell
         over CodegenPipeline — no emission logic lives here.
     </description>
+    <url>https://github.com/exeris-systems/exeris-tooling</url>
 
     <!-- Minimum Maven is implied by the provided maven-core 3.9.9. <prerequisites>
          is ignored by Maven 3+ (emits a build warning); the hard floor is the

@@ -26,6 +26,12 @@
              prepare-agent is skipped (-Djacoco.skip=true); with the agent active it is
              overwritten by prepare-agent and both flags compose. -->
         <argLine></argLine>
+        <!-- Test-only module: its jar holds no classes, so it is never released.
+             maven.deploy.skip holds it back from maven-deploy-plugin; the root
+             POM's `release` profile names it in <excludeArtifacts> as well,
+             because central-publishing-maven-plugin replaces maven-deploy-plugin
+             and does not read this property. -->
+        <maven.deploy.skip>true</maven.deploy.skip>
     </properties>
 
     <dependencies>
