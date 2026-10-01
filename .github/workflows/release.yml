@@ -160,7 +160,8 @@ jobs:
         # On a dispatch the tree is a -SNAPSHOT development line and setting the version is the
         # point of the dry run. On a tag the release PR has already set it, so a tag whose version
         # disagrees with the pom is a tag on the wrong commit, and `versions:set` would overwrite the
-        # evidence.
+        # evidence. @exeris/codegen-ts versions in lockstep with the reactor, so its package.json is
+        # held to the same version: one tag releases both or neither.
         env:
           EVENT_NAME: ${{ github.event_name }}
           WANT: ${{ steps.rel.outputs.version }}
@@ -173,8 +174,15 @@ jobs:
               exit 1
             fi
             echo "pom version $have matches the tag"
+            npm_have="$(python3 -c "import json; print(json.load(open('exeris-codegen-ts/package.json'))['version'])")"
+            if [ "$npm_have" != "$WANT" ]; then
+              echo "::error::tag says $WANT, exeris-codegen-ts/package.json says $npm_have — the release PR did not set both." >&2
+              exit 1
+            fi
+            echo "exeris-codegen-ts/package.json version $npm_have matches the tag"
           else
             mvn -B -ntp versions:set -DnewVersion="$WANT" -DgenerateBackupPoms=false
+            (cd exeris-codegen-ts && npm version "$WANT" --no-git-tag-version --ignore-scripts --allow-same-version)
           fi
 
       - name: Refuse a SNAPSHOT anywhere in the POMs

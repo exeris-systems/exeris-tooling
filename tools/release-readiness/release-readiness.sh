@@ -17,6 +17,9 @@
 # pom's `release` profile (central-publishing-maven-plugin, which replaces maven-deploy-plugin and
 # does not read that property). This gate fails when the two lists disagree.
 #
+# @exeris/codegen-ts (npm) is released by the same tag: this gate also fails when its package.json
+# or package-lock.json version differs from the reactor's.
+#
 # Usage:
 #   tools/release-readiness/release-readiness.sh             # release.yml: full gate
 #   tools/release-readiness/release-readiness.sh --unsigned  # local: after -Dgpg.skip, no signatures
@@ -27,7 +30,7 @@ set -euo pipefail
 
 UNSIGNED=0
 case "${1:-}" in
-  -h|--help) sed -n '2,25p' "$0"; exit 0 ;;
+  -h|--help) sed -n '2,28p' "$0"; exit 0 ;;
   --unsigned) UNSIGNED=1 ;;
   "") ;;
   *) echo "unknown argument: $1" >&2; exit 2 ;;
@@ -41,7 +44,7 @@ if [ "$UNSIGNED" = "0" ]; then
 fi
 
 UNSIGNED="$UNSIGNED" python3 - <<'PY'
-import os, pathlib, subprocess, sys, zipfile
+import json, os, pathlib, subprocess, sys, zipfile
 import xml.etree.ElementTree as ET
 
 NS = '{http://maven.apache.org/POM/4.0.0}'
@@ -133,6 +136,19 @@ for directory, pom in reactor():
         with zipfile.ZipFile(main_jar) as z:
             if 'META-INF/maven/plugin.xml' not in z.namelist():
                 failures.append(f'{artifact}: {main_jar.name} carries no META-INF/maven/plugin.xml')
+
+# @exeris/codegen-ts is released by the same tag as the reactor, so it carries the same version.
+reactor_version = coordinates(pathlib.Path('pom.xml'))[1]
+npm_dir = pathlib.Path('exeris-codegen-ts')
+npm_version = json.loads((npm_dir / 'package.json').read_text())['version']
+lock = json.loads((npm_dir / 'package-lock.json').read_text())
+lock_versions = {lock.get('version'), lock.get('packages', {}).get('', {}).get('version')}
+if npm_version != reactor_version:
+    failures.append(f'exeris-codegen-ts/package.json is at {npm_version}, the reactor at '
+                    f'{reactor_version}: the two release in lockstep')
+if lock_versions != {npm_version}:
+    failures.append(f'exeris-codegen-ts/package-lock.json carries {sorted(map(str, lock_versions))}, '
+                    f'package.json {npm_version}')
 
 if deploy_skipped != excluded:
     failures.append('maven.deploy.skip and <excludeArtifacts> disagree about which modules ship: '
