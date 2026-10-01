@@ -91,6 +91,14 @@
         <module>exeris-codegen-maven-plugin</module>
         <module>exeris-e2e-tests</module>
 
+        <!-- ADR-091: the application BOM, parent and starter a consumer builds on, and the invoker
+             fixture that builds an application on them. The first three have no parent in this
+             reactor's chain (exeris-app-bom has none; the other two inherit it). -->
+        <module>exeris-app-bom</module>
+        <module>exeris-app-parent</module>
+        <module>exeris-app-starter</module>
+        <module>exeris-app-starter-it</module>
+
         <!-- Last on purpose: report-aggregate runs in verify and reads
              jacoco.exec from each dependency's target/ — every measured
              module must already have produced its exec by the time this
@@ -306,6 +314,12 @@
                         upload, where a jar with no sources and javadoc beside it fails Central's
                         validation of the whole deployment. tools/release-readiness asserts the two
                         lists agree.
+
+                        exeris-app-bom declares this plugin again, in its `exeris-tooling-release`
+                        profile, for itself and the two modules that inherit it (ADR-091). The two
+                        declarations must not differ in anything but <excludeArtifacts>, and each
+                        list covers only the modules whose parent chain reaches its POM;
+                        tools/release-readiness checks both.
                     -->
                     <plugin>
                         <groupId>org.sonatype.central</groupId>
@@ -319,6 +333,7 @@
                             <excludeArtifacts>
                                 <artifact>exeris-e2e-tests</artifact>
                                 <artifact>exeris-coverage-aggregate</artifact>
+                                <artifact>exeris-app-starter-it</artifact>
                             </excludeArtifacts>
                         </configuration>
                     </plugin>
