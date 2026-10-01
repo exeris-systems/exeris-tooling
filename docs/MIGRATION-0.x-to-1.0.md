@@ -1662,6 +1662,44 @@ compiled, and generation then failed with `Duplicate edge names`. The two are no
 and this declaration draws the same `[Exeris] @GraphEdge is declared 2 times on field 'mixed'` error
 at the field. To fix it, declare each edge on its own field.
 
+### `-Aexeris.strict` now reports `@UI`, `@Tab`, `@UIGroup` and the `@Field` attributes nothing honours
+
+Only if you pass `-Aexeris.strict`. A default build is unchanged and stays silent, and no emitted
+file changes. A strict build that also passes `-Werror` now **fails** on each of the following until
+the source changes.
+
+- **`@UI` on a field** — warned as never read. The processor reads `@UI` on a type only, so a
+  field-level `@UI` reaches no metadata and the field renders from `@Field` alone. A field's
+  presentation facet arrives with `@View`'s field facet.
+- **`@UI` on a type** — warned once as consumed by no generator. `listView`, `detailView`,
+  `createForm`, `editForm`, `searchable`, `filterable` and `exportable` reach `UIMetadata`, but no
+  emitter reads them, and the other attributes are not extracted. Every entity gets the same
+  output whatever `@UI` says.
+- **`@Tab`, `@UIGroup`** — warned as never read, with a reason that no longer claims `@UI` is
+  extracted per field.
+- **`@Field` attributes** — one warning per attribute set:
+  - not extracted at all: `labelKey`, `descriptionKey`, `inList`, `inDetail`, `order`, `ui`,
+    `validation`, `defaultValue`, `cssClass`, `group`, `sensitive`, `encrypted`, `maskPattern`,
+    `writeOnly`, `compositeUnique`;
+  - extracted but read by no generator: `indexed` (the schema indexes a `searchable`, `filterable`
+    or `unique` field and no other) and `inUpdate` (the update DTO, the OpenAPI schema and the edit
+    form carry the field anyway).
+
+**What to do.** Remove the attribute or annotation, or keep it knowing it has no effect in this
+tooling version. Two cases have a working alternative:
+
+- `@Field(validation = @Validation(…))`: move the rules to a standalone `@Validation` on the same
+  field. That one is read and reaches the emitted constraints.
+- `@Field(indexed = true)`: mark the field `searchable`, `filterable` or `unique` if one of those
+  is true of it.
+
+`sensitive`, `encrypted`, `maskPattern` and `writeOnly` deserve a look before they are dismissed. The
+field is stored, returned and rendered exactly as an unmarked field, so data protection that relies
+on them does not exist in generated code. A field-level `@UI` can stay in place knowing it has no
+effect until the `@View` field facet lands; the same holds for the other presentation attributes
+(`inList`, `inDetail`, `order`, `cssClass`, `group`, `@Tab`, `@UIGroup`), which nothing reads in
+this tooling version.
+
 ### SDK 0.12.0 needs no source change for S6
 
 `SystemFieldsMetadata`, `DomainMetadata` and `ActionMetadata` keep their 0.11.0 constructors. Code
