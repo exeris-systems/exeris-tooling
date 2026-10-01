@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>eu.exeris.tooling</groupId>
+        <artifactId>exeris-tooling-parent</artifactId>
+        <version>0.9.0-SNAPSHOT</version>
+        <relativePath>../exeris-tooling-parent</relativePath>
+    </parent>
+
+    <artifactId>exeris-app-starter-it</artifactId>
+    <packaging>pom</packaging>
+
+    <name>Exeris Tooling :: Application Starter IT</name>
+    <description>
+        ADR-091 obligation 7: an application built on exeris-app-parent and exeris-app-starter, run
+        through the real exeris-codegen-maven-plugin in a separate Maven build. Holds no code of
+        its own and is never published.
+    </description>
+
+    <properties>
+        <!-- Test-only module, never released. maven.deploy.skip holds it back from
+             maven-deploy-plugin; the root POM's `release` profile names it in <excludeArtifacts>,
+             because central-publishing-maven-plugin replaces maven-deploy-plugin and does not read
+             this property. -->
+        <maven.deploy.skip>true</maven.deploy.skip>
+        <!-- Declared so that -DskipTests, which overrides it, skips the fixture build too. -->
+        <skipTests>false</skipTests>
+    </properties>
+
+    <!--
+        What invoker:install copies into the fixture's local repository: these reactor artefacts as
+        this build produced them, their parent POMs, and their transitive dependencies. Nothing
+        here is on any classpath of this module, which has no sources. The two BOMs are listed
+        because invoker:install copies neither: exeris-app-bom is the parent of exeris-app-parent
+        and exeris-app-starter, and exeris-tooling-bom is imported by the processor's and the
+        plugin's parent. Without them the fixture would take whatever copy ~/.m2 holds, or none.
+    -->
+    <dependencies>
+        <dependency>
+            <groupId>eu.exeris.tooling</groupId>
+            <artifactId>exeris-tooling-bom</artifactId>
+            <version>${project.version}</version>
+            <type>pom</type>
+        </dependency>
+        <dependency>
+            <groupId>eu.exeris.tooling</groupId>
+            <artifactId>exeris-app-bom</artifactId>
+            <version>${project.version}</version>
+            <type>pom</type>
+        </dependency>
+        <dependency>
+            <groupId>eu.exeris.tooling</groupId>
+            <artifactId>exeris-app-parent</artifactId>
+            <version>${project.version}</version>
+            <type>pom</type>
+        </dependency>
+        <dependency>
+            <groupId>eu.exeris.tooling</groupId>
+            <artifactId>exeris-app-starter</artifactId>
+            <version>${project.version}</version>
+            <type>pom</type>
+        </dependency>
+        <dependency>
+            <groupId>eu.exeris.tooling</groupId>
+            <artifactId>exeris-processor</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>eu.exeris.tooling</groupId>
+            <artifactId>exeris-codegen-maven-plugin</artifactId>
+            <version>${project.version}</version>
+            <type>maven-plugin</type>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!--
+                Each directory under src/it is an application, built by a separate Maven with the
+                steps its invoker.properties lists and checked by its verify.groovy.
+
+                The fixture builds against its own local repository, so a stale artefact in
+                ~/.m2 cannot stand in for one this build produced. invoker:install fills it with the
+                reactor artefacts above. Everything else resolves through src/it/settings.xml: first
+                from the local repository of this build, which has already resolved the kernel,
+                the SDK and the plugins the fixture uses (CI resolves the kernel from GitHub
+                Packages and installs the SDK from source, and the fixture needs neither), then from
+                Maven Central.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-invoker-plugin</artifactId>
+                <version>3.9.1</version>
+                <!-- verify.groovy is compiled by the Groovy the plugin brings, which reads the
+                     running JDK's class files. The plugin's own Groovy cannot read JDK 26's
+                     (class file major 70); 4.0.33 is the first 4.0.x whose embedded ASM can. -->
+                <dependencies>
+                    <dependency>
+                        <groupId>org.apache.groovy</groupId>
+                        <artifactId>groovy</artifactId>
+                        <version>4.0.33</version>
+                    </dependency>
+                    <!-- verify.groovy parses the fixture's effective POM with XmlSlurper. -->
+                    <dependency>
+                        <groupId>org.apache.groovy</groupId>
+                        <artifactId>groovy-xml</artifactId>
+                        <version>4.0.33</version>
+                    </dependency>
+                </dependencies>
+                <configuration>
+                    <cloneProjectsTo>${project.build.directory}/it</cloneProjectsTo>
+                    <localRepositoryPath>${project.build.directory}/it-repo</localRepositoryPath>
+                    <settingsFile>src/it/settings.xml</settingsFile>
+                    <mergeUserSettings>false</mergeUserSettings>
+                    <pomIncludes>
+                        <pomInclude>*/pom.xml</pomInclude>
+                    </pomIncludes>
+                    <postBuildHookScript>verify</postBuildHookScript>
+                    <streamLogsOnFailures>true</streamLogsOnFailures>
+                    <skipInvocation>${skipTests}</skipInvocation>
+                    <!-- The tooling version this reactor built, for verify.groovy to hold the
+                         fixture's effective tooling, plugin and processor versions against. -->
+                    <scriptVariables>
+                        <toolingVersion>${project.version}</toolingVersion>
+                    </scriptVariables>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>app-starter-it</id>
+                        <goals>
+                            <goal>install</goal>
+                            <goal>run</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>
