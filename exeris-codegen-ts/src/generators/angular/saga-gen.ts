@@ -94,6 +94,7 @@ import {
   computed,
 } from '@angular/core';
 import { LiveAnnouncer } from '@angular/cdk/a11y';
+import { httpErrorMessage } from '../core/http-error';
 
 // ============================================================================
 // Types
@@ -487,13 +488,7 @@ export class ${pascalSagaName}StateMachine {
    * so is the one holding the rejection to feed \`failToStart\`.
    */
   extractErrorMessage(err: unknown): string {
-    if (err instanceof Error) {
-      return err.message;
-    }
-    if (typeof err === 'object' && err !== null && 'message' in err) {
-      return String((err as { message: unknown }).message);
-    }
-    return 'An unknown error occurred';
+    return httpErrorMessage(err);
   }
 }
 

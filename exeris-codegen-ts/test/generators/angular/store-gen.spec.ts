@@ -512,29 +512,27 @@ describe('StoreGenerator getSearchableText emission', () => {
 
 // ---------- extractErrorMessage helper ----------
 
-describe('StoreGenerator extractErrorMessage helper — Error / message-bearing / fallback arms', () => {
+describe('StoreGenerator extractErrorMessage — every failure goes through the shared status helper', () => {
   const gen = new StoreGenerator();
 
-  it('emits the 3-branch extractErrorMessage helper with a plain-string fallback', () => {
+  it('delegates to httpErrorMessage with the entity noun and the action', () => {
     const content = gen.generate(domain({ entityName: 'Order' }), CTX)!.content;
 
-    expect(content).toContain('private extractErrorMessage(err: unknown): string {');
-    // Arm 1: instanceof Error → err.message
-    expect(content).toContain('if (err instanceof Error) {');
-    expect(content).toContain('return err.message;');
-    // Arm 2: object with "message" property
-    expect(content).toContain("typeof err === 'object' && err !== null && 'message' in err");
-    // Arm 3: fallback
-    expect(content).toContain("return 'An unknown error occurred';");
+    expect(content).toContain("import { httpErrorMessage, type HttpErrorAction } from '../core/http-error';");
+    expect(content).toContain("private extractErrorMessage(err: unknown, action: HttpErrorAction, entity = 'order'): string {");
+    expect(content).toContain('return httpErrorMessage(err, { entity, action });');
+    // No raw message reaches the error signal.
+    expect(content).not.toContain('return err.message;');
+    expect(content).not.toContain("'An unknown error occurred'");
   });
 
-  it('emits no $localize — it would require @angular/localize, which the emitted app does not declare', () => {
-    // The previous version of this suite asserted the opposite, and that is the point worth
-    // keeping: `$localize` is a global supplied by @angular/localize, which the emitted app
-    // neither depends on nor lists in `polyfills`. A text assertion cannot tell a symbol that
-    // compiles from one that does not; only `ng build` on the emitted tree can.
+  it('names the plural for the page load and the action for each write', () => {
     const content = gen.generate(domain({ entityName: 'Order' }), CTX)!.content;
-    expect(content).not.toContain('$localize');
+
+    expect(content).toContain("this._error.set(this.extractErrorMessage(err, 'load', 'orders'));");
+    expect(content).toContain("this._error.set(this.extractErrorMessage(err, 'load'));");
+    expect(content.match(/this\.extractErrorMessage\(err, 'save'\)/g)).toHaveLength(2);
+    expect(content).toContain("this._error.set(this.extractErrorMessage(err, 'delete'));");
   });
 });
 
