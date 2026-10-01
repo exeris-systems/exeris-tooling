@@ -9,7 +9,7 @@ slug: adr/ADR-091
 
 # ADR-091 — Publish an opt-in application starter, so a consumer does not hand-write its build
 
-- **Status:** ACCEPTED (2026-09-30) · amended 2026-10-01 (Amendment 1 — backend, frontend and backend + frontend)
+- **Status:** ACCEPTED (2026-09-30) · amended 2026-10-01 (Amendment 1 — backend, frontend and backend + frontend; Amendment 2 — starter scope, publication metadata, starter version)
 - **Deciders:** the founder (scope); `exeris-tooling` (module layout)
 - **Repo:** `exeris-tooling`
 - **Scope:** tooling / build (consumer-build contract)
@@ -305,3 +305,27 @@ with no Java entities of its own therefore still needs metadata from somewhere.
 **Gate.** Shapes 2 and 3 depend on `@exeris/codegen-ts` being published to npmjs (codegen-ts track
 plan, Stage 4). Shape 1 does not, and ships first. Each later shape brings its own fixture, as
 obligation 7 does for the backend.
+
+## Amendment 2 — what the invoker fixture forced (2026-10-01)
+
+- **Status:** ACCEPTED (2026-10-01).
+- **Amends:** obligation 1 (what `exeris-app-bom` manages), obligation 2 (the metadata bullet) and
+  obligation 3 (the scope of `exeris-sdk-annotations`). Everything else is unchanged.
+- **Trigger:** the obligation-7 fixture, built on the modules exactly as obligations 1–3 state them.
+
+1. **`exeris-sdk-annotations` is `compile` in `exeris-app-starter`, not `provided`.** Maven does not
+   pass a dependency's `provided` dependencies on to the consumer. With `provided`, an application on
+   parent + starter has no annotations on its compile classpath, and the fixture's first pass fails
+   with `package eu.exeris.sdk.annotation does not exist`. The annotations are `@Retention(SOURCE)`,
+   so the jar on the runtime classpath is inert. A library that wants them `provided`, as the
+   `exeris-caps-*` modules do, declares them itself and does not use the starter.
+2. **`exeris-app-parent` carries full Exeris publication metadata.** It does not blank `url`,
+   `licenses`, `developers` or `scm`. It is itself a published coordinate, and Maven Central requires
+   those elements in what it publishes. The blanking moves to the consumer's own POM, which declares
+   empty `<url/>`, `<licenses><license/></licenses>`, `<developers><developer/></developers>`,
+   `<scm>` children and its own `<description>`. The README template and the fixture show this; it
+   is the shape Spring Initializr generates beside `spring-boot-starter-parent`. Until an
+   application does this, its effective POM inherits Exeris metadata, which is a cosmetic leak and
+   not a build or publication fault.
+3. **`exeris-app-bom` also manages `exeris-app-starter`** (type `pom`), so an application on the
+   parent route states the tooling version once, in `<parent>`.
