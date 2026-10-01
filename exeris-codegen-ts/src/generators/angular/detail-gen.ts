@@ -20,6 +20,7 @@ import type { BackendType } from '../../core/backend-strategy.js';
 import { outPath } from '../../core/paths.js';
 import { tsSingleQuoted } from './ts-literal.js';
 import { auditFieldNames, updateVersionField, viewSystemFieldNames } from '../api/type-gen.js';
+import { foreignKeyLinks } from './relationship-links.js';
 
 export class DetailGenerator implements CodeGenerator {
   readonly name = 'DetailGenerator';
@@ -60,6 +61,7 @@ export class DetailGenerator implements CodeGenerator {
     const systemFieldNames = viewSystemFieldNames(domain);
     const displayFields = fields.filter(f => !systemFieldNames.includes(f.name) && !f.hidden);
     const enumTypes = this.collectEnumTypes(fields);
+    const fkLinks = foreignKeyLinks(domain, context.allDomains, context.config.generateDetails !== false);
 
     const lines: string[] = [];
 
@@ -102,6 +104,9 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`  type: 'text' | 'number' | 'boolean' | 'date' | 'datetime' | 'enum';`);
     lines.push(`  enumType?: string;`);
     lines.push(`  dataType?: 'currency' | 'percent' | 'url';`);
+    if (fkLinks.size > 0) {
+      lines.push(`  link?: string;`);
+    }
     lines.push(`}`);
     lines.push(``);
 
@@ -116,7 +121,7 @@ export class DetailGenerator implements CodeGenerator {
       const dataType = field.dataType === 'currency' || field.dataType === 'percent' || field.dataType === 'url'
         ? field.dataType
         : undefined;
-      lines.push(`  { name: '${field.name}' as keyof ${modelName}, label: '${tsSingleQuoted(mapping.label)}', type: '${fieldType}'${enumTypeName ? `, enumType: '${enumTypeName}'` : ''}${dataType ? `, dataType: '${dataType}'` : ''} },`);
+      lines.push(`  { name: '${field.name}' as keyof ${modelName}, label: '${tsSingleQuoted(mapping.label)}', type: '${fieldType}'${enumTypeName ? `, enumType: '${enumTypeName}'` : ''}${dataType ? `, dataType: '${dataType}'` : ''}${fkLinks.has(field.name) ? `, link: '${fkLinks.get(field.name)}'` : ''} },`);
     }
     lines.push(`];`);
     lines.push(``);
@@ -157,12 +162,23 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`                <dd class="mt-1 text-sm text-gray-900 dark:text-white sm:mt-0 sm:col-span-2">`);
     // @Field.dataType render facets (Wave 1A): currency/percent pipes and url anchor
     // operate on the raw entity value; every other field falls through to formatValue().
-    lines.push(`                  @switch (field.dataType) {`);
-    lines.push(`                    @case ('currency') { {{ numericValue(field, entity()) | currency }} }`);
-    lines.push(`                    @case ('percent') { {{ numericValue(field, entity()) | percent }} }`);
-    lines.push(`                    @case ('url') { <a [href]="rawValue(field, entity())" class="text-exeris-primary hover:underline">{{ rawValue(field, entity()) }}</a> }`);
-    lines.push(`                    @default { {{ formatValue(field, entity()) }} }`);
-    lines.push(`                  }`);
+    // A foreign key links to the target's detail page; an empty one falls through to the
+    // switch, so it renders exactly as an unlinked field does.
+    const sw = fkLinks.size > 0 ? '  ' : '';
+    if (fkLinks.size > 0) {
+      lines.push(`                  @if (field.link && rawValue(field, entity()) !== null) {`);
+      lines.push(`                    <a [routerLink]="[field.link, rawValue(field, entity())]" [attr.data-testid]="'link-' + field.name" class="font-mono text-exeris-primary hover:underline">{{ rawValue(field, entity()) }}</a>`);
+      lines.push(`                  } @else {`);
+    }
+    lines.push(`${sw}                  @switch (field.dataType) {`);
+    lines.push(`${sw}                    @case ('currency') { {{ numericValue(field, entity()) | currency }} }`);
+    lines.push(`${sw}                    @case ('percent') { {{ numericValue(field, entity()) | percent }} }`);
+    lines.push(`${sw}                    @case ('url') { <a [href]="rawValue(field, entity())" class="text-exeris-primary hover:underline">{{ rawValue(field, entity()) }}</a> }`);
+    lines.push(`${sw}                    @default { {{ formatValue(field, entity()) }} }`);
+    lines.push(`${sw}                  }`);
+    if (fkLinks.size > 0) {
+      lines.push(`                  }`);
+    }
     lines.push(`                </dd>`);
     lines.push(`              </div>`);
     lines.push(`            }`);
@@ -369,9 +385,13 @@ function systemPanelRows(metadata: DomainMetadata): SystemPanelRow[] {
   return rows;
 }
 
-export function generateDetail(metadata: DomainMetadata, config: GeneratorConfig): GeneratedFile {
+export function generateDetail(
+  metadata: DomainMetadata,
+  config: GeneratorConfig,
+  allDomains: DomainMetadata[] = [metadata],
+): GeneratedFile {
   const generator = new DetailGenerator();
-  const context: GeneratorContext = { config, backend: config.backend ?? 'KERNEL', allDomains: [metadata], enums: [] };
+  const context: GeneratorContext = { config, backend: config.backend ?? 'KERNEL', allDomains, enums: [] };
   return generator.generate(metadata, context)!;
 }
 

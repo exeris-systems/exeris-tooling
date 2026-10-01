@@ -1508,6 +1508,28 @@ its stamps showed neither.
   The form still leaves out `createdAt`, `updatedAt`, `version` and `deleted` under any name
   mapping, as the create DTO does.
 
+### `exeris-codegen-ts`: a UUID foreign key links to its target
+
+A `MANY_TO_ONE` relationship whose field is a `java.util.UUID` (`@Relationship UUID customerId`)
+now renders as a `routerLink` to the target's detail page, `/<plural>/<id>`, in the list cell and
+the detail row. The link text is the id; the target is not fetched. The plural is the route
+table's own (`DslMapper.routePlural`), and a qualified `targetEntity` resolves by its simple name.
+
+- **Only when the target is generated in the same app.** A target that is not among the loaded
+  domains, or is `internalApi.hidden`, has no route, and its field renders as plain text.
+- **Only when detail views are generated.** With `generateDetails: false` there is no detail route
+  to link to, and every foreign key renders as plain text.
+- **An empty foreign key renders as before**, as does every entity-typed relationship field and
+  every `ONE_TO_ONE`, `ONE_TO_MANY` and `MANY_TO_MANY` relationship.
+- **The detail component changes only for an entity with such a link.** Its `FieldDisplay`
+  interface gains `link?: string`, the linked row's `DISPLAY_FIELDS` entry carries
+  `link: '/<plural>'`, and the row template wraps its value switch in
+  `@if (field.link && …) { <a [routerLink]> } @else { … }`. Both components already import
+  `RouterModule`, so no import changes.
+- **`generateList` and `generateDetail` take an optional third argument**, the loaded domains
+  (default: the entity alone, which links nothing). A caller of these helpers that wants links
+  passes the full domain list; the orchestrator and the generator registry already do.
+
 ### `exeris-codegen-ts`: failed requests show a message per status, and delete no longer uses `alert()`
 
 The generated handler answers a failed request with a status and no body: `400` for malformed or
