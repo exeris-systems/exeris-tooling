@@ -55,9 +55,6 @@ jobs:
           distribution: temurin
           java-version: ${{ matrix.java }}
           cache: maven
-          server-id: github-exeris-kernel
-          server-username: GITHUB_ACTOR
-          server-password: GITHUB_TOKEN
 
       # japicmp.skip mirrors what the SDK's own CI passes, and it is required from
       # v0.10.0 on: that release introduced a `semver-gate` japicmp execution bound
@@ -90,7 +87,11 @@ jobs:
         # and never overwrites. It is a pre-release until the kernel tags
         # v0.12.0 (see the BOM). -U belongs back only if a SNAPSHOT ever arrives
         # over the wire.
-        run: mvn -B -ntp verify
+        #
+        # The GitHub Packages repository and its credentials come from
+        # .github/maven-settings.xml, not from the POM: a repository in the POM
+        # would be published with it (see the root pom.xml).
+        run: mvn -B -ntp --settings .github/maven-settings.xml verify
         env:
           GITHUB_ACTOR: ${{ github.actor }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
