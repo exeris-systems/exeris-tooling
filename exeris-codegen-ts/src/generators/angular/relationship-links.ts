@@ -21,10 +21,16 @@ const UUID_TYPES = new Set(['UUID', 'java.util.UUID']);
  * the route table is built with, so the link always names a declared route.
  *
  * The target must be a loaded, visible domain: a hidden or absent entity has no route in the
- * emitted table, and its field renders as plain text. Relationships are read in declaration
+ * emitted table, and its field renders as plain text. The detail route exists only when detail
+ * views are generated, so with `detailRouted` false no field links. Relationships are read in declaration
  * order; the first relationship naming a field wins.
  */
-export function foreignKeyLinks(domain: DomainMetadata, allDomains: readonly DomainMetadata[]): Map<string, string> {
+export function foreignKeyLinks(
+  domain: DomainMetadata,
+  allDomains: readonly DomainMetadata[],
+  detailRouted = true,
+): Map<string, string> {
+  if (!detailRouted) return new Map();
   const routable = new Set(allDomains.filter((d) => !d.internalApi?.hidden).map((d) => d.entityName));
   const links = new Map<string, string>();
   for (const rel of domain.relationships ?? []) {

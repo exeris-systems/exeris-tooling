@@ -67,7 +67,7 @@ export class ListGenerator implements CodeGenerator {
       ? metadata.uiMetadata.listColumns
       : this.getDefaultListColumns(metadata);
 
-    const fkLinks = foreignKeyLinks(metadata, context.allDomains);
+    const fkLinks = foreignKeyLinks(metadata, context.allDomains, context.config.generateDetails !== false);
     const listColumns = listColumnNames
       .map((name) => metadata.fields.find((f) => f.name === name))
       .filter(Boolean)

@@ -136,3 +136,13 @@ describe('no link — rendered exactly as before', () => {
     expect(emit(p, [p, category])).toEqual(baseline);
   });
 });
+
+describe('foreignKeyLinks — detail views off', () => {
+  it('links nothing when no detail route is generated', () => {
+    const p = product([FK]);
+    expect(foreignKeyLinks(p, [p, category], false).size).toBe(0);
+    const list = new ListGenerator().generate(p, createGeneratorContext({ generateDetails: false }, [p, category]))!.content;
+    expect(list).not.toContain(`[routerLink]="['${CATEGORY_ROUTE}'`);
+    expect(list).toContain('{{ item.categoryId }}');
+  });
+});

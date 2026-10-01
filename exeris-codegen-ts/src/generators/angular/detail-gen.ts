@@ -60,7 +60,7 @@ export class DetailGenerator implements CodeGenerator {
     const systemFieldNames = this.getSystemFieldNames(domain);
     const displayFields = fields.filter(f => !systemFieldNames.includes(f.name) && !f.hidden);
     const enumTypes = this.collectEnumTypes(fields);
-    const fkLinks = foreignKeyLinks(domain, context.allDomains);
+    const fkLinks = foreignKeyLinks(domain, context.allDomains, context.config.generateDetails !== false);
 
     const lines: string[] = [];
 

@@ -4,7 +4,7 @@ type: migration-guide
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-09-30
+last-verified: 2026-10-01
 ---
 
 # Migration: 0.x → 1.0
@@ -1485,6 +1485,8 @@ table's own (`DslMapper.routePlural`), and a qualified `targetEntity` resolves b
 
 - **Only when the target is generated in the same app.** A target that is not among the loaded
   domains, or is `internalApi.hidden`, has no route, and its field renders as plain text.
+- **Only when detail views are generated.** With `generateDetails: false` there is no detail route
+  to link to, and every foreign key renders as plain text.
 - **An empty foreign key renders as before**, as does every entity-typed relationship field and
   every `ONE_TO_ONE`, `ONE_TO_MANY` and `MANY_TO_MANY` relationship.
 - **The detail component changes only for an entity with such a link.** Its `FieldDisplay`
