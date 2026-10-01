@@ -9,7 +9,7 @@ slug: adr/ADR-091
 
 # ADR-091 — Publish an opt-in application starter, so a consumer does not hand-write its build
 
-- **Status:** ACCEPTED (2026-09-30)
+- **Status:** ACCEPTED (2026-09-30) · amended 2026-10-01 (Amendment 1 — backend, frontend and backend + frontend; Amendment 2 — starter scope, publication metadata, starter version)
 - **Deciders:** the founder (scope); `exeris-tooling` (module layout)
 - **Repo:** `exeris-tooling`
 - **Scope:** tooling / build (consumer-build contract)
@@ -96,7 +96,7 @@ other build file.**
      `org.junit.jupiter.api` and `org.assertj.core.api` alone — so an application declares it only
      to boot a kernel in tests it writes itself.
    - It manages nothing else: no JavaPoet, swagger, Jackson 2, H2, compile-testing, JUnit or
-     AssertJ entry.
+     AssertJ entry. *(Amended: see Amendment 2.)*
    - Release order is kernel → SDK → tooling, so the tooling version is the last of the three to be
      fixed and names the triple. A tooling release whose BOM names a `-SNAPSHOT` kernel or SDK
      version violates this obligation.
@@ -112,7 +112,7 @@ other build file.**
    - `maven-surefire-plugin` at 3.2.5 or later (the version the reactor uses, `pom.xml:154-155`),
      configured to run JUnit 5, the runner the generated-test channel requires (ADR-058).
    - It blanks `url`, `licenses`, `developers` and `scm` (the `spring-boot-starter-parent`
-     precedent), so a consumer's effective POM does not claim Exeris's project metadata as its own.
+     precedent), so a consumer's effective POM does not claim Exeris's project metadata as its own. *(Amended: see Amendment 2.)*
    - It inherits from `exeris-app-bom` rather than importing it, because properties of an imported
      BOM do not reach `<build><pluginManagement>` (`pom.xml:111-114` records this for the reactor
      itself); inheritance carries the plugin version.
@@ -121,7 +121,7 @@ other build file.**
    - `exeris-sdk-annotations` (`provided`), `exeris-kernel-spi` and `exeris-kernel-core` (`compile`),
      `exeris-kernel-community` (`runtime`), `exeris-sdk-composition-runtime` (`compile`), and
      Jackson 3 `jackson-databind` (`compile`). Jackson 3 and the composition runtime are `compile`
-     because emitted **main** code imports them.
+     because emitted **main** code imports them. *(Amended: see Amendment 2.)*
    - `exeris-kernel-community` is the **default** driver, not the only one. An application on another
      driver (for example an enterprise one) excludes it from `exeris-app-starter` and declares its
      own; `exeris:verify-runtime` checks for registered providers, not for a particular artefact, so
@@ -276,3 +276,57 @@ other build file.**
 5. **The README quick start** documents both consumption routes, the plugin block for the BOM route,
    and the two-pass first build (D2).
 6. Migration owner: `exeris-tooling`, target 0.9.0.
+
+## Amendment 1 — Backend, frontend, or both (2026-10-01)
+
+- **Status:** ACCEPTED (2026-10-01). Decided by the founder.
+- **Amends:** the *What is NOT in scope* entry "The TypeScript / npm side". The npm packaging stays a
+  separate deliverable. What this amendment adds is how a consumer chooses between the three shapes
+  an Exeris application takes. Obligations 1–7 and the Engineering Protocol are unchanged by this amendment (Amendment 2 amends obligations 1–3).
+
+A generated application is a backend, a frontend, or both. The Maven starter decided above covers
+the first. The other two need the TypeScript emitter, which reads `DomainMetadata` JSON and never
+Java sources (`exeris-gen generate --input`, default `target/classes/exeris-metadata`). A frontend
+with no Java entities of its own therefore still needs metadata from somewhere.
+
+1. **Backend.** The three Maven modules of this ADR, unchanged.
+2. **Frontend only.** An npm starter on the `@exeris/codegen-ts` side. Its metadata source is the
+   backend's **published contract artifact** as ADR-048 defines it: the peer's `cap-manifest.json`
+   plus its full `DomainMetadata`, with the `cap-manifest.json` `schemaVersion` floor 2
+   (ADR-048 §1), resolved by coordinate. A hand-maintained
+   local directory of metadata JSON is not a supported source, because nothing would keep it in step
+   with the backend it describes. The starter's name and shape belong to the codegen-ts plan.
+3. **Backend + frontend.** An opt-in addition to `exeris-app-parent` that runs the TypeScript
+   emitter on the build's own `target/classes/exeris-metadata` after the processor has written it.
+   This is ADR-048's degenerate same-build case: the same JSON on the same path, never a second input
+   model. It is off unless the application asks for it, so a backend-only build is byte-for-byte the
+   build obligations 1–7 describe. The mechanism (activation, and which Maven plugin runs Node) is an
+   implementation choice recorded with its pull request.
+
+**Gate.** Shapes 2 and 3 depend on `@exeris/codegen-ts` being published to npmjs (codegen-ts track
+plan, Stage 4). Shape 1 does not, and ships first. Each later shape brings its own fixture, as
+obligation 7 does for the backend.
+
+## Amendment 2 — what the invoker fixture forced (2026-10-01)
+
+- **Status:** ACCEPTED (2026-10-01).
+- **Amends:** obligation 1 (what `exeris-app-bom` manages), obligation 2 (the metadata bullet) and
+  obligation 3 (the scope of `exeris-sdk-annotations`). Everything else is unchanged.
+- **Trigger:** the obligation-7 fixture, built on the modules exactly as obligations 1–3 state them.
+
+1. **`exeris-sdk-annotations` is `compile` in `exeris-app-starter`, not `provided`.** Maven does not
+   pass a dependency's `provided` dependencies on to the consumer. With `provided`, an application on
+   parent + starter has no annotations on its compile classpath, and the fixture's first pass fails
+   with `package eu.exeris.sdk.annotation does not exist`. The annotations are `@Retention(SOURCE)`,
+   so the jar on the runtime classpath is inert. A library that wants them `provided`, as the
+   `exeris-caps-*` modules do, declares them itself and does not use the starter.
+2. **`exeris-app-parent` carries full Exeris publication metadata.** It does not blank `url`,
+   `licenses`, `developers` or `scm`. It is itself a published coordinate, and Maven Central requires
+   those elements in what it publishes. The blanking moves to the consumer's own POM, which declares
+   empty `<url/>`, `<licenses><license/></licenses>`, `<developers><developer/></developers>`,
+   `<scm>` children and its own `<description>`. The README template and the fixture show this; it
+   is the shape Spring Initializr generates beside `spring-boot-starter-parent`. Until an
+   application does this, its effective POM inherits Exeris metadata, which is a cosmetic leak and
+   not a build or publication fault.
+3. **`exeris-app-bom` also manages `exeris-app-starter`** (type `pom`), so an application on the
+   parent route states the tooling version once, in `<parent>`.

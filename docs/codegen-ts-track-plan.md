@@ -183,6 +183,9 @@ same model — no second rendering path. `@View` block depth stays gated on the 
   narrowing of the regenerated view (stage 1, PR-C) fits none of its values. An ADR — the TS
   counterpart of ADR-015 — before the first npm publication.
 - First npmjs publication of `@exeris/codegen-ts`.
+- The frontend-only starter (ADR-091 Amendment 1): an npm starter whose metadata source is a
+  backend's published contract artifact (ADR-048). The backend + frontend opt-in in
+  `exeris-app-parent` also waits for this publication.
 
 `graphMetadata` stays **JAVA_ONLY**: its one consumer is server-side graph sync. A graph
 *view* is a presentation feature and enters through `@View`, not through this field.
