@@ -2,7 +2,7 @@
  * Coverage for src/generators/angular/app-structure-gen.ts —
  * generateAppStructure emits the full Angular app skeleton:
  *   * static configs (package.json, angular.json, tsconfig{.app}.json,
- *     tailwind.config.js, .postcssrc.json, proxy.conf.json)
+ *     .postcssrc.json, proxy.conf.json; no tailwind.config.js or .npmrc)
  *   * src/{styles.css, index.html, favicon.ico, main.ts}
  *   * src/environments/{environment.ts, environment.development.ts}
  *   * src/app/{app.config.ts, app.component.ts, app.routes.ts, index.ts}
@@ -84,7 +84,6 @@ describe('generateAppStructure — static skeleton', () => {
     ['./angular.json', false],
     ['./tsconfig.json', false],
     ['./tsconfig.app.json', false],
-    ['./tailwind.config.js', true],
     ['./.postcssrc.json', true],
     ['./proxy.conf.json', true],
     ['src/styles.css', true],
@@ -170,7 +169,7 @@ describe('generateAppStructure — static skeleton', () => {
 
 // ---------- T25: ui-kit token system wiring ----------
 
-describe('generateAppStructure — @exeris-systems/ui-kit token wiring (T25)', () => {
+describe('generateAppStructure — @exeris/ui-kit token wiring (T25)', () => {
   const files = generateAppStructure(
     [domain({ entityName: 'Order' }), domain({ entityName: 'Product' })],
     [],
@@ -181,7 +180,9 @@ describe('generateAppStructure — @exeris-systems/ui-kit token wiring (T25)', (
     const css = fileAt(files, 'src/styles.css')!;
     // v4 token wiring: tailwindcss first, then the ui-kit "theme" (v4 @theme) entry.
     expect(css.content).toContain('@import "tailwindcss";');
-    expect(css.content).toContain('@import "@exeris-systems/ui-kit/theme";');
+    expect(css.content).toContain('@import "@exeris/ui-kit/theme";');
+    expect(css.content.indexOf('@import "tailwindcss";')).toBeLessThan(css.content.indexOf('@import "@exeris/ui-kit/theme";'));
+    expect(css.content).not.toContain('@exeris-systems/ui-kit');
     // Boilerplate component classes a product immediately deletes are gone.
     expect(css.content).not.toContain('.btn-primary');
     expect(css.content).not.toContain('.btn-secondary');
@@ -193,21 +194,33 @@ describe('generateAppStructure — @exeris-systems/ui-kit token wiring (T25)', (
     expect(css.content).not.toContain('indigo');
   });
 
-  it('package.json declares the @exeris-systems/ui-kit dependency (^0.1.0, the current ui-kit version)', () => {
-    const pkg = fileAt(files, './package.json')!;
-    expect(pkg.content).toContain('"@exeris-systems/ui-kit": "^0.1.0"');
+  it('package.json declares the @exeris/ui-kit dependency at ^0.2.0, and not the GitHub Packages name', () => {
+    const pkg = JSON.parse(fileAt(files, './package.json')!.content);
+    expect(pkg.dependencies['@exeris/ui-kit']).toBe('^0.2.0');
+    expect(pkg.dependencies['@exeris-systems/ui-kit']).toBeUndefined();
   });
 
-  it('.npmrc points the @exeris-systems scope at GitHub Packages (where ui-kit is published)', () => {
-    const npmrc = fileAt(files, './.npmrc')!;
-    expect(npmrc).toBeDefined();
-    expect(npmrc.content).toContain('@exeris-systems:registry=https://npm.pkg.github.com');
+  it('emits no .npmrc: the ui-kit is on the public npm registry and installs without a token', () => {
+    expect(fileAt(files, './.npmrc')).toBeUndefined();
+    for (const f of files) expect(f.content, f.path).not.toContain('npm.pkg.github.com');
   });
 
-  it('tailwind.config.js wires the ui-kit v3 preset so a v3 toolchain also gets the tokens', () => {
-    const tw = fileAt(files, './tailwind.config.js')!;
-    expect(tw.content).toContain("import exerisPreset from '@exeris-systems/ui-kit/tailwind.preset.js';");
-    expect(tw.content).toContain('presets: [exerisPreset]');
+  it('emits no tailwind.config.js: Tailwind v4 never reads it, and the ui-kit exports no v3 preset', () => {
+    expect(fileAt(files, './tailwind.config.js')).toBeUndefined();
+    for (const f of files) {
+      expect(f.content, f.path).not.toContain('tailwind.preset');
+      expect(f.content, f.path).not.toContain('tailwind.config');
+    }
+  });
+
+  it('angular.json lists only the global stylesheet, which Tailwind processes, and no ui-kit CSS', () => {
+    const angular = JSON.parse(fileAt(files, './angular.json')!.content);
+    const project = Object.values(angular.projects)[0] as { architect: { build: { options: { styles: string[] } } } };
+    expect(project.architect.build.options.styles).toEqual(['src/styles.css']);
+  });
+
+  it('.postcssrc.json wires the Tailwind v4 PostCSS plugin', () => {
+    expect(JSON.parse(fileAt(files, './.postcssrc.json')!.content)).toEqual({ plugins: { '@tailwindcss/postcss': {} } });
   });
 
   it('no emitted template (scaffold or per-shape) ships the hardcoded bg-indigo-600 accent', () => {
