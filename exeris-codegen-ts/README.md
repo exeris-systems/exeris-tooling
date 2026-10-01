@@ -11,7 +11,7 @@ Generates TypeScript interfaces, Angular services, form components, and list com
 - 🔧 **Services** - HttpClient-based services with full CRUD support
 - 📋 **Form Components** - Reactive forms with validation, integrated with Signals
 - 📊 **List Components** - Data tables with pagination, sorting, filtering
-- 🎨 **Tailwind CSS** - Modern utility-first styling out of the box
+- 🎨 **Tailwind CSS v4** - Utility-first styling, with the `@exeris/ui-kit` design tokens and `.exeris-*` component classes imported in the emitted `styles.css`
 - ✅ **Zod Validation** - Runtime validation schemas for type safety
 - 🔒 **Security First** - Minimal dependencies (picocolors instead of chalk) to reduce supply chain risk
 

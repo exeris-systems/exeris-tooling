@@ -176,13 +176,19 @@ describe('generateAppStructure — @exeris/ui-kit token wiring (T25)', () => {
     cfg(),
   );
 
-  it('styles.css imports Tailwind v4 then the ui-kit v4 @theme token entry, and drops the boilerplate theme', () => {
+  it('styles.css imports Tailwind v4, then the ui-kit theme entry, then its component classes, and drops the boilerplate theme', () => {
     const css = fileAt(files, 'src/styles.css')!;
     // v4 token wiring: tailwindcss first, then the ui-kit "theme" (v4 @theme) entry.
     expect(css.content).toContain('@import "tailwindcss";');
     expect(css.content).toContain('@import "@exeris/ui-kit/theme";');
     expect(css.content.indexOf('@import "tailwindcss";')).toBeLessThan(css.content.indexOf('@import "@exeris/ui-kit/theme";'));
     expect(css.content).not.toContain('@exeris-systems/ui-kit');
+    // The component layer comes last: theme first, so its `dark:` variants follow the `.dark` class.
+    expect(css.content).toContain('@import "@exeris/ui-kit/styles";');
+    expect(css.content.indexOf('@import "@exeris/ui-kit/theme";')).toBeLessThan(css.content.indexOf('@import "@exeris/ui-kit/styles";'));
+    // Tailwind v4 only: no v3 directive, no JS config.
+    expect(css.content).not.toMatch(/@tailwind\b/);
+    expect(css.content).not.toContain('@config');
     // Boilerplate component classes a product immediately deletes are gone.
     expect(css.content).not.toContain('.btn-primary');
     expect(css.content).not.toContain('.btn-secondary');

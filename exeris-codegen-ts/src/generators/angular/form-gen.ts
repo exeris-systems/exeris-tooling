@@ -199,7 +199,7 @@ export class FormGenerator implements CodeGenerator {
     // Loading and error of the by-id load mirror the detail view's markup.
     lines.push('    @if (isLoading()) {');
     lines.push('      <div class="animate-pulse space-y-4 mb-6" role="status" aria-label="Loading...">');
-    lines.push('        <div class="h-4 bg-gray-200 dark:bg-gray-700 rounded w-1/2"></div>');
+    lines.push('        <div class="h-4 bg-gray-200 dark:bg-gray-700 rounded-sm w-1/2"></div>');
     lines.push('      </div>');
     lines.push('    } @else if (loadError()) {');
     lines.push('      <div role="alert" class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-6 mb-6">');
@@ -220,7 +220,7 @@ export class FormGenerator implements CodeGenerator {
       const enumTypeName = getEnumTypeFromField(f);
       if (enumTypeName) {
         lines.push(`        <label for="${f.name}" class="block text-sm font-medium text-gray-700 dark:text-gray-300">${label} ${requiredMark}</label>`);
-        lines.push(`        <select id="${f.name}" data-testid="field-${f.name}" formControlName="${f.name}" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-exeris-primary focus:ring-exeris-primary dark:bg-gray-800 dark:border-gray-600 dark:text-white sm:text-sm"${disabledBinding}>`);
+        lines.push(`        <select id="${f.name}" data-testid="field-${f.name}" formControlName="${f.name}" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-xs focus:border-exeris-primary focus:outline-hidden focus:ring-1 focus:ring-exeris-primary dark:bg-gray-800 dark:border-gray-600 dark:text-white sm:text-sm"${disabledBinding}>`);
         lines.push('          <option value="">Select...</option>');
         lines.push(`          @for (value of ${enumTypeName}Values; track value) {`);
         lines.push(`            <option [value]="value">{{ ${enumTypeName}DisplayNames[value] }}</option>`);
@@ -228,14 +228,14 @@ export class FormGenerator implements CodeGenerator {
         lines.push('        </select>');
       } else if (mapInputType(f) === 'checkbox') {
         lines.push('        <div class="flex items-center gap-2">');
-        lines.push(`          <input id="${f.name}" data-testid="field-${f.name}" type="checkbox" formControlName="${f.name}" class="h-4 w-4 rounded border-gray-300 text-exeris-primary focus:ring-exeris-primary"${disabledBinding}>`);
+        lines.push(`          <input id="${f.name}" data-testid="field-${f.name}" type="checkbox" formControlName="${f.name}" class="h-4 w-4 rounded-sm border border-gray-300 text-exeris-primary accent-exeris-primary focus:ring-2 focus:ring-exeris-primary"${disabledBinding}>`);
         lines.push(`          <label for="${f.name}" class="text-sm text-gray-700 dark:text-gray-300">${label} ${requiredMark}</label>`);
         lines.push('        </div>');
       } else {
         const inputType = mapInputType(f);
         const inputExtra = inputType === 'number' ? ' inputmode="decimal"' : '';
         lines.push(`        <label for="${f.name}" class="block text-sm font-medium text-gray-700 dark:text-gray-300">${label} ${requiredMark}</label>`);
-        lines.push(`        <input id="${f.name}" data-testid="field-${f.name}" type="${inputType}" formControlName="${f.name}" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-exeris-primary focus:ring-exeris-primary dark:bg-gray-800 dark:border-gray-600 dark:text-white sm:text-sm"${disabledBinding}${inputExtra}${readonlyBinding}>`);
+        lines.push(`        <input id="${f.name}" data-testid="field-${f.name}" type="${inputType}" formControlName="${f.name}" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-xs focus:border-exeris-primary focus:outline-hidden focus:ring-1 focus:ring-exeris-primary dark:bg-gray-800 dark:border-gray-600 dark:text-white sm:text-sm"${disabledBinding}${inputExtra}${readonlyBinding}>`);
       }
       lines.push(`        <p class="mt-1 text-xs text-gray-500" *ngIf="form.get('${f.name}')?.invalid && form.get('${f.name}')?.touched" data-testid="error-${f.name}">`);
       lines.push(`          @if (form.get('${f.name}')?.errors?.['required']) { <span>${label} is required.</span> }`);
@@ -255,7 +255,7 @@ export class FormGenerator implements CodeGenerator {
 
       lines.push('      <div class="form-group">');
       lines.push(`        <label for="${f.name}" class="block text-sm font-medium text-gray-700 dark:text-gray-300">${label} <span class="text-xs text-gray-500">(Auto)</span></label>`);
-      lines.push(`        <input id="${f.name}" data-testid="field-${f.name}" type="${mapInputType(f)}" formControlName="${f.name}" readonly class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-exeris-primary focus:ring-exeris-primary dark:bg-gray-800 dark:border-gray-600 dark:text-white sm:text-sm bg-gray-100 dark:bg-gray-700 cursor-not-allowed opacity-75">`);
+      lines.push(`        <input id="${f.name}" data-testid="field-${f.name}" type="${mapInputType(f)}" formControlName="${f.name}" readonly class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-xs focus:border-exeris-primary focus:outline-hidden focus:ring-1 focus:ring-exeris-primary dark:bg-gray-800 dark:border-gray-600 dark:text-white sm:text-sm bg-gray-100 dark:bg-gray-700 cursor-not-allowed opacity-75">`);
       if (dependsOn) {
         lines.push(`        <p class="mt-1 text-xs text-gray-500">Computed from: ${dependsOn}</p>`);
       }
@@ -271,13 +271,13 @@ export class FormGenerator implements CodeGenerator {
       lines.push('      @if (conflict()) {');
       lines.push('        <div role="alert" data-testid="conflict-message" class="rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-200">');
       lines.push('          <p>This record was changed by someone else. Reload to see the latest version.</p>');
-      lines.push('          <button type="button" (click)="reload()" data-testid="reload-button" class="mt-2 rounded-md bg-white px-3 py-1.5 text-sm font-medium text-amber-800 shadow-sm border border-amber-300 hover:bg-amber-100 dark:bg-gray-800 dark:text-amber-200 dark:border-amber-700">Reload</button>');
+      lines.push('          <button type="button" (click)="reload()" data-testid="reload-button" class="mt-2 rounded-md bg-white px-3 py-1.5 text-sm font-medium text-amber-800 shadow-xs border border-amber-300 hover:bg-amber-100 dark:bg-gray-800 dark:text-amber-200 dark:border-amber-700">Reload</button>');
       lines.push('        </div>');
       lines.push('      }');
     }
     lines.push('      <div class="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">');
-    lines.push('        <button type="button" (click)="onCancel()" data-testid="cancel-button" class="rounded-md bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm border border-gray-300 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600">Cancel</button>');
-    lines.push('        <button type="submit" [disabled]="form.invalid || saving() || (editMode() && !current())" data-testid="submit-button" class="rounded-md bg-exeris-primary px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-exeris-primary-hover disabled:opacity-50">');
+    lines.push('        <button type="button" (click)="onCancel()" data-testid="cancel-button" class="rounded-md bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-xs border border-gray-300 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600">Cancel</button>');
+    lines.push('        <button type="submit" [disabled]="form.invalid || saving() || (editMode() && !current())" data-testid="submit-button" class="rounded-md bg-exeris-primary px-4 py-2 text-sm font-medium text-white shadow-xs hover:bg-exeris-primary-hover disabled:opacity-50">');
     lines.push(`          @if (saving()) { Saving... } @else { {{ editMode() ? 'Update' : 'Create' }} ${entityName} }`);
     lines.push('        </button>');
     lines.push('      </div>');

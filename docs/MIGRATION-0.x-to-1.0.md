@@ -1735,6 +1735,49 @@ the `@exeris-systems:registry` line from `.npmrc`. `package.json` and `styles.cs
 with `--overwrite`, as before; without it, rename the dependency and the import by hand. A CI
 step that appended a GitHub Packages token for the install can be removed.
 
+### `exeris-codegen-ts`: the app imports the kit's component classes, and is Tailwind v4 only
+
+**Breaking (visual):** the regenerated app looks different in four ways. No emitted file is added
+or removed, and no TypeScript surface changes.
+
+- **`src/styles.css`** imports `@exeris/ui-kit/styles`, the `.exeris-*` component classes, after
+  `@import "tailwindcss"` and `@import "@exeris/ui-kit/theme"` — the order the kit's README gives.
+  The theme entry has to come first: it points the `dark:` variant at the `.dark` class, and the
+  component layer compiled without it follows the operating system's dark setting instead. The
+  classes are plain CSS in the `components` layer, so Tailwind emits them without an `@source`.
+  Every `.exeris-*` class the kit defines is now available to your own markup too.
+- **A `CARD` block of a `@View`** renders `class="exeris-card p-4"`. It used to repeat a utility
+  stack beside an `exeris-card` class that the stylesheet never defined. The kit's card has a white
+  (dark: `gray-900`) surface, `rounded-lg` corners, a `gray-200` (dark: `gray-800`) border and the
+  v4 `shadow-sm`; the old stack had `rounded-md`, a `gray-700` dark border and no surface colour.
+  The padding stays `p-4`. The other blocks' `exeris-<block>` names (`exeris-hero`, `exeris-grid`,
+  …) are not kit classes and still style nothing; the utilities beside them carry the look.
+- **v3 utility names are gone.** The emitted templates used the v3 spelling of three scales. Each
+  is renamed per the [v4 upgrade guide](https://tailwindcss.com/docs/upgrade-guide), so the
+  rendered size is what v3 drew:
+
+  | v3 name (as emitted) | v4 name | where | visible change |
+  |---|---|---|---|
+  | `shadow-sm` | `shadow-xs` | form inputs, select, Reload / Cancel / submit buttons; list table wrapper, header and empty-state create buttons | yes: v4 `shadow-sm` is the v3 `shadow`, so these shadows were one size heavier than intended and are now back to the small one |
+  | `shadow` | `shadow-sm` | app shell header; detail panel | none: v4 still compiles the bare name to the same shadow, as a deprecated alias |
+  | `rounded` | `rounded-sm` | form checkbox; list, detail and form loading-skeleton bars | none, as above |
+  | `focus-visible:outline` beside `focus-visible:outline-2` | dropped | list header create button | none: v4's `outline-2` sets the outline style itself |
+
+- **Form controls draw a border and a focus ring.** The edit form's text inputs, select, readonly
+  inputs and checkbox set a border colour and a focus ring colour with no width. That pattern
+  relies on the `@tailwindcss/forms` plugin, which the app does not install, so on v4 they rendered
+  with no border, no padding and no focus ring. They now carry `border` (1px), `px-3 py-2` (the
+  plugin's padding) and `focus:outline-hidden focus:ring-1`. The checkbox gets `border`,
+  `focus:ring-2` and `accent-exeris-primary`, so its checked state takes the primary colour that its
+  `text-exeris-primary` set only under the plugin. Colours, radius and shadow are unchanged. The
+  list's search and filter controls already drew a 1px ring and are unchanged.
+
+Nothing else in the scaffold was v3: there are no `@tailwind` directives, no `tailwind.config.js`,
+no `autoprefixer` or `postcss-import`, and `.postcssrc.json` wires only `@tailwindcss/postcss`.
+`styles.css` is replaced only with `--overwrite`; without it, add the
+`@import "@exeris/ui-kit/styles";` line after the theme import by hand. A template you edited keeps
+your classes until you regenerate it.
+
 ### Compile-classpath requirements are named in the emitted Javadoc (T30)
 
 The regenerated `Application.java` Javadoc separates compile requirements from runtime ones. If an

@@ -270,7 +270,7 @@ import { CommonModule } from '@angular/common';
   template: \`
     <div class="min-h-screen bg-gray-100 dark:bg-gray-900">
       <!-- Header -->
-      <header class="bg-white dark:bg-gray-800 shadow">
+      <header class="bg-white dark:bg-gray-800 shadow-sm">
         <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
           <div class="flex items-center justify-between">
             <h1 class="text-3xl font-bold tracking-tight text-gray-900 dark:text-white">
@@ -769,20 +769,26 @@ function generateStylesCss(): string {
   // Tailwind processes, and never listed in angular.json's `styles` array, where its CSS would
   // be compiled without Tailwind.
   //
-  // The @exeris/ui-kit "theme" entry is the @theme token entry: it declares the `exeris-*`
-  // design-token namespace (bg-exeris-primary, text-exeris-primary-hover, font-exeris, …) and
-  // the `dark` variant, so generated components style against the shared SDK tokens instead of
-  // hardcoded boilerplate.
+  // Both kit entries are required, in the order the kit's README gives, after Tailwind:
+  // - "theme" is the @theme token entry: it declares the `exeris-*` design-token namespace
+  //   (bg-exeris-primary, text-exeris-primary-hover, font-exeris, …) and re-points the `dark`
+  //   variant at the `.dark` class. It comes first so the component layer's `dark:` variants
+  //   compile against that class instead of the operating system's setting.
+  // - "styles" is the `.exeris-*` component layer (exeris-card, exeris-btn, …). It uses @apply
+  //   and `dark:`, so it must be compiled by Tailwind in this same stylesheet. Its classes are
+  //   plain CSS rules, not utilities, so they are emitted whether or not a template names them:
+  //   no @source is needed for them.
   //
   // The v4 @theme entry defines brand/semantic colours + typography tokens only
   // (no neutral surface/text tokens). The body therefore takes the exeris font
   // token and relies on Tailwind's preflight neutrals rather than re-introducing
-  // a hardcoded gray theme a product immediately deletes (T25). Components opt
+  // a hardcoded gray theme a product immediately deletes. Components opt
   // into the exeris colour tokens (bg-exeris-primary, …) directly.
   return `/* Generated Angular Frontend - Global Styles */
 /* Tailwind CSS v4 */
 @import "tailwindcss";
 @import "@exeris/ui-kit/theme";
+@import "@exeris/ui-kit/styles";
 
 /* Custom base styles */
 @layer base {

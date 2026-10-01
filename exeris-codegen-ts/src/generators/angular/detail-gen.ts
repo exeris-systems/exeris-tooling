@@ -132,8 +132,8 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`    <article role="article" [attr.aria-labelledby]="'detail-title'" [attr.aria-busy]="isLoading()" class="max-w-4xl mx-auto">`);
     lines.push(`      @if (isLoading()) {`);
     lines.push(`        <div class="animate-pulse space-y-4" role="status" aria-label="Loading...">`);
-    lines.push(`          <div class="h-8 bg-gray-200 dark:bg-gray-700 rounded w-1/3"></div>`);
-    lines.push(`          <div class="h-4 bg-gray-200 dark:bg-gray-700 rounded w-1/2"></div>`);
+    lines.push(`          <div class="h-8 bg-gray-200 dark:bg-gray-700 rounded-sm w-1/3"></div>`);
+    lines.push(`          <div class="h-4 bg-gray-200 dark:bg-gray-700 rounded-sm w-1/2"></div>`);
     lines.push(`        </div>`);
     lines.push(`      } @else if (error()) {`);
     lines.push(`        <div role="alert" class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-6">`);
@@ -151,7 +151,7 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`            <button (click)="onDelete()" class="px-4 py-2 text-sm font-medium text-red-700 bg-red-100 rounded-md hover:bg-red-200">Delete</button>`);
     lines.push(`          </nav>`);
     lines.push(`        </header>`);
-    lines.push(`        <section class="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">`);
+    lines.push(`        <section class="bg-white dark:bg-gray-800 shadow-sm rounded-lg overflow-hidden">`);
     lines.push(`          <dl class="divide-y divide-gray-200 dark:divide-gray-700">`);
     lines.push(`            @for (field of displayFields; track field.name) {`);
     lines.push(`              <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">`);

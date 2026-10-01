@@ -159,7 +159,7 @@ export class ListGenerator implements CodeGenerator {
     lines.push(`          <a`);
     lines.push(`            routerLink="new"`);
     lines.push(`            data-testid="action-create"`);
-    lines.push(`            class="inline-flex items-center rounded-md bg-exeris-primary px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-exeris-primary-hover transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-exeris-primary"`);
+    lines.push(`            class="inline-flex items-center rounded-md bg-exeris-primary px-3.5 py-2.5 text-sm font-semibold text-white shadow-xs hover:bg-exeris-primary-hover transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-exeris-primary"`);
     lines.push(`          >`);
     lines.push(`            <svg class="-ml-0.5 mr-1.5 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">`);
     lines.push(`              <path d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" />`);
@@ -218,7 +218,7 @@ export class ListGenerator implements CodeGenerator {
     // Table with @defer for SSR
     lines.push(`      <!-- Data Table -->`);
     lines.push(`      @defer (on viewport; prefetch on idle) {`);
-    lines.push(`        <div class="overflow-hidden rounded-lg border border-gray-200 shadow-sm dark:border-gray-700">`);
+    lines.push(`        <div class="overflow-hidden rounded-lg border border-gray-200 shadow-xs dark:border-gray-700">`);
     lines.push(`          @if (isLoading() && items().length === 0) {`);
     lines.push(`            <!-- Loading skeleton -->`);
     lines.push(`            <div class="animate-pulse">`);
@@ -226,9 +226,9 @@ export class ListGenerator implements CodeGenerator {
     lines.push(`              @for (i of [1,2,3,4,5]; track i) {`);
     lines.push(`                <div class="h-16 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">`);
     lines.push(`                  <div class="flex items-center gap-4 p-4">`);
-    lines.push(`                    <div class="h-4 w-32 rounded bg-gray-200 dark:bg-gray-700"></div>`);
-    lines.push(`                    <div class="h-4 w-24 rounded bg-gray-200 dark:bg-gray-700"></div>`);
-    lines.push(`                    <div class="h-4 w-16 rounded bg-gray-200 dark:bg-gray-700"></div>`);
+    lines.push(`                    <div class="h-4 w-32 rounded-sm bg-gray-200 dark:bg-gray-700"></div>`);
+    lines.push(`                    <div class="h-4 w-24 rounded-sm bg-gray-200 dark:bg-gray-700"></div>`);
+    lines.push(`                    <div class="h-4 w-16 rounded-sm bg-gray-200 dark:bg-gray-700"></div>`);
     lines.push(`                  </div>`);
     lines.push(`                </div>`);
     lines.push(`              }`);
@@ -329,7 +329,7 @@ export class ListGenerator implements CodeGenerator {
     lines.push(`                      <h3 class="mt-2 text-sm font-medium text-gray-900 dark:text-white">No ${pluralName.toLowerCase()}</h3>`);
     lines.push(`                      <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Get started by creating a new ${displayName.toLowerCase()}.</p>`);
     lines.push(`                      <div class="mt-6">`);
-    lines.push(`                        <a routerLink="new" class="inline-flex items-center rounded-md bg-exeris-primary px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-exeris-primary-hover">`);
+    lines.push(`                        <a routerLink="new" class="inline-flex items-center rounded-md bg-exeris-primary px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-exeris-primary-hover">`);
     lines.push(`                          <svg class="-ml-0.5 mr-1.5 h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" /></svg>`);
     lines.push(`                          New ${displayName}`);
     lines.push(`                        </a>`);
