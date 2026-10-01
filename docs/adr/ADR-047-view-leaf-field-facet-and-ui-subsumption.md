@@ -1,14 +1,23 @@
+---
+title: "ADR-047 — Consume the `@View` leaf field facet end-to-end, subsuming and removing `@UI`"
+type: adr
+visibility: public
+owning-repo: exeris-tooling
+status: active
+slug: adr/ADR-047
+---
+
 # ADR-047: Consume the `@View` leaf field facet end-to-end — subsuming and removing `@UI`
 
-| Attribute       | Value                                                                                                  |
-|:----------------|:-------------------------------------------------------------------------------------------------------|
-| **Status**      | **ACCEPTED**. Number **047** registered in `exeris-docs/adr-index.md` (index status flip PROPOSED → ACCEPTED is a tracked follow-up). |
-| **Deciders**    | Arkadiusz Przychocki                                                                                    |
-| **Date**        | 2026-06-28                                                                                              |
-| **Scope**       | per-repo (`exeris-tooling`); `tooling/codegen`. Mandates a coordinated `exeris-sdk` record rename (`UIFieldMetadata` → `ViewFieldMetadata`) and the removal of `@UI` — see the Decision. |
-| **Owning Repo** | `exeris-tooling` (`exeris-processor` + `exeris-codegen-ts`)                                             |
-| **Driven By**   | [RFC-2026-06-28](../rfc/RFC-2026-06-28-presentation-view-emitter-tooling.md) (the `@View` emitter, whose first slice left the leaf facet `null`); [SDK RFC-2026-06-25](https://github.com/exeris-systems/exeris-sdk/blob/main/docs/rfc/RFC-2026-06-25-presentation-front-model.md) (the "`@UI` is subsumed by `@View`, not paralleled" decision) |
-| **Compliance**  | [ADR-015](ADR-015-codegen-emission-strategy.md) (emission strategy); hard-constraint #1 (single Exeris-kernel target), #3 (deterministic codegen), strong-default #4 (Java/TS emitter parity); [ADR-042](ADR-042.link.md) (`-io` reader mirror) |
+| Attribute | Value |
+| :-- | :-- |
+| **Status** | **ACCEPTED**. Number **047** registered in `exeris-docs/adr-index.md` (index status flip PROPOSED → ACCEPTED is a tracked follow-up). Amended 2026-10-01 (Amendment 1 — the interim `FieldRenderModel`). |
+| **Deciders** | Arkadiusz Przychocki |
+| **Date** | 2026-06-28 |
+| **Scope** | per-repo (`exeris-tooling`); `tooling/codegen`. Mandates a coordinated `exeris-sdk` record rename (`UIFieldMetadata` → `ViewFieldMetadata`) and the removal of `@UI` — see the Decision. |
+| **Owning Repo** | `exeris-tooling` (`exeris-processor` + `exeris-codegen-ts`) |
+| **Driven By** | [RFC-2026-06-28](../rfc/RFC-2026-06-28-presentation-view-emitter-tooling.md) (the `@View` emitter, whose first slice left the leaf facet `null`); [SDK RFC-2026-06-25](https://github.com/exeris-systems/exeris-sdk/blob/main/docs/rfc/RFC-2026-06-25-presentation-front-model.md) (the "`@UI` is subsumed by `@View`, not paralleled" decision) |
+| **Compliance** | [ADR-015](ADR-015-codegen-emission-strategy.md) (emission strategy); hard-constraint #1 (single Exeris-kernel target), #3 (deterministic codegen), strong-default #4 (Java/TS emitter parity); [ADR-042](ADR-042.link.md) (`-io` reader mirror) |
 
 ## Context and Problem Statement
 
@@ -76,3 +85,45 @@ The unification was the intent from the start; the following positions are settl
 2. **codegen-ts spec** — `view-gen` asserts `componentType`→control mapping reuses the form/list vocabulary and that a slice-1 (no-`field`) `view_*.json` still parses + emits unchanged (obligations 2, 3, 5).
 3. **ADR-042 `-io` round-trip + parity + rename** — lands in the same train; no leaf facet extracted without its `SourceModelReader` mirror + `schemaVersion` re-baseline; the `UIFieldMetadata` → `ViewFieldMetadata` rename is part of this train (obligation 4).
 4. **Migration owner:** `exeris-tooling`. The implementation wave is the full leaf-facet migration in one cut — authored-leaf (case a) **and** entity-driven expansion (case b) **and** the `FORM`-block control rendering — since case b is the model and there is no dual-path; `@UI` removal follows once parity is demonstrated.
+
+## Amendment 1 — one field-render model until the leaf facet (2026-10-01)
+
+**Trigger:** the codegen-ts 0.9.0 scope (`docs/codegen-ts-track-plan.md`, P6, P8–P12). The SDK
+roadmap places the leaf facet, the `UIFieldMetadata` → `ViewFieldMetadata` rename and `@UI`'s
+deprecation in the 1.x line; the `UIFieldMetadata` record is not yet renamed, and the processor
+leaves `ComponentNodeMetadata.field` null.
+
+### What
+
+The Decision says U2 (lists), U3 (forms) and U5 (detail) are built on the `@View` leaf-facet path.
+Until the facet exists, they are built on one internal codegen-ts **`FieldRenderModel`**:
+
+1. **One resolver.** `FieldRenderModel` resolves, per field, the control, the display format, the
+   alignment and the relationship picker, from what `FieldMetadata` and the entity's relationships
+   already carry. `list-gen`, `detail-gen` and `form-gen` render fields only through it; none keeps a
+   control or format mapping of its own. The model is internal to `exeris-codegen-ts` — not part of
+   `DomainMetadata`, not serialised, not read by the processor or the `-io` reader.
+2. **Field-level `@UI` stays unextracted in 0.9.** The processor reads only the entity-level `@UI`
+   view flags. Extracting field-level hints would write keys the SDK `-io` reader does not read
+   (ADR-042 reader parity) and would extend the `@UI` path this ADR subsumes. Hints only `@UI`,
+   `@UIGroup` or `@Tab` carry (`componentType`, `gridSpan`, `placeholder`, `helpText`, sections,
+   tabs) do not reach emitted output before the facet.
+3. **In 1.x the facet is the model's one additional input.** When the processor populates
+   `ComponentNodeMetadata.field`, `FieldRenderModel` reads it beside `FieldMetadata`, and the `@View`
+   path (obligation 2) renders through the same model. There is no second rendering path: obligation 2's
+   "reusing the form/list control vocabulary" is this model.
+4. **Introducing the model is byte-identical.** The pull request that extracts `FieldRenderModel`
+   (P8) changes no emitted output; U2, U3 and U5 then change output through it, each classified under
+   ADR-092.
+
+### What this amendment does not change
+
+The Decision's end state — `@View` as the single carrier of field-level render detail, one
+`ViewFieldMetadata` record, no dual-path between `@UI`-attached generators and `@View`, `@UI` removed
+once parity is shown — and obligations 1–6 stand. The amendment fixes what U2/U3/U5 render through
+before the facet, so that the facet arrives as an input rather than as a rewrite.
+
+*Testable:* a codegen-ts spec asserts that `list-gen`, `detail-gen` and `form-gen` obtain each
+field's control and format from `FieldRenderModel`; the P8 pull request regenerates the sample
+domains byte-identically; the processor test suite asserts that no field-level `@UI` key reaches
+`DomainMetadata` JSON in 0.9.
