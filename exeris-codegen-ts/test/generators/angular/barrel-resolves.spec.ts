@@ -25,6 +25,9 @@ const order = DomainMetadataSchema.parse({
   // Declared so the `generateSagas` case below is not vacuous the way `generateStores` is: the
   // saga file is emitted per-entity only for an entity that has one.
   sagaMetadata: { name: 'OrderFulfilment', steps: [{ name: 'reserveStock' }] },
+  // Both stream routes, so the stream-client sections are emitted and resolved too.
+  realTimeApi: true,
+  actions: [{ name: 'track', streaming: true }],
 });
 
 /** Every module specifier the barrel names, resolved against what was actually emitted. */

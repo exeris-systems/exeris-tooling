@@ -37,11 +37,27 @@
 import { outPath } from '../../core/paths.js';
 import type { ActionMetadata, DomainMetadata } from '../../models/index.js';
 import { DslMapper } from '../../models/index.js';
+import { isTenantPartitioned } from '../../models/domain-model.js';
+import { tsSingleQuoted } from './ts-literal.js';
 import type { GeneratorConfig } from '../../config.js';
 import type { CodeGenerator, GeneratedFile, GeneratorContext } from '../../core/generator-registry.js';
 import type { BackendType } from '../../core/backend-strategy.js';
 
 export { GeneratedFile };
+
+/**
+ * Whether the entity gets per-action stream clients (it declares a streaming action).
+ *
+ * Not for a tenant-partitioned entity: the kernel stream routes carry no tenant guard and the
+ * handler's producer subscribes to the event bus unfiltered, so a tenant-partitioned entity's
+ * stream would deliver every tenant's events to every subscriber. The client is emitted once the
+ * server guards the route.
+ */
+export function hasActionStreamClients(domain: DomainMetadata): boolean {
+  return !domain.internalApi?.hidden
+    && !isTenantPartitioned(domain)
+    && (domain.actions ?? []).some(a => a.streaming);
+}
 
 export class ActionStreamClientGenerator implements CodeGenerator {
   readonly name = 'ActionStreamClientGenerator';
@@ -53,13 +69,10 @@ export class ActionStreamClientGenerator implements CodeGenerator {
     // Driver parity with the Java side: only entities with at least one
     // @Action(streaming) action get a per-action stream client file. Hidden
     // internal APIs are excluded like every other Angular emitter.
-    if (domain.internalApi?.hidden) {
+    if (!hasActionStreamClients(domain)) {
       return null;
     }
     const streamingActions = this.streamingActions(domain);
-    if (streamingActions.length === 0) {
-      return null;
-    }
 
     const content = this.renderActionStreamClients(domain, streamingActions, context);
     const fileName = `${DslMapper.toKebabCase(domain.entityName)}.action-streams.ts`;
@@ -74,9 +87,7 @@ export class ActionStreamClientGenerator implements CodeGenerator {
   }
 
   generateAggregate(domains: DomainMetadata[], context: GeneratorContext): GeneratedFile[] {
-    const streamingDomains = domains.filter(
-      d => !d.internalApi?.hidden && this.streamingActions(d).length > 0,
-    );
+    const streamingDomains = domains.filter(hasActionStreamClients);
     if (streamingDomains.length === 0) {
       return [];
     }
@@ -226,7 +237,7 @@ export class ActionStreamClientGenerator implements CodeGenerator {
     lines.push(`@Injectable({ providedIn: 'root' })`);
     lines.push(`export class ${className} {`);
     lines.push(`  /** Named SSE event: emitted by the kernel ${entityName}${actionPascal}StreamHandler. */`);
-    lines.push(`  static readonly STREAM_EVENT_TYPE = '${eventName}';`);
+    lines.push(`  static readonly STREAM_EVENT_TYPE = '${tsSingleQuoted(eventName)}';`);
     lines.push(``);
     lines.push(`  /**`);
     lines.push(`   * Opens the ${entityName}.${action.name}(...) per-action SSE stream and surfaces`);
@@ -269,11 +280,24 @@ export class ActionStreamClientGenerator implements CodeGenerator {
     lines.push(`                let event = 'message';`);
     lines.push(`                const dataLines: string[] = [];`);
     lines.push(`                for (const line of chunk.split('\\n')) {`);
-    lines.push(`                  if (line.startsWith('event:')) {`);
-    lines.push(`                    event = line.slice(6).trim();`);
-    lines.push(`                  } else if (line.startsWith('data:')) {`);
-    lines.push(`                    dataLines.push(line.slice(5).trim());`);
+    lines.push(`                  // A field value drops exactly one leading space (the SSE`);
+    lines.push(`                  // field rule); the rest of the value, trailing whitespace`);
+    lines.push(`                  // included, is payload.`);
+    lines.push(`                  const colon = line.indexOf(':');`);
+    lines.push(`                  if (colon <= 0) {`);
+    lines.push(`                    continue;`);
     lines.push(`                  }`);
+    lines.push(`                  const field = line.slice(0, colon);`);
+    lines.push(`                  const raw = line.slice(colon + 1);`);
+    lines.push(`                  const value = raw.startsWith(' ') ? raw.slice(1) : raw;`);
+    lines.push(`                  if (field === 'event') {`);
+    lines.push(`                    event = value;`);
+    lines.push(`                  } else if (field === 'data') {`);
+    lines.push(`                    dataLines.push(value);`);
+    lines.push(`                  }`);
+    lines.push(`                }`);
+    lines.push(`                if (dataLines.length === 0) {`);
+    lines.push(`                  continue;`);
     lines.push(`                }`);
     lines.push(`                subscriber.next({ event, data: dataLines.join('\\n') });`);
     lines.push(`              }`);

@@ -1,30 +1,32 @@
 /**
- * Angular Stream Client Generator (SSE live-view, ADR-043 Slice 1).
+ * Angular Stream Client Generator (SSE live-view, ADR-043 Slice 1, ADR-044).
  *
  * Parity twin of the Java {@code KernelStreamHandlerGenerator}: for every
  * entity annotated {@code @ExerisDomain(realTimeApi = true)} the Java side emits
  * an {@code HttpStreamHandler} registered at {@code GET {base}/stream} via the
  * kernel router's {@code streamRoute(...)}. This generator emits the matching
- * browser client — a native {@code EventSource} (RFC-2026-06-22 Axis 4a:
- * smallest, idiomatic SSE; GET-only, no custom headers) hitting the SAME
- * {@code {base}/stream} route, so the Java handler and the TS client are
- * route-identical (strong-default #4 parity).
+ * browser client — a native {@code EventSource} (GET-only, no custom headers)
+ * hitting the SAME {@code {base}/stream} route.
  *
- * The generated client is a thin Angular service that opens an
- * {@code EventSource}, surfaces messages as an RxJS {@code Observable<MessageEvent>}
- * (so it composes with the rest of the v22 emitter's RxJS idiom), and closes the
- * connection on unsubscribe. It is deterministic: no timestamps / UUIDs / random
- * — same {@code DomainMetadata} yields byte-identical output (hard-constraint #3).
+ * Wire contract (ADR-044 obligations 2 and 5): every frame the handler emits is
+ * NAMED. A domain event arrives as {@code event: <@DomainEvent name>} (the entity
+ * name + {@code Event} when the name is blank) with the codec-encoded payload JSON
+ * as {@code data:}; the keep-alive fallback, for an entity with no
+ * {@code @DomainEvent}, sends {@code event: keep-alive} with empty data.
+ * {@code EventSource.onmessage} never fires for a named frame, so the client
+ * registers one {@code addEventListener} per declared event name and surfaces
+ * each as a {@code MessageEvent} whose {@code type} is that name. The heartbeat
+ * has no listener: it carries nothing to process.
  *
- * Named-event limitation (native EventSource): {@code onmessage} fires ONLY for
- * unnamed SSE frames ({@code event:} absent or {@code event: message}). The Java
- * scaffold emits a NAMED {@code keep-alive} heartbeat, which the browser
- * therefore ignores — correct for a heartbeat the client need not process. But
- * when the EV1 producer emits real, NAMED domain events ({@code event:
- * OrderCreated}, …), this client must grow a per-event-name
- * {@code addEventListener(type, …)} (or the server must emit unnamed frames).
- * That named-event adapter is tracked for Slice 2 / EV1; the route + service
- * shape stay unchanged, so it is an additive follow-up, not a reshape.
+ * Reconnection: the server closes the stream on its own (the keep-alive fallback
+ * closes after a fixed window, and a stream opened before the application is
+ * composed is closed at once), and the browser reconnects on its own. An
+ * {@code error} while the source is reconnecting is therefore not terminal; only
+ * a source the browser has given up on ({@code readyState === CLOSED}) errors the
+ * Observable.
+ *
+ * Deterministic: no timestamps / UUIDs / random — same {@code DomainMetadata}
+ * yields byte-identical output; event names keep declaration order.
  *
  * @author Exeris Team
  * @since 0.6.0
@@ -33,11 +35,25 @@
 import { outPath } from '../../core/paths.js';
 import type { DomainMetadata } from '../../models/index.js';
 import { DslMapper } from '../../models/index.js';
+import { isTenantPartitioned } from '../../models/domain-model.js';
+import { tsSingleQuoted } from './ts-literal.js';
 import type { GeneratorConfig } from '../../config.js';
 import type { CodeGenerator, GeneratedFile, GeneratorContext } from '../../core/generator-registry.js';
 import type { BackendType } from '../../core/backend-strategy.js';
 
 export { GeneratedFile };
+
+/**
+ * Whether the entity gets a live-view stream client.
+ *
+ * Not for a tenant-partitioned entity: the kernel stream routes carry no tenant guard and the
+ * handler's producer subscribes to the event bus unfiltered, so a tenant-partitioned entity's
+ * stream would deliver every tenant's events to every subscriber. The client is emitted once the
+ * server guards the route.
+ */
+export function hasLiveViewClient(domain: DomainMetadata): boolean {
+  return domain.realTimeApi && !domain.internalApi?.hidden && !isTenantPartitioned(domain);
+}
 
 export class StreamClientGenerator implements CodeGenerator {
   readonly name = 'StreamClientGenerator';
@@ -46,10 +62,7 @@ export class StreamClientGenerator implements CodeGenerator {
   readonly priority = 6;
 
   generate(domain: DomainMetadata, context: GeneratorContext): GeneratedFile | null {
-    // Driver parity with the Java side: only @ExerisDomain(realTimeApi) entities
-    // get a stream client. Hidden internal APIs are excluded like every other
-    // Angular emitter.
-    if (!domain.realTimeApi || domain.internalApi?.hidden) {
+    if (!hasLiveViewClient(domain)) {
       return null;
     }
 
@@ -66,7 +79,7 @@ export class StreamClientGenerator implements CodeGenerator {
   }
 
   generateAggregate(domains: DomainMetadata[], context: GeneratorContext): GeneratedFile[] {
-    const streamingDomains = domains.filter(d => d.realTimeApi && !d.internalApi?.hidden);
+    const streamingDomains = domains.filter(hasLiveViewClient);
     if (streamingDomains.length === 0) {
       return [];
     }
@@ -113,14 +126,32 @@ export class StreamClientGenerator implements CodeGenerator {
     return `${context.config.apiBasePath}${apiPath}/stream`;
   }
 
+  /**
+   * The SSE {@code event:} names the kernel handler emits for this entity, in
+   * declaration order: the raw {@code @DomainEvent} name, or the entity name +
+   * {@code Event} when the name is blank — the same choice
+   * {@code KernelStreamHandlerGenerator.eventBindings} makes.
+   */
+  private streamEventNames(domain: DomainMetadata): string[] {
+    const names: string[] = [];
+    for (const event of domain.events ?? []) {
+      const name = event.name.trim().length > 0 ? event.name : `${domain.entityName}Event`;
+      if (!names.includes(name)) {
+        names.push(name);
+      }
+    }
+    return names;
+  }
+
   private renderStreamClient(domain: DomainMetadata, context: GeneratorContext): string {
     const entityName = domain.entityName;
     const streamUrl = this.streamUrl(domain, context);
+    const eventNames = this.streamEventNames(domain);
     const lines: string[] = [];
 
     lines.push(`/**`);
     lines.push(` * ${entityName} SSE Live-View Stream Client`);
-    lines.push(` * Generated by @exeris/codegen-ts (ADR-043 Slice 1)`);
+    lines.push(` * Generated by @exeris/codegen-ts (ADR-043 Slice 1, ADR-044)`);
     lines.push(` * DO NOT EDIT - This file is auto-generated`);
     lines.push(` *`);
     lines.push(` * Parity twin of the kernel ${entityName}StreamHandler, registered at`);
@@ -133,23 +164,40 @@ export class StreamClientGenerator implements CodeGenerator {
     lines.push(``);
     lines.push(`@Injectable({ providedIn: 'root' })`);
     lines.push(`export class ${entityName}StreamClient {`);
+    lines.push(`  /**`);
+    lines.push(`   * The named SSE events the kernel ${entityName}StreamHandler emits: one per`);
+    lines.push(`   * @DomainEvent, with the event payload JSON as data.`);
+    if (eventNames.length === 0) {
+      lines.push(`   * ${entityName} declares no @DomainEvent, so the handler sends only its`);
+      lines.push(`   * 'keep-alive' heartbeat and this stream delivers no message.`);
+    }
+    lines.push(`   */`);
+    lines.push(`  static readonly STREAM_EVENT_TYPES: readonly string[] = [${eventNames.map(n => `'${tsSingleQuoted(n)}'`).join(', ')}];`);
+    lines.push(``);
     lines.push(`  private readonly streamUrl = '${streamUrl}';`);
     lines.push(``);
     lines.push(`  /**`);
-    lines.push(`   * Opens the ${entityName} live-view SSE stream and surfaces each UNNAMED`);
-    lines.push(`   * server-sent message (event: absent or event: message) as a MessageEvent.`);
-    lines.push(`   * Named SSE events — the scaffold's 'keep-alive' heartbeat, and future EV1`);
-    lines.push(`   * domain events — are NOT delivered by onmessage; they require`);
-    lines.push(`   * addEventListener(type, ...) (tracked for Slice 2/EV1). The EventSource is`);
-    lines.push(`   * closed automatically when the subscription is torn down.`);
+    lines.push(`   * Opens the ${entityName} live-view SSE stream and surfaces each domain event`);
+    lines.push(`   * as a MessageEvent: \`type\` is the event name (one of STREAM_EVENT_TYPES),`);
+    lines.push(`   * \`data\` the payload JSON. Every server frame is named, so each name gets its`);
+    lines.push(`   * own addEventListener — onmessage would see none of them. The 'keep-alive'`);
+    lines.push(`   * heartbeat is not delivered. The browser reconnects when the server closes`);
+    lines.push(`   * the stream; the Observable errors only once the EventSource gives up`);
+    lines.push(`   * (readyState CLOSED). The EventSource is closed when the subscription is`);
+    lines.push(`   * torn down.`);
     lines.push(`   */`);
-    lines.push(`  stream(): Observable<MessageEvent> {`);
-    lines.push(`    return new Observable<MessageEvent>((subscriber) => {`);
+    lines.push(`  stream(): Observable<MessageEvent<string>> {`);
+    lines.push(`    return new Observable<MessageEvent<string>>((subscriber) => {`);
     lines.push(`      const source = new EventSource(this.streamUrl, { withCredentials: true });`);
-    lines.push(`      // NOTE: onmessage fires only for unnamed SSE events; named domain`);
-    lines.push(`      // events (event: X) require addEventListener(X, ...) — Slice 2/EV1.`);
-    lines.push(`      source.onmessage = (event) => subscriber.next(event);`);
-    lines.push(`      source.onerror = (error) => subscriber.error(error);`);
+    lines.push(`      const forward = (event: MessageEvent<string>): void => subscriber.next(event);`);
+    lines.push(`      for (const type of ${entityName}StreamClient.STREAM_EVENT_TYPES) {`);
+    lines.push(`        source.addEventListener(type, forward);`);
+    lines.push(`      }`);
+    lines.push(`      source.onerror = () => {`);
+    lines.push(`        if (source.readyState === EventSource.CLOSED) {`);
+    lines.push(`          subscriber.error(new Error(\`${entityName} stream closed: \${this.streamUrl}\`));`);
+    lines.push(`        }`);
+    lines.push(`      };`);
     lines.push(`      return () => source.close();`);
     lines.push(`    });`);
     lines.push(`  }`);

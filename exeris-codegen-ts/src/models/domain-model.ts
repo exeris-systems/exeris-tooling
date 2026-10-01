@@ -571,6 +571,15 @@ export function effectiveDataScope(
 }
 
 /**
+ * Whether the entity's rows have an owning tenant — the TS twin of the Java side's
+ * `DataScopeSupport.isTenantPartitioned`. True for `TENANT` and for `UNIVERSE`, whose rows are
+ * owned too (a UNIVERSE row is readable across its owner's shared scope, never by every tenant).
+ */
+export function isTenantPartitioned(metadata: Pick<DomainMetadata, 'dataScope' | 'tenantScoped'>): boolean {
+  return effectiveDataScope(metadata) !== 'GLOBAL';
+}
+
+/**
  * Parse a processor `view_*.json` (the ViewJson wrapper) and return the inner
  * ViewMetadata. The wrapper's `name` is the view's own name (identical to
  * `view.name` by construction), so the inner record carries the identity the

@@ -2,10 +2,12 @@
  * Coverage for src/generators/angular/stream-client-gen.ts — StreamClientGenerator
  * emits a native EventSource client per @ExerisDomain(realTimeApi) entity, hitting
  * the SAME {base}/stream route the kernel KernelStreamHandlerGenerator registers
- * via streamRoute(...) (ADR-043 Slice 1 Java/TS parity).
+ * via streamRoute(...), and listening for the SAME named events its frames carry
+ * (ADR-043 Slice 1, ADR-044 obligations 2 and 5).
  */
 
 import { describe, expect, it } from 'vitest';
+import ts from 'typescript';
 import {
   StreamClientGenerator,
   generateStreamClient,
@@ -54,6 +56,12 @@ describe('StreamClientGenerator.generate — realTimeApi gating', () => {
       internalApi: { hidden: true, readOnly: false, internal: false },
     });
     expect(gen.generate(d, CTX)).toBeNull();
+  });
+
+  it('returns null for a tenant-partitioned domain (stream routes carry no tenant guard)', () => {
+    for (const scope of [{ dataScope: 'TENANT' }, { dataScope: 'UNIVERSE' }, { tenantScoped: true }] as const) {
+      expect(gen.generate(domain({ entityName: 'Order', realTimeApi: true, ...scope }), CTX)).toBeNull();
+    }
   });
 
   it('emits services/<kebab>.stream.ts for a realTimeApi domain', () => {
@@ -111,7 +119,7 @@ describe('StreamClientGenerator.generate — route parity with the kernel handle
     const content = gen.generate(domain({ entityName: 'Order', realTimeApi: true }), CTX)!.content;
 
     expect(content).toContain('new EventSource(this.streamUrl, { withCredentials: true })');
-    expect(content).toContain('stream(): Observable<MessageEvent>');
+    expect(content).toContain('stream(): Observable<MessageEvent<string>>');
     expect(content).toContain('return () => source.close();');
     expect(content).toContain('export class OrderStreamClient');
   });
@@ -121,13 +129,121 @@ describe('StreamClientGenerator.generate — route parity with the kernel handle
     expect(content).not.toContain('text/event-stream');
   });
 
-  it('documents the native-EventSource named-event limitation (onmessage = unnamed only)', () => {
-    // Honesty pin: onmessage drops named SSE frames (the scaffold's keep-alive,
-    // and future EV1 domain events). The emitted code must say so, so readers
-    // know named events need addEventListener(type, ...) — tracked for Slice 2/EV1.
+  it('lists one SSE event name per @DomainEvent, as the kernel handler names its frames', () => {
+    // KernelStreamHandlerGenerator.eventBindings: the raw @DomainEvent name, or the entity name
+    // + "Event" when the name is blank. Declaration order.
+    const d = domain({
+      entityName: 'Order',
+      realTimeApi: true,
+      events: [{ name: 'OrderPlaced' }, { name: 'OrderCancelled' }, { name: ' ' }],
+    });
+    const content = gen.generate(d, CTX)!.content;
+    expect(content).toContain(
+      "static readonly STREAM_EVENT_TYPES: readonly string[] = ['OrderPlaced', 'OrderCancelled', 'OrderEvent'];",
+    );
+    // Every frame is named, so onmessage would receive none of them.
+    expect(content).not.toContain('source.onmessage');
+  });
+
+  it('an entity with no @DomainEvent lists no event name and says the stream carries only the heartbeat', () => {
     const content = gen.generate(domain({ entityName: 'Order', realTimeApi: true }), CTX)!.content;
-    expect(content).toContain('onmessage fires only for unnamed SSE events');
-    expect(content).toContain('addEventListener');
+    expect(content).toContain('static readonly STREAM_EVENT_TYPES: readonly string[] = [];');
+    expect(content).toContain("'keep-alive' heartbeat and this stream delivers no message");
+  });
+});
+
+// ---------- behaviour ----------
+
+interface Observer {
+  next(v: unknown): void;
+  error(e: unknown): void;
+  complete(): void;
+}
+
+/** The smallest Observable the emitted client needs: subscribe runs the producer once. */
+class StubObservable {
+  constructor(private readonly producer: (s: Observer) => () => void) {}
+
+  subscribe(observer: Observer): { unsubscribe(): void } {
+    return { unsubscribe: this.producer(observer) };
+  }
+}
+
+/** Records what the client registers, and lets the test fire events and errors at it. */
+class StubEventSource {
+  static readonly CONNECTING = 0;
+  static readonly OPEN = 1;
+  static readonly CLOSED = 2;
+  static last: StubEventSource | undefined;
+
+  readyState = StubEventSource.OPEN;
+  closed = false;
+  onerror: (() => void) | null = null;
+  readonly listeners = new Map<string, (e: unknown) => void>();
+
+  constructor(readonly url: string, readonly init: { withCredentials?: boolean }) {
+    StubEventSource.last = this;
+  }
+
+  addEventListener(type: string, listener: (e: unknown) => void): void {
+    this.listeners.set(type, listener);
+  }
+
+  close(): void {
+    this.closed = true;
+  }
+}
+
+function loadClient(content: string): new () => { stream(): StubObservable } {
+  const source = content.replace(/^import .*;$/gm, '');
+  const js = ts.transpileModule(source, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const exports: Record<string, unknown> = {};
+  new Function('exports', 'Injectable', 'Observable', 'EventSource', js)(
+    exports, () => () => undefined, StubObservable, StubEventSource,
+  );
+  return exports.OrderStreamClient as new () => { stream(): StubObservable };
+}
+
+describe('StreamClientGenerator — emitted client behaviour', () => {
+  const content = new StreamClientGenerator().generate(
+    domain({ entityName: 'Order', realTimeApi: true, path: '/orders', events: [{ name: 'OrderPlaced' }, { name: 'OrderCancelled' }] }),
+    CTX,
+  )!.content;
+
+  it('listens for each named event on the served route and forwards it', () => {
+    const Client = loadClient(content);
+    const seen: unknown[] = [];
+    new Client().stream().subscribe({ next: (e) => seen.push(e), error: () => {}, complete: () => {} });
+    const source = StubEventSource.last!;
+
+    expect(source.url).toBe('/orders/stream');
+    expect(source.init).toEqual({ withCredentials: true });
+    expect([...source.listeners.keys()]).toEqual(['OrderPlaced', 'OrderCancelled']);
+
+    const frame = { type: 'OrderPlaced', data: '{"id":"1"}' };
+    source.listeners.get('OrderPlaced')!(frame);
+    expect(seen).toEqual([frame]);
+  });
+
+  it('keeps the subscription across a reconnect and errors only once the source is closed', () => {
+    const Client = loadClient(content);
+    const errors: unknown[] = [];
+    const sub = new Client().stream().subscribe({ next: () => {}, error: (e) => errors.push(e), complete: () => {} });
+    const source = StubEventSource.last!;
+
+    // The server closed the stream; the browser is reconnecting.
+    source.readyState = StubEventSource.CONNECTING;
+    source.onerror!();
+    expect(errors).toHaveLength(0);
+
+    source.readyState = StubEventSource.CLOSED;
+    source.onerror!();
+    expect(errors).toHaveLength(1);
+
+    sub.unsubscribe();
+    expect(source.closed).toBe(true);
   });
 });
 

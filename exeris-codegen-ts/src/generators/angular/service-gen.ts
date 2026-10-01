@@ -153,7 +153,9 @@ export class ServiceGenerator implements CodeGenerator {
     // T1: actions are served at POST {base}/{id}/actions/{kebab(name)} (matches the
     // OpenAPI path + the kernel route), and the server responds with the updated
     // aggregate — so the client method takes the entity id and returns the entity.
-    const actions = (metadata.actions ?? []).map((action) => ({
+    // A streaming action has no respond-once route: the kernel serves that path as a
+    // stream only, and its client is the action stream client.
+    const actions = (metadata.actions ?? []).filter((action) => !action.streaming).map((action) => ({
       name: action.name,
       description: action.description ?? `Execute ${action.name} action`,
       // methodName: valid camelCase JS identifier (kebab/snake action names would
@@ -409,6 +411,9 @@ export class ServiceGenerator implements CodeGenerator {
     // no `enumType` hint (ActionParamMetadata lacks it), so detection here relies
     // on the same name heuristic used for hint-less fields.
     for (const action of metadata.actions ?? []) {
+      if (action.streaming) {
+        continue;
+      }
       for (const param of action.params ?? []) {
         const detected = this.detectEnumType(param.type);
         if (detected) {
