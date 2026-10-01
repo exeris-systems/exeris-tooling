@@ -1,0 +1,260 @@
+name: release to maven central
+
+# Two triggers, and the split is what each one is for.
+#
+# **A tag is the release.** `v0.9.0` on a commit that is on `main` builds, signs and uploads an
+# unpublished deployment, then runs the readiness gate and attests. A push to a BRANCH fires this not at all, so a CI fix landing on `main` releases nothing.
+#
+# **The dispatch is the dry run.** With `upload` unchecked it builds, signs and runs every gate while
+# touching nothing remote, from any branch: the cheap way to find out whether a change broke the
+# release path before a tag depends on it.
+#
+# `autoPublish=false` in the root POM's `release` profile means an upload creates a DEPLOYMENT that a
+# person still has to Publish in the Central Portal, and an unpublished deployment can be Dropped. So
+# a mistyped tag costs a dropped deployment. What does need guarding is which commit a tag points at
+# and whether its version agrees with the pom; both are checked below.
+#
+# Every dependency resolves from Maven Central here, as it will for a consumer of the published
+# POMs: the `github-packages` settings profile is switched off. That is what enforces the release
+# order kernel → SDK → tooling: a tooling release whose kernel or SDK pin is not on Central fails to
+# resolve before anything is signed.
+#
+# Same shape as exeris-sdk's release.yml, including the single Maven invocation: the kernel gates and
+# uploads in two builds and proves them byte-identical, which needs `project.build.outputTimestamp`;
+# this reactor does not set it, so two builds differ and the gated bytes would not be the uploaded
+# ones.
+#
+# Required repository (or organisation) secrets:
+#   GPG_PRIVATE_KEY         armoured private key whose public half is on a keyserver Central reads
+#   GPG_PASSPHRASE          its passphrase
+#   CENTRAL_TOKEN_USERNAME  Central Portal user token, username half (central.sonatype.com/usertoken)
+#   CENTRAL_TOKEN_PASSWORD  Central Portal user token, password half
+
+on:
+  push:
+    tags:
+      # Permissive on purpose: the strict check is a step, not this filter. A filter decides what
+      # runs; it is not a guard.
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build for a DRY RUN (e.g. 0.9.0) — must not end in -SNAPSHOT'
+        required: true
+        type: string
+      upload:
+        description: 'Upload to Central. Normally leave UNCHECKED — a real release is a tag.'
+        required: true
+        type: boolean
+        default: false
+
+jobs:
+  release:
+    name: build, sign, gate, publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write       # SLSA provenance signing (Sigstore, keyless)
+      attestations: write   # writing the attestation back to the repository
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Resolve the version and refuse an unreleasable one
+        id: rel
+        # Every `${{ }}` this step needs is bound here and read as a shell variable below rather than
+        # substituted into the script text: `inputs.version` is free-form text a dispatcher types.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          IN_VERSION: ${{ inputs.version }}
+          IN_UPLOAD: ${{ inputs.upload }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT_NAME" = "push" ]; then
+            tag="${GITHUB_REF#refs/tags/}"
+            # A release tag is exactly vMAJOR.MINOR.PATCH; `v0.9.0-rc1` is not a release and must not
+            # become one by matching the trigger glob.
+            if ! printf '%s' "$tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+              echo "::error::$tag is not a release tag (expected vMAJOR.MINOR.PATCH). Nothing released." >&2
+              exit 1
+            fi
+            version="${tag#v}"
+            upload=true
+          else
+            version="${IN_VERSION:-}"
+            upload="${IN_UPLOAD:-}"
+          fi
+
+          case "$version" in
+            *-SNAPSHOT) echo "::error::Central refuses SNAPSHOT release versions." >&2; exit 1 ;;
+          esac
+
+          # Releases are cut from main. A tag ref says nothing about which branch its commit is on,
+          # so compare against main: `behind` and `identical` both mean the commit is on main.
+          if [ "$upload" = "true" ]; then
+            if [ "$EVENT_NAME" = "push" ]; then
+              contained="$(gh api "repos/$GITHUB_REPOSITORY/compare/main...$GITHUB_SHA" --jq .status)"
+              case "$contained" in
+                identical|behind) echo "tag $tag points at a commit on main ($contained)" ;;
+                *) echo "::error::tag $tag points at a commit that is NOT on main (compare: $contained)." >&2
+                   echo "::error::Delete the tag, cut it from main, tag again. Nothing was uploaded." >&2
+                   exit 1 ;;
+              esac
+            elif [ "$GITHUB_REF" != "refs/heads/main" ]; then
+              echo "::error::Upload from a dispatch is allowed on main only; this ref is $GITHUB_REF." >&2
+              echo "::error::Re-run with upload unchecked to exercise the release path from here." >&2
+              exit 1
+            fi
+          fi
+
+          { echo "version=$version"; echo "upload=$upload"; } >> "$GITHUB_OUTPUT"
+          echo "resolved: version=$version upload=$upload"
+
+      - name: Refuse a ref that cannot build a release
+        # `workflow_dispatch` only registers a workflow present on the default branch, so a ref can
+        # carry this file while lacking what it drives. Maven treats `-P release` for an absent
+        # profile as a warning and builds on, producing unsigned artifacts that fail much later with
+        # a message naming neither the profile nor the cause.
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          missing=""
+          add() { missing="${missing:+$missing; }$1"; }
+          grep -q '<id>release</id>' pom.xml || add "the 'release' profile in pom.xml"
+          [ -f .github/maven-settings.xml ] || add ".github/maven-settings.xml (Central credentials)"
+          [ -x tools/release-readiness/release-readiness.sh ] \
+            || add "tools/release-readiness/release-readiness.sh (absent or not executable)"
+
+          if [ -n "$missing" ]; then
+            echo "::error::Ref $GITHUB_REF cannot build a release — missing: $missing" >&2
+            if [ "$EVENT_NAME" = "push" ]; then
+              echo "::error::The tagged commit does not carry the release machinery. Delete the tag," >&2
+              echo "::error::land the release tooling on that branch, and cut the tag again." >&2
+            else
+              echo "::error::Dispatch against a branch that carries the release machinery." >&2
+            fi
+            exit 1
+          fi
+          echo "ok — this ref carries the release profile, the settings file and the readiness gate"
+
+      # 25 is the release-bearing row of build.yml: the toolchain every gate ran against, and the
+      # class-file level the Maven plugin imposes on a consumer's Maven JVM.
+      - name: Set up JDK 25 and import the signing key
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+          gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
+          # The env var NAME, not the passphrase. It has to match the variable the build step
+          # exports; without it the action configures its own default name, GPG_PASSPHRASE, the
+          # plugin reads a variable nobody set, and signing fails with
+          # `gpg: signing failed: No pinentry`.
+          gpg-passphrase: MAVEN_GPG_PASSPHRASE
+
+      - name: Set the release version — or, on a tag, check it
+        # On a dispatch the tree is a -SNAPSHOT development line and setting the version is the
+        # point of the dry run. On a tag the release PR has already set it, so a tag whose version
+        # disagrees with the pom is a tag on the wrong commit, and `versions:set` would overwrite the
+        # evidence.
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          WANT: ${{ steps.rel.outputs.version }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "push" ]; then
+            have="$(python3 -c "import xml.etree.ElementTree as E; print(E.parse('pom.xml').getroot().find('{http://maven.apache.org/POM/4.0.0}version').text.strip())")"
+            if [ "$have" != "$WANT" ]; then
+              echo "::error::tag says $WANT, the pom at this commit says $have — the tag is on the wrong commit." >&2
+              exit 1
+            fi
+            echo "pom version $have matches the tag"
+          else
+            mvn -B -ntp versions:set -DnewVersion="$WANT" -DgenerateBackupPoms=false
+          fi
+
+      - name: Refuse a SNAPSHOT anywhere in the POMs
+        # A release pins final upstream versions only (ROADMAP, Versioning policy). By this point the
+        # reactor's own version is final, so any -SNAPSHOT left is a cross-repo pin. On a dispatch it
+        # is reported and the build goes on, so the rest of the path can still be exercised.
+        # Element values only, read by a parser: a comment that mentions a SNAPSHOT is not a pin.
+        env:
+          UPLOAD: ${{ steps.rel.outputs.upload }}
+        run: |
+          set -euo pipefail
+          hits="$(git ls-files '*pom.xml' | python3 -c "
+          import sys, xml.etree.ElementTree as E
+          for p in sys.stdin.read().split():
+              for el in E.parse(p).getroot().iter():
+                  if el.text and '-SNAPSHOT' in el.text:
+                      print(p + ': <' + el.tag.split('}')[-1] + '>' + el.text.strip())")"
+          if [ -n "$hits" ]; then
+            echo "$hits"
+            if [ "$UPLOAD" = "true" ]; then
+              echo "::error::SNAPSHOT pins in a release. Pin the final upstream versions first." >&2
+              exit 1
+            fi
+            echo "::warning::SNAPSHOT pins present; a release from this tree would be refused."
+          else
+            echo "ok — no SNAPSHOT in any POM"
+          fi
+
+      - name: Build, sign, gate — and upload when this is a release
+        # One Maven invocation, so the bytes the tests and gates ran against are the bytes uploaded.
+        # `!github-packages` switches off the settings profile that adds the GitHub Packages
+        # registry: everything resolves from Central.
+        env:
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          CENTRAL_TOKEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
+          CENTRAL_TOKEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
+          UPLOAD: ${{ steps.rel.outputs.upload }}
+        run: |
+          set -euo pipefail
+          if [ "$UPLOAD" = "true" ]; then
+            # autoPublish=false: this uploads a deployment and stops. waitUntil=validated makes it
+            # block until Central has validated, so a missing file or signature fails here. Review
+            # the results in the portal and press Publish there.
+            mvn -B -ntp --settings .github/maven-settings.xml -P 'release,!github-packages' clean deploy
+          else
+            mvn -B -ntp --settings .github/maven-settings.xml -P 'release,!github-packages' clean verify
+          fi
+
+      - name: Release-readiness gate
+        # Every published coordinate has its pom, jar, sources jar and javadoc jar, each with a good
+        # signature; the Maven plugin carries its descriptor; maven.deploy.skip and <excludeArtifacts>
+        # agree. On the upload path it runs after the upload, so it cannot stop one: what it guards is
+        # publication. The deployment stays unpublished (autoPublish=false), and a failure here means
+        # Drop it in the Central Portal instead of pressing Publish. On the dry run it is the only check.
+        run: tools/release-readiness/release-readiness.sh
+
+      - name: Attest build provenance (SLSA)
+        # GPG says who held the key; provenance says which workflow, at which commit, on which runner
+        # produced the artifact. Verify with
+        # `gh attestation verify <file> --repo exeris-systems/exeris-tooling`.
+        #
+        # Upload path only: an attestation is written to the repository and to the public Rekor
+        # transparency log, which has no delete, so a dry run must not create one.
+        if: ${{ steps.rel.outputs.upload == 'true' }}
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            */target/*.jar
+            !exeris-e2e-tests/target/*.jar
+
+      - name: Upload the signed artifacts as a run artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-${{ steps.rel.outputs.version }}
+          path: |
+            */target/*.jar
+            */target/*.asc
+            */target/*.pom
+            target/*.asc
+            target/*.pom
+          if-no-files-found: warn
+          retention-days: 90

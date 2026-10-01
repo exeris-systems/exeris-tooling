@@ -25,8 +25,10 @@ migrations, sagas, and corresponding Angular/TypeScript frontend artifacts.
   (`mvn install`; an SDK checkout that still runs japicmp by default, rather than
   behind its opt-in `semver` profile, also needs `-Djapicmp.skip=true`, because its
   semver baseline is not on Central) and
-  `exeris-kernel` at `development/0.12.0`. GitHub Packages credentials also resolve
-  the kernel. Take the **`eu.exeris`** kernel coordinates, not `eu.exeris.preview`
+  `exeris-kernel` at `development/0.12.0`. GitHub Packages also resolves the kernel:
+  `mvn -s .github/maven-settings.xml …` with `GITHUB_ACTOR` and a `GITHUB_TOKEN`
+  (`read:packages`) exported. The POMs name no repository of their own, because a
+  published POM would hand that registry to every consumer. Take the **`eu.exeris`** kernel coordinates, not `eu.exeris.preview`
   — the preview line is JDK 28 EA with `--enable-preview`, and nothing generated here
   differs between them.
 
