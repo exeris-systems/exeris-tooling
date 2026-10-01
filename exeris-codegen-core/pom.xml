@@ -19,6 +19,7 @@
         exeris-metadata/*.json, generator registry, and shared utilities.
         Target: Exeris kernel only.
     </description>
+    <url>https://github.com/exeris-systems/exeris-tooling</url>
 
     <dependencies>
         <!-- Canonical metadata records consumed by all generators -->

@@ -1,0 +1,60 @@
+<settings xmlns="http://maven.apache.org/SETTINGS/1.2.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.2.0
+                              https://maven.apache.org/xsd/settings-1.2.0.xsd">
+  <!--
+    The one place this repository names a GitHub Packages registry. It is a settings file and not
+    the root POM because a repository declared in a POM, profile or not, is deployed with it and
+    sent to every consumer of the published coordinate. Same shape as
+    exeris-kernel-enterprise/.github/maven-settings.xml.
+
+    Credentials arrive from the environment, never from this file. Locally, export GITHUB_ACTOR and
+    a GITHUB_TOKEN (PAT, classic, read:packages) and hand this file to mvn with `-s`, or build the kernel from source and `mvn install` it, which needs neither.
+  -->
+  <servers>
+    <server>
+      <id>github-exeris-kernel</id>
+      <username>${env.GITHUB_ACTOR}</username>
+      <password>${env.GITHUB_TOKEN}</password>
+    </server>
+
+    <!--
+      Maven Central (the Central Portal). A USER TOKEN generated at central.sonatype.com/usertoken,
+      not the account password. The id must match <publishingServerId> in the root POM's `release`
+      profile.
+    -->
+    <server>
+      <id>central</id>
+      <username>${env.CENTRAL_TOKEN_USERNAME}</username>
+      <password>${env.CENTRAL_TOKEN_PASSWORD}</password>
+    </server>
+  </servers>
+
+  <profiles>
+    <!--
+      Kernel coordinates that are not on Central yet. Active for every build that uses this file;
+      release.yml switches it off with `-P '!github-packages'`, so a release resolves every
+      dependency from Central, as a consumer of the published POMs will.
+    -->
+    <profile>
+      <id>github-packages</id>
+      <repositories>
+        <repository>
+          <id>github-exeris-kernel</id>
+          <name>Exeris Kernel — GitHub Packages</name>
+          <url>https://maven.pkg.github.com/exeris-systems/exeris-kernel</url>
+          <releases>
+            <enabled>true</enabled>
+          </releases>
+          <snapshots>
+            <enabled>true</enabled>
+          </snapshots>
+        </repository>
+      </repositories>
+    </profile>
+  </profiles>
+
+  <activeProfiles>
+    <activeProfile>github-packages</activeProfile>
+  </activeProfiles>
+</settings>

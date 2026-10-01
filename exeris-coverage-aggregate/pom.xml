@@ -32,15 +32,13 @@
     </description>
 
     <properties>
-        <!-- Reporting-only module: never install to local ~/.m2 cache and
-             never deploy to the Sonatype Central repo inherited from the
-             root POM's <distributionManagement>. The published POM would
-             otherwise be a hollow report carrying four compile-scope
-             dependencies on internal tooling modules — confusing for any
-             downstream consumer that imports it by accident. No CI
-             workflow currently runs `mvn deploy`, so this is a latent
-             guard against the moment one is wired without remembering
-             to enumerate publishable modules explicitly. -->
+        <!-- Reporting-only module: never installed to the local ~/.m2 cache
+             and never released. A published POM here would be a hollow
+             report carrying dependencies on internal tooling modules.
+             maven.deploy.skip holds it back from maven-deploy-plugin; the
+             root POM's `release` profile names it in <excludeArtifacts> as
+             well, because central-publishing-maven-plugin replaces
+             maven-deploy-plugin and does not read this property. -->
         <maven.install.skip>true</maven.install.skip>
         <maven.deploy.skip>true</maven.deploy.skip>
     </properties>
