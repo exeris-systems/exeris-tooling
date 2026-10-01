@@ -422,6 +422,25 @@ and `run()` publishes exactly what `decorate` returned:
   0.12 exposes no way to ask a built router whether it has stream routes, so this case is not
   refused); the request falls through to the wrapper's respond-once dispatch.
 
+### Consequences
+
+- **[+] Amendment 2's "What remains for the kernel (K9, narrowed)" is closed.** Kernel 0.12's
+  `StreamRouteResolver` is consumed. A `configureRoutes` stream resolves, and a delegating `decorate`
+  wrapper's bindings reach stream handlers.
+- **[+] A wrapper that would hide a stream fails the boot and names its class**, instead of
+  registering streams that never match.
+- **[-] A detached application whose `decorate` returns a plain wrapper, and which serves generated
+  stream routes, now fails at boot.** It implements `StreamRouteResolver` on the wrapper and
+  delegates to the router. MIGRATION carries the shape.
+- **[-] One case stays unrefused.** When only `configureRoutes` registered streams, a non-resolver
+  wrapper is accepted and those streams do not resolve. Kernel 0.12 offers no public "serves any
+  stream" query on a built router.
+- **Reversed by:** a kernel that resolves streams without going through the bound handler, which
+  would make the refusals unnecessary. **Pending kernel ask:** reject a duplicate exact stream
+  registration (today the last one wins, against `HttpRouter.Builder`'s documented first-wins), and
+  expose "serves any stream" on a built router. Either one lets tooling drop its own post-build
+  check or close the case above.
+
 ### Engineering Protocol (addition)
 
 1. `GeneratedAppBootE2ETest` boots the emitted `Application.run()` on kernel 0.12.0 and holds
