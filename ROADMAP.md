@@ -3361,16 +3361,16 @@ needed.)*
 A consumer application writes its whole build by hand today: the SDK annotations, kernel SPI and Core
 at compile scope, a runtime driver, a JDBC driver, conditionally Jackson 3 and the composition
 runtime, the processor on `annotationProcessorPaths`, and the plugin with three goals bound to the
-right phases. No end-to-end application POM exists anywhere in the ecosystem, and the Maven plugin
+right phases. No POM in the ecosystem declares that whole set (the `exeris-caps-*` POMs bind
+`generate` and `verify-capabilities`, but neither `verify-runtime` nor a driver), and the Maven plugin
 itself has no end-to-end test: `exeris-e2e-tests` drives the pipeline in-process.
 `exeris-tooling-bom` cannot serve as a starter: its parent is the reactor root, it pins build-internal
 libraries (JavaPoet, swagger, Jackson 2, H2) and it manages neither the plugin nor a driver.
-- [ ] **ADR first.** ADR-078 lists "emitting a `pom.xml` or a dependency fragment" as out of scope.
-      A starter the consumer opts into is not emitted, but it changes that ADR's premise that tooling
-      does not own the consumer's build. Reserve the number in `exeris-docs/adr-index.md`.
+- [x] **ADR first.** ADR-091 (reserved in `exeris-docs/adr-index.md`) records the module layout and
+      the obligations; ADR-078's premise is narrowed, not superseded.
 - [ ] **`exeris-app-bom`**: the tooling + kernel + SDK triple that is known to work together, the
       kernel's Jackson 3 line, and the plugin. Tooling releases last, so its version names the pair.
-- [ ] **`exeris-app-parent`**: imports the BOM. Sets `release 25` and the JDK/Maven enforcer rules,
+- [ ] **`exeris-app-parent`**: inherits `exeris-app-bom` (ADR-091 obligation 4). Sets `release 25` and the JDK/Maven enforcer rules,
       puts the processor on `annotationProcessorPaths`, and binds `generate` + `verify-capabilities` +
       `verify-runtime`. Adds a `<resource>` for the migrations and OpenAPI that are generated under
       the `src/main/generated/java` source root, which Maven does not copy to the classpath.
