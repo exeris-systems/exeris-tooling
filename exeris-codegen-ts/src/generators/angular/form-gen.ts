@@ -14,6 +14,7 @@ import type { CodeGenerator, GeneratedFile, GeneratorContext } from '../../core/
 import type { BackendType } from '../../core/backend-strategy.js';
 import { outPath } from '../../core/paths.js';
 import { updateVersionField, viewSystemFieldNames } from '../api/type-gen.js';
+import { tsSingleQuoted } from './ts-literal.js';
 
 export { GeneratedFile };
 
@@ -133,6 +134,7 @@ export class FormGenerator implements CodeGenerator {
 
     const modelName = modelTypeName(entityName);
     const kebabName = DslMapper.toKebabCase(entityName);
+    const noun = tsSingleQuoted((domain.displayName ?? entityName).toLowerCase());
     // The literal 'id', deliberately, not systemFields.primaryKeyField. Nothing in the pipeline
     // honours that override: KernelFlywayGenerator emits `id UUID PRIMARY KEY` unconditionally,
     // KernelRepositoryGenerator's WHERE clause is the constant " WHERE id = ?", every by-id
@@ -174,6 +176,7 @@ export class FormGenerator implements CodeGenerator {
     lines.push("import { FormsModule, ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';");
     lines.push("import { ActivatedRoute, Router } from '@angular/router';");
     lines.push(`import { ${modelName}, ${modelName}Create, ${modelName}Update, ${entityName}Service } from '../services/${kebabName}.service';`);
+    lines.push("import { httpErrorMessage } from '../core/http-error';");
 
     // Collect enum types used in create fields
     const enumTypes = new Set<string>();
@@ -262,6 +265,9 @@ export class FormGenerator implements CodeGenerator {
       lines.push('      </div>');
     }
 
+    lines.push('      @if (error()) {');
+    lines.push('        <div role="alert" data-testid="submit-error" class="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">{{ error() }}</div>');
+    lines.push('      }');
     if (version) {
       // The server answers a stale update with 409 and no body; the only recovery is to load
       // the row as it now stands, which also picks up its current version.
@@ -315,7 +321,7 @@ export class FormGenerator implements CodeGenerator {
     lines.push('  readonly isLoading = computed(() => this.entityResource.isLoading());');
     lines.push('  readonly loadError = computed(() => {');
     lines.push('    const err = this.entityResource.error();');
-    lines.push('    return err instanceof Error ? err.message : err ? String(err) : null;');
+    lines.push(`    return err ? httpErrorMessage(err, { entity: '${noun}', action: 'load' }) : null;`);
     lines.push('  });');
     lines.push('');
     lines.push(`  readonly saved = output<${modelName}>();`);
@@ -435,7 +441,7 @@ export class FormGenerator implements CodeGenerator {
       lines.push('          return;');
       lines.push('        }');
     }
-    lines.push("        this.error.set(err?.message ?? 'An error occurred');");
+    lines.push(`        this.error.set(httpErrorMessage(err, { entity: '${noun}', action: 'save' }));`);
     lines.push('      },');
     lines.push('    });');
     lines.push('  }');
@@ -469,7 +475,7 @@ export class FormGenerator implements CodeGenerator {
       lines.push('        this.form.reset(fresh as any);');
       lines.push(`        this.loadedVersion.set(${readVersion('fresh')});`);
       lines.push('      },');
-      lines.push("      error: (err) => this.error.set(err?.message ?? 'An error occurred'),");
+      lines.push(`      error: (err) => this.error.set(httpErrorMessage(err, { entity: '${noun}', action: 'load' })),`);
       lines.push('    });');
       lines.push('  }');
     }

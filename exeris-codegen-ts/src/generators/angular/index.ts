@@ -15,6 +15,7 @@ export { generateStore, StoreGenerator } from './store-gen.js';
 export { generateSaga, SagaGenerator } from './saga-gen.js';
 export { generateEventHandler, EventHandlerGenerator } from './event-gen.js';
 export { generateAppStructure } from './app-structure-gen.js';
+export { generateHttpErrorHelper, HTTP_ERROR_PATH } from './http-error-gen.js';
 
 // New generators (v0.4.0)
 export { generateDetail, DetailGenerator } from './detail-gen.js';
