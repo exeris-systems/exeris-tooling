@@ -666,8 +666,9 @@ the inert-annotation sweep only inspected type-level annotations, and `@Blob` is
 `@Schedule` is `@Target(METHOD)`.
 
 Expect one warning per `@Blob` field and one per `@Schedule` method. Each names why the annotation is
-inert and where the transcription is gated — `@Blob` on the kernel (no bootable storage subsystem,
-and blob storage is post-1.0 kernel-side), `@Schedule` on the identity a declared job runs as. See
+inert and what keeps it so — `@Blob` on tooling alone (no extraction and no generator; kernel 0.12
+boots the `storage` subsystem, opt-in through `storage.blob.provider`), `@Schedule` on the identity
+a declared job runs as. See
 [`adr/ADR-072.link.md`](adr/ADR-072.link.md).
 
 **Not** a signal to remove them from your sources: unlike `@Action.path`, these are a reserved
@@ -808,7 +809,7 @@ Crypto is **not** required, though the default `subsystems()` names it — no em
 uses it.
 
 **How to satisfy it.** Add a runtime driver to the module that runs the generated application:
-`eu.exeris.kernel:exeris-kernel-community` in the open-core tree. Enterprise and third-party
+`eu.exeris:exeris-kernel-community` in the open-core tree. Enterprise and third-party
 drivers register the same SPIs and satisfy the check equally.
 
 **Opt-out.** `-Dexeris.verifyRuntime.skip=true` degrades the verdict to a WARNING — intended for a
@@ -1698,6 +1699,62 @@ because the rule is the SDK's and knows no irregular nouns. Bookmarks to the old
 routes stop resolving. Server routes do not move, because `@ExerisDomain.path` is required; only
 a service or stream client built from metadata with no `path` falls back to the derived segment,
 and that fallback now matches the SDK's `effectivePath()`.
+
+### Kernel 0.12: a generated client verifies the TLS server it calls (`crypto.tls.client.trustFile`)
+
+No emitted file changes. On kernel 0.12 the Community TLS client verifies the server's certificate
+chain against the PEM file named by `crypto.tls.client.trustFile`, else against OpenSSL's default
+trust, and checks the certificate's subject alternative names against the host it dialled (kernel
+ADR-074 Amendment A1). A generated `*Client` whose peer presents a self-signed or private-CA
+certificate now fails the handshake with `EX-NET-2001` before any request byte is sent.
+
+**What to do:** set `crypto.tls.client.trustFile` to a PEM file holding that CA. A file that is not
+readable is refused with `EX-NET-2002`. No setting keeps TLS and skips verification. Generated code
+sets neither key, so this is deployment configuration only.
+
+### Kernel 0.12: a public request that reaches persistence without a tenant is recorded (`UnscopedRequestSession`)
+
+No emitted file changes, and nothing starts failing. Kernel 0.12 emits the JFR event
+`eu.exeris.kernel.security.UnscopedRequestSession` (fields `method`, `path`, `readOnly`) once for
+every `permitAll()` request whose persistence session was opened for a storage context that declares
+no tenant. The event type is enabled by default.
+
+The emitted application binds no `HttpRoutePolicy` (ADR-079), so the kernel treats every generated
+route as `permitAll()`. A tenant-scoped handler refuses a request with no `STORAGE_CONTEXT` before it
+reaches the repository, so it records nothing. A `GLOBAL` entity's handler does not refuse, so
+**every request to a `GLOBAL` entity's route that reaches its repository records one event.** Stream
+routes and `LONG_RUNNING` routes are not covered.
+
+**To stop a route being reported**, do one of:
+- bind an `HttpRoutePolicy` (`HttpKernelProviders.HTTP_ROUTE_POLICY`) that requires
+  `authenticated()` for it;
+- bind a `KernelProviders.STORAGE_CONTEXT` that carries a tenant around its handler;
+- disable the event type in your JFR settings, which hides it for every route.
+
+### Kernel 0.12: no stream route is served over HTTP/2
+
+No emitted file changes. The kernel resolves a stream route only on its HTTP/1.1 path; an `h2`
+request to a stream route is served respond-once instead. The Community default for
+`http.maxVersion` is `HTTP_2`, so a browser `EventSource` against TLS that the kernel terminates
+negotiates `h2` and does not stream. This reaches every generated stream route: a `realTimeApi`
+`GET <base>/stream` and every `@Action(streaming = true)` route.
+
+**What to do:** terminate TLS upstream of the kernel, or, without TLS, set
+`http.maxVersion=HTTP_1_1`. Under kernel-terminated TLS the ALPN selection does not honour
+`http.maxVersion` (exeris-systems/exeris-kernel#533), so that key is not a workaround there. The
+Enterprise HTTP engine serves no stream route at all.
+
+### Kernel 0.12: `StreamMatch` moved from `HttpRouter` into the SPI
+
+Kernel 0.11's nested `eu.exeris.kernel.core.http.routing.HttpRouter.StreamMatch` is now the
+top-level record `eu.exeris.kernel.spi.http.StreamMatch` (`preview`, `@since 0.12`), and
+`HttpRouter#resolveStream(HttpMethod, String)` returns it. Generated code names neither, so no
+emitted file changes.
+
+**What to do:** hand-written code that names `HttpRouter.StreamMatch` changes its import to
+`eu.exeris.kernel.spi.http.StreamMatch`. Code that calls `HttpRouter#resolveStream` without naming
+the type compiles unchanged, but must be recompiled against kernel 0.12: the method's return type
+changed, so a class compiled against 0.11 fails to link.
 
 ---
 
