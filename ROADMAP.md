@@ -3309,8 +3309,9 @@ needed.)*
       reads what the processor writes), so a 0.9.0 processor that wrote them would ship the pair
       diverged. `@RouteAccess` gets an `INERT_ANNOTATIONS` entry until T53 compiles it into
       `RouteRequirement` in 0.10.0, together with the reader half.
-- [ ] **`@Channel`, registered as reserved.** An `INERT_ANNOTATIONS` entry, so `-Aexeris.strict`
-      reports that it has no effect yet. The WebSocket emitter over kernel ADR-084 is 0.12.0 scope.
+- [x] **`@Channel`, registered as reserved.** An `UNREAD_NOTES` entry: the processor never reads
+      the annotation, so C0 already reported it generically, and `-Aexeris.strict` now gives the
+      reserved-surface reason instead. The WebSocket emitter over kernel ADR-084 is 0.12.0 scope.
 - [ ] S6 (`SystemFieldsMetadata.builder()`) and the semver-gate flag, under "Follow SDK 0.12.0".
 
 **2. Kernel 0.12 catch-up**

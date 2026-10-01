@@ -605,6 +605,14 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "is not. Until the kernel routes by outcome or tag, "
                             + "KernelSagaGenerator chains SagaMetadata.steps() in declaration "
                             + "order and a declared transition changes nothing"),
+            new UnreadAnnotation("Channel",
+                    "reserved. The kernel side exists — WebSocketProvider / WebSocketExchange / "
+                            + "WebSocketSession with a TCK, an RFC 6455 codec in Core and a "
+                            + "Community binding — but no generator opens a WebSocket endpoint or "
+                            + "emits a typed client from this declaration, and DomainMetadata "
+                            + "carries no channel. realTimeApi and @Action.streaming are the "
+                            + "server-push (SSE) surfaces that do reach emitted code. The WebSocket "
+                            + "emitter is tracked in ROADMAP.md"),
             new UnreadAnnotation("QueryParam",
                     "action parameters are extracted through @ActionParam only; a parameter "
                             + "carrying just this annotation reaches ActionMetadata as if it were "
