@@ -20,6 +20,7 @@
         DomainMetadata records (defined in exeris-sdk-source-model) as JSON files
         in target/classes/exeris-metadata/, consumed downstream by codegen.
     </description>
+    <url>https://github.com/exeris-systems/exeris-tooling</url>
 
     <dependencies>
         <!-- SDK contracts: annotations + canonical metadata records -->

@@ -18,6 +18,7 @@
         Java code generators producing kernel-target output: handlers, services,
         repositories, OpenAPI specs, and Studio DSL. Single target — Exeris kernel.
     </description>
+    <url>https://github.com/exeris-systems/exeris-tooling</url>
 
     <dependencies>
         <dependency>
