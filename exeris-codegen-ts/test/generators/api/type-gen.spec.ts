@@ -14,8 +14,10 @@ import { describe, expect, it } from 'vitest';
 import {
   DEPRECATED_OWNER_DOC,
   TypeGenerator,
+  auditFieldNames,
   deprecatedDtoOwner,
   generateTypes,
+  viewSystemFieldNames,
 } from '../../../src/generators/api/type-gen.js';
 import {
   createGeneratorContext,
@@ -767,5 +769,40 @@ describe('TypeGenerator — versioned update DTO and schema', () => {
     expect(types).toContain('export type ThingUpdate = Partial<ThingCreate>;');
     expect(schema).toContain('export const ThingUpdateSchema = ThingCreateSchema.partial();');
     expect(schema).not.toContain('.extend(');
+  });
+});
+
+describe('auditFieldNames / viewSystemFieldNames — the views\' system-field classification', () => {
+  it('names the audit stamps from systemFields, falling back to createdAt / updatedAt', () => {
+    expect(auditFieldNames(domain({ entityName: 'Order' }))).toEqual({ createdAt: 'createdAt', updatedAt: 'updatedAt' });
+    expect(auditFieldNames(domain({
+      entityName: 'Order',
+      systemFields: { createdAtField: 'openedAt', updatedAtField: '' },
+    }))).toEqual({ createdAt: 'openedAt', updatedAt: 'updatedAt' });
+  });
+
+  it('keeps the conventional names for an entity without a systemFields block', () => {
+    expect(viewSystemFieldNames(domain({ entityName: 'Order' }))).toEqual([
+      'id', 'version', 'createdAt', 'updatedAt', 'tenantId', 'createdBy', 'updatedBy', 'deleted', 'deletedAt',
+    ]);
+  });
+
+  it('adds what the flags make server-owned, under the names systemFields gives them', () => {
+    expect(viewSystemFieldNames(domain({
+      entityName: 'Ticket',
+      audited: true,
+      versioned: true,
+      softDelete: true,
+      systemFields: { createdAtField: 'openedAt', updatedAtField: 'touchedAt', versionField: 'revision', softDeleteField: 'closed' },
+    }))).toEqual(['id', 'revision', 'openedAt', 'touchedAt', 'closed', 'tenantId']);
+  });
+
+  it('adds the default stamp and version names for flags on a block that names neither', () => {
+    expect(viewSystemFieldNames(domain({
+      entityName: 'Ticket',
+      audited: true,
+      versioned: true,
+      systemFields: { primaryKeyField: 'id' },
+    }))).toEqual(['id', 'createdAt', 'updatedAt', 'version', 'tenantId']);
   });
 });

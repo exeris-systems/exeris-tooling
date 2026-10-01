@@ -18,6 +18,7 @@ import type { GeneratorConfig } from '../../config.js';
 import type { CodeGenerator, GeneratedFile, GeneratorContext } from '../../core/generator-registry.js';
 import type { BackendType } from '../../core/backend-strategy.js';
 import { outPath } from '../../core/paths.js';
+import { viewSystemFieldNames } from '../api/type-gen.js';
 import { tsSingleQuoted } from './ts-literal.js';
 
 export { GeneratedFile };
@@ -500,7 +501,7 @@ export class ListGenerator implements CodeGenerator {
   }
 
   private getDefaultListColumns(metadata: DomainMetadata): string[] {
-    const systemFields = ['id', 'version', 'createdAt', 'updatedAt', 'createdBy', 'updatedBy', 'deletedAt', 'tenantId'];
+    const systemFields = viewSystemFieldNames(metadata);
     return metadata.fields
       .filter((f) => !f.hidden && !systemFields.includes(f.name))
       .slice(0, 5)
