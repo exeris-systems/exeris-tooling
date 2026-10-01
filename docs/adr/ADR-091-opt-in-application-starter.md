@@ -282,7 +282,7 @@ other build file.**
 - **Status:** ACCEPTED (2026-10-01). Decided by the founder.
 - **Amends:** the *What is NOT in scope* entry "The TypeScript / npm side". The npm packaging stays a
   separate deliverable. What this amendment adds is how a consumer chooses between the three shapes
-  an Exeris application takes. Obligations 1–7 and the Engineering Protocol are unchanged.
+  an Exeris application takes. Obligations 1–7 and the Engineering Protocol are unchanged by this amendment (Amendment 2 amends obligations 1–3).
 
 A generated application is a backend, a frontend, or both. The Maven starter decided above covers
 the first. The other two need the TypeScript emitter, which reads `DomainMetadata` JSON and never
