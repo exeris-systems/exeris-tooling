@@ -2790,8 +2790,10 @@ release.
 - [x] **Stage 1 — contract parity.** The emitted edit route edits (#235) · a `versioned` update
       carries its version (#236) · ADR-076 status mapping (#239) · `audited` panel (#240) ·
       `MANY_TO_ONE` UUID-FK link (#238). Route guards stay with **T53**.
-- [ ] **Stage 0 — parity gate.** Every `DomainMetadataSchema` field read by TS, `JAVA_ONLY` or
-      `RESERVED`, measured at generation time.
+- [x] **Stage 0 — parity gate.** Every `DomainMetadataSchema` field is `READ`, `JAVA_ONLY`,
+      `RESERVED` or `GAP`, measured at generation time. One `GAP`: `realTimeApi`.
+- [ ] **`realTimeApi` parity** — the orchestrator composes the TS stream clients the Java side's
+      SSE routes serve.
 - [ ] **TS output-stability ADR** — ADR-015 covers codegen-core and codegen-java only; needed before
       the first npm publication.
 
