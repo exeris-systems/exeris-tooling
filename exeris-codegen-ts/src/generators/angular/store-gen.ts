@@ -28,6 +28,7 @@ import type { CodeGenerator, GeneratedFile, GeneratorContext } from '../../core/
 import type { BackendType } from '../../core/backend-strategy.js';
 import { DslMapper } from '../../models/dsl-mapper.js';
 import { RESTORE_UNSUPPORTED } from './service-gen.js';
+import { tsSingleQuoted } from './ts-literal.js';
 
 export class StoreGenerator implements CodeGenerator {
   readonly name = 'StoreGenerator';
@@ -58,6 +59,8 @@ export class StoreGenerator implements CodeGenerator {
     const kebab = DslMapper.toKebabCase(entityName);
     const camel = DslMapper.toCamelCase(entityName);
     const pluralCamel = camel + 's';
+    const noun = tsSingleQuoted((domain.displayName ?? entityName).toLowerCase());
+    const pluralNoun = tsSingleQuoted((domain.pluralName ?? DslMapper.pluralName(entityName)).toLowerCase());
 
     // Identify searchable and filterable fields
     const searchableFields = fields.filter(f => f.searchable);
@@ -96,6 +99,7 @@ import {
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { firstValueFrom } from 'rxjs';
 import { ${entityName}Service } from '../services/${kebab}.service';
+import { httpErrorMessage, type HttpErrorAction } from '../core/http-error';
 import type { Page, PageRequest } from '../services/${kebab}.service';
 import type { ${modelName}, ${modelName}Create, ${modelName}Update } from '../types/${kebab}.types';
 
@@ -294,7 +298,7 @@ export class ${entityName}Store {
       this._totalElements.set(response.totalElements);
       this._totalPages.set(response.totalPages);
     } catch (err) {
-      this._error.set(this.extractErrorMessage(err));
+      this._error.set(this.extractErrorMessage(err, 'load', '${pluralNoun}'));
       throw err;
     } finally {
       this._loading.set(false);
@@ -319,7 +323,7 @@ export class ${entityName}Store {
       
       return entity;
     } catch (err) {
-      this._error.set(this.extractErrorMessage(err));
+      this._error.set(this.extractErrorMessage(err, 'load'));
       throw err;
     } finally {
       this._loading.set(false);
@@ -343,7 +347,7 @@ export class ${entityName}Store {
       
       return created;
     } catch (err) {
-      this._error.set(this.extractErrorMessage(err));
+      this._error.set(this.extractErrorMessage(err, 'save'));
       throw err;
     } finally {
       this._saving.set(false);
@@ -380,7 +384,7 @@ export class ${entityName}Store {
     } catch (err) {
       // Rollback on error
       this._entities.set(previousEntities);
-      this._error.set(this.extractErrorMessage(err));
+      this._error.set(this.extractErrorMessage(err, 'save'));
       throw err;
     } finally {
       this._saving.set(false);
@@ -408,7 +412,7 @@ export class ${entityName}Store {
     } catch (err) {
       // Rollback on error
       this._entities.set(previousEntities);
-      this._error.set(this.extractErrorMessage(err));
+      this._error.set(this.extractErrorMessage(err, 'delete'));
       throw err;
     } finally {
       this._saving.set(false);
@@ -586,14 +590,8 @@ ${this.generateSearchableFieldAccess(searchableFields)}
     return parts.join(' ');
   }
 
-  private extractErrorMessage(err: unknown): string {
-    if (err instanceof Error) {
-      return err.message;
-    }
-    if (typeof err === 'object' && err !== null && 'message' in err) {
-      return String((err as { message: unknown }).message);
-    }
-    return 'An unknown error occurred';
+  private extractErrorMessage(err: unknown, action: HttpErrorAction, entity = '${noun}'): string {
+    return httpErrorMessage(err, { entity, action });
   }
 }
 `;
@@ -656,7 +654,7 @@ ${this.generateSearchableFieldAccess(searchableFields)}
         this._selected.set(null);
       }
     } catch (err) {
-      this._error.set(this.extractErrorMessage(err));
+      this._error.set(this.extractErrorMessage(err, 'delete'));
       throw err;
     } finally {
       this._saving.set(false);

@@ -29,6 +29,7 @@ import { generateSaga } from './generators/angular/saga-gen.js';
 import { generateStore } from './generators/angular/store-gen.js';
 import { generateAppStructure } from './generators/angular/app-structure-gen.js';
 import { generateView, generateViewRoute } from './generators/angular/view-gen.js';
+import { generateHttpErrorHelper, needsHttpErrorHelper } from './generators/angular/http-error-gen.js';
 import { generatePeerTypes } from './generators/api/peer-type-gen.js';
 import type { PeerContract } from './peers/peer-contract.js';
 
@@ -138,6 +139,12 @@ export function buildGeneratedFiles(
   // Real per-entity Zod schemas + type/schema barrels (gated by config.generateZod).
   // These were a stub before (T20); the schemas reference the real enum module above.
   appTree.push(...new TypeGenerator().generateAggregate(domains, ctx));
+
+  // The status-to-message helper is app-wide: one file the per-entity components, stores and
+  // sagas import. An app with no entity has nothing that imports it and gets none.
+  if (needsHttpErrorHelper(domains, config)) {
+    appTree.push(generateHttpErrorHelper());
+  }
 
   // The event bus is app-wide: one service every entity's handler imports, emitted only when
   // some entity actually declares an event.

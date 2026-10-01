@@ -424,15 +424,14 @@ describe('SagaGenerator helper methods', () => {
     expect(c).toContain('this.liveAnnouncer.announce(message, priority);');
   });
 
-  it('extractErrorMessage: 3-arm helper, public because the caller now holds the rejection', () => {
+  it('extractErrorMessage: public, and maps the rejection through the shared status helper', () => {
     const c = content();
 
+    expect(c).toContain("import { httpErrorMessage } from '../core/http-error';");
     expect(c).toContain('extractErrorMessage(err: unknown): string {');
     expect(c).not.toContain('private extractErrorMessage');
-    expect(c).toContain('if (err instanceof Error) {');
-    expect(c).toContain('return err.message;');
-    expect(c).toContain("typeof err === 'object' && err !== null && 'message' in err");
-    expect(c).toContain("return 'An unknown error occurred';");
+    expect(c).toContain('return httpErrorMessage(err);');
+    expect(c).not.toContain('return err.message;');
   });
 });
 

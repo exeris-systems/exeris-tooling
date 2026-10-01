@@ -25,6 +25,7 @@ export const RESERVED_MODULE_IDENTIFIERS: ReadonlySet<string> = new Set([
   'CommonModule',
   'DatePipe',
   'HttpClient',
+  'HttpErrorResponse',
   'HttpParams',
   // @angular/forms
   'FormBuilder',
@@ -46,6 +47,8 @@ export const RESERVED_MODULE_IDENTIFIERS: ReadonlySet<string> = new Set([
   // declared by the emitted service module itself
   'Page',
   'PageRequest',
+  // declared by the emitted http-error module and imported by the store
+  'HttpErrorAction',
 ]);
 
 /** The suffix an entity type takes when its own name is already spoken for. */
