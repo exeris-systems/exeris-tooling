@@ -1,31 +1,31 @@
 /**
  * Angular Stream Client Generator (SSE live-view, ADR-043 Slice 1, ADR-044).
  *
- * Parity twin of the Java {@code KernelStreamHandlerGenerator}: for every
- * entity annotated {@code @ExerisDomain(realTimeApi = true)} the Java side emits
- * an {@code HttpStreamHandler} registered at {@code GET {base}/stream} via the
- * kernel router's {@code streamRoute(...)}. This generator emits the matching
- * browser client — a native {@code EventSource} (GET-only, no custom headers)
- * hitting the SAME {@code {base}/stream} route.
+ * Parity twin of the Java `KernelStreamHandlerGenerator`: for every
+ * entity annotated `@ExerisDomain(realTimeApi = true)` the Java side emits
+ * an `HttpStreamHandler` registered at `GET {base}/stream` via the
+ * kernel router's `streamRoute(...)`. This generator emits the matching
+ * browser client — a native `EventSource` (GET-only, no custom headers)
+ * hitting the SAME `{base}/stream` route.
  *
  * Wire contract (ADR-044 obligations 2 and 5): every frame the handler emits is
- * NAMED. A domain event arrives as {@code event: <@DomainEvent name>} (the entity
- * name + {@code Event} when the name is blank) with the codec-encoded payload JSON
- * as {@code data:}; the keep-alive fallback, for an entity with no
- * {@code @DomainEvent}, sends {@code event: keep-alive} with empty data.
- * {@code EventSource.onmessage} never fires for a named frame, so the client
- * registers one {@code addEventListener} per declared event name and surfaces
- * each as a {@code MessageEvent} whose {@code type} is that name. The heartbeat
+ * NAMED. A domain event arrives as `event: <@DomainEvent name>` (the entity
+ * name + `Event` when the name is blank) with the codec-encoded payload JSON
+ * as `data:`; the keep-alive fallback, for an entity with no
+ * `@DomainEvent`, sends `event: keep-alive` with empty data.
+ * `EventSource.onmessage` never fires for a named frame, so the client
+ * registers one `addEventListener` per declared event name and surfaces
+ * each as a `MessageEvent` whose `type` is that name. The heartbeat
  * has no listener: it carries nothing to process.
  *
  * Reconnection: the server closes the stream on its own (the keep-alive fallback
  * closes after a fixed window, and a stream opened before the application is
  * composed is closed at once), and the browser reconnects on its own. An
- * {@code error} while the source is reconnecting is therefore not terminal; only
- * a source the browser has given up on ({@code readyState === CLOSED}) errors the
+ * `error` while the source is reconnecting is therefore not terminal; only
+ * a source the browser has given up on (`readyState === CLOSED`) errors the
  * Observable.
  *
- * Deterministic: no timestamps / UUIDs / random — same {@code DomainMetadata}
+ * Deterministic: no timestamps / UUIDs / random — same `DomainMetadata`
  * yields byte-identical output; event names keep declaration order.
  *
  * @author Exeris Team
@@ -111,13 +111,13 @@ export class StreamClientGenerator implements CodeGenerator {
 
   /**
    * Builds the SSE route, byte-for-byte parity with the kernel route the Java
-   * handler is registered under: {@code {base}/stream}. The {@code {base}}
-   * derivation mirrors the ServiceGenerator's {@code baseUrl}
-   * ({@code apiBasePath + apiPath}).
+   * handler is registered under: `{base}/stream`. The `{base}`
+   * derivation mirrors the ServiceGenerator's `baseUrl`
+   * (`apiBasePath + apiPath`).
    *
-   * <p>{@code apiVersion} is deliberately NOT folded in. The router registers
-   * {@code streamRoute} at {@code effectivePath() + "/stream"} with no version
-   * segment, so a domain that declares {@code @ExerisDomain(apiVersion = …)}
+   * <p>`apiVersion` is deliberately NOT folded in. The router registers
+   * `streamRoute` at `effectivePath() + "/stream"` with no version
+   * segment, so a domain that declares `@ExerisDomain(apiVersion = …)`
    * must not include that version in the client's route.
    */
   private streamUrl(domain: DomainMetadata, context: GeneratorContext): string {
@@ -127,10 +127,10 @@ export class StreamClientGenerator implements CodeGenerator {
   }
 
   /**
-   * The SSE {@code event:} names the kernel handler emits for this entity, in
-   * declaration order: the raw {@code @DomainEvent} name, or the entity name +
-   * {@code Event} when the name is blank — the same choice
-   * {@code KernelStreamHandlerGenerator.eventBindings} makes.
+   * The SSE `event:` names the kernel handler emits for this entity, in
+   * declaration order: the raw `@DomainEvent` name, or the entity name +
+   * `Event` when the name is blank — the same choice
+   * `KernelStreamHandlerGenerator.eventBindings` makes.
    */
   private streamEventNames(domain: DomainMetadata): string[] {
     const names: string[] = [];
