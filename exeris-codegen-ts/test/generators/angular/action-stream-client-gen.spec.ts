@@ -7,6 +7,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import ts from 'typescript';
 import {
   ActionStreamClientGenerator,
   generateActionStreamClient,
@@ -134,7 +135,7 @@ describe('ActionStreamClientGenerator — named SSE event handling', () => {
     const content = gen.generate(domain({ entityName: 'Order', actions: [streamingAction] }), CTX)!.content;
 
     // The hand-rolled parser reads event:, so named frames are delivered.
-    expect(content).toContain("if (line.startsWith('event:'))");
+    expect(content).toContain("if (field === 'event') {");
     expect(content).toContain("STREAM_EVENT_TYPE = 'ShipmentMoved'");
     // Honesty note: named events are delivered, not silently dropped.
     expect(content).toContain('NAMED frames are delivered');
@@ -275,5 +276,87 @@ describe('generateActionStreamClient — top-level convenience function', () => 
     expect(
       generateActionStreamClient(domain({ entityName: 'Order', actions: [plainAction] }), CTX.config),
     ).toBeNull();
+  });
+});
+
+// ---------- behaviour on the kernel wire ----------
+
+interface Frame {
+  event: string;
+  data: string;
+}
+
+/** The smallest Observable the emitted client needs: subscribe runs the producer once. */
+class StubObservable<T> {
+  constructor(private readonly producer: (s: { next(v: T): void; error(e: unknown): void; complete(): void }) => () => void) {}
+
+  subscribe(observer: { next(v: T): void; error(e: unknown): void; complete(): void }): { unsubscribe(): void } {
+    return { unsubscribe: this.producer(observer) };
+  }
+}
+
+/**
+ * The emitted module, transpiled and bound to stand-ins for its two runtime imports — neither
+ * `@angular/core` nor `rxjs` is installed here.
+ */
+function loadClient(content: string, className: string): new () => { stream(id: string): StubObservable<Frame> } {
+  const source = content.replace(/^import .*;$/gm, '');
+  const js = ts.transpileModule(source, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const exports: Record<string, unknown> = {};
+  new Function('exports', 'Injectable', 'Observable', js)(exports, () => () => undefined, StubObservable);
+  return exports[className] as new () => { stream(id: string): StubObservable<Frame> };
+}
+
+/** Bytes exactly as the kernel's SseEventEncoder frames a named event: `event: `, `data: `, blank line. */
+const KERNEL_FRAMES = 'event: ShipmentMoved\ndata: {"leg": 2, "note": "a: b "}\n\nevent: keep-alive\ndata: \n\n';
+
+describe('ActionStreamClientGenerator — tenant-partitioned entities', () => {
+  it('emits no client and no aggregate (stream routes carry no tenant guard)', () => {
+    const gen = new ActionStreamClientGenerator();
+    for (const scope of [{ dataScope: 'TENANT' }, { dataScope: 'UNIVERSE' }, { tenantScoped: true }] as const) {
+      const d = domain({ entityName: 'Order', actions: [streamingAction], ...scope });
+      expect(gen.generate(d, CTX)).toBeNull();
+      expect(gen.generateAggregate([d], CTX)).toEqual([]);
+    }
+  });
+});
+
+describe('ActionStreamClientGenerator — emitted client against the kernel wire format', () => {
+  it('opens the stream with POST on the served route and parses every named frame', async () => {
+    const content = new ActionStreamClientGenerator()
+      .generate(domain({ entityName: 'Order', path: '/orders', actions: [streamingAction] }), CTX)!.content;
+    const Client = loadClient(content, 'OrderTrackShipmentStreamClient');
+
+    const requests: Array<{ url: string; method: string | undefined }> = [];
+    const bytes = new TextEncoder().encode(KERNEL_FRAMES);
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      requests.push({ url, method: init?.method });
+      // Split mid-frame and mid-field, as a network read may.
+      const cuts = [0, 7, 30, 52, bytes.length];
+      return new Response(new ReadableStream({
+        start(controller) {
+          for (let i = 0; i + 1 < cuts.length; i++) controller.enqueue(bytes.slice(cuts[i], cuts[i + 1]));
+          controller.close();
+        },
+      }), { status: 200 });
+    }) as typeof fetch;
+
+    try {
+      const frames: Frame[] = [];
+      await new Promise<void>((resolve, reject) => {
+        new Client().stream('42').subscribe({ next: (f) => frames.push(f), error: reject, complete: resolve });
+      });
+
+      expect(requests).toEqual([{ url: '/orders/42/actions/track-shipment', method: 'POST' }]);
+      expect(frames).toEqual([
+        { event: 'ShipmentMoved', data: '{"leg": 2, "note": "a: b "}' },
+        { event: 'keep-alive', data: '' },
+      ]);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
   });
 });

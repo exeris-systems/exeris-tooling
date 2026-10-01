@@ -61,7 +61,13 @@ const domains = [
     actions: [
       { name: 'cancel', methodName: 'cancel' },
       { name: 'setStatus', methodName: 'setStatus', params: [{ name: 'status', type: 'com.shop.OrderStatus' }] },
+      // A streaming action is served as a stream only: it gets an action stream client and no
+      // service method. The enum param pins that the service then imports nothing for it.
+      { name: 'trackDelivery', methodName: 'trackDelivery', streaming: true, streamEventType: 'DeliveryProgress',
+        params: [{ name: 'status', type: 'com.shop.OrderStatus' }] },
     ],
+    // The live-view stream client listens for each declared event by name.
+    realTimeApi: true,
     // The saga state machine is emitted only for an entity that declares one, so without this
     // the `generateSagas` flag has nothing to build and the FE gate never compiles saga-gen's
     // output. Two of the three steps carry a compensation and one does not, which is the only
@@ -82,9 +88,13 @@ const domains = [
   // A SECOND saga, so the barrel is built with two machines. Each saga file declares its own
   // SagaState/SagaStep/SagaStatusSnapshot, so a barrel that starred both would make every one of
   // those names ambiguous. One saga in the fixture could never show that.
+  // It is also the second entity with both stream routes: its live view has no event to listen
+  // for, and two action stream files must share one StreamFrame rather than each declare their own.
   d({
     entityName: 'Product',
     fields: [{ name: 'id', type: 'java.util.UUID' }, { name: 'name', type: 'String' }],
+    realTimeApi: true,
+    actions: [{ name: 'watchStock', methodName: 'watchStock', streaming: true }],
     sagaMetadata: {
       name: 'ProductRestock',
       steps: [

@@ -1695,7 +1695,8 @@ never-invoked emitter start emitting, and its output did not build.
       The architect's proposed direction, an ADR-044 amendment: guard plus an RLS `findById` for
       per-action streams, and a processor ERROR for `realTimeApi` on a TENANT entity until the
       kernel carries an isolation key on events. The dog-food is unaffected (`GalacticEra` is
-      GLOBAL). Reproduce it before it takes a number.
+      GLOBAL). Reproduce it before it takes a number. Until it is fixed, `exeris-codegen-ts` emits
+      no stream client for a tenant-partitioned (`TENANT` or `UNIVERSE`) entity.
 - [x] **T42 — the mesh has no generated frontend contract.** Types slice shipped 0.8.0 (ADR-048).
       `codegen-ts` was single-service by construction: one metadata directory in, one app out. A mesh
       consumer retyped the other service's vocabulary by hand across a language boundary with no
@@ -2791,9 +2792,11 @@ release.
       carries its version (#236) · ADR-076 status mapping (#239) · `audited` panel (#240) ·
       `MANY_TO_ONE` UUID-FK link (#238). Route guards stay with **T53**.
 - [x] **Stage 0 — parity gate.** Every `DomainMetadataSchema` field is `READ`, `JAVA_ONLY`,
-      `RESERVED` or `GAP`, measured at generation time. One `GAP`: `realTimeApi`.
-- [ ] **`realTimeApi` parity** — the orchestrator composes the TS stream clients the Java side's
-      SSE routes serve.
+      `RESERVED` or `GAP`, measured at generation time. No field is in `GAP`.
+- [x] **`realTimeApi` parity** — the orchestrator composes the TS stream clients the Java side's
+      SSE routes serve: the live-view client listens for each `@DomainEvent` by name, a streaming
+      action gets its stream client and no respond-once service method, and
+      `contract/stream-routes.json` pins the routes on both sides.
 - [ ] **TS output-stability ADR** — ADR-015 covers codegen-core and codegen-java only; needed before
       the first npm publication.
 

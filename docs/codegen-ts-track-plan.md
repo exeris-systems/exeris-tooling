@@ -47,7 +47,8 @@ the first update of a row succeeds, every later one gets 409.
 
 **The 1.0 annotation metric cannot see any of this.** "51 of 51 SDK annotations reach emitted
 output" counts against the union of the Java and TS emitters, so a field only Java reads counts as
-covered. The TS line therefore needs its own criterion (stage 0, proposed).
+covered. The TS line therefore needs its own criterion: stage 0 gates it, and the no-`GAP`
+criterion below is proposed.
 
 ## Stages
 
@@ -66,16 +67,23 @@ the orchestrator over proxied metadata. Four states:
 - **`GAP`** — the Java side acts on it and the front owes a counterpart it does not emit yet.
 
 The last three carry a reason. A field added to the schema, or one a generator starts or stops
-reading, fails the build until it is classified. At the end of stage 1: 18 `READ`, 4 `JAVA_ONLY`,
-14 `RESERVED`, 1 `GAP`.
+reading, fails the build until it is classified. Today: 19 `READ`, 4 `JAVA_ONLY`, 14 `RESERVED`,
+0 `GAP`.
 
 **Proposed TS 1.0 criterion: no field in `GAP`** — no field the backend acts on is silently ignored
 by the front. Not yet in the ROADMAP's 1.0 list.
 
-**The one `GAP`: `realTimeApi`.** The Java side emits the SSE stream handler and route; the TS
-stream clients (`stream-client-gen`, `action-stream-client-gen`) are registered but the
-orchestrator the CLI runs never composes them. `guard-gen` and `query-builder-gen` are uncomposed
-the same way. Composing the stream clients is the next parity item (stage 4, with EV1-stream).
+**`realTimeApi` is `READ`.** The orchestrator composes a stream client for every SSE route the
+emitted application serves, under `src/app/services/` beside the services and exported from the app
+barrel, whenever services are generated: the live-view client (`<entity>.stream.ts`, a native
+`EventSource` on `GET {base}/stream`) for a `realTimeApi` entity, registering one listener per
+`@DomainEvent` name because every frame the handler sends is named; and the action stream clients
+(`<entity>.action-streams.ts`, `fetch` over `POST {base}/{id}/actions/{kebab}`) for each
+`@Action(streaming)`, which has no respond-once route and so no service method.
+`contract/stream-routes.json` pins those routes on both sides (`StreamRouteParityE2ETest`,
+`stream-route-parity.spec.ts`). A tenant-partitioned entity (`TENANT` or `UNIVERSE`) gets neither
+client until the server guards its stream routes — see the ROADMAP item *Stream endpoints carry no
+tenant guard*. `guard-gen` and `query-builder-gen` remain uncomposed.
 
 ### Stage 1 — contract parity with the emitted backend — shipped
 
@@ -127,8 +135,9 @@ ADR-worthy.
 
 ### Stage 4 — remaining parity, tests, release
 
-- Compose the TS stream clients (closes the `realTimeApi` GAP), then the per-action stream driver
-  (EV1-stream), unblocked on the pinned kernel.
+- The per-action stream producer (EV1-stream): the action stream handler still sends only the
+  keep-alive scaffold, waiting on an SDK widening that links a streaming action to its event
+  types; the TS client already parses its named frames.
 - Test-emitter coverage: `spec-gen` covers 2 of 18 TS emitters.
 - `npm run lint` cannot run (no `eslint.config.*`) and is not in CI.
 - **A stability decision for the TS output.** ADR-015's output-stability contract covers
