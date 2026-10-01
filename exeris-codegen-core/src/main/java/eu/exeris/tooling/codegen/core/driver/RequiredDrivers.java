@@ -90,6 +90,6 @@ public final class RequiredDrivers {
      * equally; this is the answer for the consumer who has none.
      */
     public static String suggestedArtifact() {
-        return "eu.exeris.kernel:exeris-kernel-community";
+        return "eu.exeris:exeris-kernel-community";
     }
 }
