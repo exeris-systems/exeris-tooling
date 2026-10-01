@@ -24,13 +24,37 @@ const here = dirname(fileURLToPath(import.meta.url));
 const packageJsonPath = resolve(here, '..', 'package.json');
 const pomPath = resolve(process.argv[2] ?? resolve(here, '..', '..', 'pom.xml'));
 
+/**
+ * The document with every comment, CDATA section, processing instruction and doctype skipped in
+ * one left-to-right pass, so a delimiter inside one of them never opens another. An unterminated
+ * one runs to the end of the document.
+ */
+function withoutNonElementMarkup(xml) {
+  const spans = [
+    ['<!--', '-->'],
+    ['<![CDATA[', ']]>'],
+    ['<?', '?>'],
+    ['<!DOCTYPE', '>'],
+  ];
+  let out = '';
+  let i = 0;
+  while (i < xml.length) {
+    const span = spans.find(([open]) => xml.startsWith(open, i)
+      || (open === '<!DOCTYPE' && xml.slice(i, i + open.length).toUpperCase() === open));
+    if (!span) {
+      out += xml[i];
+      i++;
+      continue;
+    }
+    const end = xml.indexOf(span[1], i + span[0].length);
+    i = end === -1 ? xml.length : end + span[1].length;
+  }
+  return out;
+}
+
 function projectVersion(xml) {
   // Comments, CDATA, processing instructions and the doctype carry no elements.
-  const body = xml
-    .replace(/<!--[\s\S]*?-->/g, '')
-    .replace(/<!\[CDATA\[[\s\S]*?\]\]>/g, '')
-    .replace(/<\?[\s\S]*?\?>/g, '')
-    .replace(/<!DOCTYPE[^>]*>/gi, '');
+  const body = withoutNonElementMarkup(xml);
 
   const tag = /<(\/?)([A-Za-z_][\w.:-]*)[^>]*?(\/?)>/g;
   let depth = 0;
