@@ -19,6 +19,7 @@ import type { CodeGenerator, GeneratedFile, GeneratorContext } from '../../core/
 import type { BackendType } from '../../core/backend-strategy.js';
 import { outPath } from '../../core/paths.js';
 import { foreignKeyLinks } from './relationship-links.js';
+import { tsSingleQuoted } from './ts-literal.js';
 
 export { GeneratedFile };
 
@@ -117,6 +118,7 @@ export class ListGenerator implements CodeGenerator {
     lines.push(`import { FormsModule } from '@angular/forms';`);
     lines.push(`import { ${modelName}, ${entityName}Service, PageRequest, ${modelName}Filter, Page } from '../services/${kebabName}.service';`);
     lines.push(`import { Subject, debounceTime, distinctUntilChanged } from 'rxjs';`);
+    lines.push(`import { httpErrorMessage } from '../core/http-error';`);
     lines.push(`import { takeUntilDestroyed } from '@angular/core/rxjs-interop';`);
     lines.push(``);
 
@@ -171,6 +173,11 @@ export class ListGenerator implements CodeGenerator {
     lines.push(`          </a>`);
     lines.push(`        </div>`);
     lines.push(`      </div>`);
+    lines.push(``);
+
+    lines.push(`      @if (deleteError()) {`);
+    lines.push(`        <div role="alert" data-testid="delete-error" class="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">{{ deleteError() }}</div>`);
+    lines.push(`      }`);
     lines.push(``);
 
     // Search & Filters
@@ -403,6 +410,7 @@ export class ListGenerator implements CodeGenerator {
     lines.push(`  readonly data = signal<Page<${modelName}> | null>(null);`);
     lines.push(`  readonly isLoading = signal(false);`);
     lines.push(`  readonly error = signal<string | null>(null);`);
+    lines.push(`  readonly deleteError = signal<string | null>(null);`);
     lines.push(``);
     lines.push(`  // Computed values`);
     lines.push(`  readonly items = computed(() => this.data()?.content ?? []);`);
@@ -443,7 +451,7 @@ export class ListGenerator implements CodeGenerator {
     lines.push(`        this.isLoading.set(false);`);
     lines.push(`      },`);
     lines.push(`      error: (err) => {`);
-    lines.push(`        this.error.set(err.message || 'Failed to load data');`);
+    lines.push(`        this.error.set(httpErrorMessage(err, { entity: '${tsSingleQuoted(pluralName.toLowerCase())}', action: 'load' }));`);
     lines.push(`        this.isLoading.set(false);`);
     lines.push(`      },`);
     lines.push(`    });`);
@@ -485,13 +493,13 @@ export class ListGenerator implements CodeGenerator {
     lines.push(``);
     lines.push(`  onDelete(item: ${modelName}): void {`);
     lines.push(`    if (confirm('Are you sure you want to delete this ${displayName.toLowerCase()}?')) {`);
+    lines.push(`      this.deleteError.set(null);`);
     lines.push(`      this.service.delete(String(item.${idField})).subscribe({`);
     lines.push(`        next: () => {`);
     lines.push(`          this.loadData();`);
     lines.push(`        },`);
     lines.push(`        error: (err) => {`);
-    lines.push(`          console.error('Failed to delete:', err);`);
-    lines.push(`          alert('Failed to delete ${displayName.toLowerCase()}');`);
+    lines.push(`          this.deleteError.set(httpErrorMessage(err, { entity: '${tsSingleQuoted(displayName.toLowerCase())}', action: 'delete' }));`);
     lines.push(`        },`);
     lines.push(`      });`);
     lines.push(`    }`);
