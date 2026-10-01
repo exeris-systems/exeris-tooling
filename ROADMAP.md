@@ -2795,7 +2795,7 @@ ui-kit from npmjs, and the npm release step.
       carries its version (#236) · ADR-076 status mapping (#239) · `audited` panel (#240) ·
       `MANY_TO_ONE` UUID-FK link (#238). Route guards stay with **T53**.
 - [x] **Stage 0 — parity gate.** Every `DomainMetadataSchema` field is `READ`, `JAVA_ONLY`,
-      `RESERVED` or `GAP`, measured at generation time. No field is in `GAP`.
+      `RESERVED` or `GAP`, measured at generation time, top-level and nested.
 - [x] **`realTimeApi` parity** — the orchestrator composes the TS stream clients the Java side's
       SSE routes serve: the live-view client listens for each `@DomainEvent` by name, a streaming
       action gets its stream client and no respond-once service method, and
