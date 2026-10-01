@@ -54,8 +54,9 @@ export class TypeGenerator implements CodeGenerator {
       overwritable: true,
     });
 
-    // Generate barrel export for schemas
-    if (context.config.generateZod) {
+    // Generate barrel export for schemas. Enum schemas live in the enum module, so with no visible
+    // entity the barrel would re-export nothing.
+    if (context.config.generateZod && visibleDomains.length > 0) {
       files.push({
         path: 'schemas/index.ts',
         content: this.generateSchemasBarrel(visibleDomains),

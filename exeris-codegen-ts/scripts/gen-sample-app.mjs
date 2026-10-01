@@ -5,7 +5,11 @@
  * `npm install` + `ng build` it — catching component/service/template breakage
  * (the layer that needs `@angular/*`).
  *
- * Usage: node scripts/gen-sample-app.mjs <output-dir>
+ * Usage: node scripts/gen-sample-app.mjs <output-dir> [--view-only]
+ *
+ * `--view-only` generates the backend-less shape instead: no entity, only `@View` pages with
+ * authored (STATIC / NONE) content, which is the scaffold without HTTP wiring. It is built
+ * separately because nothing in the full sample can show that the scaffold compiles without it.
  *
  * Preserves an existing node_modules (only rewrites src/ + config files) so local
  * re-runs don't force a reinstall.
@@ -18,11 +22,13 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const here = dirname(fileURLToPath(import.meta.url));
 const dist = join(here, '..', 'dist');
 
-const out = resolve(process.argv[2] ?? '.fe-sample');
+const args = process.argv.slice(2);
+const viewOnly = args.includes('--view-only');
+const out = resolve(args.find((a) => !a.startsWith('--')) ?? '.fe-sample');
 
 // pathToFileURL: a bare Windows path (D:\…) is an unsupported ESM import scheme.
 const { buildGeneratedFiles } = await import(pathToFileURL(join(dist, 'orchestrator.js')).href);
-const { DomainMetadataSchema } = await import(pathToFileURL(join(dist, 'models/domain-model.js')).href);
+const { DomainMetadataSchema, ViewMetadataSchema } = await import(pathToFileURL(join(dist, 'models/domain-model.js')).href);
 const { DEFAULT_CONFIG } = await import(pathToFileURL(join(dist, 'config.js')).href);
 
 const d = (o) => DomainMetadataSchema.parse({ packageName: 'com.shop', ...o });
@@ -227,7 +233,46 @@ const peers = [
 // generated with tests on. EXERIS_SAMPLE_NO_TESTS generates the default (opt-out) shape instead,
 // which is what proves the flag leaves output untouched when nobody asks for tests.
 const config = { ...DEFAULT_CONFIG, generateTests: !process.env.EXERIS_SAMPLE_NO_TESTS };
-const files = buildGeneratedFiles(domains, enums, config, [], peers);
+
+// The backend-less app: two pages and a section, all authored content. The landing page nests
+// blocks and leaves one binding at the SDK's NONE default; the section is routed but gets no nav
+// link. No entity, enum or peer, so nothing in it reaches an API.
+const views = [
+  ViewMetadataSchema.parse({
+    name: 'Home',
+    title: 'Welcome',
+    regions: [
+      {
+        slot: 'main',
+        components: [
+          { type: 'HERO', binding: { source: 'STATIC' }, props: 'A front with no backend' },
+          {
+            type: 'GRID',
+            children: [
+              { type: 'CARD', binding: { source: 'STATIC' }, props: 'Authored content' },
+              { type: 'CARD', props: 'Rendered at build time' },
+            ],
+          },
+        ],
+      },
+    ],
+  }),
+  ViewMetadataSchema.parse({
+    name: 'About',
+    route: 'about-us',
+    regions: [{ components: [{ type: 'RICH_TEXT', binding: { source: 'STATIC' }, props: 'About this site' }] }],
+  }),
+  ViewMetadataSchema.parse({
+    name: 'Footer',
+    kind: 'SECTION',
+    regions: [{ components: [{ type: 'NAV', binding: { source: 'NONE' }, props: 'Links' }] }],
+  }),
+];
+
+// It has no entity, so no spec to run: generated with the default (tests off) shape.
+const files = viewOnly
+  ? buildGeneratedFiles([], [], DEFAULT_CONFIG, views, [])
+  : buildGeneratedFiles(domains, enums, config, [], peers);
 
 // Rewrite src/ (preserve node_modules); overwrite root config files in place.
 rmSync(join(out, 'src'), { recursive: true, force: true });
