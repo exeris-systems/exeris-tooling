@@ -4,7 +4,7 @@ type: design-note
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-09-30
+last-verified: 2026-10-01
 ---
 
 # codegen-ts track — the emitted front consumes what the backend serves
@@ -31,6 +31,10 @@ the shared contract** shows it. Measured on `main` at `d2db7b3`:
 | `relationships` | 5 | 0 | show that Order → Customer: no link, no picker, no related panel |
 | `audited` | 7 | 0 | the audit panel keys on field names that happen to be declared |
 | `graphMetadata` | 1 | 0 | — (server-side graph sync; JAVA_ONLY by nature, see below) |
+
+Stage 1 closed the first three rows: the TS side now reads `versioned`, `audited` and
+`relationships`, and `softDelete` with them (the system-field classification the views share).
+Stage 0's gate holds the per-field state from here on.
 
 Beyond fields, the wire contract: the emitted handler answers 400 / 404 / 409 / 500 with **no
 body** (`KernelHandlerGenerator`), and the emitted front maps none of them — two delete paths call
@@ -59,7 +63,9 @@ classified. Proposed as the TS line's GA criterion — not yet in the ROADMAP's 
 ignored by the front. Scheduled after stage 1 so it lands against a table with the stage-1 fields
 already moved to *read*.
 
-### Stage 1 — contract parity with the emitted backend
+### Stage 1 — contract parity with the emitted backend — shipped
+
+Shipped as #235 (A0), #236 (A), #239 (B), #240 (C), #238 (D).
 
 Scope follows the emitted Java (`KernelHandlerGenerator`, `KernelRepositoryGenerator`,
 `OpenApiPathsBuilder`). A–D are **SHARED** surfaces: the
@@ -110,6 +116,14 @@ ADR-worthy.
 - The per-action stream driver (EV1-stream), unblocked on the pinned kernel.
 - Test-emitter coverage: `spec-gen` covers 2 of 18 TS emitters.
 - `npm run lint` cannot run (no `eslint.config.*`) and is not in CI.
+- **A stability decision for the TS output.** ADR-015's output-stability contract covers
+  codegen-core and codegen-java only (MIGRATION lists codegen-ts as out of its scope), so no decision
+  says what a change to the emitted Angular app owes its consumers. The organisation's PR
+  classification needs one: `breaking (ADR-NNN)` has no ADR to name for a TS-only change, and a
+  narrowing of the regenerated view (stage 1, PR-C) fits none of its values. An ADR — the TS
+  counterpart of ADR-015 — before the first npm publication.
+- The generated header comments carry Javadoc-only tags (`@author`, `@since`) in `.ts` doc comments
+  across the emitters; one sweep, separate from feature work.
 - First npmjs publication of `@exeris/codegen-ts`.
 
 `graphMetadata` stays **JAVA_ONLY**: its one consumer is server-side graph sync. A graph
