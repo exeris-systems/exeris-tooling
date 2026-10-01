@@ -2,8 +2,8 @@ name: release to maven central
 
 # Two triggers, and the split is what each one is for.
 #
-# **A tag is the release.** `v0.9.0` on a commit that is on `main` builds, signs, gates, attests and
-# uploads. A push to a BRANCH fires this not at all, so a CI fix landing on `main` releases nothing.
+# **A tag is the release.** `v0.9.0` on a commit that is on `main` builds, signs and uploads an
+# unpublished deployment, then runs the readiness gate and attests. A push to a BRANCH fires this not at all, so a CI fix landing on `main` releases nothing.
 #
 # **The dispatch is the dry run.** With `upload` unchecked it builds, signs and runs every gate while
 # touching nothing remote, from any branch: the cheap way to find out whether a change broke the
@@ -226,8 +226,9 @@ jobs:
       - name: Release-readiness gate
         # Every published coordinate has its pom, jar, sources jar and javadoc jar, each with a good
         # signature; the Maven plugin carries its descriptor; maven.deploy.skip and <excludeArtifacts>
-        # agree. On the upload path Central validates the same and this is a second, clearer opinion;
-        # on the dry run it is the only one.
+        # agree. On the upload path it runs after the upload, so it cannot stop one: what it guards is
+        # publication. The deployment stays unpublished (autoPublish=false), and a failure here means
+        # Drop it in the Central Portal instead of pressing Publish. On the dry run it is the only check.
         run: tools/release-readiness/release-readiness.sh
 
       - name: Attest build provenance (SLSA)

@@ -5,8 +5,8 @@
   <!--
     The one place this repository names a GitHub Packages registry. It is a settings file and not
     the root POM because a repository declared in a POM, profile or not, is deployed with it and
-    sent to every consumer of the published coordinate (see the comment where <repositories> used
-    to be in pom.xml). Same shape as exeris-kernel-enterprise/.github/maven-settings.xml.
+    sent to every consumer of the published coordinate. Same shape as
+    exeris-kernel-enterprise/.github/maven-settings.xml.
 
     Credentials arrive from the environment, never from this file. Locally, export GITHUB_ACTOR and
     a GITHUB_TOKEN (PAT, classic, read:packages) and hand this file to mvn with `-s`, or build the kernel from source and `mvn install` it, which needs neither.
