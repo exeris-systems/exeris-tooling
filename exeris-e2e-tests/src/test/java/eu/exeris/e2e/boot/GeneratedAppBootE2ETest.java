@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
+import java.lang.reflect.Method;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.LinkedHashMap;
@@ -172,6 +173,15 @@ class GeneratedAppBootE2ETest {
         assertThat(probe).last().isEqualTo("subscriber:unsubscribe");
     }
 
+    @Test
+    @DisplayName("the emitted subsystems() names what the domain uses — a saga and a domain event, "
+            + "no graph — and the harness's override replaces it")
+    void subsystemsAreDerivedAndTheOverrideReplacesThem() throws Exception {
+        assertThat(subsystems(BASE_PACKAGE + ".Application"))
+                .isEqualTo("http,persistence,flow,events,crypto");
+        assertThat(subsystems(BASE_PACKAGE + ".LiveApplication")).isEqualTo("http,events,flow");
+    }
+
     // ------------------------------------------------------------------ harness
 
     @SuppressWarnings("unchecked")
@@ -187,6 +197,14 @@ class GeneratedAppBootE2ETest {
             }
             Thread.sleep(20);
         }
+    }
+
+    private static String subsystems(String applicationClass) throws Exception {
+        Class<?> type = appLoader.loadClass(applicationClass);
+        Method subsystems = appLoader.loadClass(BASE_PACKAGE + ".Application")
+                .getDeclaredMethod("subsystems");
+        subsystems.setAccessible(true);
+        return (String) subsystems.invoke(type.getDeclaredConstructor().newInstance());
     }
 
     private static HttpHandler edgeRouter(AtomicReference<HttpHandler> handlerSlot,
@@ -268,8 +286,9 @@ class GeneratedAppBootE2ETest {
 
                 public class LiveApplication extends Application {
 
-                    // No graph, no crypto: the fixture needs http, the event bus and the flow engine.
-                    // events and flow pull persistence and memory by dependency closure.
+                    // The generated default is http,persistence,flow,events,crypto. This drops crypto,
+                    // which nothing here uses, and names no persistence: events and flow pull
+                    // persistence and memory by dependency closure.
                     @Override
                     protected String subsystems() {
                         return "http,events,flow";

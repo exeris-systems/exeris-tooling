@@ -692,6 +692,93 @@ class KernelApplicationGeneratorTest {
                 .contains("REQUEST_SCOPES = List.of();");
     }
 
+    @Test
+    @DisplayName("subsystems() names what the domain uses: a plain entity boots http, persistence "
+            + "and crypto, and the Javadoc no longer asks the reader to drop graph by hand")
+    void subsystemsAreDerivedFromTheDomain() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        DomainMetadata tag = DomainMetadata.builder("Tag", "com.example.foundation.domain")
+                .path("/tags").build();
+        String application = application(gen.generateAll(List.of(tag), "com.example.foundation"));
+
+        assertThat(method(application, "\n    protected String subsystems()"))
+                .contains("return \"http,persistence,crypto\";");
+        assertThat(application)
+                .contains("{@code http,persistence,crypto}")
+                .contains("return super.subsystems() + \",scheduling\";")
+                .doesNotContain("to drop {@code graph}")
+                .doesNotContain("http,persistence,graph,flow,events,crypto");
+
+        assertThat(method(application(gen.generateAll(List.of(orderWithEventsAndSaga()),
+                "com.example.foundation")), "\n    protected String subsystems()"))
+                .contains("return \"http,persistence,flow,events,crypto\";");
+    }
+
+    @Test
+    @DisplayName("each conditional subsystem is listed exactly when emitted code reads its engine — "
+            + "events with eventEngine(), flow with flowEngine(), graph with a GraphSync")
+    void subsystemsFollowTheEmittedEngineReads() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        KernelGraphSyncGenerator graphSync = new KernelGraphSyncGenerator();
+        DomainMetadata plain = DomainMetadata.builder("Tag", "com.example.domain").path("/tags").build();
+        DomainMetadata streamOnly = DomainMetadata.builder("Feed", "com.example.domain")
+                .path("/feeds").realTimeApi(true).build();
+        DomainMetadata streamWithEvents = DomainMetadata.builder("Beacon", "com.example.domain")
+                .path("/beacons").realTimeApi(true)
+                .events(List.of(eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata.simple("BeaconPinged")))
+                .build();
+        DomainMetadata graph = DomainMetadata.builder("Customer", "com.example.domain")
+                .path("/customers")
+                .graphMetadata(eu.exeris.sdk.sourcemodel.ast.GraphMetadata.simple("Customer"))
+                .build();
+        DomainMetadata saga = DomainMetadata.builder("Shipment", "com.example.domain")
+                .path("/shipments")
+                .sagaMetadata(eu.exeris.sdk.sourcemodel.ast.SagaMetadata.simple("ShipmentSaga"))
+                .build();
+
+        for (List<DomainMetadata> domains : List.of(List.of(plain), List.of(streamOnly),
+                List.of(streamWithEvents), List.of(graph), List.of(saga),
+                List.of(plain, graph, saga, streamWithEvents), List.of(orderWithEventsAndSaga()))) {
+            List<GeneratedFile> files = gen.generateAll(domains, "com.example.foundation");
+            // Code only: the class Javadoc names both engines in its examples.
+            String components = components(files).lines()
+                    .filter(line -> !line.strip().startsWith("*") && !line.strip().startsWith("/"))
+                    .collect(java.util.stream.Collectors.joining("\n"));
+            List<String> names = List.of(method(application(files), "\n    protected String subsystems()")
+                    .replaceAll("(?s).*return \"([^\"]*)\";.*", "$1").split(","));
+            boolean emitsGraphSync = domains.stream().anyMatch(d -> graphSync.generate(d) != null);
+
+            assertThat(names).as("always on, for %s", domains)
+                    .contains("http", "persistence", "crypto");
+            assertThat(names.contains("events")).as("events for %s", domains)
+                    .isEqualTo(components.contains("KernelProviders.eventEngine()"));
+            assertThat(names.contains("flow")).as("flow for %s", domains)
+                    .isEqualTo(components.contains("KernelProviders.flowEngine()"));
+            assertThat(names.contains("graph")).as("graph for %s", domains)
+                    .isEqualTo(emitsGraphSync);
+        }
+    }
+
+    @Test
+    @DisplayName("subsystems() is the same string whatever order the domains arrive in")
+    void subsystemsDoNotDependOnDomainOrder() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        DomainMetadata graph = DomainMetadata.builder("Customer", "com.example.domain")
+                .path("/customers")
+                .graphMetadata(eu.exeris.sdk.sourcemodel.ast.GraphMetadata.simple("Customer"))
+                .build();
+        DomainMetadata saga = DomainMetadata.builder("Shipment", "com.example.domain")
+                .path("/shipments")
+                .sagaMetadata(eu.exeris.sdk.sourcemodel.ast.SagaMetadata.simple("ShipmentSaga"))
+                .build();
+
+        String forward = method(application(gen.generateAll(List.of(saga, graph), "com.example.foundation")),
+                "\n    protected String subsystems()");
+        String reverse = method(application(gen.generateAll(List.of(graph, saga), "com.example.foundation")),
+                "\n    protected String subsystems()");
+        assertThat(forward).contains("return \"http,persistence,graph,flow,crypto\";").isEqualTo(reverse);
+    }
+
     private static DomainMetadata orderWithEventsAndSaga() {
         return DomainMetadata.builder("Order", "com.example.domain")
                 .path("/orders")
