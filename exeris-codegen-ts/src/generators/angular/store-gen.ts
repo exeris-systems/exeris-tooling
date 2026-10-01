@@ -9,16 +9,13 @@
  * - Filter/search support
  * - Optimistic updates
  *
- * <p><b>No `$localize` in emitted output.</b> The fallback error message does not use
+ * **No `$localize` in emitted output.** The fallback error message does not use
  * `$localize` tagged templates. `$localize` is a global that only exists when the consumer
  * adds `@angular/localize` to their devDependencies and to `polyfills` in `angular.json`,
  * but the emitted app declares `"polyfills": []`. Tooling emits no dependency the consumer
  * did not ask for, so code that silently requires an undeclared dependency violates ADR-060
  * (the rule applied to slf4j on the Java side). Nothing else in the emitted app is
  * internationalised; making it so is a deliberate change, not a side effect.
- *
- * @author Exeris Team
- * @since 0.3.0
  */
 
 import type { DomainMetadata } from '../../models/domain-model.js';

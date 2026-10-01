@@ -8,9 +8,6 @@
  * - Path transformation
  * - Error mapping
  * - Retry logic
- *
- * @author Exeris Team
- * @since 0.3.0
  */
 
 // ============================================================================

@@ -7,9 +7,6 @@
  * - Pagination support
  * - Sorting support
  * - Full-text search
- *
- * @author Exeris Team
- * @since 0.4.0
  */
 
 import type { DomainMetadata, FieldMetadata, CodeGenerator, GeneratedFile, GeneratorContext } from '../../core/generator-registry.js';
