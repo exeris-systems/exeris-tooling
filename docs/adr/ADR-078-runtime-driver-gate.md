@@ -1,3 +1,12 @@
+---
+title: "ADR-078 — The build fails when the generated application has no driver to run on"
+type: adr
+visibility: public
+owning-repo: exeris-tooling
+status: active
+slug: adr/ADR-078
+---
+
 # ADR-078 — The build fails when the generated application has no driver to run on
 
 - **Status:** ACCEPTED (2026-08-27)
