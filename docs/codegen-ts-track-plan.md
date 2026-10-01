@@ -146,8 +146,6 @@ ADR-worthy.
   classification needs one: `breaking (ADR-NNN)` has no ADR to name for a TS-only change, and a
   narrowing of the regenerated view (stage 1, PR-C) fits none of its values. An ADR — the TS
   counterpart of ADR-015 — before the first npm publication.
-- The generated header comments carry Javadoc-only tags (`@author`, `@since`) in `.ts` doc comments
-  across the emitters; one sweep, separate from feature work.
 - First npmjs publication of `@exeris/codegen-ts`.
 
 `graphMetadata` stays **JAVA_ONLY**: its one consumer is server-side graph sync. A graph

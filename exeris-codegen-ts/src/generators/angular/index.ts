@@ -1,8 +1,5 @@
 /**
  * Angular Generators - Public Exports
- *
- * @author Exeris Team
- * @since 0.4.0
  */
 
 // Core generators

@@ -3,9 +3,6 @@
  *
  * Manages registration and execution of code generators.
  * Similar to Java's GeneratorRegistry pattern for consistency.
- *
- * @author Exeris Team
- * @since 0.3.0
  */
 
 import type { BackendType } from './backend-strategy.js';

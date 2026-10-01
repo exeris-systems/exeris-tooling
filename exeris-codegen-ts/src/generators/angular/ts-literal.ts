@@ -2,9 +2,6 @@
  * Escaping helper shared by the Angular emitters.
  *
  * Strong-default #2 (shared scaffold, not copy-paste) applies to the TS side.
- *
- * @author Exeris Team
- * @since 0.8.0
  */
 
 /**

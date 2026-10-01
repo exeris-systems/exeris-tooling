@@ -7,9 +7,6 @@
  * - Descriptions (i18n)
  * - Icons/colors (optional)
  * - Zod schemas
- *
- * @author Exeris Team
- * @since 0.4.0
  */
 
 import type { GeneratorConfig } from '../../config.js';

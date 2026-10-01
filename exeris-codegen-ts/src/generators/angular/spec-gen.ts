@@ -1,25 +1,22 @@
 /**
  * Generated specs for the generated surface — the FE half of T2 (ADR-058).
  *
- * <p><b>Two rules carry over from the Java half and shape everything here.</b>
+ * **Two rules carry over from the Java half and shape everything here.**
  *
- * <p>1. <b>Doubles, never mocks.</b> The service spec drives the real service through Angular's own
+ * 1. **Doubles, never mocks.** The service spec drives the real service through Angular's own
  * `provideHttpClientTesting()`, which lives in `@angular/common/http/testing` — part of a package
  * the emitted app already depends on. No mocking library is required, so emitting these specs adds
  * no dependency beyond the runner itself. On the Java side the same rule produced an emitted
  * `HttpExchange` recorder rather than a Mockito stub.
  *
- * <p>2. <b>The gate runs them.</b> A spec that is only type-checked proves nothing; `ng test` on the
+ * 2. **The gate runs them.** A spec that is only type-checked proves nothing; `ng test` on the
  * generated sample is the gate, exactly as `GeneratedTestsE2ETest` executes the Java half.
  *
- * <p><b>Assertions are derived from metadata, never assumed.</b> The first hand-written probe for
+ * **Assertions are derived from metadata, never assumed.** The first hand-written probe for
  * this slice asserted that an empty object fails the entity schema — and it passed the schema,
  * because that entity declares no required field. A spec emitter that guesses at shape emits
  * failing tests into a consumer's project, so every assertion below is conditioned on what the
  * metadata actually says.
- *
- * @author Exeris Team
- * @since 0.8.0
  */
 
 import { outPath } from '../../core/paths.js';
@@ -163,7 +160,7 @@ export function generateSchemaSpec(
  * The service spec: the real service, Angular's testing HTTP backend, and assertions on the URL
  * and verb each method issues.
  *
- * <p>This is the regression test for the defect class that shipped twice — an emitted client
+ * This is the regression test for the defect class that shipped twice — an emitted client
  * calling a path the emitted server does not serve. It asserts the exact `baseUrl` the generator
  * computed, so a prefix reintroduced by a default nobody typed fails here rather than at runtime.
  */
