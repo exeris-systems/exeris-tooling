@@ -9,9 +9,6 @@
  * canonical app source and are emitted by the REAL generators under the Angular
  * sourceRoot `src/app/` — exactly one tree. `generateAppStructure` contributes the
  * scaffold only; it must not re-emit per-entity files or a stub enum module.
- *
- * @author Exeris Team
- * @since 0.6.0
  */
 
 import type { DomainMetadata, ViewMetadata } from './models/domain-model.js';

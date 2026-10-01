@@ -1,9 +1,6 @@
 /**
  * Angular Service Generator
  * Generates Angular 22+ services from domain metadata.
- *
- * @author Exeris Team
- * @since 0.2.0
  */
 
 import { outPath } from '../../core/paths.js';
@@ -427,8 +424,8 @@ export class ServiceGenerator implements CodeGenerator {
 
   /**
    * Decides whether a single Java type denotes a domain enum needing an import,
-   * returning its simple name (or null). When {@code enumHint} is present
-   * (fields carry {@code enumType}) it is authoritative; otherwise a
+   * returning its simple name (or null). When `enumHint` is present
+   * (fields carry `enumType`) it is authoritative; otherwise a
    * conservative name heuristic is applied — the only signal available for
    * action params, which have no enum hint.
    */

@@ -2,9 +2,6 @@
  * TypeScript models mapping Java DomainMetadata structure from exeris-processor.
  * These interfaces define the contract between Java annotation processor output
  * and TypeScript code generators.
- *
- * @author Exeris Team
- * @since 0.2.0
  */
 
 import { z } from 'zod';

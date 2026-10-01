@@ -1,37 +1,34 @@
 /**
  * Angular Per-Action Stream Client Generator (per-action SSE streaming, ADR-044 Slice 2).
  *
- * Parity twin of the Java {@code KernelActionStreamHandlerGenerator}: for every
- * {@code @Action(streaming = true)} on an entity, the Java side emits a
- * {@code <Entity><ActionPascal>StreamHandler} registered at
- * {@code POST {base}/{id}/actions/{kebab(name)}} via the kernel router's
- * {@code streamRoute(...)} — the request OPENS the stream. This generator emits
+ * Parity twin of the Java `KernelActionStreamHandlerGenerator`: for every
+ * `@Action(streaming = true)` on an entity, the Java side emits a
+ * `<Entity><ActionPascal>StreamHandler` registered at
+ * `POST {base}/{id}/actions/{kebab(name)}` via the kernel router's
+ * `streamRoute(...)` — the request OPENS the stream. This generator emits
  * the matching browser client.
  *
  * Why NOT a native EventSource (RFC-2026-06-22 Axis 4b): a per-action stream is
  * opened over POST (the action invocation IS the subscription) and may need
- * request headers; native {@code EventSource} is GET-only with no custom headers.
- * So the client is RxJS over {@code fetch(url, { method: 'POST', … })} +
- * {@code response.body.getReader()} ({@code ReadableStream}), parsing SSE frames
+ * request headers; native `EventSource` is GET-only with no custom headers.
+ * So the client is RxJS over `fetch(url, { method: 'POST', … })` +
+ * `response.body.getReader()` (`ReadableStream`), parsing SSE frames
  * by hand and aborting the fetch on unsubscribe. Two client idioms coexist
  * (EventSource for entity-level live-view, RxJS-over-fetch for per-action),
  * justified by the transport limits and bounded by the shared route/producer
  * rules (ADR-044 §Trade-offs).
  *
  * Named-event honesty (ADR-044 obligation 2): unlike native EventSource's
- * {@code onmessage} (which drops named frames), this hand-rolled SSE parser reads
- * the {@code event:} line, so it dispatches the action's NAMED event
- * ({@code @Action.streamEventType}, or the action name when unset) — no silent
- * drops. The emitted {@code StreamFrame} carries the parsed {@code event} name so
+ * `onmessage` (which drops named frames), this hand-rolled SSE parser reads
+ * the `event:` line, so it dispatches the action's NAMED event
+ * (`@Action.streamEventType`, or the action name when unset) — no silent
+ * drops. The emitted `StreamFrame` carries the parsed `event` name so
  * the caller can demux; the JSDoc states this truthfully.
  *
  * Determinism (hard-constraint #3): no timestamps / UUIDs / random — same
- * {@code DomainMetadata} yields byte-identical output. Actions are emitted in
+ * `DomainMetadata` yields byte-identical output. Actions are emitted in
  * declared order; the route derivation matches the Java side and the TS
- * service-gen byte-for-byte ({@code apiBasePath + apiPath + /{id}/actions/{kebab}}).
- *
- * @author Exeris Team
- * @since 0.6.0
+ * service-gen byte-for-byte (`apiBasePath + apiPath + /{id}/actions/{kebab}`).
  */
 
 import { outPath } from '../../core/paths.js';
@@ -135,8 +132,8 @@ export class ActionStreamClientGenerator implements CodeGenerator {
   }
 
   /**
-   * The shared {@code StreamFrame} type, emitted ONCE into
-   * {@code services/stream-types.ts} and imported by every per-entity client
+   * The shared `StreamFrame` type, emitted ONCE into
+   * `services/stream-types.ts` and imported by every per-entity client
    * file. Single source → no ambiguous re-export across N streaming entities.
    */
   private renderStreamTypes(): string {
@@ -164,13 +161,13 @@ export class ActionStreamClientGenerator implements CodeGenerator {
 
   /**
    * Builds the per-action SSE route, byte-for-byte parity with the kernel route
-   * the Java handler is registered under: {@code {base}/{id}/actions/{kebab}}.
-   * The {@code {base}} derivation mirrors the ServiceGenerator's {@code baseUrl}
-   * ({@code apiBasePath + apiPath}); {@code {id}} is interpolated by the caller.
+   * the Java handler is registered under: `{base}/{id}/actions/{kebab}`.
+   * The `{base}` derivation mirrors the ServiceGenerator's `baseUrl`
+   * (`apiBasePath + apiPath`); `{id}` is interpolated by the caller.
    *
-   * <p>{@code apiVersion} is deliberately NOT folded in — same reason, and same
-   * miss, as {@code StreamClientGenerator.streamUrl}: the router registers no
-   * version segment, so a domain declaring {@code @ExerisDomain(apiVersion = …)}
+   * `apiVersion` is deliberately NOT folded in — same reason, and same
+   * miss, as `StreamClientGenerator.streamUrl`: the router registers no
+   * version segment, so a domain declaring `@ExerisDomain(apiVersion = …)`
    * streamed to a path nothing serves.
    */
   private actionPath(domain: DomainMetadata, action: ActionMetadata, context: GeneratorContext): string {

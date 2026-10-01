@@ -27,9 +27,6 @@
  *
  * Deterministic: no timestamps / UUIDs / random — same `DomainMetadata`
  * yields byte-identical output; event names keep declaration order.
- *
- * @author Exeris Team
- * @since 0.6.0
  */
 
 import { outPath } from '../../core/paths.js';
@@ -115,7 +112,7 @@ export class StreamClientGenerator implements CodeGenerator {
    * derivation mirrors the ServiceGenerator's `baseUrl`
    * (`apiBasePath + apiPath`).
    *
-   * <p>`apiVersion` is deliberately NOT folded in. The router registers
+   * `apiVersion` is deliberately NOT folded in. The router registers
    * `streamRoute` at `effectivePath() + "/stream"` with no version
    * segment, so a domain that declares `@ExerisDomain(apiVersion = …)`
    * must not include that version in the client's route.

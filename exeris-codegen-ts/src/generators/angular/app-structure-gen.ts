@@ -9,9 +9,6 @@
  * - angular.json
  * - tsconfig.json
  * - tailwind.config.js
- *
- * @author Exeris Team
- * @since 0.2.0
  */
 
 import type { DomainMetadata, ViewMetadata } from '../../models/domain-model.js';
@@ -356,7 +353,7 @@ export const routes: Routes = [
  * The app barrel — every generated symbol a consumer's own code can reach without knowing
  * internal paths.
  *
- * <p><b>Every section is gated on the flag that gates its emission.</b> When a flag is off,
+ * Every section is gated on the flag that gates its emission. When a flag is off,
  * no exports for that section are emitted — the barrel never references files that were not
  * generated. The `barrel-resolves.spec` asserts this invariant for every combination of flags.
  */
