@@ -15,6 +15,7 @@
 
     <name>Exeris Tooling :: Parent</name>
     <description>Common build configuration for Exeris tooling modules.</description>
+    <url>https://github.com/exeris-systems/exeris-tooling</url>
 
     <dependencyManagement>
         <dependencies>

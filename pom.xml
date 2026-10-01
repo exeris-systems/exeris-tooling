@@ -14,7 +14,11 @@
         generators (kernel-target Java + Angular/TypeScript via separate npm
         package), and end-to-end conformance tests. Apache-2.0.
     </description>
-    <url child.project.url.inherit.append.path="false">https://github.com/exeris-systems/exeris-tooling</url>
+    <!-- Every published module declares its own <url>. An inherited url gets the child's
+         artifactId appended, and `child.project.url.inherit.append.path="false"` does not stop it
+         on Maven 3.9 (effective POMs showed .../exeris-tooling/exeris-tooling-parent/exeris-processor
+         with the attribute in place). The scm attributes below do work and stay. -->
+    <url>https://github.com/exeris-systems/exeris-tooling</url>
     <inceptionYear>2026</inceptionYear>
 
     <organization>
@@ -43,7 +47,7 @@
     <scm child.scm.connection.inherit.append.path="false"
          child.scm.developerConnection.inherit.append.path="false"
          child.scm.url.inherit.append.path="false">
-        <connection>scm:git:git://github.com/exeris-systems/exeris-tooling.git</connection>
+        <connection>scm:git:https://github.com/exeris-systems/exeris-tooling.git</connection>
         <developerConnection>scm:git:ssh://git@github.com/exeris-systems/exeris-tooling.git</developerConnection>
         <url>https://github.com/exeris-systems/exeris-tooling</url>
         <tag>HEAD</tag>
@@ -65,24 +69,17 @@
         </repository>
     </distributionManagement>
 
-    <!-- Open-Core Kernel artifacts (exeris-kernel-spi etc.) are published to
-         GitHub Packages, not Maven Central. The repository declaration here
-         lets the codegen compile-test resolve eu.exeris:exeris-kernel-spi at
-         build time. Auth is provided per-environment via ~/.m2/settings.xml
-         or the CI workflow's actions/setup-java server-id binding. -->
-    <repositories>
-        <repository>
-            <id>github-exeris-kernel</id>
-            <name>Exeris Kernel — GitHub Packages</name>
-            <url>https://maven.pkg.github.com/exeris-systems/exeris-kernel</url>
-            <releases>
-                <enabled>true</enabled>
-            </releases>
-            <snapshots>
-                <enabled>true</enabled>
-            </snapshots>
-        </repository>
-    </repositories>
+    <!-- No <repositories>. Every POM this reactor publishes inherits from this one, and a repository
+         declared here, in any profile included, is written into the deployed POM verbatim: Maven
+         deploys the pom.xml as authored, not the effective model. A consumer resolving a published
+         coordinate would then be pointed at a GitHub Packages registry that needs credentials, for
+         artifacts Central already serves. A profile does not contain it either: a dependency POM's
+         profiles are activated in the consumer's build, so one active by default, or by the absence
+         of a property, is active there too.
+
+         Builds that still need GitHub Packages (kernel pre-releases not yet on Central) get the
+         repository from .github/maven-settings.xml, which declares it in a settings profile that
+         never reaches a POM. -->
 
     <modules>
         <module>exeris-tooling-bom</module>
@@ -160,7 +157,12 @@
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-source-plugin</artifactId>
-                    <version>3.3.1</version>
+                    <version>3.4.0</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-javadoc-plugin</artifactId>
+                    <version>3.12.0</version>
                 </plugin>
             </plugins>
         </pluginManagement>
@@ -195,4 +197,133 @@
             </plugin>
         </plugins>
     </build>
+
+    <!--
+        Everything a Maven Central release needs, and nothing the ordinary build touches. Activated
+        only by `-P release`; .github/workflows/release.yml is the one caller.
+
+        Profile-scoped because central-publishing-maven-plugin declares <extensions>true</extensions>
+        and takes over the `deploy` phase of every module it is declared for. Outside this profile it
+        would own every `mvn deploy` this reactor runs.
+
+        The shape follows exeris-kernel's and exeris-sdk's `release` profiles. The Central Portal
+        replaced OSSRH on 2025-06-30; nexus-staging-maven-plugin and the oss.sonatype.org URLs no
+        longer work.
+    -->
+    <profiles>
+        <profile>
+            <id>release</id>
+            <build>
+                <plugins>
+                    <!-- Central requires a sources jar beside every jar it accepts. -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-source-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>attach-sources</id>
+                                <goals>
+                                    <goal>jar-no-fork</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+
+                    <!--
+                        Central requires a javadoc jar beside every jar it accepts; it does not
+                        inspect its content. doclint is off and failOnError false because no
+                        javadoc gate holds these modules' prose, and the ability to publish must not
+                        depend on ungated prose. What does gate the release is the jar's presence:
+                        tools/release-readiness fails a published jar with no javadoc jar beside it,
+                        which is where a javadoc run that failed quietly here surfaces.
+
+                        The three OpenJDK contract tags are registered because an unregistered
+                        custom tag under `doclint none` is a swallowed warning, and its body is then
+                        dropped from the page.
+                    -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-javadoc-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>attach-javadocs</id>
+                                <goals>
+                                    <goal>jar</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                        <configuration>
+                            <doclint>none</doclint>
+                            <failOnError>false</failOnError>
+                            <quiet>true</quiet>
+                            <tags>
+                                <tag><name>apiNote</name><placement>a</placement><head>API Note:</head></tag>
+                                <tag><name>implSpec</name><placement>a</placement><head>Implementation Requirements:</head></tag>
+                                <tag><name>implNote</name><placement>a</placement><head>Implementation Note:</head></tag>
+                            </tags>
+                        </configuration>
+                    </plugin>
+
+                    <!--
+                        Central verifies a detached GPG signature on every file it accepts: jar,
+                        sources, javadoc and pom.
+
+                        No `gpgArguments`. With a passphrase available the plugin already passes
+                        loopback pinentry and a passphrase file descriptor itself; without one it
+                        appends `pinentry-mode error` after any supplied argument, and gpg honours
+                        the last occurrence. The passphrase arrives through the environment variable
+                        named by `passphraseEnvName`, which actions/setup-java's `gpg-passphrase`
+                        input sets in the settings.xml it generates. release.yml names it
+                        MAVEN_GPG_PASSPHRASE in both places; when the two names differ, signing fails
+                        with "gpg: signing failed: No pinentry", which names neither.
+                    -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-gpg-plugin</artifactId>
+                        <version>3.2.8</version>
+                        <executions>
+                            <execution>
+                                <id>sign-artifacts</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>sign</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+
+                    <!--
+                        autoPublish=false: the upload creates a deployment that a person publishes
+                        in the Central Portal after reading its validation results. A deployment can
+                        be dropped until then; a published release can never be changed.
+                        waitUntil=validated makes the build wait for that validation, so a coordinate
+                        Central rejects fails the workflow instead of sitting in the portal.
+
+                        <excludeArtifacts> and each excluded module's own maven.deploy.skip name the
+                        same modules and are not duplicates. maven.deploy.skip is read by
+                        maven-deploy-plugin, which this plugin replaces; this plugin does not read
+                        it, and without the exclusion it stages the module's jar and pom into the
+                        upload, where a jar with no sources and javadoc beside it fails Central's
+                        validation of the whole deployment. tools/release-readiness asserts the two
+                        lists agree.
+                    -->
+                    <plugin>
+                        <groupId>org.sonatype.central</groupId>
+                        <artifactId>central-publishing-maven-plugin</artifactId>
+                        <version>0.11.0</version>
+                        <extensions>true</extensions>
+                        <configuration>
+                            <publishingServerId>central</publishingServerId>
+                            <autoPublish>false</autoPublish>
+                            <waitUntil>validated</waitUntil>
+                            <excludeArtifacts>
+                                <artifact>exeris-e2e-tests</artifact>
+                                <artifact>exeris-coverage-aggregate</artifact>
+                            </excludeArtifacts>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>
