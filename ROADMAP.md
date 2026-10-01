@@ -2419,7 +2419,8 @@ Each now has the status the code settles, and every other mention in this file a
 - [ ] `MIGRATION-0.x-to-1.0.md`
 - [ ] Maven Central release (processor + codegen-core + codegen-java + plugin) — first published in
       0.9.0
-- [ ] npm registry release for `@exeris/codegen-ts` (npmjs; its own plan)
+- [ ] npm registry release for `@exeris/codegen-ts` — npmjs, `@exeris` scope, first published in
+      0.9.0 on the same tag as the Maven artefacts
 
 ---
 
@@ -2785,11 +2786,13 @@ Each now has the status the code settles, and every other mention in this file a
 
 ### codegen-ts track — contract parity with the emitted backend
 
-`@exeris/codegen-ts` has its own version line and its own plan:
-[`docs/codegen-ts-track-plan.md`](docs/codegen-ts-track-plan.md). It measures what the front reads
-from `DomainMetadata` against what the Java side acts on, and stages the catch-up — 0 a parity gate, 1 contract parity,
-2 backend-less emission, 3 the ADR-047 leaf facet and the U-cluster below, 4 tests and the npmjs
-release.
+`@exeris/codegen-ts` is versioned in lockstep with this reactor and released on the same tag, to
+npmjs under `@exeris`. Its plan: [`docs/codegen-ts-track-plan.md`](docs/codegen-ts-track-plan.md).
+It measures what the front reads from `DomainMetadata` against what the Java side acts on, and
+lists the TS scope the 0.9.0 cut waits for (P1–P15 there): lockstep version, field-schema and
+strict-audit honesty, backend-less emission, the TS output-stability and Signal Forms ADRs, the
+ADR-047 amendment, `FieldRenderModel` and on it U2 / U5 / U3 with a relationship picker, the
+ui-kit from npmjs, and the npm release step.
 
 - [x] **Stage 1 — contract parity.** The emitted edit route edits (#235) · a `versioned` update
       carries its version (#236) · ADR-076 status mapping (#239) · `audited` panel (#240) ·
@@ -2802,6 +2805,7 @@ release.
       `contract/stream-routes.json` pins the routes on both sides.
 - [ ] **TS output-stability ADR** — ADR-015 covers codegen-core and codegen-java only; needed before
       the first npm publication.
+- [ ] **TS 0.9.0 scope** — P1–P15 in the plan; the 0.9.0 cut waits for it.
 
 ### UI fidelity & theming (`exeris-codegen-ts`)
 
@@ -3678,8 +3682,10 @@ Expected to pair with kernel 0.13, and with SDK 0.13 if one is needed.
 (`@Encrypted` / `@RowLevelSecurity`, two asks on the kernel and the SDK) and `@SagaStep.parallel`
 (a kernel contract for concurrent flow steps). Each gets a milestone when its upstream half lands.
 
-**`@exeris/codegen-ts` → npmjs** has its own plan ([`docs/codegen-ts-track-plan.md`](docs/codegen-ts-track-plan.md)). The TS side is further behind than the Java side,
-and it is what a `@View` front end is generated from. **`@Channel` emission** is 0.12.0.
+**`@exeris/codegen-ts` → npmjs** ships in 0.9.0, in lockstep with the reactor; the 0.9.0 cut
+waits for the TS scope in [`docs/codegen-ts-track-plan.md`](docs/codegen-ts-track-plan.md) (P1–P15).
+The TS side is further behind than the Java side, and it is what a `@View` front end is generated
+from. **`@Channel` emission** is 0.12.0.
 
 ### Removals due in 0.10.0
 
@@ -3702,6 +3708,9 @@ keeps compiling where it still uses one. 0.10.0 removes them.
 
 - **0.x** — generated code shape may change in any release; consumers regenerate after every tooling bump
 - **1.x** — generated code shape changes only via additive minors; deprecation cycle for breaking changes
+- **One version for the whole repository.** `@exeris/codegen-ts` carries the reactor's version and
+  is released on the same tag (from 0.9.0; P1 in the codegen-ts plan adds the CI guard that fails
+  when `package.json` and the reactor disagree)
 - Output artifact compat is the headline contract — Maven plugin API is secondary
 - **A release tag carries a final version in the POM.** `v0.7.0` is the first one that does: `v0.5.0`
   and `v0.6.0` were both tagged with the reactor still at `X-SNAPSHOT`, which no sibling repo does

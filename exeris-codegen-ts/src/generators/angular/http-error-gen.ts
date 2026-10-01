@@ -9,8 +9,6 @@
  *
  * The emitted text is a constant: no metadata reaches it, so it is byte-identical across runs
  * and across apps.
- *
- * @since 0.9.0
  */
 
 import type { GeneratorConfig } from '../../config.js';

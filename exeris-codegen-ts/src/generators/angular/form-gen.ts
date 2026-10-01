@@ -1,9 +1,6 @@
 /**
  * Angular Form Generator
  * Generates Angular 22+ form components with Signals from domain metadata.
- *
- * @author Exeris Team
- * @since 0.2.0
  */
 
 import type { DomainMetadata, FieldMetadata } from '../../models/domain-model.js';

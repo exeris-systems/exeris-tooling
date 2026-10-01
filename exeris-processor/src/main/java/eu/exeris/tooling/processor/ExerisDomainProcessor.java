@@ -2640,8 +2640,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      * generated graph sync: an edge not extracted here is one the artefact never carries.
      *
      * <p>{@code @GraphEdge} is {@code @Repeatable(GraphEdges.class)}, so both the direct mirror and
-     * the synthesised container are read — the same shape as {@code @SagaStep}, and the
-     * same helper.
+     * the container are read, through the same helper as {@code @SagaStep}. Unlike a saga step, a
+     * field holds at most one edge: the two carriers are counted together and more than one is
+     * refused.
      *
      * <p>Order is field declaration order, which decides the order of the emitted constants. That
      * is the assumption every other extraction here already makes.
@@ -2652,23 +2653,26 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         for (Element enclosed : element.getEnclosedElements()) {
             if (enclosed.getKind() != ElementKind.FIELD) continue;
 
+            // Repeated on one field: javac replaced the singles with the container. A hand-written
+            // container may also stand beside one direct @GraphEdge (JLS 9.7.5 forbids it only
+            // beside two or more), so both carriers are counted together — the field holds one
+            // edge or it is refused. See refuseRepeatedEdge.
+            List<GraphEdgeMetadata> onField = new ArrayList<>();
             AnnotationMirror direct = findAnnotation(enclosed, GRAPH_EDGE_FQN);
             if (direct != null) {
-                edges.add(graphEdge(direct, enclosed));
+                onField.add(graphEdge(direct, enclosed));
             }
-
-            // Repeated on one field: javac replaced the singles with the container. Read it, so
-            // the repeat is seen rather than silently dropped — and then refuse it, because
-            // GraphEdgeMetadata cannot express it. See refuseRepeatedEdge.
             AnnotationMirror container = findAnnotation(enclosed, GRAPH_EDGES_FQN);
             if (container != null) {
-                List<GraphEdgeMetadata> repeated = new ArrayList<>();
-                forEachContained(container, contained -> repeated.add(graphEdge(contained, enclosed)));
-                if (repeated.size() > 1) {
-                    refuseRepeatedEdge(enclosed, container, repeated);
-                } else {
-                    edges.addAll(repeated);
-                }
+                forEachContained(container, contained -> onField.add(graphEdge(contained, enclosed)));
+            }
+
+            if (onField.size() > 1) {
+                // Anchored on the direct mirror when there is one: a hand-written container is
+                // not what the author repeated.
+                refuseRepeatedEdge(enclosed, direct != null ? direct : container, onField);
+            } else {
+                edges.addAll(onField);
             }
         }
 
@@ -2685,16 +2689,17 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      * the same getter and different identities, and one {@code String} cannot be both.
      *
      * <p>Accepting the shape here would produce metadata that builds at {@code javac} time and then
-     * fails the generator with "Duplicate edge names", two stages away from the declaration — and
-     * that generator's message tells the author to "declare a unique name" on an annotation that
-     * has no {@code name} attribute at all. Refusing at the field, naming the real limitation, is
-     * the better of the three available outcomes; silently dropping the repeats, which is what
-     * happened before this change, is the worst.
+     * fails the generator with "Duplicate edge names", two stages away from the declaration.
+     * Refusing at the field, naming the real limitation, is the better of the three available
+     * outcomes; silently dropping the repeats is the worst.
+     *
+     * <p>The count covers every carrier on the field: the direct mirror and every element of a
+     * {@code @GraphEdges} container, whether javac synthesised it or the author wrote it.
      *
      * <p>Lifting it is an SDK ask: {@code GraphEdgeMetadata} needs the field and the identity as
      * separate components. Recorded in the ROADMAP.
      */
-    private void refuseRepeatedEdge(Element field, AnnotationMirror container,
+    private void refuseRepeatedEdge(Element field, AnnotationMirror anchor,
                                     List<GraphEdgeMetadata> repeated) {
         String types = repeated.stream()
                 .map(e -> e.relationType() != null ? e.relationType() : "(no type)")
@@ -2708,7 +2713,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                         + "value — so two edges on one field would need one name to be both. "
                         + "Declare each edge on its own field, or open an SDK change giving "
                         + "GraphEdgeMetadata a separate identity component.",
-                field, container);
+                field, anchor);
     }
 
     /**

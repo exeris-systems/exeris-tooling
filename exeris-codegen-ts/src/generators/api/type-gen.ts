@@ -1,9 +1,6 @@
 /**
  * TypeScript Type/Interface Generator
  * Generates TypeScript interfaces and Zod schemas from domain metadata.
- *
- * @author Exeris Team
- * @since 0.2.0
  */
 
 import { outPath } from '../../core/paths.js';

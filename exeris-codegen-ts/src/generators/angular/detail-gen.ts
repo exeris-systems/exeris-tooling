@@ -7,9 +7,6 @@
  * - Loading/error states
  * - Full a11y support
  * - i18n-ready strings
- *
- * @author Exeris Team
- * @since 0.4.0
  */
 
 import type { DomainMetadata, FieldMetadata, CodeGenerator, GeneratedFile, GeneratorContext } from '../../core/generator-registry.js';

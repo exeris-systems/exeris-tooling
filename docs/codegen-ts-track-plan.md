@@ -9,8 +9,10 @@ last-verified: 2026-10-01
 
 # codegen-ts track — the emitted front consumes what the backend serves
 
-`@exeris/codegen-ts` has its own version line (`package.json`) and publishes to npm separately from
-the Maven artefacts. This note is that line's plan: what the TypeScript emitter owes before 1.0,
+`@exeris/codegen-ts` is versioned in lockstep with the Maven reactor: one tag `vX.Y.Z` releases
+both, the Maven artefacts to Maven Central and the package to npmjs under the `@exeris` scope. The
+package consumes the `DomainMetadata` JSON the same release's processor writes, so a separate version
+line would need a compatibility matrix for no gain. This note is the TS side's plan: what the TypeScript emitter owes before 1.0,
 in what order, and on which Angular v22 idioms. The [ROADMAP](../ROADMAP.md) keeps one entry that
 points here; per-item evidence lives in the pull requests that close them.
 
@@ -49,6 +51,39 @@ the first update of a row succeeds, every later one gets 409.
 output" counts against the union of the Java and TS emitters, so a field only Java reads counts as
 covered. The TS line therefore needs its own criterion: stage 0 gates it, and the no-`GAP`
 criterion below is proposed.
+
+## 0.9.0 — what the TS side ships with the cut
+
+The 0.9.0 cut waits for this scope. Each row is one pull request; the order respects the
+dependency column.
+
+| id | change | modules | ADR | depends on | size |
+|---|---|---|---|---|---|
+| P1 | Lockstep version: `package.json` follows the reactor (`0.9.0-SNAPSHOT`), and a CI guard fails when the two differ | codegen-ts, build.yml | — | — | S |
+| P2 | Field-schema honesty: `FieldMetadataSchema` / `UIMetadataSchema` keys that never arrive (`inList`, `inDetail`, `order`, `ui`, `listColumns`) are removed or classified, extending the stage-0 gate below the top level | codegen-ts | — | — | S–M |
+| P3 | Strict-audit honesty: a field-level `@UI` and the `@Field` attributes the processor drops (`inList`, `inDetail`, `order`, `group`, `cssClass`, `ui`) warn instead of passing silently | processor | — | — | S |
+| P4 | Stage 2: backend-less emission | codegen-ts | — | — | M |
+| P5 | ADR: stability of the emitted TS output (the counterpart of ADR-015, which covers codegen-core and codegen-java only) | docs | ADR | — | S |
+| P6 | ADR-047 amendment: until the 1.x facet, lists, detail and forms render through one internal `FieldRenderModel` fed by `FieldMetadata`; the facet later feeds the same model | docs | ADR amendment | — | S |
+| P7 | ADR: emitted forms are Signal Forms (Phase C of the Angular v22 RFC) | docs | ADR | P5 | S |
+| P8 | `FieldRenderModel`: one function resolving control, format, alignment and picker from what `FieldMetadata` and relationships carry; output byte-identical | codegen-ts | — | P2, P6 | S–M |
+| P9 | U2 — lists: column types, sorting, real filters, page size, row actions | codegen-ts | — | P8 | M |
+| P10 | U5 — detail: sections and related-entity panels | codegen-ts | — | P8 | S–M |
+| P11 | `form-gen` on Signal Forms at parity — the routed edit (`id` + `rxResource`), the version carried on update and the 409 conflict with reload all survive | codegen-ts | P7 | P7 | L |
+| P12 | U3 — forms from metadata on Signal Forms | codegen-ts | — | P8, P11 | M |
+| P13 | Relationship picker from `@Relationship.displayField`, on Angular Aria only if the installed `@angular/aria` marks the symbols stable (CI reads its `.d.ts`), else a native `<select>` | codegen-ts | design note | P12 | M |
+| P14 | ui-kit from npmjs: the emitted `package.json` / `.npmrc` follow the ui-kit's move off GitHub Packages | codegen-ts | — | the SDK publishing ui-kit to npmjs | S |
+| P15 | The release workflow also releases `@exeris/codegen-ts` to npmjs on the same tag (`repository`, `files`, `publishConfig.access`, provenance) | release.yml, codegen-ts | — | P1, P5, the `@exeris` org on npmjs | M |
+
+**Field-level `@UI` stays unread in 0.9.** The processor reads only the entity-level `@UI` view
+flags; extracting the field-level hints would write keys the SDK `-io` reader does not read
+(ADR-042) and would extend the `@UI` path ADR-047 subsumes into `@View`. Hints only `@UI`,
+`@UIGroup` or `@Tab` carry — `componentType`, `gridSpan`, `placeholder`, `helpText`, sections,
+tabs — arrive with the 1.x facet, through `FieldRenderModel`.
+
+**Out of 0.9:** the ADR-047 facet and the `@UI` deprecation (1.x, per the SDK roadmap); `@View`
+G1–G6 (an SDK RFC); field-level server errors (a Java error body and an ADR-036 amendment first);
+WebMCP (after P11, flag-gated); route guards (T53).
 
 ## Stages
 
@@ -125,13 +160,14 @@ absence of a backend, not a second backend target (hard constraint #1 is untouch
 
 [ADR-047](adr/ADR-047-view-leaf-field-facet-and-ui-subsumption.md) is accepted and unimplemented:
 the processor leaves `ComponentNodeMetadata.field` null and the TS schema models it as
-`z.record(z.any())`. Order, per the kernel-free menu: **U4** (processor populates the facet; TS
-schema types the leaf facet (`ViewFieldMetadata` per ADR-047, today the SDK's `UIFieldMetadata`); strict audit covers its attributes) → **U2** lists → **U5** detail
-→ **U3** forms (includes the relationship picker, which completes `relationships`) → `@View`
-block depth. Two external gates: ADR-047's coordinated SDK rename (`UIFieldMetadata` →
-`ViewFieldMetadata`), and for `@View` block depth the page corpus (ROADMAP, *Presentation views*).
-The form reshape rides Angular v22 **Phase C** (Signal Forms), which its RFC marks
-ADR-worthy.
+`z.record(z.any())`. The SDK roadmap places the facet in the 1.x line, together with the
+coordinated `UIFieldMetadata` → `ViewFieldMetadata` rename and `@UI`'s deprecation.
+
+The entity-side cascade does not wait for it: **U2** lists, **U5** detail and **U3** forms (on
+Signal Forms, with the relationship picker) ship in 0.9.0 through `FieldRenderModel` (see the 0.9.0
+section above). In 1.x the processor populates the facet, the TS schema types it, and it feeds the
+same model — no second rendering path. `@View` block depth stays gated on the page corpus (ROADMAP,
+*Presentation views*).
 
 ### Stage 4 — remaining parity, tests, release
 
@@ -146,9 +182,10 @@ ADR-worthy.
   classification needs one: `breaking (ADR-NNN)` has no ADR to name for a TS-only change, and a
   narrowing of the regenerated view (stage 1, PR-C) fits none of its values. An ADR — the TS
   counterpart of ADR-015 — before the first npm publication.
-- The generated header comments carry Javadoc-only tags (`@author`, `@since`) in `.ts` doc comments
-  across the emitters; one sweep, separate from feature work.
 - First npmjs publication of `@exeris/codegen-ts`.
+- The frontend-only starter (ADR-091 Amendment 1): an npm starter whose metadata source is a
+  backend's published contract artifact (ADR-048). The backend + frontend opt-in in
+  `exeris-app-parent` also waits for this publication.
 
 `graphMetadata` stays **JAVA_ONLY**: its one consumer is server-side graph sync. A graph
 *view* is a presentation feature and enters through `@View`, not through this field.

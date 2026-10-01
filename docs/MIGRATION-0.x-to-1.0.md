@@ -1673,6 +1673,21 @@ if it were absent, the metadata JSON carries no `routeAccess`, and no emitted fi
 `-Aexeris.strict` each occurrence, on an entity or a method, draws the inert-annotation warning.
 The transcription onto the kernel's `HttpRoutePolicy` is T53, tracked in `ROADMAP.md`.
 
+### A `@GraphEdge` beside a hand-written `@GraphEdges` is a compile error
+
+A field may carry one graph edge. The processor already refused two `@GraphEdge` on one field, but
+it counted the direct annotation and a hand-written `@GraphEdges` container separately, so
+
+```java
+@GraphEdge(type = "DIRECT")
+@GraphEdges({@GraphEdge(type = "CONTAINED")})
+private UUID mixed;
+```
+
+compiled, and generation then failed with `Duplicate edge names`. The two are now counted together,
+and this declaration draws the same `[Exeris] @GraphEdge is declared 2 times on field 'mixed'` error
+at the field. To fix it, declare each edge on its own field.
+
 ### SDK 0.12.0 needs no source change for S6
 
 `SystemFieldsMetadata`, `DomainMetadata` and `ActionMetadata` keep their 0.11.0 constructors. Code
@@ -1782,6 +1797,27 @@ emitted file changes.
 the type compiles unchanged, but must be recompiled against kernel 0.12: the method's return type
 changed, so a class compiled against 0.11 fails to link.
 
+### An application can build on a published parent and starter (ADR-091)
+
+0.9.0 publishes three POMs for an application's build: `eu.exeris.tooling:exeris-app-bom`,
+`exeris-app-parent` and `exeris-app-starter` (type `pom`). The parent runs the processor, binds
+`exeris:generate`, `exeris:verify-capabilities` and `exeris:verify-runtime`, and puts the generated
+migrations and OpenAPI on the classpath. The starter carries the dependencies the generated code
+imports, plus the community driver at runtime. The BOM names the kernel and SDK versions this release
+was tested against.
+
+**Opt-in; nothing changes if you keep your own build.** Generated code is unchanged, and no generator
+writes a build file. To adopt it, replace your hand-written dependencies and plugin configuration with
+the parent and the starter, or import the BOM and copy the build block (README, "Quick start"). Keep
+your JDBC driver and logging backend: the starter declares neither. The parent carries Exeris's own
+`url`, `licenses`, `developers`, `scm` and `description`, so declare yours, or blank them as the README
+shows, or your effective POM inherits them.
+
+**A hand-written build should check one thing it may be missing.** The plugin registers
+`src/main/generated/java` as a source root only, so the generated `db/migration/*.sql` and
+`openapi/*.yaml` are not on your classpath unless you declare a `<resource>` for them. The parent
+does; the README shows the entry.
+
 ---
 
 ## Reference
@@ -1795,3 +1831,4 @@ changed, so a class compiled against 0.11 fails to link.
 - [ADR-076 — A write against a row that is not there answers 404, not 500](adr/ADR-076-write-rejection-status.md)
 - [ADR-078 — The build fails when the generated application has no driver to run on](adr/ADR-078-runtime-driver-gate.md)
 - [ADR-079 — The emitted OpenAPI describes no authentication](adr/ADR-079-emitted-openapi-authentication-claim.md)
+- [ADR-091 — Publish an opt-in application starter, so a consumer does not hand-write its build](adr/ADR-091-opt-in-application-starter.md)

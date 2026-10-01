@@ -9,9 +9,6 @@
  * The reserved set is the inventory of identifiers **these emitters put into emitted modules**:
  * framework symbols imported, and helper types declared (`Page`, `PageRequest`).
  * `model-naming.spec.ts` validates the set by deriving it from freshly generated output.
- *
- * @author Exeris Team
- * @since 0.8.0
  */
 export const RESERVED_MODULE_IDENTIFIERS: ReadonlySet<string> = new Set([
   // @angular/core

@@ -24,9 +24,6 @@
  * Field mapping, the create-DTO field selection, enum detection and the Zod expressions are
  * imported from `type-gen.ts` rather than re-implemented, so a peer's types and this app's
  * own cannot drift apart.
- *
- * @author Exeris Team
- * @since 0.8.0
  */
 
 import { outPath } from '../../core/paths.js';
