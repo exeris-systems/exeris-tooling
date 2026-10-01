@@ -125,6 +125,8 @@ jobs:
           missing=""
           add() { missing="${missing:+$missing; }$1"; }
           grep -q '<id>release</id>' pom.xml || add "the 'release' profile in pom.xml"
+          grep -q '<id>exeris-tooling-release</id>' exeris-app-bom/pom.xml \
+            || add "the 'exeris-tooling-release' profile in exeris-app-bom/pom.xml"
           [ -f .github/maven-settings.xml ] || add ".github/maven-settings.xml (Central credentials)"
           [ -x tools/release-readiness/release-readiness.sh ] \
             || add "tools/release-readiness/release-readiness.sh (absent or not executable)"
@@ -181,7 +183,12 @@ jobs:
             fi
             echo "exeris-codegen-ts/package.json version $npm_have matches the tag"
           else
-            mvn -B -ntp versions:set -DnewVersion="$WANT" -DgenerateBackupPoms=false
+            # processAllModules: exeris-app-bom has no parent (ADR-091), so without it versions:set
+            # leaves the BOM and its two children on the SNAPSHOT. The BOM also names the tooling
+            # version as a literal property, which versions:set does not touch. The readiness gate
+            # checks both against the reactor version.
+            mvn -B -ntp versions:set -DnewVersion="$WANT" -DprocessAllModules=true -DgenerateBackupPoms=false
+            mvn -B -ntp versions:set-property -Dproperty=exeris.tooling.version -DnewVersion="$WANT" -DgenerateBackupPoms=false
             (cd exeris-codegen-ts && npm version "$WANT" --no-git-tag-version --ignore-scripts --allow-same-version)
           fi
 
@@ -215,6 +222,10 @@ jobs:
         # One Maven invocation, so the bytes the tests and gates ran against are the bytes uploaded.
         # `!github-packages` switches off the settings profile that adds the GitHub Packages
         # registry: everything resolves from Central.
+        #
+        # `exeris-tooling-release` is exeris-app-bom's copy of `release` (ADR-091). That BOM and the
+        # two modules under it inherit nothing from the root POM, so without it they are built but
+        # neither signed nor staged.
         env:
           MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
           CENTRAL_TOKEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
@@ -226,17 +237,19 @@ jobs:
             # autoPublish=false: this uploads a deployment and stops. waitUntil=validated makes it
             # block until Central has validated, so a missing file or signature fails here. Review
             # the results in the portal and press Publish there.
-            mvn -B -ntp --settings .github/maven-settings.xml -P 'release,!github-packages' clean deploy
+            mvn -B -ntp --settings .github/maven-settings.xml -P 'release,exeris-tooling-release,!github-packages' clean deploy
           else
-            mvn -B -ntp --settings .github/maven-settings.xml -P 'release,!github-packages' clean verify
+            mvn -B -ntp --settings .github/maven-settings.xml -P 'release,exeris-tooling-release,!github-packages' clean verify
           fi
 
       - name: Release-readiness gate
         # Every published coordinate has its pom, jar, sources jar and javadoc jar, each with a good
-        # signature; the Maven plugin carries its descriptor; maven.deploy.skip and <excludeArtifacts>
-        # agree. On the upload path it runs after the upload, so it cannot stop one: what it guards is
-        # publication. The deployment stays unpublished (autoPublish=false), and a failure here means
-        # Drop it in the Central Portal instead of pressing Publish. On the dry run it is the only check.
+        # signature; the Maven plugin carries its descriptor; maven.deploy.skip and both
+        # <excludeArtifacts> lists agree; exeris-app-bom names the reactor version and the kernel and
+        # SDK versions exeris-tooling-bom was tested against, none of them a SNAPSHOT. On the upload
+        # path it runs after the upload, so it cannot stop one: what it guards is publication. The
+        # deployment stays unpublished (autoPublish=false), and a failure here means Drop it in the
+        # Central Portal instead of pressing Publish. On the dry run it is the only check.
         run: tools/release-readiness/release-readiness.sh
 
       - name: Attest build provenance (SLSA)

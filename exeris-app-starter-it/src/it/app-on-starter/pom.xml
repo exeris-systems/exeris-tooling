@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!--
+        An application as README.md's quick start (route 1) builds it: exeris-app-parent, a
+        dependency on exeris-app-starter, and only what those two leave to the application, which is
+        a JDBC driver and the generated tests' JUnit 5 + AssertJ. Any other dependency here would hide
+        an import the starter does not carry.
+
+        The application's own version differs from the tooling version on purpose: a version in the
+        BOM chain derived from ${project.version} would resolve to 1.0.0 here and fail.
+    -->
+    <parent>
+        <groupId>eu.exeris.tooling</groupId>
+        <artifactId>exeris-app-parent</artifactId>
+        <version>@project.version@</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>eu.exeris.fixture</groupId>
+    <artifactId>app-on-starter</artifactId>
+    <version>1.0.0</version>
+    <description>An application built on exeris-app-parent and exeris-app-starter.</description>
+
+    <!-- The parent carries Exeris's publication metadata. An application states its own, or blanks
+         it as here; an absent element would be inherited. Same block as README.md, route 1. -->
+    <url/>
+    <licenses>
+        <license/>
+    </licenses>
+    <developers>
+        <developer/>
+    </developers>
+    <scm>
+        <connection/>
+        <developerConnection/>
+        <tag/>
+        <url/>
+    </scm>
+
+    <properties>
+        <!-- ADR-058: emit the generated tests, which run in this build's test phase. -->
+        <exeris.tests>true</exeris.tests>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>eu.exeris.tooling</groupId>
+            <artifactId>exeris-app-starter</artifactId>
+            <type>pom</type>
+        </dependency>
+
+        <!-- The application's database. The versions below are the ones the tooling reactor
+             builds with, so the fixture resolves them from the same local repository. -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <version>2.3.232</version>
+            <scope>runtime</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>5.11.4</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <version>3.27.7</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>
