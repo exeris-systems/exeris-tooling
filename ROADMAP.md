@@ -4,7 +4,7 @@ type: roadmap
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-09-30
+last-verified: 2026-10-01
 ---
 
 # Exeris Tooling — Roadmap to 1.0.0 GA
@@ -2783,14 +2783,19 @@ Each now has the status the code settles, and every other mention in this file a
 
 `@exeris/codegen-ts` has its own version line and its own plan:
 [`docs/codegen-ts-track-plan.md`](docs/codegen-ts-track-plan.md). It measures what the front reads
-from `DomainMetadata` against what the Java side acts on (`versioned`, `relationships`, `audited`:
-read by Java, by no TS generator), and stages the catch-up — 0 a parity gate, 1 contract parity,
+from `DomainMetadata` against what the Java side acts on, and stages the catch-up — 0 a parity gate, 1 contract parity,
 2 backend-less emission, 3 the ADR-047 leaf facet and the U-cluster below, 4 tests and the npmjs
 release.
 
-- [ ] **Stage 1 — contract parity.** PR-A0 the emitted edit route edits (today it creates) · PR-A `versioned` write (the `…Update` DTO drops the version,
-      so every update after a row's first answers 409) · PR-B ADR-076 status mapping · PR-C
-      `audited` panel · PR-D `MANY_TO_ONE` UUID-FK link. Route guards stay with **T53**.
+- [x] **Stage 1 — contract parity.** The emitted edit route edits (#235) · a `versioned` update
+      carries its version (#236) · ADR-076 status mapping (#239) · `audited` panel (#240) ·
+      `MANY_TO_ONE` UUID-FK link (#238). Route guards stay with **T53**.
+- [x] **Stage 0 — parity gate.** Every `DomainMetadataSchema` field is `READ`, `JAVA_ONLY`,
+      `RESERVED` or `GAP`, measured at generation time. One `GAP`: `realTimeApi`.
+- [ ] **`realTimeApi` parity** — the orchestrator composes the TS stream clients the Java side's
+      SSE routes serve.
+- [ ] **TS output-stability ADR** — ADR-015 covers codegen-core and codegen-java only; needed before
+      the first npm publication.
 
 ### UI fidelity & theming (`exeris-codegen-ts`)
 
