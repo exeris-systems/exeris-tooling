@@ -22,9 +22,7 @@ migrations, sagas, and corresponding Angular/TypeScript frontend artifacts.
   `eu.exeris:exeris-sdk-*:0.12.0-SNAPSHOT` on the resolution path. The SDK pin is not
   released yet, so `main` pins ahead of it; it moves to the final `0.12.0` once that
   publishes, and no tooling release is cut before then. Build the SDK from source at
-  `main` (`mvn install`; an SDK checkout that still runs japicmp by default, rather than
-  behind its opt-in `semver` profile, also needs `-Djapicmp.skip=true`, because its
-  semver baseline is not on Central). Everything else resolves from Central with no
+  `main` with a plain `mvn install`. Everything else resolves from Central with no
   settings file. A local repository that holds a kernel `0.12.0` fetched from GitHub
   Packages before the release keeps serving it, because Maven never re-fetches a release;
   delete `~/.m2/repository/eu/exeris/exeris-kernel*` once. The POMs name no repository
