@@ -21,7 +21,7 @@ import java.util.concurrent.atomic.AtomicReference;
  *
  * <p>Configuration travels the way the kernel testkit's own fixtures send it: JVM-global system
  * properties, set under {@link FixtureBootLock} and restored once the boot has read them. Readiness
- * is observed on the wire, not inferred: {@code GET /probe} answers {@code 503} from the edge router
+ * is observed on the wire, not inferred: {@code GET /probe} answers {@code 503} from the edge handler
  * until the lifecycle has published the composed router, and {@code 200} after.
  */
 final class BootedApplication implements AutoCloseable {
