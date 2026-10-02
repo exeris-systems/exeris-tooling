@@ -268,7 +268,7 @@ public class KernelClientGenerator implements KernelArtifactGenerator {
      */
     private String buildApiPath(DomainMetadata metadata) {
         // effectivePath() is the SDK-canonical derivation shared by every other generator (OpenAPI,
-        // Application, DSL): explicit path, else "/" + the kebab-cased pluralName().
+        // Application): explicit path, else "/" + the kebab-cased pluralName().
         return metadata.effectivePath();
     }
 

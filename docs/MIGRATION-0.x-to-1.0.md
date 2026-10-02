@@ -1791,7 +1791,7 @@ code change.
 
 ### Generation no longer depends on the JVM locale
 
-Tables, columns, OpenAPI file names and DSL identifiers are lower-cased with `Locale.ROOT`. A build
+Tables, columns and OpenAPI file names are lower-cased with `Locale.ROOT`. A build
 that ran under a locale such as `tr-TR` and committed `ınvoices`-style names will regenerate them
 with a plain `i`, new migration file names included. Rename the applied migrations or keep the old
 output. A route for an entity without a declared `path` comes from the SDK's `effectivePath()`,
@@ -2096,6 +2096,10 @@ action that runs, persists and publishes its `ACTION`-triggered `@DomainEvent`s.
 needs to watch the result can subscribe to the entity's live view (`@ExerisDomain(realTimeApi =
 true)`), which streams those events. A build that treats warnings as errors fails on this warning
 until the attribute is removed.
+
+### `eu.exeris.tooling.codegen.java.dsl` is removed
+
+No build step ran its six classes, so generated output is unchanged. ADR-015 records `exeris-codegen-java` as internal tooling with no downstream Maven consumers; code that nevertheless called them from the jar no longer compiles, and there is no replacement.
 
 ---
 
