@@ -53,6 +53,7 @@ src/main/generated/typescript/...  ← Studio-friendly clean output
 
 | Module | Stack | Purpose |
 |---|---|---|
+| [`exeris-diagnostics`](exeris-diagnostics) | Java 25 | The stable diagnostic identifiers (`EXT-PROC`, `EXT-PLUG`, `EXT-GEN`) every tooling module prints; no dependencies ([reference](docs/diagnostics.md), ADR-095). |
 | [`exeris-processor`](exeris-processor) | Java 25 | Annotation processor — extracts `DomainMetadata` from annotated sources at compile time. Self-registered via `@AutoService`. |
 | [`exeris-codegen-core`](exeris-codegen-core) | Java 25 | Shared infrastructure: `MetadataLoader`, `GeneratorRegistry`, `KernelArtifactGenerator` interface. |
 | [`exeris-codegen-java`](exeris-codegen-java) | Java 25 | Java code generators — kernel-target only (handlers, services, repositories, sagas, events, OpenAPI). |

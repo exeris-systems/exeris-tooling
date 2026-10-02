@@ -16,6 +16,8 @@ import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.java.kernel.KernelApplicationGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelGeneratorStrategy;
+import eu.exeris.tooling.diagnostics.DiagnosticId;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -27,7 +29,11 @@ import java.lang.classfile.ClassFile;
 import java.lang.constant.ClassDesc;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.logging.Handler;
+import java.util.logging.LogRecord;
+import java.util.logging.Logger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -959,6 +965,97 @@ class CodegenPipelineTest {
         @Override
         public ArtifactType artifactType() {
             return ArtifactType.CONTROLLER;
+        }
+    }
+
+    /**
+     * Each warning the pipeline logs carries its {@link DiagnosticId} (ADR-095). The pipeline logs
+     * through {@code System.Logger}, which the JDK backs with {@code java.util.logging} when no
+     * other {@code LoggerFinder} is installed, so a JUL handler on the pipeline's logger sees
+     * every record.
+     */
+    @Nested
+    @DisplayName("diagnostic identifiers on logged warnings")
+    class DiagnosticIdentifiers {
+
+        private final Logger julLogger = Logger.getLogger(CodegenPipeline.class.getName());
+        private final List<String> warnings = new ArrayList<>();
+        private final Handler capture = new Handler() {
+            @Override
+            public void publish(LogRecord logRecord) {
+                if (logRecord.getLevel() == java.util.logging.Level.WARNING) {
+                    warnings.add(logRecord.getMessage());
+                }
+            }
+
+            @Override
+            public void flush() {
+                // nothing buffered
+            }
+
+            @Override
+            public void close() {
+                // nothing held
+            }
+        };
+
+        @BeforeEach
+        void attach() {
+            julLogger.addHandler(capture);
+        }
+
+        @AfterEach
+        void detach() {
+            julLogger.removeHandler(capture);
+        }
+
+        @Test
+        @DisplayName("no metadata at all → EXT-GEN-3101")
+        void noMetadata() throws IOException {
+            pipeline.run(metadataDir, outputDir, "com.shop");
+
+            assertThat(warnings).singleElement().asString()
+                    .startsWith(DiagnosticId.NO_METADATA_FOUND.format("No domain or capability metadata"));
+        }
+
+        @Test
+        @DisplayName("an unsatisfied optional @Requires → EXT-GEN-3102, in run and in validateCapabilities")
+        void optionalRequirementUnsatisfied() throws IOException {
+            writeCapabilityJson("Checkout",
+                    desc("com.app.Checkout", List.of(),
+                            List.of(RequiresMetadata.optional("com.api.PaymentApi"))));
+
+            pipeline.run(metadataDir, outputDir, "com.app");
+            pipeline.validateCapabilities(metadataDir);
+
+            assertThat(warnings).hasSize(2).allSatisfy(w -> assertThat(w)
+                    .startsWith(DiagnosticId.OPTIONAL_REQUIREMENT_UNSATISFIED.format("capability: ")));
+        }
+
+        @Test
+        @DisplayName("a deferred capability-graph failure → EXT-GEN-3103")
+        void deferredGraphFailure() throws IOException {
+            writeCapabilityJson("Checkout",
+                    desc("com.app.Checkout", List.of(),
+                            List.of(RequiresMetadata.of("com.api.PaymentApi"))));
+
+            pipeline.run(metadataDir, outputDir, "com.app", false, true);
+
+            assertThat(warnings).singleElement().asString()
+                    .startsWith(DiagnosticId.CAPABILITY_GRAPH_DEFERRED.format("Capability graph invalid"));
+        }
+
+        @Test
+        @DisplayName("a cap-tier Wall that scanned nothing → EXT-PLUG-2206, the plugin's identifier for the same event")
+        void wallScannedNothing() throws IOException {
+            writeCapabilityJson("Billing",
+                    desc("eu.exeris.caps.billing.BillingModule",
+                            List.of(ProvidesMetadata.of("com.api.PaymentApi", "1.0")), List.of()));
+
+            pipeline.verifyCapTierWall(outputDir, metadataDir);
+
+            assertThat(warnings).singleElement().asString()
+                    .startsWith(DiagnosticId.CAP_TIER_WALL_SCANNED_NOTHING.format("Cap-tier Wall scanned nothing"));
         }
     }
 }

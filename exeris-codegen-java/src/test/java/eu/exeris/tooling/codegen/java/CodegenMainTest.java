@@ -2,6 +2,7 @@ package eu.exeris.tooling.codegen.java;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
+import eu.exeris.tooling.diagnostics.DiagnosticId;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -98,9 +99,9 @@ class CodegenMainTest {
 
             assertThat(exitCode).isOne();
             String stderr = capture(err);
-            assertThat(stderr).contains("--metadata-dir");
-            assertThat(stderr).contains("Usage: CodegenMain");
-            assertThat(stderr).contains("--output-dir");
+            assertThat(stderr)
+                    .startsWith(DiagnosticId.CLI_ARGUMENTS_INVALID.format(""))
+                    .contains("--metadata-dir", "Usage: CodegenMain", "--output-dir");
         }
 
         @Test
@@ -143,8 +144,44 @@ class CodegenMainTest {
 
             assertThat(exitCode).isOne();
             // Pipeline failures go through System.Logger, not the injected stderr.
-            // We only assert exit code here; logger output is JDK-implementation
-            // specific and not part of the contract.
+            assertThat(capture(err)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("the logged failure carries EXT-GEN-3001")
+        void loggedFailureCarriesIdentifier() throws IOException {
+            Files.writeString(metadataDir.resolve("Broken.json"), "{not valid json");
+            // System.Logger is backed by java.util.logging when no other LoggerFinder is installed.
+            java.util.logging.Logger jul = java.util.logging.Logger.getLogger(CodegenMain.class.getName());
+            java.util.List<String> errors = new java.util.ArrayList<>();
+            java.util.logging.Handler capture = new java.util.logging.Handler() {
+                @Override
+                public void publish(java.util.logging.LogRecord logRecord) {
+                    if (logRecord.getLevel() == java.util.logging.Level.SEVERE) {
+                        errors.add(logRecord.getMessage());
+                    }
+                }
+
+                @Override
+                public void flush() {
+                    // nothing buffered
+                }
+
+                @Override
+                public void close() {
+                    // nothing held
+                }
+            };
+            jul.addHandler(capture);
+            try {
+                CodegenMain.runOrPrintError(argsFor(metadataDir, outputDir, "com.shop"),
+                        new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8));
+            } finally {
+                jul.removeHandler(capture);
+            }
+
+            assertThat(errors).singleElement().asString()
+                    .startsWith(DiagnosticId.CLI_GENERATION_FAILED.format("Code generation failed"));
         }
     }
 }
