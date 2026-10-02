@@ -76,9 +76,13 @@ class KernelActionStreamHandlerGeneratorTest {
                 // deterministic keep-alive scaffold (constant, no wall-clock)
                 .contains("KEEPALIVE_INTERVAL_MILLIS = 15000L")
                 .contains("exchange.close()")
-                // keep-alive fallback marker: the per-action producer awaits the SDK
-                // widening that links a streaming action to its event types (Slice 2)
-                .contains("awaits an SDK widening")
+                // the emitted text states the fact: keep-alive only, the action is not invoked
+                .contains("Keep-alive only: this handler does not invoke Order.trackShipment(...)")
+                .contains("// The action is not invoked: this handler never calls Order.trackShipment(...),")
+                .contains("No frame carries the\n * action's event name {@code ShipmentMoved}.")
+                .doesNotContain("Each emitted frame carries")
+                .doesNotContain("SDK widening")
+                .doesNotContain("trackShipment();")
                 // kernel-target discipline: Core owns the wire
                 .doesNotContain("text/event-stream");
     }

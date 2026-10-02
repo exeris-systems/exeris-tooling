@@ -2381,6 +2381,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         // TS RxJS streaming-action client.
         if (values.containsKey("streaming")) builder.streaming((Boolean) values.get("streaming"));
         if (values.containsKey("streamEventType")) builder.streamEventType((String) values.get("streamEventType"));
+        if (Boolean.TRUE.equals(values.get("streaming"))) {
+            warnStreamingActionNotInvoked(name, method, annotation);
+        }
         // NOTE: @Action(realTimeUpdates) is deliberately NOT extracted here. It is a
         // separate "subscribe-to-progress" affordance (response shape vs. progress
         // channel) with no generator consumer. Extracting it would only create an inert
@@ -2402,6 +2405,23 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         builder.params(params);
 
         return builder.build();
+    }
+
+    /**
+     * Always reported, not gated on {@code -Aexeris.strict}: the action route is served as a
+     * stream only, and the stream handler emits keep-alives and closes without invoking the
+     * entity method, so the declared action is unreachable over HTTP. That is a behavioural
+     * surprise on an ordinary build, not a completeness finding.
+     */
+    private void warnStreamingActionNotInvoked(String actionName, ExecutableElement method,
+                                               AnnotationMirror annotation) {
+        messager.printMessage(
+                Diagnostic.Kind.WARNING,
+                DIAG_PREFIX + "@Action(streaming = true) on \"" + actionName + "\": the generated "
+                        + "stream route keeps the connection open with keep-alives but does not run "
+                        + "the action, so calling it changes nothing. The per-action stream driver "
+                        + "is tracked in ROADMAP.md (EV1-stream).",
+                method, annotation);
     }
 
     private ActionParamMetadata extractActionParamMetadata(VariableElement param, AnnotationMirror annotation) {

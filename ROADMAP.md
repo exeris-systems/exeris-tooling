@@ -2928,6 +2928,22 @@ Proposals, highest return-on-effort first:
       against the shipped kernel surface, with the GET spectate route shape as an **ADR-044 amendment**
       (the route shape is an ADR-044 obligation-1 change, not silent drift).
       Pairs with `@Projection` as the natural event→DTO shape. **Closes U7** on the entity-level path.
+      **Measured 2026-10-02 — moved to 0.10.0 with an ADR-044 amendment.** `POST <base>/{id}/actions/<kebab>`
+      for an `@Action(streaming = true)` never runs the action: `KernelHandlerGenerator` skips
+      streaming actions for respond-once dispatch, and the per-action handler emits only
+      `keepAliveScaffold(...)`, so the call changes nothing in the domain. The action→event link the
+      driver needs already exists — an `ACTION`-triggered `@DomainEvent` names its action in
+      `actionName`, which `KernelHandlerGenerator.triggered(...)` reads — so no SDK widening is owed.
+      0.9.0 ships an always-on processor warning on each streaming action and states the fact in the
+      emitted handler. Open questions for the amendment:
+      (1) invoke-then-stream semantics and the completion rule — when the stream closes after the
+      action has run; (2) the in-stream error frame shape when the action fails after the response
+      head is written; (3) frame naming — `streamEventType` against the `@DomainEvent` names the
+      action triggers; (4) `EventDescriptor` carries no correlation id, so frames from concurrent
+      invocations on the same aggregate interleave on a bus subscription; (5) obligation 4 says no
+      heap-queue buffering, while the shipped entity-level producer hands off through a bounded
+      `ArrayBlockingQueue` — the amendment either admits a bounded drop-on-full queue or the
+      per-action driver avoids one.
 
 - [ ] **EV2 — `@EventSourced` aggregate generator — log substrate delivered (kernel 0.10, ADR-049);
       aggregate surface still missing.** No generator emits event-sourced aggregates today; **T11 strict
@@ -3334,8 +3350,10 @@ needed.)*
       Plus the `@Blob` inert reason, which still names a kernel gate, and MIGRATION's
       `eu.exeris.kernel:exeris-kernel-community` coordinate, whose groupId is `eu.exeris`. Done in #243;
       ADR-078 records the coordinate as a dated amendment.
-- [ ] The EV1-stream per-action driver: `KernelActionStreamHandlerGenerator` still emits
-      `keepAliveScaffold(...)`, and nothing gates it since T23 slice B1.
+- [ ] The EV1-stream per-action driver → **0.10.0** (moved 2026-10-02, with an ADR-044
+      amendment; see **EV1-stream**). 0.9.0 ships an always-on processor warning on every
+      `@Action(streaming = true)`: the generated stream route sends keep-alives and does not run the
+      action.
 - [x] `SUBSYSTEMS` derived from `DomainMetadata` (#261; "Every generated app boots three subsystems it may
       never use").
 - [x] Measure whether the emitted error mapping should read `ExerisKernelException.faultOrigin()` *(#262:
@@ -3670,6 +3688,9 @@ Expected to pair with kernel 0.13, and with SDK 0.13 if one is needed.
 - [ ] **T53 in full** (RFC, then ADR): `@RouteAccess` + `permissions` compiled into `RouteRequirement`. D10 resolves
       with it.
 - [ ] Track C (SDK record changes), `@SagaTransition`, T12 + T17, `@PrimaryKey`, D4, unless one lands in 0.9.0 by its gate opening early.
+- [ ] **EV1-stream per-action driver** (ADR-044 amendment first): the streaming action runs, and its
+      triggered events stream back. Moved from 0.9.0 on 2026-10-02; the open questions are under
+      **EV1-stream**. Removes the 0.9.0 streaming-action warning.
 - [ ] The removals below.
 
 **Not placed in a milestone**, because the next step belongs to another repository: C2
