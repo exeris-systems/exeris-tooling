@@ -4323,8 +4323,7 @@ class ExerisDomainProcessorTest {
                     .contains("@UI")
                     .contains("reads @UI on a type only")
                     .contains("@View's field facet");
-            // Simple-name membership of the extracted set used to count this as read; the
-            // type-level inert entry must not answer for a field either.
+            // The type-level inert entry must not answer for a field-level @UI.
             assertThat(warnings(compilation, INERT)).isEmpty();
         }
 
