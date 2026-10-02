@@ -432,8 +432,9 @@ public final class KernelHandlerTestGenerator {
     // ---------------------------------------------------------------------------------------
 
     /**
-     * Emits the decode-failure cases, on {@code handleCreate}: one per answer {@code parseBody}'s
-     * three failure types lead to.
+     * Emits the four decode-failure cases on {@code handleCreate}: a CALLER refusal answering 400,
+     * and a SYSTEM kernel exception, a JDK exception and an unbound decoder registry, each
+     * answering 500.
      *
      * <p>The caller-fault case asserts {@code decodedType} as well as the status. A bodyless
      * request also answers 400, before any decoder runs, so the status alone would pass on a
