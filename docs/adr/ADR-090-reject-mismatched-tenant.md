@@ -206,6 +206,25 @@ generated code — and is recorded as a kernel ask in `ROADMAP.md`, not built he
 - `readOnly` for the audit/version columns — the entity schema does not mark them; a separate change
   if the contract should say so.
 
+### 🚫 Non-Goals
+
+- **Replacing row-level security.** The refusal is a pre-check at the edge of a bound request; RLS
+  stays the enforcement for every request the check does not see.
+- **Authorising the caller.** Whether the caller may act for the tenant it is bound to is
+  authorisation (T53), not tenancy; this ADR compares the row against the binding only.
+
+### ⚠️ Risks and Assumptions
+
+- **Assumes:** RLS is the backstop for an unbound request and for the system scope. Both carry
+  nothing to compare against, so the repository leaves the row to the policy.
+- **Assumes:** the kernel binds `STORAGE_CONTEXT` with the request's isolation key whenever a tenant is
+  known. A request that reaches the repository with the slot unbound is not refused here.
+- **Assumes:** the database role is `NOSUPERUSER NOBYPASSRLS` (above). With a bypassing role, the
+  refusal is the only partition check on writes, and reads are unpartitioned.
+- **Reversed by:** a kernel ruling on the write-side scope pin (kernel ADR-012 §4b, ask k1) that differs
+  from the conservative reading this ADR takes for bound requests, or a kernel-side refusal of a
+  mismatched write that makes the generated pre-check redundant.
+
 ## Cross-references
 
 - **ADR-076** — the typed-rejection pattern and the per-entity / repository-package placement reused
