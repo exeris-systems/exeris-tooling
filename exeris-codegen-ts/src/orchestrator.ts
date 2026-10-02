@@ -111,7 +111,7 @@ export function buildGeneratedFiles(
       if (form) appTree.push(form);
     }
     if (config.generateLists) {
-      const list = generateList(domain, config, domains);
+      const list = generateList(domain, config, domains, enums);
       if (list) appTree.push(list);
     }
     // Detail view component: read/edit for a single entity instance.
