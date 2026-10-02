@@ -3700,9 +3700,6 @@ keeps compiling where it still uses one. 0.10.0 removes them.
 
 - **0.x** — generated code shape may change in any release; consumers regenerate after every tooling bump
 - **1.x** — generated code shape changes only via additive minors; deprecation cycle for breaking changes
-- **One version for the whole repository.** `@exeris/codegen-ts` carries the reactor's version and
-  is released on the same tag (from 0.9.0; P1 in the codegen-ts plan adds the CI guard that fails
-  when `package.json` and the reactor disagree)
 - Output artifact compat is the headline contract — Maven plugin API is secondary
 - **A release tag carries a final version in the POM.** `v0.7.0` is the first one that does: `v0.5.0`
   and `v0.6.0` were both tagged with the reactor still at `X-SNAPSHOT`, which no sibling repo does
@@ -3711,6 +3708,14 @@ keeps compiling where it still uses one. 0.10.0 removes them.
   tag that commit → deploy (Maven Central, from 0.9.0) → a follow-up PR opens the next cycle at `X+1-SNAPSHOT`. Separately and still
   binding: no cross-repo dependency may be a SNAPSHOT at a cut — release upstream first, pin the
   final, then tag.
+- **`@exeris/codegen-ts` versions in lockstep with the Maven reactor.** One tag `vX.Y.Z` releases
+  both, so `exeris-codegen-ts/package.json` (and its `package-lock.json`) carries the root POM's
+  project version at every commit, `-SNAPSHOT` line included. Both the release PR and the
+  next-cycle PR set it alongside the POM: `mvn versions:set -DnewVersion=X -DgenerateBackupPoms=false`
+  plus, in `exeris-codegen-ts/`, `npm version X --no-git-tag-version --ignore-scripts`. Three checks
+  hold it: `npm run check:version` in the `vitest run --coverage (exeris-codegen-ts)` job on every
+  PR, the tag check in `release.yml` (a tag whose version differs from `package.json` releases
+  nothing), and `tools/release-readiness/release-readiness.sh`.
 
 ## Tracking
 
