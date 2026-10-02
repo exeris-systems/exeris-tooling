@@ -2968,7 +2968,7 @@ Proposals, highest return-on-effort first:
       *Superseded in 0.7.0 by UP1:* the range widened to `[25,)` and the plugin's classes are v69. The
       failure mode D1 exists to catch is unchanged — only the floor moved, and it moved down.
 
-- [ ] **D2 — Document the two-pass first build.** The processor writes
+- [x] **D2 — Document the two-pass first build.** *Done in #253: the README quick start documents both passes.* The processor writes
       `target/classes/exeris-metadata/*.json` during `compile`, which runs *after* the plugin's
       `generate-sources`, so a from-scratch build needs two passes (already noted in `GenerateMojo`;
       `build.sh` encodes it). Worth a line in the plugin quick-start / an archetype.
@@ -3328,10 +3328,11 @@ needed.)*
 - [ ] S6 (`SystemFieldsMetadata.builder()`) and the semver-gate flag, under "Follow SDK 0.12.0".
 
 **2. Kernel 0.12 catch-up**
-- [ ] The MIGRATION notes issue #227 still owes: `crypto.tls.client.trustFile`, the
+- [x] The MIGRATION notes issue #227 still owes: `crypto.tls.client.trustFile`, the
       `UnscopedRequestSession` JFR event, no stream route over h2, and the `StreamMatch` package move.
       Plus the `@Blob` inert reason, which still names a kernel gate, and MIGRATION's
-      `eu.exeris.kernel:exeris-kernel-community` coordinate, whose groupId is `eu.exeris`.
+      `eu.exeris.kernel:exeris-kernel-community` coordinate, whose groupId is `eu.exeris`. Done in #243;
+      ADR-078 records the coordinate as a dated amendment.
 - [ ] The EV1-stream per-action driver: `KernelActionStreamHandlerGenerator` still emits
       `keepAliveScaffold(...)`, and nothing gates it since T23 slice B1.
 - [ ] `SUBSYSTEMS` derived from `DomainMetadata` ("Every generated app boots three subsystems it may
@@ -3344,8 +3345,8 @@ needed.)*
       (T49, ADR-070 obligation 6): the emitted app refuses to boot on that combination today. It also
       lets a `streamRoute` registered in `configureRoutes` resolve. Lift the refusal, amend ADR-070's
       obligation, and cover both with a real-boot e2e case.
-- [ ] Kernel 0.12 also ships `CommunityStorageSubsystem` (K6). The `@Blob` inert reason above names it
-      as missing.
+- [x] Kernel 0.12 ships `CommunityStorageSubsystem` (K6); the `@Blob` inert reason now states what the
+      kernel binds (#243).
 
 **Upstream issues this scope depends on** (filed 2026-09-30):
 - **Blocks the cut.** Each is an ADR-042 divergence: the processor writes something the SDK `-io`
@@ -3373,29 +3374,31 @@ itself has no end-to-end test: `exeris-e2e-tests` drives the pipeline in-process
 libraries (JavaPoet, swagger, Jackson 2, H2) and it manages neither the plugin nor a driver.
 - [x] **ADR first.** ADR-091 (reserved in `exeris-docs/adr-index.md`) records the module layout and
       the obligations; ADR-078's premise is narrowed, not superseded.
-- [ ] **`exeris-app-bom`**: the tooling + kernel + SDK triple that is known to work together, the
+- [x] **`exeris-app-bom`**: the tooling + kernel + SDK triple that is known to work together, the
       kernel's Jackson 3 line, and the plugin. Tooling releases last, so its version names the pair.
-- [ ] **`exeris-app-parent`**: inherits `exeris-app-bom` (ADR-091 obligation 4). Sets `release 25` and the JDK/Maven enforcer rules,
+- [x] **`exeris-app-parent`**: inherits `exeris-app-bom` (ADR-091 obligation 4). Sets `release 25` and the JDK/Maven enforcer rules,
       puts the processor on `annotationProcessorPaths`, and binds `generate` + `verify-capabilities` +
       `verify-runtime`. Adds a `<resource>` for the migrations and OpenAPI that are generated under
       the `src/main/generated/java` source root, which Maven does not copy to the classpath.
-- [ ] **`exeris-app-starter`** (packaging `pom`): SDK annotations, kernel SPI + Core, the community
+- [x] **`exeris-app-starter`** (packaging `pom`): SDK annotations, kernel SPI + Core, the community
       driver at runtime, the composition runtime, Jackson 3. The JDBC driver stays the application's.
-- [ ] None of the three is parented on `exeris-tooling-root`, so no internal pin reaches a consumer.
-- [ ] **A `maven-invoker-plugin` fixture application** built on the parent and the starter. It is the
+- [x] None of the three is parented on `exeris-tooling-root`, so no internal pin reaches a consumer.
+- [x] **A `maven-invoker-plugin` fixture application** built on the parent and the starter. It is the
       Maven plugin's first end-to-end test, and it fails when an emitter starts importing something
       the starter does not carry.
-- [ ] README quick start, D2 (the two-pass first build) and D3 (committed L1 for hand-written glue).
+- [x] README quick start and D2 (the two-pass first build), with the starter (#253).
+- [ ] D3 (committed L1 for hand-written glue): the README does not yet say that deleting and
+      regenerating `src/main/generated` is unsafe once hand-written code extends generated types.
 
 **4. Maven Central**
-- [ ] A `release` profile with `maven-gpg-plugin` and `central-publishing-maven-plugin`, following the
+- [x] A `release` profile with `maven-gpg-plugin` and `central-publishing-maven-plugin`, following the
       kernel 0.12 release profile. CI deploys nothing today.
-- [ ] A javadoc jar and a sources jar for every published module, the Maven plugin and the three
+- [x] A javadoc jar and a sources jar for every published module, the Maven plugin and the three
       starter modules included.
-- [ ] `exeris-e2e-tests` and `exeris-coverage-aggregate` kept out of the deploy.
-- [ ] No GitHub Packages `<repositories>` in a published POM: every dependency resolves from Central.
-- [ ] A tag-triggered release workflow.
-- [ ] Order: kernel → SDK → tooling, because a tooling POM on Central declares both.
+- [x] `exeris-e2e-tests` and `exeris-coverage-aggregate` kept out of the deploy.
+- [x] No GitHub Packages `<repositories>` in a published POM: every dependency resolves from Central.
+- [x] A tag-triggered release workflow.
+- [x] Order: kernel → SDK → tooling, because a tooling POM on Central declares both.
 
 **5. Alongside, no gate:** the `npm start` proxy prefix (`proxy.conf.js` with a `bypass`), the
 `warnInertAttributes` call sites for `Saga` / `SagaStep`, codegen-ts lint in CI (`npm run lint` has no `eslint.config.*` and is not in `build.yml`), and the delete-or-wire
