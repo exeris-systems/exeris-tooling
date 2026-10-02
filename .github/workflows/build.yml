@@ -179,3 +179,20 @@ jobs:
       - name: ng test (emitted specs, generated app)
         working-directory: ${{ runner.temp }}/fe-sample
         run: npx ng test
+
+      # The backend-less shape: no entity, only @View pages with authored content, so the scaffold
+      # carries no HTTP wiring. Built here because the full sample above always has a backend and
+      # cannot show that the scaffold compiles without one. Same job, so the install reuses the npm
+      # cache the first app just filled.
+      - name: Generate view-only Angular app (backend-less)
+        working-directory: exeris-codegen-ts
+        run: node scripts/gen-sample-app.mjs "$RUNNER_TEMP/fe-view-only" --view-only
+
+      - name: npm install + ng build (view-only app)
+        working-directory: ${{ runner.temp }}/fe-view-only
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}" >> .npmrc
+          npm install --no-audit --no-fund --prefer-offline
+          npx ng build --configuration development
