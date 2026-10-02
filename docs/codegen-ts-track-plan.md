@@ -190,8 +190,9 @@ same model — no second rendering path. `@View` block depth stays gated on the 
 ### Stage 4 — remaining parity, tests, release
 
 - The per-action stream producer (EV1-stream): the action stream handler still sends only the
-  keep-alive scaffold, waiting on an SDK widening that links a streaming action to its event
-  types; the TS client already parses its named frames.
+  keep-alive scaffold and never runs the action. No SDK widening is needed — an `ACTION`-triggered
+  `@DomainEvent` already names its action — but the invoke-then-stream semantics wait on an
+  ADR-044 amendment (ROADMAP, 0.10.0); the TS client already parses its named frames.
 - Test-emitter coverage: `spec-gen` covers 2 of 18 TS emitters.
 - `npm run lint` cannot run (no `eslint.config.*`) and is not in CI.
 - **A stability decision for the TS output.** ADR-015's output-stability contract covers

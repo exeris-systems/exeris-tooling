@@ -24,11 +24,11 @@ import java.util.List;
  *       to the entity's {@code @DomainEvent} bus and project each event into a
  *       named SSE {@code StreamEvent}. This is the live-view body for an entity
  *       that declares domain events (Slice 1).</li>
- *   <li>{@link #keepAliveScaffold(List)} — the deterministic, finite keep-alive
- *       loop that stands in where there is no producer yet: an entity with
+ *   <li>{@link #keepAliveScaffold(List, List)} — the deterministic, finite keep-alive
+ *       loop that stands in where there is no producer: an entity with
  *       {@code realTimeApi} but no {@code @DomainEvent} (the Slice 1 fallback),
- *       and the per-action handler (Slice 2), whose producer needs an SDK widening
- *       linking a streaming action to its event types.</li>
+ *       and the per-action handler (Slice 2). The per-action handler does not
+ *       invoke its action.</li>
  * </ul>
  *
  * <p>Determinism (hard constraint #3): every value here is a compile-time
@@ -99,8 +99,7 @@ public final class KernelStreamScaffold {
 
     /**
      * Bounded keep-alive iteration count for the scaffold loop. Deterministic and
-     * finite so the generated handler terminates cleanly (calls {@code close()})
-     * until the EV1 producer seam replaces the loop with a real subscription.
+     * finite so the generated handler terminates cleanly by calling {@code close()}.
      */
     public static final int KEEPALIVE_ITERATIONS = 4;
 
@@ -121,7 +120,7 @@ public final class KernelStreamScaffold {
 
     /**
      * The {@code LOG} field plus the two keep-alive constant fields the
-     * keep-alive body ({@link #keepAliveScaffold(List)}) reads. {@code selfType}
+     * keep-alive body ({@link #keepAliveScaffold(List, List)}) reads. {@code selfType}
      * is the generated class's own {@link ClassName}.
      */
     public static List<FieldSpec> commonFields(ClassName selfType) {
@@ -222,7 +221,7 @@ public final class KernelStreamScaffold {
      *
      * @param bindings the events to project, in deterministic declaration order;
      *                 never {@code null} or empty (the caller routes the no-event
-     *                 entity to {@link #keepAliveScaffold(List)} instead)
+     *                 entity to {@link #keepAliveScaffold(List, List)} instead)
      */
     public static CodeBlock eventProducerScaffold(List<StreamEventBinding> bindings) {
         // Variable types are parameterized; the `new` side uses the diamond
@@ -296,27 +295,27 @@ public final class KernelStreamScaffold {
 
     /**
      * The shared body of the stream handler's {@code handle(HttpStreamExchange)}
-     * method, from the EV1 seam comment through the keep-alive loop to
-     * {@code close()}. The caller emits its own {@code LOG.debug(...)} opener and
-     * Javadoc before adding this block.
+     * method, from the keep-alive comment through the loop to {@code close()}. The
+     * caller emits its own {@code LOG.debug(...)} opener and Javadoc before adding
+     * this block.
      *
-     * <p>{@code heartbeatNote} is the driver-specific comment placed inside the
-     * loop (the only prose that differs between Slice 1 and Slice 2 — how the
-     * respective TS client treats the named frame); the structural code is
-     * identical for both.
+     * <p>{@code reason} and {@code heartbeatNote} are the driver-specific prose:
+     * why this handler has no producer (each driver states its own fact, so neither
+     * emits a claim about the other), and how the respective TS client treats the
+     * named frame. The structural code is identical for both.
      *
+     * @param reason        comment lines emitted above the loop, after the shared
+     *                      opening line; never {@code null}
      * @param heartbeatNote comment lines emitted inside the loop, above the
      *                      {@code emit(...)} call; never {@code null}
      */
-    public static CodeBlock keepAliveScaffold(List<String> heartbeatNote) {
+    public static CodeBlock keepAliveScaffold(List<String> reason, List<String> heartbeatNote) {
         CodeBlock.Builder body = CodeBlock.builder()
-                .add("// Keep-alive fallback: no producer is bound for this handler — the\n")
-                .add("// entity-level live view (Slice 1) routes to eventProducerScaffold(...)\n")
-                .add("// once it declares a @DomainEvent; the per-action handler (Slice 2)\n")
-                .add("// still awaits an SDK widening linking a streaming action to its\n")
-                .add("// event types. Until then this emits a deterministic, finite\n")
-                .add("// keep-alive so the handler compiles and runs end-to-end, holding\n")
-                .add("// the emit/close contract (let StreamClosedException propagate).\n")
+                .add("// Keep-alive only: a deterministic, finite keep-alive, then close().\n");
+        for (String line : reason) {
+            body.add("// $L\n", line);
+        }
+        body.add("// The emit/close contract holds: StreamClosedException propagates.\n")
                 .beginControlFlow("for (int i = 0; i < KEEPALIVE_ITERATIONS; i++)");
         for (String line : heartbeatNote) {
             body.add("// $L\n", line);

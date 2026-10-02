@@ -2583,6 +2583,97 @@ class ExerisDomainProcessorTest {
     }
 
     @Nested
+    @DisplayName("@Action(streaming = true) — always warns that the stream route does not run the action")
+    class StreamingActionWarningTests {
+
+        private static final String NOT_RUN = "keeps the connection open with keep-alives but does not "
+                + "run the action, so calling it changes nothing";
+
+        private JavaFileObject order(String methods) {
+            return JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.Action;
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+
+                    @ExerisDomain(module = "sales", path = "/orders")
+                    public class Order {
+                    %s
+                    }
+                    """.formatted(methods));
+        }
+
+        private List<javax.tools.Diagnostic<? extends JavaFileObject>> streamingWarnings(
+                Compilation compilation) {
+            return compilation.warnings().stream()
+                    .filter(d -> d.getMessage(null).contains(NOT_RUN))
+                    .collect(java.util.stream.Collectors.toList());
+        }
+
+        @Test
+        @DisplayName("one warning per streaming action, anchored on its @Action, none for a respond-once action")
+        void warnsOncePerStreamingAction() throws IOException {
+            Compilation compilation = compileWithProcessor(order("""
+                        @Action(name = "cancel", label = "Cancel")
+                        public void cancel() {
+                        }
+
+                        @Action(name = "trackShipment", label = "Track", streaming = true)
+                        public void trackShipment() {
+                        }
+
+                        @Action(name = "watchPrice", label = "Watch", streaming = true,
+                                streamEventType = "PriceMoved")
+                        public void watchPrice() {
+                        }
+                    """));
+
+            assertThat(compilation).succeeded();
+            var warnings = streamingWarnings(compilation);
+            assertThat(warnings).hasSize(2);
+            assertThat(warnings).extracting(d -> d.getMessage(null)).containsExactly(
+                    "[Exeris] @Action(streaming = true) on \"trackShipment\": the generated stream "
+                            + "route keeps the connection open with keep-alives but does not run the "
+                            + "action, so calling it changes nothing. The per-action stream driver is "
+                            + "tracked in ROADMAP.md (EV1-stream).",
+                    "[Exeris] @Action(streaming = true) on \"watchPrice\": the generated stream "
+                            + "route keeps the connection open with keep-alives but does not run the "
+                            + "action, so calling it changes nothing. The per-action stream driver is "
+                            + "tracked in ROADMAP.md (EV1-stream).");
+            // Anchored on the annotation: the reported line is the @Action line, not the method's.
+            assertThat(warnings).extracting(javax.tools.Diagnostic::getLineNumber)
+                    .containsExactly(12L, 16L);
+            assertThat(compilation.warnings().stream()
+                    .map(d -> d.getMessage(null))
+                    .noneMatch(m -> m.contains("\"cancel\"")))
+                    .isTrue();
+
+            // The warning reports; it does not change extraction.
+            String json = readContent(compilation.generatedFile(
+                    StandardLocation.CLASS_OUTPUT, "exeris-metadata/Order.json").orElseThrow());
+            assertThat(json).contains("\"streaming\" : true");
+        }
+
+        @Test
+        @DisplayName("streaming = false and an unset attribute raise no warning")
+        void noWarningWhenNotStreaming() {
+            Compilation compilation = compileWithProcessor(order("""
+                        @Action(name = "cancel", label = "Cancel", streaming = false)
+                        public void cancel() {
+                        }
+
+                        @Action(name = "ship", label = "Ship")
+                        public void ship() {
+                        }
+                    """));
+
+            assertThat(compilation).succeededWithoutWarnings();
+        }
+    }
+
+    @Nested
     @DisplayName("Processor minors — -Aexeris.strict inert-attribute audit (T11)")
     class StrictModeInertAttributeTests {
 
