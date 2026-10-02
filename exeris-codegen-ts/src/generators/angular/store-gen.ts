@@ -33,11 +33,6 @@ export class StoreGenerator implements CodeGenerator {
   readonly supportedBackends: BackendType[] = []; // All backends
 
   generate(domain: DomainMetadata, context: GeneratorContext): GeneratedFile | null {
-    // Skip internal/hidden entities
-    if (domain.internalApi?.hidden) {
-      return null;
-    }
-
     const kebab = DslMapper.toKebabCase(domain.entityName);
     const camel = DslMapper.toCamelCase(domain.entityName);
     const content = this.generateStoreContent(domain, context);

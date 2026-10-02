@@ -67,17 +67,24 @@ export type ActionParamMetadata = z.infer<typeof ActionParamMetadataSchema>;
 // Action Metadata
 // ============================================================================
 
+// Every key is a component of eu.exeris.sdk.sourcemodel.ast.ActionMetadata; the record declares
+// more than the processor writes, and `ACTION_CONTRACT_COVERAGE` in contract-coverage.ts records
+// which keys arrive from a real build.
 export const ActionMetadataSchema = z.object({
   name: z.string(),
+  // The Java method behind the action; `name` is the action identity and may differ.
+  methodName: z.string().optional(),
   displayName: z.string().optional(),
   description: z.string().optional(),
   httpMethod: z.string().optional(),
-  path: z.string().optional(),
   params: z.array(ActionParamMetadataSchema).default([]),
-  returnType: z.string().optional(),
+  // The method's return type as written in source.
+  resultType: z.string().optional(),
   async: z.boolean().default(false),
-  requiresAuth: z.boolean().default(true),
   permissions: z.array(z.string()).default([]),
+  producesEvents: z.array(z.string()).optional(),
+  // What the action's route demands of its caller; absent means the author declared nothing.
+  routeAccess: z.enum(['PUBLIC', 'AUTHENTICATED']).optional(),
   // ADR-044 Slice 2: per-action SSE streaming. The AST twin of
   // @Action(streaming=true) / @Action(streamEventType=…). When streaming is
   // true, the Java side emits an HttpStreamHandler bound via streamRoute(POST,
@@ -94,11 +101,15 @@ export type ActionMetadata = z.infer<typeof ActionMetadataSchema>;
 // Domain Event Metadata
 // ============================================================================
 
+// Every key is a component of eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata;
+// `EVENT_CONTRACT_COVERAGE` in contract-coverage.ts records where each is acted on.
 export const DomainEventMetadataSchema = z.object({
   name: z.string(),
-  displayName: z.string().optional(),
+  // The topic the emitted publisher routes on.
+  topic: z.string().optional(),
   description: z.string().optional(),
-  payloadType: z.string().optional(),
+  // The simple name of the entity that declares the event.
+  aggregateType: z.string().optional(),
   // EV1: the resolved payload field NAMES (entity-declaration order) the processor
   // and -io reader emit. The generator resolves each name's type against
   // domain.fields by name (NOT full FieldMetadata copies on the event). sensitiveFields
@@ -115,9 +126,6 @@ export const DomainEventMetadataSchema = z.object({
   trigger: z.string().optional(),
   actionName: z.string().optional(),
   fieldName: z.string().optional(),
-  // The AST does not carry inline FieldMetadata on events; the generator reads
-  // payloadFields instead. Kept optional for backward compatibility.
-  fields: z.array(FieldMetadataSchema).default([]),
 });
 
 export type DomainEventMetadata = z.infer<typeof DomainEventMetadataSchema>;
@@ -234,12 +242,16 @@ export type GraphMetadata = z.infer<typeof GraphMetadataSchema>;
 // Saga Metadata
 // ============================================================================
 
+// Every key is a component of eu.exeris.sdk.sourcemodel.ast.SagaStepMetadata;
+// `SAGA_STEP_CONTRACT_COVERAGE` in contract-coverage.ts records where each is acted on.
 export const SagaStepMetadataSchema = z.object({
   name: z.string(),
-  action: z.string().optional(),
-  compensatingAction: z.string().optional(),
+  service: z.string().optional(),
+  command: z.string().optional(),
+  // The step's compensation; a step without one is not compensated.
+  compensation: z.string().optional(),
   timeout: z.string().optional(), // ISO Duration (PT10M)
-  retries: z.number().optional(),
+  maxRetries: z.number().optional(),
   order: z.number().optional(),
   parallel: z.boolean().optional(),
   condition: z.string().optional(),
@@ -297,9 +309,11 @@ export type SystemFieldsMetadata = z.infer<typeof SystemFieldsMetadataSchema>;
 // Event Sourced Metadata
 // ============================================================================
 
+// Every key is a component of eu.exeris.sdk.sourcemodel.ast.EventSourcedMetadata.
 export const EventSourcedMetadataSchema = z.object({
   aggregateType: z.string(),
-  snapshotInterval: z.number().optional(),
+  // Events between snapshots.
+  snapshotEvery: z.number().optional(),
   eventStore: z.string().optional(),
 });
 
@@ -309,8 +323,11 @@ export type EventSourcedMetadata = z.infer<typeof EventSourcedMetadataSchema>;
 // Internal API Metadata
 // ============================================================================
 
+// Mirrors eu.exeris.sdk.sourcemodel.ast.InternalApiMetadata except `hidden`, which no annotation
+// sets: @InternalApi declares no such attribute and the processor writes the component as false
+// for every entity, so declaring it would only let hand-built metadata hide an entity a real build
+// cannot. `INTERNAL_API_CONTRACT_COVERAGE` in contract-coverage.ts records which keys arrive.
 export const InternalApiMetadataSchema = z.object({
-  hidden: z.boolean().default(false),
   readOnly: z.boolean().default(false),
   internal: z.boolean().default(false),
   reason: z.string().optional(),

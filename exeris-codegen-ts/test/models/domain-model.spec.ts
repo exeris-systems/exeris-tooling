@@ -102,12 +102,17 @@ describe('ActionParamMetadataSchema', () => {
 });
 
 describe('ActionMetadataSchema', () => {
-  it('defaults params=[], async=false, requiresAuth=true, permissions=[]', () => {
+  it('defaults params=[], async=false, permissions=[]', () => {
     const result = ActionMetadataSchema.parse({ name: 'approve' });
     expect(result.params).toEqual([]);
     expect(result.async).toBe(false);
-    expect(result.requiresAuth).toBe(true);
     expect(result.permissions).toEqual([]);
+  });
+
+  it('keeps the keys the processor writes for an action', () => {
+    // The shape ExerisDomainProcessor writes for `@Action(name = "cancel") String cancel()`.
+    const result = ActionMetadataSchema.parse({ name: 'cancel', description: 'Cancel it', httpMethod: 'POST', methodName: 'cancel' });
+    expect(result).toMatchObject({ name: 'cancel', description: 'Cancel it', httpMethod: 'POST', methodName: 'cancel' });
   });
 
   it('accepts a populated params + permissions array', () => {
@@ -122,17 +127,15 @@ describe('ActionMetadataSchema', () => {
 });
 
 describe('DomainEventMetadataSchema', () => {
-  it('defaults fields=[] when omitted', () => {
-    expect(DomainEventMetadataSchema.parse({ name: 'OrderCreated' }).fields).toEqual([]);
-  });
-
-  it('embeds FieldMetadata entries in the fields array', () => {
+  it('keeps the topic and aggregateType the processor writes', () => {
     const result = DomainEventMetadataSchema.parse({
-      name: 'OrderCreated',
-      fields: [{ name: 'orderId', type: 'UUID' }],
+      name: 'OrderPlaced',
+      topic: 'orders.placed',
+      aggregateType: 'Order',
+      payloadFields: ['id'],
+      trigger: 'CREATE',
     });
-    expect(result.fields).toHaveLength(1);
-    expect(result.fields[0].name).toBe('orderId');
+    expect(result).toMatchObject({ topic: 'orders.placed', aggregateType: 'Order', payloadFields: ['id'], trigger: 'CREATE' });
   });
 });
 
@@ -258,18 +261,21 @@ describe('GraphEdgeMetadataSchema + GraphMetadataSchema', () => {
 });
 
 describe('SagaStepMetadataSchema + SagaMetadataSchema', () => {
-  it('SagaStepMetadata accepts the optional retry + parallel + condition + dependsOn fields', () => {
+  it('SagaStepMetadata keeps the keys the processor writes for a step', () => {
+    // The step ExerisDomainProcessor writes for
+    // `@SagaStep(order = 1, name = "reserve", service = "stock", command = "Reserve", compensation = "Release")`.
     const result = SagaStepMetadataSchema.parse({
       name: 'reserve',
-      action: 'reserveInventory',
-      retries: 3,
-      parallel: true,
-      condition: '${order.items.size > 0}',
-      dependsOn: ['validate'],
+      order: 1,
+      service: 'stock',
+      command: 'Reserve',
+      compensation: 'Release',
+      timeout: 'PT5M',
+      maxRetries: 3,
+      parallel: false,
+      dependsOn: [],
     });
-    expect(result.retries).toBe(3);
-    expect(result.parallel).toBe(true);
-    expect(result.dependsOn).toEqual(['validate']);
+    expect(result).toMatchObject({ service: 'stock', command: 'Reserve', compensation: 'Release', maxRetries: 3 });
   });
 
   it('SagaMetadata defaults steps=[] when omitted', () => {
@@ -369,11 +375,12 @@ describe('SystemFieldsMetadataSchema', () => {
 });
 
 describe('EventSourcedMetadataSchema', () => {
-  it('requires aggregateType, optional snapshotInterval + eventStore', () => {
+  it('requires aggregateType, optional snapshotEvery + eventStore', () => {
     const result = EventSourcedMetadataSchema.parse({ aggregateType: 'Order' });
     expect(result.aggregateType).toBe('Order');
-    expect(result.snapshotInterval).toBeUndefined();
+    expect(result.snapshotEvery).toBeUndefined();
     expect(result.eventStore).toBeUndefined();
+    expect(EventSourcedMetadataSchema.parse({ aggregateType: 'Order', snapshotEvery: 25 }).snapshotEvery).toBe(25);
   });
 
   it('rejects when aggregateType is missing', () => {
@@ -382,11 +389,14 @@ describe('EventSourcedMetadataSchema', () => {
 });
 
 describe('InternalApiMetadataSchema', () => {
-  it('defaults hidden / readOnly / internal to false', () => {
-    const result = InternalApiMetadataSchema.parse({});
-    expect(result.hidden).toBe(false);
-    expect(result.readOnly).toBe(false);
-    expect(result.internal).toBe(false);
+  it('defaults readOnly / internal to false, and does not declare hidden', () => {
+    const defaults = InternalApiMetadataSchema.parse({});
+    expect(defaults.readOnly).toBe(false);
+    expect(defaults.internal).toBe(false);
+    // What the processor writes for @InternalApi: the record's hidden component, always false.
+    const written = InternalApiMetadataSchema.parse({ hidden: false, readOnly: false, internal: true });
+    expect('hidden' in written).toBe(false);
+    expect(written.internal).toBe(true);
   });
 
   it('preserves disabledActions + allowedRoles arrays', () => {
