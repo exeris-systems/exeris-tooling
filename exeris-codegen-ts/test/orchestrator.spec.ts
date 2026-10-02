@@ -100,15 +100,6 @@ describe('buildGeneratedFiles — T20: one real tree under src/app', () => {
     expect(at('src/app/app.config.ts')).toBeDefined();
   });
 
-  it('skips internalApi.hidden domains in the per-entity tree', () => {
-    const withHidden = buildGeneratedFiles(
-      [domain({ entityName: 'Secret', internalApi: { hidden: true, readOnly: false, internal: false } })],
-      [],
-      DEFAULT_CONFIG,
-    );
-    expect(withHidden.find((f) => f.path === 'src/app/services/secret.service.ts')).toBeUndefined();
-    expect(withHidden.find((f) => f.path === 'src/app/types/secret.types.ts')).toBeUndefined();
-  });
 });
 
 describe('buildGeneratedFiles — presentation IR (@View) flows to src/app/pages', () => {
@@ -535,7 +526,7 @@ describe('buildGeneratedFiles — saga state machines', () => {
     fields: [{ name: 'id', type: 'java.util.UUID' }],
     sagaMetadata: {
       name: 'OrderFulfilment',
-      steps: [{ name: 'reserveStock', compensatingAction: 'releaseStock' }],
+      steps: [{ name: 'reserveStock', compensation: 'releaseStock' }],
     },
   });
   const noSaga = domain({ entityName: 'Product', fields: [{ name: 'id', type: 'java.util.UUID' }] });

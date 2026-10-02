@@ -8,7 +8,7 @@
  * new flag here to be accounted for. So the scaffold reads the import specifiers of the composed
  * `src/app` tree, once, after every per-entity, per-view and peer emitter has run.
  *
- * The one fact the emitted files cannot show is an API the consumer's own code calls: a visible
+ * The one fact the emitted files cannot show is an API the consumer's own code calls: an
  * entity is served by the kernel application whether or not its TS service is emitted, so its app
  * keeps the HTTP wiring with every client emitter turned off.
  *
@@ -24,7 +24,7 @@ const HTTP_CLIENT_MODULE = '@angular/common/http';
 
 export interface ScaffoldNeeds {
   /**
-   * The app has an API to call: a visible entity the kernel application serves, or an emitted file
+   * The app has an API to call: an entity the kernel application serves, or an emitted file
    * that imports the HTTP client. When true the scaffold carries `provideHttpClient()`, the
    * dev-server proxy, the `apiUrl` environment entries and its full, fixed dependency set; when
    * false it carries none of the HTTP wiring.
@@ -63,7 +63,7 @@ export function deriveScaffoldNeeds(
   files: ReadonlyArray<{ readonly content: string }>,
 ): ScaffoldNeeds {
   const packages = new Set<string>();
-  let backend = domains.some((d) => !d.internalApi?.hidden);
+  let backend = domains.length > 0;
   for (const file of files) {
     for (const match of file.content.matchAll(IMPORT_SPECIFIER)) {
       const specifier = match[1];

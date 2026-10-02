@@ -6,8 +6,9 @@
  * is measured, not inferred from source: every domain handed to `buildGeneratedFiles` — the
  * app's own and every peer's — is wrapped in a Proxy that records each top-level property the
  * pipeline touches. A text search cannot tell `domain.path` from `path.join`, and cannot see a
- * read made through a helper or a destructuring. Each domain's field objects and `uiMetadata` are
- * proxied the same way, for `FIELD_CONTRACT_COVERAGE` and `UI_CONTRACT_COVERAGE`.
+ * read made through a helper or a destructuring. Each object a domain nests — its fields, actions,
+ * events, relationships and saga steps, `uiMetadata`, `eventSourced` and `internalApi` — is proxied
+ * the same way, for the nested tables in the same file.
  *
  * The proxies wrap the parsed objects, after the last `DomainMetadataSchema.parse`: nothing in the
  * orchestrator re-parses, so the objects the generators receive are the proxies themselves.
@@ -21,24 +22,34 @@
 import { describe, expect, it } from 'vitest';
 import { buildGeneratedFiles, type EnumMetadataForGen } from '../../src/orchestrator.js';
 import {
+  ActionMetadataSchema,
+  DomainEventMetadataSchema,
   DomainMetadataSchema,
+  EventSourcedMetadataSchema,
   FieldMetadataSchema,
+  InternalApiMetadataSchema,
+  RelationshipMetadataSchema,
+  SagaStepMetadataSchema,
   UIMetadataSchema,
   type DomainMetadata,
 } from '../../src/models/domain-model.js';
 import { DEFAULT_CONFIG, type GeneratorConfig } from '../../src/config.js';
 import type { PeerContract } from '../../src/peers/peer-contract.js';
 import {
+  ACTION_CONTRACT_COVERAGE,
   CONTRACT_COVERAGE,
+  EVENT_CONTRACT_COVERAGE,
+  EVENT_SOURCED_CONTRACT_COVERAGE,
   FIELD_CONTRACT_COVERAGE,
+  INTERNAL_API_CONTRACT_COVERAGE,
+  RELATIONSHIP_CONTRACT_COVERAGE,
+  SAGA_STEP_CONTRACT_COVERAGE,
   UI_CONTRACT_COVERAGE,
   type ContractCoverageEntry,
   type NestedContractCoverageEntry,
 } from '../../src/models/contract-coverage.js';
 
 const SCHEMA_KEYS = Object.keys(DomainMetadataSchema.shape);
-const FIELD_KEYS = Object.keys(FieldMetadataSchema.shape);
-const UI_KEYS = Object.keys(UIMetadataSchema.shape);
 
 /**
  * Property names a runtime or a test framework probes on any object it is handed, none of which a
@@ -150,15 +161,53 @@ const MAXIMAL = {
     { name: 'internalNote', type: 'String', hidden: true },
   ],
   actions: [
-    { name: 'cancel', httpMethod: 'POST' },
+    {
+      name: 'cancel',
+      methodName: 'cancelOrder',
+      displayName: 'Cancel',
+      description: 'Cancel the order',
+      httpMethod: 'PUT',
+      resultType: 'void',
+      async: true,
+      permissions: ['order:cancel'],
+      producesEvents: ['OrderCancelled'],
+      routeAccess: 'AUTHENTICATED',
+    },
     { name: 'setStatus', params: [{ name: 'status', type: 'com.shop.OrderStatus', required: true }] },
     { name: 'track', streaming: true, streamEventType: 'progress' },
   ],
   events: [
-    { name: 'OrderPlaced', payloadFields: ['id', 'total'], trigger: 'CREATE' },
+    {
+      name: 'OrderPlaced',
+      topic: 'shop.orders',
+      description: 'An order was placed',
+      aggregateType: 'Order',
+      payloadFields: ['id', 'total'],
+      trigger: 'CREATE',
+    },
     { name: 'OrderCancelled', payloadFields: ['id'], sensitiveFields: ['total'], trigger: 'ACTION', actionName: 'cancel' },
+    { name: 'NoteChanged', payloadFields: ['note'], trigger: 'UPDATE', fieldName: 'note' },
   ],
-  relationships: [{ name: 'productId', fieldName: 'productId', targetEntity: 'com.shop.Product', type: 'MANY_TO_ONE' }],
+  relationships: [
+    {
+      name: 'productId',
+      fieldName: 'productId',
+      targetEntity: 'com.shop.Product',
+      type: 'MANY_TO_ONE',
+      mappedBy: 'orders',
+      fetch: 'EAGER',
+      cascade: 'ALL',
+      orphanRemoval: true,
+      optional: false,
+      lazy: false,
+      displayField: 'name',
+      valueField: 'sku',
+      joinColumns: ['product_id'],
+    },
+    // Hand-built metadata may omit fieldName; the processor writes it equal to the name.
+    { name: 'tenantId', targetEntity: 'com.shop.Tenant', type: 'MANY_TO_ONE' },
+    { name: 'lines', targetEntity: 'com.shop.OrderLine', type: 'ONE_TO_MANY' },
+  ],
   projections: [{ name: 'OrderSummary', fields: ['id', 'total'] }],
   // Every page on, explicitly: the field keys are read by the list, detail and form emitters, so
   // the maximal entity must keep them. Product turns each switch off.
@@ -177,8 +226,19 @@ const MAXIMAL = {
   sagaMetadata: {
     name: 'OrderFulfilment',
     steps: [
-      { name: 'reserveStock', action: 'reserve', compensatingAction: 'releaseStock', order: 0 },
-      { name: 'notifyCustomer', action: 'notify', order: 1 },
+      {
+        name: 'reserveStock',
+        service: 'stock',
+        command: 'reserve',
+        compensation: 'releaseStock',
+        timeout: 'PT1M',
+        maxRetries: 5,
+        order: 0,
+        parallel: true,
+        condition: 'total > 0',
+        dependsOn: ['validate'],
+      },
+      { name: 'notifyCustomer', service: 'mail', command: 'notify', order: 1 },
     ],
     compensationStrategy: 'ALL_OR_NOTHING',
     compensationOrder: 'REVERSE',
@@ -191,26 +251,118 @@ const MAXIMAL = {
     versionField: 'rev',
     softDeleteField: 'removed',
   },
-  eventSourced: { aggregateType: 'Order', snapshotInterval: 50 },
-  internalApi: { hidden: false, readOnly: true, internal: true, reason: 'ops', disabledActions: ['cancel'] },
+  eventSourced: { aggregateType: 'Order', snapshotEvery: 50, eventStore: 'orders' },
+  internalApi: {
+    readOnly: true,
+    internal: true,
+    reason: 'ops',
+    since: '0.9',
+    disabledActions: ['cancel'],
+    allowedRoles: ['ops'],
+  },
 } as const;
 
-interface Recorders {
-  domain: Recorder;
-  field: Recorder;
-  ui: Recorder;
-}
+type AnySchema = { shape: Record<string, unknown>; parse(input: unknown): unknown };
 
-const recorders = (): Recorders => ({
-  domain: { keys: SCHEMA_KEYS, reads: new Set(), undeclared: new Set(), enumerations: [] },
-  field: { keys: FIELD_KEYS, reads: new Set(), undeclared: new Set(), enumerations: [] },
-  ui: { keys: UI_KEYS, reads: new Set(), undeclared: new Set(), enumerations: [] },
-});
+/**
+ * One nested table: the schema it mirrors, the objects of that schema a domain holds, and the
+ * minimal object the schema accepts, whose parse gives each key's default.
+ */
+const NESTED_KINDS = {
+  field: {
+    label: 'FieldMetadata',
+    table: 'FIELD_CONTRACT_COVERAGE',
+    schema: FieldMetadataSchema as AnySchema,
+    states: FIELD_CONTRACT_COVERAGE,
+    minimal: { name: '_', type: '_' },
+    of: (dm: DomainMetadata): object[] => dm.fields,
+  },
+  ui: {
+    label: 'UIMetadata',
+    table: 'UI_CONTRACT_COVERAGE',
+    schema: UIMetadataSchema as AnySchema,
+    states: UI_CONTRACT_COVERAGE,
+    minimal: {},
+    of: (dm: DomainMetadata): object[] => (dm.uiMetadata ? [dm.uiMetadata] : []),
+  },
+  action: {
+    label: 'ActionMetadata',
+    table: 'ACTION_CONTRACT_COVERAGE',
+    schema: ActionMetadataSchema as AnySchema,
+    states: ACTION_CONTRACT_COVERAGE,
+    minimal: { name: '_' },
+    of: (dm: DomainMetadata): object[] => dm.actions,
+  },
+  event: {
+    label: 'DomainEventMetadata',
+    table: 'EVENT_CONTRACT_COVERAGE',
+    schema: DomainEventMetadataSchema as AnySchema,
+    states: EVENT_CONTRACT_COVERAGE,
+    minimal: { name: '_' },
+    of: (dm: DomainMetadata): object[] => dm.events,
+  },
+  relationship: {
+    label: 'RelationshipMetadata',
+    table: 'RELATIONSHIP_CONTRACT_COVERAGE',
+    schema: RelationshipMetadataSchema as AnySchema,
+    states: RELATIONSHIP_CONTRACT_COVERAGE,
+    minimal: { name: '_', targetEntity: '_', type: 'MANY_TO_ONE' },
+    of: (dm: DomainMetadata): object[] => dm.relationships,
+  },
+  sagaStep: {
+    label: 'SagaStepMetadata',
+    table: 'SAGA_STEP_CONTRACT_COVERAGE',
+    schema: SagaStepMetadataSchema as AnySchema,
+    states: SAGA_STEP_CONTRACT_COVERAGE,
+    minimal: { name: '_' },
+    of: (dm: DomainMetadata): object[] => dm.sagaMetadata?.steps ?? [],
+  },
+  eventSourced: {
+    label: 'EventSourcedMetadata',
+    table: 'EVENT_SOURCED_CONTRACT_COVERAGE',
+    schema: EventSourcedMetadataSchema as AnySchema,
+    states: EVENT_SOURCED_CONTRACT_COVERAGE,
+    minimal: { aggregateType: '_' },
+    of: (dm: DomainMetadata): object[] => (dm.eventSourced ? [dm.eventSourced] : []),
+  },
+  internalApi: {
+    label: 'InternalApiMetadata',
+    table: 'INTERNAL_API_CONTRACT_COVERAGE',
+    schema: InternalApiMetadataSchema as AnySchema,
+    states: INTERNAL_API_CONTRACT_COVERAGE,
+    minimal: {},
+    of: (dm: DomainMetadata): object[] => (dm.internalApi ? [dm.internalApi] : []),
+  },
+} as const;
 
-/** A watched copy of a domain whose field objects and uiMetadata are watched as well. */
+type NestedKind = keyof typeof NESTED_KINDS;
+type Recorders = { domain: Recorder } & Record<NestedKind, Recorder>;
+
+const newRecorder = (keys: readonly string[]): Recorder => ({ keys, reads: new Set(), undeclared: new Set(), enumerations: [] });
+
+const recorders = (): Recorders => {
+  const recs = { domain: newRecorder(SCHEMA_KEYS) } as Recorders;
+  for (const kind of Object.keys(NESTED_KINDS) as NestedKind[]) {
+    recs[kind] = newRecorder(Object.keys(NESTED_KINDS[kind].schema.shape));
+  }
+  return recs;
+};
+
+/** A watched copy of a domain whose nested objects are watched as well. */
 function watchDomain(domain: DomainMetadata, recs: Recorders): DomainMetadata {
-  const copy: DomainMetadata = { ...domain, fields: domain.fields.map((f) => watch(f, recs.field)) };
+  const copy: DomainMetadata = {
+    ...domain,
+    fields: domain.fields.map((f) => watch(f, recs.field)),
+    actions: domain.actions.map((a) => watch(a, recs.action)),
+    events: domain.events.map((e) => watch(e, recs.event)),
+    relationships: domain.relationships.map((r) => watch(r, recs.relationship)),
+  };
   if (domain.uiMetadata) copy.uiMetadata = watch(domain.uiMetadata, recs.ui);
+  if (domain.sagaMetadata) {
+    copy.sagaMetadata = { ...domain.sagaMetadata, steps: domain.sagaMetadata.steps.map((s) => watch(s, recs.sagaStep)) };
+  }
+  if (domain.eventSourced) copy.eventSourced = watch(domain.eventSourced, recs.eventSourced);
+  if (domain.internalApi) copy.internalApi = watch(domain.internalApi, recs.internalApi);
   return watch(copy, recs.domain);
 }
 
@@ -243,8 +395,6 @@ function fixture(recs: Recorders) {
       actions: [{ name: 'track', streaming: true }],
       fields: [{ name: 'id', type: 'java.util.UUID' }],
     }),
-    // Hidden: generators skip it, and must still decide to.
-    d({ entityName: 'AuditTrail', internalApi: { hidden: true }, fields: [{ name: 'id', type: 'java.util.UUID' }] }),
   ];
   const enums: EnumMetadataForGen[] = [
     {
@@ -378,17 +528,19 @@ describe('DomainMetadata contract coverage', () => {
 });
 
 /**
- * The same checks one level down, on the run above: every field object and every `uiMetadata`
- * object the generators receive is proxied, so a key counts as read only when a generator reads
- * it off the object itself.
+ * The same checks one level down, on the run above: every nested object the generators receive is
+ * proxied, so a key counts as read only when a generator reads it off the object itself.
  */
-const NESTED = [
-  { label: 'FieldMetadata', table: 'FIELD_CONTRACT_COVERAGE', keys: FIELD_KEYS, rec: RUN.field, states: FIELD_CONTRACT_COVERAGE },
-  { label: 'UIMetadata', table: 'UI_CONTRACT_COVERAGE', keys: UI_KEYS, rec: RUN.ui, states: UI_CONTRACT_COVERAGE },
-] as const;
+const NESTED = (Object.keys(NESTED_KINDS) as NestedKind[]).map((kind) => ({
+  kind,
+  label: NESTED_KINDS[kind].label,
+  table: NESTED_KINDS[kind].table,
+  keys: RUN[kind].keys,
+  rec: RUN[kind],
+  states: NESTED_KINDS[kind].states as Record<string, NestedContractCoverageEntry>,
+}));
 
-describe.each(NESTED)('$label contract coverage', ({ label, table, keys, rec, states: typed }) => {
-  const states = typed as Record<string, NestedContractCoverageEntry>;
+describe.each(NESTED)('$label contract coverage', ({ kind, label, table, keys, rec, states }) => {
 
   it('classifies every schema key, and only schema keys, in schema order', () => {
     expect(Object.keys(states), `${table} lists exactly the ${label} schema keys, in declaration order.`).toEqual(keys);
@@ -406,13 +558,9 @@ describe.each(NESTED)('$label contract coverage', ({ label, table, keys, rec, st
 
   it('runs on a fixture that sets every key away from its default', () => {
     const { raw } = fixture(recorders());
-    const objects: Record<string, unknown>[] =
-      label === 'FieldMetadata'
-        ? raw.flatMap((dm) => dm.fields)
-        : raw.flatMap((dm) => (dm.uiMetadata ? [dm.uiMetadata] : []));
-    const defaults = (
-      label === 'FieldMetadata' ? FieldMetadataSchema.parse({ name: '_', type: '_' }) : UIMetadataSchema.parse({})
-    ) as Record<string, unknown>;
+    const { of, schema, minimal } = NESTED_KINDS[kind];
+    const objects = raw.flatMap(of) as Record<string, unknown>[];
+    const defaults = schema.parse(minimal) as Record<string, unknown>;
     const unexercised = keys.filter((k) =>
       objects.every((o) => o[k] === undefined || JSON.stringify(o[k]) === JSON.stringify(defaults[k])),
     );

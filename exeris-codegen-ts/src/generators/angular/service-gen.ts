@@ -67,10 +67,6 @@ export class ServiceGenerator implements CodeGenerator {
   readonly priority = 5;
 
   generate(domain: DomainMetadata, context: GeneratorContext): GeneratedFile | null {
-    if (domain.internalApi?.hidden) {
-      return null;
-    }
-
     const content = this.generateServiceContent(domain, context);
     const fileName = `${DslMapper.toKebabCase(domain.entityName)}.service.ts`;
     const filePath = outPath('services', fileName);
@@ -84,11 +80,10 @@ export class ServiceGenerator implements CodeGenerator {
   }
 
   generateAggregate(domains: DomainMetadata[], context: GeneratorContext): GeneratedFile[] {
-    const visibleDomains = domains.filter(d => !d.internalApi?.hidden);
     return [
       {
         path: 'services/index.ts',
-        content: this.generateServicesBarrel(visibleDomains),
+        content: this.generateServicesBarrel(domains),
         artifactType: 'SERVICE',
         overwritable: true,
       },

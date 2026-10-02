@@ -61,11 +61,11 @@ const domains = [
     // Domain events drive the per-entity handler AND the shared event bus. Without one in the
     // fixture, neither half of the event generator is ever built.
     events: [
-      { name: 'OrderPlaced', payloadFields: ['id', 'total'] },
+      { name: 'OrderPlaced', topic: 'shop.orders', aggregateType: 'Order', payloadFields: ['id', 'total'] },
       { name: 'OrderCancelled', payloadFields: ['id'], sensitiveFields: ['total'] },
     ],
     actions: [
-      { name: 'cancel', methodName: 'cancel' },
+      { name: 'cancel', methodName: 'cancel', resultType: 'void' },
       { name: 'setStatus', methodName: 'setStatus', params: [{ name: 'status', type: 'com.shop.OrderStatus' }] },
       // A streaming action is served as a stream only: it gets an action stream client and no
       // service method. The enum param pins that the service then imports nothing for it.
@@ -83,9 +83,9 @@ const domains = [
     sagaMetadata: {
       name: 'OrderFulfilment',
       steps: [
-        { name: 'reserveStock', action: 'reserve', compensatingAction: 'releaseStock', order: 0 },
-        { name: 'chargeCard', action: 'charge', compensatingAction: 'refundCard', order: 1 },
-        { name: 'notifyCustomer', action: 'notify', order: 2 },
+        { name: 'reserveStock', service: 'stock', command: 'reserve', compensation: 'releaseStock', order: 0 },
+        { name: 'chargeCard', service: 'billing', command: 'charge', compensation: 'refundCard', order: 1 },
+        { name: 'notifyCustomer', service: 'mail', command: 'notify', order: 2 },
       ],
       compensationStrategy: 'ALL_OR_NOTHING',
       compensationOrder: 'REVERSE',
@@ -105,7 +105,7 @@ const domains = [
       name: 'ProductRestock',
       steps: [
         { name: 'requestQuote', order: 0 },
-        { name: 'placePurchaseOrder', compensatingAction: 'cancelPurchaseOrder', order: 1 },
+        { name: 'placePurchaseOrder', compensation: 'cancelPurchaseOrder', order: 1 },
       ],
     },
   }),
