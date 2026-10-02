@@ -11,11 +11,10 @@
  * already carry. Resolution is a pure function of its inputs, so the same metadata always yields
  * the same model.
  *
- * Each surface keeps the decisions it has always made, including where the three disagree: the
- * detail view and the form detect an enum by different rules, the list badges only a
- * `Boolean`-typed column, and the form maps only qualified Java types to a number or date input.
- * The disagreements are recorded per surface rather than unified, because unifying them changes
- * emitted output; the list, detail and form reworks reconcile them through this model.
+ * Each surface resolves by its own rule where the three differ: the detail view and the form
+ * detect an enum by different rules, the list badges only a `Boolean`-typed column, and the form
+ * maps only qualified Java types to a number or date input. The differences are listed in
+ * `docs/codegen-ts-track-plan.md`.
  */
 
 import type { DomainMetadata, FieldMetadata } from '../../models/domain-model.js';
