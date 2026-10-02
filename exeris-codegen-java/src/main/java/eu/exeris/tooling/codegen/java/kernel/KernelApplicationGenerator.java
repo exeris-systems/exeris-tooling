@@ -11,6 +11,7 @@ import com.palantir.javapoet.WildcardTypeName;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
+import eu.exeris.tooling.codegen.core.driver.RequiredSubsystems;
 import eu.exeris.tooling.codegen.java.support.DataScopeSupport;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
 import eu.exeris.tooling.codegen.java.support.KernelStreamScaffold;
@@ -101,7 +102,6 @@ import java.util.Map;
  */
 public class KernelApplicationGenerator implements KernelArtifactGenerator {
 
-    private static final String SUBSYSTEMS = "http,persistence,graph,flow,events,crypto";
     private static final String TX_EXECUTOR_NAME = "transactionalExecutor";
     // T49: the open half of the composition root. RuntimeLifecycle stops calling
     // `new XService(...)` and asks RuntimeComponents for it, so a consumer can
@@ -154,7 +154,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
 
     // ADR-024 ("Boot Conductor Call Site" amendment): the SKU-side
     // boot conductor. Emitted ONLY into a build that actually has a composition —
-    // see buildApplication(String, boolean, boolean).
+    // see buildApplication(String, boolean, boolean, String).
     private static final ClassName COMPOSITION_CONDUCTOR =
             ClassName.get("eu.exeris.sdk.composition.runtime", "CompositionConductor");
     private static final ClassName PATH = ClassName.get("java.nio.file", "Path");
@@ -233,7 +233,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
      *                 {@code @CapabilityModule}). When {@code true}, {@code Application}
      *                 drives the SDK boot conductor around the runtime lifecycle; when
      *                 {@code false} not a single conductor symbol is emitted — see
-     *                 {@link #buildApplication(String, boolean, boolean)}
+     *                 {@link #buildApplication(String, boolean, boolean, String)}
      * @return the three emitted files; always
      *         {@code [Application, RuntimeComponents, RuntimeLifecycle]}
      * @since 0.7.0
@@ -243,7 +243,8 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
         List<GeneratedFile> files = new ArrayList<>(3);
         // The Jackson 3 sentence is emitted only when a repository in this tree imports it.
         boolean importsJackson = domains.stream().anyMatch(KernelRepositoryGenerator::importsJackson);
-        files.add(buildApplication(basePackage, composed, importsJackson));
+        files.add(buildApplication(basePackage, composed, importsJackson,
+                RequiredSubsystems.selector(domains)));
         files.add(buildRuntimeComponents(domains, basePackage));
         files.add(buildRuntimeLifecycle(domains, basePackage));
         return files;
@@ -393,7 +394,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
      * manifest is inert wiring at best and a boot failure at worst.
      */
     private GeneratedFile buildApplication(String basePackage, boolean composed,
-                                           boolean importsJackson) {
+                                           boolean importsJackson, String subsystems) {
         ClassName selfType = ClassName.get(basePackage, "Application");
         ClassName lifecycleType = ClassName.get(basePackage, "RuntimeLifecycle");
         TypeName atomicHttpHandler = ParameterizedTypeName.get(ATOMIC_REFERENCE, HTTP_HANDLER);
@@ -456,14 +457,28 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .addModifiers(Modifier.PROTECTED)
                 .returns(String.class)
                 .addJavadoc("Comma-separated Kernel subsystem list passed to\n")
-                .addJavadoc("{@link $T#forNames(String...)}. Default is the canonical\n", BOOTSTRAP_SELECTOR)
-                .addJavadoc("Open-Core selector.\n")
+                .addJavadoc("{@link $T#forNames(String...)}; the kernel adds each\n", BOOTSTRAP_SELECTOR)
+                .addJavadoc("name's dependencies itself.\n")
+                .addJavadoc("<p>Derived from the domain model when this file was generated:\n")
+                .addJavadoc("{@code http}, {@code persistence} and {@code crypto} always;\n")
+                .addJavadoc("{@code graph} when an entity declares a graph node, {@code flow}\n")
+                .addJavadoc("when one declares a saga, and {@code events} when one declares a\n")
+                .addJavadoc("domain event. {@code crypto} is listed although no generated code\n")
+                .addJavadoc("reads it: the kernel serves TLS on a listener with certificate\n")
+                .addJavadoc("material only when a crypto provider is bound, and plaintext\n")
+                .addJavadoc("otherwise.\n")
                 .addJavadoc("<p>Subclass {@code Application} and override this method to\n")
-                .addJavadoc("add/remove subsystems — e.g.\\ to drop {@code graph} when the\n")
-                .addJavadoc("project has no graph projections. (It must be an instance\n")
-                .addJavadoc("method, not a {@code static final} field, otherwise javac\n")
-                .addJavadoc("inlines the constant and the override has no effect.)\n")
-                .addStatement("return $S", SUBSYSTEMS)
+                .addJavadoc("boot a subsystem your own code reads, or to drop one:\n")
+                .addJavadoc("{@snippet :\n")
+                .addJavadoc("@Override protected String subsystems() {\n")
+                .addJavadoc("    return super.subsystems() + \",scheduling\";\n")
+                .addJavadoc("}\n")
+                .addJavadoc("}\n")
+                .addJavadoc("Dropping a name the generated code reads fails the boot, in the\n")
+                .addJavadoc("factory that reads it. (It must be an instance method, not a\n")
+                .addJavadoc("{@code static final} field, otherwise javac inlines the constant\n")
+                .addJavadoc("and the override has no effect.)\n")
+                .addStatement("return $S", subsystems)
                 .build();
 
         MethodSpec transactionalExecutorMethod = MethodSpec.methodBuilder(TX_EXECUTOR_NAME)
@@ -517,8 +532,8 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
 
         TypeSpec.Builder applicationType = KernelScaffold.publicClass("Application")
                 .addJavadoc("Generated application entry point.\n")
-                .addJavadoc("<p>Drives {@link $T} with the canonical SPI subsystem set\n", KERNEL_BOOTSTRAP)
-                .addJavadoc("({@code http,persistence,graph,flow,events,crypto}) and hands the\n")
+                .addJavadoc("<p>Drives {@link $T} with the subsystems\n", KERNEL_BOOTSTRAP)
+                .addJavadoc("{@link #subsystems()} names ({@code $L}) and hands the\n", subsystems)
                 .addJavadoc("composed Handler/Service/Repository/Router stack off to\n")
                 .addJavadoc("{@link $T#run()}.\n", lifecycleType);
         if (composed) {

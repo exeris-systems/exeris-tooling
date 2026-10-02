@@ -1328,6 +1328,40 @@ now fails the boot.
 and `FLOW_ENGINE`, or override every subscriber, flow and EV1 stream-handler factory. The
 `RuntimeComponents` scope lists entry below has the full list.
 
+### `Application.subsystems()` names only the subsystems the domain uses
+
+The emitted `subsystems()` used to return `http,persistence,graph,flow,events,crypto` in every
+application. It now returns `http`, `persistence` and `crypto`, plus:
+
+| Name | Listed when |
+|---|---|
+| `graph` | some entity carries graph metadata (`@Graph`), so a `<Entity>GraphSync` is emitted |
+| `flow` | some entity, or a standalone `@Saga`, declares a saga |
+| `events` | some entity declares a `@DomainEvent` |
+
+The order is fixed. An application with none of the three regenerates to
+`return "http,persistence,crypto";`, and its kernel no longer starts a graph engine, a flow engine
+with its snapshot store, or an event engine at boot. Nothing else changes: the generated code read
+none of those engines, and the kernel still adds `memory` and every other dependency itself.
+
+`exeris:verify-runtime` already required `GraphProvider`, `FlowProvider` and `EventProvider` only
+under these conditions, so the driver it asks for is unchanged.
+
+**If your own code reads an engine the domain does not** (for example `KernelProviders.graphEngine()`
+in a hand-written component with no `@Graph` entity), add the name back in your `Application`
+subclass:
+
+```java
+@Override
+protected String subsystems() {
+    return super.subsystems() + ",graph";
+}
+```
+
+An override that returns a fixed string keeps working, and keeps booting exactly the names it
+returns. Removing a name that generated code reads still fails the boot, in the factory that reads
+it.
+
 ### Payload-bearing event publishers encode their payloads (T48 slice C1)
 
 A publisher whose events carry `payloadFields` now takes the `EventPayloadCodecRegistry` at
@@ -1685,6 +1719,29 @@ private UUID mixed;
 compiled, and generation then failed with `Duplicate edge names`. The two are now counted together,
 and this declaration draws the same `[Exeris] @GraphEdge is declared 2 times on field 'mixed'` error
 at the field. To fix it, declare each edge on its own field.
+
+### `-Aexeris.strict` now reports four `@Saga` / `@SagaStep` attributes
+
+Only if you pass `-Aexeris.strict`. A default build is unchanged and stays silent, and nothing about
+what the compiler produces changes either way.
+
+The attribute audit is driven by a per-annotation call site, and `@Saga` and `@SagaStep` had none, so
+a strict build said nothing about any of their attributes. They are now audited on both paths a saga
+takes: a standalone `@Saga` class and an `@ExerisDomain` entity carrying `@Saga`. Four attributes are
+registered as read by no generator:
+
+- `@Saga.description` and `@SagaStep.description`: neither reaches emitted code.
+- `@SagaStep.service` and `@SagaStep.command`: the emitted step method is a skeleton that logs and
+  returns `CONTINUE` for you to override. It does not dispatch the named command to the named
+  service. **Both are required by the SDK, so expect two warnings per saga step.** You cannot remove
+  them from your source to quiet the warning. The warning tells you the step does nothing until you
+  override it.
+
+`@SagaStep.parallel` and `@SagaStep.timeout` are also read by no generator, but they are left
+unreported on purpose: the kernel's flow model has no way to express concurrent steps or a per-step
+deadline, so the linear chain the generator emits is the only correct output. The flow-level
+`@Saga.timeout`, `maxRetries` and `version` are honoured and do not warn, and neither does
+`@SagaStep.compensation`, which adds the step's compensation method.
 
 ### `-Aexeris.strict` now reports `@UI`, `@Tab`, `@UIGroup` and the `@Field` attributes nothing honours
 
