@@ -18,6 +18,7 @@ import { outPath } from '../../core/paths.js';
 import { tsSingleQuoted } from './ts-literal.js';
 import { auditFieldNames, updateVersionField, viewSystemFieldNames } from '../api/type-gen.js';
 import { foreignKeyLinks } from './relationship-links.js';
+import { entityExitRoute, entityViews } from './entity-views.js';
 
 export class DetailGenerator implements CodeGenerator {
   readonly name = 'DetailGenerator';
@@ -26,7 +27,7 @@ export class DetailGenerator implements CodeGenerator {
   readonly priority = 20;
 
   generate(domain: DomainMetadata, context: GeneratorContext): GeneratedFile | null {
-    if (domain.internalApi?.hidden) {
+    if (domain.internalApi?.hidden || !entityViews(domain).detail) {
       return null;
     }
 
@@ -59,6 +60,7 @@ export class DetailGenerator implements CodeGenerator {
     const displayFields = fields.filter(f => !systemFieldNames.includes(f.name) && !f.hidden);
     const enumTypes = this.collectEnumTypes(fields);
     const fkLinks = foreignKeyLinks(domain, context.allDomains, context.config.generateDetails !== false);
+    const views = entityViews(domain);
 
     const lines: string[] = [];
 
@@ -147,7 +149,9 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`        <header class="mb-8 flex items-center justify-between">`);
     lines.push(`          <h1 id="detail-title" class="text-2xl font-bold text-gray-900 dark:text-white">{{ getTitle() }}</h1>`);
     lines.push(`          <nav class="flex gap-3">`);
-    lines.push(`            <a [routerLink]="['edit']" class="px-4 py-2 text-sm font-medium text-white bg-exeris-primary rounded-md hover:bg-exeris-primary-hover">Edit</a>`);
+    if (views.edit) {
+      lines.push(`            <a [routerLink]="['edit']" class="px-4 py-2 text-sm font-medium text-white bg-exeris-primary rounded-md hover:bg-exeris-primary-hover">Edit</a>`);
+    }
     lines.push(`            <button (click)="onDelete()" class="px-4 py-2 text-sm font-medium text-red-700 bg-red-100 rounded-md hover:bg-red-200">Delete</button>`);
     lines.push(`          </nav>`);
     lines.push(`        </header>`);
@@ -303,8 +307,8 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`    if (confirm('Are you sure you want to delete this ${displayName.toLowerCase()}?')) {`);
     lines.push(`      this.deleteError.set(null);`);
     lines.push(`      this.service.delete(this.id()).subscribe({`);
-    // The route table's own plural, so the navigation target is a route the table declares.
-    lines.push(`        next: () => this.router.navigate(['/${DslMapper.routePlural(entityName)}']),`);
+    // The list route, or the app root when the list is switched off: a route the table declares.
+    lines.push(`        next: () => this.router.navigate(['${entityExitRoute(domain, views)}']),`);
     lines.push(`        error: (err) => this.deleteError.set(httpErrorMessage(err, { entity: '${noun}', action: 'delete' })),`);
     lines.push(`      });`);
     lines.push(`    }`);
@@ -386,9 +390,9 @@ export function generateDetail(
   metadata: DomainMetadata,
   config: GeneratorConfig,
   allDomains: DomainMetadata[] = [metadata],
-): GeneratedFile {
+): GeneratedFile | null {
   const generator = new DetailGenerator();
   const context: GeneratorContext = { config, backend: config.backend ?? 'KERNEL', allDomains, enums: [] };
-  return generator.generate(metadata, context)!;
+  return generator.generate(metadata, context);
 }
 

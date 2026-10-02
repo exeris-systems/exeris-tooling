@@ -18,6 +18,7 @@ import { outPath } from '../../core/paths.js';
 import { viewSystemFieldNames } from '../api/type-gen.js';
 import { foreignKeyLinks } from './relationship-links.js';
 import { tsSingleQuoted } from './ts-literal.js';
+import { entityViews } from './entity-views.js';
 
 export { GeneratedFile };
 
@@ -28,7 +29,7 @@ export class ListGenerator implements CodeGenerator {
   readonly priority = 20;
 
   generate(domain: DomainMetadata, context: GeneratorContext): GeneratedFile | null {
-    if (domain.internalApi?.hidden) {
+    if (domain.internalApi?.hidden || !entityViews(domain).list) {
       return null;
     }
 
@@ -79,7 +80,13 @@ export class ListGenerator implements CodeGenerator {
         };
       });
 
-    const filterableFields = metadata.fields.filter((f) => f.filterable);
+    const views = entityViews(metadata);
+    // With the entity's filter switch off no field gets a control, whatever the field says.
+    const filterableFields = views.filter ? metadata.fields.filter((f) => f.filterable) : [];
+    const filterControls = filterableFields.slice(0, 2).filter((f) => f.type === 'Boolean');
+    // FormsModule carries ngModel, which only the search box and the filter controls bind; Angular
+    // reports an unused standalone import against the template.
+    const hasControls = views.search || filterControls.length > 0;
 
     const lines: string[] = [];
 
@@ -110,11 +117,17 @@ export class ListGenerator implements CodeGenerator {
     lines.push(`} from '@angular/core';`);
     lines.push(`import { CommonModule } from '@angular/common';`);
     lines.push(`import { RouterModule } from '@angular/router';`);
-    lines.push(`import { FormsModule } from '@angular/forms';`);
+    if (hasControls) {
+      lines.push(`import { FormsModule } from '@angular/forms';`);
+    }
     lines.push(`import { ${modelName}, ${entityName}Service, PageRequest, ${modelName}Filter, Page } from '../services/${kebabName}.service';`);
-    lines.push(`import { Subject, debounceTime, distinctUntilChanged } from 'rxjs';`);
+    if (views.search) {
+      lines.push(`import { Subject, debounceTime, distinctUntilChanged } from 'rxjs';`);
+    }
     lines.push(`import { httpErrorMessage } from '../core/http-error';`);
-    lines.push(`import { takeUntilDestroyed } from '@angular/core/rxjs-interop';`);
+    if (views.search) {
+      lines.push(`import { takeUntilDestroyed } from '@angular/core/rxjs-interop';`);
+    }
     lines.push(``);
 
     // Row enter animation is native (animate.enter, Angular 22) — a compiler
@@ -127,7 +140,7 @@ export class ListGenerator implements CodeGenerator {
     lines.push(`@Component({`);
     lines.push(`  selector: 'app-${kebabName}-list',`);
     lines.push(`  standalone: true,`);
-    lines.push(`  imports: [CommonModule, RouterModule, FormsModule],`);
+    lines.push(`  imports: [CommonModule, RouterModule${hasControls ? ', FormsModule' : ''}],`);
     lines.push(`  changeDetection: ChangeDetectionStrategy.OnPush,`);
     lines.push(`  styles: [\``);
     lines.push(`    .row-enter { animation: row-enter-kf 200ms ease-out both; }`);
@@ -155,18 +168,20 @@ export class ListGenerator implements CodeGenerator {
     lines.push(`            }`);
     lines.push(`          </p>`);
     lines.push(`        </div>`);
-    lines.push(`        <div class="mt-4 sm:ml-16 sm:mt-0">`);
-    lines.push(`          <a`);
-    lines.push(`            routerLink="new"`);
-    lines.push(`            data-testid="action-create"`);
-    lines.push(`            class="inline-flex items-center rounded-md bg-exeris-primary px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-exeris-primary-hover transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-exeris-primary"`);
-    lines.push(`          >`);
-    lines.push(`            <svg class="-ml-0.5 mr-1.5 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">`);
-    lines.push(`              <path d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" />`);
-    lines.push(`            </svg>`);
-    lines.push(`            New ${displayName}`);
-    lines.push(`          </a>`);
-    lines.push(`        </div>`);
+    if (views.create) {
+      lines.push(`        <div class="mt-4 sm:ml-16 sm:mt-0">`);
+      lines.push(`          <a`);
+      lines.push(`            routerLink="new"`);
+      lines.push(`            data-testid="action-create"`);
+      lines.push(`            class="inline-flex items-center rounded-md bg-exeris-primary px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-exeris-primary-hover transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-exeris-primary"`);
+      lines.push(`          >`);
+      lines.push(`            <svg class="-ml-0.5 mr-1.5 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">`);
+      lines.push(`              <path d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" />`);
+      lines.push(`            </svg>`);
+      lines.push(`            New ${displayName}`);
+      lines.push(`          </a>`);
+      lines.push(`        </div>`);
+    }
     lines.push(`      </div>`);
     lines.push(``);
 
@@ -175,30 +190,32 @@ export class ListGenerator implements CodeGenerator {
     lines.push(`      }`);
     lines.push(``);
 
-    // Search & Filters
-    lines.push(`      <!-- Search & Filters -->`);
-    lines.push(`      <div class="flex flex-col gap-4 sm:flex-row sm:items-center">`);
-    lines.push(`        <div class="relative flex-1">`);
-    lines.push(`          <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">`);
-    lines.push(`            <svg class="h-5 w-5 text-gray-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">`);
-    lines.push(`              <path fill-rule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clip-rule="evenodd" />`);
-    lines.push(`            </svg>`);
-    lines.push(`          </div>`);
-    lines.push(`          <input`);
-    lines.push(`            type="search"`);
-    lines.push(`            [(ngModel)]="searchQuery"`);
-    lines.push(`            (ngModelChange)="onSearch($event)"`);
-    lines.push(`            placeholder="Search ${pluralName.toLowerCase()}..."`);
-    lines.push(`            aria-label="Search ${pluralName.toLowerCase()}"`);
-    lines.push(`            data-testid="search-input"`);
-    lines.push(`            class="block w-full rounded-md border-0 py-2 pl-10 pr-3 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-exeris-primary dark:bg-gray-800 dark:text-white dark:ring-gray-600 sm:text-sm sm:leading-6"`);
-    lines.push(`          />`);
-    lines.push(`        </div>`);
+    // Search & Filters — the row exists when it holds a control.
+    if (hasControls) {
+      lines.push(`      <!-- Search & Filters -->`);
+      lines.push(`      <div class="flex flex-col gap-4 sm:flex-row sm:items-center">`);
+      if (views.search) {
+        lines.push(`        <div class="relative flex-1">`);
+        lines.push(`          <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">`);
+        lines.push(`            <svg class="h-5 w-5 text-gray-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">`);
+        lines.push(`              <path fill-rule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clip-rule="evenodd" />`);
+        lines.push(`            </svg>`);
+        lines.push(`          </div>`);
+        lines.push(`          <input`);
+        lines.push(`            type="search"`);
+        lines.push(`            [(ngModel)]="searchQuery"`);
+        lines.push(`            (ngModelChange)="onSearch($event)"`);
+        lines.push(`            placeholder="Search ${pluralName.toLowerCase()}..."`);
+        lines.push(`            aria-label="Search ${pluralName.toLowerCase()}"`);
+        lines.push(`            data-testid="search-input"`);
+        lines.push(`            class="block w-full rounded-md border-0 py-2 pl-10 pr-3 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-exeris-primary dark:bg-gray-800 dark:text-white dark:ring-gray-600 sm:text-sm sm:leading-6"`);
+        lines.push(`          />`);
+        lines.push(`        </div>`);
+      }
 
-    // Filter dropdowns
-    for (const field of filterableFields.slice(0, 2)) {
-      const mapping = DslMapper.mapField(field);
-      if (field.type === 'Boolean') {
+      // Filter dropdowns
+      for (const field of filterControls) {
+        const mapping = DslMapper.mapField(field);
         lines.push(`        <select`);
         lines.push(`          [(ngModel)]="filter${field.name.charAt(0).toUpperCase() + field.name.slice(1)}"`);
         lines.push(`          (ngModelChange)="onFilterChange()"`);
@@ -211,9 +228,9 @@ export class ListGenerator implements CodeGenerator {
         lines.push(`          <option value="false">No</option>`);
         lines.push(`        </select>`);
       }
+      lines.push(`      </div>`);
+      lines.push(``);
     }
-    lines.push(`      </div>`);
-    lines.push(``);
 
     // Table with @defer for SSR
     lines.push(`      <!-- Data Table -->`);
@@ -314,8 +331,13 @@ export class ListGenerator implements CodeGenerator {
     // Actions
     lines.push(`                    <td class="whitespace-nowrap py-4 pl-3 pr-6 text-right text-sm">`);
     lines.push(`                      <div class="flex justify-end gap-3">`);
-    lines.push(`                        <a [routerLink]="[item.${idField}]" [attr.data-testid]="'action-view-' + item.${idField}" class="text-exeris-primary hover:text-exeris-primary-hover dark:text-exeris-primary dark:hover:text-exeris-primary-hover font-medium">View</a>`);
-    lines.push(`                        <a [routerLink]="[item.${idField}, 'edit']" [attr.data-testid]="'action-edit-' + item.${idField}" class="text-exeris-primary hover:text-exeris-primary-hover dark:text-exeris-primary dark:hover:text-exeris-primary-hover font-medium">Edit</a>`);
+    // Each row link exists only beside the route it opens; Delete is an API call and always stays.
+    if (views.detail) {
+      lines.push(`                        <a [routerLink]="[item.${idField}]" [attr.data-testid]="'action-view-' + item.${idField}" class="text-exeris-primary hover:text-exeris-primary-hover dark:text-exeris-primary dark:hover:text-exeris-primary-hover font-medium">View</a>`);
+    }
+    if (views.edit) {
+      lines.push(`                        <a [routerLink]="[item.${idField}, 'edit']" [attr.data-testid]="'action-edit-' + item.${idField}" class="text-exeris-primary hover:text-exeris-primary-hover dark:text-exeris-primary dark:hover:text-exeris-primary-hover font-medium">Edit</a>`);
+    }
     lines.push(`                        <button (click)="onDelete(item)" [attr.data-testid]="'action-delete-' + item.${idField}" class="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 font-medium">Delete</button>`);
     lines.push(`                      </div>`);
     lines.push(`                    </td>`);
@@ -327,13 +349,15 @@ export class ListGenerator implements CodeGenerator {
     lines.push(`                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />`);
     lines.push(`                      </svg>`);
     lines.push(`                      <h3 class="mt-2 text-sm font-medium text-gray-900 dark:text-white">No ${pluralName.toLowerCase()}</h3>`);
-    lines.push(`                      <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Get started by creating a new ${displayName.toLowerCase()}.</p>`);
-    lines.push(`                      <div class="mt-6">`);
-    lines.push(`                        <a routerLink="new" class="inline-flex items-center rounded-md bg-exeris-primary px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-exeris-primary-hover">`);
-    lines.push(`                          <svg class="-ml-0.5 mr-1.5 h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" /></svg>`);
-    lines.push(`                          New ${displayName}`);
-    lines.push(`                        </a>`);
-    lines.push(`                      </div>`);
+    if (views.create) {
+      lines.push(`                      <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Get started by creating a new ${displayName.toLowerCase()}.</p>`);
+      lines.push(`                      <div class="mt-6">`);
+      lines.push(`                        <a routerLink="new" class="inline-flex items-center rounded-md bg-exeris-primary px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-exeris-primary-hover">`);
+      lines.push(`                          <svg class="-ml-0.5 mr-1.5 h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" /></svg>`);
+      lines.push(`                          New ${displayName}`);
+      lines.push(`                        </a>`);
+      lines.push(`                      </div>`);
+    }
     lines.push(`                    </td>`);
     lines.push(`                  </tr>`);
     lines.push(`                }`);
@@ -387,11 +411,11 @@ export class ListGenerator implements CodeGenerator {
     lines.push(`  private readonly service = inject(${entityName}Service);`);
     lines.push(``);
     lines.push(`  // State`);
-    lines.push(`  searchQuery = '';`);
-    for (const field of filterableFields.slice(0, 2)) {
-      if (field.type === 'Boolean') {
-        lines.push(`  filter${field.name.charAt(0).toUpperCase() + field.name.slice(1)}: string = '';`);
-      }
+    if (views.search) {
+      lines.push(`  searchQuery = '';`);
+    }
+    for (const field of filterControls) {
+      lines.push(`  filter${field.name.charAt(0).toUpperCase() + field.name.slice(1)}: string = '';`);
     }
     lines.push(``);
     lines.push(`  // Signals`);
@@ -414,22 +438,24 @@ export class ListGenerator implements CodeGenerator {
     lines.push(``);
     lines.push(`  protected readonly Math = Math;`);
     lines.push(``);
-    lines.push(`  // Search debounce`);
-    lines.push(`  private readonly searchSubject = new Subject<string>();`);
-    lines.push(``);
-    lines.push(`  constructor() {`);
-    lines.push(`    // Debounce search`);
-    lines.push(`    this.searchSubject.pipe(`);
-    lines.push(`      debounceTime(300),`);
-    lines.push(`      distinctUntilChanged(),`);
-    lines.push(`      takeUntilDestroyed()`);
-    lines.push(`    ).subscribe((query) => {`);
-    lines.push(`      this.filter.update((f) => ({ ...f, search: query || undefined }));`);
-    lines.push(`      this.currentPage.set(0);`);
-    lines.push(`      this.loadData();`);
-    lines.push(`    });`);
-    lines.push(`  }`);
-    lines.push(``);
+    if (views.search) {
+      lines.push(`  // Search debounce`);
+      lines.push(`  private readonly searchSubject = new Subject<string>();`);
+      lines.push(``);
+      lines.push(`  constructor() {`);
+      lines.push(`    // Debounce search`);
+      lines.push(`    this.searchSubject.pipe(`);
+      lines.push(`      debounceTime(300),`);
+      lines.push(`      distinctUntilChanged(),`);
+      lines.push(`      takeUntilDestroyed()`);
+      lines.push(`    ).subscribe((query) => {`);
+      lines.push(`      this.filter.update((f) => ({ ...f, search: query || undefined }));`);
+      lines.push(`      this.currentPage.set(0);`);
+      lines.push(`      this.loadData();`);
+      lines.push(`    });`);
+      lines.push(`  }`);
+      lines.push(``);
+    }
     lines.push(`  ngOnInit(): void {`);
     lines.push(`    this.loadData();`);
     lines.push(`  }`);
@@ -452,17 +478,17 @@ export class ListGenerator implements CodeGenerator {
     lines.push(`    });`);
     lines.push(`  }`);
     lines.push(``);
-    lines.push(`  onSearch(query: string): void {`);
-    lines.push(`    this.searchSubject.next(query);`);
-    lines.push(`  }`);
-    lines.push(``);
+    if (views.search) {
+      lines.push(`  onSearch(query: string): void {`);
+      lines.push(`    this.searchSubject.next(query);`);
+      lines.push(`  }`);
+      lines.push(``);
+    }
     lines.push(`  onFilterChange(): void {`);
     lines.push(`    this.filter.update((f) => ({`);
     lines.push(`      ...f,`);
-    for (const field of filterableFields.slice(0, 2)) {
-      if (field.type === 'Boolean') {
-        lines.push(`      ${field.name}: this.filter${field.name.charAt(0).toUpperCase() + field.name.slice(1)} ? this.filter${field.name.charAt(0).toUpperCase() + field.name.slice(1)} === 'true' : undefined,`);
-      }
+    for (const field of filterControls) {
+      lines.push(`      ${field.name}: this.filter${field.name.charAt(0).toUpperCase() + field.name.slice(1)} ? this.filter${field.name.charAt(0).toUpperCase() + field.name.slice(1)} === 'true' : undefined,`);
     }
     lines.push(`    }));`);
     lines.push(`    this.currentPage.set(0);`);

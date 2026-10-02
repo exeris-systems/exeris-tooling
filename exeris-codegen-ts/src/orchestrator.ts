@@ -119,7 +119,8 @@ export function buildGeneratedFiles(
     }
     // Detail view component: read/edit for a single entity instance.
     if (config.generateDetails) {
-      appTree.push(generateDetail(domain, config, domains));
+      const detail = generateDetail(domain, config, domains);
+      if (detail) appTree.push(detail);
     }
     // Signal store: reactive entity state (signal-first).
     if (config.generateStores) {

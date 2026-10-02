@@ -4323,13 +4323,13 @@ class ExerisDomainProcessorTest {
                     .contains("@UI")
                     .contains("reads @UI on a type only")
                     .contains("@View's field facet");
-            // The type-level inert entry must not answer for a field-level @UI.
+            // No type-level @UI attribute entry answers for a field-level @UI.
             assertThat(warnings(compilation, INERT)).isEmpty();
         }
 
         @Test
-        @DisplayName("type-level @UI is reported once as extracted-but-unconsumed, never as unread")
-        void typeLevelUiIsReportedAsInert() {
+        @DisplayName("type-level @UI: the view switches are quiet, each unconsumed attribute is reported, nothing as unread")
+        void typeLevelUiReportsOnlyUnconsumedAttributes() {
             Compilation compilation = strictCompile("Widget", """
                     package com.example;
 
@@ -4338,7 +4338,9 @@ class ExerisDomainProcessorTest {
                     import eu.exeris.sdk.annotation.UI;
 
                     @ExerisDomain(module = "core", path = "/widgets")
-                    @UI(listView = false, exportable = true, icon = "box")
+                    @UI(listView = false, detailView = false, createForm = false, editForm = false,
+                        searchable = false, filterable = false,
+                        exportable = true, icon = "box", placeholder = "x")
                     public class Widget {
                         @Field(label = "Name")
                         private String name;
@@ -4346,11 +4348,39 @@ class ExerisDomainProcessorTest {
                     """);
 
             assertThat(compilation).succeeded();
-            // The seven flags the processor reads reach UIMetadata, and no generator reads
-            // UIMetadata's flags — so the read attributes are no more effective than icon.
-            assertThat(warnings(compilation, INERT))
-                    .singleElement()
-                    .satisfies(m -> assertThat(m).contains("@UI is set").contains("UIMetadata"));
+            // The six switches decide which pages, routes and list controls the TS emitter writes.
+            List<String> inert = warnings(compilation, INERT);
+            assertThat(inert).hasSize(3);
+            assertThat(inert).anySatisfy(m -> assertThat(m).contains("@UI.exportable is set"));
+            assertThat(inert).anySatisfy(m -> assertThat(m).contains("@UI.icon is set").contains("UIMetadata"));
+            assertThat(inert).anySatisfy(m -> assertThat(m).contains("@UI.placeholder is set")
+                    .contains("@View's field facet"));
+            for (String flag : List.of("listView", "detailView", "createForm", "editForm", "searchable", "filterable")) {
+                assertThat(inert).noneSatisfy(m -> assertThat(m).contains("@UI." + flag));
+            }
+            assertThat(warnings(compilation, UNREAD)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("type-level @UI setting only view switches draws no warning")
+        void typeLevelUiViewSwitchesAreQuiet() {
+            Compilation compilation = strictCompile("Widget", """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Field;
+                    import eu.exeris.sdk.annotation.UI;
+
+                    @ExerisDomain(module = "core", path = "/widgets")
+                    @UI(listView = false, searchable = false)
+                    public class Widget {
+                        @Field(label = "Name")
+                        private String name;
+                    }
+                    """);
+
+            assertThat(compilation).succeeded();
+            assertThat(warnings(compilation, INERT)).isEmpty();
             assertThat(warnings(compilation, UNREAD)).isEmpty();
         }
 
