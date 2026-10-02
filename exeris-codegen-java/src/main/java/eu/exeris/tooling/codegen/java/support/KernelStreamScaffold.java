@@ -28,10 +28,7 @@ import java.util.List;
  *       loop that stands in where there is no producer: an entity with
  *       {@code realTimeApi} but no {@code @DomainEvent} (the Slice 1 fallback),
  *       and the per-action handler (Slice 2). The per-action handler does not
- *       invoke its action. The SDK already links an action to its events — an
- *       {@code ACTION}-triggered {@code @DomainEvent} names the action in
- *       {@code actionName} — so what the per-action driver lacks is its own
- *       invoke-then-stream design, not an SDK attribute.</li>
+ *       invoke its action.</li>
  * </ul>
  *
  * <p>Determinism (hard constraint #3): every value here is a compile-time
