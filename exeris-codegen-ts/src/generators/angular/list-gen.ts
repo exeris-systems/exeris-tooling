@@ -15,8 +15,7 @@ import type { GeneratorConfig } from '../../config.js';
 import type { CodeGenerator, GeneratedFile, GeneratorContext } from '../../core/generator-registry.js';
 import type { BackendType } from '../../core/backend-strategy.js';
 import { outPath } from '../../core/paths.js';
-import { viewSystemFieldNames } from '../api/type-gen.js';
-import { foreignKeyLinks } from './relationship-links.js';
+import { fieldRenderContext, resolveFieldRenders, type FieldRenderModel } from './field-render.js';
 import { tsSingleQuoted } from './ts-literal.js';
 
 export { GeneratedFile };
@@ -60,26 +59,14 @@ export class ListGenerator implements CodeGenerator {
     // honours it, and the emitted app would then request the wrong identifier.
     const idField = 'id';
 
-    const listColumnNames = this.listColumnNames(metadata);
+    const renders = resolveFieldRenders(
+      metadata,
+      fieldRenderContext(metadata, context.allDomains, context.config.generateDetails !== false),
+    );
+    const listColumns = this.listColumnNames(renders)
+      .map((name) => renders.find((r) => r.name === name)!);
 
-    const fkLinks = foreignKeyLinks(metadata, context.allDomains, context.config.generateDetails !== false);
-    const listColumns = listColumnNames
-      .map((name) => metadata.fields.find((f) => f.name === name))
-      .filter(Boolean)
-      .map((field) => {
-        const mapping = DslMapper.mapField(field!);
-        return {
-          name: field!.name,
-          label: mapping.label,
-          type: field!.type,
-          format: field!.format,
-          dataType: field!.dataType,
-          sortable: field!.sortable,
-          link: fkLinks.get(field!.name),
-        };
-      });
-
-    const filterableFields = metadata.fields.filter((f) => f.filterable);
+    const filterableFields = renders.filter((r) => r.list.filterable);
 
     const lines: string[] = [];
 
@@ -197,16 +184,15 @@ export class ListGenerator implements CodeGenerator {
 
     // Filter dropdowns
     for (const field of filterableFields.slice(0, 2)) {
-      const mapping = DslMapper.mapField(field);
-      if (field.type === 'Boolean') {
+      if (field.list.filter === 'boolean-select') {
         lines.push(`        <select`);
         lines.push(`          [(ngModel)]="filter${field.name.charAt(0).toUpperCase() + field.name.slice(1)}"`);
         lines.push(`          (ngModelChange)="onFilterChange()"`);
-        lines.push(`          aria-label="Filter by ${mapping.label}"`);
+        lines.push(`          aria-label="Filter by ${field.label}"`);
         lines.push(`          data-testid="filter-${field.name}"`);
         lines.push(`          class="rounded-md border-0 py-2 pl-3 pr-10 text-gray-900 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-exeris-primary dark:bg-gray-800 dark:text-white dark:ring-gray-600 sm:text-sm"`);
         lines.push(`        >`);
-        lines.push(`          <option value="">All ${mapping.label}</option>`);
+        lines.push(`          <option value="">All ${field.label}</option>`);
         lines.push(`          <option value="true">Yes</option>`);
         lines.push(`          <option value="false">No</option>`);
         lines.push(`        </select>`);
@@ -252,15 +238,15 @@ export class ListGenerator implements CodeGenerator {
     for (const col of listColumns) {
       lines.push(`                  <th`);
       lines.push(`                    scope="col"`);
-      lines.push(`                    class="px-6 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400${col.sortable ? ' cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-200' : ''}"`);
-      if (col.sortable) {
+      lines.push(`                    class="px-6 py-3.5 text-${col.list.align} text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400${col.list.sortable ? ' cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-200' : ''}"`);
+      if (col.list.sortable) {
         lines.push(`                    (click)="onSort('${col.name}')"`);
         lines.push(`                    [attr.aria-sort]="sortField() === '${col.name}' ? (sortDirection() === 'asc' ? 'ascending' : 'descending') : 'none'"`);
       }
       lines.push(`                  >`);
       lines.push(`                    <div class="flex items-center gap-1">`);
       lines.push(`                      <span>${col.label}</span>`);
-      if (col.sortable) {
+      if (col.list.sortable) {
         lines.push(`                      @if (sortField() === '${col.name}') {`);
         lines.push(`                        <svg class="h-4 w-4" [class.rotate-180]="sortDirection() === 'desc'" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">`);
         lines.push(`                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" />`);
@@ -282,28 +268,28 @@ export class ListGenerator implements CodeGenerator {
     // Data cells
     for (const col of listColumns) {
       lines.push(`                    <td class="whitespace-nowrap px-6 py-4 text-sm text-gray-900 dark:text-gray-100">`);
-      if (col.link) {
+      if (col.list.cell === 'link') {
         // A foreign key links to the target's detail page; an empty one renders as any other cell.
         lines.push(`                      @if (item.${col.name}) {`);
         lines.push(`                        <a [routerLink]="['${col.link}', item.${col.name}]" [attr.data-testid]="'link-${col.name}-' + item.${idField}" class="font-mono text-exeris-primary hover:text-exeris-primary-hover hover:underline">{{ item.${col.name} }}</a>`);
         lines.push(`                      } @else {`);
         lines.push(`                        {{ item.${col.name} }}`);
         lines.push(`                      }`);
-      } else if (col.type === 'Boolean') {
+      } else if (col.list.cell === 'boolean') {
         lines.push(`                      @if (item.${col.name}) {`);
         lines.push(`                        <span class="inline-flex items-center rounded-full bg-green-50 px-2 py-1 text-xs font-medium text-green-700 ring-1 ring-inset ring-green-600/20 dark:bg-green-900/20 dark:text-green-400 dark:ring-green-500/20">Yes</span>`);
         lines.push(`                      } @else {`);
         lines.push(`                        <span class="inline-flex items-center rounded-full bg-gray-50 px-2 py-1 text-xs font-medium text-gray-600 ring-1 ring-inset ring-gray-500/10 dark:bg-gray-800 dark:text-gray-400">No</span>`);
         lines.push(`                      }`);
-      } else if (col.format === 'date' || col.type.includes('Date')) {
+      } else if (col.list.cell === 'date') {
         lines.push(`                      {{ item.${col.name} | date:'mediumDate' }}`);
-      } else if (col.format === 'datetime' || col.type.includes('DateTime') || col.type.includes('Instant')) {
+      } else if (col.list.cell === 'datetime') {
         lines.push(`                      {{ item.${col.name} | date:'medium' }}`);
-      } else if (col.dataType === 'currency') {
+      } else if (col.list.cell === 'currency') {
         lines.push(`                      {{ item.${col.name} | currency }}`);
-      } else if (col.dataType === 'percent') {
+      } else if (col.list.cell === 'percent') {
         lines.push(`                      {{ item.${col.name} | percent }}`);
-      } else if (col.dataType === 'url') {
+      } else if (col.list.cell === 'url') {
         lines.push(`                      <a [href]="item.${col.name}" class="text-exeris-primary hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300 underline">{{ item.${col.name} }}</a>`);
       } else {
         lines.push(`                      {{ item.${col.name} }}`);
@@ -389,7 +375,7 @@ export class ListGenerator implements CodeGenerator {
     lines.push(`  // State`);
     lines.push(`  searchQuery = '';`);
     for (const field of filterableFields.slice(0, 2)) {
-      if (field.type === 'Boolean') {
+      if (field.list.filter === 'boolean-select') {
         lines.push(`  filter${field.name.charAt(0).toUpperCase() + field.name.slice(1)}: string = '';`);
       }
     }
@@ -460,7 +446,7 @@ export class ListGenerator implements CodeGenerator {
     lines.push(`    this.filter.update((f) => ({`);
     lines.push(`      ...f,`);
     for (const field of filterableFields.slice(0, 2)) {
-      if (field.type === 'Boolean') {
+      if (field.list.filter === 'boolean-select') {
         lines.push(`      ${field.name}: this.filter${field.name.charAt(0).toUpperCase() + field.name.slice(1)} ? this.filter${field.name.charAt(0).toUpperCase() + field.name.slice(1)} === 'true' : undefined,`);
       }
     }
@@ -508,10 +494,9 @@ export class ListGenerator implements CodeGenerator {
    * The first five non-hidden, non-system fields, in declaration order. No metadata selects list
    * columns: field-level `@UI(displayInList)` would, and the processor does not extract it.
    */
-  private listColumnNames(metadata: DomainMetadata): string[] {
-    const systemFields = viewSystemFieldNames(metadata);
-    return metadata.fields
-      .filter((f) => !f.hidden && !systemFields.includes(f.name))
+  private listColumnNames(renders: readonly FieldRenderModel[]): string[] {
+    return renders
+      .filter((r) => r.displayed)
       .slice(0, 5)
       .map((f) => f.name);
   }

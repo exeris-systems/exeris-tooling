@@ -2989,7 +2989,8 @@ Proposals, highest return-on-effort first:
       `generate-sources`, so a from-scratch build needs two passes (already noted in `GenerateMojo`;
       `build.sh` encodes it). Worth a line in the plugin quick-start / an archetype.
 
-- [ ] **D3 — Document the committed-L1 expectation for hand-written glue.** A hand-written class that
+- [x] **D3 — Document the committed-L1 expectation for hand-written glue.** *Done: README quick
+      start, "Commit the generated tree once your own code depends on it".* A hand-written class that
       `extends` a generated `*SagaFlow` references generated types that only exist *after* generation,
       so `rm -rf src/main/generated && mvn compile` fails on the first pass. Committed-L1 resolves it;
       `exeris:detach` (L2) makes it moot.
@@ -3405,8 +3406,7 @@ libraries (JavaPoet, swagger, Jackson 2, H2) and it manages neither the plugin n
       Maven plugin's first end-to-end test, and it fails when an emitter starts importing something
       the starter does not carry.
 - [x] README quick start and D2 (the two-pass first build), with the starter (#253).
-- [ ] D3 (committed L1 for hand-written glue): the README does not yet say that deleting and
-      regenerating `src/main/generated` is unsafe once hand-written code extends generated types.
+- [x] D3 (committed L1 for hand-written glue): the README quick start says so.
 
 **4. Maven Central**
 - [x] A `release` profile with `maven-gpg-plugin` and `central-publishing-maven-plugin`, following the
