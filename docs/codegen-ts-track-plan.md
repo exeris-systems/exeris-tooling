@@ -55,7 +55,9 @@ criterion below is proposed.
 ## 0.9.0 — what the TS side ships with the cut
 
 The 0.9.0 cut waits for this scope. Each row is one pull request; the order respects the
-dependency column.
+dependency column. The cost is the whole release's: the Maven artefacts reach Maven Central only
+with this scope, so a slip in any row — P11 is the largest, and P14 and P15 depend on the SDK moving
+the ui-kit to npmjs and on the `@exeris` org there — delays the Java side too.
 
 | id | change | modules | ADR | depends on | size |
 |---|---|---|---|---|---|
@@ -74,6 +76,9 @@ dependency column.
 | P13 | Relationship picker from `@Relationship.displayField`, on Angular Aria only if the installed `@angular/aria` marks the symbols stable (CI reads its `.d.ts`), else a native `<select>` | codegen-ts | design note | P12 | M |
 | P14 | ui-kit from npmjs: the emitted `package.json` / `.npmrc` follow the ui-kit's move off GitHub Packages | codegen-ts | — | the SDK publishing ui-kit to npmjs | S |
 | P15 | The release workflow also releases `@exeris/codegen-ts` to npmjs on the same tag (`repository`, `files`, `publishConfig.access`, provenance) | release.yml, codegen-ts | — | P1, P5, the `@exeris` org on npmjs | M |
+| P16 | Nested schemas follow what the processor writes: saga steps keep `command` / `compensation` / `service` (saga-gen reads a `compensatingAction` that never arrives), `@Action` keeps `methodName` / `routeAccess` / `producesEvents` / `resultType`, `@DomainEvent` keeps `topic` / `aggregateType`, `@EventSourced` reads `snapshotEvery`; `internalApi.hidden` either gets written by the processor or stops being read | codegen-ts, processor if `hidden` is written | — | P2 | M |
+| P17 | The entity-level `@UI` view flags take effect: `listView` / `detailView` / `createForm` / `editForm` (and `searchable` / `filterable`) decide what the TS emitter writes; their strict-audit inert entries go in the same change | codegen-ts, processor | — | P2, P3 | S–M |
+| P18 | Emitted headers and footers carry no per-release value: the hard-coded versions in file headers, the landing and app footers go, and the CLI `--version` reads `package.json`; a spec keeps them out (ADR-092) | codegen-ts | — | — | S |
 
 **Field-level `@UI` stays unread in 0.9.** The processor reads only the entity-level `@UI` view
 flags; extracting the field-level hints would write keys the SDK `-io` reader does not read
