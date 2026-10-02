@@ -20,8 +20,7 @@ const UUID_TYPES = new Set(['UUID', 'java.util.UUID']);
  * (`/<routePlural(target)>`). The route segment comes from `DslMapper.routePlural`, the function
  * the route table is built with, so the link always names a declared route.
  *
- * The target must be a loaded, visible domain: a hidden or absent entity has no route in the
- * emitted table, and its field renders as plain text. The detail route exists only when detail
+ * The target must be a loaded domain: an absent entity has no route in the emitted table, and its field renders as plain text. The detail route exists only when detail
  * views are generated, so with `detailRouted` false no field links. Relationships are read in declaration
  * order; the first relationship naming a field wins.
  */
@@ -31,7 +30,7 @@ export function foreignKeyLinks(
   detailRouted = true,
 ): Map<string, string> {
   if (!detailRouted) return new Map();
-  const routable = new Set(allDomains.filter((d) => !d.internalApi?.hidden).map((d) => d.entityName));
+  const routable = new Set(allDomains.map((d) => d.entityName));
   const links = new Map<string, string>();
   for (const rel of domain.relationships ?? []) {
     if (rel.type !== 'MANY_TO_ONE') continue;

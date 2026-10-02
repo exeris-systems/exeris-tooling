@@ -26,10 +26,6 @@ export class DetailGenerator implements CodeGenerator {
   readonly priority = 20;
 
   generate(domain: DomainMetadata, context: GeneratorContext): GeneratedFile | null {
-    if (domain.internalApi?.hidden) {
-      return null;
-    }
-
     const kebab = DslMapper.toKebabCase(domain.entityName);
     const content = this.generateDetailContent(domain, context);
 

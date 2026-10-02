@@ -28,10 +28,6 @@ export class ListGenerator implements CodeGenerator {
   readonly priority = 20;
 
   generate(domain: DomainMetadata, context: GeneratorContext): GeneratedFile | null {
-    if (domain.internalApi?.hidden) {
-      return null;
-    }
-
     const content = this.generateListContent(domain, context);
     const fileName = `${DslMapper.toKebabCase(domain.entityName)}-list.component.ts`;
     const filePath = outPath('components', fileName);

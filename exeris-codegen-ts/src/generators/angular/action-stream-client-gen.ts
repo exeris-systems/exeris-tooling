@@ -51,8 +51,7 @@ export { GeneratedFile };
  * server guards the route.
  */
 export function hasActionStreamClients(domain: DomainMetadata): boolean {
-  return !domain.internalApi?.hidden
-    && !isTenantPartitioned(domain)
+  return !isTenantPartitioned(domain)
     && (domain.actions ?? []).some(a => a.streaming);
 }
 

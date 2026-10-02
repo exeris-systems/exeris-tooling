@@ -20,10 +20,6 @@ export class TypeGenerator implements CodeGenerator {
   readonly priority = 2; // After enums
 
   generate(domain: DomainMetadata, context: GeneratorContext): GeneratedFile | null {
-    if (domain.internalApi?.hidden) {
-      return null;
-    }
-
     const content = this.generateInterface(domain, context);
     const kebabName = DslMapper.toKebabCase(domain.entityName);
 
@@ -37,11 +33,10 @@ export class TypeGenerator implements CodeGenerator {
 
   generateAggregate(domains: DomainMetadata[], context: GeneratorContext): GeneratedFile[] {
     const files: GeneratedFile[] = [];
-    const visibleDomains = domains.filter(d => !d.internalApi?.hidden);
 
     // Generate Zod schemas if enabled
     if (context.config.generateZod) {
-      for (const domain of visibleDomains) {
+      for (const domain of domains) {
         files.push(this.generateZodSchema(domain, context));
       }
     }
@@ -49,17 +44,17 @@ export class TypeGenerator implements CodeGenerator {
     // Generate barrel export for types
     files.push({
       path: 'types/index.ts',
-      content: this.generateTypesBarrel(visibleDomains),
+      content: this.generateTypesBarrel(domains),
       artifactType: 'TYPE',
       overwritable: true,
     });
 
-    // Generate barrel export for schemas. Enum schemas live in the enum module, so with no visible
-    // entity the barrel would re-export nothing.
-    if (context.config.generateZod && visibleDomains.length > 0) {
+    // Generate barrel export for schemas. Enum schemas live in the enum module, so with no entity
+    // the barrel would re-export nothing.
+    if (context.config.generateZod && domains.length > 0) {
       files.push({
         path: 'schemas/index.ts',
-        content: this.generateSchemasBarrel(visibleDomains),
+        content: this.generateSchemasBarrel(domains),
         artifactType: 'SCHEMA',
         overwritable: true,
       });
