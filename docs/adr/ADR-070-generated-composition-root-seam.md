@@ -9,7 +9,7 @@ slug: adr/ADR-070
 
 # ADR-070 — Open the generated composition root: `RuntimeComponents`
 
-- **Status:** ACCEPTED (2026-08-18) · amended 2026-09-26 (Amendment 1 — obligation 6; Amendment 2 — edge router, subscribers and flows, scope lists)
+- **Status:** ACCEPTED (2026-08-18) · amended 2026-09-26 (Amendment 1 — obligation 6; Amendment 2 — edge router, subscribers and flows, scope lists) · amended 2026-10-01 (Amendment 3 — StreamRouteResolver, obligations 4–6)
 - **Repo:** `exeris-tooling`
 - **Scope:** tooling / codegen pipeline
 - **Visibility:** public
@@ -356,3 +356,110 @@ principle; it would change obligations 5 and 6." Two alternatives were rejected:
    allowlisted, and every listed scope is read in its phase. It fails in both directions when the
    derivation drifts.
 4. `KernelCodegenCompileTest` compiles all of it against `exeris-kernel-spi` / `-core` 0.12.0.
+
+---
+
+## Amendment 3 — StreamRouteResolver (K9) (2026-10-01)
+
+**Status:** Accepted *(replaces obligations 4, 5 and 6 as stated in the Decision and as changed by
+Amendments 1 and 2, including Amendment 2's edge router, `componentsSlot` and the stream routes it
+carries; adds one Engineering Protocol item. Obligations 1–3 and 7 and the scope lists are
+unchanged.)*
+**Trigger:** kernel 0.12 ships `StreamRouteResolver` and `StreamMatch` in the SPI
+(`eu.exeris.kernel.spi.http`): a driver resolves a stream through the bound handler's
+`StreamRouteResolver`, and a handler that wraps a router implements it by delegating. The same
+release refuses a duplicate stream registration and lets a built router say whether it serves any
+stream route (`HttpRouter#servesStreams()`).
+
+### Obligation 4, as it now reads
+
+**`Application#components(TransactionalExecutor)` is the installation point**, and the boot
+callback threads it: `new RuntimeLifecycle(handlerSlot, components(transactionalExecutor())).run()`.
+Being inside `KernelBootstrap.boot(...)` is load-bearing — it is what lets a factory body call
+`KernelProviders.flowEngine()` / `eventEngine()`. The kernel holds the handler
+`RuntimeLifecycle.edgeHandler(handlerSlot)` builds before boot, because the http subsystem reads its
+server handler once, when it starts, ahead of the callback. It forwards every request, and every
+stream resolution, to whatever the slot holds. While the slot is empty it resolves no stream and
+answers every request, a stream open included, `503`. `RuntimeLifecycle.run()` registers every
+generated stream route on the router it composes, beside the respond-once routes.
+
+### Obligation 5, as it now reads
+
+**`configureRoutes(HttpRouter.Builder)` runs after every generated route and before `build()`.**
+A hand-written route can add to the table; it can never silently displace a generated one. That
+covers stream routes: a `streamRoute` registered here resolves exactly like a generated one. A
+respond-once route cannot displace a generated one, because the first registration that matches
+wins, and the unit tests assert the order. A stream route cannot either: the kernel's
+`HttpRouter.Builder#streamRoute` refuses a second registration at the same method and the same path,
+exact or template pattern, with `IllegalArgumentException("a stream route is already registered for
+<METHOD> <path>")` as it is made (`StreamRouteTable.Builder#add`, kernel `v0.12.0`
+`exeris-kernel-core/.../http/routing/StreamRouteTable.java:121-135`). Generated stream routes are
+registered first, so a `configureRoutes` stream at a generated method and path fails the boot from
+the kernel, naming both; the emitted code carries no check of its own for it. A template of the
+same shape under another parameter name is admitted and never reached for the paths the generated
+one matches, since the first matching template wins. A stream at a concrete exact path under a
+generated template (for example `POST /orders/42/actions/x`) takes precedence for that one path,
+because the kernel resolves an exact path before a template; this per-path override is permitted
+and is not refused.
+
+### Obligation 6, as it now reads
+
+**`decorate(HttpRouter)` runs between `build()` and the handler slot.** Whatever it returns is what
+the kernel serves; the default returns the router unchanged. It is the sibling of obligation 5 —
+same object, one line later — and exists because a per-request concern the generated code does not
+own (a tenant binding, a decoder registry, an allocator) otherwise forces a consumer to reimplement
+`Application#run()`, once per application.
+
+**A wrapper either resolves the router's streams or is refused.** The edge handler asks the slot,
+and `run()` publishes exactly what `decorate` returned:
+
+- **The router itself** (the default) resolves every stream route, generated and hand-registered.
+- **A wrapper that implements `StreamRouteResolver`** by delegating to the router resolves them too.
+  What it binds around the `HttpStreamHandler` it returns is bound for that stream, inside the
+  kernel's own bindings, for the stream's whole life. Its `resolveStream` runs before route
+  authorization and outside every binding, so it decides from method and path alone. The emitted
+  `decorate` Javadoc shows the shape. `run()` probes every generated stream route through it after
+  the type check; a `null` answer for any of them fails the boot, naming the wrapper's class and
+  the route. Any non-null match passes, since a wrapper may return a match of its own.
+- **Any other wrapper**, in front of a router that serves any stream route, fails the boot: `run()`
+  asks the built router `servesStreams()` (kernel `v0.12.0`
+  `exeris-kernel-core/.../http/routing/HttpRouter.java:127`) and, when it does, throws
+  `IllegalStateException` naming the wrapper's class and telling the author to implement
+  `StreamRouteResolver` and delegate to the router. Behind it no stream route would resolve. The
+  check is emitted in every application, so a stream registered only in `configureRoutes` is
+  protected exactly as a generated one is. Nothing is served outside a wrapper.
+- In front of a router that **serves no stream route** any wrapper is accepted.
+
+### Consequences
+
+- **[+] Amendment 2's "What remains for the kernel (K9, narrowed)" is closed.** Kernel 0.12's
+  `StreamRouteResolver` is consumed. A `configureRoutes` stream resolves, and a delegating `decorate`
+  wrapper's bindings reach stream handlers.
+- **[+] A wrapper that would hide a stream fails the boot and names its class**, instead of
+  registering streams that never match.
+- **[-] A detached application whose `decorate` returns a plain wrapper, and which serves generated
+  stream routes, now fails at boot.** It implements `StreamRouteResolver` on the wrapper and
+  delegates to the router. MIGRATION carries the shape.
+- **[-] A detached application whose `decorate` returns a plain wrapper, and whose
+  `configureRoutes` registers a stream route, now fails at boot** for the same reason and with the
+  same cure.
+- **[-] A `configureRoutes` stream at a generated method and path fails the boot with the kernel's
+  `IllegalArgumentException`**, raised at registration, rather than a tooling-side
+  `IllegalStateException` after `build()`.
+- **Reversed by:** a kernel that resolves streams without going through the bound handler, which
+  would make the refusals unnecessary. Both kernel asks this amendment depended on — refuse a
+  duplicate stream registration, and say whether a built router serves any stream — were answered
+  in kernel 0.12.0 and are consumed: the first replaces tooling's own post-build displacement check,
+  the second closes the `configureRoutes`-only case.
+
+### Engineering Protocol (addition)
+
+1. `GeneratedAppBootE2ETest` boots the emitted `Application.run()` on kernel 0.12.0 and holds
+   obligations 4–6 on the wire: a generated stream and a `configureRoutes` stream behind a
+   delegating `decorate` wrapper, whose binding reaches the stream; a wrapper that is not a
+   resolver, and a resolver that answers `null` for a generated route, each refused at boot with
+   its class named; a `configureRoutes` stream at a generated path, refused at boot by the kernel's
+   builder; in an application with no generated stream route, a wrapper that is not a resolver
+   refused once `configureRoutes` registers a stream and accepted when nothing streams; and
+   `edgeHandler(...)` answering `503` to a stream open while the slot is empty. The `decorate` and
+   edge cases fail when the emitted mechanism each covers is removed.
