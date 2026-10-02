@@ -599,12 +599,13 @@ growing toward the surface. Founder call; this section exists so it is taken aga
 
 ### Every generated app boots three subsystems it may never use
 
-- [ ] **`SUBSYSTEMS` is a hardcoded six-name string and half of it is conditional.**
+- [x] **`SUBSYSTEMS` is a hardcoded six-name string and half of it is conditional.** *Consumed in
+      #261: `Application.subsystems()` is derived from `DomainMetadata` (`RequiredSubsystems`), and
+      `RequiredDrivers` shares its predicates. What follows is the measurement that motivated it.*
       `KernelApplicationGenerator` emits `subsystems()` returning
       `"http,persistence,graph,flow,events,crypto"` unconditionally. `graph` is needed only by a
       domain declaring `@Graph`, `flow` by one declaring `@Saga`, `events` by one declaring
-      `@DomainEvent` — three facts held in `DomainMetadata`, at the call site, in the generator that
-      already derives `hasStreamRoutes` from the same list for the T49 guard.
+      `@DomainEvent` — three facts held in `DomainMetadata`, at the call site.
 
       **A cost, not a boot failure, and the cost is specific.** `CommunityFlowSubsystem.initialize()`
       builds a `FlowEngineConfig`, runs `FlowBootstrap.loadWithProvider(...)` for a provider and an
@@ -2393,10 +2394,9 @@ Each now has the status the code settles, and every other mention in this file a
       2. **Population.** `FieldMetadata.blob` exists as a carrier and nothing sets it.
       3. **Emission.** Zero references to `BlobMetadata` in `exeris-codegen-java` or
          `exeris-codegen-ts` — no generator would know what to do with it if it were filled.
-      4. **Boot.** `KernelApplicationGenerator.SUBSYSTEMS` is the literal
-         `"http,persistence,graph,flow,events,crypto"` — six names, unconditional, no `storage`.
-         See the entry above: the list must become domain-derived *before* it grows a seventh name,
-         and the reason is not hypothetical.
+      4. **Boot.** `Application.subsystems()` is domain-derived since #261 (`RequiredSubsystems`),
+         and it has no `storage` name. A `@Blob` transcription adds `storage` as a fourth
+         conditional name, decided by the same metadata.
 
       The ask moved owner — kernel → this repo — and it is a slice rather than a line. Two rules that
       follow from the shape of this list, and matter more than the count: an annotation is "covered"
@@ -2433,7 +2433,7 @@ Each now has the status the code settles, and every other mention in this file a
 |---|---|:---:|---|
 | T1  | `@Action` endpoints advertised (OpenAPI + Angular) but no kernel route serves them — 404 | **High** | ✅ 0.6.0 (#92) |
 | T20 | Generated Angular frontend doesn't compile (`npm run build` fails) — two parallel TS emission paths; the `src/app` sourceRoot ships an empty enum stub that shadows the real `types/enums.ts`, so enum-typed code fails (TS2304/2305) | **High** (latent) | ✅ 0.6.0 (#101/#102; FE gate + POSIX-path determinism fix 2026-06-28) |
-| T23 | Stream-route boot-reachability — the generated boot hands the kernel a lambda, not the `HttpRouter` the stream dispatcher resolves via `instanceof`, so every generated `streamRoute(...)` misses on a real boot and falls through to respond-once dispatch. Two lambdas were named: `RuntimeLifecycle`'s `router::handle` in the slot, and `Application`'s `forwardingHandler` bound as `HTTP_SERVER_HANDLER` | **High** | ✅ **Re-closed 2026-09-26 in tooling (B1).** `Application` binds a pre-boot edge `HttpRouter` (`RuntimeLifecycle.edgeRouter`); `GeneratedAppBootE2ETest` reads an SSE frame over a real boot. Residual K9: `configureRoutes` stream routes; scope around streams. *(Reopened earlier the same day: 0.6.0 (#106) fixed the slot and left the forwarder, the only handler the kernel reads; see the T23 entry in the T-namespace section.)* |
+| T23 | Stream-route boot-reachability — the generated boot hands the kernel a lambda, not the `HttpRouter` the stream dispatcher resolves via `instanceof`, so every generated `streamRoute(...)` misses on a real boot and falls through to respond-once dispatch. Two lambdas were named: `RuntimeLifecycle`'s `router::handle` in the slot, and `Application`'s `forwardingHandler` bound as `HTTP_SERVER_HANDLER` | **High** | ✅ **Re-closed 2026-09-26 in tooling (B1).** `Application` binds a pre-boot edge `HttpRouter` (`RuntimeLifecycle.edgeRouter`); `GeneratedAppBootE2ETest` reads an SSE frame over a real boot. Residual K9 (`configureRoutes` stream routes, scope around streams) consumed on kernel 0.12.0 (ADR-070 Amendment 3). *(Reopened earlier the same day: 0.6.0 (#106) fixed the slot and left the forwarder, the only handler the kernel reads; see the T23 entry in the T-namespace section.)* |
 | T8  | No generated finders/indexes for FK + `filterable` fields → O(n) `findAll().filter()` everywhere | **High** | ✅ 2026-06-28 (finders + FK/filterable indexes; T9 constraints deferred) |
 | T10 | `@Validation` enforced client-side (Zod) but dropped server-side (handler/service/DB) | **High** | ✅ 0.6.0 (#103) |
 | T12 | N generated apps can't form a mesh — client is own-app/relative-host, saga step is local, no cross-app contract | **High** | **T42 (types) SHIPPED 0.8.0**, no kernel gate; client+registry 0.9.0 — split by ADR-048; the client half needs a final kernel 0.12 — not for a binary break (the 2026-09-01 readiness measurement found `HttpRequest` additive, re-checked 2026-09-26), but because a peer-addressed client needs ADR-074's `defaultAuthority` / `withAuthority`, which exist only from 0.12 (K8) — and because its update must first reach the generated server (T58, whose `put` dependency is answered by kernel 0.12.0) |
@@ -3334,7 +3334,7 @@ needed.)*
       ADR-078 records the coordinate as a dated amendment.
 - [ ] The EV1-stream per-action driver: `KernelActionStreamHandlerGenerator` still emits
       `keepAliveScaffold(...)`, and nothing gates it since T23 slice B1.
-- [ ] `SUBSYSTEMS` derived from `DomainMetadata` ("Every generated app boots three subsystems it may
+- [x] `SUBSYSTEMS` derived from `DomainMetadata` (#261; "Every generated app boots three subsystems it may
       never use").
 - [ ] Measure whether the emitted error mapping should read `ExerisKernelException.faultOrigin()`
       rather than re-derive CALLER vs SYSTEM (0.12 readiness, below).
@@ -3479,17 +3479,9 @@ Also open and independent of all four: the missing `warnInertAttributes` call si
 
 Each is recorded where it was measured; this is the one list to hand to the kernel.
 
-- **K9, narrowed** — *answered by kernel 0.12's `StreamRouteResolver` and consumed (ADR-070
-  Amendment 3). The two follow-up asks, refuse a duplicate stream registration and expose "serves
-  any stream" on a built router, were answered in kernel 0.12.0 (`HttpRouter#servesStreams()`) and
-  are consumed too.* T23 slice B1 made generated streams resolve on a real boot without the kernel.
-  What is left needs it. A `streamRoute` registered in `configureRoutes` still does not resolve,
-  because only the edge router is asked to resolve streams. And a scope bound in `decorate` is not
-  bound for a stream, which runs on the edge router outside the wrapper. Both want stream resolution
-  through an SPI that a forwarder or a wrapper can delegate. That needs an SPI return type: today's
-  match type, `HttpRouter.StreamMatch`, lives in core.
-- **`KernelWebClient.put`** (T58) — *answered by kernel 0.12.0 (exeris-kernel#579) and consumed.* The facade had `get/getList/post/patch/delete`, so the generated
-  Java `*Client` cannot send the verb the generated router serves for update.
+- **K9** — *answered by kernel 0.12.0 and consumed (ADR-070 Amendment 3):* `StreamRouteResolver`, a
+  builder that refuses a duplicate stream registration, and `HttpRouter#servesStreams()`.
+- **`KernelWebClient.put`** (T58) — *answered by kernel 0.12.0 (exeris-kernel#579) and consumed.*
 - **The reference RLS policy admits cross-tenant `DELETE` and re-own of shared rows** (T29 slice
   B). Measured on PostgreSQL 16 as a `NOSUPERUSER NOBYPASSRLS` non-owner. With the single `FOR ALL`
   shape the `RlsConnectionInterceptor` Javadoc gives, a tenant deleted a partition-mate's shared row,
@@ -3708,9 +3700,6 @@ keeps compiling where it still uses one. 0.10.0 removes them.
 
 - **0.x** — generated code shape may change in any release; consumers regenerate after every tooling bump
 - **1.x** — generated code shape changes only via additive minors; deprecation cycle for breaking changes
-- **One version for the whole repository.** `@exeris/codegen-ts` carries the reactor's version and
-  is released on the same tag (from 0.9.0; P1 in the codegen-ts plan adds the CI guard that fails
-  when `package.json` and the reactor disagree)
 - Output artifact compat is the headline contract — Maven plugin API is secondary
 - **A release tag carries a final version in the POM.** `v0.7.0` is the first one that does: `v0.5.0`
   and `v0.6.0` were both tagged with the reactor still at `X-SNAPSHOT`, which no sibling repo does
@@ -3719,6 +3708,14 @@ keeps compiling where it still uses one. 0.10.0 removes them.
   tag that commit → deploy (Maven Central, from 0.9.0) → a follow-up PR opens the next cycle at `X+1-SNAPSHOT`. Separately and still
   binding: no cross-repo dependency may be a SNAPSHOT at a cut — release upstream first, pin the
   final, then tag.
+- **`@exeris/codegen-ts` versions in lockstep with the Maven reactor.** One tag `vX.Y.Z` releases
+  both, so `exeris-codegen-ts/package.json` (and its `package-lock.json`) carries the root POM's
+  project version at every commit, `-SNAPSHOT` line included. Both the release PR and the
+  next-cycle PR set it alongside the POM: `mvn versions:set -DnewVersion=X -DgenerateBackupPoms=false`
+  plus, in `exeris-codegen-ts/`, `npm version X --no-git-tag-version --ignore-scripts`. Three checks
+  hold it: `npm run check:version` in the `vitest run --coverage (exeris-codegen-ts)` job on every
+  PR, the tag check in `release.yml` (a tag whose version differs from `package.json` releases
+  nothing), and `tools/release-readiness/release-readiness.sh`.
 
 ## Tracking
 
