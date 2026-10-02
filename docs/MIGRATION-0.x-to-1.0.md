@@ -1108,6 +1108,37 @@ the handler's own and the cause reaches your log at `ERROR`, naming the registry
 **If you only regenerate, there is nothing to do.** If you asserted on the old behaviour — an
 unlogged 500 — that assertion now sees a logged one.
 
+### A body that fails to decode server-side now answers 500, not 400 (kernel ADR-083)
+
+Regenerated handlers ask the kernel whose fault a failed decode is, through
+`eu.exeris.kernel.spi.exceptions.FaultOrigin.classify`, instead of answering every decode failure
+`400`. Only a failure the kernel classifies `FaultOrigin.CALLER` is the caller's — in kernel 0.12 that
+is `RequestBodyDecodeException`, which the decoder SPI requires for a malformed body. Everything else
+the decoder throws is a server-side fault: a kernel exception left at `FaultOrigin.SYSTEM` (an
+allocation failure inside the decoder, say), a driver exception, or a JDK exception such as a
+`NullPointerException` or an `IllegalArgumentException`.
+
+| Failure while decoding the body | Before | After |
+|---|---|---|
+| Malformed body (`RequestBodyDecodeException`, `CALLER`) | 400 | **400**, unchanged |
+| No body | 400 | **400**, unchanged |
+| No decoder registry bound, or no decoder for the content-type | 500 | **500**, unchanged |
+| Any other failure inside the decoder | 400 | **500**, logged at `ERROR` |
+
+Regenerated handlers gain a private `respondDecodeFailed(HttpExchange, RuntimeException)` beside
+`respondDecoderUnavailable`, called from every body-parsing site. It logs the cause and answers 500
+with no body; the log message carries no request data. The emitted handler now imports
+`eu.exeris.kernel.spi.exceptions.FaultOrigin`, so it needs `exeris-kernel-spi` 0.12 or later, which
+the dependency floor above already sets.
+
+**If you only regenerate, there is nothing to do.** If you wrote a decoder that signals a malformed
+body with anything other than `RequestBodyDecodeException`, that body is now answered 500: throw
+`RequestBodyDecodeException.malformedBody(...)` instead, as the `HttpRequestBodyDecoder` contract
+requires. With `exeris.tests` on, the generated `<Entity>HandlerTest` gains four cases: a malformed body
+(`RequestBodyDecodeException`, 400), a `SYSTEM` kernel exception (500), a JDK exception (500) and no
+decoder registry bound (500). `RecordingRequestBody` gains a `failure` field that the decode throws
+when it is set.
+
 ### A primitive `boolean` field now renders as a checkbox (T20d)
 
 Three sites in `form-gen` tested the literal type name `java.lang.Boolean`, so a field declared

@@ -449,7 +449,7 @@ class KernelHandlerGeneratorTest {
     }
 
     @Test
-    @DisplayName("parseBody guards resolve/decode in one try; 5xx (IllegalState) re-thrown, only decode failures map to 400 (ADR-036 §2)")
+    @DisplayName("parseBody guards resolve/decode in one try; 5xx (IllegalState) re-thrown, only caller-classified decode failures map to 400 (ADR-036 §2)")
     void shouldPreserveStatusMappingAcrossResolveAndDecode() {
         DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
                 .path("/orders")
@@ -465,7 +465,7 @@ class KernelHandlerGeneratorTest {
         // the same try, so a resolve-time RuntimeException cannot escape parseBody
         // unmapped. The IllegalStateException catch re-throws unchanged so the
         // intentional 5xx mappings (unbound registry / unregistered decoder) are NOT
-        // downgraded to 400; everything else becomes a 400 IllegalArgumentException.
+        // downgraded to 400; a CALLER-classified failure becomes a 400 IllegalArgumentException.
         assertThat(handler)
                 .contains("catch (IllegalStateException e)")
                 .contains("throw e;")
@@ -479,6 +479,73 @@ class KernelHandlerGeneratorTest {
                         "catch (RuntimeException e)");
         // null content-type renders a friendly token in the unresolved-decoder message.
         assertThat(handler).contains("contentType != null ? contentType : \"(absent)\"");
+    }
+
+    @Test
+    @DisplayName("parseBody answers 400 only for a CALLER-classified decode failure; any other is wrapped for a 500 (ADR-036 §2, kernel ADR-083)")
+    void onlyACallerClassifiedDecodeFailureIsTheCallersFault() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .build();
+
+        String handler = new KernelHandlerGenerator().generate(metadata).content();
+
+        // The kernel classifies the failure, not its JDK type: a SYSTEM kernel exception, a
+        // driver exception or a JDK exception must not reach the call site's 400 catch.
+        assertThat(handler)
+                .contains("import eu.exeris.kernel.spi.exceptions.FaultOrigin;")
+                .containsSubsequence(
+                        "catch (IllegalStateException e)",
+                        "throw e;",
+                        "catch (RuntimeException e)",
+                        "if (FaultOrigin.classify(e) == FaultOrigin.CALLER)",
+                        "throw new IllegalArgumentException(\"Invalid request body\", e)",
+                        "throw new RuntimeException(\"Request body decoding failed with a server-side fault\", e)");
+        // An equality against CALLER, never a switch: FaultOrigin may gain constants.
+        assertThat(handler).doesNotContain("switch (FaultOrigin");
+        // classify, not instanceof — a kernel exception classified CALLER later is picked up.
+        assertThat(handler).doesNotContain("instanceof RequestBodyDecodeException");
+
+        // The wrapped failure is answered and logged as the deployment's, with no request data.
+        assertThat(handler)
+                .contains("private void respondDecodeFailed(HttpExchange exchange, RuntimeException cause)")
+                .contains("the request body decoder failed with a fault the kernel does not classify "
+                        + "as the caller's");
+    }
+
+    @Test
+    @DisplayName("every parseBody call site answers a server-side decode failure 500, after the 400 and decoder-unavailable catches")
+    void everyBodyCallSiteAnswersAServerSideDecodeFailure() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .actions(List.of(
+                        ActionMetadata.builder("cancel").methodName("cancel").build(),
+                        ActionMetadata.builder("applyDiscount").methodName("applyDiscount")
+                                .params(List.of(ActionParamMetadata.required("percent", "java.math.BigDecimal")))
+                                .build()))
+                .build();
+
+        String handler = new KernelHandlerGenerator().generate(metadata).content();
+
+        assertThat(handler.split("respondDecodeFailed\\(exchange, e\\)", -1).length - 1)
+                .as("handleCreate, handleUpdate and the one action that carries a body")
+                .isEqualTo(3);
+        // The RuntimeException catch must close each try last: ahead of either sibling it would
+        // swallow the 400 and the decoder-unavailable answers.
+        for (String parse : List.of("entity = parseBody(exchange, Order.class)",
+                "request = parseBody(exchange, ApplyDiscountRequest.class)")) {
+            int from = handler.indexOf(parse);
+            assertThat(from).as(parse).isNotNegative();
+            assertThat(handler.substring(from))
+                    .as(parse)
+                    .containsSubsequence(
+                            "catch (IllegalArgumentException e)",
+                            "exchange.respond(HttpStatus.BAD_REQUEST)",
+                            "catch (IllegalStateException e)",
+                            "respondDecoderUnavailable(exchange, e)",
+                            "catch (RuntimeException e)",
+                            "respondDecodeFailed(exchange, e)");
+        }
     }
 
     @Test

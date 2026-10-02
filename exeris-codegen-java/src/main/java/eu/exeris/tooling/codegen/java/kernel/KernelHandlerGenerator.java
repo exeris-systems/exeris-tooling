@@ -81,6 +81,8 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
 
     private static final ClassName KERNEL_PROVIDERS =
             ClassName.get("eu.exeris.kernel.spi.context", "KernelProviders");
+    private static final ClassName FAULT_ORIGIN =
+            ClassName.get("eu.exeris.kernel.spi.exceptions", "FaultOrigin");
     private static final ClassName ILLEGAL_STATE_EXCEPTION =
             ClassName.get("java.lang", "IllegalStateException");
     private static final ClassName UUID = ClassName.get("java.util", "UUID");
@@ -203,6 +205,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         }
         handlerBuilder.addMethod(buildExtractPathId());
         handlerBuilder.addMethod(buildRespondDecoderUnavailable(entityLower));
+        handlerBuilder.addMethod(buildRespondDecodeFailed(entityLower));
         handlerBuilder.addMethod(buildParseBody());
 
         TypeSpec handler = handlerBuilder.build();
@@ -495,14 +498,8 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
             ClassName requestType = selfType.nestedClass(actionRequestName(action));
             method.addStatement("$T request", requestType)
                     .beginControlFlow("try")
-                    .addStatement("request = parseBody(exchange, $T.class)", requestType)
-                    .nextControlFlow("catch ($T e)", ILLEGAL_ARGUMENT_EXCEPTION)
-                    .addStatement("exchange.respond($T.BAD_REQUEST)", HTTP_STATUS)
-                    .addStatement("return")
-                    .nextControlFlow("catch ($T e)", ILLEGAL_STATE_EXCEPTION)
-                    .addStatement("respondDecoderUnavailable(exchange, e)")
-                    .addStatement("return")
-                    .endControlFlow();
+                    .addStatement("request = parseBody(exchange, $T.class)", requestType);
+            appendBodyDecodeCatches(method);
         }
 
         method.beginControlFlow("try")
@@ -665,6 +662,34 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                 .build();
     }
 
+    /**
+     * Emits the shared "the decoder failed server-side" refusal.
+     *
+     * <p>{@code parseBody} wraps every decode failure that kernel ADR-083's
+     * {@code FaultOrigin.classify} does not report as {@code CALLER} — a kernel exception left at
+     * {@code SYSTEM}, a driver exception, a JDK exception — and this answers it. 500, because the
+     * caller cannot fix it by changing the request (ADR-036 §2). Logged with its cause and returned
+     * without it, like {@link #buildRespondDecoderUnavailable}; the message carries no request data,
+     * because a body that failed to decode is the content most likely to hold a secret.
+     */
+    private static MethodSpec buildRespondDecodeFailed(String entityLower) {
+        return MethodSpec.methodBuilder("respondDecodeFailed")
+                .addJavadoc("Refuses a request whose body the decoder failed to read for a reason\n")
+                .addJavadoc("the kernel does not attribute to the caller.\n")
+                .addModifiers(Modifier.PRIVATE)
+                .addParameter(HTTP_EXCHANGE, EXCHANGE_PARAM)
+                .addParameter(RUNTIME_EXCEPTION, "cause")
+                .addStatement("LOG.log($T.ERROR, $S, cause)", KernelScaffold.LOGGER_LEVEL,
+                        "Refusing " + entityLower + " request: the request body decoder failed with "
+                                + "a fault the kernel does not classify as the caller's "
+                                + "(FaultOrigin.SYSTEM) - a decoder or driver defect, or a runtime "
+                                + "resource failure, rather than a malformed body. It is answered 500 "
+                                + "and never downgraded to 400 (ADR-036, kernel ADR-083). The logged "
+                                + "cause names the failure.")
+                .addStatement(RESPOND_SERVER_ERROR, HTTP_STATUS)
+                .build();
+    }
+
     /** Emits the shared "parse {@code id} from the path or 400" guard: declares a
      *  {@code UUID id} and parses it, responding {@code BAD_REQUEST} and returning
      *  on a malformed value. Leaves {@code id} in scope for the caller. */
@@ -680,22 +705,35 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
     }
 
     /** Emits the shared "decode the request body into {@code entity} or fail" guard.
-     *  Leaves {@code entity} in scope for the caller.
-     *
-     *  <p>Two catches, because {@code parseBody} raises two failures that mean opposite
-     *  things: {@link IllegalArgumentException} is the body the caller sent (400), and
-     *  {@link IllegalStateException} is the decoder this deployment did not bind (500,
-     *  never downgraded — ADR-036). Both must be caught here; an uncaught one leaves the
-     *  handler and is answered by the dispatcher with no body and no log. */
+     *  Leaves {@code entity} in scope for the caller. The catches are
+     *  {@link #appendBodyDecodeCatches}'s. */
     private static void appendBodyParseGuard(MethodSpec.Builder method, ClassName entityType) {
         method.addStatement("$T entity", entityType)
                 .beginControlFlow("try")
-                .addStatement("entity = parseBody(exchange, $T.class)", entityType)
-                .nextControlFlow("catch ($T e)", ILLEGAL_ARGUMENT_EXCEPTION)
+                .addStatement("entity = parseBody(exchange, $T.class)", entityType);
+        appendBodyDecodeCatches(method);
+    }
+
+    /**
+     * Closes a {@code parseBody} {@code try} with one catch per failure {@code parseBody} raises,
+     * shared by every call site so the three answers cannot drift apart between them.
+     *
+     * <p>{@link IllegalArgumentException} is the caller's body — absent, or a decode failure the
+     * kernel classifies {@code FaultOrigin.CALLER} — and answers 400. {@link IllegalStateException}
+     * is a decoder this deployment did not bind, and any other {@link RuntimeException} is a decode
+     * that failed server-side; both answer 500 and are never downgraded to 400 (ADR-036 §2). The
+     * order is load-bearing: the {@code RuntimeException} catch must come last. An uncaught failure
+     * would leave the handler and be answered by the dispatcher with no body and no log.
+     */
+    private static void appendBodyDecodeCatches(MethodSpec.Builder method) {
+        method.nextControlFlow("catch ($T e)", ILLEGAL_ARGUMENT_EXCEPTION)
                 .addStatement("exchange.respond($T.BAD_REQUEST)", HTTP_STATUS)
                 .addStatement("return")
                 .nextControlFlow("catch ($T e)", ILLEGAL_STATE_EXCEPTION)
                 .addStatement("respondDecoderUnavailable(exchange, e)")
+                .addStatement("return")
+                .nextControlFlow("catch ($T e)", RUNTIME_EXCEPTION)
+                .addStatement("respondDecodeFailed(exchange, e)")
                 .addStatement("return")
                 .endControlFlow();
     }
@@ -804,13 +842,21 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                 .addJavadoc("{@link eu.exeris.kernel.spi.http.HttpRequest} contract, the body is owned by\n")
                 .addJavadoc("the transport/codec and released when the exchange ends — neither this\n")
                 .addJavadoc("method nor the decoder closes it.\n")
-                .addJavadoc("<p>Status mapping is the handler's concern, not the SPI's (ADR-036 §2):\n")
-                .addJavadoc("a decode failure — or any failure resolving/constructing the decode —\n")
-                .addJavadoc("surfaces as {@link IllegalArgumentException} (the call sites map it to\n")
-                .addJavadoc("{@code 400 BAD_REQUEST}); an unbound registry or an unregistered\n")
-                .addJavadoc("decoder surfaces as {@link IllegalStateException} (a server-side\n")
-                .addJavadoc("configuration error → {@code 5xx}) and is re-thrown unchanged, never\n")
-                .addJavadoc("downgraded to 400.\n")
+                .addJavadoc("<p>Status mapping is the handler's concern, not the SPI's (ADR-036 §2),\n")
+                .addJavadoc("and only the caller's fault answers 400. Three failures, three types:\n")
+                .addJavadoc("<ul>\n")
+                .addJavadoc("<li>{@link IllegalArgumentException} — an absent body, or a decode failure\n")
+                .addJavadoc("{@link FaultOrigin#classify} reports as {@link FaultOrigin#CALLER} (a\n")
+                .addJavadoc("malformed body, which the decoder SPI requires to surface as\n")
+                .addJavadoc("{@code RequestBodyDecodeException}). The call sites answer\n")
+                .addJavadoc("{@code 400 BAD_REQUEST}.</li>\n")
+                .addJavadoc("<li>{@link IllegalStateException} — an unbound registry or an\n")
+                .addJavadoc("unregistered decoder, re-thrown unchanged: a deployment fault,\n")
+                .addJavadoc("{@code 500}.</li>\n")
+                .addJavadoc("<li>any other {@link RuntimeException} — a decode failure of any other\n")
+                .addJavadoc("origin, wrapped so that no JDK type the decoder throws can be read as the\n")
+                .addJavadoc("caller's (kernel ADR-083). The call sites answer {@code 500}.</li>\n")
+                .addJavadoc("</ul>\n")
                 .addJavadoc("<p>The allocator is no longer among those failure modes: it is a\n")
                 .addJavadoc("constructor-captured field, so an absent one cannot reach a request at all.\n")
                 .beginControlFlow("if (!exchange.request().hasBody())")
@@ -821,17 +867,24 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                         "content-type")
                 // Decoder resolution, context construction, and decode all run inside
                 // one try so a RuntimeException from ANY of them (e.g. registry.resolve
-                // on a hostile content-type) maps to BAD_REQUEST at the call site rather
-                // than escaping parseBody unhandled. The IllegalStateException catch
-                // re-throws unchanged so the intentional 5xx mappings survive per
-                // ADR-036 §2 — they must NOT be downgraded to 400.
+                // on a hostile content-type) is mapped at the call site rather than
+                // escaping parseBody unhandled. The IllegalStateException catch re-throws
+                // unchanged so the intentional 5xx mappings survive per ADR-036 §2.
+                //
+                // Every other failure is classified by the kernel, not by its JDK type
+                // (kernel ADR-083 §4): only FaultOrigin.CALLER becomes the 400
+                // IllegalArgumentException. Classify, rather than instanceof
+                // RequestBodyDecodeException, so a kernel exception classified CALLER later
+                // is answered 400 without a regeneration. The rest is wrapped, because a
+                // re-thrown IllegalArgumentException from the decoder would reach the
+                // call site's 400 catch. FaultOrigin may gain constants, so the test is an
+                // equality against CALLER, never a switch.
                 //
                 // The allocator is not read here. It arrives as a constructor argument,
                 // captured by RuntimeComponents inside the bootstrap callback where the
                 // MEMORY_ALLOCATOR ScopedValue binding is live. Reading that ScopedValue here
-                // would always fail, and the NoSuchElementException from an unbound .get()
-                // would reach the RuntimeException mapping as "Invalid request body" — a
-                // deployment fault blamed on a request whose body was never read. The request
+                // would fail on every request with a NoSuchElementException from the unbound
+                // .get() — a deployment fault, answered 500, for a body never read. The request
                 // runs on a virtual thread started with Thread.ofVirtual().start(), which inherits no
                 // ScopedValue binding (only StructuredTaskScope forks do), and the kernel
                 // documents that start as its one deliberate exception to the STS mandate.
@@ -855,7 +908,11 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                 .nextControlFlow("catch ($T e)", ILLEGAL_STATE_EXCEPTION)
                 .addStatement("throw e")
                 .nextControlFlow("catch ($T e)", RUNTIME_EXCEPTION)
+                .beginControlFlow("if ($T.classify(e) == $T.CALLER)", FAULT_ORIGIN, FAULT_ORIGIN)
                 .addStatement("throw new $T($S, e)", ILLEGAL_ARGUMENT_EXCEPTION, "Invalid request body")
+                .endControlFlow()
+                .addStatement("throw new $T($S, e)", RUNTIME_EXCEPTION,
+                        "Request body decoding failed with a server-side fault")
                 .endControlFlow()
                 .build();
     }
