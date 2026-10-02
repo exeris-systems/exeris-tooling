@@ -10,11 +10,13 @@ import java.util.Set;
  * Derives the kernel SPIs an emitted application needs a provider for (ADR-078).
  *
  * <h2>Driven by what was emitted, not by the subsystem name list</h2>
- * The emitted {@code Application.subsystems()} returns a fixed comma-separated string, and a
- * consumer is invited by its own javadoc to override it. Deriving the requirement from that
- * string would therefore check something the running application may not ask for, and would
- * fail builds that are correct. Every entry below is instead justified by an artefact the
- * pipeline <em>emitted into this project</em>:
+ * The emitted {@code Application.subsystems()} returns a comma-separated string, and a consumer is
+ * invited by its own javadoc to override it. Deriving the requirement from that string would
+ * therefore check something the running application may not ask for, and would fail builds that
+ * are correct. Every entry below is instead justified by an artefact the pipeline <em>emitted into
+ * this project</em>. The three conditional entries read the predicates of
+ * {@link RequiredSubsystems}, which derives the default string, so the default asks for exactly the
+ * subsystems whose providers this class requires, plus {@code crypto}:
  *
  * <ul>
  *   <li>{@code SubsystemProvider} — always. {@code Application.main()} hands
@@ -34,7 +36,8 @@ import java.util.Set;
  *
  * <p>Crypto is deliberately absent even though the default {@code subsystems()} names it: no
  * emitted artefact uses it, so requiring it would be a claim about the consumer's subsystem
- * list rather than about this pipeline's output — the very reasoning this class avoids.
+ * list rather than about this pipeline's output — the very reasoning this class avoids. The
+ * kernel's crypto subsystem also boots without a provider: it is left not running.
  *
  * @since 0.8.0
  */
@@ -71,13 +74,13 @@ public final class RequiredDrivers {
         required.add(SUBSYSTEM_PROVIDER);
         required.add(PERSISTENCE_PROVIDER);
         required.add(HTTP_PROVIDER);
-        if (domains.stream().anyMatch(DomainMetadata::hasEvents)) {
+        if (RequiredSubsystems.usesEvents(domains)) {
             required.add(EVENT_PROVIDER);
         }
-        if (domains.stream().anyMatch(DomainMetadata::hasGraphMetadata)) {
+        if (RequiredSubsystems.usesGraph(domains)) {
             required.add(GRAPH_PROVIDER);
         }
-        if (domains.stream().anyMatch(d -> d.isSaga() && d.sagaMetadata() != null)) {
+        if (RequiredSubsystems.usesFlow(domains)) {
             required.add(FLOW_PROVIDER);
         }
         return required;

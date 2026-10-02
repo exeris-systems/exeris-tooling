@@ -1328,6 +1328,40 @@ now fails the boot.
 and `FLOW_ENGINE`, or override every subscriber, flow and EV1 stream-handler factory. The
 `RuntimeComponents` scope lists entry below has the full list.
 
+### `Application.subsystems()` names only the subsystems the domain uses
+
+The emitted `subsystems()` used to return `http,persistence,graph,flow,events,crypto` in every
+application. It now returns `http`, `persistence` and `crypto`, plus:
+
+| Name | Listed when |
+|---|---|
+| `graph` | some entity carries graph metadata (`@Graph`), so a `<Entity>GraphSync` is emitted |
+| `flow` | some entity, or a standalone `@Saga`, declares a saga |
+| `events` | some entity declares a `@DomainEvent` |
+
+The order is fixed. An application with none of the three regenerates to
+`return "http,persistence,crypto";`, and its kernel no longer starts a graph engine, a flow engine
+with its snapshot store, or an event engine at boot. Nothing else changes: the generated code read
+none of those engines, and the kernel still adds `memory` and every other dependency itself.
+
+`exeris:verify-runtime` already required `GraphProvider`, `FlowProvider` and `EventProvider` only
+under these conditions, so the driver it asks for is unchanged.
+
+**If your own code reads an engine the domain does not** (for example `KernelProviders.graphEngine()`
+in a hand-written component with no `@Graph` entity), add the name back in your `Application`
+subclass:
+
+```java
+@Override
+protected String subsystems() {
+    return super.subsystems() + ",graph";
+}
+```
+
+An override that returns a fixed string keeps working, and keeps booting exactly the names it
+returns. Removing a name that generated code reads still fails the boot, in the factory that reads
+it.
+
 ### Payload-bearing event publishers encode their payloads (T48 slice C1)
 
 A publisher whose events carry `payloadFields` now takes the `EventPayloadCodecRegistry` at
