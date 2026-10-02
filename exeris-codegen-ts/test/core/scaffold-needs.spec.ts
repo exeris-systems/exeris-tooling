@@ -30,11 +30,6 @@ describe('deriveScaffoldNeeds — backend', () => {
     expect(deriveScaffoldNeeds([domain({ entityName: 'Order' })], []).backend).toBe(true);
   });
 
-  it('a hidden entity alone is no backend', () => {
-    const hidden = domain({ entityName: 'Ledger', internalApi: { hidden: true, readOnly: false, internal: false } });
-    expect(deriveScaffoldNeeds([hidden], []).backend).toBe(false);
-  });
-
   it('ignores an indented or commented mention — only a declaration at column 0 counts', () => {
     const content = [
       "import { Component } from '@angular/core';",

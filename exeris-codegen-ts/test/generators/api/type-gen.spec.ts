@@ -40,18 +40,6 @@ function field(overrides: Partial<FieldMetadata> & { name: string; type: string 
   return FieldMetadataSchema.parse(overrides);
 }
 
-/**
- * Shorthand for a hidden domain — both per-domain `generate()` and
- * cross-domain `generateAggregate()` filter out internalApi.hidden,
- * and the literal appears in multiple tests.
- */
-function hiddenDomain(entityName: string): DomainMetadata {
-  return domain({
-    entityName,
-    internalApi: { hidden: true, readOnly: false, internal: false },
-  });
-}
-
 // ---------- CodeGenerator contract ----------
 
 describe('TypeGenerator — CodeGenerator metadata', () => {
@@ -77,13 +65,6 @@ describe('TypeGenerator.generate — per-domain interface emission', () => {
     expect(file!.path).toBe('types/order-line.types.ts');
     expect(file!.artifactType).toBe('TYPE');
     expect(file!.overwritable).toBe(true);
-  });
-
-  it('returns null for an internalApi.hidden domain', () => {
-    expect(gen.generate(
-      hiddenDomain('Audit'),
-      CTX,
-    )).toBeNull();
   });
 
   it('declares the entity under its own name, "Entity" suffix and all (T40)', () => {
@@ -373,19 +354,6 @@ describe('TypeGenerator.generateAggregate — schemas + barrels', () => {
     expect(files).toHaveLength(1);
     expect(files[0].path).toBe('types/index.ts');
     expect(files.find(f => f.path.startsWith('schemas/'))).toBeUndefined();
-  });
-
-  it('hidden domains are filtered out of both schemas and barrels', () => {
-    const ctx = createGeneratorContext({ generateZod: true });
-    const files = gen.generateAggregate([
-      domain({ entityName: 'Order' }),
-      hiddenDomain('Audit'),
-    ], ctx);
-
-    expect(files.find(f => f.path === 'schemas/audit.schema.ts')).toBeUndefined();
-    const typesBarrel = files.find(f => f.path === 'types/index.ts')!;
-    expect(typesBarrel.content).toContain("./order.types");
-    expect(typesBarrel.content).not.toContain("./audit.types");
   });
 
   it('types barrel always re-exports ./enums + every visible-domain kebab-path', () => {
@@ -686,14 +654,6 @@ describe('generateTypes — top-level convenience function', () => {
 
     expect(files).toHaveLength(1);
     expect(files[0].path).toBe('types/order.types.ts');
-  });
-
-  it('returns an EMPTY array for an internalApi.hidden domain', () => {
-    const files = generateTypes(
-      hiddenDomain('Audit'),
-      CTX.config,
-    );
-    expect(files).toEqual([]);
   });
 
   it('falls back to KERNEL backend when config.backend is undefined (still emits the per-domain file)', () => {

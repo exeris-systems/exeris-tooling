@@ -13,8 +13,6 @@
  *
  * Unique-to-store contracts pinned here:
  *   - NO generateAggregate method (no barrel file)
- *   - generateStore convenience THROWS on a hidden domain
- *     (sibling form/service/guard/list convenience funcs return null)
  *   - NO explicit priority field — defaults to undefined (10 fallback
  *     used by GeneratorRegistry)
  */
@@ -41,13 +39,6 @@ function domain(overrides: Partial<DomainMetadata> & { entityName: string }): Do
 
 function field(overrides: Partial<FieldMetadata> & { name: string; type: string }): FieldMetadata {
   return FieldMetadataSchema.parse(overrides);
-}
-
-function hiddenDomain(entityName: string): DomainMetadata {
-  return domain({
-    entityName,
-    internalApi: { hidden: true, readOnly: false, internal: false },
-  });
 }
 
 // ---------- CodeGenerator contract ----------
@@ -81,9 +72,6 @@ describe('StoreGenerator.generate — emit path + hidden-skip', () => {
     expect(file!.overwritable).toBe(true);
   });
 
-  it('returns null for an internalApi.hidden domain', () => {
-    expect(gen.generate(hiddenDomain('Audit'), CTX)).toBeNull();
-  });
 });
 
 // ---------- emitted structure ----------
@@ -556,24 +544,14 @@ describe('StoreGenerator emitted imports — every symbol from the module that e
   });
 });
 
-// ---------- generateStore convenience (unique contract: THROWS on hidden) ----------
+// ---------- generateStore convenience ----------
 
-describe('generateStore — top-level convenience function (unique THROW-on-hidden contract)', () => {
-  it('returns the per-domain file for a visible domain', () => {
+describe('generateStore — top-level convenience function', () => {
+  it('returns the per-domain file for a domain', () => {
     const file = generateStore(domain({ entityName: 'Order' }), CTX.config);
 
     expect(file.path).toBe('stores/order.store.ts');
     expect(file.content).toContain('export class OrderStore');
-  });
-
-  it('THROWS for a hidden domain — sibling generate*Convenience returns null instead', () => {
-    // Unlike generateForm / generateGuard / generateList / generateService
-    // which all return null for hidden domains, generateStore throws an
-    // explicit Error. Pinned here so any future contract realignment
-    // (e.g. widening to | null for cross-convention consistency) fails
-    // this test loudly and surfaces the deliberate API change.
-    expect(() => generateStore(hiddenDomain('Audit'), CTX.config))
-      .toThrow(/Failed to generate store for Audit/);
   });
 
   it('hardcodes backend = "KERNEL" inside the convenience context', () => {

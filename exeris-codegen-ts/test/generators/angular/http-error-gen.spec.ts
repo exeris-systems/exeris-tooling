@@ -137,11 +137,6 @@ describe('orchestrator — the helper is emitted when an entity is', () => {
     expect(buildGeneratedFiles([], [], DEFAULT_CONFIG).some((f) => f.path === helperPath)).toBe(false);
   });
 
-  it('emits none when every entity is hidden', () => {
-    const hidden = domain({ entityName: 'Secret', internalApi: { hidden: true, readOnly: false, internal: false } });
-    expect(buildGeneratedFiles([hidden], [], DEFAULT_CONFIG).some((f) => f.path === helperPath)).toBe(false);
-  });
-
   it('emits none when no emitter that imports it is on', () => {
     const config = {
       ...DEFAULT_CONFIG,

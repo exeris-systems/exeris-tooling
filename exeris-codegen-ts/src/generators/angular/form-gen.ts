@@ -25,7 +25,7 @@ export class FormGenerator implements CodeGenerator {
 
   generate(domain: DomainMetadata, context: GeneratorContext): GeneratedFile | null {
     // One component serves both the create and the edit route, so it is dropped only when both are off.
-    if (domain.internalApi?.hidden || !hasFormPage(entityViews(domain))) {
+    if (!hasFormPage(entityViews(domain))) {
       return null;
     }
 

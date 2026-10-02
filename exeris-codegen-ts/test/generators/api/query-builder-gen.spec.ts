@@ -35,14 +35,6 @@ function field(overrides: Partial<FieldMetadata> & { name: string; type: string 
   return FieldMetadataSchema.parse(overrides);
 }
 
-/** Shorthand for an internalApi.hidden domain (filtered out by both generate + generateAggregate). */
-function hiddenDomain(entityName: string): DomainMetadata {
-  return domain({
-    entityName,
-    internalApi: { hidden: true, readOnly: false, internal: false },
-  });
-}
-
 // ---------- CodeGenerator contract ----------
 
 describe('QueryBuilderGenerator — CodeGenerator metadata', () => {
@@ -68,14 +60,6 @@ describe('QueryBuilderGenerator.generate — per-domain', () => {
     expect(file!.path).toBe('queries/order-line.query.ts');
     expect(file!.artifactType).toBe('QUERY_BUILDER');
     expect(file!.overwritable).toBe(true);
-  });
-
-  it('returns null for an internalApi.hidden domain', () => {
-    const file = gen.generate(
-      hiddenDomain('Audit'),
-      CTX,
-    );
-    expect(file).toBeNull();
   });
 
   it('emits the entity-named QueryBuilder class + the camelCase factory helper', () => {
@@ -215,16 +199,6 @@ describe('QueryBuilderGenerator.generateAggregate — barrel export', () => {
     expect(files[0].path).toBe('queries/index.ts');
     expect(files[0].content).toContain("export * from './order.query';");
     expect(files[0].content).toContain("export * from './order-line.query';");
-  });
-
-  it('hidden domains are filtered out of the barrel', () => {
-    const files = gen.generateAggregate([
-      domain({ entityName: 'Order' }),
-      hiddenDomain('Audit'),
-    ], CTX);
-
-    expect(files[0].content).toContain("./order.query");
-    expect(files[0].content).not.toContain("./audit.query");
   });
 
   it('empty visible-domain list still emits the barrel header + zero exports', () => {

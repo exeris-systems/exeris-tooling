@@ -27,7 +27,7 @@ export class DetailGenerator implements CodeGenerator {
   readonly priority = 20;
 
   generate(domain: DomainMetadata, context: GeneratorContext): GeneratedFile | null {
-    if (domain.internalApi?.hidden || !entityViews(domain).detail) {
+    if (!entityViews(domain).detail) {
       return null;
     }
 

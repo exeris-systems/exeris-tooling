@@ -49,7 +49,7 @@ export { GeneratedFile };
  * server guards the route.
  */
 export function hasLiveViewClient(domain: DomainMetadata): boolean {
-  return domain.realTimeApi && !domain.internalApi?.hidden && !isTenantPartitioned(domain);
+  return domain.realTimeApi && !isTenantPartitioned(domain);
 }
 
 export class StreamClientGenerator implements CodeGenerator {

@@ -12,9 +12,6 @@
  *     {content: ''} which the orchestrator does NOT filter out)
  *
  * Branch points pinned:
- *   - Domain-loop body: hidden-domain skip for form/list/service/types
- *     (sub-generators return null on internalApi.hidden); schema still
- *     emits (local placeholder always returns content).
  *   - Pluraliser (two seams): nav label / browser-tab title go
  *     through labelPlural(entityName); URL paths + sidebar router-link
  *     target go through routePlural(entityName) (kebab-cased). Both
@@ -515,101 +512,18 @@ describe('generateAppStructure — resolveApiSettings', () => {
   });
 });
 
-// ---------- hidden-domain skip-skip ----------
+// ---------- per-entity artefacts belong to the orchestrator ----------
 
-describe('generateAppStructure — hidden-domain handling', () => {
-  it('scaffold-only: emits no per-domain components/services/types/schemas (the orchestrator owns those + skips hidden domains)', () => {
-    const files = generateAppStructure(
-      [domain({ entityName: 'Order', internalApi: { hidden: true, readOnly: false, internal: false } })],
-      [],
-      cfg(),
-    );
-    // generateAppStructure emits no per-entity artefact, for visible or hidden domains.
-    // The per-entity tree (and the hidden-domain skip) lives in the orchestrator's
-    // buildGeneratedFiles, covered in orchestrator.spec.
+describe('generateAppStructure — scaffold only', () => {
+  it('emits no per-domain components/services/types/schemas (the orchestrator owns those)', () => {
+    const files = generateAppStructure([domain({ entityName: 'Order' })], [], cfg());
+    // generateAppStructure emits no per-entity artefact. The per-entity tree lives in the
+    // orchestrator's buildGeneratedFiles, covered in orchestrator.spec.
     expect(fileAt(files, 'src/app/components/order-form.component.ts')).toBeUndefined();
     expect(fileAt(files, 'src/app/components/order-list.component.ts')).toBeUndefined();
     expect(fileAt(files, 'src/app/services/order.service.ts')).toBeUndefined();
     expect(fileAt(files, 'src/app/types/order.types.ts')).toBeUndefined();
     expect(fileAt(files, 'src/app/schemas/order.schema.ts')).toBeUndefined();
-  });
-
-  it('barrel + nav sidebar + routes ALL skip hidden domains (would otherwise be dead import paths / broken router links)', () => {
-    const files = generateAppStructure(
-      [
-        domain({ entityName: 'Order' }),
-        domain({ entityName: 'InternalLedger', internalApi: { hidden: true, readOnly: false, internal: false } }),
-      ],
-      [],
-      cfg(),
-    );
-    const barrel = fileAt(files, 'src/app/index.ts')!;
-    const comp = fileAt(files, 'src/app/app.component.ts')!;
-    const routes = fileAt(files, 'src/app/app.routes.ts')!;
-
-    // Barrel — non-hidden Order is fully exported (types / schema /
-    // service / components); hidden InternalLedger is fully absent.
-    // The barrel re-exports the src/app tree the orchestrator emits;
-    // it honours `hidden` so the public API surface never points at
-    // an entity whose files were never written.
-    expect(barrel.content).toContain("from './types/order.types';");
-    expect(barrel.content).toContain("from './schemas/order.schema';");
-    expect(barrel.content).toContain("from './services/order.service';");
-    expect(barrel.content).toContain("from './components/order-form.component';");
-    expect(barrel.content).toContain("from './components/order-list.component';");
-    expect(barrel.content).not.toContain('internal-ledger.types');
-    expect(barrel.content).not.toContain('internal-ledger.schema');
-    expect(barrel.content).not.toContain('internal-ledger.service');
-    expect(barrel.content).not.toContain('internal-ledger-form');
-    expect(barrel.content).not.toContain('internal-ledger-list');
-    expect(barrel.content).not.toContain('InternalLedger');
-    // Belt-and-braces: with one visible domain remaining,
-    // Page+PageRequest still re-exports exactly once (from Order)
-    // — the de-duplication counter walks the FILTERED list now.
-    const matches = barrel.content.match(/PageRequest/g) ?? [];
-    expect(matches).toHaveLength(1);
-
-    // Sidebar nav — Order link is present; InternalLedger has NO
-    // router-link emitted (would otherwise point at a route whose
-    // loadComponent target was never written to disk → runtime
-    // crash on first click).
-    expect(comp.content).toContain('routerLink="/orders"');
-    expect(comp.content).not.toContain('routerLink="/internal-ledgers"');
-    expect(comp.content).not.toContain('InternalLedger');
-
-    // Routes — Order's list/new/:id triple is present;
-    // InternalLedger has NO route entry (path or loadComponent).
-    expect(routes.content).toContain("path: 'orders'");
-    expect(routes.content).toContain('OrderListComponent');
-    expect(routes.content).not.toContain("path: 'internal-ledgers'");
-    expect(routes.content).not.toContain('InternalLedgerListComponent');
-    expect(routes.content).not.toContain('InternalLedgerFormComponent');
-    expect(routes.content).not.toContain('internal-ledger-list.component');
-    expect(routes.content).not.toContain('internal-ledger-form.component');
-  });
-
-  it('ALL-hidden domain set: barrel + nav + routes degrade to the empty-domain shape (no per-entity emit, no broken redirect)', () => {
-    const files = generateAppStructure(
-      [domain({ entityName: 'InternalLedger', internalApi: { hidden: true, readOnly: false, internal: false } })],
-      [],
-      cfg(),
-    );
-    const comp = fileAt(files, 'src/app/app.component.ts')!;
-    const routes = fileAt(files, 'src/app/app.routes.ts')!;
-
-    // Barrel: same as the empty-domains case — nothing to re-export, so none.
-    expect(fileAt(files, 'src/app/index.ts')).toBeUndefined();
-
-    // Nav: no sidebar links at all.
-    expect(comp.content).not.toContain('routerLink="/');
-    expect(comp.content).not.toContain('InternalLedger');
-
-    // Routes: no redirect (no first-visible-domain default), and no
-    // list/new/:id triple is emitted. Equivalent to passing [] to
-    // generateAppStructure.
-    expect(routes.content).not.toContain('redirectTo');
-    expect(routes.content).not.toContain('internal-ledger');
-    expect(routes.content).not.toContain('InternalLedger');
   });
 });
 

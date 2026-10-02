@@ -43,13 +43,6 @@ function field(overrides: Partial<FieldMetadata> & { name: string; type: string 
   return FieldMetadataSchema.parse(overrides);
 }
 
-function hiddenDomain(entityName: string): DomainMetadata {
-  return domain({
-    entityName,
-    internalApi: { hidden: true, readOnly: false, internal: false },
-  });
-}
-
 // ---------- CodeGenerator contract ----------
 
 describe('ServiceGenerator — CodeGenerator metadata', () => {
@@ -77,9 +70,6 @@ describe('ServiceGenerator.generate — emit path + hidden-skip', () => {
     expect(file!.overwritable).toBe(true);
   });
 
-  it('returns null for an internalApi.hidden domain', () => {
-    expect(gen.generate(hiddenDomain('Audit'), CTX)).toBeNull();
-  });
 });
 
 // ---------- emitted structure ----------
@@ -491,16 +481,6 @@ describe('ServiceGenerator.generateAggregate — services/index.ts barrel', () =
     expect(files[0].content).toContain("export * from './order-line.service';");
   });
 
-  it('barrel filters out hidden domains', () => {
-    const files = gen.generateAggregate([
-      domain({ entityName: 'Order' }),
-      hiddenDomain('Audit'),
-    ], CTX);
-
-    expect(files[0].content).toContain('./order.service');
-    expect(files[0].content).not.toContain('./audit.service');
-  });
-
   it('empty-input emits the barrel header with zero exports', () => {
     const files = gen.generateAggregate([], CTX);
 
@@ -597,10 +577,6 @@ describe('generateService — top-level convenience function', () => {
 
     expect(file).not.toBeNull();
     expect(file!.path).toBe('services/order.service.ts');
-  });
-
-  it('returns null for a hidden domain', () => {
-    expect(generateService(hiddenDomain('Audit'), CTX.config)).toBeNull();
   });
 
   it('falls back to KERNEL backend when config.backend is undefined (still emits per-domain file)', () => {
