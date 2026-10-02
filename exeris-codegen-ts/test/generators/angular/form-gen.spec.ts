@@ -274,8 +274,8 @@ describe('FormGenerator boolean controls (T20d)', () => {
   });
 
   it('a required boolean is not forced to true', () => {
-    // Signal Forms' required() counts false as empty; Validators.required did not. A
-    // required boolean only has to hold a boolean, which a checkbox always does.
+    // Signal Forms' required() counts false as empty, so a required boolean is not emitted as
+    // required(): it only has to hold a boolean, which a checkbox always does.
     const content = gen.generate(domain({
       entityName: 'Empire',
       fields: [field({ name: 'onVacation', type: 'boolean', required: true })],
@@ -695,7 +695,7 @@ describe('FormGenerator schema validators', () => {
       .toContain('max(path.x, 100);');
   });
 
-  it('min / max on a decimal string bound its parsed value, as Validators.min / max did', () => {
+  it('min / max on a decimal string bound its parsed value', () => {
     // min() and max() take number paths only; a BigDecimal control holds a string.
     const slice = schemaSliceFor(field({ name: 'x', type: 'java.math.BigDecimal', min: 0, max: 10 }));
     expect(slice).toContain('validate(path.x, ({ value }) => (parseFloat(value()) < 0 ? minError(0) : undefined));');
