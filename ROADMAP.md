@@ -2816,13 +2816,14 @@ SDK gap.
   (sections, columns), `@Tab`, `@NavMenu` (badge/role/icons), `@Relationship`
   (`displayField`/`displayTemplate` → picker), plus per-field `format`, `gridSpan`, `width`,
   `placeholder`, `helpText`, `dataType` (currency/percent/url…). All declarable today.
-- **Pipeline (processor → JSON → emitter) — carries only a shallow, entity-level slice.** The TS
-  `UIMetadataSchema` (`domain-model.ts`) models exactly `icon/color/listColumns/searchFields/
-  filterFields/formLayout` — and is `.optional()`, so when the processor emits no `uiMetadata` the
-  whole block is absent. Decisive: there is **no per-field UI surface** on the TS side —
-  `componentType` / `@UIGroup` / `@Tab` / `gridSpan` / `fieldOverrides` are modelled nowhere
-  (`grep componentType src/` = 0). So even if the processor emitted the rich attributes, the TS
-  Zod schema would drop them on deserialization.
+- **Pipeline (processor → JSON → emitter) — carries only a shallow, entity-level slice.** The
+  processor reads type-level `@UI` only, into seven view flags (`listView`, `detailView`,
+  `createForm`, `editForm`, `searchable`, `filterable`, `exportable`); the TS `UIMetadataSchema`
+  (`domain-model.ts`) declares those plus `icon` / `color` (never written), all optional, and no
+  emitter honours the flags yet (`UI_CONTRACT_COVERAGE` records six as `GAP`; P17 in the codegen-ts
+  plan). There is **no per-field UI surface**: field-level `@UI`, `@UIGroup` and `@Tab` are not
+  extracted in 0.9 (ADR-047 Amendment 1) — `componentType`, `gridSpan`, sections and tabs arrive with
+  `@View`'s 1.x field facet.
 - **ui-kit (theme) — tokenized but unwired.** `exeris-sdk/exeris-sdk-ui-kit` has a real token
   system — `tailwind.preset.js` exporting `exerisPreset`, `--exeris-primary` (+ spacing/radius/
   shadow), `.exeris-btn`/`.exeris-card`/`.exeris-table`, dark mode, re-skin by overriding CSS vars.
