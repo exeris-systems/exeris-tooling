@@ -1765,7 +1765,7 @@ code change.
 
 ### Generation no longer depends on the JVM locale
 
-Tables, columns, OpenAPI file names and DSL identifiers are lower-cased with `Locale.ROOT`. A build
+Tables, columns and OpenAPI file names are lower-cased with `Locale.ROOT`. A build
 that ran under a locale such as `tr-TR` and committed `ınvoices`-style names will regenerate them
 with a plain `i`, new migration file names included. Rename the applied migrations or keep the old
 output. A route for an entity without a declared `path` comes from the SDK's `effectivePath()`,
@@ -2007,6 +2007,10 @@ shows, or your effective POM inherits them.
 `src/main/generated/java` as a source root only, so the generated `db/migration/*.sql` and
 `openapi/*.yaml` are not on your classpath unless you declare a `<resource>` for them. The parent
 does; the README shows the entry.
+
+### `eu.exeris.tooling.codegen.java.dsl` is removed
+
+No build step ran its six classes, so generated output is unchanged; code that called them from the `exeris-codegen-java` jar no longer compiles, and there is no replacement.
 
 ---
 
