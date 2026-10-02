@@ -3336,7 +3336,8 @@ needed.)*
       `keepAliveScaffold(...)`, and nothing gates it since T23 slice B1.
 - [x] `SUBSYSTEMS` derived from `DomainMetadata` (#261; "Every generated app boots three subsystems it may
       never use").
-- [ ] Measure whether the emitted error mapping should read `ExerisKernelException.faultOrigin()`
+- [x] Measure whether the emitted error mapping should read `ExerisKernelException.faultOrigin()` *(#262:
+      only `parseBody` disagreed; it now answers 400 only for a `FaultOrigin.CALLER` decode failure)*
       rather than re-derive CALLER vs SYSTEM (0.12 readiness, below).
 - [x] **K9, consumed** (ADR-070 Amendment 3). Kernel 0.12.0 ships `StreamRouteResolver`, through
       which a handler that wraps or forwards a router delegates stream resolution. The emitted
