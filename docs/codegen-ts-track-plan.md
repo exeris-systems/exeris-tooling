@@ -86,6 +86,17 @@ flags; extracting the field-level hints would write keys the SDK `-io` reader do
 `@UIGroup` or `@Tab` carry — `componentType`, `gridSpan`, `placeholder`, `helpText`, sections,
 tabs — arrive with the 1.x facet, through `FieldRenderModel`.
 
+**`FieldRenderModel` keeps each surface's own rules.** The model
+(`exeris-codegen-ts/src/generators/angular/field-render.ts`) records, per field, the list cell, the
+detail display type and the form control, and its facet slot is typed `never` until the processor
+fills `ComponentNodeMetadata.field`. Extracting it was byte-identical, so the decisions the three
+generators disagreed on are recorded per surface rather than unified: the detail view detects an
+enum by a `…Status`/`…Type`/`…Role`/`…State` simple name and the form by any qualified non-JDK type;
+the list badges only a `Boolean` column, and renders a `LocalDateTime` with the date-only pipe; the
+form maps only qualified `java.lang` / `java.time` types to a number or date input, so a primitive
+`long` is a text input coerced to a number. P9, P10 and P12 reconcile these, each as an output
+change classified under ADR-092.
+
 **Out of 0.9:** the ADR-047 facet and the `@UI` deprecation (1.x, per the SDK roadmap); `@View`
 G1–G6 (an SDK RFC); field-level server errors (a Java error body and an ADR-036 amendment first);
 WebMCP (after P11, flag-gated); route guards (T53).
