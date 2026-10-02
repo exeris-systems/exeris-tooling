@@ -179,7 +179,9 @@ class DiagnosticIdTest {
                 .collect(Collectors.toCollection(TreeSet::new));
 
         assertThat(documented).isEqualTo(registered);
-        assertThat(retired).as("a retired identifier is never allocated again").doesNotContainAnyElementsOf(registered);
+        Set<String> reallocated = new TreeSet<>(retired);
+        reallocated.retainAll(registered);
+        assertThat(reallocated).as("a retired identifier is never allocated again").isEmpty();
         assertThat(text).as("the consumer regex, verbatim").contains("`" + CONSUMER.pattern() + "`");
     }
 

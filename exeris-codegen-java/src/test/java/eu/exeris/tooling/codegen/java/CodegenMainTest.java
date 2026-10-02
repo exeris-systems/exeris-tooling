@@ -99,10 +99,9 @@ class CodegenMainTest {
 
             assertThat(exitCode).isOne();
             String stderr = capture(err);
-            assertThat(stderr).startsWith(DiagnosticId.CLI_ARGUMENTS_INVALID.format(""));
-            assertThat(stderr).contains("--metadata-dir");
-            assertThat(stderr).contains("Usage: CodegenMain");
-            assertThat(stderr).contains("--output-dir");
+            assertThat(stderr)
+                    .startsWith(DiagnosticId.CLI_ARGUMENTS_INVALID.format(""))
+                    .contains("--metadata-dir", "Usage: CodegenMain", "--output-dir");
         }
 
         @Test
