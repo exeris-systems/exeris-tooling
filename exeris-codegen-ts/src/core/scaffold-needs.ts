@@ -39,7 +39,7 @@ export interface ScaffoldNeeds {
 
 /**
  * The needs of an app with a backend. `generateAppStructure` defaults to it, so a caller that
- * composes the scaffold on its own gets the scaffold it always got.
+ * composes the scaffold on its own gets the backend scaffold.
  */
 export const BACKEND_SCAFFOLD_NEEDS: ScaffoldNeeds = { backend: true, packages: new Set<string>() };
 
