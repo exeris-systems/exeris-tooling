@@ -56,15 +56,6 @@ describe('ActionStreamClientGenerator.generate — streaming-action gating', () 
     expect(gen.generate(domain({ entityName: 'Order', actions: [plainAction] }), CTX)).toBeNull();
   });
 
-  it('returns null for a hidden internal API even with a streaming action', () => {
-    const d = domain({
-      entityName: 'Order',
-      actions: [streamingAction],
-      internalApi: { hidden: true, readOnly: false, internal: false },
-    });
-    expect(gen.generate(d, CTX)).toBeNull();
-  });
-
   it('emits services/<kebab>.action-streams.ts for an entity with a streaming action', () => {
     const file = gen.generate(domain({ entityName: 'OrderLine', actions: [streamingAction] }), CTX);
 

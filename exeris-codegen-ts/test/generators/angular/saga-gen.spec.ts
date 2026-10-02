@@ -10,9 +10,7 @@
  *
  * Unique-to-saga-gen contracts pinned:
  *   - artifactType=SAGA, supportedBackends=[] (all backends)
- *   - generate() returns null when !domain.sagaMetadata (NOT on
- *     internalApi.hidden — saga check fires first, similar to
- *     event-gen's events check)
+ *   - generate() returns null when !domain.sagaMetadata
  *   - NO generateAggregate method (no barrel emitted)
  *   - generateSaga convenience hardcodes backend 'KERNEL'
  *   - Saga name fallback: sagaMetadata.name → <entityName>Saga
@@ -82,16 +80,6 @@ describe('SagaGenerator.generate — sagaMetadata-presence check', () => {
     expect(gen.generate(domain({ entityName: 'Order' }), CTX)).toBeNull();
   });
 
-  it('DOES NOT skip a hidden domain that has sagaMetadata (saga check fires first, mirrors event-gen)', () => {
-    const file = gen.generate(domain({
-      entityName: 'HiddenButSagaful',
-      internalApi: { hidden: true, readOnly: false, internal: false },
-      sagaMetadata: { name: 'HiddenSaga', steps: [] },
-    }), CTX);
-
-    expect(file).not.toBeNull();
-    expect(file!.path).toBe('sagas/hidden-but-sagaful.saga.ts');
-  });
 });
 
 // ---------- emitted top-level types + structure ----------
@@ -99,7 +87,7 @@ describe('SagaGenerator.generate — sagaMetadata-presence check', () => {
 describe('SagaGenerator emitted content — top-level types + class skeleton', () => {
   const gen = new SagaGenerator();
 
-  function sagaContent(stepsOverride?: Array<{ name: string; compensatingAction?: string }>): string {
+  function sagaContent(stepsOverride?: Array<{ name: string; compensation?: string }>): string {
     return gen.generate(domain({
       entityName: 'Order',
       sagaMetadata: {
@@ -475,21 +463,22 @@ describe('SagaGenerator step-definitions emission', () => {
       // Step names are consumer-authored metadata. Before the labels stopped being $localize
       // tagged templates they sat inside a template literal; as single-quoted literals an
       // unescaped apostrophe would end the string and emit a syntax error into the app.
-      sagaMetadata: { name: 'OrderSaga', steps: [{ name: "o'brien", compensatingAction: "undo'it" }] },
+      sagaMetadata: { name: 'OrderSaga', steps: [{ name: "o'brien", compensation: "undo'it" }] },
     }), CTX)!.content;
 
     expect(content).toContain("name: 'o\\'brien',");
     expect(content).toContain("compensatingAction: 'undo\\'it',");
   });
 
-  it('step with compensatingAction → emits compensatingAction: \'<action>\'; without → emits undefined literal', () => {
+  it('step with a compensation → emits compensatingAction: \'<compensation>\'; without → emits undefined literal', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
       sagaMetadata: {
         name: 'OrderSaga',
         steps: [
-          { name: 'reserve', compensatingAction: 'releaseInventory' },
-          { name: 'notify' }, // no compensatingAction
+          // `compensation` is the key the processor writes from @SagaStep(compensation = …).
+          { name: 'reserve', service: 'stock', command: 'reserve', compensation: 'releaseInventory' },
+          { name: 'notify' }, // no compensation
         ],
       },
     }), CTX)!.content;

@@ -4,7 +4,7 @@
  * Exercises:
  *   - a UUID foreign key links to `/<routePlural(target)>/<id>` in list and detail
  *   - a qualified targetEntity resolves by its simple name
- *   - a target that is not loaded, or hidden, renders as plain text
+ *   - a target that is not loaded renders as plain text
  *   - a non-UUID field, an entity-typed field and the other three kinds are unchanged
  *   - no new router import: RouterModule, already imported by both components, carries RouterLink
  */
@@ -106,12 +106,6 @@ describe('no link — rendered exactly as before', () => {
   it('when the target is not loaded', () => {
     const p = product([FK]);
     expect(emit(p, [p])).toEqual(baseline);
-  });
-
-  it('when the target is hidden', () => {
-    const p = product([FK]);
-    const hidden = domain({ entityName: 'Category', internalApi: { hidden: true, readOnly: false, internal: false } });
-    expect(emit(p, [p, hidden])).toEqual(baseline);
   });
 
   it('when the local field is not a UUID', () => {

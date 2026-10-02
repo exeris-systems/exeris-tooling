@@ -37,13 +37,6 @@ function field(overrides: Partial<FieldMetadata> & { name: string; type: string 
   return FieldMetadataSchema.parse(overrides);
 }
 
-function hiddenDomain(entityName: string): DomainMetadata {
-  return domain({
-    entityName,
-    internalApi: { hidden: true, readOnly: false, internal: false },
-  });
-}
-
 // ---------- CodeGenerator contract ----------
 
 describe('DetailGenerator — CodeGenerator metadata', () => {
@@ -71,9 +64,6 @@ describe('DetailGenerator.generate — emit path + hidden-skip', () => {
     expect(file!.overwritable).toBe(true);
   });
 
-  it('returns null for an internalApi.hidden domain', () => {
-    expect(gen.generate(hiddenDomain('Audit'), CTX)).toBeNull();
-  });
 });
 
 // ---------- emitted content structure ----------
