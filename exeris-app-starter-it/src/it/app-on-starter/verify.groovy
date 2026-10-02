@@ -15,8 +15,10 @@ assert log.contains('Cap-tier Wall clean (1 module(s)')
 assert log.contains('Runtime drivers present for all')
 
 def generated = new File(basedir, 'src/main/generated/java/eu/exeris/fixture/notes')
-assert new File(generated, 'Application.java').text
-        .contains('import eu.exeris.sdk.composition.runtime.CompositionConductor;')
+def application = new File(generated, 'Application.java').text
+assert application.contains('import eu.exeris.sdk.composition.runtime.CompositionConductor;')
+// Note declares no graph node, saga or domain event, so the app boots none of their subsystems.
+assert application.contains('return "http,persistence,crypto";')
 assert new File(generated, 'repository/NoteRepository.java').text
         .contains('import tools.jackson.databind.ObjectMapper;')
 

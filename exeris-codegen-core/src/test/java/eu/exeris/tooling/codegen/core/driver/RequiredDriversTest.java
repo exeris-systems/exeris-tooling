@@ -31,10 +31,12 @@ class RequiredDriversTest {
     @Test
     @DisplayName("crypto is not required, though the emitted subsystems() names it")
     void cryptoIsNotRequired() {
-        // The emitted default subsystems() string is "http,persistence,graph,flow,events,crypto",
-        // and a consumer is invited to override it. Requiring crypto would be a claim about that
-        // string rather than about an emitted artefact — no emitted code uses crypto — and the
-        // whole point of deriving from artefacts is that it survives the override.
+        // The emitted default subsystems() string always names crypto, and a consumer is invited
+        // to override it. Requiring crypto would be a claim about that string rather than about an
+        // emitted artefact — no emitted code uses crypto — and the whole point of deriving from
+        // artefacts is that it survives the override.
+        assertThat(RequiredSubsystems.forDomains(List.of(order().build())))
+                .contains(RequiredSubsystems.CRYPTO);
         assertThat(RequiredDrivers.forDomains(List.of(order().build())))
                 .noneMatch(spi -> spi.contains("crypto"));
     }
@@ -97,5 +99,25 @@ class RequiredDriversTest {
 
         assertThat(RequiredDrivers.forDomains(List.of(everything)))
                 .containsExactlyElementsOf(RequiredDrivers.forDomains(List.of(everything)));
+    }
+
+    @Test
+    @DisplayName("each conditional SPI is required exactly when the default subsystem list names it")
+    void conditionalSpisFollowTheDefaultSubsystemList() {
+        DomainMetadata plain = order().build();
+        DomainMetadata events = order().events(List.of(DomainEventMetadata.simple("OrderCreated"))).build();
+        DomainMetadata graph = order().graphMetadata(GraphMetadata.simple("Order")).build();
+        DomainMetadata saga = order().sagaMetadata(SagaMetadata.simple("OrderSaga")).build();
+
+        for (DomainMetadata domain : List.of(plain, events, graph, saga)) {
+            List<DomainMetadata> domains = List.of(domain);
+            List<String> names = RequiredSubsystems.forDomains(domains);
+            assertThat(RequiredDrivers.forDomains(domains).contains(RequiredDrivers.EVENT_PROVIDER))
+                    .isEqualTo(names.contains(RequiredSubsystems.EVENTS));
+            assertThat(RequiredDrivers.forDomains(domains).contains(RequiredDrivers.GRAPH_PROVIDER))
+                    .isEqualTo(names.contains(RequiredSubsystems.GRAPH));
+            assertThat(RequiredDrivers.forDomains(domains).contains(RequiredDrivers.FLOW_PROVIDER))
+                    .isEqualTo(names.contains(RequiredSubsystems.FLOW));
+        }
     }
 }
