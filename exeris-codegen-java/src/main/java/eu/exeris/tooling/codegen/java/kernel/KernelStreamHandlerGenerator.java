@@ -35,8 +35,8 @@ import java.util.List;
  * <h2>Slice 1 shape (RFC-2026-06-22): entity-level live view</h2>
  * <p>Driver is the entity-level {@code @ExerisDomain(realTimeApi)} flag
  * (already plumbed into {@link DomainMetadata#realTimeApi()}); the per-action
- * {@code @Action(streaming)} driver is Slice 2, blocked on an SDK
- * {@code ActionMetadata} widening, and is deliberately not emitted here.
+ * {@code @Action(streaming)} driver is not emitted here: its stream handler is
+ * keep-alive only (ROADMAP EV1-stream).
  *
  * <p>The emitted body depends on whether the entity declares any
  * {@code @DomainEvent}:
@@ -248,6 +248,8 @@ public class KernelStreamHandlerGenerator implements KernelArtifactGenerator {
                 // to process); EV1 named events reach the TS client via per-name
                 // addEventListener once the entity declares a @DomainEvent.
                 .addCode(KernelStreamScaffold.keepAliveScaffold(List.of(
+                        "No producer is bound: this entity declares no @DomainEvent. Declaring",
+                        "one routes the live view to the EV1 producer instead."), List.of(
                         "Named keep-alive heartbeat (deterministic name, empty data). The",
                         "browser EventSource.onmessage ignores named events — fine for a",
                         "heartbeat the client need not process; EV1 named domain events are",

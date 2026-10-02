@@ -111,6 +111,10 @@ class KernelStreamHandlerGeneratorTest {
                 .contains("KEEPALIVE_INTERVAL_MILLIS = 15000L")
                 .contains("StreamEvent.of(\"keep-alive\", \"\")")
                 .contains("exchange.close()")
+                // the keep-alive comment states this driver's own reason, nothing about the
+                // per-action driver
+                .contains("// No producer is bound: this entity declares no @DomainEvent.")
+                .doesNotContain("per-action")
                 // no producer machinery — and so no engine to take: the keep-alive handler keeps
                 // its implicit no-arg constructor
                 .doesNotContain("bus.subscribe")

@@ -1694,9 +1694,10 @@ Two exported TypeScript types are realigned onto the SDK records they mirror.
   `createForm`, `editForm`, `searchable`, `filterable`, `exportable` (all optional). The list page's
   columns are the first five visible non-system fields, which is what every real build already got.
 
-**No generated output changes.** No generator reads the new `UIMetadata` keys yet — that is a known
-gap, recorded in `UI_CONTRACT_COVERAGE`. This matters only if your own code builds metadata by hand
-with the removed keys, or imports these types from the package: Zod now strips the removed keys.
+**The schema change alone changes no generated output.** What the view switches do is the entry
+[*the entity-level `@UI` view switches take effect*](#exeris-codegen-ts-the-entity-level-ui-view-switches-take-effect).
+This matters only if your own code builds metadata by hand with the removed keys, or imports these
+types from the package: Zod now strips the removed keys.
 
 ### `exeris-codegen-ts`: emitted headers no longer carry a version (one-time rewrite)
 
@@ -1849,10 +1850,11 @@ the source changes.
 - **`@UI` on a field** — warned as never read. The processor reads `@UI` on a type only, so a
   field-level `@UI` reaches no metadata and the field renders from `@Field` alone. A field's
   presentation facet arrives with `@View`'s field facet.
-- **`@UI` on a type** — warned once as consumed by no generator. `listView`, `detailView`,
-  `createForm`, `editForm`, `searchable`, `filterable` and `exportable` reach `UIMetadata`, but no
-  emitter reads them, and the other attributes are not extracted. Every entity gets the same
-  output whatever `@UI` says.
+- **`@UI` on a type** — one warning per attribute set that nothing honours: `exportable` (it
+  reaches `UIMetadata` and nothing exports), and every attribute the processor does not read off a
+  type — `icon`, `label`, `pluralLabel`, `description`, the four titles, `color`, and any
+  field-presentation attribute written on the type. The six view switches draw no warning: they
+  decide what the TS emitter writes (see the next entry).
 - **`@Tab`, `@UIGroup`** — warned as never read, with a reason that no longer claims `@UI` is
   extracted per field.
 - **`@Field` attributes** — one warning per attribute set:
@@ -1877,6 +1879,46 @@ on them does not exist in generated code. A field-level `@UI` can stay in place 
 effect until the `@View` field facet lands; the same holds for the other presentation attributes
 (`inList`, `inDetail`, `order`, `cssClass`, `group`, `@Tab`, `@UIGroup`), which nothing reads in
 this tooling version.
+
+### `exeris-codegen-ts`: the entity-level `@UI` view switches take effect
+
+`Compatibility impact: breaking (ADR-092)` for an entity that sets a switch to `false`; no change for
+any other. The switches are presentation only and TS only: the generated Java application serves
+every CRUD route of the entity whatever they say, and its OpenAPI document is unchanged.
+
+A type-level `@UI` used to change nothing the front emitted. A regenerated app now honours
+`listView`, `detailView`, `createForm`, `editForm`, `searchable` and `filterable`. An unset attribute
+on a present `@UI` reads as `true`, and an entity without `@UI` keeps every page, so **an app that
+sets no switch to `false` regenerates byte-identical**. With a switch off:
+
+- **`listView = false`** — no `<entity>-list.component.ts`, no list route, no sidebar link and no
+  `<Entity>ListComponent` export. The root redirect goes to the first entity that has a list (or to
+  the first `PAGE` view, as before). The detail page's delete and the routed form's exits return to
+  the app root instead of the missing list.
+- **`detailView = false`** — no `<entity>-detail.component.ts`, no `:id` route and no
+  `<Entity>DetailComponent` export. Nothing links to the missing page: the list row loses its
+  **View** link (`action-view-<id>`), a `MANY_TO_ONE` UUID foreign key to the entity renders as text
+  in other entities' lists and detail views (no `link-<field>`), and the routed form returns to the
+  list after a save and on cancel instead of opening the saved row.
+- **`createForm = false`** — no `new` route; the list loses its **New** button (`action-create`) and
+  the empty state's call to create one.
+- **`editForm = false`** — no `:id/edit` route; the list row and the detail page lose **Edit**
+  (`action-edit-<id>`).
+- **both form switches off** — no `<entity>-form.component.ts` and no `<Entity>FormComponent`
+  export. With either on, the form component is emitted and serves the remaining route.
+- **`searchable = false`** — the list has no search box (`search-input`), and no `searchQuery`,
+  `onSearch` or debounce subscription.
+- **`filterable = false`** — the list has no filter control (`filter-<field>`), whatever the fields'
+  own `filterable` says. The service, the store and the generated `<Model>Filter` type keep the
+  filter parameters: the server still accepts them.
+
+`exportable` stays unread: nothing exports on either side.
+
+**What to do.** Nothing, unless a switch is `false` somewhere. Then: code or end-to-end tests that
+navigate to a removed route, import a removed component or select a removed `data-testid` must
+change, or the switch must be set back to `true`. A link you write by hand to an entity whose
+detail page is off has no route to open. `generateDetail()`, the package's exported convenience,
+now returns `GeneratedFile | null`, `null` for an entity whose detail view is off.
 
 ### SDK 0.12.0 needs no source change for S6
 
@@ -2008,9 +2050,31 @@ shows, or your effective POM inherits them.
 `openapi/*.yaml` are not on your classpath unless you declare a `<resource>` for them. The parent
 does; the README shows the entry.
 
+### `@Action(streaming = true)` now warns that its route does not run the action
+
+Every build now reports one warning per streaming action, without `-Aexeris.strict`:
+
+```
+[Exeris] @Action(streaming = true) on "<name>": the generated stream route keeps the connection
+open with keep-alives but does not run the action, so calling it changes nothing. The per-action
+stream driver is tracked in ROADMAP.md (EV1-stream).
+```
+
+This reports what the generated code already did. A streaming action gets a stream route only
+(`POST <base>/{id}/actions/<kebab>`), and the handler behind it sends four `keep-alive` frames and
+closes. It never calls the entity method, so nothing is loaded, persisted or published, and no
+respond-once route exists for the action either. The emitted handler's Javadoc and comments now say
+so; its code is unchanged.
+
+**If the action must change the domain, drop `streaming = true`** — it is then served as an ordinary
+action that runs, persists and publishes its `ACTION`-triggered `@DomainEvent`s. A client that
+needs to watch the result can subscribe to the entity's live view (`@ExerisDomain(realTimeApi =
+true)`), which streams those events. A build that treats warnings as errors fails on this warning
+until the attribute is removed.
+
 ### `eu.exeris.tooling.codegen.java.dsl` is removed
 
-No build step ran its six classes, so generated output is unchanged; code that called them from the `exeris-codegen-java` jar no longer compiles, and there is no replacement.
+No build step ran its six classes, so generated output is unchanged. ADR-015 records `exeris-codegen-java` as internal tooling with no downstream Maven consumers; code that nevertheless called them from the jar no longer compiles, and there is no replacement.
 
 ---
 

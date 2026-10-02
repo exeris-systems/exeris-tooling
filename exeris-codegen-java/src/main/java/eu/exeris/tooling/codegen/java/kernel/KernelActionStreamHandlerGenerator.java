@@ -45,17 +45,23 @@ import java.util.List;
  * streaming action gets the {@code streamRoute} ONLY (never both a respond-once
  * {@code route(...)} and a stream route).
  *
- * <h2>Named event (ADR-044 obligation 2)</h2>
- * <p>The SSE {@code event:} name carried on each emitted frame is the action's
- * {@code @Action(streamEventType)} when present, else a deterministic default
- * (the action name). The keep-alive scaffold uses the reserved {@code keep-alive}
- * name with empty data.
+ * <h2>The action is not invoked</h2>
+ * <p>The emitted body is keep-alive only: it never calls the entity method, loads
+ * nothing and persists nothing, so a request to the route changes nothing in the
+ * domain. {@code KernelHandlerGenerator} skips streaming actions, so there is no
+ * respond-once path either. The processor warns on every
+ * {@code @Action(streaming = true)} for this reason.
  *
- * <h2>Producer seam (ADR-044 obligation 3) + determinism (constraint #3)</h2>
- * <p>Identical scaffold to Slice 1: a deterministic, finite keep-alive loop with
- * a <b>constant</b> interval (no wall-clock / timestamp / random) standing in
- * behind a clearly-marked EV1 seam ({@code // TODO: bind domain-event bus
- * producer (EV1)}). The loop is <b>replaced</b>, not reshaped, when EV1 lands.
+ * <h2>Named event (ADR-044 obligation 2)</h2>
+ * <p>The handler carries the action's SSE {@code event:} name as the
+ * {@code STREAM_EVENT_TYPE} constant: the {@code @Action(streamEventType)} when
+ * present, else a deterministic default (the action name). No emitted frame
+ * carries it; the only frames are the reserved {@code keep-alive} name with empty
+ * data.
+ *
+ * <h2>Determinism (constraint #3)</h2>
+ * <p>The same scaffold as the Slice 1 fallback: a deterministic, finite keep-alive
+ * loop with a <b>constant</b> interval (no wall-clock / timestamp / random).
  *
  * <h2>Kernel-target discipline (hard constraint #1)</h2>
  * <p>No {@code text/event-stream} literal, no chunk framing (Core's
@@ -140,14 +146,14 @@ public class KernelActionStreamHandlerGenerator implements KernelArtifactGenerat
                 .addJavadoc("<p>Implements {@link $T}; registered at {@code POST $L}\n",
                         HTTP_STREAM_HANDLER, actionPath)
                 .addJavadoc("via the router's {@code streamRoute(...)} — the request opens the stream\n")
-                .addJavadoc("(ADR-044 Slice 2, axis 3c). Each emitted frame carries the named SSE\n")
-                .addJavadoc("event {@code $L}.\n", eventName)
-                .addJavadoc("<p>Slice 2 scaffold: emits a deterministic keep-alive then closes.\n")
-                .addJavadoc("Closes after $L keep-alives (~$Ls); the EV1 seam replaces the loop\n",
-                        KernelStreamScaffold.KEEPALIVE_ITERATIONS,
+                .addJavadoc("(ADR-044 Slice 2, axis 3c).\n")
+                .addJavadoc("<p>Keep-alive only: this handler does not invoke $L.$L(...), so a\n",
+                        entity, action.name())
+                .addJavadoc("request changes nothing in the domain. It emits $L {@code keep-alive}\n",
+                        KernelStreamScaffold.KEEPALIVE_ITERATIONS)
+                .addJavadoc("frames with empty data and closes (~$Ls). No frame carries the\n",
                         KernelStreamScaffold.keepAliveWindowSeconds())
-                .addJavadoc("with a long-lived {@code @DomainEvent} subscription projecting each\n")
-                .addJavadoc("event into a {@link $T}.\n", STREAM_EVENT)
+                .addJavadoc("action's event name {@code $L}.\n", eventName)
                 .addJavadoc("<p><b>DO NOT EDIT</b> - Regenerate from domain model.\n")
                 .addFields(KernelStreamScaffold.commonFields(selfType))
                 // Per-action extra: the named SSE event this handler emits (the
@@ -169,8 +175,9 @@ public class KernelActionStreamHandlerGenerator implements KernelArtifactGenerat
                 .addModifiers(Modifier.PUBLIC)
                 .returns(TypeName.VOID)
                 .addParameter(HTTP_STREAM_EXCHANGE, "exchange")
-                .addJavadoc("Opens the per-action SSE stream for $L.$L(...) and emits events.\n",
+                .addJavadoc("Opens the per-action SSE stream for $L.$L(...) and emits keep-alives;\n",
                         entity, action.name())
+                .addJavadoc("the action itself is not invoked.\n")
                 .addJavadoc("<p>Client disconnect surfaces as an unchecked\n")
                 .addJavadoc("{@code StreamClosedException} from {@link $T#emit($T)}; this method\n",
                         HTTP_STREAM_EXCHANGE, STREAM_EVENT)
@@ -178,14 +185,14 @@ public class KernelActionStreamHandlerGenerator implements KernelArtifactGenerat
                 .addJavadoc("caught and swallowed. Back-pressure parks the virtual thread inside\n")
                 .addJavadoc("{@code emit}; this handler never buffers to a heap queue.\n")
                 .addStatement("LOG.log($T.DEBUG, $S)", KernelScaffold.LOGGER_LEVEL, "Opening " + entity + "." + action.name() + " action stream")
-                // Shared deterministic keep-alive scaffold (EV1 seam + loop + close).
-                // Slice-2 heartbeat note: the RxJS-over-fetch client parses NAMED SSE
-                // frames, so it will dispatch the EV1 named event (STREAM_EVENT_TYPE)
-                // once the seam replaces this loop.
+                // Shared deterministic keep-alive scaffold (loop + close). The
+                // per-action reason states that the action is not invoked.
                 .addCode(KernelStreamScaffold.keepAliveScaffold(List.of(
-                        "Named keep-alive heartbeat (deterministic name, empty data). The",
-                        "RxJS client parses named SSE frames, so it can dispatch the EV1",
-                        "named event (STREAM_EVENT_TYPE = \"" + eventName + "\") once the seam lands.")))
+                        "The action is not invoked: this handler never calls "
+                                + entity + "." + action.name() + "(...),",
+                        "so a request to this route changes nothing in the domain."), List.of(
+                        "Named keep-alive heartbeat (deterministic name, empty data). No frame",
+                        "carries STREAM_EVENT_TYPE = \"" + eventName + "\".")))
                 .build();
     }
 

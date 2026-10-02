@@ -118,9 +118,10 @@ the orchestrator over proxied metadata. Four states:
 - **`GAP`** — the Java side acts on it and the front owes a counterpart it does not emit yet.
 
 The last three carry a reason. A field added to the schema, or one a generator starts or stops
-reading, fails the build until it is classified. Today: 18 `READ`, 4 `JAVA_ONLY`, 14 `RESERVED`,
-1 `GAP` (`uiMetadata`: the entity-level `@UI` view flags no emitter honours — P17). One level
-down, `FIELD_CONTRACT_COVERAGE` has 1 `GAP` (`inUpdate`) and `UI_CONTRACT_COVERAGE` 6 (the view flags).
+reading, fails the build until it is classified. Today: 19 `READ`, 4 `JAVA_ONLY`, 14 `RESERVED`,
+no `GAP`. One level down, `FIELD_CONTRACT_COVERAGE` has 1 `GAP` (`inUpdate`); `UI_CONTRACT_COVERAGE`
+has none — the six view switches are `READ` (P17), and `icon`, `color` and `exportable` are
+`RESERVED`.
 
 **Proposed TS 1.0 criterion: no field in `GAP`** — no field the backend acts on is silently ignored
 by the front. Not yet in the ROADMAP's 1.0 list.
@@ -189,8 +190,9 @@ same model — no second rendering path. `@View` block depth stays gated on the 
 ### Stage 4 — remaining parity, tests, release
 
 - The per-action stream producer (EV1-stream): the action stream handler still sends only the
-  keep-alive scaffold, waiting on an SDK widening that links a streaming action to its event
-  types; the TS client already parses its named frames.
+  keep-alive scaffold and never runs the action. No SDK widening is needed — an `ACTION`-triggered
+  `@DomainEvent` already names its action — but the invoke-then-stream semantics wait on an
+  ADR-044 amendment (ROADMAP, 0.10.0); the TS client already parses its named frames.
 - Test-emitter coverage: `spec-gen` covers 2 of 18 TS emitters.
 - `npm run lint` cannot run (no `eslint.config.*`) and is not in CI.
 - **A stability decision for the TS output.** ADR-015's output-stability contract covers
