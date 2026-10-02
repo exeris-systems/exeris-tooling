@@ -1,4 +1,4 @@
-name: release to maven central
+name: release to maven central and npmjs
 
 # Two triggers, and the split is what each one is for.
 #
@@ -24,11 +24,31 @@ name: release to maven central
 # this reactor does not set it, so two builds differ and the gated bytes would not be the uploaded
 # ones.
 #
+# **The same tag releases @exeris/codegen-ts to npmjs** (ADR-092, lockstep), and npm goes second.
+# Both registries are immutable, but only the Maven half has an undo: an unpublished Central
+# deployment can be Dropped, while an npm version, once published, can never be reused. So the npm
+# job runs only after the Maven job (upload validated, readiness gate passed), in the `npm-publish`
+# environment, and before publishing it waits for the Maven release to be visible on Maven Central.
+# The order a release follows is therefore: tag → Maven deployment uploaded → a person presses
+# Publish in the Central Portal → the npm job (approved in the environment, when it has a required
+# reviewer) sees the release on Central and publishes. A deployment that is Dropped leaves npm
+# untouched; the only half-release left is an npm publish that fails after Maven is published, and
+# that is finished by re-running the npm job, which never publishes a version twice.
+#
+# npm authenticates by trusted publishing (OIDC): npmjs trusts this repository, this file and the
+# `npm-publish` environment, and no token is stored. Provenance is attached to the published
+# version. A dispatch never publishes to npm, whatever `upload` says: it packs, and runs
+# `npm publish --dry-run`.
+#
 # Required repository (or organisation) secrets:
 #   GPG_PRIVATE_KEY         armoured private key whose public half is on a keyserver Central reads
 #   GPG_PASSPHRASE          its passphrase
 #   CENTRAL_TOKEN_USERNAME  Central Portal user token, username half (central.sonatype.com/usertoken)
 #   CENTRAL_TOKEN_PASSWORD  Central Portal user token, password half
+# Optional:
+#   NPM_TOKEN               npm granular access token with publish rights on @exeris/codegen-ts.
+#                           A fallback for when trusted publishing is not configured: npm tries
+#                           OIDC first and uses the token only when that fails.
 
 on:
   push:
@@ -56,6 +76,9 @@ jobs:
       contents: read
       id-token: write       # SLSA provenance signing (Sigstore, keyless)
       attestations: write   # writing the attestation back to the repository
+    outputs:
+      version: ${{ steps.rel.outputs.version }}
+      upload: ${{ steps.rel.outputs.upload }}
 
     steps:
       - name: Checkout
@@ -285,3 +308,159 @@ jobs:
             target/*.pom
           if-no-files-found: warn
           retention-days: 90
+
+  # The dry run of the npm half. Same checks as the publishing job, then a tarball and
+  # `npm publish --dry-run`, which reports what it would upload and needs no credentials.
+  npm-dry-run:
+    name: npm — pack and publish --dry-run
+    needs: release
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: exeris-codegen-ts
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: exeris-codegen-ts/package-lock.json
+
+      - name: Set the release version and refuse an unreleasable one
+        env:
+          WANT: ${{ needs.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          if ! printf '%s' "$WANT" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::$WANT is not a release version (MAJOR.MINOR.PATCH); npm never receives one." >&2
+            exit 1
+          fi
+          npm version "$WANT" --no-git-tag-version --ignore-scripts --allow-same-version
+
+      - name: npm ci + test
+        run: |
+          npm ci
+          npm test
+
+      # `npm pack` runs `prepack`, which cleans and rebuilds dist/, so the tarball holds what this
+      # commit's sources compile to and nothing a previous build left behind.
+      - name: Pack, and publish --dry-run
+        run: |
+          set -euo pipefail
+          npm pack --pack-destination "$RUNNER_TEMP"
+          npm publish --dry-run --access public
+
+      - name: Upload the tarball as a run artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: npm-${{ needs.release.outputs.version }}
+          path: ${{ runner.temp }}/*.tgz
+          if-no-files-found: error
+          retention-days: 14
+
+  npm-publish:
+    name: npm — publish @exeris/codegen-ts
+    needs: release
+    # A tag only. The Maven job has already refused a tag that is not vMAJOR.MINOR.PATCH, that is
+    # not on main, or whose package.json disagrees with it; `needs` carries those refusals here.
+    if: ${{ github.event_name == 'push' && needs.release.outputs.upload == 'true' }}
+    runs-on: ubuntu-latest
+    # npmjs's trusted-publisher entry names this environment, so a publish from any other job or
+    # workflow is refused by the registry. A required reviewer on it is the hold point between
+    # pressing Publish in the Central Portal and releasing the npm half.
+    environment: npm-publish
+    permissions:
+      contents: read
+      id-token: write   # OIDC token exchanged for a short-lived npm publish credential
+    defaults:
+      run:
+        working-directory: exeris-codegen-ts
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # registry-url writes an .npmrc for npmjs. Trusted publishing needs npm >= 11.5.1 and
+      # Node >= 22.14.0; the step below checks the npm half.
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+          cache: npm
+          cache-dependency-path: exeris-codegen-ts/package-lock.json
+
+      - name: Refuse an unreleasable version or an npm without trusted publishing
+        env:
+          WANT: ${{ needs.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          have="$(node -p "require('./package.json').version")"
+          case "$have" in
+            *-SNAPSHOT*) echo "::error::package.json is at $have; a SNAPSHOT is never published to npm." >&2; exit 1 ;;
+          esac
+          if ! printf '%s' "$have" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::package.json is at $have, not MAJOR.MINOR.PATCH. Nothing published." >&2
+            exit 1
+          fi
+          if [ "$have" != "$WANT" ]; then
+            echo "::error::package.json is at $have, the Maven release at $WANT. Nothing published." >&2
+            exit 1
+          fi
+          npm_version="$(npm --version)"
+          if ! node -e '
+            const [a, b, c] = process.argv[1].split(".").map(Number);
+            process.exit(a > 11 || (a === 11 && (b > 5 || (b === 5 && c >= 1))) ? 0 : 1);
+          ' "$npm_version"; then
+            echo "::error::npm $npm_version cannot use trusted publishing (needs >= 11.5.1)." >&2
+            exit 1
+          fi
+          echo "publishing @exeris/codegen-ts@$have with npm $npm_version"
+
+      - name: npm ci + test
+        run: |
+          npm ci
+          npm test
+
+      # The Maven half goes first because it is the half with an undo. Publishing in the Central
+      # Portal is a person's action this workflow cannot observe, so the job looks for its result:
+      # the release's POM on Maven Central. Central takes minutes to show a published release; past
+      # the wait, re-run this job once it does.
+      - name: Wait for the Maven release on Maven Central
+        env:
+          WANT: ${{ needs.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          url="https://repo1.maven.org/maven2/eu/exeris/tooling/exeris-codegen-core/$WANT/exeris-codegen-core-$WANT.pom"
+          for attempt in $(seq 1 30); do
+            if curl -fsSIL -o /dev/null "$url"; then
+              echo "Maven release $WANT is on Maven Central"
+              exit 0
+            fi
+            echo "attempt $attempt: $url not on Maven Central yet"
+            sleep 60
+          done
+          echo "::error::eu.exeris.tooling $WANT is not on Maven Central. Publish the deployment in the Central Portal, then re-run this job. Nothing was published to npm." >&2
+          exit 1
+
+      # A version npm already holds can never be published again, so a re-run after a successful
+      # publish finds it and stops.
+      - name: Publish to npmjs (trusted publishing, provenance)
+        env:
+          WANT: ${{ needs.release.outputs.version }}
+          # Empty unless the fallback secret exists; OIDC is tried first either way.
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          if published="$(npm view "@exeris/codegen-ts@$WANT" version 2>/dev/null)" && [ "$published" = "$WANT" ]; then
+            echo "@exeris/codegen-ts@$WANT is already on npmjs; nothing to publish."
+            exit 0
+          fi
+          npm publish --provenance --access public
