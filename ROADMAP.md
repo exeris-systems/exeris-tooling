@@ -3325,7 +3325,7 @@ needed.)*
 - [x] **`@Channel`, registered as reserved.** An `UNREAD_NOTES` entry: the processor never reads
       the annotation, so C0 already reported it generically, and `-Aexeris.strict` now gives the
       reserved-surface reason instead. The WebSocket emitter over kernel ADR-084 is 0.12.0 scope.
-- [ ] S6 (`SystemFieldsMetadata.builder()`) and the semver-gate flag, under "Follow SDK 0.12.0".
+- [x] S6 (`SystemFieldsMetadata.builder()`) and the semver-gate flag, under "Follow SDK 0.12.0".
 
 **2. Kernel 0.12 catch-up**
 - [x] The MIGRATION notes issue #227 still owes: `crypto.tls.client.trustFile`, the
@@ -3337,7 +3337,8 @@ needed.)*
       `keepAliveScaffold(...)`, and nothing gates it since T23 slice B1.
 - [x] `SUBSYSTEMS` derived from `DomainMetadata` (#261; "Every generated app boots three subsystems it may
       never use").
-- [ ] Measure whether the emitted error mapping should read `ExerisKernelException.faultOrigin()`
+- [x] Measure whether the emitted error mapping should read `ExerisKernelException.faultOrigin()` *(#262:
+      only `parseBody` disagreed; it now answers 400 only for a `FaultOrigin.CALLER` decode failure)*
       rather than re-derive CALLER vs SYSTEM (0.12 readiness, below).
 - [x] **K9, consumed** (ADR-070 Amendment 3). Kernel 0.12.0 ships `StreamRouteResolver`, through
       which a handler that wraps or forwards a router delegates stream resolution. The emitted
@@ -3558,12 +3559,12 @@ opt-in semver gate.
       remains for the 1.0.0 pin: delete the `INERT_ATTRIBUTES` entry, the `apiVersion` field in
       `exeris-codegen-ts` `domain-model.ts`, and `KernelClientGeneratorTest`'s `.apiVersion("v2")`
       case, which pins that a value a caller sets reaches no client path.
-- [ ] **S6 — nothing is forced.** SDK 0.12 keeps `SystemFieldsMetadata(10)`, `DomainMetadata(39)`
+- [x] **S6 — nothing is forced.** SDK 0.12 keeps `SystemFieldsMetadata(10)`, `DomainMetadata(39)`
       and `ActionMetadata(17)` as delegating constructors, and this repo already passes the eleventh
       `SystemFieldsMetadata` argument. Optional and recommended: build the record with
       `SystemFieldsMetadata.builder()` in `extractSystemFieldsOverrides`. The builder names each of
       the eleven same-typed `String` components instead of relying on their order.
-- [ ] **Semver gate.** On SDK `main`, japicmp runs only under `-Psemver`. Drop
+- [x] **Semver gate.** On SDK `main`, japicmp runs only under `-Psemver`. Drop
       `-Djapicmp.skip=true` and its comment from `.github/workflows/build.yml` (the "Install
       exeris-sdk to local Maven repo" step). Leaving it is harmless.
 - [x] **The locale pin flips.** SDK `main` lower-cases `effectivePath()`, `effectiveTableName()` and

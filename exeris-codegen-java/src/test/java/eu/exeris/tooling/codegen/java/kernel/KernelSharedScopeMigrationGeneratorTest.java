@@ -38,8 +38,8 @@ class KernelSharedScopeMigrationGeneratorTest {
     }
 
     private static SystemFieldsMetadata systemFields(String tenantIdField, String sharedScopeField) {
-        return new SystemFieldsMetadata("id", "createdAt", "createdBy", "updatedAt", "updatedBy",
-                tenantIdField, "version", null, null, null, sharedScopeField);
+        return SystemFieldsMetadata.builder()
+                .tenantIdField(tenantIdField).sharedScopeField(sharedScopeField).build();
     }
 
     @Test
