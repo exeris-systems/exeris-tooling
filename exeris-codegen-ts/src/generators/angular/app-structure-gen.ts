@@ -280,7 +280,6 @@ import { CommonModule } from '@angular/common';
             <h1 class="text-3xl font-bold tracking-tight text-gray-900 dark:text-white">
               🚀 ${htmlInTemplate(appName)}
             </h1>
-            <span class="text-sm text-gray-500 dark:text-gray-400">v0.1.0</span>
           </div>
         </div>
       </header>

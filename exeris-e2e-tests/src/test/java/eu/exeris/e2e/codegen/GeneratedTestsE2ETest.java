@@ -179,9 +179,11 @@ class GeneratedTestsE2ETest {
                     .as("generated-test failures:%n%s", render(summary))
                     .isZero();
             // Guard against a vacuous pass: an emitter that stopped emitting @Test methods would
-            // otherwise "succeed" with zero executed tests. 20 handler cases (9 covering the
+            // otherwise "succeed" with zero executed tests. 24 handler cases (9 covering the
             // bodyless routes and the pre-decode guards — including the ADR-076 pair that pins
-            // both sides of a DELETE: 204 when a row matched, 404 when none did — plus 11
+            // both sides of a DELETE: 204 when a row matched, 404 when none did — plus 4
+            // decode-failure cases: a CALLER refusal answering 400, a SYSTEM kernel exception, a
+            // JDK exception and an unbound decoder registry each answering 500 — plus 11
             // @Validation cases: the baseline
             // accept, a reject and a boundary accept for each of orderNumber's two length rules
             // and quantity's two numeric ones, the not-null reject, and the one case proving
@@ -192,11 +194,11 @@ class GeneratedTestsE2ETest {
             // tenant stamp and the four foreign-tenant cases (bound tenant accepted, foreign tenant refused,
             // unbound left to the database, update never writes the owner) = 12 — + 15 for Species,
             // the UNIVERSE entity: the same 12 plus the shared-scope stamp, the foreign-shared-scope refusal
-            // and the kept-when-unbound tag — + 4 saga cases — + 14 InvoiceHandlerTest cases (the 9
-            // bodyless/guard cases, 3 @Validation cases for its required reference, and the two
-            // foreign-tenant 400s) + 15 SpeciesHandlerTest cases (the same, plus the
-            // foreign-shared-scope 400).
-            assertThat(summary.getTestsSucceededCount()).isEqualTo(94);
+            // and the kept-when-unbound tag — + 4 saga cases — + 18 InvoiceHandlerTest cases (the 9
+            // bodyless/guard cases, the 4 decode-failure cases, 3 @Validation cases for its
+            // required reference, and the two foreign-tenant 400s) + 19 SpeciesHandlerTest cases
+            // (the same, plus the foreign-shared-scope 400).
+            assertThat(summary.getTestsSucceededCount()).isEqualTo(106);
         }
     }
 

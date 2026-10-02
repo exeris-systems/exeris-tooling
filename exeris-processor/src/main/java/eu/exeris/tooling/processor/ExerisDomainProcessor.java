@@ -2132,11 +2132,21 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             return null;
         }
 
-        return new SystemFieldsMetadata(
-                primaryKeyField, createdAtField, createdByField,
-                updatedAtField, updatedByField, tenantIdField,
-                versionField, softDeleteField, softDeleteTimestampField, softDeletedByField,
-                sharedScopeField);
+        // Every component is set, including the nulls: the record carries what was resolved
+        // above, not the builder's preset defaults.
+        return SystemFieldsMetadata.builder()
+                .primaryKeyField(primaryKeyField)
+                .createdAtField(createdAtField)
+                .createdByField(createdByField)
+                .updatedAtField(updatedAtField)
+                .updatedByField(updatedByField)
+                .tenantIdField(tenantIdField)
+                .versionField(versionField)
+                .softDeleteField(softDeleteField)
+                .softDeleteTimestampField(softDeleteTimestampField)
+                .softDeletedByField(softDeletedByField)
+                .sharedScopeField(sharedScopeField)
+                .build();
     }
 
     private static String nonBlankOr(String value, String fallback) {
