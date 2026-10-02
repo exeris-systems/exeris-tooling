@@ -1,5 +1,7 @@
 package eu.exeris.tooling.codegen.java;
 
+import eu.exeris.tooling.diagnostics.DiagnosticId;
+
 import java.io.PrintStream;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
@@ -73,7 +75,7 @@ public final class CodegenMain {
         try {
             parsed = CliArgs.parse(args);
         } catch (IllegalArgumentException badArgs) {
-            err.println(badArgs.getMessage());
+            err.println(DiagnosticId.CLI_ARGUMENTS_INVALID.format(badArgs.getMessage()));
             printUsage(err);
             return 1;
         }
@@ -86,7 +88,7 @@ public final class CodegenMain {
             );
             return 0;
         } catch (Exception e) {
-            LOG.log(Level.ERROR, "Code generation failed", e);
+            LOG.log(Level.ERROR, DiagnosticId.CLI_GENERATION_FAILED.format("Code generation failed"), e);
             return 1;
         }
     }

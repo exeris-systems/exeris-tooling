@@ -1500,7 +1500,7 @@ class ExerisDomainProcessorTest {
                 return;
             }
             assertThat(warnings).containsExactly(
-                    "[Exeris] " + name + ": default table changes from '" + oldTable + "' to '"
+                    "[Exeris] EXT-PROC-1104: " + name + ": default table changes from '" + oldTable + "' to '"
                             + newTable + "'; set @ExerisDomain(tableName = \"" + oldTable
                             + "\") to keep the existing table and migration");
         }
@@ -2417,7 +2417,7 @@ class ExerisDomainProcessorTest {
 
             assertThat(compilation).failed();
             assertThat(compilation).hadErrorContaining(
-                    "[Exeris] @RouteAccess(PUBLIC) on 'Order' contradicts its "
+                    "[Exeris] EXT-PROC-1004: @RouteAccess(PUBLIC) on 'Order' contradicts its "
                             + "@ExerisDomain.permissions");
             assertThat(compilation).hadErrorContaining(CONTRADICTION);
             assertThat(compilation).hadErrorContaining(
@@ -2437,7 +2437,7 @@ class ExerisDomainProcessorTest {
 
             assertThat(compilation).failed();
             assertThat(compilation).hadErrorContaining(
-                    "[Exeris] @RouteAccess(PUBLIC) on action method 'approve' contradicts its "
+                    "[Exeris] EXT-PROC-1004: @RouteAccess(PUBLIC) on action method 'approve' contradicts its "
                             + "@Action.permissions");
             assertThat(compilation).hadErrorContaining(
                     "Drop the permissions, or declare @RouteAccess(AUTHENTICATED)");
@@ -2479,7 +2479,7 @@ class ExerisDomainProcessorTest {
 
             assertThat(compilation).failed();
             assertThat(compilation).hadErrorContaining(
-                    "[Exeris] action method 'approve' declares @Action.permissions but no "
+                    "[Exeris] EXT-PROC-1005: action method 'approve' declares @Action.permissions but no "
                             + "@RouteAccess of its own, so it inherits @RouteAccess(PUBLIC) from "
                             + "type 'Order' and its route is public");
             assertThat(compilation).hadErrorContaining(
@@ -2634,11 +2634,11 @@ class ExerisDomainProcessorTest {
             var warnings = streamingWarnings(compilation);
             assertThat(warnings).hasSize(2);
             assertThat(warnings).extracting(d -> d.getMessage(null)).containsExactly(
-                    "[Exeris] @Action(streaming = true) on \"trackShipment\": the generated stream "
+                    "[Exeris] EXT-PROC-1107: @Action(streaming = true) on \"trackShipment\": the generated stream "
                             + "route keeps the connection open with keep-alives but does not run the "
                             + "action, so calling it changes nothing. The per-action stream driver is "
                             + "tracked in ROADMAP.md (EV1-stream).",
-                    "[Exeris] @Action(streaming = true) on \"watchPrice\": the generated stream "
+                    "[Exeris] EXT-PROC-1107: @Action(streaming = true) on \"watchPrice\": the generated stream "
                             + "route keeps the connection open with keep-alives but does not run the "
                             + "action, so calling it changes nothing. The per-action stream driver is "
                             + "tracked in ROADMAP.md (EV1-stream).");
@@ -3814,10 +3814,10 @@ class ExerisDomainProcessorTest {
                     .filter(m -> m != null && m.contains("draws from nothing"))
                     .toList();
             assertThat(wrongAttr).containsExactly(
-                    "[Exeris] @Bind(source = STATIC) draws from nothing, so its expression is ignored "
+                    "[Exeris] EXT-PROC-1106: @Bind(source = STATIC) draws from nothing, so its expression is ignored "
                             + "and this node renders no bound value. Put authored content in "
                             + "@Block(props), or bind data with source = ENTITY, PROJECTION or ACTION.",
-                    "[Exeris] @Bind(source = NONE) draws from nothing, so its ref, path are ignored "
+                    "[Exeris] EXT-PROC-1106: @Bind(source = NONE) draws from nothing, so its ref, path are ignored "
                             + "and this node renders no bound value. Put authored content in "
                             + "@Block(props), or bind data with source = ENTITY, PROJECTION or ACTION.");
 

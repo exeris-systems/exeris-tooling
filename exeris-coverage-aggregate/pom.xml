@@ -55,8 +55,14 @@
     <dependencies>
         <!-- Modules contributing classes + exec data. report-aggregate
              walks the dependency closure and folds in exec files from
-             every reactor project it finds, so we list the four
+             every reactor project it finds, so we list the five
              modules that have a jacoco.exec we care about. -->
+        <dependency>
+            <groupId>eu.exeris.tooling</groupId>
+            <artifactId>exeris-diagnostics</artifactId>
+            <version>${project.version}</version>
+            <scope>provided</scope>
+        </dependency>
         <dependency>
             <groupId>eu.exeris.tooling</groupId>
             <artifactId>exeris-processor</artifactId>

@@ -2998,11 +2998,32 @@ Proposals, highest return-on-effort first:
       *Update:* document that "delete and regenerate from scratch" is not a safe loop once glue exists,
       until detach lands.
 
-- [ ] **D4 — Stable diagnostic IDs. Inbound ask from `exeris-ai-bridge` 0.7.0** (its `build:explain_diagnostic`
-      tool; recorded in that repo's cross-repo asks table). Processor diagnostics are prefixed free text:
-      `DIAG_PREFIX = "[Exeris] "` (`ExerisDomainProcessor.java:90`) is applied at **all 9**
-      `Messager.printMessage` sites, so a consumer can already tell an Exeris diagnostic apart from a plain
-      `javac` one — it just cannot tell *which* one. The kernel's `KernelErrorCodes` single-source-of-truth
+- [x] **D4 — Stable diagnostic IDs. Inbound ask from `exeris-ai-bridge` 0.7.0** (its `build:explain_diagnostic`
+      tool; recorded in that repo's cross-repo asks table). *Shipped (0.9.0),
+      [ADR-095](docs/adr/ADR-095-stable-diagnostic-identifiers.md).* One registry,
+      `eu.exeris.tooling.diagnostics.DiagnosticId`, in a new zero-dependency artefact
+      `eu.exeris.tooling:exeris-diagnostics` (`java.lang` only, no service file), holds 43 identifiers:
+      25 `EXT-PROC-1xxx` for the processor, 13 `EXT-PLUG-2xxx` for the four plugin goals and 5
+      `EXT-GEN-3xxx` for the code-generation pipeline (`CodegenPipeline`'s `System.Logger` warnings
+      and the `CodegenMain` command line). `TS` and the 4xxx block are reserved for the TypeScript
+      emitter. Every message prints as `[Exeris] EXT-…-NNNN: <text>`, found anywhere in a line by
+      `\[Exeris\] (EXT-[A-Z]+-\d{4}): ` (Maven puts `[ERROR] Failed to execute goal …: ` ahead of it).
+      The processor, `exeris-codegen-java` and the plugin each depend on `exeris-diagnostics`; the
+      processor's permitted dependency set names it. The processor's `note` / `warning` / `error` /
+      `reportProcessingFailure` take a required `DiagnosticId` and reach `Messager` through one
+      method, so a diagnostic without an identifier does not compile, and a test fails if a
+      `printMessage` call appears anywhere else. Plugin pass-through messages keep the wrapped
+      exception's text after the identifier; I/O failures end with the cause. `DiagnosticIdTest` pins
+      every value, the format, the uniqueness, the reserved `TS` block and the match with the
+      reference table in [`docs/diagnostics.md`](docs/diagnostics.md), retired identifiers included.
+      Owed: the `ADR-095.link.md` stub in `exeris-ai-bridge`, whose `build-explain_diagnostic` moves
+      from text anchors to the identifier.
+      Original finding below.
+
+      Processor diagnostics were prefixed free text: one `[Exeris] ` prefix constant in
+      `ExerisDomainProcessor` was applied at **all 9** `Messager.printMessage` sites, so a consumer
+      could tell an Exeris diagnostic apart from a plain
+      `javac` one, but not *which* one. The kernel's `KernelErrorCodes` single-source-of-truth
       is the precedent to copy. Without IDs the bridge tool degrades to substring matching on message text
       that no gate holds stable, and every message reworded here silently breaks it.
       *Two corrections to the ask as stated, measured 2026-08-26:*
@@ -3688,7 +3709,7 @@ Expected to pair with kernel 0.13, and with SDK 0.13 if one is needed.
 
 - [ ] **T53 in full** (RFC, then ADR): `@RouteAccess` + `permissions` compiled into `RouteRequirement`. D10 resolves
       with it.
-- [ ] Track C (SDK record changes), `@SagaTransition`, T12 + T17, `@PrimaryKey`, D4, unless one lands in 0.9.0 by its gate opening early.
+- [ ] Track C (SDK record changes), `@SagaTransition`, T12 + T17, `@PrimaryKey`, unless one lands in 0.9.0 by its gate opening early.
 - [ ] **EV1-stream per-action driver** (ADR-044 amendment first): the streaming action runs, and its
       triggered events stream back. Moved from 0.9.0 on 2026-10-02; the open questions are under
       **EV1-stream**. Removes the 0.9.0 streaming-action warning.

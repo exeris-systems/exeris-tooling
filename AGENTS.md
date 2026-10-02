@@ -34,7 +34,7 @@ Coordinates: groupId `eu.exeris`, packages `eu.exeris.tooling.*`.
   removed in 0.1.0. Do NOT reintroduce them. Spring hosting belongs downstream in `exeris-spring-runtime`
   ([policy](.agents/policies/kernel-target-only.md)).
 - **Annotation processor is build-time only:** `exeris-processor` depends strictly on `javax.lang.model`,
-  `exeris-sdk-source-model`, and JDK. Zero runtime libraries (no Jackson databind leaking runtime types,
+  `exeris-sdk-source-model`, `exeris-diagnostics` (`java.lang` only), and JDK. Zero runtime libraries (no Jackson databind leaking runtime types,
   no Spring, no kernel runtime). Diagnostics use `e.toString()`, not `e.getMessage()`
   ([policy](.agents/policies/processor-build-time-only.md)).
 - **Codegen determinism:** Same `DomainMetadata` → byte-identical output across runs, machines, and

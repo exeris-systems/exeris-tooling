@@ -7,6 +7,7 @@ import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
 import eu.exeris.tooling.codegen.maven.internal.DetachResult;
 import eu.exeris.tooling.codegen.maven.internal.DetachService;
+import eu.exeris.tooling.diagnostics.DiagnosticId;
 
 import java.io.File;
 import java.io.IOException;
@@ -67,8 +68,8 @@ public class DetachMojo extends AbstractMojo {
             result = service.detach(
                     generatedDir.toPath(), targetDir.toPath(), gitignore.toPath(), ignoreEntry);
         } catch (IOException e) {
-            throw new MojoExecutionException(
-                    "Detach failed (generatedDir=" + generatedDir + ")", e);
+            throw new MojoExecutionException(DiagnosticId.DETACH_FAILED.format(
+                    "Detach failed (generatedDir=" + generatedDir + "): " + e), e);
         }
 
         if (result.isEmpty() && result.conflicts().isEmpty()) {
@@ -88,15 +89,15 @@ public class DetachMojo extends AbstractMojo {
         }
 
         if (!result.conflicts().isEmpty()) {
-            getLog().warn(result.conflicts().size()
-                    + " file(s) already existed at the target and were left in place:");
+            getLog().warn(DiagnosticId.DETACH_CONFLICTS.format(result.conflicts().size()
+                    + " file(s) already existed at the target and were left in place:"));
             for (Path conflict : result.conflicts()) {
                 getLog().warn("  conflict: " + conflict);
             }
             if (failOnConflict) {
-                throw new MojoFailureException(
+                throw new MojoFailureException(DiagnosticId.DETACH_CONFLICTS.format(
                         "Detach left " + result.conflicts().size()
-                                + " conflict(s); resolve them or set exeris.failOnConflict=false");
+                                + " conflict(s); resolve them or set exeris.failOnConflict=false"));
             }
         }
     }

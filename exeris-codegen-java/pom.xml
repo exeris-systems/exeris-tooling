@@ -26,6 +26,12 @@
             <artifactId>exeris-codegen-core</artifactId>
         </dependency>
 
+        <!-- Stable diagnostic identifiers for CodegenPipeline's own warnings (ADR-095). -->
+        <dependency>
+            <groupId>eu.exeris.tooling</groupId>
+            <artifactId>exeris-diagnostics</artifactId>
+        </dependency>
+
         <!-- JavaPoet — type-safe Java emission (ADR-015 + Amendment 1: Palantir fork) -->
         <dependency>
             <groupId>com.palantir.javapoet</groupId>

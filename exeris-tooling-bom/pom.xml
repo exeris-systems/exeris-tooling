@@ -175,6 +175,11 @@
             <!-- Internal tooling modules -->
             <dependency>
                 <groupId>eu.exeris.tooling</groupId>
+                <artifactId>exeris-diagnostics</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>eu.exeris.tooling</groupId>
                 <artifactId>exeris-processor</artifactId>
                 <version>${project.version}</version>
             </dependency>

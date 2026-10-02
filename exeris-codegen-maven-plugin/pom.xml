@@ -39,6 +39,13 @@
             <version>${project.version}</version>
         </dependency>
 
+        <!-- Stable diagnostic identifiers (ADR-095). -->
+        <dependency>
+            <groupId>eu.exeris.tooling</groupId>
+            <artifactId>exeris-diagnostics</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
         <!-- Maven plugin contract — provided by the running Maven, never bundled. -->
         <dependency>
             <groupId>org.apache.maven</groupId>
