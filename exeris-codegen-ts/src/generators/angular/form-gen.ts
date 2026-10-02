@@ -23,7 +23,7 @@ export class FormGenerator implements CodeGenerator {
   readonly priority = 20;
 
   generate(domain: DomainMetadata, context: GeneratorContext): GeneratedFile | null {
-    // One component serves both the create and the edit route, so it goes only with both.
+    // One component serves both the create and the edit route, so it is dropped only when both are off.
     if (domain.internalApi?.hidden || !hasFormPage(entityViews(domain))) {
       return null;
     }
