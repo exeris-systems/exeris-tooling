@@ -99,8 +99,7 @@ public final class KernelStreamScaffold {
 
     /**
      * Bounded keep-alive iteration count for the scaffold loop. Deterministic and
-     * finite so the generated handler terminates cleanly (calls {@code close()})
-     * until the EV1 producer seam replaces the loop with a real subscription.
+     * finite so the generated handler terminates cleanly by calling {@code close()}.
      */
     public static final int KEEPALIVE_ITERATIONS = 4;
 
