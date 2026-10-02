@@ -4,7 +4,7 @@ type: migration-guide
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-10-01
+last-verified: 2026-10-02
 ---
 
 # Migration: 0.x → 1.0
@@ -1063,9 +1063,9 @@ requires them.
 
 *(Replaced 2026-09-26. This entry first said "Neither pin moves in this train"; B0 moved both.)*
 
-The BOM moves to **`eu.exeris:exeris-sdk-*:0.12.0-SNAPSHOT`** and **`eu.exeris:exeris-kernel-*:0.12.0`**,
-and neither is published yet. Build the SDK from `main` and the kernel from `development/0.12.0`.
-A tooling release is not cut until both are final.
+The BOM moves to **`eu.exeris:exeris-sdk-*:0.12.0-SNAPSHOT`** and **`eu.exeris:exeris-kernel-*:0.12.0`**.
+The kernel pin is the final `0.12.0` release on Maven Central. The SDK pin is not published yet:
+build the SDK from `main`. A tooling release is not cut until the SDK pin is final too.
 
 **The metadata schema stamp moves `0.11.0` → `0.12.0`.** SDK 0.12 moves `SchemaVersion.CURRENT`, so
 a baseline stamped `0.11.0` reads as schema skew (ADR-042). Re-run codegen once after upgrading.
@@ -1142,8 +1142,9 @@ route with `stream` as the id and answers `400`. Regenerating does not change th
 setting does; the fix is kernel-side (K9 in the dog-food log). The refusal above still fires; on the
 generated boot it protects nothing.
 
-**Superseded later in the same train — the refusal is gone (T23 slice B1).** See "Stream routes
-resolve on a real boot; `Application` binds an edge router" below.
+**Superseded later in the same train — the refusal is gone (T23 slice B1, K9).** See "Stream routes
+resolve on a real boot; `Application` binds an edge handler" and "`decorate` must resolve streams
+in a streaming app; `configureRoutes` takes stream routes" below.
 
 ### `exeris-codegen-ts`: `GraphEdgeMetadata` and `GraphMetadata` change shape (#208)
 
@@ -1244,44 +1245,71 @@ and no generator reads (`@TenantId.autoPopulate`, `@Version.useForETag`,
 `@SoftDelete.retentionPeriod`, …). Setting any of them changes no emitted output; the warning says
 so rather than letting the extraction hide it.
 
-### Stream routes resolve on a real boot; `Application` binds an edge router (T23, ADR-070 Amendment 2)
+### Stream routes resolve on a real boot; `Application` binds an edge handler (T23, ADR-070)
 
-`Application.run()` no longer binds a forwarding lambda. It builds
-`RuntimeLifecycle.edgeRouter(handlerSlot, componentsSlot)`, an `HttpRouter` carrying every
-generated stream route, and binds that as `HTTP_SERVER_HANDLER`. Respond-once requests fall through
-its `notFound` to the router `RuntimeLifecycle.run()` composes, exactly as before.
+`Application.run()` no longer binds a forwarding lambda. It binds
+`RuntimeLifecycle.edgeHandler(handlerSlot)`, a named class that forwards every request to the handler
+slot and implements kernel 0.12's `StreamRouteResolver`, delegating stream resolution to the slot as
+well. `RuntimeLifecycle.run()` registers every generated stream route on the router it composes,
+beside the respond-once routes.
 
 **Regenerated diff:** `Application`, `RuntimeLifecycle` and `RuntimeComponents` change. Every EV1
 live-view `<Entity>StreamHandler` (an entity with `realTimeApi` and a `@DomainEvent`) gains an
-`EventEngine` constructor parameter. `RuntimeLifecycle` gains a three-argument constructor
-`(handlerSlot, componentsSlot, components)` and a static `edgeRouter(...)`, and `run()` no longer
-registers stream routes.
+`EventEngine` constructor parameter. `RuntimeLifecycle` gains a static `edgeHandler(...)` and a
+private nested class, `EdgeHandler`. Its constructor is still `(handlerSlot, components)`.
 
 **If you only regenerate, streams now work.** `GET <base>/stream` opens an SSE stream instead of
-answering `400`.
+answering `400`. A stream opened while the application is still composing is answered `503`, like
+any other request.
 
-**`decorate` no longer refuses a wrapper.** It applies to respond-once routes. Stream routes resolve
-on the edge router and run outside it, so a scope bound in `decorate` is not bound for a stream
-(kernel K9).
-
-**A `streamRoute` you register in `configureRoutes` still does not resolve.** That router is never
-asked to resolve a stream. Resolving hand-registered streams needs the kernel (K9).
-
-**Hand-rolled launchers** (a copied `Application.run()`, a dev server, an integration harness)
-switch to the edge router and share both slots:
+**Hand-rolled launchers** (a copied `Application.run()`, a dev server, an integration harness) bind
+the edge handler and share the slot:
 
     var handlerSlot = new AtomicReference<HttpHandler>();
-    var componentsSlot = new AtomicReference<RuntimeComponents>();
     ScopedValue.where(HttpKernelProviders.HTTP_SERVER_HANDLER,
-            RuntimeLifecycle.edgeRouter(handlerSlot, componentsSlot)).call(() -> {
+            RuntimeLifecycle.edgeHandler(handlerSlot)).call(() -> {
         KernelBootstrap.builder().selector(selector).build().boot(() ->
-                new RuntimeLifecycle(handlerSlot, componentsSlot, components).run());
+                new RuntimeLifecycle(handlerSlot, components).run());
         return null;
     });
 
-The two-argument constructor still compiles, and still serves no stream. A launcher that bound the
-handler slot's content directly as the server handler *did* get streams before this train, and
-loses them now: bind `edgeRouter(...)` instead.
+A launcher that binds its own forwarding lambda still compiles and serves no stream: the kernel
+resolves a stream only through a bound handler that implements `StreamRouteResolver`. A launcher that
+binds what `run()` puts in the slot gets streams too.
+
+### `decorate` must resolve streams in a streaming app; `configureRoutes` takes stream routes (K9, ADR-070)
+
+Kernel 0.12 resolves a stream through `StreamRouteResolver` on the bound handler, which a wrapper
+can implement by delegating. The generated application publishes exactly what `decorate` returns,
+so if the router serves any stream route — your domain declares `realTimeApi` or any
+`@Action(streaming = true)`, or your `configureRoutes` registers a `streamRoute` — and you override
+`decorate`:
+
+- **Returning the router** (the default) needs nothing.
+- **A wrapper that implements `StreamRouteResolver`** resolves every stream route, and what it binds
+  around the stream handler it returns is bound for that stream. Each generated stream route is
+  probed through it at boot; one it answers `null` for fails the boot with `IllegalStateException`
+  naming the wrapper's class and the route. This is how a tenant bound in
+  `decorate` reaches a live view. The emitted `decorate` Javadoc shows the shape: delegate
+  `resolveStream` to the router, and wrap the `HttpStreamHandler` of a hit. `resolveStream` itself
+  runs before route authorization and outside every binding, so decide from the method and path
+  alone. Bind only immutable values around a stream; the binding lives as long as the stream does.
+- **Any other wrapper, a lambda included, now fails the boot** with `IllegalStateException`
+  naming its class. Implement `StreamRouteResolver` on it as above. The check asks the built router
+  `servesStreams()`, so it applies to an application whose only streams come from `configureRoutes`
+  as much as to one with generated stream routes.
+
+An application whose router serves no stream route accepts any wrapper, as before.
+
+**A `streamRoute` registered in `configureRoutes` now resolves**, with its path parameters, while
+`decorate` returns the router or a resolver. One registered at a method and path a generated stream
+route already serves fails the boot from the kernel: `HttpRouter.Builder#streamRoute` throws
+`IllegalArgumentException("a stream route is already registered for <METHOD> <path>")` as it is
+registered, since generated stream routes are registered first. Serve it at another path, or
+override the generated stream handler's factory instead. A stream at a concrete path under a
+generated template, such as `POST /orders/42/actions/track`, is not refused: the kernel resolves an
+exact path before a template, so it takes precedence for that one path and the generated route still
+serves every other.
 
 ### Subscribers and saga flows are composed and started at boot (T48 slice C1, ADR-075 Amendment 2)
 
@@ -1422,14 +1450,10 @@ not as the table owner (or keep tables `FORCE`d, as the generated migrations do)
   nothing on the server un-sets the soft-delete flag, so remove the call.
 - **Emitted service spec:** asserts `PUT` for update, and adds an archive case for soft-delete
   entities.
-- **Java `*Client`:** unchanged on the wire. `update` still sends `PATCH`, because `KernelWebClient`
-  has no `put`, and its Javadoc now says so. To make it reach a generated server, add this to the
-  *serving* application:
-  ```java
-  @Override public void configureRoutes(HttpRouter.Builder routes) {
-      routes.route(HttpMethod.PATCH, "/orders/{id}", orderHandler()::handleUpdate);
-  }
-  ```
+- **Java `*Client`:** `update(id, entity)` now sends `PUT {base}/{id}` through
+  `KernelWebClient.put` (kernel 0.12), matching the generated router and the TS service. It sent
+  `PATCH`, which no generated server answered. A serving application that added a
+  `PATCH {base}/{id}` route to reach the generated server can remove it.
 - A hand-written TS client that copied the generated `PATCH` should switch to `PUT`.
 
 ### `exeris-codegen-ts`: the edit route edits, and a routed form navigates
