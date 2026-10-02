@@ -2583,6 +2583,97 @@ class ExerisDomainProcessorTest {
     }
 
     @Nested
+    @DisplayName("@Action(streaming = true) — always warns that the stream route does not run the action")
+    class StreamingActionWarningTests {
+
+        private static final String NOT_RUN = "keeps the connection open with keep-alives but does not "
+                + "run the action, so calling it changes nothing";
+
+        private JavaFileObject order(String methods) {
+            return JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.Action;
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+
+                    @ExerisDomain(module = "sales", path = "/orders")
+                    public class Order {
+                    %s
+                    }
+                    """.formatted(methods));
+        }
+
+        private List<javax.tools.Diagnostic<? extends JavaFileObject>> streamingWarnings(
+                Compilation compilation) {
+            return compilation.warnings().stream()
+                    .filter(d -> d.getMessage(null).contains(NOT_RUN))
+                    .collect(java.util.stream.Collectors.toList());
+        }
+
+        @Test
+        @DisplayName("one warning per streaming action, anchored on its @Action, none for a respond-once action")
+        void warnsOncePerStreamingAction() throws IOException {
+            Compilation compilation = compileWithProcessor(order("""
+                        @Action(name = "cancel", label = "Cancel")
+                        public void cancel() {
+                        }
+
+                        @Action(name = "trackShipment", label = "Track", streaming = true)
+                        public void trackShipment() {
+                        }
+
+                        @Action(name = "watchPrice", label = "Watch", streaming = true,
+                                streamEventType = "PriceMoved")
+                        public void watchPrice() {
+                        }
+                    """));
+
+            assertThat(compilation).succeeded();
+            var warnings = streamingWarnings(compilation);
+            assertThat(warnings).hasSize(2);
+            assertThat(warnings).extracting(d -> d.getMessage(null)).containsExactly(
+                    "[Exeris] @Action(streaming = true) on \"trackShipment\": the generated stream "
+                            + "route keeps the connection open with keep-alives but does not run the "
+                            + "action, so calling it changes nothing. The per-action stream driver is "
+                            + "tracked in ROADMAP.md (EV1-stream).",
+                    "[Exeris] @Action(streaming = true) on \"watchPrice\": the generated stream "
+                            + "route keeps the connection open with keep-alives but does not run the "
+                            + "action, so calling it changes nothing. The per-action stream driver is "
+                            + "tracked in ROADMAP.md (EV1-stream).");
+            // Anchored on the annotation: the reported line is the @Action line, not the method's.
+            assertThat(warnings).extracting(javax.tools.Diagnostic::getLineNumber)
+                    .containsExactly(12L, 16L);
+            assertThat(compilation.warnings().stream()
+                    .map(d -> d.getMessage(null))
+                    .noneMatch(m -> m.contains("\"cancel\"")))
+                    .isTrue();
+
+            // The warning reports; it does not change extraction.
+            String json = readContent(compilation.generatedFile(
+                    StandardLocation.CLASS_OUTPUT, "exeris-metadata/Order.json").orElseThrow());
+            assertThat(json).contains("\"streaming\" : true");
+        }
+
+        @Test
+        @DisplayName("streaming = false and an unset attribute raise no warning")
+        void noWarningWhenNotStreaming() {
+            Compilation compilation = compileWithProcessor(order("""
+                        @Action(name = "cancel", label = "Cancel", streaming = false)
+                        public void cancel() {
+                        }
+
+                        @Action(name = "ship", label = "Ship")
+                        public void ship() {
+                        }
+                    """));
+
+            assertThat(compilation).succeededWithoutWarnings();
+        }
+    }
+
+    @Nested
     @DisplayName("Processor minors — -Aexeris.strict inert-attribute audit (T11)")
     class StrictModeInertAttributeTests {
 
@@ -4323,13 +4414,13 @@ class ExerisDomainProcessorTest {
                     .contains("@UI")
                     .contains("reads @UI on a type only")
                     .contains("@View's field facet");
-            // The type-level inert entry must not answer for a field-level @UI.
+            // No type-level @UI attribute entry answers for a field-level @UI.
             assertThat(warnings(compilation, INERT)).isEmpty();
         }
 
         @Test
-        @DisplayName("type-level @UI is reported once as extracted-but-unconsumed, never as unread")
-        void typeLevelUiIsReportedAsInert() {
+        @DisplayName("type-level @UI: the view switches are quiet, each unconsumed attribute is reported, nothing as unread")
+        void typeLevelUiReportsOnlyUnconsumedAttributes() {
             Compilation compilation = strictCompile("Widget", """
                     package com.example;
 
@@ -4338,7 +4429,9 @@ class ExerisDomainProcessorTest {
                     import eu.exeris.sdk.annotation.UI;
 
                     @ExerisDomain(module = "core", path = "/widgets")
-                    @UI(listView = false, exportable = true, icon = "box")
+                    @UI(listView = false, detailView = false, createForm = false, editForm = false,
+                        searchable = false, filterable = false,
+                        exportable = true, icon = "box", placeholder = "x")
                     public class Widget {
                         @Field(label = "Name")
                         private String name;
@@ -4346,11 +4439,39 @@ class ExerisDomainProcessorTest {
                     """);
 
             assertThat(compilation).succeeded();
-            // The seven flags the processor reads reach UIMetadata, and no generator reads
-            // UIMetadata's flags — so the read attributes are no more effective than icon.
-            assertThat(warnings(compilation, INERT))
-                    .singleElement()
-                    .satisfies(m -> assertThat(m).contains("@UI is set").contains("UIMetadata"));
+            // The six switches decide which pages, routes and list controls the TS emitter writes.
+            List<String> inert = warnings(compilation, INERT);
+            assertThat(inert).hasSize(3);
+            assertThat(inert).anySatisfy(m -> assertThat(m).contains("@UI.exportable is set"));
+            assertThat(inert).anySatisfy(m -> assertThat(m).contains("@UI.icon is set").contains("UIMetadata"));
+            assertThat(inert).anySatisfy(m -> assertThat(m).contains("@UI.placeholder is set")
+                    .contains("@View's field facet"));
+            for (String flag : List.of("listView", "detailView", "createForm", "editForm", "searchable", "filterable")) {
+                assertThat(inert).noneSatisfy(m -> assertThat(m).contains("@UI." + flag));
+            }
+            assertThat(warnings(compilation, UNREAD)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("type-level @UI setting only view switches draws no warning")
+        void typeLevelUiViewSwitchesAreQuiet() {
+            Compilation compilation = strictCompile("Widget", """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Field;
+                    import eu.exeris.sdk.annotation.UI;
+
+                    @ExerisDomain(module = "core", path = "/widgets")
+                    @UI(listView = false, searchable = false)
+                    public class Widget {
+                        @Field(label = "Name")
+                        private String name;
+                    }
+                    """);
+
+            assertThat(compilation).succeeded();
+            assertThat(warnings(compilation, INERT)).isEmpty();
             assertThat(warnings(compilation, UNREAD)).isEmpty();
         }
 

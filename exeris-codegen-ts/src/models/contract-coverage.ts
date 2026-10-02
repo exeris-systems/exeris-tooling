@@ -72,12 +72,7 @@ export const CONTRACT_COVERAGE = {
     state: 'RESERVED',
     reason: 'The processor writes it empty, since @Projection is not extracted; no projection read model or endpoint is emitted on either side.',
   },
-  uiMetadata: {
-    state: 'GAP',
-    reason:
-      'The processor writes the @UI view switches and the Java form DSL lays out on its column count; no TS ' +
-      'generator honours a switch, so @UI(listView = false) still emits a list page. See UI_CONTRACT_COVERAGE.',
-  },
+  uiMetadata: { state: 'READ' },
   graphMetadata: { state: 'JAVA_ONLY', reason: 'Server-side graph synchronisation; the front has no graph surface.' },
   sagaMetadata: { state: 'READ' },
   systemFields: { state: 'READ' },
@@ -151,17 +146,15 @@ export const FIELD_CONTRACT_COVERAGE = {
   computedFrom: { state: 'READ', written: true },
 } as const satisfies { readonly [K in keyof FieldMetadata]-?: NestedContractCoverageEntry };
 
-const UI_SWITCH_GAP = 'Written from @UI; the front emits the surface whatever the switch says.';
-
 export const UI_CONTRACT_COVERAGE = {
   icon: { state: 'RESERVED', written: false, reason: `${NOT_WRITTEN} @UI declares it and the processor drops it.` },
   color: { state: 'RESERVED', written: false, reason: `${NOT_WRITTEN} @UI declares it and the processor drops it.` },
-  listView: { state: 'GAP', written: true, reason: UI_SWITCH_GAP },
-  detailView: { state: 'GAP', written: true, reason: UI_SWITCH_GAP },
-  createForm: { state: 'GAP', written: true, reason: UI_SWITCH_GAP },
-  editForm: { state: 'GAP', written: true, reason: UI_SWITCH_GAP },
-  searchable: { state: 'GAP', written: true, reason: UI_SWITCH_GAP },
-  filterable: { state: 'GAP', written: true, reason: UI_SWITCH_GAP },
+  listView: { state: 'READ', written: true },
+  detailView: { state: 'READ', written: true },
+  createForm: { state: 'READ', written: true },
+  editForm: { state: 'READ', written: true },
+  searchable: { state: 'READ', written: true },
+  filterable: { state: 'READ', written: true },
   exportable: {
     state: 'RESERVED',
     written: true,

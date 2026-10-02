@@ -127,6 +127,20 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             "the processor does not read it, so it never reaches FieldMetadata and no emitter can "
                     + "honour it. ";
 
+    /**
+     * Opening clause of every {@code @UI} entry in {@link #INERT_ATTRIBUTES} whose attribute a
+     * type-level {@code @UI} carries but the processor does not read there: only the six view
+     * switches and {@code exportable} reach {@code UIMetadata}.
+     */
+    private static final String UI_NOT_EXTRACTED =
+            "the processor reads only the view switches off a type-level @UI, so it never reaches "
+                    + "UIMetadata and no emitter can honour it. ";
+
+    /** Note for a field-presentation {@code @UI} attribute written on a type. */
+    private static final String UI_FIELD_ATTRIBUTE_ON_TYPE = UI_NOT_EXTRACTED
+            + "It describes a field, and on a field @UI is not read either: a field's presentation "
+            + "facet arrives with @View's field facet";
+
     /** Closing clause on every strict-mode diagnostic — it is opt-in, so say so at the point of use. */
     private static final String STRICT_SUFFIX = ". (reported because -Aexeris.strict is enabled)";
 
@@ -539,7 +553,53 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "it: the emitted step method is a protected skeleton that logs and "
                             + "returns CONTINUE for the author to override, and no command is built "
                             + "or sent. The SDK gives the attribute no default, so every step "
-                            + "reports it"));
+                            + "reports it"),
+            // Type-level @UI: the view switches listView, detailView, createForm, editForm,
+            // searchable and filterable decide which pages, routes and list controls the TS emitter
+            // writes, so they are absent here. On a field, @UI is answered by the unread pass.
+            new InertAttribute("UI", "exportable",
+                    "it reaches UIMetadata.exportable and no emitter reads it: no export action is "
+                            + "emitted on either side"),
+            new InertAttribute("UI", "icon",
+                    UI_NOT_EXTRACTED + "The sidebar picks an entity's icon from its name"),
+            new InertAttribute("UI", "label",
+                    UI_NOT_EXTRACTED + "Emitted labels come from the entity name"),
+            new InertAttribute("UI", "pluralLabel",
+                    UI_NOT_EXTRACTED + "Emitted plural labels come from the entity name"),
+            new InertAttribute("UI", "description",
+                    UI_NOT_EXTRACTED + "Emitted descriptions come from @ExerisDomain"),
+            new InertAttribute("UI", "listTitle",
+                    UI_NOT_EXTRACTED + "The list page is titled with the entity's plural name"),
+            new InertAttribute("UI", "createTitle",
+                    UI_NOT_EXTRACTED + "The create route is titled with the entity name"),
+            new InertAttribute("UI", "editTitle",
+                    UI_NOT_EXTRACTED + "The edit route is titled with the entity name"),
+            new InertAttribute("UI", "detailTitle",
+                    UI_NOT_EXTRACTED + "The detail route is titled with the entity name"),
+            new InertAttribute("UI", "color",
+                    UI_NOT_EXTRACTED + "No emitted component applies it"),
+            new InertAttribute("UI", "enumSource", UI_FIELD_ATTRIBUTE_ON_TYPE),
+            new InertAttribute("UI", "displayInList", UI_FIELD_ATTRIBUTE_ON_TYPE),
+            new InertAttribute("UI", "displayInDetail", UI_FIELD_ATTRIBUTE_ON_TYPE),
+            new InertAttribute("UI", "editableInForm", UI_FIELD_ATTRIBUTE_ON_TYPE),
+            new InertAttribute("UI", "displayOrder", UI_FIELD_ATTRIBUTE_ON_TYPE),
+            new InertAttribute("UI", "componentType", UI_FIELD_ATTRIBUTE_ON_TYPE),
+            new InertAttribute("UI", "customComponent", UI_FIELD_ATTRIBUTE_ON_TYPE),
+            new InertAttribute("UI", "width", UI_FIELD_ATTRIBUTE_ON_TYPE),
+            new InertAttribute("UI", "format", UI_FIELD_ATTRIBUTE_ON_TYPE),
+            new InertAttribute("UI", "placeholder", UI_FIELD_ATTRIBUTE_ON_TYPE),
+            new InertAttribute("UI", "placeholderKey", UI_FIELD_ATTRIBUTE_ON_TYPE),
+            new InertAttribute("UI", "helpText", UI_FIELD_ATTRIBUTE_ON_TYPE),
+            new InertAttribute("UI", "helpTextKey", UI_FIELD_ATTRIBUTE_ON_TYPE),
+            new InertAttribute("UI", "cssClass", UI_FIELD_ATTRIBUTE_ON_TYPE),
+            new InertAttribute("UI", "visible", UI_FIELD_ATTRIBUTE_ON_TYPE),
+            new InertAttribute("UI", "component", UI_FIELD_ATTRIBUTE_ON_TYPE),
+            new InertAttribute("UI", "readOnly", UI_FIELD_ATTRIBUTE_ON_TYPE),
+            new InertAttribute("UI", "hidden", UI_FIELD_ATTRIBUTE_ON_TYPE),
+            new InertAttribute("UI", "gridSpan", UI_FIELD_ATTRIBUTE_ON_TYPE),
+            new InertAttribute("UI", "props", UI_FIELD_ATTRIBUTE_ON_TYPE),
+            new InertAttribute("UI", "visibleWhen", UI_FIELD_ATTRIBUTE_ON_TYPE),
+            new InertAttribute("UI", "enabledWhen", UI_FIELD_ATTRIBUTE_ON_TYPE));
 
     /**
      * Hand-maintained registry of whole type-level annotations that are extracted
@@ -603,17 +663,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "table, so every generated route is registered exactly as if the "
                             + "annotation were absent, and DomainMetadata / ActionMetadata carry no "
                             + "routeAccess. The transcription onto the kernel's HttpRoutePolicy is "
-                            + "T53, tracked in ROADMAP.md"),
-            // Type-level only — see TYPE_LEVEL_EXTRACTION. On a field, @UI is reported by the
-            // unread pass instead, with its UNREAD_NOTES entry.
-            new InertAnnotation(UI_FQN, "UI",
-                    "on an @ExerisDomain type it is extracted — listView, detailView, createForm, "
-                            + "editForm, searchable, filterable and exportable reach UIMetadata — "
-                            + "but no generator reads those flags, and none of its other attributes "
-                            + "is extracted at all. Every entity gets the same list, detail, create "
-                            + "and edit output whatever @UI says, and no export is emitted. The "
-                            + "only UIMetadata component an emitter reads, listColumns, is not an "
-                            + "@UI attribute and nothing fills it"));
+                            + "T53, tracked in ROADMAP.md"));
 
     /**
      * Every SDK annotation this processor extracts, by simple name. <strong>C0: this set is the
@@ -2381,6 +2431,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         // TS RxJS streaming-action client.
         if (values.containsKey("streaming")) builder.streaming((Boolean) values.get("streaming"));
         if (values.containsKey("streamEventType")) builder.streamEventType((String) values.get("streamEventType"));
+        if (Boolean.TRUE.equals(values.get("streaming"))) {
+            warnStreamingActionNotInvoked(name, method, annotation);
+        }
         // NOTE: @Action(realTimeUpdates) is deliberately NOT extracted here. It is a
         // separate "subscribe-to-progress" affordance (response shape vs. progress
         // channel) with no generator consumer. Extracting it would only create an inert
@@ -2402,6 +2455,23 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         builder.params(params);
 
         return builder.build();
+    }
+
+    /**
+     * Always reported, not gated on {@code -Aexeris.strict}: the action route is served as a
+     * stream only, and the stream handler emits keep-alives and closes without invoking the
+     * entity method, so the declared action is unreachable over HTTP. That is a behavioural
+     * surprise on an ordinary build, not a completeness finding.
+     */
+    private void warnStreamingActionNotInvoked(String actionName, ExecutableElement method,
+                                               AnnotationMirror annotation) {
+        messager.printMessage(
+                Diagnostic.Kind.WARNING,
+                DIAG_PREFIX + "@Action(streaming = true) on \"" + actionName + "\": the generated "
+                        + "stream route keeps the connection open with keep-alives but does not run "
+                        + "the action, so calling it changes nothing. The per-action stream driver "
+                        + "is tracked in ROADMAP.md (EV1-stream).",
+                method, annotation);
     }
 
     private ActionParamMetadata extractActionParamMetadata(VariableElement param, AnnotationMirror annotation) {
@@ -2725,10 +2795,11 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     }
 
     private UIMetadata extractUIMetadata(TypeElement element) {
-        AnnotationMirror uiAnnotation = findAnnotation(element, "eu.exeris.sdk.annotation.UI");
+        AnnotationMirror uiAnnotation = findAnnotation(element, UI_FQN);
         if (uiAnnotation == null) return null;
 
         Map<String, Object> values = extractAnnotationValues(uiAnnotation);
+        warnInertAttributes("UI", values, element, uiAnnotation);
 
         return UIMetadata.builder()
                 .listView(values.containsKey("listView") ? (Boolean) values.get("listView") : true)

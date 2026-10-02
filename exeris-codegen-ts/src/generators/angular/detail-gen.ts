@@ -9,7 +9,7 @@
  * - i18n-ready strings
  */
 
-import type { DomainMetadata, FieldMetadata, CodeGenerator, GeneratedFile, GeneratorContext } from '../../core/generator-registry.js';
+import type { DomainMetadata, CodeGenerator, GeneratedFile, GeneratorContext } from '../../core/generator-registry.js';
 import { DslMapper } from '../../models/dsl-mapper.js';
 import { modelTypeName } from '../../models/model-naming.js';
 import type { GeneratorConfig } from '../../config.js';
@@ -17,7 +17,8 @@ import type { BackendType } from '../../core/backend-strategy.js';
 import { outPath } from '../../core/paths.js';
 import { tsSingleQuoted } from './ts-literal.js';
 import { auditFieldNames, updateVersionField, viewSystemFieldNames } from '../api/type-gen.js';
-import { foreignKeyLinks } from './relationship-links.js';
+import { fieldRenderContext, resolveFieldRenders } from './field-render.js';
+import { entityExitRoute, entityViews } from './entity-views.js';
 
 export class DetailGenerator implements CodeGenerator {
   readonly name = 'DetailGenerator';
@@ -26,6 +27,10 @@ export class DetailGenerator implements CodeGenerator {
   readonly priority = 20;
 
   generate(domain: DomainMetadata, context: GeneratorContext): GeneratedFile | null {
+    if (!entityViews(domain).detail) {
+      return null;
+    }
+
     const kebab = DslMapper.toKebabCase(domain.entityName);
     const content = this.generateDetailContent(domain, context);
 
@@ -38,7 +43,7 @@ export class DetailGenerator implements CodeGenerator {
   }
 
   private generateDetailContent(domain: DomainMetadata, context: GeneratorContext): string {
-    const { entityName, fields = [] } = domain;
+    const { entityName } = domain;
     const modelName = modelTypeName(entityName);
     const kebab = DslMapper.toKebabCase(entityName);
     const displayName = domain.displayName ?? entityName;
@@ -51,10 +56,15 @@ export class DetailGenerator implements CodeGenerator {
     // honours it, and the emitted app would then request the wrong identifier.
     const idField = 'id';
 
-    const systemFieldNames = viewSystemFieldNames(domain);
-    const displayFields = fields.filter(f => !systemFieldNames.includes(f.name) && !f.hidden);
-    const enumTypes = this.collectEnumTypes(fields);
-    const fkLinks = foreignKeyLinks(domain, context.allDomains, context.config.generateDetails !== false);
+    const renders = resolveFieldRenders(
+      domain,
+      fieldRenderContext(domain, context.allDomains, context.config.generateDetails !== false),
+    );
+    const displayFields = renders.filter((r) => r.displayed);
+    // Every field's enum is imported, a hidden or system one included, in declaration order.
+    const enumTypes = [...new Set(renders.flatMap((r) => (r.detail.enumType ? [r.detail.enumType] : [])))];
+    const hasLinks = renders.some((r) => r.link !== undefined);
+    const views = entityViews(domain);
 
     const lines: string[] = [];
 
@@ -97,7 +107,7 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`  type: 'text' | 'number' | 'boolean' | 'date' | 'datetime' | 'enum';`);
     lines.push(`  enumType?: string;`);
     lines.push(`  dataType?: 'currency' | 'percent' | 'url';`);
-    if (fkLinks.size > 0) {
+    if (hasLinks) {
       lines.push(`  link?: string;`);
     }
     lines.push(`}`);
@@ -105,16 +115,10 @@ export class DetailGenerator implements CodeGenerator {
 
     lines.push(`const DISPLAY_FIELDS: FieldDisplay[] = [`);
     for (const field of displayFields) {
-      const mapping = DslMapper.mapField(field);
-      const fieldType = this.getDisplayType(field);
-      const enumTypeName = this.getEnumTypeName(field);
-      // @Field.dataType — front-presentation hint (Wave 1A, additive). Only the
-      // currency/percent/url facets drive a distinct render; any other value is
-      // ignored and the default formatValue() path applies.
-      const dataType = field.dataType === 'currency' || field.dataType === 'percent' || field.dataType === 'url'
-        ? field.dataType
-        : undefined;
-      lines.push(`  { name: '${field.name}' as keyof ${modelName}, label: '${tsSingleQuoted(mapping.label)}', type: '${fieldType}'${enumTypeName ? `, enumType: '${enumTypeName}'` : ''}${dataType ? `, dataType: '${dataType}'` : ''}${fkLinks.has(field.name) ? `, link: '${fkLinks.get(field.name)}'` : ''} },`);
+      // Only the currency/percent/url facets of @Field.dataType drive a distinct render; any other
+      // value is absent here and the default formatValue() path applies.
+      const { display, enumType, dataType } = field.detail;
+      lines.push(`  { name: '${field.name}' as keyof ${modelName}, label: '${tsSingleQuoted(field.label)}', type: '${display}'${enumType ? `, enumType: '${enumType}'` : ''}${dataType ? `, dataType: '${dataType}'` : ''}${field.link !== undefined ? `, link: '${field.link}'` : ''} },`);
     }
     lines.push(`];`);
     lines.push(``);
@@ -143,7 +147,9 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`        <header class="mb-8 flex items-center justify-between">`);
     lines.push(`          <h1 id="detail-title" class="text-2xl font-bold text-gray-900 dark:text-white">{{ getTitle() }}</h1>`);
     lines.push(`          <nav class="flex gap-3">`);
-    lines.push(`            <a [routerLink]="['edit']" class="px-4 py-2 text-sm font-medium text-white bg-exeris-primary rounded-md hover:bg-exeris-primary-hover">Edit</a>`);
+    if (views.edit) {
+      lines.push(`            <a [routerLink]="['edit']" class="px-4 py-2 text-sm font-medium text-white bg-exeris-primary rounded-md hover:bg-exeris-primary-hover">Edit</a>`);
+    }
     lines.push(`            <button (click)="onDelete()" class="px-4 py-2 text-sm font-medium text-red-700 bg-red-100 rounded-md hover:bg-red-200">Delete</button>`);
     lines.push(`          </nav>`);
     lines.push(`        </header>`);
@@ -157,8 +163,8 @@ export class DetailGenerator implements CodeGenerator {
     // operate on the raw entity value; every other field falls through to formatValue().
     // A foreign key links to the target's detail page; an empty one falls through to the
     // switch, so it renders exactly as an unlinked field does.
-    const sw = fkLinks.size > 0 ? '  ' : '';
-    if (fkLinks.size > 0) {
+    const sw = hasLinks ? '  ' : '';
+    if (hasLinks) {
       lines.push(`                  @if (field.link && rawValue(field, entity()) !== null) {`);
       lines.push(`                    <a [routerLink]="[field.link, rawValue(field, entity())]" [attr.data-testid]="'link-' + field.name" class="font-mono text-exeris-primary hover:underline">{{ rawValue(field, entity()) }}</a>`);
       lines.push(`                  } @else {`);
@@ -169,7 +175,7 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`${sw}                    @case ('url') { <a [href]="rawValue(field, entity())" class="text-exeris-primary hover:underline">{{ rawValue(field, entity()) }}</a> }`);
     lines.push(`${sw}                    @default { {{ formatValue(field, entity()) }} }`);
     lines.push(`${sw}                  }`);
-    if (fkLinks.size > 0) {
+    if (hasLinks) {
       lines.push(`                  }`);
     }
     lines.push(`                </dd>`);
@@ -240,7 +246,7 @@ export class DetailGenerator implements CodeGenerator {
     }
     if (enumTypes.length > 0) lines.push(``);
 
-    const nameField = displayFields.find(f => f.name === 'name' || f.name === 'title');
+    const nameField = displayFields.find((f) => f.name === 'name' || f.name === 'title');
     lines.push(`  getTitle(): string {`);
     lines.push(`    const entity = this.entity();`);
     lines.push(`    if (!entity) return '';`);
@@ -299,8 +305,8 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`    if (confirm('Are you sure you want to delete this ${displayName.toLowerCase()}?')) {`);
     lines.push(`      this.deleteError.set(null);`);
     lines.push(`      this.service.delete(this.id()).subscribe({`);
-    // The route table's own plural, so the navigation target is a route the table declares.
-    lines.push(`        next: () => this.router.navigate(['/${DslMapper.routePlural(entityName)}']),`);
+    // The list route, or the app root when the list is switched off: a route the table declares.
+    lines.push(`        next: () => this.router.navigate(['${entityExitRoute(domain, views)}']),`);
     lines.push(`        error: (err) => this.deleteError.set(httpErrorMessage(err, { entity: '${noun}', action: 'delete' })),`);
     lines.push(`      });`);
     lines.push(`    }`);
@@ -308,40 +314,6 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`}`);
 
     return lines.join('\n');
-  }
-
-  private getDisplayType(field: FieldMetadata): string {
-    const type = field.type;
-    if (field.enumType || this.isEnumType(type)) return 'enum';
-    if (type === 'Boolean' || type === 'boolean') return 'boolean';
-    if (type.includes('LocalDate') && !type.includes('DateTime')) return 'date';
-    if (type.includes('Instant') || type.includes('DateTime')) return 'datetime';
-    if (type.includes('Integer') || type.includes('Long') || type === 'number') return 'number';
-    return 'text';
-  }
-
-  private isEnumType(type: string): boolean {
-    const knownTypes = new Set(['String', 'Integer', 'Long', 'Double', 'Float', 'Boolean', 'BigDecimal', 'UUID', 'Instant', 'LocalDate', 'LocalDateTime']);
-    if (knownTypes.has(type)) return false;
-    if (type.includes('<') || type.endsWith('[]') || type.startsWith('java.')) return false;
-    const simpleName = type.includes('.') ? type.split('.').pop()! : type;
-    return /^[A-Z][a-zA-Z0-9]*$/.test(simpleName) &&
-      (simpleName.endsWith('Status') || simpleName.endsWith('Type') || simpleName.endsWith('Role') || simpleName.endsWith('State'));
-  }
-
-  private getEnumTypeName(field: FieldMetadata): string | undefined {
-    if (field.enumType) return field.enumType.includes('.') ? field.enumType.split('.').pop()! : field.enumType;
-    if (this.isEnumType(field.type)) return field.type.includes('.') ? field.type.split('.').pop()! : field.type;
-    return undefined;
-  }
-
-  private collectEnumTypes(fields: FieldMetadata[]): string[] {
-    const enums = new Set<string>();
-    for (const field of fields) {
-      const enumType = this.getEnumTypeName(field);
-      if (enumType) enums.add(enumType);
-    }
-    return [...enums];
   }
 }
 
@@ -382,9 +354,9 @@ export function generateDetail(
   metadata: DomainMetadata,
   config: GeneratorConfig,
   allDomains: DomainMetadata[] = [metadata],
-): GeneratedFile {
+): GeneratedFile | null {
   const generator = new DetailGenerator();
   const context: GeneratorContext = { config, backend: config.backend ?? 'KERNEL', allDomains, enums: [] };
-  return generator.generate(metadata, context)!;
+  return generator.generate(metadata, context);
 }
 
