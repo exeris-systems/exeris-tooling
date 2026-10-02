@@ -446,14 +446,12 @@ interface FormValidation {
  * The schema rules `FieldMetadata` declares, field by field in declaration order, each field's
  * rules in the order required, minLength, maxLength, pattern, min, max.
  *
- * Each rule enforces what the Reactive validator of the same name enforced:
  * - `required` is not applied to a checkbox. Signal Forms counts `false` as empty, which would
  *   force the box to be ticked; a required boolean only has to hold a boolean, which it always does.
  * - length and pattern apply to text controls only: a number control holds a number, and a
  *   length or pattern constraint is declared on character sequences.
  * - min and max bound a number control directly. A text control holding a decimal string is bounded
- *   by its parsed value, as `Validators.min` / `Validators.max` did; a blank or unparseable value
- *   passes, as it did there.
+ *   by its parsed value; a blank or unparseable value passes.
  */
 function formValidation(fields: readonly FieldRenderModel[]): FormValidation {
   const rules: string[] = [];
