@@ -230,6 +230,23 @@ describe('buildGeneratedFiles — peer contracts', () => {
       paths.findIndex((p) => p.includes('/shipping/')),
     );
   });
+
+  it('a contracts-only run (peers, no local entity or view) writes the peer trees at the output root and no app scaffold', () => {
+    const files = buildGeneratedFiles([], [], DEFAULT_CONFIG, [], peers);
+    const paths = files.map((f) => f.path);
+    expect(paths).toContain('peers/billing/index.ts');
+    expect(paths).toContain('peers/shipping/index.ts');
+    expect(paths.every((p) => p.startsWith('peers/'))).toBe(true);
+    expect(paths.some((p) => p.startsWith('src/'))).toBe(false);
+    expect(paths).not.toContain('./package.json');
+    expect(paths).not.toContain('./angular.json');
+  });
+
+  it('a run with a local entity keeps the peer trees under src/app and emits the scaffold', () => {
+    const paths = buildGeneratedFiles([localOrder], [], DEFAULT_CONFIG, [], peers).map((f) => f.path);
+    expect(paths).toContain('src/app/peers/billing/index.ts');
+    expect(paths).toContain('./package.json');
+  });
 });
 
 // ---------------------------------------------------------------------------

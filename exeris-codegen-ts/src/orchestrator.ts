@@ -187,8 +187,14 @@ export function buildGeneratedFiles(
     appTree.push(...generatePeerTypes(peer, config));
   }
 
+  // A run with peers and no local entity or view emits contracts only (ADR-048, T42 types
+  // slice): its consumer need not be an Angular app, so the tree is written at the output root
+  // (`peers/<name>/…`) and no app scaffold is emitted.
+  const contractsOnly = peers.length > 0 && domains.length === 0 && views.length === 0;
+  const treeRoot = contractsOnly ? '' : 'src/app/';
+
   for (const file of appTree) {
-    generatedFiles.push({ ...file, path: `src/app/${file.path}` });
+    generatedFiles.push({ ...file, path: `${treeRoot}${file.path}` });
   }
 
   // Scaffold only — no per-entity files, no enum module (those live in appTree above).
@@ -196,7 +202,9 @@ export function buildGeneratedFiles(
   // each per-view route export (RFC-2026-06-28 §5 route-assembly). What the scaffold wires
   // (HTTP client, dev proxy, API environment, optional dependencies) is read off the composed
   // tree, so it never carries a backend piece no emitted file uses.
-  generatedFiles.push(...generateAppStructure(domains, enums, config, views, deriveScaffoldNeeds(domains, appTree)));
+  if (!contractsOnly) {
+    generatedFiles.push(...generateAppStructure(domains, enums, config, views, deriveScaffoldNeeds(domains, appTree)));
+  }
 
   return generatedFiles;
 }
