@@ -54,6 +54,8 @@ public final class RequiredSubsystems {
     }
 
     /**
+     * Returns the subsystem names the default {@code Application.subsystems()} lists.
+     *
      * @param domains every entity this build emits code for
      * @return the subsystem names, in the fixed order {@code http, persistence, graph, flow,
      *         events, crypto} with the conditional ones this build does not use left out
@@ -77,6 +79,8 @@ public final class RequiredSubsystems {
     }
 
     /**
+     * Returns the selector string the default {@code Application.subsystems()} emits.
+     *
      * @param domains every entity this build emits code for
      * @return {@link #forDomains} joined with commas, as {@code Application.subsystems()} returns it
      */
