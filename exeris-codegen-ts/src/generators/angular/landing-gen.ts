@@ -160,7 +160,7 @@ ${properties}
 
     <div class="section">
         <h2 class="accent">> NEXT STEPS</h2>
-        <p>Built with Exeris Generator v1.3</p>
+        <p>Built with Exeris</p>
         <a [attr.href]="'mailto:' + contactEmail" class="btn">REQUEST SOURCE CODE</a>
     </div>
 </div>

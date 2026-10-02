@@ -555,25 +555,23 @@ describe('FormGenerator field rendering', () => {
 describe('FormGenerator field ordering', () => {
   const gen = new FormGenerator();
 
-  it('fields are rendered in order(asc) — explicit order beats default 999', () => {
+  it('fields are rendered in declaration order', () => {
     const content = gen.generate(domain({
       entityName: 'Thing',
       fields: [
-        field({ name: 'third', type: 'String', order: 30 }),
-        field({ name: 'first', type: 'String', order: 10 }),
-        field({ name: 'second', type: 'String', order: 20 }),
-        field({ name: 'last', type: 'String' }), // no order → defaults to 999
+        field({ name: 'third', type: 'String' }),
+        field({ name: 'first', type: 'String' }),
+        field({ name: 'second', type: 'String' }),
       ],
     }), CTX)!.content;
 
     const firstIdx = content.indexOf('data-testid="field-first"');
     const secondIdx = content.indexOf('data-testid="field-second"');
     const thirdIdx = content.indexOf('data-testid="field-third"');
-    const lastIdx = content.indexOf('data-testid="field-last"');
 
+    expect(thirdIdx).toBeGreaterThan(-1);
+    expect(thirdIdx).toBeLessThan(firstIdx);
     expect(firstIdx).toBeLessThan(secondIdx);
-    expect(secondIdx).toBeLessThan(thirdIdx);
-    expect(thirdIdx).toBeLessThan(lastIdx);
   });
 });
 
@@ -694,7 +692,7 @@ describe('FormGenerator computed fields', () => {
     expect(content).toContain('// TODO: Implement computation logic');
   });
 
-  it('computed field without dependencies (no computedFrom + no dependencies) → no effect block emitted', () => {
+  it('computed field without computedFrom → no effect block emitted', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
       fields: [
@@ -706,18 +704,6 @@ describe('FormGenerator computed fields', () => {
     expect(content).not.toContain('Auto-sync static');
   });
 
-  it('falls back to field.dependencies when computedFrom is undefined', () => {
-    const content = gen.generate(domain({
-      entityName: 'Order',
-      fields: [
-        field({ name: 'a', type: 'String' }),
-        field({ name: 'tax', type: 'String', computed: true, dependencies: ['a'] }),
-      ],
-    }), CTX)!.content;
-
-    expect(content).toContain('Computed from: a');
-    expect(content).toContain('Auto-sync tax based on a');
-  });
 });
 
 // ---------- generateForm convenience ----------

@@ -4,7 +4,7 @@ type: design-note
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-10-01
+last-verified: 2026-10-02
 ---
 
 # codegen-ts track — the emitted front consumes what the backend serves
@@ -107,8 +107,9 @@ the orchestrator over proxied metadata. Four states:
 - **`GAP`** — the Java side acts on it and the front owes a counterpart it does not emit yet.
 
 The last three carry a reason. A field added to the schema, or one a generator starts or stops
-reading, fails the build until it is classified. Today: 19 `READ`, 4 `JAVA_ONLY`, 14 `RESERVED`,
-0 `GAP`.
+reading, fails the build until it is classified. Today: 18 `READ`, 4 `JAVA_ONLY`, 14 `RESERVED`,
+1 `GAP` (`uiMetadata`: the entity-level `@UI` view flags no emitter honours — P17). One level
+down, `FIELD_CONTRACT_COVERAGE` has 1 `GAP` (`inUpdate`) and `UI_CONTRACT_COVERAGE` 6 (the view flags).
 
 **Proposed TS 1.0 criterion: no field in `GAP`** — no field the backend acts on is silently ignored
 by the front. Not yet in the ROADMAP's 1.0 list.

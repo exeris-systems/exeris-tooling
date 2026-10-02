@@ -120,8 +120,7 @@ class KernelErrorGeneratorTest {
     void universeEntityGetsTheSharedScopeMismatchTypeToo() {
         DomainMetadata metadata = DomainMetadata.builder("Species", "com.example.domain")
                 .dataScope(DataScope.UNIVERSE)
-                .systemFields(new SystemFieldsMetadata("id", "createdAt", "createdBy", "updatedAt",
-                        "updatedBy", "tenantId", "version", null, null, null, "worldId"))
+                .systemFields(SystemFieldsMetadata.builder().sharedScopeField("worldId").build())
                 .fields(List.of(FieldMetadata.builder("tenantId", "java.util.UUID").build(),
                         FieldMetadata.builder("worldId", "java.util.UUID").build()))
                 .build();
