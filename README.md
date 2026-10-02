@@ -253,6 +253,17 @@ mvn verify                               # pass 2: generate, compile, verify-cap
 Do not `clean` between the passes: it deletes the metadata pass 1 wrote. Once the generated tree under
 `src/main/generated/java` is committed, every build is a single pass.
 
+### Commit the generated tree once your own code depends on it
+
+Hand-written code that extends or imports a generated type, for example a class that `extends` a
+generated `*SagaFlow`, compiles only while that type exists. So once such code is in the tree,
+deleting `src/main/generated` and rebuilding is not a safe loop: the first pass compiles your
+sources before `exeris:generate` has anything to generate from, and fails on the missing types.
+Keep `src/main/generated/java` committed, and regenerate over it rather than from an empty tree.
+To own the code outright, run `mvn exeris:detach`. It moves the generated sources into
+`src/main/java` and leaves any file that already exists there untouched. Then remove the
+`exeris:generate` execution from your build.
+
 ### Generated tests
 
 Set `<exeris.tests>true</exeris.tests>` to emit tests for the generated code under
