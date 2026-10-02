@@ -1737,7 +1737,7 @@ step that appended a GitHub Packages token for the install can be removed.
 
 ### `exeris-codegen-ts`: the app imports the kit's component classes, and is Tailwind v4 only
 
-**Breaking (visual):** the regenerated app looks different in four ways. No emitted file is added
+**Breaking (visual):** the regenerated app looks different in five ways. No emitted file is added
 or removed, and no TypeScript surface changes.
 
 - **`src/styles.css`** imports `@exeris/ui-kit/styles`, the `.exeris-*` component classes, after
@@ -1771,11 +1771,19 @@ or removed, and no TypeScript surface changes.
   `focus:ring-2` and `accent-exeris-primary`, so its checked state takes the primary colour that its
   `text-exeris-primary` set only under the plugin. Colours, radius and shadow are unchanged. The
   list's search and filter controls already drew a 1px ring and are unchanged.
+- **Rich text is typeset.** A `RICH_TEXT` block of a `@View` has always carried
+  `prose dark:prose-invert`, but the app did not install `@tailwindcss/typography`, so those
+  classes styled nothing. An app whose templates use a `prose` class now lists
+  `"@tailwindcss/typography": "^0.5.20"` in `devDependencies`, beside `tailwindcss`, and
+  `styles.css` loads it with `@plugin "@tailwindcss/typography";` after the three imports. Headings,
+  paragraphs, lists and links inside the block take the plugin's typography, inverted under the
+  `.dark` class. An app with no such block gets neither line, and its output is unchanged.
 
 Nothing else in the scaffold was v3: there are no `@tailwind` directives, no `tailwind.config.js`,
 no `autoprefixer` or `postcss-import`, and `.postcssrc.json` wires only `@tailwindcss/postcss`.
-`styles.css` is replaced only with `--overwrite`; without it, add the
-`@import "@exeris/ui-kit/styles";` line after the theme import by hand. A template you edited keeps
+`package.json` and `styles.css` are replaced only with `--overwrite`; without it, add the
+`@import "@exeris/ui-kit/styles";` line after the theme import by hand, and, in an app with rich
+text, the typography dependency and its `@plugin` line after the imports. A template you edited keeps
 your classes until you regenerate it.
 
 ### Compile-classpath requirements are named in the emitted Javadoc (T30)

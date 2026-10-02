@@ -174,3 +174,30 @@ describe('the v3 sizes are kept under their v4 names', () => {
     expect(list).not.toMatch(/focus-visible:outline /);
   });
 });
+
+/**
+ * The typography plugin follows the templates: the view-only sample renders a RICH_TEXT block
+ * (`prose dark:prose-invert`), the full sample renders none.
+ */
+describe('the typography plugin is installed exactly when a template uses prose', () => {
+  const pkg = (files: typeof apps.full) => JSON.parse(files.find((f) => f.path === './package.json')!.content);
+  const styles = (files: typeof apps.full) => files.find((f) => f.path === 'src/styles.css')!.content;
+
+  it('an app with a RICH_TEXT block installs it beside tailwindcss and loads it after the imports', () => {
+    const files = apps['view-only'];
+    expect(files.some((f) => /class="[^"]*\bprose\b/.test(f.content))).toBe(true);
+    expect(pkg(files).devDependencies['@tailwindcss/typography']).toBe('^0.5.20');
+    expect(pkg(files).dependencies['@tailwindcss/typography']).toBeUndefined();
+    expect(styles(files)).toContain(
+      '@import "tailwindcss";\n@import "@exeris/ui-kit/theme";\n@import "@exeris/ui-kit/styles";\n@plugin "@tailwindcss/typography";\n',
+    );
+  });
+
+  it('an app without one carries neither the dependency nor the directive', () => {
+    const files = apps.full;
+    expect(files.some((f) => /\bprose\b/.test(f.content))).toBe(false);
+    expect(pkg(files).devDependencies['@tailwindcss/typography']).toBeUndefined();
+    expect(pkg(files).dependencies['@tailwindcss/typography']).toBeUndefined();
+    expect(styles(files)).not.toContain('@plugin');
+  });
+});
