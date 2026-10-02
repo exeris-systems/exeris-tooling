@@ -1619,6 +1619,50 @@ table's own (`DslMapper.routePlural`), and a qualified `targetEntity` resolves b
   (default: the entity alone, which links nothing). A caller of these helpers that wants links
   passes the full domain list; the orchestrator and the generator registry already do.
 
+### `exeris-codegen-ts`: the detail view has sections, related-record links, action buttons and typed dates
+
+`Compatibility impact: breaking (ADR-092)` for every emitted `<entity>-detail.component.ts`; TS only
+— no Java artefact, no OpenAPI path and no `DomainMetadata` key changes. Field-level `@UI`,
+`@UIGroup` and `@Tab` stay unread, so sections and tabs declared there do not appear; they arrive
+with the `@View` field facet.
+
+- **Sections.** The field table is a section headed **Details** (`aria-labelledby="details-title"`),
+  and the system panel's heading is an `<h2 id="system-title">` in place of an unlabelled `<h3>`.
+- **Related records.** For each `ONE_TO_MANY` relationship, in declaration order, whose target is
+  generated in the same app with a list page (`generateLists` on, `@UI(listView)` not `false`), a
+  **Related records** section links to the target's list (`data-testid="related-<relationship>"`).
+  The link opens the whole list: the generated list endpoint takes no filter, so the children of
+  one record cannot be fetched without loading every row, and the detail view does not try.
+  `MANY_TO_MANY` gets no link: the generated backend keeps no join table for it.
+- **Action buttons.** Each `@Action` that is not `streaming` and declares no `@ActionParam` gets a
+  button in the header (`data-testid="action-<kebab-name>"`) calling the service method of the same
+  name. A success reloads the record; a failure shows in its own alert (`data-testid="action-error"`).
+  An action with parameters is still reached only through the service.
+- **Display types.** The detail view resolves them by one rule set, documented in
+  `field-render.ts`:
+  - **enum** — an explicit `enumType`, else a type naming an enum the app's enum module declares
+    (qualified type by qualified name, simple type by simple name). A type merely named like an enum
+    (`…Status`, `…Type`, `…Role`, `…State`) and declared by no enum now renders as text; before, it
+    imported a symbol `types/enums.ts` did not export and the component did not compile. The
+    processor never writes `enumType`, so an enum whose name carries none of those suffixes
+    (`com.shop.Priority`) used to render its raw constant; it now renders its display name.
+  - **boolean** — `boolean`, `Boolean` and `java.lang.Boolean` alike (`Yes` / `No`); the qualified
+    wrapper used to render `true` / `false`.
+  - **date** — `LocalDate`, or `format: 'date'`: rendered with `DatePipe` `'mediumDate'`, which reads
+    `yyyy-MM-dd` as that calendar day. `new Date(...).toLocaleDateString()` read it as midnight UTC,
+    so west of Greenwich it showed the day before.
+  - **date-time** — `Instant`, `LocalDateTime`, `OffsetDateTime`, `ZonedDateTime`, or
+    `format: 'datetime'`: `DatePipe` `'medium'`. `OffsetDateTime` and `ZonedDateTime` used to be text.
+  - **number** — every type whose DTO type is `number` (`int`, `long`, `double`, `float` and their
+    wrappers). `BigDecimal` stays text.
+- **`generateDetail` takes an optional fourth argument**, the app's enums (default none). A caller
+  of the helper that wants enum display names passes them; the orchestrator does.
+
+**What to do.** Regenerate. Code or end-to-end tests that read the system panel's `<h3>`, a date
+rendered by `toLocaleDateString()` / `toLocaleString()`, or an enum-suffixed non-enum type's import
+must follow the new output. A link that should open only one record's children needs a filtering
+list endpoint on the server first.
+
 ### `exeris-codegen-ts`: failed requests show a message per status, and delete no longer uses `alert()`
 
 The generated handler answers a failed request with a status and no body: `400` for malformed or

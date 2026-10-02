@@ -45,16 +45,17 @@ describe('resolveFieldRender — per type', () => {
     { type: 'String', cell: 'text', display: 'text', inputType: 'text', control: 'input', value: 'text' },
     { type: 'java.lang.String', cell: 'text', display: 'text', inputType: 'text', control: 'input', value: 'text' },
     // The form maps only the qualified wrapper to a number input; the primitive is still coerced.
-    { type: 'long', cell: 'text', display: 'text', inputType: 'text', control: 'input', value: 'number' },
+    // The detail view shows every type whose DTO type is a number as a number.
+    { type: 'long', cell: 'text', display: 'number', inputType: 'text', control: 'input', value: 'number' },
     { type: 'java.lang.Long', cell: 'text', display: 'number', inputType: 'number', control: 'input', value: 'number' },
-    { type: 'int', cell: 'text', display: 'text', inputType: 'text', control: 'input', value: 'number' },
+    { type: 'int', cell: 'text', display: 'number', inputType: 'text', control: 'input', value: 'number' },
     { type: 'java.lang.Integer', cell: 'text', display: 'number', inputType: 'number', control: 'input', value: 'number' },
     // BigDecimal is a string DTO for precision: a text input, never coerced.
     { type: 'java.math.BigDecimal', cell: 'text', display: 'text', inputType: 'text', control: 'input', value: 'text' },
     // The list badges only the Boolean wrapper's simple name.
     { type: 'boolean', cell: 'text', display: 'boolean', inputType: 'checkbox', control: 'checkbox', value: 'boolean' },
     { type: 'Boolean', cell: 'boolean', display: 'boolean', inputType: 'checkbox', control: 'checkbox', value: 'boolean' },
-    { type: 'java.lang.Boolean', cell: 'text', display: 'text', inputType: 'checkbox', control: 'checkbox', value: 'boolean' },
+    { type: 'java.lang.Boolean', cell: 'text', display: 'boolean', inputType: 'checkbox', control: 'checkbox', value: 'boolean' },
     { type: 'java.util.UUID', cell: 'text', display: 'text', inputType: 'text', control: 'input', value: 'text' },
     { type: 'java.time.LocalDate', cell: 'date', display: 'date', inputType: 'date', control: 'input', value: 'text' },
     { type: 'java.time.Instant', cell: 'datetime', display: 'datetime', inputType: 'datetime-local', control: 'input', value: 'text' },
@@ -103,10 +104,10 @@ describe('resolveFieldRender — facets, enums and links', () => {
   });
 
   it('without enumType the detail view and the form detect an enum by different rules', () => {
-    // Detail: a capitalised simple name ending in Status/Type/Role/State. Form: any qualified
-    // non-JDK type that names no entity or DTO.
+    // Detail: the type names an enum the enum module declares. Form: any qualified non-JDK type
+    // that names no entity or DTO.
     const bare = render({ type: 'OrderStatus' });
-    expect(bare.detail.enumType).toBe('OrderStatus');
+    expect(bare.detail).toMatchObject({ display: 'text', enumType: undefined });
     expect(bare.form.enumType).toBeUndefined();
     const address = render({ type: 'com.shop.Address' });
     expect(address.detail.enumType).toBeUndefined();
@@ -130,6 +131,54 @@ describe('resolveFieldRender — facets, enums and links', () => {
     expect(render({ type: 'Boolean', filterable: true }).list.filter).toBe('boolean-select');
     expect(render({ type: 'boolean', filterable: true }).list.filter).toBeUndefined();
     expect(render({ type: 'Boolean' }).list.filter).toBeUndefined();
+  });
+});
+
+describe('resolveFieldRender — the detail view\'s display rules', () => {
+  const ENUMS = [{ name: 'OrderStatus', qualifiedName: 'com.shop.OrderStatus' }];
+
+  /** Resolves one field against an entity whose app declares `ENUMS`. */
+  function detailOf(field: Record<string, unknown>) {
+    const d = domain({ fields: [{ name: 'id', type: 'java.util.UUID' }, { name: 'value', ...field }] });
+    return resolveFieldRenders(d, fieldRenderContext(d, [d], true, ENUMS)).find((r) => r.name === 'value')!.detail;
+  }
+
+  it('a type naming a declared enum is an enum: qualified by its qualified name, simple by its name', () => {
+    expect(detailOf({ type: 'com.shop.OrderStatus' })).toMatchObject({ display: 'enum', enumType: 'OrderStatus' });
+    expect(detailOf({ type: 'OrderStatus' })).toMatchObject({ display: 'enum', enumType: 'OrderStatus' });
+  });
+
+  it('a type named like an enum but declared by no enum is not one', () => {
+    expect(detailOf({ type: 'com.other.OrderStatus' })).toMatchObject({ display: 'text', enumType: undefined });
+    expect(detailOf({ type: 'PaymentType' })).toMatchObject({ display: 'text', enumType: undefined });
+  });
+
+  it('an explicit enumType wins over the declared enums', () => {
+    expect(detailOf({ type: 'String', enumType: 'com.shop.Priority' })).toMatchObject({ display: 'enum', enumType: 'Priority' });
+  });
+
+  it.each([
+    ['boolean', 'boolean'],
+    ['Boolean', 'boolean'],
+    ['java.lang.Boolean', 'boolean'],
+    ['LocalDate', 'date'],
+    ['java.time.LocalDate', 'date'],
+    ['Instant', 'datetime'],
+    ['java.time.LocalDateTime', 'datetime'],
+    ['java.time.OffsetDateTime', 'datetime'],
+    ['java.time.ZonedDateTime', 'datetime'],
+    ['double', 'number'],
+    ['java.lang.Double', 'number'],
+    ['java.math.BigDecimal', 'text'],
+    ['java.util.UUID', 'text'],
+  ])('%s displays as %s', (type, display) => {
+    expect(detailOf({ type }).display).toBe(display);
+  });
+
+  it('an explicit date or datetime format decides before the type', () => {
+    expect(detailOf({ type: 'String', format: 'date' }).display).toBe('date');
+    expect(detailOf({ type: 'java.time.Instant', format: 'date' }).display).toBe('date');
+    expect(detailOf({ type: 'String', format: 'datetime' }).display).toBe('datetime');
   });
 });
 
