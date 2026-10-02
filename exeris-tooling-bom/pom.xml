@@ -103,7 +103,6 @@
         <assertj.version>3.27.7</assertj.version>
         <compile-testing.version>0.21.0</compile-testing.version>
         <json-schema-validator.version>1.5.4</json-schema-validator.version>
-        <approvaltests.version>24.16.0</approvaltests.version>
         <!-- The JDBC driver the kernel testkit's persistence needs when the e2e suite boots the
              EMITTED Application with the events/flow subsystems: both declare
              dependsOn("persistence"), and the testkit deliberately ships no driver. Same
@@ -285,12 +284,6 @@
                 <groupId>com.networknt</groupId>
                 <artifactId>json-schema-validator</artifactId>
                 <version>${json-schema-validator.version}</version>
-                <scope>test</scope>
-            </dependency>
-            <dependency>
-                <groupId>com.approvaltests</groupId>
-                <artifactId>approvaltests</artifactId>
-                <version>${approvaltests.version}</version>
                 <scope>test</scope>
             </dependency>
             <dependency>
