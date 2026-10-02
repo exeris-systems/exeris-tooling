@@ -11,7 +11,7 @@ import type { CodeGenerator, GeneratedFile, GeneratorContext } from '../../core/
 import type { BackendType } from '../../core/backend-strategy.js';
 import { outPath } from '../../core/paths.js';
 import { updateVersionField } from '../api/type-gen.js';
-import { fieldRenderContext, resolveFieldRenders, toTitleCase } from './field-render.js';
+import { fieldRenderContext, resolveFieldRenders, toTitleCase, type FieldRenderModel } from './field-render.js';
 import { tsSingleQuoted } from './ts-literal.js';
 import { entityExitRoute, entityViews, hasFormPage } from './entity-views.js';
 
@@ -86,11 +86,12 @@ export class FormGenerator implements CodeGenerator {
     // A routed form returns to the saved instance's detail page; without one, it leaves the entity.
     const views = entityViews(domain);
     const exitRoute = entityExitRoute(domain, views);
+    const formModelName = `${entityName}FormModel`;
+    const validation = formValidation(createFields);
 
     lines.push("import { Component, ChangeDetectionStrategy, input, output, signal, computed, effect, inject } from '@angular/core';");
     lines.push("import { rxResource } from '@angular/core/rxjs-interop';");
-    lines.push("import { CommonModule } from '@angular/common';");
-    lines.push("import { FormsModule, ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';");
+    lines.push(`import { ${signalFormsImports(validation).join(', ')} } from '@angular/forms/signals';`);
     lines.push("import { ActivatedRoute, Router } from '@angular/router';");
     lines.push(`import { ${modelName}, ${modelName}Create, ${modelName}Update, ${entityName}Service } from '../services/${kebabName}.service';`);
     lines.push("import { httpErrorMessage } from '../core/http-error';");
@@ -109,10 +110,17 @@ export class FormGenerator implements CodeGenerator {
     }
 
     lines.push('');
+    // The value the form edits: one property per control, typed as the control holds it.
+    lines.push(`interface ${formModelName} {`);
+    for (const f of createFields) {
+      lines.push(`  ${f.name}: ${f.form.modelType};`);
+    }
+    lines.push('}');
+    lines.push('');
     lines.push('@Component({');
     lines.push(`  selector: 'app-${kebabName}-form',`);
     lines.push('  standalone: true,');
-    lines.push('  imports: [CommonModule, FormsModule, ReactiveFormsModule],');
+    lines.push('  imports: [FormField],');
     lines.push('  changeDetection: ChangeDetectionStrategy.OnPush,');
     lines.push('  template: `');
     // Loading and error of the by-id load mirror the detail view's markup.
@@ -126,19 +134,19 @@ export class FormGenerator implements CodeGenerator {
     lines.push('        <button type="button" (click)="reload()" class="mt-4 text-sm font-medium text-red-600">Try again</button>');
     lines.push('      </div>');
     lines.push('    }');
-    lines.push('    <form [formGroup]="form" (ngSubmit)="onSubmit()" class="space-y-6">');
+    // The form validates itself, so the browser's own validation of the bound attributes is off.
+    lines.push('    <form (submit)="onSubmit($event)" novalidate class="space-y-6">');
 
     for (const f of createFields) {
       const { label, control, inputType, inputMode, enumType: enumTypeName } = f.form;
       const requiredMark = f.form.required ? '<span class="text-red-500" aria-hidden="true">*</span>' : '';
-      const disabledBinding = f.form.readOnly ? ' [disabled]="true"' : '';
-      const readonlyBinding = f.form.readOnly ? ' [readonly]="true"' : '';
+      const binding = `[formField]="form.${f.name}"`;
 
       lines.push('      <div class="form-group">');
 
       if (control === 'select') {
         lines.push(`        <label for="${f.name}" class="block text-sm font-medium text-gray-700 dark:text-gray-300">${label} ${requiredMark}</label>`);
-        lines.push(`        <select id="${f.name}" data-testid="field-${f.name}" formControlName="${f.name}" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-exeris-primary focus:ring-exeris-primary dark:bg-gray-800 dark:border-gray-600 dark:text-white sm:text-sm"${disabledBinding}>`);
+        lines.push(`        <select id="${f.name}" data-testid="field-${f.name}" ${binding} class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-exeris-primary focus:ring-exeris-primary dark:bg-gray-800 dark:border-gray-600 dark:text-white sm:text-sm">`);
         lines.push('          <option value="">Select...</option>');
         lines.push(`          @for (value of ${enumTypeName}Values; track value) {`);
         lines.push(`            <option [value]="value">{{ ${enumTypeName}DisplayNames[value] }}</option>`);
@@ -146,33 +154,37 @@ export class FormGenerator implements CodeGenerator {
         lines.push('        </select>');
       } else if (control === 'checkbox') {
         lines.push('        <div class="flex items-center gap-2">');
-        lines.push(`          <input id="${f.name}" data-testid="field-${f.name}" type="checkbox" formControlName="${f.name}" class="h-4 w-4 rounded border-gray-300 text-exeris-primary focus:ring-exeris-primary"${disabledBinding}>`);
+        lines.push(`          <input id="${f.name}" data-testid="field-${f.name}" type="checkbox" ${binding} class="h-4 w-4 rounded border-gray-300 text-exeris-primary focus:ring-exeris-primary">`);
         lines.push(`          <label for="${f.name}" class="text-sm text-gray-700 dark:text-gray-300">${label} ${requiredMark}</label>`);
         lines.push('        </div>');
       } else {
         const inputExtra = inputMode ? ` inputmode="${inputMode}"` : '';
         lines.push(`        <label for="${f.name}" class="block text-sm font-medium text-gray-700 dark:text-gray-300">${label} ${requiredMark}</label>`);
-        lines.push(`        <input id="${f.name}" data-testid="field-${f.name}" type="${inputType}" formControlName="${f.name}" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-exeris-primary focus:ring-exeris-primary dark:bg-gray-800 dark:border-gray-600 dark:text-white sm:text-sm"${disabledBinding}${inputExtra}${readonlyBinding}>`);
+        lines.push(`        <input id="${f.name}" data-testid="field-${f.name}" type="${inputType}" ${binding} class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-exeris-primary focus:ring-exeris-primary dark:bg-gray-800 dark:border-gray-600 dark:text-white sm:text-sm"${inputExtra}>`);
       }
-      lines.push(`        <p class="mt-1 text-xs text-gray-500" *ngIf="form.get('${f.name}')?.invalid && form.get('${f.name}')?.touched" data-testid="error-${f.name}">`);
-      lines.push(`          @if (form.get('${f.name}')?.errors?.['required']) { <span>${label} is required.</span> }`);
-      lines.push(`          @if (form.get('${f.name}')?.errors?.['pattern']) { <span>Invalid format.</span> }`);
-      lines.push(`          @if (form.get('${f.name}')?.errors?.['minlength']) { <span>Too short.</span> }`);
-      lines.push(`          @if (form.get('${f.name}')?.errors?.['maxlength']) { <span>Too long.</span> }`);
-      lines.push(`          @if (form.get('${f.name}')?.errors?.['min']) { <span>Too low.</span> }`);
-      lines.push(`          @if (form.get('${f.name}')?.errors?.['max']) { <span>Too high.</span> }`);
-      lines.push('        </p>');
+      const state = `form.${f.name}()`;
+      lines.push(`        @if (${state}.invalid() && ${state}.touched()) {`);
+      lines.push(`          <p class="mt-1 text-xs text-gray-500" data-testid="error-${f.name}">`);
+      lines.push(`            @if (${state}.getError('required')) { <span>${label} is required.</span> }`);
+      // A value the native control cannot parse (a partial date, a non-number) reads as a format error.
+      lines.push(`            @if (${state}.getError('pattern') || ${state}.getError('parse')) { <span>Invalid format.</span> }`);
+      lines.push(`            @if (${state}.getError('minLength')) { <span>Too short.</span> }`);
+      lines.push(`            @if (${state}.getError('maxLength')) { <span>Too long.</span> }`);
+      lines.push(`            @if (${state}.getError('min')) { <span>Too low.</span> }`);
+      lines.push(`            @if (${state}.getError('max')) { <span>Too high.</span> }`);
+      lines.push('          </p>');
+      lines.push('        }');
       lines.push('      </div>');
     }
 
-    // Render computed fields (readonly, displayed for info)
+    // Computed fields are shown for information: read-only, and not part of the form model.
     for (const f of computedFields) {
       const label = f.form.label;
       const dependsOn = f.form.computedFrom.join(', ');
 
       lines.push('      <div class="form-group">');
       lines.push(`        <label for="${f.name}" class="block text-sm font-medium text-gray-700 dark:text-gray-300">${label} <span class="text-xs text-gray-500">(Auto)</span></label>`);
-      lines.push(`        <input id="${f.name}" data-testid="field-${f.name}" type="${f.form.inputType}" formControlName="${f.name}" readonly class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-exeris-primary focus:ring-exeris-primary dark:bg-gray-800 dark:border-gray-600 dark:text-white sm:text-sm bg-gray-100 dark:bg-gray-700 cursor-not-allowed opacity-75">`);
+      lines.push(`        <input id="${f.name}" data-testid="field-${f.name}" type="${f.form.inputType}" [value]="${computedSignalName(f.name)}() ?? ''" readonly class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-exeris-primary focus:ring-exeris-primary dark:bg-gray-800 dark:border-gray-600 dark:text-white sm:text-sm bg-gray-100 dark:bg-gray-700 cursor-not-allowed opacity-75">`);
       if (dependsOn) {
         lines.push(`        <p class="mt-1 text-xs text-gray-500">Computed from: ${dependsOn}</p>`);
       }
@@ -194,7 +206,7 @@ export class FormGenerator implements CodeGenerator {
     }
     lines.push('      <div class="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">');
     lines.push('        <button type="button" (click)="onCancel()" data-testid="cancel-button" class="rounded-md bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm border border-gray-300 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600">Cancel</button>');
-    lines.push('        <button type="submit" [disabled]="form.invalid || saving() || (editMode() && !current())" data-testid="submit-button" class="rounded-md bg-exeris-primary px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-exeris-primary-hover disabled:opacity-50">');
+    lines.push('        <button type="submit" [disabled]="form().invalid() || saving() || (editMode() && !current())" data-testid="submit-button" class="rounded-md bg-exeris-primary px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-exeris-primary-hover disabled:opacity-50">');
     lines.push(`          @if (saving()) { Saving... } @else { {{ editMode() ? 'Update' : 'Create' }} ${entityName} }`);
     lines.push('        </button>');
     lines.push('      </div>');
@@ -203,7 +215,6 @@ export class FormGenerator implements CodeGenerator {
     lines.push('})');
 
     lines.push(`export class ${entityName}FormComponent {`);
-    lines.push('  private readonly fb = inject(FormBuilder);');
     lines.push(`  private readonly service = inject(${entityName}Service);`);
     lines.push('  private readonly router = inject(Router);');
     // The form is a page when its activated route's component is this class; embedded in a
@@ -251,46 +262,46 @@ export class FormGenerator implements CodeGenerator {
       lines.push(`  private readonly loadedVersion = signal<${versionType}>(null);`);
     }
     lines.push('');
-    lines.push('  readonly form = this.fb.group({');
-    for (const { name, form, field: f } of createFields) {
-      const validators: string[] = [];
-      if (f.required) validators.push('Validators.required');
-      if (f.minLength) validators.push(`Validators.minLength(${f.minLength})`);
-      if (f.maxLength) validators.push(`Validators.maxLength(${f.maxLength})`);
-      if (f.pattern) validators.push(`Validators.pattern(/${f.pattern}/)`);
-      if (f.min !== undefined) validators.push(`Validators.min(${f.min})`);
-      if (f.max !== undefined) validators.push(`Validators.max(${f.max})`);
-      const validatorsArray = validators.length ? `[${validators.join(', ')}]` : '[]';
-      lines.push(`    ${name}: [${form.initialValue}, ${validatorsArray}],`);
+    lines.push(`  private readonly formModel = signal<${formModelName}>({`);
+    for (const f of createFields) {
+      lines.push(`    ${f.name}: ${f.form.initialValue},`);
     }
     lines.push('  });');
-    lines.push('');
-    lines.push('  constructor() {');
-
-    // Generate effects for computed fields
-    if (computedFields.length > 0) {
-      for (const cf of computedFields) {
-        const deps = cf.form.computedFrom;
-        if (deps.length > 0) {
-          lines.push(`    // Auto-sync ${cf.name} based on ${deps.join(', ')}`);
-          lines.push('    effect(() => {');
-          lines.push('      const values = {');
-          for (const dep of deps) {
-            lines.push(`        ${dep}: this.form.get('${dep}')?.value,`);
-          }
-          lines.push('      };');
-          lines.push(`      const computed${toTitleCase(cf.name)} = this.compute${toTitleCase(cf.name)}(values);`);
-          lines.push(`      this.form.get('${cf.name}')?.setValue(computed${toTitleCase(cf.name)}, { emitEvent: false });`);
-          lines.push('    });');
-          lines.push('');
-        }
+    if (validation.rules.length > 0) {
+      lines.push('  readonly form = form(this.formModel, (path) => {');
+      for (const rule of validation.rules) {
+        lines.push(`    ${rule}`);
       }
+      lines.push('  });');
+    } else {
+      lines.push('  readonly form = form(this.formModel);');
     }
 
+    // A computed field is derived from the values it depends on, read from the form model when
+    // the dependency is a control and from the loaded entity otherwise.
+    const controlNames = new Set(createFields.map((f) => f.name));
+    const declaredNames = new Set((domain.fields ?? []).map((f) => f.name));
+    for (const cf of computedFields) {
+      const deps = cf.form.computedFrom;
+      const values = deps.map((dep) => {
+        const source = controlNames.has(dep)
+          ? `this.formModel().${dep}`
+          : declaredNames.has(dep) ? `this.current()?.${dep}` : 'undefined';
+        return `${dep}: ${source}`;
+      });
+      lines.push('');
+      if (deps.length > 0) {
+        lines.push(`  // Auto-sync ${cf.name} based on ${deps.join(', ')}`);
+      }
+      const argument = values.length > 0 ? `{ ${values.join(', ')} }` : '{}';
+      lines.push(`  readonly ${computedSignalName(cf.name)} = computed(() => this.${computeMethodName(cf.name)}(${argument}));`);
+    }
+    lines.push('');
+    lines.push('  constructor() {');
     lines.push('    effect(() => {');
     lines.push('      const entity = this.current();');
     lines.push('      if (entity && this.editMode()) {');
-    lines.push('        this.form.patchValue(entity as any);');
+    lines.push('        this.formModel.set(this.toFormModel(entity));');
     if (version) {
       lines.push(`        this.loadedVersion.set(${readVersion('entity')});`);
     }
@@ -298,62 +309,66 @@ export class FormGenerator implements CodeGenerator {
     lines.push('    });');
     lines.push('  }');
     lines.push('');
-    lines.push('  onSubmit(): void {');
-    lines.push('    if (this.form.invalid) {');
-    lines.push('      this.form.markAllAsTouched();');
-    lines.push('      return;');
-    lines.push('    }');
+    // A loaded value the control cannot show (null, or absent) becomes the control's empty value.
+    lines.push(`  private toFormModel(entity: ${modelName}): ${formModelName} {`);
+    lines.push('    return {');
+    for (const f of createFields) {
+      lines.push(`      ${f.name}: entity.${f.name} ?? ${f.form.emptyValue},`);
+    }
+    lines.push('    };');
+    lines.push('  }');
+    lines.push('');
+    // submit() marks every field touched and runs the action only when the form is valid.
+    lines.push('  onSubmit(event: Event): void {');
+    lines.push('    event.preventDefault();');
+    lines.push('    void submit(this.form, () => this.save());');
+    lines.push('  }');
+    lines.push('');
+    // The generated server names no field in a failed response, so a save resolves to no field
+    // error: every failure is reported at form level.
+    lines.push('  private save(): Promise<undefined> {');
     // Edit mode without a loaded entity would overwrite a row it never read.
     lines.push('    const current = this.current();');
     lines.push('    if (this.editMode() && !current) {');
-    lines.push('      return;');
+    lines.push('      return Promise.resolve(undefined);');
     lines.push('    }');
     lines.push('');
     lines.push('    this.saving.set(true);');
     lines.push('    this.error.set(null);');
     if (version) lines.push('    this.conflict.set(false);');
     lines.push('');
-    // A numeric control is seeded '' and getRawValue() is statically string-typed, so it is
-    // coerced on submit to match the DTO's number type.
-    const numericCreateFields = createFields.filter((f) => f.form.value === 'number');
-    if (numericCreateFields.length > 0) {
-      // Coerce string-typed numeric controls to numbers so the payload matches
-      // the *Create/*Update DTO type.
-      lines.push('    const raw = this.form.getRawValue();');
-      lines.push('    const data = {');
-      lines.push('      ...raw,');
-      for (const f of numericCreateFields) {
-        lines.push(`      ${f.name}: raw.${f.name} === null || raw.${f.name} === '' ? null : Number(raw.${f.name}),`);
-      }
-      lines.push('    };');
-    } else {
-      lines.push('    const data = this.form.getRawValue();');
-    }
+    // A number control holds `number | null`, the DTO's own type, so the model is the payload.
+    lines.push('    const data = this.formModel();');
     const updatePayload = version
       ? `{ ...data, ${version.name}: this.loadedVersion() } as ${modelName}Update`
       : `data as ${modelName}Update`;
     lines.push(`    const request$ = this.editMode() && current ? this.service.update(String(current.${idField}), ${updatePayload}) : this.service.create(data as ${modelName}Create);`);
     lines.push('');
-    lines.push('    request$.subscribe({');
-    lines.push('      next: (result) => {');
-    lines.push('        this.saving.set(false);');
-    lines.push('        this.saved.emit(result);');
-    lines.push('        if (this.routed) {');
+    lines.push('    return new Promise((resolve) => {');
+    lines.push('      request$.subscribe({');
+    lines.push('        next: (result) => {');
+    lines.push('          this.saving.set(false);');
+    lines.push('          resolve(undefined);');
+    lines.push('          this.saved.emit(result);');
+    lines.push('          if (this.routed) {');
     lines.push(views.detail
-      ? `          void this.router.navigate(['/${plural}', String(result.${idField})]);`
-      : `          void this.router.navigate(['${exitRoute}']);`);
-    lines.push('        }');
-    lines.push('      },');
-    lines.push('      error: (err) => {');
-    lines.push('        this.saving.set(false);');
+      ? `            void this.router.navigate(['/${plural}', String(result.${idField})]);`
+      : `            void this.router.navigate(['${exitRoute}']);`);
+    lines.push('          }');
+    lines.push('        },');
+    lines.push('        error: (err) => {');
+    lines.push('          this.saving.set(false);');
+    lines.push('          resolve(undefined);');
     if (version) {
-      lines.push("        if (this.editMode() && err?.status === 409) {");
-      lines.push('          this.conflict.set(true);');
-      lines.push('          return;');
-      lines.push('        }');
+      // A conflict is about the whole row, never one field.
+      lines.push("          if (this.editMode() && err?.status === 409) {");
+      lines.push('            this.conflict.set(true);');
+      lines.push('            return;');
+      lines.push('          }');
     }
-    lines.push(`        this.error.set(httpErrorMessage(err, { entity: '${noun}', action: 'save' }));`);
-    lines.push('      },');
+    lines.push(`          this.error.set(httpErrorMessage(err, { entity: '${noun}', action: 'save' }));`);
+    lines.push('        },');
+    lines.push('      });');
     lines.push('    });');
     lines.push('  }');
     lines.push('');
@@ -387,7 +402,7 @@ export class FormGenerator implements CodeGenerator {
       lines.push('    if (!current) return;');
       lines.push(`    this.service.findById(String(current.${idField})).subscribe({`);
       lines.push('      next: (fresh) => {');
-      lines.push('        this.form.reset(fresh as any);');
+      lines.push('        this.form().reset(this.toFormModel(fresh));');
       lines.push(`        this.loadedVersion.set(${readVersion('fresh')});`);
       lines.push('      },');
       lines.push(`      error: (err) => this.error.set(httpErrorMessage(err, { entity: '${noun}', action: 'load' })),`);
@@ -398,9 +413,8 @@ export class FormGenerator implements CodeGenerator {
     // Generate compute methods for computed fields
     for (const cf of computedFields) {
       const deps = cf.form.computedFrom;
-      const methodName = `compute${toTitleCase(cf.name)}`;
       lines.push('');
-      lines.push(`  private ${methodName}(values: { ${deps.map(d => `${d}: any`).join(', ')} }): any {`);
+      lines.push(`  private ${computeMethodName(cf.name)}(values: { ${deps.map(d => `${d}: any`).join(', ')} }): any {`);
       lines.push('    // TODO: Implement computation logic');
       lines.push(`    // Depends on: ${deps.join(', ')}`);
       lines.push('    return null;');
@@ -421,3 +435,78 @@ export function generateForm(metadata: DomainMetadata, config: GeneratorConfig):
 
 
 
+
+/** The validation rules of a form schema, and the `@angular/forms/signals` functions they call. */
+interface FormValidation {
+  readonly rules: string[];
+  readonly used: ReadonlySet<string>;
+}
+
+/**
+ * The schema rules `FieldMetadata` declares, field by field in declaration order, each field's
+ * rules in the order required, minLength, maxLength, pattern, min, max.
+ *
+ * Each rule enforces what the Reactive validator of the same name enforced:
+ * - `required` is not applied to a checkbox. Signal Forms counts `false` as empty, which would
+ *   force the box to be ticked; a required boolean only has to hold a boolean, which it always does.
+ * - length and pattern apply to text controls only: a number control holds a number, and a
+ *   length or pattern constraint is declared on character sequences.
+ * - min and max bound a number control directly. A text control holding a decimal string is bounded
+ *   by its parsed value, as `Validators.min` / `Validators.max` did; a blank or unparseable value
+ *   passes, as it did there.
+ */
+function formValidation(fields: readonly FieldRenderModel[]): FormValidation {
+  const rules: string[] = [];
+  const used = new Set<string>();
+  const add = (rule: string, ...fns: string[]): void => {
+    rules.push(rule);
+    for (const fn of fns) used.add(fn);
+  };
+  for (const { name, form, field: f } of fields) {
+    const path = `path.${name}`;
+    if (f.required && form.value !== 'boolean') add(`required(${path});`, 'required');
+    if (form.value === 'text') {
+      if (f.minLength) add(`minLength(${path}, ${f.minLength});`, 'minLength');
+      if (f.maxLength) add(`maxLength(${path}, ${f.maxLength});`, 'maxLength');
+      if (f.pattern) add(`pattern(${path}, /${f.pattern}/);`, 'pattern');
+      if (f.min !== undefined) {
+        add(`validate(${path}, ({ value }) => (parseFloat(value()) < ${f.min} ? minError(${f.min}) : undefined));`, 'validate', 'minError');
+      }
+      if (f.max !== undefined) {
+        add(`validate(${path}, ({ value }) => (parseFloat(value()) > ${f.max} ? maxError(${f.max}) : undefined));`, 'validate', 'maxError');
+      }
+    } else if (form.value === 'number') {
+      if (f.min !== undefined) add(`min(${path}, ${f.min});`, 'min');
+      if (f.max !== undefined) add(`max(${path}, ${f.max});`, 'max');
+    }
+  }
+  return { rules, used };
+}
+
+/**
+ * The `@angular/forms/signals` imports of a form, in a fixed order. Every one is stable in the
+ * Angular major the emitted `package.json` pins (ADR-093): no experimental or developer-preview
+ * symbol is emitted.
+ */
+const SIGNAL_FORMS_IMPORT_ORDER = [
+  'form', 'FormField', 'submit',
+  'required', 'minLength', 'maxLength', 'pattern', 'min', 'max', 'validate', 'minError', 'maxError',
+] as const;
+
+function signalFormsImports(validation: FormValidation): string[] {
+  const always = new Set(['form', 'FormField', 'submit']);
+  return SIGNAL_FORMS_IMPORT_ORDER.filter((name) => always.has(name) || validation.used.has(name));
+}
+
+/** `fullName` to `FullName`, the suffix of a computed field's member names. */
+function memberSuffix(name: string): string {
+  return toTitleCase(name).replace(/ /g, '');
+}
+
+function computedSignalName(name: string): string {
+  return `computed${memberSuffix(name)}`;
+}
+
+function computeMethodName(name: string): string {
+  return `compute${memberSuffix(name)}`;
+}
