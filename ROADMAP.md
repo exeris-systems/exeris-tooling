@@ -599,12 +599,13 @@ growing toward the surface. Founder call; this section exists so it is taken aga
 
 ### Every generated app boots three subsystems it may never use
 
-- [ ] **`SUBSYSTEMS` is a hardcoded six-name string and half of it is conditional.**
+- [x] **`SUBSYSTEMS` is a hardcoded six-name string and half of it is conditional.** *Consumed in
+      #261: `Application.subsystems()` is derived from `DomainMetadata` (`RequiredSubsystems`), and
+      `RequiredDrivers` shares its predicates. What follows is the measurement that motivated it.*
       `KernelApplicationGenerator` emits `subsystems()` returning
       `"http,persistence,graph,flow,events,crypto"` unconditionally. `graph` is needed only by a
       domain declaring `@Graph`, `flow` by one declaring `@Saga`, `events` by one declaring
-      `@DomainEvent` — three facts held in `DomainMetadata`, at the call site, in the generator that
-      already derives `hasStreamRoutes` from the same list for the T49 guard.
+      `@DomainEvent` — three facts held in `DomainMetadata`, at the call site.
 
       **A cost, not a boot failure, and the cost is specific.** `CommunityFlowSubsystem.initialize()`
       builds a `FlowEngineConfig`, runs `FlowBootstrap.loadWithProvider(...)` for a provider and an
@@ -2393,10 +2394,9 @@ Each now has the status the code settles, and every other mention in this file a
       2. **Population.** `FieldMetadata.blob` exists as a carrier and nothing sets it.
       3. **Emission.** Zero references to `BlobMetadata` in `exeris-codegen-java` or
          `exeris-codegen-ts` — no generator would know what to do with it if it were filled.
-      4. **Boot.** `KernelApplicationGenerator.SUBSYSTEMS` is the literal
-         `"http,persistence,graph,flow,events,crypto"` — six names, unconditional, no `storage`.
-         See the entry above: the list must become domain-derived *before* it grows a seventh name,
-         and the reason is not hypothetical.
+      4. **Boot.** `Application.subsystems()` is domain-derived since #261 (`RequiredSubsystems`),
+         and it has no `storage` name. A `@Blob` transcription adds `storage` as a fourth
+         conditional name, decided by the same metadata.
 
       The ask moved owner — kernel → this repo — and it is a slice rather than a line. Two rules that
       follow from the shape of this list, and matter more than the count: an annotation is "covered"
@@ -3334,7 +3334,7 @@ needed.)*
       ADR-078 records the coordinate as a dated amendment.
 - [ ] The EV1-stream per-action driver: `KernelActionStreamHandlerGenerator` still emits
       `keepAliveScaffold(...)`, and nothing gates it since T23 slice B1.
-- [ ] `SUBSYSTEMS` derived from `DomainMetadata` ("Every generated app boots three subsystems it may
+- [x] `SUBSYSTEMS` derived from `DomainMetadata` (#261; "Every generated app boots three subsystems it may
       never use").
 - [ ] Measure whether the emitted error mapping should read `ExerisKernelException.faultOrigin()`
       rather than re-derive CALLER vs SYSTEM (0.12 readiness, below).

@@ -230,15 +230,17 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      * that has nothing else it could emit. {@code @SagaStep.waitForAll} and {@code .failFast}
      * share the cause and are additionally uncarried. When the kernel grows the contract, the
      * generators consume all three — no entry to delete, because none was ever added.
+     * {@code @SagaStep.timeout} is the same shape: extracted, read by no emitter, and the kernel's
+     * {@code FlowStepDescriptor} has no per-step deadline to compile it into — only the flow as a
+     * whole carries a timeout, which {@code @Saga.timeout} reaches.
      *
-     * <p>Today the point is moot twice over, and the second reason is the sharper one: an entry
-     * for any of them would fire <em>nothing</em>. {@link #warnInertAttributes} is called for
-     * {@code ExerisDomain}, {@code Field}, {@code Action} and {@code ActionParam} and for nothing
-     * else, so {@code Saga} and {@code SagaStep} have no call site — condition (3) above, the
-     * unreachable-entry trap, exactly as the standing {@code T11-strict} marker on
-     * {@code DomainEvent} records for its own annotation. Adding the two missing call sites is
-     * worth doing on its own merits; it is not a prerequisite for a decision that is to add no
-     * entry.
+     * <p>{@code Saga} and {@code SagaStep} do have call sites, on the one extraction path both a
+     * standalone {@code @Saga} class and an {@code @ExerisDomain} entity carrying {@code @Saga} go
+     * through, so the entries for them below fire. The {@code @Saga.compensation*} family is unregistered for a
+     * different reason: none of it is extracted, half of it has no carrier, and what an emitter
+     * should compile it into against the kernel's compensation surface is an open question, not a
+     * generator that declines to act. C0's never-read pass does not cover these either — it works
+     * per annotation, and {@code @Saga} is read.
      *
      * <p>When a generator starts consuming one of these, DELETE its entry in the
      * same change — a stale entry produces a false "no effect" warning on an
@@ -449,7 +451,28 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "model at the edge. Roles resolve at the method level through the "
                             + "kernel's own @RequiresRole (kernel ADR-014). Note that the emitted "
                             + "Angular guards do check a role, but against a name this pipeline "
-                            + "invents rather than one declared here (T53)"));
+                            + "invents rather than one declared here (T53)"),
+            new InertAttribute("Saga", "description",
+                    "the value reaches SagaMetadata.description in the JSON, and the TypeScript "
+                            + "schema declares the field, but no emitter renders it — the emitted "
+                            + "flow class's Javadoc names only the entity, and the emitted Angular "
+                            + "saga state machine does not carry it"),
+            new InertAttribute("SagaStep", "description",
+                    "the value reaches SagaStepMetadata.description in the JSON, but no emitter "
+                            + "renders it — the emitted step method's Javadoc names only the step, "
+                            + "and the TypeScript step schema does not declare the field"),
+            new InertAttribute("SagaStep", "service",
+                    "the value reaches SagaStepMetadata.service in the JSON, and no emitter reads "
+                            + "it: the emitted step method is a protected skeleton that logs and "
+                            + "returns CONTINUE for the author to override, and nothing dispatches to "
+                            + "the named service. The SDK gives the attribute no default, so every "
+                            + "step reports it"),
+            new InertAttribute("SagaStep", "command",
+                    "the value reaches SagaStepMetadata.command in the JSON, and no emitter reads "
+                            + "it: the emitted step method is a protected skeleton that logs and "
+                            + "returns CONTINUE for the author to override, and no command is built "
+                            + "or sent. The SDK gives the attribute no default, so every step "
+                            + "reports it"));
 
     /**
      * Hand-maintained registry of whole type-level annotations that are extracted
@@ -2797,6 +2820,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         if (sagaAnnotation == null) return null;
 
         Map<String, Object> values = extractAnnotationValues(sagaAnnotation);
+        // Shared by a standalone @Saga class and an @ExerisDomain entity carrying @Saga, so one
+        // call site audits both; each class reaches this method exactly once.
+        warnInertAttributes("Saga", values, element, sagaAnnotation);
         String name = values.containsKey("name")
                 ? (String) values.get("name")
                 : element.getSimpleName().toString();
@@ -2851,7 +2877,11 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             }
         }
 
-        // Sort by order
+        // This is the saga-step sorter KernelSagaGenerator's Javadoc requires of its callers: the
+        // steps leave the processor ordered by @SagaStep.order, and both emitters walk the list as
+        // given — the Java flow chains its transitions in list order and the TypeScript state
+        // machine lists its steps in list order. List.sort is stable, so equal orders keep
+        // declaration sequence. Removing the sort silently reorders every emitted saga.
         steps.sort(Comparator.comparingInt(SagaStepMetadata::order));
 
         return steps;
@@ -2860,6 +2890,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     /** One {@code @SagaStep} mirror, whether it stood alone or came out of the container. */
     private SagaStepMetadata sagaStep(AnnotationMirror stepAnnotation, ExecutableElement method) {
         Map<String, Object> values = extractAnnotationValues(stepAnnotation);
+        // Per mirror, so a repeated @SagaStep is audited once per repeat, like its extraction.
+        warnInertAttributes("SagaStep", values, method, stepAnnotation);
         String name = getString(values, "name", method.getSimpleName().toString());
         int order = getInt(values, "order", 1);
 

@@ -2873,9 +2873,9 @@ class ExerisDomainProcessorTest {
             // The registry is a list; the warnings come from warnInertAttributes call
             // sites. An entry whose annotation has no call site is unreachable and reads
             // as coverage while producing nothing — which is what @Action.path and
-            // @ExerisDomain.apiVersion did. This fixture sets all five registered
-            // attributes at once, so a future entry added without its call site fails
-            // here rather than going quiet.
+            // @ExerisDomain.apiVersion did. This fixture sets nine registered attributes
+            // at once — the saga ones on an @ExerisDomain entity carrying @Saga — so a
+            // future entry added without its call site fails here rather than going quiet.
             Compilation compilation = javac()
                     .withOptions("-Aexeris.strict=true")
                     .withProcessors(new ExerisDomainProcessor())
@@ -2887,9 +2887,92 @@ class ExerisDomainProcessorTest {
             assertThat(hasInertWarningFor(compilation, "@ExerisDomain.apiVersion")).isTrue();
             assertThat(hasInertWarningFor(compilation, "@ActionParam.description")).isTrue();
             assertThat(hasInertWarningFor(compilation, "@ActionParam.required")).isTrue();
+            assertThat(hasInertWarningFor(compilation, "@Saga.description")).isTrue();
+            assertThat(hasInertWarningFor(compilation, "@SagaStep.description")).isTrue();
+            assertThat(hasInertWarningFor(compilation, "@SagaStep.service")).isTrue();
+            assertThat(hasInertWarningFor(compilation, "@SagaStep.command")).isTrue();
             assertThat(inertWarnings(compilation))
                     .as("one warning per registered inert attribute, no more")
-                    .isEqualTo(5);
+                    .isEqualTo(9);
+        }
+
+        @Test
+        @DisplayName("-Aexeris.strict reaches a standalone @Saga and every repeat of a @SagaStep")
+        void strictReachesStandaloneSagaAndRepeatedSteps() {
+            Compilation compilation = javac()
+                    .withOptions("-Aexeris.strict=true")
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(standaloneSagaWithInertAttributes());
+
+            assertThat(compilation).succeeded();
+            assertThat(hasInertWarningFor(compilation, "@Saga.description")).isTrue();
+            assertThat(hasInertWarningFor(compilation, "@SagaStep.description")).isTrue();
+            List<String> serviceWarnings = compilation.warnings().stream()
+                    .map(d -> d.getMessage(null))
+                    .filter(m -> m != null && m.contains("@SagaStep.service"))
+                    .toList();
+            assertThat(serviceWarnings)
+                    .as("one per step, both out of the synthesised @SagaSteps container")
+                    .hasSize(2);
+            assertThat(serviceWarnings.getFirst())
+                    .contains("no code generator consumes it")
+                    .contains("logs and returns CONTINUE")
+                    .contains("nothing dispatches to the named service");
+            // @Saga.description + @SagaStep.description + 2 × (service, command).
+            assertThat(inertWarnings(compilation)).isEqualTo(6);
+        }
+
+        @Test
+        @DisplayName("-Aexeris.strict stays silent on @SagaStep.parallel and .timeout — the kernel has no carrier")
+        void strictIsQuietOnKernelGatedSagaStepAttributes() {
+            // Both are extracted and read by no emitter, and both are deliberately unregistered:
+            // a FlowDefinition expresses neither concurrent steps nor a per-step deadline. The
+            // consumed @Saga attributes (timeout, maxRetries, version) and @SagaStep.compensation
+            // must not warn either.
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Payment",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.Saga;
+                    import eu.exeris.sdk.annotation.SagaStep;
+
+                    @Saga(name = "Payment", timeout = "PT10M", maxRetries = 5, version = 2)
+                    public class Payment {
+                        @SagaStep(order = 1, name = "charge", service = "billing", command = "Charge",
+                                compensation = "Refund", timeout = "PT5S", parallel = true)
+                        public void charge() {
+                        }
+                    }
+                    """
+            );
+
+            Compilation compilation = javac()
+                    .withOptions("-Aexeris.strict=true")
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(source);
+
+            assertThat(compilation).succeeded();
+            assertThat(compilation.warnings().stream()
+                    .map(d -> d.getMessage(null))
+                    .filter(m -> m != null && m.contains("no code generator consumes it"))
+                    .toList())
+                    .as("only the two required attributes nothing dispatches")
+                    .allMatch(m -> m.contains("@SagaStep.service") || m.contains("@SagaStep.command"))
+                    .hasSize(2);
+        }
+
+        @Test
+        @DisplayName("Default build stays quiet on a standalone @Saga that sets every registered saga attribute")
+        void defaultBuildDoesNotWarnOnSagaAttributes() {
+            Compilation compilation = javac()
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(standaloneSagaWithInertAttributes());
+
+            assertThat(compilation).succeeded();
+            assertThat(inertWarnings(compilation))
+                    .as("inert-attribute warnings with strict unset")
+                    .isZero();
         }
 
         @Test
@@ -3096,8 +3179,11 @@ class ExerisDomainProcessorTest {
                     import eu.exeris.sdk.annotation.ExerisDomain;
                     import eu.exeris.sdk.annotation.Action;
                     import eu.exeris.sdk.annotation.ActionParam;
+                    import eu.exeris.sdk.annotation.Saga;
+                    import eu.exeris.sdk.annotation.SagaStep;
 
                     @ExerisDomain(module = "core", path = "/orders", apiVersion = "v1")
+                    @Saga(name = "OrderApproval", description = "Approves an order end to end")
                     public class Order {
                         @Action(name = "approve", label = "Approve", path = "/{id}/approve",
                                 httpMethod = "GET")
@@ -3105,6 +3191,39 @@ class ExerisDomainProcessorTest {
                                 @ActionParam(label = "Reason",
                                         description = "Why this order is approved",
                                         required = true) String reason) {
+                        }
+
+                        @SagaStep(order = 1, name = "reserve", description = "Holds the stock",
+                                service = "stock", command = "Reserve")
+                        public void reserve() {
+                        }
+                    }
+                    """
+            );
+        }
+
+        /**
+         * A standalone {@code @Saga} class — the annotation's documented home, reached through
+         * {@code processSaga} rather than the entity path — with a repeated {@code @SagaStep}, so
+         * the audit is shown to see steps that came out of the synthesised container. Every
+         * registered saga attribute is set once on the first step; the repeat sets only the two
+         * the SDK requires.
+         */
+        private JavaFileObject standaloneSagaWithInertAttributes() {
+            return JavaFileObjects.forSourceString(
+                    "com.example.Checkout",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.Saga;
+                    import eu.exeris.sdk.annotation.SagaStep;
+
+                    @Saga(name = "Checkout", description = "Takes an order to payment")
+                    public class Checkout {
+                        @SagaStep(order = 1, name = "reserve", description = "Holds the stock",
+                                service = "stock", command = "Reserve")
+                        @SagaStep(order = 2, name = "charge", service = "billing", command = "Charge")
+                        public void reserveAndCharge() {
                         }
                     }
                     """
