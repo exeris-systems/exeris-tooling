@@ -4276,4 +4276,205 @@ class ExerisDomainProcessorTest {
             return new String(inputStream.readAllBytes(), StandardCharsets.UTF_8);
         }
     }
+
+    @Nested
+    @DisplayName("-Aexeris.strict on presentation attributes: @UI by element kind, @Field, @Tab, @UIGroup")
+    class StrictModePresentationAuditTests {
+
+        private static final String INERT = "no code generator consumes it";
+        private static final String UNREAD = "this processor never reads it";
+
+        private List<String> warnings(Compilation compilation, String pass) {
+            return compilation.warnings().stream()
+                    .map(d -> d.getMessage(null))
+                    .filter(m -> m != null && m.contains(pass))
+                    .toList();
+        }
+
+        private Compilation strictCompile(String className, String source) {
+            return javac()
+                    .withOptions("-Aexeris.strict=true")
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(JavaFileObjects.forSourceString("com.example." + className, source));
+        }
+
+        @Test
+        @DisplayName("field-level @UI is reported as never read, and names the @View field facet")
+        void fieldLevelUiIsReportedAsUnread() {
+            Compilation compilation = strictCompile("Widget", """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Field;
+                    import eu.exeris.sdk.annotation.UI;
+
+                    @ExerisDomain(module = "core", path = "/widgets")
+                    public class Widget {
+                        @Field(label = "Name")
+                        @UI(placeholder = "Your name", gridSpan = 6)
+                        private String name;
+                    }
+                    """);
+
+            assertThat(compilation).succeeded();
+            List<String> unread = warnings(compilation, UNREAD);
+            assertThat(unread).hasSize(1);
+            assertThat(unread.get(0))
+                    .contains("@UI")
+                    .contains("reads @UI on a type only")
+                    .contains("@View's field facet");
+            // The type-level inert entry must not answer for a field-level @UI.
+            assertThat(warnings(compilation, INERT)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("type-level @UI is reported once as extracted-but-unconsumed, never as unread")
+        void typeLevelUiIsReportedAsInert() {
+            Compilation compilation = strictCompile("Widget", """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Field;
+                    import eu.exeris.sdk.annotation.UI;
+
+                    @ExerisDomain(module = "core", path = "/widgets")
+                    @UI(listView = false, exportable = true, icon = "box")
+                    public class Widget {
+                        @Field(label = "Name")
+                        private String name;
+                    }
+                    """);
+
+            assertThat(compilation).succeeded();
+            // The seven flags the processor reads reach UIMetadata, and no generator reads
+            // UIMetadata's flags — so the read attributes are no more effective than icon.
+            assertThat(warnings(compilation, INERT))
+                    .singleElement()
+                    .satisfies(m -> assertThat(m).contains("@UI is set").contains("UIMetadata"));
+            assertThat(warnings(compilation, UNREAD)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("default build stays quiet about @UI at either level")
+        void defaultBuildIsQuietAboutUi() {
+            Compilation compilation = javac()
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(JavaFileObjects.forSourceString("com.example.Widget", """
+                            package com.example;
+
+                            import eu.exeris.sdk.annotation.ExerisDomain;
+                            import eu.exeris.sdk.annotation.Field;
+                            import eu.exeris.sdk.annotation.UI;
+
+                            @ExerisDomain(module = "core", path = "/widgets")
+                            @UI(listView = false)
+                            public class Widget {
+                                @Field(label = "Name", inList = true)
+                                @UI(placeholder = "x")
+                                private String name;
+                            }
+                            """));
+
+            assertThat(compilation).succeeded();
+            assertThat(warnings(compilation, INERT)).isEmpty();
+            assertThat(warnings(compilation, UNREAD)).isEmpty();
+        }
+
+        @ParameterizedTest(name = "@Field.{0}")
+        @MethodSource("eu.exeris.tooling.processor.ExerisDomainProcessorTest#inertFieldAttributes")
+        @DisplayName("each @Field attribute no generator consumes is reported as inert")
+        void inertFieldAttributeWarns(String attribute, String assignment) {
+            Compilation compilation = strictCompile("Widget", """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Field;
+                    import eu.exeris.sdk.annotation.UI;
+                    import eu.exeris.sdk.annotation.Validation;
+
+                    @ExerisDomain(module = "core", path = "/widgets")
+                    public class Widget {
+                        @Field(label = "Name", %s)
+                        private String name;
+                    }
+                    """.formatted(assignment));
+
+            assertThat(compilation).succeeded();
+            assertThat(warnings(compilation, INERT))
+                    .singleElement()
+                    .satisfies(m -> assertThat(m).contains("@Field." + attribute + " is set"));
+        }
+
+        @Test
+        @DisplayName("the @Field attributes generators do consume draw no inert warning")
+        void consumedFieldAttributesAreQuiet() {
+            Compilation compilation = strictCompile("Widget", """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Field;
+
+                    @ExerisDomain(module = "core", path = "/widgets")
+                    public class Widget {
+                        @Field(label = "Name", description = "d", required = true, unique = true,
+                               searchable = true, sortable = true, filterable = true,
+                               readOnly = true, inCreate = false, dataType = "text")
+                        private String name;
+
+                        @Field(label = "Total", computed = true, computedFrom = {"name"})
+                        private String total;
+                    }
+                    """);
+
+            assertThat(compilation).succeeded();
+            assertThat(warnings(compilation, INERT)).isEmpty();
+        }
+
+        @ParameterizedTest(name = "@{0}")
+        @ValueSource(strings = {"Tab", "UIGroup"})
+        @DisplayName("@Tab and @UIGroup are reported as never read")
+        void groupingAnnotationsAreReportedAsUnread(String annotation) {
+            Compilation compilation = strictCompile("Widget", """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Field;
+                    import eu.exeris.sdk.annotation.%1$s;
+
+                    @ExerisDomain(module = "core", path = "/widgets")
+                    public class Widget {
+                        @Field(label = "Name")
+                        @%1$s(name = "general")
+                        private String name;
+                    }
+                    """.formatted(annotation));
+
+            assertThat(compilation).succeeded();
+            assertThat(warnings(compilation, UNREAD))
+                    .singleElement()
+                    .satisfies(m -> assertThat(m).contains("@" + annotation + " is set")
+                            .contains("grouping is emitted from @View"));
+        }
+    }
+
+    static Stream<Arguments> inertFieldAttributes() {
+        return Stream.of(
+                Arguments.of("labelKey", "labelKey = \"widget.name\""),
+                Arguments.of("descriptionKey", "descriptionKey = \"widget.name.help\""),
+                Arguments.of("inList", "inList = true"),
+                Arguments.of("inDetail", "inDetail = false"),
+                Arguments.of("order", "order = 1"),
+                Arguments.of("ui", "ui = @UI(placeholder = \"x\")"),
+                Arguments.of("validation", "validation = @Validation(maxLength = 10)"),
+                Arguments.of("defaultValue", "defaultValue = \"x\""),
+                Arguments.of("cssClass", "cssClass = \"wide\""),
+                Arguments.of("group", "group = \"general\""),
+                Arguments.of("sensitive", "sensitive = true"),
+                Arguments.of("encrypted", "encrypted = true"),
+                Arguments.of("maskPattern", "maskPattern = \"***\""),
+                Arguments.of("writeOnly", "writeOnly = true"),
+                Arguments.of("compositeUnique", "compositeUnique = \"g\""),
+                Arguments.of("indexed", "indexed = true"),
+                Arguments.of("inUpdate", "inUpdate = false"));
+    }
 }
