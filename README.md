@@ -18,16 +18,16 @@ migrations, sagas, and corresponding Angular/TypeScript frontend artifacts.
 - Maven 3.9+ (enforced alongside the JDK rule).
 - Node 18+ to build `exeris-codegen-ts`; the **generated** Angular v22 app targets
   Node 22+.
-- `eu.exeris:exeris-sdk-*:0.12.0-SNAPSHOT` and `eu.exeris:exeris-kernel-*:0.12.0`
-  on the resolution path. Neither is released yet, so `main` pins ahead of both. The
-  pins move to the final `0.12.0` releases once they publish, and no tooling release
-  is cut before that. Build both from source: `exeris-sdk` at `main`
-  (`mvn install`; an SDK checkout that still runs japicmp by default, rather than
+- `eu.exeris:exeris-kernel-*:0.12.0`, the final release on Maven Central, and
+  `eu.exeris:exeris-sdk-*:0.12.0-SNAPSHOT` on the resolution path. The SDK pin is not
+  released yet, so `main` pins ahead of it; it moves to the final `0.12.0` once that
+  publishes, and no tooling release is cut before then. Build the SDK from source at
+  `main` (`mvn install`; an SDK checkout that still runs japicmp by default, rather than
   behind its opt-in `semver` profile, also needs `-Djapicmp.skip=true`, because its
-  semver baseline is not on Central) and
-  `exeris-kernel` at `development/0.12.0`. GitHub Packages also resolves the kernel:
-  `mvn -s .github/maven-settings.xml …` with `GITHUB_ACTOR` and a `GITHUB_TOKEN`
-  (`read:packages`) exported. The POMs name no repository of their own, because a
+  semver baseline is not on Central). Everything else resolves from Central with no
+  settings file. A local repository that holds a kernel `0.12.0` fetched from GitHub
+  Packages before the release keeps serving it, because Maven never re-fetches a release;
+  delete `~/.m2/repository/eu/exeris/exeris-kernel*` once. The POMs name no repository of their own, because a
   published POM would hand that registry to every consumer. Take the **`eu.exeris`** kernel coordinates, not `eu.exeris.preview`
   — the preview line is JDK 28 EA with `--enable-preview`, and nothing generated here
   differs between them.
