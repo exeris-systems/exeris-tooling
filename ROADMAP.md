@@ -3356,7 +3356,7 @@ needed.)*
   - exeris-sdk#159: the reader leaves `GraphMetadata.edges` empty. This one has been in the released
     pair since tooling 0.8.0 / SDK 0.11.0.
 - **Wanted for 0.9.0:**
-  - exeris-kernel#579: `KernelWebClient.put`, which unblocks T58's Java half.
+  - exeris-kernel#579: `KernelWebClient.put` — *answered by kernel 0.12.0 and consumed (T58, #264).*
   - exeris-kernel#580: the reference shared-scope RLS policy and its TCK cells (T29 slice B).
   - exeris-sdk#160: annotation status notes that tooling 0.9.0 makes false.
 - Later (0.10.0 or unplaced): exeris-kernel#581–#585, exeris-sdk#161–#166.
