@@ -236,8 +236,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      *
      * <p>{@code Saga} and {@code SagaStep} do have call sites, on the one extraction path both a
      * standalone {@code @Saga} class and an {@code @ExerisDomain} entity carrying {@code @Saga} go
-     * through, so the entries for them below fire and the carve-out above is a decision rather
-     * than an accident of reach. The {@code @Saga.compensation*} family is unregistered for a
+     * through, so the entries for them below fire. The {@code @Saga.compensation*} family is unregistered for a
      * different reason: none of it is extracted, half of it has no carrier, and what an emitter
      * should compile it into against the kernel's compensation surface is an open question, not a
      * generator that declines to act. C0's never-read pass does not cover these either — it works
