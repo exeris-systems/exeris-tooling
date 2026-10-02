@@ -1281,7 +1281,8 @@ binds what `run()` puts in the slot gets streams too.
 
 Kernel 0.12 resolves a stream through `StreamRouteResolver` on the bound handler, which a wrapper
 can implement by delegating. The generated application publishes exactly what `decorate` returns,
-so if your domain declares `realTimeApi` or any `@Action(streaming = true)` and you override
+so if the router serves any stream route — your domain declares `realTimeApi` or any
+`@Action(streaming = true)`, or your `configureRoutes` registers a `streamRoute` — and you override
 `decorate`:
 
 - **Returning the router** (the default) needs nothing.
@@ -1294,20 +1295,21 @@ so if your domain declares `realTimeApi` or any `@Action(streaming = true)` and 
   runs before route authorization and outside every binding, so decide from the method and path
   alone. Bind only immutable values around a stream; the binding lives as long as the stream does.
 - **Any other wrapper, a lambda included, now fails the boot** with `IllegalStateException`
-  naming its class. Implement `StreamRouteResolver` on it as above.
+  naming its class. Implement `StreamRouteResolver` on it as above. The check asks the built router
+  `servesStreams()`, so it applies to an application whose only streams come from `configureRoutes`
+  as much as to one with generated stream routes.
 
-An application without generated stream routes accepts any wrapper, as before.
+An application whose router serves no stream route accepts any wrapper, as before.
 
 **A `streamRoute` registered in `configureRoutes` now resolves**, with its path parameters, while
 `decorate` returns the router or a resolver. One registered at a method and path a generated stream
-route already serves fails the boot with `IllegalStateException` naming them, because the kernel's
-stream table keeps the last registration at an exact path and would otherwise replace the generated
-route. Serve it at another path, or override the generated stream handler's factory instead. A
-stream at a concrete path under a generated template, such as `POST /orders/42/actions/track`, is not
-refused: the kernel resolves an exact path before a template, so it takes precedence for that one
-path and the generated route still serves every other. In an
-application without generated stream routes, a stream registered here behind a wrapper that is not
-a resolver does not resolve, and is not refused.
+route already serves fails the boot from the kernel: `HttpRouter.Builder#streamRoute` throws
+`IllegalArgumentException("a stream route is already registered for <METHOD> <path>")` as it is
+registered, since generated stream routes are registered first. Serve it at another path, or
+override the generated stream handler's factory instead. A stream at a concrete path under a
+generated template, such as `POST /orders/42/actions/track`, is not refused: the kernel resolves an
+exact path before a template, so it takes precedence for that one path and the generated route still
+serves every other.
 
 ### Subscribers and saga flows are composed and started at boot (T48 slice C1, ADR-075 Amendment 2)
 

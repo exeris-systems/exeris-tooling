@@ -57,7 +57,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * observe the composing window (503 for a stream open too) deterministically. The boot tests run
  * the emitted {@code Application.run()} end to end, which is the only way to prove the edge handler
  * is what the kernel is handed and that composition inside the boot callback feeds it: with a
- * {@code decorate} wrapper that resolves streams, and with the two compositions it refuses.
+ * {@code decorate} wrapper that resolves streams, and with the compositions it refuses. A second
+ * application, with no generated stream route, shows that the refusal follows what the built router
+ * serves rather than what was generated.
  */
 @Tag("e2e")
 @Tag("boot")
@@ -65,6 +67,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class GeneratedAppBootE2ETest {
 
     private static final String BASE_PACKAGE = "eu.exeris.e2e.live";
+    private static final String QUIET_PACKAGE = "eu.exeris.e2e.quiet";
     private static final Duration FRAME_TIMEOUT = Duration.ofSeconds(20);
 
     @TempDir
@@ -72,17 +75,25 @@ class GeneratedAppBootE2ETest {
 
     private static GeneratedTree app;
     private static ClassLoader appLoader;
+    private static GeneratedTree quietApp;
+    private static ClassLoader quietLoader;
 
     @BeforeAll
     static void generateCompileAndLoad() throws IOException {
-        app = GeneratedTree.build(workspace, BASE_PACKAGE, domainSources(), harnessSources());
+        app = GeneratedTree.build(workspace.resolve("live"), BASE_PACKAGE, domainSources(), harnessSources());
         appLoader = app.loader();
+        quietApp = GeneratedTree.build(workspace.resolve("quiet"), QUIET_PACKAGE,
+                quietDomainSources(), quietHarnessSources());
+        quietLoader = quietApp.loader();
     }
 
     @AfterAll
     static void closeLoader() throws IOException {
         if (app != null) {
             app.close();
+        }
+        if (quietApp != null) {
+            quietApp.close();
         }
     }
 
@@ -125,7 +136,7 @@ class GeneratedAppBootE2ETest {
             assertThat(RawHttp.request(port, "GET", "/beacons")).startsWith("HTTP/1.1 204");
 
             // A handler in the slot that is not a resolver erases the stream table behind it —
-            // the kernel's contract, and the reason run() refuses one when it has stream routes.
+            // the kernel's contract, and the reason run() refuses one when the router serves streams.
             HttpRouter router = HttpRouter.builder()
                     .streamRoute(HttpMethod.GET, "/echo/{name}/stream", exchange -> { })
                     .notFound(exchange -> exchange.respond(HttpStatus.NO_CONTENT))
@@ -134,8 +145,8 @@ class GeneratedAppBootE2ETest {
             assertThat(RawHttp.request(port, "GET", "/echo/alpha/stream")).startsWith("HTTP/1.1 204");
         }
 
-        // The emitted requireStreamRoute(...) looks a generated template route up by its own
-        // template string, so a template has to match itself: "{id}" is a non-empty segment.
+        // The emitted requireDecoratedStreamRoute(...) probes a generated template route by its
+        // own template string, so a template has to match itself: "{id}" is a non-empty segment.
         HttpStreamHandlerProbe generated = new HttpStreamHandlerProbe();
         assertThat(HttpRouter.builder()
                 .streamRoute(HttpMethod.POST, "/beacons/{id}/actions/track", generated)
@@ -247,15 +258,46 @@ class GeneratedAppBootE2ETest {
     }
 
     @Test
-    @DisplayName("a configureRoutes stream route at a generated stream path is refused at boot, "
-            + "naming the path, rather than replacing the generated route")
+    @DisplayName("a configureRoutes stream route at a generated stream path is refused at boot by the "
+            + "kernel's router builder, naming the method and path")
     void streamRouteAtAGeneratedPathIsRefused() {
+        // Generated stream routes are registered before configureRoutes, so the kernel builder
+        // sees the hand-written one second and refuses it as it is registered.
         assertThatThrownBy(() -> BootedApplication.start(appLoader, BASE_PACKAGE + ".DisplacingApplication"))
                 .isInstanceOf(AssertionError.class)
                 .hasMessageContaining("exited during boot")
                 .rootCause()
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("a stream route is already registered for GET /beacons/stream");
+    }
+
+    @Test
+    @DisplayName("an application with no generated stream route refuses a decorate wrapper that is not "
+            + "a StreamRouteResolver once configureRoutes registers a stream, naming the wrapper's class")
+    void wrapperIsRefusedWhenOnlyConfigureRoutesRegistersAStream() {
+        // The guard asks the built router whether it serves any stream, so a stream the
+        // consumer registered is protected the same way a generated one is.
+        assertThatThrownBy(() -> BootedApplication.start(quietLoader, QUIET_PACKAGE + ".StreamingPlainWrapApplication"))
+                .isInstanceOf(AssertionError.class)
+                .hasMessageContaining("exited during boot")
+                .rootCause()
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("GET /beacons/stream is a generated stream route");
+                .hasMessageContaining("RuntimeComponents.decorate returned eu.exeris.e2e.quiet.QuietWrapper,")
+                .hasMessageContaining("does not implement StreamRouteResolver")
+                .hasMessageContaining("Implement StreamRouteResolver on the wrapper and delegate resolveStream "
+                        + "to the router");
+    }
+
+    @Test
+    @DisplayName("an application whose router serves no stream route boots behind a decorate wrapper "
+            + "that is not a StreamRouteResolver, and the wrapper serves its requests")
+    void wrapperIsAcceptedWhenTheRouterServesNoStream() throws Exception {
+        try (BootedApplication booted = BootedApplication.start(quietLoader, QUIET_PACKAGE + ".QuietApplication")) {
+            int port = booted.port();
+            assertThat(RawHttp.request(port, "GET", "/tag")).as("the wrapper's binding reaches the route")
+                    .startsWith("HTTP/1.1 200");
+            assertThat(RawHttp.request(port, "GET", "/lamps/not-a-uuid")).startsWith("HTTP/1.1 400");
+        }
     }
 
     // ------------------------------------------------------------------ harness
@@ -610,6 +652,149 @@ class GeneratedAppBootE2ETest {
                             @Override
                             public HttpHandler decorate(HttpRouter router) {
                                 return new NullResolver(router);
+                            }
+                        };
+                    }
+                }
+                """);
+        return sources;
+    }
+
+    /** One entity with no stream route: no {@code realTimeApi}, no streaming action. */
+    private static Map<String, String> quietDomainSources() {
+        Map<String, String> sources = new LinkedHashMap<>();
+        sources.put("eu/exeris/e2e/quiet/domain/Lamp.java",
+                """
+                package eu.exeris.e2e.quiet.domain;
+
+                import eu.exeris.sdk.annotation.ExerisDomain;
+                import eu.exeris.sdk.annotation.Field;
+
+                import java.util.UUID;
+
+                @ExerisDomain(module = "quiet", path = "/lamps")
+                public class Lamp {
+
+                    private UUID id;
+
+                    @Field(label = "Label", required = true)
+                    private String label;
+
+                    public UUID getId() {
+                        return id;
+                    }
+
+                    public void setId(UUID id) {
+                        this.id = id;
+                    }
+
+                    public String getLabel() {
+                        return label;
+                    }
+
+                    public void setLabel(String label) {
+                        this.label = label;
+                    }
+                }
+                """);
+        return sources;
+    }
+
+    /**
+     * Around the stream-less tree: {@code QuietApplication} decorates with a wrapper that is not a
+     * resolver and registers no stream, which must boot; {@code StreamingPlainWrapApplication} adds
+     * one stream in {@code configureRoutes} behind the same wrapper, which must be refused.
+     */
+    private static Map<String, String> quietHarnessSources() {
+        Map<String, String> sources = new LinkedHashMap<>();
+        sources.put("eu/exeris/e2e/quiet/QuietApplication.java",
+                """
+                package eu.exeris.e2e.quiet;
+
+                import eu.exeris.kernel.spi.persistence.TransactionalExecutor;
+
+                public class QuietApplication extends Application {
+
+                    @Override
+                    protected String subsystems() {
+                        return "http,events,flow";
+                    }
+
+                    @Override
+                    protected RuntimeComponents components(TransactionalExecutor transactionalExecutor) {
+                        return new QuietComponents(transactionalExecutor);
+                    }
+                }
+                """);
+        sources.put("eu/exeris/e2e/quiet/QuietComponents.java",
+                """
+                package eu.exeris.e2e.quiet;
+
+                import eu.exeris.kernel.core.http.routing.HttpRouter;
+                import eu.exeris.kernel.spi.http.HttpHandler;
+                import eu.exeris.kernel.spi.http.HttpMethod;
+                import eu.exeris.kernel.spi.http.HttpStatus;
+                import eu.exeris.kernel.spi.persistence.TransactionalExecutor;
+
+                public class QuietComponents extends RuntimeComponents {
+
+                    /** Bound by the decorate wrapper; a route reports whether it was. */
+                    public static final ScopedValue<String> TAG = ScopedValue.newInstance();
+
+                    public QuietComponents(TransactionalExecutor transactionalExecutor) {
+                        super(transactionalExecutor);
+                    }
+
+                    @Override
+                    public void configureRoutes(HttpRouter.Builder routes) {
+                        routes.route(HttpMethod.GET, "/probe", exchange -> exchange.respond(HttpStatus.OK));
+                        routes.route(HttpMethod.GET, "/tag",
+                                exchange -> exchange.respond(TAG.isBound() ? HttpStatus.OK : HttpStatus.CONFLICT));
+                    }
+
+                    @Override
+                    public HttpHandler decorate(HttpRouter router) {
+                        return new QuietWrapper(router);
+                    }
+                }
+                """);
+        sources.put("eu/exeris/e2e/quiet/QuietWrapper.java",
+                """
+                package eu.exeris.e2e.quiet;
+
+                import eu.exeris.kernel.core.http.routing.HttpRouter;
+                import eu.exeris.kernel.spi.http.HttpExchange;
+                import eu.exeris.kernel.spi.http.HttpHandler;
+
+                /** Binds TAG around requests, and resolves no streams. */
+                public record QuietWrapper(HttpRouter router) implements HttpHandler {
+
+                    @Override
+                    public void handle(HttpExchange exchange) {
+                        ScopedValue.where(QuietComponents.TAG, "tenant-7").run(() -> router.handle(exchange));
+                    }
+                }
+                """);
+        sources.put("eu/exeris/e2e/quiet/StreamingPlainWrapApplication.java",
+                """
+                package eu.exeris.e2e.quiet;
+
+                import eu.exeris.kernel.core.http.routing.HttpRouter;
+                import eu.exeris.kernel.spi.http.HttpMethod;
+                import eu.exeris.kernel.spi.http.StreamEvent;
+                import eu.exeris.kernel.spi.persistence.TransactionalExecutor;
+
+                /** The same wrapper, with one stream of the consumer's own and none generated. */
+                public class StreamingPlainWrapApplication extends QuietApplication {
+
+                    @Override
+                    protected RuntimeComponents components(TransactionalExecutor transactionalExecutor) {
+                        return new QuietComponents(transactionalExecutor) {
+                            @Override
+                            public void configureRoutes(HttpRouter.Builder routes) {
+                                super.configureRoutes(routes);
+                                routes.streamRoute(HttpMethod.GET, "/lamps/live",
+                                        exchange -> exchange.emit(StreamEvent.of("lamp", "on")));
                             }
                         };
                     }

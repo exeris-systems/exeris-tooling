@@ -377,7 +377,7 @@ class KernelApplicationGeneratorTest {
         // The kernel resolves a stream only through StreamRouteResolver on the bound handler, so
         // behind any other wrapper every stream route would be unreachable.
         int decorate = run.indexOf("HttpHandler handler = components.decorate(router);");
-        int refusal = run.indexOf("if (!(handler instanceof StreamRouteResolver)) {");
+        int refusal = run.indexOf("if (router.servesStreams() && !(handler instanceof StreamRouteResolver)) {");
         int publish = run.indexOf("handlerSlot.set(handler);");
         int probe = run.indexOf("requireDecoratedStreamRoute(decorated, HttpMethod.GET, \"/era/stream\");");
         assertThat(refusal).isGreaterThan(decorate);
@@ -400,6 +400,8 @@ class KernelApplicationGeneratorTest {
         assertThat(components(files))
                 .contains("A wrapper that implements it, delegating to the router, resolves every")
                 .contains("<li>A wrapper that does not implement it is refused at boot when the")
+                .contains("router serves any stream route, generated or registered in")
+                .doesNotContain("application has generated stream routes")
                 .contains("record TenantBinding(HttpRouter router) implements HttpHandler, StreamRouteResolver {")
                 .contains("StreamMatch match = router.resolveStream(method, path);")
                 .contains("{@link StreamRouteResolver}")
@@ -434,21 +436,31 @@ class KernelApplicationGeneratorTest {
     }
 
     @Test
-    @DisplayName("T49 residual: an app with no stream routes takes any wrapper — the guard is "
-            + "emitted only where it can bite")
-    void appWithoutStreamRoutesCarriesNoGuard() {
+    @DisplayName("K9: an app with no generated stream routes still guards decorate on the built "
+            + "router's servesStreams(), so a configureRoutes stream is not hidden by a wrapper")
+    void appWithoutGeneratedStreamRoutesGuardsOnServesStreams() {
         KernelApplicationGenerator gen = new KernelApplicationGenerator();
         DomainMetadata order = DomainMetadata.builder("Order", "com.example.domain")
                 .path("/orders").build();
         List<GeneratedFile> files = gen.generateAll(List.of(order), "com.example.foundation");
+        String run = method(lifecycle(files), "public void run()");
 
-        // Guarding an app that streams nothing would refuse a wrapper for a constraint it
-        // does not have — which is the whole reason a deployment wants the hook.
-        assertThat(method(lifecycle(files), "public void run()"))
-                .doesNotContain("instanceof StreamRouteResolver")
-                .doesNotContain("IllegalStateException")
+        // The guard is the router's own answer: a router with no stream route takes any
+        // wrapper, and one whose only streams came from configureRoutes refuses a wrapper
+        // that would hide them.
+        int build = run.indexOf("HttpRouter router = routerBuilder.build();");
+        int decorate = run.indexOf("HttpHandler handler = components.decorate(router);");
+        int refusal = run.indexOf("if (router.servesStreams() && !(handler instanceof StreamRouteResolver)) {");
+        int publish = run.indexOf("handlerSlot.set(handler);");
+        assertThat(decorate).isGreaterThan(build);
+        assertThat(refusal).isGreaterThan(decorate);
+        assertThat(publish).isGreaterThan(refusal);
+        assertThat(run)
+                .contains("throw new IllegalStateException(\"RuntimeComponents.decorate returned \" "
+                        + "+ handler.getClass().getName()")
                 .doesNotContain("requireDecoratedStreamRoute")
-                .contains("handlerSlot.set(handler);");
+                .doesNotContain("StreamRouteResolver decorated");
+        assertThat(lifecycle(files)).doesNotContain("private static void requireDecoratedStreamRoute(");
     }
 
     @Test
@@ -474,8 +486,8 @@ class KernelApplicationGeneratorTest {
     }
 
     @Test
-    @DisplayName("K9: generated stream routes are registered before configureRoutes, and each is "
-            + "checked after build() — a hand-written stream route adds, it never replaces")
+    @DisplayName("K9: generated stream routes are registered before configureRoutes, so the "
+            + "kernel builder refuses a hand-written one at a generated method and path")
     void configureRoutesMayAddStreamsButNotReplaceAGeneratedOne() {
         KernelApplicationGenerator gen = new KernelApplicationGenerator();
         DomainMetadata live = DomainMetadata.builder("GalacticEra", "com.example.domain")
@@ -487,22 +499,20 @@ class KernelApplicationGeneratorTest {
                 + "galacticEraStreamHandler);");
         int hook = run.indexOf("components.configureRoutes(routerBuilder)");
         int build = run.indexOf("HttpRouter router = routerBuilder.build()");
-        int check = run.indexOf("requireStreamRoute(router, HttpMethod.GET, \"/era/stream\", "
-                + "galacticEraStreamHandler);");
         int decorate = run.indexOf("HttpHandler handler = components.decorate(router)");
 
         assertThat(stream).isGreaterThan(-1);
         assertThat(hook).isGreaterThan(stream);
-        assertThat(check).isGreaterThan(build).isGreaterThan(hook);
-        assertThat(decorate).isGreaterThan(check);
-        assertThat(method(lifecycle(files), "private static void requireStreamRoute("))
-                .contains("StreamMatch match = router.resolveStream(method, path);")
-                .contains("if (match == null || match.handler() != generated) {")
-                .contains("throw new IllegalStateException(");
+        assertThat(build).isGreaterThan(hook);
+        assertThat(decorate).isGreaterThan(build);
+        // The kernel builder refuses a duplicate stream registration as it is made, so the
+        // lifecycle carries no post-build displacement check of its own.
+        assertThat(lifecycle(files)).doesNotContain("requireStreamRoute(");
         // The hook's Javadoc says streams are admitted, and what is refused.
         assertThat(components(files))
                 .contains("<p><b>Stream routes too.</b>")
-                .contains("stream route already serves is refused at boot")
+                .contains("stream route already serves is refused by the builder as it is")
+                .doesNotContain("last stream registered at an exact path")
                 .doesNotContain("Respond-once routes only.");
     }
 

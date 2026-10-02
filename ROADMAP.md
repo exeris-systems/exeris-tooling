@@ -3481,8 +3481,9 @@ Also open and independent of all four: the missing `warnInertAttributes` call si
 Each is recorded where it was measured; this is the one list to hand to the kernel.
 
 - **K9, narrowed** — *answered by kernel 0.12's `StreamRouteResolver` and consumed (ADR-070
-  Amendment 3). What remains is a new ask: reject a duplicate exact stream registration, and expose
-  "serves any stream" on a built router.* T23 slice B1 made generated streams resolve on a real boot without the kernel.
+  Amendment 3). The two follow-up asks, refuse a duplicate stream registration and expose "serves
+  any stream" on a built router, were answered in kernel 0.12.0 (`HttpRouter#servesStreams()`) and
+  are consumed too.* T23 slice B1 made generated streams resolve on a real boot without the kernel.
   What is left needs it. A `streamRoute` registered in `configureRoutes` still does not resolve,
   because only the edge router is asked to resolve streams. And a scope bound in `decorate` is not
   bound for a stream, which runs on the edge router outside the wrapper. Both want stream resolution

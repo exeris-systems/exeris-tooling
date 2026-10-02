@@ -115,7 +115,6 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
     // The pre-boot handler the kernel holds, and the slot it forwards to.
     private static final String EDGE_HANDLER_METHOD = "edgeHandler";
     private static final String EDGE_HANDLER_TYPE = "EdgeHandler";
-    private static final String REQUIRE_STREAM_ROUTE_METHOD = "requireStreamRoute";
     private static final String REQUIRE_DECORATED_STREAM_ROUTE_METHOD = "requireDecoratedStreamRoute";
     private static final String HANDLER_SLOT = "handlerSlot";
 
@@ -886,9 +885,9 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .addJavadoc("<p><b>Stream routes too.</b> A {@code routes.streamRoute(...)} registered\n")
                 .addJavadoc("here lands in the same router as the generated stream routes, and the\n")
                 .addJavadoc("kernel resolves it the same way. One at a method and path a generated\n")
-                .addJavadoc("stream route already serves is refused at boot: the router keeps the\n")
-                .addJavadoc("last stream registered at an exact path, so it would replace the generated\n")
-                .addJavadoc("one rather than add to the table. A stream registered here resolves\n")
+                .addJavadoc("stream route already serves is refused by the builder as it is\n")
+                .addJavadoc("registered: the router admits one stream route per method and path, so\n")
+                .addJavadoc("the boot fails rather than serve either. A stream registered here resolves\n")
                 .addJavadoc("only while {@link #$L} returns the router or a wrapper that\n", DECORATE_METHOD)
                 .addJavadoc("implements {@link $T}.\n", STREAM_ROUTE_RESOLVER)
                 .addComment("No generated body — override to register hand-written routes.")
@@ -916,10 +915,10 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .addJavadoc("route: each is probed through it at boot, and one it answers {@code null}\n")
                 .addJavadoc("for fails the boot, naming the wrapper's class and the route.</li>\n")
                 .addJavadoc("<li>A wrapper that does not implement it is refused at boot when the\n")
-                .addJavadoc("application has generated stream routes, naming the wrapper's class. Without\n")
-                .addJavadoc("them it is accepted and serves respond-once routes only: a stream route\n")
-                .addJavadoc("registered in {@link #$L} behind it does not resolve.</li>\n",
+                .addJavadoc("router serves any stream route, generated or registered in\n")
+                .addJavadoc("{@link #$L}, naming the wrapper's class. A router that serves\n",
                         CONFIGURE_ROUTES_METHOD)
+                .addJavadoc("no stream route takes any wrapper.</li>\n")
                 .addJavadoc("</ul>\n")
                 .addJavadoc("<pre>{@code\n")
                 .addJavadoc("@Override public HttpHandler $L(HttpRouter router) {\n", DECORATE_METHOD)
@@ -1178,7 +1177,6 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
         type.addMethod(buildEdgeHandlerMethod(atomicHttpHandler));
         type.addMethod(buildRunMethod(domains, streamRoutes));
         if (!streamRoutes.isEmpty()) {
-            type.addMethod(buildRequireStreamRouteMethod());
             type.addMethod(buildRequireDecoratedStreamRouteMethod());
         }
         type.addType(buildEdgeHandlerType(atomicHttpHandler));
@@ -1301,32 +1299,6 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .build();
     }
 
-    /**
-     * Emits the boot check that a generated stream route survived {@code configureRoutes} —
-     * only when there is a stream route to check. The router keeps the last stream registered
-     * at an exact path, so a hand-written one at a generated path would replace it.
-     */
-    private MethodSpec buildRequireStreamRouteMethod() {
-        return MethodSpec.methodBuilder(REQUIRE_STREAM_ROUTE_METHOD)
-                .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
-                .returns(TypeName.VOID)
-                .addParameter(HTTP_ROUTER, "router")
-                .addParameter(HTTP_METHOD, "method")
-                .addParameter(String.class, "path")
-                .addParameter(HTTP_STREAM_HANDLER, "generated")
-                .addJavadoc("Refuses to serve when a stream route registered in\n")
-                .addJavadoc("{@link $L#$L} replaced a generated one at the same\n",
-                        COMPONENTS_TYPE_NAME, CONFIGURE_ROUTES_METHOD)
-                .addJavadoc("method and path.\n")
-                .addStatement("$T match = router.resolveStream(method, path)", STREAM_MATCH)
-                .beginControlFlow("if (match == null || match.handler() != generated)")
-                .addStatement("throw new $T(method + $S + path\n        + $S)",
-                        IllegalStateException.class, " ",
-                        " is a generated stream route; configureRoutes registered another one there")
-                .endControlFlow()
-                .build();
-    }
-
     private MethodSpec buildRunMethod(List<DomainMetadata> domains, List<StreamRoute> streamRoutes) {
         MethodSpec.Builder method = MethodSpec.methodBuilder("run")
                 .addModifiers(Modifier.PUBLIC)
@@ -1334,14 +1306,17 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .addJavadoc("Composes the application, starts its saga plans and subscribers,\n")
                 .addJavadoc("publishes the decorated router to the handler slot, and parks on a\n")
                 .addJavadoc("shutdown latch until the JVM exits; then releases the subscribers.\n");
-        if (!streamRoutes.isEmpty()) {
-            method.addJavadoc("@throws IllegalStateException when {@link $L#$L} returns a\n",
-                            COMPONENTS_TYPE_NAME, DECORATE_METHOD)
-                    .addJavadoc("        handler that is not a {@link $T}: the kernel resolves a\n",
-                            STREAM_ROUTE_RESOLVER)
-                    .addJavadoc("        stream only through one, so behind any other wrapper none of this\n")
-                    .addJavadoc("        application's stream routes would resolve; or when that handler\n")
-                    .addJavadoc("        resolves no stream for one of the generated stream routes\n");
+        method.addJavadoc("@throws IllegalStateException when the router serves a stream route and\n")
+                .addJavadoc("        {@link $L#$L} returns a handler that is not a\n",
+                        COMPONENTS_TYPE_NAME, DECORATE_METHOD)
+                .addJavadoc("        {@link $T}: the kernel resolves a stream only through one, so\n",
+                        STREAM_ROUTE_RESOLVER)
+                .addJavadoc("        behind any other wrapper none of the router's stream routes would\n");
+        if (streamRoutes.isEmpty()) {
+            method.addJavadoc("        resolve\n");
+        } else {
+            method.addJavadoc("        resolve; or when that handler resolves no stream for one of the\n")
+                    .addJavadoc("        generated stream routes\n");
         }
 
         // T49: the per-entity Repository → Service → Handler chain is built by
@@ -1437,33 +1412,31 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
         // T49: the consumer's routes are registered after every generated one and before
         // build(), so a hand-written route can add to the table but never silently displace
         // a generated one. A respond-once route cannot: the first registration that matches
-        // wins. A stream route at an exact path can, because the stream table keeps the last
-        // one, so each generated stream route is checked after build().
+        // wins. A stream route cannot either: the builder refuses a second stream route at
+        // the same method and path when it is registered.
         method.addStatement("$L.$L(routerBuilder)", COMPONENTS_FIELD, CONFIGURE_ROUTES_METHOD);
         method.addStatement("$T router = routerBuilder.build()", HTTP_ROUTER);
-        for (StreamRoute route : streamRoutes) {
-            method.addStatement("$L(router, $T.$L, $S, $L)", REQUIRE_STREAM_ROUTE_METHOD,
-                    HTTP_METHOD, route.method(), route.path(), route.accessor());
-        }
         // T49 residual: the consumer's one chance to wrap the router before it is served.
         // The kernel resolves streams through StreamRouteResolver on the edge handler, which
         // asks the slot. A wrapper that is not a resolver would leave every stream route
-        // unreachable, so an application with stream routes refuses it rather than serve
-        // without them.
+        // unreachable, so a router that serves any stream route, generated or registered in
+        // configureRoutes, refuses it rather than serve without them. The guard is the built
+        // router's own answer, so a router with no stream route takes any wrapper.
         method.addStatement("$T handler = $L.$L(router)", HTTP_HANDLER, COMPONENTS_FIELD, DECORATE_METHOD);
+        method.beginControlFlow("if (router.servesStreams() && !(handler instanceof $T))",
+                    STREAM_ROUTE_RESOLVER)
+                .addStatement("throw new $T($S + handler.getClass().getName()\n"
+                                + "        + $S\n"
+                                + "        + $S\n"
+                                + "        + $S)",
+                        IllegalStateException.class,
+                        "RuntimeComponents.decorate returned ",
+                        ", which does not implement StreamRouteResolver.",
+                        " This application serves stream routes, and the kernel resolves a stream only through one.",
+                        " Implement StreamRouteResolver on the wrapper and delegate resolveStream to the router,"
+                                + " as the RuntimeComponents.decorate Javadoc shows.")
+                .endControlFlow();
         if (!streamRoutes.isEmpty()) {
-            method.beginControlFlow("if (!(handler instanceof $T))", STREAM_ROUTE_RESOLVER)
-                    .addStatement("throw new $T($S + handler.getClass().getName()\n"
-                                    + "        + $S\n"
-                                    + "        + $S\n"
-                                    + "        + $S)",
-                            IllegalStateException.class,
-                            "RuntimeComponents.decorate returned ",
-                            ", which does not implement StreamRouteResolver.",
-                            " This application serves stream routes, and the kernel resolves a stream only through one.",
-                            " Implement StreamRouteResolver on the wrapper and delegate resolveStream to the router,"
-                                    + " as the RuntimeComponents.decorate Javadoc shows.")
-                    .endControlFlow();
             // A resolver that answers null for a generated route would hide that stream as
             // surely as a wrapper that resolves none, so each one is probed through it.
             method.addStatement("$T decorated = ($T) handler", STREAM_ROUTE_RESOLVER, STREAM_ROUTE_RESOLVER);
