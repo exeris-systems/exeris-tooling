@@ -27,8 +27,9 @@ migrations, sagas, and corresponding Angular/TypeScript frontend artifacts.
   semver baseline is not on Central). Everything else resolves from Central with no
   settings file. A local repository that holds a kernel `0.12.0` fetched from GitHub
   Packages before the release keeps serving it, because Maven never re-fetches a release;
-  delete `~/.m2/repository/eu/exeris/exeris-kernel*` once. The POMs name no repository of their own, because a
-  published POM would hand that registry to every consumer. Take the **`eu.exeris`** kernel coordinates, not `eu.exeris.preview`
+  delete `~/.m2/repository/eu/exeris/exeris-kernel*` once. The POMs name no repository
+  of their own, because a published POM would hand that registry to every consumer.
+  Take the **`eu.exeris`** kernel coordinates, not `eu.exeris.preview`
   — the preview line is JDK 28 EA with `--enable-preview`, and nothing generated here
   differs between them.
 
