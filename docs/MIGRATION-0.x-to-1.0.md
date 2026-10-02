@@ -1945,6 +1945,42 @@ change, or the switch must be set back to `true`. A link you write by hand to an
 detail page is off has no route to open. `generateDetail()`, the package's exported convenience,
 now returns `GeneratedFile | null`, `null` for an entity whose detail view is off.
 
+### `exeris-codegen-ts`: emitted forms are Signal Forms (ADR-093)
+
+`Compatibility impact: breaking (ADR-092)` for every entity with a form. TS only: the request the
+form sends (the `…Create` / `…Update` DTO, the version on update) and the statuses it handles are
+unchanged, and nothing on the Java side moves.
+
+Each `<entity>-form.component.ts` is rebuilt on `@angular/forms/signals` instead of Reactive Forms.
+It imports `form`, `FormField`, `submit` and the validators its fields declare, and nothing from
+`@angular/forms`. The component holds its value in a private `formModel` signal typed by a
+module-local `<Entity>FormModel` interface. `form` is now a `FieldTree` built on that signal, each
+control is bound with `[formField]`, and the `<form>` submits through `submit()`. The selector,
+inputs, outputs, routes, labels, messages, classes and every `data-testid` stay as they were.
+
+**What behaves differently:**
+- A number control now holds `number | null`, blank being `null`, where it used to hold a string that
+  the submit handler converted. A declared default is seeded as a number when it reads as one, and
+  as blank otherwise. A `BigDecimal` / `BigInteger` control still holds a string.
+- A value the browser cannot parse in a number or date input marks the field invalid with
+  "Invalid format.". Before, it reached the model as an empty value.
+- A computed field shows the value of a `computed<Field>` signal fed by the controls it depends on,
+  and stays out of the submitted DTO. Its `compute<Field>` stub is unchanged. Before, its input was
+  bound to a control the form did not declare, so it failed at runtime. A camelCase computed field
+  now gets valid member names (`computedFullName`).
+
+**What to do.** Regenerate. Hand-written code that touches the emitted form's API has to change:
+- `component.form.value`, `.getRawValue()`, `.controls`, `.get('x')`: read `component.form().value()`
+  or `component.form.x().value()`.
+- `patchValue`, `setValue`, `reset(value)`: write the field's value signal,
+  `component.form.x().value.set(…)`, or call `component.form().reset(value)`.
+- `form.invalid`, `markAllAsTouched()`: `component.form().invalid()`, `component.form().markAsTouched()`.
+- A subclass of an emitted form, or a template that wraps it with `formControlName` or
+  `[formGroup]`, must be rewritten against the `FieldTree`. Reactive Forms directives do not bind
+  to it.
+- Tests that set a control by `formControlName` or select errors by Reactive keys: the error kinds
+  are now `minLength` and `maxLength` (not `minlength` / `maxlength`). The `data-testid`s are unchanged.
+
 ### SDK 0.12.0 needs no source change for S6
 
 `SystemFieldsMetadata`, `DomainMetadata` and `ActionMetadata` keep their 0.11.0 constructors. Code
@@ -2111,3 +2147,4 @@ until the attribute is removed.
 - [ADR-078 — The build fails when the generated application has no driver to run on](adr/ADR-078-runtime-driver-gate.md)
 - [ADR-079 — The emitted OpenAPI describes no authentication](adr/ADR-079-emitted-openapi-authentication-claim.md)
 - [ADR-091 — Publish an opt-in application starter, so a consumer does not hand-write its build](adr/ADR-091-opt-in-application-starter.md)
+- [ADR-093 — Emitted forms are Angular Signal Forms](adr/ADR-093-emitted-forms-are-signal-forms.md)
