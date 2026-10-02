@@ -4,7 +4,7 @@ type: design-note
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-10-01
+last-verified: 2026-10-02
 ---
 
 # codegen-ts track — the emitted front consumes what the backend serves
