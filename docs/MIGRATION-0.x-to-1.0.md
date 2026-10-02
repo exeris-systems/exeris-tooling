@@ -4,7 +4,7 @@ type: migration-guide
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-10-01
+last-verified: 2026-10-02
 ---
 
 # Migration: 0.x → 1.0
@@ -1063,9 +1063,9 @@ requires them.
 
 *(Replaced 2026-09-26. This entry first said "Neither pin moves in this train"; B0 moved both.)*
 
-The BOM moves to **`eu.exeris:exeris-sdk-*:0.12.0-SNAPSHOT`** and **`eu.exeris:exeris-kernel-*:0.12.0`**,
-and neither is published yet. Build the SDK from `main` and the kernel from `development/0.12.0`.
-A tooling release is not cut until both are final.
+The BOM moves to **`eu.exeris:exeris-sdk-*:0.12.0-SNAPSHOT`** and **`eu.exeris:exeris-kernel-*:0.12.0`**.
+The kernel pin is the final `0.12.0` release on Maven Central. The SDK pin is not published yet:
+build the SDK from `main`. A tooling release is not cut until the SDK pin is final too.
 
 **The metadata schema stamp moves `0.11.0` → `0.12.0`.** SDK 0.12 moves `SchemaVersion.CURRENT`, so
 a baseline stamped `0.11.0` reads as schema skew (ADR-042). Re-run codegen once after upgrading.
@@ -1422,14 +1422,10 @@ not as the table owner (or keep tables `FORCE`d, as the generated migrations do)
   nothing on the server un-sets the soft-delete flag, so remove the call.
 - **Emitted service spec:** asserts `PUT` for update, and adds an archive case for soft-delete
   entities.
-- **Java `*Client`:** unchanged on the wire. `update` still sends `PATCH`, because `KernelWebClient`
-  has no `put`, and its Javadoc now says so. To make it reach a generated server, add this to the
-  *serving* application:
-  ```java
-  @Override public void configureRoutes(HttpRouter.Builder routes) {
-      routes.route(HttpMethod.PATCH, "/orders/{id}", orderHandler()::handleUpdate);
-  }
-  ```
+- **Java `*Client`:** `update(id, entity)` now sends `PUT {base}/{id}` through
+  `KernelWebClient.put` (kernel 0.12), matching the generated router and the TS service. It sent
+  `PATCH`, which no generated server answered. A serving application that added a
+  `PATCH {base}/{id}` route to reach the generated server can remove it.
 - A hand-written TS client that copied the generated `PATCH` should switch to `PUT`.
 
 ### `exeris-codegen-ts`: the edit route edits, and a routed form navigates

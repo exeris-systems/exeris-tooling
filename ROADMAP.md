@@ -4,7 +4,7 @@ type: roadmap
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-10-01
+last-verified: 2026-10-02
 ---
 
 # Exeris Tooling — Roadmap to 1.0.0 GA
@@ -1650,7 +1650,7 @@ never-invoked emitter start emitting, and its output did not build.
       columns through a kernel codec (the ADR-060 shape) — needs a check that kernel 0.12 exposes a
       JSON codec usable outside HTTP/event bodies and that it round-trips existing rows. Still open:
       nothing makes the *failure* name the artefact.
-- [ ] **T58 — PATCH/PUT parity: a generated client's update never reached a generated server.**
+- [x] **T58 — PATCH/PUT parity: a generated client's update never reached a generated server.**
       Numbered 2026-09-26, the next free T after the renumbering. Measured the same day. The
       generated router serves update on `PUT` and the OpenAPI document publishes `PUT`
       (`OpenApiPathsBuilder`), but the generated TypeScript service and Java client sent `PATCH`; the
@@ -1668,15 +1668,11 @@ never-invoked emitter start emitting, and its output did not build.
       and `crud-route-parity.spec.ts` (TS service, emitted spec). The e2e `KernelWebClient` stub,
       which shadowed the real facade in the compile gate, is gone.
 
-      **Java half open — blocked on the kernel.** `KernelWebClient` (kernel 0.12.0) has
-      `get/getList/post/patch/delete` and no `put`, so the generated `*Client.update` still sends
-      `PATCH`; its Javadoc says so and prints the serving-side route (`routes.route(HttpMethod.PATCH,
-      "<base>/{id}", <entity>Handler()::handleUpdate)` in `RuntimeComponents.configureRoutes`). The
-      parity test pins the exemption and fails once the facade gains `put`. Kernel ask:
-      `KernelWebClient.put` ("Kernel asks from this train"). Alternative, an architect decision:
-      serve a `PATCH` alias on the router and publish it in OpenAPI. Blocks the T12 client slice
-      until one lands. Also open: the TS `<Entity>Update` is `Partial<Create>` while the server's
-      update is a full replacement — a partial body over `PUT` nulls the omitted columns.
+      **Java half shipped (0.9.0, on the final kernel 0.12.0 from Central):** `*Client.update` calls
+      `KernelWebClient.put` (the kernel ask, exeris-kernel#579, is answered), and
+      `CrudRouteParityE2ETest` asserts `PUT` with no exemption. Still open: the TS `<Entity>Update`
+      is `Partial<Create>` while the server's update is a full replacement — a partial body over `PUT`
+      nulls the omitted columns.
 - [x] **Locale determinism — shipped 0.9.0 (2026-09-26).** Nineteen `toLowerCase()` calls in
       codegen-java used the JVM default locale. Under `tr-TR`: table `ınvoices`, column `item_ıd`,
       `ınvoice-api.yaml`, and an `InvalidPathException` writing `V…__create_lıne_ıtems.sql` on a
@@ -2437,8 +2433,8 @@ Each now has the status the code settles, and every other mention in this file a
 | T23 | Stream-route boot-reachability — the generated boot hands the kernel a lambda, not the `HttpRouter` the stream dispatcher resolves via `instanceof`, so every generated `streamRoute(...)` misses on a real boot and falls through to respond-once dispatch. Two lambdas were named: `RuntimeLifecycle`'s `router::handle` in the slot, and `Application`'s `forwardingHandler` bound as `HTTP_SERVER_HANDLER` | **High** | ✅ **Re-closed 2026-09-26 in tooling (B1).** `Application` binds a pre-boot edge `HttpRouter` (`RuntimeLifecycle.edgeRouter`); `GeneratedAppBootE2ETest` reads an SSE frame over a real boot. Residual K9: `configureRoutes` stream routes; scope around streams. *(Reopened earlier the same day: 0.6.0 (#106) fixed the slot and left the forwarder, the only handler the kernel reads; see the T23 entry in the T-namespace section.)* |
 | T8  | No generated finders/indexes for FK + `filterable` fields → O(n) `findAll().filter()` everywhere | **High** | ✅ 2026-06-28 (finders + FK/filterable indexes; T9 constraints deferred) |
 | T10 | `@Validation` enforced client-side (Zod) but dropped server-side (handler/service/DB) | **High** | ✅ 0.6.0 (#103) |
-| T12 | N generated apps can't form a mesh — client is own-app/relative-host, saga step is local, no cross-app contract | **High** | **T42 (types) SHIPPED 0.8.0**, no kernel gate; client+registry 0.9.0 — split by ADR-048; the client half needs a final kernel 0.12 — not for a binary break (the 2026-09-01 readiness measurement found `HttpRequest` additive, re-checked 2026-09-26), but because a peer-addressed client needs ADR-074's `defaultAuthority` / `withAuthority`, which exist only from 0.12 (K8) — and because its update must first reach the generated server (T58: `KernelWebClient` has no `put`) |
-| T58 | PATCH/PUT parity — the generated router serves update on `PUT` (and OpenAPI publishes `PUT`) while the generated TS service and Java client sent `PATCH`, so a generated client's update never reached a generated server | **High** | 🔶 TS half shipped 0.9.0 (2026-09-26, cross-build `crud-routes.json` gate); Java half blocked on kernel `KernelWebClient.put` |
+| T12 | N generated apps can't form a mesh — client is own-app/relative-host, saga step is local, no cross-app contract | **High** | **T42 (types) SHIPPED 0.8.0**, no kernel gate; client+registry 0.9.0 — split by ADR-048; the client half needs a final kernel 0.12 — not for a binary break (the 2026-09-01 readiness measurement found `HttpRequest` additive, re-checked 2026-09-26), but because a peer-addressed client needs ADR-074's `defaultAuthority` / `withAuthority`, which exist only from 0.12 (K8) — and because its update must first reach the generated server (T58, whose `put` dependency is answered by kernel 0.12.0) |
+| T58 | PATCH/PUT parity — the generated router serves update on `PUT` (and OpenAPI publishes `PUT`) while the generated TS service and Java client sent `PATCH`, so a generated client's update never reached a generated server | **High** | ✅ 0.9.0 — TS half 2026-09-26 (cross-build `crud-routes.json` gate); Java half on kernel 0.12.0 `KernelWebClient.put` |
 | T17 | Capability-graph validation is closed-world per app — a legitimate cross-service `@Requires` hard-fails the build | **High** | **0.9.0** — ships with the client+registry slice per ADR-048 |
 | T54 | *(was T26)* A `@ExerisDomain(versioned = true)` entity whose `version` field is the **wrapper** `Long` throws NPE on the first `save()` of a fresh entity: `buildColumnLayout` hardcodes the VERSION column's type as `Long` and the emitter binds it by unboxing (`stmt.bindLong(i, entity.getVersion())`), with no null guard — and no guard is possible while the column type is a constant, since a primitive `long version` field cannot be null-compared. `update()` has the same unboxing (`long expected = entity.getVersion()`). Every other nullable system column (`createdAt`/`updatedAt`) *is* guarded, so this is the one gap. Fix is to read the declared field type into the column instead of assuming, which makes it a repository-emitter change rather than a test one | **Medium** (latent; primitive-`long` entities were unaffected) | ✅ 0.7.x — found 2026-08-02 by the T2 slice-d system-column fixture, fixed the same day: both the version bind and `update()`'s expected-version read go through a boxed local with a null default, so a wrapper-typed field behaves exactly like the primitive it shadows. The e2e fixture keeps the **wrapper** declaration (a primitive would pass either way) and the generated repository test no longer pre-stages the version, which makes every consumer's emitted test a regression test for it |
 | T2  | Zero tests generated for the generated surface | Medium | 🔶 0.7.0 slices a–f — the **Java half is complete** (handler bodyless routes + body-route guards + service delegation + repository round-trip + saga wiring + `@Validation` boundary pairs, ADR-058); **FE spec slice → 0.8.0** |
@@ -3424,8 +3420,8 @@ temporary exception; the rule binds the cut)*. Four groups, by what blocks them 
   T17. **Not** the EV1-stream per-action driver — see the readiness measurement below.
   *(2026-09-26: the pin bump and the `@Saga.version` emitter half are applied on the working branch
   as **B0**, below — against pre-release 0.12 builds, so they still wait on the finals. T12's client
-  half also waits on T58's Java half: the generated client's update has to reach the generated
-  server, and `KernelWebClient` has no `put`.)*
+  half also waited on T58's Java half, which shipped once kernel 0.12.0 gave `KernelWebClient` a
+  `put`.)*
 - **Behind an SDK record change:** the `GraphEdgeMetadata` field/identity split, the six
   `@Saga.compensation*` attributes, `@SagaStep.waitForAll` / `.failFast`. Each is a carrier that does
   not exist; extracting into nothing is the failure mode 0.8.0 spent itself removing.
@@ -3439,8 +3435,9 @@ Also open and independent of all four: the missing `warnInertAttributes` call si
 
 - [~] **B0 — the 0.12 pin bump. Applied on the working branch 2026-09-26; not final.**
       `exeris.sdk.version` → `0.12.0-SNAPSHOT` (SDK `main`) and `exeris.kernel.version` → `0.12.0`
-      (kernel `development/0.12.0`, code cut 2026-09-03). Both are installed from source; neither is
-      on Maven Central. The dog-food measured this reactor green against that pair on 2026-09-25,
+      (kernel `development/0.12.0`, code cut 2026-09-03). *Kernel half final: `0.12.0` is released
+      on Maven Central (tag `v0.12.0`), and CI resolves it from there. The SDK half is still
+      `0.12.0-SNAPSHOT`, installed from source.* The dog-food measured this reactor green against that pair on 2026-09-25,
       `KernelCodegenCompileTest` against kernel 0.12 included, with the S6 rider below as its only
       source change. Three riders, each forced by the new line rather than chosen:
       - **S6** — `SystemFieldsMetadata` grew a trailing `sharedScopeField`, a positional break with
@@ -3470,9 +3467,9 @@ Also open and independent of all four: the missing `warnInertAttributes` call si
       jars are all class-file major 69 with zero preview stamps, as at 0.11.0 (0.10.2 had 9 in core),
       so the e2e surefire JVM stays without `--enable-preview`.
 
-      **What makes it final:** both pins move to the `0.12.0` releases once kernel and SDK publish,
+      **What makes it final:** both pins at the `0.12.0` releases (the kernel's is),
       and only then can 0.9.0 be cut — no cross-repo SNAPSHOT at a cut, and the tag's own POM is
-      final (Versioning policy). Until then a consumer building this branch installs both from
+      final (Versioning policy). Until then a consumer building this branch installs the SDK from
       source. SDK `main` builds from a fresh clone with no flag, because japicmp runs only under
       `-Psemver` there.
 
@@ -3486,7 +3483,7 @@ Each is recorded where it was measured; this is the one list to hand to the kern
   bound for a stream, which runs on the edge router outside the wrapper. Both want stream resolution
   through an SPI that a forwarder or a wrapper can delegate. That needs an SPI return type: today's
   match type, `HttpRouter.StreamMatch`, lives in core.
-- **`KernelWebClient.put`** (T58). The facade has `get/getList/post/patch/delete`, so the generated
+- **`KernelWebClient.put`** (T58) — *answered by kernel 0.12.0 (exeris-kernel#579) and consumed.* The facade had `get/getList/post/patch/delete`, so the generated
   Java `*Client` cannot send the verb the generated router serves for update.
 - **The reference RLS policy admits cross-tenant `DELETE` and re-own of shared rows** (T29 slice
   B). Measured on PostgreSQL 16 as a `NOSUPERUSER NOBYPASSRLS` non-owner. With the single `FOR ALL`
@@ -3673,8 +3670,7 @@ Expected to pair with kernel 0.13, and with SDK 0.13 if one is needed.
 
 - [ ] **T53 in full** (RFC, then ADR): `@RouteAccess` + `permissions` compiled into `RouteRequirement`. D10 resolves
       with it.
-- [ ] Track C (SDK record changes), `@SagaTransition`, T12 + T17, `@PrimaryKey`, D4 and T58's Java
-      half (on `KernelWebClient.put`), unless one lands in 0.9.0 by its gate opening early.
+- [ ] Track C (SDK record changes), `@SagaTransition`, T12 + T17, `@PrimaryKey`, D4, unless one lands in 0.9.0 by its gate opening early.
 - [ ] The removals below.
 
 **Not placed in a milestone**, because the next step belongs to another repository: C2

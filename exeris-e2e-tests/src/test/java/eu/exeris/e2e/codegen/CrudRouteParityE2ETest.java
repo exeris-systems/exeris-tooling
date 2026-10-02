@@ -1,6 +1,5 @@
 package eu.exeris.e2e.codegen;
 
-import eu.exeris.kernel.core.http.client.KernelWebClient;
 import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
@@ -17,7 +16,6 @@ import tools.jackson.databind.json.JsonMapper;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -41,10 +39,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * service against the same contract file — the only way to link two builds that never run
  * together.
  *
- * <p><b>The one exemption, and what retires it.</b> The Java client sends {@code PATCH}:
- * {@code KernelWebClient} has no {@code put} verb, so there is no call it can make
- * that the router serves. {@link #javaClientCallsOnlyServedRoutes()} asserts that fact as well as
- * the exemption, so the day the facade gains {@code put(...)} this test fails and says to switch.
+ * <p>Every client call is held to the contract, update included: the client sends {@code PUT}
+ * through {@code KernelWebClient.put}, the verb the router serves.
  */
 @Tag("e2e")
 @Tag("codegen")
@@ -140,7 +136,7 @@ class CrudRouteParityE2ETest {
     }
 
     @Test
-    @DisplayName("the generated Java client calls only routes the router serves (update exempt until KernelWebClient has put)")
+    @DisplayName("the generated Java client calls only routes the router serves")
     void javaClientCallsOnlyServedRoutes() {
         String client = new KernelClientGenerator().generate(metadata).content();
         Map<String, Set<Endpoint>> expected = contract.byOperation();
@@ -157,17 +153,6 @@ class CrudRouteParityE2ETest {
             Endpoint sent = new Endpoint(call.group(1).toUpperCase(java.util.Locale.ROOT),
                     clientTemplate(call.group(2).trim(), client));
 
-            if ("update".equals(operation)) {
-                boolean facadeHasPut = Arrays.stream(KernelWebClient.class.getMethods())
-                        .anyMatch(candidate -> candidate.getName().equals("put"));
-                assertThat(facadeHasPut)
-                        .as("KernelWebClient now has put(...). Switch KernelClientGenerator.buildUpdate "
-                                + "to client.put, drop its not-served Javadoc, and delete this exemption")
-                        .isFalse();
-                assertThat(sent).as("the known PATCH/PUT gap, and nothing else")
-                        .isEqualTo(new Endpoint("PATCH", "{base}/{id}"));
-                continue;
-            }
             assertThat(expected.get(operation))
                     .as("client method %s sends %s", method.group(1), sent)
                     .contains(sent);

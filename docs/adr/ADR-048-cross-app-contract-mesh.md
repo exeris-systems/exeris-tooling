@@ -9,7 +9,7 @@ slug: adr/ADR-048
 
 # ADR-048 — A peer's contract is a dependency, and its types are the first thing worth generating from it
 
-- **Status:** ACCEPTED (2026-08-28) · amended 2026-09-26 (Amendment 1 — §6's client-slice gate is additive, not a binary break)
+- **Status:** ACCEPTED (2026-08-28) · amended 2026-09-26 (Amendment 1 — §6's client-slice gate is additive, not a binary break) · amended 2026-10-02 (Amendment 2 — the T58 precondition is met)
 - **Repo:** `exeris-tooling`
 - **Scope:** tooling / codegen (pipeline input shape)
 - **Visibility:** public
@@ -216,3 +216,13 @@ break:
   constraint on it: it must not raise `cap-manifest.json`'s `schemaVersion`, because the SDK boot
   check (`KNOWN_SCHEMA_VERSION = 2` in `CompositionStampAssertion`) refuses anything above 2.
 - The saga remote-dispatch body, which stays gated as §6 says.
+
+## Amendment 2 — the T58 precondition is met (2026-10-02)
+
+- **Status:** ACCEPTED (2026-10-02).
+- **Amends:** Amendment 1, "What the gate is now", reason 2. Reason 1 and everything else are unchanged.
+
+Kernel 0.12.0 is final on Maven Central, and its `KernelWebClient` has `put` (exeris-kernel#579).
+The generated `*Client.update` sends `PUT {base}/{id}`, the verb the generated router serves, and
+`CrudRouteParityE2ETest` asserts it with no exemption (T58). Reason 2 no longer gates the client
+slice; reason 1, ADR-074's addressing surface, is available on the same final kernel.
