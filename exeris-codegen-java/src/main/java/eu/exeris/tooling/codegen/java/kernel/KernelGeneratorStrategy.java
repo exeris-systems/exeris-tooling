@@ -35,7 +35,7 @@ import java.util.List;
  *
  * <p>{@link KernelClientGenerator} binds to the tier-neutral {@code KernelWebClient}
  * facade in {@code eu.exeris.kernel.core.http.client} (ADR-034). Its
- * {@code get/post/patch/delete(path, [body,] Class<T>)} methods are the entity-typed surface
+ * {@code get/post/put/delete(path, [body,] Class<T>)} methods are the entity-typed surface
  * the generator targets, so no tooling-side {@code HttpEntityCodec} collaborator is needed.
  *
  * <h2>Project-wide (invoked separately by {@code CodegenPipeline})</h2>

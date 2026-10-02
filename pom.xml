@@ -77,9 +77,9 @@
          profiles are activated in the consumer's build, so one active by default, or by the absence
          of a property, is active there too.
 
-         Builds that still need GitHub Packages (kernel pre-releases not yet on Central) get the
-         repository from .github/maven-settings.xml, which declares it in a settings profile that
-         never reaches a POM. -->
+         A dependency not yet on Central is installed from source into the local repository. If a
+         build ever needs another repository, it belongs in a settings file, which never reaches a
+         POM. -->
 
     <modules>
         <module>exeris-tooling-bom</module>
