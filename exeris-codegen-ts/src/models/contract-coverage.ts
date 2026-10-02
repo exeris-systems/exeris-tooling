@@ -19,7 +19,7 @@
  * does not is a `GAP`, never `JAVA_ONLY`.
  */
 
-import type { DomainMetadata } from './domain-model.js';
+import type { DomainMetadata, FieldMetadata, UIMetadata } from './domain-model.js';
 
 export type ContractState = 'READ' | 'JAVA_ONLY' | 'RESERVED' | 'GAP';
 
@@ -59,7 +59,12 @@ export const CONTRACT_COVERAGE = {
   events: { state: 'READ' },
   relationships: { state: 'READ' },
   projections: { state: 'RESERVED', reason: 'No projection read model or endpoint is emitted on either side.' },
-  uiMetadata: { state: 'READ' },
+  uiMetadata: {
+    state: 'GAP',
+    reason:
+      'The processor writes the @UI view switches and the Java form DSL lays out on its column count; no TS ' +
+      'generator honours a switch, so @UI(listView = false) still emits a list page. See UI_CONTRACT_COVERAGE.',
+  },
   graphMetadata: { state: 'JAVA_ONLY', reason: 'Server-side graph synchronisation; the front has no graph surface.' },
   sagaMetadata: { state: 'READ' },
   systemFields: { state: 'READ' },
@@ -68,3 +73,82 @@ export const CONTRACT_COVERAGE = {
 } as const satisfies { readonly [K in keyof DomainMetadata]-?: ContractCoverageEntry };
 
 export type ContractField = keyof typeof CONTRACT_COVERAGE;
+
+/**
+ * Contract coverage one level down: the keys of a field object and of `uiMetadata`.
+ *
+ * The states mean what they mean for `CONTRACT_COVERAGE`, with one difference: for `GAP` it is
+ * enough that the processor writes the key and the front owes an emission for it — a presentation
+ * key can be owed by the front alone. Each entry also says whether `ExerisDomainProcessor` ever
+ * sets the key from the source (`written`). The schemas mirror the SDK records, which declare
+ * more than the processor extracts, so a key can be declared, even read, and still never arrive
+ * from a real build: a generator branch on it runs only for hand-built metadata. A key that is
+ * never written can be acted on by no one, so it is only ever `READ` or `RESERVED`.
+ *
+ * `READ` is measured by the same orchestrator run as `CONTRACT_COVERAGE`, with every field object
+ * and every `uiMetadata` object proxied; `written` is read off the processor's extraction and is
+ * not measured.
+ */
+export type NestedContractCoverageEntry = ContractCoverageEntry & { readonly written: boolean };
+
+const NOT_WRITTEN = 'Declared by the SDK record; the processor never sets it.';
+
+export const FIELD_CONTRACT_COVERAGE = {
+  name: { state: 'READ', written: true },
+  type: { state: 'READ', written: true },
+  columnName: { state: 'RESERVED', written: false, reason: `${NOT_WRITTEN} Columns are the snake-cased field name.` },
+  displayName: { state: 'READ', written: true },
+  description: { state: 'READ', written: true },
+  required: { state: 'READ', written: true },
+  unique: { state: 'JAVA_ONLY', written: true, reason: 'Indexes the column in the Flyway migration.' },
+  indexed: {
+    state: 'RESERVED',
+    written: true,
+    reason: 'No emitter reads it: the migration indexes searchable, unique and filterable fields, not indexed ones.',
+  },
+  searchable: { state: 'READ', written: true },
+  sortable: { state: 'READ', written: true },
+  filterable: { state: 'READ', written: true },
+  audited: {
+    state: 'RESERVED',
+    written: false,
+    reason: `${NOT_WRITTEN} Auditing is the entity-level audited flag; nothing is audited per field.`,
+  },
+  readOnly: { state: 'READ', written: true },
+  hidden: { state: 'READ', written: false },
+  defaultValue: { state: 'READ', written: false },
+  minLength: { state: 'READ', written: true },
+  maxLength: { state: 'READ', written: true },
+  min: { state: 'READ', written: true },
+  max: { state: 'READ', written: true },
+  pattern: { state: 'READ', written: true },
+  format: { state: 'READ', written: false },
+  dataType: { state: 'READ', written: true },
+  enumType: { state: 'READ', written: false },
+  inCreate: { state: 'READ', written: true },
+  inUpdate: {
+    state: 'GAP',
+    written: true,
+    reason: 'The edit form is built from inCreate alone, so @Field(inUpdate = false) still offers the field for editing.',
+  },
+  computed: { state: 'READ', written: true },
+  computedFrom: { state: 'READ', written: true },
+} as const satisfies { readonly [K in keyof FieldMetadata]-?: NestedContractCoverageEntry };
+
+const UI_SWITCH_GAP = 'Written from @UI; the front emits the surface whatever the switch says.';
+
+export const UI_CONTRACT_COVERAGE = {
+  icon: { state: 'RESERVED', written: false, reason: `${NOT_WRITTEN} @UI declares it and the processor drops it.` },
+  color: { state: 'RESERVED', written: false, reason: `${NOT_WRITTEN} @UI declares it and the processor drops it.` },
+  listView: { state: 'GAP', written: true, reason: UI_SWITCH_GAP },
+  detailView: { state: 'GAP', written: true, reason: UI_SWITCH_GAP },
+  createForm: { state: 'GAP', written: true, reason: UI_SWITCH_GAP },
+  editForm: { state: 'GAP', written: true, reason: UI_SWITCH_GAP },
+  searchable: { state: 'GAP', written: true, reason: UI_SWITCH_GAP },
+  filterable: { state: 'GAP', written: true, reason: UI_SWITCH_GAP },
+  exportable: {
+    state: 'RESERVED',
+    written: true,
+    reason: 'Written from @UI; no export action is emitted on either side, and the switch defaults to off.',
+  },
+} as const satisfies { readonly [K in keyof UIMetadata]-?: NestedContractCoverageEntry };
