@@ -33,22 +33,6 @@ jobs:
         with:
           path: exeris-tooling
 
-      # CI builds the SDK from source and `mvn install`s it (NOT GitHub Packages),
-      # so this ref decides which SDK version lands in the local repo, and it
-      # must match exeris.sdk.version in the BOM.
-      #
-      # Tracking `main`: the BOM pins 0.12.0-SNAPSHOT, and `main` is the only
-      # ref that builds it. The cost is that a moving ref lets an unrelated SDK
-      # commit turn this build red, and it ends with the release: when the SDK
-      # tags v0.12.0, this returns to `ref: v0.12.0` in the same change that pins
-      # the final version. No tooling release is cut while this says `main`.
-      - name: Checkout exeris-sdk (main — 0.12.0-SNAPSHOT, matches exeris.sdk.version in the BOM)
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: exeris-systems/exeris-sdk
-          ref: main
-          path: exeris-sdk
-
       - name: Set up JDK ${{ matrix.java }}
         uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
@@ -57,26 +41,17 @@ jobs:
           cache: maven
 
       # A released coordinate is resolved from Maven Central, and a cached copy of the same
-      # coordinate published before the release is purged. Maven never re-fetches a release it
-      # already holds, so an ~/.m2 restored by the cache above would otherwise keep serving a
-      # pre-release jar under the final version. The kernel jars are re-fetched from Central on
-      # every run; that is a few megabytes.
-      - name: Purge cached exeris-kernel artefacts
-        run: rm -rf ~/.m2/repository/eu/exeris/exeris-kernel*
-
-      # maven.javadoc.skip: `attach-javadocs` builds two javadoc jars nothing here
-      # consumes, at the cost of ~200 "no comment" warnings per run. Those are the SDK's own docs debt, reported
-      # against SDK sources, and reading them in this repo's log teaches only that
-      # our log is noisy. They belong to the SDK's build, where they are actionable.
-      - name: Install exeris-sdk to local Maven repo
-        working-directory: exeris-sdk
-        run: mvn -B -ntp -DskipTests -Dmaven.javadoc.skip=true install
+      # coordinate published or installed before the release is purged. Maven never re-fetches a
+      # release it already holds, so an ~/.m2 restored by the cache above would otherwise keep
+      # serving a pre-release kernel jar, or an SDK built from source, under the final version.
+      # The kernel and SDK jars are re-fetched from Central on every run; that is a few megabytes.
+      - name: Purge cached exeris-kernel and exeris-sdk artefacts
+        run: rm -rf ~/.m2/repository/eu/exeris/exeris-kernel* ~/.m2/repository/eu/exeris/exeris-sdk*
 
       - name: mvn -B verify (exeris-tooling)
         working-directory: exeris-tooling
-        # No -U. The SDK SNAPSHOT is built into the local repo by the step above
-        # rather than fetched, so there is no remote SNAPSHOT to re-check. The
-        # kernel resolves from Maven Central, at its final 0.12.0 release. -U
+        # No -U. The kernel and the SDK resolve from Maven Central, each at its
+        # final 0.12.0 release, so there is no remote SNAPSHOT to re-check. -U
         # belongs back only if a SNAPSHOT ever arrives over the wire.
         #
         # No settings file: every remote dependency comes from Central, the only

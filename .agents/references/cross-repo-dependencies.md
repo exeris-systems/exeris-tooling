@@ -18,7 +18,7 @@ downstream consumer applications (budgetHQ, user microservices)
 
 - **Reads from:** `eu.exeris:exeris-sdk-annotations` and `eu.exeris:exeris-sdk-source-model`.
 - **Contract:** The SDK's `@ExerisDomain` domain class is the single source of truth. Tooling consumes the AST records published by `exeris-sdk-source-model`.
-- **Local installation:** During local cross-repo development, `mvn install` in `exeris-sdk` provides the required SNAPSHOT artifacts.
+- **Resolution:** `exeris-tooling-bom` pins a released SDK (`exeris.sdk.version`), resolved from Maven Central. To build against an unreleased SDK change, `mvn install` it from an `exeris-sdk` checkout and point `exeris.sdk.version` at that version locally; no cross-repo SNAPSHOT remains at a tooling cut.
 
 ## Target: `exeris-kernel`
 

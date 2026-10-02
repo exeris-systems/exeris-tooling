@@ -159,9 +159,10 @@ jobs:
           gpg-passphrase: MAVEN_GPG_PASSPHRASE
 
       # Every eu.exeris coordinate a release depends on is resolved from Maven Central. The cache
-      # above is shared with build.yml, so it can hold an SDK installed from source or a kernel
-      # published elsewhere before its release, and Maven never re-fetches a release it already
-      # holds. Purging them is what lets a pin that is not on Central fail to resolve here.
+      # above is shared with build.yml, so it can hold a copy of an eu.exeris coordinate that was
+      # installed from source or published elsewhere before its release, and Maven never
+      # re-fetches a release it already holds. Purging them is what lets a pin that is not on
+      # Central fail to resolve here.
       - name: Purge cached eu.exeris artefacts
         run: rm -rf ~/.m2/repository/eu/exeris
 
