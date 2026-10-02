@@ -2968,7 +2968,7 @@ Proposals, highest return-on-effort first:
       *Superseded in 0.7.0 by UP1:* the range widened to `[25,)` and the plugin's classes are v69. The
       failure mode D1 exists to catch is unchanged — only the floor moved, and it moved down.
 
-- [ ] **D2 — Document the two-pass first build.** The processor writes
+- [x] **D2 — Document the two-pass first build.** *Done in #253: the README quick start documents both passes.* The processor writes
       `target/classes/exeris-metadata/*.json` during `compile`, which runs *after* the plugin's
       `generate-sources`, so a from-scratch build needs two passes (already noted in `GenerateMojo`;
       `build.sh` encodes it). Worth a line in the plugin quick-start / an archetype.
@@ -3345,8 +3345,8 @@ needed.)*
       (T49, ADR-070 obligation 6): the emitted app refuses to boot on that combination today. It also
       lets a `streamRoute` registered in `configureRoutes` resolve. Lift the refusal, amend ADR-070's
       obligation, and cover both with a real-boot e2e case.
-- [x] Kernel 0.12 also ships `CommunityStorageSubsystem` (K6). *(#243: the `@Blob` reason now states what the kernel binds.)* The `@Blob` inert reason above names it
-      as missing.
+- [x] Kernel 0.12 ships `CommunityStorageSubsystem` (K6); the `@Blob` inert reason now states what the
+      kernel binds (#243).
 
 **Upstream issues this scope depends on** (filed 2026-09-30):
 - **Blocks the cut.** Each is an ADR-042 divergence: the processor writes something the SDK `-io`
