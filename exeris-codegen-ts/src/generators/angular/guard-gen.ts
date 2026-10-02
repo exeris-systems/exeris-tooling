@@ -20,10 +20,6 @@ export class GuardGenerator implements CodeGenerator {
   readonly priority = 15;
 
   generate(domain: DomainMetadata, context: GeneratorContext): GeneratedFile | null {
-    if (domain.internalApi?.hidden) {
-      return null;
-    }
-
     const kebab = DslMapper.toKebabCase(domain.entityName);
     const content = this.generateGuardContent(domain, context);
 
@@ -186,7 +182,6 @@ export class AuthService {
     ];
 
     for (const domain of domains) {
-      if (domain.internalApi?.hidden) continue;
       const kebab = DslMapper.toKebabCase(domain.entityName);
       lines.push(`export * from './${kebab}.guard';`);
     }
@@ -196,10 +191,8 @@ export class AuthService {
 }
 
 export function generateGuard(metadata: DomainMetadata, config: GeneratorConfig): GeneratedFile | null {
-  // Returns null when the domain is internalApi.hidden — matches the
-  // sibling generateForm convenience's `| null` contract. The previous
-  // `!` non-null assertion silently crashed on hidden domains; widening
-  // the return type at the source forces callers to handle the skip.
+  // Typed `| null` like the sibling generateForm convenience, so a generator that skips a domain
+  // never needs a non-null assertion at the call site.
   const generator = new GuardGenerator();
   const context: GeneratorContext = { config, backend: config.backend ?? 'KERNEL', allDomains: [metadata], enums: [] };
   return generator.generate(metadata, context);

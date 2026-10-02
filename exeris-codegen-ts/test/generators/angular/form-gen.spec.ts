@@ -15,10 +15,6 @@
  *   - Order-based sort + label fallback (displayName ?? toTitleCase(name))
  *   - Mode-driven submit dispatch (create vs update)
  *   - Enum imports + enumValues + enumDisplayNames properties
- *
- * Note on generateForm convenience: this is the only api/angular
- * generator whose convenience function returns `null` for a hidden
- * domain (the others use `!`). Worth a dedicated test.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -43,13 +39,6 @@ function domain(overrides: Partial<DomainMetadata> & { entityName: string }): Do
 
 function field(overrides: Partial<FieldMetadata> & { name: string; type: string }): FieldMetadata {
   return FieldMetadataSchema.parse(overrides);
-}
-
-function hiddenDomain(entityName: string): DomainMetadata {
-  return domain({
-    entityName,
-    internalApi: { hidden: true, readOnly: false, internal: false },
-  });
 }
 
 // ---------- CodeGenerator contract ----------
@@ -79,9 +68,6 @@ describe('FormGenerator.generate — emit path + hidden-skip', () => {
     expect(file!.overwritable).toBe(true);
   });
 
-  it('returns null for an internalApi.hidden domain', () => {
-    expect(gen.generate(hiddenDomain('Audit'), CTX)).toBeNull();
-  });
 });
 
 // ---------- emitted structure ----------
@@ -713,10 +699,6 @@ describe('generateForm — top-level convenience function', () => {
     const file = generateForm(domain({ entityName: 'Order' }), CTX.config);
     expect(file).not.toBeNull();
     expect(file!.path).toBe('components/order-form.component.ts');
-  });
-
-  it('returns null for a hidden domain (unlike sibling generators which use !)', () => {
-    expect(generateForm(hiddenDomain('Audit'), CTX.config)).toBeNull();
   });
 
   it('falls back to KERNEL backend when config.backend is undefined', () => {

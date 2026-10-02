@@ -49,15 +49,6 @@ describe('StreamClientGenerator.generate — realTimeApi gating', () => {
     expect(gen.generate(domain({ entityName: 'Order' }), CTX)).toBeNull();
   });
 
-  it('returns null for a hidden internal API even when realTimeApi is true', () => {
-    const d = domain({
-      entityName: 'Order',
-      realTimeApi: true,
-      internalApi: { hidden: true, readOnly: false, internal: false },
-    });
-    expect(gen.generate(d, CTX)).toBeNull();
-  });
-
   it('returns null for a tenant-partitioned domain (stream routes carry no tenant guard)', () => {
     for (const scope of [{ dataScope: 'TENANT' }, { dataScope: 'UNIVERSE' }, { tenantScoped: true }] as const) {
       expect(gen.generate(domain({ entityName: 'Order', realTimeApi: true, ...scope }), CTX)).toBeNull();

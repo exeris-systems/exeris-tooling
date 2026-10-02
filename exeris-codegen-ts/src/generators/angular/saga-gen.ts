@@ -549,7 +549,7 @@ export class ${pascalSagaName}StateMachine {
     name: '${tsSingleQuoted(step.name)}',
     label: '${tsSingleQuoted(label)}',
     status: 'PENDING',
-    compensatingAction: ${step.compensatingAction ? `'${tsSingleQuoted(step.compensatingAction)}'` : 'undefined'},
+    compensatingAction: ${step.compensation ? `'${tsSingleQuoted(step.compensation)}'` : 'undefined'},
   }`;
     }).join(',\n');
 

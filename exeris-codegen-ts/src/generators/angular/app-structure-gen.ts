@@ -114,12 +114,6 @@ export function generateAppStructure(
   files.push({ path: `${envRoot}/environment.ts`, content: generateEnvironmentFile({ production: true, api }), overwritable: false });
   files.push({ path: `${envRoot}/environment.development.ts`, content: generateEnvironmentFile({ production: false, api }), overwritable: true });
 
-  // Public-surface emitters (sidebar nav, route list, barrel re-exports) take the
-  // visible list so they never reference an entity whose per-entity files the
-  // orchestrator skips for hidden domains. Filtering once here keeps the
-  // hidden-domain policy in one spot.
-  const visibleDomains = domains.filter((d) => !d.internalApi?.hidden);
-
   // Views are sorted deterministically (by effective route path, then name) so the
   // emitted route imports/spreads + nav links are order-stable regardless of the
   // directory-scan order the CLI hands them in. The sort is on a copy — the caller's
@@ -128,12 +122,12 @@ export function generateAppStructure(
 
   // App shell under src/app
   files.push({ path: `${appRoot}/app.config.ts`, content: generateAppConfig(needs.backend), overwritable: false });
-  files.push({ path: `${appRoot}/app.component.ts`, content: generateAppComponent(visibleDomains, appName, sortedViews), overwritable: false });
-  files.push({ path: `${appRoot}/app.routes.ts`, content: generateAppRoutes(visibleDomains, appName, sortedViews), overwritable: false });
+  files.push({ path: `${appRoot}/app.component.ts`, content: generateAppComponent(domains, appName, sortedViews), overwritable: false });
+  files.push({ path: `${appRoot}/app.routes.ts`, content: generateAppRoutes(domains, appName, sortedViews), overwritable: false });
   // The app barrel re-exports the generated types, services, stores and components. With no
-  // visible entity and no enum there is nothing to re-export, and no barrel.
-  if (visibleDomains.length > 0 || enums.length > 0) {
-    files.push({ path: `${appRoot}/index.ts`, content: generateBarrelExport(visibleDomains, enums, config), overwritable: true });
+  // entity and no enum there is nothing to re-export, and no barrel.
+  if (domains.length > 0 || enums.length > 0) {
+    files.push({ path: `${appRoot}/index.ts`, content: generateBarrelExport(domains, enums, config), overwritable: true });
   }
 
   // T20: per-entity components/services/types/schemas and enums are emitted by the
@@ -347,7 +341,7 @@ function generateAppRoutes(domains: DomainMetadata[], appName: string, views: Vi
 
   // The default redirect prefers the FIRST PAGE view when any exists (a generated
   // standalone front then lands on a @View page out of the box); otherwise it keeps
-  // the existing entity-based default (first visible domain), and falls back to ''
+  // the existing entity-based default (first domain), and falls back to ''
   // when neither is present. With zero views the entity branch is taken unchanged.
   const firstPageView = views.find(isPageView);
   const firstListed = domains.find((d) => entityViews(d).list);
@@ -387,16 +381,10 @@ export const routes: Routes = [${redirect}${routes.join('')}${viewSpreads}
  * generated. The `barrel-resolves.spec` asserts this invariant for every combination of flags.
  */
 function generateBarrelExport(
-  visibleDomains: DomainMetadata[],
+  domains: DomainMetadata[],
   enums: EnumMetadata[],
   config: GeneratorConfig,
 ): string {
-  // Caller (generateAppStructure) is responsible for filtering out
-  // hidden domains — see the `visibleDomains` comment at the call
-  // site. This function trusts its input and iterates everything
-  // it's given. Sole caller in tree; if a second caller ever shows
-  // up, document the contract or reintroduce the filter here.
-
   const exports: string[] = [
     "// Generated barrel export",
     "// DO NOT EDIT - This file is auto-generated",
@@ -405,22 +393,22 @@ function generateBarrelExport(
     "export * from './types/enums';",
   ];
 
-  // Every section below re-exports per-entity files; with no visible entity the enums are all
+  // Every section below re-exports per-entity files; with no entity the enums are all
   // there is, and empty section headers would advertise surfaces the app does not have.
-  if (visibleDomains.length === 0) {
+  if (domains.length === 0) {
     return exports.join('\n') + '\n';
   }
 
   exports.push("", "// Types (main type definitions)");
 
-  for (const domain of visibleDomains) {
+  for (const domain of domains) {
     const kebab = DslMapper.toKebabCase(domain.entityName);
     exports.push(`export * from './types/${kebab}.types';`);
   }
 
   if (config.generateZod) {
     exports.push("", "// Schemas (Zod validation schemas only)");
-    for (const domain of visibleDomains) {
+    for (const domain of domains) {
       const kebab = DslMapper.toKebabCase(domain.entityName);
       exports.push(`export * from './schemas/${kebab}.schema';`);
     }
@@ -431,7 +419,7 @@ function generateBarrelExport(
 
     // Export Page and PageRequest only once from first service
     let pageTypesExported = false;
-    for (const domain of visibleDomains) {
+    for (const domain of domains) {
       const kebab = DslMapper.toKebabCase(domain.entityName);
       const model = modelTypeName(domain.entityName);
       if (!pageTypesExported) {
@@ -448,8 +436,8 @@ function generateBarrelExport(
   // the per-file names (`<Entity>StreamClient`, `<Entity><Action>StreamClient`, the one
   // shared `StreamFrame`) are distinct, so starring them is unambiguous.
   if (config.generateServices) {
-    const liveView = visibleDomains.some(hasLiveViewClient);
-    const actionStreams = visibleDomains.some(hasActionStreamClients);
+    const liveView = domains.some(hasLiveViewClient);
+    const actionStreams = domains.some(hasActionStreamClients);
     if (liveView || actionStreams) {
       exports.push("", "// SSE stream clients");
       if (liveView) exports.push("export * from './services/streams.index';");
@@ -469,7 +457,7 @@ function generateBarrelExport(
   // than reported. The filter type therefore keeps coming from the service alone.
   if (config.generateStores) {
     exports.push("", "// Stores (signal state over the services)");
-    for (const domain of visibleDomains) {
+    for (const domain of domains) {
       const kebab = DslMapper.toKebabCase(domain.entityName);
       exports.push(`export { ${domain.entityName}Store } from './stores/${kebab}.store';`);
       exports.push(`export type { ${domain.entityName}StoreState } from './stores/${kebab}.store';`);
@@ -479,7 +467,7 @@ function generateBarrelExport(
   // A component is exported only when it is emitted: the config flag and the entity's @UI switch
   // both decide that.
   const componentExports: string[] = [];
-  for (const domain of visibleDomains) {
+  for (const domain of domains) {
     const kebab = DslMapper.toKebabCase(domain.entityName);
     const views = entityViews(domain);
     if (config.generateForms && hasFormPage(views)) {
@@ -501,7 +489,7 @@ function generateBarrelExport(
   // like the generated services. The barrel is how that code reaches them without knowing
   // internal paths, so an event surface missing from it is emitted-but-unreachable.
   const eventDomains = config.generateEvents
-    ? visibleDomains.filter((d) => d.events && d.events.length > 0)
+    ? domains.filter((d) => d.events && d.events.length > 0)
     : [];
   if (eventDomains.length > 0) {
     exports.push('', '// Domain events (handlers, payload types, and the shared bus)');
@@ -522,7 +510,7 @@ function generateBarrelExport(
   // reported. The shared type names therefore come from the first saga only, exactly as `Page`
   // and `PageRequest` do in the services section above.
   const sagaDomains = config.generateSagas
-    ? visibleDomains.filter((d) => sagaMachineName(d) !== null)
+    ? domains.filter((d) => sagaMachineName(d) !== null)
     : [];
   if (sagaDomains.length > 0) {
     exports.push('', '// Saga state machines');

@@ -1605,7 +1605,7 @@ the detail row. The link text is the id; the target is not fetched. The plural i
 table's own (`DslMapper.routePlural`), and a qualified `targetEntity` resolves by its simple name.
 
 - **Only when the target is generated in the same app.** A target that is not among the loaded
-  domains, or is `internalApi.hidden`, has no route, and its field renders as plain text.
+  domains has no route, and its field renders as plain text.
 - **Only when detail views are generated.** With `generateDetails: false` there is no detail route
   to link to, and every foreign key renders as plain text.
 - **An empty foreign key renders as before**, as does every entity-typed relationship field and
@@ -1716,6 +1716,31 @@ No type, route, selector or `data-testid` changes, so no hand-written code is af
 committed the emitted app, commit the regenerated headers as a change of their own to keep the
 diff of a later release readable. The `exeris-gen --version` flag now prints the package's own
 version from its `package.json`.
+
+### `exeris-codegen-ts`: nested metadata types declare what the processor writes
+
+Five exported TypeScript types are realigned onto the SDK records they mirror, so the keys a real
+build writes are no longer stripped on parse.
+
+- `SagaStepMetadata`: `action`, `compensatingAction` and `retries` become `command`, `compensation`
+  and `maxRetries`, and `service` is added. **The emitted saga state machine now carries each step's
+  compensation**: a step declared with `@SagaStep(compensation = "releaseStock")` is emitted with
+  `compensatingAction: 'releaseStock'` where it used to get `undefined`, because the key the
+  generator read never arrived. The emitted `SagaStep` interface keeps its `compensatingAction`
+  member.
+- `ActionMetadata` loses `path`, `returnType` and `requiresAuth`, none of them a component of the
+  SDK record, and gains `methodName`, `resultType`, `producesEvents` and `routeAccess` (all optional).
+- `DomainEventMetadata` loses `displayName`, `payloadType` and `fields`, and gains `topic` and
+  `aggregateType` (optional).
+- `EventSourcedMetadata.snapshotInterval` becomes `snapshotEvery`.
+- `InternalApiMetadata` loses `hidden`. No annotation sets it, and the processor writes it `false`
+  for every entity, so every `internalApi.hidden` check the generators made skipped nothing in a real
+  build. The checks are removed. **No generated output changes for metadata the processor wrote**;
+  metadata built by hand with `internalApi: { hidden: true }` now emits that entity like any other.
+
+Nothing else in the regenerated app changes. This matters to your own code only if it builds
+metadata by hand with the renamed or removed keys, or imports these types from the package: Zod now
+strips the removed keys.
 
 ### `@View`: wrong attributes on STATIC/NONE bindings are diagnosed
 

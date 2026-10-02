@@ -20,12 +20,12 @@ export const HTTP_ERROR_PATH = outPath('core', 'http-error.ts');
 
 /**
  * The helper is consumed only by the per-entity detail, list, form, store and saga emitters,
- * so an app with no visible entity, or with all of those emitters off, gets none.
+ * so an app with no entity, or with all of those emitters off, gets none.
  */
 export function needsHttpErrorHelper(domains: DomainMetadata[], config: GeneratorConfig): boolean {
   const consumerOn = config.generateDetails || config.generateLists || config.generateForms
     || config.generateStores || config.generateSagas;
-  return consumerOn && domains.some(d => !d.internalApi?.hidden);
+  return consumerOn && domains.length > 0;
 }
 
 export function generateHttpErrorHelper(): { path: string; content: string } {
