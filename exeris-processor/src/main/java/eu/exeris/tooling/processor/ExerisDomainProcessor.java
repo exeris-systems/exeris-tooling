@@ -110,11 +110,22 @@ public class ExerisDomainProcessor extends AbstractProcessor {
 
     private static final String ACTION_FQN = "eu.exeris.sdk.annotation.Action";
 
+    /** {@code @UI}, which the processor reads on a type and never on a field. */
+    private static final String UI_FQN = "eu.exeris.sdk.annotation.UI";
+
     /** Package every SDK annotation lives under, including the {@code capability} sub-package. */
     private static final String SDK_ANNOTATION_PACKAGE = "eu.exeris.sdk.annotation.";
 
     /** The sole element of a {@code @Repeatable} container, and of every single-value annotation. */
     private static final String VALUE_ELEMENT = "value";
+
+    /**
+     * Opening clause of every {@code @Field} entry in {@link #INERT_ATTRIBUTES} whose attribute the
+     * processor never reads, so {@code FieldMetadata} has nothing to carry it in.
+     */
+    private static final String FIELD_NOT_EXTRACTED =
+            "the processor does not read it, so it never reaches FieldMetadata and no emitter can "
+                    + "honour it. ";
 
     /** Closing clause on every strict-mode diagnostic — it is opt-in, so say so at the point of use. */
     private static final String STRICT_SUFFIX = ". (reported because -Aexeris.strict is enabled)";
@@ -230,15 +241,17 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      * that has nothing else it could emit. {@code @SagaStep.waitForAll} and {@code .failFast}
      * share the cause and are additionally uncarried. When the kernel grows the contract, the
      * generators consume all three — no entry to delete, because none was ever added.
+     * {@code @SagaStep.timeout} is the same shape: extracted, read by no emitter, and the kernel's
+     * {@code FlowStepDescriptor} has no per-step deadline to compile it into — only the flow as a
+     * whole carries a timeout, which {@code @Saga.timeout} reaches.
      *
-     * <p>Today the point is moot twice over, and the second reason is the sharper one: an entry
-     * for any of them would fire <em>nothing</em>. {@link #warnInertAttributes} is called for
-     * {@code ExerisDomain}, {@code Field}, {@code Action} and {@code ActionParam} and for nothing
-     * else, so {@code Saga} and {@code SagaStep} have no call site — condition (3) above, the
-     * unreachable-entry trap, exactly as the standing {@code T11-strict} marker on
-     * {@code DomainEvent} records for its own annotation. Adding the two missing call sites is
-     * worth doing on its own merits; it is not a prerequisite for a decision that is to add no
-     * entry.
+     * <p>{@code Saga} and {@code SagaStep} do have call sites, on the one extraction path both a
+     * standalone {@code @Saga} class and an {@code @ExerisDomain} entity carrying {@code @Saga} go
+     * through, so the entries for them below fire. The {@code @Saga.compensation*} family is unregistered for a
+     * different reason: none of it is extracted, half of it has no carrier, and what an emitter
+     * should compile it into against the kernel's compensation surface is an open question, not a
+     * generator that declines to act. C0's never-read pass does not cover these either — it works
+     * per annotation, and {@code @Saga} is read.
      *
      * <p>When a generator starts consuming one of these, DELETE its entry in the
      * same change — a stale entry produces a false "no effect" warning on an
@@ -449,7 +462,84 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "model at the edge. Roles resolve at the method level through the "
                             + "kernel's own @RequiresRole (kernel ADR-014). Note that the emitted "
                             + "Angular guards do check a role, but against a name this pipeline "
-                            + "invents rather than one declared here (T53)"));
+                            + "invents rather than one declared here (T53)"),
+            new InertAttribute("Field", "labelKey",
+                    FIELD_NOT_EXTRACTED + "Every emitted label is the literal label value; no "
+                            + "emitter resolves a message key"),
+            new InertAttribute("Field", "descriptionKey",
+                    FIELD_NOT_EXTRACTED + "Every emitted description is the literal description "
+                            + "value; no emitter resolves a message key"),
+            new InertAttribute("Field", "inList",
+                    FIELD_NOT_EXTRACTED + "The generated list chooses its columns without "
+                            + "consulting it"),
+            new InertAttribute("Field", "inDetail",
+                    FIELD_NOT_EXTRACTED + "The generated detail view shows the field whatever "
+                            + "this says"),
+            new InertAttribute("Field", "order",
+                    FIELD_NOT_EXTRACTED + "Fields are emitted in declaration order on both sides"),
+            new InertAttribute("Field", "ui",
+                    FIELD_NOT_EXTRACTED + "The processor reads @UI on a type only, never on a "
+                            + "field, so neither this nested @UI nor a standalone one on the field "
+                            + "reaches the metadata. A field's presentation facet arrives with "
+                            + "@View's field facet"),
+            new InertAttribute("Field", "validation",
+                    FIELD_NOT_EXTRACTED + "The nested @Validation is never read. A standalone "
+                            + "@Validation on the same field is read and reaches the emitted "
+                            + "constraints — move the rules there"),
+            new InertAttribute("Field", "defaultValue",
+                    FIELD_NOT_EXTRACTED + "No emitted column, DTO or form carries a default "
+                            + "taken from it"),
+            new InertAttribute("Field", "cssClass",
+                    FIELD_NOT_EXTRACTED + "No emitted component applies it"),
+            new InertAttribute("Field", "group",
+                    FIELD_NOT_EXTRACTED + "Generated forms are not grouped, and @UIGroup, the "
+                            + "grouping annotation, is not read either"),
+            new InertAttribute("Field", "sensitive",
+                    FIELD_NOT_EXTRACTED + "The field is stored, returned and rendered exactly "
+                            + "as an unmarked field; nothing is masked, redacted or kept out of "
+                            + "logs on its account"),
+            new InertAttribute("Field", "encrypted",
+                    FIELD_NOT_EXTRACTED + "The emitted schema and repository store the value "
+                            + "as written; no column encryption is emitted"),
+            new InertAttribute("Field", "maskPattern",
+                    FIELD_NOT_EXTRACTED + "No emitted response, view or log line applies a mask"),
+            new InertAttribute("Field", "writeOnly",
+                    FIELD_NOT_EXTRACTED + "The field is emitted like any other, read responses "
+                            + "and generated types included"),
+            new InertAttribute("Field", "compositeUnique",
+                    FIELD_NOT_EXTRACTED + "The emitted schema creates no multi-column unique "
+                            + "constraint; a single-column unique = true is honoured"),
+            new InertAttribute("Field", "indexed",
+                    "it is extracted into FieldMetadata.indexed and no generator reads it: the "
+                            + "emitted schema indexes a field that is searchable, filterable or "
+                            + "unique and no other, so indexed = true on a field that is none of "
+                            + "those yields no index"),
+            new InertAttribute("Field", "inUpdate",
+                    "it is extracted into FieldMetadata.inUpdate and no generator reads it: the "
+                            + "emitted update DTO, OpenAPI schema and edit form carry the field "
+                            + "whatever this says (inCreate, its counterpart, is honoured by the "
+                            + "TypeScript create DTO and form)"),
+            new InertAttribute("Saga", "description",
+                    "the value reaches SagaMetadata.description in the JSON, and the TypeScript "
+                            + "schema declares the field, but no emitter renders it — the emitted "
+                            + "flow class's Javadoc names only the entity, and the emitted Angular "
+                            + "saga state machine does not carry it"),
+            new InertAttribute("SagaStep", "description",
+                    "the value reaches SagaStepMetadata.description in the JSON, but no emitter "
+                            + "renders it — the emitted step method's Javadoc names only the step, "
+                            + "and the TypeScript step schema does not declare the field"),
+            new InertAttribute("SagaStep", "service",
+                    "the value reaches SagaStepMetadata.service in the JSON, and no emitter reads "
+                            + "it: the emitted step method is a protected skeleton that logs and "
+                            + "returns CONTINUE for the author to override, and nothing dispatches to "
+                            + "the named service. The SDK gives the attribute no default, so every "
+                            + "step reports it"),
+            new InertAttribute("SagaStep", "command",
+                    "the value reaches SagaStepMetadata.command in the JSON, and no emitter reads "
+                            + "it: the emitted step method is a protected skeleton that logs and "
+                            + "returns CONTINUE for the author to override, and no command is built "
+                            + "or sent. The SDK gives the attribute no default, so every step "
+                            + "reports it"));
 
     /**
      * Hand-maintained registry of whole type-level annotations that are extracted
@@ -513,7 +603,17 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "table, so every generated route is registered exactly as if the "
                             + "annotation were absent, and DomainMetadata / ActionMetadata carry no "
                             + "routeAccess. The transcription onto the kernel's HttpRoutePolicy is "
-                            + "T53, tracked in ROADMAP.md"));
+                            + "T53, tracked in ROADMAP.md"),
+            // Type-level only — see TYPE_LEVEL_EXTRACTION. On a field, @UI is reported by the
+            // unread pass instead, with its UNREAD_NOTES entry.
+            new InertAnnotation(UI_FQN, "UI",
+                    "on an @ExerisDomain type it is extracted — listView, detailView, createForm, "
+                            + "editForm, searchable, filterable and exportable reach UIMetadata — "
+                            + "but no generator reads those flags, and none of its other attributes "
+                            + "is extracted at all. Every entity gets the same list, detail, create "
+                            + "and edit output whatever @UI says, and no export is emitted. The "
+                            + "only UIMetadata component an emitter reads, listColumns, is not an "
+                            + "@UI attribute and nothing fills it"));
 
     /**
      * Every SDK annotation this processor extracts, by simple name. <strong>C0: this set is the
@@ -546,6 +646,18 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             "InternalApi", "Provides", "Region", "Relationship", "Requires", "Saga", "SagaStep",
             "SharedScope", "SoftDelete", "SoftDeleteTimestamp", "SoftDeletedBy", "TenantId", "UI",
             "Validation", "Version", "View");
+
+    /**
+     * The members of {@link #EXTRACTED_ANNOTATIONS} the processor reads on a type declaration and
+     * nowhere else, although the SDK lets them target a field as well. Membership of the set above
+     * is by simple name, so without this a field-level use would count as read when no extraction
+     * ever looks at it.
+     *
+     * <p>On a type, such an annotation is answered by the first pass as usual. On any other
+     * element it is answered by the unread pass, with its {@link #UNREAD_NOTES} entry, and the
+     * first pass skips it — so each use is still reported exactly once.
+     */
+    private static final Set<String> TYPE_LEVEL_EXTRACTION = Set.of("UI");
 
     /**
      * Reasons for the annotations {@link #EXTRACTED_ANNOTATIONS} does not contain. Optional by
@@ -621,10 +733,17 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "builds its sidebar from the entity list and the @View routes, never "
                             + "from this annotation"),
             new UnreadAnnotation("Tab",
-                    "presentation grouping is emitted from @View (regions and blocks) and, at the "
-                            + "leaf level, from @UI. This annotation feeds neither"),
+                    "presentation grouping is emitted from @View (regions and blocks), and this "
+                            + "annotation does not feed it. Generated forms and detail views are "
+                            + "not split into tabs"),
             new UnreadAnnotation("UIGroup",
-                    "same gap as @Tab: @UI is extracted per field, this grouping annotation is not"));
+                    "same gap as @Tab: grouping is emitted from @View, and generated forms are not "
+                            + "grouped by this annotation or by @Field.group"),
+            // Reached only from a non-type element: on a type, @UI is extracted (TYPE_LEVEL_EXTRACTION).
+            new UnreadAnnotation("UI",
+                    "the processor reads @UI on a type only. On a field it reaches no metadata, so "
+                            + "the field renders from @Field alone. A field's presentation facet "
+                            + "arrives with @View's field facet"));
 
     private ObjectMapper objectMapper;
     private Messager messager;
@@ -2797,6 +2916,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         if (sagaAnnotation == null) return null;
 
         Map<String, Object> values = extractAnnotationValues(sagaAnnotation);
+        // Shared by a standalone @Saga class and an @ExerisDomain entity carrying @Saga, so one
+        // call site audits both; each class reaches this method exactly once.
+        warnInertAttributes("Saga", values, element, sagaAnnotation);
         String name = values.containsKey("name")
                 ? (String) values.get("name")
                 : element.getSimpleName().toString();
@@ -2851,7 +2973,11 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             }
         }
 
-        // Sort by order
+        // This is the saga-step sorter KernelSagaGenerator's Javadoc requires of its callers: the
+        // steps leave the processor ordered by @SagaStep.order, and both emitters walk the list as
+        // given — the Java flow chains its transitions in list order and the TypeScript state
+        // machine lists its steps in list order. List.sort is stable, so equal orders keep
+        // declaration sequence. Removing the sort silently reorders every emitted saga.
         steps.sort(Comparator.comparingInt(SagaStepMetadata::order));
 
         return steps;
@@ -2860,6 +2986,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     /** One {@code @SagaStep} mirror, whether it stood alone or came out of the container. */
     private SagaStepMetadata sagaStep(AnnotationMirror stepAnnotation, ExecutableElement method) {
         Map<String, Object> values = extractAnnotationValues(stepAnnotation);
+        // Per mirror, so a repeated @SagaStep is audited once per repeat, like its extraction.
+        warnInertAttributes("SagaStep", values, method, stepAnnotation);
         String name = getString(values, "name", method.getSimpleName().toString());
         int order = getInt(values, "order", 1);
 
@@ -2950,6 +3078,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             return;
         }
         for (InertAnnotation inert : INERT_ANNOTATIONS) {
+            if (readElsewhere(inert.display(), element)) {
+                continue;
+            }
             AnnotationMirror mirror = findAnnotation(element, inert.fqn());
             if (mirror != null) {
                 messager.printMessage(
@@ -2982,7 +3113,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      */
     private void warnUnreadAnnotations(Element element) {
         for (AnnotationMirror mirror : element.getAnnotationMirrors()) {
-            String display = unreadNameOf(mirror);
+            String display = unreadNameOf(mirror, element);
             if (display != null) {
                 messager.printMessage(
                         Diagnostic.Kind.WARNING,
@@ -3002,12 +3133,16 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      * <p>Split out of the loop so the decision reads as one expression with one exit rather than
      * a chain of {@code continue}s, and so each reason for staying quiet can carry its own line.
      */
-    private static String unreadNameOf(AnnotationMirror mirror) {
+    private static String unreadNameOf(AnnotationMirror mirror, Element element) {
         String fqn = mirror.getAnnotationType().toString();
         if (!fqn.startsWith(SDK_ANNOTATION_PACKAGE)) {
             return null;
         }
         String simpleName = fqn.substring(fqn.lastIndexOf('.') + 1);
+        // Extracted by name, but not from this kind of element — so unread here.
+        if (readElsewhere(simpleName, element)) {
+            return simpleName;
+        }
         if (isAlreadyAudited(simpleName)) {
             return null;
         }
@@ -3019,6 +3154,15 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             return isAlreadyAudited(contained) ? null : contained;
         }
         return simpleName;
+    }
+
+    /**
+     * Whether {@code simpleName} is read only on a type declaration (per
+     * {@link #TYPE_LEVEL_EXTRACTION}) and {@code element} is not one — so that, here, nothing
+     * reads it.
+     */
+    private static boolean readElsewhere(String simpleName, Element element) {
+        return TYPE_LEVEL_EXTRACTION.contains(simpleName) && !(element instanceof TypeElement);
     }
 
     /**

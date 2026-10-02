@@ -60,10 +60,7 @@ export class ListGenerator implements CodeGenerator {
     // honours it, and the emitted app would then request the wrong identifier.
     const idField = 'id';
 
-    // Determine list columns
-    const listColumnNames = metadata.uiMetadata?.listColumns?.length
-      ? metadata.uiMetadata.listColumns
-      : this.getDefaultListColumns(metadata);
+    const listColumnNames = this.listColumnNames(metadata);
 
     const fkLinks = foreignKeyLinks(metadata, context.allDomains, context.config.generateDetails !== false);
     const listColumns = listColumnNames
@@ -507,7 +504,11 @@ export class ListGenerator implements CodeGenerator {
     return lines.join('\n');
   }
 
-  private getDefaultListColumns(metadata: DomainMetadata): string[] {
+  /**
+   * The first five non-hidden, non-system fields, in declaration order. No metadata selects list
+   * columns: field-level `@UI(displayInList)` would, and the processor does not extract it.
+   */
+  private listColumnNames(metadata: DomainMetadata): string[] {
     const systemFields = viewSystemFieldNames(metadata);
     return metadata.fields
       .filter((f) => !f.hidden && !systemFields.includes(f.name))

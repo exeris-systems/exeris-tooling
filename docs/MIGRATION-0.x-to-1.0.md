@@ -1328,6 +1328,40 @@ now fails the boot.
 and `FLOW_ENGINE`, or override every subscriber, flow and EV1 stream-handler factory. The
 `RuntimeComponents` scope lists entry below has the full list.
 
+### `Application.subsystems()` names only the subsystems the domain uses
+
+The emitted `subsystems()` used to return `http,persistence,graph,flow,events,crypto` in every
+application. It now returns `http`, `persistence` and `crypto`, plus:
+
+| Name | Listed when |
+|---|---|
+| `graph` | some entity carries graph metadata (`@Graph`), so a `<Entity>GraphSync` is emitted |
+| `flow` | some entity, or a standalone `@Saga`, declares a saga |
+| `events` | some entity declares a `@DomainEvent` |
+
+The order is fixed. An application with none of the three regenerates to
+`return "http,persistence,crypto";`, and its kernel no longer starts a graph engine, a flow engine
+with its snapshot store, or an event engine at boot. Nothing else changes: the generated code read
+none of those engines, and the kernel still adds `memory` and every other dependency itself.
+
+`exeris:verify-runtime` already required `GraphProvider`, `FlowProvider` and `EventProvider` only
+under these conditions, so the driver it asks for is unchanged.
+
+**If your own code reads an engine the domain does not** (for example `KernelProviders.graphEngine()`
+in a hand-written component with no `@Graph` entity), add the name back in your `Application`
+subclass:
+
+```java
+@Override
+protected String subsystems() {
+    return super.subsystems() + ",graph";
+}
+```
+
+An override that returns a fixed string keeps working, and keeps booting exactly the names it
+returns. Removing a name that generated code reads still fails the boot, in the factory that reads
+it.
+
 ### Payload-bearing event publishers encode their payloads (T48 slice C1)
 
 A publisher whose events carry `payloadFields` now takes the `EventPayloadCodecRegistry` at
@@ -1615,6 +1649,24 @@ the default) and the entity is `GLOBAL`. An app with neither emits exactly what 
   so `<Entity>Service.<action>(id, …)` is no longer emitted for it; call the action stream client
   instead. Non-streaming actions are unchanged.
 
+### `exeris-codegen-ts`: `FieldMetadata` and `UIMetadata` declare what the processor writes
+
+Two exported TypeScript types are realigned onto the SDK records they mirror.
+
+- `FieldMetadata` loses `inList`, `inDetail`, `order`, `ui` and `dependencies`. None is a component
+  of the SDK `FieldMetadata` record, so no metadata document has carried one; the schema supplied
+  `inList: true` / `inDetail: true` defaults that no generator read. The form no longer sorts on
+  `order`, which was always absent, so fields stay in declaration order as before; a computed field's
+  dependencies are `computedFrom` alone.
+- `UIMetadata` loses `listColumns`, `searchFields`, `filterFields` and `formLayout`, which no record
+  declares, and gains the seven `@UI` view switches the processor writes: `listView`, `detailView`,
+  `createForm`, `editForm`, `searchable`, `filterable`, `exportable` (all optional). The list page's
+  columns are the first five visible non-system fields, which is what every real build already got.
+
+**No generated output changes.** No generator reads the new `UIMetadata` keys yet — that is a known
+gap, recorded in `UI_CONTRACT_COVERAGE`. This matters only if your own code builds metadata by hand
+with the removed keys, or imports these types from the package: Zod now strips the removed keys.
+
 ### `exeris-codegen-ts`: emitted headers no longer carry a version (one-time rewrite)
 
 Emitted file headers carried hard-coded package versions (`v0.2.0`, `v0.3.0`, `v0.4.0`), none of
@@ -1640,6 +1692,36 @@ compiler warning at the `@Bind` and a wrong-attribute comment in the emitted tem
 produce a `TODO(@View G1)` or `TODO(@View G2)` marker. Authored text belongs in `@Block(props)`; to
 bind data use `source = ENTITY`, `PROJECTION` or `ACTION`. `TODO(@View G2)` is no longer emitted at
 all.
+
+### `exeris-codegen-ts`: an app without a backend no longer gets backend wiring
+
+An app whose metadata declares no visible entity — only `@View` pages with authored (`STATIC` /
+`NONE`) content, or nothing at all — has no API to call, and its scaffold no longer pretends it has
+one. The scaffold now wires a backend piece only when the app has an API: a visible entity, or an
+emitted file that imports `@angular/common/http`. **An app with a visible entity emits exactly what
+it did**, whichever client emitters are on.
+
+A regenerated backend-less app no longer gets:
+
+- `provideHttpClient()` and its import in `src/app/app.config.ts`; the router and
+  `provideZonelessChangeDetection()` stay;
+- `proxy.conf.json`, and `--proxy-config proxy.conf.json` in the `start` script (now `ng serve`);
+- `apiUrl` and the deprecated `apiVersion` in `src/environments/environment*.ts`, which keep
+  `production`;
+- `zod`, `@angular/cdk` and `@angular/forms` in `package.json`, each of which returns as soon as an
+  emitted file imports it (an `@ExerisEnum` emitted with its Zod schema keeps `zod`, and so does a
+  peer contract);
+- the `types/` and `schemas/` barrels and the empty enum module; with an enum, `types/enums.ts`,
+  `types/index.ts` and an app barrel exporting only the enums are emitted, and no empty section;
+- `src/app/index.ts`, when there is neither an entity nor an enum to re-export;
+- a `redirectTo: ''` route pointing at itself, when there is no entity and no `PAGE` view.
+
+`@angular/common`, `@angular/router`, `rxjs` (a peer dependency of `@angular/core`), `tslib`, the
+ui-kit and its `.npmrc` stay. The CLI does not replace an existing file without `--overwrite`, so an
+existing app keeps its `package.json`, `app.config.ts` and environments until you regenerate with
+it. Files the run no longer produces — `proxy.conf.json` and the empty barrels — are pruned when the
+output tree carries the generation manifest from an earlier run. If your own code uses `HttpClient`
+in a backend-less app, add `provideHttpClient()` to `app.config.ts` yourself.
 
 ### Compile-classpath requirements are named in the emitted Javadoc (T30)
 
@@ -1703,6 +1785,67 @@ private UUID mixed;
 compiled, and generation then failed with `Duplicate edge names`. The two are now counted together,
 and this declaration draws the same `[Exeris] @GraphEdge is declared 2 times on field 'mixed'` error
 at the field. To fix it, declare each edge on its own field.
+
+### `-Aexeris.strict` now reports four `@Saga` / `@SagaStep` attributes
+
+Only if you pass `-Aexeris.strict`. A default build is unchanged and stays silent, and nothing about
+what the compiler produces changes either way.
+
+The attribute audit is driven by a per-annotation call site, and `@Saga` and `@SagaStep` had none, so
+a strict build said nothing about any of their attributes. They are now audited on both paths a saga
+takes: a standalone `@Saga` class and an `@ExerisDomain` entity carrying `@Saga`. Four attributes are
+registered as read by no generator:
+
+- `@Saga.description` and `@SagaStep.description`: neither reaches emitted code.
+- `@SagaStep.service` and `@SagaStep.command`: the emitted step method is a skeleton that logs and
+  returns `CONTINUE` for you to override. It does not dispatch the named command to the named
+  service. **Both are required by the SDK, so expect two warnings per saga step.** You cannot remove
+  them from your source to quiet the warning. The warning tells you the step does nothing until you
+  override it.
+
+`@SagaStep.parallel` and `@SagaStep.timeout` are also read by no generator, but they are left
+unreported on purpose: the kernel's flow model has no way to express concurrent steps or a per-step
+deadline, so the linear chain the generator emits is the only correct output. The flow-level
+`@Saga.timeout`, `maxRetries` and `version` are honoured and do not warn, and neither does
+`@SagaStep.compensation`, which adds the step's compensation method.
+
+### `-Aexeris.strict` now reports `@UI`, `@Tab`, `@UIGroup` and the `@Field` attributes nothing honours
+
+Only if you pass `-Aexeris.strict`. A default build is unchanged and stays silent, and no emitted
+file changes. A strict build that also passes `-Werror` now **fails** on each of the following until
+the source changes.
+
+- **`@UI` on a field** — warned as never read. The processor reads `@UI` on a type only, so a
+  field-level `@UI` reaches no metadata and the field renders from `@Field` alone. A field's
+  presentation facet arrives with `@View`'s field facet.
+- **`@UI` on a type** — warned once as consumed by no generator. `listView`, `detailView`,
+  `createForm`, `editForm`, `searchable`, `filterable` and `exportable` reach `UIMetadata`, but no
+  emitter reads them, and the other attributes are not extracted. Every entity gets the same
+  output whatever `@UI` says.
+- **`@Tab`, `@UIGroup`** — warned as never read, with a reason that no longer claims `@UI` is
+  extracted per field.
+- **`@Field` attributes** — one warning per attribute set:
+  - not extracted at all: `labelKey`, `descriptionKey`, `inList`, `inDetail`, `order`, `ui`,
+    `validation`, `defaultValue`, `cssClass`, `group`, `sensitive`, `encrypted`, `maskPattern`,
+    `writeOnly`, `compositeUnique`;
+  - extracted but read by no generator: `indexed` (the schema indexes a `searchable`, `filterable`
+    or `unique` field and no other) and `inUpdate` (the update DTO, the OpenAPI schema and the edit
+    form carry the field anyway).
+
+**What to do.** Remove the attribute or annotation, or keep it knowing it has no effect in this
+tooling version. Two cases have a working alternative:
+
+- `@Field(validation = @Validation(…))`: move the rules to a standalone `@Validation` on the same
+  field. That one is read and reaches the emitted constraints.
+- `@Field(indexed = true)`: mark the field `searchable`, `filterable` or `unique` if one of those
+  is true of it.
+
+`sensitive`, `encrypted`, `maskPattern` and `writeOnly` deserve a look before they are dismissed. The
+field is stored, returned and rendered exactly as an unmarked field, so data protection that relies
+on them does not exist in generated code. A field-level `@UI` can stay in place knowing it has no
+effect until the `@View` field facet lands; the same holds for the other presentation attributes
+(`inList`, `inDetail`, `order`, `cssClass`, `group`, `@Tab`, `@UIGroup`), which nothing reads in
+this tooling version.
 
 ### SDK 0.12.0 needs no source change for S6
 
