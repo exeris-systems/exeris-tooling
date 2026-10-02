@@ -3,14 +3,15 @@
  * Generates Angular 22+ form components with Signals from domain metadata.
  */
 
-import type { DomainMetadata, FieldMetadata } from '../../models/domain-model.js';
+import type { DomainMetadata } from '../../models/domain-model.js';
 import { modelTypeName } from '../../models/model-naming.js';
 import { DslMapper } from '../../models/dsl-mapper.js';
 import type { GeneratorConfig } from '../../config.js';
 import type { CodeGenerator, GeneratedFile, GeneratorContext } from '../../core/generator-registry.js';
 import type { BackendType } from '../../core/backend-strategy.js';
 import { outPath } from '../../core/paths.js';
-import { updateVersionField, viewSystemFieldNames } from '../api/type-gen.js';
+import { updateVersionField } from '../api/type-gen.js';
+import { fieldRenderContext, resolveFieldRenders, toTitleCase } from './field-render.js';
 import { tsSingleQuoted } from './ts-literal.js';
 
 export { GeneratedFile };
@@ -39,59 +40,6 @@ export class FormGenerator implements CodeGenerator {
   }
 
   private generateFormContent(domain: DomainMetadata, context: GeneratorContext): string {
-    // Helper functions
-    const getEnumTypeName = (fqcn: string): string => {
-      const parts = fqcn.split('.');
-      return parts[parts.length - 1];
-    };
-
-    const toTitleCase = (value: string): string => {
-      return value.replace(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase());
-    };
-
-    // Which fields carry a boolean DTO type. Keyed off DslMapper for the same reason
-    // isNumericField is (see below): a test on the literal 'java.lang.Boolean' misses a
-    // primitive `boolean`, whose DTO type is `boolean` just the same.
-    const isBooleanField = (field: FieldMetadata): boolean => {
-      const ts = DslMapper.mapType(field.type).tsType;
-      return ts === 'boolean' || ts === 'boolean | null';
-    };
-
-    const mapInputType = (field: FieldMetadata): string => {
-      // @Field.dataType — front-presentation hint (Wave 1A, additive). For an
-      // editable form control the facet maps to the closest native input type:
-      // url -> type="url"; currency/percent -> a numeric input. The default path
-      // (no dataType, or any other value) is unchanged.
-      if (field.dataType === 'url') return 'url';
-      if (field.dataType === 'currency' || field.dataType === 'percent') return 'number';
-      const type = field.type;
-      if (isBooleanField(field)) return 'checkbox';
-      if (type === 'java.lang.Integer' || type === 'java.lang.Long' || type === 'java.lang.Double' || type === 'java.lang.Float') return 'number';
-      if (type === 'java.time.Instant' || type === 'java.time.LocalDateTime') return 'datetime-local';
-      if (type === 'java.time.LocalDate') return 'date';
-      return 'text';
-    };
-
-    // Which create fields carry a numeric DTO type. Reactive-form controls are seeded
-    // with '' (string), so getRawValue() is statically string-typed even though
-    // <input type="number"> yields a number at runtime. We coerce these fields explicitly
-    // on submit so the payload is both type-correct and semantically a number.
-    //
-    // The predicate MUST mirror the DTO type emitted by type-gen, i.e.
-    // DslMapper's tsType — NOT a hand-rolled java-type list. BigDecimal/BigInteger
-    // deliberately map to `string` (precision preservation, rendered as a text
-    // input), so coercing them to Number() would BOTH lose precision AND reintroduce
-    // a TS2352 (number→string DTO). Keying off ts? === 'number' keeps coercion in
-    // lock-step with whatever DslMapper decides is a JS number.
-    const isNumericField = (field: FieldMetadata): boolean => {
-      const ts = DslMapper.mapType(field.type).tsType;
-      return ts === 'number' || ts === 'number | null';
-    };
-
-    const isLifecycleField = (name: string): boolean => {
-      return ['active', 'onboardingStatus', 'onboardingStartedAt', 'onboardingCompletedAt', 'hierarchyLevel', 'parentTenantId', 'createdAt', 'updatedAt', 'deleted', 'version'].includes(name);
-    };
-
     // A versioned entity's lock field is never a control: the edit form holds the loaded
     // entity's value aside and sends it with the update (type-gen's updateVersionField names it).
     const version = updateVersionField(domain);
@@ -103,30 +51,6 @@ export class FormGenerator implements CodeGenerator {
         ? `${entityExpr}.${name} ?? null`
         : `(${entityExpr} as unknown as { ${name}?: number }).${name} ?? null`;
     };
-    // No control for a system field (type-gen's viewSystemFieldNames). That includes a UNIVERSE
-    // entity's shared-scope key, which is server-owned like its tenant: the repository stamps it
-    // from the bound storage context and the create DTO omits it, so the form never sends it.
-    const systemNames = viewSystemFieldNames(domain);
-    const isSystemField = (name: string): boolean => systemNames.includes(name);
-
-    const isEnumField = (field: FieldMetadata): boolean => {
-      // Check explicit enumType first
-      if (field.enumType) return true;
-      // Fallback: detect enum from type pattern (e.g., "eu.exeris.foundation.domain.TenantPlan")
-      const type = field.type;
-      return type.includes('.') && !type.startsWith('java.') && !type.includes('Entity') && !type.includes('DTO');
-    };
-
-    const getEnumTypeFromField = (field: FieldMetadata): string | null => {
-      // Always the simple enum name — the FQN (e.g. "com.shop.OrderStatus") is what
-      // the metadata carries, but it must be stripped to the simple name for use as
-      // a TS identifier in imports and type references (mirrors type-gen / service-gen).
-      const raw = field.enumType ?? (isEnumField(field) ? field.type : null);
-      if (!raw) return null;
-      const parts = raw.split('.');
-      return parts[parts.length - 1];
-    };
-
     const entityName = domain.entityName;
 
     const modelName = modelTypeName(entityName);
@@ -140,23 +64,14 @@ export class FormGenerator implements CodeGenerator {
     // honours it, and the emitted app would then request the wrong identifier.
     const idField = 'id';
 
-    const fields = domain.fields;
-    const createFields = fields.filter((f) =>
-      f.inCreate !== false &&
-      f.hidden !== true &&
-      f.readOnly !== true &&
-      !f.computed &&  // Exclude computed fields
-      !isLifecycleField(f.name) &&
-      !isSystemField(f.name)
-    );
-
-    // Collect computed fields that depend on create fields
-    const computedFields = fields.filter((f) =>
-      f.computed &&
-      f.inCreate !== false &&
-      !isLifecycleField(f.name) &&
-      !isSystemField(f.name)
-    );
+    // No control for a system field (type-gen's viewSystemFieldNames). That includes a UNIVERSE
+    // entity's shared-scope key, which is server-owned like its tenant: the repository stamps it
+    // from the bound storage context and the create DTO omits it, so the form never sends it.
+    // The form renders no link, so the context resolves none.
+    const renders = resolveFieldRenders(domain, fieldRenderContext(domain, [], false));
+    const createFields = renders.filter((r) => r.form.placement === 'control');
+    // Computed fields render read-only, for information, and are kept out of the submitted DTO.
+    const computedFields = renders.filter((r) => r.form.placement === 'computed');
 
     const lines: string[] = [];
     lines.push('/**');
@@ -178,9 +93,8 @@ export class FormGenerator implements CodeGenerator {
     // Collect enum types used in create fields
     const enumTypes = new Set<string>();
     for (const f of createFields) {
-      const enumType = getEnumTypeFromField(f);
-      if (enumType) {
-        enumTypes.add(enumType);
+      if (f.form.enumType) {
+        enumTypes.add(f.form.enumType);
       }
     }
 
@@ -210,15 +124,14 @@ export class FormGenerator implements CodeGenerator {
     lines.push('    <form [formGroup]="form" (ngSubmit)="onSubmit()" class="space-y-6">');
 
     for (const f of createFields) {
-      const label = f.displayName ?? toTitleCase(f.name);
-      const requiredMark = f.required ? '<span class="text-red-500" aria-hidden="true">*</span>' : '';
-      const disabledBinding = f.readOnly ? ' [disabled]="true"' : '';
-      const readonlyBinding = f.readOnly ? ' [readonly]="true"' : '';
+      const { label, control, inputType, inputMode, enumType: enumTypeName } = f.form;
+      const requiredMark = f.form.required ? '<span class="text-red-500" aria-hidden="true">*</span>' : '';
+      const disabledBinding = f.form.readOnly ? ' [disabled]="true"' : '';
+      const readonlyBinding = f.form.readOnly ? ' [readonly]="true"' : '';
 
       lines.push('      <div class="form-group">');
 
-      const enumTypeName = getEnumTypeFromField(f);
-      if (enumTypeName) {
+      if (control === 'select') {
         lines.push(`        <label for="${f.name}" class="block text-sm font-medium text-gray-700 dark:text-gray-300">${label} ${requiredMark}</label>`);
         lines.push(`        <select id="${f.name}" data-testid="field-${f.name}" formControlName="${f.name}" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-exeris-primary focus:ring-exeris-primary dark:bg-gray-800 dark:border-gray-600 dark:text-white sm:text-sm"${disabledBinding}>`);
         lines.push('          <option value="">Select...</option>');
@@ -226,14 +139,13 @@ export class FormGenerator implements CodeGenerator {
         lines.push(`            <option [value]="value">{{ ${enumTypeName}DisplayNames[value] }}</option>`);
         lines.push('          }');
         lines.push('        </select>');
-      } else if (mapInputType(f) === 'checkbox') {
+      } else if (control === 'checkbox') {
         lines.push('        <div class="flex items-center gap-2">');
         lines.push(`          <input id="${f.name}" data-testid="field-${f.name}" type="checkbox" formControlName="${f.name}" class="h-4 w-4 rounded border-gray-300 text-exeris-primary focus:ring-exeris-primary"${disabledBinding}>`);
         lines.push(`          <label for="${f.name}" class="text-sm text-gray-700 dark:text-gray-300">${label} ${requiredMark}</label>`);
         lines.push('        </div>');
       } else {
-        const inputType = mapInputType(f);
-        const inputExtra = inputType === 'number' ? ' inputmode="decimal"' : '';
+        const inputExtra = inputMode ? ` inputmode="${inputMode}"` : '';
         lines.push(`        <label for="${f.name}" class="block text-sm font-medium text-gray-700 dark:text-gray-300">${label} ${requiredMark}</label>`);
         lines.push(`        <input id="${f.name}" data-testid="field-${f.name}" type="${inputType}" formControlName="${f.name}" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-exeris-primary focus:ring-exeris-primary dark:bg-gray-800 dark:border-gray-600 dark:text-white sm:text-sm"${disabledBinding}${inputExtra}${readonlyBinding}>`);
       }
@@ -250,12 +162,12 @@ export class FormGenerator implements CodeGenerator {
 
     // Render computed fields (readonly, displayed for info)
     for (const f of computedFields) {
-      const label = f.displayName ?? toTitleCase(f.name);
-      const dependsOn = (f.computedFrom ?? []).join(', ');
+      const label = f.form.label;
+      const dependsOn = f.form.computedFrom.join(', ');
 
       lines.push('      <div class="form-group">');
       lines.push(`        <label for="${f.name}" class="block text-sm font-medium text-gray-700 dark:text-gray-300">${label} <span class="text-xs text-gray-500">(Auto)</span></label>`);
-      lines.push(`        <input id="${f.name}" data-testid="field-${f.name}" type="${mapInputType(f)}" formControlName="${f.name}" readonly class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-exeris-primary focus:ring-exeris-primary dark:bg-gray-800 dark:border-gray-600 dark:text-white sm:text-sm bg-gray-100 dark:bg-gray-700 cursor-not-allowed opacity-75">`);
+      lines.push(`        <input id="${f.name}" data-testid="field-${f.name}" type="${f.form.inputType}" formControlName="${f.name}" readonly class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-exeris-primary focus:ring-exeris-primary dark:bg-gray-800 dark:border-gray-600 dark:text-white sm:text-sm bg-gray-100 dark:bg-gray-700 cursor-not-allowed opacity-75">`);
       if (dependsOn) {
         lines.push(`        <p class="mt-1 text-xs text-gray-500">Computed from: ${dependsOn}</p>`);
       }
@@ -335,7 +247,7 @@ export class FormGenerator implements CodeGenerator {
     }
     lines.push('');
     lines.push('  readonly form = this.fb.group({');
-    for (const f of createFields) {
+    for (const { name, form, field: f } of createFields) {
       const validators: string[] = [];
       if (f.required) validators.push('Validators.required');
       if (f.minLength) validators.push(`Validators.minLength(${f.minLength})`);
@@ -344,14 +256,7 @@ export class FormGenerator implements CodeGenerator {
       if (f.min !== undefined) validators.push(`Validators.min(${f.min})`);
       if (f.max !== undefined) validators.push(`Validators.max(${f.max})`);
       const validatorsArray = validators.length ? `[${validators.join(', ')}]` : '[]';
-      // A checkbox has no empty state, so a boolean control can be seeded with a real
-      // boolean and needs no submit-time coercion — unlike a numeric control, which must
-      // seed '' to keep "blank" distinguishable from 0 and is coerced below. A declared
-      // defaultValue goes in unquoted for the same reason: `'true'` is a string.
-      const defaultValue = isBooleanField(f)
-        ? (String(f.defaultValue ?? 'false').trim().toLowerCase() === 'true' ? 'true' : 'false')
-        : (f.defaultValue ? `'${f.defaultValue}'` : "''");
-      lines.push(`    ${f.name}: [${defaultValue}, ${validatorsArray}],`);
+      lines.push(`    ${name}: [${form.initialValue}, ${validatorsArray}],`);
     }
     lines.push('  });');
     lines.push('');
@@ -360,7 +265,7 @@ export class FormGenerator implements CodeGenerator {
     // Generate effects for computed fields
     if (computedFields.length > 0) {
       for (const cf of computedFields) {
-        const deps = cf.computedFrom ?? [];
+        const deps = cf.form.computedFrom;
         if (deps.length > 0) {
           lines.push(`    // Auto-sync ${cf.name} based on ${deps.join(', ')}`);
           lines.push('    effect(() => {');
@@ -403,7 +308,9 @@ export class FormGenerator implements CodeGenerator {
     lines.push('    this.error.set(null);');
     if (version) lines.push('    this.conflict.set(false);');
     lines.push('');
-    const numericCreateFields = createFields.filter(isNumericField);
+    // A numeric control is seeded '' and getRawValue() is statically string-typed, so it is
+    // coerced on submit to match the DTO's number type.
+    const numericCreateFields = createFields.filter((f) => f.form.value === 'number');
     if (numericCreateFields.length > 0) {
       // Coerce string-typed numeric controls to numbers so the payload matches
       // the *Create/*Update DTO type.
@@ -479,7 +386,7 @@ export class FormGenerator implements CodeGenerator {
 
     // Generate compute methods for computed fields
     for (const cf of computedFields) {
-      const deps = cf.computedFrom ?? [];
+      const deps = cf.form.computedFrom;
       const methodName = `compute${toTitleCase(cf.name)}`;
       lines.push('');
       lines.push(`  private ${methodName}(values: { ${deps.map(d => `${d}: any`).join(', ')} }): any {`);
