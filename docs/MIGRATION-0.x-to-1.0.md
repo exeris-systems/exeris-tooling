@@ -1911,6 +1911,28 @@ shows, or your effective POM inherits them.
 `openapi/*.yaml` are not on your classpath unless you declare a `<resource>` for them. The parent
 does; the README shows the entry.
 
+### `@Action(streaming = true)` now warns that its route does not run the action
+
+Every build now reports one warning per streaming action, without `-Aexeris.strict`:
+
+```
+[Exeris] @Action(streaming = true) on "<name>": the generated stream route keeps the connection
+open with keep-alives but does not run the action, so calling it changes nothing. The per-action
+stream driver is tracked in ROADMAP.md (EV1-stream).
+```
+
+This reports what the generated code already did. A streaming action gets a stream route only
+(`POST <base>/{id}/actions/<kebab>`), and the handler behind it sends four `keep-alive` frames and
+closes. It never calls the entity method, so nothing is loaded, persisted or published, and no
+respond-once route exists for the action either. The emitted handler's Javadoc and comments now say
+so; its code is unchanged.
+
+**If the action must change the domain, drop `streaming = true`** — it is then served as an ordinary
+action that runs, persists and publishes its `ACTION`-triggered `@DomainEvent`s. A client that
+needs to watch the result can subscribe to the entity's live view (`@ExerisDomain(realTimeApi =
+true)`), which streams those events. A build that treats warnings as errors fails on this warning
+until the attribute is removed.
+
 ---
 
 ## Reference
