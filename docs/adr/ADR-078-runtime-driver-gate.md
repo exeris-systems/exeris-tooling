@@ -167,3 +167,20 @@ That coordinate does not exist: the kernel publishes the Community driver as
 `eu.exeris:exeris-kernel-community` (and `eu.exeris.preview:exeris-kernel-community` on the preview
 line). `RequiredDrivers.suggestedArtifact()` names `eu.exeris:exeris-kernel-community`, which is the
 coordinate the gate tells a consumer to add. The decision is unchanged.
+
+### 2026-10-01 — the default `subsystems()` is derived from the same facts
+
+*Context* and *Why derive from artefacts and not from `subsystems()`* describe the emitted
+`subsystems()` as the fixed string `http,persistence,graph,flow,events,crypto`, with a javadoc
+inviting the reader to drop `graph` by hand. Generation now derives that default from the domain
+model: `http`, `persistence` and `crypto` always, and `graph`, `flow` and `events` under the
+predicates that decide `GraphProvider`, `FlowProvider` and `EventProvider` in obligation 3.
+`RequiredSubsystems` holds the three predicates and `RequiredDrivers` reads them, so for an
+application that keeps the default, the gate requires a provider for every conditional name the
+application boots and for no other.
+
+The decision is unchanged. The gate still derives from emitted artefacts rather than from the
+string, because `subsystems()` remains an overridable method and an override can still add or drop
+a name. Obligation 4 also stands: the default names `crypto` because the kernel's HTTP transport
+serves TLS only when a crypto provider is bound, which no emitted artefact can show, and the
+Community crypto subsystem boots without a provider rather than failing.
