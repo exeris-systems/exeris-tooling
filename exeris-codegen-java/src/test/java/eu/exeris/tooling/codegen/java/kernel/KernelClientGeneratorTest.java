@@ -16,7 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * tier-neutral {@code KernelWebClient} facade in
  * {@code eu.exeris.kernel.core.http.client} (ADR-034). The facade exposes the
  * entity-typed convenience verbs the generator targets
- * ({@code get/post/patch/delete(path, [body,] Class<T>)}), so no tooling-side
+ * ({@code get/post/put/delete(path, [body,] Class<T>)}), so no tooling-side
  * {@code HttpEntityCodec} collaborator is required — see the
  * {@link KernelGeneratorStrategy} Javadoc for the unpark rationale.
  *
@@ -25,7 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li>artifact type {@code CLIENT}, package/class naming, and the
  *       {@code apiPath} build (explicit-{@code path()} branch + apiVersion
  *       override);</li>
- *   <li>the emitted CRUD verb surface ({@code client.get/post/patch/delete})
+ *   <li>the emitted CRUD verb surface ({@code client.get/post/put/delete})
  *       and the {@code 404 → Optional.empty()} mapping via
  *       {@code WebClientException.isNotFound()};</li>
  *   <li>the ADR-034 binding target FQN (regression pin);</li>
@@ -118,7 +118,7 @@ class KernelClientGeneratorTest {
     }
 
     @Test
-    @DisplayName("emits the KernelWebClient CRUD verb surface (get/post/patch/delete) with typed Class<T> args")
+    @DisplayName("emits the KernelWebClient CRUD verb surface (get/post/put/delete) with typed Class<T> args")
     void generateEmitsTypedVerbSurface() {
         DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
                 .path("/orders")
@@ -129,26 +129,23 @@ class KernelClientGeneratorTest {
         assertThat(file.content())
                 .contains("client.get(BASE_PATH + \"/\" + id, Order.class)")
                 .contains("client.post(BASE_PATH, entity, Order.class)")
-                .contains("client.patch(BASE_PATH + \"/\" + id, entity, Order.class)")
+                .contains("client.put(BASE_PATH + \"/\" + id, entity, Order.class)")
                 .contains("client.delete(BASE_PATH + \"/\" + id, Void.class)");
     }
 
     @Test
-    @DisplayName("PATCH/PUT parity: update() says the generated router serves PUT and names the serving-side PATCH route")
-    void updateJavadocNamesTheUnservedVerbAndTheWorkaround() {
+    @DisplayName("PATCH/PUT parity: update() sends PUT, the verb the generated router serves, and no PATCH")
+    void updateSendsPut() {
         DomainMetadata metadata = DomainMetadata.builder("PurchaseOrder", "com.example.domain")
                 .path("/purchase-orders")
                 .build();
 
         String content = generator.generate(metadata).content();
 
-        // KernelWebClient has no put, so the emitted PATCH cannot be aligned on the
-        // router's PUT from this side. The Javadoc is the only place a consumer learns that, and the
-        // route it prints must name the entity's real path and RuntimeComponents accessor.
         assertThat(content)
-                .contains("Not served by the generated server as emitted.")
-                .contains("routes.route(HttpMethod.PATCH, \"/purchase-orders/{id}\", "
-                        + "purchaseOrderHandler()::handleUpdate);");
+                .contains("return client.put(BASE_PATH + \"/\" + id, entity, PurchaseOrder.class);")
+                .doesNotContain("client.patch(")
+                .doesNotContain("HttpMethod.PATCH");
     }
 
     @Test

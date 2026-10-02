@@ -44,12 +44,9 @@ import javax.lang.model.element.Modifier;
  * address and is never dialled, so wiring that sets only those compiles and is refused at its
  * first request.
  *
- * <p>Update is the one verb this client cannot align with the generated server. The router
- * serves update on {@code PUT} and the OpenAPI document publishes {@code PUT}, but
- * {@code KernelWebClient} offers no {@code put}, so the emitted {@code update}
- * sends {@code PATCH} and its Javadoc prints the serving-side route that makes it reach.
- * {@code CrudRouteParityE2ETest} holds every other client call to the router's routes and fails
- * once the facade gains {@code put}.
+ * <p>Every call sends the verb the generated router serves for its operation; update is
+ * {@code PUT}, as the router and the OpenAPI document state it. {@code CrudRouteParityE2ETest}
+ * holds each client call to the router's routes.
  *
  * @implNote Emission is JavaPoet-based (ADR-015).
  *
@@ -107,7 +104,7 @@ public class KernelClientGenerator implements KernelArtifactGenerator {
                 .addMethod(buildFindAllPaged(entity, entityType, listOfEntity))
                 .addMethod(buildFindAll(entity, entityType, listOfEntity))
                 .addMethod(buildCreate(entity, entityType))
-                .addMethod(buildUpdate(entity, entityType, apiPath))
+                .addMethod(buildUpdate(entity, entityType))
                 .addMethod(buildDelete(entity))
                 .build();
 
@@ -228,30 +225,9 @@ public class KernelClientGenerator implements KernelArtifactGenerator {
                 .build();
     }
 
-    private MethodSpec buildUpdate(String entity, ClassName entityType, String apiPath) {
-        // PATCH/PUT parity. The generated router serves update on PUT only, the OpenAPI document
-        // publishes PUT, and the kernel router matches methods exactly — so this PATCH falls
-        // through to the router's not-found handler. It stays PATCH because KernelWebClient
-        // has get/getList/post/patch/delete and no put: there is no call this
-        // client can make that sends the verb the server serves. The emitted Javadoc says so,
-        // with the one-route workaround on the serving side, and CrudRouteParityE2ETest pins the
-        // exemption — it fails the day the facade gains put(...), which is the cue to switch.
+    private MethodSpec buildUpdate(String entity, ClassName entityType) {
         return MethodSpec.methodBuilder("update")
                 .addJavadoc("Updates an existing $L.\n", entity)
-                .addJavadoc("\n")
-                .addJavadoc("<p><b>Not served by the generated server as emitted.</b> The generated\n")
-                .addJavadoc("router serves this update on {@code PUT}, and this method sends\n")
-                .addJavadoc("{@code PATCH}, because {@link $T} has no {@code put} verb yet. Until it\n",
-                        WEB_CLIENT)
-                .addJavadoc("does, the serving application must route {@code PATCH} to the same\n")
-                .addJavadoc("handler from its {@code RuntimeComponents}:\n")
-                .addJavadoc("{@snippet :\n")
-                .addJavadoc("@Override public void configureRoutes(HttpRouter.Builder routes) {\n")
-                .addJavadoc("    routes.route(HttpMethod.PATCH, \"$L/{id}\", $LHandler()::handleUpdate);\n",
-                        apiPath, Character.toLowerCase(entity.charAt(0)) + entity.substring(1))
-                .addJavadoc("}\n")
-                .addJavadoc("}\n")
-                .addJavadoc("Without it the request is answered by the router's not-found handler.\n")
                 .addJavadoc("\n")
                 .addJavadoc("@param id the entity ID\n")
                 .addJavadoc("@param entity the entity with updated data\n")
@@ -260,7 +236,7 @@ public class KernelClientGenerator implements KernelArtifactGenerator {
                 .returns(entityType)
                 .addParameter(UUID, "id")
                 .addParameter(entityType, "entity")
-                .addStatement("return client.patch(BASE_PATH + $S + id, entity, $T.class)", "/", entityType)
+                .addStatement("return client.put(BASE_PATH + $S + id, entity, $T.class)", "/", entityType)
                 .build();
     }
 
