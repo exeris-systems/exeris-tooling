@@ -24,11 +24,14 @@ export const RESERVED_MODULE_IDENTIFIERS: ReadonlySet<string> = new Set([
   'HttpClient',
   'HttpErrorResponse',
   'HttpParams',
-  // @angular/forms
+  // @angular/forms. No emitter imports these; they stay reserved so that an entity whose type is
+  // renamed for one keeps that type name.
   'FormBuilder',
   'FormsModule',
   'ReactiveFormsModule',
   'Validators',
+  // @angular/forms/signals
+  'FormField',
   // @angular/router
   // Identifiers that the emitters import.
   'ActivatedRoute',

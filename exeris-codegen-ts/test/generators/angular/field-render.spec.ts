@@ -186,11 +186,21 @@ describe('resolveFieldRender — labels and initial values', () => {
     expect([named.label, named.form.label]).toEqual(['Price', 'Price']);
   });
 
-  it('a boolean seeds a boolean, from its declared default; any other control seeds a string', () => {
+  it('a boolean seeds a boolean, from its declared default; a number seeds a number or null; any other control seeds a string', () => {
     expect(render({ type: 'boolean' }).form.initialValue).toBe('false');
     expect(render({ type: 'Boolean', defaultValue: ' TRUE ' }).form.initialValue).toBe('true');
+    expect(render({ type: 'java.lang.Integer' }).form.initialValue).toBe('null');
+    expect(render({ type: 'java.lang.Integer', defaultValue: '7' }).form.initialValue).toBe('7');
+    expect(render({ type: 'java.lang.Integer', defaultValue: 'seven' }).form.initialValue).toBe('null');
     expect(render({ type: 'String' }).form.initialValue).toBe("''");
     expect(render({ type: 'String', defaultValue: 'x' }).form.initialValue).toBe("'x'");
+  });
+
+  it('the form model holds each value kind as its DTO type, with an empty value of that type', () => {
+    expect(render({ type: 'boolean' }).form).toMatchObject({ modelType: 'boolean', emptyValue: 'false' });
+    expect(render({ type: 'long' }).form).toMatchObject({ modelType: 'number | null', emptyValue: 'null' });
+    expect(render({ type: 'java.math.BigDecimal' }).form).toMatchObject({ modelType: 'string', emptyValue: "''" });
+    expect(render({ type: 'com.shop.Status', enumType: 'com.shop.Status' }).form).toMatchObject({ modelType: 'string', emptyValue: "''" });
   });
 });
 
