@@ -9,7 +9,7 @@ slug: adr/ADR-091
 
 # ADR-091 — Publish an opt-in application starter, so a consumer does not hand-write its build
 
-- **Status:** ACCEPTED (2026-09-30) · amended 2026-10-01 (Amendment 1 — backend, frontend and backend + frontend; Amendment 2 — starter scope, publication metadata, starter version)
+- **Status:** ACCEPTED (2026-09-30) · amended 2026-10-01 (Amendment 1 — backend, frontend and backend + frontend; Amendment 2 — starter scope, publication metadata, starter version) · amended 2026-10-02 (Amendment 3 — the release profile list)
 - **Deciders:** the founder (scope); `exeris-tooling` (module layout)
 - **Repo:** `exeris-tooling`
 - **Scope:** tooling / build (consumer-build contract)
@@ -330,3 +330,15 @@ obligation 7 does for the backend.
    not a build or publication fault.
 3. **`exeris-app-bom` also manages `exeris-app-starter`** (type `pom`), so an application on the
    parent route states the tooling version once, in `<parent>`.
+
+## Amendment 3 — the release profile list (2026-10-02)
+
+- **Status:** ACCEPTED (2026-10-02).
+- **Amends:** the obligation-4 sentence that quotes the profiles `release.yml` passes
+  (`-P 'release,!github-packages'`). Nothing else changes.
+
+The kernel 0.12.0 release is on Maven Central, so the build no longer reads a GitHub Packages
+registry, and `.github/maven-settings.xml` no longer declares the `github-packages` profile.
+`release.yml` passes `-P 'release,exeris-tooling-release'`. What obligation 4 requires is unchanged:
+`exeris-tooling-release` is activated beside `release`, and a consumer's `-P release` activates
+nothing from the starter chain.
