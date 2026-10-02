@@ -1134,9 +1134,10 @@ the dependency floor above already sets.
 **If you only regenerate, there is nothing to do.** If you wrote a decoder that signals a malformed
 body with anything other than `RequestBodyDecodeException`, that body is now answered 500: throw
 `RequestBodyDecodeException.malformedBody(...)` instead, as the `HttpRequestBodyDecoder` contract
-requires. With `exeris.tests` on, the generated `<Entity>HandlerTest` gains four cases, one per row
-above that reaches the decoder, and `RecordingRequestBody` gains a `failure` field that the decode
-throws when it is set.
+requires. With `exeris.tests` on, the generated `<Entity>HandlerTest` gains four cases: a malformed body
+(`RequestBodyDecodeException`, 400), a `SYSTEM` kernel exception (500), a JDK exception (500) and no
+decoder registry bound (500). `RecordingRequestBody` gains a `failure` field that the decode throws
+when it is set.
 
 ### A primitive `boolean` field now renders as a checkbox (T20d)
 
