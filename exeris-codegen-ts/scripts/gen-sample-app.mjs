@@ -165,6 +165,29 @@ const domains = [
     ],
     systemFields: { versionField: 'revision', createdAtField: 'openedAt', updatedAtField: 'touchedAt' },
   }),
+  // Named for the @UI view switches: every other fixture entity gets every page, so the shapes an
+  // entity takes with a switch off are compiled only here. Tag has a list and an edit form and
+  // nothing else — no detail page, no create route, no search box, no filter control although a
+  // field is filterable — and its foreign key to itself renders as text, the target having no
+  // detail page. Its form serves the edit route alone and leaves to the list.
+  d({
+    entityName: 'Tag',
+    fields: [
+      { name: 'id', type: 'java.util.UUID' },
+      { name: 'label', type: 'String', searchable: true },
+      { name: 'pinned', type: 'Boolean', filterable: true },
+      { name: 'parentId', type: 'java.util.UUID' },
+    ],
+    relationships: [{ name: 'parentId', targetEntity: 'Tag', type: 'MANY_TO_ONE' }],
+    uiMetadata: { listView: true, detailView: false, createForm: false, editForm: true, searchable: false, filterable: false },
+  }),
+  // Receipt has no list page and no edit form: a detail page with no Edit button, reached by id,
+  // and a create-only form. Both leave to the app root, which no list of its own backs.
+  d({
+    entityName: 'Receipt',
+    fields: [{ name: 'id', type: 'java.util.UUID' }, { name: 'amount', type: 'java.math.BigDecimal', dataType: 'currency' }],
+    uiMetadata: { listView: false, detailView: true, createForm: true, editForm: false },
+  }),
 ];
 const enums = [{
   name: 'OrderStatus',

@@ -13,6 +13,7 @@ import { outPath } from '../../core/paths.js';
 import { updateVersionField } from '../api/type-gen.js';
 import { fieldRenderContext, resolveFieldRenders, toTitleCase } from './field-render.js';
 import { tsSingleQuoted } from './ts-literal.js';
+import { entityExitRoute, entityViews, hasFormPage } from './entity-views.js';
 
 export { GeneratedFile };
 
@@ -23,7 +24,8 @@ export class FormGenerator implements CodeGenerator {
   readonly priority = 20;
 
   generate(domain: DomainMetadata, context: GeneratorContext): GeneratedFile | null {
-    if (domain.internalApi?.hidden) {
+    // One component serves both the create and the edit route, so it is dropped only when both are off.
+    if (domain.internalApi?.hidden || !hasFormPage(entityViews(domain))) {
       return null;
     }
 
@@ -81,6 +83,9 @@ export class FormGenerator implements CodeGenerator {
     lines.push(' */');
     lines.push('');
     const plural = DslMapper.routePlural(entityName);
+    // A routed form returns to the saved instance's detail page; without one, it leaves the entity.
+    const views = entityViews(domain);
+    const exitRoute = entityExitRoute(domain, views);
 
     lines.push("import { Component, ChangeDetectionStrategy, input, output, signal, computed, effect, inject } from '@angular/core';");
     lines.push("import { rxResource } from '@angular/core/rxjs-interop';");
@@ -334,7 +339,9 @@ export class FormGenerator implements CodeGenerator {
     lines.push('        this.saving.set(false);');
     lines.push('        this.saved.emit(result);');
     lines.push('        if (this.routed) {');
-    lines.push(`          void this.router.navigate(['/${plural}', String(result.${idField})]);`);
+    lines.push(views.detail
+      ? `          void this.router.navigate(['/${plural}', String(result.${idField})]);`
+      : `          void this.router.navigate(['${exitRoute}']);`);
     lines.push('        }');
     lines.push('      },');
     lines.push('      error: (err) => {');
@@ -354,8 +361,12 @@ export class FormGenerator implements CodeGenerator {
     lines.push('    this.cancelled.emit();');
     lines.push('    if (this.routed) {');
     // Back to the entity being edited, or to the list when nothing was.
-    lines.push('      const id = this.id();');
-    lines.push(`      void this.router.navigate(id !== undefined ? ['/${plural}', id] : ['/${plural}']);`);
+    if (views.detail) {
+      lines.push('      const id = this.id();');
+      lines.push(`      void this.router.navigate(id !== undefined ? ['/${plural}', id] : ['${exitRoute}']);`);
+    } else {
+      lines.push(`      void this.router.navigate(['${exitRoute}']);`);
+    }
     lines.push('    }');
     lines.push('  }');
     lines.push('');
