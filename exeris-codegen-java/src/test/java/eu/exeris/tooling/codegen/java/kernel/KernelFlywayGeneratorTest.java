@@ -183,10 +183,10 @@ class KernelFlywayGeneratorTest {
                 FieldMetadata.builder("sku", "String").build(),
                 FieldMetadata.builder("ownerTenantId", "java.util.UUID").build(),
                 FieldMetadata.builder("universeId", "java.util.UUID").build());
-        SystemFieldsMetadata owner = new SystemFieldsMetadata("id", "createdAt", "createdBy",
-                "updatedAt", "updatedBy", "ownerTenantId", "version", null, null, null, null);
-        SystemFieldsMetadata ownerAndScope = new SystemFieldsMetadata("id", "createdAt", "createdBy",
-                "updatedAt", "updatedBy", "ownerTenantId", "version", null, null, null, "universeId");
+        SystemFieldsMetadata owner = SystemFieldsMetadata.builder()
+                .tenantIdField("ownerTenantId").build();
+        SystemFieldsMetadata ownerAndScope = SystemFieldsMetadata.builder()
+                .tenantIdField("ownerTenantId").sharedScopeField("universeId").build();
         DomainMetadata universe = DomainMetadata.builder("CatalogItem", "eu.exeris.app.domain")
                 .dataScope(DataScope.UNIVERSE).systemFields(ownerAndScope).fields(fields).build();
         DomainMetadata tenant = DomainMetadata.builder("CatalogItem", "eu.exeris.app.domain")
@@ -274,10 +274,12 @@ class KernelFlywayGeneratorTest {
     @Test
     @DisplayName("System-field overrides (T5): tenant/audit/soft-delete/version columns + RLS follow overridden names")
     void systemFieldOverridesFixture() {
-        SystemFieldsMetadata sf = new SystemFieldsMetadata(
-                "id", "createdAt", "createdBy",
-                "modifiedAt", "updatedBy", "orgId",
-                "rev", "deleted", null, null, null);
+        SystemFieldsMetadata sf = SystemFieldsMetadata.builder()
+                .updatedAtField("modifiedAt")
+                .tenantIdField("orgId")
+                .versionField("rev")
+                .softDeleteField("deleted")
+                .build();
 
         DomainMetadata metadata = DomainMetadata.builder("Order", "eu.exeris.app.domain")
                 .tenantScoped(true).audited(true).softDelete(true).versioned(true)
@@ -307,10 +309,13 @@ class KernelFlywayGeneratorTest {
     @Test
     @DisplayName("System-field overrides (T5): audit-by / soft-delete-timestamp / soft-deleted-by columns follow overrides")
     void systemFieldOverridesAuxiliaryColumnsFixture() {
-        SystemFieldsMetadata sf = new SystemFieldsMetadata(
-                "id", "createdAt", "authorId",
-                "updatedAt", "editorId", "tenantId",
-                "version", "deleted", "removedAt", "removedBy", null);
+        SystemFieldsMetadata sf = SystemFieldsMetadata.builder()
+                .createdByField("authorId")
+                .updatedByField("editorId")
+                .softDeleteField("deleted")
+                .softDeleteTimestampField("removedAt")
+                .softDeletedByField("removedBy")
+                .build();
 
         DomainMetadata metadata = DomainMetadata.builder("Order", "eu.exeris.app.domain")
                 .audited(true).softDelete(true)

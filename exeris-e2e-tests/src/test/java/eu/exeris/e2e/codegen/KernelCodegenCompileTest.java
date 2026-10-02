@@ -276,8 +276,8 @@ class KernelCodegenCompileTest {
                 .dataScope(DataScope.UNIVERSE)
                 .audited(true)
                 .versioned(true)
-                .systemFields(new SystemFieldsMetadata("id", "createdAt", "createdBy", "updatedAt",
-                        "updatedBy", "organizationId", "version", null, null, null, "worldId"))
+                .systemFields(SystemFieldsMetadata.builder()
+                        .tenantIdField("organizationId").sharedScopeField("worldId").build())
                 .fields(List.of(
                         FieldMetadata.builder("name", "String").required(true).build(),
                         FieldMetadata.builder("organizationId", "java.util.UUID").build(),
