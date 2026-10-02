@@ -505,8 +505,7 @@ class KernelApplicationGeneratorTest {
         assertThat(hook).isGreaterThan(stream);
         assertThat(build).isGreaterThan(hook);
         assertThat(decorate).isGreaterThan(build);
-        // The kernel builder refuses a duplicate stream registration as it is made, so the
-        // lifecycle carries no post-build displacement check of its own.
+        // A duplicate stream registration is the kernel builder's to refuse, as it is made.
         assertThat(lifecycle(files)).doesNotContain("requireStreamRoute(");
         // The hook's Javadoc says streams are admitted, and what is refused.
         assertThat(components(files))

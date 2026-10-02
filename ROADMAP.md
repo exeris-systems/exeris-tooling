@@ -3338,12 +3338,11 @@ needed.)*
       never use").
 - [ ] Measure whether the emitted error mapping should read `ExerisKernelException.faultOrigin()`
       rather than re-derive CALLER vs SYSTEM (0.12 readiness, below).
-- [x] **K9, consumed** (ADR-070 Amendment 3; lands with the final kernel 0.12.0 pin). Kernel 0.12 ships `StreamRouteResolver` (`@since 0.12`), an SPI through which
-      a handler that wraps or forwards a router delegates stream resolution. `StreamMatch` moved from
-      core into the SPI. This removes the reason `decorate` and stream routes are mutually exclusive
-      (T49, ADR-070 obligation 6): the emitted app refuses to boot on that combination today. It also
-      lets a `streamRoute` registered in `configureRoutes` resolve. Lift the refusal, amend ADR-070's
-      obligation, and cover both with a real-boot e2e case.
+- [x] **K9, consumed** (ADR-070 Amendment 3). Kernel 0.12.0 ships `StreamRouteResolver`, through
+      which a handler that wraps or forwards a router delegates stream resolution. The emitted
+      `decorate` wrapper and stream routes now work together, and a `configureRoutes` stream
+      resolves. A plain wrapper is refused only when the router `servesStreams()`; covered by
+      `GeneratedAppBootE2ETest`.
 - [x] Kernel 0.12 ships `CommunityStorageSubsystem` (K6); the `@Blob` inert reason now states what the
       kernel binds (#243).
 
