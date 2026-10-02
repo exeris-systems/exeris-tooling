@@ -1675,6 +1675,36 @@ produce a `TODO(@View G1)` or `TODO(@View G2)` marker. Authored text belongs in 
 bind data use `source = ENTITY`, `PROJECTION` or `ACTION`. `TODO(@View G2)` is no longer emitted at
 all.
 
+### `exeris-codegen-ts`: an app without a backend no longer gets backend wiring
+
+An app whose metadata declares no visible entity — only `@View` pages with authored (`STATIC` /
+`NONE`) content, or nothing at all — has no API to call, and its scaffold no longer pretends it has
+one. The scaffold now wires a backend piece only when the app has an API: a visible entity, or an
+emitted file that imports `@angular/common/http`. **An app with a visible entity emits exactly what
+it did**, whichever client emitters are on.
+
+A regenerated backend-less app no longer gets:
+
+- `provideHttpClient()` and its import in `src/app/app.config.ts`; the router and
+  `provideZonelessChangeDetection()` stay;
+- `proxy.conf.json`, and `--proxy-config proxy.conf.json` in the `start` script (now `ng serve`);
+- `apiUrl` and the deprecated `apiVersion` in `src/environments/environment*.ts`, which keep
+  `production`;
+- `zod`, `@angular/cdk` and `@angular/forms` in `package.json`, each of which returns as soon as an
+  emitted file imports it (an `@ExerisEnum` emitted with its Zod schema keeps `zod`, and so does a
+  peer contract);
+- the `types/` and `schemas/` barrels and the empty enum module; with an enum, `types/enums.ts`,
+  `types/index.ts` and an app barrel exporting only the enums are emitted, and no empty section;
+- `src/app/index.ts`, when there is neither an entity nor an enum to re-export;
+- a `redirectTo: ''` route pointing at itself, when there is no entity and no `PAGE` view.
+
+`@angular/common`, `@angular/router`, `rxjs` (a peer dependency of `@angular/core`), `tslib`, the
+ui-kit and its `.npmrc` stay. The CLI does not replace an existing file without `--overwrite`, so an
+existing app keeps its `package.json`, `app.config.ts` and environments until you regenerate with
+it. Files the run no longer produces — `proxy.conf.json` and the empty barrels — are pruned when the
+output tree carries the generation manifest from an earlier run. If your own code uses `HttpClient`
+in a backend-less app, add `provideHttpClient()` to `app.config.ts` yourself.
+
 ### Compile-classpath requirements are named in the emitted Javadoc (T30)
 
 The regenerated `Application.java` Javadoc separates compile requirements from runtime ones. If an

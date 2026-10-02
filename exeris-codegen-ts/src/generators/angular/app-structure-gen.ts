@@ -26,6 +26,7 @@ import { tsSingleQuoted } from './ts-literal.js';
 import { sagaMachineName } from './saga-gen.js';
 import { hasLiveViewClient } from './stream-client-gen.js';
 import { hasActionStreamClients } from './action-stream-client-gen.js';
+import { BACKEND_SCAFFOLD_NEEDS, type ScaffoldNeeds } from '../../core/scaffold-needs.js';
 
 export interface GeneratedFile {
   path: string;
@@ -69,7 +70,10 @@ export function generateAppStructure(
   // Presentation-IR views (RFC-2026-06-28 §5 route-assembly). Optional + defaults
   // to none so existing 3-arg callers stay valid AND so a zero-view build emits
   // app.routes.ts / app.component.ts byte-identical to before this wiring landed.
-  views: ViewMetadata[] = []
+  views: ViewMetadata[] = [],
+  // What the emitted tree uses (core/scaffold-needs). Defaults to an app with a backend, the
+  // scaffold this function emits on its own; the orchestrator passes what it composed.
+  needs: ScaffoldNeeds = BACKEND_SCAFFOLD_NEEDS
 ): GeneratedFile[] {
   const files: GeneratedFile[] = [];
   // Output roots
@@ -77,11 +81,12 @@ export function generateAppStructure(
   const srcRoot = 'src';
   const appRoot = 'src/app';
   const envRoot = 'src/environments';
-  const { apiUrl, apiVersion } = resolveApiSettings(config);
+  // The API environment entries exist only for code that calls the API.
+  const api = needs.backend ? resolveApiSettings(config) : null;
   const appName = config.appName;
 
   // Config files at the project root
-  files.push({ path: `${outputRoot}/package.json`, content: generatePackageJson(appName, config), overwritable: false });
+  files.push({ path: `${outputRoot}/package.json`, content: generatePackageJson(appName, config, needs), overwritable: false });
   files.push({ path: `${outputRoot}/angular.json`, content: generateAngularJson(appName, config), overwritable: false });
   files.push({ path: `${outputRoot}/tsconfig.json`, content: generateTsConfig(), overwritable: false });
   files.push({ path: `${outputRoot}/tsconfig.app.json`, content: generateTsConfigApp(config), overwritable: false });
@@ -92,7 +97,9 @@ export function generateAppStructure(
   }
   files.push({ path: `${outputRoot}/tailwind.config.js`, content: generateTailwindConfig(), overwritable: true });
   files.push({ path: `${outputRoot}/.postcssrc.json`, content: generatePostcssConfig(), overwritable: true });
-  files.push({ path: `${outputRoot}/proxy.conf.json`, content: generateProxyConfig(), overwritable: true });
+  if (needs.backend) {
+    files.push({ path: `${outputRoot}/proxy.conf.json`, content: generateProxyConfig(), overwritable: true });
+  }
   files.push({ path: `${outputRoot}/.npmrc`, content: generateNpmrc(), overwritable: true });
 
   // Static files under src/
@@ -103,8 +110,8 @@ export function generateAppStructure(
   files.push({ path: `${srcRoot}/main.ts`, content: generateMainTs(), overwritable: false });
 
   // Environment files under src/environments
-  files.push({ path: `${envRoot}/environment.ts`, content: generateEnvironmentFile({ production: true, apiUrl, apiVersion }), overwritable: false });
-  files.push({ path: `${envRoot}/environment.development.ts`, content: generateEnvironmentFile({ production: false, apiUrl, apiVersion }), overwritable: true });
+  files.push({ path: `${envRoot}/environment.ts`, content: generateEnvironmentFile({ production: true, api }), overwritable: false });
+  files.push({ path: `${envRoot}/environment.development.ts`, content: generateEnvironmentFile({ production: false, api }), overwritable: true });
 
   // Public-surface emitters (sidebar nav, route list, barrel re-exports) take the
   // visible list so they never reference an entity whose per-entity files the
@@ -119,10 +126,14 @@ export function generateAppStructure(
   const sortedViews = sortViews(views);
 
   // App shell under src/app
-  files.push({ path: `${appRoot}/app.config.ts`, content: generateAppConfig(), overwritable: false });
+  files.push({ path: `${appRoot}/app.config.ts`, content: generateAppConfig(needs.backend), overwritable: false });
   files.push({ path: `${appRoot}/app.component.ts`, content: generateAppComponent(visibleDomains, appName, sortedViews), overwritable: false });
   files.push({ path: `${appRoot}/app.routes.ts`, content: generateAppRoutes(visibleDomains, appName, sortedViews), overwritable: false });
-  files.push({ path: `${appRoot}/index.ts`, content: generateBarrelExport(visibleDomains, enums, config), overwritable: true });
+  // The app barrel re-exports the generated types, services, stores and components. With no
+  // visible entity and no enum there is nothing to re-export, and no barrel.
+  if (visibleDomains.length > 0 || enums.length > 0) {
+    files.push({ path: `${appRoot}/index.ts`, content: generateBarrelExport(visibleDomains, enums, config), overwritable: true });
+  }
 
   // T20: per-entity components/services/types/schemas and enums are emitted by the
   // CLI orchestrator under src/app/ (the real generators), NOT here — this function
@@ -148,7 +159,13 @@ bootstrapApplication(AppComponent, appConfig)
 `;
 }
 
-function generateAppConfig(): string {
+function generateAppConfig(backend: boolean): string {
+  // provideHttpClient() is wired only when the app has an API (core/scaffold-needs); an app
+  // without one has no HttpClient consumer to provide for.
+  const httpImport = backend ? `\nimport { provideHttpClient } from '@angular/common/http';` : '';
+  const httpProvider = backend
+    ? `\n    // v22: fetch is the default HttpClient transport (the old explicit opt-in is now redundant).\n    provideHttpClient(),`
+    : '';
   return `/**
  * Angular Application Configuration
  * Generated by @exeris/codegen-ts
@@ -157,8 +174,7 @@ function generateAppConfig(): string {
  */
 
 import { ApplicationConfig, provideZonelessChangeDetection } from '@angular/core';
-import { provideRouter, withComponentInputBinding } from '@angular/router';
-import { provideHttpClient } from '@angular/common/http';
+import { provideRouter, withComponentInputBinding } from '@angular/router';${httpImport}
 
 import { routes } from './app.routes';
 
@@ -166,9 +182,7 @@ export const appConfig: ApplicationConfig = {
   providers: [
     // Zoneless mode - no zone.js needed for change detection
     provideZonelessChangeDetection(),
-    provideRouter(routes, withComponentInputBinding()),
-    // v22: fetch is the default HttpClient transport (the old explicit opt-in is now redundant).
-    provideHttpClient(),
+    provideRouter(routes, withComponentInputBinding()),${httpProvider}
     // Row enter/leave animations are native (animate.enter, Angular 22) — a
     // compiler feature, so no @angular/animations package or provider is needed.
   ],
@@ -332,6 +346,11 @@ function generateAppRoutes(domains: DomainMetadata[], appName: string, views: Vi
   // are emitted, so app.routes.ts is byte-identical to the pre-route-assembly output.
   const importBlock = viewImports ? `\n${viewImports}` : '';
 
+  // With no destination at all, a redirect from '' to '' would only point the router at itself.
+  const redirect = defaultRedirect
+    ? `\n  {\n    path: '',\n    redirectTo: '${defaultRedirect}',\n    pathMatch: 'full'\n  },`
+    : '';
+
   return `/**
  * Application Routes
  * Generated by @exeris/codegen-ts
@@ -339,12 +358,7 @@ function generateAppRoutes(domains: DomainMetadata[], appName: string, views: Vi
 
 import { Routes } from '@angular/router';${importBlock}
 
-export const routes: Routes = [
-  {
-    path: '',
-    redirectTo: '${defaultRedirect}',
-    pathMatch: 'full'
-  },${routes.join('')}${viewSpreads}
+export const routes: Routes = [${redirect}${routes.join('')}${viewSpreads}
 ];
 `;
 }
@@ -374,9 +388,15 @@ function generateBarrelExport(
     "",
     "// Enums",
     "export * from './types/enums';",
-    "",
-    "// Types (main type definitions)",
   ];
+
+  // Every section below re-exports per-entity files; with no visible entity the enums are all
+  // there is, and empty section headers would advertise surfaces the app does not have.
+  if (visibleDomains.length === 0) {
+    return exports.join('\n') + '\n';
+  }
+
+  exports.push("", "// Types (main type definitions)");
 
   for (const domain of visibleDomains) {
     const kebab = DslMapper.toKebabCase(domain.entityName);
@@ -504,8 +524,38 @@ function generateBarrelExport(
   return exports.join('\n') + '\n';
 }
 
-function generatePackageJson(appName: string, config: GeneratorConfig): string {
+/**
+ * The runtime dependencies. The framework core — `@angular/common|compiler|core|platform-browser|
+ * router`, `rxjs` (a peer dependency of `@angular/core`) and `tslib` (`importHelpers`) — and the
+ * ui-kit the styles and Tailwind config import are always present. `@angular/cdk`, `@angular/forms`
+ * and `zod` are used only by some emitters: an app with a backend keeps its fixed set, and an app
+ * without one lists each only when an emitted file imports it.
+ */
+function runtimeDependencies(needs: ScaffoldNeeds): string {
+  const used = (pkg: string): boolean => needs.backend || needs.packages.has(pkg);
+  const entries: Array<[string, string, boolean]> = [
+    ['@angular/cdk', '^22.0.0', used('@angular/cdk')],
+    ['@angular/common', '^22.0.0', true],
+    ['@angular/compiler', '^22.0.0', true],
+    ['@angular/core', '^22.0.0', true],
+    ['@angular/forms', '^22.0.0', used('@angular/forms')],
+    ['@angular/platform-browser', '^22.0.0', true],
+    ['@angular/router', '^22.0.0', true],
+    ['@exeris-systems/ui-kit', '^0.1.0', true],
+    ['rxjs', '~7.8.1', true],
+    ['tslib', '^2.8.1', true],
+    ['zod', '^3.24.0', used('zod')],
+  ];
+  return entries
+    .filter(([, , kept]) => kept)
+    .map(([name, range]) => `    "${name}": "${range}"`)
+    .join(',\n');
+}
+
+function generatePackageJson(appName: string, config: GeneratorConfig, needs: ScaffoldNeeds): string {
   const pkgName = frontendSlug(appName);
+  // The dev-server proxy forwards API calls; without a backend there is no proxy config to pass.
+  const start = needs.backend ? 'ng serve --proxy-config proxy.conf.json' : 'ng serve';
   return `{
   "name": ${jsonValue(pkgName)},
   "version": "0.1.0",
@@ -516,7 +566,7 @@ function generatePackageJson(appName: string, config: GeneratorConfig): string {
   },
   "scripts": {
     "ng": "ng",
-    "start": "ng serve --proxy-config proxy.conf.json",
+    "start": "${start}",
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
@@ -524,17 +574,7 @@ function generatePackageJson(appName: string, config: GeneratorConfig): string {
   },
   "private": true,
   "dependencies": {
-    "@angular/cdk": "^22.0.0",
-    "@angular/common": "^22.0.0",
-    "@angular/compiler": "^22.0.0",
-    "@angular/core": "^22.0.0",
-    "@angular/forms": "^22.0.0",
-    "@angular/platform-browser": "^22.0.0",
-    "@angular/router": "^22.0.0",
-    "@exeris-systems/ui-kit": "^0.1.0",
-    "rxjs": "~7.8.1",
-    "tslib": "^2.8.1",
-    "zod": "^3.24.0"
+${runtimeDependencies(needs)}
   },
   "devDependencies": {
     "@angular/build": "^22.0.0",
@@ -840,18 +880,24 @@ function getEntityIcon(entityName: string): string {
   return icons[entityName] ?? icons.default;
 }
 
-function generateEnvironmentFile(params: { production: boolean; apiUrl: string; apiVersion: string }): string {
-  const { production, apiUrl, apiVersion } = params;
+function generateEnvironmentFile(params: {
+  production: boolean;
+  api: { apiUrl: string; apiVersion: string } | null;
+}): string {
+  const { production, api } = params;
+  const apiEntries = api
+    ? `
+  apiUrl: '${api.apiUrl}',
+  /** @deprecated No generated code reads it. exeris-tooling 0.10.0 stops emitting it. */
+  apiVersion: '${api.apiVersion}',`
+    : '';
   return `/**
  * Angular Environment Configuration
  * Generated by @exeris/codegen-ts
  */
 
 export const environment = {
-  production: ${production},
-  apiUrl: '${apiUrl}',
-  /** @deprecated No generated code reads it. exeris-tooling 0.10.0 stops emitting it. */
-  apiVersion: '${apiVersion}',
+  production: ${production},${apiEntries}
 } as const;
 `;
 }
