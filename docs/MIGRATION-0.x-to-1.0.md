@@ -1649,6 +1649,24 @@ the default) and the entity is `GLOBAL`. An app with neither emits exactly what 
   so `<Entity>Service.<action>(id, …)` is no longer emitted for it; call the action stream client
   instead. Non-streaming actions are unchanged.
 
+### `exeris-codegen-ts`: `FieldMetadata` and `UIMetadata` declare what the processor writes
+
+Two exported TypeScript types are realigned onto the SDK records they mirror.
+
+- `FieldMetadata` loses `inList`, `inDetail`, `order`, `ui` and `dependencies`. None is a component
+  of the SDK `FieldMetadata` record, so no metadata document has carried one; the schema supplied
+  `inList: true` / `inDetail: true` defaults that no generator read. The form no longer sorts on
+  `order`, which was always absent, so fields stay in declaration order as before; a computed field's
+  dependencies are `computedFrom` alone.
+- `UIMetadata` loses `listColumns`, `searchFields`, `filterFields` and `formLayout`, which no record
+  declares, and gains the seven `@UI` view switches the processor writes: `listView`, `detailView`,
+  `createForm`, `editForm`, `searchable`, `filterable`, `exportable` (all optional). The list page's
+  columns are the first five visible non-system fields, which is what every real build already got.
+
+**No generated output changes.** No generator reads the new `UIMetadata` keys yet — that is a known
+gap, recorded in `UI_CONTRACT_COVERAGE`. This matters only if your own code builds metadata by hand
+with the removed keys, or imports these types from the package: Zod now strips the removed keys.
+
 ### `@View`: wrong attributes on STATIC/NONE bindings are diagnosed
 
 `@Bind(source = STATIC)` or `NONE` carrying `ref`, `path`, `expression` or `language` now produces a

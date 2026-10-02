@@ -6,7 +6,8 @@
  * is measured, not inferred from source: every domain handed to `buildGeneratedFiles` — the
  * app's own and every peer's — is wrapped in a Proxy that records each top-level property the
  * pipeline touches. A text search cannot tell `domain.path` from `path.join`, and cannot see a
- * read made through a helper or a destructuring.
+ * read made through a helper or a destructuring. Each domain's field objects and `uiMetadata` are
+ * proxied the same way, for `FIELD_CONTRACT_COVERAGE` and `UI_CONTRACT_COVERAGE`.
  *
  * The proxies wrap the parsed objects, after the last `DomainMetadataSchema.parse`: nothing in the
  * orchestrator re-parses, so the objects the generators receive are the proxies themselves.
@@ -19,12 +20,25 @@
 
 import { describe, expect, it } from 'vitest';
 import { buildGeneratedFiles, type EnumMetadataForGen } from '../../src/orchestrator.js';
-import { DomainMetadataSchema, type DomainMetadata } from '../../src/models/domain-model.js';
+import {
+  DomainMetadataSchema,
+  FieldMetadataSchema,
+  UIMetadataSchema,
+  type DomainMetadata,
+} from '../../src/models/domain-model.js';
 import { DEFAULT_CONFIG, type GeneratorConfig } from '../../src/config.js';
 import type { PeerContract } from '../../src/peers/peer-contract.js';
-import { CONTRACT_COVERAGE, type ContractCoverageEntry } from '../../src/models/contract-coverage.js';
+import {
+  CONTRACT_COVERAGE,
+  FIELD_CONTRACT_COVERAGE,
+  UI_CONTRACT_COVERAGE,
+  type ContractCoverageEntry,
+  type NestedContractCoverageEntry,
+} from '../../src/models/contract-coverage.js';
 
 const SCHEMA_KEYS = Object.keys(DomainMetadataSchema.shape);
+const FIELD_KEYS = Object.keys(FieldMetadataSchema.shape);
+const UI_KEYS = Object.keys(UIMetadataSchema.shape);
 
 /**
  * Property names a runtime or a test framework probes on any object it is handed, none of which a
@@ -33,6 +47,8 @@ const SCHEMA_KEYS = Object.keys(DomainMetadataSchema.shape);
 const PROBES = new Set(['then', 'toJSON', 'constructor', 'asymmetricMatch', '$$typeof', 'nodeType', 'tagName']);
 
 interface Recorder {
+  /** The keys of the schema the watched objects were parsed with. */
+  keys: readonly string[];
   reads: Set<string>;
   /** Property names read that the schema does not declare: Zod strips them, so they are always undefined. */
   undeclared: Set<string>;
@@ -47,12 +63,12 @@ function callSite(): string {
 
 function note(rec: Recorder, key: string | symbol): void {
   if (typeof key === 'string' && !PROBES.has(key)) {
-    (SCHEMA_KEYS.includes(key) ? rec.reads : rec.undeclared).add(key);
+    (rec.keys.includes(key) ? rec.reads : rec.undeclared).add(key);
   }
 }
 
-function watch(domain: DomainMetadata, rec: Recorder): DomainMetadata {
-  return new Proxy(domain, {
+function watch<T extends object>(target: T, rec: Recorder): T {
+  return new Proxy(target, {
     get(target, key, receiver) {
       note(rec, key);
       return Reflect.get(target, key, receiver);
@@ -113,6 +129,25 @@ const MAXIMAL = {
     { name: 'rev', type: 'java.lang.Long' },
     { name: 'tenantId', type: 'java.util.UUID' },
     { name: 'removed', type: 'boolean' },
+    // The FieldMetadata keys the fields above leave at their defaults.
+    {
+      name: 'reference',
+      type: 'String',
+      columnName: 'ref_code',
+      displayName: 'Reference',
+      description: 'Customer reference',
+      unique: true,
+      indexed: true,
+      audited: true,
+      defaultValue: 'N/A',
+      minLength: 3,
+      pattern: '^[A-Z]+$',
+      format: 'text',
+      inUpdate: false,
+    },
+    { name: 'quantity', type: 'java.lang.Integer', max: 99, readOnly: true, inCreate: false },
+    { name: 'grandTotal', type: 'java.math.BigDecimal', computed: true, computedFrom: ['total'] },
+    { name: 'internalNote', type: 'String', hidden: true },
   ],
   actions: [
     { name: 'cancel', httpMethod: 'POST' },
@@ -125,7 +160,17 @@ const MAXIMAL = {
   ],
   relationships: [{ name: 'productId', fieldName: 'productId', targetEntity: 'com.shop.Product', type: 'MANY_TO_ONE' }],
   projections: [{ name: 'OrderSummary', fields: ['id', 'total'] }],
-  uiMetadata: { icon: 'cart', listColumns: ['id', 'total', 'status'], searchFields: ['note'], filterFields: ['status'] },
+  uiMetadata: {
+    icon: 'cart',
+    color: '#0a7',
+    listView: false,
+    detailView: false,
+    createForm: false,
+    editForm: false,
+    searchable: false,
+    filterable: false,
+    exportable: true,
+  },
   graphMetadata: { label: 'Order', edges: [{ name: 'contains', targetLabel: 'Product', relationType: 'CONTAINS' }] },
   sagaMetadata: {
     name: 'OrderFulfilment',
@@ -148,7 +193,26 @@ const MAXIMAL = {
   internalApi: { hidden: false, readOnly: true, internal: true, reason: 'ops', disabledActions: ['cancel'] },
 } as const;
 
-function fixture(rec: Recorder) {
+interface Recorders {
+  domain: Recorder;
+  field: Recorder;
+  ui: Recorder;
+}
+
+const recorders = (): Recorders => ({
+  domain: { keys: SCHEMA_KEYS, reads: new Set(), undeclared: new Set(), enumerations: [] },
+  field: { keys: FIELD_KEYS, reads: new Set(), undeclared: new Set(), enumerations: [] },
+  ui: { keys: UI_KEYS, reads: new Set(), undeclared: new Set(), enumerations: [] },
+});
+
+/** A watched copy of a domain whose field objects and uiMetadata are watched as well. */
+function watchDomain(domain: DomainMetadata, recs: Recorders): DomainMetadata {
+  const copy: DomainMetadata = { ...domain, fields: domain.fields.map((f) => watch(f, recs.field)) };
+  if (domain.uiMetadata) copy.uiMetadata = watch(domain.uiMetadata, recs.ui);
+  return watch(copy, recs.domain);
+}
+
+function fixture(recs: Recorders) {
   const domains = [
     d(MAXIMAL),
     // A plain target for the relationship, at the other end of every flag.
@@ -186,9 +250,9 @@ function fixture(rec: Recorder) {
     { name: 'billing', domains: [d({ ...MAXIMAL, packageName: 'com.billing' })], enums: [] },
   ];
   return {
-    domains: domains.map((x) => watch(x, rec)),
+    domains: domains.map((x) => watchDomain(x, recs)),
     enums,
-    peers: peers.map((p) => ({ ...p, domains: p.domains.map((x) => watch(x, rec)) })),
+    peers: peers.map((p) => ({ ...p, domains: p.domains.map((x) => watchDomain(x, recs)) })),
     raw: [...domains, ...peers.flatMap((p) => p.domains)],
   };
 }
@@ -207,19 +271,21 @@ const ALL_ON: GeneratorConfig = {
   generateTests: true,
 };
 
-function run(): Recorder {
-  const rec: Recorder = { reads: new Set(), undeclared: new Set(), enumerations: [] };
-  const { domains, enums, peers } = fixture(rec);
+function run(): Recorders {
+  const recs = recorders();
+  const { domains, enums, peers } = fixture(recs);
   buildGeneratedFiles(domains, enums, ALL_ON, [], peers);
-  return rec;
+  return recs;
 }
+
+const RUN = run();
 
 const STATES = CONTRACT_COVERAGE as Record<string, ContractCoverageEntry>;
 const classifiedAs = (state: ContractCoverageEntry['state']): string[] =>
   Object.keys(STATES).filter((k) => STATES[k].state === state);
 
 describe('DomainMetadata contract coverage', () => {
-  const rec = run();
+  const rec = RUN.domain;
 
   it('classifies every schema field, and only schema fields, in schema order', () => {
     const unclassified = SCHEMA_KEYS.filter((k) => !(k in STATES));
@@ -246,7 +312,7 @@ describe('DomainMetadata contract coverage', () => {
 
   it('runs on a fixture that sets every schema field away from its default', () => {
     const defaults = DomainMetadataSchema.parse({ entityName: '_', packageName: '_' }) as Record<string, unknown>;
-    const { raw } = fixture({ reads: new Set(), undeclared: new Set(), enumerations: [] });
+    const { raw } = fixture(recorders());
     const unexercised = SCHEMA_KEYS.filter((k) =>
       raw.every((dm) => {
         const v = (dm as Record<string, unknown>)[k];
@@ -297,5 +363,69 @@ describe('DomainMetadata contract coverage', () => {
         `${classifiedButNotRead.join(', ')}. Move each to JAVA_ONLY, RESERVED or GAP with a reason — or, if a generator ` +
         `should read it, make sure the fixture reaches that code path.`,
     ).toEqual([]);
+  });
+});
+
+/**
+ * The same checks one level down, on the run above: every field object and every `uiMetadata`
+ * object the generators receive is proxied, so a key counts as read only when a generator reads
+ * it off the object itself.
+ */
+const NESTED = [
+  { label: 'FieldMetadata', table: 'FIELD_CONTRACT_COVERAGE', keys: FIELD_KEYS, rec: RUN.field, states: FIELD_CONTRACT_COVERAGE },
+  { label: 'UIMetadata', table: 'UI_CONTRACT_COVERAGE', keys: UI_KEYS, rec: RUN.ui, states: UI_CONTRACT_COVERAGE },
+] as const;
+
+describe.each(NESTED)('$label contract coverage', ({ label, table, keys, rec, states: typed }) => {
+  const states = typed as Record<string, NestedContractCoverageEntry>;
+
+  it('classifies every schema key, and only schema keys, in schema order', () => {
+    expect(Object.keys(states), `${table} lists exactly the ${label} schema keys, in declaration order.`).toEqual(keys);
+  });
+
+  it('gives every JAVA_ONLY, RESERVED and GAP key a reason', () => {
+    const missing = keys.filter((k) => states[k].state !== 'READ' && !('reason' in states[k] && states[k].reason.trim()));
+    expect(missing, `${table} entries without a reason: ${missing.join(', ')}.`).toEqual([]);
+  });
+
+  it('acts on no key the processor never writes', () => {
+    const acted = keys.filter((k) => !states[k].written && states[k].state !== 'READ' && states[k].state !== 'RESERVED');
+    expect(acted, `${table} marks keys the processor never writes as acted on: ${acted.join(', ')}.`).toEqual([]);
+  });
+
+  it('runs on a fixture that sets every key away from its default', () => {
+    const { raw } = fixture(recorders());
+    const objects: Record<string, unknown>[] =
+      label === 'FieldMetadata'
+        ? raw.flatMap((dm) => dm.fields)
+        : raw.flatMap((dm) => (dm.uiMetadata ? [dm.uiMetadata] : []));
+    const defaults = (
+      label === 'FieldMetadata' ? FieldMetadataSchema.parse({ name: '_', type: '_' }) : UIMetadataSchema.parse({})
+    ) as Record<string, unknown>;
+    const unexercised = keys.filter((k) =>
+      objects.every((o) => o[k] === undefined || JSON.stringify(o[k]) === JSON.stringify(defaults[k])),
+    );
+    expect(unexercised, `${label} keys no fixture object sets to a non-default value: ${unexercised.join(', ')}.`).toEqual(
+      [],
+    );
+  });
+
+  it('sees no whole-object enumeration', () => {
+    expect(
+      [...new Set(rec.enumerations)],
+      `A generator enumerates a whole ${label} object, which reads every key indiscriminately.`,
+    ).toEqual([]);
+  });
+
+  it('reads no key the schema does not declare', () => {
+    expect([...rec.undeclared].sort(), `Generators read ${label} keys the schema strips.`).toEqual([]);
+  });
+
+  it('marks READ exactly the keys a generator reads', () => {
+    const read = keys.filter((k) => rec.reads.has(k));
+    expect(
+      read,
+      `${table} must mark READ exactly the keys TS generators read during generation (measured below).`,
+    ).toEqual(keys.filter((k) => states[k].state === 'READ'));
   });
 });
