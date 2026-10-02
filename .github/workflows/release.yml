@@ -15,8 +15,8 @@ name: release to maven central
 # and whether its version agrees with the pom; both are checked below.
 #
 # Every dependency resolves from Maven Central here, as it will for a consumer of the published
-# POMs: the `github-packages` settings profile is switched off. That is what enforces the release
-# order kernel → SDK → tooling: a tooling release whose kernel or SDK pin is not on Central fails to
+# POMs: neither the POMs nor .github/maven-settings.xml name another repository. That is what
+# enforces the release order kernel → SDK → tooling: a tooling release whose kernel or SDK pin is not on Central fails to
 # resolve before anything is signed.
 #
 # Same shape as exeris-sdk's release.yml, including the single Maven invocation: the kernel gates and
@@ -158,6 +158,13 @@ jobs:
           # `gpg: signing failed: No pinentry`.
           gpg-passphrase: MAVEN_GPG_PASSPHRASE
 
+      # Every eu.exeris coordinate a release depends on is resolved from Maven Central. The cache
+      # above is shared with build.yml, so it can hold an SDK installed from source or a kernel
+      # published elsewhere before its release, and Maven never re-fetches a release it already
+      # holds. Purging them is what lets a pin that is not on Central fail to resolve here.
+      - name: Purge cached eu.exeris artefacts
+        run: rm -rf ~/.m2/repository/eu/exeris
+
       - name: Set the release version — or, on a tag, check it
         # On a dispatch the tree is a -SNAPSHOT development line and setting the version is the
         # point of the dry run. On a tag the release PR has already set it, so a tag whose version
@@ -220,8 +227,7 @@ jobs:
 
       - name: Build, sign, gate — and upload when this is a release
         # One Maven invocation, so the bytes the tests and gates ran against are the bytes uploaded.
-        # `!github-packages` switches off the settings profile that adds the GitHub Packages
-        # registry: everything resolves from Central.
+        # The settings file carries only the Central credentials: everything resolves from Central.
         #
         # `exeris-tooling-release` is exeris-app-bom's copy of `release` (ADR-091). That BOM and the
         # two modules under it inherit nothing from the root POM, so without it they are built but
@@ -237,9 +243,9 @@ jobs:
             # autoPublish=false: this uploads a deployment and stops. waitUntil=validated makes it
             # block until Central has validated, so a missing file or signature fails here. Review
             # the results in the portal and press Publish there.
-            mvn -B -ntp --settings .github/maven-settings.xml -P 'release,exeris-tooling-release,!github-packages' clean deploy
+            mvn -B -ntp --settings .github/maven-settings.xml -P 'release,exeris-tooling-release' clean deploy
           else
-            mvn -B -ntp --settings .github/maven-settings.xml -P 'release,exeris-tooling-release,!github-packages' clean verify
+            mvn -B -ntp --settings .github/maven-settings.xml -P 'release,exeris-tooling-release' clean verify
           fi
 
       - name: Release-readiness gate

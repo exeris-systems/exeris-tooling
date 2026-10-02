@@ -56,12 +56,19 @@ jobs:
           java-version: ${{ matrix.java }}
           cache: maven
 
+      # A released coordinate is resolved from Maven Central, and a cached copy of the same
+      # coordinate published before the release is purged. Maven never re-fetches a release it
+      # already holds, so an ~/.m2 restored by the cache above would otherwise keep serving a
+      # pre-release jar under the final version. The kernel jars are re-fetched from Central on
+      # every run; that is a few megabytes.
+      - name: Purge cached exeris-kernel artefacts
+        run: rm -rf ~/.m2/repository/eu/exeris/exeris-kernel*
+
       # japicmp.skip mirrors what the SDK's own CI passes, and it is required from
       # v0.10.0 on: that release introduced a `semver-gate` japicmp execution bound
       # to `verify`, which `install` runs. The gate resolves the previous release
-      # jar as its baseline, and `eu.exeris` artifacts are not on Maven Central yet
-      # (deliberately — the SDK does not move to Central before the kernel does), so
-      # a runner has nothing to resolve. An absent baseline is configured to FAIL
+      # jar as its baseline, and no SDK release is on Maven Central yet (the SDK
+      # follows the kernel there), so a runner has nothing to resolve. An absent baseline is configured to FAIL
       # rather than report "no breaks found", which is the correct posture for the
       # SDK and simply not our gate to run: we are building its jars to get the
       # types on our classpath, not policing its API compatibility.
@@ -82,19 +89,12 @@ jobs:
         working-directory: exeris-tooling
         # No -U. The SDK SNAPSHOT is built into the local repo by the step above
         # rather than fetched, so there is no remote SNAPSHOT to re-check. The
-        # kernel resolves from GitHub Packages at 0.12.0, a release-shaped
-        # coordinate that the kernel's CI publishes once from development/0.12.0
-        # and never overwrites. It is a pre-release until the kernel tags
-        # v0.12.0 (see the BOM). -U belongs back only if a SNAPSHOT ever arrives
-        # over the wire.
+        # kernel resolves from Maven Central, at its final 0.12.0 release. -U
+        # belongs back only if a SNAPSHOT ever arrives over the wire.
         #
-        # The GitHub Packages repository and its credentials come from
-        # .github/maven-settings.xml, not from the POM: a repository in the POM
-        # would be published with it (see the root pom.xml).
-        run: mvn -B -ntp --settings .github/maven-settings.xml verify
-        env:
-          GITHUB_ACTOR: ${{ github.actor }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # No settings file: every remote dependency comes from Central, the only
+        # repository a consumer of the published POMs has.
+        run: mvn -B -ntp verify
 
   # exeris-codegen-ts is the TypeScript / Angular emitter sibling of
   # exeris-codegen-java. It is NOT a Maven module — vitest drives its
