@@ -31,6 +31,7 @@ import { generateView, generateViewRoute } from './generators/angular/view-gen.j
 import { generateHttpErrorHelper, needsHttpErrorHelper } from './generators/angular/http-error-gen.js';
 import { generatePeerTypes } from './generators/api/peer-type-gen.js';
 import type { PeerContract } from './peers/peer-contract.js';
+import { deriveScaffoldNeeds } from './core/scaffold-needs.js';
 
 /** Minimal output-file shape the writer consumes (path + content). The per-shape
  *  generators return richer objects (artifactType/overwritable); those are structurally
@@ -83,9 +84,13 @@ export function buildGeneratedFiles(
   // The per-entity tree — emitted by the real generators, then re-rooted to src/app.
   const appTree: OutputFile[] = [];
 
-  // Always emit the enum module (even empty) so the type/app barrels' re-export of
-  // './enums' resolves whether or not the project declares any @ExerisEnum.
-  appTree.push({ path: 'types/enums.ts', content: generateEnumTypes(enums, config.generateZod) });
+  // The type surface — the enum module, and the type/schema barrels that re-export it — exists
+  // when the app declares a visible entity or an enum. With either, the enum module is emitted even
+  // empty, so the barrels' re-export of './enums' resolves; with neither, nothing would import it.
+  const hasTypeSurface = enums.length > 0 || domains.some((d) => !d.internalApi?.hidden);
+  if (hasTypeSurface) {
+    appTree.push({ path: 'types/enums.ts', content: generateEnumTypes(enums, config.generateZod) });
+  }
 
   for (const domain of domains) {
     if (domain.internalApi?.hidden) {
@@ -147,7 +152,9 @@ export function buildGeneratedFiles(
 
   // Real per-entity Zod schemas + type/schema barrels (gated by config.generateZod).
   // These were a stub before (T20); the schemas reference the real enum module above.
-  appTree.push(...new TypeGenerator().generateAggregate(domains, ctx));
+  if (hasTypeSurface) {
+    appTree.push(...new TypeGenerator().generateAggregate(domains, ctx));
+  }
 
   // The status-to-message helper is app-wide: one file the per-entity components, stores and
   // sagas import. An app with no entity has nothing that imports it and gets none.
@@ -188,8 +195,10 @@ export function buildGeneratedFiles(
 
   // Scaffold only — no per-entity files, no enum module (those live in appTree above).
   // `views` is threaded through so the app shell's app.routes.ts imports + spreads
-  // each per-view route export (RFC-2026-06-28 §5 route-assembly).
-  generatedFiles.push(...generateAppStructure(domains, enums, config, views));
+  // each per-view route export (RFC-2026-06-28 §5 route-assembly). What the scaffold wires
+  // (HTTP client, dev proxy, API environment, optional dependencies) is read off the composed
+  // tree, so it never carries a backend piece no emitted file uses.
+  generatedFiles.push(...generateAppStructure(domains, enums, config, views, deriveScaffoldNeeds(domains, appTree)));
 
   return generatedFiles;
 }

@@ -49,8 +49,8 @@ class KernelCodegenE2ETest {
                 .path("/species")
                 .module("catalog")
                 .dataScope(DataScope.UNIVERSE)
-                .systemFields(new SystemFieldsMetadata("id", "createdAt", "createdBy", "updatedAt",
-                        "updatedBy", "organizationId", "version", null, null, null, "worldId"))
+                .systemFields(SystemFieldsMetadata.builder()
+                        .tenantIdField("organizationId").sharedScopeField("worldId").build())
                 .fields(List.of(
                         FieldMetadata.builder("name", "String").build(),
                         FieldMetadata.builder("organizationId", "java.util.UUID").build(),

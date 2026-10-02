@@ -47,22 +47,28 @@ describe('FieldMetadataSchema', () => {
     expect(result.audited).toBe(false);
     expect(result.readOnly).toBe(false);
     expect(result.hidden).toBe(false);
-    expect(result.inList).toBe(true);
-    expect(result.inDetail).toBe(true);
     expect(result.inCreate).toBe(true);
     expect(result.inUpdate).toBe(true);
     expect(result.computed).toBe(false);
   });
 
-  it('round-trips computed-field arrays (computedFrom + dependencies aliases)', () => {
+  it('round-trips the computedFrom array', () => {
     const input = {
       name: 'fullName',
       type: 'String',
       computed: true,
       computedFrom: ['firstName', 'lastName'],
-      dependencies: ['firstName', 'lastName'],
     };
     expect(FieldMetadataSchema.parse(input)).toMatchObject(input);
+  });
+
+  it('strips keys the SDK FieldMetadata record does not declare', () => {
+    const result = FieldMetadataSchema.parse({
+      name: 'total', type: 'BigDecimal', inList: false, inDetail: false, order: 1, ui: {}, dependencies: ['x'],
+    }) as Record<string, unknown>;
+    for (const key of ['inList', 'inDetail', 'order', 'ui', 'dependencies']) {
+      expect(result, key).not.toHaveProperty(key);
+    }
   });
 
   it('rejects when required name field is missing', () => {
@@ -178,18 +184,28 @@ describe('ProjectionMetadataSchema', () => {
 });
 
 describe('UIMetadataSchema', () => {
-  it('defaults listColumns / searchFields / filterFields to empty arrays', () => {
-    const result = UIMetadataSchema.parse({});
-    expect(result.listColumns).toEqual([]);
-    expect(result.searchFields).toEqual([]);
-    expect(result.filterFields).toEqual([]);
+  it('keeps the view switches the processor writes for @UI', () => {
+    // The shape UIMetadata serialises to for @UI(listView = false, exportable = true): every
+    // component is written, the ones the source never set at their builder defaults.
+    const wire = {
+      listView: false, detailView: true, createForm: true, editForm: true,
+      searchable: true, filterable: true, exportable: true,
+      bulkActions: false, columns: 12, defaultLayout: 'grid', groups: [], fieldOverrides: [],
+    };
+    expect(UIMetadataSchema.parse(wire)).toEqual({
+      listView: false, detailView: true, createForm: true, editForm: true,
+      searchable: true, filterable: true, exportable: true,
+    });
   });
 
-  it('preserves icon + color + formLayout when supplied', () => {
-    const result = UIMetadataSchema.parse({
-      icon: 'shopping-cart', color: '#ff0000', formLayout: 'grid',
+  it('fills no switch the wire leaves out', () => {
+    expect(UIMetadataSchema.parse({})).toEqual({});
+  });
+
+  it('preserves icon + color when supplied', () => {
+    expect(UIMetadataSchema.parse({ icon: 'shopping-cart', color: '#ff0000' })).toEqual({
+      icon: 'shopping-cart', color: '#ff0000',
     });
-    expect(result).toMatchObject({ icon: 'shopping-cart', color: '#ff0000', formLayout: 'grid' });
   });
 });
 

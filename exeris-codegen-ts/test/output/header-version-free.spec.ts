@@ -1,0 +1,137 @@
+/**
+ * Header guard (ADR-092 obligation 5): an emitted file carries no value that changes per release.
+ *
+ * A release that changes no emitter must regenerate byte-identical output, so no emitted header
+ * comment names a package version, and no emitted footer or badge names a generator version. The
+ * fixture turns on every generator the orchestrator drives (tests, sagas, events, stream clients,
+ * views, peers) and also runs the registry's generators (guards, query builders, the landing page),
+ * so a version reintroduced in any of them is caught here rather than in a consumer's diff.
+ *
+ * Scope: `.ts` and `.html` files only. A version pin in the emitted `package.json` is a dependency
+ * declaration, not provenance, and is legitimate.
+ */
+
+import { describe, expect, it } from 'vitest';
+import { buildGeneratedFiles, type EnumMetadataForGen } from '../../src/orchestrator.js';
+import {
+  DomainMetadataSchema,
+  ViewMetadataSchema,
+  type DomainMetadata,
+} from '../../src/models/domain-model.js';
+import { DEFAULT_CONFIG } from '../../src/config.js';
+import { createDefaultRegistry, createGeneratorContext } from '../../src/core/generator-registry.js';
+
+function domain(overrides: Partial<DomainMetadata> & { entityName: string }): DomainMetadata {
+  return DomainMetadataSchema.parse({ packageName: 'com.shop', ...overrides });
+}
+
+const STATUS: EnumMetadataForGen = {
+  name: 'OrderStatus',
+  qualifiedName: 'com.shop.OrderStatus',
+  packageName: 'com.shop',
+  values: [
+    { name: 'NEW', displayName: 'New', ordinal: 0 },
+    { name: 'PAID', displayName: 'Paid', ordinal: 1 },
+  ],
+};
+
+const DOMAINS: DomainMetadata[] = [
+  domain({
+    entityName: 'Order',
+    versioned: true,
+    audited: true,
+    realTimeApi: true,
+    fields: [
+      { name: 'id', type: 'java.util.UUID' },
+      { name: 'version', type: 'java.lang.Long' },
+      { name: 'status', type: 'com.shop.OrderStatus', enumType: 'com.shop.OrderStatus', required: true },
+      { name: 'productId', type: 'java.util.UUID' },
+    ],
+    relationships: [{ name: 'productId', targetEntity: 'Product', type: 'MANY_TO_ONE' }],
+    events: [{ name: 'OrderPlaced', payloadFields: ['id'] }],
+    actions: [
+      { name: 'cancel', methodName: 'cancel' },
+      { name: 'trackDelivery', methodName: 'trackDelivery', streaming: true },
+    ],
+    sagaMetadata: {
+      name: 'OrderFulfilment',
+      steps: [{ name: 'reserveStock', action: 'reserve', compensatingAction: 'releaseStock', order: 0 }],
+      compensationStrategy: 'ALL_OR_NOTHING',
+      compensationOrder: 'REVERSE',
+    },
+  }),
+  domain({ entityName: 'Product', fields: [{ name: 'id', type: 'java.util.UUID' }, { name: 'name', type: 'String' }] }),
+  // The landing page is emitted only for this entity name.
+  domain({
+    entityName: 'ExerisPitchDeck',
+    fields: [{ name: 'hero', type: 'IMAGE_URL', defaultValue: 'https://example.com/a.png' }],
+  }),
+];
+
+const VIEW = ViewMetadataSchema.parse({
+  name: 'Dashboard',
+  kind: 'PAGE',
+  route: '/dashboard',
+  title: 'Dashboard',
+  regions: [{ slot: 'main', components: [{ type: 'HERO', binding: { source: 'STATIC' }, props: 'Hi' }] }],
+});
+
+const PEER = {
+  name: 'billing',
+  domains: [domain({ entityName: 'Invoice', packageName: 'com.billing', fields: [{ name: 'id', type: 'java.util.UUID' }] })],
+  enums: [],
+};
+
+async function allEmittedFiles(): Promise<{ path: string; content: string }[]> {
+  const orchestrated = buildGeneratedFiles(
+    DOMAINS,
+    [STATUS],
+    { ...DEFAULT_CONFIG, generateTests: true },
+    [VIEW],
+    [PEER]
+  );
+  const registry = await createDefaultRegistry();
+  const registered = registry.generateAll(DOMAINS, createGeneratorContext({}, DOMAINS, [STATUS]));
+  return [...orchestrated, ...registered].filter((f) => /\.(ts|html)$/.test(f.path));
+}
+
+/** The leading comment block: a `/* … *\/` or `<!-- … -->` block, or a run of `//` lines. */
+function headerRegion(content: string): string {
+  const text = content.replace(/^#!.*\n/, '').trimStart();
+  if (text.startsWith('/*')) return text.slice(0, text.indexOf('*/') + 2);
+  if (text.startsWith('<!--')) return text.slice(0, text.indexOf('-->') + 3);
+  const lines = text.split('\n');
+  const end = lines.findIndex((l) => !l.trimStart().startsWith('//'));
+  return lines.slice(0, end === -1 ? lines.length : end).join('\n');
+}
+
+const SEMVER = /\bv?\d+\.\d+\.\d+\b/;
+// A `v`-prefixed version anywhere in emitted markup or code is a release-varying badge or footer.
+const V_VERSION = /\bv\d+\.\d+(\.\d+)?\b/;
+
+describe('emitted headers and footers carry no release-varying version (ADR-092 header guard)', () => {
+  it('covers a fixture where every generator emits — including the landing page and app shell', async () => {
+    const files = await allEmittedFiles();
+    const paths = files.map((f) => f.path);
+    expect(files.filter((f) => headerRegion(f.content).includes('Generated by @exeris/codegen-ts')).length)
+      .toBeGreaterThan(20);
+    expect(paths.some((p) => p.endsWith('.html'))).toBe(true);
+    expect(paths.some((p) => p.endsWith('app.component.ts'))).toBe(true);
+    expect(paths.some((p) => p.includes('guard'))).toBe(true);
+    expect(paths.some((p) => p.includes('saga'))).toBe(true);
+  });
+
+  it('no header comment names a version', async () => {
+    const offenders = (await allEmittedFiles())
+      .filter((f) => SEMVER.test(headerRegion(f.content)))
+      .map((f) => `${f.path}: ${headerRegion(f.content).match(SEMVER)?.[0]}`);
+    expect(offenders).toEqual([]);
+  });
+
+  it('no emitted footer, badge or provenance line names a generator version', async () => {
+    const offenders = (await allEmittedFiles())
+      .filter((f) => V_VERSION.test(f.content))
+      .map((f) => `${f.path}: ${f.content.match(V_VERSION)?.[0]}`);
+    expect(offenders).toEqual([]);
+  });
+});

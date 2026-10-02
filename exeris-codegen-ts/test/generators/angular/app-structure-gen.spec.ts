@@ -22,8 +22,8 @@
  *     `Colony` → `Colonies` / `colonies` and `Box` → `Boxes` / `boxes`.
  *   - getEntityIcon: each known entity name → its emoji; unknown →
  *     default '📁'.
- *   - generateAppRoutes: empty domains → redirectTo: ''; non-empty →
- *     first domain's routePlural.
+ *   - generateAppRoutes: empty domains and no PAGE view → no redirect
+ *     route; non-empty → first domain's routePlural.
  *   - generateBarrelExport: Page/PageRequest exported ONLY ONCE
  *     (from the first domain's service), other domains export bare
  *     {Service, Filter}.
@@ -96,7 +96,6 @@ describe('generateAppStructure — static skeleton', () => {
     ['src/app/app.config.ts', false],
     ['src/app/app.component.ts', false],
     ['src/app/app.routes.ts', false],
-    ['src/app/index.ts', true],
   ] as const)('emits %s with overwritable=%s', (path, overwritable) => {
     const f = files.find((x) => x.path === path);
     expect(f, `missing ${path}`).toBeDefined();
@@ -108,6 +107,11 @@ describe('generateAppStructure — static skeleton', () => {
     const dev = fileAt(files, 'src/environments/environment.development.ts')!;
     expect(prod.content).toContain('production: true');
     expect(dev.content).toContain('production: false');
+  });
+
+  it('emits src/app/index.ts with overwritable=true once it has something to re-export', () => {
+    const barrel = fileAt(generateAppStructure([], [{ name: 'Tier', qualifiedName: 'com.shop.Tier' }], cfg()), 'src/app/index.ts');
+    expect(barrel?.overwritable).toBe(true);
   });
 
   it('main.ts bootstraps AppComponent with appConfig', () => {
@@ -294,10 +298,10 @@ describe('generateAppStructure — configurable appName (T7/U5)', () => {
 describe('generateAppStructure — empty domain set', () => {
   const files = generateAppStructure([], [], cfg());
 
-  it('app.routes.ts emits a redirectTo:"" route (no first-domain default)', () => {
+  it('app.routes.ts emits no redirect when there is no destination to redirect to', () => {
     const routes = fileAt(files, 'src/app/app.routes.ts')!;
-    expect(routes.content).toContain("redirectTo: ''");
-    expect(routes.content).toContain("pathMatch: 'full'");
+    expect(routes.content).not.toContain('redirectTo');
+    expect(routes.content).toContain('export const routes: Routes = [\n];');
   });
 
   it('app.component.ts header still renders without any nav links', () => {
@@ -306,11 +310,15 @@ describe('generateAppStructure — empty domain set', () => {
     expect(comp.content).not.toContain('routerLink="/');
   });
 
-  it('index.ts barrel still emits enums + section headers, no service exports', () => {
-    const barrel = fileAt(files, 'src/app/index.ts')!;
-    expect(barrel.content).toContain("export * from './types/enums';");
-    expect(barrel.content).toContain('// Services (export service classes and pagination types)');
-    expect(barrel.content).not.toContain('PageRequest');
+  it('emits no index.ts barrel: with no entity and no enum it would re-export nothing', () => {
+    expect(fileAt(files, 'src/app/index.ts')).toBeUndefined();
+  });
+
+  it('with enums only, the barrel re-exports the enum module and carries no empty section', () => {
+    const barrel = fileAt(generateAppStructure([], [{ name: 'Tier', qualifiedName: 'com.shop.Tier' }], cfg()), 'src/app/index.ts')!;
+    expect(barrel.content).toBe(
+      "// Generated barrel export\n// DO NOT EDIT - This file is auto-generated\n\n// Enums\nexport * from './types/enums';\n",
+    );
   });
 
   it('emits NO per-domain component/service/schema/types files', () => {
@@ -586,25 +594,20 @@ describe('generateAppStructure — hidden-domain handling', () => {
       [],
       cfg(),
     );
-    const barrel = fileAt(files, 'src/app/index.ts')!;
     const comp = fileAt(files, 'src/app/app.component.ts')!;
     const routes = fileAt(files, 'src/app/app.routes.ts')!;
 
-    // Barrel: same shape as the empty-domains case — enums + section
-    // headers, no per-entity exports.
-    expect(barrel.content).toContain("export * from './types/enums';");
-    expect(barrel.content).toContain('// Services (export service classes and pagination types)');
-    expect(barrel.content).not.toContain('PageRequest');
-    expect(barrel.content).not.toContain('InternalLedger');
+    // Barrel: same as the empty-domains case — nothing to re-export, so none.
+    expect(fileAt(files, 'src/app/index.ts')).toBeUndefined();
 
     // Nav: no sidebar links at all.
     expect(comp.content).not.toContain('routerLink="/');
     expect(comp.content).not.toContain('InternalLedger');
 
-    // Routes: redirectTo degrades to '' (no first-visible-domain
-    // default), and no list/new/:id triple is emitted. Equivalent
-    // to passing [] to generateAppStructure.
-    expect(routes.content).toContain("redirectTo: ''");
+    // Routes: no redirect (no first-visible-domain default), and no
+    // list/new/:id triple is emitted. Equivalent to passing [] to
+    // generateAppStructure.
+    expect(routes.content).not.toContain('redirectTo');
     expect(routes.content).not.toContain('internal-ledger');
     expect(routes.content).not.toContain('InternalLedger');
   });

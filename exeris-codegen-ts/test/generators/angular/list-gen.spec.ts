@@ -5,8 +5,7 @@
  * sortable headers, and pagination.
  *
  * Exercises:
- *   - listColumns precedence: explicit uiMetadata.listColumns >
- *     getDefaultListColumns (first 5 non-hidden non-system fields)
+ *   - list columns: the first 5 non-hidden non-system fields
  *   - displayName / pluralName fallbacks
  *   - systemFields.primaryKeyField alias in track / data-testid / delete dispatch
  *   - Per-column rendering matrix: Boolean → Yes/No badge; date format →
@@ -189,9 +188,9 @@ describe('ListGenerator displayName / pluralName fallbacks', () => {
   });
 });
 
-// ---------- listColumns precedence ----------
+// ---------- list column selection ----------
 
-describe('ListGenerator listColumns selection', () => {
+describe('ListGenerator list column selection', () => {
   const gen = new ListGenerator();
 
   function columnNamesIn(content: string): string[] {
@@ -203,36 +202,7 @@ describe('ListGenerator listColumns selection', () => {
     return matches.map(m => m[1]);
   }
 
-  it('explicit uiMetadata.listColumns wins over the default heuristic (first-N filter)', () => {
-    const content = gen.generate(domain({
-      entityName: 'Order',
-      uiMetadata: { listColumns: ['orderNumber'] },
-      fields: [
-        field({ name: 'orderNumber', type: 'String' }),
-        field({ name: 'firstName', type: 'String' }),
-        field({ name: 'lastName', type: 'String' }),
-      ],
-    }), CTX)!.content;
-
-    const columns = columnNamesIn(content);
-    expect(columns).toContain('Order Number');
-    // First-name / Last-name not selected because uiMetadata pinned only orderNumber.
-    expect(columns).not.toContain('First Name');
-    expect(columns).not.toContain('Last Name');
-  });
-
-  it('uiMetadata.listColumns referencing non-existent field is silently dropped (no row emitted)', () => {
-    const content = gen.generate(domain({
-      entityName: 'Order',
-      uiMetadata: { listColumns: ['orderNumber', 'doesNotExist'] },
-      fields: [field({ name: 'orderNumber', type: 'String' })],
-    }), CTX)!.content;
-
-    const columns = columnNamesIn(content);
-    expect(columns).toEqual(['Order Number']);
-  });
-
-  it('without uiMetadata.listColumns → getDefaultListColumns: first 5 non-hidden non-system fields', () => {
+  it('takes the first 5 non-hidden non-system fields', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
       fields: [
@@ -264,10 +234,9 @@ describe('ListGenerator listColumns selection', () => {
     expect(columns).not.toContain('Secret');
   });
 
-  it('empty listColumns OR empty fields → table renders with only the Actions header', () => {
+  it('no fields → table renders with only the Actions header', () => {
     const content = gen.generate(domain({
       entityName: 'Empty',
-      uiMetadata: { listColumns: [] },
     }), CTX)!.content;
 
     const columns = columnNamesIn(content);
@@ -285,7 +254,6 @@ describe('ListGenerator per-column rendering matrix', () => {
   it('Boolean column renders Yes / No pill badges (no raw {{ value }})', () => {
     const content = gen.generate(domain({
       entityName: 'Thing',
-      uiMetadata: { listColumns: ['flag'] },
       fields: [field({ name: 'flag', type: 'Boolean' })],
     }), CTX)!.content;
 
@@ -316,7 +284,6 @@ describe('ListGenerator per-column rendering matrix', () => {
   ])('temporal type %s → date pipe with %s pattern (%s)', (fieldType, expectedPattern) => {
     const content = gen.generate(domain({
       entityName: 'Thing',
-      uiMetadata: { listColumns: ['at'] },
       fields: [field({ name: 'at', type: fieldType })],
     }), CTX)!.content;
 
@@ -331,7 +298,6 @@ describe('ListGenerator per-column rendering matrix', () => {
     // format: 'datetime' covers (b).
     const content = gen.generate(domain({
       entityName: 'Thing',
-      uiMetadata: { listColumns: ['ts'] },
       fields: [field({ name: 'ts', type: 'String', format: 'datetime' })],
     }), CTX)!.content;
     expect(content).toContain("{{ item.ts | date:'medium' }}");
@@ -340,7 +306,6 @@ describe('ListGenerator per-column rendering matrix', () => {
   it('default column renders {{ item.<name> }} interpolation (no pipe)', () => {
     const content = gen.generate(domain({
       entityName: 'Thing',
-      uiMetadata: { listColumns: ['title'] },
       fields: [field({ name: 'title', type: 'String' })],
     }), CTX)!.content;
 
@@ -357,7 +322,6 @@ describe('ListGenerator @Field.dataType render facets', () => {
   it("dataType 'currency' renders the | currency pipe", () => {
     const content = gen.generate(domain({
       entityName: 'Invoice',
-      uiMetadata: { listColumns: ['amount'] },
       fields: [field({ name: 'amount', type: 'BigDecimal', dataType: 'currency' })],
     }), CTX)!.content;
 
@@ -367,7 +331,6 @@ describe('ListGenerator @Field.dataType render facets', () => {
   it("dataType 'percent' renders the | percent pipe", () => {
     const content = gen.generate(domain({
       entityName: 'Stat',
-      uiMetadata: { listColumns: ['rate'] },
       fields: [field({ name: 'rate', type: 'Double', dataType: 'percent' })],
     }), CTX)!.content;
 
@@ -377,7 +340,6 @@ describe('ListGenerator @Field.dataType render facets', () => {
   it("dataType 'url' renders an <a [href]> anchor instead of raw interpolation", () => {
     const content = gen.generate(domain({
       entityName: 'Site',
-      uiMetadata: { listColumns: ['homepage'] },
       fields: [field({ name: 'homepage', type: 'String', dataType: 'url' })],
     }), CTX)!.content;
 
@@ -388,7 +350,6 @@ describe('ListGenerator @Field.dataType render facets', () => {
   it('absent dataType keeps the default {{ item.<name> }} path (no pipe / anchor)', () => {
     const content = gen.generate(domain({
       entityName: 'Plain',
-      uiMetadata: { listColumns: ['note'] },
       fields: [field({ name: 'note', type: 'String' })],
     }), CTX)!.content;
 
@@ -407,7 +368,6 @@ describe('ListGenerator sortable column markers', () => {
   it('sortable=true column gets click handler + aria-sort attribute + arrow SVG', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
-      uiMetadata: { listColumns: ['orderNumber'] },
       fields: [field({ name: 'orderNumber', type: 'String', sortable: true })],
     }), CTX)!.content;
 
@@ -420,7 +380,6 @@ describe('ListGenerator sortable column markers', () => {
   it('sortable=false (default) column gets NO click handler / NO aria-sort / NO arrow', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
-      uiMetadata: { listColumns: ['orderNumber'] },
       fields: [field({ name: 'orderNumber', type: 'String' })],
     }), CTX)!.content;
 

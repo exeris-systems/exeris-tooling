@@ -10,6 +10,9 @@ import { z } from 'zod';
 // Field Metadata
 // ============================================================================
 
+// Mirrors eu.exeris.sdk.sourcemodel.ast.FieldMetadata: every key here is a component of that
+// record. The record declares more than the processor writes, so several keys never arrive from a
+// real build; `FIELD_CONTRACT_COVERAGE` in contract-coverage.ts records which, per key.
 export const FieldMetadataSchema = z.object({
   name: z.string(),
   type: z.string(),
@@ -37,17 +40,11 @@ export const FieldMetadataSchema = z.object({
   // generators; the default render path is unchanged when dataType is absent.
   dataType: z.string().optional(),
   enumType: z.string().optional(),
-  // Formularz / widoki
-  inList: z.boolean().default(true),
-  inDetail: z.boolean().default(true),
   inCreate: z.boolean().default(true),
   inUpdate: z.boolean().default(true),
-  order: z.number().optional(),
-  ui: z.record(z.any()).optional(),
-  // Computed fields
   computed: z.boolean().default(false),
-  computedFrom: z.array(z.string()).optional(), // List of field names this depends on
-  dependencies: z.array(z.string()).optional(), // Alias for computedFrom
+  // The names of the fields a computed field is derived from.
+  computedFrom: z.array(z.string()).optional(),
 });
 
 export type FieldMetadata = z.infer<typeof FieldMetadataSchema>;
@@ -163,13 +160,23 @@ export type ProjectionMetadata = z.infer<typeof ProjectionMetadataSchema>;
 // UI Metadata
 // ============================================================================
 
+// Mirrors the entity-level components of eu.exeris.sdk.sourcemodel.ast.UIMetadata that carry
+// what @UI declares: the seven view switches the processor copies from the annotation, plus the
+// icon and colour the record declares and the processor never sets. `columns`, `defaultLayout`,
+// `bulkActions`, `groups` and `fieldOverrides` are written too, but only ever as the builder's
+// defaults, so leaving them undeclared loses nothing the source said. The switches are optional rather than defaulted: the processor writes all seven
+// whenever @UI is present, so a default would only fill hand-built metadata, with a value no
+// source stated.
 export const UIMetadataSchema = z.object({
   icon: z.string().optional(),
   color: z.string().optional(),
-  listColumns: z.array(z.string()).default([]),
-  searchFields: z.array(z.string()).default([]),
-  filterFields: z.array(z.string()).default([]),
-  formLayout: z.string().optional(),
+  listView: z.boolean().optional(),
+  detailView: z.boolean().optional(),
+  createForm: z.boolean().optional(),
+  editForm: z.boolean().optional(),
+  searchable: z.boolean().optional(),
+  filterable: z.boolean().optional(),
+  exportable: z.boolean().optional(),
 });
 
 export type UIMetadata = z.infer<typeof UIMetadataSchema>;
