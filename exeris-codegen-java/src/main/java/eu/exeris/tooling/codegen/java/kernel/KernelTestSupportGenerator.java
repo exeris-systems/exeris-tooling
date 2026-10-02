@@ -843,12 +843,8 @@ public final class KernelTestSupportGenerator {
      *
      * <p><b>Why the allocator is in here.</b> It is not optional and it is easy to miss:
      * {@code HttpRequestDecodingContext} is a record with {@code requireNonNull(allocator)}, and
-     * {@code parseBody} fills that slot from {@code KernelProviders.MEMORY_ALLOCATOR.get()}. An
-     * unbound slot throws {@code NoSuchElementException}, which {@code parseBody} catches and maps
-     * to {@code 400 BAD_REQUEST} — the <em>same</em> status a validation rejection produces. A
-     * generated test that bound only the decoder registry would go green on every rejection case
-     * while never once reaching the validation guard. Binding it is what makes those cases mean
-     * what they say.
+     * the handler fills that slot from the allocator it was constructed with. The generated test
+     * hands it this same object, so the decoding context gets exactly the double the test staged.
      *
      * <p>Which is also why {@link KernelHandlerTestGenerator} always emits the accept case
      * alongside the reject cases: {@code 201 CREATED} can only come out the far end of a decode
@@ -878,10 +874,14 @@ public final class KernelTestSupportGenerator {
                 .addJavadoc("post-decode path — the {@code @Validation} guards — with no kernel\n")
                 .addJavadoc("bootstrap, no driver and no port.\n")
                 .addJavadoc("<p>{@code decodedType} and {@code contentType} record what the handler\n")
-                .addJavadoc("asked for.\n")
+                .addJavadoc("asked for. Stage {@code failure} instead to make the decode throw it.\n")
                 .addJavadoc("<p><b>DO NOT EDIT</b> - Regenerate from domain models.\n")
                 .addField(FieldSpec.builder(ClassName.OBJECT, "next", Modifier.PUBLIC)
                         .addJavadoc("What the next decode returns.\n").build())
+                .addField(FieldSpec.builder(ClassName.get("java.lang", "RuntimeException"), "failure",
+                                Modifier.PUBLIC)
+                        .addJavadoc("What the next decode throws instead of returning {@code next};\n")
+                        .addJavadoc("{@code null} — the default — decodes.\n").build())
                 .addField(FieldSpec.builder(wildcardClass, "decodedType", Modifier.PUBLIC)
                         .addJavadoc("The target type the handler asked to decode into.\n").build())
                 .addField(FieldSpec.builder(String.class, "contentType", Modifier.PUBLIC)
@@ -911,7 +911,12 @@ public final class KernelTestSupportGenerator {
                 .addJavadoc("Answers with {@code next}, ignoring {@code body}: what a handler test\n")
                 .addJavadoc("covers is the path <em>past</em> a decode, not the decode itself —\n")
                 .addJavadoc("that belongs to the codec driver, which is not generated code.\n")
+                .addJavadoc("<p>Throws {@code failure} when one is staged — the way a codec driver\n")
+                .addJavadoc("fails, which is what the handler's status mapping is tested against.\n")
                 .addStatement("this.decodedType = targetType")
+                .beginControlFlow("if (failure != null)")
+                .addStatement("throw failure")
+                .endControlFlow()
                 .addStatement("return next")
                 .build());
 

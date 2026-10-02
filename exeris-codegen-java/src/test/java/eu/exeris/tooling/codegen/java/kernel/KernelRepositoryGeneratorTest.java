@@ -351,8 +351,8 @@ class KernelRepositoryGeneratorTest {
                                            String sharedScopeField) {
         return DomainMetadata.builder("Species", "com.example.domain")
                 .dataScope(tier)
-                .systemFields(new SystemFieldsMetadata("id", "createdAt", "createdBy", "updatedAt",
-                        "updatedBy", "organizationId", "version", null, null, null, sharedScopeField))
+                .systemFields(SystemFieldsMetadata.builder()
+                        .tenantIdField("organizationId").sharedScopeField(sharedScopeField).build())
                 .fields(List.of(
                         FieldMetadata.builder("name", "String").build(),
                         FieldMetadata.builder("organizationId", "java.util.UUID").build(),
@@ -547,10 +547,12 @@ class KernelRepositoryGeneratorTest {
     void shouldHonourSystemFieldOverrides() {
         // tenantId→orgId, updatedAt→modifiedAt, version→rev; createdAt/deleted
         // left at defaults to prove per-field resolution.
-        SystemFieldsMetadata sf = new SystemFieldsMetadata(
-                "id", "createdAt", "createdBy",
-                "modifiedAt", "updatedBy", "orgId",
-                "rev", "deleted", null, null, null);
+        SystemFieldsMetadata sf = SystemFieldsMetadata.builder()
+                .updatedAtField("modifiedAt")
+                .tenantIdField("orgId")
+                .versionField("rev")
+                .softDeleteField("deleted")
+                .build();
 
         DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
                 .tenantScoped(true).audited(true).softDelete(true).versioned(true)

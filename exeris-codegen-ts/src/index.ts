@@ -13,7 +13,7 @@
 
 import { Command } from 'commander';
 import pc from 'picocolors';
-import { writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { writeFileSync, mkdirSync, existsSync, readFileSync } from 'node:fs';
 import { join, dirname, basename, resolve } from 'node:path';
 import { pruneOrphansAndWriteManifest, MANIFEST_NAME } from './output/manifest.js';
 import { loadConfig, cliOverrides, type GeneratorConfig, DEFAULT_CONFIG } from './config.js';
@@ -23,7 +23,11 @@ import { buildGeneratedFiles } from './orchestrator.js';
 
 import { getStrategy } from './core/backend-strategy.js';
 
-const VERSION = '0.3.0';
+// The package's own manifest is the single source of the CLI version. It sits one directory above
+// both src/ (tsx) and dist/ (built), and npm always ships it, so the relative URL resolves in each.
+const VERSION: string = (
+  JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }
+).version;
 
 // ============================================================================
 // CLI Setup
