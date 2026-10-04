@@ -8,9 +8,8 @@ import java.util.Locale;
  *
  * <ul>
  *   <li>{@link #kebab(String)} — the URL segment for an action route. The kernel route
- *       ({@code KernelApplicationGenerator}), the OpenAPI path ({@code OpenApiPathsBuilder}),
- *       and the page/table DSL endpoints ({@code PageDslGenerator}, {@code TableDslGenerator})
- *       must all advertise the <em>same</em> segment, or the served route will not match the
+ *       ({@code KernelApplicationGenerator}) and the OpenAPI path ({@code OpenApiPathsBuilder})
+ *       must advertise the <em>same</em> segment, or the served route will not match the
  *       advertised path.</li>
  *   <li>{@link #pascal(String)} — the Java identifier fragment for an action handler. The
  *       route's method reference ({@code orderHandler::handle<X>}) emitted by

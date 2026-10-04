@@ -3069,9 +3069,9 @@ class ExerisDomainProcessorTest {
         @Test
         @DisplayName("-Aexeris.strict reports @Action.httpMethod: every emitter serves and calls actions on POST")
         void strictReportsActionHttpMethodWithTheVerbActuallyServed() {
-            // Extracted into ActionMetadata.httpMethod, read only by the dsl emitters no
-            // production path constructs: the router, the OpenAPI document and the TS service
-            // all use POST. Without this entry an author writing httpMethod = "GET" hears nothing.
+            // Extracted into ActionMetadata.httpMethod and read by no generator: the router,
+            // the OpenAPI document and the TS service all use POST. Without this entry an author
+            // writing httpMethod = "GET" hears nothing.
             Compilation compilation = javac()
                     .withOptions("-Aexeris.strict=true")
                     .withProcessors(new ExerisDomainProcessor())
@@ -3085,8 +3085,7 @@ class ExerisDomainProcessorTest {
             assertThat(httpMethodWarnings).hasSize(1);
             assertThat(httpMethodWarnings.getFirst())
                     .contains("no generator reads it")
-                    .contains("POST {domainPath}/{id}/actions/{kebab-action-name}")
-                    .contains("no production code path constructs");
+                    .contains("POST {domainPath}/{id}/actions/{kebab-action-name}");
         }
 
         @Test

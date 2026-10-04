@@ -1,17 +1,16 @@
 /**
  * Coverage for src/generators/angular/form-gen.ts — FormGenerator emits
- * an Angular 22 standalone form component with FormBuilder + Validators +
- * Signals. Exercises:
+ * an Angular 22 standalone form component on Signal Forms (ADR-093). Exercises:
  *   - isLifecycleField / isSystemField skip filter
  *   - inCreate=false / hidden=true / readOnly=true / computed exclusion
  *   - Computed field detection + separate rendering with dependsOn note +
- *     compute method stub + effect() per dependency set
+ *     compute method stub + a computed signal per computed field
  *   - mapInputType java.* → HTML input type mapping
  *   - isEnumField (explicit enumType OR FQCN with dots that isn't java.*
  *     / Entity / DTO)
  *   - Field rendering: enum select, checkbox, text/number/date input
- *   - Validator builder: required/minLength/maxLength/pattern/min/max
- *   - Default value: explicit defaultValue / Boolean → 'false' / fallback "''"
+ *   - Schema validators: required/minLength/maxLength/pattern/min/max
+ *   - Model seed: explicit defaultValue / Boolean → 'false' / number → null / fallback "''"
  *   - Order-based sort + label fallback (displayName ?? toTitleCase(name))
  *   - Mode-driven submit dispatch (create vs update)
  *   - Enum imports + enumValues + enumDisplayNames properties
@@ -32,6 +31,20 @@ import {
 } from '../../../src/models/domain-model.js';
 
 const CTX: GeneratorContext = createGeneratorContext({});
+
+/** The form model's seed: the `signal<…FormModel>({ … })` the form is built on. */
+function seedBlock(content: string): string {
+  const start = content.indexOf('private readonly formModel = signal<');
+  expect(start, 'the form model seed').toBeGreaterThan(-1);
+  return content.slice(start, content.indexOf('});', start));
+}
+
+/** The form model interface: one property per control, typed as the control holds it. */
+function modelInterface(content: string): string {
+  const start = content.indexOf('interface ');
+  expect(start, 'the form model interface').toBeGreaterThan(-1);
+  return content.slice(start, content.indexOf('}', start));
+}
 
 function domain(overrides: Partial<DomainMetadata> & { entityName: string }): DomainMetadata {
   return DomainMetadataSchema.parse({ packageName: 'com.shop', ...overrides });
@@ -75,14 +88,19 @@ describe('FormGenerator.generate — emit path + hidden-skip', () => {
 describe('FormGenerator emitted content — top-level structure', () => {
   const gen = new FormGenerator();
 
-  it('imports Angular core + FormBuilder + Validators + service + entity types', () => {
+  it('imports Angular core + Signal Forms + service + entity types, and nothing from Reactive Forms', () => {
     const content = gen.generate(domain({ entityName: 'Order' }), CTX)!.content;
 
     expect(content).toContain("import { Component, ChangeDetectionStrategy, input, output, signal, computed, effect, inject } from '@angular/core';");
     expect(content).toContain("import { rxResource } from '@angular/core/rxjs-interop';");
     expect(content).toContain("import { ActivatedRoute, Router } from '@angular/router';");
-    expect(content).toContain("import { FormsModule, ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';");
+    expect(content).toContain("import { form, FormField, submit } from '@angular/forms/signals';");
     expect(content).toContain("import { Order, OrderCreate, OrderUpdate, OrderService } from '../services/order.service';");
+    expect(content).toContain('imports: [FormField],');
+    expect(content).not.toContain("from '@angular/forms';");
+    for (const reactive of ['FormBuilder', 'ReactiveFormsModule', 'FormsModule', 'Validators', 'formControlName', 'formGroup']) {
+      expect(content, reactive).not.toContain(reactive);
+    }
   });
 
   it('@Component decorator includes app-<kebab>-form selector + standalone + OnPush', () => {
@@ -93,7 +111,7 @@ describe('FormGenerator emitted content — top-level structure', () => {
     expect(content).toContain('ChangeDetectionStrategy.OnPush');
   });
 
-  it('FormComponent class declares mode/entity inputs + saved/cancelled outputs + saving/error signals + form FormGroup', () => {
+  it('FormComponent class declares mode/entity inputs + saved/cancelled outputs + saving/error signals + form FieldTree', () => {
     const content = gen.generate(domain({ entityName: 'Order' }), CTX)!.content;
 
     expect(content).toContain('export class OrderFormComponent {');
@@ -103,7 +121,58 @@ describe('FormGenerator emitted content — top-level structure', () => {
     expect(content).toContain('readonly cancelled = output<void>();');
     expect(content).toContain('readonly saving = signal(false);');
     expect(content).toContain("readonly error = signal<string | null>(null);");
-    expect(content).toContain('readonly form = this.fb.group({');
+    expect(content).toContain('interface OrderFormModel {');
+    expect(content).toContain('private readonly formModel = signal<OrderFormModel>({');
+    expect(content).toContain('readonly form = form(this.formModel);');
+  });
+
+  it('submits through submit(), which marks every field touched and runs the action only when valid', () => {
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      fields: [field({ name: 'orderNumber', type: 'String', required: true })],
+    }), CTX)!.content;
+
+    expect(content).toContain('<form (submit)="onSubmit($event)" novalidate class="space-y-6">');
+    expect(content).toContain('onSubmit(event: Event): void {');
+    expect(content).toContain('event.preventDefault();');
+    expect(content).toContain('void submit(this.form, () => this.save());');
+    expect(content).toContain('private save(): Promise<undefined> {');
+    expect(content).toContain('const data = this.formModel();');
+  });
+
+  it('binds every control with [formField] and keeps every data-testid', () => {
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      fields: [
+        field({ name: 'orderNumber', type: 'String' }),
+        field({ name: 'status', type: 'String', enumType: 'OrderStatus' }),
+        field({ name: 'paid', type: 'java.lang.Boolean' }),
+      ],
+    }), CTX)!.content;
+
+    for (const name of ['orderNumber', 'status', 'paid']) {
+      expect(content).toContain(`data-testid="field-${name}"`);
+      expect(content).toContain(`[formField]="form.${name}"`);
+      expect(content).toContain(`data-testid="error-${name}"`);
+    }
+    for (const testid of ['submit-error', 'cancel-button', 'submit-button']) {
+      expect(content).toContain(`data-testid="${testid}"`);
+    }
+  });
+
+  it('renders each validation error with the message it had, read by kind from the field state', () => {
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      fields: [field({ name: 'code', type: 'String', displayName: 'Code' })],
+    }), CTX)!.content;
+
+    expect(content).toContain('@if (form.code().invalid() && form.code().touched()) {');
+    expect(content).toContain("@if (form.code().getError('required')) { <span>Code is required.</span> }");
+    expect(content).toContain("@if (form.code().getError('pattern') || form.code().getError('parse')) { <span>Invalid format.</span> }");
+    expect(content).toContain("@if (form.code().getError('minLength')) { <span>Too short.</span> }");
+    expect(content).toContain("@if (form.code().getError('maxLength')) { <span>Too long.</span> }");
+    expect(content).toContain("@if (form.code().getError('min')) { <span>Too low.</span> }");
+    expect(content).toContain("@if (form.code().getError('max')) { <span>Too high.</span> }");
   });
 
   it('onSubmit dispatches to service.update in edit mode and service.create otherwise', () => {
@@ -150,15 +219,17 @@ describe('FormGenerator boolean controls (T20d)', () => {
       ],
     }), CTX)!.content;
 
-    expect(content).toContain('type="checkbox" formControlName="onVacation"');
-    expect(content).toContain('type="checkbox" formControlName="flagged"');
-    expect(content).toContain('onVacation: [false, []],');
-    expect(content).toContain('flagged: [false, []],');
+    expect(content).toContain('type="checkbox" [formField]="form.onVacation"');
+    expect(content).toContain('type="checkbox" [formField]="form.flagged"');
+    expect(seedBlock(content)).toContain('onVacation: false,');
+    expect(seedBlock(content)).toContain('flagged: false,');
 
-    // The seed is what fixes the cast: a boolean-seeded control is typed
-    // `boolean | null`, which overlaps the DTO's `boolean` and casts cleanly.
-    // A '' seed types it `string | null`, which does not overlap at all.
-    expect(content).not.toContain("onVacation: ['', []],");
+    // The model type is what fixes the cast: a boolean control is held as `boolean`,
+    // which matches the DTO's `boolean` and casts cleanly. A string-typed control
+    // would not overlap it at all.
+    expect(modelInterface(content)).toContain('onVacation: boolean;');
+    expect(modelInterface(content)).toContain('flagged: boolean;');
+    expect(seedBlock(content)).not.toContain("onVacation: '',");
   });
 
   it('a declared boolean default is emitted unquoted', () => {
@@ -172,9 +243,9 @@ describe('FormGenerator boolean controls (T20d)', () => {
       ],
     }), CTX)!.content;
 
-    expect(content).toContain('enabled: [true, []],');
-    expect(content).toContain('archived: [false, []],');
-    expect(content).not.toContain("enabled: ['true'");
+    expect(seedBlock(content)).toContain('enabled: true,');
+    expect(seedBlock(content)).toContain('archived: false,');
+    expect(content).not.toContain("enabled: 'true'");
   });
 
   it('a boolean default is read case-insensitively', () => {
@@ -186,29 +257,43 @@ describe('FormGenerator boolean controls (T20d)', () => {
       fields: [field({ name: 'enabled', type: 'boolean', defaultValue: 'True' })],
     }), CTX)!.content;
 
-    expect(content).toContain('enabled: [true, []],');
+    expect(seedBlock(content)).toContain('enabled: true,');
   });
 
-  it('booleans are not run through the numeric coercion', () => {
-    // Number(true) is 1. The coercion exists because a numeric control must seed ''
-    // to keep "blank" distinct from 0; a checkbox has no blank state, so a boolean
-    // needs no coercion and must not acquire one.
+  it('booleans are not held as numbers', () => {
+    // Number(true) is 1. A number control holds `number | null` so that blank stays
+    // distinct from 0; a checkbox has no blank state, so a boolean is held as a boolean.
     const content = gen.generate(domain({
       entityName: 'Empire',
       fields: [field({ name: 'onVacation', type: 'boolean' })],
     }), CTX)!.content;
 
-    expect(content).not.toContain('Number(raw.onVacation)');
-    expect(content).toContain('const data = this.form.getRawValue();');
+    expect(modelInterface(content)).not.toContain('onVacation: number | null;');
+    expect(content).not.toMatch(/[^A-Za-z]Number\(/);
+    expect(content).toContain('const data = this.formModel();');
+  });
+
+  it('a required boolean is not forced to true', () => {
+    // Signal Forms' required() counts false as empty, so a required boolean is not emitted as
+    // required(): it only has to hold a boolean, which a checkbox always does.
+    const content = gen.generate(domain({
+      entityName: 'Empire',
+      fields: [field({ name: 'onVacation', type: 'boolean', required: true })],
+    }), CTX)!.content;
+
+    expect(content).not.toContain('required(path.onVacation)');
+    expect(content).toContain('<span class="text-red-500" aria-hidden="true">*</span>');
   });
 });
 
 // ---------- T20c: numeric coercion on submit ----------
 
-describe('FormGenerator onSubmit numeric coercion (T20c)', () => {
+describe('FormGenerator numeric controls hold numbers (T20c)', () => {
   const gen = new FormGenerator();
 
-  it('numeric (number-typed DTO) create field is coerced via Number() before the DTO cast', () => {
+  // A number control holds `number | null`, the DTO's own type: blank is null, and the
+  // payload needs no coercion before the DTO cast.
+  it('numeric (number-typed DTO) create field is held as number | null and sent as is', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
       fields: [
@@ -217,17 +302,30 @@ describe('FormGenerator onSubmit numeric coercion (T20c)', () => {
       ],
     }), CTX)!.content;
 
-    // raw read + spread + per-field numeric coercion
-    expect(content).toContain('const raw = this.form.getRawValue();');
-    expect(content).toContain('...raw,');
-    expect(content).toContain("quantity: raw.quantity === null || raw.quantity === '' ? null : Number(raw.quantity),");
-    // String field is NOT coerced
-    expect(content).not.toContain('Number(raw.orderNumber)');
-    // still dispatches with the coerced `data`
+    expect(modelInterface(content)).toContain('quantity: number | null;');
+    expect(seedBlock(content)).toContain('quantity: null,');
+    // String field stays a string
+    expect(modelInterface(content)).toContain('orderNumber: string;');
+    // dispatches with the model as the payload
+    expect(content).toContain('const data = this.formModel();');
     expect(content).toContain('this.service.create(data as OrderCreate)');
+    expect(content).not.toMatch(/[^A-Za-z]Number\(/);
   });
 
-  it('every DslMapper number-typed variant is coerced', () => {
+  it('a numeric default is seeded as a number; one that is not a number seeds blank', () => {
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      fields: [
+        field({ name: 'quantity', type: 'java.lang.Integer', defaultValue: '5' }),
+        field({ name: 'ratio', type: 'java.lang.Double', defaultValue: 'lots' }),
+      ],
+    }), CTX)!.content;
+
+    expect(seedBlock(content)).toContain('quantity: 5,');
+    expect(seedBlock(content)).toContain('ratio: null,');
+  });
+
+  it('every DslMapper number-typed variant is held as a number', () => {
     // Only java types whose DslMapper tsType is `number`/`number | null`. The
     // predicate keys off the mapped DTO type, so this list IS the contract.
     const content = gen.generate(domain({
@@ -242,7 +340,7 @@ describe('FormGenerator onSubmit numeric coercion (T20c)', () => {
     }), CTX)!.content;
 
     for (const name of ['i', 'l', 'd', 'f', 'p']) {
-      expect(content).toContain(`${name}: raw.${name} === null || raw.${name} === '' ? null : Number(raw.${name}),`);
+      expect(modelInterface(content)).toContain(`${name}: number | null;`);
     }
   });
 
@@ -250,7 +348,7 @@ describe('FormGenerator onSubmit numeric coercion (T20c)', () => {
   // preservation, text input). Coercing them to Number() would lose precision AND
   // reintroduce a TS2352 (number value → string DTO field) — the exact crash the
   // first cut of this PR caused on the Stellar `ng build`.
-  it('BigDecimal / BigInteger (string-typed DTO) are NOT coerced', () => {
+  it('BigDecimal / BigInteger (string-typed DTO) are NOT held as numbers', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
       fields: [
@@ -259,22 +357,21 @@ describe('FormGenerator onSubmit numeric coercion (T20c)', () => {
       ],
     }), CTX)!.content;
 
-    expect(content).not.toContain('Number(raw.total)');
-    expect(content).not.toContain('Number(raw.ledger)');
-    // no numeric fields at all → plain getRawValue path
-    expect(content).toContain('const data = this.form.getRawValue();');
-    expect(content).not.toContain('const raw = this.form.getRawValue();');
+    expect(modelInterface(content)).toContain('total: string;');
+    expect(modelInterface(content)).toContain('ledger: string;');
+    expect(seedBlock(content)).toContain("total: '',");
+    expect(content).not.toMatch(/[^A-Za-z]Number\(/);
+    expect(content).toContain('const data = this.formModel();');
   });
 
-  it('no numeric create fields → plain getRawValue(), no coercion block', () => {
+  it('no numeric create fields → no number-typed model property', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
       fields: [field({ name: 'orderNumber', type: 'String' })],
     }), CTX)!.content;
 
-    expect(content).toContain('const data = this.form.getRawValue();');
-    expect(content).not.toContain('Number(raw.');
-    expect(content).not.toContain('const raw = this.form.getRawValue();');
+    expect(content).toContain('const data = this.formModel();');
+    expect(modelInterface(content)).not.toContain('number | null');
   });
 });
 
@@ -385,16 +482,17 @@ describe('FormGenerator field filtering for createFields', () => {
 
     for (const overlap of ['createdAt', 'updatedAt', 'version', 'deleted']) {
       // Each overlap field appears exactly zero times in the form
-      // (no data-testid, no label, no FormBuilder entry).
+      // (no data-testid, no label, no form model entry).
       expect(content).not.toContain(`data-testid="field-${overlap}"`);
-      // The FormBuilder block doesn't even reference the field name as
-      // a key — guards against a silent partial filter that leaves
-      // some occurrences behind.
-      expect(content).not.toMatch(new RegExp(`^\\s*${overlap}: \\[`, 'm'));
+      // The form model doesn't even reference the field name as a key —
+      // guards against a silent partial filter that leaves some
+      // occurrences behind.
+      expect(content).not.toMatch(new RegExp(`^\\s*${overlap}: `, 'm'));
     }
     // Sibling visible field survives.
     expect(content).toContain('data-testid="field-name"');
-    expect(content).toMatch(/^\s*name: \[/m);
+    expect(modelInterface(content)).toMatch(/^\s*name: string;/m);
+    expect(seedBlock(content)).toMatch(/^\s*name: '',/m);
   });
 
   it('excludes hidden=true and readOnly=true fields', () => {
@@ -482,7 +580,7 @@ describe('FormGenerator field rendering', () => {
       fields: [field({ name: 'flag', type: 'java.lang.Boolean' })],
     }), CTX)!.content;
 
-    expect(content).toContain('type="checkbox" formControlName="flag"');
+    expect(content).toContain('type="checkbox" [formField]="form.flag"');
   });
 
   it.each([
@@ -500,7 +598,7 @@ describe('FormGenerator field rendering', () => {
       fields: [field({ name: 'attr', type: javaType })],
     }), CTX)!.content;
 
-    expect(content).toContain(`type="${expectedInputType}" formControlName="attr"`);
+    expect(content).toContain(`type="${expectedInputType}" [formField]="form.attr"`);
   });
 
   it('number input gets inputmode="decimal" extra attribute', () => {
@@ -561,61 +659,119 @@ describe('FormGenerator field ordering', () => {
   });
 });
 
-// ---------- validator builder ----------
+// ---------- schema validators ----------
 
-describe('FormGenerator FormBuilder validators array', () => {
+describe('FormGenerator schema validators', () => {
   const gen = new FormGenerator();
 
-  function formGroupSliceFor(f: FieldMetadata): string {
-    const content = gen.generate(domain({
-      entityName: 'Thing',
-      fields: [f],
-    }), CTX)!.content;
-    const groupStart = content.indexOf('readonly form = this.fb.group({');
-    const groupEnd = content.indexOf('});', groupStart);
-    return content.slice(groupStart, groupEnd);
+  function contentFor(f: FieldMetadata): string {
+    return gen.generate(domain({ entityName: 'Thing', fields: [f] }), CTX)!.content;
   }
 
-  it('required field → Validators.required in the FormBuilder array', () => {
-    expect(formGroupSliceFor(field({ name: 'x', type: 'String', required: true })))
-      .toContain('Validators.required');
+  function schemaSliceFor(f: FieldMetadata): string {
+    const content = contentFor(f);
+    const schemaStart = content.indexOf('readonly form = form(this.formModel');
+    const schemaEnd = content.indexOf('\n  });', schemaStart);
+    return content.slice(schemaStart, schemaEnd);
+  }
+
+  it('required field → required() in the schema', () => {
+    expect(schemaSliceFor(field({ name: 'x', type: 'String', required: true })))
+      .toContain('required(path.x);');
   });
 
   it.each([
-    ['minLength', 3, 'Validators.minLength(3)'],
-    ['maxLength', 50, 'Validators.maxLength(50)'],
+    ['minLength', 3, 'minLength(path.x, 3);'],
+    ['maxLength', 50, 'maxLength(path.x, 50);'],
   ])('string %s=%s → %s', (attr, value, validator) => {
-    expect(formGroupSliceFor(field({ name: 'x', type: 'String', [attr]: value } as Partial<FieldMetadata> & { name: string; type: string })))
+    expect(schemaSliceFor(field({ name: 'x', type: 'String', [attr]: value } as Partial<FieldMetadata> & { name: string; type: string })))
       .toContain(validator);
   });
 
-  it('numeric min / max → Validators.min / Validators.max', () => {
-    expect(formGroupSliceFor(field({ name: 'x', type: 'java.lang.Long', min: 0 })))
-      .toContain('Validators.min(0)');
-    expect(formGroupSliceFor(field({ name: 'x', type: 'java.lang.Long', max: 100 })))
-      .toContain('Validators.max(100)');
+  it('numeric min / max → min() / max()', () => {
+    expect(schemaSliceFor(field({ name: 'x', type: 'java.lang.Long', min: 0 })))
+      .toContain('min(path.x, 0);');
+    expect(schemaSliceFor(field({ name: 'x', type: 'java.lang.Long', max: 100 })))
+      .toContain('max(path.x, 100);');
   });
 
-  it('pattern → Validators.pattern(/<pattern>/)', () => {
-    expect(formGroupSliceFor(field({ name: 'x', type: 'String', pattern: '^[A-Z]+$' })))
-      .toContain('Validators.pattern(/^[A-Z]+$/)');
+  it('min / max on a decimal string bound its parsed value', () => {
+    // min() and max() take number paths only; a BigDecimal control holds a string.
+    const slice = schemaSliceFor(field({ name: 'x', type: 'java.math.BigDecimal', min: 0, max: 10 }));
+    expect(slice).toContain('validate(path.x, ({ value }) => (parseFloat(value()) < 0 ? minError(0) : undefined));');
+    expect(slice).toContain('validate(path.x, ({ value }) => (parseFloat(value()) > 10 ? maxError(10) : undefined));');
+    expect(slice).not.toContain('min(path.x');
   });
 
-  it('no validators set → empty [] array', () => {
-    expect(formGroupSliceFor(field({ name: 'x', type: 'String' })))
-      .toMatch(/x: \[[^,]+, \[\]\]/);
+  it('pattern → pattern(path, /<pattern>/)', () => {
+    expect(schemaSliceFor(field({ name: 'x', type: 'String', pattern: '^[A-Z]+$' })))
+      .toContain('pattern(path.x, /^[A-Z]+$/);');
+  });
+
+  it('length and pattern apply to text controls, never to a number', () => {
+    const slice = schemaSliceFor(field({ name: 'x', type: 'java.lang.Integer', minLength: 2, pattern: '^[0-9]+$' }));
+    expect(slice).not.toContain('minLength(');
+    expect(slice).not.toContain('pattern(');
+  });
+
+  it('no validators set → a form without a schema', () => {
+    expect(contentFor(field({ name: 'x', type: 'String' })))
+      .toContain('readonly form = form(this.formModel);');
+  });
+
+  it('imports exactly the validators the schema calls, in a fixed order', () => {
+    const content = gen.generate(domain({
+      entityName: 'Thing',
+      fields: [
+        field({ name: 'max', type: 'java.lang.Long', max: 9 }),
+        field({ name: 'code', type: 'String', required: true, pattern: '^[A-Z]+$' }),
+      ],
+    }), CTX)!.content;
+    expect(content).toContain("import { form, FormField, submit, required, pattern, max } from '@angular/forms/signals';");
   });
 });
 
-// ---------- default values for FormBuilder ----------
+// ---------- ADR-093 obligation 5: stable Signal Forms symbols only ----------
 
-describe('FormGenerator FormBuilder default values', () => {
+describe('FormGenerator imports only stable @angular/forms/signals symbols', () => {
+  const gen = new FormGenerator();
+  // Each is `@publicApi 22.0` in the Angular 22 type declarations. Experimental symbols
+  // (provideExperimentalWebMcpForms, the experimentalWebMcpTool option) are absent on purpose.
+  const STABLE = new Set([
+    'form', 'FormField', 'submit',
+    'required', 'minLength', 'maxLength', 'pattern', 'min', 'max', 'email',
+    'validate', 'minError', 'maxError',
+  ]);
+
+  it('every imported symbol is on the stable allow-list, for every validator combination', () => {
+    const content = gen.generate(domain({
+      entityName: 'Thing',
+      fields: [
+        field({ name: 'code', type: 'String', required: true, minLength: 1, maxLength: 9, pattern: '^[A-Z]+$' }),
+        field({ name: 'count', type: 'java.lang.Integer', min: 0, max: 9 }),
+        field({ name: 'price', type: 'java.math.BigDecimal', min: 0, max: 9 }),
+        field({ name: 'armed', type: 'boolean', required: true }),
+        field({ name: 'status', type: 'String', enumType: 'Status' }),
+      ],
+    }), CTX)!.content;
+
+    const line = content.match(/import \{ ([^}]+) \} from '@angular\/forms\/signals';/);
+    expect(line).not.toBeNull();
+    const symbols = line![1].split(',').map((name) => name.trim());
+    expect(symbols.filter((name) => !STABLE.has(name))).toEqual([]);
+    expect(content).not.toMatch(/experimental/i);
+  });
+});
+
+// ---------- form model seed values ----------
+
+describe('FormGenerator form model seed values', () => {
   const gen = new FormGenerator();
 
   function defaultFor(f: FieldMetadata): string {
     const content = gen.generate(domain({ entityName: 'Thing', fields: [f] }), CTX)!.content;
-    const m = content.match(new RegExp(`${f.name}: \\[(.+?), `));
-    expect(m, `should match a ${f.name}: [<default>, ...] in the FormGroup`).not.toBeNull();
+    const m = seedBlock(content).match(new RegExp(`${f.name}: (.+?),\n`));
+    expect(m, `should match a ${f.name}: <seed>, in the form model seed`).not.toBeNull();
     return m![1];
   }
 
@@ -629,6 +785,10 @@ describe('FormGenerator FormBuilder default values', () => {
 
   it("string field with no defaultValue → empty string literal \"''\"", () => {
     expect(defaultFor(field({ name: 'x', type: 'String' }))).toBe("''");
+  });
+
+  it('number field with no defaultValue → null', () => {
+    expect(defaultFor(field({ name: 'x', type: 'java.lang.Long' }))).toBe('null');
   });
 });
 
@@ -655,7 +815,7 @@ describe('FormGenerator computed fields', () => {
     expect(content).toContain('Computed from: first, last');
   });
 
-  it('each computed field generates an effect() block + a compute<Name> method stub', () => {
+  it('each computed field derives a computed signal from its dependencies + a compute<Name> method stub', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
       fields: [
@@ -665,13 +825,13 @@ describe('FormGenerator computed fields', () => {
       ],
     }), CTX)!.content;
 
-    // Effect block.
+    // Derived signal, rendered read-only.
     expect(content).toContain("// Auto-sync sum based on a, b");
-    expect(content).toContain('effect(() => {');
-    expect(content).toContain("a: this.form.get('a')?.value");
-    expect(content).toContain("b: this.form.get('b')?.value");
-    expect(content).toContain('const computedSum = this.computeSum(values);');
-    expect(content).toContain("this.form.get('sum')?.setValue(computedSum, { emitEvent: false });");
+    expect(content).toContain('readonly computedSum = computed(() => this.computeSum({ a: this.formModel().a, b: this.formModel().b }));');
+    expect(content).toContain(`[value]="computedSum() ?? ''" readonly`);
+    // Kept out of the form model, and so out of the submitted DTO.
+    expect(modelInterface(content)).not.toMatch(/^\s*sum: /m);
+    expect(seedBlock(content)).not.toMatch(/^\s*sum: /m);
 
     // Compute stub at the bottom.
     expect(content).toContain('private computeSum(values: { a: any, b: any }): any {');
@@ -686,8 +846,23 @@ describe('FormGenerator computed fields', () => {
       ],
     }), CTX)!.content;
 
-    // No "Auto-sync" effect block.
+    // No "Auto-sync" note; the signal calls the stub with no values.
     expect(content).not.toContain('Auto-sync static');
+    expect(content).toContain('readonly computedStatic = computed(() => this.computeStatic({}));');
+  });
+
+  it('a camelCase computed field gets valid member names, and a non-control dependency reads the loaded entity', () => {
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      fields: [
+        field({ name: 'id', type: 'java.util.UUID' }),
+        field({ name: 'firstName', type: 'String' }),
+        field({ name: 'fullName', type: 'String', computed: true, computedFrom: ['firstName', 'id', 'unknown'] }),
+      ],
+    }), CTX)!.content;
+
+    expect(content).toContain('readonly computedFullName = computed(() => this.computeFullName({ firstName: this.formModel().firstName, id: this.current()?.id, unknown: undefined }));');
+    expect(content).toContain('private computeFullName(');
   });
 
 });
@@ -779,11 +954,15 @@ describe('FormGenerator — routed by id', () => {
   it('patches the form from the effective entity', () => {
     expect(content).toContain('const entity = this.current();');
     expect(content).toContain('if (entity && this.editMode()) {');
+    expect(content).toContain('this.formModel.set(this.toFormModel(entity));');
+    // A loaded null takes the control's empty value rather than reaching a text input.
+    expect(content).toContain('private toFormModel(entity: Address): AddressFormModel {');
+    expect(content).toContain("street: entity.street ?? '',");
   });
 
   it('never submits an edit before the entity is loaded', () => {
     expect(content).toContain('if (this.editMode() && !current) {');
-    expect(content).toContain('[disabled]="form.invalid || saving() || (editMode() && !current())"');
+    expect(content).toContain('[disabled]="form().invalid() || saving() || (editMode() && !current())"');
   });
 
   it('shows the by-id load state', () => {
@@ -842,8 +1021,8 @@ describe('FormGenerator — versioned entity', () => {
   it('holds the loaded entity version aside, never as a control', () => {
     expect(versioned).toContain('private readonly loadedVersion = signal<number | null>(null);');
     expect(versioned).toContain('this.loadedVersion.set(entity.version ?? null);');
-    expect(versioned).not.toContain('formControlName="version"');
-    expect(versioned).not.toContain('    version: [');
+    expect(versioned).not.toContain('[formField]="form.version"');
+    expect(versioned).not.toMatch(/^\s*version: /m);
   });
 
   it('sends the loaded version on update, and leaves the create payload alone', () => {
@@ -863,8 +1042,19 @@ describe('FormGenerator — versioned entity', () => {
     expect(versioned).toContain('this.entityResource.reload();\n      return;');
     // Host-supplied entity: fetched directly.
     expect(versioned).toContain('this.service.findById(String(current.id)).subscribe({');
-    expect(versioned).toContain('this.form.reset(fresh as any);');
+    expect(versioned).toContain('this.form().reset(this.toFormModel(fresh));');
     expect(versioned).toContain('this.loadedVersion.set(fresh.version ?? null);');
+  });
+
+  it('a 409 is a form-level conflict: the save resolves with no field error', () => {
+    const start = versioned.indexOf('error: (err) => {');
+    const errorBranch = versioned.slice(start, versioned.indexOf('},', start));
+    // The submit action settles before the conflict is shown, and returns no field error.
+    expect(errorBranch.indexOf('resolve(undefined);')).toBeGreaterThan(-1);
+    expect(errorBranch.indexOf('resolve(undefined);')).toBeLessThan(errorBranch.indexOf('err?.status === 409'));
+    expect(versioned).not.toContain("kind: 'server'");
+    expect(versioned).toContain('data-testid="conflict-message"');
+    expect(versioned).toContain('data-testid="reload-button"');
   });
 
   it('keys the version on systemFields.versionField', () => {
@@ -874,7 +1064,7 @@ describe('FormGenerator — versioned entity', () => {
       fields: [field({ name: 'id', type: 'java.util.UUID' }), field({ name: 'rev', type: 'long' })],
       systemFields: { versionField: 'rev' } as DomainMetadata['systemFields'],
     }), CTX)!.content;
-    expect(content).not.toContain('formControlName="rev"');
+    expect(content).not.toContain('[formField]="form.rev"');
     expect(content).toContain('private readonly loadedVersion = signal<number | null>(null);');
     expect(content).toContain('{ ...data, rev: this.loadedVersion() } as OrderUpdate');
   });
