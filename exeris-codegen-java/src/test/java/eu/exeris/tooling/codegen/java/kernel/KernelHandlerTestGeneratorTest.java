@@ -122,22 +122,26 @@ class KernelHandlerTestGeneratorTest {
     }
 
     @Test
-    @DisplayName("an entity with no @Validation rule binds no provider slot at all")
-    void bindsNoKernelProviderSlotWithoutRules() {
+    @DisplayName("an entity with no @Validation rule binds only the decoder-registry slot, for the decode-failure cases")
+    void bindsOnlyTheDecoderRegistryWithoutRules() {
         String source = new KernelHandlerTestGenerator().generate(ORDER, "com.example").content();
 
         // Binding a ScopedValue is only justified by the guards it lets a test reach. With no
-        // rules there are none, so the emitted test stays a plain in-process unit test.
+        // rules the only such guard is the decode-failure mapping, which needs the decoder
+        // registry bound and nothing else: the three cases whose decoder throws.
         //
-        // The probe is `ScopedValue.where`, not the bare type name: since T43-follow-up the
-        // emitted newHandler Javadoc explains why the allocator is a constructor argument and
-        // says "ScopedValue" while doing it. A binding is what this test is about, and a word in
-        // a comment is not one — asserting on the word made prose part of the contract.
-        assertThat(source)
-                .doesNotContain("ScopedValue.where")
-                .doesNotContain("KernelProviders.");
-        // RecordingRequestBody IS referenced now, as the allocator every handler needs at
-        // construction. That is a double being passed, not a provider slot being bound.
+        // The probe is `ScopedValue.where`, not the bare type name: the emitted newHandler
+        // Javadoc says "ScopedValue" while explaining why the allocator is a constructor
+        // argument. A binding is what this test is about, and a word in a comment is not one.
+        assertThat(source.split("ScopedValue\\.where\\(", -1).length - 1)
+                .as("one binding per decode-failure case whose decoder runs")
+                .isEqualTo(3);
+        assertThat(source.split("ScopedValue\\.where\\(HttpKernelProviders\\.HTTP_REQUEST_BODY_DECODER_REGISTRY, body\\)", -1).length - 1)
+                .as("and every one of them binds the decoder registry")
+                .isEqualTo(3);
+        // No kernel-context slot: not the allocator (a constructor argument), and not a tenant
+        // (ORDER is not tenant-partitioned).
+        assertThat(source).doesNotContainPattern("(?<!Http)KernelProviders\\.");
     }
 
     @Test
@@ -178,13 +182,47 @@ class KernelHandlerTestGeneratorTest {
     }
 
     @Test
+    @DisplayName("decode failures: a CALLER refusal answers 400, a SYSTEM or JDK failure and an unbound registry answer 500")
+    void coversEveryDecodeFailureAnswer() {
+        // Emitted for every entity, with or without validation rules: the decode path does not
+        // depend on them.
+        String source = new KernelHandlerTestGenerator().generate(ORDER, "com.example").content();
+
+        assertThat(source)
+                .containsSubsequence(
+                        "void handleCreateRespondsBadRequestWhenTheDecoderRejectsTheBody()",
+                        "body.failure = RequestBodyDecodeException.malformedBody(Order.class.getName(), 0L, null)",
+                        "assertThat(exchange.status()).isEqualTo(HttpStatus.BAD_REQUEST)",
+                        // A bodyless request also answers 400 — only a decode that ran sets this.
+                        "assertThat(body.decodedType).isEqualTo(Order.class)")
+                .containsSubsequence(
+                        "void handleCreateRespondsServerErrorWhenTheDecoderFailsWithASystemFault()",
+                        "body.failure = new ExerisKernelException(\"EX-TEST-0001\", \"decoder failed server-side\") {",
+                        "assertThat(exchange.status()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR)")
+                .containsSubsequence(
+                        "void handleCreateRespondsServerErrorWhenTheDecoderFailsWithAJdkException()",
+                        "body.failure = new IllegalArgumentException(\"decoder defect\")",
+                        "assertThat(exchange.status()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR)")
+                .containsSubsequence(
+                        "void handleCreateRespondsServerErrorWhenNoDecoderRegistryIsBound()",
+                        "handler.handleCreate(exchange)",
+                        "assertThat(exchange.status()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR)",
+                        "assertThat(body.decodedType).isNull()");
+        // The unbound-registry case must not bind the registry it is about.
+        String unbound = source.substring(
+                source.indexOf("void handleCreateRespondsServerErrorWhenNoDecoderRegistryIsBound()"));
+        unbound = unbound.substring(0, unbound.indexOf("assertThat(service.saved).isNull()"));
+        assertThat(unbound).doesNotContain("HTTP_REQUEST_BODY_DECODER_REGISTRY");
+    }
+
+    @Test
     @DisplayName("the accept case asserts CREATED — the one status no mis-wiring can fake")
     void theAcceptCaseIsTheWiringCanary() {
         String source = new KernelHandlerTestGenerator().generate(VALIDATED, "com.example").content();
 
-        // Every failure past the body guard — unbound registry, unbound allocator, a decode that
-        // throws — answers 400, the same status a rejection does. So a reject-only suite would go
-        // green having never reached a validation guard. CREATED cannot be produced that way.
+        // A body the decoder refuses as the caller's answers 400, the same status a rejection
+        // does. So a reject-only suite could go green having never reached a validation guard.
+        // CREATED cannot be produced that way.
         assertThat(source)
                 .contains("void handleCreateRespondsCreatedWhenEveryRuleIsSatisfied()")
                 .contains("HttpStatus.CREATED")
@@ -246,7 +284,8 @@ class KernelHandlerTestGeneratorTest {
 
         assertThat(new KernelHandlerTestGenerator().generate(patterned, "com.example").content())
                 .doesNotContain("handleCreateRejectsQuantityBelowMin")
-                .doesNotContain("ScopedValue.where");
+                .doesNotContain("handleCreateRespondsCreatedWhenEveryRuleIsSatisfied")
+                .doesNotContain("handleUpdateRunsTheSameValidationGuard");
     }
 
     @Test

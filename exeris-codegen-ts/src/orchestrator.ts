@@ -85,17 +85,14 @@ export function buildGeneratedFiles(
   const appTree: OutputFile[] = [];
 
   // The type surface — the enum module, and the type/schema barrels that re-export it — exists
-  // when the app declares a visible entity or an enum. With either, the enum module is emitted even
+  // when the app declares an entity or an enum. With either, the enum module is emitted even
   // empty, so the barrels' re-export of './enums' resolves; with neither, nothing would import it.
-  const hasTypeSurface = enums.length > 0 || domains.some((d) => !d.internalApi?.hidden);
+  const hasTypeSurface = enums.length > 0 || domains.length > 0;
   if (hasTypeSurface) {
     appTree.push({ path: 'types/enums.ts', content: generateEnumTypes(enums, config.generateZod) });
   }
 
   for (const domain of domains) {
-    if (domain.internalApi?.hidden) {
-      continue;
-    }
     appTree.push(...generateTypes(domain, config));
     if (config.generateServices) {
       const service = generateService(domain, config);
@@ -119,7 +116,8 @@ export function buildGeneratedFiles(
     }
     // Detail view component: read/edit for a single entity instance.
     if (config.generateDetails) {
-      appTree.push(generateDetail(domain, config, domains));
+      const detail = generateDetail(domain, config, domains);
+      if (detail) appTree.push(detail);
     }
     // Signal store: reactive entity state (signal-first).
     if (config.generateStores) {
@@ -163,7 +161,7 @@ export function buildGeneratedFiles(
   }
 
   // The stream-client barrels, and the StreamFrame module the action stream clients share.
-  // Both generators return nothing when no visible entity has a stream route.
+  // Both generators return nothing when no entity has a stream route.
   if (config.generateServices) {
     appTree.push(...streamClientGenerator.generateAggregate(domains, ctx));
     appTree.push(...actionStreamClientGenerator.generateAggregate(domains, ctx));

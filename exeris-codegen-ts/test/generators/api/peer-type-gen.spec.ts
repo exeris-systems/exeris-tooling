@@ -143,17 +143,6 @@ describe('generatePeerTypes', () => {
     expect(types).not.toContain('export interface Component {');
   });
 
-  it('skips a hidden entity the peer does not expose', () => {
-    const hidden = DomainMetadataSchema.parse({
-      packageName: 'com.billing', entityName: 'Ledger',
-      fields: [{ name: 'id', type: 'java.util.UUID' }],
-      internalApi: { hidden: true },
-    });
-    const files = generatePeerTypes({ ...billing, domains: [order, hidden] }, DEFAULT_CONFIG);
-    expect(files.some((f) => f.path.includes('ledger'))).toBe(false);
-    expect(byPath(files, 'peers/billing/index.ts')).not.toContain('ledger');
-  });
-
   it('is deterministic — same contract in, byte-identical output', () => {
     expect(generatePeerTypes(billing, DEFAULT_CONFIG)).toEqual(generatePeerTypes(billing, DEFAULT_CONFIG));
   });

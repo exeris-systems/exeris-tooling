@@ -61,12 +61,11 @@ export function peerRoot(peerName: string): string {
  */
 export function generatePeerTypes(peer: PeerContract, config: GeneratorConfig): PeerOutputFile[] {
   const root = peerRoot(peer.name);
-  const visible = peer.domains.filter((d) => !d.internalApi?.hidden);
   const files: PeerOutputFile[] = [
     { path: outPath(root, 'types', 'enums.ts'), content: generateEnumTypes(peer.enums, config.generateZod) },
   ];
 
-  for (const domain of visible) {
+  for (const domain of peer.domains) {
     files.push({
       path: outPath(root, 'types', `${DslMapper.toKebabCase(domain.entityName)}.types.ts`),
       content: peerInterface(peer.name, domain),
@@ -74,7 +73,7 @@ export function generatePeerTypes(peer: PeerContract, config: GeneratorConfig): 
   }
 
   if (config.generateZod) {
-    for (const domain of visible) {
+    for (const domain of peer.domains) {
       files.push({
         path: outPath(root, 'schemas', `${DslMapper.toKebabCase(domain.entityName)}.schema.ts`),
         content: peerZodSchema(peer.name, domain),
@@ -82,7 +81,7 @@ export function generatePeerTypes(peer: PeerContract, config: GeneratorConfig): 
     }
   }
 
-  files.push({ path: outPath(root, 'index.ts'), content: peerBarrel(peer.name, visible, config.generateZod) });
+  files.push({ path: outPath(root, 'index.ts'), content: peerBarrel(peer.name, peer.domains, config.generateZod) });
   return files;
 }
 

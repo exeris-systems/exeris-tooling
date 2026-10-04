@@ -36,6 +36,10 @@ import java.util.Map;
  * guard runs ahead of that again. So these three cases need no request-body double at all, and
  * each additionally asserts that the service was never reached.
  *
+ * <p>The decode-failure paths: a body the decoder refuses as the caller's fault answers
+ * {@code 400}; a decoder that fails for any other reason, and a decoder registry that is not
+ * bound, answer {@code 500} (ADR-036 §2, kernel ADR-083).
+ *
  * <p>Slice f: the paths <em>past</em> a successful decode — the {@code @Validation} guards. These
  * bind {@code RecordingRequestBody} into two kernel {@code ScopedValue} provider slots, which
  * ADR-058 permits because those slots live in {@code exeris-kernel-spi} — the artefact the generated
@@ -95,6 +99,10 @@ public final class KernelHandlerTestGenerator {
     private static final ClassName KERNEL_PROVIDERS =
             ClassName.get("eu.exeris.kernel.spi.context", "KernelProviders");
     private static final ClassName BIG_DECIMAL = ClassName.get("java.math", "BigDecimal");
+    private static final ClassName REQUEST_BODY_DECODE_EXCEPTION =
+            ClassName.get("eu.exeris.kernel.spi.exceptions.http", "RequestBodyDecodeException");
+    private static final ClassName EXERIS_KERNEL_EXCEPTION =
+            ClassName.get("eu.exeris.kernel.spi.exceptions", "ExerisKernelException");
 
     /**
      * The longest string literal a length case will emit. A {@code maxLength} in the thousands is a
@@ -139,8 +147,9 @@ public final class KernelHandlerTestGenerator {
                 .addJavadoc("Generated tests for {@link $T}.\n", handlerType)
                 .addJavadoc("<p>Covers the status each route owes the router: the bodyless CRUD\n")
                 .addJavadoc("routes, the guard paths of {@code handleCreate} /\n")
-                .addJavadoc("{@code handleUpdate} that reject before the body is read, and the\n")
-                .addJavadoc("{@code @Validation} guards past a successful decode.\n")
+                .addJavadoc("{@code handleUpdate} that reject before the body is read, the status\n")
+                .addJavadoc("each kind of decode failure owes, and the {@code @Validation} guards\n")
+                .addJavadoc("past a successful decode.\n")
                 .addJavadoc("<p>Requires JUnit 5 and AssertJ on the test classpath, and nothing else.\n")
                 .addJavadoc("<p><b>DO NOT EDIT</b> - Regenerate from domain models.\n");
 
@@ -180,6 +189,8 @@ public final class KernelHandlerTestGenerator {
                 tenantScoped));
         type.addMethod(updateMissingBodyTest(entity, handlerType, exchangeType, stubType, basePath,
                 tenantScoped));
+        addDecodeFaultTests(type, entityType, handlerType, exchangeType, bodyType, stubType,
+                basePath, tenantScoped);
         addValidationTests(type, metadata, entityType, handlerType, exchangeType, bodyType,
                 stubType, basePath, tenantScoped);
         addCallerFaultTests(type, metadata, entityType, handlerType, exchangeType, bodyType,
@@ -417,6 +428,101 @@ public final class KernelHandlerTestGenerator {
     }
 
     // ---------------------------------------------------------------------------------------
+    // Decode failures — whose fault a body that did not decode is.
+    // ---------------------------------------------------------------------------------------
+
+    /**
+     * Emits the four decode-failure cases on {@code handleCreate}: a CALLER refusal answering 400,
+     * and a SYSTEM kernel exception, a JDK exception and an unbound decoder registry, each
+     * answering 500.
+     *
+     * <p>The caller-fault case asserts {@code decodedType} as well as the status. A bodyless
+     * request also answers 400, before any decoder runs, so the status alone would pass on a
+     * handler that never reached the decoder; {@code decodedType} is set only by a decode that ran.
+     *
+     * <p>The two server-fault probes are the ones a type-based mapping gets wrong: a kernel
+     * exception the kernel leaves at {@code FaultOrigin.SYSTEM}, and a JDK
+     * {@link IllegalArgumentException} — the type the handler's own 400 catch names, so a decoder
+     * failure re-thrown unwrapped would be answered as the caller's. Neither depends on validation
+     * rules, so every entity gets all four.
+     */
+    private void addDecodeFaultTests(TypeSpec.Builder type, ClassName entityType,
+                                     ClassName handlerType, ClassName exchangeType,
+                                     ClassName bodyType, ClassName stubType, String basePath,
+                                     boolean tenantScoped) {
+        type.addMethod(decodeFaultTest("handleCreateRespondsBadRequestWhenTheDecoderRejectsTheBody",
+                        handlerType, exchangeType, bodyType, stubType, basePath, tenantScoped,
+                        CodeBlock.of("$T.malformedBody($T.class.getName(), 0L, null)",
+                                REQUEST_BODY_DECODE_EXCEPTION, entityType))
+                .addJavadoc("A body the decoder cannot bind is the caller's fault\n")
+                .addJavadoc("({@code FaultOrigin.CALLER}), so it answers 400 and nothing is saved.\n")
+                .addStatement("$T.assertThat(exchange.status()).isEqualTo($T.BAD_REQUEST)",
+                        ASSERTIONS, HTTP_STATUS)
+                .addStatement("$T.assertThat(body.decodedType).isEqualTo($T.class)",
+                        ASSERTIONS, entityType)
+                .addStatement("$T.assertThat(service.saved).isNull()", ASSERTIONS)
+                .build());
+        type.addMethod(decodeFaultTest(
+                        "handleCreateRespondsServerErrorWhenTheDecoderFailsWithASystemFault",
+                        handlerType, exchangeType, bodyType, stubType, basePath, tenantScoped,
+                        CodeBlock.of("new $T($S, $S) { }", EXERIS_KERNEL_EXCEPTION,
+                                "EX-TEST-0001", "decoder failed server-side"))
+                .addJavadoc("A kernel exception left at {@code FaultOrigin.SYSTEM} — an allocation\n")
+                .addJavadoc("failure inside the decoder, say — is the deployment's fault: 500, never\n")
+                .addJavadoc("downgraded to 400.\n")
+                .addStatement("$T.assertThat(exchange.status()).isEqualTo($T.INTERNAL_SERVER_ERROR)",
+                        ASSERTIONS, HTTP_STATUS)
+                .addStatement("$T.assertThat(service.saved).isNull()", ASSERTIONS)
+                .build());
+        type.addMethod(decodeFaultTest(
+                        "handleCreateRespondsServerErrorWhenTheDecoderFailsWithAJdkException",
+                        handlerType, exchangeType, bodyType, stubType, basePath, tenantScoped,
+                        CodeBlock.of("new $T($S)", IllegalArgumentException.class, "decoder defect"))
+                .addJavadoc("A JDK exception carries no fault origin, so it is the deployment's\n")
+                .addJavadoc("(kernel ADR-083) — even an {@code IllegalArgumentException}, the type\n")
+                .addJavadoc("the handler's own 400 answers.\n")
+                .addStatement("$T.assertThat(exchange.status()).isEqualTo($T.INTERNAL_SERVER_ERROR)",
+                        ASSERTIONS, HTTP_STATUS)
+                .addStatement("$T.assertThat(service.saved).isNull()", ASSERTIONS)
+                .build());
+        type.addMethod(test("handleCreateRespondsServerErrorWhenNoDecoderRegistryIsBound")
+                .addJavadoc("A body arrives but no decoder registry is bound around the dispatch: a\n")
+                .addJavadoc("deployment fault, answered 500 rather than blamed on the body.\n")
+                .addStatement("$T service = new $T()", stubType, stubType)
+                .addStatement("$T body = new $T()", bodyType, bodyType)
+                .addStatement("$T handler = newHandler(service, body)", handlerType)
+                .addStatement("$T exchange = $T.post($S, body)", exchangeType, exchangeType, basePath)
+                .addStatement(invoke("handleCreate", tenantScoped))
+                .addStatement("$T.assertThat(exchange.status()).isEqualTo($T.INTERNAL_SERVER_ERROR)",
+                        ASSERTIONS, HTTP_STATUS)
+                .addStatement("$T.assertThat(body.decodedType).isNull()", ASSERTIONS)
+                .addStatement("$T.assertThat(service.saved).isNull()", ASSERTIONS)
+                .build());
+    }
+
+    /** A {@code handleCreate} dispatch whose decoder throws {@code failure}; assertions are the caller's. */
+    private static MethodSpec.Builder decodeFaultTest(String name, ClassName handlerType,
+                                                      ClassName exchangeType, ClassName bodyType,
+                                                      ClassName stubType, String basePath,
+                                                      boolean tenantScoped, CodeBlock failure) {
+        MethodSpec.Builder m = test(name)
+                .addStatement("$T service = new $T()", stubType, stubType)
+                .addStatement("$T body = new $T()", bodyType, bodyType)
+                .addStatement("body.failure = $L", failure)
+                .addStatement("$T handler = newHandler(service, body)", handlerType)
+                .addStatement("$T exchange = $T.post($S, body)", exchangeType, exchangeType, basePath);
+        if (tenantScoped) {
+            return m.addStatement("$T.where($T.HTTP_REQUEST_BODY_DECODER_REGISTRY, body)\n"
+                            + ".where($T.STORAGE_CONTEXT, TENANT_SCOPE)\n"
+                            + ".run(() -> handler.handleCreate(exchange))",
+                    SCOPED_VALUE, HTTP_KERNEL_PROVIDERS, KERNEL_PROVIDERS);
+        }
+        return m.addStatement("$T.where($T.HTTP_REQUEST_BODY_DECODER_REGISTRY, body)\n"
+                        + ".run(() -> handler.handleCreate(exchange))",
+                SCOPED_VALUE, HTTP_KERNEL_PROVIDERS);
+    }
+
+    // ---------------------------------------------------------------------------------------
     // @Validation (T10) — the paths past a successful decode.
     // ---------------------------------------------------------------------------------------
 
@@ -431,11 +537,11 @@ public final class KernelHandlerTestGenerator {
      * because that case fails the moment the operator slips. The pair is the test; neither half
      * carries it alone.
      *
-     * <p><b>And the accept case is load-bearing for a second reason.</b> Everything past
-     * {@code hasBody()} — an unbound decoder registry, an unbound memory allocator, a decode that
-     * throws — also lands on {@code 400 BAD_REQUEST}. So a suite of reject-only cases would go green
-     * on wiring that never once reached a validation guard. {@code 201 CREATED} can only come out
-     * the far end of a decode that worked, so it is what makes the rejects mean what they say.
+     * <p><b>And the accept case is load-bearing for a second reason.</b> A decode the decoder
+     * refuses as the caller's fault also lands on {@code 400 BAD_REQUEST}, so a suite of reject-only
+     * cases could go green without once reaching a validation guard. {@code 201 CREATED} can only
+     * come out the far end of a decode that worked, so it is what makes the rejects mean what they
+     * say.
      *
      * <p>Nothing is emitted at all unless every rule-carrying field has a synthesizable valid value:
      * a rejection case that sets one field to a bad value and leaves another invalid would be
@@ -466,8 +572,8 @@ public final class KernelHandlerTestGenerator {
                 .addJavadoc("Every rule satisfied, each bounded field sitting exactly on its\n")
                 .addJavadoc("boundary: the rules are inclusive, so this must pass <em>through</em>.\n")
                 .addJavadoc("<p>It is also the only case here that proves the decode path ran at\n")
-                .addJavadoc("all — every failure mode past the body guard answers 400, the same\n")
-                .addJavadoc("status a rejection does.\n")
+                .addJavadoc("all — a body the decoder refuses answers 400, the same status a\n")
+                .addJavadoc("rejection does.\n")
                 .addStatement("$T.assertThat(exchange.status()).isEqualTo($T.CREATED)",
                         ASSERTIONS, HTTP_STATUS)
                 .addStatement("$T.assertThat(service.saved).isSameAs(decoded)", ASSERTIONS)

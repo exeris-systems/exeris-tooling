@@ -22,17 +22,10 @@ function domain(overrides: Partial<DomainMetadata> & { entityName: string }): Do
   return DomainMetadataSchema.parse({ packageName: 'com.shop', ...overrides });
 }
 
-function hiddenDomain(entityName: string): DomainMetadata {
-  return domain({
-    entityName,
-    internalApi: { hidden: true, readOnly: false, internal: false },
-  });
-}
-
 function readOnlyDomain(entityName: string): DomainMetadata {
   return domain({
     entityName,
-    internalApi: { hidden: false, readOnly: true, internal: false },
+    internalApi: { readOnly: true, internal: false },
   });
 }
 
@@ -61,10 +54,6 @@ describe('GuardGenerator.generate — per-domain', () => {
     expect(file!.path).toBe('guards/order-line.guard.ts');
     expect(file!.artifactType).toBe('GUARD');
     expect(file!.overwritable).toBe(true);
-  });
-
-  it('returns null for an internalApi.hidden domain', () => {
-    expect(gen.generate(hiddenDomain('Audit'), CTX)).toBeNull();
   });
 
   it('PERMISSIONS const is keyed by uppercase entityName with kebab→snake permission strings', () => {
@@ -185,17 +174,6 @@ describe('GuardGenerator.generateAggregate — AuthService + barrel', () => {
     expect(barrel).toContain("export * from './order-line.guard';");
   });
 
-  it('barrel filters out hidden domains', () => {
-    const files = gen.generateAggregate([
-      domain({ entityName: 'Order' }),
-      hiddenDomain('Audit'),
-    ], CTX);
-
-    const barrel = files.find(f => f.path === 'guards/index.ts')!.content;
-    expect(barrel).toContain("./order.guard");
-    expect(barrel).not.toContain("./audit.guard");
-  });
-
   it('barrel emits header even when the visible-domain list is empty (zero exports)', () => {
     const files = gen.generateAggregate([], CTX);
     const barrel = files.find(f => f.path === 'guards/index.ts')!.content;
@@ -214,13 +192,6 @@ describe('generateGuard — top-level convenience function', () => {
     expect(file).not.toBeNull();
     expect(file!.path).toBe('guards/order.guard.ts');
     expect(file!.content).toContain('export const canViewOrder');
-  });
-
-  it('returns null for a hidden domain (signature widened to `| null` to match generateForm)', () => {
-    // The previous signature used `!` which would have crashed
-    // here at runtime — the new `| null` contract makes the
-    // skip explicit and forces callers to handle it.
-    expect(generateGuard(hiddenDomain('Audit'), CTX.config)).toBeNull();
   });
 
   it('falls back to KERNEL backend when config.backend is undefined (still emits per-domain file)', () => {

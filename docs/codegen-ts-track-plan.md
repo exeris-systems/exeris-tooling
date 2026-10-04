@@ -86,6 +86,17 @@ flags; extracting the field-level hints would write keys the SDK `-io` reader do
 `@UIGroup` or `@Tab` carry — `componentType`, `gridSpan`, `placeholder`, `helpText`, sections,
 tabs — arrive with the 1.x facet, through `FieldRenderModel`.
 
+**`FieldRenderModel` keeps each surface's own rules.** The model
+(`exeris-codegen-ts/src/generators/angular/field-render.ts`) records, per field, the list cell, the
+detail display type and the form control, and its facet slot is typed `never` until the processor
+fills `ComponentNodeMetadata.field`. Extracting it was byte-identical, so the decisions the three
+generators disagreed on are recorded per surface rather than unified: the detail view detects an
+enum by a `…Status`/`…Type`/`…Role`/`…State` simple name and the form by any qualified non-JDK type;
+the list badges only a `Boolean` column, and renders a `LocalDateTime` with the date-only pipe; the
+form maps only qualified `java.lang` / `java.time` types to a number or date input, so a primitive
+`long` is a text input coerced to a number. P9, P10 and P12 reconcile these, each as an output
+change classified under ADR-092.
+
 **Out of 0.9:** the ADR-047 facet and the `@UI` deprecation (1.x, per the SDK roadmap); `@View`
 G1–G6 (an SDK RFC); field-level server errors (a Java error body and an ADR-036 amendment first);
 WebMCP (after P11, flag-gated); route guards (T53).
@@ -107,9 +118,11 @@ the orchestrator over proxied metadata. Four states:
 - **`GAP`** — the Java side acts on it and the front owes a counterpart it does not emit yet.
 
 The last three carry a reason. A field added to the schema, or one a generator starts or stops
-reading, fails the build until it is classified. Today: 18 `READ`, 4 `JAVA_ONLY`, 14 `RESERVED`,
-1 `GAP` (`uiMetadata`: the entity-level `@UI` view flags no emitter honours — P17). One level
-down, `FIELD_CONTRACT_COVERAGE` has 1 `GAP` (`inUpdate`) and `UI_CONTRACT_COVERAGE` 6 (the view flags).
+reading, fails the build until it is classified. Today: 18 `READ`, 4 `JAVA_ONLY`, 15 `RESERVED`,
+no `GAP`. One level down, `FIELD_CONTRACT_COVERAGE` has 1 `GAP` (`inUpdate`) and
+`RELATIONSHIP_CONTRACT_COVERAGE` 1 (`displayField`); `UI_CONTRACT_COVERAGE` has none — the six view
+switches are `READ` (P17), and `icon`, `color` and `exportable` are `RESERVED` — and neither have the
+action, event, saga-step, `eventSourced` and `internalApi` tables.
 
 **Proposed TS 1.0 criterion: no field in `GAP`** — no field the backend acts on is silently ignored
 by the front. Not yet in the ROADMAP's 1.0 list.
@@ -178,8 +191,9 @@ same model — no second rendering path. `@View` block depth stays gated on the 
 ### Stage 4 — remaining parity, tests, release
 
 - The per-action stream producer (EV1-stream): the action stream handler still sends only the
-  keep-alive scaffold, waiting on an SDK widening that links a streaming action to its event
-  types; the TS client already parses its named frames.
+  keep-alive scaffold and never runs the action. No SDK widening is needed — an `ACTION`-triggered
+  `@DomainEvent` already names its action — but the invoke-then-stream semantics wait on an
+  ADR-044 amendment (ROADMAP, 0.10.0); the TS client already parses its named frames.
 - Test-emitter coverage: `spec-gen` covers 2 of 18 TS emitters.
 - `npm run lint` cannot run (no `eslint.config.*`) and is not in CI.
 - **A stability decision for the TS output.** ADR-015's output-stability contract covers
