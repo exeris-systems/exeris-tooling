@@ -9,7 +9,7 @@ Generates TypeScript interfaces, Angular services, form components, and list com
 - 🎯 **Angular 22** - Standalone components, Signals, Control Flow, Resource API
 - 📝 **TypeScript Types** - Interfaces and Zod schemas from Java domain models
 - 🔧 **Services** - HttpClient-based services with full CRUD support
-- 📋 **Form Components** - Reactive forms with validation, integrated with Signals
+- 📋 **Form Components** - Angular Signal Forms with validation (ADR-093)
 - 📊 **List Components** - Data tables with pagination, sorting, filtering
 - 🎨 **Tailwind CSS** - Modern utility-first styling out of the box
 - ✅ **Zod Validation** - Runtime validation schemas for type safety

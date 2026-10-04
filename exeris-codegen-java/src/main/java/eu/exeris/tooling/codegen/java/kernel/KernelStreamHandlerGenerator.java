@@ -35,8 +35,8 @@ import java.util.List;
  * <h2>Slice 1 shape (RFC-2026-06-22): entity-level live view</h2>
  * <p>Driver is the entity-level {@code @ExerisDomain(realTimeApi)} flag
  * (already plumbed into {@link DomainMetadata#realTimeApi()}); the per-action
- * {@code @Action(streaming)} driver is Slice 2, blocked on an SDK
- * {@code ActionMetadata} widening, and is deliberately not emitted here.
+ * {@code @Action(streaming)} driver is not emitted here: its stream handler is
+ * keep-alive only (ROADMAP EV1-stream).
  *
  * <p>The emitted body depends on whether the entity declares any
  * {@code @DomainEvent}:

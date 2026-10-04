@@ -49,11 +49,9 @@ describe('backend-less emission — a view-only app', () => {
 
   it('emits exactly the shell, the view page and its route', () => {
     expect([...paths(files)].sort()).toEqual([
-      './.npmrc',
       './.postcssrc.json',
       './angular.json',
       './package.json',
-      './tailwind.config.js',
       './tsconfig.app.json',
       './tsconfig.json',
       'src/app/app.component.ts',
@@ -101,7 +99,7 @@ describe('backend-less emission — a view-only app', () => {
       '@angular/core',
       '@angular/platform-browser',
       '@angular/router',
-      '@exeris-systems/ui-kit',
+      '@exeris/ui-kit',
       'rxjs',
       'tslib',
     ]);

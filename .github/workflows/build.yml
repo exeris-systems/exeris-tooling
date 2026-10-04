@@ -156,17 +156,12 @@ jobs:
         working-directory: exeris-codegen-ts
         run: node scripts/gen-sample-app.mjs "$RUNNER_TEMP/fe-sample"
 
-      # @exeris-systems/ui-kit is published to GitHub Packages. The generated app emits
-      # the scoped registry in its .npmrc; append the read token (the workflow's
-      # GITHUB_TOKEN has packages:read; the SDK repo + package are public) so the
-      # sample installs ui-kit exactly as a real consumer does — validating the
+      # @exeris/ui-kit is on the public npm registry. The sample installs it without a
+      # token or an .npmrc, exactly as a real consumer does, so the gate validates the
       # published tarball, not a local source checkout.
       - name: npm install + ng build (generated app)
         working-directory: ${{ runner.temp }}/fe-sample
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}" >> .npmrc
           npm install --no-audit --no-fund
           npx ng build --configuration development
 
@@ -188,9 +183,6 @@ jobs:
 
       - name: npm install + ng build (view-only app)
         working-directory: ${{ runner.temp }}/fe-view-only
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}" >> .npmrc
           npm install --no-audit --no-fund --prefer-offline
           npx ng build --configuration development
