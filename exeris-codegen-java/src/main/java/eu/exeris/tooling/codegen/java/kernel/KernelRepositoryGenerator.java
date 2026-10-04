@@ -603,8 +603,15 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                         toSnakeCase(f.name()))));
 
         if (metadata.hasRelationships()) {
+            // An explicit-UUID foreign key (@Relationship UUID customerId) is also a field, and the
+            // processor records a field without @Field as filterable, so its field finder is
+            // already findByCustomerId over customer_id: the same method on the same column. The
+            // FK finder is emitted only when no field finder took its name.
+            Set<String> taken = new HashSet<>();
+            specs.forEach(spec -> taken.add(spec.methodName()));
             metadata.relationships().stream()
                     .filter(r -> r.type() == RelationshipMetadata.RelationType.MANY_TO_ONE)
+                    .filter(r -> !taken.contains(foreignKeyFinderName(r.name())))
                     .sorted(Comparator.comparing(RelationshipMetadata::name))
                     .forEach(r -> specs.add(new FinderSpec(
                             foreignKeyFinderName(r.name()),

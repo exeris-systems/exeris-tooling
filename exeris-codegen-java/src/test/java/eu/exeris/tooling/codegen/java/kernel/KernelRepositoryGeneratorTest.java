@@ -850,6 +850,22 @@ class KernelRepositoryGeneratorTest {
     }
 
     @Test
+    @DisplayName("an explicit-UUID foreign key without @Field gets one finder, not a field finder and an FK "
+            + "finder of the same name")
+    void explicitForeignKeyFieldIsNotFoundTwice() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                // FieldMetadata.simple: how the processor records a field that carries no @Field.
+                .fields(List.of(FieldMetadata.simple("customerId", "java.util.UUID")))
+                .relationships(List.of(RelationshipMetadata.manyToOne("customerId", "Customer")))
+                .build();
+
+        assertThat(KernelRepositoryGenerator.finderSpecs(metadata))
+                .extracting(KernelRepositoryGenerator.FinderSpec::methodName)
+                .containsExactly("findByCustomerId");
+    }
+
+    @Test
     @DisplayName("T8: soft-delete finders include the AND deleted = false filter")
     void shouldApplySoftDeleteFilterToFinders() {
         DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")

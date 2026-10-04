@@ -1522,6 +1522,15 @@ not as the table owner (or keep tables `FORCE`d, as the generated migrations do)
   `PATCH {base}/{id}` route to reach the generated server can remove it.
 - A hand-written TS client that copied the generated `PATCH` should switch to `PUT`.
 
+### An explicit-UUID foreign key without `@Field` no longer emits its finder twice
+
+A `MANY_TO_ONE` relationship declared on a UUID field with no `@Field`
+(`@Relationship(targetEntity = Customer.class) private UUID customerId;`) emitted
+`findByCustomerId(UUID)` twice in the generated repository and service — once because the processor
+records a field without `@Field` as filterable, once as the relationship's foreign-key finder — and
+the generated tree did not compile (`method findByCustomerId(UUID) is already defined`). The finder is
+emitted once, over the same `customer_id` column. Regenerate; no code change.
+
 ### `exeris-codegen-ts`: the edit route edits, and a routed form navigates
 
 The emitted app routes `/<plural>/:id/edit` to `<Entity>FormComponent`, but the form had no input
