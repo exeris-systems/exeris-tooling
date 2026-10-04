@@ -1059,13 +1059,14 @@ requires them.
 
 ## 0.9.0 train — regeneration deltas
 
-### Dependency floor (hard, pre-release)
+### Dependency floor (hard)
 
 *(Replaced 2026-09-26. This entry first said "Neither pin moves in this train"; B0 moved both.)*
 
-The BOM moves to **`eu.exeris:exeris-sdk-*:0.12.0-SNAPSHOT`** and **`eu.exeris:exeris-kernel-*:0.12.0`**.
-The kernel pin is the final `0.12.0` release on Maven Central. The SDK pin is not published yet:
-build the SDK from `main`. A tooling release is not cut until the SDK pin is final too.
+The BOM moves to **`eu.exeris:exeris-sdk-*:0.12.0`** and **`eu.exeris:exeris-kernel-*:0.12.0`**,
+both final releases on Maven Central. Nothing is built from source. A local repository that holds
+an SDK or kernel `0.12.0` installed or fetched before the release keeps serving it; delete
+`~/.m2/repository/eu/exeris/exeris-sdk*` and `~/.m2/repository/eu/exeris/exeris-kernel*` once.
 
 **The metadata schema stamp moves `0.11.0` → `0.12.0`.** SDK 0.12 moves `SchemaVersion.CURRENT`, so
 a baseline stamped `0.11.0` reads as schema skew (ADR-042). Re-run codegen once after upgrading.
