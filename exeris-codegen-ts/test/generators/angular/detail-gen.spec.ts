@@ -791,3 +791,18 @@ describe('DetailGenerator styles its sections, actions and panels through the ki
     expect(content).toContain('data-testid="action-error" class="exeris-alert exeris-alert-danger mb-6 text-sm"');
   });
 });
+
+describe('DetailGenerator — collection values', () => {
+  it('formats an array comma-separated and an object as JSON', () => {
+    const content = new DetailGenerator().generate(domain({
+      entityName: 'Order',
+      fields: [
+        { name: 'id', type: 'java.util.UUID' },
+        { name: 'labels', type: 'java.util.List<java.lang.String>' },
+      ],
+    }), CTX)!.content;
+    expect(content).toContain(
+      "default: return Array.isArray(value) ? value.join(', ') : typeof value === 'object' ? JSON.stringify(value) : String(value);",
+    );
+  });
+});
