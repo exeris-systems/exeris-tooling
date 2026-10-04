@@ -5,11 +5,13 @@
  * - Signal-based state management
  * - rxResource (RxJS-interop Resource) for data fetching
  * - Loading/error states
+ * - A "Details" section, a "Related records" section and the system panel
+ * - Buttons for the entity's parameterless actions
  * - Full a11y support
  * - i18n-ready strings
  */
 
-import type { DomainMetadata, CodeGenerator, GeneratedFile, GeneratorContext } from '../../core/generator-registry.js';
+import type { DomainMetadata, CodeGenerator, EnumMetadata, GeneratedFile, GeneratorContext } from '../../core/generator-registry.js';
 import { DslMapper } from '../../models/dsl-mapper.js';
 import { modelTypeName } from '../../models/model-naming.js';
 import type { GeneratorConfig } from '../../config.js';
@@ -17,7 +19,7 @@ import type { BackendType } from '../../core/backend-strategy.js';
 import { outPath } from '../../core/paths.js';
 import { tsSingleQuoted } from './ts-literal.js';
 import { auditFieldNames, updateVersionField, viewSystemFieldNames } from '../api/type-gen.js';
-import { fieldRenderContext, resolveFieldRenders } from './field-render.js';
+import { fieldRenderContext, resolveFieldRenders, toTitleCase } from './field-render.js';
 import { entityExitRoute, entityViews } from './entity-views.js';
 
 export class DetailGenerator implements CodeGenerator {
@@ -58,9 +60,11 @@ export class DetailGenerator implements CodeGenerator {
 
     const renders = resolveFieldRenders(
       domain,
-      fieldRenderContext(domain, context.allDomains, context.config.generateDetails !== false),
+      fieldRenderContext(domain, context.allDomains, context.config.generateDetails !== false, context.enums ?? []),
     );
     const displayFields = renders.filter((r) => r.displayed);
+    const related = relatedListLinks(domain, context.allDomains, context.config.generateLists !== false);
+    const actions = detailActions(domain);
     // Every field's enum is imported, a hidden or system one included, in declaration order.
     const enumTypes = [...new Set(renders.flatMap((r) => (r.detail.enumType ? [r.detail.enumType] : [])))];
     const hasLinks = renders.some((r) => r.link !== undefined);
@@ -86,9 +90,11 @@ export class DetailGenerator implements CodeGenerator {
     const panelRows = systemPanelRows(domain);
     const stamps = panelRows.filter((row) => row.kind === 'date');
     const undeclaredRows = panelRows.filter((row) => !row.declared);
+    const hasDateFields = displayFields.some((f) => f.detail.display === 'date' || f.detail.display === 'datetime');
+    const usesDatePipe = stamps.length > 0 || hasDateFields;
     // DatePipe is only imported when something renders a date: Angular reports an unused
     // standalone import against the template.
-    lines.push(stamps.length > 0
+    lines.push(usesDatePipe
       ? `import { CommonModule, DatePipe } from '@angular/common';`
       : `import { CommonModule } from '@angular/common';`);
     lines.push(`import { RouterModule, Router } from '@angular/router';`);
@@ -126,7 +132,7 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`@Component({`);
     lines.push(`  selector: 'app-${kebab}-detail',`);
     lines.push(`  standalone: true,`);
-    lines.push(`  imports: [CommonModule, RouterModule${stamps.length > 0 ? ', DatePipe' : ''}],`);
+    lines.push(`  imports: [CommonModule, RouterModule${usesDatePipe ? ', DatePipe' : ''}],`);
     lines.push(`  changeDetection: ChangeDetectionStrategy.OnPush,`);
     lines.push(`  template: \``);
     lines.push(`    <article role="article" [attr.aria-labelledby]="'detail-title'" [attr.aria-busy]="isLoading()" class="max-w-4xl mx-auto">`);
@@ -144,16 +150,25 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`        @if (deleteError()) {`);
     lines.push(`          <div role="alert" data-testid="delete-error" class="mb-6 rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">{{ deleteError() }}</div>`);
     lines.push(`        }`);
+    if (actions.length > 0) {
+      lines.push(`        @if (actionError()) {`);
+      lines.push(`          <div role="alert" data-testid="action-error" class="mb-6 rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">{{ actionError() }}</div>`);
+      lines.push(`        }`);
+    }
     lines.push(`        <header class="mb-8 flex items-center justify-between">`);
     lines.push(`          <h1 id="detail-title" class="text-2xl font-bold text-gray-900 dark:text-white">{{ getTitle() }}</h1>`);
     lines.push(`          <nav class="flex gap-3">`);
+    for (const action of actions) {
+      lines.push(`            <button type="button" (click)="runAction('${action.methodName}')" [disabled]="actionPending()" data-testid="action-${action.kebabName}" class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 disabled:opacity-50 dark:text-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600">${action.label}</button>`);
+    }
     if (views.edit) {
       lines.push(`            <a [routerLink]="['edit']" class="px-4 py-2 text-sm font-medium text-white bg-exeris-primary rounded-md hover:bg-exeris-primary-hover">Edit</a>`);
     }
     lines.push(`            <button (click)="onDelete()" class="px-4 py-2 text-sm font-medium text-red-700 bg-red-100 rounded-md hover:bg-red-200">Delete</button>`);
     lines.push(`          </nav>`);
     lines.push(`        </header>`);
-    lines.push(`        <section class="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">`);
+    lines.push(`        <section aria-labelledby="details-title" class="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">`);
+    lines.push(`          <h2 id="details-title" class="px-4 pt-4 sm:px-6 text-sm font-medium text-gray-500 dark:text-gray-400">Details</h2>`);
     lines.push(`          <dl class="divide-y divide-gray-200 dark:divide-gray-700">`);
     lines.push(`            @for (field of displayFields; track field.name) {`);
     lines.push(`              <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">`);
@@ -173,7 +188,19 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`${sw}                    @case ('currency') { {{ numericValue(field, entity()) | currency }} }`);
     lines.push(`${sw}                    @case ('percent') { {{ numericValue(field, entity()) | percent }} }`);
     lines.push(`${sw}                    @case ('url') { <a [href]="rawValue(field, entity())" class="text-exeris-primary hover:underline">{{ rawValue(field, entity()) }}</a> }`);
-    lines.push(`${sw}                    @default { {{ formatValue(field, entity()) }} }`);
+    if (hasDateFields) {
+      // A date renders through DatePipe, which reads a LocalDate's yyyy-MM-dd as that calendar day
+      // in the viewer's zone rather than as midnight UTC.
+      lines.push(`${sw}                    @default {`);
+      lines.push(`${sw}                      @switch (field.type) {`);
+      lines.push(`${sw}                        @case ('date') { {{ (dateValue(field, entity()) | date:'mediumDate') ?? '—' }} }`);
+      lines.push(`${sw}                        @case ('datetime') { {{ (dateValue(field, entity()) | date:'medium') ?? '—' }} }`);
+      lines.push(`${sw}                        @default { {{ formatValue(field, entity()) }} }`);
+      lines.push(`${sw}                      }`);
+      lines.push(`${sw}                    }`);
+    } else {
+      lines.push(`${sw}                    @default { {{ formatValue(field, entity()) }} }`);
+    }
     lines.push(`${sw}                  }`);
     if (hasLinks) {
       lines.push(`                  }`);
@@ -183,8 +210,23 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`            }`);
     lines.push(`          </dl>`);
     lines.push(`        </section>`);
-    lines.push(`        <section class="mt-8 bg-gray-50 dark:bg-gray-800/50 rounded-lg p-6">`);
-    lines.push(`          <h3 class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-4">System Information</h3>`);
+    if (related.length > 0) {
+      // Each link opens the target's whole list: the generated list endpoint takes no filter, so
+      // a panel of only this entity's children cannot be fetched without loading every row.
+      lines.push(`        <section aria-labelledby="related-title" class="mt-8 bg-white dark:bg-gray-800 shadow rounded-lg p-6">`);
+      lines.push(`          <h2 id="related-title" class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-4">Related records</h2>`);
+      lines.push(`          <ul class="divide-y divide-gray-200 dark:divide-gray-700">`);
+      for (const link of related) {
+        lines.push(`            <li class="flex items-center justify-between py-3 text-sm">`);
+        lines.push(`              <span class="font-medium text-gray-900 dark:text-white">${link.label}</span>`);
+        lines.push(`              <a routerLink="${link.route}" data-testid="related-${link.testId}" class="text-exeris-primary hover:underline">View all ${link.targetLabel}</a>`);
+        lines.push(`            </li>`);
+      }
+      lines.push(`          </ul>`);
+      lines.push(`        </section>`);
+    }
+    lines.push(`        <section aria-labelledby="system-title" class="mt-8 bg-gray-50 dark:bg-gray-800/50 rounded-lg p-6">`);
+    lines.push(`          <h2 id="system-title" class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-4">System Information</h2>`);
     lines.push(`          <dl class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">`);
     lines.push(`            <div><dt class="text-gray-400">ID</dt><dd class="font-mono text-gray-600 dark:text-gray-300">{{ entity()?.${idField} }}</dd></div>`);
     // A row the entity interface does not declare is read off systemInfo(), the narrowing cast
@@ -231,6 +273,17 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`    return err ? httpErrorMessage(err, { entity: '${noun}', action: 'load' }) : null;`);
     lines.push(`  });`);
     lines.push(`  readonly deleteError = signal<string | null>(null);`);
+    if (actions.length > 0) {
+      lines.push(`  readonly actionError = signal<string | null>(null);`);
+      lines.push(`  readonly actionPending = signal(false);`);
+      lines.push(``);
+      lines.push(`  /** The entity's parameterless actions, by service method name. */`);
+      lines.push(`  private readonly actionCalls = {`);
+      for (const action of actions) {
+        lines.push(`    ${action.methodName}: (id: string) => this.service.${action.methodName}(id),`);
+      }
+      lines.push(`  };`);
+    }
     lines.push(``);
 
     for (const enumType of enumTypes) {
@@ -268,6 +321,17 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`  }`);
     lines.push(``);
 
+    if (hasDateFields) {
+      // DatePipe accepts `string | number | Date | null | undefined`, never `unknown`; an empty
+      // value is null so the template shows the em-dash.
+      lines.push(`  dateValue(field: FieldDisplay, entity: ${modelName} | null): string | number | null {`);
+      lines.push(`    const value = this.rawValue(field, entity);`);
+      lines.push(`    if (value === null || value === undefined || value === '') return null;`);
+      lines.push(`    return typeof value === 'number' ? value : String(value);`);
+      lines.push(`  }`);
+      lines.push(``);
+    }
+
     lines.push(`  rawValue(field: FieldDisplay, entity: ${modelName} | null): unknown {`);
     lines.push(`    if (!entity) return null;`);
     lines.push(`    return entity[field.name as keyof ${modelName}] ?? null;`);
@@ -280,8 +344,6 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`    if (value === null || value === undefined) return '—';`);
     lines.push(`    switch (field.type) {`);
     lines.push(`      case 'boolean': return value ? 'Yes' : 'No';`);
-    lines.push(`      case 'date': return new Date(value as string).toLocaleDateString();`);
-    lines.push(`      case 'datetime': return new Date(value as string).toLocaleString();`);
     lines.push(`      case 'enum': return this.getEnumDisplayName(field.enumType ?? '', value as string);`);
     lines.push(`      default: return String(value);`);
     lines.push(`    }`);
@@ -301,6 +363,26 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`  reload(): void { this.entityResource.reload(); }`);
     lines.push(``);
 
+    if (actions.length > 0) {
+      // A successful action reloads the entity rather than trusting the response body: the
+      // action route answers with whatever the action method returns.
+      lines.push(`  runAction(name: keyof typeof this.actionCalls): void {`);
+      lines.push(`    this.actionError.set(null);`);
+      lines.push(`    this.actionPending.set(true);`);
+      lines.push(`    this.actionCalls[name](this.id()).subscribe({`);
+      lines.push(`      next: () => {`);
+      lines.push(`        this.actionPending.set(false);`);
+      lines.push(`        this.entityResource.reload();`);
+      lines.push(`      },`);
+      lines.push(`      error: (err) => {`);
+      lines.push(`        this.actionPending.set(false);`);
+      lines.push(`        this.actionError.set(httpErrorMessage(err, { entity: '${noun}' }));`);
+      lines.push(`      },`);
+      lines.push(`    });`);
+      lines.push(`  }`);
+      lines.push(``);
+    }
+
     lines.push(`  onDelete(): void {`);
     lines.push(`    if (confirm('Are you sure you want to delete this ${displayName.toLowerCase()}?')) {`);
     lines.push(`      this.deleteError.set(null);`);
@@ -315,6 +397,75 @@ export class DetailGenerator implements CodeGenerator {
 
     return lines.join('\n');
   }
+}
+
+/** A link in the detail view's "Related records" section. */
+interface RelatedListLink {
+  /** The relationship's label: its humanized name. */
+  label: string;
+  /** The absolute route of the target's list page. */
+  route: string;
+  /** The target's plural, as the list page names it. */
+  targetLabel: string;
+  testId: string;
+}
+
+/**
+ * One link per ONE_TO_MANY relationship, in declaration order, to the list page of its target.
+ *
+ * The target must be a loaded domain whose list page is emitted: the config generates lists and the
+ * target's `@UI` keeps its list view. A MANY_TO_MANY relationship has no link: the generated
+ * backend keeps no join table for it, so no route lists its other side. ONE_TO_ONE and MANY_TO_ONE
+ * point at a single record and are linked from the field table when the foreign key is a field.
+ */
+function relatedListLinks(
+  domain: DomainMetadata,
+  allDomains: readonly DomainMetadata[],
+  listsGenerated: boolean,
+): RelatedListLink[] {
+  if (!listsGenerated) return [];
+  const listed = new Set(allDomains.filter((d) => entityViews(d).list).map((d) => d.entityName));
+  const links: RelatedListLink[] = [];
+  for (const rel of domain.relationships ?? []) {
+    if (rel.type !== 'ONE_TO_MANY') continue;
+    // The processor's fallback may record a qualified name; entity names are simple names.
+    const target = rel.targetEntity.includes('.') ? rel.targetEntity.split('.').pop()! : rel.targetEntity;
+    if (!listed.has(target)) continue;
+    links.push({
+      label: tsTemplateText(DslMapper.humanize(rel.name)),
+      route: `/${DslMapper.routePlural(target)}`,
+      targetLabel: tsTemplateText(DslMapper.pluralName(target)),
+      testId: DslMapper.toKebabCase(rel.name),
+    });
+  }
+  return links;
+}
+
+/** A button in the detail view's header, running one of the entity's actions on the shown record. */
+interface DetailAction {
+  /** The service method, the name `service-gen` gives the action. */
+  methodName: string;
+  kebabName: string;
+  label: string;
+}
+
+/**
+ * The actions the detail view offers, in declaration order: those the service exposes as a method
+ * (every action but a streaming one) that need nothing but the record's id. An action taking
+ * parameters needs input the detail view has no control for, and is left to the service.
+ */
+function detailActions(domain: DomainMetadata): DetailAction[] {
+  return (domain.actions ?? [])
+    .filter((action) => !action.streaming && (action.params ?? []).length === 0)
+    .map((action) => {
+      const methodName = DslMapper.toMethodName(action.name);
+      return { methodName, kebabName: DslMapper.toKebabCase(action.name), label: tsTemplateText(toTitleCase(methodName)) };
+    });
+}
+
+/** Text placed between template tags, inside the component's template literal. */
+function tsTemplateText(text: string): string {
+  return text.replace(/[`$\\{}<>]/g, '');
 }
 
 /** A row of the detail view's system panel, after the id. */
@@ -354,9 +505,10 @@ export function generateDetail(
   metadata: DomainMetadata,
   config: GeneratorConfig,
   allDomains: DomainMetadata[] = [metadata],
+  enums: EnumMetadata[] = [],
 ): GeneratedFile | null {
   const generator = new DetailGenerator();
-  const context: GeneratorContext = { config, backend: config.backend ?? 'KERNEL', allDomains, enums: [] };
+  const context: GeneratorContext = { config, backend: config.backend ?? 'KERNEL', allDomains, enums };
   return generator.generate(metadata, context);
 }
 

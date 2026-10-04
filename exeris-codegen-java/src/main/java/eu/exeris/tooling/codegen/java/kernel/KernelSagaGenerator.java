@@ -54,7 +54,10 @@ import java.util.stream.Collectors;
  * appear in {@code SagaMetadata.steps()} ({@code transition(0,
  * 1).transition(1, 2)...}). The {@link SagaStepMetadata#order()} field
  * is <b>not</b> consulted — callers wanting non-list ordering must
- * sort their step list before passing it to the AST. The flow
+ * sort their step list before passing it to the AST. The processor is
+ * that caller: {@code ExerisDomainProcessor} sorts the steps by
+ * {@code order} before writing {@code SagaMetadata} out, with a stable
+ * sort, so steps sharing an {@code order} keep their declaration order. The flow
  * {@code timeoutDuration} is parsed once from the saga's ISO-8601
  * timeout string at class-init time via
  * {@link java.time.Duration#parse(CharSequence)} and pinned to a

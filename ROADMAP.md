@@ -1534,29 +1534,19 @@ never-invoked emitter start emitting, and its output did not build.
       evidence; the log's T51 and T52 were already taken, so T53 was the next free number. The
       log's T51 now has its own entry here (below), which it never had.
 
-- [ ] **The whole `codegen-java` `dsl` package is invoked by nobody.** Measured 2026-09-01 while
-      checking a claim in the T53 table. `DomainMetadataGenerator`, `EntitySchemaGenerator`,
-      `FormDslGenerator`, `PageDslGenerator`, `TableDslGenerator` and `DslTypeMapper` have **zero**
-      production call sites between them; the only hits outside their own package are three
-      *comments* naming them (`ExerisDomainProcessor:252`, `NameCasing:12`). Nothing reads the
-      `<entity>.meta.json` they would write either — the real processor↔generator contract is
-      `exeris-metadata/<entity>.json`, a different file.
-
-      This is the "emitters wired by nobody" pattern at package scale rather than at flag scale,
-      and it has already cost something: two places in this repo cited `DomainMetadataGenerator` as
-      a live consumer of `@Action.permissions`, including a `-Aexeris.strict` reason that reaches a
-      user's `javac` output. Both are corrected in this change.
-
-      **It also holds a determinism violation that is currently unreachable.**
-      `DomainMetadataGenerator:53` writes `"generatedAt": Instant.now().toString()` into its output —
-      exactly the timestamp-in-emitted-artefact the 0.1.0 `OutputWriter` fix removed and hard
-      constraint 3 forbids. It cannot fire today because nothing calls it, which is precisely what
-      makes it a trap: wiring the package would reintroduce a regression the repo believes it closed.
-
-      **Decide before 1.0: delete or wire.** Deleting is the honest default — the Atom-UI DSL target
-      it serves has no consumer in this ecosystem, and dead emitters are what produced the false
-      claims above. Wiring means first removing the timestamp. What must not persist is the third
-      state, where the code exists, is tested, and is cited in diagnostics as though it ran.
+- [x] **The `codegen-java` `dsl` package is deleted.** *Done 2026-10-02 (0.9.0).*
+      `DomainMetadataGenerator`, `EntitySchemaGenerator`, `FormDslGenerator`, `PageDslGenerator`,
+      `TableDslGenerator` and `DslTypeMapper` had zero production call sites — no `CodegenPipeline`
+      registration, no Maven-plugin path, no `META-INF/services` entry — and nothing read the
+      `<entity>.meta.json` they would write; the processor↔generator contract is
+      `exeris-metadata/<entity>.json`. `DomainMetadataGenerator` also wrote
+      `"generatedAt": Instant.now()`, a timestamp in an emitted artefact (hard constraint 3), so
+      wiring the package would have reintroduced a determinism regression. The Atom-UI DSL target it
+      served has no consumer in this ecosystem, so it is deleted rather than wired, with its tests
+      and the test-only `json-schema-validator` dependency only its form test used.
+      `LocaleIndependenceTest` now covers the main and generated-test trees. The `-Aexeris.strict`
+      reasons for `@Action.httpMethod` and `@Action.permissions` say that no generator reads the
+      field. MIGRATION 0.9.0 records the removal, since the classes were in the published jar.
 
 - [x] **T51 — the required scopes are published. Shipped 2026-09-26.** `RuntimeComponents
       .COMPOSITION_SCOPES` (`MEMORY_ALLOCATOR`, `EVENT_ENGINE`, `FLOW_ENGINE`, each only when read)
@@ -1681,7 +1671,7 @@ never-invoked emitter start emitting, and its output did not build.
       codegen-java used the JVM default locale. Under `tr-TR`: table `ınvoices`, column `item_ıd`,
       `ınvoice-api.yaml`, and an `InvalidPathException` writing `V…__create_lıne_ıtems.sql` on a
       non-UTF-8 path encoding. All now pass `Locale.ROOT`; `LocaleIndependenceTest` generates the
-      main tree, the test tree and the DSL files under ROOT and `tr-TR` and requires identical
+      main tree and the test tree under ROOT and `tr-TR` and requires identical
       bytes. Processor, codegen-core, maven plugin and codegen-ts had no site. The SDK half:
       `DomainMetadata.effectivePath()` / `effectiveTableName()` and
       `FieldMetadata.effectiveColumnName()` lower-case under `Locale.ROOT` on SDK `main`
@@ -2925,9 +2915,8 @@ Proposals, highest return-on-effort first:
       matching to `route(...)` only), so the emitted per-action
       `streamRoute(POST, "<base>/{id}/actions/<kebab>")` can never match a concrete request — the route
       404s on a real boot (same defect class as T20/T23: advertised-but-dead). Stream-route template
-      matching is filed as a kernel ask (kernel v0.11 plan); the per-action slice lands in **0.7.0**
-      against the shipped kernel surface, with the GET spectate route shape as an **ADR-044 amendment**
-      (the route shape is an ADR-044 obligation-1 change, not silent drift).
+      matching was filed as a kernel ask and shipped in kernel 0.11. The per-action slice is 0.10.0 (see
+      the 2026-10-02 note below).
       Pairs with `@Projection` as the natural event→DTO shape. **Closes U7** on the entity-level path.
       **Measured 2026-10-02 — moved to 0.10.0 with an ADR-044 amendment.** `POST <base>/{id}/actions/<kebab>`
       for an `@Action(streaming = true)` never runs the action: `KernelHandlerGenerator` skips
@@ -3215,7 +3204,7 @@ Proposals, highest return-on-effort first:
       | processor extraction | **absent**: `grep -rn "roles\|permissions" exeris-processor/src/main` returns nothing |
       | `-Aexeris.strict` completeness audit | **silent** — no `INERT_ATTRIBUTES` entry, so an author sets a permission and is told nothing (fixed alongside this entry) |
       | backend enforcement | nothing binds `HTTP_ROUTE_POLICY`, so every emitted route is `PERMIT_ALL` (ADR-079) |
-      | the generator that *would* read it | `DomainMetadataGenerator` copies `action.permissions()` into a `.meta.json` — but it is **constructed by no production code path and that file is read by nothing** (measured 2026-09-01; the earlier wording here claimed "a consumer that is there and never receives a value", which was wrong in both halves). Closing the extraction alone would still produce no effect |
+      | a generator that reads it | **none** — no generator reads `ActionMetadata.permissions` (the unwired `dsl` package that copied it into a `.meta.json` read by nothing was deleted 2026-10-02). Closing the extraction alone would still produce no effect |
       | frontend enforcement | `guard-gen` emits `canView<Entity>` etc. checking `auth.hasPermission(<ENTITY>_PERMISSIONS.READ)` against **invented** constant names, and `app-structure-gen` attaches them to **no route** |
 
       The last row is the sharpest: the generated frontend guards on permissions the generated
@@ -3421,11 +3410,14 @@ libraries (JavaPoet, swagger, Jackson 2, H2) and it manages neither the plugin n
 
 **5. Alongside, no gate:** the `npm start` proxy prefix (`proxy.conf.js` with a `bypass`), the
 `warnInertAttributes` call sites for `Saga` / `SagaStep`, codegen-ts lint in CI (`npm run lint` has no `eslint.config.*` and is not in `build.yml`), and the delete-or-wire
-decision for the `dsl` package, `KernelStrategy.generateClientCode` and `getRealTimeConfig`.
+decision for `KernelStrategy.generateClientCode` and `getRealTimeConfig` (codegen-ts plan). The
+`dsl` half is done: the package is deleted (2026-10-02).
 
 **6. The cut:** kernel `0.12.0` and SDK `0.12.0` final on Central → pins move → release PR at
-`0.9.0` → tag → deploy to Central → `0.10.0-SNAPSHOT` (Versioning policy). *The first two steps are
-done: both are final on Central, and the BOM pins both (B0). Next is the release PR.*
+`0.9.0` → tag → deploy to Central → Publish in the Central Portal → `@exeris/codegen-ts@0.9.0` to
+npmjs from the same tag → `0.10.0-SNAPSHOT` (Versioning policy, including the one-time npm setup the
+first npm release needs). *The first two steps are done: both are final on Central, and the BOM pins
+both (B0). Next is the release PR.*
 
 ### Gate groups, carried forward (placement: Scope above and 0.10.0)
 
@@ -3738,6 +3730,33 @@ keeps compiling where it still uses one. 0.10.0 removes them.
   hold it: `npm run check:version` in the `vitest run --coverage (exeris-codegen-ts)` job on every
   PR, the tag check in `release.yml` (a tag whose version differs from `package.json` releases
   nothing), and `tools/release-readiness/release-readiness.sh`.
+- **The npm half of a cut goes second.** `release.yml` publishes `@exeris/codegen-ts` to npmjs from
+  the same tag, in a job that needs the Maven job and runs in the `npm-publish` environment. Maven
+  goes first because it is the half with an undo: an unpublished Central deployment can be Dropped,
+  an npm version can never be reused. The cut therefore continues: tag → Maven deployment uploaded
+  and gated → **Publish in the Central Portal** → approve the `npm-publish` job → it waits until the
+  release's POM is on Maven Central, runs the tests, and publishes with provenance. A Dropped
+  deployment leaves npm untouched; if the npm job fails after Maven is published, re-run it (it
+  skips a version npm already has). A `workflow_dispatch` never publishes to npm: it packs, uploads
+  the tarball as a run artifact and runs `npm publish --dry-run`. Every PR runs
+  `npm pack --dry-run` and fails on a tarball holding anything beyond `dist/**/*.js`,
+  `package.json`, `README.md` and `LICENSE`; the readiness gate checks the publication metadata
+  (`repository`, `files`, `publishConfig.access`, the bin, LICENSE) and refuses a `-SNAPSHOT`.
+- **One-time npm setup, before the first tag that publishes.** On npmjs: create the `exeris`
+  organisation (it owns the `@exeris` scope). The first version of a package cannot be published by
+  trusted publishing alone, because the trusted-publisher setting lives on the package's own page
+  and npm creates that page at the first publish. So the first release goes through a token: put a
+  short-lived granular access token with read-write on the `@exeris` scope in the repository
+  secret `NPM_TOKEN`, which the job uses when OIDC is not configured, and the workflow still
+  publishes it with provenance. (Publishing the first version by hand from a laptop also works,
+  but that version carries no provenance.) Then, on the package's settings page, add a **trusted publisher**:
+  GitHub Actions, organisation `exeris-systems`, repository `exeris-tooling`, workflow
+  `release.yml`, environment `npm-publish`. Once that works, delete `NPM_TOKEN` and set the
+  package's publishing access to require two-factor authentication and disallow tokens. On GitHub:
+  create the `npm-publish` environment with yourself as a required reviewer, which makes the
+  approval the hold point between Publish in the Central Portal and the npm release. Without a
+  reviewer the job starts at once and fails after its wait if the Maven release is not yet on
+  Central; re-run it once it is.
 
 ## Tracking
 
