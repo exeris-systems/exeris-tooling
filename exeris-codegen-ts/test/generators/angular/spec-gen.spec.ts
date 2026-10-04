@@ -83,10 +83,18 @@ describe('generateSchemaSpec', () => {
   // given one that fails.
   it('omits a field whose type the mapper has no literal for', () => {
     const content = generateSchemaSpec(
-      entity([{ name: 'id', type: 'java.util.UUID' }, { name: 'tags', type: 'java.util.List<String>' }]),
+      entity([{ name: 'id', type: 'java.util.UUID' }, { name: 'address', type: 'com.shop.Address' }]),
       DEFAULT_CONFIG,
     ).content;
-    expect(content).not.toContain('tags:');
+    expect(content).not.toContain('address:');
+  });
+
+  it('gives a collection typed as the processor writes it an empty array', () => {
+    const content = generateSchemaSpec(
+      entity([{ name: 'id', type: 'java.util.UUID' }, { name: 'tags', type: 'java.util.List<java.lang.String>' }]),
+      DEFAULT_CONFIG,
+    ).content;
+    expect(content).toContain('tags: []');
   });
 
   // Guessing a value that fails is worse than omitting an optional field.
