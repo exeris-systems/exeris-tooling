@@ -4724,7 +4724,8 @@ class ExerisDomainProcessorTest {
                     public class Widget {
                         @Field(label = "Name", description = "d", required = true, unique = true,
                                searchable = true, sortable = true, filterable = true,
-                               readOnly = true, inCreate = false, dataType = "text")
+                               readOnly = true, inCreate = false, inUpdate = false,
+                               dataType = "text")
                         private String name;
 
                         @Field(label = "Total", computed = true, computedFrom = {"name"})
@@ -4780,7 +4781,6 @@ class ExerisDomainProcessorTest {
                 Arguments.of("maskPattern", "maskPattern = \"***\""),
                 Arguments.of("writeOnly", "writeOnly = true"),
                 Arguments.of("compositeUnique", "compositeUnique = \"g\""),
-                Arguments.of("indexed", "indexed = true"),
-                Arguments.of("inUpdate", "inUpdate = false"));
+                Arguments.of("indexed", "indexed = true"));
     }
 }
