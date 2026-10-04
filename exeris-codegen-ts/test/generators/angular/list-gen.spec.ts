@@ -1,20 +1,18 @@
 /**
- * Coverage for src/generators/angular/list-gen.ts — ListGenerator emits
- * an Angular 21 standalone list component with signals, CDK a11y table,
- * @defer SSR placeholder, list animations, search + filter dropdowns,
- * sortable headers, and pagination.
+ * Coverage for src/generators/angular/list-gen.ts — ListGenerator emits a standalone, OnPush,
+ * signal-driven list component that loads the whole collection (the server's list route returns
+ * an array and reads no query parameter) and pages, sorts, searches and filters it in the browser.
  *
  * Exercises:
  *   - list columns: the first 5 non-hidden non-system fields
  *   - displayName / pluralName fallbacks
  *   - systemFields.primaryKeyField alias in track / data-testid / delete dispatch
- *   - Per-column rendering matrix: Boolean → Yes/No badge; date format →
- *     mediumDate; datetime/Instant → medium; default → {{ item.<name> }}
- *   - Sortable column gets click handler + aria-sort + arrow markup
- *   - First 2 filterable Boolean fields render filter dropdowns
- *   - Component class signals + searchSubject debounce wiring
+ *   - per-column rendering: boolean badge, enum badge, number / currency / percent right-aligned,
+ *     date against date-time, url and foreign-key links
+ *   - sortable headers, every filterable field's control, search, page size and row actions
  */
 
+import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import { ListGenerator, generateList } from '../../../src/generators/angular/list-gen.js';
 import {
@@ -72,7 +70,7 @@ describe('ListGenerator.generate — emit path + hidden-skip', () => {
 describe('ListGenerator emitted content — top-level structure', () => {
   const gen = new ListGenerator();
 
-  it('imports Component / signals + CommonModule + RouterModule + FormsModule + service + rxjs operators (no @angular/animations)', () => {
+  it('imports signals, the router, the service and the HTTP error helper; no forms, rxjs or animations', () => {
     const content = gen.generate(domain({ entityName: 'Order' }), CTX)!.content;
 
     expect(content).toContain("import {");
@@ -80,14 +78,29 @@ describe('ListGenerator emitted content — top-level structure', () => {
     expect(content).toContain('signal,');
     expect(content).toContain('computed,');
     expect(content).toContain("from '@angular/core';");
-    expect(content).toContain("import { CommonModule } from '@angular/common';");
     expect(content).toContain("import { RouterModule } from '@angular/router';");
-    expect(content).toContain("import { FormsModule } from '@angular/forms';");
-    expect(content).toContain("import { Order, OrderService, PageRequest, OrderFilter, Page } from '../services/order.service';");
-    expect(content).toContain("import { Subject, debounceTime, distinctUntilChanged } from 'rxjs';");
-    expect(content).toContain("import { takeUntilDestroyed } from '@angular/core/rxjs-interop';");
+    expect(content).toContain("import { Order, OrderService, Page } from '../services/order.service';");
+    expect(content).toContain("import { httpErrorMessage } from '../core/http-error';");
+    // Search and filters write signals from template references: nothing binds ngModel.
+    expect(content).not.toContain('FormsModule');
+    expect(content).not.toContain("from 'rxjs'");
+    expect(content).not.toContain('CommonModule');
     // B4: @angular/animations is deprecated in v22 — row enter is native animate.enter (no import).
     expect(content).not.toContain("from '@angular/animations'");
+  });
+
+  it('imports exactly the pipes its columns use', () => {
+    const content = gen.generate(domain({
+      entityName: 'Invoice',
+      fields: [
+        field({ name: 'issuedOn', type: 'java.time.LocalDate' }),
+        field({ name: 'lines', type: 'Integer' }),
+        field({ name: 'amount', type: 'BigDecimal', dataType: 'currency' }),
+      ],
+    }), CTX)!.content;
+    expect(content).toContain("import { CurrencyPipe, DatePipe, DecimalPipe } from '@angular/common';");
+    expect(content).toContain('imports: [RouterModule, CurrencyPipe, DatePipe, DecimalPipe],');
+    expect(content).not.toContain('PercentPipe');
   });
 
   it('emits @Component decorator with app-<kebab>-list selector + OnPush + row-enter styles + host class (no animations metadata)', () => {
@@ -112,45 +125,63 @@ describe('ListGenerator emitted content — top-level structure', () => {
     expect(content).not.toContain('[@listAnimation]');
   });
 
-  it('ListComponent class declares the documented signal surface (page / size / sort / filter / data / isLoading / error + computed items/totals)', () => {
+  it('ListComponent class holds every loaded row and derives filtered, paged items from it', () => {
     const content = gen.generate(domain({ entityName: 'Order' }), CTX)!.content;
 
     expect(content).toContain('export class OrderListComponent implements OnInit {');
+    expect(content).toContain('readonly rows = signal<Order[]>([]);');
     expect(content).toContain('readonly currentPage = signal(0);');
     expect(content).toContain('readonly pageSize = signal(20);');
-    expect(content).toContain("readonly sortField = signal<string>('id');");
-    expect(content).toContain("readonly sortDirection = signal<'asc' | 'desc'>('desc');");
-    expect(content).toContain('readonly filter = signal<OrderFilter>({});');
-    expect(content).toContain('readonly data = signal<Page<Order> | null>(null);');
     expect(content).toContain('readonly isLoading = signal(false);');
     expect(content).toContain('readonly error = signal<string | null>(null);');
-    expect(content).toContain('readonly items = computed');
-    expect(content).toContain('readonly totalElements = computed');
-    expect(content).toContain('readonly totalPages = computed');
+    expect(content).toContain('readonly totalElements = computed(() => this.filtered().length);');
+    expect(content).toContain('readonly totalPages = computed(() => Math.ceil(this.totalElements() / this.pageSize()));');
+    expect(content).toContain('readonly page = computed(() => Math.min(this.currentPage(), Math.max(this.totalPages() - 1, 0)));');
+    expect(content).toContain('return this.filtered().slice(start, start + this.pageSize());');
   });
 
-  it('search debounce: searchSubject debounceTime(300) + distinctUntilChanged + takeUntilDestroyed in constructor', () => {
-    const content = gen.generate(domain({ entityName: 'Order' }), CTX)!.content;
+  it('search is a signal the filtered rows read; no debounce plumbing', () => {
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      fields: [field({ name: 'code', type: 'String' }), field({ name: 'note', type: 'String' })],
+    }), CTX)!.content;
 
-    expect(content).toContain('private readonly searchSubject = new Subject<string>();');
-    expect(content).toContain('debounceTime(300)');
-    expect(content).toContain('distinctUntilChanged()');
-    expect(content).toContain('takeUntilDestroyed()');
+    expect(content).toContain('(input)="onSearch(searchBox.value)"');
+    expect(content).toContain("readonly searchQuery = signal('');");
+    expect(content).toContain('const query = this.searchQuery().trim().toLowerCase();');
+    // No field is marked searchable, so search covers the columns.
+    expect(content).toContain("(query === '' || [item.code, item.note].some((value) => textOf(value).includes(query)))");
+    expect(content).not.toContain('searchSubject');
+    expect(content).not.toContain('debounceTime');
   });
 
-  it('loadData method invokes service.findAll with the page/sort/filter signals', () => {
+  it('search covers only the searchable fields when any is marked', () => {
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      fields: [field({ name: 'code', type: 'String', searchable: true }), field({ name: 'note', type: 'String' })],
+    }), CTX)!.content;
+    expect(content).toContain('[item.code].some((value) => textOf(value).includes(query))');
+  });
+
+  it('loadData asks for the whole collection and reads the array the server answers with', () => {
     const content = gen.generate(domain({ entityName: 'Order' }), CTX)!.content;
 
-    expect(content).toContain('this.service.findAll(');
-    expect(content).toContain('page: this.currentPage()');
-    expect(content).toContain('size: this.pageSize()');
-    expect(content).toContain('sort: this.sortField()');
-    expect(content).toContain('direction: this.sortDirection()');
-    expect(content).toContain('this.filter()');
+    expect(content).toContain('this.service.findAll().subscribe({');
+    expect(content).toContain('this.rows.set(listRows(result));');
+    expect(content).toContain('function listRows<T>(result: Page<T> | T[]): T[] {');
+    expect(content).toContain('return Array.isArray(result) ? result : (result.content ?? []);');
+    expect(content).not.toContain('page: this.currentPage()');
+  });
+
+  it('page size is a selector over 10 / 20 / 25 / 50 that returns to the first page', () => {
+    const content = gen.generate(domain({ entityName: 'Order' }), CTX)!.content;
+    expect(content).toContain('data-testid="page-size"');
+    for (const size of [10, 20, 25, 50]) {
+      expect(content).toContain(`<option value="${size}" [selected]="pageSize() === ${size}">${size}</option>`);
+    }
+    expect(content).toContain('this.pageSize.set(Number(size));');
   });
 });
-
-// ---------- displayName / pluralName fallbacks ----------
 
 describe('ListGenerator displayName / pluralName fallbacks', () => {
   const gen = new ListGenerator();
@@ -254,24 +285,15 @@ describe('ListGenerator per-column rendering matrix', () => {
   });
 
   it.each([
-    // Branch order in list-gen.ts:281-285:
-    //   if (format === 'date' || type.includes('Date')) → mediumDate
-    //   else if (format === 'datetime' || type.includes('DateTime') || type.includes('Instant')) → medium
-    //   else → raw {{ item.<name> }}
-    // QUIRK: every type whose name contains 'Date' matches the FIRST
-    // arm before the second can be checked. That includes
-    // LocalDateTime / OffsetDateTime / ZonedDateTime — all route
-    // through the mediumDate (date-only) format despite carrying time
-    // components. Pre-existing source behaviour; pinned here.
-    // Each row's second column is the EXPECTED emitted pipe pattern
-    // for that type — Instant is the only multi-component temporal
-    // that escapes the QUIRK because its name doesn't contain "Date".
-    ['Instant',        'medium',     "Instant doesn't contain 'Date' → reaches the medium-datetime arm"],
-    ['LocalDate',      'mediumDate', 'pure date type → mediumDate'],
-    ['LocalDateTime',  'mediumDate', "QUIRK: contains 'Date' substring → first arm wins, time component lost"],
-    ['OffsetDateTime', 'mediumDate', 'QUIRK: same as LocalDateTime'],
-    ['ZonedDateTime',  'mediumDate', 'QUIRK: same as LocalDateTime'],
-  ])('temporal type %s → date pipe with %s pattern (%s)', (fieldType, expectedPattern) => {
+    ['Instant',                 'medium'],
+    ['java.time.Instant',       'medium'],
+    ['LocalDate',               'mediumDate'],
+    ['java.time.LocalDate',     'mediumDate'],
+    ['LocalDateTime',           'medium'],
+    ['java.time.LocalDateTime', 'medium'],
+    ['OffsetDateTime',          'medium'],
+    ['ZonedDateTime',           'medium'],
+  ])('temporal type %s → date pipe with %s pattern', (fieldType, expectedPattern) => {
     const content = gen.generate(domain({
       entityName: 'Thing',
       fields: [field({ name: 'at', type: fieldType })],
@@ -280,17 +302,31 @@ describe('ListGenerator per-column rendering matrix', () => {
     expect(content).toContain(`{{ item.at | date:'${expectedPattern}' }}`);
   });
 
-  it('explicit format=datetime on a non-Date-substring type DOES route through the datetime arm', () => {
-    // The only way to reach the datetime arm with the current branch
-    // ordering is either (a) field.type contains 'Instant' (no Date
-    // substring), or (b) field.format === 'datetime' AND field.type
-    // does NOT include 'Date'. A plain String field with
-    // format: 'datetime' covers (b).
+  it('explicit format=datetime renders a String field with the date-time pipe', () => {
     const content = gen.generate(domain({
       entityName: 'Thing',
       fields: [field({ name: 'ts', type: 'String', format: 'datetime' })],
     }), CTX)!.content;
     expect(content).toContain("{{ item.ts | date:'medium' }}");
+  });
+
+  it.each(['boolean', 'Boolean', 'java.lang.Boolean'])('%s column renders the Yes / No badge', (type) => {
+    const content = gen.generate(domain({
+      entityName: 'Thing',
+      fields: [field({ name: 'flag', type })],
+    }), CTX)!.content;
+    expect(content).toContain('@if (item.flag)');
+    expect(content).toContain('>Yes<');
+  });
+
+  it('a numeric column is right-aligned with tabular digits and the number pipe', () => {
+    const content = gen.generate(domain({
+      entityName: 'Thing',
+      fields: [field({ name: 'qty', type: 'Integer' })],
+    }), CTX)!.content;
+    expect(content).toContain('{{ item.qty | number }}');
+    expect(content).toContain('px-6 py-3.5 text-right text-xs');
+    expect(content).toContain('dark:text-gray-100 text-right tabular-nums">');
   });
 
   it('default column renders {{ item.<name> }} interpolation (no pipe)', () => {
@@ -388,7 +424,6 @@ describe('ListGenerator systemFields.primaryKeyField alias propagation', () => {
 
     expect(content).toContain('@for (item of items(); track item.id; let i = $index)');
     expect(content).toContain("'row-' + item.id");
-    expect(content).toContain("readonly sortField = signal<string>('id');");
     expect(content).toContain('this.service.delete(String(item.id))');
   });
 
@@ -404,61 +439,209 @@ describe('ListGenerator systemFields.primaryKeyField alias propagation', () => {
 
     expect(content).toContain('@for (item of items(); track item.id; let i = $index)');
     expect(content).toContain("'row-' + item.id");
-    expect(content).toContain("readonly sortField = signal<string>('id');");
     expect(content).toContain('this.service.delete(String(item.id))');
     expect(content).not.toContain('item.uuid');
   });
 });
 
-// ---------- filter dropdowns ----------
+// ---------- sorting ----------
 
-describe('ListGenerator filter dropdowns (Boolean only, first 2)', () => {
+describe('ListGenerator client-side sorting', () => {
   const gen = new ListGenerator();
 
-  it('first 2 filterable Boolean fields render filter <select> dropdowns', () => {
+  it('a sortable column sorts the filtered rows; unsorted keeps the server order', () => {
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      fields: [field({ name: 'orderNumber', type: 'String', sortable: true })],
+    }), CTX)!.content;
+
+    expect(content).toContain("readonly sortField = signal<keyof Order | null>(null);");
+    expect(content).toContain("readonly sortDirection = signal<'asc' | 'desc'>('asc');");
+    expect(content).toContain('return [...rows].sort((a, b) => compareValues(a[field], b[field], direction));');
+    expect(content).toContain('return this.sorted().slice(start, start + this.pageSize());');
+    expect(content).toContain('function compareValues(a: unknown, b: unknown, direction: 1 | -1): number {');
+    expect(content).toContain('onSort(field: keyof Order): void {');
+  });
+
+  it('the emitted comparator orders decimal strings by value, sign and fraction length included', () => {
+    const content = gen.generate(domain({
+      entityName: 'Account',
+      fields: [field({ name: 'balance', type: 'java.math.BigDecimal', sortable: true })],
+    }), CTX)!.content;
+    const start = content.indexOf('const DECIMAL = ');
+    const end = content.indexOf('\n}\n', content.indexOf('function compareValues(')) + 3;
+    const js = ts.transpileModule(`${content.slice(start, end)}\nreturn compareValues;`, {
+      compilerOptions: { target: ts.ScriptTarget.ES2022 },
+    }).outputText;
+    const compareValues = new Function(js)() as (a: unknown, b: unknown, direction: 1 | -1) => number;
+    const sort = (values: unknown[], direction: 1 | -1 = 1) => [...values].sort((a, b) => compareValues(a, b, direction));
+
+    expect(sort(['2.5', '2.25', '1.10', '1.5', '-5', '0', '10', '-0.5', '9.99'])).toEqual(
+      ['-5', '-0.5', '0', '1.10', '1.5', '2.25', '2.5', '9.99', '10'],
+    );
+    expect(sort(['2.5', '2.25', '-5', '10'], -1)).toEqual(['10', '2.5', '2.25', '-5']);
+    // Digits beyond a double's precision still order exactly.
+    expect(sort(['12345678901234567890.02', '12345678901234567890.01'])).toEqual(
+      ['12345678901234567890.01', '12345678901234567890.02'],
+    );
+    expect(compareValues('1.50', '1.5', 1)).toBe(0);
+    // Absent values sort last in both directions; numbers compare by value; dates stay textual.
+    expect(sort([null, '3', '', '1'])).toEqual(['1', '3', null, '']);
+    expect(sort([null, '3', '1'], -1)).toEqual(['3', '1', null]);
+    expect(sort([10, 9, 100])).toEqual([9, 10, 100]);
+    expect(sort(['2026-10-04', '2026-01-15'])).toEqual(['2026-01-15', '2026-10-04']);
+  });
+
+  it('no sortable column: no sort state, no comparator', () => {
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      fields: [field({ name: 'orderNumber', type: 'String' })],
+    }), CTX)!.content;
+    expect(content).not.toContain('sortField');
+    expect(content).not.toContain('compareValues');
+  });
+});
+
+// ---------- filters ----------
+
+describe('ListGenerator filters — every filterable field, client-side', () => {
+  const gen = new ListGenerator();
+
+  it('every filterable field gets a control: no first-two limit', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
       fields: [
         field({ name: 'active', type: 'Boolean', filterable: true }),
-        field({ name: 'paid', type: 'Boolean', filterable: true }),
-        field({ name: 'shipped', type: 'Boolean', filterable: true }), // 3rd — skipped
+        field({ name: 'paid', type: 'boolean', filterable: true }),
+        field({ name: 'shipped', type: 'java.lang.Boolean', filterable: true }),
       ],
     }), CTX)!.content;
 
     expect(content).toContain('data-testid="filter-active"');
     expect(content).toContain('data-testid="filter-paid"');
-    expect(content).not.toContain('data-testid="filter-shipped"');
+    expect(content).toContain('data-testid="filter-shipped"');
+    expect(content).toContain("(activeFilter === '' || item.active === (activeFilter === 'true'))");
+    expect(content).toContain("readonly filterActive = signal('');");
+    expect(content).toContain('(change)="setFilter(filterActive, filterActiveControl.value)"');
   });
 
-  it('non-Boolean filterable field does NOT get a dropdown in the template (even within the first-2 slice)', () => {
+  it('a text field filters by contains, case-insensitively', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
-      fields: [
-        field({ name: 'status', type: 'String', filterable: true }),
-        field({ name: 'priority', type: 'Integer', filterable: true }),
+      fields: [field({ name: 'status', type: 'String', filterable: true })],
+    }), CTX)!.content;
+    expect(content).toContain('data-testid="filter-status"');
+    expect(content).toContain('type="search"');
+    expect(content).toContain("const statusFilter = this.filterStatus().trim().toLowerCase();");
+    expect(content).toContain("(statusFilter === '' || textOf(item.status).includes(statusFilter))");
+  });
+
+  it('a date or date-time field filters by an inclusive day range', () => {
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      fields: [field({ name: 'placedAt', type: 'java.time.Instant', filterable: true })],
+    }), CTX)!.content;
+    expect(content).toContain('data-testid="filter-placedAt-from"');
+    expect(content).toContain('data-testid="filter-placedAt-to"');
+    expect(content).toContain('type="date"');
+    expect(content).toContain('inDayRange(item.placedAt, this.filterPlacedAtFrom(), this.filterPlacedAtTo())');
+    expect(content).toContain('function inDayRange(value: unknown, from: string, to: string): boolean {');
+  });
+
+  it('a numeric field filters by an inclusive range', () => {
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      fields: [field({ name: 'priority', type: 'Integer', filterable: true })],
+    }), CTX)!.content;
+    expect(content).toContain('data-testid="filter-priority-min"');
+    expect(content).toContain('data-testid="filter-priority-max"');
+    expect(content).toContain('inNumberRange(item.priority, this.filterPriorityMin(), this.filterPriorityMax())');
+  });
+
+  it('without a filterable field or search the filtered rows are the loaded rows', () => {
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      uiMetadata: { searchable: false },
+      fields: [field({ name: 'status', type: 'String' })],
+    }), CTX)!.content;
+    expect(content).toContain('readonly filtered = computed(() => this.rows());');
+    expect(content).not.toContain('setFilter');
+    expect(content).not.toContain('WritableSignal');
+  });
+});
+
+// ---------- enums ----------
+
+describe('ListGenerator enum columns and filters', () => {
+  const gen = new ListGenerator();
+  const STATUS = {
+    name: 'OrderStatus',
+    qualifiedName: 'com.shop.OrderStatus',
+    packageName: 'com.shop',
+    values: [
+      { name: 'NEW', displayName: 'New', ordinal: 0 },
+      { name: 'PAID', displayName: 'Paid', ordinal: 1 },
+    ],
+  };
+  const ctx = createGeneratorContext({}, [], [STATUS]);
+  const order = (filterable: boolean) => domain({
+    entityName: 'Order',
+    fields: [field({ name: 'status', type: 'com.shop.OrderStatus', filterable })],
+  });
+
+  it('an emitted enum renders as a badge labelled by its display names, one tone per constant', () => {
+    const content = gen.generate(order(false), ctx)!.content;
+    expect(content).toContain("import { OrderStatusDisplayNames } from '../types/enums';");
+    expect(content).toContain('protected readonly statusBadges: Readonly<Record<string, EnumBadge>> = {');
+    expect(content).toContain("NEW: { label: OrderStatusDisplayNames.NEW, className: 'inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ring-1 ring-inset bg-blue-50");
+    expect(content).toContain("PAID: { label: OrderStatusDisplayNames.PAID, className: 'inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ring-1 ring-inset bg-violet-50");
+    expect(content).toContain('@let statusBadge = badgeOf(statusBadges, item.status);');
+    expect(content).toContain('<span [class]="statusBadge.className">{{ statusBadge.label }}</span>');
+  });
+
+  it('a filterable enum filters by an exact constant, offered with its labels', () => {
+    const content = gen.generate(order(true), ctx)!.content;
+    expect(content).toContain('data-testid="filter-status"');
+    expect(content).toContain(`<option value="NEW">{{ statusBadges['NEW'].label }}</option>`);
+    expect(content).toContain("(statusFilter === '' || String(item.status) === statusFilter)");
+  });
+
+  it('a type no enum was emitted for renders as text and imports nothing from types/enums', () => {
+    const content = gen.generate(order(false), CTX)!.content;
+    expect(content).toContain('{{ item.status }}');
+    expect(content).not.toContain('types/enums');
+  });
+});
+
+// ---------- row actions ----------
+
+describe('ListGenerator row actions', () => {
+  const gen = new ListGenerator();
+
+  it('offers each respond-once action that needs only the id; skips streaming and parameterised ones', () => {
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      actions: [
+        { name: 'markPaid' },
+        { name: 'ship-now' },
+        { name: 'refund', params: [{ name: 'amount', type: 'BigDecimal' }] },
+        { name: 'track', streaming: true },
       ],
     }), CTX)!.content;
 
-    expect(content).not.toContain('data-testid="filter-status"');
-    expect(content).not.toContain('data-testid="filter-priority"');
+    expect(content).toContain(`(click)="onMarkPaid(item)" [attr.data-testid]="'action-mark-paid-' + item.id"`);
+    expect(content).toContain('>Mark Paid</button>');
+    expect(content).toContain(`(click)="onShipNow(item)" [attr.data-testid]="'action-ship-now-' + item.id"`);
+    expect(content).toContain('this.service.markPaid(String(item.id)).subscribe({');
+    expect(content).toContain('this.service.shipNow(String(item.id)).subscribe({');
+    expect(content).toContain('readonly actionError = signal<string | null>(null);');
+    expect(content).not.toContain('onRefund');
+    expect(content).not.toContain('onTrack');
   });
 
-  it('class declares the filter<Name> string fields for each Boolean filter (uppercase first char)', () => {
-    const content = gen.generate(domain({
-      entityName: 'Order',
-      fields: [field({ name: 'active', type: 'Boolean', filterable: true })],
-    }), CTX)!.content;
-
-    expect(content).toContain("filterActive: string = '';");
-  });
-
-  it('onFilterChange method updates the filter signal with parsed Boolean (string "true" → true, anything else → undefined)', () => {
-    const content = gen.generate(domain({
-      entityName: 'Order',
-      fields: [field({ name: 'active', type: 'Boolean', filterable: true })],
-    }), CTX)!.content;
-
-    expect(content).toContain("active: this.filterActive ? this.filterActive === 'true' : undefined,");
+  it('no eligible action: no action error state', () => {
+    const content = gen.generate(domain({ entityName: 'Order' }), CTX)!.content;
+    expect(content).not.toContain('actionError');
   });
 });
 

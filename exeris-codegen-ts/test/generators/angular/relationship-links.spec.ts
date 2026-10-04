@@ -120,9 +120,17 @@ describe('no link — rendered exactly as before', () => {
     expect(emit(p, [p, category])).toEqual(emit(plain, [plain, category]));
   });
 
-  it.each(['ONE_TO_ONE', 'ONE_TO_MANY', 'MANY_TO_MANY'] as const)('for %s', (type) => {
+  it.each(['ONE_TO_ONE', 'MANY_TO_MANY'] as const)('for %s', (type) => {
     const p = product([{ ...FK, type }]);
     expect(emit(p, [p, category])).toEqual(baseline);
+  });
+
+  it('for ONE_TO_MANY, whose only addition is the detail view\'s related-records link', () => {
+    const p = product([{ ...FK, type: 'ONE_TO_MANY' }]);
+    const out = emit(p, [p, category]);
+    expect(out.list).toEqual(baseline.list);
+    expect(out.detail).not.toContain(`link: '${CATEGORY_ROUTE}'`);
+    expect(out.detail).toContain(`<a routerLink="${CATEGORY_ROUTE}" data-testid="related-category-id"`);
   });
 
   it('when the relationship names no declared field', () => {
