@@ -1915,7 +1915,7 @@ private UUID mixed;
 ```
 
 compiled, and generation then failed with `Duplicate edge names`. The two are now counted together,
-and this declaration draws the same `[Exeris] @GraphEdge is declared 2 times on field 'mixed'` error
+and this declaration draws the same `[Exeris] EXT-PROC-1013: @GraphEdge is declared 2 times on field 'mixed'` error
 at the field. To fix it, declare each edge on its own field.
 
 ### `-Aexeris.strict` now reports four `@Saga` / `@SagaStep` attributes
@@ -2127,7 +2127,7 @@ table. On an existing database that table does not exist yet.
 
 The processor warns once for each such entity, with the value that keeps the old name:
 
-    warning: [Exeris] Colony: default table changes from 'colonys' to 'colonies'; set @ExerisDomain(tableName = "colonys") to keep the existing table and migration
+    warning: [Exeris] EXT-PROC-1104: Colony: default table changes from 'colonys' to 'colonies'; set @ExerisDomain(tableName = "colonys") to keep the existing table and migration
 
 To keep the existing table and the migration that created it, set the attribute:
 
@@ -2233,13 +2233,28 @@ shows, or your effective POM inherits them.
 `openapi/*.yaml` are not on your classpath unless you declare a `<resource>` for them. The parent
 does; the README shows the entry.
 
+### `exeris-codegen-ts`: a run with only peers emits contracts, not an Angular app
+
+A `generate` run whose input has peers (`--peer`) and no local entity, enum or view emits the peer
+contracts alone: each peer tree is written at the output root, `<output>/peers/<name>/…`, and no
+app scaffold (`package.json`, `angular.json`, `index.html`, `main.ts`, styles, environments) is
+emitted. The consumer of such a run need not be an Angular app — a static site can import the
+contract types directly.
+
+A run with at least one local entity, enum or view is unchanged: peer trees stay under
+`src/app/peers/<name>/` beside the app.
+
+**To migrate a contracts-only consumer:** point `--output` at the directory that should hold
+`peers/`, and import from `<output>/peers/<name>`. Regeneration removes the scaffold files an
+earlier run wrote there, if the output tree carries the generator's manifest.
+
 ### `@Action(streaming = true)` now warns that its route does not run the action
 
 Every build now reports one warning per streaming action, without `-Aexeris.strict`:
 
 ```
-[Exeris] @Action(streaming = true) on "<name>": the generated stream route keeps the connection
-open with keep-alives but does not run the action, so calling it changes nothing. The per-action
+[Exeris] EXT-PROC-1107: @Action(streaming = true) on "<name>": the generated stream route keeps
+the connection open with keep-alives but does not run the action, so calling it changes nothing. The per-action
 stream driver is tracked in ROADMAP.md (EV1-stream).
 ```
 
@@ -2254,6 +2269,40 @@ action that runs, persists and publishes its `ACTION`-triggered `@DomainEvent`s.
 needs to watch the result can subscribe to the entity's live view (`@ExerisDomain(realTimeApi =
 true)`), which streams those events. A build that treats warnings as errors fails on this warning
 until the attribute is removed.
+
+### Every diagnostic carries a stable identifier (D4)
+
+Every message the annotation processor prints, every warning the code-generation pipeline logs, and
+every failure or warning an `exeris:*` goal raises now carries an identifier between the `[Exeris]`
+prefix and the text ([ADR-095](adr/ADR-095-stable-diagnostic-identifiers.md)):
+
+```
+[Exeris] EXT-PROC-1101: @ExerisDomain.tenantScoped is deprecated for removal in SDK 1.0.0; …
+[ERROR] Failed to execute goal …: [Exeris] EXT-PLUG-2001: Refusing to wipe the committed generated tree: …
+[Exeris] EXT-GEN-3101: No domain or capability metadata found in …
+```
+
+Nothing about what the compiler or the generator produces changes, and no diagnostic changes
+severity. What changes is the text: processor messages gain the identifier after `[Exeris] `, and
+plugin and pipeline messages, which carried no prefix at all, gain `[Exeris] ` and the identifier. A
+plugin failure that wraps an exception (a `CapabilityGraphException`, a cap-tier Wall violation, the
+empty-metadata refusal) keeps the exception's message unchanged after the identifier. A plugin I/O
+failure (`EXT-PLUG-2002`, `2003`, `2101`, `2202`, `2204`, `2301`) now ends with its cause, which
+before showed only under `mvn -e`.
+
+**If a tool, CI step or test matches on diagnostic text, match on the identifier instead.** The text
+after it is written for a person and may be reworded in any release; the identifier is stable. The
+regular expression `\[Exeris\] (EXT-[A-Z]+-\d{4}): ` finds one anywhere in a line. A check anchored at
+the start of a plugin message (`startsWith("Refusing to wipe")`, `^Cap-tier Wall`) no longer matches
+and must move to the identifier; a substring check of the text still matches. The full list, with
+what each one means and what to do about it, is [`docs/diagnostics.md`](diagnostics.md).
+
+The identifiers live in a new artefact, `eu.exeris.tooling:exeris-diagnostics`, which
+`exeris-processor`, `exeris-codegen-java` and `exeris-codegen-maven-plugin` depend on. It has no
+dependencies of its own and arrives transitively: an `annotationProcessorPaths` entry for
+`exeris-processor` resolves it with the processor, so neither `exeris-app-parent` nor a hand-written
+build declares it. A build that lists the processor's jars on the processor path by hand, rather than
+by coordinate, adds `exeris-diagnostics` to that list.
 
 ### `eu.exeris.tooling.codegen.java.dsl` is removed
 

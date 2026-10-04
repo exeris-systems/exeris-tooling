@@ -25,6 +25,7 @@ import eu.exeris.tooling.codegen.java.kernel.KernelRepositoryTestGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelSagaTestGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelServiceTestGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelTestSupportGenerator;
+import eu.exeris.tooling.diagnostics.DiagnosticId;
 
 import java.io.IOException;
 import java.lang.System.Logger;
@@ -187,8 +188,9 @@ public final class CodegenPipeline {
         List<CapabilityModuleDescriptor> capabilities = loadCapabilities(metadataDir);
 
         if (domains.isEmpty() && capabilities.isEmpty()) {
-            LOG.log(Level.WARNING, "No domain or capability metadata found in " + metadataDir
-                    + " — make sure @ExerisDomain / @CapabilityModule-annotated classes are compiled first");
+            LOG.log(Level.WARNING, DiagnosticId.NO_METADATA_FOUND.format(
+                    "No domain or capability metadata found in " + metadataDir
+                            + " — make sure @ExerisDomain / @CapabilityModule-annotated classes are compiled first"));
             // T18: empty metadata is overwhelmingly a masked compile failure, not
             // an intentional teardown. If a *previous* run owns a committed tree,
             // pruning here would silently wipe it (recoverable only via git
@@ -509,7 +511,7 @@ public final class CodegenPipeline {
         // gate discards the graph without emitting a manifest.
         CapabilityGraph graph = CapabilityGraph.build(capabilities);
         for (String warning : graph.warnings()) {
-            LOG.log(Level.WARNING, "capability: " + warning);
+            LOG.log(Level.WARNING, DiagnosticId.OPTIONAL_REQUIREMENT_UNSATISFIED.format("capability: " + warning));
         }
         return capabilities.size();
     }
@@ -567,9 +569,12 @@ public final class CodegenPipeline {
             // normal Maven lifecycle `compile` always populates target/classes before
             // process-classes, which makes this overwhelmingly a relocated or mis-set
             // classesDir rather than a cap that legitimately has no code.
-            LOG.log(Level.WARNING, "Cap-tier Wall scanned nothing: no compiled classes under "
-                    + classesDir + " for " + capabilities.size() + " capability module(s) — "
-                    + "ADR-024 predicate 4 is unverified, not satisfied (check classesDir)");
+            // The same event VerifyCapabilitiesMojo reports through Maven's log, so the same
+            // identifier: one event, one identifier, whichever layer prints it.
+            LOG.log(Level.WARNING, DiagnosticId.CAP_TIER_WALL_SCANNED_NOTHING.format(
+                    "Cap-tier Wall scanned nothing: no compiled classes under "
+                            + classesDir + " for " + capabilities.size() + " capability module(s) — "
+                            + "ADR-024 predicate 4 is unverified, not satisfied (check classesDir)"));
             return 0;
         }
         if (!result.violations().isEmpty()) {
@@ -626,8 +631,9 @@ public final class CodegenPipeline {
             // re-validates FRESH metadata this same build — so degrade to a
             // WARNING, keep the prior cap-manifest.json in place, and let that
             // gate deliver the fail-closed verdict.
-            LOG.log(Level.WARNING, "Capability graph invalid on possibly-stale metadata — deferring "
-                    + "to the post-compile verify-capabilities gate: " + e.getMessage());
+            LOG.log(Level.WARNING, DiagnosticId.CAPABILITY_GRAPH_DEFERRED.format(
+                    "Capability graph invalid on possibly-stale metadata — deferring "
+                            + "to the post-compile verify-capabilities gate: " + e.getMessage()));
             if (writer.preserve(CAP_MANIFEST)) {
                 LOG.log(Level.INFO, "Kept previous " + CAP_MANIFEST
                         + " (refreshed on the next successful generate)");
@@ -635,7 +641,7 @@ public final class CodegenPipeline {
             return 0;
         }
         for (String warning : graph.warnings()) {
-            LOG.log(Level.WARNING, "capability: " + warning);
+            LOG.log(Level.WARNING, DiagnosticId.OPTIONAL_REQUIREMENT_UNSATISFIED.format("capability: " + warning));
         }
 
         DefaultPrettyPrinter printer = new DefaultPrettyPrinter();

@@ -3,6 +3,7 @@ package eu.exeris.tooling.codegen.maven;
 import eu.exeris.tooling.codegen.core.capability.CapabilityGraphException;
 import eu.exeris.tooling.codegen.java.CodegenPipeline;
 import eu.exeris.tooling.codegen.java.EmptyMetadataException;
+import eu.exeris.tooling.diagnostics.DiagnosticId;
 import org.apache.maven.model.Plugin;
 import org.apache.maven.model.PluginExecution;
 import org.apache.maven.plugin.AbstractMojo;
@@ -191,15 +192,18 @@ public class GenerateMojo extends AbstractMojo {
                     + metadataDir + " → output=" + outputDir);
             pipeline.run(metadataDir.toPath(), outputDir.toPath(), basePackage, allowEmpty,
                     deferCapabilityFailure);
-        } catch (CapabilityGraphException | EmptyMetadataException e) {
-            // A user-side condition (unsatisfied @Requires / version mismatch /
-            // cycle; or empty metadata from a masked compile failure, T18) — not a
+        } catch (CapabilityGraphException e) {
+            // A user-side condition (unsatisfied @Requires / version mismatch / cycle) — not a
             // plugin bug. Surface the actionable message as a build FAILURE, not an
             // "unexpected error".
-            throw new MojoFailureException(e.getMessage(), e);
+            throw new MojoFailureException(
+                    DiagnosticId.CAPABILITY_GRAPH_UNRESOLVED.format(e.getMessage()), e);
+        } catch (EmptyMetadataException e) {
+            // Empty metadata from a masked compile failure (T18) — user-side, as above.
+            throw new MojoFailureException(DiagnosticId.EMPTY_METADATA_REFUSED.format(e.getMessage()), e);
         } catch (IOException e) {
-            throw new MojoExecutionException(
-                    "Code generation failed (metadataDir=" + metadataDir + ")", e);
+            throw new MojoExecutionException(DiagnosticId.GENERATION_FAILED.format(
+                    "Code generation failed (metadataDir=" + metadataDir + "): " + e), e);
         }
 
         registerSourceRoots();
@@ -249,10 +253,10 @@ public class GenerateMojo extends AbstractMojo {
                     + metadataDir + " → output=" + testOutputDir);
             testPipeline.runTests(metadataDir.toPath(), testOutputDir.toPath(), basePackage);
         } catch (EmptyMetadataException e) {
-            throw new MojoFailureException(e.getMessage(), e);
+            throw new MojoFailureException(DiagnosticId.EMPTY_METADATA_REFUSED.format(e.getMessage()), e);
         } catch (IOException e) {
-            throw new MojoExecutionException(
-                    "Test generation failed (testOutputDir=" + testOutputDir + ")", e);
+            throw new MojoExecutionException(DiagnosticId.TEST_GENERATION_FAILED.format(
+                    "Test generation failed (testOutputDir=" + testOutputDir + "): " + e), e);
         }
         registerTestSourceRoot();
     }
