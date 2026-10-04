@@ -3,7 +3,7 @@
  *
  * Exercises:
  *   - per Java type: list cell, detail display type and enum, form control, input type and value kind
- *   - the dataType facets, the foreign-key link, and the enum each surface resolves by the shared rule
+ *   - the dataType facets, the foreign-key link and picker, and the enum each surface resolves by the shared rule
  *   - system fields (audited, versioned, tenantId), readOnly, inCreate = false, inUpdate = false, hidden and computed fields
  *   - the form's initial value, and the facet slot leaving the result unchanged
  *   - list-gen, detail-gen and form-gen keeping no control or format mapping of their own
@@ -360,6 +360,42 @@ describe('resolveFieldRender — labels and initial values', () => {
     expect(render({ type: 'long' }).form).toMatchObject({ modelType: 'number | null', emptyValue: 'null' });
     expect(render({ type: 'java.math.BigDecimal' }).form).toMatchObject({ modelType: 'string', emptyValue: "''" });
     expect(render({ type: 'com.shop.Status', enumType: 'com.shop.Status' }).form).toMatchObject({ modelType: 'string', emptyValue: "''" });
+  });
+});
+
+describe('resolveFieldRender — foreign-key picker', () => {
+  const target = domain({
+    entityName: 'Product',
+    fields: [{ name: 'id', type: 'java.util.UUID' }, { name: 'name', type: 'String' }],
+  });
+  const owner = domain({
+    fields: [{ name: 'id', type: 'java.util.UUID' }, { name: 'productId', type: 'java.util.UUID', required: true }],
+    relationships: [{ name: 'productId', targetEntity: 'com.shop.Product', type: 'MANY_TO_ONE', displayField: 'name' }],
+  });
+  const resolve = (all: DomainMetadata[], servicesGenerated: boolean): FieldRenderModel =>
+    resolveFieldRenders(owner, fieldRenderContext(owner, all, false, [], servicesGenerated)).find((r) => r.name === 'productId')!;
+
+  it('makes a foreign key whose target service is generated a picker holding the id as text', () => {
+    expect(resolve([owner, target], true).form).toMatchObject({
+      control: 'picker',
+      picker: { target: 'Product', serviceModule: 'product.service', labelField: 'name' },
+      value: 'text',
+      modelType: 'string',
+      emptyValue: "''",
+      required: true,
+    });
+  });
+
+  it('keeps a text input without the target service or the target', () => {
+    expect(resolve([owner, target], false).form).toMatchObject({ control: 'input', inputType: 'text' });
+    expect(resolve([owner, target], false).form.picker).toBeUndefined();
+    expect(resolve([owner], true).form).toMatchObject({ control: 'input', inputType: 'text' });
+  });
+
+  it('gives the list and the detail view, which resolve without services, no picker', () => {
+    const listed = resolveFieldRenders(owner, fieldRenderContext(owner, [owner, target], true)).find((r) => r.name === 'productId')!;
+    expect(listed.form.control).toBe('input');
+    expect(listed.link).toBe(`/${DslMapper.routePlural('Product')}`);
   });
 });
 

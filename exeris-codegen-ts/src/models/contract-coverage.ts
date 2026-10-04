@@ -234,13 +234,7 @@ export const RELATIONSHIP_CONTRACT_COVERAGE = {
   orphanRemoval: { state: 'RESERVED', written: false, reason: RECORD_DEFAULT },
   optional: { state: 'RESERVED', written: false, reason: RECORD_DEFAULT },
   lazy: { state: 'RESERVED', written: false, reason: RECORD_DEFAULT },
-  displayField: {
-    state: 'GAP',
-    written: true,
-    reason:
-      'Written from @Relationship, which requires it; the list and detail views label a foreign key link with ' +
-      'the raw id and the form offers a plain input, so the declared display field is shown nowhere.',
-  },
+  displayField: { state: 'READ', written: true },
   valueField: { state: 'RESERVED', written: false, reason: RECORD_DEFAULT },
   joinColumns: { state: 'RESERVED', written: false, reason: RECORD_DEFAULT },
 } as const satisfies { readonly [K in keyof RelationshipMetadata]-?: NestedContractCoverageEntry };
