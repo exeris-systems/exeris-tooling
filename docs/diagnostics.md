@@ -4,7 +4,7 @@ type: reference
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-10-02
+last-verified: 2026-10-04
 ---
 
 # Diagnostic identifiers
@@ -64,6 +64,7 @@ Printed by `javac` while it compiles your sources. `-Aexeris.strict=true` enable
 | `EXT-PROC-1011` | A system-field role marker (`@TenantId`, `@Version`, `@SoftDelete…`, `@Audit…`) is on more than one field. | Keep the marker on exactly one field. |
 | `EXT-PROC-1012` | A system-field role marker and the matching `@ExerisDomain` override name different fields. | Remove whichever of the two is wrong. |
 | `EXT-PROC-1013` | `@GraphEdge` is declared more than once on one field. | Declare each edge on its own field. |
+| `EXT-PROC-1014` | `@ExerisDomain(realTimeApi = true)` is on a `TENANT` or `UNIVERSE` entity. Kernel events carry no tenant, so the generated live view would send every tenant's events to every subscriber. | Declare `dataScope = DataScope.GLOBAL` if the rows are not tenant-owned; otherwise drop `realTimeApi` until stream events carry an isolation key. |
 
 ### 11xx — warnings on an ordinary build
 

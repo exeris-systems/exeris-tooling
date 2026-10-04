@@ -966,8 +966,8 @@ the log now reaches **T52**, `S1–S6` and `K1–K9`; `V1–V3` and `D1–D3` ar
 past the log's end is this file's **T53**, which took the next free number.)* *(Later on 2026-09-26:
 "T1–T26" above overstated the overlap — this file's own T26 was a collision with the log's T26, not
 a transcription of it, and it is now **T54**. The `T*` numbers past the log's end are T53, the
-four the numbering below assigned (T54–T57), and **T58**, PATCH/PUT parity, which took the next
-free number after them.)* Findings are
+four the numbering below assigned (T54–T57), **T58**, PATCH/PUT parity, which took the next
+free number after them, and **T59**, stream routes without a tenant guard.)* Findings are
 numbered *there*, by the consumer that hits them; this file records the tooling-owned subset and its
 disposition. That direction is deliberate — a finding is minted by whoever measures it, and tooling
 does not get to renumber somebody else's evidence.
@@ -1677,16 +1677,33 @@ never-invoked emitter start emitting, and its output did not build.
       `FieldMetadata.effectiveColumnName()` lower-case under `Locale.ROOT` on SDK `main`
       (exeris-sdk#150). `LocaleIndependenceTest`'s fixture declares no `path`, so the defaulted
       route, which every generator reads through `effectivePath()`, is covered too.
-- [ ] **Stream endpoints carry no tenant guard — found by reading 2026-09-26, not yet measured, so
-      not yet numbered.** The tenant guard (T41, extended past CRUD to actions by T45) is emitted into
+- [~] **T59 — stream endpoints carry no tenant guard.** *Found by reading 2026-09-26; measured and
+      numbered 2026-10-04.* The tenant guard (T41, extended past CRUD to actions by T45) is emitted into
       no stream handler, and the entity-level EV1 producer subscribes to the event bus with no filter
-      (`KernelStreamScaffold`) while kernel `EventDescriptor` carries no tenant. So
-      `realTimeApi = true` on a TENANT entity would send every tenant's events to every subscriber.
-      The architect's proposed direction, an ADR-044 amendment: guard plus an RLS `findById` for
-      per-action streams, and a processor ERROR for `realTimeApi` on a TENANT entity until the
-      kernel carries an isolation key on events. The dog-food is unaffected (`GalacticEra` is
-      GLOBAL). Reproduce it before it takes a number. Until it is fixed, `exeris-codegen-ts` emits
-      no stream client for a tenant-partitioned (`TENANT` or `UNIVERSE`) entity.
+      (`KernelStreamScaffold.eventProducerScaffold`, whose callback never reads its `descriptor`)
+      while kernel `EventDescriptor` carries no tenant (event id, stream id, type ordinal, flags,
+      timestamp). So `realTimeApi = true` on a TENANT entity sends every tenant's events to every
+      subscriber. The dog-food is unaffected (`GalacticEra` is GLOBAL).
+
+      **Measured:** a `dataScope = TENANT`, `realTimeApi = true` entity with one `@DomainEvent`,
+      generated through processor and pipeline, its `<Entity>StreamHandler` driven against the
+      kernel testkit's events engine (`EmbeddedKernelFixtures.eventsOnH2()`) by two streams, each
+      bound to a different tenant's `STORAGE_CONTEXT`. One publish through the generated publisher
+      under tenant A, of a tenant-A row: both streams received the frame with tenant A's payload,
+      the tenant-B stream while its own context was bound.
+
+      **Per-action streams (`@Action(streaming = true)`) are not exposed today:** the handler sends
+      keep-alives only and loads, reads and subscribes to nothing (EXT-PROC-1107). The exposure
+      arrives with the per-action driver, which therefore owes the guard and an RLS `findById`.
+
+      **0.9.0, the stopgap (founder decision 2026-10-04):** the processor refuses `realTimeApi = true`
+      on a tenant-partitioned entity (`TENANT`, `UNIVERSE`, or the deprecated `tenantScoped = true`)
+      with `EXT-PROC-1014`, also when the entity declares no `@DomainEvent`. Streaming actions are not
+      refused. `exeris-codegen-ts` emits no stream client for a tenant-partitioned entity. Metadata
+      JSON that reaches `exeris:generate` without the processor is not checked.
+
+      **0.10.0, the fix:** the tenant guard in every stream handler and an isolation key on stream
+      events, with the ADR-044 amendment (see **0.10.0**). It removes the refusal.
 - [x] **T42 — the mesh has no generated frontend contract.** Types slice shipped 0.8.0 (ADR-048).
       `codegen-ts` was single-service by construction: one metadata directory in, one app out. A mesh
       consumer retyped the other service's vocabulary by hand across a language boundary with no
@@ -2934,7 +2951,10 @@ Proposals, highest return-on-effort first:
       invocations on the same aggregate interleave on a bus subscription; (5) obligation 4 says no
       heap-queue buffering, while the shipped entity-level producer hands off through a bounded
       `ArrayBlockingQueue` — the amendment either admits a bounded drop-on-full queue or the
-      per-action driver avoids one.
+      per-action driver avoids one; (6) tenant isolation (**T59**) — no stream handler carries the
+      tenant guard and `EventDescriptor` carries no isolation key, so the entity-level producer
+      forwards every tenant's events; 0.9.0 refuses `realTimeApi` on a tenant-partitioned entity
+      (`EXT-PROC-1014`) until the amendment settles the guard and the key.
 
 - [ ] **EV2 — `@EventSourced` aggregate generator — log substrate delivered (kernel 0.10, ADR-049);
       aggregate surface still missing.** No generator emits event-sourced aggregates today; **T11 strict
@@ -3366,6 +3386,8 @@ needed.)*
       amendment; see **EV1-stream**). 0.9.0 ships an always-on processor warning on every
       `@Action(streaming = true)`: the generated stream route sends keep-alives and does not run the
       action.
+- [x] **T59, the stopgap:** `realTimeApi = true` on a `TENANT` or `UNIVERSE` entity is a processor
+      error (`EXT-PROC-1014`). The tenant guard and the isolation key → **0.10.0**.
 - [x] `SUBSYSTEMS` derived from `DomainMetadata` (#261; "Every generated app boots three subsystems it may
       never use").
 - [x] Measure whether the emitted error mapping should read `ExerisKernelException.faultOrigin()` *(#262:
@@ -3704,6 +3726,12 @@ Expected to pair with kernel 0.13, and with SDK 0.13 if one is needed.
 - [ ] **EV1-stream per-action driver** (ADR-044 amendment first): the streaming action runs, and its
       triggered events stream back. Moved from 0.9.0 on 2026-10-02; the open questions are under
       **EV1-stream**. Removes the 0.9.0 streaming-action warning.
+- [ ] **T59 — tenant isolation on stream routes** (the same ADR-044 amendment): the tenant guard in
+      the entity-level and the per-action stream handler, an RLS `findById` before a per-action stream
+      opens, and an isolation key on the events a live view forwards, so a stream delivers only its
+      own tenant's events. The key is a kernel ask: `EventDescriptor` carries none. Removes the 0.9.0
+      `EXT-PROC-1014` refusal; `exeris-codegen-ts` then emits stream clients for tenant-partitioned
+      entities.
 - [ ] The removals below.
 
 **Not placed in a milestone**, because the next step belongs to another repository: C2
