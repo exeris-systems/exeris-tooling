@@ -187,10 +187,11 @@ export function buildGeneratedFiles(
     appTree.push(...generatePeerTypes(peer, config));
   }
 
-  // A run with peers and no local entity or view emits contracts only (ADR-048, T42 types
+  // A run with peers and no local entity, enum or view emits contracts only (ADR-048, T42 types
   // slice): its consumer need not be an Angular app, so the tree is written at the output root
-  // (`peers/<name>/…`) and no app scaffold is emitted.
-  const contractsOnly = peers.length > 0 && domains.length === 0 && views.length === 0;
+  // (`peers/<name>/…`) and no app scaffold is emitted. A local enum is part of the app's own type
+  // surface (`types/`), which lives under `src/app/` beside the scaffold, so it keeps the app layout.
+  const contractsOnly = peers.length > 0 && domains.length === 0 && enums.length === 0 && views.length === 0;
   const treeRoot = contractsOnly ? '' : 'src/app/';
 
   for (const file of appTree) {

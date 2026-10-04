@@ -2235,13 +2235,13 @@ does; the README shows the entry.
 
 ### `exeris-codegen-ts`: a run with only peers emits contracts, not an Angular app
 
-A `generate` run whose input has peers (`--peer`) and no local entity or view emits the peer
+A `generate` run whose input has peers (`--peer`) and no local entity, enum or view emits the peer
 contracts alone: each peer tree is written at the output root, `<output>/peers/<name>/…`, and no
 app scaffold (`package.json`, `angular.json`, `index.html`, `main.ts`, styles, environments) is
 emitted. The consumer of such a run need not be an Angular app — a static site can import the
 contract types directly.
 
-A run with at least one local entity or view is unchanged: peer trees stay under
+A run with at least one local entity, enum or view is unchanged: peer trees stay under
 `src/app/peers/<name>/` beside the app.
 
 **To migrate a contracts-only consumer:** point `--output` at the directory that should hold

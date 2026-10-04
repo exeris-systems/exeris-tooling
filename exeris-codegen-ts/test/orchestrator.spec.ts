@@ -231,7 +231,7 @@ describe('buildGeneratedFiles — peer contracts', () => {
     );
   });
 
-  it('a contracts-only run (peers, no local entity or view) writes the peer trees at the output root and no app scaffold', () => {
+  it('a contracts-only run (peers, no local entity, enum or view) writes the peer trees at the output root and no app scaffold', () => {
     const files = buildGeneratedFiles([], [], DEFAULT_CONFIG, [], peers);
     const paths = files.map((f) => f.path);
     expect(paths).toContain('peers/billing/index.ts');
@@ -240,6 +240,20 @@ describe('buildGeneratedFiles — peer contracts', () => {
     expect(paths.some((p) => p.startsWith('src/'))).toBe(false);
     expect(paths).not.toContain('./package.json');
     expect(paths).not.toContain('./angular.json');
+  });
+
+  it('a run with a local enum and no entity keeps the app layout: its type surface stays under src/app', () => {
+    const status = {
+      name: 'Status',
+      qualifiedName: 'com.local.Status',
+      packageName: 'com.local',
+      values: [{ name: 'OPEN', displayName: 'Open', ordinal: 0 }],
+    };
+    const paths = buildGeneratedFiles([], [status], DEFAULT_CONFIG, [], peers).map((f) => f.path);
+    expect(paths).toContain('src/app/types/enums.ts');
+    expect(paths).toContain('src/app/peers/billing/index.ts');
+    expect(paths).toContain('./package.json');
+    expect(paths.some((p) => p.startsWith('types/') || p.startsWith('peers/'))).toBe(false);
   });
 
   it('a run with a local entity keeps the peer trees under src/app and emits the scaffold', () => {

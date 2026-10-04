@@ -141,7 +141,7 @@ billing-contract/
 exeris-gen generate --peer billing=../billing-contract --peer shipping=../shipping-contract
 ```
 
-A run with peers and no local entity or view emits only the contracts, at the output root
+A run with peers and no local entity, enum or view emits only the contracts, at the output root
 (`<output>/peers/<name>/`), with no Angular app scaffold — for a consumer that is not an Angular app.
 
 Three things to know:
