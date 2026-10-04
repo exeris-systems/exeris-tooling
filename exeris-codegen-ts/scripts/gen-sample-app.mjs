@@ -51,6 +51,11 @@ const domains = [
       { name: 'status', type: 'com.shop.OrderStatus', enumType: 'com.shop.OrderStatus', required: true, filterable: true },
       // Bounded boxed number: its Zod schema and its Signal Forms validators both carry min and max.
       { name: 'quantity', type: 'java.lang.Integer', required: true, min: 1, max: 99 },
+      // An offset date-time and two collections, typed as the processor writes them. A collection
+      // renders as text in the list and detail and has no form control.
+      { name: 'placedAt', type: 'java.time.OffsetDateTime' },
+      { name: 'labels', type: 'java.util.List<java.lang.String>' },
+      { name: 'attributes', type: 'java.util.Map<java.lang.String,java.lang.String>' },
       { name: 'productId', type: 'java.util.UUID' },
       // T20d: a *primitive* boolean. The sample carried no boolean of either kind, which
       // is why a text-input-and-'' -seeded checkbox field type-checked here for two trains.
@@ -59,6 +64,18 @@ const domains = [
       // A calendar date: the detail view renders it through DatePipe with mediumDate, an arm no
       // other fixture field reaches.
       { name: 'deliveryDate', type: 'java.time.LocalDate' },
+      // The form's type rules, one control kind each: a primitive number is a number input
+      // holding number | null; a type naming the emitted enum, with no explicit enumType, is a
+      // select; a zone-free date-time is a datetime-local input; a zoned one and an integer
+      // string are text inputs.
+      { name: 'units', type: 'long', min: 1 },
+      { name: 'previousStatus', type: 'com.shop.OrderStatus' },
+      { name: 'pickupAt', type: 'java.time.LocalDateTime' },
+      { name: 'promisedAt', type: 'java.time.ZonedDateTime' },
+      { name: 'loyaltyPoints', type: 'java.math.BigInteger' },
+      // inUpdate = false: the edit form disables the control through a Signal Forms rule bound to
+      // edit mode, and the field is required, so the rule sits beside a validator.
+      { name: 'orderNumber', type: 'String', required: true, maxLength: 20, inUpdate: false },
     ],
     // The foreign key renders as a routerLink to the target's detail page in the list cell and
     // the detail row. The target is qualified, as the processor's fallback can record it, so the
@@ -315,7 +332,7 @@ for (const f of files) {
 }
 console.log(`gen-sample-app — wrote ${files.length} files to ${out}`);
 
-// The emitted package.json pins `@exeris/ui-kit@^0.2.0`, the coordinate on the public npm
+// The emitted package.json pins `@exeris/ui-kit@^0.2.1`, the coordinate on the public npm
 // registry, which installs without a token. OPTIONAL local escape hatch: set
 // EXERIS_UI_KIT_PATH to an exeris-sdk-ui-kit directory or to a tarball `npm pack` made from
 // it, and only that one dependency is repointed at it (file:), so the sample builds against a

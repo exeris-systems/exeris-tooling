@@ -10,5 +10,11 @@
     "since": "0.9",
     "adr": "ADR-092",
     "justification": "A run whose input has peers and no local entity, enum or view emits contracts only: the peer trees are written at the output root and no Angular scaffold (package.json, angular.json, index.html, main.ts, styles, environments) is emitted, so a consumer that is not an Angular app can import the contract types without receiving an app. A contracts-only consumer points --output at the directory that holds peers/ and imports from <output>/peers/<name>; docs/MIGRATION-0.x-to-1.0.md 0.9.0 carries the step. Runs with a local entity, enum or view are unchanged."
+  },
+  {
+    "signature": "<entity>-form.component.ts: input type by the shared field type rules; <select> only for an emitted enum; @Field(inUpdate = false) disabled in edit mode",
+    "since": "0.9",
+    "adr": "ADR-092",
+    "justification": "The emitted form resolves each control by the type rules the list and the detail view use. A primitive or simple-named number becomes a number input, a simple-named LocalDate / LocalDateTime a date / datetime-local input, and a java.time.Instant a text input holding the ISO-8601 value, because a datetime-local input cannot hold a value with a zone. A <select> renders only for an enum the enum module exports, so a qualified type that is not an emitted enum, which previously imported a missing symbol, is a text input. A field with @Field(inUpdate = false) is disabled while the form edits and its loaded value is sent back on update. The selector, inputs, outputs, routes, DTOs and every data-testid are unchanged; docs/MIGRATION-0.x-to-1.0.md 0.9.0 carries the step."
   }
 ]

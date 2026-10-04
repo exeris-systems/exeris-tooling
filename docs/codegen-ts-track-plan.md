@@ -80,13 +80,16 @@ the ui-kit to npmjs and on the `@exeris` org there — delays the Java side too.
 | P17 | The entity-level `@UI` view flags take effect: `listView` / `detailView` / `createForm` / `editForm` (and `searchable` / `filterable`) decide what the TS emitter writes; their strict-audit inert entries go in the same change | codegen-ts, processor | — | P2, P3 | S–M |
 | P18 | Emitted headers and footers carry no per-release value: the hard-coded versions in file headers, the landing and app footers go, and the CLI `--version` reads `package.json`; a spec keeps them out (ADR-092) | codegen-ts | — | — | S |
 | P19 | The emitted app imports `@exeris/ui-kit/styles` (the `.exeris-*` component classes) after `/theme`, a CARD block uses `exeris-card`, rich text gets `@tailwindcss/typography`, and the scaffold, shell and `@View` pages are Tailwind v4 only, guarded by a spec | codegen-ts | — | P14 | S |
-| P20 | The generated list, detail and form components — their controls, tables, actions, and error and conflict panels — style themselves through the kit's component classes (`exeris-btn` with `-primary`, `-secondary`, `-danger`, `-ghost`, `-sm`; `exeris-input`, `exeris-select`, `exeris-textarea`, `exeris-checkbox`, `exeris-label`, `exeris-help-text`, `exeris-error-text`, `exeris-input-error`, `exeris-table`, `exeris-card` with `-header`, `-body`, `-footer`; `exeris-alert` with its four variants; `exeris-badge` with `-primary`, `-success`, `-warning`, `-danger`; `exeris-spinner`) instead of inline utility strings — which fixes their v3 class names and the form controls drawn without a border — and the Tailwind v4 class scan extends to them, so a consumer restyles them in `styles.css` without editing generated files | codegen-ts | ADR-092 | P9, P10, P11, P19; `@exeris/ui-kit` 0.2.1 (the classes complete on Tailwind v4) | M |
+| P20 | The generated list, detail and form components — their controls, tables, actions, and error and conflict panels — style themselves through the kit's component classes (`exeris-btn` with `-primary`, `-secondary`, `-danger`, `-ghost`, `-sm`; `exeris-input`, `exeris-select`, `exeris-checkbox`, `exeris-label`, `exeris-help-text`, `exeris-error-text`, `exeris-input-error`, `exeris-table`, `exeris-card` with `-header`, `-body`; `exeris-alert` with `-danger`, `-warning`; `exeris-badge` with `-success`) instead of inline utility strings — which fixes their v3 class names and the form controls drawn without a border — and the Tailwind v4 class scan extends to them, so a consumer restyles them in `styles.css` without editing generated files | codegen-ts | ADR-092 | P9, P10, P11, P19; `@exeris/ui-kit` 0.2.1 (the classes complete on Tailwind v4) | M |
 
 **The kit's component classes P20 does not use leave its frozen contract.** The chip, color, editor,
-file, radio, range, rating and toggle controls, the scroll and truncation helpers, `exeris-btn-lg`
-and `exeris-badge-gray` have no emitter in 0.9 — field-level `@UI`, which would choose the controls,
-stays unread — so `@exeris/ui-kit` 0.3.0, after P20, moves them to an entry outside the names it
-freezes at 1.0. They return to it additively when an emitter uses them.
+file, radio, range, rating, toggle and textarea controls, the scroll and truncation helpers,
+`exeris-btn-lg`, `exeris-card-footer`, `exeris-alert-info` and `-success`, `exeris-badge-primary`,
+`-warning`, `-danger` and `-gray`, and `exeris-spinner` have no emitter in 0.9: field-level `@UI`,
+which would choose a control, stays unread; the form is no card; no panel reports information or
+success; an enum badge takes its constant's palette tone; loading states are skeletons. So
+`@exeris/ui-kit` 0.3.0, after P20, moves them to an entry outside the names it freezes at 1.0. They
+return to it additively when an emitter uses them.
 
 **Field-level `@UI` stays unread in 0.9.** The processor reads only the entity-level `@UI` view
 flags; extracting the field-level hints would write keys the SDK `-io` reader does not read
@@ -94,18 +97,15 @@ flags; extracting the field-level hints would write keys the SDK `-io` reader do
 `@UIGroup` or `@Tab` carry — `componentType`, `gridSpan`, `placeholder`, `helpText`, sections,
 tabs — arrive with the 1.x facet, through `FieldRenderModel`.
 
-**`FieldRenderModel` keeps each surface's own rules.** The model
+**`FieldRenderModel` resolves every surface by one set of type rules.** The model
 (`exeris-codegen-ts/src/generators/angular/field-render.ts`) records, per field, the list cell, the
 detail display type and the form control, and its facet slot is typed `never` until the processor
-fills `ComponentNodeMetadata.field`. Extracting it was byte-identical, so the decisions the three
-generators disagreed on are recorded per surface rather than unified: the detail view detected an
-enum by a `…Status`/`…Type`/`…Role`/`…State` simple name and the form by any qualified non-JDK type;
-the form maps only qualified `java.lang` / `java.time` types to a number or date input, so a primitive
-`long` is a text input coerced to a number. P10 and P12 reconcile these, each as an output change
-classified under ADR-092. The list (P9) already resolves by the rules they converge on: a boolean or
-a number is whatever the DTO carries as one, primitive or wrapper, simple or qualified; an enum is a
-type the processor emitted an `enum_*.json` for, the only enums `types/enums` exports; `LocalDate` is
-a date and `Instant` / `LocalDateTime` / `OffsetDateTime` / `ZonedDateTime` are date-times.
+fills `ComponentNodeMetadata.field`. The list, the detail view and the form resolve a field's type
+by the same rules: a boolean or a number is whatever the DTO carries as one, primitive or wrapper,
+simple or qualified; an enum is a type naming an enum the processor emitted an `enum_*.json` for,
+the only enums `types/enums` exports; `LocalDate` is a date and `Instant` / `LocalDateTime` /
+`OffsetDateTime` / `ZonedDateTime` are date-times. Each surface differs only where its own output
+calls for it, listed below.
 
 P10 set the rules the other two converge on, as exported functions of `field-render.ts`, and the
 detail view resolves through them: **enum** — an explicit `enumType`, else a type naming an enum
@@ -116,8 +116,16 @@ or `java.lang.Boolean` (`isBooleanType`); **date** — `LocalDate` or `format: '
 `ZonedDateTime` or `format: 'datetime'`, rendered with `'medium'` (`temporalKindOf`); **number** —
 the DTO type is `number` (`isNumericType`). The `currency` / `percent` / `url` facets of `dataType`
 and the foreign-key link are unchanged. The list (P9) resolves by the same rules, except that
-`java.util.Date` is a date-time cell and `BigDecimal` / `BigInteger` are number cells; until P12
-lands, the form's enum test and input types keep their own rules.
+`java.util.Date` is a date-time cell and `BigDecimal` / `BigInteger` are number cells. The form (P12)
+resolves by them too, with two constraints of its control: a `<select>` needs an enum the enum module
+declares, since it imports the enum's constants, so an explicit `enumType` the processor did not
+emit is a text input; and a `date` / `datetime-local` input is given only to a zone-free value
+(`LocalDate`, `LocalDateTime`, a `format`ted `String`), since the input's value carries no zone —
+`Instant`, `OffsetDateTime` and `ZonedDateTime` are text inputs holding the ISO-8601 value. A number
+is a `type="number"` input; `BigDecimal` / `BigInteger` stay string text inputs with a `decimal` /
+`numeric` keyboard. `@Field(inUpdate = false)` disables the control in edit mode through a Signal
+Forms `disabled` rule; the update sends the loaded value back, because the generated update writes
+every column.
 
 P10's related-records section links each `ONE_TO_MANY` to the target's whole list: the generated
 list handler (`KernelHandlerGenerator.handleGetAll`) calls `service.findAll()` and reads no query
@@ -148,7 +156,7 @@ the orchestrator over proxied metadata. Four states:
 
 The last three carry a reason. A field added to the schema, or one a generator starts or stops
 reading, fails the build until it is classified. Today: 18 `READ`, 4 `JAVA_ONLY`, 15 `RESERVED`,
-no `GAP`. One level down, `FIELD_CONTRACT_COVERAGE` has 1 `GAP` (`inUpdate`) and
+no `GAP`. One level down, `FIELD_CONTRACT_COVERAGE` has no `GAP` and
 `RELATIONSHIP_CONTRACT_COVERAGE` 1 (`displayField`); `UI_CONTRACT_COVERAGE` has none — the six view
 switches are `READ` (P17), and `icon`, `color` and `exportable` are `RESERVED` — and neither have the
 action, event, saga-step, `eventSourced` and `internalApi` tables.

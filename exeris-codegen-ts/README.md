@@ -246,14 +246,16 @@ machine, and the `SagaStatusSnapshot` shape it folds, are exported from the app 
 | Java Type | TypeScript Type | Form Control |
 |-----------|-----------------|--------------|
 | `String` | `string` | `<input type="text">` |
-| `Integer`, `Long` | `number` | `<input type="number">` |
-| `Boolean` | `boolean` | `<input type="checkbox">` |
-| `BigDecimal` | `string` | `<input type="text">` |
+| `int`, `long`, `double`, `Integer`, `Long`, `Double`, `Float` | `number` (boxed: `number \| null`) | `<input type="number">` |
+| `boolean`, `Boolean` | `boolean` (boxed: `boolean \| null`) | `<input type="checkbox">` |
+| `BigDecimal`, `BigInteger` | `string` (exact digits) | `<input type="text">` with `inputmode` `decimal` / `numeric` |
 | `LocalDate` | `string` | `<input type="date">` |
-| `LocalDateTime`, `Instant` | `string` | `<input type="datetime-local">` |
+| `LocalDateTime` | `string` | `<input type="datetime-local">` |
+| `Instant`, `ZonedDateTime` | `string` | `<input type="text">` holding the ISO-8601 value, zone included |
 | `UUID` | `string` | `<input type="text">` |
-| `List<T>` | `T[]` | `<textarea>` |
-| `enum` | `string` | `<select>` |
+| an `enum` the processor emitted | the enum's string union | `<select>` |
+
+A field with `@Field(inUpdate = false)` is disabled while the form edits, and is sent back as loaded.
 
 ## License
 

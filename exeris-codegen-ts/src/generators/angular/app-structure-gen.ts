@@ -546,7 +546,7 @@ function runtimeDependencies(needs: ScaffoldNeeds): string {
     ['@angular/forms', '^22.0.0', used('@angular/forms')],
     ['@angular/platform-browser', '^22.0.0', true],
     ['@angular/router', '^22.0.0', true],
-    ['@exeris/ui-kit', '^0.2.0', true],
+    ['@exeris/ui-kit', '^0.2.1', true],
     ['rxjs', '~7.8.1', true],
     ['tslib', '^2.8.1', true],
     ['zod', '^3.24.0', used('zod')],

@@ -7,7 +7,7 @@ import type { DomainMetadata } from '../../models/domain-model.js';
 import { modelTypeName } from '../../models/model-naming.js';
 import { DslMapper } from '../../models/dsl-mapper.js';
 import type { GeneratorConfig } from '../../config.js';
-import type { CodeGenerator, GeneratedFile, GeneratorContext } from '../../core/generator-registry.js';
+import type { CodeGenerator, EnumMetadata, GeneratedFile, GeneratorContext } from '../../core/generator-registry.js';
 import type { BackendType } from '../../core/backend-strategy.js';
 import { outPath } from '../../core/paths.js';
 import { updateVersionField } from '../api/type-gen.js';
@@ -70,7 +70,7 @@ export class FormGenerator implements CodeGenerator {
     // entity's shared-scope key, which is server-owned like its tenant: the repository stamps it
     // from the bound storage context and the create DTO omits it, so the form never sends it.
     // The form renders no link, so the context resolves none.
-    const renders = resolveFieldRenders(domain, fieldRenderContext(domain, [], false));
+    const renders = resolveFieldRenders(domain, fieldRenderContext(domain, [], false, context.enums ?? []));
     const createFields = renders.filter((r) => r.form.placement === 'control');
     // Computed fields render read-only, for information, and are kept out of the submitted DTO.
     const computedFields = renders.filter((r) => r.form.placement === 'computed');
@@ -126,12 +126,12 @@ export class FormGenerator implements CodeGenerator {
     // Loading and error of the by-id load mirror the detail view's markup.
     lines.push('    @if (isLoading()) {');
     lines.push('      <div class="animate-pulse space-y-4 mb-6" role="status" aria-label="Loading...">');
-    lines.push('        <div class="h-4 bg-gray-200 dark:bg-gray-700 rounded w-1/2"></div>');
+    lines.push('        <div class="h-4 bg-gray-200 dark:bg-gray-700 rounded-sm w-1/2"></div>');
     lines.push('      </div>');
     lines.push('    } @else if (loadError()) {');
-    lines.push('      <div role="alert" class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-6 mb-6">');
-    lines.push('        <p class="text-red-700 dark:text-red-300">{{ loadError() }}</p>');
-    lines.push('        <button type="button" (click)="reload()" class="mt-4 text-sm font-medium text-red-600">Try again</button>');
+    lines.push('      <div role="alert" class="exeris-alert exeris-alert-danger mb-6">');
+    lines.push('        <p>{{ loadError() }}</p>');
+    lines.push('        <button type="button" (click)="reload()" class="exeris-btn exeris-btn-secondary exeris-btn-sm mt-4">Try again</button>');
     lines.push('      </div>');
     lines.push('    }');
     // The form validates itself, so the browser's own validation of the bound attributes is off.
@@ -141,12 +141,15 @@ export class FormGenerator implements CodeGenerator {
       const { label, control, inputType, inputMode, enumType: enumTypeName } = f.form;
       const requiredMark = f.form.required ? '<span class="text-red-500" aria-hidden="true">*</span>' : '';
       const binding = `[formField]="form.${f.name}"`;
+      const state = `form.${f.name}()`;
+      // The kit's error border marks a field the error text below it describes.
+      const errorClass = `[class.exeris-input-error]="${state}.invalid() && ${state}.touched()"`;
 
       lines.push('      <div class="form-group">');
 
       if (control === 'select') {
-        lines.push(`        <label for="${f.name}" class="block text-sm font-medium text-gray-700 dark:text-gray-300">${label} ${requiredMark}</label>`);
-        lines.push(`        <select id="${f.name}" data-testid="field-${f.name}" ${binding} class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-exeris-primary focus:ring-exeris-primary dark:bg-gray-800 dark:border-gray-600 dark:text-white sm:text-sm">`);
+        lines.push(`        <label for="${f.name}" class="exeris-label">${label} ${requiredMark}</label>`);
+        lines.push(`        <select id="${f.name}" data-testid="field-${f.name}" ${binding} class="exeris-select mt-1" ${errorClass}>`);
         lines.push('          <option value="">Select...</option>');
         lines.push(`          @for (value of ${enumTypeName}Values; track value) {`);
         lines.push(`            <option [value]="value">{{ ${enumTypeName}DisplayNames[value] }}</option>`);
@@ -154,17 +157,16 @@ export class FormGenerator implements CodeGenerator {
         lines.push('        </select>');
       } else if (control === 'checkbox') {
         lines.push('        <div class="flex items-center gap-2">');
-        lines.push(`          <input id="${f.name}" data-testid="field-${f.name}" type="checkbox" ${binding} class="h-4 w-4 rounded border-gray-300 text-exeris-primary focus:ring-exeris-primary">`);
-        lines.push(`          <label for="${f.name}" class="text-sm text-gray-700 dark:text-gray-300">${label} ${requiredMark}</label>`);
+        lines.push(`          <input id="${f.name}" data-testid="field-${f.name}" type="checkbox" ${binding} class="exeris-checkbox">`);
+        lines.push(`          <label for="${f.name}" class="exeris-label">${label} ${requiredMark}</label>`);
         lines.push('        </div>');
       } else {
         const inputExtra = inputMode ? ` inputmode="${inputMode}"` : '';
-        lines.push(`        <label for="${f.name}" class="block text-sm font-medium text-gray-700 dark:text-gray-300">${label} ${requiredMark}</label>`);
-        lines.push(`        <input id="${f.name}" data-testid="field-${f.name}" type="${inputType}" ${binding} class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-exeris-primary focus:ring-exeris-primary dark:bg-gray-800 dark:border-gray-600 dark:text-white sm:text-sm"${inputExtra}>`);
+        lines.push(`        <label for="${f.name}" class="exeris-label">${label} ${requiredMark}</label>`);
+        lines.push(`        <input id="${f.name}" data-testid="field-${f.name}" type="${inputType}" ${binding} class="exeris-input mt-1" ${errorClass}${inputExtra}>`);
       }
-      const state = `form.${f.name}()`;
       lines.push(`        @if (${state}.invalid() && ${state}.touched()) {`);
-      lines.push(`          <p class="mt-1 text-xs text-gray-500" data-testid="error-${f.name}">`);
+      lines.push(`          <p class="exeris-error-text" data-testid="error-${f.name}">`);
       lines.push(`            @if (${state}.getError('required')) { <span>${label} is required.</span> }`);
       // A value the native control cannot parse (a partial date, a non-number) reads as a format error.
       lines.push(`            @if (${state}.getError('pattern') || ${state}.getError('parse')) { <span>Invalid format.</span> }`);
@@ -183,30 +185,31 @@ export class FormGenerator implements CodeGenerator {
       const dependsOn = f.form.computedFrom.join(', ');
 
       lines.push('      <div class="form-group">');
-      lines.push(`        <label for="${f.name}" class="block text-sm font-medium text-gray-700 dark:text-gray-300">${label} <span class="text-xs text-gray-500">(Auto)</span></label>`);
-      lines.push(`        <input id="${f.name}" data-testid="field-${f.name}" type="${f.form.inputType}" [value]="${computedSignalName(f.name)}() ?? ''" readonly class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-exeris-primary focus:ring-exeris-primary dark:bg-gray-800 dark:border-gray-600 dark:text-white sm:text-sm bg-gray-100 dark:bg-gray-700 cursor-not-allowed opacity-75">`);
+      lines.push(`        <label for="${f.name}" class="exeris-label">${label} <span class="text-xs text-gray-500">(Auto)</span></label>`);
+      // Read-only: the field takes the kit's muted surface instead of the editable one.
+      lines.push(`        <input id="${f.name}" data-testid="field-${f.name}" type="${f.form.inputType}" [value]="${computedSignalName(f.name)}() ?? ''" readonly class="exeris-input mt-1 bg-[rgb(var(--exeris-bg-tertiary))] cursor-not-allowed opacity-75">`);
       if (dependsOn) {
-        lines.push(`        <p class="mt-1 text-xs text-gray-500">Computed from: ${dependsOn}</p>`);
+        lines.push(`        <p class="exeris-help-text">Computed from: ${dependsOn}</p>`);
       }
       lines.push('      </div>');
     }
 
     lines.push('      @if (error()) {');
-    lines.push('        <div role="alert" data-testid="submit-error" class="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">{{ error() }}</div>');
+    lines.push('        <div role="alert" data-testid="submit-error" class="exeris-alert exeris-alert-danger text-sm">{{ error() }}</div>');
     lines.push('      }');
     if (version) {
       // The server answers a stale update with 409 and no body; the only recovery is to load
       // the row as it now stands, which also picks up its current version.
       lines.push('      @if (conflict()) {');
-      lines.push('        <div role="alert" data-testid="conflict-message" class="rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-200">');
+      lines.push('        <div role="alert" data-testid="conflict-message" class="exeris-alert exeris-alert-warning text-sm">');
       lines.push('          <p>This record was changed by someone else. Reload to see the latest version.</p>');
-      lines.push('          <button type="button" (click)="reload()" data-testid="reload-button" class="mt-2 rounded-md bg-white px-3 py-1.5 text-sm font-medium text-amber-800 shadow-sm border border-amber-300 hover:bg-amber-100 dark:bg-gray-800 dark:text-amber-200 dark:border-amber-700">Reload</button>');
+      lines.push('          <button type="button" (click)="reload()" data-testid="reload-button" class="exeris-btn exeris-btn-secondary exeris-btn-sm mt-2">Reload</button>');
       lines.push('        </div>');
       lines.push('      }');
     }
     lines.push('      <div class="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">');
-    lines.push('        <button type="button" (click)="onCancel()" data-testid="cancel-button" class="rounded-md bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm border border-gray-300 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600">Cancel</button>');
-    lines.push('        <button type="submit" [disabled]="form().invalid() || saving() || (editMode() && !current())" data-testid="submit-button" class="rounded-md bg-exeris-primary px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-exeris-primary-hover disabled:opacity-50">');
+    lines.push('        <button type="button" (click)="onCancel()" data-testid="cancel-button" class="exeris-btn exeris-btn-secondary">Cancel</button>');
+    lines.push('        <button type="submit" [disabled]="form().invalid() || saving() || (editMode() && !current())" data-testid="submit-button" class="exeris-btn exeris-btn-primary">');
     lines.push(`          @if (saving()) { Saving... } @else { {{ editMode() ? 'Update' : 'Create' }} ${entityName} }`);
     lines.push('        </button>');
     lines.push('      </div>');
@@ -339,9 +342,17 @@ export class FormGenerator implements CodeGenerator {
     lines.push('');
     // A number control holds `number | null`, the DTO's own type, so the model is the payload.
     lines.push('    const data = this.formModel();');
+    // The generated update writes every column of the row, so the edit payload is the loaded record
+    // with the form's values over it: a field the form does not offer (read-only, hidden, create-only)
+    // keeps its stored value. An `inUpdate = false` field is taken from the loaded record itself, not
+    // from the model, whose seed turns a stored null into the control's empty value.
+    const fixedInEdit = createFields
+      .filter((r) => !r.form.inUpdate)
+      .map((r) => `, ${r.name}: current.${r.name}`)
+      .join('');
     const updatePayload = version
-      ? `{ ...data, ${version.name}: this.loadedVersion() } as ${modelName}Update`
-      : `data as ${modelName}Update`;
+      ? `{ ...current, ...data${fixedInEdit}, ${version.name}: this.loadedVersion() } as ${modelName}Update`
+      : `{ ...current, ...data${fixedInEdit} } as ${modelName}Update`;
     lines.push(`    const request$ = this.editMode() && current ? this.service.update(String(current.${idField}), ${updatePayload}) : this.service.create(data as ${modelName}Create);`);
     lines.push('');
     lines.push('    return new Promise((resolve) => {');
@@ -427,9 +438,13 @@ export class FormGenerator implements CodeGenerator {
   }
 }
 
-export function generateForm(metadata: DomainMetadata, config: GeneratorConfig): GeneratedFile | null {
+export function generateForm(
+  metadata: DomainMetadata,
+  config: GeneratorConfig,
+  enums: EnumMetadata[] = [],
+): GeneratedFile | null {
   const generator = new FormGenerator();
-  const context: GeneratorContext = { config, backend: config.backend ?? 'KERNEL', allDomains: [metadata], enums: [] };
+  const context: GeneratorContext = { config, backend: config.backend ?? 'KERNEL', allDomains: [metadata], enums };
   return generator.generate(metadata, context);
 }
 
@@ -444,7 +459,7 @@ interface FormValidation {
 
 /**
  * The schema rules `FieldMetadata` declares, field by field in declaration order, each field's
- * rules in the order required, minLength, maxLength, pattern, min, max.
+ * rules in the order required, minLength, maxLength, pattern, min, max, disabled.
  *
  * - `required` is not applied to a checkbox. Signal Forms counts `false` as empty, which would
  *   force the box to be ticked; a required boolean only has to hold a boolean, which it always does.
@@ -452,6 +467,8 @@ interface FormValidation {
  *   length or pattern constraint is declared on character sequences.
  * - min and max bound a number control directly. A text control holding a decimal string is bounded
  *   by its parsed value; a blank or unparseable value passes.
+ * - `disabled` applies to a field with `inUpdate = false` while the form edits. A disabled field
+ *   takes no input and is not validated, so a required field the edit cannot change never blocks it.
  */
 function formValidation(fields: readonly FieldRenderModel[]): FormValidation {
   const rules: string[] = [];
@@ -477,6 +494,7 @@ function formValidation(fields: readonly FieldRenderModel[]): FormValidation {
       if (f.min !== undefined) add(`min(${path}, ${f.min});`, 'min');
       if (f.max !== undefined) add(`max(${path}, ${f.max});`, 'max');
     }
+    if (!form.inUpdate) add(`disabled(${path}, { when: () => this.editMode() });`, 'disabled');
   }
   return { rules, used };
 }
@@ -489,6 +507,7 @@ function formValidation(fields: readonly FieldRenderModel[]): FormValidation {
 const SIGNAL_FORMS_IMPORT_ORDER = [
   'form', 'FormField', 'submit',
   'required', 'minLength', 'maxLength', 'pattern', 'min', 'max', 'validate', 'minError', 'maxError',
+  'disabled',
 ] as const;
 
 function signalFormsImports(validation: FormValidation): string[] {

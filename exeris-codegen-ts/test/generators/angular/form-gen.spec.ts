@@ -5,9 +5,9 @@
  *   - inCreate=false / hidden=true / readOnly=true / computed exclusion
  *   - Computed field detection + separate rendering with dependsOn note +
  *     compute method stub + a computed signal per computed field
- *   - mapInputType java.* → HTML input type mapping
- *   - isEnumField (explicit enumType OR FQCN with dots that isn't java.*
- *     / Entity / DTO)
+ *   - the input type by the shared type rules (number, date, date-time, zoned date-time as text)
+ *   - enum select for an enum the app's enum module declares; any other type a text input
+ *   - inUpdate = false: disabled in edit mode, its loaded value sent back on update
  *   - Field rendering: enum select, checkbox, text/number/date input
  *   - Schema validators: required/minLength/maxLength/pattern/min/max
  *   - Model seed: explicit defaultValue / Boolean → 'false' / number → null / fallback "''"
@@ -31,6 +31,18 @@ import {
 } from '../../../src/models/domain-model.js';
 
 const CTX: GeneratorContext = createGeneratorContext({});
+
+/** The enums the processor emitted for the specs below, as `types/enums` declares them. */
+function enumMeta(qualifiedName: string): GeneratorContext['enums'][number] {
+  const name = qualifiedName.split('.').pop()!;
+  return { name, qualifiedName, packageName: qualifiedName.slice(0, qualifiedName.lastIndexOf('.')), values: [] };
+}
+
+const ENUM_CTX: GeneratorContext = createGeneratorContext({}, [], [
+  enumMeta('com.shop.OrderStatus'),
+  enumMeta('com.shop.Status'),
+  enumMeta('eu.exeris.foundation.domain.TenantPlan'),
+]);
 
 /** The form model's seed: the `signal<…FormModel>({ … })` the form is built on. */
 function seedBlock(content: string): string {
@@ -148,7 +160,7 @@ describe('FormGenerator emitted content — top-level structure', () => {
         field({ name: 'status', type: 'String', enumType: 'OrderStatus' }),
         field({ name: 'paid', type: 'java.lang.Boolean' }),
       ],
-    }), CTX)!.content;
+    }), ENUM_CTX)!.content;
 
     for (const name of ['orderNumber', 'status', 'paid']) {
       expect(content).toContain(`data-testid="field-${name}"`);
@@ -175,13 +187,28 @@ describe('FormGenerator emitted content — top-level structure', () => {
     expect(content).toContain("@if (form.code().getError('max')) { <span>Too high.</span> }");
   });
 
+  it('an edit sends the loaded record with the form values over it, so a field the form does not offer keeps its value', () => {
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      fields: [
+        field({ name: 'id', type: 'java.util.UUID' }),
+        field({ name: 'note', type: 'String' }),
+        field({ name: 'internalCode', type: 'String', hidden: true }),
+        field({ name: 'createdBy', type: 'String', inCreate: false }),
+      ],
+    }), CTX)!.content;
+    expect(content).not.toContain('internalCode:');
+    expect(content).toContain('this.service.update(String(current.id), { ...current, ...data } as OrderUpdate)');
+    expect(content).toContain('this.service.create(data as OrderCreate)');
+  });
+
   it('onSubmit dispatches to service.update in edit mode and service.create otherwise', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
       fields: [field({ name: 'orderNumber', type: 'String' })],
     }), CTX)!.content;
 
-    expect(content).toContain('const request$ = this.editMode() && current ? this.service.update(String(current.id), data as OrderUpdate) : this.service.create(data as OrderCreate);');
+    expect(content).toContain('const request$ = this.editMode() && current ? this.service.update(String(current.id), { ...current, ...data } as OrderUpdate) : this.service.create(data as OrderCreate);');
     expect(content).not.toContain("this.mode() === 'create'");
   });
 
@@ -520,7 +547,7 @@ describe('FormGenerator field rendering', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
       fields: [field({ name: 'status', type: 'String', enumType: 'OrderStatus' })],
-    }), CTX)!.content;
+    }), ENUM_CTX)!.content;
 
     expect(content).toContain('<select id="status"');
     expect(content).toContain('@for (value of OrderStatusValues; track value)');
@@ -539,7 +566,7 @@ describe('FormGenerator field rendering', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
       fields: [field({ name: 'status', type: 'com.shop.OrderStatus', enumType: 'com.shop.OrderStatus' })],
-    }), CTX)!.content;
+    }), ENUM_CTX)!.content;
 
     expect(content).toContain("import { OrderStatus, OrderStatusDisplayNames } from '../types/enums';");
     expect(content).toContain('readonly OrderStatusValues = Object.values(OrderStatus);');
@@ -547,30 +574,42 @@ describe('FormGenerator field rendering', () => {
     expect(content).not.toContain('com.shop.OrderStatus');
   });
 
-  it('FQCN field type (containing dot, not java.*) is auto-detected as enum (simple name extracted)', () => {
+  it('a field whose type names a processor-emitted enum renders a select over that enum', () => {
     const content = gen.generate(domain({
       entityName: 'Tenant',
       fields: [field({ name: 'plan', type: 'eu.exeris.foundation.domain.TenantPlan' })],
-    }), CTX)!.content;
+    }), ENUM_CTX)!.content;
 
     expect(content).toContain('<select id="plan"');
     expect(content).toContain('@for (value of TenantPlanValues; track value)');
     expect(content).toContain("import { TenantPlan, TenantPlanDisplayNames } from '../types/enums';");
   });
 
-  it('FQCN types containing "Entity" or "DTO" are NOT auto-detected as enums (entity/DTO escape)', () => {
+  it('a qualified type the enum module does not declare is a text input with no enum import', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
       fields: [
+        field({ name: 'address', type: 'com.shop.Address' }),
         field({ name: 'ref', type: 'com.shop.CustomerEntity' }),
-        field({ name: 'audit', type: 'com.shop.AuditDTO' }),
+        field({ name: 'payment', type: 'com.shop.PaymentStatus' }),
       ],
-    }), CTX)!.content;
+    }), ENUM_CTX)!.content;
 
-    // No select rendered for either field.
-    expect(content).not.toContain('@for (value of CustomerEntityValues');
-    expect(content).not.toContain('@for (value of AuditDTOValues');
-    // No import line either.
+    for (const name of ['address', 'ref', 'payment']) {
+      expect(content).toContain(`type="text" [formField]="form.${name}"`);
+    }
+    expect(content).not.toContain('<select');
+    expect(content).not.toContain("from '../types/enums'");
+  });
+
+  it('an explicit enumType the enum module does not declare renders no select', () => {
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      fields: [field({ name: 'priority', type: 'String', enumType: 'com.shop.Priority' })],
+    }), ENUM_CTX)!.content;
+
+    expect(content).toContain('type="text" [formField]="form.priority"');
+    expect(content).not.toContain('PriorityValues');
     expect(content).not.toContain("from '../types/enums'");
   });
 
@@ -588,9 +627,19 @@ describe('FormGenerator field rendering', () => {
     ['java.lang.Long', 'number'],
     ['java.lang.Double', 'number'],
     ['java.lang.Float', 'number'],
-    ['java.time.Instant', 'datetime-local'],
+    ['long', 'number'],
+    ['int', 'number'],
+    ['Long', 'number'],
+    ['double', 'number'],
     ['java.time.LocalDateTime', 'datetime-local'],
+    ['LocalDateTime', 'datetime-local'],
     ['java.time.LocalDate', 'date'],
+    ['LocalDate', 'date'],
+    // A value naming a zone or an offset: neither native date input can hold it.
+    ['java.time.Instant', 'text'],
+    ['java.time.OffsetDateTime', 'text'],
+    ['java.time.ZonedDateTime', 'text'],
+    ['java.math.BigDecimal', 'text'],
     ['String', 'text'],
   ])('java type %s → input type=%s', (javaType, expectedInputType) => {
     const content = gen.generate(domain({
@@ -608,6 +657,31 @@ describe('FormGenerator field rendering', () => {
     }), CTX)!.content;
 
     expect(content).toContain('inputmode="decimal"');
+  });
+
+  it('a BigDecimal is a text input with a decimal keyboard, a BigInteger with a numeric one', () => {
+    const content = gen.generate(domain({
+      entityName: 'Thing',
+      fields: [
+        field({ name: 'price', type: 'java.math.BigDecimal' }),
+        field({ name: 'units', type: 'java.math.BigInteger' }),
+      ],
+    }), CTX)!.content;
+
+    expect(content).toMatch(/type="text" \[formField\]="form\.price"[^>]*inputmode="decimal"/);
+    expect(content).toMatch(/type="text" \[formField\]="form\.units"[^>]*inputmode="numeric"/);
+    expect(modelInterface(content)).toContain('price: string;');
+    expect(modelInterface(content)).toContain('units: string;');
+  });
+
+  it('a primitive long is a number input holding number | null', () => {
+    const content = gen.generate(domain({
+      entityName: 'Thing',
+      fields: [field({ name: 'count', type: 'long' })],
+    }), CTX)!.content;
+
+    expect(content).toContain('type="number" [formField]="form.count"');
+    expect(modelInterface(content)).toContain('count: number | null;');
   });
 
   it('label falls back to toTitleCase(name) when displayName is absent; explicit displayName wins', () => {
@@ -740,7 +814,7 @@ describe('FormGenerator imports only stable @angular/forms/signals symbols', () 
   const STABLE = new Set([
     'form', 'FormField', 'submit',
     'required', 'minLength', 'maxLength', 'pattern', 'min', 'max', 'email',
-    'validate', 'minError', 'maxError',
+    'validate', 'minError', 'maxError', 'disabled',
   ]);
 
   it('every imported symbol is on the stable allow-list, for every validator combination', () => {
@@ -752,8 +826,9 @@ describe('FormGenerator imports only stable @angular/forms/signals symbols', () 
         field({ name: 'price', type: 'java.math.BigDecimal', min: 0, max: 9 }),
         field({ name: 'armed', type: 'boolean', required: true }),
         field({ name: 'status', type: 'String', enumType: 'Status' }),
+        field({ name: 'sku', type: 'String', inUpdate: false }),
       ],
-    }), CTX)!.content;
+    }), ENUM_CTX)!.content;
 
     const line = content.match(/import \{ ([^}]+) \} from '@angular\/forms\/signals';/);
     expect(line).not.toBeNull();
@@ -810,7 +885,8 @@ describe('FormGenerator computed fields', () => {
     // The (Auto) marker tags the computed field's label.
     expect(content).toContain('(Auto)</span></label>');
     // The readonly attribute on the rendered input.
-    expect(content).toContain('readonly class="mt-1 block w-full');
+    expect(content).toContain('readonly class="exeris-input mt-1 bg-[rgb(var(--exeris-bg-tertiary))] cursor-not-allowed opacity-75">');
+    expect(content).toContain('<p class="exeris-help-text">Computed from: first, last</p>');
     // The "Computed from: ..." note.
     expect(content).toContain('Computed from: first, last');
   });
@@ -1008,6 +1084,79 @@ describe('FormGenerator — navigation when the form is the routed page', () => 
 
 // ---------- versioned: the edit sends the loaded version; a 409 is a conflict ----------
 
+describe('FormGenerator — collection fields', () => {
+  const content = new FormGenerator().generate(domain({
+    entityName: 'Order',
+    fields: [
+      field({ name: 'id', type: 'java.util.UUID' }),
+      field({ name: 'note', type: 'String' }),
+      field({ name: 'labels', type: 'java.util.List<java.lang.String>' }),
+      field({ name: 'attributes', type: 'java.util.Map<java.lang.String,java.lang.String>' }),
+    ],
+  }), CTX)!.content;
+
+  it('a list or map field has no control and no place in the form model', () => {
+    expect(content).toContain('data-testid="field-note"');
+    expect(content).not.toContain('data-testid="field-labels"');
+    expect(content).not.toContain('data-testid="field-attributes"');
+    expect(modelInterface(content)).not.toContain('labels');
+    expect(modelInterface(content)).not.toContain('attributes');
+  });
+
+  it('an edit sends the loaded record, so the stored collection is kept', () => {
+    expect(content).toContain('this.service.update(String(current.id), { ...current, ...data } as OrderUpdate)');
+  });
+});
+
+describe('FormGenerator — @Field(inUpdate = false)', () => {
+  const gen = new FormGenerator();
+  const fields = [
+    field({ name: 'id', type: 'java.util.UUID' }),
+    field({ name: 'sku', type: 'String', required: true, inUpdate: false }),
+    field({ name: 'name', type: 'String' }),
+    field({ name: 'price', type: 'java.lang.Long' }),
+  ];
+  const content = gen.generate(domain({ entityName: 'Product', fields }), CTX)!.content;
+
+  it('keeps the control, so the create form still offers the field', () => {
+    expect(content).toContain('data-testid="field-sku"');
+    expect(content).toContain('[formField]="form.sku"');
+    expect(modelInterface(content)).toContain('sku: string;');
+    expect(content).toContain('this.service.create(data as ProductCreate)');
+  });
+
+  it('disables the control while the form edits, and only then', () => {
+    expect(content).toContain('disabled(path.sku, { when: () => this.editMode() });');
+    expect(content).not.toContain('disabled(path.name');
+    expect(content).not.toContain('disabled(path.price');
+    expect(content).toMatch(/import \{ [^}]*\bdisabled\b[^}]* \} from '@angular\/forms\/signals';/);
+  });
+
+  it('the required rule stays, and the disabled rule follows it', () => {
+    expect(content.indexOf('required(path.sku);')).toBeGreaterThan(-1);
+    expect(content.indexOf('required(path.sku);')).toBeLessThan(content.indexOf('disabled(path.sku'));
+  });
+
+  it('sends the stored value back on update, read from the loaded record rather than the model', () => {
+    // The model seeds a stored null as the control's empty value; the loaded record holds the null.
+    expect(content).toContain('      sku: entity.sku ?? \'\',');
+    expect(content).toContain(
+      'this.editMode() && current ? '
+      + 'this.service.update(String(current.id), { ...current, ...data, sku: current.sku } as ProductUpdate) : '
+      + 'this.service.create(data as ProductCreate);',
+    );
+  });
+
+  it('a form without such a field disables nothing and imports no disabled', () => {
+    const plain = gen.generate(domain({
+      entityName: 'Product',
+      fields: [field({ name: 'name', type: 'String' })],
+    }), CTX)!.content;
+    expect(plain).not.toContain('disabled(');
+    expect(plain).not.toMatch(/import \{ [^}]*\bdisabled\b/);
+  });
+});
+
 describe('FormGenerator — versioned entity', () => {
   const gen = new FormGenerator();
   const fields = [
@@ -1028,7 +1177,7 @@ describe('FormGenerator — versioned entity', () => {
   it('sends the loaded version on update, and leaves the create payload alone', () => {
     expect(versioned).toContain(
       'this.editMode() && current ? '
-      + 'this.service.update(String(current.id), { ...data, version: this.loadedVersion() } as OrderUpdate) : '
+      + 'this.service.update(String(current.id), { ...current, ...data, version: this.loadedVersion() } as OrderUpdate) : '
       + 'this.service.create(data as OrderCreate);',
     );
   });
@@ -1066,7 +1215,7 @@ describe('FormGenerator — versioned entity', () => {
     }), CTX)!.content;
     expect(content).not.toContain('[formField]="form.rev"');
     expect(content).toContain('private readonly loadedVersion = signal<number | null>(null);');
-    expect(content).toContain('{ ...data, rev: this.loadedVersion() } as OrderUpdate');
+    expect(content).toContain('{ ...current, ...data, rev: this.loadedVersion() } as OrderUpdate');
   });
 
   it('reads an undeclared version field through a narrowing cast', () => {
@@ -1079,7 +1228,7 @@ describe('FormGenerator — versioned entity', () => {
   });
 
   it('an unversioned entity emits no version payload or conflict state', () => {
-    expect(unversioned).toContain('this.service.update(String(current.id), data as OrderUpdate)');
+    expect(unversioned).toContain('this.service.update(String(current.id), { ...current, ...data } as OrderUpdate)');
     expect(unversioned).not.toContain('loadedVersion');
     expect(unversioned).not.toContain('conflict');
     expect(unversioned).not.toContain('409');
@@ -1125,5 +1274,49 @@ describe('FormGenerator — system fields follow systemFields and the flags', ()
       expect(content).not.toContain(`data-testid="field-${name}"`);
     }
     expect(content).toContain('data-testid="field-amount"');
+  });
+});
+// ---------- kit component classes ----------
+
+describe('FormGenerator styles its controls, errors and buttons through the kit classes', () => {
+  const gen = new FormGenerator();
+  const content = gen.generate(domain({
+    entityName: 'Order',
+    versioned: true,
+    fields: [
+      field({ name: 'id', type: 'java.util.UUID' }),
+      field({ name: 'name', type: 'String', required: true }),
+      field({ name: 'paid', type: 'java.lang.Boolean' }),
+      field({ name: 'status', type: 'com.shop.OrderStatus' }),
+      field({ name: 'version', type: 'java.lang.Long' }),
+    ],
+  }), ENUM_CTX)!.content;
+
+  it('a text input, a select and a checkbox carry the matching kit field class, labelled by exeris-label', () => {
+    expect(content).toContain('<label for="name" class="exeris-label">');
+    expect(content).toContain(
+      'data-testid="field-name" type="text" [formField]="form.name" class="exeris-input mt-1" [class.exeris-input-error]="form.name().invalid() && form.name().touched()">',
+    );
+    expect(content).toContain(
+      'data-testid="field-status" [formField]="form.status" class="exeris-select mt-1" [class.exeris-input-error]="form.status().invalid() && form.status().touched()">',
+    );
+    expect(content).toContain('data-testid="field-paid" type="checkbox" [formField]="form.paid" class="exeris-checkbox">');
+    expect(content).toContain('<label for="paid" class="exeris-label">');
+  });
+
+  it('a field error is exeris-error-text', () => {
+    expect(content).toContain('<p class="exeris-error-text" data-testid="error-name">');
+  });
+
+  it('the submit error is a danger alert and the conflict a warning one, with a small secondary Reload', () => {
+    expect(content).toContain('data-testid="submit-error" class="exeris-alert exeris-alert-danger text-sm"');
+    expect(content).toContain('data-testid="conflict-message" class="exeris-alert exeris-alert-warning text-sm"');
+    expect(content).toContain('data-testid="reload-button" class="exeris-btn exeris-btn-secondary exeris-btn-sm mt-2">Reload</button>');
+    expect(content).toContain('<div role="alert" class="exeris-alert exeris-alert-danger mb-6">');
+  });
+
+  it('Cancel is a secondary button and submit the primary one', () => {
+    expect(content).toContain('data-testid="cancel-button" class="exeris-btn exeris-btn-secondary">Cancel</button>');
+    expect(content).toContain('data-testid="submit-button" class="exeris-btn exeris-btn-primary">');
   });
 });
