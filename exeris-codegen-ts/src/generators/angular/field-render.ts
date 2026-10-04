@@ -136,6 +136,10 @@ export interface FieldRenderModel {
     readonly value: FormValueKind;
     /** The control's initial value, as a TypeScript expression. */
     readonly initialValue: string;
+    /** The TypeScript type the form model holds for the control: a number control holds `number | null`. */
+    readonly modelType: 'boolean' | 'number | null' | 'string';
+    /** The model value standing for "no value", as a TypeScript expression: what a loaded `null` becomes. */
+    readonly emptyValue: 'false' | 'null' | "''";
     readonly computedFrom: readonly string[];
   };
   /** The metadata the model was resolved from, for what is not rendering (validators). */
@@ -381,16 +385,24 @@ function formInputType(field: FieldMetadata, value: FormValueKind): string {
 }
 
 /**
- * A checkbox has no empty state, so a boolean control is seeded with a real boolean; every other
- * control seeds `''` so that blank stays distinguishable from a value, or the declared default as a
- * string literal.
+ * A checkbox has no empty state, so a boolean control is seeded with a real boolean. A number
+ * control holds a number, so blank is `null` and a declared default is seeded only when it reads as
+ * a finite number. Every other control seeds `''` so that blank stays distinguishable from a value,
+ * or the declared default as a string literal.
  */
 function formInitialValue(field: FieldMetadata, value: FormValueKind): string {
   if (value === 'boolean') {
     return String(field.defaultValue ?? 'false').trim().toLowerCase() === 'true' ? 'true' : 'false';
   }
+  if (value === 'number') {
+    const seed = field.defaultValue?.trim() ? Number(field.defaultValue) : Number.NaN;
+    return Number.isFinite(seed) ? String(seed) : 'null';
+  }
   return field.defaultValue ? `'${field.defaultValue}'` : "''";
 }
+
+const FORM_MODEL_TYPES = { boolean: 'boolean', number: 'number | null', text: 'string' } as const;
+const FORM_EMPTY_VALUES = { boolean: 'false', number: 'null', text: "''" } as const;
 
 function formPlacement(field: FieldMetadata, system: boolean): FormPlacement {
   if (field.inCreate === false || LIFECYCLE_FIELDS.has(field.name) || system) return 'none';
@@ -414,6 +426,8 @@ function formRender(field: FieldMetadata, system: boolean): FieldRenderModel['fo
     readOnly: Boolean(field.readOnly),
     value,
     initialValue: formInitialValue(field, value),
+    modelType: FORM_MODEL_TYPES[value],
+    emptyValue: FORM_EMPTY_VALUES[value],
     computedFrom: field.computedFrom ?? [],
   };
 }
