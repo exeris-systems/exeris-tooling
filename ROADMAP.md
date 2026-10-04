@@ -3414,14 +3414,15 @@ decision for `KernelStrategy.generateClientCode` and `getRealTimeConfig` (codege
 `dsl` half is done: the package is deleted (2026-10-02).
 
 **6. The cut:** kernel `0.12.0` and SDK `0.12.0` final on Central → pins move → release PR at
-`0.9.0` → tag → deploy to Central → `0.10.0-SNAPSHOT` (Versioning policy).
+`0.9.0` → tag → deploy to Central → `0.10.0-SNAPSHOT` (Versioning policy). *The first two steps are
+done: both are final on Central, and the BOM pins both (B0). Next is the release PR.*
 
 ### Gate groups, carried forward (placement: Scope above and 0.10.0)
 
-0.9.0's defining property is that a large share of it is not this repo's to unblock: neither
-`exeris-kernel` nor `exeris-sdk` has a final `0.12.0`, and the no-cross-repo-SNAPSHOT rule below
-applies to pinning as much as to tagging *(2026-09-26: B0 pins ahead of both finals as a declared,
-temporary exception; the rule binds the cut)*. Four groups, by what blocks them —
+0.9.0's defining property is that a large share of it was not this repo's to unblock: it waited on
+a final `0.12.0` of both `exeris-kernel` and `exeris-sdk`, and the no-cross-repo-SNAPSHOT rule below
+applies to pinning as much as to tagging. Both are final on Central now and B0 pins them. Four
+groups, by what blocks them —
 
 - **No external gate:** D10 (whose *resolution* is a T53 question — do not settle it before that
   RFC), the `npm start` proxy prefix, C1, C2, T53. *(2026-09-30: D10 and T53 are 0.10.0; C1 shipped
@@ -3432,7 +3433,7 @@ temporary exception; the rule binds the cut)*. Four groups, by what blocks them 
 - **Behind a final kernel 0.12:** the pin bump, `@Saga.version`'s emitter half, T12's client half +
   T17. **Not** the EV1-stream per-action driver — see the readiness measurement below.
   *(2026-09-26: the pin bump and the `@Saga.version` emitter half are applied on the working branch
-  as **B0**, below — against pre-release 0.12 builds, so they still wait on the finals. T12's client
+  as **B0**, below, now on the final 0.12.0 releases of both. T12's client
   half also waited on T58's Java half, which shipped once kernel 0.12.0 gave `KernelWebClient` a
   `put`.)*
 - **Behind an SDK record change:** the `GraphEdgeMetadata` field/identity split, the six
@@ -3446,11 +3447,12 @@ temporary exception; the rule binds the cut)*. Four groups, by what blocks them 
 Also open and independent of all four: the missing `warnInertAttributes` call sites for `Saga` and
 `SagaStep`, and a comment naming the processor as the saga-step sorter.
 
-- [~] **B0 — the 0.12 pin bump. Applied on the working branch 2026-09-26; not final.**
-      `exeris.sdk.version` → `0.12.0-SNAPSHOT` (SDK `main`) and `exeris.kernel.version` → `0.12.0`
-      (kernel `development/0.12.0`, code cut 2026-09-03). *Kernel half final: `0.12.0` is released
-      on Maven Central (tag `v0.12.0`), and CI resolves it from there. The SDK half is still
-      `0.12.0-SNAPSHOT`, installed from source.* The dog-food measured this reactor green against that pair on 2026-09-25,
+- [x] **B0 — the 0.12 pin bump. Final on both halves.**
+      `exeris.sdk.version` → `0.12.0` and `exeris.kernel.version` → `0.12.0`, both final releases
+      on Maven Central (tags `v0.12.0`); CI resolves both from there with no source build. The bump
+      was applied on the working branch on 2026-09-26 against the pre-release builds, SDK `main`
+      (`0.12.0-SNAPSHOT`) and kernel `development/0.12.0` (code cut 2026-09-03), and the dog-food
+      measured this reactor green against that pair on 2026-09-25,
       `KernelCodegenCompileTest` against kernel 0.12 included, with the S6 rider below as its only
       source change. Three riders, each forced by the new line rather than chosen:
       - **S6** — `SystemFieldsMetadata` grew a trailing `sharedScopeField`, a positional break with
@@ -3474,17 +3476,15 @@ Also open and independent of all four: the missing `warnInertAttributes` call si
         `INERT_ATTRIBUTES` entry stays while the attribute exists.
       Rides along with no emitter change: T52's caller half (see T52). Carried with the pins and
       invisible to emitted code: Jackson 3 `3.1.5` → `3.2.2`, the kernel's own pin (left at 3.1.5,
-      the BOM forced the kernel down a minor on the e2e classpath), and the CI SDK checkout moved
-      from `v0.11.0` to `main`, the only ref that builds `0.12.0-SNAPSHOT`.
+      the BOM forced the kernel down a minor on the e2e classpath). CI no longer checks out or builds
+      the SDK: the final `0.12.0` resolves from Central.
       The ADR-066 baseline was re-read at this pin: the spi, core, community and community-testkit
       jars are all class-file major 69 with zero preview stamps, as at 0.11.0 (0.10.2 had 9 in core),
       so the e2e surefire JVM stays without `--enable-preview`.
 
-      **What makes it final:** both pins at the `0.12.0` releases (the kernel's is),
-      and only then can 0.9.0 be cut — no cross-repo SNAPSHOT at a cut, and the tag's own POM is
-      final (Versioning policy). Until then a consumer building this branch installs the SDK from
-      source. SDK `main` builds from a fresh clone with no flag, because japicmp runs only under
-      `-Psemver` there.
+      **Final:** both pins are the `0.12.0` releases, which is what lets 0.9.0 be cut — no
+      cross-repo SNAPSHOT at a cut, and the tag's own POM is final (Versioning policy). A consumer
+      building this branch resolves both from Central.
 
 ### Kernel asks from this train — 2026-09-26
 
@@ -3528,7 +3528,8 @@ Each is recorded where it was measured; this is the one list to hand to the kern
 
 ### Follow SDK 0.12.0
 
-SDK 0.12 is on SDK `main` since 2026-09-29 (exeris-sdk#150), which is what tooling CI builds (B0).
+SDK 0.12 landed on SDK `main` on 2026-09-29 (exeris-sdk#150) and is released as `0.12.0` on Maven
+Central, which is what the BOM pins and CI resolves (B0).
 It brings the S6 compatibility constructors and `SystemFieldsMetadata.builder()`, T38, T6, and an
 opt-in semver gate.
 
@@ -3631,11 +3632,8 @@ emitted mapping should read it rather than re-derive it is a slice to measure, n
 
 **B0 landed ahead of the releases.** *(This paragraph was replaced on 2026-09-26. It said that B0
 had to wait for a final kernel `0.12.0` and for a 0.12 source model. B0 did not wait; what waits is
-the 0.9.0 cut.)* The BOM pins SDK `0.12.0-SNAPSHOT` and kernel `0.12.0`, both built from source.
-The kernel's `development/0.12.0` carries the final version string without a `v0.12.0` tag. This is
-a standing exception to UP0, not a change to it: no tooling release is cut while either pin is
-pre-release, and both move to the final `0.12.0` once kernel and SDK publish. Until then, CI builds
-the SDK from `main`. What B0 unblocked:
+the 0.9.0 cut.)* The BOM pins SDK `0.12.0` and kernel `0.12.0`, both final releases on Maven
+Central, so UP0 holds with no exception. What B0 unblocked:
 - T55's emitter half (shipped);
 - the ADR-074 note in the emitted `*Client` (K8, shipped);
 - T29 slice B, shipped the same day: the processor scans `@SharedScope` (see T29).
