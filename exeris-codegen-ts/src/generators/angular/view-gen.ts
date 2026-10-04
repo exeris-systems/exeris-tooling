@@ -6,8 +6,8 @@
  * paired lazy route (`pages/<kebab>.route.ts`) so the page is routable. This is
  * the codegen-ts half of the build gate the SDK presentation IR opens: the SDK
  * names no Angular type (framework-neutral IR in, Angular out); the ui-kit stays
- * a consumer (its `exeris-*` design-token utilities skin the emitted markup, per
- * U1 / T25).
+ * a consumer: its `exeris-*` design-token utilities and, where the kit defines one
+ * for the block, its `.exeris-*` component class skin the emitted markup.
  *
  * Determinism (hard-constraint #3): the template is assembled in declaration
  * order (regions, then each region's component tree depth-first), with no Date /
@@ -15,7 +15,7 @@
  *
  * BlockType → element mapping (RFC §3):
  *   HERO       → <section class="exeris-hero …">
- *   CARD       → <article class="exeris-card …">
+ *   CARD       → <article class="exeris-card p-4"> (the kit's component class)
  *   GRID       → <div class="exeris-grid …">
  *   LIST       → <ul class="exeris-list …">
  *   CONTAINER  → <div class="exeris-container …">
@@ -25,6 +25,9 @@
  *   SLOT       → <ng-content> (a named host slot)
  *   CUSTOM     → the named customType selector element
  *   FORM       → a placeholder block (leaf-field form emission is slice 2, RFC §5)
+ * CARD is the only block the kit has a component class for. The other `exeris-<block>`
+ * names are marker classes the kit does not define: they style nothing, and the
+ * utilities beside them carry the look.
  *
  * Bindings HONOURED in slice 1 (RFC §3):
  *   STATIC / NONE → authored / literal structure (props text when present)
@@ -227,7 +230,10 @@ function blockTag(type: BlockType): { tag: string; cls: string } {
     case 'HERO':
       return { tag: 'section', cls: 'exeris-hero bg-exeris-primary text-white p-8 rounded-md' };
     case 'CARD':
-      return { tag: 'article', cls: 'exeris-card rounded-md border border-gray-200 dark:border-gray-700 p-4 shadow-sm' };
+      // The kit's component class carries the surface, border, radius and shadow; only the
+      // padding stays a utility, because `.exeris-card` has none and its body padding lives on a
+      // nested `.exeris-card-body` the block tree does not model.
+      return { tag: 'article', cls: 'exeris-card p-4' };
     case 'GRID':
       return { tag: 'div', cls: 'exeris-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4' };
     case 'LIST':

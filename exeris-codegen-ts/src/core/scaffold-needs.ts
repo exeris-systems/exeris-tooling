@@ -12,6 +12,11 @@
  * entity is served by the kernel application whether or not its TS service is emitted, so its app
  * keeps the HTTP wiring with every client emitter turned off.
  *
+ * Tailwind plugins are accounted for the same way: the typography plugin is installed when an
+ * emitted template names one of its `prose` classes, not when some block type or flag is set, so
+ * any emitter that adopts `prose` brings the plugin with it and an app that never renders rich text
+ * keeps the scaffold without it.
+ *
  * An app with no backend is a first-class shape (a `@View`-only front with authored content), not a
  * second backend target: the kernel stays the only server the emitted code can address. Without a
  * backend the scaffold simply omits the HTTP wiring nothing uses.
@@ -35,13 +40,19 @@ export interface ScaffoldNeeds {
    * subpath import counts for its package. Membership only; never iterated into output.
    */
   readonly packages: ReadonlySet<string>;
+  /**
+   * An emitted template uses the `@tailwindcss/typography` plugin: a `class` attribute names
+   * `prose` or a `prose-*` modifier, under any variant (`dark:prose-invert`). When true the scaffold
+   * installs the plugin and loads it in `styles.css`; when false it does neither.
+   */
+  readonly typography: boolean;
 }
 
 /**
  * The needs of an app with a backend. `generateAppStructure` defaults to it, so a caller that
  * composes the scaffold on its own gets the backend scaffold.
  */
-export const BACKEND_SCAFFOLD_NEEDS: ScaffoldNeeds = { backend: true, packages: new Set<string>() };
+export const BACKEND_SCAFFOLD_NEEDS: ScaffoldNeeds = { backend: true, packages: new Set<string>(), typography: false };
 
 /**
  * Static `import … from '…'`, `export … from '…'` and side-effect `import '…'` declarations that
@@ -49,6 +60,22 @@ export const BACKEND_SCAFFOLD_NEEDS: ScaffoldNeeds = { backend: true, packages: 
  * string content, and a dynamic `import('…')` is always a relative lazy route.
  */
 const IMPORT_SPECIFIER = /^(?:import|export)\b(?:[^'"`;]*?\bfrom\s*)?\s*['"]([^'"]+)['"]/gm;
+
+/** A static `class="…"` attribute's value. A `[class]` binding is an expression, not a class list. */
+const CLASS_ATTRIBUTE = /(?<![\w-])class="([^"]*)"/g;
+
+/** A typography plugin class, its variant prefixes removed: `prose`, `prose-invert`, `prose-lg`, … */
+const PROSE_CLASS = /^prose(?:-[a-z0-9-]+)?$/;
+
+/** Whether a file's static class attributes name a typography plugin class. */
+function usesTypography(content: string): boolean {
+  for (const match of content.matchAll(CLASS_ATTRIBUTE)) {
+    for (const token of match[1].split(/\s+/)) {
+      if (PROSE_CLASS.test(token.slice(token.lastIndexOf(':') + 1))) return true;
+    }
+  }
+  return false;
+}
 
 /** `@scope/name/sub` → `@scope/name`; `name/sub` → `name`; a relative specifier → null. */
 function packageOf(specifier: string): string | null {
@@ -64,7 +91,9 @@ export function deriveScaffoldNeeds(
 ): ScaffoldNeeds {
   const packages = new Set<string>();
   let backend = domains.length > 0;
+  let typography = false;
   for (const file of files) {
+    typography ||= usesTypography(file.content);
     for (const match of file.content.matchAll(IMPORT_SPECIFIER)) {
       const specifier = match[1];
       if (specifier === HTTP_CLIENT_MODULE || specifier.startsWith(`${HTTP_CLIENT_MODULE}/`)) {
@@ -74,5 +103,5 @@ export function deriveScaffoldNeeds(
       if (pkg) packages.add(pkg);
     }
   }
-  return { backend, packages };
+  return { backend, packages, typography };
 }
