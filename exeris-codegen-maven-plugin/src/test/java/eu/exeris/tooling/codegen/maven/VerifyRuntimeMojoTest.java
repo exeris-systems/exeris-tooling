@@ -60,6 +60,7 @@ class VerifyRuntimeMojoTest {
                 .hasMessageContaining("eu.exeris:exeris-kernel-community")
                 .hasMessageContaining(SUBSYSTEM)
                 .hasMessageContaining(PERSISTENCE)
+                .hasMessageStartingWith("[Exeris] EXT-PLUG-2302: ")
                 .hasMessageContaining("2 of 2")
                 .hasMessageContaining("exeris.verifyRuntime.skip");
     }
@@ -80,8 +81,20 @@ class VerifyRuntimeMojoTest {
     void dedicatedSkipWarnsInsteadOfFailing(@TempDir Path tmp) throws Exception {
         VerifyRuntimeMojo mojo = mojo(tmp, missing(SUBSYSTEM));
         mojo.skipRuntimeCheck = true;
+        List<String> warnings = new ArrayList<>();
+        mojo.setLog(new org.apache.maven.plugin.logging.SystemStreamLog() {
+            @Override
+            public void warn(CharSequence content) {
+                warnings.add(content.toString());
+            }
+        });
 
         mojo.execute();
+
+        // One event, one identifier: the follow-up line explains the first and carries none.
+        assertThat(warnings).hasSize(2);
+        assertThat(warnings.getFirst()).startsWith("[Exeris] EXT-PLUG-2302: ").contains(SUBSYSTEM);
+        assertThat(warnings.getLast()).doesNotContain("[Exeris]").contains("reported, not enforced");
     }
 
     @Test
@@ -113,7 +126,9 @@ class VerifyRuntimeMojoTest {
 
         assertThatThrownBy(mojo::execute)
                 .isInstanceOf(MojoExecutionException.class)
-                .hasMessageContaining("Could not read domain metadata");
+                .hasMessageStartingWith("[Exeris] EXT-PLUG-2301: ")
+                .hasMessageContaining("Could not read domain metadata")
+                .hasMessageContaining("java.io.IOException: disk gone");
     }
 
     @Test

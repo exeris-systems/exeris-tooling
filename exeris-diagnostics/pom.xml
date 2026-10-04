@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>eu.exeris.tooling</groupId>
+        <artifactId>exeris-tooling-parent</artifactId>
+        <version>0.9.0-SNAPSHOT</version>
+        <relativePath>../exeris-tooling-parent</relativePath>
+    </parent>
+
+    <artifactId>exeris-diagnostics</artifactId>
+    <packaging>jar</packaging>
+    <name>Exeris Tooling :: Diagnostics</name>
+    <description>
+        The registry of stable diagnostic identifiers (EXT-PROC, EXT-PLUG, EXT-GEN) that the
+        annotation processor, the code generators and the Maven plugin print (ADR-095). Uses
+        nothing beyond java.lang and has no runtime dependency, so every tooling module,
+        the build-time-only annotation processor included, can depend on it.
+    </description>
+    <url>https://github.com/exeris-systems/exeris-tooling</url>
+
+    <!-- No compile or runtime dependency, by contract: the annotation processor depends on this
+         module, and the processor's dependency set is closed (build-time-only policy). -->
+    <dependencies>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>

@@ -33,6 +33,13 @@
             <artifactId>exeris-sdk-source-model</artifactId>
         </dependency>
 
+        <!-- Stable diagnostic identifiers (ADR-095). java.lang only, no dependencies of its own,
+             so it leaves the build-time-only dependency set unchanged. -->
+        <dependency>
+            <groupId>eu.exeris.tooling</groupId>
+            <artifactId>exeris-diagnostics</artifactId>
+        </dependency>
+
         <!-- Auto-registration of this processor on the classpath -->
         <dependency>
             <groupId>com.google.auto.service</groupId>

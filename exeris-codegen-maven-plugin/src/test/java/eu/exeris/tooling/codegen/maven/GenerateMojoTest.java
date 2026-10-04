@@ -108,6 +108,7 @@ class GenerateMojoTest {
 
         assertThatThrownBy(mojo::execute)
                 .isInstanceOf(MojoFailureException.class)
+                .hasMessageStartingWith("[Exeris] EXT-PLUG-2001: ")
                 .hasMessageContaining("Refusing to wipe")
                 .hasMessageContaining("allowEmpty=true");
         // failure occurs before the compile source root is registered
@@ -185,7 +186,9 @@ class GenerateMojoTest {
 
         assertThatThrownBy(mojo::execute)
                 .isInstanceOf(MojoExecutionException.class)
+                .hasMessageStartingWith("[Exeris] EXT-PLUG-2002: ")
                 .hasMessageContaining("Code generation failed")
+                .hasMessageContaining("disk full")
                 .hasRootCauseMessage("disk full");
     }
 
@@ -200,6 +203,7 @@ class GenerateMojoTest {
 
         assertThatThrownBy(mojo::execute)
                 .isInstanceOf(MojoFailureException.class)
+                .hasMessageStartingWith("[Exeris] EXT-PLUG-2201: ")
                 .hasMessageContaining("com.api.PaymentApi");
         // failure occurs before the compile source root is registered
         assertThat(mojo.project.getCompileSourceRoots())
@@ -380,7 +384,9 @@ class GenerateMojoTest {
 
             assertThatThrownBy(mojo::execute)
                     .isInstanceOf(MojoExecutionException.class)
+                    .hasMessageStartingWith("[Exeris] EXT-PLUG-2003: ")
                     .hasMessageContaining("Test generation failed")
+                    .hasMessageContaining("disk full")
                     .hasRootCauseMessage("disk full");
         }
     }

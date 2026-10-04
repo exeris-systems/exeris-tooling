@@ -3,6 +3,7 @@ package eu.exeris.tooling.codegen.maven;
 import eu.exeris.tooling.codegen.core.capability.CapTierWallException;
 import eu.exeris.tooling.codegen.core.capability.CapabilityGraphException;
 import eu.exeris.tooling.codegen.java.CodegenPipeline;
+import eu.exeris.tooling.diagnostics.DiagnosticId;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
@@ -124,10 +125,11 @@ public class VerifyCapabilitiesMojo extends AbstractMojo {
             // @Requires / version mismatch / cycle) — the genuine, actionable
             // verdict the generate-sources pass deferred to. A build FAILURE,
             // not a plugin bug.
-            throw new MojoFailureException(e.getMessage(), e);
+            throw new MojoFailureException(
+                    DiagnosticId.CAPABILITY_GRAPH_UNRESOLVED.format(e.getMessage()), e);
         } catch (IOException e) {
-            throw new MojoExecutionException(
-                    "Capability verification failed (metadataDir=" + metadataDir + ")", e);
+            throw new MojoExecutionException(DiagnosticId.CAPABILITY_VERIFICATION_FAILED.format(
+                    "Capability verification failed (metadataDir=" + metadataDir + "): " + e), e);
         }
     }
 
@@ -143,8 +145,9 @@ public class VerifyCapabilitiesMojo extends AbstractMojo {
      */
     private void verifyWall(int modules) throws MojoExecutionException, MojoFailureException, IOException {
         if (skipWall) {
-            getLog().warn("Cap-tier Wall guard DISABLED (exeris.wall.skip=true) — "
-                    + "ADR-024 obligation 3 treats this as a registry violation");
+            getLog().warn(DiagnosticId.CAP_TIER_WALL_DISABLED.format(
+                    "Cap-tier Wall guard DISABLED (exeris.wall.skip=true) — "
+                            + "ADR-024 obligation 3 treats this as a registry violation"));
             return;
         }
         try {
@@ -156,17 +159,18 @@ public class VerifyCapabilitiesMojo extends AbstractMojo {
                 // Wall gated nothing — so nothing was scanned. Reported through Maven's own log
                 // because that is where a user looks; the pipeline logs the same fact via
                 // System.Logger for non-Maven callers.
-                getLog().warn("Cap-tier Wall scanned nothing for " + modules + " capability module(s)"
-                        + " — no compiled classes under " + classesDir
-                        + " (check exeris.classesDir); predicate 4 is unverified, not satisfied");
+                getLog().warn(DiagnosticId.CAP_TIER_WALL_SCANNED_NOTHING.format(
+                        "Cap-tier Wall scanned nothing for " + modules + " capability module(s)"
+                                + " — no compiled classes under " + classesDir
+                                + " (check exeris.classesDir); predicate 4 is unverified, not satisfied"));
             }
         } catch (CapTierWallException e) {
             // A cap author's boundary breach — user-side and actionable, so a FAILURE.
-            throw new MojoFailureException(e.getMessage(), e);
+            throw new MojoFailureException(DiagnosticId.CAP_TIER_WALL_VIOLATED.format(e.getMessage()), e);
         } catch (UncheckedIOException e) {
             // An unreadable/corrupt class file is an environment problem, not a Wall verdict.
-            throw new MojoExecutionException(
-                    "Cap-tier Wall scan failed (classesDir=" + classesDir + ")", e);
+            throw new MojoExecutionException(DiagnosticId.CAP_TIER_WALL_SCAN_FAILED.format(
+                    "Cap-tier Wall scan failed (classesDir=" + classesDir + "): " + e), e);
         }
     }
 }
