@@ -416,8 +416,6 @@ describe('StoreGenerator softDelete branch', () => {
   });
 });
 
-// ---------- getTsFilterType: nullability strip ----------
-
 // ---------- generateFieldFilters branch ----------
 
 describe('StoreGenerator filteredEntities filter-loop emission', () => {
