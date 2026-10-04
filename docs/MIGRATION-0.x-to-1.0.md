@@ -948,7 +948,8 @@ service and the event publisher. `RuntimeComponents.create<Entity>Handler()` res
 time, and holds them. The allocator is a boot-scoped provider like the event engine, and resolving it
 in the factory puts a wiring fault at boot, with the composition on the stack. Kernel 0.12 also binds
 `MEMORY_ALLOCATOR` around every request and stream it dispatches, so a per-request read would find
-it there; the generated handler does not depend on that binding.
+it there; the generated handler does not depend on that binding. The emitted handler's constructor Javadoc
+states the same reason, so a committed (L1) tree shows a Javadoc-only diff in each `<Entity>Handler`.
 
 **Action required — only if you override the factory.** If your `RuntimeComponents` subclass
 overrides `create<Entity>Handler()`, the `new <Entity>Handler(...)` call inside it needs the extra
