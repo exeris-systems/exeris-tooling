@@ -1855,6 +1855,34 @@ the `@exeris-systems:registry` line from `.npmrc`. `package.json` and `styles.cs
 with `--overwrite`, as before; without it, rename the dependency and the import by hand. A CI
 step that appended a GitHub Packages token for the install can be removed.
 
+### `exeris-codegen-ts`: the app imports the kit's component classes, and rich text is typeset
+
+**Additive (ADR-092):** the regenerated app looks different in three ways and, with rich text, gains
+one devDependency. The list, detail and form components are unchanged; no TypeScript surface changes.
+
+- **`src/styles.css`** imports `@exeris/ui-kit/styles`, the `.exeris-*` component classes, after
+  `@import "tailwindcss"` and `@import "@exeris/ui-kit/theme"` — the order the kit's README gives.
+  The theme entry has to come first: it points the `dark:` variant at the `.dark` class, and the
+  component layer compiled without it follows the operating system's dark setting instead. The
+  classes are plain CSS in the `components` layer, so Tailwind emits them without an `@source`.
+  Every `.exeris-*` class the kit defines is now available to your own markup too.
+- **A `CARD` block of a `@View`** renders `class="exeris-card p-4"`. It used to repeat a utility
+  stack beside an `exeris-card` class that the stylesheet never defined. The kit's card carries its
+  own surface, border, radius and shadow; the padding stays `p-4`. The other blocks'
+  `exeris-<block>` names (`exeris-hero`, `exeris-grid`, …) are not kit classes and still style
+  nothing; the utilities beside them carry the look.
+- **Rich text is typeset.** A `RICH_TEXT` block of a `@View` has always carried
+  `prose dark:prose-invert`, but the app did not install `@tailwindcss/typography`, so those
+  classes styled nothing. An app whose templates use a `prose` class now lists
+  `"@tailwindcss/typography": "^0.5.20"` in `devDependencies`, beside `tailwindcss`, and
+  `styles.css` loads it with `@plugin "@tailwindcss/typography";` after the three imports. An app
+  with no such block gets neither line, and its output is unchanged.
+
+The app shell header's bare `shadow` is now `shadow-sm`, its v4 name; it draws the same shadow.
+`package.json` and `styles.css` are replaced only with `--overwrite`; without it, add the
+`@import "@exeris/ui-kit/styles";` line after the theme import by hand, and, in an app with rich
+text, the typography dependency and its `@plugin` line after the imports.
+
 ### Compile-classpath requirements are named in the emitted Javadoc (T30)
 
 The regenerated `Application.java` Javadoc separates compile requirements from runtime ones. If an
@@ -2232,6 +2260,21 @@ shows, or your effective POM inherits them.
 `src/main/generated/java` as a source root only, so the generated `db/migration/*.sql` and
 `openapi/*.yaml` are not on your classpath unless you declare a `<resource>` for them. The parent
 does; the README shows the entry.
+
+### `exeris-codegen-ts`: a run with only peers emits contracts, not an Angular app
+
+A `generate` run whose input has peers (`--peer`) and no local entity, enum or view emits the peer
+contracts alone: each peer tree is written at the output root, `<output>/peers/<name>/…`, and no
+app scaffold (`package.json`, `angular.json`, `index.html`, `main.ts`, styles, environments) is
+emitted. The consumer of such a run need not be an Angular app — a static site can import the
+contract types directly.
+
+A run with at least one local entity, enum or view is unchanged: peer trees stay under
+`src/app/peers/<name>/` beside the app.
+
+**To migrate a contracts-only consumer:** point `--output` at the directory that should hold
+`peers/`, and import from `<output>/peers/<name>`. Regeneration removes the scaffold files an
+earlier run wrote there, if the output tree carries the generator's manifest.
 
 ### `@Action(streaming = true)` now warns that its route does not run the action
 

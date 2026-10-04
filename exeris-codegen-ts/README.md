@@ -130,7 +130,8 @@ put settings you want to keep.
 ## Peer contracts (mesh)
 
 An app that talks to a peer service can generate that peer's DTOs instead of retyping them
-([ADR-048](../docs/adr/ADR-048-cross-app-contract-mesh.md)). A peer's **contract artifact** is
+([ADR-048](https://github.com/exeris-systems/exeris-tooling/blob/main/docs/adr/ADR-048-cross-app-contract-mesh.md)).
+A peer's **contract artifact** is
 a directory holding its `cap-manifest.json` and the metadata of the entities it provides:
 
 ```
@@ -144,6 +145,9 @@ billing-contract/
 ```bash
 exeris-gen generate --peer billing=../billing-contract --peer shipping=../shipping-contract
 ```
+
+A run with peers and no local entity, enum or view emits only the contracts, at the output root
+(`<output>/peers/<name>/`), with no Angular app scaffold — for a consumer that is not an Angular app.
 
 Three things to know:
 
@@ -250,40 +254,6 @@ machine, and the `SagaStatusSnapshot` shape it folds, are exported from the app 
 | `UUID` | `string` | `<input type="text">` |
 | `List<T>` | `T[]` | `<textarea>` |
 | `enum` | `string` | `<select>` |
-
-## Integration with Exeris
-
-This generator is part of the Exeris tooling ecosystem:
-
-1. **exeris-processor** - Annotation processor that generates JSON metadata at compile time
-2. **exeris-codegen-java** - Java/Spring code generator for backend
-3. **exeris-codegen-ts** - TypeScript/Angular code generator for frontend
-
-### Full Stack Generation Script
-
-```powershell
-# Windows
-.\scripts\generate-all.ps1
-
-# Unix/Linux/macOS
-./scripts/generate-all.sh
-```
-
-## Development
-
-```bash
-# Install dependencies
-npm install
-
-# Build
-npm run build
-
-# Run in development mode
-npm run dev generate --input path/to/metadata
-
-# Run tests
-npm test
-```
 
 ## License
 

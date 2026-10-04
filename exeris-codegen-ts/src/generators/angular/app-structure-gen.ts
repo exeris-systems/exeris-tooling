@@ -102,7 +102,7 @@ export function generateAppStructure(
   }
 
   // Static files under src/
-  files.push({ path: `${srcRoot}/styles.css`, content: generateStylesCss(), overwritable: true });
+  files.push({ path: `${srcRoot}/styles.css`, content: generateStylesCss(needs.typography), overwritable: true });
   files.push({ path: `${srcRoot}/index.html`, content: generateIndexHtml(appName), overwritable: true });
   files.push({ path: `${srcRoot}/favicon.ico`, content: generateFavicon(), overwritable: true });
   // main.ts under src/
@@ -266,7 +266,7 @@ import { CommonModule } from '@angular/common';
   template: \`
     <div class="min-h-screen bg-gray-100 dark:bg-gray-900">
       <!-- Header -->
-      <header class="bg-white dark:bg-gray-800 shadow">
+      <header class="bg-white dark:bg-gray-800 shadow-sm">
         <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
           <div class="flex items-center justify-between">
             <h1 class="text-3xl font-bold tracking-tight text-gray-900 dark:text-white">
@@ -557,6 +557,15 @@ function runtimeDependencies(needs: ScaffoldNeeds): string {
     .join(',\n');
 }
 
+/**
+ * `@tailwindcss/typography`, beside `tailwindcss` in devDependencies: like Tailwind itself it is
+ * consumed by the stylesheet build, never imported at runtime. Listed only when an emitted template
+ * uses a `prose` class (core/scaffold-needs), so an app without rich text keeps its scaffold as is.
+ */
+function typographyDevDependency(needs: ScaffoldNeeds): string {
+  return needs.typography ? '\n    "@tailwindcss/typography": "^0.5.20",' : '';
+}
+
 function generatePackageJson(appName: string, config: GeneratorConfig, needs: ScaffoldNeeds): string {
   const pkgName = frontendSlug(appName);
   // The dev-server proxy forwards API calls; without a backend there is no proxy config to pass.
@@ -585,7 +594,7 @@ ${runtimeDependencies(needs)}
     "@angular/build": "^22.0.0",
     "@angular/cli": "^22.0.0",
     "@angular/compiler-cli": "^22.0.0",
-    "@tailwindcss/postcss": "^4.0.0",
+    "@tailwindcss/postcss": "^4.0.0",${typographyDevDependency(needs)}
     "@types/node": "^22.0.0",
     "postcss": "^8.5.0",
     "tailwindcss": "^4.0.0",
@@ -770,27 +779,39 @@ function generatePostcssConfig(): string {
 `;
 }
 
-function generateStylesCss(): string {
+function generateStylesCss(typography: boolean): string {
   // Tailwind CSS v4 is CSS-first: @import replaces the @tailwind directives, and no
   // tailwind.config.js is read. The ui-kit is imported here, in the global stylesheet that
   // Tailwind processes, and never listed in angular.json's `styles` array, where its CSS would
   // be compiled without Tailwind.
   //
-  // The @exeris/ui-kit "theme" entry is the @theme token entry: it declares the `exeris-*`
-  // design-token namespace (bg-exeris-primary, text-exeris-primary-hover, font-exeris, …) and
-  // the `dark` variant, so generated components style against the shared SDK tokens instead of
-  // hardcoded boilerplate.
+  // Both kit entries are required, in the order the kit's README gives, after Tailwind:
+  // - "theme" is the @theme token entry: it declares the `exeris-*` design-token namespace
+  //   (bg-exeris-primary, text-exeris-primary-hover, font-exeris, …) and re-points the `dark`
+  //   variant at the `.dark` class. It comes first so the component layer's `dark:` variants
+  //   compile against that class instead of the operating system's setting.
+  // - "styles" is the `.exeris-*` component layer (exeris-card, exeris-btn, …). It uses @apply
+  //   and `dark:`, so it must be compiled by Tailwind in this same stylesheet. Its classes are
+  //   plain CSS rules, not utilities, so they are emitted whether or not a template names them:
+  //   no @source is needed for them.
   //
   // The v4 @theme entry defines brand/semantic colours + typography tokens only
   // (no neutral surface/text tokens). The body therefore takes the exeris font
   // token and relies on Tailwind's preflight neutrals rather than re-introducing
-  // a hardcoded gray theme a product immediately deletes (T25). Components opt
+  // a hardcoded gray theme a product immediately deletes. Components opt
   // into the exeris colour tokens (bg-exeris-primary, …) directly.
+  //
+  // The typography plugin, when a template uses `prose`, is loaded with the v4 `@plugin`
+  // directive after the imports, which CSS requires to come first. Its `prose-invert` is a plain
+  // utility, so `dark:prose-invert` compiles against the kit's `.dark` class variant like every
+  // other `dark:` utility.
+  const plugins = typography ? '@plugin "@tailwindcss/typography";\n' : '';
   return `/* Generated Angular Frontend - Global Styles */
 /* Tailwind CSS v4 */
 @import "tailwindcss";
 @import "@exeris/ui-kit/theme";
-
+@import "@exeris/ui-kit/styles";
+${plugins}
 /* Custom base styles */
 @layer base {
   html {
