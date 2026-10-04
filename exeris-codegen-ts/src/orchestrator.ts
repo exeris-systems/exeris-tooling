@@ -111,12 +111,12 @@ export function buildGeneratedFiles(
       if (form) appTree.push(form);
     }
     if (config.generateLists) {
-      const list = generateList(domain, config, domains);
+      const list = generateList(domain, config, domains, enums);
       if (list) appTree.push(list);
     }
     // Detail view component: read/edit for a single entity instance.
     if (config.generateDetails) {
-      const detail = generateDetail(domain, config, domains);
+      const detail = generateDetail(domain, config, domains, enums);
       if (detail) appTree.push(detail);
     }
     // Signal store: reactive entity state (signal-first).

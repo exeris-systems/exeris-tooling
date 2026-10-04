@@ -53,6 +53,9 @@ const domains = [
       // is why a text-input-and-'' -seeded checkbox field type-checked here for two trains.
       // The wrapper was always handled; the primitive is the one that fell through.
       { name: 'expedited', type: 'boolean' },
+      // A calendar date: the detail view renders it through DatePipe with mediumDate, an arm no
+      // other fixture field reaches.
+      { name: 'deliveryDate', type: 'java.time.LocalDate' },
     ],
     // The foreign key renders as a routerLink to the target's detail page in the list cell and
     // the detail row. The target is qualified, as the processor's fallback can record it, so the
@@ -99,6 +102,9 @@ const domains = [
   d({
     entityName: 'Product',
     fields: [{ name: 'id', type: 'java.util.UUID' }, { name: 'name', type: 'String' }],
+    // The other side of Order's foreign key: the detail view's related-records link to the
+    // order list, the only section an entity without a ONE_TO_MANY never emits.
+    relationships: [{ name: 'orders', targetEntity: 'com.shop.Order', type: 'ONE_TO_MANY', mappedBy: 'productId' }],
     realTimeApi: true,
     actions: [{ name: 'watchStock', methodName: 'watchStock', streaming: true }],
     sagaMetadata: {
@@ -306,21 +312,20 @@ for (const f of files) {
 }
 console.log(`gen-sample-app — wrote ${files.length} files to ${out}`);
 
-// The emitted package.json pins `@exeris-systems/ui-kit@^0.1.0` — the published
-// coordinate (GitHub Packages), which CI installs with a read:packages token.
-// OPTIONAL local-dev escape hatch: set EXERIS_UI_KIT_PATH to an exeris-sdk-ui-kit
-// checkout to repoint just that one dependency at it (file:), so a dev without a
-// GitHub Packages token can still build the sample. Leaving it unset uses the real
-// registry. Only the throwaway sample is rewritten — the real generator output keeps
-// the `^0.1.0` registry coordinate.
+// The emitted package.json pins `@exeris/ui-kit@^0.2.0`, the coordinate on the public npm
+// registry, which installs without a token. OPTIONAL local escape hatch: set
+// EXERIS_UI_KIT_PATH to an exeris-sdk-ui-kit directory or to a tarball `npm pack` made from
+// it, and only that one dependency is repointed at it (file:), so the sample builds against a
+// kit that is not published. Leaving it unset uses the registry. Only the throwaway sample is
+// rewritten; the real generator output keeps the registry coordinate.
 const uiKitPath = process.env.EXERIS_UI_KIT_PATH;
 if (uiKitPath) {
   const pkgPath = join(out, 'package.json');
   const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
-  if (pkg.dependencies?.['@exeris-systems/ui-kit']) {
+  if (pkg.dependencies?.['@exeris/ui-kit']) {
     const linked = `file:${resolve(uiKitPath)}`;
-    pkg.dependencies['@exeris-systems/ui-kit'] = linked;
+    pkg.dependencies['@exeris/ui-kit'] = linked;
     writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
-    console.log(`gen-sample-app — linked @exeris-systems/ui-kit -> ${linked}`);
+    console.log(`gen-sample-app — linked @exeris/ui-kit -> ${linked}`);
   }
 }

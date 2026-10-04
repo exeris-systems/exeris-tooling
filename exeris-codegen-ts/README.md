@@ -1,15 +1,15 @@
 # @exeris/codegen-ts
 
-> Exeris Frontend Code Generator for Angular 21+
+> Exeris Frontend Code Generator for Angular 22+
 
 Generates TypeScript interfaces, Angular services, form components, and list components from Exeris domain metadata.
 
 ## Features
 
-- 🎯 **Angular 21+ Support** - Standalone components, Signals, Control Flow, Resource API
+- 🎯 **Angular 22+ Support** - Standalone components, Signals, Control Flow, Resource API
 - 📝 **TypeScript Types** - Interfaces and Zod schemas from Java domain models
 - 🔧 **Services** - HttpClient-based services with full CRUD support
-- 📋 **Form Components** - Reactive forms with validation, integrated with Signals
+- 📋 **Form Components** - Angular Signal Forms with validation (ADR-093)
 - 📊 **List Components** - Data tables with pagination, sorting, filtering
 - 🎨 **Tailwind CSS** - Modern utility-first styling out of the box
 - ✅ **Zod Validation** - Runtime validation schemas for type safety

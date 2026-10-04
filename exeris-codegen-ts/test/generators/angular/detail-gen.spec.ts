@@ -4,11 +4,10 @@
  * the `rxResource()` API for data fetching. Exercises:
  *   - system-field filtering (type-gen's viewSystemFieldNames) and the
  *     system panel (audit stamps on `audited`, version on `versioned`)
- *   - getDisplayType matrix (enum / boolean / date / datetime / number /
- *     text fallback)
- *   - isEnumType heuristic (suffix Status/Type/Role/State + known-types
- *     skip + generic/array skip + java.* prefix skip + lowercase skip)
- *   - getEnumTypeName precedence (explicit enumType > isEnumType heuristic)
+ *   - display-type matrix (enum / boolean / date / datetime / number /
+ *     text fallback), dates through DatePipe
+ *   - the enum rule (explicit enumType, else a type naming a declared enum)
+ *   - sections, the related-records links and the action buttons
  *   - collectEnumTypes dedup
  *   - getTitle fallback (name/title field → idField)
  */
@@ -28,6 +27,16 @@ import {
 } from '../../../src/models/domain-model.js';
 
 const CTX: GeneratorContext = createGeneratorContext({});
+
+/** A context whose app declares the enums `names` name, in package com.shop. */
+function enumCtx(...names: string[]): GeneratorContext {
+  return createGeneratorContext({}, [], names.map((name) => ({
+    name,
+    qualifiedName: `com.shop.${name}`,
+    packageName: 'com.shop',
+    values: [{ name: 'A', displayName: 'A', ordinal: 0 }],
+  })));
+}
 
 function domain(overrides: Partial<DomainMetadata> & { entityName: string }): DomainMetadata {
   return DomainMetadataSchema.parse({ packageName: 'com.shop', ...overrides });
@@ -193,11 +202,11 @@ describe('DetailGenerator system-field filtering', () => {
 describe('DetailGenerator field display-type matrix', () => {
   const gen = new DetailGenerator();
 
-  function displayTypeFor(fieldType: string, extras: Partial<FieldMetadata> = {}): string {
+  function displayTypeFor(fieldType: string, extras: Partial<FieldMetadata> = {}, ctx = CTX): string {
     const content = gen.generate(domain({
       entityName: 'Thing',
       fields: [field({ name: 'attr', type: fieldType, ...extras })],
-    }), CTX)!.content;
+    }), ctx)!.content;
     // Pull the type out of the DISPLAY_FIELDS row: type: '<type>'
     const match = content.match(/name: 'attr' as keyof Thing, label: [^,]+, type: '([^']+)'/);
     expect(match, `should find an attr row in DISPLAY_FIELDS for type=${fieldType}`).not.toBeNull();
@@ -212,7 +221,9 @@ describe('DetailGenerator field display-type matrix', () => {
     ['LocalDateTime', 'datetime'],
     ['Integer', 'number'],
     ['Long', 'number'],
-    ['number', 'number'],
+    ['long', 'number'],
+    ['java.lang.Boolean', 'boolean'],
+    ['java.time.OffsetDateTime', 'datetime'],
     ['String', 'text'],
     ['BigDecimal', 'text'], // not in the special-case list → text fallback
   ])('field type %s → display type %s', (fieldType, expected) => {
@@ -223,22 +234,21 @@ describe('DetailGenerator field display-type matrix', () => {
     expect(displayTypeFor('String', { enumType: 'OrderStatus' })).toBe('enum');
   });
 
-  it('PascalCase type ending in Status / Type / Role / State is auto-detected as enum (isEnumType heuristic)', () => {
-    expect(displayTypeFor('OrderStatus')).toBe('enum');
-    expect(displayTypeFor('PaymentType')).toBe('enum');
-    expect(displayTypeFor('UserRole')).toBe('enum');
-    expect(displayTypeFor('WorkflowState')).toBe('enum');
+  it('a type naming a declared enum is an enum, qualified or simple', () => {
+    const ctx = enumCtx('OrderStatus');
+    expect(displayTypeFor('com.shop.OrderStatus', {}, ctx)).toBe('enum');
+    expect(displayTypeFor('OrderStatus', {}, ctx)).toBe('enum');
   });
 
-  it('PascalCase type WITHOUT a known suffix is NOT auto-detected as enum (fallback "text")', () => {
+  it('a type named like an enum that no declared enum matches is text: nothing could be imported for it', () => {
+    expect(displayTypeFor('OrderStatus')).toBe('text');
+    expect(displayTypeFor('PaymentType')).toBe('text');
+    expect(displayTypeFor('com.other.OrderStatus', {}, enumCtx('OrderStatus'))).toBe('text');
     expect(displayTypeFor('Customer')).toBe('text');
   });
 
-  it('java.* FQN is rejected by isEnumType (returns text via the unknown-type fallback)', () => {
+  it('JDK, generic and array types are text', () => {
     expect(displayTypeFor('java.util.UUID')).toBe('text');
-  });
-
-  it('generic + array types are rejected by isEnumType', () => {
     expect(displayTypeFor('List<String>')).toBe('text');
     expect(displayTypeFor('String[]')).toBe('text');
   });
@@ -252,8 +262,8 @@ describe('DetailGenerator enum collection + import line', () => {
   it('enum-typed fields produce an import { Enum, EnumDisplayNames } line from ../types/enums', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
-      fields: [field({ name: 'status', type: 'OrderStatus' })], // matches isEnumType
-    }), CTX)!.content;
+      fields: [field({ name: 'status', type: 'com.shop.OrderStatus' })],
+    }), enumCtx('OrderStatus'))!.content;
 
     expect(content).toContain("import { OrderStatus, OrderStatusDisplayNames } from '../types/enums';");
   });
@@ -276,7 +286,7 @@ describe('DetailGenerator enum collection + import line', () => {
         field({ name: 'status2', type: 'OrderStatus' }), // duplicate → must not double-import
         field({ name: 'role', type: 'UserRole' }),
       ],
-    }), CTX)!.content;
+    }), enumCtx('OrderStatus', 'UserRole'))!.content;
 
     // One import line, OrderStatus + OrderStatusDisplayNames + UserRole + UserRoleDisplayNames all in it.
     const importMatch = content.match(/import \{ ([^}]+) \} from '\.\.\/types\/enums';/);
@@ -307,7 +317,7 @@ describe('DetailGenerator enum collection + import line', () => {
     const single = gen.generate(domain({
       entityName: 'Order',
       fields: [field({ name: 'status', type: 'OrderStatus' })],
-    }), CTX)!.content;
+    }), enumCtx('OrderStatus'))!.content;
     expect(single).toContain('private readonly orderStatusDisplayNames = OrderStatusDisplayNames;');
     expect(single).not.toContain('orderstatusDisplayNames');
 
@@ -328,7 +338,7 @@ describe('DetailGenerator enum collection + import line', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
       fields: [field({ name: 'status', type: 'OrderStatus' })],
-    }), CTX)!.content;
+    }), enumCtx('OrderStatus'))!.content;
 
     expect(content).toContain('this.orderStatusDisplayNames[value as keyof typeof this.orderStatusDisplayNames]');
   });
@@ -627,5 +637,127 @@ describe('DetailGenerator — system panel', () => {
     expect(content).toContain("@if (entity()?.createdAt) { <div><dt class=\"text-gray-400\">Created</dt><dd>{{ entity()?.createdAt | date:'medium' }}</dd></div> }");
     expect(content).not.toContain('Updated</dt>');
     expect(content).not.toContain('systemInfo');
+  });
+});
+
+// ---------- dates ----------
+
+describe('DetailGenerator — dates render through DatePipe', () => {
+  const gen = new DetailGenerator();
+
+  it('a LocalDate renders with mediumDate and a date-time with medium, an empty one as the em-dash', () => {
+    const content = gen.generate(domain({
+      entityName: 'Booking',
+      fields: [field({ name: 'day', type: 'java.time.LocalDate' }), field({ name: 'at', type: 'java.time.OffsetDateTime' })],
+    }), CTX)!.content;
+    expect(content).toContain("import { CommonModule, DatePipe } from '@angular/common';");
+    expect(content).toContain("{{ (dateValue(field, entity()) | date:'mediumDate') ?? '—' }}");
+    expect(content).toContain("{{ (dateValue(field, entity()) | date:'medium') ?? '—' }}");
+    expect(content).toContain('dateValue(field: FieldDisplay, entity: Booking | null): string | number | null {');
+    expect(content).not.toContain('toLocaleDateString');
+    expect(content).not.toContain('toLocaleString');
+  });
+
+  it('an entity with no date field emits neither the date arms nor dateValue', () => {
+    const content = gen.generate(domain({ entityName: 'Plain', fields: [field({ name: 'name', type: 'String' })] }), CTX)!.content;
+    expect(content).not.toContain('dateValue(');
+    expect(content).not.toContain('DatePipe');
+  });
+});
+
+// ---------- sections ----------
+
+describe('DetailGenerator — sections', () => {
+  const gen = new DetailGenerator();
+
+  it('labels the field table "Details" and the system panel "System Information", each a labelled section', () => {
+    const content = gen.generate(domain({ entityName: 'Plain', fields: [field({ name: 'name', type: 'String' })] }), CTX)!.content;
+    expect(content).toContain('<section aria-labelledby="details-title"');
+    expect(content).toContain('<h2 id="details-title"');
+    expect(content).toContain('<section aria-labelledby="system-title"');
+    expect(content).toContain('<h2 id="system-title" class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-4">System Information</h2>');
+    expect(content).not.toContain('Related records');
+  });
+});
+
+// ---------- related records ----------
+
+describe('DetailGenerator — related records', () => {
+  const gen = new DetailGenerator();
+  const line = domain({ entityName: 'OrderLine', fields: [field({ name: 'id', type: 'java.util.UUID' })] });
+  const note = domain({ entityName: 'Note', fields: [field({ name: 'id', type: 'java.util.UUID' })] });
+  const order = (relationships: Array<Record<string, unknown>>) =>
+    domain({ entityName: 'Order', fields: [field({ name: 'id', type: 'java.util.UUID' })], relationships: relationships as never });
+
+  it('links each ONE_TO_MANY to its target list, in declaration order, qualified targets by simple name', () => {
+    const d = order([
+      { name: 'lines', targetEntity: 'com.shop.OrderLine', type: 'ONE_TO_MANY', mappedBy: 'orderId' },
+      { name: 'notes', targetEntity: 'Note', type: 'ONE_TO_MANY' },
+    ]);
+    const content = gen.generate(d, createGeneratorContext({}, [d, line, note]))!.content;
+    expect(content).toContain('<h2 id="related-title"');
+    const lines = content.indexOf('<a routerLink="/order-lines" data-testid="related-lines"');
+    const notes = content.indexOf('<a routerLink="/notes" data-testid="related-notes"');
+    expect(lines).toBeGreaterThan(-1);
+    expect(notes).toBeGreaterThan(lines);
+    expect(content).toContain('>View all OrderLines</a>');
+    expect(content).toContain('<span class="font-medium text-gray-900 dark:text-white">Lines</span>');
+    // The children are never fetched by the detail view.
+    expect(content).not.toContain('OrderLineService');
+  });
+
+  it('links nothing for a MANY_TO_MANY, an unloaded target, a target without a list, or with lists off', () => {
+    const unlisted = domain({ entityName: 'Note', fields: [field({ name: 'id', type: 'java.util.UUID' })], uiMetadata: { listView: false } as never });
+    const cases: Array<[DomainMetadata, GeneratorContext]> = [];
+    const m2m = order([{ name: 'notes', targetEntity: 'Note', type: 'MANY_TO_MANY' }]);
+    cases.push([m2m, createGeneratorContext({}, [m2m, note])]);
+    const missing = order([{ name: 'notes', targetEntity: 'Note', type: 'ONE_TO_MANY' }]);
+    cases.push([missing, createGeneratorContext({}, [missing])]);
+    cases.push([missing, createGeneratorContext({}, [missing, unlisted])]);
+    cases.push([missing, createGeneratorContext({ generateLists: false }, [missing, note])]);
+    for (const [d, ctx] of cases) {
+      expect(gen.generate(d, ctx)!.content).not.toContain('Related records');
+    }
+  });
+});
+
+// ---------- actions ----------
+
+describe('DetailGenerator — action buttons', () => {
+  const gen = new DetailGenerator();
+  const withActions = domain({
+    entityName: 'Order',
+    fields: [field({ name: 'id', type: 'java.util.UUID' })],
+    actions: [
+      { name: 'cancel', methodName: 'cancel' },
+      { name: 'mark-urgent', methodName: 'markUrgent' },
+      { name: 'setStatus', methodName: 'setStatus', params: [{ name: 'status', type: 'String' }] },
+      { name: 'track', methodName: 'track', streaming: true },
+    ] as never,
+  });
+
+  it('offers a button per parameterless, non-streaming action, calling the service method service-gen names', () => {
+    const content = gen.generate(withActions, CTX)!.content;
+    expect(content).toContain(`<button type="button" (click)="runAction('cancel')" [disabled]="actionPending()" data-testid="action-cancel"`);
+    expect(content).toContain(`(click)="runAction('markUrgent')" [disabled]="actionPending()" data-testid="action-mark-urgent"`);
+    expect(content).toContain('    cancel: (id: string) => this.service.cancel(id),');
+    expect(content).toContain('    markUrgent: (id: string) => this.service.markUrgent(id),');
+    expect(content).toContain('>Mark Urgent</button>');
+    expect(content).not.toContain('setStatus');
+    expect(content).not.toContain('this.service.track(');
+  });
+
+  it('reloads the entity after an action and shows a failure in its own alert', () => {
+    const content = gen.generate(withActions, CTX)!.content;
+    expect(content).toContain('runAction(name: keyof typeof this.actionCalls): void {');
+    expect(content).toContain('        this.entityResource.reload();');
+    expect(content).toContain("this.actionError.set(httpErrorMessage(err, { entity: 'order' }));");
+    expect(content).toContain('data-testid="action-error"');
+  });
+
+  it('an entity with no such action emits no action state', () => {
+    const content = gen.generate(domain({ entityName: 'Plain', fields: [field({ name: 'id', type: 'java.util.UUID' })] }), CTX)!.content;
+    expect(content).not.toContain('actionPending');
+    expect(content).not.toContain('runAction');
   });
 });

@@ -290,6 +290,27 @@ describe('buildGeneratedFiles — detail components', () => {
     expect(routes).toContain('m.OrderFormComponent');
   });
 
+  // The processor never writes enumType, so a loaded enum the field's type names is the only way
+  // the detail view learns a field is an enum.
+  it('shows a field whose type names a loaded enum through the enum module', () => {
+    const battle = domain({ entityName: 'Battle', fields: [{ name: 'status', type: 'com.shop.BattleStatus' }] });
+    const detail = at(buildGeneratedFiles([battle], [BATTLE_STATUS], DEFAULT_CONFIG), 'src/app/components/battle-detail.component.ts');
+    expect(detail).toContain("import { BattleStatus, BattleStatusDisplayNames } from '../types/enums';");
+    expect(detail).toContain("type: 'enum', enumType: 'BattleStatus'");
+  });
+
+  it('links a ONE_TO_MANY to a route the table declares', () => {
+    const line = domain({ entityName: 'OrderLine', fields: [{ name: 'id', type: 'java.util.UUID' }] });
+    const parent = domain({
+      entityName: 'Order',
+      fields: [{ name: 'id', type: 'java.util.UUID' }],
+      relationships: [{ name: 'lines', targetEntity: 'OrderLine', type: 'ONE_TO_MANY' }] as never,
+    });
+    const files = buildGeneratedFiles([parent, line], [], DEFAULT_CONFIG);
+    expect(at(files, 'src/app/components/order-detail.component.ts')).toContain('<a routerLink="/order-lines"');
+    expect(at(files, 'src/app/app.routes.ts')).toContain("path: 'order-lines'");
+  });
+
   it('gives every link the emitted list renders a matching route', () => {
     const files = buildGeneratedFiles([order], [], DEFAULT_CONFIG);
     const list = at(files, 'src/app/components/order-list.component.ts');
