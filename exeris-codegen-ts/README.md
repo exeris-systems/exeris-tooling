@@ -1,12 +1,12 @@
 # @exeris/codegen-ts
 
-> Exeris Frontend Code Generator for Angular 22+
+> Exeris front-end code generator: emits an Angular 22 application
 
 Generates TypeScript interfaces, Angular services, form components, and list components from Exeris domain metadata.
 
 ## Features
 
-- 🎯 **Angular 22+ Support** - Standalone components, Signals, Control Flow, Resource API
+- 🎯 **Angular 22** - Standalone components, Signals, Control Flow, Resource API
 - 📝 **TypeScript Types** - Interfaces and Zod schemas from Java domain models
 - 🔧 **Services** - HttpClient-based services with full CRUD support
 - 📋 **Form Components** - Angular Signal Forms with validation (ADR-093)
@@ -17,11 +17,15 @@ Generates TypeScript interfaces, Angular services, form components, and list com
 
 ## Installation
 
+Published to npmjs under the `@exeris` scope, at the same version as the `eu.exeris.tooling` Maven
+artefacts it releases with. Pin it to the tooling version your build uses.
+
 ```bash
-npm install -g @exeris/codegen-ts
-# or
-npm install --save-dev @exeris/codegen-ts
+npm install --save-dev @exeris/codegen-ts@<tooling-version>
+npx exeris-gen --help
 ```
+
+The package is the `exeris-gen` command line only; it exports no library API.
 
 ## Quick Start
 
