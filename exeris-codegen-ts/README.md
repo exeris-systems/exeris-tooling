@@ -253,6 +253,7 @@ machine, and the `SagaStatusSnapshot` shape it folds, are exported from the app 
 | `LocalDateTime` | `string` | `<input type="datetime-local">` |
 | `Instant`, `ZonedDateTime` | `string` | `<input type="text">` holding the ISO-8601 value, zone included |
 | `UUID` | `string` | `<input type="text">` |
+| `UUID` holding a `MANY_TO_ONE` foreign key, the target generated with its service | `string` | `<select>` of the target's records (`findAll()`), valued by `id` and labelled by `@Relationship.displayField` (the id when that is empty) |
 | an `enum` the processor emitted | the enum's string union | `<select>` |
 
 A field with `@Field(inUpdate = false)` is disabled while the form edits, and is sent back as loaded.

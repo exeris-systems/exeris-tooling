@@ -16,5 +16,11 @@
     "since": "0.9",
     "adr": "ADR-092",
     "justification": "The emitted form resolves each control by the type rules the list and the detail view use. A primitive or simple-named number becomes a number input, a simple-named LocalDate / LocalDateTime a date / datetime-local input, and a java.time.Instant a text input holding the ISO-8601 value, because a datetime-local input cannot hold a value with a zone. A <select> renders only for an enum the enum module exports, so a qualified type that is not an emitted enum, which previously imported a missing symbol, is a text input. A field with @Field(inUpdate = false) is disabled while the form edits and its loaded value is sent back on update. The selector, inputs, outputs, routes, DTOs and every data-testid are unchanged; docs/MIGRATION-0.x-to-1.0.md 0.9.0 carries the step."
+  },
+  {
+    "signature": "<entity>-form.component.ts: a MANY_TO_ONE UUID foreign key is a <select> of the target's records labelled by @Relationship.displayField",
+    "since": "0.9",
+    "adr": "ADR-092",
+    "justification": "A foreign key whose target is generated with its service renders as a native <select> over the records the target service's findAll() returns, valued by their id and labelled by the target's displayField value (the id when the target declares no such field or the value is empty), instead of a text input holding the id. The control's id, data-testid, binding, validators and held value are unchanged, and the form injects the target's root-provided service. A value the loaded records do not contain stays an option. Without the target service the field stays a text input. docs/MIGRATION-0.x-to-1.0.md 0.9.0 carries the step."
   }
 ]
