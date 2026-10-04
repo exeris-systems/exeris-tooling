@@ -1644,6 +1644,22 @@ never-invoked emitter start emitting, and its output did not build.
       columns through a kernel codec (the ADR-060 shape) — needs a check that kernel 0.12 exposes a
       JSON codec usable outside HTTP/event bodies and that it round-trips existing rows. Still open:
       nothing makes the *failure* name the artefact.
+
+      **2026-10-04: declared by the starter; still open for builds not on it.** `exeris-app-starter`
+      (ADR-091, 0.9.0) declares every artefact emitted main code imports, at the scope it needs:
+      kernel-spi/-core, `exeris-sdk-composition-runtime` and `jackson-databind` at compile scope, the
+      Community driver at runtime scope. The `exeris-app-starter-it` invoker fixture is composed and
+      has a `List<String>` field, compiles the generated tree against the starter, and `verify.groovy`
+      asserts both the `CompositionConductor` and the `tools.jackson` import are present, so the two
+      known instances are under a reactor gate. The `Application` Javadoc now names every requirement
+      by coordinate, separates compile from runtime-only (driver, JDBC driver), says what the starter
+      covers, and names JUnit 5 / AssertJ as the generated tests' test-scope imports, which the
+      starter does not carry. Not ticked: the starter is opt-in, and a build that does not use it
+      still fails at `javac` with a missing package, not an artefact. The fixture also boots no
+      graph, saga or domain event, so a new import from those emitters would not fail it; none of
+      them imports anything outside the JDK and kernel SPI/Core today. `exeris:generate` runs at
+      `generate-sources`, before `compile`, and knows what it emitted. It is the one existing goal
+      that could check the compile classpath and name the missing artefact.
 - [x] **T58 — PATCH/PUT parity: a generated client's update never reached a generated server.**
       Numbered 2026-09-26, the next free T after the renumbering. Measured the same day. The
       generated router serves update on `PUT` and the OpenAPI document publishes `PUT`
@@ -2193,8 +2209,8 @@ Each now has the status the code settles, and every other mention in this file a
   the ui-kit v3 preset for v3 toolchains (`:716-736`) — though the emitted file does not itself say a
   v4 build ignores it. (c) A token/theme binding for `@View` is **G6**, emitted today as a
   `TODO(@View G6)` marker (`view-gen.ts:40,247`) and corpus-gated with the rest of the full emitter.
-- **T30 — open, with its own entry now** (above): mitigated by ADR-060 and the 0.7.0 MIGRATION line,
-  not closed.
+- **T30 — open, with its own entry now** (above): mitigated by ADR-060, the emitted Javadoc and the
+  0.9.0 starter (ADR-091), not closed. A build not on the starter still gets `javac`'s package error.
 
 - [x] **T20d — a boolean form control held a string.** Shipped 0.9.0, and re-measuring it widened
       the finding. The log reports two `TS2352`s from a missing boolean branch in the submit-time

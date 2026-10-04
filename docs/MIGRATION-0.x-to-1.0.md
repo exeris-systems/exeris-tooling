@@ -1885,12 +1885,19 @@ text, the typography dependency and its `@plugin` line after the imports.
 
 ### Compile-classpath requirements are named in the emitted Javadoc (T30)
 
-The regenerated `Application.java` Javadoc separates compile requirements from runtime ones. If an
-entity has a `List<X>` field, its repository imports Jackson 3. Declare
+The regenerated `Application.java` Javadoc separates compile requirements from runtime-only ones and
+names each by coordinate. Compile: `eu.exeris:exeris-kernel-spi` and `-core`, plus
+`eu.exeris:exeris-sdk-composition-runtime` in a composed build. Runtime only: a kernel driver
+(`eu.exeris:exeris-kernel-community` by default) and your JDBC driver. It also says that
+`eu.exeris.tooling:exeris-app-starter` declares all of them except the JDBC driver, and that
+generated tests need JUnit 5 and AssertJ at test scope.
+
+If an entity has a `List<X>` field, its repository imports Jackson 3. Declare
 `tools.jackson.core:jackson-databind` at compile scope: the Community driver brings it only
 transitively, and a runtime-scoped driver does not reach `javac`. Such a repository's Javadoc says
-so, and the `Application` Javadoc names Jackson 3 only when a repository in the tree imports it. No
-code change.
+so, and the `Application` Javadoc names Jackson 3 only when a repository in the tree imports it.
+
+A committed `Application.java` (L1) shows a Javadoc-only diff. No code change.
 
 ### Generation no longer depends on the JVM locale
 
