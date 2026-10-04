@@ -313,6 +313,17 @@ describe('buildGeneratedFiles — detail components', () => {
     expect(detail).toContain("type: 'enum', enumType: 'BattleStatus'");
   });
 
+  it('offers a field whose type names a loaded enum as a select over that enum in the form', () => {
+    const battle = domain({ entityName: 'Battle', fields: [{ name: 'status', type: 'com.shop.BattleStatus' }] });
+    const form = at(buildGeneratedFiles([battle], [BATTLE_STATUS], DEFAULT_CONFIG), 'src/app/components/battle-form.component.ts');
+    expect(form).toContain("import { BattleStatus, BattleStatusDisplayNames } from '../types/enums';");
+    expect(form).toContain('<select id="status"');
+    // Without the loaded enum the type names nothing the enum module exports: a text input.
+    const plain = at(buildGeneratedFiles([battle], [], DEFAULT_CONFIG), 'src/app/components/battle-form.component.ts');
+    expect(plain).not.toContain('<select');
+    expect(plain).toContain('type="text" [formField]="form.status"');
+  });
+
   it('links a ONE_TO_MANY to a route the table declares', () => {
     const line = domain({ entityName: 'OrderLine', fields: [{ name: 'id', type: 'java.util.UUID' }] });
     const parent = domain({

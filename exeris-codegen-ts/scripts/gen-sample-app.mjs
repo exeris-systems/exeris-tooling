@@ -61,6 +61,18 @@ const domains = [
       // A calendar date: the detail view renders it through DatePipe with mediumDate, an arm no
       // other fixture field reaches.
       { name: 'deliveryDate', type: 'java.time.LocalDate' },
+      // The form's type rules, one control kind each: a primitive number is a number input
+      // holding number | null; a type naming the emitted enum, with no explicit enumType, is a
+      // select; a zone-free date-time is a datetime-local input; a zoned one and an integer
+      // string are text inputs.
+      { name: 'units', type: 'long', min: 1 },
+      { name: 'previousStatus', type: 'com.shop.OrderStatus' },
+      { name: 'pickupAt', type: 'java.time.LocalDateTime' },
+      { name: 'promisedAt', type: 'java.time.ZonedDateTime' },
+      { name: 'loyaltyPoints', type: 'java.math.BigInteger' },
+      // inUpdate = false: the edit form disables the control through a Signal Forms rule bound to
+      // edit mode, and the field is required, so the rule sits beside a validator.
+      { name: 'orderNumber', type: 'String', required: true, maxLength: 20, inUpdate: false },
     ],
     // The foreign key renders as a routerLink to the target's detail page in the list cell and
     // the detail row. The target is qualified, as the processor's fallback can record it, so the
