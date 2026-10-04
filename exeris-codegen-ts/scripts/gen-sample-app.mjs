@@ -53,6 +53,9 @@ const domains = [
       // is why a text-input-and-'' -seeded checkbox field type-checked here for two trains.
       // The wrapper was always handled; the primitive is the one that fell through.
       { name: 'expedited', type: 'boolean' },
+      // A calendar date: the detail view renders it through DatePipe with mediumDate, an arm no
+      // other fixture field reaches.
+      { name: 'deliveryDate', type: 'java.time.LocalDate' },
     ],
     // The foreign key renders as a routerLink to the target's detail page in the list cell and
     // the detail row. The target is qualified, as the processor's fallback can record it, so the
@@ -99,6 +102,9 @@ const domains = [
   d({
     entityName: 'Product',
     fields: [{ name: 'id', type: 'java.util.UUID' }, { name: 'name', type: 'String' }],
+    // The other side of Order's foreign key: the detail view's related-records link to the
+    // order list, the only section an entity without a ONE_TO_MANY never emits.
+    relationships: [{ name: 'orders', targetEntity: 'com.shop.Order', type: 'ONE_TO_MANY', mappedBy: 'productId' }],
     realTimeApi: true,
     actions: [{ name: 'watchStock', methodName: 'watchStock', streaming: true }],
     sagaMetadata: {

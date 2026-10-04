@@ -11,9 +11,11 @@
  * already carry. Resolution is a pure function of its inputs, so the same metadata always yields
  * the same model.
  *
- * Each surface resolves by its own rule where the three differ: the detail view and the form
- * detect an enum by different rules, and the form maps only qualified Java types to a number or
- * date input. The differences are listed in `docs/codegen-ts-track-plan.md`.
+ * The detail view resolves its display type through the shared rules below (`enumTypeOf`,
+ * `isBooleanType`, `temporalKindOf`, `isNumericType`), which are the rules every surface converges
+ * on. Where a surface still resolves by its own rule — the form's enum test and number/date
+ * inputs, the list's `java.util.Date` date-time and its `BigDecimal` / `BigInteger` number cell —
+ * the difference is listed in `docs/codegen-ts-track-plan.md`.
  *
  * The list's rules: a boolean or a number is any type the DTO carries as one, an enum is a type
  * the processor emitted an enum for (the only enums `types/enums` exports), and a date-time type
@@ -42,8 +44,17 @@ export interface FieldRenderContext {
   readonly systemFieldNames: readonly string[];
   /** Foreign-key fields mapped to the route prefix of their target's detail page (`foreignKeyLinks`). */
   readonly links: ReadonlyMap<string, string>;
-  /** The enums the processor emitted; the list renders a field of one of these types as an enum. */
+  /**
+   * The enums the processor emitted, which the app's enum module declares: a field whose type names
+   * one is an enum (`enumTypeOf`), and the list takes its constants for the badges.
+   */
   readonly enums?: readonly EnumMetadata[];
+}
+
+/** An enum the app's enum module (`types/enums.ts`) declares, as far as type resolution needs it. */
+export interface KnownEnum {
+  readonly name: string;
+  readonly qualifiedName: string;
 }
 
 /** How a list cell renders its value. */
@@ -142,10 +153,11 @@ const LIFECYCLE_FIELDS = new Set([
 
 const DATA_TYPE_FACETS = new Set<string>(['currency', 'percent', 'url']);
 
-/** Java types the detail view never treats as an enum, whatever their name. */
-const DETAIL_KNOWN_TYPES = new Set([
-  'String', 'Integer', 'Long', 'Double', 'Float', 'Boolean', 'BigDecimal', 'UUID', 'Instant', 'LocalDate', 'LocalDateTime',
-]);
+/** Calendar-date types: a day with no time and no zone, rendered with the `mediumDate` pipe format. */
+const DATE_TYPES = new Set(['LocalDate']);
+
+/** Instant-like types: a point in time, rendered with the `medium` pipe format. */
+const DATETIME_TYPES = new Set(['Instant', 'LocalDateTime', 'OffsetDateTime', 'ZonedDateTime']);
 
 /** `camelCase` to `Title Case`, the form's label and method-name casing. */
 export function toTitleCase(value: string): string {
@@ -194,8 +206,8 @@ export function resolveFieldRender(
     link,
     list: listRender(field, link, context.enums ?? []),
     detail: {
-      display: detailDisplay(field),
-      enumType: detailEnumType(field),
+      display: detailDisplay(field, context.enums ?? []),
+      enumType: enumTypeOf(field, context.enums ?? []),
       dataType,
     },
     form: formRender(field, system),
@@ -276,29 +288,59 @@ function listRender(
   };
 }
 
-function detailDisplay(field: FieldMetadata): DetailDisplayType {
-  const type = field.type;
-  if (field.enumType || isDetailEnumType(type)) return 'enum';
-  if (type === 'Boolean' || type === 'boolean') return 'boolean';
-  if (type.includes('LocalDate') && !type.includes('DateTime')) return 'date';
-  if (type.includes('Instant') || type.includes('DateTime')) return 'datetime';
-  if (type.includes('Integer') || type.includes('Long') || type === 'number') return 'number';
+function detailDisplay(field: FieldMetadata, enums: readonly KnownEnum[]): DetailDisplayType {
+  if (enumTypeOf(field, enums)) return 'enum';
+  if (isBooleanType(field.type)) return 'boolean';
+  const temporal = temporalKindOf(field);
+  if (temporal) return temporal;
+  if (isNumericType(field.type)) return 'number';
   return 'text';
 }
 
-/** The detail view's enum test on a type name: a capitalised simple name ending in Status, Type, Role or State. */
-function isDetailEnumType(type: string): boolean {
-  if (DETAIL_KNOWN_TYPES.has(type)) return false;
-  if (type.includes('<') || type.endsWith('[]') || type.startsWith('java.')) return false;
-  const simpleName = type.includes('.') ? type.split('.').pop()! : type;
-  return /^[A-Z][a-zA-Z0-9]*$/.test(simpleName) &&
-    (simpleName.endsWith('Status') || simpleName.endsWith('Type') || simpleName.endsWith('Role') || simpleName.endsWith('State'));
+/**
+ * The enum rule: the simple name of the enum a field holds, or `undefined` when it holds none.
+ *
+ * A field is an enum when it carries an explicit `enumType`, or when its type names an enum the
+ * app's enum module declares — a qualified type by its qualified name, a simple type by its simple
+ * name. The type's name is never guessed from: an enum the module does not declare cannot be
+ * imported from it, and a type named like an enum (`…Status`) may be an entity or a record.
+ */
+export function enumTypeOf(field: FieldMetadata, enums: readonly KnownEnum[]): string | undefined {
+  if (field.enumType) return simpleName(field.enumType);
+  const type = field.type;
+  const known = type.includes('.')
+    ? enums.find((e) => e.qualifiedName === type)
+    : enums.find((e) => e.name === type);
+  return known?.name;
 }
 
-function detailEnumType(field: FieldMetadata): string | undefined {
-  if (field.enumType) return simpleName(field.enumType);
-  if (isDetailEnumType(field.type)) return simpleName(field.type);
+/** The boolean rule: the primitive, the wrapper and the qualified wrapper alike. */
+export function isBooleanType(type: string): boolean {
+  return type === 'boolean' || type === 'Boolean' || type === 'java.lang.Boolean';
+}
+
+/**
+ * The temporal rule: `'date'` for a calendar date, `'datetime'` for a point in time, `undefined`
+ * otherwise. An explicit `format` of `date` or `datetime` decides first; else the type's simple
+ * name does — `LocalDate` is a date, `Instant`, `LocalDateTime`, `OffsetDateTime` and
+ * `ZonedDateTime` are date-times. A date renders with the `mediumDate` pipe format and a date-time
+ * with `medium`.
+ */
+export function temporalKindOf(field: FieldMetadata): 'date' | 'datetime' | undefined {
+  if (field.format === 'date' || field.format === 'datetime') return field.format;
+  const name = simpleName(field.type);
+  if (DATE_TYPES.has(name)) return 'date';
+  if (DATETIME_TYPES.has(name)) return 'datetime';
   return undefined;
+}
+
+/**
+ * The number rule: the type's DTO type is a TypeScript `number`. `BigDecimal` and `BigInteger`
+ * map to `string` for precision and are not numbers here.
+ */
+export function isNumericType(type: string): boolean {
+  const ts = DslMapper.mapType(type).tsType;
+  return ts === 'number' || ts === 'number | null';
 }
 
 /** The form's enum test: an explicit `enumType`, else a qualified non-JDK type that names no entity or DTO. */
