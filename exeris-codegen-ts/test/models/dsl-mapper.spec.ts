@@ -448,3 +448,24 @@ describe('DslMapper.toCamelCase', () => {
     expect(DslMapper.toCamelCase('orderLine')).toBe('orderLine');
   });
 });
+
+describe('DslMapper.mapType — types as the processor writes them', () => {
+  // TypeMirror.toString() qualifies the container and every type argument.
+  it.each([
+    ['java.util.List<java.lang.String>', 'string[]', 'z.array(z.string())'],
+    ['java.util.Set<java.util.UUID>', 'string[]', 'z.array(z.string().uuid())'],
+    ['java.util.Collection<java.lang.Long>', '(number | null)[]', 'z.array(z.number().nullable())'],
+    ['java.util.List<com.shop.Tag>', 'Tag[]', 'z.array(z.lazy(() => TagSchema))'],
+    ['java.util.Map<java.lang.String,java.lang.Integer>', 'Record<string, number | null>', 'z.record(z.number().int().nullable())'],
+    ['java.util.Map<java.lang.String,java.util.List<java.lang.Long>>', 'Record<string, (number | null)[]>', 'z.record(z.array(z.number().nullable()))'],
+    ['java.util.Optional<java.time.Instant>', 'string | null', 'z.string().datetime().nullable()'],
+  ])('%s → %s', (type, tsType, zodType) => {
+    expect(DslMapper.mapType(type)).toMatchObject({ tsType, zodType });
+  });
+
+  it('an offset or zoned date-time is a string whose schema accepts the offset', () => {
+    for (const type of ['java.time.OffsetDateTime', 'OffsetDateTime', 'java.time.ZonedDateTime', 'ZonedDateTime']) {
+      expect(DslMapper.mapType(type)).toMatchObject({ tsType: 'string', zodType: 'z.string().datetime({ offset: true })' });
+    }
+  });
+});

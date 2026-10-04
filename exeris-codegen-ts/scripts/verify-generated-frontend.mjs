@@ -44,6 +44,14 @@ const domain = DomainMetadataSchema.parse({
     { name: 'odds', type: 'java.lang.Double', min: 0 },
     { name: 'turn', type: 'int', max: 99 },
     { name: 'arena', type: 'String', minLength: 2, maxLength: 40 },
+    // Collection and zoned types exactly as the processor writes them (TypeMirror.toString()):
+    // qualified containers and element types, and an offset date-time.
+    { name: 'tags', type: 'java.util.List<java.lang.String>' },
+    { name: 'phases', type: 'java.util.List<com.shop.BattleStatus>' },
+    { name: 'scores', type: 'java.util.Map<java.lang.String,java.lang.Integer>' },
+    { name: 'judges', type: 'java.util.Set<java.util.UUID>' },
+    { name: 'startsAt', type: 'java.time.OffsetDateTime' },
+    { name: 'endsAt', type: 'java.time.ZonedDateTime' },
   ],
 });
 const enums = [{

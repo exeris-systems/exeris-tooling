@@ -26,6 +26,24 @@ export interface TypeMapping {
   defaultValue: string;
 }
 
+/** The type arguments of a generic, split at its top-level commas: `K, List<V>` → `['K', 'List<V>']`. */
+function splitTypeArguments(args: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < args.length; i++) {
+    const c = args[i];
+    if (c === '<') depth++;
+    else if (c === '>') depth--;
+    else if (c === ',' && depth === 0) {
+      parts.push(args.slice(start, i).trim());
+      start = i + 1;
+    }
+  }
+  parts.push(args.slice(start).trim());
+  return parts;
+}
+
 const JAVA_TO_TS_MAP: Record<string, TypeMapping> = {
   // Primitives
   'String': {
@@ -221,18 +239,34 @@ const JAVA_TO_TS_MAP: Record<string, TypeMapping> = {
     zodType: 'z.string().time()',
     defaultValue: "''",
   },
+  // An offset or zoned date-time is serialised with its offset (`2026-10-04T10:00:00+02:00`), which
+  // Zod's datetime() accepts only with `offset: true`.
+  'OffsetDateTime': {
+    tsType: 'string',
+    formControl: 'datepicker',
+    inputType: 'datetime-local',
+    zodType: 'z.string().datetime({ offset: true })',
+    defaultValue: "''",
+  },
+  'java.time.OffsetDateTime': {
+    tsType: 'string',
+    formControl: 'datepicker',
+    inputType: 'datetime-local',
+    zodType: 'z.string().datetime({ offset: true })',
+    defaultValue: "''",
+  },
   'ZonedDateTime': {
     tsType: 'string',
     formControl: 'datepicker',
     inputType: 'datetime-local',
-    zodType: 'z.string().datetime()',
+    zodType: 'z.string().datetime({ offset: true })',
     defaultValue: "''",
   },
   'java.time.ZonedDateTime': {
     tsType: 'string',
     formControl: 'datepicker',
     inputType: 'datetime-local',
-    zodType: 'z.string().datetime()',
+    zodType: 'z.string().datetime({ offset: true })',
     defaultValue: "''",
   },
   'Duration': {
@@ -379,18 +413,14 @@ export class DslMapper {
       return direct;
     }
 
-    // Handle simple class name (without package)
-    const simpleName = javaType.split('.').pop() ?? javaType;
-    const simpleMapping = JAVA_TO_TS_MAP[simpleName];
-    if (simpleMapping) {
-      return simpleMapping;
-    }
-
-    // Handle generics like List<String>
-    const genericMatch = javaType.match(/^(\w+)<(.+)>$/);
+    // Generics, with the container simple or qualified as the processor writes it
+    // (`java.util.List<java.lang.String>`). Matched before the simple-name lookup, which would
+    // otherwise split the type arguments on their dots.
+    const genericMatch = javaType.match(/^([\w.]+)<(.+)>$/);
     if (genericMatch) {
-      const [, container, inner] = genericMatch;
-      const innerMapping = this.mapType(inner ?? 'unknown');
+      const container = genericMatch[1].split('.').pop() ?? genericMatch[1];
+      const inner = genericMatch[2];
+      const innerMapping = this.mapType(inner);
 
       if (container === 'List' || container === 'Set' || container === 'Collection') {
         return {
@@ -404,7 +434,7 @@ export class DslMapper {
 
       if (container === 'Map') {
         // For Map<K,V> we simplify to Record<string, V>
-        const parts = (inner ?? '').split(',').map((s) => s.trim());
+        const parts = splitTypeArguments(inner);
         const valueType = parts[1] ? this.mapType(parts[1]) : { tsType: 'unknown', zodType: 'z.unknown()' };
         return {
           tsType: `Record<string, ${valueType.tsType}>`,
@@ -437,6 +467,13 @@ export class DslMapper {
         zodType: `z.array(${elementMapping.zodType})`,
         defaultValue: '[]',
       };
+    }
+
+    // Handle simple class name (without package)
+    const simpleName = javaType.split('.').pop() ?? javaType;
+    const simpleMapping = JAVA_TO_TS_MAP[simpleName];
+    if (simpleMapping) {
+      return simpleMapping;
     }
 
     // Fallback for unknown types (assume it's a custom entity/DTO)
