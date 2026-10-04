@@ -4,7 +4,7 @@ type: roadmap
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-10-02
+last-verified: 2026-10-04
 ---
 
 # Exeris Tooling — Roadmap to 1.0.0 GA
