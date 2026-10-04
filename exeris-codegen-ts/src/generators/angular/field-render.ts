@@ -442,8 +442,18 @@ function formInitialValue(field: FieldMetadata, value: FormValueKind): string {
 const FORM_MODEL_TYPES = { boolean: 'boolean', number: 'number | null', text: 'string' } as const;
 const FORM_EMPTY_VALUES = { boolean: 'false', number: 'null', text: "''" } as const;
 
+/**
+ * A collection or map field: its DTO type is an array or a record. The form has no control that
+ * edits one, so it offers none; an edit sends the loaded record, which keeps the stored value.
+ */
+function isCollectionType(type: string): boolean {
+  const ts = DslMapper.mapType(type).tsType;
+  return ts.endsWith('[]') || ts.startsWith('Record<');
+}
+
 function formPlacement(field: FieldMetadata, system: boolean): FormPlacement {
   if (field.inCreate === false || LIFECYCLE_FIELDS.has(field.name) || system) return 'none';
+  if (isCollectionType(field.type)) return 'none';
   if (field.computed) return 'computed';
   if (field.hidden === true || field.readOnly === true) return 'none';
   return 'control';

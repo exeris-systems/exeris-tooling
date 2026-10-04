@@ -1084,6 +1084,30 @@ describe('FormGenerator — navigation when the form is the routed page', () => 
 
 // ---------- versioned: the edit sends the loaded version; a 409 is a conflict ----------
 
+describe('FormGenerator — collection fields', () => {
+  const content = new FormGenerator().generate(domain({
+    entityName: 'Order',
+    fields: [
+      field({ name: 'id', type: 'java.util.UUID' }),
+      field({ name: 'note', type: 'String' }),
+      field({ name: 'labels', type: 'java.util.List<java.lang.String>' }),
+      field({ name: 'attributes', type: 'java.util.Map<java.lang.String,java.lang.String>' }),
+    ],
+  }), CTX)!.content;
+
+  it('a list or map field has no control and no place in the form model', () => {
+    expect(content).toContain('data-testid="field-note"');
+    expect(content).not.toContain('data-testid="field-labels"');
+    expect(content).not.toContain('data-testid="field-attributes"');
+    expect(modelInterface(content)).not.toContain('labels');
+    expect(modelInterface(content)).not.toContain('attributes');
+  });
+
+  it('an edit sends the loaded record, so the stored collection is kept', () => {
+    expect(content).toContain('this.service.update(String(current.id), { ...current, ...data } as OrderUpdate)');
+  });
+});
+
 describe('FormGenerator — @Field(inUpdate = false)', () => {
   const gen = new FormGenerator();
   const fields = [

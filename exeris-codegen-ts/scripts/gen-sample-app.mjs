@@ -51,8 +51,11 @@ const domains = [
       { name: 'status', type: 'com.shop.OrderStatus', enumType: 'com.shop.OrderStatus', required: true, filterable: true },
       // Bounded boxed number: its Zod schema and its Signal Forms validators both carry min and max.
       { name: 'quantity', type: 'java.lang.Integer', required: true, min: 1, max: 99 },
-      // An offset date-time, typed as the processor writes it.
+      // An offset date-time and two collections, typed as the processor writes them. A collection
+      // renders as text in the list and detail and has no form control.
       { name: 'placedAt', type: 'java.time.OffsetDateTime' },
+      { name: 'labels', type: 'java.util.List<java.lang.String>' },
+      { name: 'attributes', type: 'java.util.Map<java.lang.String,java.lang.String>' },
       { name: 'productId', type: 'java.util.UUID' },
       // T20d: a *primitive* boolean. The sample carried no boolean of either kind, which
       // is why a text-input-and-'' -seeded checkbox field type-checked here for two trains.

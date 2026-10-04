@@ -345,7 +345,8 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`    switch (field.type) {`);
     lines.push(`      case 'boolean': return value ? 'Yes' : 'No';`);
     lines.push(`      case 'enum': return this.getEnumDisplayName(field.enumType ?? '', value as string);`);
-    lines.push(`      default: return String(value);`);
+    // A collection field renders its items comma-separated, and a map as its JSON.
+    lines.push(`      default: return Array.isArray(value) ? value.join(', ') : typeof value === 'object' ? JSON.stringify(value) : String(value);`);
     lines.push(`    }`);
     lines.push(`  }`);
     lines.push(``);
