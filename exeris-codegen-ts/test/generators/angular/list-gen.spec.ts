@@ -12,6 +12,7 @@
  *   - sortable headers, every filterable field's control, search, page size and row actions
  */
 
+import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import { ListGenerator, generateList } from '../../../src/generators/angular/list-gen.js';
 import {
@@ -460,6 +461,35 @@ describe('ListGenerator client-side sorting', () => {
     expect(content).toContain('return this.sorted().slice(start, start + this.pageSize());');
     expect(content).toContain('function compareValues(a: unknown, b: unknown, direction: 1 | -1): number {');
     expect(content).toContain('onSort(field: keyof Order): void {');
+  });
+
+  it('the emitted comparator orders decimal strings by value, sign and fraction length included', () => {
+    const content = gen.generate(domain({
+      entityName: 'Account',
+      fields: [field({ name: 'balance', type: 'java.math.BigDecimal', sortable: true })],
+    }), CTX)!.content;
+    const start = content.indexOf('const DECIMAL = ');
+    const end = content.indexOf('\n}\n', content.indexOf('function compareValues(')) + 3;
+    const js = ts.transpileModule(`${content.slice(start, end)}\nreturn compareValues;`, {
+      compilerOptions: { target: ts.ScriptTarget.ES2022 },
+    }).outputText;
+    const compareValues = new Function(js)() as (a: unknown, b: unknown, direction: 1 | -1) => number;
+    const sort = (values: unknown[], direction: 1 | -1 = 1) => [...values].sort((a, b) => compareValues(a, b, direction));
+
+    expect(sort(['2.5', '2.25', '1.10', '1.5', '-5', '0', '10', '-0.5', '9.99'])).toEqual(
+      ['-5', '-0.5', '0', '1.10', '1.5', '2.25', '2.5', '9.99', '10'],
+    );
+    expect(sort(['2.5', '2.25', '-5', '10'], -1)).toEqual(['10', '2.5', '2.25', '-5']);
+    // Digits beyond a double's precision still order exactly.
+    expect(sort(['12345678901234567890.02', '12345678901234567890.01'])).toEqual(
+      ['12345678901234567890.01', '12345678901234567890.02'],
+    );
+    expect(compareValues('1.50', '1.5', 1)).toBe(0);
+    // Absent values sort last in both directions; numbers compare by value; dates stay textual.
+    expect(sort([null, '3', '', '1'])).toEqual(['1', '3', null, '']);
+    expect(sort([null, '3', '1'], -1)).toEqual(['3', '1', null]);
+    expect(sort([10, 9, 100])).toEqual([9, 10, 100]);
+    expect(sort(['2026-10-04', '2026-01-15'])).toEqual(['2026-01-15', '2026-10-04']);
   });
 
   it('no sortable column: no sort state, no comparator', () => {
