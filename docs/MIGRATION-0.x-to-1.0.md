@@ -2293,6 +2293,26 @@ by coordinate, adds `exeris-diagnostics` to that list.
 
 No build step ran its six classes, so generated output is unchanged. ADR-015 records `exeris-codegen-java` as internal tooling with no downstream Maven consumers; code that nevertheless called them from the jar no longer compiles, and there is no replacement.
 
+### `@exeris/codegen-ts` installs from npmjs, at the tooling version
+
+From 0.9.0 the front-end generator is published to npmjs as `@exeris/codegen-ts`, by the same
+release tag as the `eu.exeris.tooling` Maven artefacts and at the same version (ADR-092). Install it
+from the public registry and pin it to the tooling version your Maven build uses:
+
+```bash
+npm install --save-dev @exeris/codegen-ts@0.9.0
+npx exeris-gen generate --input <metadata dir> --output <app dir>
+```
+
+No `.npmrc` entry or token is needed for it; drop any `npm link`, `file:` or Git dependency on a
+checkout of this repository. Each version carries npm provenance naming the workflow run that
+published it (`npm audit signatures` checks it). This concerns the generator only: how the
+generated app resolves the UI kit is unchanged.
+
+The package is the `exeris-gen` command line and nothing else: it exports no library API, and
+`import '@exeris/codegen-ts'` fails with `ERR_PACKAGE_PATH_NOT_EXPORTED`. Before, the same import
+resolved to the CLI entry point and ran it.
+
 ---
 
 ## Reference

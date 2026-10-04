@@ -105,6 +105,29 @@ jobs:
         working-directory: exeris-codegen-ts
         run: npm run verify:generated
 
+      # The package release.yml publishes to npmjs on a tag: `prepack` rebuilds dist/ from clean,
+      # and the listing is exactly the files a consumer receives. The tarball holds the compiled
+      # CLI, its manifest, README and LICENSE, and nothing else; anything outside that set, or a
+      # missing entry point, fails here rather than on the release tag.
+      - name: npm pack --dry-run (exeris-codegen-ts)
+        working-directory: exeris-codegen-ts
+        run: |
+          set -euo pipefail
+          npm pack --dry-run --json > "$RUNNER_TEMP/pack.json"
+          node -e '
+            const [pack] = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+            const paths = pack.files.map(f => f.path).sort();
+            const allowed = /^(dist\/.+\.js|package\.json|README\.md|LICENSE)$/;
+            const stray = paths.filter(p => !allowed.test(p));
+            const missing = ["package.json", "README.md", "LICENSE", "dist/index.js"].filter(p => !paths.includes(p));
+            console.log(paths.join("\n"));
+            console.log(`${pack.id}: ${paths.length} files, ${pack.size} bytes packed`);
+            if (stray.length || missing.length) {
+              console.error(`::error::tarball contents wrong. Unexpected: [${stray}] Missing: [${missing}]`);
+              process.exit(1);
+            }
+          ' "$RUNNER_TEMP/pack.json"
+
   # Full FE build gate: generate a complete sample app and `ng build` it — the catch
   # for component/service/template breakage (the layer that needs @angular/*), the FE
   # analog of KernelCodegenCompileTest. Heavier (installs Angular), so a separate job.

@@ -1,0 +1,8 @@
+[
+  {
+    "signature": "@exeris/codegen-ts main / types -> exports { \"./package.json\" }",
+    "since": "0.9",
+    "adr": "ADR-092",
+    "justification": "The package's import entry point is removed: src/index.ts exports nothing and runs the CLI's program.parse() when loaded, so `import '@exeris/codegen-ts'` executed the generator instead of exposing an API. The package is a CLI; it is reached through its bin (`npx exeris-gen`), and `import '@exeris/codegen-ts'` now fails with ERR_PACKAGE_PATH_NOT_EXPORTED. docs/MIGRATION-0.x-to-1.0.md 0.9.0 carries the step. Released in lockstep with the tooling reactor under ADR-092."
+  }
+]
