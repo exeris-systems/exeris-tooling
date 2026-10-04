@@ -1883,6 +1883,53 @@ The app shell header's bare `shadow` is now `shadow-sm`, its v4 name; it draws t
 `@import "@exeris/ui-kit/styles";` line after the theme import by hand, and, in an app with rich
 text, the typography dependency and its `@plugin` line after the imports.
 
+### `exeris-codegen-ts`: list, detail and form components use the kit's component classes
+
+**None (ADR-092):** only class attributes change. Styling classes are outside the emitted surface,
+and the `@exeris/ui-kit` dependency moves from `^0.2.0` to `^0.2.1`, a patch. Every control,
+column, panel and action still renders, every `data-testid` is unchanged, and no input, output,
+route or TypeScript type changes. The components look different:
+
+- **Form controls have borders.** A text, number or date input is `exeris-input`, an enum select
+  `exeris-select`, a checkbox `exeris-checkbox`, each label `exeris-label`. The controls used to
+  name only a border colour; Tailwind v4's preflight resets borders to zero and v4 has no forms
+  plugin, so they rendered without one. The kit's field classes carry their own border, padding,
+  focus ring and dark colours. A field the form reports invalid also carries `exeris-input-error`,
+  and its message is `exeris-error-text` (red, where it used to be grey). A computed field's
+  "Computed from" note is `exeris-help-text`.
+- **The list** puts its table in an `exeris-card` and makes it an `exeris-table`: the table class
+  sets the header and cell padding, type, colours, dividers and row hover, so `<thead>`, `<tbody>`
+  and the cells carry no classes of their own beyond a numeric column's `text-right`. The search
+  box is `exeris-input pl-10`, each filter `exeris-input` or `exeris-select` (full width on a
+  narrow screen, `sm:w-auto` beside the search box), the page-size selector `exeris-select w-auto`.
+  "New" is `exeris-btn exeris-btn-primary`; View, Edit and the row actions are
+  `exeris-btn exeris-btn-ghost exeris-btn-sm`, Delete is `exeris-btn exeris-btn-danger exeris-btn-sm`,
+  Previous and Next are `exeris-btn exeris-btn-secondary`. A boolean "Yes" is
+  `exeris-badge exeris-badge-success`; "No" is an `exeris-badge` on the kit's neutral surface. Enum
+  badges keep their per-constant palette.
+- **The detail view's** Details, Related records and System Information sections are each an
+  `exeris-card` with an `exeris-card-header` heading; the related list and the system grid are
+  `exeris-card-body`. Edit is the primary button, the action buttons secondary, Delete danger.
+- **Error and conflict panels** are `exeris-alert exeris-alert-danger` (load, delete, action and
+  submit errors) and `exeris-alert exeris-alert-warning` (the edit conflict). "Try again" and
+  "Reload" are `exeris-btn exeris-btn-secondary exeris-btn-sm`; the form's Cancel and submit buttons
+  are the secondary and primary buttons.
+
+The loading skeletons' bare `rounded`, a deprecated v3 alias in v4, is now `rounded-sm`, the same
+radius; the detail sections' bare `shadow` gives way to the card's.
+
+**Restyling.** Override a class in `src/styles.css`, after the imports — for example
+`.exeris-input { border-radius: 0; }` or `.exeris-btn-primary { background-color: …; }`. The kit
+declares its classes in `@layer components`, and unlayered CSS takes precedence over any layer, so
+the override applies without `!important` and without editing a generated file. A utility written
+beside a kit class in the markup also wins, which is how `pl-10` makes room for the search icon.
+Re-pointing an `--exeris-*` property (`--exeris-primary`, `--exeris-border`, …) re-themes every
+class that reads it.
+
+The components are replaced on regeneration as before. `package.json` is replaced only with
+`--overwrite`; without it, raise `@exeris/ui-kit` to `^0.2.1` by hand: 0.2.1 is the release whose
+field classes draw their borders and rings on Tailwind v4.
+
 ### Compile-classpath requirements are named in the emitted Javadoc (T30)
 
 The regenerated `Application.java` Javadoc separates compile requirements from runtime-only ones and

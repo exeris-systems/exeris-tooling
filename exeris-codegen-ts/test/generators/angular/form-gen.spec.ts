@@ -885,7 +885,8 @@ describe('FormGenerator computed fields', () => {
     // The (Auto) marker tags the computed field's label.
     expect(content).toContain('(Auto)</span></label>');
     // The readonly attribute on the rendered input.
-    expect(content).toContain('readonly class="mt-1 block w-full');
+    expect(content).toContain('readonly class="exeris-input mt-1 bg-[rgb(var(--exeris-bg-tertiary))] cursor-not-allowed opacity-75">');
+    expect(content).toContain('<p class="exeris-help-text">Computed from: first, last</p>');
     // The "Computed from: ..." note.
     expect(content).toContain('Computed from: first, last');
   });
@@ -1250,5 +1251,49 @@ describe('FormGenerator — system fields follow systemFields and the flags', ()
       expect(content).not.toContain(`data-testid="field-${name}"`);
     }
     expect(content).toContain('data-testid="field-amount"');
+  });
+});
+// ---------- kit component classes ----------
+
+describe('FormGenerator styles its controls, errors and buttons through the kit classes', () => {
+  const gen = new FormGenerator();
+  const content = gen.generate(domain({
+    entityName: 'Order',
+    versioned: true,
+    fields: [
+      field({ name: 'id', type: 'java.util.UUID' }),
+      field({ name: 'name', type: 'String', required: true }),
+      field({ name: 'paid', type: 'java.lang.Boolean' }),
+      field({ name: 'status', type: 'com.shop.OrderStatus' }),
+      field({ name: 'version', type: 'java.lang.Long' }),
+    ],
+  }), CTX)!.content;
+
+  it('a text input, a select and a checkbox carry the matching kit field class, labelled by exeris-label', () => {
+    expect(content).toContain('<label for="name" class="exeris-label">');
+    expect(content).toContain(
+      'data-testid="field-name" type="text" [formField]="form.name" class="exeris-input mt-1" [class.exeris-input-error]="form.name().invalid() && form.name().touched()">',
+    );
+    expect(content).toContain(
+      'data-testid="field-status" [formField]="form.status" class="exeris-select mt-1" [class.exeris-input-error]="form.status().invalid() && form.status().touched()">',
+    );
+    expect(content).toContain('data-testid="field-paid" type="checkbox" [formField]="form.paid" class="exeris-checkbox">');
+    expect(content).toContain('<label for="paid" class="exeris-label">');
+  });
+
+  it('a field error is exeris-error-text', () => {
+    expect(content).toContain('<p class="exeris-error-text" data-testid="error-name">');
+  });
+
+  it('the submit error is a danger alert and the conflict a warning one, with a small secondary Reload', () => {
+    expect(content).toContain('data-testid="submit-error" class="exeris-alert exeris-alert-danger text-sm"');
+    expect(content).toContain('data-testid="conflict-message" class="exeris-alert exeris-alert-warning text-sm"');
+    expect(content).toContain('data-testid="reload-button" class="exeris-btn exeris-btn-secondary exeris-btn-sm mt-2">Reload</button>');
+    expect(content).toContain('<div role="alert" class="exeris-alert exeris-alert-danger mb-6">');
+  });
+
+  it('Cancel is a secondary button and submit the primary one', () => {
+    expect(content).toContain('data-testid="cancel-button" class="exeris-btn exeris-btn-secondary">Cancel</button>');
+    expect(content).toContain('data-testid="submit-button" class="exeris-btn exeris-btn-primary">');
   });
 });
