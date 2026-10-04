@@ -31,13 +31,19 @@ const { DomainMetadataSchema } = await import(pathToFileURL(join(dist, 'models/d
 const { DEFAULT_CONFIG } = await import(pathToFileURL(join(dist, 'config.js')).href);
 
 // Fixture: an entity with an ENUM-typed field, so the generated entity type and Zod
-// schema import the enum module — if that module were the empty stub, this fails.
+// schema import the enum module — if that module were the empty stub, this fails. Its bounded
+// fields put `min` / `max` on a boxed number (a nullable schema), a primitive and a string: a
+// bound that lands on Zod's nullable wrapper does not type-check.
 const domain = DomainMetadataSchema.parse({
   packageName: 'com.shop',
   entityName: 'Battle',
   fields: [
     { name: 'id', type: 'java.util.UUID' },
     { name: 'status', type: 'com.shop.BattleStatus', enumType: 'com.shop.BattleStatus' },
+    { name: 'rounds', type: 'java.lang.Integer', required: true, min: 1, max: 12 },
+    { name: 'odds', type: 'java.lang.Double', min: 0 },
+    { name: 'turn', type: 'int', max: 99 },
+    { name: 'arena', type: 'String', minLength: 2, maxLength: 40 },
   ],
 });
 const enums = [{
@@ -134,7 +140,7 @@ check(
   [
     {
       name: 'billing',
-      domains: [peerOrder('com.billing', [{ name: 'invoiceNo', type: 'String', required: true }])],
+      domains: [peerOrder('com.billing', [{ name: 'invoiceNo', type: 'String', required: true }, { name: 'lines', type: 'java.lang.Long', min: 1 }])],
       enums: [{ name: 'OrderStatus', qualifiedName: 'com.billing.OrderStatus', packageName: 'com.billing',
                 values: [{ name: 'DRAFT', displayName: 'Draft', ordinal: 0 }] }],
     },
