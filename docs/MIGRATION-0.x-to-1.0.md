@@ -2169,9 +2169,13 @@ sent back unchanged.
 **`@Field(inUpdate = false)`.** In create mode the field is a control as before, governed by
 `inCreate`. In edit mode its control is disabled through a Signal Forms `disabled` rule bound to the
 form's `editMode()`; a disabled field is not validated, so a required field the edit cannot change
-never blocks the save. The update still carries the field, with the value the form loaded: the
-generated server's update writes every column of the row, so leaving the field out would clear it.
-The form imports `disabled` from `@angular/forms/signals` when it has such a field.
+never blocks the save. The form imports `disabled` from `@angular/forms/signals` when it has such a field.
+
+**The edit payload is the loaded record with the form's values over it** (`{ ...current, ...data }`).
+The generated server's update writes every column of the row, and the form offers no control for a
+read-only, hidden or create-only field, so an edit sent the model alone and cleared those columns.
+They keep their stored value; an `inUpdate = false` field is sent as loaded. Code that reads the
+update request on the server sees every field of the record, not only the form's controls.
 
 **What to do.** Regenerate. Then:
 - End-to-end tests that type into an `Instant` field through a date-time picker: type the ISO-8601

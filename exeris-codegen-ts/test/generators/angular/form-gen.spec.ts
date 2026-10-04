@@ -187,13 +187,28 @@ describe('FormGenerator emitted content — top-level structure', () => {
     expect(content).toContain("@if (form.code().getError('max')) { <span>Too high.</span> }");
   });
 
+  it('an edit sends the loaded record with the form values over it, so a field the form does not offer keeps its value', () => {
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      fields: [
+        field({ name: 'id', type: 'java.util.UUID' }),
+        field({ name: 'note', type: 'String' }),
+        field({ name: 'internalCode', type: 'String', hidden: true }),
+        field({ name: 'createdBy', type: 'String', inCreate: false }),
+      ],
+    }), CTX)!.content;
+    expect(content).not.toContain('internalCode:');
+    expect(content).toContain('this.service.update(String(current.id), { ...current, ...data } as OrderUpdate)');
+    expect(content).toContain('this.service.create(data as OrderCreate)');
+  });
+
   it('onSubmit dispatches to service.update in edit mode and service.create otherwise', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
       fields: [field({ name: 'orderNumber', type: 'String' })],
     }), CTX)!.content;
 
-    expect(content).toContain('const request$ = this.editMode() && current ? this.service.update(String(current.id), data as OrderUpdate) : this.service.create(data as OrderCreate);');
+    expect(content).toContain('const request$ = this.editMode() && current ? this.service.update(String(current.id), { ...current, ...data } as OrderUpdate) : this.service.create(data as OrderCreate);');
     expect(content).not.toContain("this.mode() === 'create'");
   });
 
@@ -1103,7 +1118,7 @@ describe('FormGenerator — @Field(inUpdate = false)', () => {
     expect(content).toContain('      sku: entity.sku ?? \'\',');
     expect(content).toContain(
       'this.editMode() && current ? '
-      + 'this.service.update(String(current.id), data as ProductUpdate) : '
+      + 'this.service.update(String(current.id), { ...current, ...data } as ProductUpdate) : '
       + 'this.service.create(data as ProductCreate);',
     );
   });
@@ -1138,7 +1153,7 @@ describe('FormGenerator — versioned entity', () => {
   it('sends the loaded version on update, and leaves the create payload alone', () => {
     expect(versioned).toContain(
       'this.editMode() && current ? '
-      + 'this.service.update(String(current.id), { ...data, version: this.loadedVersion() } as OrderUpdate) : '
+      + 'this.service.update(String(current.id), { ...current, ...data, version: this.loadedVersion() } as OrderUpdate) : '
       + 'this.service.create(data as OrderCreate);',
     );
   });
@@ -1176,7 +1191,7 @@ describe('FormGenerator — versioned entity', () => {
     }), CTX)!.content;
     expect(content).not.toContain('[formField]="form.rev"');
     expect(content).toContain('private readonly loadedVersion = signal<number | null>(null);');
-    expect(content).toContain('{ ...data, rev: this.loadedVersion() } as OrderUpdate');
+    expect(content).toContain('{ ...current, ...data, rev: this.loadedVersion() } as OrderUpdate');
   });
 
   it('reads an undeclared version field through a narrowing cast', () => {
@@ -1189,7 +1204,7 @@ describe('FormGenerator — versioned entity', () => {
   });
 
   it('an unversioned entity emits no version payload or conflict state', () => {
-    expect(unversioned).toContain('this.service.update(String(current.id), data as OrderUpdate)');
+    expect(unversioned).toContain('this.service.update(String(current.id), { ...current, ...data } as OrderUpdate)');
     expect(unversioned).not.toContain('loadedVersion');
     expect(unversioned).not.toContain('conflict');
     expect(unversioned).not.toContain('409');

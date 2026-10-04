@@ -339,11 +339,12 @@ export class FormGenerator implements CodeGenerator {
     lines.push('');
     // A number control holds `number | null`, the DTO's own type, so the model is the payload.
     lines.push('    const data = this.formModel();');
-    // A field of `inUpdate = false` is sent back as loaded: the control is disabled in edit mode, so
-    // the model still holds the loaded value, and the update writes every column of the row.
+    // The generated update writes every column of the row, so the edit payload is the loaded record
+    // with the form's values over it: a field the form does not offer (read-only, hidden, create-only)
+    // keeps its stored value, and an `inUpdate = false` field, disabled in edit mode, is sent as loaded.
     const updatePayload = version
-      ? `{ ...data, ${version.name}: this.loadedVersion() } as ${modelName}Update`
-      : `data as ${modelName}Update`;
+      ? `{ ...current, ...data, ${version.name}: this.loadedVersion() } as ${modelName}Update`
+      : `{ ...current, ...data } as ${modelName}Update`;
     lines.push(`    const request$ = this.editMode() && current ? this.service.update(String(current.${idField}), ${updatePayload}) : this.service.create(data as ${modelName}Create);`);
     lines.push('');
     lines.push('    return new Promise((resolve) => {');
