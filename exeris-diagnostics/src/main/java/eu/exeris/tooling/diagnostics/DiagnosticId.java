@@ -110,6 +110,14 @@ public enum DiagnosticId {
     GRAPH_EDGE_REPEATED_ON_FIELD("EXT-PROC-1013",
             "@GraphEdge is declared more than once on one field."),
 
+    /**
+     * {@code @ExerisDomain(realTimeApi = true)} on a {@code TENANT} or {@code UNIVERSE} entity: kernel
+     * events carry no isolation key, so the generated live view would send every tenant's events to
+     * every subscriber.
+     */
+    REAL_TIME_API_ON_TENANT_PARTITIONED("EXT-PROC-1014",
+            "@ExerisDomain(realTimeApi = true) is on a TENANT or UNIVERSE entity; its live view cannot be isolated per tenant."),
+
     // -----------------------------------------------------------------------
     // EXT-PROC-11xx — warnings on an ordinary build (javac WARNING)
     // -----------------------------------------------------------------------

@@ -11,7 +11,7 @@ slug: adr/ADR-044
 
 | Attribute       | Value                                                                                                  |
 |:----------------|:-------------------------------------------------------------------------------------------------------|
-| **Status**      | **ACCEPTED**                                                                                            |
+| **Status**      | **ACCEPTED** · amended 2026-10-04 (Amendment 1 — no stream handler for a tenant-partitioned entity)       |
 | **Deciders**    | Arkadiusz Przychocki                                                                                    |
 | **Date**        | 2026-06-24                                                                                              |
 | **Scope**       | per-repo (`exeris-tooling`); `tooling/codegen`                                                          |
@@ -87,3 +87,30 @@ This ratifies RFC-2026-06-22's recommendation across all four axes and resolves 
 2. **TS spec (`stream-client-gen.spec.ts`).** Pins the route parity, the determinism (byte-identical), the named-event honesty note, and — when EV1 lands — an `addEventListener` assertion per declared `@DomainEvent` (obligation 2 + 5).
 3. **Determinism + E2E gates** carry obligation 4's byte-identical guarantee.
 4. **Migration owner:** `exeris-tooling` (founder). Slice 1 is **compliant and shipped** (PR #104). Tracked, not yet compliant: per-action Slice 2 (driver 1b/route 3c/client 4b), the EV1 named-event listeners (obligation 2's per-name `addEventListener`), and the cross-cutting route-derivation parity test. Each lands under this ADR with no contract change.
+
+## Amendment 1 — No stream handler for a tenant-partitioned entity (2026-10-04)
+
+- **Amends:** obligation 1, for the entity-level driver only. Obligations 2–6 and the Engineering
+  Protocol are unchanged.
+- **Decided by:** the founder, 2026-10-04. Target exeris-tooling 0.9.0, ROADMAP item T59.
+
+The entity-level producer subscribes to the entity's `@DomainEvent` stream with no filter, and the
+kernel's `EventDescriptor` carries no tenant or isolation key, so a handler cannot tell whose event it
+is about to send. Driven against the kernel testkit's event engine, one event published under tenant
+A of a `TENANT` entity reached a stream opened under tenant B. Obligation 6 places authentication at
+the kernel edge; the edge authenticates the caller, but it does not partition the event feed.
+
+1. **`@ExerisDomain(realTimeApi = true)` on a tenant-partitioned entity is a processor error**
+   (`EXT-PROC-1014`, ADR-095). Tenant-partitioned means any tier other than `GLOBAL` (ADR-059 link
+   stub), including the deprecated `tenantScoped = true`. Obligation 1's entity-level handler is
+   emitted for `GLOBAL` entities only.
+2. **The per-action driver is not refused.** A `streaming = true` action's handler sends keep-alive
+   frames and reads nothing (`EXT-PROC-1107`), so it has nothing to leak. The driver that makes it
+   read a row must carry the tenant guard and load the row under row-level security before it opens
+   the stream.
+3. **Metadata that reaches `exeris:generate` without passing the processor is not checked.** The
+   refusal is a processor diagnostic; the generators do not repeat it.
+
+**Reversed by:** the kernel carrying an isolation key on stream events (or a per-subscriber filter),
+and the emitted handler filtering on it. That change re-admits tenant-partitioned entities and is
+planned with the 0.10.0 amendment that also fixes the per-action driver.

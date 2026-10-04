@@ -1437,6 +1437,192 @@ class ExerisDomainProcessorTest {
     }
 
     @Nested
+    @DisplayName("realTimeApi on a tenant-partitioned entity is refused (EXT-PROC-1014)")
+    class RealTimeApiTenancyTests {
+
+        private static final String REFUSAL = "[Exeris] EXT-PROC-1014: ";
+
+        /**
+         * An entity with {@code attributes} appended to {@code @ExerisDomain} and {@code fields} as
+         * its body. The annotation starts on line 9.
+         */
+        private JavaFileObject item(String attributes, String fields) {
+            return JavaFileObjects.forSourceString(
+                    "com.example.Item",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.Action;
+                    import eu.exeris.sdk.annotation.DomainEvent;
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.system.SharedScope;
+                    import java.util.UUID;
+
+                    @ExerisDomain(module = "catalog", path = "/items", %s)
+                    @DomainEvent(name = "ItemMoved", topic = "catalog.items", trigger = DomainEvent.Trigger.MANUAL)
+                    public class Item {
+                        private UUID id;
+                    %s
+                    }
+                    """.formatted(attributes, fields));
+        }
+
+        private long refusals(Compilation compilation) {
+            return compilation.errors().stream()
+                    .filter(d -> d.getMessage(null).startsWith(REFUSAL))
+                    .count();
+        }
+
+        @Test
+        @DisplayName("TENANT: refused on the @ExerisDomain line, naming the tier and both ways out")
+        void tenantIsRefused() {
+            JavaFileObject source = item(
+                    "realTimeApi = true, dataScope = ExerisDomain.DataScope.TENANT",
+                    "    private UUID tenantId;");
+
+            Compilation compilation = compileWithProcessor(source);
+
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorCount(1);
+            assertThat(compilation)
+                    .hadErrorContaining(REFUSAL + "@ExerisDomain(realTimeApi = true) on a "
+                            + "DataScope.TENANT entity: the generated live view forwards every Item "
+                            + "event on the bus to every subscriber, and kernel events carry no tenant "
+                            + "to filter on, so each tenant would receive every other tenant's events. "
+                            + "Declare dataScope = DataScope.GLOBAL if the rows are not tenant-owned, "
+                            + "or drop realTimeApi until stream events carry an isolation key.")
+                    .inFile(source)
+                    .onLine(9);
+        }
+
+        @Test
+        @DisplayName("UNIVERSE: refused too — a UNIVERSE row is owned by a tenant")
+        void universeIsRefused() {
+            Compilation compilation = compileWithProcessor(item(
+                    "realTimeApi = true, dataScope = ExerisDomain.DataScope.UNIVERSE",
+                    """
+                        private UUID tenantId;
+                        @SharedScope private UUID universeId;
+                    """));
+
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorCount(1);
+            assertThat(compilation).hadErrorContaining(REFUSAL
+                    + "@ExerisDomain(realTimeApi = true) on a DataScope.UNIVERSE entity");
+        }
+
+        @Test
+        @DisplayName("the deprecated tenantScoped = true resolves to TENANT and is refused")
+        void deprecatedTenantScopedIsRefused() {
+            Compilation compilation = compileWithProcessor(item(
+                    "realTimeApi = true, tenantScoped = true", "    private UUID tenantId;"));
+
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorCount(1);
+            assertThat(compilation).hadErrorContaining(REFUSAL
+                    + "@ExerisDomain(realTimeApi = true) on a DataScope.TENANT entity");
+        }
+
+        @Test
+        @DisplayName("a TENANT entity with no @DomainEvent is refused as well")
+        void tenantWithoutEventsIsRefused() {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Pulse",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import java.util.UUID;
+
+                    @ExerisDomain(module = "catalog", path = "/pulses", realTimeApi = true,
+                            dataScope = ExerisDomain.DataScope.TENANT)
+                    public class Pulse {
+                        private UUID id;
+                        private UUID tenantId;
+                    }
+                    """);
+
+            // Its stream sends keep-alives only today, but declaring an event later would start
+            // the cross-tenant feed with no further diagnostic.
+            Compilation compilation = compileWithProcessor(source);
+
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorCount(1);
+            assertThat(compilation).hadErrorContaining(REFUSAL);
+        }
+
+        @ParameterizedTest(name = "{0}")
+        @ValueSource(strings = {"realTimeApi = true, dataScope = ExerisDomain.DataScope.GLOBAL",
+                "realTimeApi = true"})
+        @DisplayName("GLOBAL, declared or by default: accepted, and realTimeApi reaches the metadata")
+        void globalIsAccepted(String attributes) throws IOException {
+            Compilation compilation = compileWithProcessor(item(attributes, ""));
+
+            assertThat(compilation).succeededWithoutWarnings();
+            String metadata = readContent(compilation.generatedFile(
+                    StandardLocation.CLASS_OUTPUT, "exeris-metadata/Item.json").orElseThrow());
+            assertThat(metadata).contains("\"realTimeApi\" : true");
+        }
+
+        @Test
+        @DisplayName("a TENANT entity without realTimeApi is not refused")
+        void tenantWithoutRealTimeApiIsAccepted() {
+            Compilation compilation = compileWithProcessor(item(
+                    "dataScope = ExerisDomain.DataScope.TENANT", "    private UUID tenantId;"));
+
+            assertThat(compilation).succeededWithoutWarnings();
+        }
+
+        @ParameterizedTest(name = "dataScope = {0}")
+        @ValueSource(strings = {"GLOBAL", "UNIVERSE"})
+        @DisplayName("a contradicted dataScope reports the contradiction only, not the refusal too")
+        void contradictedScopeReportsOnlyTheContradiction(String tier) {
+            Compilation compilation = compileWithProcessor(item(
+                    "realTimeApi = true, dataScope = ExerisDomain.DataScope." + tier + ", tenantScoped = true",
+                    "    private UUID tenantId;"));
+
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorCount(1);
+            assertThat(compilation).hadErrorContaining("[Exeris] EXT-PROC-1003: ");
+            assertThat(refusals(compilation)).isZero();
+        }
+
+        @Test
+        @DisplayName("an untranscribable UNIVERSE reports its missing @SharedScope and the refusal: "
+                + "neither fix clears the other")
+        void untranscribableUniverseReportsBoth() {
+            Compilation compilation = compileWithProcessor(item(
+                    "realTimeApi = true, dataScope = ExerisDomain.DataScope.UNIVERSE",
+                    "    private UUID tenantId;"));
+
+            // EXT-PROC-1007 offers dataScope = TENANT as its way out, which the refusal also
+            // covers, so the tier is decided either way and both facts hold.
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorCount(2);
+            assertThat(compilation).hadErrorContaining("[Exeris] EXT-PROC-1007: ");
+            assertThat(refusals(compilation)).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("a streaming action on a TENANT entity is not refused: its stream carries keep-alives only")
+        void streamingActionOnTenantEntityIsNotRefused() {
+            Compilation compilation = compileWithProcessor(item(
+                    "dataScope = ExerisDomain.DataScope.TENANT",
+                    """
+                        private UUID tenantId;
+
+                        @Action(name = "track", label = "Track", streaming = true)
+                        public void track() {
+                        }
+                    """));
+
+            assertThat(compilation).succeeded();
+            assertThat(refusals(compilation)).isZero();
+            assertThat(compilation).hadWarningContaining("[Exeris] EXT-PROC-1107: ");
+        }
+    }
+
+    @Nested
     @DisplayName("1.1.8 @ExerisDomain.tableName and the derived table")
     class TableNameTests {
 

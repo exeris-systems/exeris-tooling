@@ -50,6 +50,7 @@ class ExerisDomainProcessorBranchTest {
         @Test
         @DisplayName("Every documented @ExerisDomain attribute propagates into the metadata JSON")
         void everyAttributeFlowsThrough() throws IOException {
+            // GLOBAL, because realTimeApi on a TENANT or UNIVERSE entity is refused (EXT-PROC-1014).
             JavaFileObject source = JavaFileObjects.forSourceString(
                     "com.example.AllAttrs",
                     """
@@ -66,7 +67,7 @@ class ExerisDomainProcessorBranchTest {
                         graphqlApi = true,
                         realTimeApi = true,
                         internalClient = true,
-                        dataScope = ExerisDomain.DataScope.TENANT,
+                        dataScope = ExerisDomain.DataScope.GLOBAL,
                         softDelete = true,
                         audited = true,
                         versioned = true,
@@ -95,7 +96,7 @@ class ExerisDomainProcessorBranchTest {
                     .contains("\"graphqlApi\" : true")
                     .contains("\"realTimeApi\" : true")
                     .contains("\"internalClient\" : true")
-                    .contains("\"dataScope\" : \"TENANT\"")
+                    .contains("\"dataScope\" : \"GLOBAL\"")
                     .contains("\"softDelete\" : true")
                     .contains("\"audited\" : true")
                     .contains("\"versioned\" : true")

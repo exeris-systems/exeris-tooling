@@ -1732,8 +1732,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
 
         // Extract @ExerisDomain annotation values
         AnnotationMirror domainAnnotation = findAnnotation(element, "eu.exeris.sdk.annotation.ExerisDomain");
+        boolean scopeContradicted = false;
         if (domainAnnotation != null) {
-            extractDomainAnnotationValues(domainAnnotation, builder, element);
+            scopeContradicted = extractDomainAnnotationValues(domainAnnotation, builder, element);
         }
 
         // Extract fields with @Field annotations
@@ -1791,8 +1792,45 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         DomainMetadata metadata = builder.build();
         if (domainAnnotation != null) {
             warnDefaultTableChange(element, metadata);
+            // Not on a contradicted declaration: its tier is undecided until the author fixes the
+            // line EXT-PROC-1003 already reports.
+            if (!scopeContradicted) {
+                refuseRealTimeApiOnTenantPartitioned(element, domainAnnotation, metadata);
+            }
         }
         return metadata;
+    }
+
+    /**
+     * Refuses {@code realTimeApi = true} on an entity whose rows have an owning tenant.
+     *
+     * <p>The live view the flag generates subscribes to the entity's {@code @DomainEvent}s on the
+     * kernel bus and forwards every one to every open stream. A kernel {@code EventDescriptor}
+     * carries no isolation key, so the stream handler has nothing to filter on: each subscriber
+     * would receive every tenant's events. Until events carry that key, the declaration is refused
+     * rather than emitted with a cross-tenant feed.
+     *
+     * <p>Tenant-partitioned is {@code effectiveDataScope() != GLOBAL}, the predicate
+     * {@code DataScopeSupport.isTenantPartitioned} applies on the emitter side: {@code UNIVERSE}
+     * rows are owned too, and the deprecated {@code tenantScoped = true} resolves to
+     * {@code TENANT}. An entity with no {@code @DomainEvent} is refused as well, although its
+     * stream sends keep-alives only: declaring an event later would start the feed with no
+     * further diagnostic.
+     */
+    private void refuseRealTimeApiOnTenantPartitioned(TypeElement element, AnnotationMirror domainAnnotation,
+                                                      DomainMetadata metadata) {
+        DataScope tier = metadata.effectiveDataScope();
+        if (!metadata.realTimeApi() || tier == DataScope.GLOBAL) {
+            return;
+        }
+        error(DiagnosticId.REAL_TIME_API_ON_TENANT_PARTITIONED,
+                "@ExerisDomain(realTimeApi = true) on a DataScope." + tier + " entity: the generated "
+                        + "live view forwards every " + metadata.entityName() + " event on the bus to "
+                        + "every subscriber, and kernel events carry no tenant to filter on, so each "
+                        + "tenant would receive every other tenant's events. Declare dataScope = "
+                        + "DataScope.GLOBAL if the rows are not tenant-owned, or drop realTimeApi "
+                        + "until stream events carry an isolation key.",
+                element, domainAnnotation);
     }
 
     /**
@@ -1822,7 +1860,14 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                 element);
     }
 
-    private void extractDomainAnnotationValues(
+    /**
+     * Copies the {@code @ExerisDomain} attributes onto {@code builder} and runs the checks that
+     * need only the annotation and the entity's fields.
+     *
+     * @return whether {@code dataScope} and {@code tenantScoped} contradict each other, which
+     *         leaves the entity's tier undecided for every later check
+     */
+    private boolean extractDomainAnnotationValues(
             AnnotationMirror annotation, DomainMetadata.Builder builder, TypeElement element) {
         Map<String, Object> values = extractAnnotationValues(annotation);
         warnInertAttributes("ExerisDomain", values, element, annotation);
@@ -1933,6 +1978,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         if (systemFields != null) {
             builder.systemFields(systemFields);
         }
+        return contradicted;
     }
 
     /**
