@@ -1990,8 +1990,10 @@ the source changes.
     `validation`, `defaultValue`, `cssClass`, `group`, `sensitive`, `encrypted`, `maskPattern`,
     `writeOnly`, `compositeUnique`;
   - extracted but read by no generator: `indexed` (the schema indexes a `searchable`, `filterable`
-    or `unique` field and no other) and `inUpdate` (the update DTO, the OpenAPI schema and the edit
-    form carry the field anyway).
+    or `unique` field and no other).
+
+  `@Field.inUpdate` draws no warning: the emitted form reads it (see "the form's controls follow
+  the field's type" below).
 
 **What to do.** Remove the attribute or annotation, or keep it knowing it has no effect in this
 tooling version. Two cases have a working alternative:

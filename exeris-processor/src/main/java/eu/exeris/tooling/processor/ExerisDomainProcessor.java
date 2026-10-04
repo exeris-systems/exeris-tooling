@@ -523,11 +523,6 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "emitted schema indexes a field that is searchable, filterable or "
                             + "unique and no other, so indexed = true on a field that is none of "
                             + "those yields no index"),
-            new InertAttribute("Field", "inUpdate",
-                    "it is extracted into FieldMetadata.inUpdate and no generator reads it: the "
-                            + "emitted update DTO, OpenAPI schema and edit form carry the field "
-                            + "whatever this says (inCreate, its counterpart, is honoured by the "
-                            + "TypeScript create DTO and form)"),
             new InertAttribute("Saga", "description",
                     "the value reaches SagaMetadata.description in the JSON, and the TypeScript "
                             + "schema declares the field, but no emitter renders it — the emitted "
