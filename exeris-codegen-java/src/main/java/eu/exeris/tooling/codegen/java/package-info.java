@@ -7,7 +7,6 @@
  *       repository, saga, events, application bootstrap, OpenAPI, Flyway)</li>
  *   <li>{@code openapi/} — OpenAPI 3.1 specification builders shared by
  *       {@code kernel/}</li>
- *   <li>{@code dsl/} — DSL JSON generators for Studio frontend UI</li>
  * </ul>
  *
  * <h2>Architecture</h2>

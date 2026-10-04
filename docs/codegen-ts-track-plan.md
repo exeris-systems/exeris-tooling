@@ -4,7 +4,7 @@ type: design-note
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-10-02
+last-verified: 2026-10-04
 ---
 
 # codegen-ts track — the emitted front consumes what the backend serves
@@ -92,10 +92,12 @@ detail display type and the form control, and its facet slot is typed `never` un
 fills `ComponentNodeMetadata.field`. Extracting it was byte-identical, so the decisions the three
 generators disagreed on are recorded per surface rather than unified: the detail view detected an
 enum by a `…Status`/`…Type`/`…Role`/`…State` simple name and the form by any qualified non-JDK type;
-the list badges only a `Boolean` column, and renders a `LocalDateTime` with the date-only pipe; the
-form maps only qualified `java.lang` / `java.time` types to a number or date input, so a primitive
-`long` is a text input coerced to a number. P9, P10 and P12 reconcile these, each as an output
-change classified under ADR-092.
+the form maps only qualified `java.lang` / `java.time` types to a number or date input, so a primitive
+`long` is a text input coerced to a number. P10 and P12 reconcile these, each as an output change
+classified under ADR-092. The list (P9) already resolves by the rules they converge on: a boolean or
+a number is whatever the DTO carries as one, primitive or wrapper, simple or qualified; an enum is a
+type the processor emitted an `enum_*.json` for, the only enums `types/enums` exports; `LocalDate` is
+a date and `Instant` / `LocalDateTime` / `OffsetDateTime` / `ZonedDateTime` are date-times.
 
 P10 set the rules the other two converge on, as exported functions of `field-render.ts`, and the
 detail view resolves through them: **enum** — an explicit `enumType`, else a type naming an enum
@@ -105,8 +107,9 @@ or `java.lang.Boolean` (`isBooleanType`); **date** — `LocalDate` or `format: '
 `DatePipe` `'mediumDate'`; **date-time** — `Instant`, `LocalDateTime`, `OffsetDateTime`,
 `ZonedDateTime` or `format: 'datetime'`, rendered with `'medium'` (`temporalKindOf`); **number** —
 the DTO type is `number` (`isNumericType`). The `currency` / `percent` / `url` facets of `dataType`
-and the foreign-key link are unchanged. Until P9 and P12 land, the list's badge and date pipe and
-the form's enum test and input types keep their own rules.
+and the foreign-key link are unchanged. The list (P9) resolves by the same rules, except that
+`java.util.Date` is a date-time cell and `BigDecimal` / `BigInteger` are number cells; until P12
+lands, the form's enum test and input types keep their own rules.
 
 P10's related-records section links each `ONE_TO_MANY` to the target's whole list: the generated
 list handler (`KernelHandlerGenerator.handleGetAll`) calls `service.findAll()` and reads no query

@@ -282,24 +282,18 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                     "it is extracted into ActionMetadata.httpMethod and no generator reads it: the "
                             + "router serves every action on POST {domainPath}/{id}/actions/"
                             + "{kebab-action-name} (a streaming action as a POST stream route), the "
-                            + "OpenAPI document publishes POST, and the TypeScript service POSTs. The "
-                            + "only readers are the page, table and metadata emitters in the dsl "
-                            + "package, which no production code path constructs. Serving another "
-                            + "verb changes the route and the published contract on both sides, so "
-                            + "it waits on a decision — the per-action GET spectate route, an "
-                            + "ADR-044 amendment — rather than being honoured silently"),
+                            + "OpenAPI document publishes POST, and the TypeScript service POSTs. "
+                            + "Serving another verb changes the route and the published contract on "
+                            + "both sides, so it waits on a decision — the per-action GET spectate "
+                            + "route, an ADR-044 amendment — rather than being honoured silently"),
             new InertAttribute("Action", "permissions",
                     "the processor does not extract it, so ActionMetadata's permissions field is "
-                            + "empty in every build — and nothing would read it if it were filled. "
-                            + "The one generator that copies the field, DomainMetadataGenerator, is "
-                            + "constructed by no production code path, and the .meta.json it would "
-                            + "write is read by nothing. So this is not an extraction gap in front "
-                            + "of a waiting consumer: closing the extraction alone would still "
-                            + "produce no effect. Of the two access attributes this is nonetheless "
-                            + "the half with a destination in principle: the kernel's "
-                            + "RouteRequirement decides on named scopes, so a permission is what a "
-                            + "generated URL-to-policy table would carry — and that table is this "
-                            + "repository's to emit and is not built (T53)"),
+                            + "empty in every build — and no generator reads that field, so closing "
+                            + "the extraction alone would still produce no effect. Of the two access "
+                            + "attributes this is nonetheless the half with a destination in "
+                            + "principle: the kernel's RouteRequirement decides on named scopes, so "
+                            + "a permission is what a generated URL-to-policy table would carry — "
+                            + "and that table is this repository's to emit and is not built (T53)"),
             new InertAttribute("Action", "roles",
                     "the processor does not extract it, and unlike permissions it has no route-level "
                             + "destination: the kernel decides a route on scopes and never on roles, "

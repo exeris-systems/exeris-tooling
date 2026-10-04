@@ -4,7 +4,7 @@ type: migration-guide
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-10-02
+last-verified: 2026-10-04
 ---
 
 # Migration: 0.x → 1.0
@@ -1818,12 +1818,42 @@ A regenerated backend-less app no longer gets:
 - `src/app/index.ts`, when there is neither an entity nor an enum to re-export;
 - a `redirectTo: ''` route pointing at itself, when there is no entity and no `PAGE` view.
 
-`@angular/common`, `@angular/router`, `rxjs` (a peer dependency of `@angular/core`), `tslib`, the
-ui-kit and its `.npmrc` stay. The CLI does not replace an existing file without `--overwrite`, so an
+`@angular/common`, `@angular/router`, `rxjs` (a peer dependency of `@angular/core`), `tslib` and
+the ui-kit stay. The CLI does not replace an existing file without `--overwrite`, so an
 existing app keeps its `package.json`, `app.config.ts` and environments until you regenerate with
 it. Files the run no longer produces — `proxy.conf.json` and the empty barrels — are pruned when the
 output tree carries the generation manifest from an earlier run. If your own code uses `HttpClient`
 in a backend-less app, add `provideHttpClient()` to `app.config.ts` yourself.
+
+### `exeris-codegen-ts`: the app depends on `@exeris/ui-kit` from the public npm registry
+
+**Breaking:** an emitted dependency is renamed and two emitted files are no longer produced.
+
+The UI kit moved from GitHub Packages (`@exeris-systems/ui-kit` 0.1.x) to the public npm registry as
+`@exeris/ui-kit` 0.2.0, which supports Tailwind CSS v4 only and no longer exports the v3
+`tailwind.preset.js`. The regenerated app changes as follows:
+
+- **`package.json`:** the dependency is `"@exeris/ui-kit": "^0.2.0"` in place of
+  `"@exeris-systems/ui-kit": "^0.1.0"`.
+- **`src/styles.css`:** imports `@exeris/ui-kit/theme` in place of `@exeris-systems/ui-kit/theme`,
+  still after `@import "tailwindcss"`. `angular.json` keeps listing only `src/styles.css`; the
+  kit's CSS belongs in that global stylesheet, because a kit file listed in the `styles` array is
+  compiled without Tailwind and fails.
+- **`.npmrc` is no longer emitted.** It only pointed the `@exeris-systems` scope at GitHub Packages.
+  Installing the app needs no GitHub token and no `read:packages` scope, locally or in CI.
+- **`tailwind.config.js` is no longer emitted.** Tailwind v4 never reads it, and the preset it
+  imported is gone from the kit: loading it fails with `ERR_PACKAGE_PATH_NOT_EXPORTED`. The v4
+  setup is `.postcssrc.json` (`@tailwindcss/postcss`) plus the imports in `src/styles.css`, both
+  unchanged.
+
+On regeneration, an output tree that carries the generation manifest from an earlier run has its
+`.npmrc` and `tailwind.config.js` **deleted**, as is every file a run no longer produces. The
+pruner does not look at content, so a line you added to that `.npmrc` (another registry, a token
+reference) goes with it; move it to your user `~/.npmrc` or re-create the project file after
+regenerating. A tree without a manifest keeps both files: delete `tailwind.config.js`, and drop
+the `@exeris-systems:registry` line from `.npmrc`. `package.json` and `styles.css` are replaced only
+with `--overwrite`, as before; without it, rename the dependency and the import by hand. A CI
+step that appended a GitHub Packages token for the install can be removed.
 
 ### Compile-classpath requirements are named in the emitted Javadoc (T30)
 
@@ -1836,7 +1866,7 @@ code change.
 
 ### Generation no longer depends on the JVM locale
 
-Tables, columns, OpenAPI file names and DSL identifiers are lower-cased with `Locale.ROOT`. A build
+Tables, columns and OpenAPI file names are lower-cased with `Locale.ROOT`. A build
 that ran under a locale such as `tr-TR` and committed `ınvoices`-style names will regenerate them
 with a plain `i`, new migration file names included. Rename the applied migrations or keep the old
 output. A route for an entity without a declared `path` comes from the SDK's `effectivePath()`,
@@ -1980,7 +2010,7 @@ sets no switch to `false` regenerates byte-identical**. With a switch off:
   `onSearch` or debounce subscription.
 - **`filterable = false`** — the list has no filter control (`filter-<field>`), whatever the fields'
   own `filterable` says. The service, the store and the generated `<Model>Filter` type keep the
-  filter parameters: the server still accepts them.
+  filter parameters.
 
 `exportable` stays unread: nothing exports on either side.
 
@@ -1989,6 +2019,53 @@ navigate to a removed route, import a removed component or select a removed `dat
 change, or the switch must be set back to `true`. A link you write by hand to an entity whose
 detail page is off has no route to open. `generateDetail()`, the package's exported convenience,
 now returns `GeneratedFile | null`, `null` for an entity whose detail view is off.
+
+### `exeris-codegen-ts`: lists page, sort, search and filter every loaded row, and render by type
+
+`Compatibility impact: breaking (ADR-092)` for every regenerated `<entity>-list.component.ts`. TS
+only: the generated server, its OpenAPI document, the service and the store are unchanged.
+
+The generated server's list route (`GET {base}`) answers with the entity's whole collection as a
+JSON array and reads no query parameter: it does not page, sort, search or filter. The emitted list
+expected a paged envelope (`Page.content`) and sent `page`, `size`, `sort` and filter parameters the
+server ignores, so against a generated server it showed no rows. The regenerated list:
+
+- **Loads the collection once and works on it in the browser.** `findAll()` is called with no
+  arguments, and the response is read as an array (a paged envelope is still read through
+  `content`). Paging, sorting, search and filters are `computed` signals over every loaded row, so
+  they cover the whole collection rather than one page. The state is `rows`, `filtered`, `sorted`
+  (with a sortable column), `items`, `page`, `totalElements` and `totalPages`; the old `data`,
+  `filter` and `searchSubject` members and the `onFilterChange` method are gone, and with them the
+  `FormsModule`, `CommonModule` and `rxjs` imports. Only the pipes the columns use are imported.
+- **Renders each column by its type.** Every boolean type (`boolean`, `Boolean`,
+  `java.lang.Boolean`) gets the Yes/No badge, not only `Boolean`. A field whose type is an enum the
+  processor emitted gets a badge with the constant's display name, coloured from a fixed six-tone
+  palette in declaration order. Integers, decimals and `BigDecimal` / `BigInteger` render through
+  the `number` pipe; they, currency and percent columns are right-aligned. `LocalDateTime`,
+  `OffsetDateTime`, `ZonedDateTime` and `java.util.Date` now render with their time
+  (`date:'medium'`), as `Instant` did; `LocalDate` stays `date:'mediumDate'`.
+- **Sorts by a sortable column's header.** The header holds a button (`sort-<field>`) that toggles
+  ascending and descending and sets `aria-sort`. Numbers and decimal strings (`BigDecimal`,
+  `BigInteger`) order by value, sign and fraction length included; absent values sort last in both
+  directions. With no column sorted the rows keep the server's order; the old initial sort on `id`,
+  descending, is gone.
+- **Filters by every filterable field**, not the first two `Boolean` ones: a Yes/No select for a
+  boolean, a select of constants for an enum, a contains match for text, a from/to day range for a
+  date or date-time (`filter-<field>-from` / `-to`), and a min/max range for a number
+  (`filter-<field>-min` / `-max`). The entity's `@UI(filterable = false)` still removes them all.
+- **Searches the fields marked `@Field(searchable = true)`**, or every list column when none is,
+  as a contains match on each keystroke. `@UI(searchable = false)` still removes the box.
+- **Offers a page size** of 10, 20, 25 or 50 rows (`page-size`), 20 by default. The pagination bar
+  shows whenever a row passes the filters.
+- **Offers a row button for each `@Action`** that is not streaming and takes no parameters
+  (`action-<kebab-name>-<id>`). It calls the service's action method and reloads; a failure shows in
+  `action-error`. An action with parameters stays on the service, because the list has nowhere to
+  collect its input.
+
+**What to do.** Regenerate. Code or tests that read a removed member (`data`, `filter`,
+`searchSubject`, `onFilterChange`) or rely on the initial `id` sort must change. Expect a list to
+hold the whole collection in the browser: an entity with many rows needs a server-side list route
+before this shape scales, which the generated server does not provide yet.
 
 ### SDK 0.12.0 needs no source change for S6
 
@@ -2141,6 +2218,10 @@ action that runs, persists and publishes its `ACTION`-triggered `@DomainEvent`s.
 needs to watch the result can subscribe to the entity's live view (`@ExerisDomain(realTimeApi =
 true)`), which streams those events. A build that treats warnings as errors fails on this warning
 until the attribute is removed.
+
+### `eu.exeris.tooling.codegen.java.dsl` is removed
+
+No build step ran its six classes, so generated output is unchanged. ADR-015 records `exeris-codegen-java` as internal tooling with no downstream Maven consumers; code that nevertheless called them from the jar no longer compiles, and there is no replacement.
 
 ---
 
