@@ -1113,13 +1113,12 @@ describe('FormGenerator — @Field(inUpdate = false)', () => {
     expect(content.indexOf('required(path.sku);')).toBeLessThan(content.indexOf('disabled(path.sku'));
   });
 
-  it('sends the loaded value back on update: the update writes every column of the row', () => {
-    // A disabled control holds the value the edit form seeded it with, so the model is the payload.
-    expect(content).toContain('this.formModel.set(this.toFormModel(entity));');
+  it('sends the stored value back on update, read from the loaded record rather than the model', () => {
+    // The model seeds a stored null as the control's empty value; the loaded record holds the null.
     expect(content).toContain('      sku: entity.sku ?? \'\',');
     expect(content).toContain(
       'this.editMode() && current ? '
-      + 'this.service.update(String(current.id), { ...current, ...data } as ProductUpdate) : '
+      + 'this.service.update(String(current.id), { ...current, ...data, sku: current.sku } as ProductUpdate) : '
       + 'this.service.create(data as ProductCreate);',
     );
   });
@@ -1267,7 +1266,7 @@ describe('FormGenerator styles its controls, errors and buttons through the kit 
       field({ name: 'status', type: 'com.shop.OrderStatus' }),
       field({ name: 'version', type: 'java.lang.Long' }),
     ],
-  }), CTX)!.content;
+  }), ENUM_CTX)!.content;
 
   it('a text input, a select and a checkbox carry the matching kit field class, labelled by exeris-label', () => {
     expect(content).toContain('<label for="name" class="exeris-label">');

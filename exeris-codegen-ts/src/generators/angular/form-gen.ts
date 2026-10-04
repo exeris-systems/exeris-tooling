@@ -344,10 +344,15 @@ export class FormGenerator implements CodeGenerator {
     lines.push('    const data = this.formModel();');
     // The generated update writes every column of the row, so the edit payload is the loaded record
     // with the form's values over it: a field the form does not offer (read-only, hidden, create-only)
-    // keeps its stored value, and an `inUpdate = false` field, disabled in edit mode, is sent as loaded.
+    // keeps its stored value. An `inUpdate = false` field is taken from the loaded record itself, not
+    // from the model, whose seed turns a stored null into the control's empty value.
+    const fixedInEdit = createFields
+      .filter((r) => !r.form.inUpdate)
+      .map((r) => `, ${r.name}: current.${r.name}`)
+      .join('');
     const updatePayload = version
-      ? `{ ...current, ...data, ${version.name}: this.loadedVersion() } as ${modelName}Update`
-      : `{ ...current, ...data } as ${modelName}Update`;
+      ? `{ ...current, ...data${fixedInEdit}, ${version.name}: this.loadedVersion() } as ${modelName}Update`
+      : `{ ...current, ...data${fixedInEdit} } as ${modelName}Update`;
     lines.push(`    const request$ = this.editMode() && current ? this.service.update(String(current.${idField}), ${updatePayload}) : this.service.create(data as ${modelName}Create);`);
     lines.push('');
     lines.push('    return new Promise((resolve) => {');
