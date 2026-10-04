@@ -4,7 +4,7 @@ type: design-note
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-10-02
+last-verified: 2026-10-04
 ---
 
 # codegen-ts track — the emitted front consumes what the backend serves
@@ -92,10 +92,12 @@ detail display type and the form control, and its facet slot is typed `never` un
 fills `ComponentNodeMetadata.field`. Extracting it was byte-identical, so the decisions the three
 generators disagreed on are recorded per surface rather than unified: the detail view detects an
 enum by a `…Status`/`…Type`/`…Role`/`…State` simple name and the form by any qualified non-JDK type;
-the list badges only a `Boolean` column, and renders a `LocalDateTime` with the date-only pipe; the
-form maps only qualified `java.lang` / `java.time` types to a number or date input, so a primitive
-`long` is a text input coerced to a number. P9, P10 and P12 reconcile these, each as an output
-change classified under ADR-092.
+the form maps only qualified `java.lang` / `java.time` types to a number or date input, so a primitive
+`long` is a text input coerced to a number. P10 and P12 reconcile these, each as an output change
+classified under ADR-092. The list (P9) already resolves by the rules they converge on: a boolean or
+a number is whatever the DTO carries as one, primitive or wrapper, simple or qualified; an enum is a
+type the processor emitted an `enum_*.json` for, the only enums `types/enums` exports; `LocalDate` is
+a date and `Instant` / `LocalDateTime` / `OffsetDateTime` / `ZonedDateTime` are date-times.
 
 **Out of 0.9:** the ADR-047 facet and the `@UI` deprecation (1.x, per the SDK roadmap); `@View`
 G1–G6 (an SDK RFC); field-level server errors (a Java error body and an ADR-036 amendment first);
