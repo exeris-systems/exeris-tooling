@@ -179,7 +179,7 @@ class GeneratedTestsE2ETest {
                     .as("generated-test failures:%n%s", render(summary))
                     .isZero();
             // Guard against a vacuous pass: an emitter that stopped emitting @Test methods would
-            // otherwise "succeed" with zero executed tests. 24 handler cases (9 covering the
+            // otherwise "succeed" with zero executed tests. 30 handler cases (9 covering the
             // bodyless routes and the pre-decode guards — including the ADR-076 pair that pins
             // both sides of a DELETE: 204 when a row matched, 404 when none did — plus 4
             // decode-failure cases: a CALLER refusal answering 400, a SYSTEM kernel exception, a
@@ -187,18 +187,24 @@ class GeneratedTestsE2ETest {
             // @Validation cases: the baseline
             // accept, a reject and a boundary accept for each of orderNumber's two length rules
             // and quantity's two numeric ones, the not-null reject, and the one case proving
-            // handleUpdate carries the same guard) + 7 service cases (six CRUD delegations and
-            // the one T8 finder the fixture carries) + 7 repository cases for Order (the save/load
-            // round-trip and the six paths around it) + 9 for Invoice — the entity that carries
+            // handleUpdate carries the same guard — plus 6 more list-route cases: the page and size
+            // passed through, the orderNumber filter, and four refusals, the unparameterised list
+            // being one of the 9; Order declares nothing sortable, and its un-annotated id is the
+            // primary key, which is never a sort key or a filter) + 8 service cases (seven CRUD
+            // delegations, findPage included, and the one T8 finder the fixture carries) + 8
+            // repository cases for Order (the save/load round-trip, the six paths around it, and
+            // findPage's placeholder/bind alignment) + 13 for Invoice — the entity that carries
             // every system column, and the only tenant-partitioned one here, so it alone gets the
-            // tenant stamp and the four foreign-tenant cases (bound tenant accepted, foreign tenant refused,
-            // unbound left to the database, update never writes the owner) = 12 — + 15 for Species,
-            // the UNIVERSE entity: the same 12 plus the shared-scope stamp, the foreign-shared-scope refusal
-            // and the kept-when-unbound tag — + 4 saga cases — + 18 InvoiceHandlerTest cases (the 9
-            // bodyless/guard cases, the 4 decode-failure cases, 3 @Validation cases for its
-            // required reference, and the two foreign-tenant 400s) + 19 SpeciesHandlerTest cases
-            // (the same, plus the foreign-shared-scope 400).
-            assertThat(summary.getTestsSucceededCount()).isEqualTo(106);
+            // tenant stamp and the four foreign-tenant cases (bound tenant accepted, foreign tenant
+            // refused, unbound left to the database, update never writes the owner) — + 16 for
+            // Species, the UNIVERSE entity: the same 13 plus the shared-scope stamp, the
+            // foreign-shared-scope refusal and the kept-when-unbound tag — + 4 saga cases — + 23
+            // InvoiceHandlerTest cases (the 9 bodyless/guard cases, 5 further list cases — page and
+            // size, four refusals; every other field is a system field or not flagged — the 4
+            // decode-failure cases, 3 @Validation cases for its required reference, and the two
+            // foreign-tenant 400s) + 24 SpeciesHandlerTest cases (the same, plus the
+            // foreign-shared-scope 400).
+            assertThat(summary.getTestsSucceededCount()).isEqualTo(126);
         }
     }
 

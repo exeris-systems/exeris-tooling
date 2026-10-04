@@ -311,7 +311,7 @@ class KernelHandlerTestGeneratorTest {
         assertThat(source)
                 .contains("static final class StubOrderService extends OrderService")
                 .contains("super((OrderRepository) null)")
-                .contains("public List<Order> findAll()")
+                .contains("public OrderPage findPage(OrderListQuery query)")
                 .contains("public Optional<Order> findById(UUID id)")
                 .contains("public void delete(UUID id)");
     }

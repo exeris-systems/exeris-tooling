@@ -1,6 +1,15 @@
+---
+title: "ADR-079 — The emitted OpenAPI describes no authentication, because the emitted application performs none"
+type: adr
+visibility: public
+owning-repo: exeris-tooling
+status: active
+slug: adr/ADR-079
+---
+
 # ADR-079 — The emitted OpenAPI describes no authentication, because the emitted application performs none
 
-- **Status:** ACCEPTED (2026-08-28)
+- **Status:** ACCEPTED (2026-08-28) · amended 2026-10-04 (Amendment 1 — the collection `GET` declares `400` and the page envelope, ADR-096)
 - **Repo:** `exeris-tooling`
 - **Scope:** tooling / codegen (emitted artefact contract)
 - **Visibility:** public
@@ -184,3 +193,30 @@ that is not there.
 - `OpenApiComponentsBuilderTest#buildsThreeSchemas` — no scheme on the per-entity components.
 - Each was perturbed and observed to fail: re-adding the document requirement, re-adding `401` to
   the by-id `GET`, and re-adding `404` to the collection `GET`.
+
+## Amendment 1 — the collection `GET` reads a query and declares `400` (2026-10-04)
+
+**Status:** Accepted *(changes one row of the Decision's table and one verification test; the
+principle — declare exactly the statuses the emitted handler can answer — is unchanged)*
+
+ADR-096 makes the list route read `page`, `size`, `sort` and filter parameters, and answer `400` for
+a query it refuses, before the service is reached. The collection `GET`'s handler can therefore
+answer `400`, and the operation declares it:
+
+| Route | Declares |
+|---|---|
+| `GET` collection | `200` (content `application/json`, schema `<Entity>Page`), `400`, `500` |
+
+Every other row of the table is unchanged. The operation also declares the query parameters
+ADR-096 obligation 10 lists.
+
+The components gain one schema per entity, `<Entity>Page`, beside the entity, create and update
+schemas; no security scheme is added. Verification:
+
+- `OpenApiPathsBuilderTest#responseSetsFollowTheRouteShape` — the collection `GET` is
+  `containsOnlyKeys("200", "400", "500")`.
+- `OpenApiComponentsBuilderTest#buildsFourSchemas` (was `buildsThreeSchemas`) —
+  `containsOnlyKeys` over the entity, create, update and `Page` schemas, and still no security scheme.
+- `OpenApiPathsBuilderTest#listOperationDeclaresTheQuery` and `ListQueryContractE2ETest` — the
+  parameters and the `200` content schema.
+

@@ -106,9 +106,12 @@ class KernelRepositoryTestGeneratorTest {
         // The test and the repository are generated from one DomainMetadata, so a changed column
         // list changes both and a SQL-text assertion could never fail. What is actually at risk is
         // index alignment between the bind path and the read path, and that only shows at runtime.
+        // findPage's case reads the statement only to count its placeholders against the binds,
+        // which two separate emitter walks produce; it compares no SQL text.
         assertThat(source)
                 .doesNotContain("SELECT ")
-                .doesNotContain("INSERT INTO")
+                .doesNotContain("INSERT INTO");
+        assertThat(source.replace("persistence.sql.chars().filter(c -> c == '?').count()", ""))
                 .doesNotContain("persistence.sql");
     }
 

@@ -201,9 +201,9 @@ class OpenApiPathsBuilderTest {
 
         Paths paths = OpenApiPathsBuilder.buildPaths(plain);
 
-        // The collection GET parses no id and decodes no body, so it can reject nothing, and it has
-        // no id to miss: its handler is a service call inside the 500 catch and nothing else.
-        assertThat(paths.get("/orders").getGet().getResponses()).containsOnlyKeys("200", "500");
+        // The collection GET has no id to miss, so no 404; it parses a query string, and a query the
+        // list query refuses is the caller's 400.
+        assertThat(paths.get("/orders").getGet().getResponses()).containsOnlyKeys("200", "400", "500");
         // The create POST decodes a body — 400 — but addresses no row, so no 404.
         assertThat(paths.get("/orders").getPost().getResponses()).containsOnlyKeys("201", "400", "500");
         assertThat(paths.get("/orders/{id}").getDelete().getResponses())
@@ -215,5 +215,24 @@ class OpenApiPathsBuilderTest {
         assertThat(OpenApiPathsBuilder.buildPaths(locked)
                 .get("/orders/{id}/actions/approve").getPost().getResponses())
                 .containsOnlyKeys("200", "400", "404", "409", "500");
+    }
+
+    @Test
+    @DisplayName("the list operation declares page and size always, sort only when something is "
+            + "sortable, one typed parameter per filter, and the page envelope")
+    void listOperationDeclaresTheQuery() {
+        DomainMetadata unsortable = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .fields(List.of(eu.exeris.sdk.sourcemodel.ast.FieldMetadata.builder("urgent", "boolean")
+                        .filterable(true).build()))
+                .build();
+
+        Operation list = OpenApiPathsBuilder.buildPaths(unsortable).get("/orders").getGet();
+
+        assertThat(list.getParameters()).extracting(p -> p.getName()).containsExactly("page", "size", "urgent");
+        assertThat(list.getParameters().get(2).getSchema().getType()).isEqualTo("boolean");
+        assertThat(list.getParameters().get(1).getSchema().getMaximum().intValue()).isEqualTo(100);
+        assertThat(list.getResponses().get("200").getContent().get("application/json").getSchema().get$ref())
+                .isEqualTo("#/components/schemas/OrderPage");
     }
 }

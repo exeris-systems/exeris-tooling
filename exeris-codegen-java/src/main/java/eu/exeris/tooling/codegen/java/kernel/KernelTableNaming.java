@@ -1,6 +1,7 @@
 package eu.exeris.tooling.codegen.java.kernel;
 
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
+import eu.exeris.tooling.codegen.java.support.ColumnNaming;
 
 import java.util.Locale;
 
@@ -51,7 +52,7 @@ final class KernelTableNaming {
      * (not {@code customer_id_id}).
      */
     static String foreignKeyColumn(String relationshipName) {
-        return toSnakeCase(foreignKeyBase(relationshipName)) + "_id";
+        return ColumnNaming.foreignKeyColumn(relationshipName);
     }
 
     /**
@@ -62,13 +63,6 @@ final class KernelTableNaming {
      * finder name + parameter name in the repository/service emitters.
      */
     static String foreignKeyBase(String relationshipName) {
-        if (relationshipName.length() > 2 && relationshipName.endsWith("Id")) {
-            return relationshipName.substring(0, relationshipName.length() - 2);
-        }
-        return relationshipName;
-    }
-
-    private static String toSnakeCase(String camelCase) {
-        return camelCase.replaceAll("([a-z])([A-Z])", "$1_$2").toLowerCase(Locale.ROOT);
+        return ColumnNaming.foreignKeyBase(relationshipName);
     }
 }

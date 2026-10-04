@@ -64,7 +64,7 @@ class KernelCodegenE2ETest {
         private final KernelGeneratorStrategy strategy = new KernelGeneratorStrategy();
 
         @Test
-        @DisplayName("Should generate exactly the registered set (Controller, Service, Repository, DomainError, Event + EventHandler + GraphSync + Saga when declared, Migration, OpenAPI, Client)")
+        @DisplayName("Should generate exactly the registered set (Controller, Service, Repository, DomainError, ListQuery + Page, Event + EventHandler + GraphSync + Saga when declared, Migration, OpenAPI, Client)")
         void shouldGenerateCoreArtifacts() {
             List<GeneratedFile> files = strategy.generate(orderMetadata);
             assertThat(files).extracting(GeneratedFile::artifactType)
@@ -74,6 +74,8 @@ class KernelCodegenE2ETest {
                             ArtifactType.REPOSITORY,
                             ArtifactType.DOMAIN_ERROR,  // <Entity>NotFoundException (ADR-076)
                             ArtifactType.DOMAIN_ERROR,  // <Entity>TenantMismatchException
+                            ArtifactType.LIST_QUERY,    // <Entity>ListQuery
+                            ArtifactType.LIST_QUERY,    // <Entity>Page
                             ArtifactType.EVENT,
                             ArtifactType.EVENT_HANDLER,
                             ArtifactType.GRAPH_SYNC,

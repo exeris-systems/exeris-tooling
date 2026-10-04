@@ -69,7 +69,6 @@ public class KernelClientGenerator implements KernelArtifactGenerator {
             ClassName.get("eu.exeris.kernel.core.http.client", "KernelWebClient", "WebClientException");
     private static final ClassName UUID = ClassName.get("java.util", "UUID");
     private static final ClassName OPTIONAL = ClassName.get("java.util", "Optional");
-    private static final ClassName LIST = ClassName.get("java.util", "List");
     private static final ClassName VOID = ClassName.get("java.lang", "Void");
 
     @Override
@@ -81,7 +80,6 @@ public class KernelClientGenerator implements KernelArtifactGenerator {
 
         ClassName entityType = ClassName.get(metadata.packageName(), entity);
         TypeName optionalOfEntity = ParameterizedTypeName.get(OPTIONAL, entityType);
-        TypeName listOfEntity = ParameterizedTypeName.get(LIST, entityType);
 
         TypeSpec client = KernelScaffold.publicClass(className)
                 .addJavadoc("Generated client for the $L API.\n", entity)
@@ -101,8 +99,8 @@ public class KernelClientGenerator implements KernelArtifactGenerator {
                 .addField(FieldSpec.builder(WEB_CLIENT, "client", Modifier.PRIVATE, Modifier.FINAL).build())
                 .addMethod(buildConstructor(className))
                 .addMethod(buildFindById(entity, entityType, optionalOfEntity))
-                .addMethod(buildFindAllPaged(entity, entityType, listOfEntity))
-                .addMethod(buildFindAll(entity, entityType, listOfEntity))
+                .addMethod(buildFindAllPaged(entity, metadata))
+                .addMethod(buildFindAll(entity, metadata))
                 .addMethod(buildCreate(entity, entityType))
                 .addMethod(buildUpdate(entity, entityType))
                 .addMethod(buildDelete(entity))
@@ -185,30 +183,45 @@ public class KernelClientGenerator implements KernelArtifactGenerator {
                 .build();
     }
 
-    private MethodSpec buildFindAllPaged(String entity, ClassName entityType, TypeName listOfEntity) {
+    /**
+     * {@code findAll(page, size)} — the first {@code size}-row page at {@code page}, unsorted and
+     * unfiltered. A convenience over {@link #buildFindAll}; it makes no request of its own.
+     */
+    private MethodSpec buildFindAllPaged(String entity, DomainMetadata metadata) {
+        ClassName queryType = KernelListQueryGenerator.listQueryType(metadata);
         return MethodSpec.methodBuilder("findAll")
-                .addJavadoc("Finds all $L entities with pagination.\n", entity)
+                .addJavadoc("Finds one page of $L entities, unsorted and unfiltered.\n", entity)
                 .addJavadoc("\n")
                 .addJavadoc("@param page page number (0-based)\n")
-                .addJavadoc("@param size page size\n")
-                .addJavadoc("@return list of entities\n")
+                .addJavadoc("@param size page size, 1 to {@link $T#MAX_SIZE}\n", queryType)
+                .addJavadoc("@return the page\n")
+                .addJavadoc("@throws IllegalArgumentException if either is out of range — refused here\n")
+                .addJavadoc("        rather than sent, since the server would answer 400\n")
                 .addModifiers(Modifier.PUBLIC)
-                .returns(listOfEntity)
+                .returns(KernelListQueryGenerator.pageType(metadata))
                 .addParameter(TypeName.INT, "page")
                 .addParameter(TypeName.INT, "size")
-                .addStatement("String path = BASE_PATH + $S + page + $S + size", "?page=", "&size=")
-                .addStatement("return $T.of(client.get(path, $T[].class))", LIST, entityType)
+                .addStatement("return findAll($T.of(page, size))", queryType)
                 .build();
     }
 
-    private MethodSpec buildFindAll(String entity, ClassName entityType, TypeName listOfEntity) {
+    /**
+     * {@code findAll(query)} — the list route with the query's page, sort and filters, decoded into
+     * the per-entity page record. The query string is the one {@code <Entity>ListQuery.parse} reads
+     * on the server, written by the same type.
+     */
+    private MethodSpec buildFindAll(String entity, DomainMetadata metadata) {
+        ClassName queryType = KernelListQueryGenerator.listQueryType(metadata);
+        ClassName pageType = KernelListQueryGenerator.pageType(metadata);
         return MethodSpec.methodBuilder("findAll")
-                .addJavadoc("Finds all $L entities.\n", entity)
+                .addJavadoc("Finds one page of $L entities: the query's page, sort and filters.\n", entity)
                 .addJavadoc("\n")
-                .addJavadoc("@return list of entities\n")
+                .addJavadoc("@param query the page, sort and filters\n")
+                .addJavadoc("@return the page\n")
                 .addModifiers(Modifier.PUBLIC)
-                .returns(listOfEntity)
-                .addStatement("return $T.of(client.get(BASE_PATH, $T[].class))", LIST, entityType)
+                .returns(pageType)
+                .addParameter(queryType, "query")
+                .addStatement("return client.get(BASE_PATH + $S + query.toQueryString(), $T.class)", "?", pageType)
                 .build();
     }
 

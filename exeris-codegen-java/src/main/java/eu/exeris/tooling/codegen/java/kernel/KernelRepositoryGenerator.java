@@ -11,8 +11,11 @@ import com.palantir.javapoet.TypeVariableName;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
+import eu.exeris.tooling.codegen.java.support.ColumnNaming;
 import eu.exeris.tooling.codegen.java.support.DataScopeSupport;
+import eu.exeris.tooling.codegen.java.support.DomainTypeKind;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
+import eu.exeris.tooling.codegen.java.support.ListQuerySupport;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import static eu.exeris.tooling.codegen.java.support.DataScopeSupport.isTenantPartitioned;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
@@ -129,17 +132,6 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
 
     // Format-string / code-fragment literals — consolidated so SonarQube
     // S1192 stays quiet and so the SQL shape can evolve in one place.
-    private static final String LIST_PREFIX = "List<";
-    /**
-     * The same type spelled the way the processor records it. {@code FieldMetadata.type()} comes
-     * from {@code VariableElement.asType().toString()}, which javac always renders fully
-     * qualified — so a source field declared {@code List<Tag>} arrives as
-     * {@code java.util.List<com.app.domain.Tag>}. Accepting only the short form (which every
-     * hand-built test fixture uses) sent real collection fields down the ENUM_LIKE path, where
-     * {@code ClassName.bestGuess} split the type on its dots and failed with
-     * "not a valid name: List&lt;com" — i.e. any entity with a collection field crashed codegen.
-     */
-    private static final String QUALIFIED_LIST_PREFIX = "java.util.List<";
     private static final String ENTITY_SRC = "entity";
     private static final String WHERE_ID_CLAUSE = " WHERE id = ?";
     private static final String SQL_VAR_STMT = "String sql = $S";
@@ -148,21 +140,6 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     private static final String RETURN_ENTITY_STMT = "return entity";
     private static final String BIND_STRING_NULL_GUARDED =
             "stmt.bindString($L, $L == null ? null : $L.toString())";
-
-    // Type-name variants accepted in FieldMetadata.type() — consolidated
-    // here so the emit-side switch is a single dispatch on DomainTypeKind
-    // instead of a chain of equality probes.
-    private static final Set<String> UUID_TYPES = Set.of("UUID", "java.util.UUID");
-    private static final Set<String> STRING_TYPES = Set.of("String", "java.lang.String");
-    private static final Set<String> LONG_TYPES = Set.of("Long", "long", "java.lang.Long");
-    private static final Set<String> INT_TYPES = Set.of("Integer", "int", "java.lang.Integer");
-    private static final Set<String> BOOL_TYPES = Set.of("Boolean", "boolean", "java.lang.Boolean");
-    private static final Set<String> DOUBLE_TYPES = Set.of("Double", "double", "java.lang.Double");
-    private static final Set<String> BIG_DECIMAL_TYPES = Set.of("BigDecimal", "java.math.BigDecimal");
-
-    private enum DomainTypeKind {
-        LIST, UUID, STRING, LONG, INT, BOOL, DOUBLE, BIG_DECIMAL, INSTANT_LIKE, LOCAL_DATE_TIME, LOCAL_DATE, ENUM_LIKE
-    }
 
     /**
      * Whether the emitted repository for {@code metadata} imports Jackson 3 — true exactly when a
@@ -179,33 +156,13 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         return metadata.fields().stream().anyMatch(f -> listElementType(f.type()) != null);
     }
 
-    /**
-     * The element type of a {@code List}-typed field, in either spelling, or {@code null} when
-     * the type is not a list.
-     */
+    /** The element type of a {@code List}-typed field, or {@code null} — see {@link DomainTypeKind}. */
     private static String listElementType(String type) {
-        for (String prefix : List.of(LIST_PREFIX, QUALIFIED_LIST_PREFIX)) {
-            if (type.startsWith(prefix) && type.endsWith(">")) {
-                return type.substring(prefix.length(), type.length() - 1);
-            }
-        }
-        return null;
+        return DomainTypeKind.listElementType(type);
     }
 
     private static DomainTypeKind classifyDomainType(String type) {
-        if (listElementType(type) != null) return DomainTypeKind.LIST;
-        if (UUID_TYPES.contains(type)) return DomainTypeKind.UUID;
-        if (STRING_TYPES.contains(type)) return DomainTypeKind.STRING;
-        if (LONG_TYPES.contains(type)) return DomainTypeKind.LONG;
-        if (INT_TYPES.contains(type)) return DomainTypeKind.INT;
-        if (BOOL_TYPES.contains(type)) return DomainTypeKind.BOOL;
-        if (DOUBLE_TYPES.contains(type)) return DomainTypeKind.DOUBLE;
-        if (BIG_DECIMAL_TYPES.contains(type)) return DomainTypeKind.BIG_DECIMAL;
-        if (type.contains(INSTANT_TYPE)) return DomainTypeKind.INSTANT_LIKE;
-        // Check LocalDateTime before LocalDate ("LocalDateTime".contains("LocalDate")).
-        if (type.contains("LocalDateTime")) return DomainTypeKind.LOCAL_DATE_TIME;
-        if (type.contains("LocalDate")) return DomainTypeKind.LOCAL_DATE;
-        return DomainTypeKind.ENUM_LIKE;
+        return DomainTypeKind.of(type);
     }
 
     @Override
@@ -294,7 +251,8 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                         .addStatement("this.executor = executor")
                         .build())
                 .addMethod(buildFindById(ctx, optionalOfEntity))
-                .addMethod(buildFindAll(ctx, listOfEntity));
+                .addMethod(buildFindAll(ctx, listOfEntity))
+                .addMethod(buildFindPage(ctx));
 
         // T8: cross-aggregate finders for filterable fields and MANY_TO_ONE FK
         // columns, so callers stop doing O(n) findAll().stream().filter(...).
@@ -303,6 +261,11 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         for (MethodSpec finder : buildFinders(ctx, listOfEntity)) {
             repo.addMethod(finder);
         }
+
+        if (!ListQuerySupport.sortable(metadata).isEmpty()) {
+            repo.addMethod(buildSortColumn(ctx));
+        }
+        repo.addMethod(buildBindListFilter(ctx));
 
         repo.addMethod(buildSave(ctx))
                 .addMethod(buildUpdate(ctx))
@@ -513,6 +476,142 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                         PERSISTENCE_STATEMENT, QUERY_RESULT,
                         LIST_TYPE, ctx.entityType(), ARRAY_LIST)
                 .build();
+    }
+
+    /**
+     * The list route's query: one page of the rows the {@code <Entity>ListQuery} filters select, in
+     * its sort order, and the number of rows matched — two statements inside one
+     * {@code executor.query}, so both read through the same connection.
+     *
+     * <p><b>Nothing from the request reaches the SQL as text.</b> The statement is assembled from
+     * fragments emitted here: a predicate per non-null filter component, each a fixed
+     * {@code <column> = ?}, the {@code ORDER BY} column from {@code sortColumn}'s fixed table, and
+     * {@code LIMIT ? OFFSET ?}. Filter values, the limit and the offset are bound. The predicates are
+     * appended and bound by walking the filter components in the same emitted order, so bind index
+     * <em>i</em> is predicate <em>i</em> by construction.
+     *
+     * <p>{@code id} closes every {@code ORDER BY}, so rows that tie on the sort column keep one order
+     * from page to page and a row cannot appear on two pages or on none.
+     *
+     * <p>The soft-delete predicate is the one {@code findAll} applies. Tenant and shared-scope
+     * visibility are left to row-level security exactly as on {@code findAll}: nothing here binds a
+     * tenant, so the list reads what the session's policy shows and nothing else.
+     */
+    private MethodSpec buildFindPage(Context ctx) {
+        DomainMetadata metadata = ctx.metadata();
+        ClassName queryType = KernelListQueryGenerator.listQueryType(metadata);
+        ClassName pageType = KernelListQueryGenerator.pageType(metadata);
+        ClassName filterType = KernelListQueryGenerator.filterType(metadata);
+        String selectCols = String.join(", ", ctx.columns().stream().map(Column::sqlName).toList());
+
+        MethodSpec.Builder method = MethodSpec.methodBuilder("findPage")
+                .addModifiers(Modifier.PUBLIC)
+                .returns(pageType)
+                .addParameter(queryType, "query")
+                .addJavadoc("One page of rows matching {@code query}'s filters, in its sort order, with the\n")
+                .addJavadoc("total number of matching rows.\n")
+                .addJavadoc("\n")
+                .addJavadoc("@param query the page, sort and filters; already validated by its constructor\n")
+                .addJavadoc("@return the page\n")
+                .addStatement("$T filter = query.filter()", filterType)
+                .addStatement("$T<String> predicates = new $T<>()", LIST_TYPE, ARRAY_LIST);
+        if (metadata.softDelete()) {
+            method.addStatement("predicates.add($S)", toSnakeCase(ctx.sys().deleted()) + " = false");
+        }
+        for (ListQuerySupport.Property filter : ListQuerySupport.filters(metadata)) {
+            method.beginControlFlow("if (filter.$L() != null)", filter.name())
+                    .addStatement("predicates.add($S)", filter.column() + " = ?")
+                    .endControlFlow();
+        }
+        method.addStatement("String where = predicates.isEmpty() ? $S : $S + String.join($S, predicates)",
+                "", " WHERE ", " AND ");
+        if (ListQuerySupport.sortable(metadata).isEmpty()) {
+            method.addStatement("String order = $S", " ORDER BY id");
+        } else {
+            method.addStatement("String order = query.sort() == null ? $S : $S + sortColumn(query.sort())"
+                            + " + (query.descending() ? $S : $S)",
+                    " ORDER BY id", " ORDER BY ", " DESC, id", " ASC, id");
+        }
+        method.addStatement("String countSql = $S + where", "SELECT COUNT(*) FROM " + ctx.table())
+                .addStatement("String pageSql = $S + where + order + $S",
+                        "SELECT " + selectCols + " FROM " + ctx.table(), " LIMIT ? OFFSET ?")
+                .addStatement("""
+                        return executor.query(conn -> {
+                            long total;
+                            try ($T stmt = conn.prepare(countSql)) {
+                                bindListFilter(stmt, filter);
+                                try ($T qr = stmt.executeQuery()) {
+                                    total = qr.next() ? qr.row().getLong(0) : 0L;
+                                }
+                            }
+                            $T<$T> content = new $T<>();
+                            try ($T stmt = conn.prepare(pageSql)) {
+                                int next = bindListFilter(stmt, filter);
+                                stmt.bindInt(next, query.size());
+                                stmt.bindLong(next + 1, (long) query.page() * query.size());
+                                try ($T qr = stmt.executeQuery()) {
+                                    while (qr.next()) {
+                                        content.add(mapRow(qr.row()));
+                                    }
+                                }
+                            }
+                            return $T.of(content, total, query.page(), query.size());
+                        })""",
+                        PERSISTENCE_STATEMENT, QUERY_RESULT,
+                        LIST_TYPE, ctx.entityType(), ARRAY_LIST,
+                        PERSISTENCE_STATEMENT, QUERY_RESULT, pageType);
+        return method.build();
+    }
+
+    /**
+     * The fixed table from a sortable property to its column — the only path by which {@code sort}
+     * reaches SQL. The query's constructor has already refused any other property, so the
+     * {@code default} is unreachable from a request; it throws rather than fall back, so a query
+     * built around the constructor cannot sort on text.
+     */
+    private MethodSpec buildSortColumn(Context ctx) {
+        MethodSpec.Builder method = MethodSpec.methodBuilder("sortColumn")
+                .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+                .returns(String.class)
+                .addParameter(String.class, "property")
+                .addCode("return switch (property) {\n$>");
+        for (ListQuerySupport.Property property : ListQuerySupport.sortable(ctx.metadata())) {
+            method.addCode("case $S -> $S;\n", property.name(), property.column());
+        }
+        return method.addCode("default -> throw new $T($S + property);\n$<};\n",
+                        ILLEGAL_ARGUMENT_EXCEPTION, "not a sortable property: ")
+                .build();
+    }
+
+    /**
+     * Binds the non-null filter components from index 0, in the order {@code findPage} appended
+     * their predicates, and returns the next free index. Each value goes through the same bind its
+     * column's writes use — a {@code BigDecimal} as its plain string, an enum or a {@code LocalDate}
+     * as its {@code toString()}.
+     */
+    private MethodSpec buildBindListFilter(Context ctx) {
+        MethodSpec.Builder method = MethodSpec.methodBuilder("bindListFilter")
+                .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+                .returns(TypeName.INT)
+                .addParameter(PERSISTENCE_STATEMENT, "stmt")
+                .addParameter(KernelListQueryGenerator.filterType(ctx.metadata()), "filter")
+                .addStatement("int index = 0");
+        for (ListQuerySupport.Property filter : ListQuerySupport.filters(ctx.metadata())) {
+            String value = "filter." + filter.name() + "()";
+            method.beginControlFlow("if ($L != null)", value);
+            switch (filter.kind()) {
+                case UUID -> method.addStatement("stmt.bindUuid(index++, $L)", value);
+                case STRING -> method.addStatement("stmt.bindString(index++, $L)", value);
+                case LONG -> method.addStatement("stmt.bindLong(index++, $L)", value);
+                case INT -> method.addStatement("stmt.bindInt(index++, $L)", value);
+                case BOOL -> method.addStatement("stmt.bindBoolean(index++, $L)", value);
+                case DOUBLE -> method.addStatement("stmt.bindDouble(index++, $L)", value);
+                case BIG_DECIMAL -> method.addStatement("stmt.bindString(index++, $L.toPlainString())", value);
+                default -> method.addStatement("stmt.bindString(index++, $L.toString())", value);
+            }
+            method.endControlFlow();
+        }
+        return method.addStatement("return index").build();
     }
 
     /**
@@ -1373,7 +1472,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     }
 
     private static String toSnakeCase(String camelCase) {
-        return camelCase.replaceAll("([a-z])([A-Z])", "$1_$2").toLowerCase(java.util.Locale.ROOT);
+        return ColumnNaming.snakeCase(camelCase);
     }
 
     private static String capitalize(String s) {

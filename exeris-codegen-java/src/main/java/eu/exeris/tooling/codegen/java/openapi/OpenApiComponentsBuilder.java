@@ -3,6 +3,7 @@ package eu.exeris.tooling.codegen.java.openapi;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 import eu.exeris.tooling.codegen.java.support.DataScopeSupport;
+import eu.exeris.tooling.codegen.java.support.ListQuerySupport;
 import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.media.Schema;
 
@@ -26,6 +27,7 @@ public final class OpenApiComponentsBuilder {
         schemas.put(metadata.entityName(), buildEntitySchema(metadata));
         schemas.put(metadata.entityName() + "CreateDto", buildCreateDtoSchema(metadata));
         schemas.put(metadata.entityName() + "UpdateDto", buildUpdateDtoSchema(metadata));
+        schemas.put(pageSchemaName(metadata.entityName()), buildPageSchema(metadata));
         components.setSchemas(schemas);
         return components;
     }
@@ -64,6 +66,42 @@ public final class OpenApiComponentsBuilder {
         properties.put("createdAt", new Schema<String>().type("string").format("date-time").description("Creation timestamp"));
         properties.put("updatedAt", new Schema<String>().type("string").format("date-time").description("Last update timestamp"));
         schema.setProperties(properties);
+        return schema;
+    }
+
+    /** The name of the list route's envelope schema — {@code <Entity>Page}, as the Java record is named. */
+    static String pageSchemaName(String entityName) {
+        return entityName + "Page";
+    }
+
+    /**
+     * The list route's envelope, member for member as {@link ListQuerySupport#ENVELOPE} names it and
+     * the generated {@code <Entity>Page} record declares it. Every member is always present.
+     */
+    private static Schema<?> buildPageSchema(DomainMetadata metadata) {
+        Schema<Object> schema = new Schema<>();
+        schema.setType("object");
+        schema.setDescription("One page of " + metadata.entityName());
+        Map<String, Schema> properties = new LinkedHashMap<>();
+        Schema<Object> content = new Schema<>();
+        content.setType("array");
+        content.setItems(new Schema<>().$ref("#/components/schemas/" + metadata.entityName()));
+        content.setDescription("The rows of this page, in the query's order");
+        properties.put("content", content);
+        properties.put("totalElements", new Schema<Long>().type("integer").format("int64")
+                .description("The number of rows the query matched"));
+        properties.put("totalPages", new Schema<Integer>().type("integer").format("int32")
+                .description("The number of pages of size those rows fill"));
+        properties.put("size", new Schema<Integer>().type("integer").format("int32")
+                .description("The page size"));
+        properties.put("number", new Schema<Integer>().type("integer").format("int32")
+                .description("The zero-based page index"));
+        properties.put("first", new Schema<Boolean>().type("boolean")
+                .description("Whether this is the first page"));
+        properties.put("last", new Schema<Boolean>().type("boolean")
+                .description("Whether no page follows this one"));
+        schema.setProperties(properties);
+        schema.setRequired(new java.util.ArrayList<>(ListQuerySupport.ENVELOPE));
         return schema;
     }
 

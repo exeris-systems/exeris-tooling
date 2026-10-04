@@ -18,6 +18,8 @@ import java.util.List;
  *   <li>{@link KernelActionStreamHandlerGenerator} — per-action SSE stream handlers against the same streaming SPI (one per {@code @Action(streaming=true)}; ADR-044 Slice 2)</li>
  *   <li>{@link KernelServiceGenerator} — POJO domain services (delegates to {@code *Repository}; no direct Kernel API surface)</li>
  *   <li>{@link KernelRepositoryGenerator} — repositories against {@code spi.persistence.{TransactionalExecutor, PersistenceStatement, QueryResult, RowCursor}}</li>
+ *   <li>{@link KernelListQueryGenerator} — the list route's {@code <Entity>ListQuery} and
+ *       {@code <Entity>Page} records (plain JDK types; no kernel API surface)</li>
  *   <li>{@link KernelEventGenerator} — domain-event publisher against {@code spi.events.{EventEngine, EventDescriptor, EventPayload, EventTypeSpec}}</li>
  *   <li>{@link KernelEventHandlerGenerator} — domain-event subscriber against {@code spi.events.{EventBus, EventHandler, SubscriptionToken}}</li>
  *   <li>{@link KernelGraphSyncGenerator} — graph-sync projection against {@code spi.graph.{GraphEngine, GraphSession}} + {@code spi.graph.model.{GraphNodeDescriptor, GraphEdgeDescriptor}}</li>
@@ -65,6 +67,7 @@ public class KernelGeneratorStrategy {
         registry.register(new KernelServiceGenerator());
         registry.register(new KernelRepositoryGenerator());
         registry.register(new KernelErrorGenerator());
+        registry.register(new KernelListQueryGenerator());
         registry.register(new KernelEventGenerator());
         registry.register(new KernelEventHandlerGenerator());
         registry.register(new KernelGraphSyncGenerator());

@@ -12,10 +12,12 @@ import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.Artifact
 import eu.exeris.tooling.codegen.java.kernel.KernelRepositoryGenerator.Column;
 import eu.exeris.tooling.codegen.java.kernel.KernelRepositoryGenerator.ColumnKind;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
+import eu.exeris.tooling.codegen.java.support.ListQuerySupport;
 
 import static eu.exeris.tooling.codegen.java.support.DataScopeSupport.isTenantPartitioned;
 
 import javax.lang.model.element.Modifier;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -43,7 +45,8 @@ import java.util.List;
  *
  * <p>Around that: the id is filled in when absent (and lands at parameter 0), the WHERE-clause id
  * binds after the SET list, an empty result is {@code Optional.empty()}, a zero-row write is
- * rejected, and {@code count()} reads the aggregate.
+ * rejected, {@code count()} reads the aggregate, and {@code findPage} binds every placeholder it
+ * appended, the limit and offset last.
  *
  * <h2>The double</h2>
  * <p>{@code RecordingPersistence} (emitted once per project by {@link KernelTestSupportGenerator})
@@ -190,6 +193,7 @@ public final class KernelRepositoryTestGenerator {
                 conflictType != null ? conflictType : notFoundType));
         type.addMethod(deleteRejectsTest(repositoryType, persistenceType, notFoundType));
         type.addMethod(countTest(repositoryType, persistenceType));
+        type.addMethod(findPageTest(metadata, repositoryType, persistenceType));
         if (tenantScoped) {
             type.addMethod(asTenantHelper());
         }
@@ -325,6 +329,70 @@ public final class KernelRepositoryTestGenerator {
                 .addStatement("$T.assertThat(repository.count()).isEqualTo($LL)",
                         ASSERTIONS, KernelTestSamples.SAMPLE_NUMBER)
                 .build();
+    }
+
+    /**
+     * The list query's two alignments, neither of which a compile check sees: every placeholder
+     * {@code findPage} appended to the statement has a bind, and the limit and offset land after the
+     * filter values, in that order. Asserted on the page statement — the last one prepared — with a
+     * filter set when the entity has one a literal can be written for, so the filter's predicate and
+     * its bind are both counted.
+     *
+     * <p>Not the SQL text, for the reason the class Javadoc gives. The placeholder count is not
+     * circular in that way: the predicates and the binds are emitted by two separate walks of the
+     * filter list, and a drift between them shows up here as a count that does not match.
+     */
+    private MethodSpec findPageTest(DomainMetadata metadata, ClassName repositoryType,
+                                    ClassName persistenceType) {
+        ClassName queryType = KernelListQueryGenerator.listQueryType(metadata);
+        ClassName pageType = KernelListQueryGenerator.pageType(metadata);
+        List<ListQuerySupport.Property> filters = ListQuerySupport.filters(metadata);
+        int sampled = -1;
+        for (int i = 0; i < filters.size(); i++) {
+            if (filterBind(filters.get(i)) != null) {
+                sampled = i;
+                break;
+            }
+        }
+        List<String> args = new ArrayList<>();
+        for (int i = 0; i < filters.size(); i++) {
+            args.add(i == sampled ? filterBind(filters.get(i)).toString() : "null");
+        }
+        CodeBlock filter = CodeBlock.of("new $T($L)", KernelListQueryGenerator.filterType(metadata),
+                String.join(", ", args));
+        int limitIndex = sampled < 0 ? 0 : 1;
+
+        MethodSpec.Builder test = test("findPageBindsEveryPlaceholderThenTheLimitAndOffset")
+                .addStatement("$T persistence = new $T()", persistenceType, persistenceType)
+                .addStatement("$T repository = new $T(persistence)", repositoryType, repositoryType)
+                .addStatement("$T page = repository.findPage(new $T(3, 5, null, false, $L))",
+                        pageType, queryType, filter)
+                .addStatement("$T.assertThat(persistence.sql.chars().filter(c -> c == '?').count())"
+                        + ".isEqualTo((long) persistence.binds.size())", ASSERTIONS);
+        if (sampled >= 0) {
+            test.addStatement("$T.assertThat(persistence.binds).containsEntry(0, $L)",
+                    ASSERTIONS, filterBind(filters.get(sampled)));
+        }
+        return test
+                .addStatement("$T.assertThat(persistence.binds).containsEntry($L, 5).containsEntry($L, 15L)",
+                        ASSERTIONS, limitIndex, limitIndex + 1)
+                .addStatement("$T.assertThat(page.number()).isEqualTo(3)", ASSERTIONS)
+                .addStatement("$T.assertThat(page.size()).isEqualTo(5)", ASSERTIONS)
+                .addStatement("$T.assertThat(page.content()).isEmpty()", ASSERTIONS)
+                .addStatement("$T.assertThat(page.totalElements()).isZero()", ASSERTIONS)
+                .build();
+    }
+
+    /** A filter value whose recorded bind equals it, or {@code null} for a kind with no literal. */
+    private static CodeBlock filterBind(ListQuerySupport.Property filter) {
+        return switch (filter.kind()) {
+            case UUID -> CodeBlock.of("$T.fromString($S)", UUID, KernelTestSamples.FIXED_ID);
+            case STRING -> CodeBlock.of("$S", "sample");
+            case BOOL -> CodeBlock.of("true");
+            case INT -> CodeBlock.of("$L", KernelTestSamples.SAMPLE_NUMBER);
+            case LONG -> CodeBlock.of("$LL", KernelTestSamples.SAMPLE_NUMBER);
+            default -> null;
+        };
     }
 
     /**

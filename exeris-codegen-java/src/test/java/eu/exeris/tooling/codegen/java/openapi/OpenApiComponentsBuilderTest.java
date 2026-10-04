@@ -15,8 +15,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 class OpenApiComponentsBuilderTest {
 
     @Test
-    @DisplayName("Builds entity / CreateDto / UpdateDto schemas, and declares no security scheme")
-    void buildsThreeSchemas() {
+    @DisplayName("Builds entity / CreateDto / UpdateDto / Page schemas, and declares no security scheme")
+    void buildsFourSchemas() {
         DomainMetadata meta = DomainMetadata.builder("Order", "com.example.domain")
                 .description("Customer order entity")
                 .fields(List.of(
@@ -27,7 +27,7 @@ class OpenApiComponentsBuilderTest {
         Components components = OpenApiComponentsBuilder.buildComponents(meta);
 
         assertThat(components.getSchemas())
-                .containsKeys("Order", "OrderCreateDto", "OrderUpdateDto");
+                .containsOnlyKeys("Order", "OrderCreateDto", "OrderUpdateDto", "OrderPage");
         // ADR-079: the emitted app performs no authentication, so the spec describes none.
         assertThat(components.getSecuritySchemes()).isNull();
     }

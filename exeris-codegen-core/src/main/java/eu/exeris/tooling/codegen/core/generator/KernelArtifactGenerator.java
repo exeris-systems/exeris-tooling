@@ -104,6 +104,7 @@ public interface KernelArtifactGenerator {
         GRAPH_SYNC,      // graph-sync projection (eu.exeris.kernel.spi.graph.*)
         SAGA,            // saga skeleton (eu.exeris.kernel.spi.flow.*)
         APPLICATION,     // application bootstrap (Application + RuntimeComponents + RuntimeLifecycle)
+        LIST_QUERY,     // per-entity list-route types (<Entity>ListQuery, <Entity>Page): the parsed page/sort/filter query and the page envelope the list route answers with
         DOMAIN_ERROR,   // per-entity write-rejection exception (<Entity>NotFoundException, <Entity>VersionConflictException) raised by the repository and mapped to 404/409 by the handler (ADR-076)
         CONFIGURATION,
         OPENAPI_SPEC,    // OpenAPI 3.1 specification (YAML)

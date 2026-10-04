@@ -151,13 +151,15 @@ class CrudRouteParityE2ETest {
             calls++;
             String operation = clientOperation(method.group(1));
             Endpoint sent = new Endpoint(call.group(1).toUpperCase(java.util.Locale.ROOT),
-                    clientTemplate(call.group(2).trim(), client));
+                    clientTemplate(call.group(2).trim()));
 
             assertThat(expected.get(operation))
                     .as("client method %s sends %s", method.group(1), sent)
                     .contains(sent);
         }
-        assertThat(calls).as("client calls found in the emitted client").isEqualTo(6);
+        // findById, the paged findAll(query), create, update, delete; findAll(page, size) delegates
+        // to findAll(query) and sends nothing of its own.
+        assertThat(calls).as("client calls found in the emitted client").isEqualTo(5);
     }
 
     // ---------------------------------------------------------------------------------------
@@ -208,15 +210,12 @@ class CrudRouteParityE2ETest {
     }
 
     /** The client's path expressions: {@code BASE_PATH}, {@code BASE_PATH + "/" + id}, and the
-     *  paged {@code path} local, which must itself be {@code BASE_PATH} plus a query string. */
-    private static String clientTemplate(String expression, String client) {
+     *  list route's {@code BASE_PATH} plus the list query's own query string. */
+    private static String clientTemplate(String expression) {
         return switch (expression) {
             case "BASE_PATH" -> "{base}";
             case "BASE_PATH + \"/\" + id" -> "{base}/{id}";
-            case "path" -> {
-                assertThat(client).contains("String path = BASE_PATH + \"?page=\"");
-                yield "{base}";
-            }
+            case "BASE_PATH + \"?\" + query.toQueryString()" -> "{base}";
             default -> throw new AssertionError("unrecognised client path expression " + expression);
         };
     }

@@ -3468,6 +3468,30 @@ libraries (JavaPoet, swagger, Jackson 2, H2) and it manages neither the plugin n
 - [x] A tag-triggered release workflow.
 - [x] Order: kernel → SDK → tooling, because a tooling POM on Central declares both.
 
+**4b. The list route pages on the server** *(added 2026-10-04 by founder decision: the response
+shape changes from an array to an envelope, and that break is cheaper before the first Central
+release)*
+- [x] **Java half.** `GET {base}` reads `page` / `size` (default 20, at most 100; out of range is a
+      `400`, not a clamp) / `sort=<property>,<asc|desc>` / one equality filter per
+      `@Field(filterable)` property and per `MANY_TO_ONE` foreign key — never a system field or the
+      primary key, which is the tiebreak only — refuses an unknown or repeated
+      parameter with `400`, and answers `{content, totalElements, totalPages, size, number, first,
+      last}`. Per-entity `<Entity>ListQuery` and `<Entity>Page` in the repository package; the
+      repository's `findPage` binds every value and maps `sort` through a fixed column table, with
+      `id` as the tiebreak; RLS stays the only tenant read filter, as on `findAll`. Client, OpenAPI
+      and generated tests follow. Pinned in `contract/list-query.json`
+      (`ListQueryContractE2ETest`); run on a real boot over H2 (`ListRouteBootE2ETest`).
+      ADR-096 records the contract; ADR-079 Amendment 1 the list operation's response set.
+- [ ] **TS half (codegen-ts track).** The list sends its sort, filters and page to the route
+      instead of working on loaded rows; the detail view's related-record links become panels that
+      fetch `?<fk>=<id>`; `service-gen.ts` and `store-gen.ts` stay on `Page<T>`, read
+      `contract/list-query.json` in a spec, and send a filter only for a property of a type in its
+      `filterableScalarTypes` or an enum. **Gates the cut together with the Java half**: a list that
+      pages in the browser now holds only the first page.
+- [ ] Not in this slice: `search` (the front sends it; the route refuses it as an unknown
+      parameter until a server-side search exists), range filters for dates and numbers, multi-column
+      sort.
+
 **5. Alongside, no gate:** the `npm start` proxy prefix (`proxy.conf.js` with a `bypass`), the
 `warnInertAttributes` call sites for `Saga` / `SagaStep`, codegen-ts lint in CI (`npm run lint` has no `eslint.config.*` and is not in `build.yml`), and the delete-or-wire
 decision for `KernelStrategy.generateClientCode` and `getRealTimeConfig` (codegen-ts plan). The

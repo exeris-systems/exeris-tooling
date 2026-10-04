@@ -48,13 +48,16 @@ class KernelGeneratorStrategyTest {
 
         List<GeneratedFile> files = strategy.generate(metadata);
 
-        assertThat(files).hasSize(11);
+        assertThat(files).hasSize(13);
         assertThat(files).extracting(GeneratedFile::artifactType)
                 .containsExactlyInAnyOrder(
                         ArtifactType.CONTROLLER,
                         // ADR-076: one here, not two — Product is unversioned, so it has no
                         // stale-version failure mode and no conflict type is emitted for it.
                         ArtifactType.DOMAIN_ERROR,
+                        // The list route's <Entity>ListQuery and <Entity>Page.
+                        ArtifactType.LIST_QUERY,
+                        ArtifactType.LIST_QUERY,
                         ArtifactType.SERVICE,
                         ArtifactType.REPOSITORY,
                         ArtifactType.EVENT,
