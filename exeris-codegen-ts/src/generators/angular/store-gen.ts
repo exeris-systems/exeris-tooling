@@ -65,11 +65,6 @@ export class StoreGenerator implements CodeGenerator {
     // honours it, and the emitted app would then request the wrong identifier.
     const idField = 'id';
 
-    // Build filter interface fields
-    const filterFields = filterableFields
-      .map(f => `  ${f.name}?: ${this.getTsFilterType(f.type)};`)
-      .join('\n');
-
     return `/**
  * ${entityName} Signal Store
  * 
@@ -92,18 +87,11 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { firstValueFrom } from 'rxjs';
 import { ${entityName}Service } from '../services/${kebab}.service';
 import { httpErrorMessage, type HttpErrorAction } from '../core/http-error';
-import type { Page, PageRequest } from '../services/${kebab}.service';
+import type { Page, PageRequest, ${modelName}Filter } from '../services/${kebab}.service';
 import type { ${modelName}, ${modelName}Create, ${modelName}Update } from '../types/${kebab}.types';
 
-// ============================================================================
-// Filter Interface
-// ============================================================================
-
-export interface ${modelName}Filter {
-  /** Full-text search query */
-  search?: string;
-${filterFields}
-}
+// The filter is the service's: one declaration, typed against the enums the service imports.
+export type { ${modelName}Filter };
 
 // ============================================================================
 // Store State Interface
@@ -284,11 +272,15 @@ export class ${entityName}Store {
         direction: this._sortDirection(),
       };
 
-      const response = await firstValueFrom(this.service.findAll(pageRequest, this._filter()));
-      
-      this._entities.set(response.content);
-      this._totalElements.set(response.totalElements);
-      this._totalPages.set(response.totalPages);
+      // The server answers the list route with a JSON array; a paged envelope is read through
+      // its content and totals.
+      const response: Page<${modelName}> | ${modelName}[] = await firstValueFrom(
+        this.service.findAll(pageRequest, this._filter()),
+      );
+      const rows = Array.isArray(response) ? response : (response.content ?? []);
+      this._entities.set(rows);
+      this._totalElements.set(Array.isArray(response) ? rows.length : response.totalElements);
+      this._totalPages.set(Array.isArray(response) ? (rows.length > 0 ? 1 : 0) : response.totalPages);
     } catch (err) {
       this._error.set(this.extractErrorMessage(err, 'load', '${pluralNoun}'));
       throw err;
@@ -587,15 +579,6 @@ ${this.generateSearchableFieldAccess(searchableFields)}
   }
 }
 `;
-  }
-
-  private getTsFilterType(javaType: string): string {
-    const mapping = DslMapper.mapType(javaType);
-    // For filters, we use simpler types (no nullability in filter)
-    if (mapping.tsType.includes('|')) {
-      return mapping.tsType.split('|')[0].trim();
-    }
-    return mapping.tsType;
   }
 
   private generateFieldFilters(fields: { name: string; type: string }[]): string {
