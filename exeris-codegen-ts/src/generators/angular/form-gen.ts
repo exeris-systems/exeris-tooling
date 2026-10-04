@@ -298,7 +298,8 @@ export class FormGenerator implements CodeGenerator {
     lines.push('  });');
     lines.push('');
     // An embedding host's `entity` wins over the by-id load; an `id` always means edit.
-    lines.push(`  readonly current = computed<${modelName} | null>(() => this.entity() ?? this.entityResource.value() ?? null);`);
+    // A resource's value() throws once its load has failed, so it is read only when it holds one.
+    lines.push(`  readonly current = computed<${modelName} | null>(() => this.entity() ?? (this.entityResource.hasValue() ? this.entityResource.value() : null) ?? null);`);
     lines.push("  readonly editMode = computed(() => this.id() !== undefined || this.mode() === 'edit');");
     lines.push('  readonly isLoading = computed(() => this.entityResource.isLoading());');
     lines.push('  readonly loadError = computed(() => {');

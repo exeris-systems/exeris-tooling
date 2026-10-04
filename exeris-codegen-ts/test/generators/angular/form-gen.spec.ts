@@ -1023,7 +1023,7 @@ describe('FormGenerator — routed by id', () => {
   });
 
   it('prefers the entity input over the loaded entity, and derives edit mode from the id', () => {
-    expect(content).toContain('readonly current = computed<Address | null>(() => this.entity() ?? this.entityResource.value() ?? null);');
+    expect(content).toContain('readonly current = computed<Address | null>(() => this.entity() ?? (this.entityResource.hasValue() ? this.entityResource.value() : null) ?? null);');
     expect(content).toContain("readonly editMode = computed(() => this.id() !== undefined || this.mode() === 'edit');");
     expect(content).toContain("{{ editMode() ? 'Update' : 'Create' }} Address");
   });

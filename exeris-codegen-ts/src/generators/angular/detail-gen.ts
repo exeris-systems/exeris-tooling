@@ -266,7 +266,8 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`    stream: ({ params }) => this.service.findById(params),`);
     lines.push(`  });`);
     lines.push(``);
-    lines.push(`  readonly entity = computed(() => this.entityResource.value() ?? null);`);
+    // A resource's value() throws once its load has failed, so it is read only when it holds one.
+    lines.push(`  readonly entity = computed(() => (this.entityResource.hasValue() ? this.entityResource.value() : null) ?? null);`);
     lines.push(`  readonly isLoading = computed(() => this.entityResource.isLoading());`);
     lines.push(`  readonly error = computed(() => {`);
     lines.push(`    const err = this.entityResource.error();`);
