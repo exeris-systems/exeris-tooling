@@ -4,9 +4,8 @@
  * a deprecated alias, or changed the meaning of; and the typography plugin is installed exactly when
  * a template uses `prose`.
  *
- * The entity components under `src/app/components/` are outside the class scan: their inline
- * utility strings give way to the kit's component classes (codegen-ts plan, P20), and the scan
- * covers them from that change on.
+ * The entity components under `src/app/components/` are outside the class scan; their classes are
+ * the subject of the codegen-ts plan's P20.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -118,7 +117,7 @@ describe.each(Object.entries(apps))('the %s app is Tailwind v4 only', (_name, fi
     expect(JSON.parse(fileAt(files, './.postcssrc.json'))).toEqual({ plugins: { '@tailwindcss/postcss': {} } });
   });
 
-  it('the shell header keeps the v3 default shadow, now shadow-sm', () => {
+  it('the shell header carries shadow-sm, not the bare v3 shadow', () => {
     expect(fileAt(files, 'src/app/app.component.ts')).toContain('<header class="bg-white dark:bg-gray-800 shadow-sm">');
   });
 });
