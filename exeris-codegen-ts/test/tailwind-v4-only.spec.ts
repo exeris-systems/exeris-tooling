@@ -1,12 +1,15 @@
 /**
  * The emitted app is Tailwind CSS v4 only. The scaffold carries no v3 directive, JavaScript config
- * or v3 PostCSS setup; the shell and the `@View` pages write no class name v4 removed, keeps only as
- * a deprecated alias, or changed the meaning of; and the typography plugin is installed exactly when
- * a template uses `prose`.
+ * or v3 PostCSS setup; no emitted template — the shell, the `@View` pages and the entity list,
+ * detail and form components — writes a class name v4 removed, keeps only as a deprecated alias, or
+ * changed the meaning of; and the typography plugin is installed exactly when a template uses
+ * `prose`.
  *
- * The entity components under `src/app/components/` are outside the class scan: their inline
- * utility strings give way to the kit's component classes (codegen-ts plan, P20), and the scan
- * covers them from that change on.
+ * Every form control is drawn with a border. v4's preflight resets borders to `0 solid` and ships
+ * no forms plugin, so a control that names only a border or ring colour renders without one. An
+ * emitted `<input>`, `<select>` or `<textarea>` therefore carries the kit's field class
+ * (`exeris-input`, `exeris-select`, `exeris-textarea`, `exeris-checkbox`), which sets its border,
+ * ring and padding; or, styled by utilities, it sets a border or ring width beside the colour.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -14,14 +17,37 @@ import { buildGeneratedFiles, type OutputFile } from '../src/orchestrator.js';
 import { DomainMetadataSchema, ViewMetadataSchema } from '../src/models/domain-model.js';
 import { DEFAULT_CONFIG } from '../src/config.js';
 
+/**
+ * An entity whose list, detail and form emit every control kind and panel: a filter per filter
+ * kind, an enum badge, a boolean badge, a row and header action, a computed field and the
+ * conflict panel of a versioned entity.
+ */
 const order = DomainMetadataSchema.parse({
   entityName: 'Order',
   packageName: 'com.shop',
+  versioned: true,
   fields: [
     { name: 'id', type: 'java.util.UUID' },
-    { name: 'note', type: 'String' },
+    { name: 'note', type: 'String', filterable: true, required: true },
+    { name: 'paid', type: 'java.lang.Boolean', filterable: true },
+    { name: 'total', type: 'java.lang.Integer', filterable: true },
+    { name: 'placedOn', type: 'java.time.LocalDate', filterable: true },
+    { name: 'status', type: 'com.shop.OrderStatus', filterable: true },
+    { name: 'summary', type: 'String', computed: true, computedFrom: ['note'] },
+    { name: 'version', type: 'java.lang.Long' },
   ],
+  actions: [{ name: 'markPaid', methodName: 'markPaid' }],
 });
+
+const orderStatus = {
+  name: 'OrderStatus',
+  qualifiedName: 'com.shop.OrderStatus',
+  packageName: 'com.shop',
+  values: [
+    { name: 'NEW', displayName: 'New', ordinal: 0 },
+    { name: 'PAID', displayName: 'Paid', ordinal: 1 },
+  ],
+};
 
 const views = [
   ViewMetadataSchema.parse({
@@ -42,7 +68,7 @@ const views = [
 ];
 
 const apps: Record<string, OutputFile[]> = {
-  entity: buildGeneratedFiles([order], [], DEFAULT_CONFIG),
+  entity: buildGeneratedFiles([order], [orderStatus], DEFAULT_CONFIG),
   'view-only': buildGeneratedFiles([], [], DEFAULT_CONFIG, views),
 };
 
@@ -79,7 +105,39 @@ function classTokens(content: string): string[] {
     .map((t) => t.slice(t.lastIndexOf(':') + 1));
 }
 
-const scanned = (path: string) => /\.(ts|html|css)$/.test(path) && !path.startsWith('src/app/components/');
+const scanned = (path: string) => /\.(ts|html|css)$/.test(path);
+
+/** The kit field class each control element carries; a checkbox input carries `exeris-checkbox`. */
+function kitFieldClass(tag: string, type: string | undefined): string {
+  if (tag === 'select') return 'exeris-select';
+  if (tag === 'textarea') return 'exeris-textarea';
+  return type === 'checkbox' ? 'exeris-checkbox' : 'exeris-input';
+}
+
+/** A non-zero border or ring width utility: `border`, `border-2`, `border-x`, `ring-1`, … */
+const EDGE_WIDTH = /^(?:border(?:-[xytrbse])?(?:-[1-9]\d*)?|ring(?:-[1-9]\d*)?)$/;
+/** A border or ring utility that sets neither a width nor a style, position or offset: a colour. */
+const EDGE_COLOUR = /^(?:border|ring)-(?!(?:[xytrbse]-)?\d+$|[xytrbse]$|inset$|offset-|solid$|dashed$|dotted$|double$|hidden$|none$)/;
+
+/**
+ * Every `<input>`, `<select>` and `<textarea>` a file writes, but a hidden or radio input, that
+ * neither carries its kit field class nor draws its own edge: a border or ring colour beside a
+ * border or ring width.
+ */
+function bareControls(path: string, content: string): string[] {
+  const offenders: string[] = [];
+  for (const m of content.matchAll(/<(input|select|textarea)\b([^>]*)>/g)) {
+    const [tag, attrs] = [m[1], m[2]];
+    const type = /\btype="([^"]*)"/.exec(attrs)?.[1];
+    if (type === 'hidden' || type === 'radio') continue;
+    const classes = (/\bclass="([^"]*)"/.exec(attrs)?.[1] ?? '').split(/\s+/).filter((t) => t.length > 0);
+    if (classes.includes(kitFieldClass(tag, type))) continue;
+    const bare = classes.map((t) => t.slice(t.lastIndexOf(':') + 1));
+    if (bare.some((t) => EDGE_COLOUR.test(t)) && bare.some((t) => EDGE_WIDTH.test(t))) continue;
+    offenders.push(`${path}: <${tag}${type ? ` type="${type}"` : ''}> class="${classes.join(' ')}"`);
+  }
+  return offenders;
+}
 
 const fileAt = (files: OutputFile[], path: string) => files.find((f) => f.path === path)!.content;
 
@@ -97,6 +155,11 @@ describe.each(Object.entries(apps))('the %s app is Tailwind v4 only', (_name, fi
           .filter((t) => V3_ONLY.has(t) || V3_ONLY_PATTERN.test(t))
           .map((t) => `${f.path}: ${t}`),
       );
+    expect(offenders).toEqual([]);
+  });
+
+  it('draws every form control with a border: the kit field class, or an edge width beside its colour', () => {
+    const offenders = files.filter((f) => scanned(f.path)).flatMap((f) => bareControls(f.path, f.content));
     expect(offenders).toEqual([]);
   });
 
@@ -124,6 +187,38 @@ describe.each(Object.entries(apps))('the %s app is Tailwind v4 only', (_name, fi
 });
 
 /** The view-only app renders a RICH_TEXT block (`prose dark:prose-invert`); the entity app none. */
+/** The entity app's list, detail and form are inside the scan, and their controls are kit fields. */
+describe('the entity components are scanned and style their controls through the kit', () => {
+  it('a control with an edge colour and no edge width is reported; with a width, or the kit class, it is not', () => {
+    const at = (markup: string) => bareControls('x.ts', markup);
+    expect(at('<input type="text" class="mt-1 block w-full rounded-md border-gray-300 focus:ring-exeris-primary">')).toHaveLength(1);
+    expect(at('<select class="rounded-md border-0 ring-inset ring-gray-300">')).toHaveLength(1);
+    expect(at('<input type="checkbox" class="exeris-input">')).toHaveLength(1);
+    expect(at('<input type="text" class="rounded-md border border-gray-300">')).toEqual([]);
+    expect(at('<select class="ring-1 ring-inset ring-gray-300">')).toEqual([]);
+    expect(at('<input type="checkbox" class="exeris-checkbox">')).toEqual([]);
+    expect(at('<input type="hidden">')).toEqual([]);
+  });
+
+  const components = apps.entity.filter((f) => f.path.startsWith('src/app/components/'));
+
+  it('the list, detail and form are emitted and scanned', () => {
+    const paths = components.filter((f) => scanned(f.path)).map((f) => f.path);
+    for (const view of ['list', 'detail', 'form']) {
+      expect(paths).toContain(`src/app/components/order-${view}.component.ts`);
+    }
+  });
+
+  it('every control they write is a kit field, and there is one of each kind', () => {
+    const controls = components.flatMap((f) => [...f.content.matchAll(/<(input|select)\b[^>]*>/g)].map((m) => m[0]));
+    expect(controls.length).toBeGreaterThan(8);
+    for (const kit of ['exeris-input', 'exeris-select', 'exeris-checkbox']) {
+      expect(controls.some((c) => c.includes(`class="${kit}`)), kit).toBe(true);
+    }
+    expect(components.flatMap((f) => bareControls(f.path, f.content))).toEqual([]);
+  });
+});
+
 describe('the typography plugin is installed exactly when a template uses prose', () => {
   const pkg = (files: OutputFile[]) => JSON.parse(fileAt(files, './package.json'));
 

@@ -312,7 +312,7 @@ for (const f of files) {
 }
 console.log(`gen-sample-app — wrote ${files.length} files to ${out}`);
 
-// The emitted package.json pins `@exeris/ui-kit@^0.2.0`, the coordinate on the public npm
+// The emitted package.json pins `@exeris/ui-kit@^0.2.1`, the coordinate on the public npm
 // registry, which installs without a token. OPTIONAL local escape hatch: set
 // EXERIS_UI_KIT_PATH to an exeris-sdk-ui-kit directory or to a tarball `npm pack` made from
 // it, and only that one dependency is repointed at it (file:), so the sample builds against a
