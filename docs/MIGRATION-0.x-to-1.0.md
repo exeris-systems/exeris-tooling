@@ -2131,6 +2131,56 @@ inputs, outputs, routes, labels, messages, classes and every `data-testid` stay 
 - Tests that set a control by `formControlName` or select errors by Reactive keys: the error kinds
   are now `minLength` and `maxLength` (not `minlength` / `maxlength`). The `data-testid`s are unchanged.
 
+### `exeris-codegen-ts`: the form's controls follow the field's type, and `inUpdate = false` fixes a field in edit
+
+`Compatibility impact: breaking (ADR-092)`, for an entity whose form has a field of a type listed
+below or a field with `@Field(inUpdate = false)`. The form's shape is ADR-093's and is unchanged:
+the selector, inputs, outputs, routes, labels, messages and every `data-testid` stay as they were,
+and so do the `…Create` / `…Update` DTOs and the requests the form sends. TS only: the Java update
+handler accepts every field whatever `inUpdate` says, as it did.
+
+The form now picks each control by the rules the list and the detail view use. What a regenerated
+form renders differently, for unchanged metadata:
+
+| Field type | Before | After |
+|---|---|---|
+| a primitive number (`int`, `long`, `double`, `float`) or a simple-named wrapper (`Long`, `Integer`, …) | text input, value held as `number \| null` | `type="number"` input, `inputmode="decimal"` |
+| `LocalDate` written without its package | text input | `type="date"` input |
+| `LocalDateTime` written without its package | text input | `type="datetime-local"` input |
+| a `String` with `format = "date"` / `"datetime"` | text input | `type="date"` / `type="datetime-local"` input |
+| `java.time.Instant` | `type="datetime-local"` input | text input holding the ISO-8601 value |
+| `OffsetDateTime`, `ZonedDateTime` | text input | text input (unchanged) |
+| `BigDecimal` / `BigInteger` | text input | text input with `inputmode="decimal"` / `"numeric"`; still a string, never coerced |
+| a type naming an enum the processor emitted, written without its package | text input | `<select>` over the enum's constants |
+| a qualified type that is not an emitted enum (a record, a value object) | `<select>` importing a symbol `types/enums` does not export | text input |
+| an `enumType` naming an enum the processor did not emit | `<select>` importing a symbol `types/enums` does not export | text input |
+
+The two `<select>` rows that become text inputs describe forms that did not compile: the select
+imported a name the enum module does not declare.
+
+An `Instant`, `OffsetDateTime` or `ZonedDateTime` keeps a text input because its value names a zone
+or an offset (`2026-10-04T08:15:00Z`), and a `datetime-local` input holds a value with neither: the
+browser blanks such a value when the edit form loads it, and a value typed into it reaches the server
+with no zone. The text input holds the value exactly as the DTO carries it, so an untouched field is
+sent back unchanged.
+
+**`@Field(inUpdate = false)`.** In create mode the field is a control as before, governed by
+`inCreate`. In edit mode its control is disabled through a Signal Forms `disabled` rule bound to the
+form's `editMode()`; a disabled field is not validated, so a required field the edit cannot change
+never blocks the save. The update still carries the field, with the value the form loaded: the
+generated server's update writes every column of the row, so leaving the field out would clear it.
+The form imports `disabled` from `@angular/forms/signals` when it has such a field.
+
+**What to do.** Regenerate. Then:
+- End-to-end tests that type into an `Instant` field through a date-time picker: type the ISO-8601
+  value into the text input instead.
+- End-to-end tests or hand-written code that change an `inUpdate = false` field in the edit form: the
+  control is disabled there, and `component.form.<field>().disabled()` is `true` while editing.
+  Change the field through the create form, or drop `inUpdate = false` if it should stay editable.
+- A field whose `<select>` disappears: the processor emits an enum for every `@ExerisDomain` field
+  whose Java type is an `enum`, so a field typed as one keeps its select. Hand-written metadata
+  passes the enum beside the entities (`enum_*.json`); any other type is a text input.
+
 ### SDK 0.12.0 needs no source change for S6
 
 `SystemFieldsMetadata`, `DomainMetadata` and `ActionMetadata` keep their 0.11.0 constructors. Code

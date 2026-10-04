@@ -7,7 +7,7 @@ import type { DomainMetadata } from '../../models/domain-model.js';
 import { modelTypeName } from '../../models/model-naming.js';
 import { DslMapper } from '../../models/dsl-mapper.js';
 import type { GeneratorConfig } from '../../config.js';
-import type { CodeGenerator, GeneratedFile, GeneratorContext } from '../../core/generator-registry.js';
+import type { CodeGenerator, EnumMetadata, GeneratedFile, GeneratorContext } from '../../core/generator-registry.js';
 import type { BackendType } from '../../core/backend-strategy.js';
 import { outPath } from '../../core/paths.js';
 import { updateVersionField } from '../api/type-gen.js';
@@ -70,7 +70,7 @@ export class FormGenerator implements CodeGenerator {
     // entity's shared-scope key, which is server-owned like its tenant: the repository stamps it
     // from the bound storage context and the create DTO omits it, so the form never sends it.
     // The form renders no link, so the context resolves none.
-    const renders = resolveFieldRenders(domain, fieldRenderContext(domain, [], false));
+    const renders = resolveFieldRenders(domain, fieldRenderContext(domain, [], false, context.enums ?? []));
     const createFields = renders.filter((r) => r.form.placement === 'control');
     // Computed fields render read-only, for information, and are kept out of the submitted DTO.
     const computedFields = renders.filter((r) => r.form.placement === 'computed');
@@ -339,6 +339,8 @@ export class FormGenerator implements CodeGenerator {
     lines.push('');
     // A number control holds `number | null`, the DTO's own type, so the model is the payload.
     lines.push('    const data = this.formModel();');
+    // A field of `inUpdate = false` is sent back as loaded: the control is disabled in edit mode, so
+    // the model still holds the loaded value, and the update writes every column of the row.
     const updatePayload = version
       ? `{ ...data, ${version.name}: this.loadedVersion() } as ${modelName}Update`
       : `data as ${modelName}Update`;
@@ -427,9 +429,13 @@ export class FormGenerator implements CodeGenerator {
   }
 }
 
-export function generateForm(metadata: DomainMetadata, config: GeneratorConfig): GeneratedFile | null {
+export function generateForm(
+  metadata: DomainMetadata,
+  config: GeneratorConfig,
+  enums: EnumMetadata[] = [],
+): GeneratedFile | null {
   const generator = new FormGenerator();
-  const context: GeneratorContext = { config, backend: config.backend ?? 'KERNEL', allDomains: [metadata], enums: [] };
+  const context: GeneratorContext = { config, backend: config.backend ?? 'KERNEL', allDomains: [metadata], enums };
   return generator.generate(metadata, context);
 }
 
@@ -444,7 +450,7 @@ interface FormValidation {
 
 /**
  * The schema rules `FieldMetadata` declares, field by field in declaration order, each field's
- * rules in the order required, minLength, maxLength, pattern, min, max.
+ * rules in the order required, minLength, maxLength, pattern, min, max, disabled.
  *
  * - `required` is not applied to a checkbox. Signal Forms counts `false` as empty, which would
  *   force the box to be ticked; a required boolean only has to hold a boolean, which it always does.
@@ -452,6 +458,8 @@ interface FormValidation {
  *   length or pattern constraint is declared on character sequences.
  * - min and max bound a number control directly. A text control holding a decimal string is bounded
  *   by its parsed value; a blank or unparseable value passes.
+ * - `disabled` applies to a field with `inUpdate = false` while the form edits. A disabled field
+ *   takes no input and is not validated, so a required field the edit cannot change never blocks it.
  */
 function formValidation(fields: readonly FieldRenderModel[]): FormValidation {
   const rules: string[] = [];
@@ -477,6 +485,7 @@ function formValidation(fields: readonly FieldRenderModel[]): FormValidation {
       if (f.min !== undefined) add(`min(${path}, ${f.min});`, 'min');
       if (f.max !== undefined) add(`max(${path}, ${f.max});`, 'max');
     }
+    if (!form.inUpdate) add(`disabled(${path}, { when: () => this.editMode() });`, 'disabled');
   }
   return { rules, used };
 }
@@ -489,6 +498,7 @@ function formValidation(fields: readonly FieldRenderModel[]): FormValidation {
 const SIGNAL_FORMS_IMPORT_ORDER = [
   'form', 'FormField', 'submit',
   'required', 'minLength', 'maxLength', 'pattern', 'min', 'max', 'validate', 'minError', 'maxError',
+  'disabled',
 ] as const;
 
 function signalFormsImports(validation: FormValidation): string[] {

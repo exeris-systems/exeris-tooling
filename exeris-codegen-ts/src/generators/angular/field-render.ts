@@ -11,11 +11,13 @@
  * already carry. Resolution is a pure function of its inputs, so the same metadata always yields
  * the same model.
  *
- * The detail view resolves its display type through the shared rules below (`enumTypeOf`,
- * `isBooleanType`, `temporalKindOf`, `isNumericType`), which are the rules every surface converges
- * on. Where a surface still resolves by its own rule — the form's enum test and number/date
- * inputs, the list's `java.util.Date` date-time and its `BigDecimal` / `BigInteger` number cell —
- * the difference is listed in `docs/codegen-ts-track-plan.md`.
+ * The detail view's display type and the form's control resolve through the shared rules below
+ * (`enumTypeOf`, `isBooleanType`, `temporalKindOf`, `isNumericType`). The form adds two constraints
+ * of its own control: a select needs an enum the app's enum module declares, because it imports
+ * that enum's constants, and a date or date-time input is given only to a value without a zone,
+ * because the input's value carries none. Where the list resolves by its own rule — its
+ * `java.util.Date` date-time and its `BigDecimal` / `BigInteger` number cell — the difference is
+ * listed in `docs/codegen-ts-track-plan.md`.
  *
  * The list's rules: a boolean or a number is any type the DTO carries as one, an enum is a type
  * the processor emitted an enum for (the only enums `types/enums` exports), and a date-time type
@@ -128,11 +130,18 @@ export interface FieldRenderModel {
     readonly control: FormControlKind;
     /** The `<input type>`; for a select it is still resolved, and a computed input uses it. */
     readonly inputType: string;
-    readonly inputMode?: 'decimal';
-    /** The simple enum name, when the form treats the field as an enum. */
+    /** The virtual keyboard hint: a number, or a decimal string, takes `decimal`; an integer string `numeric`. */
+    readonly inputMode?: 'decimal' | 'numeric';
+    /** The simple name of the enum the select offers, when the control is a select. */
     readonly enumType?: string;
     readonly required: boolean;
     readonly readOnly: boolean;
+    /**
+     * `@Field.inUpdate`: whether the edit form lets the field change. When `false` the control is
+     * disabled in edit mode and the update sends the loaded value back unchanged; the create form
+     * is unaffected.
+     */
+    readonly inUpdate: boolean;
     readonly value: FormValueKind;
     /** The control's initial value, as a TypeScript expression. */
     readonly initialValue: string;
@@ -214,7 +223,7 @@ export function resolveFieldRender(
       enumType: enumTypeOf(field, context.enums ?? []),
       dataType,
     },
-    form: formRender(field, system),
+    form: formRender(field, system, context.enums ?? []),
     field,
   };
 }
@@ -347,12 +356,14 @@ export function isNumericType(type: string): boolean {
   return ts === 'number' || ts === 'number | null';
 }
 
-/** The form's enum test: an explicit `enumType`, else a qualified non-JDK type that names no entity or DTO. */
-function formEnumType(field: FieldMetadata): string | undefined {
-  const type = field.type;
-  const raw = field.enumType
-    ?? (type.includes('.') && !type.startsWith('java.') && !type.includes('Entity') && !type.includes('DTO') ? type : undefined);
-  return raw ? simpleName(raw) : undefined;
+/**
+ * The enum a form select offers: the field's enum by `enumTypeOf`, when the app's enum module
+ * declares it. The select imports the enum's constants from that module, so an enum it does not
+ * declare yields no select.
+ */
+function formEnumType(field: FieldMetadata, enums: readonly KnownEnum[]): string | undefined {
+  const name = enumTypeOf(field, enums);
+  return name !== undefined && enums.some((e) => e.name === name) ? name : undefined;
 }
 
 function simpleName(name: string): string {
@@ -372,16 +383,43 @@ function formValueKind(field: FieldMetadata): FormValueKind {
   return 'text';
 }
 
-/** The `<input type>`: the `dataType` facet first, then the value kind, then the qualified Java type. */
+/**
+ * Instant-like types whose value names a zone or an offset (`…Z`, `…+02:00`). A `date` or
+ * `datetime-local` input holds a value without one: the browser blanks such a value when it is
+ * set, and a value the user enters names no zone the server could read it in. These types keep a
+ * text input holding the ISO-8601 string as the DTO carries it.
+ */
+const ZONED_TYPES = new Set(['Instant', 'OffsetDateTime', 'ZonedDateTime']);
+
+/** Decimal strings: the DTO carries them as a `string` to keep their precision. */
+const DECIMAL_STRING_TYPES = new Set(['BigDecimal']);
+const INTEGER_STRING_TYPES = new Set(['BigInteger']);
+
+/**
+ * The `<input type>`: the `dataType` facet first, then the shared rules — a boolean is a checkbox,
+ * a DTO number a number input, a zone-free date or date-time (`temporalKindOf`) a `date` or
+ * `datetime-local` input — and any other value a text input.
+ */
 function formInputType(field: FieldMetadata, value: FormValueKind): string {
   if (field.dataType === 'url') return 'url';
   if (field.dataType === 'currency' || field.dataType === 'percent') return 'number';
-  const type = field.type;
   if (value === 'boolean') return 'checkbox';
-  if (type === 'java.lang.Integer' || type === 'java.lang.Long' || type === 'java.lang.Double' || type === 'java.lang.Float') return 'number';
-  if (type === 'java.time.Instant' || type === 'java.time.LocalDateTime') return 'datetime-local';
-  if (type === 'java.time.LocalDate') return 'date';
+  if (value === 'number') return 'number';
+  const temporal = temporalKindOf(field);
+  if (temporal && !ZONED_TYPES.has(simpleName(field.type))) {
+    return temporal === 'date' ? 'date' : 'datetime-local';
+  }
   return 'text';
+}
+
+/** The keyboard hint: a number input and a decimal string take `decimal`, an integer string `numeric`. */
+function formInputMode(field: FieldMetadata, inputType: string): 'decimal' | 'numeric' | undefined {
+  if (inputType === 'number') return 'decimal';
+  if (inputType !== 'text') return undefined;
+  const name = simpleName(field.type);
+  if (DECIMAL_STRING_TYPES.has(name)) return 'decimal';
+  if (INTEGER_STRING_TYPES.has(name)) return 'numeric';
+  return undefined;
 }
 
 /**
@@ -411,19 +449,20 @@ function formPlacement(field: FieldMetadata, system: boolean): FormPlacement {
   return 'control';
 }
 
-function formRender(field: FieldMetadata, system: boolean): FieldRenderModel['form'] {
+function formRender(field: FieldMetadata, system: boolean, enums: readonly KnownEnum[]): FieldRenderModel['form'] {
   const value = formValueKind(field);
   const inputType = formInputType(field, value);
-  const enumType = formEnumType(field);
+  const enumType = formEnumType(field, enums);
   return {
     placement: formPlacement(field, system),
     label: field.displayName ?? toTitleCase(field.name),
     control: enumType ? 'select' : inputType === 'checkbox' ? 'checkbox' : 'input',
     inputType,
-    inputMode: inputType === 'number' ? 'decimal' : undefined,
+    inputMode: formInputMode(field, inputType),
     enumType,
     required: Boolean(field.required),
     readOnly: Boolean(field.readOnly),
+    inUpdate: field.inUpdate !== false,
     value,
     initialValue: formInitialValue(field, value),
     modelType: FORM_MODEL_TYPES[value],

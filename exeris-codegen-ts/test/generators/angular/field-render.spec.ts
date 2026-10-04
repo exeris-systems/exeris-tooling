@@ -3,8 +3,8 @@
  *
  * Exercises:
  *   - per Java type: list cell, detail display type and enum, form control, input type and value kind
- *   - the dataType facets, the foreign-key link and the enum detected by each surface's own rule
- *   - system fields (audited, versioned, tenantId), readOnly, inCreate = false, hidden and computed fields
+ *   - the dataType facets, the foreign-key link, and the enum each surface resolves by the shared rule
+ *   - system fields (audited, versioned, tenantId), readOnly, inCreate = false, inUpdate = false, hidden and computed fields
  *   - the form's initial value, and the facet slot leaving the result unchanged
  *   - list-gen, detail-gen and form-gen keeping no control or format mapping of their own
  */
@@ -40,26 +40,38 @@ describe('resolveFieldRender — per type', () => {
     inputType: string;
     control: FieldRenderModel['form']['control'];
     value: FieldRenderModel['form']['value'];
+    /** The input's keyboard hint; `decimal` for a number input unless stated. */
+    mode?: FieldRenderModel['form']['inputMode'];
   };
   const rows: Row[] = [
     { type: 'String', cell: 'text', display: 'text', inputType: 'text', control: 'input', value: 'text' },
     { type: 'java.lang.String', cell: 'text', display: 'text', inputType: 'text', control: 'input', value: 'text' },
-    // The form maps only the qualified wrapper to a number input; the primitive is still coerced.
-    // The detail view shows every type whose DTO type is a number as a number; the list too, and
-    // it also formats BigDecimal / BigInteger as numbers. The list badges every DTO boolean.
-    { type: 'long', cell: 'number', display: 'number', inputType: 'text', control: 'input', value: 'number' },
+    // Every type whose DTO type is a number is a number on every surface: the list cell, the
+    // detail value and the form's number input, primitive or wrapper, simple or qualified. The list
+    // also formats BigDecimal / BigInteger as numbers. Every DTO boolean is a checkbox.
+    { type: 'long', cell: 'number', display: 'number', inputType: 'number', control: 'input', value: 'number' },
+    { type: 'Long', cell: 'number', display: 'number', inputType: 'number', control: 'input', value: 'number' },
     { type: 'java.lang.Long', cell: 'number', display: 'number', inputType: 'number', control: 'input', value: 'number' },
-    { type: 'int', cell: 'number', display: 'number', inputType: 'text', control: 'input', value: 'number' },
+    { type: 'int', cell: 'number', display: 'number', inputType: 'number', control: 'input', value: 'number' },
     { type: 'java.lang.Integer', cell: 'number', display: 'number', inputType: 'number', control: 'input', value: 'number' },
-    // BigDecimal is a string DTO for precision: a text input and a text detail value, never coerced.
-    { type: 'java.math.BigDecimal', cell: 'number', display: 'text', inputType: 'text', control: 'input', value: 'text' },
+    { type: 'double', cell: 'number', display: 'number', inputType: 'number', control: 'input', value: 'number' },
+    // BigDecimal and BigInteger are string DTOs for precision: a text input with a numeric
+    // keyboard and a text detail value, never coerced.
+    { type: 'java.math.BigDecimal', cell: 'number', display: 'text', inputType: 'text', control: 'input', value: 'text', mode: 'decimal' },
+    { type: 'java.math.BigInteger', cell: 'number', display: 'text', inputType: 'text', control: 'input', value: 'text', mode: 'numeric' },
     { type: 'boolean', cell: 'boolean', display: 'boolean', inputType: 'checkbox', control: 'checkbox', value: 'boolean' },
     { type: 'Boolean', cell: 'boolean', display: 'boolean', inputType: 'checkbox', control: 'checkbox', value: 'boolean' },
     { type: 'java.lang.Boolean', cell: 'boolean', display: 'boolean', inputType: 'checkbox', control: 'checkbox', value: 'boolean' },
     { type: 'java.util.UUID', cell: 'text', display: 'text', inputType: 'text', control: 'input', value: 'text' },
+    // A zone-free date or date-time is a date or datetime-local input. A value naming a zone or
+    // an offset is a text input: neither native input holds one.
+    { type: 'LocalDate', cell: 'date', display: 'date', inputType: 'date', control: 'input', value: 'text' },
     { type: 'java.time.LocalDate', cell: 'date', display: 'date', inputType: 'date', control: 'input', value: 'text' },
-    { type: 'java.time.Instant', cell: 'datetime', display: 'datetime', inputType: 'datetime-local', control: 'input', value: 'text' },
+    { type: 'LocalDateTime', cell: 'datetime', display: 'datetime', inputType: 'datetime-local', control: 'input', value: 'text' },
     { type: 'java.time.LocalDateTime', cell: 'datetime', display: 'datetime', inputType: 'datetime-local', control: 'input', value: 'text' },
+    { type: 'java.time.Instant', cell: 'datetime', display: 'datetime', inputType: 'text', control: 'input', value: 'text' },
+    { type: 'java.time.OffsetDateTime', cell: 'datetime', display: 'datetime', inputType: 'text', control: 'input', value: 'text' },
+    { type: 'java.time.ZonedDateTime', cell: 'datetime', display: 'datetime', inputType: 'text', control: 'input', value: 'text' },
   ];
 
   for (const row of rows) {
@@ -70,7 +82,7 @@ describe('resolveFieldRender — per type', () => {
       expect(r.form.inputType).toBe(row.inputType);
       expect(r.form.control).toBe(row.control);
       expect(r.form.value).toBe(row.value);
-      expect(r.form.inputMode).toBe(row.inputType === 'number' ? 'decimal' : undefined);
+      expect(r.form.inputMode).toBe(row.mode ?? (row.inputType === 'number' ? 'decimal' : undefined));
       expect(r.list.align).toBe(row.cell === 'number' ? 'right' : 'left');
       expect(r.placeholder).toBeUndefined();
       expect(r.help).toBeUndefined();
@@ -96,22 +108,39 @@ describe('resolveFieldRender — facets, enums and links', () => {
     expect(r.form.inputType).toBe('text');
   });
 
-  it('an explicit enumType is an enum on every surface, by its simple name', () => {
-    const r = render({ type: 'com.shop.OrderStatus', enumType: 'com.shop.OrderStatus' });
+  const ORDER_STATUS = { name: 'OrderStatus', qualifiedName: 'com.shop.OrderStatus', packageName: 'com.shop', values: [] };
+
+  /** Resolves one field against an entity whose app declares `enums`. */
+  function renderWith(field: Record<string, unknown>, enums = [ORDER_STATUS]): FieldRenderModel {
+    const d = domain({ fields: [{ name: 'id', type: 'java.util.UUID' }, { name: 'value', ...field }] });
+    return resolveFieldRenders(d, fieldRenderContext(d, [d], true, enums)).find((r) => r.name === 'value')!;
+  }
+
+  it('an explicit enumType the enum module declares is an enum on every surface, by its simple name', () => {
+    const r = renderWith({ type: 'com.shop.OrderStatus', enumType: 'com.shop.OrderStatus' });
     expect(r.detail).toMatchObject({ display: 'enum', enumType: 'OrderStatus' });
-    expect(r.form).toMatchObject({ control: 'select', enumType: 'OrderStatus' });
+    expect(r.form).toMatchObject({ control: 'select', enumType: 'OrderStatus', inputType: 'text', value: 'text' });
   });
 
-  it('without enumType the detail view and the form detect an enum by different rules', () => {
-    // Detail: the type names an enum the enum module declares. Form: any qualified non-JDK type
-    // that names no entity or DTO.
-    const bare = render({ type: 'OrderStatus' });
-    expect(bare.detail).toMatchObject({ display: 'text', enumType: undefined });
-    expect(bare.form.enumType).toBeUndefined();
-    const address = render({ type: 'com.shop.Address' });
-    expect(address.detail.enumType).toBeUndefined();
-    expect(address.form).toMatchObject({ control: 'select', enumType: 'Address' });
-    expect(render({ type: 'com.shop.CustomerEntity' }).form.enumType).toBeUndefined();
+  it('the form and the detail view resolve an enum by the same rule, qualified or simple', () => {
+    for (const type of ['com.shop.OrderStatus', 'OrderStatus']) {
+      const r = renderWith({ type });
+      expect(r.detail).toMatchObject({ display: 'enum', enumType: 'OrderStatus' });
+      expect(r.form).toMatchObject({ control: 'select', enumType: 'OrderStatus' });
+    }
+  });
+
+  it('a qualified type the enum module does not declare is a text input, never a select', () => {
+    for (const type of ['com.shop.Address', 'com.shop.PaymentStatus', 'com.shop.CustomerEntity']) {
+      const r = renderWith({ type });
+      expect(r.form).toMatchObject({ control: 'input', inputType: 'text', enumType: undefined });
+      expect(r.detail.enumType).toBeUndefined();
+    }
+  });
+
+  it('an explicit enumType the enum module does not declare is no select: it could not be imported', () => {
+    const r = renderWith({ type: 'String', enumType: 'com.shop.Priority' });
+    expect(r.form).toMatchObject({ control: 'input', enumType: undefined });
   });
 
   it('a MANY_TO_ONE UUID foreign key to a routed entity links, and the list cell is the link', () => {
@@ -186,6 +215,12 @@ describe('resolveFieldRender — the detail view\'s display rules', () => {
     expect(detailOf({ type: 'String', format: 'date' }).display).toBe('date');
     expect(detailOf({ type: 'java.time.Instant', format: 'date' }).display).toBe('date');
     expect(detailOf({ type: 'String', format: 'datetime' }).display).toBe('datetime');
+  });
+
+  it('the form follows an explicit format for a zone-free value and keeps a zoned value as text', () => {
+    expect(render({ type: 'String', format: 'date' }).form.inputType).toBe('date');
+    expect(render({ type: 'java.time.LocalDateTime', format: 'date' }).form.inputType).toBe('date');
+    expect(render({ type: 'java.time.Instant', format: 'date' }).form.inputType).toBe('text');
   });
 });
 
@@ -280,6 +315,11 @@ describe('resolveFieldRender — placement', () => {
   it('inCreate = false removes the control, the computed input included', () => {
     expect(render({ type: 'String', inCreate: false }).form.placement).toBe('none');
     expect(render({ type: 'String', inCreate: false, computed: true }).form.placement).toBe('none');
+  });
+
+  it('inUpdate = false keeps the control, marked as fixed in edit; the default lets the edit change it', () => {
+    expect(render({ type: 'String', inUpdate: false }).form).toMatchObject({ placement: 'control', inUpdate: false });
+    expect(render({ type: 'String' }).form).toMatchObject({ placement: 'control', inUpdate: true });
   });
 
   it('a hidden field is not displayed and has no control', () => {

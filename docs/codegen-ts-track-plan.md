@@ -94,18 +94,15 @@ flags; extracting the field-level hints would write keys the SDK `-io` reader do
 `@UIGroup` or `@Tab` carry — `componentType`, `gridSpan`, `placeholder`, `helpText`, sections,
 tabs — arrive with the 1.x facet, through `FieldRenderModel`.
 
-**`FieldRenderModel` keeps each surface's own rules.** The model
+**`FieldRenderModel` resolves every surface by one set of type rules.** The model
 (`exeris-codegen-ts/src/generators/angular/field-render.ts`) records, per field, the list cell, the
 detail display type and the form control, and its facet slot is typed `never` until the processor
-fills `ComponentNodeMetadata.field`. Extracting it was byte-identical, so the decisions the three
-generators disagreed on are recorded per surface rather than unified: the detail view detected an
-enum by a `…Status`/`…Type`/`…Role`/`…State` simple name and the form by any qualified non-JDK type;
-the form maps only qualified `java.lang` / `java.time` types to a number or date input, so a primitive
-`long` is a text input coerced to a number. P10 and P12 reconcile these, each as an output change
-classified under ADR-092. The list (P9) already resolves by the rules they converge on: a boolean or
-a number is whatever the DTO carries as one, primitive or wrapper, simple or qualified; an enum is a
-type the processor emitted an `enum_*.json` for, the only enums `types/enums` exports; `LocalDate` is
-a date and `Instant` / `LocalDateTime` / `OffsetDateTime` / `ZonedDateTime` are date-times.
+fills `ComponentNodeMetadata.field`. The list, the detail view and the form resolve a field's type
+by the same rules: a boolean or a number is whatever the DTO carries as one, primitive or wrapper,
+simple or qualified; an enum is a type naming an enum the processor emitted an `enum_*.json` for,
+the only enums `types/enums` exports; `LocalDate` is a date and `Instant` / `LocalDateTime` /
+`OffsetDateTime` / `ZonedDateTime` are date-times. Each surface differs only where its own output
+calls for it, listed below.
 
 P10 set the rules the other two converge on, as exported functions of `field-render.ts`, and the
 detail view resolves through them: **enum** — an explicit `enumType`, else a type naming an enum
@@ -116,8 +113,16 @@ or `java.lang.Boolean` (`isBooleanType`); **date** — `LocalDate` or `format: '
 `ZonedDateTime` or `format: 'datetime'`, rendered with `'medium'` (`temporalKindOf`); **number** —
 the DTO type is `number` (`isNumericType`). The `currency` / `percent` / `url` facets of `dataType`
 and the foreign-key link are unchanged. The list (P9) resolves by the same rules, except that
-`java.util.Date` is a date-time cell and `BigDecimal` / `BigInteger` are number cells; until P12
-lands, the form's enum test and input types keep their own rules.
+`java.util.Date` is a date-time cell and `BigDecimal` / `BigInteger` are number cells. The form (P12)
+resolves by them too, with two constraints of its control: a `<select>` needs an enum the enum module
+declares, since it imports the enum's constants, so an explicit `enumType` the processor did not
+emit is a text input; and a `date` / `datetime-local` input is given only to a zone-free value
+(`LocalDate`, `LocalDateTime`, a `format`ted `String`), since the input's value carries no zone —
+`Instant`, `OffsetDateTime` and `ZonedDateTime` are text inputs holding the ISO-8601 value. A number
+is a `type="number"` input; `BigDecimal` / `BigInteger` stay string text inputs with a `decimal` /
+`numeric` keyboard. `@Field(inUpdate = false)` disables the control in edit mode through a Signal
+Forms `disabled` rule; the update sends the loaded value back, because the generated update writes
+every column.
 
 P10's related-records section links each `ONE_TO_MANY` to the target's whole list: the generated
 list handler (`KernelHandlerGenerator.handleGetAll`) calls `service.findAll()` and reads no query
@@ -148,7 +153,7 @@ the orchestrator over proxied metadata. Four states:
 
 The last three carry a reason. A field added to the schema, or one a generator starts or stops
 reading, fails the build until it is classified. Today: 18 `READ`, 4 `JAVA_ONLY`, 15 `RESERVED`,
-no `GAP`. One level down, `FIELD_CONTRACT_COVERAGE` has 1 `GAP` (`inUpdate`) and
+no `GAP`. One level down, `FIELD_CONTRACT_COVERAGE` has no `GAP` and
 `RELATIONSHIP_CONTRACT_COVERAGE` 1 (`displayField`); `UI_CONTRACT_COVERAGE` has none — the six view
 switches are `READ` (P17), and `icon`, `color` and `exportable` are `RESERVED` — and neither have the
 action, event, saga-step, `eventSourced` and `internalApi` tables.
