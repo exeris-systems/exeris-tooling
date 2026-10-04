@@ -63,7 +63,7 @@ const domains = [
       // holding number | null; a type naming the emitted enum, with no explicit enumType, is a
       // select; a zone-free date-time is a datetime-local input; a zoned one and an integer
       // string are text inputs.
-      { name: 'quantity', type: 'long', min: 1 },
+      { name: 'units', type: 'long', min: 1 },
       { name: 'previousStatus', type: 'com.shop.OrderStatus' },
       { name: 'pickupAt', type: 'java.time.LocalDateTime' },
       { name: 'promisedAt', type: 'java.time.ZonedDateTime' },
