@@ -80,6 +80,13 @@ the ui-kit to npmjs and on the `@exeris` org there — delays the Java side too.
 | P17 | The entity-level `@UI` view flags take effect: `listView` / `detailView` / `createForm` / `editForm` (and `searchable` / `filterable`) decide what the TS emitter writes; their strict-audit inert entries go in the same change | codegen-ts, processor | — | P2, P3 | S–M |
 | P18 | Emitted headers and footers carry no per-release value: the hard-coded versions in file headers, the landing and app footers go, and the CLI `--version` reads `package.json`; a spec keeps them out (ADR-092) | codegen-ts | — | — | S |
 | P19 | The emitted app imports `@exeris/ui-kit/styles` (the `.exeris-*` component classes) after `/theme`, a CARD block uses `exeris-card`, form controls carry their own border, padding and focus ring, rich text gets `@tailwindcss/typography`, and the scaffold is Tailwind v4 only, guarded by a spec | codegen-ts | — | P14 | S–M |
+| P20 | The generated list, detail and form components — their controls, tables, actions, and error and conflict panels — style themselves through the kit's component classes (`exeris-btn*`, `exeris-input`, `exeris-select`, `exeris-textarea`, `exeris-checkbox`, `exeris-label`, `exeris-help-text`, `exeris-error-text`, `exeris-input-error`, `exeris-table`, `exeris-card*`, `exeris-alert*`, `exeris-badge*`, `exeris-spinner`) instead of inline utility strings, so a consumer restyles them in `styles.css` without editing generated files | codegen-ts | ADR-092 | P9, P10, P11, P19 | M |
+
+**The kit's component classes P20 does not use leave its frozen contract.** The chip, color, editor,
+file, radio, range, rating and toggle controls and the scroll and truncation helpers have no emitter
+in 0.9 — field-level `@UI`, which would choose them, stays unread — so `@exeris/ui-kit` 0.3.0 moves
+them to an entry outside the names it freezes at 1.0. They return to it additively when an emitter
+uses them.
 
 **Field-level `@UI` stays unread in 0.9.** The processor reads only the entity-level `@UI` view
 flags; extracting the field-level hints would write keys the SDK `-io` reader does not read
