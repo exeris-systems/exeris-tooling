@@ -1932,12 +1932,19 @@ field classes draw their borders and rings on Tailwind v4.
 
 ### Compile-classpath requirements are named in the emitted Javadoc (T30)
 
-The regenerated `Application.java` Javadoc separates compile requirements from runtime ones. If an
-entity has a `List<X>` field, its repository imports Jackson 3. Declare
+The regenerated `Application.java` Javadoc separates compile requirements from runtime-only ones and
+names each by coordinate. Compile: `eu.exeris:exeris-kernel-spi` and `-core`, plus
+`eu.exeris:exeris-sdk-composition-runtime` in a composed build. Runtime only: a kernel driver
+(`eu.exeris:exeris-kernel-community` by default) and your JDBC driver. It also says that
+`eu.exeris.tooling:exeris-app-starter` declares all of them except the JDBC driver, and that
+generated tests need JUnit 5 and AssertJ at test scope.
+
+If an entity has a `List<X>` field, its repository imports Jackson 3. Declare
 `tools.jackson.core:jackson-databind` at compile scope: the Community driver brings it only
 transitively, and a runtime-scoped driver does not reach `javac`. Such a repository's Javadoc says
-so, and the `Application` Javadoc names Jackson 3 only when a repository in the tree imports it. No
-code change.
+so, and the `Application` Javadoc names Jackson 3 only when a repository in the tree imports it.
+
+A committed `Application.java` (L1) shows a Javadoc-only diff. No code change.
 
 ### Generation no longer depends on the JVM locale
 
@@ -2344,6 +2351,40 @@ action that runs, persists and publishes its `ACTION`-triggered `@DomainEvent`s.
 needs to watch the result can subscribe to the entity's live view (`@ExerisDomain(realTimeApi =
 true)`), which streams those events. A build that treats warnings as errors fails on this warning
 until the attribute is removed.
+
+### `realTimeApi = true` on a `TENANT` or `UNIVERSE` entity is a compile error (T59)
+
+`@ExerisDomain(realTimeApi = true)` on an entity whose rows have an owning tenant — `dataScope`
+`TENANT` or `UNIVERSE`, or the deprecated `tenantScoped = true` — now fails the build at the
+annotation:
+
+```
+[Exeris] EXT-PROC-1014: @ExerisDomain(realTimeApi = true) on a DataScope.TENANT entity: the generated
+live view forwards every <Entity> event on the bus to every subscriber, and kernel events carry no
+tenant to filter on, so each tenant would receive every other tenant's events. …
+```
+
+Until 0.9.0 such an entity compiled, and its generated `GET {base}/stream` subscribed to the
+entity's `@DomainEvent`s with no filter and no tenant guard: a subscriber bound to one tenant
+received the events, and payloads, published for every other tenant. An entity with no
+`@DomainEvent` streamed keep-alives only, and is refused as well, because declaring an event later
+would start that feed.
+
+**If the rows are not tenant-owned,** declare `dataScope = DataScope.GLOBAL`. That is a schema
+change, not only a stream change: a `GLOBAL` entity is emitted with no owner column, no row-level
+security policy and no tenant guard on its routes.
+
+**Otherwise, drop `realTimeApi`.** `GET {base}/stream`, `<Entity>StreamHandler` and its `create…`
+factory on `RuntimeComponents` are then no longer emitted; remove any override of that factory and
+any reference to the class. The generated front end is unchanged: it already emitted no stream
+client for a tenant-partitioned entity. A live view for these entities, with a tenant guard
+and an isolation key on stream events, is scheduled for 0.10.0.
+
+`@Action(streaming = true)` on a tenant-partitioned entity is not refused. Its stream route sends
+keep-alives only and reads nothing (`EXT-PROC-1107`, above).
+
+The check runs in the annotation processor. Metadata JSON that reaches `exeris:generate` without
+passing through the processor is not checked.
 
 ### Every diagnostic carries a stable identifier (D4)
 
