@@ -2241,6 +2241,31 @@ update request on the server sees every field of the record, not only the form's
   whose Java type is an `enum`, so a field typed as one keeps its select. Hand-written metadata
   passes the enum beside the entities (`enum_*.json`); any other type is a text input.
 
+### `exeris-codegen-ts`: a many-to-one foreign key is picked from its target's records
+
+`Compatibility impact: breaking (ADR-092)`, for an entity with a `MANY_TO_ONE` relationship whose
+local field is a UUID and whose target is in the same generation with its service generated. The
+control changes type for unchanged metadata: the form rendered a text input for the id, and now
+renders a `<select>` of the target's records. Its `id`, `data-testid` (`field-<name>`), `[formField]`
+binding, kit classes, validators and the value it holds (the target's id, a string) are unchanged, and
+so are the DTOs and the requests the form sends. TS only: the Java side does not read `displayField`.
+
+- The options come from the target's service `findAll()`, loaded once when the form is created; an
+  option's value is the record's `id` and its label the value of `@Relationship.displayField` on the
+  target, or the id when the target declares no such field or the value is empty.
+- An optional key has an empty `—` option; a required key has a disabled `Select...` placeholder and
+  keeps its `required` validator.
+- A value the loaded records do not contain — while they load, or a record the list does not return —
+  stays an option showing the id, so editing a record never blanks its foreign key.
+- The form injects the target's service (`<Target>Service`). A form embedded in a host, or rendered
+  in a test, needs that service resolvable as it needs its own; the generated services are
+  `providedIn: 'root'`.
+- Without the target's service (`--no-services`), or for a target outside the generation or one
+  declaring no `id`, the field stays a text input.
+
+**What to do.** Regenerate. End-to-end tests that type an id into the field select an option
+instead (`selectOption` by value or label); a test backend answers the target's list route.
+
 ### SDK 0.12.0 needs no source change for S6
 
 `SystemFieldsMetadata`, `DomainMetadata` and `ActionMetadata` keep their 0.11.0 constructors. Code

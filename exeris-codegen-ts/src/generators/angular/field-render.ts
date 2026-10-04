@@ -3,7 +3,7 @@
  *
  * `list-gen`, `detail-gen` and `form-gen` obtain every per-field render decision here — whether the
  * field is shown, its label, list cell, detail display type, form control, input type, enum and
- * foreign-key link — and only print what it resolves. None of the three keeps a control or format
+ * foreign-key link and picker — and only print what it resolves. None of the three keeps a control or format
  * mapping of its own (ADR-047 Amendment 1, ADR-093 obligation 4).
  *
  * The model is internal to codegen-ts: it is not part of `DomainMetadata`, it is never serialised,
@@ -15,7 +15,8 @@
  * (`enumTypeOf`, `isBooleanType`, `temporalKindOf`, `isNumericType`). The form adds two constraints
  * of its own control: a select needs an enum the app's enum module declares, because it imports
  * that enum's constants, and a date or date-time input is given only to a value without a zone,
- * because the input's value carries none. Where the list resolves by its own rule — its
+ * because the input's value carries none. A foreign key whose target's records the app's services
+ * list is picked from those records (`foreignKeyPickers`). Where the list resolves by its own rule — its
  * `java.util.Date` date-time and its `BigDecimal` / `BigInteger` number cell — the difference is
  * listed in `docs/codegen-ts-track-plan.md`.
  *
@@ -28,7 +29,7 @@ import type { DomainMetadata, FieldMetadata } from '../../models/domain-model.js
 import type { EnumMetadata } from '../../core/generator-registry.js';
 import { DslMapper } from '../../models/dsl-mapper.js';
 import { viewSystemFieldNames } from '../api/type-gen.js';
-import { foreignKeyLinks } from './relationship-links.js';
+import { foreignKeyLinks, foreignKeyPickers, type ForeignKeyPicker } from './relationship-links.js';
 
 /**
  * The per-field render facet from `@View`, the second input of the model.
@@ -46,6 +47,8 @@ export interface FieldRenderContext {
   readonly systemFieldNames: readonly string[];
   /** Foreign-key fields mapped to the route prefix of their target's detail page (`foreignKeyLinks`). */
   readonly links: ReadonlyMap<string, string>;
+  /** Foreign-key fields mapped to the records their form control offers (`foreignKeyPickers`). */
+  readonly pickers?: ReadonlyMap<string, ForeignKeyPicker>;
   /**
    * The enums the processor emitted, which the app's enum module declares: a field whose type names
    * one is an enum (`enumTypeOf`), and the list takes its constants for the badges.
@@ -84,8 +87,11 @@ export type DataTypeFacet = 'currency' | 'percent' | 'url';
 /** Where a field appears in the form: as an editable control, as a read-only computed input, or not at all. */
 export type FormPlacement = 'control' | 'computed' | 'none';
 
-/** The form control element a field binds to. */
-export type FormControlKind = 'select' | 'checkbox' | 'input';
+/**
+ * The form control element a field binds to. `select` offers an enum's constants, `picker` a
+ * foreign key's target records; both are a native `<select>`.
+ */
+export type FormControlKind = 'select' | 'picker' | 'checkbox' | 'input';
 
 /** The DTO value kind of a form control, which decides its seed and its submit-time coercion. */
 export type FormValueKind = 'boolean' | 'number' | 'text';
@@ -134,6 +140,8 @@ export interface FieldRenderModel {
     readonly inputMode?: 'decimal' | 'numeric';
     /** The simple name of the enum the select offers, when the control is a select. */
     readonly enumType?: string;
+    /** The target records the control offers, when the control is a picker. */
+    readonly picker?: ForeignKeyPicker;
     readonly required: boolean;
     readonly readOnly: boolean;
     /**
@@ -179,17 +187,20 @@ export function toTitleCase(value: string): string {
 
 /**
  * The context every field of `domain` resolves against. `detailRouted` is whether detail views are
- * emitted: without a detail route no field links.
+ * emitted: without a detail route no field links. `servicesGenerated` is whether the app's entity
+ * services are emitted: without the target's service no foreign key is picked from its records.
  */
 export function fieldRenderContext(
   domain: DomainMetadata,
   allDomains: readonly DomainMetadata[],
   detailRouted: boolean,
   enums: readonly EnumMetadata[] = [],
+  servicesGenerated = false,
 ): FieldRenderContext {
   return {
     systemFieldNames: viewSystemFieldNames(domain),
     links: foreignKeyLinks(domain, allDomains, detailRouted),
+    pickers: foreignKeyPickers(domain, allDomains, servicesGenerated),
     enums,
   };
 }
@@ -223,7 +234,7 @@ export function resolveFieldRender(
       enumType: enumTypeOf(field, context.enums ?? []),
       dataType,
     },
-    form: formRender(field, system, context.enums ?? []),
+    form: formRender(field, system, context.enums ?? [], context.pickers?.get(field.name)),
     field,
   };
 }
@@ -459,17 +470,27 @@ function formPlacement(field: FieldMetadata, system: boolean): FormPlacement {
   return 'control';
 }
 
-function formRender(field: FieldMetadata, system: boolean, enums: readonly KnownEnum[]): FieldRenderModel['form'] {
+/**
+ * A foreign key with a picker is a select of its target's records; its value is still the id
+ * string the text input would hold, so the model, seed and validators are those of a text control.
+ */
+function formRender(
+  field: FieldMetadata,
+  system: boolean,
+  enums: readonly KnownEnum[],
+  picker: ForeignKeyPicker | undefined,
+): FieldRenderModel['form'] {
   const value = formValueKind(field);
   const inputType = formInputType(field, value);
   const enumType = formEnumType(field, enums);
   return {
     placement: formPlacement(field, system),
     label: field.displayName ?? toTitleCase(field.name),
-    control: enumType ? 'select' : inputType === 'checkbox' ? 'checkbox' : 'input',
+    control: enumType ? 'select' : picker ? 'picker' : inputType === 'checkbox' ? 'checkbox' : 'input',
     inputType,
-    inputMode: formInputMode(field, inputType),
+    inputMode: picker ? undefined : formInputMode(field, inputType),
     enumType,
+    ...(picker ? { picker } : {}),
     required: Boolean(field.required),
     readOnly: Boolean(field.readOnly),
     inUpdate: field.inUpdate !== false,

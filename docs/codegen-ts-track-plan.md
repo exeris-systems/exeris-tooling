@@ -82,6 +82,17 @@ the ui-kit to npmjs and on the `@exeris` org there — delays the Java side too.
 | P19 | The emitted app imports `@exeris/ui-kit/styles` (the `.exeris-*` component classes) after `/theme`, a CARD block uses `exeris-card`, rich text gets `@tailwindcss/typography`, and the scaffold, shell and `@View` pages are Tailwind v4 only, guarded by a spec | codegen-ts | — | P14 | S |
 | P20 | The generated list, detail and form components — their controls, tables, actions, and error and conflict panels — style themselves through the kit's component classes (`exeris-btn` with `-primary`, `-secondary`, `-danger`, `-ghost`, `-sm`; `exeris-input`, `exeris-select`, `exeris-checkbox`, `exeris-label`, `exeris-help-text`, `exeris-error-text`, `exeris-input-error`, `exeris-table`, `exeris-card` with `-header`, `-body`; `exeris-alert` with `-danger`, `-warning`; `exeris-badge` with `-success`) instead of inline utility strings — which fixes their v3 class names and the form controls drawn without a border — and the Tailwind v4 class scan extends to them, so a consumer restyles them in `styles.css` without editing generated files | codegen-ts | ADR-092 | P9, P10, P11, P19; `@exeris/ui-kit` 0.2.1 (the classes complete on Tailwind v4) | M |
 
+**P13: the relationship picker is a native `<select>`.** `@angular/aria` 22.2.1, the npm `latest`,
+carries no stability marker in its `.d.ts` — neither `@publicApi` nor `@developerPreview` appears in
+any of its `types/*.d.ts` — so the emitted form uses none of its symbols and the emitted
+`package.json` does not depend on it. A `MANY_TO_ONE` UUID foreign key whose target is in the same
+generation with its service generated is a `<select>` over the records the target service's
+`findAll()` returns, valued by `id` and labelled by the target's `@Relationship.displayField` value
+(the id when the target declares no such field or the value is empty); a value the loaded records do
+not contain stays an option, so an edit never blanks the key while they load. Moving the picker to
+Angular Aria is a later change, gated on the installed package marking the symbols stable; no CI check
+reads the `.d.ts` until then.
+
 **The kit's component classes P20 does not use leave its frozen contract.** The chip, color, editor,
 file, radio, range, rating, toggle and textarea controls, the scroll and truncation helpers,
 `exeris-btn-lg`, `exeris-card-footer`, `exeris-alert-info` and `-success`, `exeris-badge-primary`,
@@ -156,10 +167,11 @@ the orchestrator over proxied metadata. Four states:
 
 The last three carry a reason. A field added to the schema, or one a generator starts or stops
 reading, fails the build until it is classified. Today: 18 `READ`, 4 `JAVA_ONLY`, 15 `RESERVED`,
-no `GAP`. One level down, `FIELD_CONTRACT_COVERAGE` has no `GAP` and
-`RELATIONSHIP_CONTRACT_COVERAGE` 1 (`displayField`); `UI_CONTRACT_COVERAGE` has none — the six view
-switches are `READ` (P17), and `icon`, `color` and `exportable` are `RESERVED` — and neither have the
-action, event, saga-step, `eventSourced` and `internalApi` tables.
+no `GAP`. No table one level down has a `GAP` either: `FIELD_CONTRACT_COVERAGE` (23 `READ`, 1
+`JAVA_ONLY`, 3 `RESERVED`), `RELATIONSHIP_CONTRACT_COVERAGE` (5 `READ` — `displayField` labels the
+form's foreign-key picker, P13 — 1 `JAVA_ONLY`, 7 `RESERVED`), `UI_CONTRACT_COVERAGE` (the six view
+switches `READ` (P17); `icon`, `color` and `exportable` `RESERVED`), and the action, event, saga-step,
+`eventSourced` and `internalApi` tables.
 
 **Proposed TS 1.0 criterion: no field in `GAP`** — no field the backend acts on is silently ignored
 by the front. Not yet in the ROADMAP's 1.0 list.
