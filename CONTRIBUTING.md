@@ -4,7 +4,7 @@ type: reference
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-09-05
+last-verified: 2026-10-04
 ---
 
 # Contributing to Exeris Tooling
@@ -30,6 +30,31 @@ cd exeris-codegen-ts && npm install && npm test
 
 **JDK 25 LTS is the baseline** across the reactor (`maven.compiler.release=25`, per kernel ADR-066 / SDK ADR-069).
 Maven 3.9+ for Java modules; Node 18+ for `exeris-codegen-ts`.
+
+## `exeris-codegen-ts`
+
+The package README ([`exeris-codegen-ts/README.md`](exeris-codegen-ts/README.md)) is the package's
+page on npmjs, so it covers using `exeris-gen` only. Building, testing and releasing the package are
+described here.
+
+```bash
+cd exeris-codegen-ts
+npm install
+
+npm run build              # tsc into dist/
+npm run dev -- generate --input path/to/metadata   # run the CLI from source (tsx)
+npm test                   # vitest
+npm run test:coverage      # vitest with coverage; fails on a threshold violation
+npm run verify:generated   # generate a sample app and type-check its data layer (no Angular needed)
+npm run check:version      # package.json and package-lock.json versions equal the root pom.xml version
+```
+
+`node scripts/gen-sample-app.mjs <dir>` writes the complete sample app that CI installs and builds
+with `ng build`; `--view-only` writes the backend-less variant. `EXERIS_UI_KIT_PATH` points the sample
+at a local `exeris-sdk-ui-kit` checkout instead of the published UI kit.
+
+The package version is the Maven reactor's version: one `vX.Y.Z` tag releases both, and
+`check:version` holds them equal on every commit, `-SNAPSHOT` included.
 
 ## Architectural invariants
 
