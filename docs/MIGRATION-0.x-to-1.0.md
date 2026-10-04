@@ -944,11 +944,11 @@ nothing now, with one fewer place to look for the reason.
 service and the event publisher. `RuntimeComponents.create<Entity>Handler()` resolves
 `KernelProviders.MEMORY_ALLOCATOR` and passes it in.
 
-**Why.** That `ScopedValue`'s binding is established around the bootstrap callback. A request is
-served on a virtual thread started with `Thread.ofVirtual().start()` — which inherits no
-`ScopedValue` binding, only `StructuredTaskScope` forks do — so the previous per-request `.get()`
-could only ever find it unbound. Resolving it where the binding is live is what the kernel's own
-benchmark runtime does.
+**Why.** A handler resolves the providers it needs where their bindings are live, at composition
+time, and holds them. The allocator is a boot-scoped provider like the event engine, and resolving it
+in the factory puts a wiring fault at boot, with the composition on the stack. Kernel 0.12 also binds
+`MEMORY_ALLOCATOR` around every request and stream it dispatches, so a per-request read would find
+it there; the generated handler does not depend on that binding.
 
 **Action required — only if you override the factory.** If your `RuntimeComponents` subclass
 overrides `create<Entity>Handler()`, the `new <Entity>Handler(...)` call inside it needs the extra
