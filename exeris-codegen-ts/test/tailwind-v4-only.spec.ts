@@ -181,7 +181,7 @@ describe.each(Object.entries(apps))('the %s app is Tailwind v4 only', (_name, fi
     expect(JSON.parse(fileAt(files, './.postcssrc.json'))).toEqual({ plugins: { '@tailwindcss/postcss': {} } });
   });
 
-  it('the shell header keeps the v3 default shadow, now shadow-sm', () => {
+  it('the shell header carries shadow-sm, not the bare v3 shadow', () => {
     expect(fileAt(files, 'src/app/app.component.ts')).toContain('<header class="bg-white dark:bg-gray-800 shadow-sm">');
   });
 });

@@ -29,7 +29,11 @@
 # from exeris-tooling-bom's, the versions this release was built and tested against.
 #
 # @exeris/codegen-ts (npm) is released by the same tag: this gate also fails when its package.json
-# or package-lock.json version differs from the reactor's.
+# or package-lock.json version differs from the reactor's, when that version is a -SNAPSHOT, and
+# when package.json lacks what publishing to npmjs depends on: the `repository` npm provenance and
+# trusted publishing match against this repository, a `files` list, `publishConfig.access` public
+# (a scoped package is otherwise published restricted), the `exeris-gen` bin under dist/, and the
+# LICENSE file its `license` names.
 #
 # Usage:
 #   tools/release-readiness/release-readiness.sh             # release.yml: full gate
@@ -41,7 +45,7 @@ set -euo pipefail
 
 UNSIGNED=0
 case "${1:-}" in
-  -h|--help) sed -n '2,39p' "$0"; exit 0 ;;
+  -h|--help) sed -n '2,43p' "$0"; exit 0 ;;
   --unsigned) UNSIGNED=1 ;;
   "") ;;
   *) echo "unknown argument: $1" >&2; exit 2 ;;
@@ -275,6 +279,40 @@ if npm_version != reactor_version:
 if lock_versions != {npm_version}:
     failures.append(f'exeris-codegen-ts/package-lock.json carries {sorted(map(str, lock_versions))}, '
                     f'package.json {npm_version}')
+if npm_version.endswith('-SNAPSHOT'):
+    failures.append(f'exeris-codegen-ts/package.json is at {npm_version}; npm receives final versions only')
+
+# What publishing to npmjs depends on. Trusted publishing and provenance compare `repository` with
+# the repository the workflow runs in.
+pkg = json.loads((npm_dir / 'package.json').read_text())
+repo = pkg.get('repository') if isinstance(pkg.get('repository'), dict) else {}
+repo_url = str(repo.get('url', '')).removeprefix('git+').removesuffix('.git')
+if pkg.get('name') != '@exeris/codegen-ts':
+    failures.append(f'exeris-codegen-ts/package.json: name is {pkg.get("name")!r}, not @exeris/codegen-ts')
+if pkg.get('private'):
+    failures.append('exeris-codegen-ts/package.json: `private` is set, so npm refuses to publish it')
+if repo.get('type') != 'git' or repo_url != 'https://github.com/exeris-systems/exeris-tooling' \
+        or repo.get('directory') != 'exeris-codegen-ts':
+    failures.append('exeris-codegen-ts/package.json: `repository` must be {type: git, url: '
+                    'git+https://github.com/exeris-systems/exeris-tooling.git, directory: '
+                    'exeris-codegen-ts} for npm provenance; it is ' + repr(pkg.get('repository')))
+files = pkg.get('files')
+if not isinstance(files, list) or not files:
+    failures.append('exeris-codegen-ts/package.json: no `files` list, so npm would publish the whole '
+                    'directory (sources, tests, scripts)')
+elif any(not str(f).lstrip('./').startswith('dist/') for f in files):
+    failures.append(f'exeris-codegen-ts/package.json: `files` {files} reaches outside dist/')
+if (pkg.get('publishConfig') or {}).get('access') != 'public':
+    failures.append('exeris-codegen-ts/package.json: `publishConfig.access` is not "public"; a scoped '
+                    'package would be published restricted, or refused')
+bin_path = (pkg.get('bin') or {}).get('exeris-gen') if isinstance(pkg.get('bin'), dict) else None
+if not bin_path or not str(bin_path).lstrip('./').startswith('dist/'):
+    failures.append(f'exeris-codegen-ts/package.json: bin `exeris-gen` is {bin_path!r}, not a file under dist/')
+if not pkg.get('license'):
+    failures.append('exeris-codegen-ts/package.json: no `license`')
+if not (npm_dir / 'LICENSE').is_file():
+    failures.append('exeris-codegen-ts/LICENSE is missing; npm packs a LICENSE from the package '
+                    'directory only')
 
 for owner, listed in excluded_by.items():
     governed_skips = {a for a in deploy_skipped if governing(a) == owner}
