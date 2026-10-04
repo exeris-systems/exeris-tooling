@@ -197,9 +197,9 @@ describe('generateAppStructure — @exeris/ui-kit token wiring (T25)', () => {
     expect(css.content).not.toContain('indigo');
   });
 
-  it('package.json declares the @exeris/ui-kit dependency at ^0.2.0, and not the GitHub Packages name', () => {
+  it('package.json declares the @exeris/ui-kit dependency at ^0.2.1, and not the GitHub Packages name', () => {
     const pkg = JSON.parse(fileAt(files, './package.json')!.content);
-    expect(pkg.dependencies['@exeris/ui-kit']).toBe('^0.2.0');
+    expect(pkg.dependencies['@exeris/ui-kit']).toBe('^0.2.1');
     expect(pkg.dependencies['@exeris-systems/ui-kit']).toBeUndefined();
   });
 
