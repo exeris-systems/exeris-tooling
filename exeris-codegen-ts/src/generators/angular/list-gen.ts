@@ -34,6 +34,12 @@ const DEFAULT_PAGE_SIZE = 20;
 
 const BADGE_BASE = 'inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ring-1 ring-inset';
 
+/**
+ * A boolean cell's "No": the kit's badge shape on its neutral surface and secondary text, which
+ * follow the theme. A false value is not a failure, so it takes no danger colour.
+ */
+const BOOLEAN_FALSE_BADGE = 'exeris-badge bg-[rgb(var(--exeris-bg-tertiary))] text-[rgb(var(--exeris-text-secondary))]';
+
 /** Utility classes per badge tone. Full literals, so Tailwind's source scan finds every one. */
 const BADGE_TONE_CLASSES: Readonly<Record<BadgeTone, string>> = {
   blue: 'bg-blue-50 text-blue-700 ring-blue-600/20 dark:bg-blue-900/20 dark:text-blue-300',
@@ -44,8 +50,15 @@ const BADGE_TONE_CLASSES: Readonly<Record<BadgeTone, string>> = {
   slate: 'bg-slate-50 text-slate-700 ring-slate-500/20 dark:bg-slate-800 dark:text-slate-300',
 };
 
-const FILTER_SELECT_CLASS = 'rounded-md border-0 py-2 pl-3 pr-10 text-gray-900 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-exeris-primary dark:bg-gray-800 dark:text-white dark:ring-gray-600 sm:text-sm';
-const FILTER_INPUT_CLASS = 'rounded-md border-0 py-2 px-3 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-exeris-primary dark:bg-gray-800 dark:text-white dark:ring-gray-600 sm:text-sm';
+/**
+ * The filter controls. The kit's field classes are full width, so a filter takes its own line on a
+ * narrow screen and its natural width beside the search box from `sm` on.
+ */
+const FILTER_SELECT_CLASS = 'exeris-select sm:w-auto';
+const FILTER_INPUT_CLASS = 'exeris-input sm:w-auto';
+
+/** A row link or action: a small ghost button, so the row's actions read as one group. */
+const ROW_ACTION_CLASS = 'exeris-btn exeris-btn-ghost exeris-btn-sm';
 
 /** `fieldName` → `FieldName`, the suffix of the signals and template references a field owns. */
 function capitalize(name: string): string {
@@ -310,7 +323,7 @@ export class ListGenerator implements CodeGenerator {
       lines.push(`          <a`);
       lines.push(`            routerLink="new"`);
       lines.push(`            data-testid="action-create"`);
-      lines.push(`            class="inline-flex items-center rounded-md bg-exeris-primary px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-exeris-primary-hover transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-exeris-primary"`);
+      lines.push(`            class="exeris-btn exeris-btn-primary"`);
       lines.push(`          >`);
       lines.push(`            <svg class="-ml-0.5 mr-1.5 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">`);
       lines.push(`              <path d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" />`);
@@ -323,11 +336,11 @@ export class ListGenerator implements CodeGenerator {
     lines.push(``);
 
     lines.push(`      @if (deleteError()) {`);
-    lines.push(`        <div role="alert" data-testid="delete-error" class="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">{{ deleteError() }}</div>`);
+    lines.push(`        <div role="alert" data-testid="delete-error" class="exeris-alert exeris-alert-danger text-sm">{{ deleteError() }}</div>`);
     lines.push(`      }`);
     if (actions.length > 0) {
       lines.push(`      @if (actionError()) {`);
-      lines.push(`        <div role="alert" data-testid="action-error" class="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">{{ actionError() }}</div>`);
+      lines.push(`        <div role="alert" data-testid="action-error" class="exeris-alert exeris-alert-danger text-sm">{{ actionError() }}</div>`);
       lines.push(`      }`);
     }
     lines.push(``);
@@ -350,7 +363,7 @@ export class ListGenerator implements CodeGenerator {
         lines.push(`            placeholder="Search ${pluralName.toLowerCase()}..."`);
         lines.push(`            aria-label="Search ${pluralName.toLowerCase()}"`);
         lines.push(`            data-testid="search-input"`);
-        lines.push(`            class="block w-full rounded-md border-0 py-2 pl-10 pr-3 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-exeris-primary dark:bg-gray-800 dark:text-white dark:ring-gray-600 sm:text-sm sm:leading-6"`);
+        lines.push(`            class="exeris-input pl-10"`);
         lines.push(`          />`);
         lines.push(`        </div>`);
       }
@@ -364,7 +377,7 @@ export class ListGenerator implements CodeGenerator {
     // Table with @defer for SSR
     lines.push(`      <!-- Data Table -->`);
     lines.push(`      @defer (on viewport; prefetch on idle) {`);
-    lines.push(`        <div class="overflow-hidden rounded-lg border border-gray-200 shadow-sm dark:border-gray-700">`);
+    lines.push(`        <div class="exeris-card overflow-hidden">`);
     lines.push(`          @if (isLoading() && items().length === 0) {`);
     lines.push(`            <!-- Loading skeleton -->`);
     lines.push(`            <div class="animate-pulse">`);
@@ -372,9 +385,9 @@ export class ListGenerator implements CodeGenerator {
     lines.push(`              @for (i of [1,2,3,4,5]; track i) {`);
     lines.push(`                <div class="h-16 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">`);
     lines.push(`                  <div class="flex items-center gap-4 p-4">`);
-    lines.push(`                    <div class="h-4 w-32 rounded bg-gray-200 dark:bg-gray-700"></div>`);
-    lines.push(`                    <div class="h-4 w-24 rounded bg-gray-200 dark:bg-gray-700"></div>`);
-    lines.push(`                    <div class="h-4 w-16 rounded bg-gray-200 dark:bg-gray-700"></div>`);
+    lines.push(`                    <div class="h-4 w-32 rounded-sm bg-gray-200 dark:bg-gray-700"></div>`);
+    lines.push(`                    <div class="h-4 w-24 rounded-sm bg-gray-200 dark:bg-gray-700"></div>`);
+    lines.push(`                    <div class="h-4 w-16 rounded-sm bg-gray-200 dark:bg-gray-700"></div>`);
     lines.push(`                  </div>`);
     lines.push(`                </div>`);
     lines.push(`              }`);
@@ -387,19 +400,21 @@ export class ListGenerator implements CodeGenerator {
     lines.push(`              </svg>`);
     lines.push(`              <p class="mt-4 text-sm font-medium text-gray-900 dark:text-white">Failed to load ${pluralName.toLowerCase()}</p>`);
     lines.push(`              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ error() }}</p>`);
-    lines.push(`              <button type="button" (click)="loadData()" class="mt-4 text-sm font-medium text-exeris-primary hover:text-exeris-primary-hover">Try again</button>`);
+    lines.push(`              <button type="button" (click)="loadData()" class="exeris-btn exeris-btn-secondary exeris-btn-sm mt-4">Try again</button>`);
     lines.push(`            </div>`);
     lines.push(`          } @else {`);
-    lines.push(`            <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700" aria-label="${pluralName} table" data-testid="data-table">`);
-    lines.push(`              <thead class="bg-gray-50 dark:bg-gray-800">`);
+    lines.push(`            <table class="exeris-table" aria-label="${pluralName} table" data-testid="data-table">`);
+    lines.push(`              <thead>`);
     lines.push(`                <tr>`);
 
-    // Column headers; a sortable one holds a button, so the sort is reachable by keyboard.
+    // Column headers; a sortable one holds a button, so the sort is reachable by keyboard. The
+    // table class sets the cells' padding, type and colours; a numeric column only aligns right.
     for (const col of listColumns) {
-      const align = col.list.align === 'right' ? 'text-right' : 'text-left';
       lines.push(`                  <th`);
       lines.push(`                    scope="col"`);
-      lines.push(`                    class="px-6 py-3.5 ${align} text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400"`);
+      if (col.list.align === 'right') {
+        lines.push(`                    class="text-right"`);
+      }
       if (col.list.sortable) {
         lines.push(`                    [attr.aria-sort]="sortField() === '${col.name}' ? (sortDirection() === 'asc' ? 'ascending' : 'descending') : 'none'"`);
       }
@@ -418,45 +433,44 @@ export class ListGenerator implements CodeGenerator {
       }
       lines.push(`                  </th>`);
     }
-    lines.push(`                  <th scope="col" class="relative py-3.5 pl-3 pr-6">`);
+    lines.push(`                  <th scope="col" class="relative">`);
     lines.push(`                    <span class="sr-only">Actions</span>`);
     lines.push(`                  </th>`);
     lines.push(`                </tr>`);
     lines.push(`              </thead>`);
-    lines.push(`              <tbody class="divide-y divide-gray-200 bg-white dark:divide-gray-700 dark:bg-gray-900">`);
+    lines.push(`              <tbody>`);
     lines.push(`                @for (item of items(); track item.${idField}; let i = $index) {`);
-    lines.push(`                  <tr animate.enter="row-enter" [style.animation-delay.ms]="i * 50" class="hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors" [attr.data-testid]="'row-' + item.${idField}">`);
+    lines.push(`                  <tr animate.enter="row-enter" [style.animation-delay.ms]="i * 50" class="transition-colors" [attr.data-testid]="'row-' + item.${idField}">`);
 
     // Data cells
     for (const col of listColumns) {
-      const align = col.list.align === 'right' ? ' text-right tabular-nums' : '';
-      lines.push(`                    <td class="whitespace-nowrap px-6 py-4 text-sm text-gray-900 dark:text-gray-100${align}">`);
+      lines.push(col.list.align === 'right' ? `                    <td class="text-right tabular-nums">` : `                    <td>`);
       lines.push(...this.cell(col, idField));
       lines.push(`                    </td>`);
     }
 
     // Actions
-    lines.push(`                    <td class="whitespace-nowrap py-4 pl-3 pr-6 text-right text-sm">`);
-    lines.push(`                      <div class="flex justify-end gap-3">`);
+    lines.push(`                    <td class="text-right">`);
+    lines.push(`                      <div class="flex justify-end gap-2">`);
     // Each row link exists only beside the route it opens; Delete is an API call and always stays.
     if (views.detail) {
-      lines.push(`                        <a [routerLink]="[item.${idField}]" [attr.data-testid]="'action-view-' + item.${idField}" class="text-exeris-primary hover:text-exeris-primary-hover dark:text-exeris-primary dark:hover:text-exeris-primary-hover font-medium">View</a>`);
+      lines.push(`                        <a [routerLink]="[item.${idField}]" [attr.data-testid]="'action-view-' + item.${idField}" class="${ROW_ACTION_CLASS}">View</a>`);
     }
     if (views.edit) {
-      lines.push(`                        <a [routerLink]="[item.${idField}, 'edit']" [attr.data-testid]="'action-edit-' + item.${idField}" class="text-exeris-primary hover:text-exeris-primary-hover dark:text-exeris-primary dark:hover:text-exeris-primary-hover font-medium">Edit</a>`);
+      lines.push(`                        <a [routerLink]="[item.${idField}, 'edit']" [attr.data-testid]="'action-edit-' + item.${idField}" class="${ROW_ACTION_CLASS}">Edit</a>`);
     }
     for (const action of actions) {
       const method = DslMapper.toMethodName(action.name);
       const kebab = DslMapper.toKebabCase(action.name);
-      lines.push(`                        <button type="button" (click)="on${capitalize(method)}(item)" [attr.data-testid]="'action-${kebab}-' + item.${idField}" class="text-exeris-primary hover:text-exeris-primary-hover dark:text-exeris-primary dark:hover:text-exeris-primary-hover font-medium">${toTitleCase(method)}</button>`);
+      lines.push(`                        <button type="button" (click)="on${capitalize(method)}(item)" [attr.data-testid]="'action-${kebab}-' + item.${idField}" class="${ROW_ACTION_CLASS}">${toTitleCase(method)}</button>`);
     }
-    lines.push(`                        <button type="button" (click)="onDelete(item)" [attr.data-testid]="'action-delete-' + item.${idField}" class="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 font-medium">Delete</button>`);
+    lines.push(`                        <button type="button" (click)="onDelete(item)" [attr.data-testid]="'action-delete-' + item.${idField}" class="exeris-btn exeris-btn-danger exeris-btn-sm">Delete</button>`);
     lines.push(`                      </div>`);
     lines.push(`                    </td>`);
     lines.push(`                  </tr>`);
     lines.push(`                } @empty {`);
     lines.push(`                  <tr>`);
-    lines.push(`                    <td colspan="${listColumns.length + 1}" class="px-6 py-12 text-center">`);
+    lines.push(`                    <td colspan="${listColumns.length + 1}" class="py-12 text-center">`);
     lines.push(`                      <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">`);
     lines.push(`                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />`);
     lines.push(`                      </svg>`);
@@ -464,7 +478,7 @@ export class ListGenerator implements CodeGenerator {
     if (views.create) {
       lines.push(`                      <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Get started by creating a new ${displayName.toLowerCase()}.</p>`);
       lines.push(`                      <div class="mt-6">`);
-      lines.push(`                        <a routerLink="new" class="inline-flex items-center rounded-md bg-exeris-primary px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-exeris-primary-hover">`);
+      lines.push(`                        <a routerLink="new" class="exeris-btn exeris-btn-primary">`);
       lines.push(`                          <svg class="-ml-0.5 mr-1.5 h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" /></svg>`);
       lines.push(`                          New ${displayName}`);
       lines.push(`                        </a>`);
@@ -479,12 +493,12 @@ export class ListGenerator implements CodeGenerator {
     lines.push(`        </div>`);
     lines.push(`      } @placeholder {`);
     lines.push(`        <!-- SSR placeholder -->`);
-    lines.push(`        <div class="h-96 rounded-lg border border-gray-200 dark:border-gray-700 animate-pulse bg-gray-100 dark:bg-gray-800"></div>`);
+    lines.push(`        <div class="exeris-card h-96 animate-pulse"></div>`);
     lines.push(`      }`);
     lines.push(``);
 
     // Pagination
-    const navButton = 'relative inline-flex items-center rounded-md bg-white dark:bg-gray-800 px-3 py-2 text-sm font-semibold text-gray-900 dark:text-gray-100 ring-1 ring-inset ring-gray-300 dark:ring-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors';
+    const navButton = 'exeris-btn exeris-btn-secondary';
     lines.push(`      <!-- Pagination -->`);
     lines.push(`      @if (totalElements() > 0) {`);
     lines.push(`        <nav class="flex items-center justify-between border-t border-gray-200 dark:border-gray-700 px-4 py-3 sm:px-0" aria-label="Pagination">`);
@@ -496,7 +510,7 @@ export class ListGenerator implements CodeGenerator {
     lines.push(`            </p>`);
     lines.push(`            <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">`);
     lines.push(`              Rows per page`);
-    lines.push(`              <select #pageSizeSelect (change)="onPageSizeChange(pageSizeSelect.value)" data-testid="page-size" class="${FILTER_SELECT_CLASS}">`);
+    lines.push(`              <select #pageSizeSelect (change)="onPageSizeChange(pageSizeSelect.value)" data-testid="page-size" class="exeris-select w-auto">`);
     for (const size of PAGE_SIZES) {
       lines.push(`                <option value="${size}" [selected]="pageSize() === ${size}">${size}</option>`);
     }
@@ -720,9 +734,9 @@ export class ListGenerator implements CodeGenerator {
       case 'boolean':
         return [
           `${indent}@if (${value}) {`,
-          `${indent}  <span class="inline-flex items-center rounded-full bg-green-50 px-2 py-1 text-xs font-medium text-green-700 ring-1 ring-inset ring-green-600/20 dark:bg-green-900/20 dark:text-green-400 dark:ring-green-500/20">Yes</span>`,
+          `${indent}  <span class="exeris-badge exeris-badge-success">Yes</span>`,
           `${indent}} @else {`,
-          `${indent}  <span class="inline-flex items-center rounded-full bg-gray-50 px-2 py-1 text-xs font-medium text-gray-600 ring-1 ring-inset ring-gray-500/10 dark:bg-gray-800 dark:text-gray-400">No</span>`,
+          `${indent}  <span class="${BOOLEAN_FALSE_BADGE}">No</span>`,
           `${indent}}`,
         ];
       case 'enum':
@@ -743,7 +757,7 @@ export class ListGenerator implements CodeGenerator {
       case 'percent':
         return [`${indent}{{ ${value} | percent }}`];
       case 'url':
-        return [`${indent}<a [href]="${value}" class="text-exeris-primary hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300 underline">{{ ${value} }}</a>`];
+        return [`${indent}<a [href]="${value}" class="text-exeris-primary hover:text-exeris-primary-hover underline">{{ ${value} }}</a>`];
       default:
         return [`${indent}{{ ${value} }}`];
     }

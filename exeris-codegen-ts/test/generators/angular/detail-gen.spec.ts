@@ -675,7 +675,7 @@ describe('DetailGenerator — sections', () => {
     expect(content).toContain('<section aria-labelledby="details-title"');
     expect(content).toContain('<h2 id="details-title"');
     expect(content).toContain('<section aria-labelledby="system-title"');
-    expect(content).toContain('<h2 id="system-title" class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-4">System Information</h2>');
+    expect(content).toContain('<h2 id="system-title" class="exeris-card-header text-sm font-medium text-gray-500 dark:text-gray-400">System Information</h2>');
     expect(content).not.toContain('Related records');
   });
 });
@@ -759,5 +759,35 @@ describe('DetailGenerator — action buttons', () => {
     const content = gen.generate(domain({ entityName: 'Plain', fields: [field({ name: 'id', type: 'java.util.UUID' })] }), CTX)!.content;
     expect(content).not.toContain('actionPending');
     expect(content).not.toContain('runAction');
+  });
+});
+// ---------- kit component classes ----------
+
+describe('DetailGenerator styles its sections, actions and panels through the kit classes', () => {
+  const gen = new DetailGenerator();
+  const content = gen.generate(domain({
+    entityName: 'Order',
+    fields: [field({ name: 'id', type: 'java.util.UUID' }), field({ name: 'name', type: 'String' })],
+    actions: [{ name: 'cancel', methodName: 'cancel' }] as never,
+  }), CTX)!.content;
+
+  it('each section is an exeris-card whose heading is its header', () => {
+    expect(content).toContain('<section aria-labelledby="details-title" class="exeris-card overflow-hidden">');
+    expect(content).toContain('<h2 id="details-title" class="exeris-card-header');
+    expect(content).toContain('<section aria-labelledby="system-title" class="exeris-card mt-8">');
+    expect(content).toContain('<dl class="exeris-card-body grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">');
+  });
+
+  it('the header actions are kit buttons: actions secondary, Edit primary, Delete danger', () => {
+    expect(content).toContain('data-testid="action-cancel" class="exeris-btn exeris-btn-secondary">Cancel</button>');
+    expect(content).toContain(`<a [routerLink]="['edit']" class="exeris-btn exeris-btn-primary">Edit</a>`);
+    expect(content).toContain('<button (click)="onDelete()" class="exeris-btn exeris-btn-danger">Delete</button>');
+  });
+
+  it('the load, delete and action errors are danger alerts', () => {
+    expect(content).toContain('<div role="alert" class="exeris-alert exeris-alert-danger">');
+    expect(content).toContain('(click)="reload()" class="exeris-btn exeris-btn-secondary exeris-btn-sm mt-4">Try again</button>');
+    expect(content).toContain('data-testid="delete-error" class="exeris-alert exeris-alert-danger mb-6 text-sm"');
+    expect(content).toContain('data-testid="action-error" class="exeris-alert exeris-alert-danger mb-6 text-sm"');
   });
 });
