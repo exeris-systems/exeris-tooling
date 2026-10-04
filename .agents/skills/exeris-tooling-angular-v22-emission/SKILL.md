@@ -30,7 +30,8 @@ per-shape generators.
   are in.
 - `detail-gen.ts` fetches through `rxResource`.
 - `service-gen.ts` still returns `Observable<T>` from `HttpClient`: Phase B's remaining step.
-- `form-gen.ts` still emits Reactive Forms (`FormBuilder`, `Validators`): Phase C.
+- `form-gen.ts` emits Signal Forms (`form`, `[formField]`, `submit`; ADR-093): Phase C's form step
+  is in. Flag-gated WebMCP is what remains of Phase C.
 
 New or rewritten emission follows the canon below. An existing generator changes shape only in the
 phase that owns the change.
@@ -49,13 +50,13 @@ phase that owns the change.
   (now `undefined`, not `null`).
   - **NOT adopted — `debounced()`:** it is an **experimental** v22 API (`@angular/core`) and returns a
     `Resource<T>` (`.value()`), not a debounced signal. Per the no-experimental-by-default rule it stays
-    out of default emission; the existing `Subject + debounceTime + takeUntilDestroyed` in `list-gen` is
-    stable, idiomatic v22 — keep it.
+    out of default emission. `list-gen` searches through a `computed` over the loaded rows, which needs
+    no debounce.
   - **NOT adopted — dropping explicit `OnPush`:** v22's OnPush-default is a CLI-scaffold-level default on
     new apps, not a framework behaviour change for components without an explicit strategy. Keep the
     explicit `ChangeDetectionStrategy.OnPush` to avoid depending on that default.
-- **Phase C — reshape (ADR-worthy):** `form-gen.ts` Reactive Forms → **Signal Forms** (real emitted-shape
-  change → needs its own ADR + emitter-parity note); then **WebMCP** (`provideExperimentalWebMcpForms()`
+- **Phase C — reshape (ADR-worthy):** `form-gen.ts` Reactive Forms → **Signal Forms** — done, under
+  ADR-093; then **WebMCP** (`provideExperimentalWebMcpForms()`
   / `experimentalWebMcpTool` / `declareExperimentalWebMcpTool`) **flag-gated, OFF by default** —
   Angular *experimental* API. WebMCP-from-forms is near-free *given* Signal Forms, so Signal Forms precede it.
 
@@ -64,11 +65,11 @@ reshape into the version bump).
 
 ## Emit / stop-emitting quick reference
 - **Stop:** `withFetch()` arg; `typescript ~5.9` / `@angular/* ^21` pins; `@angular/platform-browser-dynamic`;
-  the `@angular-devkit/build-angular` builder; (Phase C) `FormBuilder`/`Validators` Reactive Forms.
+  the `@angular-devkit/build-angular` builder; `FormBuilder`/`Validators` Reactive Forms (ADR-093).
 - **Keep (already v22-valid):** standalone, signals, `@if/@for/@defer`, `inject()`, functional guards,
   `provideZonelessChangeDetection()`, esbuild `@angular/build:application` builder, Tailwind v4,
-  explicit `OnPush`, `Subject + debounceTime + takeUntilDestroyed` search debounce.
-- **Start (per phase):** `httpResource()`/`rxResource()` (stable), Signal Forms (Phase C), opt-in WebMCP (Phase C).
+  explicit `OnPush`, Signal Forms (ADR-093).
+- **Start (per phase):** `httpResource()`/`rxResource()` (stable), opt-in WebMCP (Phase C).
 
 ## Two MCP planes — do not conflate
 - **Dev-time (helps us author; we do NOT emit):** Angular CLI MCP (`ng mcp`, read-only doc/example tools)

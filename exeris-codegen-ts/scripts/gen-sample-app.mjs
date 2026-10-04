@@ -47,7 +47,10 @@ const domains = [
       { name: 'total', type: 'java.math.BigDecimal', dataType: 'currency' },
       { name: 'createdAt', type: 'java.time.Instant' },
       { name: 'updatedAt', type: 'java.time.Instant' },
-      { name: 'status', type: 'com.shop.OrderStatus', enumType: 'com.shop.OrderStatus', required: true },
+      // Filterable, so the store's and the service's filter both name the enum and must import it.
+      { name: 'status', type: 'com.shop.OrderStatus', enumType: 'com.shop.OrderStatus', required: true, filterable: true },
+      // Bounded boxed number: its Zod schema and its Signal Forms validators both carry min and max.
+      { name: 'quantity', type: 'java.lang.Integer', required: true, min: 1, max: 99 },
       { name: 'productId', type: 'java.util.UUID' },
       // T20d: a *primitive* boolean. The sample carried no boolean of either kind, which
       // is why a text-input-and-'' -seeded checkbox field type-checked here for two trains.

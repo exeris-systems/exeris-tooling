@@ -4,7 +4,7 @@ type: roadmap
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-10-02
+last-verified: 2026-10-04
 ---
 
 # Exeris Tooling — Roadmap to 1.0.0 GA
@@ -2792,11 +2792,12 @@ Each now has the status the code settles, and every other mention in this file a
 `@exeris/codegen-ts` is versioned in lockstep with this reactor and released on the same tag, to
 npmjs under `@exeris`. Its plan: [`docs/codegen-ts-track-plan.md`](docs/codegen-ts-track-plan.md).
 It measures what the front reads from `DomainMetadata` against what the Java side acts on, and
-lists the TS scope the 0.9.0 cut waits for (P1–P18 there): lockstep version, field-schema and
+lists the TS scope the 0.9.0 cut waits for (P1–P20 there): lockstep version, field-schema and
 strict-audit honesty, backend-less emission, the TS output-stability and Signal Forms ADRs, the
 ADR-047 amendment, `FieldRenderModel` and on it U2 / U5 / U3 with a relationship picker, the
 ui-kit from npmjs, the npm release step, nested schemas that follow the processor, the entity-level
-`@UI` view flags taking effect, and emitted headers without a per-release value.
+`@UI` view flags taking effect, emitted headers without a per-release value, the kit's styles on
+Tailwind v4, and generated components styled through the kit's component classes.
 
 - [x] **Stage 1 — contract parity.** The emitted edit route edits (#235) · a `versioned` update
       carries its version (#236) · ADR-076 status mapping (#239) · `audited` panel (#240) ·
@@ -2809,7 +2810,7 @@ ui-kit from npmjs, the npm release step, nested schemas that follow the processo
       `contract/stream-routes.json` pins the routes on both sides.
 - [ ] **TS output-stability ADR** — ADR-015 covers codegen-core and codegen-java only; needed before
       the first npm publication.
-- [ ] **TS 0.9.0 scope** — P1–P18 in the plan; the 0.9.0 cut waits for it.
+- [ ] **TS 0.9.0 scope** — P1–P20 in the plan; the 0.9.0 cut waits for it.
 
 ### UI fidelity & theming (`exeris-codegen-ts`)
 
@@ -3738,7 +3739,7 @@ Expected to pair with kernel 0.13, and with SDK 0.13 if one is needed.
 (a kernel contract for concurrent flow steps). Each gets a milestone when its upstream half lands.
 
 **`@exeris/codegen-ts` → npmjs** ships in 0.9.0, in lockstep with the reactor; the 0.9.0 cut
-waits for the TS scope in [`docs/codegen-ts-track-plan.md`](docs/codegen-ts-track-plan.md) (P1–P18).
+waits for the TS scope in [`docs/codegen-ts-track-plan.md`](docs/codegen-ts-track-plan.md) (P1–P20).
 The TS side is further behind than the Java side, and it is what a `@View` front end is generated
 from. **`@Channel` emission** is 0.12.0.
 

@@ -11,10 +11,12 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import {
   DEPRECATED_OWNER_DOC,
   TypeGenerator,
   auditFieldNames,
+  buildZodType,
   deprecatedDtoOwner,
   generateTypes,
   viewSystemFieldNames,
@@ -764,5 +766,31 @@ describe('auditFieldNames / viewSystemFieldNames — the views\' system-field cl
       versioned: true,
       systemFields: { primaryKeyField: 'id' },
     }))).toEqual(['id', 'createdAt', 'updatedAt', 'version', 'tenantId']);
+  });
+});
+
+describe('buildZodType — numeric bounds on a boxed type', () => {
+  /** The emitted expression, evaluated against the real Zod the emitted app installs. */
+  const schemaOf = (f: Partial<FieldMetadata> & { name: string; type: string }) =>
+    new Function('z', `return ${buildZodType(FieldMetadataSchema.parse(f))};`)(z) as z.ZodTypeAny;
+
+  it('puts min and max on the number and keeps it nullable', () => {
+    expect(buildZodType(FieldMetadataSchema.parse({ name: 'qty', type: 'Integer', required: true, min: 1, max: 9 })))
+      .toBe('z.number().int().min(1).max(9).nullable()');
+    const qty = schemaOf({ name: 'qty', type: 'Integer', required: true, min: 1, max: 9 });
+    expect(qty.safeParse(5).success).toBe(true);
+    expect(qty.safeParse(null).success).toBe(true);
+    expect(qty.safeParse(0).success).toBe(false);
+    expect(qty.safeParse(10).success).toBe(false);
+  });
+
+  it('bounds an optional boxed decimal and an unboxed primitive alike', () => {
+    const rate = schemaOf({ name: 'rate', type: 'Double', min: 0.5 });
+    expect(rate.safeParse(undefined).success).toBe(true);
+    expect(rate.safeParse(0.4).success).toBe(false);
+    const count = schemaOf({ name: 'count', type: 'int', required: true, max: 3 });
+    expect(buildZodType(FieldMetadataSchema.parse({ name: 'count', type: 'int', required: true, max: 3 })))
+      .toBe('z.number().int().max(3)');
+    expect(count.safeParse(4).success).toBe(false);
   });
 });

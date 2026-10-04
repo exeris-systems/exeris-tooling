@@ -122,16 +122,6 @@ export class ServiceGenerator implements CodeGenerator {
     // Collect enum types for imports (fields + action params — T20a)
     const enumTypes = this.collectEnumTypes(metadata);
 
-    const fields = metadata.fields.map((field) => {
-      const mapping = DslMapper.mapType(field.type);
-      return {
-        name: field.name,
-        tsType: mapping.tsType,
-        zodType: this.buildZodType(field),
-        required: field.required,
-      };
-    });
-
     const filterableFields = metadata.fields
       .filter((f) => f.filterable)
       .map((field) => {
@@ -170,7 +160,6 @@ export class ServiceGenerator implements CodeGenerator {
       apiBasePath: context.config.apiBasePath,
       generateZod: context.config.generateZod,
       softDelete: metadata.softDelete,
-      fields,
       filterableFields,
       actions,
       systemFields,
@@ -179,13 +168,12 @@ export class ServiceGenerator implements CodeGenerator {
   }
 
   private renderService(data: Record<string, unknown>): string {
-    const { entityName, apiBasePath, apiPath, generateZod, softDelete, fields, filterableFields, actions, systemFields, enumTypes } = data as {
+    const { entityName, apiBasePath, apiPath, generateZod, softDelete, filterableFields, actions, systemFields, enumTypes } = data as {
       entityName: string;
       apiBasePath: string;
       apiPath: string;
       generateZod: boolean;
       softDelete: boolean;
-      fields: Array<{ name: string; tsType: string; zodType: string; required: boolean }>;
       filterableFields: Array<{ name: string; filterType: string }>;
       actions: Array<{ name: string; description: string; methodName: string; kebabName: string; hasParams: boolean; params: Array<{ name: string; tsType: string }> }>;
       systemFields: string[];
@@ -342,29 +330,6 @@ export class ServiceGenerator implements CodeGenerator {
     lines.push(`}`);
 
     return lines.join('\n');
-  }
-
-  private buildZodType(field: FieldMetadata): string {
-    let zodType = DslMapper.mapType(field.type).zodType;
-
-    if (field.minLength && zodType.includes('z.string')) {
-      zodType = zodType.replace('z.string()', `z.string().min(${field.minLength})`);
-    }
-    if (field.maxLength && zodType.includes('z.string')) {
-      zodType = `${zodType}.max(${field.maxLength})`;
-    }
-    if (field.format === 'email') {
-      zodType = 'z.string().email()';
-    }
-    if (field.format === 'url') {
-      zodType = 'z.string().url()';
-    }
-
-    if (!field.required) {
-      zodType += '.optional()';
-    }
-
-    return zodType;
   }
 
   private getSystemFields(metadata: DomainMetadata): string[] {

@@ -69,3 +69,23 @@ describe('deriveScaffoldNeeds — packages', () => {
     expect(deriveScaffoldNeeds([], [file(content)]).packages.size).toBe(0);
   });
 });
+
+describe('deriveScaffoldNeeds — typography', () => {
+  it('a class attribute naming prose, or a prose modifier under a variant, needs the plugin', () => {
+    expect(deriveScaffoldNeeds([], [file('<div class="exeris-rich-text prose max-w-none">')]).typography).toBe(true);
+    expect(deriveScaffoldNeeds([], [file('<div class="lg:dark:prose-invert">')]).typography).toBe(true);
+  });
+
+  it('prose outside a class attribute, or inside a longer class name, does not', () => {
+    const content = [
+      '<p>Some prose about the site.</p>',
+      '<div class="exeris-prose proseish" data-class="prose">',
+      "const label = 'prose';",
+    ].join('\n');
+    expect(deriveScaffoldNeeds([], [file(content)]).typography).toBe(false);
+  });
+
+  it('the default needs carry no typography plugin', () => {
+    expect(BACKEND_SCAFFOLD_NEEDS.typography).toBe(false);
+  });
+});

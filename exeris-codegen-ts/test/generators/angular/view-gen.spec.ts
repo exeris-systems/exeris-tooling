@@ -100,6 +100,13 @@ describe('generateView — component shape', () => {
     expect(file.content).toContain('bg-exeris-primary');
   });
 
+  it('a CARD carries the kit\'s .exeris-card component class, not a utility stack that repeats it', () => {
+    expect(file.content).toContain('<article class="exeris-card p-4" data-block="CARD"');
+    // The kit class owns the surface, border, radius and shadow.
+    const card = file.content.split('\n').find((l) => l.includes('data-block="CARD"'))!;
+    expect(card).not.toMatch(/\b(border|rounded-md|shadow-sm|shadow-xs)\b/);
+  });
+
   it('renders recursive children — the CARD lives inside the GRID', () => {
     const gridIdx = file.content.indexOf('data-block="GRID"');
     const cardIdx = file.content.indexOf('data-block="CARD"');

@@ -91,24 +91,19 @@ describe('StoreGenerator emitted content — top-level structure', () => {
     expect(content).toContain("import { takeUntilDestroyed } from '@angular/core/rxjs-interop';");
     expect(content).toContain("import { OrderService } from '../services/order.service';");
     expect(content).toContain("import type { Order, OrderCreate, OrderUpdate } from '../types/order.types';");
-    expect(content).toContain("import type { Page, PageRequest } from '../services/order.service';");
+    expect(content).toContain("import type { Page, PageRequest, OrderFilter } from '../services/order.service';");
   });
 
-  it('emits Filter interface with search?: string always + filterable fields', () => {
+  it('re-exports the service\'s Filter instead of declaring a second one', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
-      fields: [
-        field({ name: 'status', type: 'String', filterable: true }),
-        field({ name: 'paid', type: 'Boolean', filterable: true }),
-        field({ name: 'notFilterable', type: 'String' }),
-      ],
+      fields: [field({ name: 'status', type: 'com.shop.OrderStatus', filterable: true })],
     }), CTX)!.content;
 
-    expect(content).toContain('export interface OrderFilter {');
-    expect(content).toContain('search?: string;');
-    expect(content).toContain('status?: string;');
-    expect(content).toContain('paid?: boolean;');
-    expect(content).not.toContain('notFilterable');
+    expect(content).toContain('export type { OrderFilter };');
+    expect(content).not.toContain('export interface OrderFilter');
+    // The enum the filter names is the service's import, so the store needs none of its own.
+    expect(content).not.toContain("from '../types/enums'");
   });
 
   it('emits StoreState interface with the full shape (entities/selected/loading/saving/error/filter/pagination/sort)', () => {
@@ -421,27 +416,6 @@ describe('StoreGenerator softDelete branch', () => {
   });
 });
 
-// ---------- getTsFilterType: nullability strip ----------
-
-describe('StoreGenerator getTsFilterType — strips union/nullability', () => {
-  const gen = new StoreGenerator();
-
-  it('union-type field (Integer → "number | null") is collapsed to the FIRST arm ("number") in the Filter interface', () => {
-    const content = gen.generate(domain({
-      entityName: 'Thing',
-      fields: [
-        field({ name: 'maybeNum', type: 'Integer', filterable: true }),
-        field({ name: 'plainStr', type: 'String', filterable: true }),
-      ],
-    }), CTX)!.content;
-
-    // Integer normally maps to "number | null"; filter strips to "number".
-    expect(content).toContain('maybeNum?: number;');
-    // String has no union to strip.
-    expect(content).toContain('plainStr?: string;');
-  });
-});
-
 // ---------- generateFieldFilters branch ----------
 
 describe('StoreGenerator filteredEntities filter-loop emission', () => {
@@ -534,7 +508,7 @@ describe('StoreGenerator emitted imports — every symbol from the module that e
     // service-gen emits both interfaces into the service module. TS2305 on every store.
     const content = gen.generate(domain({ entityName: 'Order' }), CTX)!.content;
 
-    expect(content).toContain("import type { Page, PageRequest } from '../services/order.service';");
+    expect(content).toContain("import type { Page, PageRequest, OrderFilter } from '../services/order.service';");
     expect(content).not.toContain("Page, PageRequest } from '../types/order.types'");
   });
 
@@ -545,6 +519,17 @@ describe('StoreGenerator emitted imports — every symbol from the module that e
 });
 
 // ---------- generateStore convenience ----------
+
+describe('StoreGenerator loadAll — reads what the list route answers', () => {
+  it('takes the rows from a JSON array, and from a paged envelope through its content and totals', () => {
+    const content = new StoreGenerator().generate(domain({ entityName: 'Order' }), CTX)!.content;
+    expect(content).toContain('const response: Page<Order> | Order[] = await firstValueFrom(');
+    expect(content).toContain("const rows = Array.isArray(response) ? response : (response.content ?? []);");
+    expect(content).toContain('this._entities.set(rows);');
+    expect(content).toContain('this._totalElements.set(Array.isArray(response) ? rows.length : response.totalElements);');
+    expect(content).not.toContain('this._entities.set(response.content);');
+  });
+});
 
 describe('generateStore — top-level convenience function', () => {
   it('returns the per-domain file for a domain', () => {
