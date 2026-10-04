@@ -85,9 +85,7 @@
                 ~/.m2 cannot stand in for one this build produced. invoker:install fills it with the
                 reactor artefacts above. Everything else resolves through src/it/settings.xml: first
                 from the local repository of this build, which has already resolved the kernel,
-                the SDK and the plugins the fixture uses (CI resolves the kernel from GitHub
-                Packages and installs the SDK from source, and the fixture needs neither), then from
-                Maven Central.
+                the SDK and the plugins the fixture uses, then from Maven Central.
             -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>

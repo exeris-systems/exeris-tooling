@@ -5,11 +5,9 @@ This document summarizes the build commands, compiler requirements, and test sui
 ## Primary Build Commands
 
 ```bash
-# Full Maven reactor build and test execution
+# Full Maven reactor build and test execution. Every dependency, the kernel and the SDK
+# included, resolves from Maven Central; no settings file is needed.
 mvn clean install
-
-# Maven build using organization settings (when available in a sibling checkout of .github)
-mvn -s ../.github/maven-settings.xml clean install
 
 # Targeted compile gate: verifies generated code compiles against current kernel SPI
 mvn -pl exeris-e2e-tests -am test -Dtest=KernelCodegenCompileTest -Dsurefire.failIfNoSpecifiedTests=false
