@@ -107,7 +107,7 @@ export function buildGeneratedFiles(
       if (actionStreamClient) appTree.push(actionStreamClient);
     }
     if (config.generateForms) {
-      const form = generateForm(domain, config);
+      const form = generateForm(domain, config, enums);
       if (form) appTree.push(form);
     }
     if (config.generateLists) {

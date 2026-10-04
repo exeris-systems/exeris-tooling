@@ -137,11 +137,7 @@ export const FIELD_CONTRACT_COVERAGE = {
   dataType: { state: 'READ', written: true },
   enumType: { state: 'READ', written: false },
   inCreate: { state: 'READ', written: true },
-  inUpdate: {
-    state: 'GAP',
-    written: true,
-    reason: 'The edit form is built from inCreate alone, so @Field(inUpdate = false) still offers the field for editing.',
-  },
+  inUpdate: { state: 'READ', written: true },
   computed: { state: 'READ', written: true },
   computedFrom: { state: 'READ', written: true },
 } as const satisfies { readonly [K in keyof FieldMetadata]-?: NestedContractCoverageEntry };
