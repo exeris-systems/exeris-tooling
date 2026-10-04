@@ -1774,12 +1774,42 @@ A regenerated backend-less app no longer gets:
 - `src/app/index.ts`, when there is neither an entity nor an enum to re-export;
 - a `redirectTo: ''` route pointing at itself, when there is no entity and no `PAGE` view.
 
-`@angular/common`, `@angular/router`, `rxjs` (a peer dependency of `@angular/core`), `tslib`, the
-ui-kit and its `.npmrc` stay. The CLI does not replace an existing file without `--overwrite`, so an
+`@angular/common`, `@angular/router`, `rxjs` (a peer dependency of `@angular/core`), `tslib` and
+the ui-kit stay. The CLI does not replace an existing file without `--overwrite`, so an
 existing app keeps its `package.json`, `app.config.ts` and environments until you regenerate with
 it. Files the run no longer produces — `proxy.conf.json` and the empty barrels — are pruned when the
 output tree carries the generation manifest from an earlier run. If your own code uses `HttpClient`
 in a backend-less app, add `provideHttpClient()` to `app.config.ts` yourself.
+
+### `exeris-codegen-ts`: the app depends on `@exeris/ui-kit` from the public npm registry
+
+**Breaking:** an emitted dependency is renamed and two emitted files are no longer produced.
+
+The UI kit moved from GitHub Packages (`@exeris-systems/ui-kit` 0.1.x) to the public npm registry as
+`@exeris/ui-kit` 0.2.0, which supports Tailwind CSS v4 only and no longer exports the v3
+`tailwind.preset.js`. The regenerated app changes as follows:
+
+- **`package.json`:** the dependency is `"@exeris/ui-kit": "^0.2.0"` in place of
+  `"@exeris-systems/ui-kit": "^0.1.0"`.
+- **`src/styles.css`:** imports `@exeris/ui-kit/theme` in place of `@exeris-systems/ui-kit/theme`,
+  still after `@import "tailwindcss"`. `angular.json` keeps listing only `src/styles.css`; the
+  kit's CSS belongs in that global stylesheet, because a kit file listed in the `styles` array is
+  compiled without Tailwind and fails.
+- **`.npmrc` is no longer emitted.** It only pointed the `@exeris-systems` scope at GitHub Packages.
+  Installing the app needs no GitHub token and no `read:packages` scope, locally or in CI.
+- **`tailwind.config.js` is no longer emitted.** Tailwind v4 never reads it, and the preset it
+  imported is gone from the kit: loading it fails with `ERR_PACKAGE_PATH_NOT_EXPORTED`. The v4
+  setup is `.postcssrc.json` (`@tailwindcss/postcss`) plus the imports in `src/styles.css`, both
+  unchanged.
+
+On regeneration, an output tree that carries the generation manifest from an earlier run has its
+`.npmrc` and `tailwind.config.js` **deleted**, as is every file a run no longer produces. The
+pruner does not look at content, so a line you added to that `.npmrc` (another registry, a token
+reference) goes with it; move it to your user `~/.npmrc` or re-create the project file after
+regenerating. A tree without a manifest keeps both files: delete `tailwind.config.js`, and drop
+the `@exeris-systems:registry` line from `.npmrc`. `package.json` and `styles.css` are replaced only
+with `--overwrite`, as before; without it, rename the dependency and the import by hand. A CI
+step that appended a GitHub Packages token for the install can be removed.
 
 ### Compile-classpath requirements are named in the emitted Javadoc (T30)
 
