@@ -83,6 +83,7 @@ class VerifyCapabilitiesMojoTest {
 
         assertThatThrownBy(mojo::execute)
                 .isInstanceOf(MojoFailureException.class)
+                .hasMessageStartingWith("[Exeris] EXT-PLUG-2201: ")
                 .hasMessageContaining("com.api.PaymentApi");
     }
 
@@ -96,7 +97,9 @@ class VerifyCapabilitiesMojoTest {
 
         assertThatThrownBy(mojo::execute)
                 .isInstanceOf(MojoExecutionException.class)
+                .hasMessageStartingWith("[Exeris] EXT-PLUG-2202: ")
                 .hasMessageContaining("Capability verification failed")
+                .hasMessageContaining("disk full")
                 .hasRootCauseMessage("disk full");
     }
 
@@ -129,6 +132,8 @@ class VerifyCapabilitiesMojoTest {
         void skipWallLeavesGraphGateArmed(@TempDir Path tmp) throws Exception {
             List<Path> graphCalls = new ArrayList<>();
             VerifyCapabilitiesMojo mojo = mojo(tmp, graphCalls, 2);
+            List<String> warnings = new ArrayList<>();
+            mojo.setLog(recordWarnings(warnings));
             mojo.skipWall = true;
             mojo.wallVerifier = (c, m) -> {
                 throw new AssertionError("Wall must not run when exeris.wall.skip=true");
@@ -137,6 +142,9 @@ class VerifyCapabilitiesMojoTest {
             mojo.execute();
 
             assertThat(graphCalls).hasSize(1);
+            assertThat(warnings).singleElement(org.assertj.core.api.InstanceOfAssertFactories.STRING)
+                    .startsWith("[Exeris] EXT-PLUG-2205: ")
+                    .contains("exeris.wall.skip=true");
         }
 
         @Test
@@ -164,6 +172,7 @@ class VerifyCapabilitiesMojoTest {
 
             assertThatThrownBy(mojo::execute)
                     .isInstanceOf(MojoFailureException.class)
+                    .hasMessageStartingWith("[Exeris] EXT-PLUG-2203: ")
                     .hasMessageContaining("Cap-tier Wall violated")
                     .hasMessageContaining("org.springframework.context.ApplicationContext");
         }
@@ -183,6 +192,7 @@ class VerifyCapabilitiesMojoTest {
 
             assertThat(warnings).hasSize(1);
             assertThat(warnings.getFirst())
+                    .startsWith("[Exeris] EXT-PLUG-2206: ")
                     .contains("scanned nothing")
                     .contains(mojo.classesDir.toString())
                     .contains("unverified, not satisfied");
@@ -220,7 +230,9 @@ class VerifyCapabilitiesMojoTest {
 
             assertThatThrownBy(mojo::execute)
                     .isInstanceOf(MojoExecutionException.class)
+                    .hasMessageStartingWith("[Exeris] EXT-PLUG-2204: ")
                     .hasMessageContaining("Cap-tier Wall scan failed")
+                    .hasMessageContaining("truncated class file")
                     .hasRootCauseMessage("truncated class file");
         }
     }

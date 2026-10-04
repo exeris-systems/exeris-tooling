@@ -9,6 +9,7 @@ import com.sun.source.util.Trees;
 import eu.exeris.sdk.sourcemodel.ast.*;
 import eu.exeris.sdk.sourcemodel.mutation.BaselineTrust;
 import eu.exeris.sdk.sourcemodel.mutation.SourceDigest;
+import eu.exeris.tooling.diagnostics.DiagnosticId;
 
 import javax.annotation.processing.*;
 import javax.lang.model.SourceVersion;
@@ -88,9 +89,6 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      * compiler plugin) to enable it.
      */
     public static final String OPTION_STRICT = "exeris.strict";
-
-    /** Diagnostic prefix prepended to every NOTE/WARNING/ERROR this processor emits. */
-    private static final String DIAG_PREFIX = "[Exeris] ";
 
     /** Attribute name shared by {@code @Saga} and the capability {@code @Provides}/{@code @Requires}. */
     private static final String VERSION_ATTRIBUTE = "version";
@@ -318,11 +316,14 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                     "the annotation's role — which field plays it — is extracted (C1) and "
                             + "reaches the schema and the repository. This attribute is not: "
                             + "SystemFieldsMetadata carries one field name per role and has no component "
-                            + "for it, so setting it changes no emitted output. The emitted OpenAPI marks "
-                            + "a tenant-partitioned entity's owner readOnly and leaves it out of the "
-                            + "create/update DTOs, and the TypeScript types omit it, whatever "
-                            + "this attribute says; the entity itself, owner included, is still what a "
-                            + "read answers with"),
+                            + "for it, so setting it changes no emitted output. Whatever this attribute "
+                            + "says, the emitted OpenAPI marks a tenant-partitioned entity's owner "
+                            + "readOnly and leaves it out of the create/update DTOs, and the generated "
+                            + "repository stamps the bound tenant, refuses a different one with 400 and "
+                            + "never updates it. The TypeScript create/update types "
+                            + "leave it out too, except on an entity with no systemFields block, where "
+                            + "they keep it marked @deprecated until exeris-tooling 0.10.0 removes it. "
+                            + "The entity itself, owner included, is still what a read answers with"),
             new InertAttribute("TenantId", "scopeUniqueConstraints",
                     "the annotation's role — which field plays it — is extracted (C1) and "
                             + "reaches the schema and the repository. This attribute is not: "
@@ -857,15 +858,15 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             return;
         }
 
-        note("Processing " + discoveredEnums.size() + " discovered enum(s)");
+        note(DiagnosticId.VERBOSE_PROGRESS, "Processing " + discoveredEnums.size() + " discovered enum(s)");
 
         for (TypeElement enumElement : discoveredEnums) {
             try {
                 EnumMetadata metadata = buildEnumMetadata(enumElement);
                 writeMetadata("enum_" + enumElement.getSimpleName(), metadata);
-                note("Generated enum metadata: " + enumElement.getSimpleName());
+                note(DiagnosticId.VERBOSE_PROGRESS, "Generated enum metadata: " + enumElement.getSimpleName());
             } catch (Exception e) {
-                reportProcessingFailure(enumElement, "Failed to process enum", e);
+                reportProcessingFailure(DiagnosticId.PROCESSING_FAILURE, enumElement, "Failed to process enum", e);
             }
         }
     }
@@ -933,7 +934,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
 
         for (Element element : roundEnv.getElementsAnnotatedWith(domainAnnotation)) {
             if (element.getKind() != ElementKind.CLASS) {
-                error(element, "@ExerisDomain can only be applied to classes");
+                error(DiagnosticId.ANNOTATION_ON_WRONG_ELEMENT,
+                        "@ExerisDomain can only be applied to classes", element);
                 continue;
             }
 
@@ -952,7 +954,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
 
         for (Element element : roundEnv.getElementsAnnotatedWith(sagaAnnotation)) {
             if (element.getKind() != ElementKind.CLASS) {
-                error(element, "@Saga can only be applied to classes");
+                error(DiagnosticId.ANNOTATION_ON_WRONG_ELEMENT,
+                        "@Saga can only be applied to classes", element);
                 continue;
             }
 
@@ -984,7 +987,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
 
         for (Element element : roundEnv.getElementsAnnotatedWith(capabilityModuleType)) {
             if (element.getKind() != ElementKind.CLASS && element.getKind() != ElementKind.INTERFACE) {
-                error(element, "@CapabilityModule can only be applied to a type");
+                error(DiagnosticId.ANNOTATION_ON_WRONG_ELEMENT,
+                        "@CapabilityModule can only be applied to a type", element);
                 continue;
             }
             processCapabilityModule((TypeElement) element);
@@ -996,15 +1000,15 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         String packageName = getPackageName(element);
         String qualifiedName = element.getQualifiedName().toString();
 
-        note("Processing capability module: " + qualifiedName);
+        note(DiagnosticId.VERBOSE_PROGRESS, "Processing capability module: " + qualifiedName);
 
         try {
             CapabilityModuleMetadata module = buildCapabilityModuleMetadata(element);
             writeMetadata("capability_" + name,
                     new CapabilityModuleJson(name, packageName, qualifiedName, module));
-            note("Generated capability metadata for: " + name);
+            note(DiagnosticId.VERBOSE_PROGRESS, "Generated capability metadata for: " + name);
         } catch (Exception e) {
-            reportProcessingFailure(element, "Failed to process capability module", e);
+            reportProcessingFailure(DiagnosticId.PROCESSING_FAILURE, element, "Failed to process capability module", e);
         }
     }
 
@@ -1127,7 +1131,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         for (Element element : roundEnv.getElementsAnnotatedWith(viewAnnotation)) {
             // @View is @Target(TYPE) — a class, record, or interface carrier.
             if (!(element instanceof TypeElement typeElement)) {
-                error(element, "@View can only be applied to a type");
+                error(DiagnosticId.ANNOTATION_ON_WRONG_ELEMENT,
+                        "@View can only be applied to a type", element);
                 continue;
             }
             processView(typeElement);
@@ -1139,7 +1144,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         String packageName = getPackageName(element);
         String qualifiedName = element.getQualifiedName().toString();
 
-        note("Processing view: " + qualifiedName);
+        note(DiagnosticId.VERBOSE_PROGRESS, "Processing view: " + qualifiedName);
 
         try {
             ViewMetadata view = buildViewMetadata(element);
@@ -1152,9 +1157,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             // (Java∪TS union).
             auditAnnotations(element);
 
-            note("Generated view metadata for: " + name);
+            note(DiagnosticId.VERBOSE_PROGRESS, "Generated view metadata for: " + name);
         } catch (Exception e) {
-            reportProcessingFailure(element, "Failed to process view", e);
+            reportProcessingFailure(DiagnosticId.PROCESSING_FAILURE, element, "Failed to process view", e);
         }
     }
 
@@ -1329,9 +1334,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         if (ignored.isEmpty()) {
             return;
         }
-        messager.printMessage(
-                Diagnostic.Kind.WARNING,
-                DIAG_PREFIX + "@Bind(source = " + source + ") draws from nothing, so its "
+        warning(DiagnosticId.BIND_WITHOUT_SOURCE_IGNORED,
+                "@Bind(source = " + source + ") draws from nothing, so its "
                         + String.join(", ", ignored) + (ignored.size() == 1 ? " is" : " are")
                         + " ignored and this node renders no bound value. Put authored content in "
                         + "@Block(props), or bind data with source = ENTITY, PROJECTION or ACTION.",
@@ -1415,9 +1419,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      */
     private void warnDeprecatedTenantScoped(TypeElement element, boolean tenantScoped) {
         DataScope tier = fallbackTier(tenantScoped);
-        messager.printMessage(
-                Diagnostic.Kind.WARNING,
-                DIAG_PREFIX + "@ExerisDomain.tenantScoped is deprecated for removal in SDK 1.0.0; "
+        warning(DiagnosticId.TENANT_SCOPED_DEPRECATED,
+                "@ExerisDomain.tenantScoped is deprecated for removal in SDK 1.0.0; "
                         + "declare dataScope = DataScope." + tier + " instead. Reading the boolean "
                         + "as a fallback for this build (tenantScoped = " + tenantScoped + " → "
                         + tier + "). See MIGRATION.md in exeris-sdk.",
@@ -1432,12 +1435,13 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      */
     private void errorContradictingDataScope(
             TypeElement element, DataScope declared, boolean tenantScoped) {
-        error(element,
+        error(DiagnosticId.DATA_SCOPE_CONTRADICTS_TENANT_SCOPED,
                 "@ExerisDomain declares dataScope = DataScope." + declared
                         + " and tenantScoped = " + tenantScoped + ", which contradict each other — "
                         + "tenantScoped = " + tenantScoped + " means DataScope."
                         + fallbackTier(tenantScoped) + ". Declare the tier once: drop tenantScoped, "
-                        + "which is deprecated for removal in SDK 1.0.0.");
+                        + "which is deprecated for removal in SDK 1.0.0.",
+                element);
     }
 
     /**
@@ -1465,8 +1469,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         boolean typeIsPublic = isPublicRoute(typeAccess);
         if (typeIsPublic && domainAnnotation != null
                 && declaresPermissions(extractAnnotationValues(domainAnnotation))) {
-            messager.printMessage(Diagnostic.Kind.ERROR,
-                    DIAG_PREFIX + "@RouteAccess(PUBLIC) on '" + element.getSimpleName()
+            error(DiagnosticId.PUBLIC_ROUTE_WITH_PERMISSIONS,
+                    "@RouteAccess(PUBLIC) on '" + element.getSimpleName()
                             + "' contradicts its @ExerisDomain.permissions. A public route runs "
                             + "with no principal bound, so a permission on it can never be "
                             + "satisfied. Drop the permissions, or declare "
@@ -1485,8 +1489,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             AnnotationMirror methodAccess = findAnnotation(enclosed, ROUTE_ACCESS_FQN);
             if (methodAccess != null) {
                 if (isPublicRoute(methodAccess)) {
-                    messager.printMessage(Diagnostic.Kind.ERROR,
-                            DIAG_PREFIX + "@RouteAccess(PUBLIC) on action method '"
+                    error(DiagnosticId.PUBLIC_ROUTE_WITH_PERMISSIONS,
+                            "@RouteAccess(PUBLIC) on action method '"
                                     + enclosed.getSimpleName() + "' contradicts its "
                                     + "@Action.permissions. A public route runs with no principal "
                                     + "bound, so a permission on it can never be satisfied. Drop "
@@ -1494,8 +1498,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             enclosed, methodAccess);
                 }
             } else if (typeIsPublic) {
-                messager.printMessage(Diagnostic.Kind.ERROR,
-                        DIAG_PREFIX + "action method '" + enclosed.getSimpleName()
+                error(DiagnosticId.ACTION_PERMISSIONS_ON_INHERITED_PUBLIC_ROUTE,
+                        "action method '" + enclosed.getSimpleName()
                                 + "' declares @Action.permissions but no @RouteAccess of its own, "
                                 + "so it inherits @RouteAccess(PUBLIC) from type '"
                                 + element.getSimpleName() + "' and its route is public. A public "
@@ -1560,21 +1564,25 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                 ? systemFields.tenantIdField() : "tenantId";
         VariableElement owner = instanceField(element, ownerName);
         if (owner == null) {
-            error(element, "@ExerisDomain(dataScope = DataScope.UNIVERSE) needs an owning tenant, "
-                    + "and this entity declares no field '" + ownerName + "'. A UNIVERSE row is owned "
-                    + "by a tenant and readable across its shared scope: reads widen, writes stay "
-                    + "pinned to the owner (kernel ADR-012 §4b.2 — a shared-scope key requires an "
-                    + "isolation key). Declare the owner field — 'private UUID tenantId;', or mark "
-                    + "the field that plays the role with @TenantId — beside the @SharedScope one.");
+            error(DiagnosticId.UNIVERSE_WITHOUT_OWNER_FIELD,
+                    "@ExerisDomain(dataScope = DataScope.UNIVERSE) needs an owning tenant, "
+                            + "and this entity declares no field '" + ownerName + "'. A UNIVERSE row is owned "
+                            + "by a tenant and readable across its shared scope: reads widen, writes stay "
+                            + "pinned to the owner (kernel ADR-012 §4b.2 — a shared-scope key requires an "
+                            + "isolation key). Declare the owner field — 'private UUID tenantId;', or mark "
+                            + "the field that plays the role with @TenantId — beside the @SharedScope one.",
+                    element);
         }
 
         List<VariableElement> scopeCarriers = fieldsCarrying(element, SHARED_SCOPE_FQN);
         if (scopeCarriers.isEmpty()) {
-            error(element, "@ExerisDomain(dataScope = DataScope.UNIVERSE) needs a field marked "
-                    + "@SharedScope: it is the column the generated policy compares against the "
-                    + "shared scope the kernel publishes, so without one nothing widens and the "
-                    + "tier would behave as TENANT. Mark the UUID or String field that holds the "
-                    + "row's shared-scope key with @SharedScope, or declare dataScope = TENANT.");
+            error(DiagnosticId.UNIVERSE_WITHOUT_SHARED_SCOPE,
+                    "@ExerisDomain(dataScope = DataScope.UNIVERSE) needs a field marked "
+                            + "@SharedScope: it is the column the generated policy compares against the "
+                            + "shared scope the kernel publishes, so without one nothing widens and the "
+                            + "tier would behave as TENANT. Mark the UUID or String field that holds the "
+                            + "row's shared-scope key with @SharedScope, or declare dataScope = TENANT.",
+                    element);
             return;
         }
         if (scopeCarriers.size() > 1) {
@@ -1585,24 +1593,24 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         AnnotationMirror mirror = findAnnotation(scope, SHARED_SCOPE_FQN);
         String type = scope.asType().toString();
         if (!"java.util.UUID".equals(type) && !"java.lang.String".equals(type)) {
-            messager.printMessage(Diagnostic.Kind.ERROR,
-                    DIAG_PREFIX + "@SharedScope is on field '" + scope.getSimpleName() + "' of type "
+            error(DiagnosticId.SHARED_SCOPE_WRONG_TYPE,
+                    "@SharedScope is on field '" + scope.getSimpleName() + "' of type "
                             + type + ". The shared-scope key is compared with the session setting "
                             + "the kernel publishes, which is a UUID or a string: declare the field "
                             + "as java.util.UUID or java.lang.String.",
                     scope, mirror);
         }
         if (scope.equals(owner)) {
-            messager.printMessage(Diagnostic.Kind.ERROR,
-                    DIAG_PREFIX + "@SharedScope is on '" + scope.getSimpleName() + "', which is also "
+            error(DiagnosticId.SHARED_SCOPE_ON_OWNER_FIELD,
+                    "@SharedScope is on '" + scope.getSimpleName() + "', which is also "
                             + "the owning tenant field. They are two predicates over two columns — "
                             + "the owner pins writes, the shared scope widens reads — so one field "
                             + "cannot be both. Put @SharedScope on a separate field.",
                     scope, mirror);
         }
         if (declaresRequired(scope)) {
-            messager.printMessage(Diagnostic.Kind.ERROR,
-                    DIAG_PREFIX + "@SharedScope field '" + scope.getSimpleName() + "' is required. "
+            error(DiagnosticId.SHARED_SCOPE_REQUIRED,
+                    "@SharedScope field '" + scope.getSimpleName() + "' is required. "
                             + "The generated repository fills an absent shared scope from the bound "
                             + "StorageContext, but a required field is refused with 400 by the "
                             + "generated handler and made NOT NULL by the migration, both before that "
@@ -1678,7 +1686,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         String packageName = getPackageName(element);
         String fqn = element.getQualifiedName().toString();
 
-        note("Processing domain entity: " + fqn);
+        note(DiagnosticId.VERBOSE_PROGRESS, "Processing domain entity: " + fqn);
 
         try {
             // Build full metadata using DomainMetadata model
@@ -1687,9 +1695,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             // Write JSON metadata file + ADR-042 baseline-trust sibling fields
             writeDomainMetadataWithTrust(entityName, metadata, element);
 
-            note("Generated metadata for: " + entityName);
+            note(DiagnosticId.VERBOSE_PROGRESS, "Generated metadata for: " + entityName);
         } catch (Exception e) {
-            reportProcessingFailure(element, "Failed to process domain entity", e);
+            reportProcessingFailure(DiagnosticId.PROCESSING_FAILURE, element, "Failed to process domain entity", e);
         }
     }
 
@@ -1697,7 +1705,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         String sagaName = element.getSimpleName().toString();
         String packageName = getPackageName(element);
 
-        note("Processing saga: " + sagaName);
+        note(DiagnosticId.VERBOSE_PROGRESS, "Processing saga: " + sagaName);
 
         try {
             // Extract saga metadata
@@ -1718,9 +1726,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             // unread note could fire only on an @ExerisDomain entity that also carries @Saga.
             auditAnnotations(element);
 
-            note("Generated saga metadata for: " + sagaName);
+            note(DiagnosticId.VERBOSE_PROGRESS, "Generated saga metadata for: " + sagaName);
         } catch (Exception e) {
-            reportProcessingFailure(element, "Failed to process saga", e);
+            reportProcessingFailure(DiagnosticId.PROCESSING_FAILURE, element, "Failed to process saga", e);
         }
     }
 
@@ -1812,9 +1820,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         if (plainPlural.equals(derived)) {
             return;
         }
-        messager.printMessage(
-                Diagnostic.Kind.WARNING,
-                DIAG_PREFIX + entityName + ": default table changes from '" + plainPlural
+        warning(DiagnosticId.DEFAULT_TABLE_NAME_CHANGED,
+                entityName + ": default table changes from '" + plainPlural
                         + "' to '" + derived + "'; set @ExerisDomain(tableName = \"" + plainPlural
                         + "\") to keep the existing table and migration",
                 element);
@@ -2010,9 +2017,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                 // author has to choose which single field survives, and cannot choose from a
                 // list that repeats the same "first" field against every later one.
                 VariableElement offender = carriers.get(1);
-                messager.printMessage(
-                        Diagnostic.Kind.ERROR,
-                        DIAG_PREFIX + "@" + role.annotation() + " is declared on " + carriers.size()
+                error(DiagnosticId.SYSTEM_FIELD_ROLE_REPEATED,
+                        "@" + role.annotation() + " is declared on " + carriers.size()
                                 + " fields (" + quotedNames(carriers) + "). SystemFieldsMetadata "
                                 + "carries one field name per role, so the pipeline cannot express "
                                 + "more than one. Declare it once.",
@@ -2024,9 +2030,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             String annotated = carrier.getSimpleName().toString();
             String override = blankToNull(getString(values, role.overrideAttribute(), null));
             if (override != null && !override.equals(annotated)) {
-                messager.printMessage(
-                        Diagnostic.Kind.ERROR,
-                        DIAG_PREFIX + "@" + role.annotation() + " is on field '" + annotated
+                error(DiagnosticId.SYSTEM_FIELD_ROLE_CONFLICTS_WITH_OVERRIDE,
+                        "@" + role.annotation() + " is on field '" + annotated
                                 + "' while @ExerisDomain(" + role.overrideAttribute() + " = \""
                                 + override + "\") names a different one. One role resolves to one "
                                 + "field; drop whichever is wrong.",
@@ -2063,8 +2068,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                 : fallbackTier(Boolean.TRUE.equals(values.get("tenantScoped")));
         // Exactly one carrier: a repeated marker was refused above and never reached `declared`.
         VariableElement carrier = fieldsCarrying(element, SHARED_SCOPE_FQN).getFirst();
-        messager.printMessage(Diagnostic.Kind.WARNING,
-                DIAG_PREFIX + "@SharedScope on '" + field + "' marks the column a DataScope.UNIVERSE "
+        warning(DiagnosticId.SHARED_SCOPE_OUTSIDE_UNIVERSE,
+                "@SharedScope on '" + field + "' marks the column a DataScope.UNIVERSE "
                         + "policy widens reads on; this entity is " + tier + ", so it has no effect "
                         + "and is not recorded. Declare dataScope = DataScope.UNIVERSE (the entity "
                         + "also needs its owning tenant field), or remove the marker.",
@@ -2339,9 +2344,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                         "@Field.inCreate / @Field.inUpdate",
                         "form-lifecycle scope is a field property, not a validation rule");
                 if (!recognized) {
-                    messager.printMessage(
-                            Diagnostic.Kind.WARNING,
-                            DIAG_PREFIX + "@Validation.validateOn = \"" + validateOn + "\" is not a "
+                    warning(DiagnosticId.VALIDATE_ON_UNRECOGNISED,
+                            "@Validation.validateOn = \"" + validateOn + "\" is not a "
                                     + "recognized value (expected \"CREATE\" or \"UPDATE\"); "
                                     + "no fallback applied — your intent is being silently "
                                     + "dropped now and will continue to be when SDK 1.0.0 "
@@ -2355,9 +2359,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
 
     private void warnDeprecatedValidationAttribute(
             VariableElement field, String attribute, String canonical, String reason) {
-        messager.printMessage(
-                Diagnostic.Kind.WARNING,
-                DIAG_PREFIX + "@Validation." + attribute + " is deprecated for removal in SDK 1.0.0; "
+        warning(DiagnosticId.VALIDATION_ATTRIBUTE_DEPRECATED,
+                "@Validation." + attribute + " is deprecated for removal in SDK 1.0.0; "
                         + "use " + canonical + " instead — " + reason
                         + ". See MIGRATION.md in exeris-sdk.",
                 field);
@@ -2459,9 +2462,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      */
     private void warnStreamingActionNotInvoked(String actionName, ExecutableElement method,
                                                AnnotationMirror annotation) {
-        messager.printMessage(
-                Diagnostic.Kind.WARNING,
-                DIAG_PREFIX + "@Action(streaming = true) on \"" + actionName + "\": the generated "
+        warning(DiagnosticId.STREAMING_ACTION_NOT_INVOKED,
+                "@Action(streaming = true) on \"" + actionName + "\": the generated "
                         + "stream route keeps the connection open with keep-alives but does not run "
                         + "the action, so calling it changes nothing. The per-action stream driver "
                         + "is tracked in ROADMAP.md (EV1-stream).",
@@ -2898,9 +2900,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         String types = repeated.stream()
                 .map(e -> e.relationType() != null ? e.relationType() : "(no type)")
                 .collect(Collectors.joining(", "));
-        messager.printMessage(
-                Diagnostic.Kind.ERROR,
-                DIAG_PREFIX + "@GraphEdge is declared " + repeated.size() + " times on field '"
+        error(DiagnosticId.GRAPH_EDGE_REPEATED_ON_FIELD,
+                "@GraphEdge is declared " + repeated.size() + " times on field '"
                         + field.getSimpleName() + "' (" + types + "), and the pipeline cannot carry "
                         + "that. GraphEdgeMetadata identifies an edge by the field it is declared "
                         + "on, and the graph-sync generator derives the entity getter from the same "
@@ -3122,9 +3123,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         for (InertAttribute inert : INERT_ATTRIBUTES) {
             if (inert.annotation().equals(annotationSimpleName)
                     && values.containsKey(inert.attribute())) {
-                messager.printMessage(
-                        Diagnostic.Kind.WARNING,
-                        DIAG_PREFIX + "@" + annotationSimpleName + "." + inert.attribute()
+                warning(DiagnosticId.STRICT_INERT_ATTRIBUTE,
+                        "@" + annotationSimpleName + "." + inert.attribute()
                                 + " is set but no code generator consumes it — "
                                 + inert.note() + STRICT_SUFFIX,
                         element, mirror);
@@ -3158,9 +3158,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             }
             AnnotationMirror mirror = findAnnotation(element, inert.fqn());
             if (mirror != null) {
-                messager.printMessage(
-                        Diagnostic.Kind.WARNING,
-                        DIAG_PREFIX + "@" + inert.display()
+                warning(DiagnosticId.STRICT_INERT_ANNOTATION,
+                        "@" + inert.display()
                                 + " is set but no code generator consumes it — "
                                 + inert.note() + STRICT_SUFFIX,
                         element, mirror);
@@ -3190,9 +3189,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         for (AnnotationMirror mirror : element.getAnnotationMirrors()) {
             String display = unreadNameOf(mirror, element);
             if (display != null) {
-                messager.printMessage(
-                        Diagnostic.Kind.WARNING,
-                        DIAG_PREFIX + "@" + display
+                warning(DiagnosticId.STRICT_UNREAD_ANNOTATION,
+                        "@" + display
                                 + " is set but this processor never reads it, so no generator can "
                                 + "consume it and the annotation has no effect on emitted output — "
                                 + noteFor(display) + STRICT_SUFFIX,
@@ -3441,7 +3439,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             CharSequence content = path.getCompilationUnit().getSourceFile().getCharContent(true);
             return content == null ? null : content.toString();
         } catch (IOException | RuntimeException e) {
-            note("could not read source for ADR-042 digest (" + element.getSimpleName() + "): " + e);
+            note(DiagnosticId.VERBOSE_SOURCE_UNREADABLE,
+                    "could not read source for ADR-042 digest (" + element.getSimpleName() + "): " + e);
             return null;
         }
     }
@@ -3481,14 +3480,26 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      * — opt-in keeps the default build clean while preserving the trail when
      * users need to debug processor behaviour.
      */
-    private void note(String message) {
+    private void note(DiagnosticId id, String message) {
         if (verbose) {
-            messager.printMessage(Diagnostic.Kind.NOTE, DIAG_PREFIX + message);
+            print(Diagnostic.Kind.NOTE, id, message, null, null);
         }
     }
 
-    private void error(Element element, String message) {
-        messager.printMessage(Diagnostic.Kind.ERROR, DIAG_PREFIX + message, element);
+    private void error(DiagnosticId id, String message, Element element) {
+        print(Diagnostic.Kind.ERROR, id, message, element, null);
+    }
+
+    private void error(DiagnosticId id, String message, Element element, AnnotationMirror mirror) {
+        print(Diagnostic.Kind.ERROR, id, message, element, mirror);
+    }
+
+    private void warning(DiagnosticId id, String message, Element element) {
+        print(Diagnostic.Kind.WARNING, id, message, element, null);
+    }
+
+    private void warning(DiagnosticId id, String message, Element element, AnnotationMirror mirror) {
+        print(Diagnostic.Kind.WARNING, id, message, element, mirror);
     }
 
     /**
@@ -3499,9 +3510,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      * about what actually went wrong. Under {@code -Aexeris.verbose=true},
      * also dumps the stack trace.
      */
-    private void reportProcessingFailure(Element element, String prefix, Exception e) {
-        StringBuilder message = new StringBuilder(DIAG_PREFIX)
-                .append(prefix)
+    private void reportProcessingFailure(DiagnosticId id, Element element, String prefix, Exception e) {
+        StringBuilder message = new StringBuilder(prefix)
                 .append(": ")
                 .append(e);
         if (verbose) {
@@ -3510,7 +3520,25 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                 message.append("    at ").append(frame).append(System.lineSeparator());
             }
         }
-        messager.printMessage(Diagnostic.Kind.ERROR, message.toString(), element);
+        error(id, message.toString(), element);
+    }
+
+    /**
+     * The only call to {@link Messager#printMessage}. Every diagnostic reaches it through a helper
+     * whose {@link DiagnosticId} parameter is required, so a diagnostic without a stable
+     * identifier does not compile; {@link DiagnosticId#format} puts the identifier in its fixed
+     * position.
+     */
+    private void print(Diagnostic.Kind kind, DiagnosticId id, String message,
+                       Element element, AnnotationMirror mirror) {
+        String text = id.format(message);
+        if (element == null) {
+            messager.printMessage(kind, text);
+        } else if (mirror == null) {
+            messager.printMessage(kind, text, element);
+        } else {
+            messager.printMessage(kind, text, element, mirror);
+        }
     }
 }
 
