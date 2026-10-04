@@ -325,8 +325,8 @@ describe('ListGenerator per-column rendering matrix', () => {
       fields: [field({ name: 'qty', type: 'Integer' })],
     }), CTX)!.content;
     expect(content).toContain('{{ item.qty | number }}');
-    expect(content).toContain('px-6 py-3.5 text-right text-xs');
-    expect(content).toContain('dark:text-gray-100 text-right tabular-nums">');
+    expect(content).toMatch(/<th\s+scope="col"\s+class="text-right"/);
+    expect(content).toContain('<td class="text-right tabular-nums">');
   });
 
   it('default column renders {{ item.<name> }} interpolation (no pipe)', () => {
@@ -693,5 +693,69 @@ describe('ListGenerator default columns follow the system-field classification',
       ],
     }), CTX)!.content;
     expect(columnNamesIn(content)).toEqual(['Created By', 'Order Number']);
+  });
+});
+// ---------- kit component classes ----------
+
+describe('ListGenerator styles its controls, table, actions and panels through the kit classes', () => {
+  const gen = new ListGenerator();
+  const STATUS = {
+    name: 'OrderStatus',
+    qualifiedName: 'com.shop.OrderStatus',
+    packageName: 'com.shop',
+    values: [{ name: 'NEW', displayName: 'New', ordinal: 0 }],
+  };
+  const content = gen.generate(domain({
+    entityName: 'Order',
+    fields: [
+      field({ name: 'note', type: 'String', filterable: true }),
+      field({ name: 'paid', type: 'Boolean', filterable: true }),
+      field({ name: 'total', type: 'java.lang.Integer', filterable: true }),
+      field({ name: 'status', type: 'com.shop.OrderStatus', filterable: true }),
+    ],
+    actions: [{ name: 'markPaid' }] as never,
+  }), createGeneratorContext({}, [], [STATUS]))!.content;
+
+  it('the table is an exeris-table in an exeris-card, and its cells carry only their alignment', () => {
+    expect(content).toContain('<div class="exeris-card overflow-hidden">');
+    expect(content).toContain('<table class="exeris-table" aria-label="Orders table" data-testid="data-table">');
+    expect(content).toContain('<thead>');
+    expect(content).toContain('<tbody>');
+    expect(content).toContain('<td class="text-right tabular-nums">');
+    expect(content).not.toMatch(/<t[hd][^>]*\bpx-6\b/);
+  });
+
+  it('search, filters and the page size are kit fields', () => {
+    expect(content).toContain('class="exeris-input pl-10"');
+    expect(content).toMatch(/data-testid="filter-note"\s+class="exeris-input sm:w-auto"/);
+    expect(content).toMatch(/data-testid="filter-paid"\s+class="exeris-select sm:w-auto"/);
+    expect(content).toMatch(/data-testid="filter-total-min"\s+class="exeris-input sm:w-auto"/);
+    expect(content).toMatch(/data-testid="filter-status"\s+class="exeris-select sm:w-auto"/);
+    expect(content).toContain('data-testid="page-size" class="exeris-select w-auto"');
+  });
+
+  it('create, row actions, retry and paging are kit buttons, Delete the danger one', () => {
+    expect(content).toMatch(/data-testid="action-create"\s+class="exeris-btn exeris-btn-primary"/);
+    expect(content).toContain(`'action-view-' + item.id" class="exeris-btn exeris-btn-ghost exeris-btn-sm">View</a>`);
+    expect(content).toContain(`'action-edit-' + item.id" class="exeris-btn exeris-btn-ghost exeris-btn-sm">Edit</a>`);
+    expect(content).toContain(`'action-mark-paid-' + item.id" class="exeris-btn exeris-btn-ghost exeris-btn-sm">Mark Paid</button>`);
+    expect(content).toContain(`'action-delete-' + item.id" class="exeris-btn exeris-btn-danger exeris-btn-sm">Delete</button>`);
+    expect(content).toContain('(click)="loadData()" class="exeris-btn exeris-btn-secondary exeris-btn-sm mt-4">Try again</button>');
+    expect(content).toMatch(/data-testid="pagination-prev"\s+class="exeris-btn exeris-btn-secondary"/);
+    expect(content).toMatch(/data-testid="pagination-next"\s+class="exeris-btn exeris-btn-secondary"/);
+  });
+
+  it('the delete and action errors are danger alerts', () => {
+    expect(content).toContain('data-testid="delete-error" class="exeris-alert exeris-alert-danger text-sm"');
+    expect(content).toContain('data-testid="action-error" class="exeris-alert exeris-alert-danger text-sm"');
+  });
+
+  it('a boolean is a kit badge: success for Yes, the neutral surface for No', () => {
+    expect(content).toContain('<span class="exeris-badge exeris-badge-success">Yes</span>');
+    expect(content).toContain('<span class="exeris-badge bg-[rgb(var(--exeris-bg-tertiary))] text-[rgb(var(--exeris-text-secondary))]">No</span>');
+  });
+
+  it('an enum keeps its per-constant palette rather than a semantic kit badge', () => {
+    expect(content).toContain("NEW: { label: OrderStatusDisplayNames.NEW, className: 'inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ring-1 ring-inset bg-blue-50");
   });
 });

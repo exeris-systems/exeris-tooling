@@ -138,37 +138,37 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`    <article role="article" [attr.aria-labelledby]="'detail-title'" [attr.aria-busy]="isLoading()" class="max-w-4xl mx-auto">`);
     lines.push(`      @if (isLoading()) {`);
     lines.push(`        <div class="animate-pulse space-y-4" role="status" aria-label="Loading...">`);
-    lines.push(`          <div class="h-8 bg-gray-200 dark:bg-gray-700 rounded w-1/3"></div>`);
-    lines.push(`          <div class="h-4 bg-gray-200 dark:bg-gray-700 rounded w-1/2"></div>`);
+    lines.push(`          <div class="h-8 bg-gray-200 dark:bg-gray-700 rounded-sm w-1/3"></div>`);
+    lines.push(`          <div class="h-4 bg-gray-200 dark:bg-gray-700 rounded-sm w-1/2"></div>`);
     lines.push(`        </div>`);
     lines.push(`      } @else if (error()) {`);
-    lines.push(`        <div role="alert" class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-6">`);
-    lines.push(`          <p class="text-red-700 dark:text-red-300">{{ error() }}</p>`);
-    lines.push(`          <button (click)="reload()" class="mt-4 text-sm font-medium text-red-600">Try again</button>`);
+    lines.push(`        <div role="alert" class="exeris-alert exeris-alert-danger">`);
+    lines.push(`          <p>{{ error() }}</p>`);
+    lines.push(`          <button (click)="reload()" class="exeris-btn exeris-btn-secondary exeris-btn-sm mt-4">Try again</button>`);
     lines.push(`        </div>`);
     lines.push(`      } @else if (entity()) {`);
     lines.push(`        @if (deleteError()) {`);
-    lines.push(`          <div role="alert" data-testid="delete-error" class="mb-6 rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">{{ deleteError() }}</div>`);
+    lines.push(`          <div role="alert" data-testid="delete-error" class="exeris-alert exeris-alert-danger mb-6 text-sm">{{ deleteError() }}</div>`);
     lines.push(`        }`);
     if (actions.length > 0) {
       lines.push(`        @if (actionError()) {`);
-      lines.push(`          <div role="alert" data-testid="action-error" class="mb-6 rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">{{ actionError() }}</div>`);
+      lines.push(`          <div role="alert" data-testid="action-error" class="exeris-alert exeris-alert-danger mb-6 text-sm">{{ actionError() }}</div>`);
       lines.push(`        }`);
     }
     lines.push(`        <header class="mb-8 flex items-center justify-between">`);
     lines.push(`          <h1 id="detail-title" class="text-2xl font-bold text-gray-900 dark:text-white">{{ getTitle() }}</h1>`);
     lines.push(`          <nav class="flex gap-3">`);
     for (const action of actions) {
-      lines.push(`            <button type="button" (click)="runAction('${action.methodName}')" [disabled]="actionPending()" data-testid="action-${action.kebabName}" class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 disabled:opacity-50 dark:text-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600">${action.label}</button>`);
+      lines.push(`            <button type="button" (click)="runAction('${action.methodName}')" [disabled]="actionPending()" data-testid="action-${action.kebabName}" class="exeris-btn exeris-btn-secondary">${action.label}</button>`);
     }
     if (views.edit) {
-      lines.push(`            <a [routerLink]="['edit']" class="px-4 py-2 text-sm font-medium text-white bg-exeris-primary rounded-md hover:bg-exeris-primary-hover">Edit</a>`);
+      lines.push(`            <a [routerLink]="['edit']" class="exeris-btn exeris-btn-primary">Edit</a>`);
     }
-    lines.push(`            <button (click)="onDelete()" class="px-4 py-2 text-sm font-medium text-red-700 bg-red-100 rounded-md hover:bg-red-200">Delete</button>`);
+    lines.push(`            <button (click)="onDelete()" class="exeris-btn exeris-btn-danger">Delete</button>`);
     lines.push(`          </nav>`);
     lines.push(`        </header>`);
-    lines.push(`        <section aria-labelledby="details-title" class="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">`);
-    lines.push(`          <h2 id="details-title" class="px-4 pt-4 sm:px-6 text-sm font-medium text-gray-500 dark:text-gray-400">Details</h2>`);
+    lines.push(`        <section aria-labelledby="details-title" class="exeris-card overflow-hidden">`);
+    lines.push(`          <h2 id="details-title" class="exeris-card-header text-sm font-medium text-gray-500 dark:text-gray-400">Details</h2>`);
     lines.push(`          <dl class="divide-y divide-gray-200 dark:divide-gray-700">`);
     lines.push(`            @for (field of displayFields; track field.name) {`);
     lines.push(`              <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">`);
@@ -213,9 +213,9 @@ export class DetailGenerator implements CodeGenerator {
     if (related.length > 0) {
       // Each link opens the target's whole list: the generated list endpoint takes no filter, so
       // a panel of only this entity's children cannot be fetched without loading every row.
-      lines.push(`        <section aria-labelledby="related-title" class="mt-8 bg-white dark:bg-gray-800 shadow rounded-lg p-6">`);
-      lines.push(`          <h2 id="related-title" class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-4">Related records</h2>`);
-      lines.push(`          <ul class="divide-y divide-gray-200 dark:divide-gray-700">`);
+      lines.push(`        <section aria-labelledby="related-title" class="exeris-card mt-8">`);
+      lines.push(`          <h2 id="related-title" class="exeris-card-header text-sm font-medium text-gray-500 dark:text-gray-400">Related records</h2>`);
+      lines.push(`          <ul class="exeris-card-body divide-y divide-gray-200 dark:divide-gray-700">`);
       for (const link of related) {
         lines.push(`            <li class="flex items-center justify-between py-3 text-sm">`);
         lines.push(`              <span class="font-medium text-gray-900 dark:text-white">${link.label}</span>`);
@@ -225,9 +225,9 @@ export class DetailGenerator implements CodeGenerator {
       lines.push(`          </ul>`);
       lines.push(`        </section>`);
     }
-    lines.push(`        <section aria-labelledby="system-title" class="mt-8 bg-gray-50 dark:bg-gray-800/50 rounded-lg p-6">`);
-    lines.push(`          <h2 id="system-title" class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-4">System Information</h2>`);
-    lines.push(`          <dl class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">`);
+    lines.push(`        <section aria-labelledby="system-title" class="exeris-card mt-8">`);
+    lines.push(`          <h2 id="system-title" class="exeris-card-header text-sm font-medium text-gray-500 dark:text-gray-400">System Information</h2>`);
+    lines.push(`          <dl class="exeris-card-body grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">`);
     lines.push(`            <div><dt class="text-gray-400">ID</dt><dd class="font-mono text-gray-600 dark:text-gray-300">{{ entity()?.${idField} }}</dd></div>`);
     // A row the entity interface does not declare is read off systemInfo(), the narrowing cast
     // emitted below, so the template type-checks under strictTemplates.
