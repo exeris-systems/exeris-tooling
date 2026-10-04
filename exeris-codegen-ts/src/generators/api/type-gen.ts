@@ -243,7 +243,11 @@ export class TypeGenerator implements CodeGenerator {
  */
 export function buildZodType(field: FieldMetadata): string {
   const baseMapping = DslMapper.mapType(field.type);
-  let zodType = baseMapping.zodType;
+  // A boxed type maps to `….nullable()`. Zod's nullable wrapper has no `min` / `max`, so the
+  // constraints go on the inner schema and the wrapper is put back after them.
+  const NULLABLE = '.nullable()';
+  const nullable = baseMapping.zodType.endsWith(NULLABLE);
+  let zodType = nullable ? baseMapping.zodType.slice(0, -NULLABLE.length) : baseMapping.zodType;
 
   // Apply validations
   if (field.minLength && zodType.includes('z.string')) {
@@ -257,6 +261,9 @@ export function buildZodType(field: FieldMetadata): string {
   }
   if (field.max !== undefined && zodType.includes('z.number')) {
     zodType += `.max(${field.max})`;
+  }
+  if (nullable) {
+    zodType += NULLABLE;
   }
   if (field.format === 'email') {
     zodType = 'z.string().email()';
