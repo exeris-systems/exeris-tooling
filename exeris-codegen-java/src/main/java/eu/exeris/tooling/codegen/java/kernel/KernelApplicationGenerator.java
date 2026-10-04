@@ -551,27 +551,37 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                             COMPONENTS_METHOD, TRANSACTIONAL_EXECUTOR);
         }
         // Every import in the generated tree is a requirement on the consumer's compile
-        // classpath that no emitted pom declares, so this Javadoc names them by phase.
+        // classpath that no emitted pom declares, so this Javadoc names each one by coordinate
+        // and by phase: an import is a compile requirement, and therefore a runtime one too.
         applicationType
-                .addJavadoc("<p>Compile classpath requirements: the generated sources import\n")
-                .addJavadoc("{@code exeris-kernel-spi} and {@code -core}.\n");
+                .addJavadoc("<p>Compile classpath requirements: the generated sources import these\n")
+                .addJavadoc("artefacts, so the tree does not compile without them, and they are\n")
+                .addJavadoc("needed at run time as well. {@code eu.exeris:exeris-kernel-spi} and\n")
+                .addJavadoc("{@code eu.exeris:exeris-kernel-core}.\n");
         if (composed) {
             applicationType
-                    .addJavadoc("Composition adds {@code eu.exeris:exeris-sdk-composition-runtime}:\n")
-                    .addJavadoc("this class imports its boot conductor, so the tree does not compile\n")
-                    .addJavadoc("without it.\n");
+                    .addJavadoc("{@code eu.exeris:exeris-sdk-composition-runtime}: this class imports\n")
+                    .addJavadoc("its boot conductor.\n");
         }
         if (importsJackson) {
             applicationType
-                    .addJavadoc("A repository for an entity with a {@code List<X>} field also imports\n")
-                    .addJavadoc("Jackson 3 ({@code tools.jackson.databind} / {@code tools.jackson.core}),\n")
-                    .addJavadoc("which the kernel SPI and core do not bring; that repository's Javadoc\n")
-                    .addJavadoc("names it.\n");
+                    .addJavadoc("{@code tools.jackson.core:jackson-databind} (Jackson 3): a repository for\n")
+                    .addJavadoc("an entity with a {@code List<X>} field imports it, and the kernel SPI and\n")
+                    .addJavadoc("core do not bring it; that repository's Javadoc names it.\n");
         }
         applicationType
-                .addJavadoc("<p>Runtime classpath requirements, in addition: a kernel persistence\n")
-                .addJavadoc("provider (Community driver with a configured PostgreSQL DataSource —\n")
-                .addJavadoc("bound by the kernel bootstrap, not by this generated code).\n")
+                .addJavadoc("<p>Runtime classpath requirements only: a kernel driver that registers\n")
+                .addJavadoc("the subsystem providers this application boots — by default\n")
+                .addJavadoc("{@code eu.exeris:exeris-kernel-community} at runtime scope, which\n")
+                .addJavadoc("{@code exeris:verify-runtime} checks for — and the JDBC driver of the\n")
+                .addJavadoc("database the persistence provider is configured with. A driver at\n")
+                .addJavadoc("runtime scope does not reach the compile classpath, so it does not\n")
+                .addJavadoc("satisfy a compile requirement above, even one it depends on itself.\n")
+                .addJavadoc("<p>{@code eu.exeris.tooling:exeris-app-starter} (type {@code pom})\n")
+                .addJavadoc("declares every artefact named above except the JDBC driver: the compile\n")
+                .addJavadoc("requirements at compile scope, the Community driver at runtime scope.\n")
+                .addJavadoc("Generated tests, where enabled, also import JUnit 5 and AssertJ, which\n")
+                .addJavadoc("the starter does not declare: add them at test scope.\n")
                 .addJavadoc("<p>Generated code logs through {@link System.Logger}, so it adds no\n")
                 .addJavadoc("logging dependency of its own. To route it to a backend, put a\n")
                 .addJavadoc("{@link System.LoggerFinder} provider on the classpath.\n");

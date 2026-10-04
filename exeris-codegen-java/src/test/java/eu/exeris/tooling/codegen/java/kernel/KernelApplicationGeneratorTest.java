@@ -235,11 +235,14 @@ class KernelApplicationGeneratorTest {
         String compile = composed.substring(composed.indexOf("Compile classpath requirements"),
                 composed.indexOf("Runtime classpath requirements"));
         assertThat(compile)
-                .contains("{@code exeris-kernel-spi} and {@code -core}")
-                .contains("Composition adds {@code eu.exeris:exeris-sdk-composition-runtime}")
-                .doesNotContain("tools.jackson.databind");
-        assertThat(composed.substring(composed.indexOf("Runtime classpath requirements")))
-                .doesNotContain("composition-runtime");
+                .contains("{@code eu.exeris:exeris-kernel-spi} and\n * {@code eu.exeris:exeris-kernel-core}")
+                .contains("{@code eu.exeris:exeris-sdk-composition-runtime}: this class imports")
+                .doesNotContain("jackson-databind");
+        String runtime = composed.substring(composed.indexOf("Runtime classpath requirements"),
+                composed.indexOf("exeris-app-starter"));
+        assertThat(runtime)
+                .doesNotContain("composition-runtime")
+                .contains("{@code eu.exeris:exeris-kernel-community} at runtime scope");
 
         assertThat(application(gen.generateAll(domains, "com.example.foundation", false)))
                 .contains("Compile classpath requirements")
@@ -262,11 +265,11 @@ class KernelApplicationGeneratorTest {
         assertThat(KernelRepositoryGenerator.importsJackson(withoutList)).isFalse();
 
         assertThat(application(gen.generateAll(List.of(withoutList), "com.example.foundation", false)))
-                .doesNotContain("tools.jackson.databind");
+                .doesNotContain("jackson-databind");
         assertThat(application(gen.generateAll(List.of(withoutList, withList),
                         "com.example.foundation", false)))
-                .contains("Jackson 3 ({@code tools.jackson.databind} / {@code tools.jackson.core})")
-                .contains("that repository's Javadoc\n * names it.");
+                .contains("{@code tools.jackson.core:jackson-databind} (Jackson 3)")
+                .contains("that repository's Javadoc names it.");
     }
 
     @Test
