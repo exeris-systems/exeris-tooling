@@ -38,13 +38,6 @@ function field(overrides: Partial<FieldMetadata> & { name: string; type: string 
   return FieldMetadataSchema.parse(overrides);
 }
 
-function hiddenDomain(entityName: string): DomainMetadata {
-  return domain({
-    entityName,
-    internalApi: { hidden: true, readOnly: false, internal: false },
-  });
-}
-
 // ---------- CodeGenerator contract ----------
 
 describe('ListGenerator — CodeGenerator metadata', () => {
@@ -72,9 +65,6 @@ describe('ListGenerator.generate — emit path + hidden-skip', () => {
     expect(file!.overwritable).toBe(true);
   });
 
-  it('returns null for an internalApi.hidden domain', () => {
-    expect(gen.generate(hiddenDomain('Audit'), CTX)).toBeNull();
-  });
 });
 
 // ---------- emitted top-level structure ----------
@@ -480,10 +470,6 @@ describe('generateList — top-level convenience function', () => {
 
     expect(file).not.toBeNull();
     expect(file!.path).toBe('components/order-list.component.ts');
-  });
-
-  it('returns null for a hidden domain', () => {
-    expect(generateList(hiddenDomain('Audit'), CTX.config)).toBeNull();
   });
 
   it('falls back to KERNEL backend when config.backend is undefined (still emits per-domain file)', () => {

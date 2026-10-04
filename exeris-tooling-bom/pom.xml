@@ -18,30 +18,22 @@
 
     <properties>
         <!--
-          Pinned ahead of their releases. Both pins are built from source: the
-          SDK's `main` is `0.12.0-SNAPSHOT`, and the kernel's
-          `development/0.12.0` carries the final string `0.12.0` with no
-          `v0.12.0` tag. A kernel `0.12.0` resolved before that tag is a
-          pre-release build that merely looks final; treat it as the SNAPSHOT
-          it is.
-
-          This is a temporary exception to the released-pins rule, not a
-          relaxation of it: no cross-repo SNAPSHOT may remain at a tooling cut
-          (ROADMAP "Versioning policy"), so both pins move to the final
-          `0.12.0` releases once the kernel and the SDK publish, and no tooling
-          release is tagged before they do.
+          SDK 0.12.0, the final release on Maven Central (tag `v0.12.0`), the
+          line that pairs with kernel 0.12.0. Both Exeris pins are releases, as
+          the released-pins rule requires of a tooling cut (ROADMAP "Versioning
+          policy"), and both resolve from Central with no settings file.
 
           How this repo reads SDK 0.12's records: a record grows by a trailing
-          component, and builders are the stable path. `DomainMetadata` and
-          `ActionMetadata` are built through their builders. `SystemFieldsMetadata`
-          has no builder on SDK `main` and is built positionally; its eleventh
-          component, `sharedScopeField` (the `@SharedScope` carrier), is filled
-          only for a `DataScope.UNIVERSE` entity and is `null` everywhere else,
-          which `@JsonInclude(NON_NULL)` keeps off the wire. The `schemaVersion`
-          the processor stamps follows `SchemaVersion.CURRENT`. `@Channel` and
-          `@RouteAccess` are read by nothing yet.
+          component, and builders are the stable path. `DomainMetadata`,
+          `ActionMetadata` and `SystemFieldsMetadata` are built through their
+          builders. `SystemFieldsMetadata.sharedScopeField` (the `@SharedScope`
+          carrier) is filled only for a `DataScope.UNIVERSE` entity and is
+          `null` everywhere else, which `@JsonInclude(NON_NULL)` keeps off the
+          wire. The `schemaVersion` the processor stamps follows
+          `SchemaVersion.CURRENT`. `@Channel` and `@RouteAccess` are read by
+          nothing yet.
         -->
-        <exeris.sdk.version>0.12.0-SNAPSHOT</exeris.sdk.version>
+        <exeris.sdk.version>0.12.0</exeris.sdk.version>
         <!--
           Kernel 0.12.0 — the line SDK 0.12 pairs with, and the floor for three
           things the emitters name:
@@ -103,6 +95,7 @@
         <assertj.version>3.27.7</assertj.version>
         <compile-testing.version>0.21.0</compile-testing.version>
         <json-schema-validator.version>1.5.4</json-schema-validator.version>
+        <approvaltests.version>24.16.0</approvaltests.version>
         <!-- The JDBC driver the kernel testkit's persistence needs when the e2e suite boots the
              EMITTED Application with the events/flow subsystems: both declare
              dependsOn("persistence"), and the testkit deliberately ships no driver. Same
@@ -284,6 +277,12 @@
                 <groupId>com.networknt</groupId>
                 <artifactId>json-schema-validator</artifactId>
                 <version>${json-schema-validator.version}</version>
+                <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>com.approvaltests</groupId>
+                <artifactId>approvaltests</artifactId>
+                <version>${approvaltests.version}</version>
                 <scope>test</scope>
             </dependency>
             <dependency>

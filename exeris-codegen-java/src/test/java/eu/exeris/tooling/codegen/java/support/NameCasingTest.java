@@ -10,12 +10,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Pins the two action-name transforms that several generators share.
  *
- * <p>Before this util, {@code KernelHandlerGenerator}, {@code KernelApplicationGenerator},
- * {@code OpenApiPathsBuilder}, and the page/table DSL generators each carried a byte-identical
- * copy. The route's method reference (built from {@link NameCasing#pascal}) must resolve to the
- * generated {@code handle<X>} (also built from {@code pascal}); the served route segment
- * ({@link NameCasing#kebab}) must equal the advertised OpenAPI/DSL path segment. One impl, one
- * test — divergence is now impossible by construction.
+ * <p>{@code KernelHandlerGenerator}, {@code KernelApplicationGenerator} and
+ * {@code OpenApiPathsBuilder} all read these transforms. The route's method reference (built from
+ * {@link NameCasing#pascal}) must resolve to the generated {@code handle<X>} (also built from
+ * {@code pascal}); the served route segment ({@link NameCasing#kebab}) must equal the advertised
+ * OpenAPI path segment. One impl, one test — divergence is impossible by construction.
  */
 @DisplayName("NameCasing")
 class NameCasingTest {

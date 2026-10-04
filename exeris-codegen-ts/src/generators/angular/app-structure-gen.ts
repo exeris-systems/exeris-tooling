@@ -8,7 +8,7 @@
  * - package.json
  * - angular.json
  * - tsconfig.json
- * - tailwind.config.js
+ * - .postcssrc.json and src/styles.css (Tailwind CSS v4, CSS-first: no tailwind.config.js)
  */
 
 import type { DomainMetadata, ViewMetadata } from '../../models/domain-model.js';
@@ -96,12 +96,10 @@ export function generateAppStructure(
   if (config.generateTests) {
     files.push({ path: `${outputRoot}/tsconfig.spec.json`, content: generateTsConfigSpec(), overwritable: false });
   }
-  files.push({ path: `${outputRoot}/tailwind.config.js`, content: generateTailwindConfig(), overwritable: true });
   files.push({ path: `${outputRoot}/.postcssrc.json`, content: generatePostcssConfig(), overwritable: true });
   if (needs.backend) {
     files.push({ path: `${outputRoot}/proxy.conf.json`, content: generateProxyConfig(), overwritable: true });
   }
-  files.push({ path: `${outputRoot}/.npmrc`, content: generateNpmrc(), overwritable: true });
 
   // Static files under src/
   files.push({ path: `${srcRoot}/styles.css`, content: generateStylesCss(), overwritable: true });
@@ -114,12 +112,6 @@ export function generateAppStructure(
   files.push({ path: `${envRoot}/environment.ts`, content: generateEnvironmentFile({ production: true, api }), overwritable: false });
   files.push({ path: `${envRoot}/environment.development.ts`, content: generateEnvironmentFile({ production: false, api }), overwritable: true });
 
-  // Public-surface emitters (sidebar nav, route list, barrel re-exports) take the
-  // visible list so they never reference an entity whose per-entity files the
-  // orchestrator skips for hidden domains. Filtering once here keeps the
-  // hidden-domain policy in one spot.
-  const visibleDomains = domains.filter((d) => !d.internalApi?.hidden);
-
   // Views are sorted deterministically (by effective route path, then name) so the
   // emitted route imports/spreads + nav links are order-stable regardless of the
   // directory-scan order the CLI hands them in. The sort is on a copy — the caller's
@@ -128,12 +120,12 @@ export function generateAppStructure(
 
   // App shell under src/app
   files.push({ path: `${appRoot}/app.config.ts`, content: generateAppConfig(needs.backend), overwritable: false });
-  files.push({ path: `${appRoot}/app.component.ts`, content: generateAppComponent(visibleDomains, appName, sortedViews), overwritable: false });
-  files.push({ path: `${appRoot}/app.routes.ts`, content: generateAppRoutes(visibleDomains, appName, sortedViews), overwritable: false });
+  files.push({ path: `${appRoot}/app.component.ts`, content: generateAppComponent(domains, appName, sortedViews), overwritable: false });
+  files.push({ path: `${appRoot}/app.routes.ts`, content: generateAppRoutes(domains, appName, sortedViews), overwritable: false });
   // The app barrel re-exports the generated types, services, stores and components. With no
-  // visible entity and no enum there is nothing to re-export, and no barrel.
-  if (visibleDomains.length > 0 || enums.length > 0) {
-    files.push({ path: `${appRoot}/index.ts`, content: generateBarrelExport(visibleDomains, enums, config), overwritable: true });
+  // entity and no enum there is nothing to re-export, and no barrel.
+  if (domains.length > 0 || enums.length > 0) {
+    files.push({ path: `${appRoot}/index.ts`, content: generateBarrelExport(domains, enums, config), overwritable: true });
   }
 
   // T20: per-entity components/services/types/schemas and enums are emitted by the
@@ -347,7 +339,7 @@ function generateAppRoutes(domains: DomainMetadata[], appName: string, views: Vi
 
   // The default redirect prefers the FIRST PAGE view when any exists (a generated
   // standalone front then lands on a @View page out of the box); otherwise it keeps
-  // the existing entity-based default (first visible domain), and falls back to ''
+  // the existing entity-based default (first domain), and falls back to ''
   // when neither is present. With zero views the entity branch is taken unchanged.
   const firstPageView = views.find(isPageView);
   const firstListed = domains.find((d) => entityViews(d).list);
@@ -387,16 +379,10 @@ export const routes: Routes = [${redirect}${routes.join('')}${viewSpreads}
  * generated. The `barrel-resolves.spec` asserts this invariant for every combination of flags.
  */
 function generateBarrelExport(
-  visibleDomains: DomainMetadata[],
+  domains: DomainMetadata[],
   enums: EnumMetadata[],
   config: GeneratorConfig,
 ): string {
-  // Caller (generateAppStructure) is responsible for filtering out
-  // hidden domains — see the `visibleDomains` comment at the call
-  // site. This function trusts its input and iterates everything
-  // it's given. Sole caller in tree; if a second caller ever shows
-  // up, document the contract or reintroduce the filter here.
-
   const exports: string[] = [
     "// Generated barrel export",
     "// DO NOT EDIT - This file is auto-generated",
@@ -405,22 +391,22 @@ function generateBarrelExport(
     "export * from './types/enums';",
   ];
 
-  // Every section below re-exports per-entity files; with no visible entity the enums are all
+  // Every section below re-exports per-entity files; with no entity the enums are all
   // there is, and empty section headers would advertise surfaces the app does not have.
-  if (visibleDomains.length === 0) {
+  if (domains.length === 0) {
     return exports.join('\n') + '\n';
   }
 
   exports.push("", "// Types (main type definitions)");
 
-  for (const domain of visibleDomains) {
+  for (const domain of domains) {
     const kebab = DslMapper.toKebabCase(domain.entityName);
     exports.push(`export * from './types/${kebab}.types';`);
   }
 
   if (config.generateZod) {
     exports.push("", "// Schemas (Zod validation schemas only)");
-    for (const domain of visibleDomains) {
+    for (const domain of domains) {
       const kebab = DslMapper.toKebabCase(domain.entityName);
       exports.push(`export * from './schemas/${kebab}.schema';`);
     }
@@ -431,7 +417,7 @@ function generateBarrelExport(
 
     // Export Page and PageRequest only once from first service
     let pageTypesExported = false;
-    for (const domain of visibleDomains) {
+    for (const domain of domains) {
       const kebab = DslMapper.toKebabCase(domain.entityName);
       const model = modelTypeName(domain.entityName);
       if (!pageTypesExported) {
@@ -448,8 +434,8 @@ function generateBarrelExport(
   // the per-file names (`<Entity>StreamClient`, `<Entity><Action>StreamClient`, the one
   // shared `StreamFrame`) are distinct, so starring them is unambiguous.
   if (config.generateServices) {
-    const liveView = visibleDomains.some(hasLiveViewClient);
-    const actionStreams = visibleDomains.some(hasActionStreamClients);
+    const liveView = domains.some(hasLiveViewClient);
+    const actionStreams = domains.some(hasActionStreamClients);
     if (liveView || actionStreams) {
       exports.push("", "// SSE stream clients");
       if (liveView) exports.push("export * from './services/streams.index';");
@@ -469,7 +455,7 @@ function generateBarrelExport(
   // than reported. The filter type therefore keeps coming from the service alone.
   if (config.generateStores) {
     exports.push("", "// Stores (signal state over the services)");
-    for (const domain of visibleDomains) {
+    for (const domain of domains) {
       const kebab = DslMapper.toKebabCase(domain.entityName);
       exports.push(`export { ${domain.entityName}Store } from './stores/${kebab}.store';`);
       exports.push(`export type { ${domain.entityName}StoreState } from './stores/${kebab}.store';`);
@@ -479,7 +465,7 @@ function generateBarrelExport(
   // A component is exported only when it is emitted: the config flag and the entity's @UI switch
   // both decide that.
   const componentExports: string[] = [];
-  for (const domain of visibleDomains) {
+  for (const domain of domains) {
     const kebab = DslMapper.toKebabCase(domain.entityName);
     const views = entityViews(domain);
     if (config.generateForms && hasFormPage(views)) {
@@ -501,7 +487,7 @@ function generateBarrelExport(
   // like the generated services. The barrel is how that code reaches them without knowing
   // internal paths, so an event surface missing from it is emitted-but-unreachable.
   const eventDomains = config.generateEvents
-    ? visibleDomains.filter((d) => d.events && d.events.length > 0)
+    ? domains.filter((d) => d.events && d.events.length > 0)
     : [];
   if (eventDomains.length > 0) {
     exports.push('', '// Domain events (handlers, payload types, and the shared bus)');
@@ -522,7 +508,7 @@ function generateBarrelExport(
   // reported. The shared type names therefore come from the first saga only, exactly as `Page`
   // and `PageRequest` do in the services section above.
   const sagaDomains = config.generateSagas
-    ? visibleDomains.filter((d) => sagaMachineName(d) !== null)
+    ? domains.filter((d) => sagaMachineName(d) !== null)
     : [];
   if (sagaDomains.length > 0) {
     exports.push('', '// Saga state machines');
@@ -546,7 +532,7 @@ function generateBarrelExport(
 /**
  * The runtime dependencies. The framework core — `@angular/common|compiler|core|platform-browser|
  * router`, `rxjs` (a peer dependency of `@angular/core`) and `tslib` (`importHelpers`) — and the
- * ui-kit the styles and Tailwind config import are always present. `@angular/cdk`, `@angular/forms`
+ * ui-kit the styles import is always present. `@angular/cdk`, `@angular/forms`
  * and `zod` are used only by some emitters: an app with a backend keeps its fixed set, and an app
  * without one lists each only when an emitted file imports it.
  */
@@ -560,7 +546,7 @@ function runtimeDependencies(needs: ScaffoldNeeds): string {
     ['@angular/forms', '^22.0.0', used('@angular/forms')],
     ['@angular/platform-browser', '^22.0.0', true],
     ['@angular/router', '^22.0.0', true],
-    ['@exeris-systems/ui-kit', '^0.1.0', true],
+    ['@exeris/ui-kit', '^0.2.0', true],
     ['rxjs', '~7.8.1', true],
     ['tslib', '^2.8.1', true],
     ['zod', '^3.24.0', used('zod')],
@@ -774,28 +760,6 @@ function generateTsConfigSpec(): string {
 `;
 }
 
-function generateTailwindConfig(): string {
-  // Tailwind CSS v4 is CSS-first, so this file is largely vestigial for a v4
-  // build (the tokens come from `@import "@exeris-systems/ui-kit/theme"` in styles.css).
-  // It is kept valid and wires the ui-kit v3 JS preset so a v3-toolchain consumer
-  // ALSO gets the same `exeris-*` token namespace. The preset is the documented
-  // v3 entry point (v4 ignores `presets`); both entries declare identical tokens.
-  return `/** @type {import('tailwindcss').Config} */
-import exerisPreset from '@exeris-systems/ui-kit/tailwind.preset.js';
-
-export default {
-  presets: [exerisPreset],
-  content: [
-    "./src/**/*.{html,ts}",
-  ],
-  theme: {
-    extend: {},
-  },
-  plugins: [],
-}
-`;
-}
-
 function generatePostcssConfig(): string {
   // PostCSS configuration for Tailwind CSS v4 (JSON format per Angular docs)
   return `{
@@ -807,14 +771,15 @@ function generatePostcssConfig(): string {
 }
 
 function generateStylesCss(): string {
-  // Tailwind CSS v4 uses @import instead of @tailwind directives.
+  // Tailwind CSS v4 is CSS-first: @import replaces the @tailwind directives, and no
+  // tailwind.config.js is read. The ui-kit is imported here, in the global stylesheet that
+  // Tailwind processes, and never listed in angular.json's `styles` array, where its CSS would
+  // be compiled without Tailwind.
   //
-  // The @exeris-systems/ui-kit "theme" entry is the v4 (@theme, CSS-first) token entry:
-  // it declares the `exeris-*` design-token namespace (bg-exeris-primary,
-  // text-exeris-primary-hover, font-exeris, …) so generated components style
-  // against the shared SDK tokens instead of hardcoded boilerplate. (A v3
-  // toolchain consumes the same tokens via the tailwind.preset.js wired in
-  // tailwind.config.js.)
+  // The @exeris/ui-kit "theme" entry is the @theme token entry: it declares the `exeris-*`
+  // design-token namespace (bg-exeris-primary, text-exeris-primary-hover, font-exeris, …) and
+  // the `dark` variant, so generated components style against the shared SDK tokens instead of
+  // hardcoded boilerplate.
   //
   // The v4 @theme entry defines brand/semantic colours + typography tokens only
   // (no neutral surface/text tokens). The body therefore takes the exeris font
@@ -824,7 +789,7 @@ function generateStylesCss(): string {
   return `/* Generated Angular Frontend - Global Styles */
 /* Tailwind CSS v4 */
 @import "tailwindcss";
-@import "@exeris-systems/ui-kit/theme";
+@import "@exeris/ui-kit/theme";
 
 /* Custom base styles */
 @layer base {
@@ -848,15 +813,6 @@ function generateProxyConfig(): string {
     "logLevel": "debug"
   }
 }
-`;
-}
-
-function generateNpmrc(): string {
-  // @exeris-systems/ui-kit is published to GitHub Packages. Resolve the @exeris-systems
-  // scope from there. GitHub Packages requires auth even for reads: add a token with
-  // read:packages to your global ~/.npmrc, e.g.
-  //   //npm.pkg.github.com/:_authToken=YOUR_GITHUB_TOKEN
-  return `@exeris-systems:registry=https://npm.pkg.github.com
 `;
 }
 

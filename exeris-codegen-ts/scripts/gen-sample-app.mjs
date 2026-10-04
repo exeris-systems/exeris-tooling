@@ -61,11 +61,11 @@ const domains = [
     // Domain events drive the per-entity handler AND the shared event bus. Without one in the
     // fixture, neither half of the event generator is ever built.
     events: [
-      { name: 'OrderPlaced', payloadFields: ['id', 'total'] },
+      { name: 'OrderPlaced', topic: 'shop.orders', aggregateType: 'Order', payloadFields: ['id', 'total'] },
       { name: 'OrderCancelled', payloadFields: ['id'], sensitiveFields: ['total'] },
     ],
     actions: [
-      { name: 'cancel', methodName: 'cancel' },
+      { name: 'cancel', methodName: 'cancel', resultType: 'void' },
       { name: 'setStatus', methodName: 'setStatus', params: [{ name: 'status', type: 'com.shop.OrderStatus' }] },
       // A streaming action is served as a stream only: it gets an action stream client and no
       // service method. The enum param pins that the service then imports nothing for it.
@@ -83,9 +83,9 @@ const domains = [
     sagaMetadata: {
       name: 'OrderFulfilment',
       steps: [
-        { name: 'reserveStock', action: 'reserve', compensatingAction: 'releaseStock', order: 0 },
-        { name: 'chargeCard', action: 'charge', compensatingAction: 'refundCard', order: 1 },
-        { name: 'notifyCustomer', action: 'notify', order: 2 },
+        { name: 'reserveStock', service: 'stock', command: 'reserve', compensation: 'releaseStock', order: 0 },
+        { name: 'chargeCard', service: 'billing', command: 'charge', compensation: 'refundCard', order: 1 },
+        { name: 'notifyCustomer', service: 'mail', command: 'notify', order: 2 },
       ],
       compensationStrategy: 'ALL_OR_NOTHING',
       compensationOrder: 'REVERSE',
@@ -105,7 +105,7 @@ const domains = [
       name: 'ProductRestock',
       steps: [
         { name: 'requestQuote', order: 0 },
-        { name: 'placePurchaseOrder', compensatingAction: 'cancelPurchaseOrder', order: 1 },
+        { name: 'placePurchaseOrder', compensation: 'cancelPurchaseOrder', order: 1 },
       ],
     },
   }),
@@ -306,21 +306,20 @@ for (const f of files) {
 }
 console.log(`gen-sample-app — wrote ${files.length} files to ${out}`);
 
-// The emitted package.json pins `@exeris-systems/ui-kit@^0.1.0` — the published
-// coordinate (GitHub Packages), which CI installs with a read:packages token.
-// OPTIONAL local-dev escape hatch: set EXERIS_UI_KIT_PATH to an exeris-sdk-ui-kit
-// checkout to repoint just that one dependency at it (file:), so a dev without a
-// GitHub Packages token can still build the sample. Leaving it unset uses the real
-// registry. Only the throwaway sample is rewritten — the real generator output keeps
-// the `^0.1.0` registry coordinate.
+// The emitted package.json pins `@exeris/ui-kit@^0.2.0`, the coordinate on the public npm
+// registry, which installs without a token. OPTIONAL local escape hatch: set
+// EXERIS_UI_KIT_PATH to an exeris-sdk-ui-kit directory or to a tarball `npm pack` made from
+// it, and only that one dependency is repointed at it (file:), so the sample builds against a
+// kit that is not published. Leaving it unset uses the registry. Only the throwaway sample is
+// rewritten; the real generator output keeps the registry coordinate.
 const uiKitPath = process.env.EXERIS_UI_KIT_PATH;
 if (uiKitPath) {
   const pkgPath = join(out, 'package.json');
   const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
-  if (pkg.dependencies?.['@exeris-systems/ui-kit']) {
+  if (pkg.dependencies?.['@exeris/ui-kit']) {
     const linked = `file:${resolve(uiKitPath)}`;
-    pkg.dependencies['@exeris-systems/ui-kit'] = linked;
+    pkg.dependencies['@exeris/ui-kit'] = linked;
     writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
-    console.log(`gen-sample-app — linked @exeris-systems/ui-kit -> ${linked}`);
+    console.log(`gen-sample-app — linked @exeris/ui-kit -> ${linked}`);
   }
 }

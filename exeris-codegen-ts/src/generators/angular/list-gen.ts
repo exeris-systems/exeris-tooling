@@ -28,7 +28,7 @@ export class ListGenerator implements CodeGenerator {
   readonly priority = 20;
 
   generate(domain: DomainMetadata, context: GeneratorContext): GeneratedFile | null {
-    if (domain.internalApi?.hidden || !entityViews(domain).list) {
+    if (!entityViews(domain).list) {
       return null;
     }
 

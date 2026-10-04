@@ -7,8 +7,7 @@
  * Unique-to-event-gen contracts pinned:
  *   - supportedBackends is the single kernel target (['KERNEL']); siblings
  *     leave it [] meaning "all" — now equivalent under kernel-target-only
- *   - generate() returns null when domain has NO events (NOT on
- *     internalApi.hidden — events check fires first)
+ *   - generate() returns null when domain has NO events
  *   - generateAggregate() returns empty array when no domain has
  *     events (no event-bus emitted at all)
  *   - isDestructive announcement heuristic: event name containing
@@ -76,21 +75,6 @@ describe('EventHandlerGenerator.generate — events-presence check', () => {
     expect(gen.generate(domain({ entityName: 'Order', events: [] }), CTX)).toBeNull();
   });
 
-  it('DOES NOT skip a hidden domain that has events — the events check fires first', () => {
-    // Unlike sibling generators that null-out for hidden domains,
-    // event-gen's null-check is on events length, NOT on
-    // internalApi.hidden. A hidden domain WITH events still emits.
-    // (This may be intentional — event subscribers might want to
-    // listen even to hidden entities — or oversight. Pinned here.)
-    const file = gen.generate(domain({
-      entityName: 'HiddenButEventful',
-      internalApi: { hidden: true, readOnly: false, internal: false },
-      events: [{ name: 'Created', fields: [] }],
-    }), CTX);
-
-    expect(file).not.toBeNull();
-    expect(file!.path).toBe('events/hidden-but-eventful.events.ts');
-  });
 });
 
 // ---------- emitted structure ----------

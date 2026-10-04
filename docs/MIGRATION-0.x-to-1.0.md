@@ -1059,13 +1059,14 @@ requires them.
 
 ## 0.9.0 train — regeneration deltas
 
-### Dependency floor (hard, pre-release)
+### Dependency floor (hard)
 
 *(Replaced 2026-09-26. This entry first said "Neither pin moves in this train"; B0 moved both.)*
 
-The BOM moves to **`eu.exeris:exeris-sdk-*:0.12.0-SNAPSHOT`** and **`eu.exeris:exeris-kernel-*:0.12.0`**.
-The kernel pin is the final `0.12.0` release on Maven Central. The SDK pin is not published yet:
-build the SDK from `main`. A tooling release is not cut until the SDK pin is final too.
+The BOM moves to **`eu.exeris:exeris-sdk-*:0.12.0`** and **`eu.exeris:exeris-kernel-*:0.12.0`**,
+both final releases on Maven Central. Nothing is built from source. A local repository that holds
+an SDK or kernel `0.12.0` installed or fetched before the release keeps serving it; delete
+`~/.m2/repository/eu/exeris/exeris-sdk*` and `~/.m2/repository/eu/exeris/exeris-kernel*` once.
 
 **The metadata schema stamp moves `0.11.0` → `0.12.0`.** SDK 0.12 moves `SchemaVersion.CURRENT`, so
 a baseline stamped `0.11.0` reads as schema skew (ADR-042). Re-run codegen once after upgrading.
@@ -1605,7 +1606,7 @@ the detail row. The link text is the id; the target is not fetched. The plural i
 table's own (`DslMapper.routePlural`), and a qualified `targetEntity` resolves by its simple name.
 
 - **Only when the target is generated in the same app.** A target that is not among the loaded
-  domains, or is `internalApi.hidden`, has no route, and its field renders as plain text.
+  domains has no route, and its field renders as plain text.
 - **Only when detail views are generated.** With `generateDetails: false` there is no detail route
   to link to, and every foreign key renders as plain text.
 - **An empty foreign key renders as before**, as does every entity-typed relationship field and
@@ -1717,6 +1718,31 @@ committed the emitted app, commit the regenerated headers as a change of their o
 diff of a later release readable. The `exeris-gen --version` flag now prints the package's own
 version from its `package.json`.
 
+### `exeris-codegen-ts`: nested metadata types declare what the processor writes
+
+Five exported TypeScript types are realigned onto the SDK records they mirror, so the keys a real
+build writes are no longer stripped on parse.
+
+- `SagaStepMetadata`: `action`, `compensatingAction` and `retries` become `command`, `compensation`
+  and `maxRetries`, and `service` is added. **The emitted saga state machine now carries each step's
+  compensation**: a step declared with `@SagaStep(compensation = "releaseStock")` is emitted with
+  `compensatingAction: 'releaseStock'` where it used to get `undefined`, because the key the
+  generator read never arrived. The emitted `SagaStep` interface keeps its `compensatingAction`
+  member.
+- `ActionMetadata` loses `path`, `returnType` and `requiresAuth`, none of them a component of the
+  SDK record, and gains `methodName`, `resultType`, `producesEvents` and `routeAccess` (all optional).
+- `DomainEventMetadata` loses `displayName`, `payloadType` and `fields`, and gains `topic` and
+  `aggregateType` (optional).
+- `EventSourcedMetadata.snapshotInterval` becomes `snapshotEvery`.
+- `InternalApiMetadata` loses `hidden`. No annotation sets it, and the processor writes it `false`
+  for every entity, so every `internalApi.hidden` check the generators made skipped nothing in a real
+  build. The checks are removed. **No generated output changes for metadata the processor wrote**;
+  metadata built by hand with `internalApi: { hidden: true }` now emits that entity like any other.
+
+Nothing else in the regenerated app changes. This matters to your own code only if it builds
+metadata by hand with the renamed or removed keys, or imports these types from the package: Zod now
+strips the removed keys.
+
 ### `@View`: wrong attributes on STATIC/NONE bindings are diagnosed
 
 `@Bind(source = STATIC)` or `NONE` carrying `ref`, `path`, `expression` or `language` now produces a
@@ -1748,12 +1774,42 @@ A regenerated backend-less app no longer gets:
 - `src/app/index.ts`, when there is neither an entity nor an enum to re-export;
 - a `redirectTo: ''` route pointing at itself, when there is no entity and no `PAGE` view.
 
-`@angular/common`, `@angular/router`, `rxjs` (a peer dependency of `@angular/core`), `tslib`, the
-ui-kit and its `.npmrc` stay. The CLI does not replace an existing file without `--overwrite`, so an
+`@angular/common`, `@angular/router`, `rxjs` (a peer dependency of `@angular/core`), `tslib` and
+the ui-kit stay. The CLI does not replace an existing file without `--overwrite`, so an
 existing app keeps its `package.json`, `app.config.ts` and environments until you regenerate with
 it. Files the run no longer produces — `proxy.conf.json` and the empty barrels — are pruned when the
 output tree carries the generation manifest from an earlier run. If your own code uses `HttpClient`
 in a backend-less app, add `provideHttpClient()` to `app.config.ts` yourself.
+
+### `exeris-codegen-ts`: the app depends on `@exeris/ui-kit` from the public npm registry
+
+**Breaking:** an emitted dependency is renamed and two emitted files are no longer produced.
+
+The UI kit moved from GitHub Packages (`@exeris-systems/ui-kit` 0.1.x) to the public npm registry as
+`@exeris/ui-kit` 0.2.0, which supports Tailwind CSS v4 only and no longer exports the v3
+`tailwind.preset.js`. The regenerated app changes as follows:
+
+- **`package.json`:** the dependency is `"@exeris/ui-kit": "^0.2.0"` in place of
+  `"@exeris-systems/ui-kit": "^0.1.0"`.
+- **`src/styles.css`:** imports `@exeris/ui-kit/theme` in place of `@exeris-systems/ui-kit/theme`,
+  still after `@import "tailwindcss"`. `angular.json` keeps listing only `src/styles.css`; the
+  kit's CSS belongs in that global stylesheet, because a kit file listed in the `styles` array is
+  compiled without Tailwind and fails.
+- **`.npmrc` is no longer emitted.** It only pointed the `@exeris-systems` scope at GitHub Packages.
+  Installing the app needs no GitHub token and no `read:packages` scope, locally or in CI.
+- **`tailwind.config.js` is no longer emitted.** Tailwind v4 never reads it, and the preset it
+  imported is gone from the kit: loading it fails with `ERR_PACKAGE_PATH_NOT_EXPORTED`. The v4
+  setup is `.postcssrc.json` (`@tailwindcss/postcss`) plus the imports in `src/styles.css`, both
+  unchanged.
+
+On regeneration, an output tree that carries the generation manifest from an earlier run has its
+`.npmrc` and `tailwind.config.js` **deleted**, as is every file a run no longer produces. The
+pruner does not look at content, so a line you added to that `.npmrc` (another registry, a token
+reference) goes with it; move it to your user `~/.npmrc` or re-create the project file after
+regenerating. A tree without a manifest keeps both files: delete `tailwind.config.js`, and drop
+the `@exeris-systems:registry` line from `.npmrc`. `package.json` and `styles.css` are replaced only
+with `--overwrite`, as before; without it, rename the dependency and the import by hand. A CI
+step that appended a GitHub Packages token for the install can be removed.
 
 ### Compile-classpath requirements are named in the emitted Javadoc (T30)
 
@@ -1766,7 +1822,7 @@ code change.
 
 ### Generation no longer depends on the JVM locale
 
-Tables, columns, OpenAPI file names and DSL identifiers are lower-cased with `Locale.ROOT`. A build
+Tables, columns and OpenAPI file names are lower-cased with `Locale.ROOT`. A build
 that ran under a locale such as `tr-TR` and committed `ınvoices`-style names will regenerate them
 with a plain `i`, new migration file names included. Rename the applied migrations or keep the old
 output. A route for an entity without a declared `path` comes from the SDK's `effectivePath()`,
@@ -2071,6 +2127,10 @@ action that runs, persists and publishes its `ACTION`-triggered `@DomainEvent`s.
 needs to watch the result can subscribe to the entity's live view (`@ExerisDomain(realTimeApi =
 true)`), which streams those events. A build that treats warnings as errors fails on this warning
 until the attribute is removed.
+
+### `eu.exeris.tooling.codegen.java.dsl` is removed
+
+No build step ran its six classes, so generated output is unchanged. ADR-015 records `exeris-codegen-java` as internal tooling with no downstream Maven consumers; code that nevertheless called them from the jar no longer compiles, and there is no replacement.
 
 ---
 

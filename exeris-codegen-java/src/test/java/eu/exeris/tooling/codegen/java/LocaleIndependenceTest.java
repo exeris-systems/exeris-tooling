@@ -9,10 +9,6 @@ import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 import eu.exeris.sdk.sourcemodel.ast.GraphMetadata;
 import eu.exeris.sdk.sourcemodel.ast.RelationshipMetadata;
 import eu.exeris.sdk.sourcemodel.ast.SagaMetadata;
-import eu.exeris.tooling.codegen.java.dsl.EntitySchemaGenerator;
-import eu.exeris.tooling.codegen.java.dsl.FormDslGenerator;
-import eu.exeris.tooling.codegen.java.dsl.PageDslGenerator;
-import eu.exeris.tooling.codegen.java.dsl.TableDslGenerator;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -35,15 +31,15 @@ import static org.assertj.core.api.Assertions.assertThat;
  * visibly breaks identifiers: {@code 'I'} lower-cases to dotless {@code 'ı'} (U+0131), so a default
  * table for {@code Invoice} would come out as {@code ınvoices}, and {@code itemId} as the column
  * {@code item_ıd}. Every such call in the emitters passes {@code Locale.ROOT}, and this test keeps it
- * that way: it runs the whole production pipeline — main tree, generated-test tree, and the
- * DSL emitters — once under {@link Locale#ROOT} and once under {@code tr-TR}, and requires the two
- * output trees to be identical file for file and byte for byte.
+ * that way: it runs the whole production pipeline — main tree and generated-test tree — once under
+ * {@link Locale#ROOT} and once under {@code tr-TR}, and requires the two output trees to be
+ * identical file for file and byte for byte.
  *
  * <p>The fixture's names are chosen to put an upper-case {@code I} through every lower-casing site:
  * a default table and route ({@code Invoice}), an explicit override ({@code LINE_ITEMS}), a
  * snake-cased column ({@code itemId}), a relationship target, graph-sync table names, the OpenAPI
- * file name, and a {@code format} the form DSL switches on ({@code EMAIL}, which lower-cases to
- * {@code emaıl} in Turkish and misses its branch).
+ * file name, and an upper-case {@code format} value ({@code EMAIL}, which lower-cases to
+ * {@code emaıl} in Turkish).
  *
  * <p>The default locale is JVM-global, so this sets and restores all three categories in
  * {@code finally}; the build runs tests single-threaded per fork.
@@ -57,7 +53,7 @@ class LocaleIndependenceTest {
     Path scratch;
 
     @Test
-    @DisplayName("the pipeline and the DSL emitters produce byte-identical trees under ROOT and tr-TR")
+    @DisplayName("the pipeline produces byte-identical trees under ROOT and tr-TR")
     void turkishLocaleChangesNoByte() throws IOException {
         Path metadataDir = Files.createDirectories(scratch.resolve("metadata"));
         ObjectMapper mapper = CodegenPipeline.defaultMapper();
@@ -78,7 +74,6 @@ class LocaleIndependenceTest {
         assertThat(root.keySet()).anyMatch(p -> p.contains("create_invoices"));
         assertThat(root.keySet()).anyMatch(p -> p.contains("create_line_items"));
         assertThat(root.keySet()).anyMatch(p -> p.endsWith("invoice-api.yaml"));
-        assertThat(root.keySet()).anyMatch(p -> p.endsWith("invoice.create-form.json"));
         assertThat(root.values().stream().map(b -> new String(b, java.nio.charset.StandardCharsets.UTF_8)))
                 .as("the defaulted route")
                 .anyMatch(s -> s.contains("\"/invoices\""));
@@ -96,15 +91,6 @@ class LocaleIndependenceTest {
             CodegenPipeline pipeline = CodegenPipeline.createDefault();
             pipeline.run(metadataDir, out.resolve("main"), "com.shop");
             pipeline.runTests(metadataDir, out.resolve("test"), "com.shop");
-            Path dsl = Files.createDirectories(out.resolve("dsl"));
-            for (DomainMetadata domain : fixture()) {
-                new EntitySchemaGenerator(domain).writeTo(dsl);
-                new PageDslGenerator(domain).writeListPageTo(dsl);
-                new PageDslGenerator(domain).writeDetailPageTo(dsl);
-                new TableDslGenerator(domain).writeTo(dsl);
-                new FormDslGenerator(domain).writeCreateFormTo(dsl);
-                new FormDslGenerator(domain).writeEditFormTo(dsl);
-            }
         } finally {
             Locale.setDefault(saved);
             Locale.setDefault(Locale.Category.DISPLAY, savedDisplay);
