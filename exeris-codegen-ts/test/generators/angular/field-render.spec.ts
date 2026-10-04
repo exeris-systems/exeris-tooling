@@ -45,21 +45,21 @@ describe('resolveFieldRender — per type', () => {
     { type: 'String', cell: 'text', display: 'text', inputType: 'text', control: 'input', value: 'text' },
     { type: 'java.lang.String', cell: 'text', display: 'text', inputType: 'text', control: 'input', value: 'text' },
     // The form maps only the qualified wrapper to a number input; the primitive is still coerced.
-    { type: 'long', cell: 'text', display: 'text', inputType: 'text', control: 'input', value: 'number' },
-    { type: 'java.lang.Long', cell: 'text', display: 'number', inputType: 'number', control: 'input', value: 'number' },
-    { type: 'int', cell: 'text', display: 'text', inputType: 'text', control: 'input', value: 'number' },
-    { type: 'java.lang.Integer', cell: 'text', display: 'number', inputType: 'number', control: 'input', value: 'number' },
-    // BigDecimal is a string DTO for precision: a text input, never coerced.
-    { type: 'java.math.BigDecimal', cell: 'text', display: 'text', inputType: 'text', control: 'input', value: 'text' },
-    // The list badges only the Boolean wrapper's simple name.
-    { type: 'boolean', cell: 'text', display: 'boolean', inputType: 'checkbox', control: 'checkbox', value: 'boolean' },
+    // The detail view shows every type whose DTO type is a number as a number; the list too, and
+    // it also formats BigDecimal / BigInteger as numbers. The list badges every DTO boolean.
+    { type: 'long', cell: 'number', display: 'number', inputType: 'text', control: 'input', value: 'number' },
+    { type: 'java.lang.Long', cell: 'number', display: 'number', inputType: 'number', control: 'input', value: 'number' },
+    { type: 'int', cell: 'number', display: 'number', inputType: 'text', control: 'input', value: 'number' },
+    { type: 'java.lang.Integer', cell: 'number', display: 'number', inputType: 'number', control: 'input', value: 'number' },
+    // BigDecimal is a string DTO for precision: a text input and a text detail value, never coerced.
+    { type: 'java.math.BigDecimal', cell: 'number', display: 'text', inputType: 'text', control: 'input', value: 'text' },
+    { type: 'boolean', cell: 'boolean', display: 'boolean', inputType: 'checkbox', control: 'checkbox', value: 'boolean' },
     { type: 'Boolean', cell: 'boolean', display: 'boolean', inputType: 'checkbox', control: 'checkbox', value: 'boolean' },
-    { type: 'java.lang.Boolean', cell: 'text', display: 'text', inputType: 'checkbox', control: 'checkbox', value: 'boolean' },
+    { type: 'java.lang.Boolean', cell: 'boolean', display: 'boolean', inputType: 'checkbox', control: 'checkbox', value: 'boolean' },
     { type: 'java.util.UUID', cell: 'text', display: 'text', inputType: 'text', control: 'input', value: 'text' },
     { type: 'java.time.LocalDate', cell: 'date', display: 'date', inputType: 'date', control: 'input', value: 'text' },
     { type: 'java.time.Instant', cell: 'datetime', display: 'datetime', inputType: 'datetime-local', control: 'input', value: 'text' },
-    // The list's date test matches the substring `Date` before the date-time test is reached.
-    { type: 'java.time.LocalDateTime', cell: 'date', display: 'datetime', inputType: 'datetime-local', control: 'input', value: 'text' },
+    { type: 'java.time.LocalDateTime', cell: 'datetime', display: 'datetime', inputType: 'datetime-local', control: 'input', value: 'text' },
   ];
 
   for (const row of rows) {
@@ -71,7 +71,7 @@ describe('resolveFieldRender — per type', () => {
       expect(r.form.control).toBe(row.control);
       expect(r.form.value).toBe(row.value);
       expect(r.form.inputMode).toBe(row.inputType === 'number' ? 'decimal' : undefined);
-      expect(r.list.align).toBe('left');
+      expect(r.list.align).toBe(row.cell === 'number' ? 'right' : 'left');
       expect(r.placeholder).toBeUndefined();
       expect(r.help).toBeUndefined();
     });
@@ -103,10 +103,10 @@ describe('resolveFieldRender — facets, enums and links', () => {
   });
 
   it('without enumType the detail view and the form detect an enum by different rules', () => {
-    // Detail: a capitalised simple name ending in Status/Type/Role/State. Form: any qualified
-    // non-JDK type that names no entity or DTO.
+    // Detail: the type names an enum the enum module declares. Form: any qualified non-JDK type
+    // that names no entity or DTO.
     const bare = render({ type: 'OrderStatus' });
-    expect(bare.detail.enumType).toBe('OrderStatus');
+    expect(bare.detail).toMatchObject({ display: 'text', enumType: undefined });
     expect(bare.form.enumType).toBeUndefined();
     const address = render({ type: 'com.shop.Address' });
     expect(address.detail.enumType).toBeUndefined();
@@ -126,10 +126,129 @@ describe('resolveFieldRender — facets, enums and links', () => {
     expect(r.detail.display).toBe('text');
   });
 
-  it('a filterable Boolean gets the yes/no filter; any other filterable type gets none', () => {
-    expect(render({ type: 'Boolean', filterable: true }).list.filter).toBe('boolean-select');
-    expect(render({ type: 'boolean', filterable: true }).list.filter).toBeUndefined();
+  it('every filterable field gets the filter its list cell calls for; a field not filterable gets none', () => {
+    const filterOf = (field: Record<string, unknown>) => render({ ...field, filterable: true }).list.filter;
+    expect(filterOf({ type: 'Boolean' })).toBe('boolean');
+    expect(filterOf({ type: 'boolean' })).toBe('boolean');
+    expect(filterOf({ type: 'String' })).toBe('text');
+    expect(filterOf({ type: 'java.util.UUID' })).toBe('text');
+    expect(filterOf({ type: 'String', dataType: 'url' })).toBe('text');
+    expect(filterOf({ type: 'java.time.LocalDate' })).toBe('date-range');
+    expect(filterOf({ type: 'java.time.Instant' })).toBe('date-range');
+    expect(filterOf({ type: 'java.lang.Integer' })).toBe('number-range');
+    expect(filterOf({ type: 'java.math.BigDecimal', dataType: 'currency' })).toBe('number-range');
     expect(render({ type: 'Boolean' }).list.filter).toBeUndefined();
+  });
+});
+
+describe('resolveFieldRender — the detail view\'s display rules', () => {
+  const ENUMS = [{ name: 'OrderStatus', qualifiedName: 'com.shop.OrderStatus', packageName: 'com.shop', values: [] }];
+
+  /** Resolves one field against an entity whose app declares `ENUMS`. */
+  function detailOf(field: Record<string, unknown>) {
+    const d = domain({ fields: [{ name: 'id', type: 'java.util.UUID' }, { name: 'value', ...field }] });
+    return resolveFieldRenders(d, fieldRenderContext(d, [d], true, ENUMS)).find((r) => r.name === 'value')!.detail;
+  }
+
+  it('a type naming a declared enum is an enum: qualified by its qualified name, simple by its name', () => {
+    expect(detailOf({ type: 'com.shop.OrderStatus' })).toMatchObject({ display: 'enum', enumType: 'OrderStatus' });
+    expect(detailOf({ type: 'OrderStatus' })).toMatchObject({ display: 'enum', enumType: 'OrderStatus' });
+  });
+
+  it('a type named like an enum but declared by no enum is not one', () => {
+    expect(detailOf({ type: 'com.other.OrderStatus' })).toMatchObject({ display: 'text', enumType: undefined });
+    expect(detailOf({ type: 'PaymentType' })).toMatchObject({ display: 'text', enumType: undefined });
+  });
+
+  it('an explicit enumType wins over the declared enums', () => {
+    expect(detailOf({ type: 'String', enumType: 'com.shop.Priority' })).toMatchObject({ display: 'enum', enumType: 'Priority' });
+  });
+
+  it.each([
+    ['boolean', 'boolean'],
+    ['Boolean', 'boolean'],
+    ['java.lang.Boolean', 'boolean'],
+    ['LocalDate', 'date'],
+    ['java.time.LocalDate', 'date'],
+    ['Instant', 'datetime'],
+    ['java.time.LocalDateTime', 'datetime'],
+    ['java.time.OffsetDateTime', 'datetime'],
+    ['java.time.ZonedDateTime', 'datetime'],
+    ['double', 'number'],
+    ['java.lang.Double', 'number'],
+    ['java.math.BigDecimal', 'text'],
+    ['java.util.UUID', 'text'],
+  ])('%s displays as %s', (type, display) => {
+    expect(detailOf({ type }).display).toBe(display);
+  });
+
+  it('an explicit date or datetime format decides before the type', () => {
+    expect(detailOf({ type: 'String', format: 'date' }).display).toBe('date');
+    expect(detailOf({ type: 'java.time.Instant', format: 'date' }).display).toBe('date');
+    expect(detailOf({ type: 'String', format: 'datetime' }).display).toBe('datetime');
+  });
+});
+
+describe('resolveFieldRender — the list facet', () => {
+  const STATUS = {
+    name: 'OrderStatus',
+    qualifiedName: 'com.shop.OrderStatus',
+    packageName: 'com.shop',
+    values: ['NEW', 'PAID', 'SHIPPED', 'DELIVERED', 'RETURNED', 'CANCELLED', 'ARCHIVED']
+      .map((name, ordinal) => ({ name, displayName: name, ordinal })),
+  };
+
+  function renderWithEnums(field: Record<string, unknown>, enums = [STATUS]): FieldRenderModel {
+    const d = domain({ fields: [{ name: 'id', type: 'java.util.UUID' }, { name: 'value', ...field }] });
+    return resolveFieldRenders(d, fieldRenderContext(d, [d], true, enums)).find((r) => r.name === 'value')!;
+  }
+
+  it.each([
+    ['int', 'number', 'right'],
+    ['java.lang.Double', 'number', 'right'],
+    ['java.math.BigInteger', 'number', 'right'],
+    ['java.time.LocalDate', 'date', 'left'],
+    ['java.time.LocalDateTime', 'datetime', 'left'],
+    ['java.time.OffsetDateTime', 'datetime', 'left'],
+    ['java.time.ZonedDateTime', 'datetime', 'left'],
+    ['java.util.Date', 'datetime', 'left'],
+    ['java.lang.Boolean', 'boolean', 'left'],
+  ])('%s renders as a %s cell aligned %s', (type, cell, align) => {
+    expect(render({ type }).list).toMatchObject({ cell, align });
+  });
+
+  it('currency and percent align right; an explicit format decides date against date-time', () => {
+    expect(render({ type: 'java.math.BigDecimal', dataType: 'currency' }).list.align).toBe('right');
+    expect(render({ type: 'Double', dataType: 'percent' }).list.align).toBe('right');
+    expect(render({ type: 'java.time.Instant', format: 'date' }).list.cell).toBe('date');
+    expect(render({ type: 'String', format: 'datetime' }).list.cell).toBe('datetime');
+  });
+
+  it('a type the processor emitted an enum for is an enum cell, by qualified or simple name', () => {
+    expect(renderWithEnums({ type: 'com.shop.OrderStatus' }).list).toMatchObject({ cell: 'enum', enumType: 'OrderStatus' });
+    expect(renderWithEnums({ type: 'OrderStatus' }).list).toMatchObject({ cell: 'enum', enumType: 'OrderStatus' });
+    expect(renderWithEnums({ type: 'com.shop.Other', enumType: 'com.shop.OrderStatus' }).list.cell).toBe('enum');
+  });
+
+  it('a type that only looks like an enum is text: types/enums would not export it', () => {
+    const r = renderWithEnums({ type: 'com.shop.PaymentStatus' });
+    expect(r.list).toMatchObject({ cell: 'text', enumType: undefined, enumValues: undefined });
+    expect(render({ type: 'com.shop.OrderStatus' }).list.cell).toBe('text');
+  });
+
+  it('enum constants take the badge palette in declaration order, wrapping after six', () => {
+    const shuffled = { ...STATUS, values: [...STATUS.values].reverse() };
+    const values = renderWithEnums({ type: 'com.shop.OrderStatus', filterable: true }, [shuffled]).list.enumValues;
+    expect(values).toEqual([
+      { value: 'NEW', tone: 'blue' },
+      { value: 'PAID', tone: 'violet' },
+      { value: 'SHIPPED', tone: 'teal' },
+      { value: 'DELIVERED', tone: 'amber' },
+      { value: 'RETURNED', tone: 'pink' },
+      { value: 'CANCELLED', tone: 'slate' },
+      { value: 'ARCHIVED', tone: 'blue' },
+    ]);
+    expect(renderWithEnums({ type: 'com.shop.OrderStatus', filterable: true }).list.filter).toBe('enum');
   });
 });
 

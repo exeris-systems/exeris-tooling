@@ -11,13 +11,19 @@
  * already carry. Resolution is a pure function of its inputs, so the same metadata always yields
  * the same model.
  *
- * Each surface resolves by its own rule where the three differ: the detail view and the form
- * detect an enum by different rules, the list badges only a `Boolean`-typed column, and the form
- * maps only qualified Java types to a number or date input. The differences are listed in
- * `docs/codegen-ts-track-plan.md`.
+ * The detail view resolves its display type through the shared rules below (`enumTypeOf`,
+ * `isBooleanType`, `temporalKindOf`, `isNumericType`), which are the rules every surface converges
+ * on. Where a surface still resolves by its own rule — the form's enum test and number/date
+ * inputs, the list's `java.util.Date` date-time and its `BigDecimal` / `BigInteger` number cell —
+ * the difference is listed in `docs/codegen-ts-track-plan.md`.
+ *
+ * The list's rules: a boolean or a number is any type the DTO carries as one, an enum is a type
+ * the processor emitted an enum for (the only enums `types/enums` exports), and a date-time type
+ * renders with its time.
  */
 
 import type { DomainMetadata, FieldMetadata } from '../../models/domain-model.js';
+import type { EnumMetadata } from '../../core/generator-registry.js';
 import { DslMapper } from '../../models/dsl-mapper.js';
 import { viewSystemFieldNames } from '../api/type-gen.js';
 import { foreignKeyLinks } from './relationship-links.js';
@@ -38,10 +44,34 @@ export interface FieldRenderContext {
   readonly systemFieldNames: readonly string[];
   /** Foreign-key fields mapped to the route prefix of their target's detail page (`foreignKeyLinks`). */
   readonly links: ReadonlyMap<string, string>;
+  /**
+   * The enums the processor emitted, which the app's enum module declares: a field whose type names
+   * one is an enum (`enumTypeOf`), and the list takes its constants for the badges.
+   */
+  readonly enums?: readonly EnumMetadata[];
+}
+
+/** An enum the app's enum module (`types/enums.ts`) declares, as far as type resolution needs it. */
+export interface KnownEnum {
+  readonly name: string;
+  readonly qualifiedName: string;
 }
 
 /** How a list cell renders its value. */
-export type ListCellKind = 'link' | 'boolean' | 'date' | 'datetime' | 'currency' | 'percent' | 'url' | 'text';
+export type ListCellKind =
+  | 'link' | 'boolean' | 'enum' | 'date' | 'datetime' | 'number' | 'currency' | 'percent' | 'url' | 'text';
+
+/** The filter control a filterable list column gets, by what its cell holds. */
+export type ListFilterKind = 'boolean' | 'enum' | 'text' | 'date-range' | 'number-range';
+
+/**
+ * The colour of an enum constant's badge. Without a per-constant colour in the metadata it is a
+ * fixed palette taken in declaration order, so a constant keeps its colour across regenerations
+ * until a constant is inserted before it.
+ */
+export type BadgeTone = 'blue' | 'violet' | 'teal' | 'amber' | 'pink' | 'slate';
+
+const BADGE_TONES: readonly BadgeTone[] = ['blue', 'violet', 'teal', 'amber', 'pink', 'slate'];
 
 /** The detail view's display type, the `type` of its emitted `FieldDisplay`. */
 export type DetailDisplayType = 'text' | 'number' | 'boolean' | 'date' | 'datetime' | 'enum';
@@ -74,11 +104,16 @@ export interface FieldRenderModel {
   readonly help?: undefined;
   readonly list: {
     readonly cell: ListCellKind;
-    readonly align: 'left';
+    /** Numbers, amounts and percentages align right so their digits line up. */
+    readonly align: 'left' | 'right';
     readonly sortable: boolean;
     readonly filterable: boolean;
-    /** The filter control a filterable field gets; `undefined` when it gets none. */
-    readonly filter?: 'boolean-select';
+    /** The filter control of a filterable field; `undefined` when the field is not filterable. */
+    readonly filter?: ListFilterKind;
+    /** The simple enum name, when the cell is an enum. */
+    readonly enumType?: string;
+    /** The enum's constants in declaration order with their badge tone, when the cell is an enum. */
+    readonly enumValues?: readonly { readonly value: string; readonly tone: BadgeTone }[];
   };
   readonly detail: {
     readonly display: DetailDisplayType;
@@ -122,10 +157,11 @@ const LIFECYCLE_FIELDS = new Set([
 
 const DATA_TYPE_FACETS = new Set<string>(['currency', 'percent', 'url']);
 
-/** Java types the detail view never treats as an enum, whatever their name. */
-const DETAIL_KNOWN_TYPES = new Set([
-  'String', 'Integer', 'Long', 'Double', 'Float', 'Boolean', 'BigDecimal', 'UUID', 'Instant', 'LocalDate', 'LocalDateTime',
-]);
+/** Calendar-date types: a day with no time and no zone, rendered with the `mediumDate` pipe format. */
+const DATE_TYPES = new Set(['LocalDate']);
+
+/** Instant-like types: a point in time, rendered with the `medium` pipe format. */
+const DATETIME_TYPES = new Set(['Instant', 'LocalDateTime', 'OffsetDateTime', 'ZonedDateTime']);
 
 /** `camelCase` to `Title Case`, the form's label and method-name casing. */
 export function toTitleCase(value: string): string {
@@ -140,10 +176,12 @@ export function fieldRenderContext(
   domain: DomainMetadata,
   allDomains: readonly DomainMetadata[],
   detailRouted: boolean,
+  enums: readonly EnumMetadata[] = [],
 ): FieldRenderContext {
   return {
     systemFieldNames: viewSystemFieldNames(domain),
     links: foreignKeyLinks(domain, allDomains, detailRouted),
+    enums,
   };
 }
 
@@ -170,16 +208,10 @@ export function resolveFieldRender(
     system,
     displayed: !field.hidden && !system,
     link,
-    list: {
-      cell: listCell(field, link),
-      align: 'left',
-      sortable: field.sortable,
-      filterable: field.filterable,
-      filter: field.filterable && field.type === 'Boolean' ? 'boolean-select' : undefined,
-    },
+    list: listRender(field, link, context.enums ?? []),
     detail: {
-      display: detailDisplay(field),
-      enumType: detailEnumType(field),
+      display: detailDisplay(field, context.enums ?? []),
+      enumType: enumTypeOf(field, context.enums ?? []),
       dataType,
     },
     form: formRender(field, system),
@@ -187,45 +219,132 @@ export function resolveFieldRender(
   };
 }
 
+/** Java simple names whose values carry a time of day as well as a date. */
+const LIST_DATETIME_TYPES = new Set(['Instant', 'LocalDateTime', 'OffsetDateTime', 'ZonedDateTime', 'Date']);
+
+/** Java simple names the DTO carries as a string to keep their precision, but which hold a number. */
+const LIST_DECIMAL_TYPES = new Set(['BigDecimal', 'BigInteger']);
+
 /**
- * The list cell. Only the `Boolean` wrapper's simple name gets the badge, and a type containing
- * `Date` — `LocalDateTime` included — gets the date pipe before the date-time pipe is considered.
+ * The enum a field's type names, among those the processor emitted. Only these are exported by
+ * `types/enums`, so a type that merely looks like an enum renders as text.
  */
-function listCell(field: FieldMetadata, link: string | undefined): ListCellKind {
-  const type = field.type;
+function listEnum(field: FieldMetadata, enums: readonly EnumMetadata[]): EnumMetadata | undefined {
+  const type = field.enumType ?? field.type;
+  return enums.find((e) => e.qualifiedName === type) ?? enums.find((e) => e.name === type);
+}
+
+/**
+ * The list cell. Booleans and numbers follow the DTO type type-gen emits, so a primitive and its
+ * wrapper, simple or qualified, render alike. An explicit `format` decides date against date-time;
+ * otherwise `LocalDate` is a date and the instant-like types are date-times.
+ */
+function listCell(field: FieldMetadata, link: string | undefined, isEnum: boolean): ListCellKind {
   if (link) return 'link';
-  if (type === 'Boolean') return 'boolean';
-  if (field.format === 'date' || type.includes('Date')) return 'date';
-  if (field.format === 'datetime' || type.includes('DateTime') || type.includes('Instant')) return 'datetime';
+  const ts = DslMapper.mapType(field.type).tsType;
+  if (ts === 'boolean' || ts === 'boolean | null') return 'boolean';
+  if (isEnum) return 'enum';
+  if (field.format === 'date') return 'date';
+  if (field.format === 'datetime') return 'datetime';
   if (field.dataType === 'currency') return 'currency';
   if (field.dataType === 'percent') return 'percent';
   if (field.dataType === 'url') return 'url';
+  const simple = simpleName(field.type);
+  if (simple === 'LocalDate') return 'date';
+  if (LIST_DATETIME_TYPES.has(simple)) return 'datetime';
+  if (ts === 'number' || ts === 'number | null' || LIST_DECIMAL_TYPES.has(simple)) return 'number';
   return 'text';
 }
 
-function detailDisplay(field: FieldMetadata): DetailDisplayType {
-  const type = field.type;
-  if (field.enumType || isDetailEnumType(type)) return 'enum';
-  if (type === 'Boolean' || type === 'boolean') return 'boolean';
-  if (type.includes('LocalDate') && !type.includes('DateTime')) return 'date';
-  if (type.includes('Instant') || type.includes('DateTime')) return 'datetime';
-  if (type.includes('Integer') || type.includes('Long') || type === 'number') return 'number';
+function listFilter(cell: ListCellKind): ListFilterKind {
+  switch (cell) {
+    case 'boolean': return 'boolean';
+    case 'enum': return 'enum';
+    case 'date':
+    case 'datetime': return 'date-range';
+    case 'number':
+    case 'currency':
+    case 'percent': return 'number-range';
+    default: return 'text';
+  }
+}
+
+function listRender(
+  field: FieldMetadata,
+  link: string | undefined,
+  enums: readonly EnumMetadata[],
+): FieldRenderModel['list'] {
+  const enumMeta = link ? undefined : listEnum(field, enums);
+  const cell = listCell(field, link, enumMeta !== undefined);
+  const enumValues = cell === 'enum' && enumMeta
+    ? [...enumMeta.values]
+        .sort((a, b) => a.ordinal - b.ordinal)
+        .map((v, i) => ({ value: v.name, tone: BADGE_TONES[i % BADGE_TONES.length] }))
+    : undefined;
+  return {
+    cell,
+    align: cell === 'number' || cell === 'currency' || cell === 'percent' ? 'right' : 'left',
+    sortable: field.sortable,
+    filterable: field.filterable,
+    filter: field.filterable ? listFilter(cell) : undefined,
+    enumType: cell === 'enum' ? enumMeta?.name : undefined,
+    enumValues,
+  };
+}
+
+function detailDisplay(field: FieldMetadata, enums: readonly KnownEnum[]): DetailDisplayType {
+  if (enumTypeOf(field, enums)) return 'enum';
+  if (isBooleanType(field.type)) return 'boolean';
+  const temporal = temporalKindOf(field);
+  if (temporal) return temporal;
+  if (isNumericType(field.type)) return 'number';
   return 'text';
 }
 
-/** The detail view's enum test on a type name: a capitalised simple name ending in Status, Type, Role or State. */
-function isDetailEnumType(type: string): boolean {
-  if (DETAIL_KNOWN_TYPES.has(type)) return false;
-  if (type.includes('<') || type.endsWith('[]') || type.startsWith('java.')) return false;
-  const simpleName = type.includes('.') ? type.split('.').pop()! : type;
-  return /^[A-Z][a-zA-Z0-9]*$/.test(simpleName) &&
-    (simpleName.endsWith('Status') || simpleName.endsWith('Type') || simpleName.endsWith('Role') || simpleName.endsWith('State'));
-}
-
-function detailEnumType(field: FieldMetadata): string | undefined {
+/**
+ * The enum rule: the simple name of the enum a field holds, or `undefined` when it holds none.
+ *
+ * A field is an enum when it carries an explicit `enumType`, or when its type names an enum the
+ * app's enum module declares — a qualified type by its qualified name, a simple type by its simple
+ * name. The type's name is never guessed from: an enum the module does not declare cannot be
+ * imported from it, and a type named like an enum (`…Status`) may be an entity or a record.
+ */
+export function enumTypeOf(field: FieldMetadata, enums: readonly KnownEnum[]): string | undefined {
   if (field.enumType) return simpleName(field.enumType);
-  if (isDetailEnumType(field.type)) return simpleName(field.type);
+  const type = field.type;
+  const known = type.includes('.')
+    ? enums.find((e) => e.qualifiedName === type)
+    : enums.find((e) => e.name === type);
+  return known?.name;
+}
+
+/** The boolean rule: the primitive, the wrapper and the qualified wrapper alike. */
+export function isBooleanType(type: string): boolean {
+  return type === 'boolean' || type === 'Boolean' || type === 'java.lang.Boolean';
+}
+
+/**
+ * The temporal rule: `'date'` for a calendar date, `'datetime'` for a point in time, `undefined`
+ * otherwise. An explicit `format` of `date` or `datetime` decides first; else the type's simple
+ * name does — `LocalDate` is a date, `Instant`, `LocalDateTime`, `OffsetDateTime` and
+ * `ZonedDateTime` are date-times. A date renders with the `mediumDate` pipe format and a date-time
+ * with `medium`.
+ */
+export function temporalKindOf(field: FieldMetadata): 'date' | 'datetime' | undefined {
+  if (field.format === 'date' || field.format === 'datetime') return field.format;
+  const name = simpleName(field.type);
+  if (DATE_TYPES.has(name)) return 'date';
+  if (DATETIME_TYPES.has(name)) return 'datetime';
   return undefined;
+}
+
+/**
+ * The number rule: the type's DTO type is a TypeScript `number`. `BigDecimal` and `BigInteger`
+ * map to `string` for precision and are not numbers here.
+ */
+export function isNumericType(type: string): boolean {
+  const ts = DslMapper.mapType(type).tsType;
+  return ts === 'number' || ts === 'number | null';
 }
 
 /** The form's enum test: an explicit `enumType`, else a qualified non-JDK type that names no entity or DTO. */

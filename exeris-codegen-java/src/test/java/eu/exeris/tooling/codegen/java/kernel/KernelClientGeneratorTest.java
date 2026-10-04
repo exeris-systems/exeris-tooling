@@ -88,7 +88,7 @@ class KernelClientGeneratorTest {
         // buildApiPath delegates to DomainMetadata#effectivePath(), the SDK-canonical
         // derivation (explicit path, else "/" + kebab + "s"). With no explicit path,
         // a "PaymentOrder" entity resolves to /payment-orders — consistent with
-        // the OpenAPI / Application / DSL generators, which all use effectivePath().
+        // the OpenAPI / Application generators, which all use effectivePath().
         DomainMetadata metadata = DomainMetadata.builder("PaymentOrder", "com.example.domain")
                 .build();
 
