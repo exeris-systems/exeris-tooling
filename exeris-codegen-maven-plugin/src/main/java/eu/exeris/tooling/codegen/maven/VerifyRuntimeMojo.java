@@ -3,6 +3,7 @@ package eu.exeris.tooling.codegen.maven;
 import eu.exeris.tooling.codegen.core.driver.RequiredDrivers;
 import eu.exeris.tooling.codegen.core.driver.RuntimeDriverCheck;
 import eu.exeris.tooling.codegen.java.CodegenPipeline;
+import eu.exeris.tooling.diagnostics.DiagnosticId;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
@@ -107,8 +108,8 @@ public class VerifyRuntimeMojo extends AbstractMojo {
         try {
             result = verifier.verify(metadataDir.toPath(), classpath());
         } catch (IOException e) {
-            throw new MojoExecutionException(
-                    "Could not read domain metadata (metadataDir=" + metadataDir + ")", e);
+            throw new MojoExecutionException(DiagnosticId.RUNTIME_METADATA_UNREADABLE.format(
+                    "Could not read domain metadata (metadataDir=" + metadataDir + "): " + e), e);
         }
 
         if (result.vacuous()) {
@@ -122,7 +123,7 @@ public class VerifyRuntimeMojo extends AbstractMojo {
             return;
         }
 
-        String message = describe(result);
+        String message = DiagnosticId.RUNTIME_DRIVER_MISSING.format(describe(result));
         if (skipRuntimeCheck) {
             getLog().warn(message);
             getLog().warn("exeris.verifyRuntime.skip=true — reported, not enforced");

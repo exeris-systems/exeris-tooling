@@ -63,6 +63,7 @@ class DetachMojoTest {
 
         assertThatThrownBy(mojo::execute)
                 .isInstanceOf(MojoFailureException.class)
+                .hasMessageStartingWith("[Exeris] EXT-PLUG-2102: ")
                 .hasMessageContaining("conflict");
     }
 
@@ -73,9 +74,19 @@ class DetachMojoTest {
         write(mojo.generatedDir.toPath().resolve("com/shop/Order.java"), "GENERATED");
         write(mojo.targetDir.toPath().resolve("com/shop/Order.java"), "OWNED");
 
+        java.util.List<String> warnings = new java.util.ArrayList<>();
+        mojo.setLog(new org.apache.maven.plugin.logging.SystemStreamLog() {
+            @Override
+            public void warn(CharSequence content) {
+                warnings.add(content.toString());
+            }
+        });
+
         mojo.execute(); // must not throw
 
         assertThat(mojo.targetDir.toPath().resolve("com/shop/Order.java")).content().isEqualTo("OWNED");
+        // The header carries the identifier; the per-file lines under it are its continuation.
+        assertThat(warnings.getFirst()).startsWith("[Exeris] EXT-PLUG-2102: ");
     }
 
     @Test
@@ -91,7 +102,9 @@ class DetachMojoTest {
 
         assertThatThrownBy(mojo::execute)
                 .isInstanceOf(MojoExecutionException.class)
+                .hasMessageStartingWith("[Exeris] EXT-PLUG-2101: ")
                 .hasMessageContaining("Detach failed")
+                .hasMessageContaining("read-only fs")
                 .hasRootCauseMessage("read-only fs");
     }
 }

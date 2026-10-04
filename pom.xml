@@ -84,6 +84,7 @@
         <module>exeris-tooling-bom</module>
         <module>exeris-tooling-parent</module>
 
+        <module>exeris-diagnostics</module>
         <module>exeris-processor</module>
         <module>exeris-codegen-core</module>
         <module>exeris-codegen-java</module>
