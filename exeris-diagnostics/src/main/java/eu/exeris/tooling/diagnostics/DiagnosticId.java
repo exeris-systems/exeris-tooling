@@ -260,7 +260,9 @@ public enum DiagnosticId {
 
     /**
      * An entity field's type is one the generated repository cannot store and read back — a
-     * parameterised type other than {@code List<…>}, or {@code BigInteger}. Nothing is generated.
+     * parameterised type other than {@code List<…>}, an array, {@code char} or {@code Character},
+     * {@code BigInteger}, or a JDK value type with no static {@code valueOf(String)} such as
+     * {@code LocalTime} or {@code Duration}. Nothing is generated.
      */
     FIELD_TYPE_NOT_PERSISTABLE("EXT-GEN-3003",
             "An entity field has a type the generated repository cannot store and read back."),

@@ -107,6 +107,8 @@ class ListQuerySupportTest {
                 .containsExactly("content", "totalElements", "totalPages", "size", "number", "first", "last");
         assertThat(ListQuerySupport.filterableScalarTypes()).isSorted()
                 .contains("java.util.UUID", "boolean", "java.time.LocalDate")
+                .contains("short", "Short", "java.lang.Short", "byte", "Byte", "java.lang.Byte",
+                        "float", "Float", "java.lang.Float")
                 .doesNotContain("java.time.Instant", "java.time.LocalDateTime");
         assertThat(ListQuerySupport.sortableScalarTypes()).isSorted()
                 .containsAll(ListQuerySupport.filterableScalarTypes())

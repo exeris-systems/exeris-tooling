@@ -16,6 +16,7 @@ import eu.exeris.tooling.codegen.java.support.DataScopeSupport;
 import eu.exeris.tooling.codegen.java.support.DomainTypeKind;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
 import eu.exeris.tooling.codegen.java.support.ListQuerySupport;
+import eu.exeris.tooling.codegen.java.support.SqlColumnTypes;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import static eu.exeris.tooling.codegen.java.support.DataScopeSupport.isTenantPartitioned;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
@@ -50,8 +51,20 @@ import java.util.Set;
  *       {@code executor.executeManaged(conn -> ...)} — managed transaction
  *       boundary, retry on serialisation failure handled by the kernel.</li>
  *   <li>{@code List<X>} fields are persisted as JSON via Jackson 3
- *       ({@code tools.jackson.databind.ObjectMapper}); {@code BigDecimal}
- *       is bound as String (no {@code bindBigDecimal} in SPI).</li>
+ *       ({@code tools.jackson.databind.ObjectMapper}) and get no finder: equality
+ *       on JSON text is not equality on the list.</li>
+ *   <li>{@code BigDecimal} and {@code LocalDate} have no typed SPI bind, so they
+ *       are bound as a string and every placeholder they fill is cast to the
+ *       column's SQL type ({@code CAST(? AS DECIMAL(19,4))}, {@code CAST(? AS DATE)})
+ *       — read from {@link SqlColumnTypes}, the mapping the migration declares the
+ *       column with. PostgreSQL types a string parameter {@code character varying}
+ *       and refuses it against a numeric or date column without the cast.</li>
+ *   <li>{@code Short} and {@code Byte} bind through {@code bindShort} into a
+ *       {@code SMALLINT} column, {@code Float} through {@code bindFloat} into
+ *       {@code REAL}. A wrapper-typed scalar ({@code Long}, {@code Integer},
+ *       {@code Short}, {@code Byte}, {@code Boolean}, {@code Float}, {@code Double})
+ *       binds {@code NULL} when it is {@code null} and reads back {@code null} from
+ *       a SQL {@code NULL}; a primitive is bound and read as it is.</li>
  *   <li>{@code Instant} binds/reads natively via {@code bindInstant} /
  *       {@code RowCursor.getInstant} (TIMESTAMPTZ). {@code LocalDateTime}
  *       has no typed SPI accessor, so it is bridged through that native
@@ -63,10 +76,11 @@ import java.util.Set;
  *       through {@code bindInstant} into a TIMESTAMPTZ column and read back
  *       through {@code getInstant} <b>at {@code ZoneOffset.UTC}</b>: the instant
  *       is preserved, the offset or zone the value carried is not.</li>
- *   <li>A field whose type has no column encoding — a parameterised type other
- *       than {@code List<X>}, or {@code BigInteger} — is refused before
- *       anything is emitted ({@link UnpersistableFieldTypeException},
- *       {@code EXT-GEN-3003}).</li>
+ *   <li>A field whose type has no column encoding ({@link DomainTypeKind#UNSTORABLE}:
+ *       a parameterised type other than {@code List<X>}, an array, {@code char},
+ *       {@code BigInteger}, or a JDK value type with no {@code valueOf(String)}
+ *       such as {@code LocalTime} or {@code Duration}) is refused before anything
+ *       is emitted ({@link UnpersistableFieldTypeException}, {@code EXT-GEN-3003}).</li>
  * </ul>
  *
  * @implNote Emission is JavaPoet-based (ADR-015).
@@ -148,8 +162,6 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     private static final String EXECUTE_MANAGED_LAMBDA = "executor.executeManaged(conn -> ";
     private static final String TRY_PREPARE_STMT = "try ($T stmt = conn.prepare(sql))";
     private static final String RETURN_ENTITY_STMT = "return entity";
-    private static final String BIND_STRING_NULL_GUARDED =
-            "stmt.bindString($L, $L == null ? null : $L.toString())";
 
     /**
      * Whether the emitted repository for {@code metadata} imports Jackson 3 — true exactly when a
@@ -177,7 +189,8 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
 
     /**
      * Refuses the entity set when any entity has a domain column whose type the repository cannot
-     * store and read back: a parameterised type other than {@code List<…>}, or {@code BigInteger}.
+     * store and read back — a {@link DomainTypeKind#UNSTORABLE} field. An enum field is never
+     * refused, whatever its type is named, when its {@code enumType} is set.
      * A field that is not a column — one shadowing the primary key or an active system column — is
      * not checked, since nothing binds or reads it.
      *
@@ -200,25 +213,48 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     private static List<String> unpersistableFields(DomainMetadata metadata) {
         List<String> refused = new ArrayList<>();
         for (Column col : buildColumnLayout(metadata.fields(), metadata, resolveSystemFieldNames(metadata))) {
-            if (col.kind() == ColumnKind.DOMAIN && !persistable(col.javaType())) {
-                String reason = col.javaType().contains("<")
-                        ? "a parameterised type other than List<…>"
-                        : "no typed SPI accessor and no valueOf(String); BigDecimal is stored";
+            if (col.kind() == ColumnKind.DOMAIN && kindOf(col, metadata) == DomainTypeKind.UNSTORABLE) {
                 refused.add(metadata.packageName() + "." + metadata.entityName() + "." + col.javaName()
-                        + " : " + col.javaType() + " (" + reason + ")");
+                        + " : " + col.javaType() + " (" + refusalReason(col.javaType()) + ")");
             }
         }
         return refused;
     }
 
+    private static String refusalReason(String type) {
+        if (type.contains("<")) {
+            return "a parameterised type other than List<…>";
+        }
+        if (type.endsWith("[]")) {
+            return "an array";
+        }
+        if (DomainTypeKind.of(type) == DomainTypeKind.UNSTORABLE && type.endsWith("BigInteger")) {
+            return "no typed SPI accessor and no valueOf(String); BigDecimal is stored";
+        }
+        return "no typed SPI accessor and no valueOf(String)";
+    }
+
     /**
-     * Whether the repository has a column encoding for {@code type}: every kind but
-     * {@code BIG_INTEGER} and a parameterised {@code OPAQUE} type, which has no {@code valueOf(String)}
-     * and whose type arguments may name a recognised type.
+     * The kind a layout column is bound and read as: a domain column takes its field's
+     * {@link DomainTypeKind#of(FieldMetadata) kind}, so an enum is {@code ENUM} whatever its type is
+     * named; a system column, and the primary key, the kind of its type.
      */
-    private static boolean persistable(String type) {
-        DomainTypeKind kind = classifyDomainType(type);
-        return kind != DomainTypeKind.BIG_INTEGER && !(kind == DomainTypeKind.OPAQUE && type.contains("<"));
+    private static DomainTypeKind kindOf(Column col, DomainMetadata metadata) {
+        if (col.kind() == ColumnKind.DOMAIN) {
+            for (FieldMetadata field : metadata.fields()) {
+                if (field.name().equals(col.javaName()) && field.type().equals(col.javaType())) {
+                    return DomainTypeKind.of(field);
+                }
+            }
+        }
+        return classifyDomainType(col.javaType());
+    }
+
+    /** The placeholder a column's value is bound through — see {@link SqlColumnTypes#placeholder}. */
+    private static String placeholder(Column col, DomainMetadata metadata) {
+        return col.kind() == ColumnKind.DOMAIN
+                ? SqlColumnTypes.placeholder(kindOf(col, metadata), col.javaType())
+                : "?";
     }
 
     @Override
@@ -542,7 +578,8 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
      *
      * <p><b>Nothing from the request reaches the SQL as text.</b> The statement is assembled from
      * fragments emitted here: a predicate per non-null filter component, each a fixed
-     * {@code <column> = ?}, the {@code ORDER BY} column from {@code sortColumn}'s fixed table, and
+     * {@code <column> = ?} (the placeholder cast to the column's type for a value bound as text,
+     * as the writes do), the {@code ORDER BY} column from {@code sortColumn}'s fixed table, and
      * {@code LIMIT ? OFFSET ?}. Filter values, the limit and the offset are bound. The predicates are
      * appended and bound by walking the filter components in the same emitted order, so bind index
      * <em>i</em> is predicate <em>i</em> by construction.
@@ -577,7 +614,8 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         }
         for (ListQuerySupport.Property filter : ListQuerySupport.filters(metadata)) {
             method.beginControlFlow("if (filter.$L() != null)", filter.name())
-                    .addStatement("predicates.add($S)", filter.column() + " = ?")
+                    .addStatement("predicates.add($S)", filter.column() + " = "
+                            + SqlColumnTypes.placeholder(filter.kind(), filter.javaType()))
                     .endControlFlow();
         }
         method.addStatement("String where = predicates.isEmpty() ? $S : $S + String.join($S, predicates)",
@@ -644,7 +682,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
      * Binds the non-null filter components from index 0, in the order {@code findPage} appended
      * their predicates, and returns the next free index. Each value goes through the same bind its
      * column's writes use — a {@code BigDecimal} as its plain string, an enum or a {@code LocalDate}
-     * as its {@code toString()}.
+     * as its {@code toString()}, a {@code Byte} widened to {@code bindShort}.
      */
     private MethodSpec buildBindListFilter(Context ctx) {
         MethodSpec.Builder method = MethodSpec.methodBuilder("bindListFilter")
@@ -661,7 +699,10 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                 case STRING -> method.addStatement("stmt.bindString(index++, $L)", value);
                 case LONG -> method.addStatement("stmt.bindLong(index++, $L)", value);
                 case INT -> method.addStatement("stmt.bindInt(index++, $L)", value);
+                case SHORT -> method.addStatement("stmt.bindShort(index++, $L)", value);
+                case BYTE -> method.addStatement("stmt.bindShort(index++, $L.shortValue())", value);
                 case BOOL -> method.addStatement("stmt.bindBoolean(index++, $L)", value);
+                case FLOAT -> method.addStatement("stmt.bindFloat(index++, $L)", value);
                 case DOUBLE -> method.addStatement("stmt.bindDouble(index++, $L)", value);
                 case BIG_DECIMAL -> method.addStatement("stmt.bindString(index++, $L.toPlainString())", value);
                 default -> method.addStatement("stmt.bindString(index++, $L.toString())", value);
@@ -731,18 +772,20 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
      * @param paramTypeName the metadata type string, for the SPI bind dispatch
      * @param paramName     the emitted parameter name
      * @param column        the SQL column the predicate filters on (repository-only)
+     * @param kind          the parameter's kind, which picks its bind and placeholder
      */
     record FinderSpec(String methodName, TypeName paramType, String paramTypeName,
-                      String paramName, String column) {}
+                      String paramName, String column, DomainTypeKind kind) {}
 
     /**
      * The finder set for an entity, in the byte-deterministic emission order: filterable fields
      * sorted by name, then MANY_TO_ONE FK finders sorted by relationship name.
      *
      * <p>Every filterable field gets a finder; the WHERE column always exists — either as a domain
-     * column or, in the rare shadow case, as the system column it collides with. The one exclusion
-     * is a field whose finder would shadow the primary-key lookup (see
-     * {@link #shadowsPrimaryKeyLookup}).
+     * column or, in the rare shadow case, as the system column it collides with. Two exclusions: a
+     * field whose finder would shadow the primary-key lookup (see {@link #shadowsPrimaryKeyLookup}),
+     * and a {@code List} field, whose column is JSON text — equality on it compares a rendering, not
+     * the list, so such a finder could not find the row it was written from.
      */
     static List<FinderSpec> finderSpecs(DomainMetadata metadata) {
         List<FinderSpec> specs = new ArrayList<>();
@@ -750,13 +793,15 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         metadata.fields().stream()
                 .filter(FieldMetadata::filterable)
                 .filter(f -> !shadowsPrimaryKeyLookup(f))
+                .filter(f -> DomainTypeKind.of(f) != DomainTypeKind.LIST)
                 .sorted(Comparator.comparing(FieldMetadata::name))
                 .forEach(f -> specs.add(new FinderSpec(
                         fieldFinderName(f.name()),
                         KernelTypeMapping.typeNameOf(f.type()),
                         f.type(),
                         f.name(),
-                        toSnakeCase(f.name()))));
+                        toSnakeCase(f.name()),
+                        DomainTypeKind.of(f))));
 
         if (metadata.hasRelationships()) {
             // An explicit-UUID foreign key (@Relationship UUID customerId) is also a field, and the
@@ -774,7 +819,8 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                             UUID_TYPE,
                             "UUID",
                             KernelTableNaming.foreignKeyBase(r.name()) + "Id",
-                            KernelTableNaming.foreignKeyColumn(r.name()))));
+                            KernelTableNaming.foreignKeyColumn(r.name()),
+                            DomainTypeKind.UUID)));
         }
         return specs;
     }
@@ -798,7 +844,8 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         String softDeleteFilter = ctx.metadata().softDelete()
                 ? " AND " + toSnakeCase(ctx.sys().deleted()) + " = false" : "";
         String sql = "SELECT " + selectCols + " FROM " + ctx.table()
-                + " WHERE " + spec.column() + " = ?" + softDeleteFilter + " ORDER BY id";
+                + " WHERE " + spec.column() + " = " + SqlColumnTypes.placeholder(spec.kind(), spec.paramTypeName())
+                + softDeleteFilter + " ORDER BY id";
 
         return MethodSpec.methodBuilder(spec.methodName())
                 .addModifiers(Modifier.PUBLIC)
@@ -818,34 +865,70 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                                 }
                             }
                         })""",
-                        PERSISTENCE_STATEMENT, finderBind(spec.paramTypeName(), spec.paramName()),
+                        PERSISTENCE_STATEMENT, finderBind(spec),
                         QUERY_RESULT, LIST_TYPE, ctx.entityType(), ARRAY_LIST)
                 .build();
     }
 
     /**
-     * Binds the single finder parameter at index 0, dispatching on the
-     * parameter's domain type via the same {@link #classifyDomainType} the CRUD
-     * binds use. An {@code OffsetDateTime} or {@code ZonedDateTime} binds its
-     * instant, as {@link #emitBindDomain} does; every other type the SPI has no
-     * typed binder for (BigDecimal / LocalDate / enum / Instant / LocalDateTime)
-     * is bound as a null-guarded {@code String}.
+     * Binds the single finder parameter at index 0 through the bind the write path uses for the
+     * same kind, so the parameter compares against the column in the encoding the column holds: a
+     * timestamp kind as its instant, {@code Short}/{@code Byte}/{@code Float} through their typed
+     * binds, {@code BigDecimal} as its plain string and {@code LocalDate} or an enum as its
+     * {@code toString()} (the first two into a cast placeholder). A {@code null} argument binds
+     * {@code NULL}, which matches no row.
      */
-    private CodeBlock finderBind(String paramTypeName, String paramName) {
-        return switch (classifyDomainType(paramTypeName)) {
-            case UUID -> CodeBlock.of("stmt.bindUuid(0, $L);", paramName);
-            case STRING -> CodeBlock.of("stmt.bindString(0, $L);", paramName);
-            case LONG -> CodeBlock.of("stmt.bindLong(0, $L);", paramName);
-            case INT -> CodeBlock.of("stmt.bindInt(0, $L);", paramName);
-            case BOOL -> CodeBlock.of("stmt.bindBoolean(0, $L);", paramName);
-            case DOUBLE -> CodeBlock.of("stmt.bindDouble(0, $L);", paramName);
-            // Compared as the stored instant, the encoding the write path binds.
-            case OFFSET_DATE_TIME, ZONED_DATE_TIME -> CodeBlock.of(
-                    "if ($L == null) stmt.bindNull(0); else stmt.bindInstant(0, $L.toInstant());",
-                    paramName, paramName);
-            default -> CodeBlock.of("stmt.bindString(0, $L == null ? null : $L.toString());",
-                    paramName, paramName);
+    private CodeBlock finderBind(FinderSpec spec) {
+        return bindValue(spec.kind(), spec.paramTypeName(), "0", spec.paramName());
+    }
+
+    /**
+     * One {@code stmt.bind…} statement for {@code value} at {@code index}, by kind — the single
+     * dispatch the writes and the finders share. A reference-typed value is null-guarded with
+     * {@code bindNull}; a primitive one ({@link DomainTypeKind#isPrimitive}) is bound as it is.
+     * {@code value} is an expression and may be evaluated twice, so it must have no side effect.
+     * The block ends with {@code ;} and no line break.
+     */
+    private static CodeBlock bindValue(DomainTypeKind kind, String type, String index, String value) {
+        boolean primitive = DomainTypeKind.isPrimitive(type);
+        return switch (kind) {
+            case LIST -> CodeBlock.of("stmt.bindString($L, toJson($L));", index, value);
+            case UUID -> CodeBlock.of("stmt.bindUuid($L, $L);", index, value);
+            case STRING -> CodeBlock.of("stmt.bindString($L, $L);", index, value);
+            case LONG -> guarded(primitive, index, value, CodeBlock.of("stmt.bindLong($L, $L)", index, value));
+            case INT -> guarded(primitive, index, value, CodeBlock.of("stmt.bindInt($L, $L)", index, value));
+            case SHORT -> guarded(primitive, index, value, CodeBlock.of("stmt.bindShort($L, $L)", index, value));
+            // SMALLINT: a byte widens to short; a Byte unboxes through shortValue().
+            case BYTE -> guarded(primitive, index, value, primitive
+                    ? CodeBlock.of("stmt.bindShort($L, $L)", index, value)
+                    : CodeBlock.of("stmt.bindShort($L, $L.shortValue())", index, value));
+            case BOOL -> guarded(primitive, index, value, CodeBlock.of("stmt.bindBoolean($L, $L)", index, value));
+            case FLOAT -> guarded(primitive, index, value, CodeBlock.of("stmt.bindFloat($L, $L)", index, value));
+            case DOUBLE -> guarded(primitive, index, value, CodeBlock.of("stmt.bindDouble($L, $L)", index, value));
+            // SPI has no bindBigDecimal — encoded as the plain string, into a cast placeholder.
+            case BIG_DECIMAL -> CodeBlock.of("stmt.bindString($L, $L == null ? null : $L.toPlainString());",
+                    index, value, value);
+            // T19: native bindInstant (kernel 0.10 SPI) for TIMESTAMPTZ columns.
+            case INSTANT_LIKE -> guarded(false, index, value,
+                    CodeBlock.of("stmt.bindInstant($L, $L)", index, value));
+            // T19b: LocalDateTime → TIMESTAMPTZ at the UTC offset (the read reverses it).
+            case LOCAL_DATE_TIME -> guarded(false, index, value,
+                    CodeBlock.of("stmt.bindInstant($L, $L.toInstant($T.UTC))", index, value, ZONE_OFFSET));
+            // The instant is what is stored; the offset or zone is not (read back at UTC).
+            case OFFSET_DATE_TIME, ZONED_DATE_TIME -> guarded(false, index, value,
+                    CodeBlock.of("stmt.bindInstant($L, $L.toInstant())", index, value));
+            case UNSTORABLE -> throw unsupported(type);
+            // No bindLocalDate and no enum bind: the string form (a LocalDate into a cast placeholder).
+            case LOCAL_DATE, ENUM, OPAQUE -> CodeBlock.of(
+                    "stmt.bindString($L, $L == null ? null : $L.toString());", index, value, value);
         };
+    }
+
+    /** {@code bind;} for a primitive, else {@code if (value == null) stmt.bindNull(index); else bind;}. */
+    private static CodeBlock guarded(boolean primitive, String index, String value, CodeBlock bind) {
+        return primitive
+                ? CodeBlock.of("$L;", bind)
+                : CodeBlock.of("if ($L == null) stmt.bindNull($L); else $L;", value, index, bind);
     }
 
 
@@ -1108,7 +1191,8 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
 
     private MethodSpec buildSave(Context ctx) {
         String columnsJoined = String.join(", ", ctx.columns().stream().map(Column::sqlName).toList());
-        String placeholders = String.join(", ", ctx.columns().stream().map(c -> "?").toList());
+        String placeholders = String.join(", ",
+                ctx.columns().stream().map(c -> placeholder(c, ctx.metadata())).toList());
         String sql = "INSERT INTO " + ctx.table() + " (" + columnsJoined + ") VALUES (" + placeholders + ")";
 
         MethodSpec.Builder save = MethodSpec.methodBuilder("save")
@@ -1202,7 +1286,8 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         // "did the row exist": SET id = id writes nothing and binds nothing.
         String setClause = updatable.isEmpty()
                 ? "id = id"
-                : String.join(", ", updatable.stream().map(c -> c.sqlName() + " = ?").toList());
+                : String.join(", ", updatable.stream()
+                        .map(c -> c.sqlName() + " = " + placeholder(c, ctx.metadata())).toList());
         boolean versioned = ctx.metadata().versioned();
         String whereClause = versioned
                 ? WHERE_ID_CLAUSE + " AND " + toSnakeCase(ctx.sys().version()) + " = ?" : WHERE_ID_CLAUSE;
@@ -1268,7 +1353,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         CodeBlock.Builder body = CodeBlock.builder()
                 .beginControlFlow(EXECUTE_MANAGED_LAMBDA)
                 .beginControlFlow(TRY_PREPARE_STMT, PERSISTENCE_STATEMENT);
-        emitUpdateBinds(body, updatable, versioned);
+        emitUpdateBinds(body, updatable, versioned, ctx.metadata());
         body.addStatement("rowsAffected[0] = stmt.executeUpdate()");
         body.endControlFlow();
         body.endControlFlow(")");
@@ -1369,14 +1454,18 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     private void emitReadDomain(MethodSpec.Builder map, Column col, int idx, Context ctx) {
         String setter = "entity." + setterFor(col);
         String type = col.javaType();
-        switch (classifyDomainType(type)) {
+        boolean primitive = DomainTypeKind.isPrimitive(type);
+        switch (kindOf(col, ctx.metadata())) {
             case LIST -> emitReadList(map, type, setter, idx);
             case UUID -> map.addStatement("$L(row.getUuid($L))", setter, idx);
             case STRING -> map.addStatement("$L(row.getString($L))", setter, idx);
-            case LONG -> map.addStatement("$L(row.getLong($L))", setter, idx);
-            case INT -> map.addStatement("$L(row.getInt($L))", setter, idx);
-            case BOOL -> map.addStatement("$L(row.getBoolean($L))", setter, idx);
-            case DOUBLE -> map.addStatement("$L(row.getDouble($L))", setter, idx);
+            case LONG -> emitReadScalar(map, primitive, setter, idx, CodeBlock.of("row.getLong($L)", idx));
+            case INT -> emitReadScalar(map, primitive, setter, idx, CodeBlock.of("row.getInt($L)", idx));
+            case SHORT -> emitReadScalar(map, primitive, setter, idx, CodeBlock.of("row.getShort($L)", idx));
+            case BYTE -> emitReadScalar(map, primitive, setter, idx, CodeBlock.of("(byte) row.getShort($L)", idx));
+            case BOOL -> emitReadScalar(map, primitive, setter, idx, CodeBlock.of("row.getBoolean($L)", idx));
+            case FLOAT -> emitReadScalar(map, primitive, setter, idx, CodeBlock.of("row.getFloat($L)", idx));
+            case DOUBLE -> emitReadScalar(map, primitive, setter, idx, CodeBlock.of("row.getDouble($L)", idx));
             case BIG_DECIMAL -> map.addCode(CodeBlock.of(
                     // No bindBigDecimal in SPI — round-trip via String.
                     "{ String v = row.getString($L); if (v != null) $L(new $T(v)); }\n",
@@ -1402,15 +1491,29 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
             case ZONED_DATE_TIME -> map.addCode(CodeBlock.of(
                     "{ $T v = row.getInstant($L); if (v != null) $L($T.ofInstant(v, $T.UTC)); }\n",
                     INSTANT, idx, setter, ZONED_DATE_TIME, ZONE_OFFSET));
-            case BIG_INTEGER -> throw unsupported(type);
-            // A type string never classifies as ENUM (DomainTypeKind.of(String)); an enum and a
-            // type nothing recognises are both read back through the type's valueOf(String).
+            case UNSTORABLE -> throw unsupported(type);
+            // An enum, and a type nothing recognises, are both read back through the type's
+            // valueOf(String).
             case ENUM, OPAQUE -> emitReadEnumLike(map, type, setter, idx, ctx);
         }
     }
 
     /**
-     * What an emit switch throws on a {@code BIG_INTEGER} column. {@link #generate} refuses such an
+     * A typed scalar read. A primitive field takes the accessor's value as it is; a wrapper field is
+     * left {@code null} for a SQL {@code NULL}, which the primitive accessors cannot report — they
+     * answer a default or throw.
+     */
+    private static void emitReadScalar(MethodSpec.Builder map, boolean primitive, String setter, int idx,
+                                       CodeBlock read) {
+        if (primitive) {
+            map.addStatement("$L($L)", setter, read);
+        } else {
+            map.addStatement("if (!row.isNull($L)) $L($L)", idx, setter, read);
+        }
+    }
+
+    /**
+     * What an emit switch throws on an {@code UNSTORABLE} column. {@link #generate} refuses such an
      * entity before emitting anything, so no switch reaches it; one that did would otherwise emit a
      * column with no encoding.
      */
@@ -1439,14 +1542,15 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     private void emitInsertBinds(CodeBlock.Builder body, Context ctx) {
         int idx = 0;
         for (Column col : ctx.columns()) {
-            emitBindCol(body, col, idx++, ENTITY_SRC);
+            emitBindCol(body, col, idx++, ENTITY_SRC, ctx.metadata());
         }
     }
 
-    private void emitUpdateBinds(CodeBlock.Builder body, List<Column> updatable, boolean versioned) {
+    private void emitUpdateBinds(CodeBlock.Builder body, List<Column> updatable, boolean versioned,
+                                 DomainMetadata metadata) {
         int idx = 0;
         for (Column col : updatable) {
-            emitBindCol(body, col, idx++, ENTITY_SRC);
+            emitBindCol(body, col, idx++, ENTITY_SRC, metadata);
         }
         // id bind terminates WHERE clause; for versioned entities, the
         // expectedVersion bind enforces the optimistic-lock guard.
@@ -1456,7 +1560,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         }
     }
 
-    private void emitBindCol(CodeBlock.Builder body, Column col, int idx, String src) {
+    private void emitBindCol(CodeBlock.Builder body, Column col, int idx, String src, DomainMetadata metadata) {
         // The is/get split (DELETED, and a primitive boolean domain field) lives in getterFor and
         // nowhere else — the generated repository test asserts through the same helper, so a
         // divergence here would silently make its assertions name an accessor nothing binds.
@@ -1480,48 +1584,16 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                 body.addStatement("$T $L = $L.$L()", BOXED_LONG, local, src, accessor);
                 body.addStatement("stmt.bindLong($L, $L == null ? 0L : $L)", idx, local, local);
             }
-            case DOMAIN -> emitBindDomain(body, col, idx, src);
+            case DOMAIN -> emitBindDomain(body, col, idx, src, metadata);
         }
     }
 
-    private void emitBindDomain(CodeBlock.Builder body, Column col, int idx, String src) {
+    private void emitBindDomain(CodeBlock.Builder body, Column col, int idx, String src, DomainMetadata metadata) {
         // T15 lives in getterFor now: a primitive `boolean` field's JavaBean accessor is `isX()`,
         // not `getX()` (matching the system DELETED column), while `Boolean` wrappers keep `getX()`
         // per the Lombok/JavaBean convention.
         String getter = src + "." + getterFor(col) + "()";
-        String type = col.javaType();
-        switch (classifyDomainType(type)) {
-            case LIST -> body.addStatement("stmt.bindString($L, toJson($L))", idx, getter);
-            case UUID -> body.addStatement("stmt.bindUuid($L, $L)", idx, getter);
-            case STRING -> body.addStatement("stmt.bindString($L, $L)", idx, getter);
-            case LONG -> body.addStatement("stmt.bindLong($L, $L)", idx, getter);
-            case INT -> body.addStatement("stmt.bindInt($L, $L)", idx, getter);
-            case BOOL -> body.addStatement("stmt.bindBoolean($L, $L)", idx, getter);
-            case DOUBLE -> body.addStatement("stmt.bindDouble($L, $L)", idx, getter);
-            // SPI has no bindBigDecimal — encode as plain string.
-            case BIG_DECIMAL -> body.addStatement(
-                    "stmt.bindString($L, $L == null ? null : $L.toPlainString())",
-                    idx, getter, getter);
-            // T19: native bindInstant (kernel 0.10 SPI) for TIMESTAMPTZ columns;
-            // null-guarded via bindNull.
-            case INSTANT_LIKE -> body.add(
-                    "if ($L == null) stmt.bindNull($L); else stmt.bindInstant($L, $L);\n",
-                    getter, idx, idx, getter);
-            // T19b: LocalDateTime → TIMESTAMPTZ via the native bindInstant at the UTC
-            // offset (the read side reverses it with ofInstant(..., UTC)); null-guarded.
-            case LOCAL_DATE_TIME -> body.add(
-                    "if ($L == null) stmt.bindNull($L); else stmt.bindInstant($L, $L.toInstant($T.UTC));\n",
-                    getter, idx, idx, getter, ZONE_OFFSET);
-            // The instant is what is stored; the offset or zone is not (read back at UTC).
-            case OFFSET_DATE_TIME, ZONED_DATE_TIME -> body.add(
-                    "if ($L == null) stmt.bindNull($L); else stmt.bindInstant($L, $L.toInstant());\n",
-                    getter, idx, idx, getter);
-            case BIG_INTEGER -> throw unsupported(type);
-            // SPI has no bindLocalDate / enum binds — round-trip via String.toString();
-            // null-guarded.
-            case LOCAL_DATE, ENUM, OPAQUE ->
-                    body.addStatement(BIND_STRING_NULL_GUARDED, idx, getter, getter);
-        }
+        body.add("$L\n", bindValue(kindOf(col, metadata), col.javaType(), String.valueOf(idx), getter));
     }
 
     private MethodSpec buildParseList() {

@@ -149,7 +149,7 @@ with status 1.
 |---|---|---|
 | `EXT-GEN-3001` | The codegen command line failed to generate code. | Read the exception logged with it, which names the cause. |
 | `EXT-GEN-3002` | The codegen command line was given missing or malformed arguments. | Pass `--metadata-dir` and `--output-dir`, as the usage text printed under it says. |
-| `EXT-GEN-3003` | An entity field has a type the generated repository cannot store and read back: a parameterised type other than `List<…>` (`Map`, `Set`, `Optional`, …), or `BigInteger`. Nothing is generated. | Declare the field as a `List<…>` (stored as a JSON column) or as a supported scalar — `BigDecimal` in place of `BigInteger`. The message names every such field. |
+| `EXT-GEN-3003` | An entity field has a type the generated repository cannot store and read back: a parameterised type other than `List<…>` (`Map`, `Set`, `Optional`, …), an array (`byte[]`, …), `char` / `Character`, `BigInteger`, or a JDK value type with no static `valueOf(String)` (`LocalTime`, `OffsetTime`, `Duration`, `Period`, `Year`, `YearMonth`, `MonthDay`, `ZoneId`, `ZoneOffset`, `java.util.Date`, `Currency`, `Locale`, `URI`, `URL`, `Object`). An enum is never refused. Nothing is generated. | Declare the field as a `List<…>` (stored as a JSON column) or as a supported scalar (`String`, `UUID`, `Long`, `Integer`, `Short`, `Byte`, `Boolean`, `Float`, `Double`, `BigDecimal`, `Instant`, `LocalDateTime`, `OffsetDateTime`, `ZonedDateTime`, `LocalDate`, an enum) — `BigDecimal` in place of `BigInteger`, a `String` for a time of day or a duration. The message names every such field. |
 
 ### 31xx — warnings
 

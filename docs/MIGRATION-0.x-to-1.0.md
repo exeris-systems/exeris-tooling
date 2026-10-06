@@ -2517,6 +2517,71 @@ these types, which either did not compile or did not generate.
 The check runs in the code-generation pipeline, not the annotation processor, so the annotated
 source compiles and the build fails at `exeris:generate`.
 
+### Field types are stored correctly on PostgreSQL; `List` fields lose their finder; more types are refused (`EXT-GEN-3003`)
+
+`Compatibility impact: breaking (ADR-015, ADR-096)` for the generated Java: a `List` field's
+`findBy<Field>` is no longer emitted, wrapper-typed fields read a SQL `NULL` back as `null`, and the
+refusal of `EXT-GEN-3003` covers more types. The emitted migrations are unchanged.
+
+**What now works on PostgreSQL.** Measured against PostgreSQL 16 with the pgjdbc default
+(`stringtype=varchar`), through the emitted repository over the emitted migration. Before, every one
+of these failed; H2, which converts a string parameter silently, passed them all:
+
+| Field type | Before | Now |
+|---|---|---|
+| `BigDecimal`, `LocalDate` | `save`, `update`, `findBy<Field>` and the list filter fail: `42804` (column is `numeric` / `date`, expression is `character varying`) and `42883` (no `=` operator) | the value is still bound as text, and every placeholder it fills is cast to the column type the migration declares: `CAST(? AS DECIMAL(19,4))`, `CAST(? AS DATE)` |
+| `Short`, `Byte`, `Float` | bound as text into `SMALLINT` / `REAL`: the same `42804` / `42883` on every write and finder | `bindShort` (a `Byte` through `shortValue()`) and `bindFloat`; read back through `getShort` / `getFloat` |
+| `short`, `byte`, `float` (primitive) | generation failed inside JavaPoet | generate, bound and read as their wrappers are |
+| `Instant`, `LocalDateTime` finder | compared the argument's `toString()` with the `TIMESTAMPTZ` column: `42883` | binds the instant, as `save` does (`LocalDateTime` at `ZoneOffset.UTC`) |
+| `Long`, `Integer`, `Boolean`, `Double` holding `null` | `save` and `update` threw `NullPointerException` unboxing it | bind SQL `NULL` |
+
+Reading was already right for all of them. A `BigDecimal` reads back with the column's scale
+(`12.34` stored in `DECIMAL(19,4)` reads as `12.3400`), as it did before.
+
+**Wrapper fields and `NULL`.** A field declared as a wrapper — `Long`, `Integer`, `Short`, `Byte`,
+`Boolean`, `Float`, `Double` — now reads a SQL `NULL` back as `null`: the repository asks
+`RowCursor.isNull` before the typed accessor, which cannot report a `NULL`. Before, the read went
+straight to the accessor, which the community driver answers on a `NULL` column with a
+`NullPointerException`. A primitive field is bound and read as before; declare a wrapper if the
+column can hold `NULL`.
+
+**`List` fields have no finder.** A `List<…>` field is stored as JSON text, and its
+`findBy<Field>(List<…>)` compared `List.toString()` (`[a, b]`) with that text (`["a","b"]`), so it
+never returned a row. It is no longer emitted, on the repository or on the generated service. A
+call to it stops compiling; the list route already refused a `List` filter. Filter such rows in the
+caller, or keep the value you need to match on in a scalar field of its own.
+
+**`Short`, `Byte` and `Float` are list-route sort keys and filters**, parsed with
+`Short.parseShort`, `Byte.parseByte` and `Float.parseFloat` (ADR-096 Amendment 2). The OpenAPI
+document gives a `Short` or `Byte` property `type: integer, format: int32`. It also gives the
+fully qualified `java.lang.Float` and `java.lang.Double` — the spelling the processor writes —
+`type: number` with their format, where it gave `type: string` before.
+
+**More types are refused.** `EXT-GEN-3003` now also refuses, before anything is written, a field of
+these types:
+
+- `LocalTime`, `OffsetTime`, `Duration`, `Period`, `Year`, `YearMonth`, `MonthDay`, `ZoneId`,
+  `ZoneOffset`, `java.util.Date`, `Currency`, `Locale`, `URI`, `URL`, `Object`, `Character` — the
+  repository read each back through `X.valueOf(String)`, which none of them has, so the generated
+  repository did not compile;
+- `char` and any array (`byte[]`, …) — generation failed inside JavaPoet, naming no field, or
+  emitted a repository that did not compile.
+
+Each of these failed before, so no entity that generated a compiling repository is newly refused.
+Declare a time of day or a duration as a `String` (or as a supported scalar such as a `Long` of
+seconds). A type of your own with a static `valueOf(String)`, `java.sql.Date` / `Time` /
+`Timestamp`, and the enums `DayOfWeek` and `Month` are kept: they are stored through `toString()`
+and read back through `valueOf(String)` as before, and are neither sort keys nor filters. A type of
+your own **without** such a method still generates a repository that does not compile — generation
+sees the type's name, not the type, so it cannot tell. An enum is never refused, even one named like
+a refused type, once the pipeline has resolved it (it does for every enum the processor emitted);
+metadata handed to a generator directly must set the field's `enumType` for that.
+
+**Regenerating** changes the repository of every entity with a field of a type named above (the
+casts, the typed binds, the `NULL` guards, the finder binds), its `<Entity>ListQuery` where a
+`Short`, `Byte` or `Float` field becomes a parameter, and its service where a `List` finder goes.
+No migration changes: the cast reads the column type the migration already declares.
+
 ### Every diagnostic carries a stable identifier (D4)
 
 Every message the annotation processor prints, every warning the code-generation pipeline logs, and
@@ -2591,9 +2656,10 @@ switch on. A `List` field is neither; an `Instant`, `LocalDateTime`, `OffsetDate
 nothing a person types); a field named `page`, `size` or
 `sort` is sortable but never a filter. An enum field is both, when the processor emitted the enum —
 which it does for every `@ExerisDomain` field whose Java type is an `enum`; hand-written metadata
-passes the enum beside the entities (`enum_*.json`). A field of any other type — a record, `Float`,
-`Short`, or a type merely named like an enum — is neither; a `Map`, `Set` or `BigInteger` field
-fails generation (`EXT-GEN-3003`, above). Rows that tie on the sort column are ordered by `id`, so a
+passes the enum beside the entities (`enum_*.json`). `Short`, `Byte` and `Float` fields are both
+(ADR-096 Amendment 2). A field of any other type — a record, or a type merely named like an enum —
+is neither; a `Map`, `Set`, `BigInteger`, `LocalTime`, `Duration`, `char` or array field fails
+generation (`EXT-GEN-3003`, above). Rows that tie on the sort column are ordered by `id`, so a
 row does not move between pages. Where `NULL` values sort is the database's default. See ADR-096.
 
 **New emitted types.** Per entity, in the generated **repository** package:

@@ -4,6 +4,7 @@ import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
+import eu.exeris.tooling.codegen.java.support.SqlColumnTypes;
 import static eu.exeris.tooling.codegen.java.support.DataScopeSupport.isTenantPartitioned;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 import eu.exeris.sdk.sourcemodel.ast.RelationshipMetadata;
@@ -417,22 +418,9 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
         return camelCase.replaceAll("([a-z])([A-Z])", "$1_$2").toLowerCase(java.util.Locale.ROOT);
     }
 
+    /** The SQL type of a domain column — {@link SqlColumnTypes}, which the repository's casts read too. */
     private String mapJavaTypeToSql(String javaType) {
-        return switch (simpleTypeName(javaType)) {
-            case "String" -> "VARCHAR(255)";
-            case "UUID" -> "UUID";
-            case "Long", "long" -> "BIGINT";
-            case "Integer", "int" -> "INTEGER";
-            case "Short", "short", "Byte", "byte" -> "SMALLINT";
-            case "BigDecimal" -> "DECIMAL(19,4)";
-            case "Double", "double" -> "DOUBLE PRECISION";
-            case "Float", "float" -> "REAL";
-            case "Boolean", "boolean" -> "BOOLEAN";
-            case "Instant", "LocalDateTime", "OffsetDateTime", "ZonedDateTime" -> "TIMESTAMPTZ";
-            case "LocalDate" -> "DATE";
-            case "LocalTime" -> "TIME";
-            default -> "VARCHAR(255)";
-        };
+        return SqlColumnTypes.of(javaType);
     }
 
     @Override

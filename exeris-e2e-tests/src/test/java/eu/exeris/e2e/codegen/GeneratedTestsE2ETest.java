@@ -360,6 +360,20 @@ class GeneratedTestsE2ETest {
                     @Field(label = "Promised For")
                     private OffsetDateTime promisedFor;
 
+                    // The narrow numerics bind through bindShort / bindFloat, a Byte read back
+                    // narrowed from getShort, and the wrappers read through isNull first.
+                    @Field(label = "Pallets")
+                    private Short pallets;
+
+                    @Field(label = "Priority")
+                    private byte priority;
+
+                    @Field(label = "Weight Kg")
+                    private Float weightKg;
+
+                    @Field(label = "Loyalty Points")
+                    private Long loyaltyPoints;
+
                     public UUID getId() {
                         return id;
                     }
@@ -415,6 +429,15 @@ class GeneratedTestsE2ETest {
                     public void setPromisedFor(OffsetDateTime promisedFor) {
                         this.promisedFor = promisedFor;
                     }
+
+                    public Short getPallets() { return pallets; }
+                    public void setPallets(Short pallets) { this.pallets = pallets; }
+                    public byte getPriority() { return priority; }
+                    public void setPriority(byte priority) { this.priority = priority; }
+                    public Float getWeightKg() { return weightKg; }
+                    public void setWeightKg(Float weightKg) { this.weightKg = weightKg; }
+                    public Long getLoyaltyPoints() { return loyaltyPoints; }
+                    public void setLoyaltyPoints(Long loyaltyPoints) { this.loyaltyPoints = loyaltyPoints; }
 
                     @SagaStep(order = 0, name = "reserveStock", service = "inventory",
                             command = "ReserveStock", compensation = "ReleaseStock")

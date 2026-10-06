@@ -12,6 +12,8 @@ slug: adr/ADR-096
 - **Status:** ACCEPTED (2026-10-04) · accepted-on-merge per the per-repo pattern (ADR-047 / ADR-058)
   · amended 2026-10-06 (Amendment 1 — `OffsetDateTime` and `ZonedDateTime` are sort keys; `BigInteger`,
   `Map` and `Set` fields are refused by generation)
+  · amended 2026-10-06 (Amendment 2 — `Short`, `Byte` and `Float` are sort keys and filters; a
+  `BigDecimal` or `LocalDate` filter binds through a cast placeholder)
 - **Deciders:** the founder (server-side paging in 0.9.0; parameter strictness; system fields;
   size bounds)
 - **Repo:** `exeris-tooling`
@@ -243,3 +245,44 @@ Verification: `ListQuerySupportTest` and `DomainTypeKindTest` pin the kinds and 
 `ListQueryContractE2ETest` holds `ListQuerySupport.sortableScalarTypes()` to the contract file and
 parses `sort=<offsetDateTimeField>,asc` through a generated `<Entity>ListQuery`;
 `ZonedTemporalFieldE2ETest` round-trips both types through the emitted repository on H2.
+
+## Amendment 2 — `Short`, `Byte` and `Float` are sort keys and filters (2026-10-06)
+
+**Status:** Accepted *(widens the sortable and filterable sets of obligation 5 and their lists in the
+contract file of obligation 9; fixes how a `BigDecimal` or `LocalDate` filter value reaches its
+predicate; the grammar and every other obligation are unchanged)*
+
+The generated repository binds a `Short` or `Byte` field through `bindShort` into a `SMALLINT`
+column and a `Float` field through `bindFloat` into a `REAL` column, and reads each back through its
+typed accessor. Before, it had no encoding for them: they were written as text, which PostgreSQL
+refuses against a numeric column, and obligation 5 counted them among the types whose stored text
+need not order as their values do. Their columns now hold numbers, which order and compare as
+`Integer` and `Double` columns do.
+
+Obligation 5 reads, from this amendment:
+
+- **Sortable** and **filterable** add `Short`, `Byte` and `Float` in every spelling (`short`,
+  `Short`, `java.lang.Short`, and so for the other two). A filter value is parsed with
+  `Short.parseShort`, `Byte.parseByte` or `Float.parseFloat`; a value that does not parse is refused
+  with `400`, as for every other filter. Equality on a `Float` filter is exact, as it is on a
+  `Double` one.
+- **A `BigDecimal` or `LocalDate` filter** is still bound as text (the kernel SPI has no decimal or
+  date bind), and its predicate is now `<column> = CAST(? AS <type>)`, where `<type>` is the column
+  type the generated migration declares (`DECIMAL(19,4)`, `DATE`). Without the cast PostgreSQL
+  refuses the comparison (`42883`). The cast type is read from the same mapping the migration is
+  emitted from, so the two cannot disagree.
+- **Any other type** no longer lists `Float` or `Short`. A record or another type of the
+  application's own remains neither a sort key nor a filter. A type the repository cannot store —
+  `LocalTime`, `Duration`, `char`, an array, among others — is not reached by the list route at
+  all: generation refuses the entity (`EXT-GEN-3003`).
+
+`contract/list-query.json` (obligation 9) lists the nine new spellings in both
+`filterableScalarTypes` and `sortableScalarTypes`, and its `unrecognised` examples drop `Float` and
+`Short`. The TypeScript half is to be held to the same file; until it reads it, the TypeScript
+emitter's own sort and filter offer for these types is not checked against this list.
+
+Verification: `ListQuerySupportTest` and `DomainTypeKindTest` pin the kinds and the sets;
+`KernelListQueryGeneratorTest` pins the parse of each new type; `ListQueryContractE2ETest` holds
+both lists to the contract file; `FieldTypeStorageE2ETest` filters on a `Short`, `Byte`, `Float`,
+`BigDecimal` and `LocalDate` column on H2, and `PostgresTypeMatrixE2ETest` (opt-in) sorts and
+filters on every offered type on PostgreSQL 16.
