@@ -1642,9 +1642,10 @@ with the `@View` field facet.
 - **Related records.** For each `ONE_TO_MANY` relationship, in declaration order, whose target is
   generated in the same app with a list page (`generateLists` on, `@UI(listView)` not `false`), a
   **Related records** section links to the target's list (`data-testid="related-<relationship>"`).
-  The link opens the whole list: the generated list endpoint takes no filter, so the children of
-  one record cannot be fetched without loading every row, and the detail view does not try.
-  `MANY_TO_MANY` gets no link: the generated backend keeps no join table for it.
+  When the target filters on a `MANY_TO_ONE` back to this entity, the section also lists this
+  record's children through the list route (*the list, store, picker and related-records panels use
+  the list route's query* below). `MANY_TO_MANY` gets no link: the generated backend keeps no join
+  table for it.
 - **Action buttons.** Each `@Action` that is not `streaming` and declares no `@ActionParam` gets a
   button in the header (`data-testid="action-<kebab-name>"`) calling the service method of the same
   name. A success reloads the record; a failure shows in its own alert (`data-testid="action-error"`).
