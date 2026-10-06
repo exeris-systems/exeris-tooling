@@ -162,8 +162,10 @@ everything else with `400`, runs one bound, whitelisted page query and one count
   names) on the client as they encode on the server.
 - **Risk:** a consumer's hand-written client of `GET {base}` sends a parameter the route does not
   read and starts receiving `400`.
-- **Reversed by:** a need for cursor-based paging, a server-side search, or a query language richer
-  than equality filters — any of which would supersede obligations 2, 3 and 6.
+- **Reversed by:** a consumer whose list cannot be served by single-property equality filters and
+  offset paging — a reported filter it needs that equality cannot express, or a measured page query
+  whose `OFFSET` cost on its data volume breaks its latency budget. Either supersedes obligations 2, 3
+  and 6.
 
 ## Cross-references
 

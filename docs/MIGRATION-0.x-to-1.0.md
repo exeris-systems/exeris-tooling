@@ -2502,7 +2502,7 @@ changes from a JSON array to an envelope, its query string is now read, and the 
 | `page` | zero-based page index | `0` | negative, or not an integer |
 | `size` | page size | `20` | below `1`, above `100`, or not an integer |
 | `sort` | `<property>,asc` or `<property>,desc` (a bare `<property>` sorts ascending) | `id` order | the property is not sortable, or the direction is neither `asc` nor `desc` |
-| `<property>` | equality filter, one per filterable property; `<relationship>Id=<uuid>` for every `MANY_TO_ONE` | none | the value does not parse as the property's type (a boolean is exactly `true` or `false`; an enum is a constant's name; a date is `yyyy-MM-dd`) |
+| `<property>` | equality filter, one per filterable property; `<base>Id=<uuid>` for every `MANY_TO_ONE` | none | the value does not parse as the property's type (a boolean is exactly `true` or `false`; an enum is a constant's name; a date is `yyyy-MM-dd`) |
 
 Any other parameter name, and any parameter given twice, is refused with `400` as well — a mistyped
 filter is an error rather than an unfiltered answer. The response is

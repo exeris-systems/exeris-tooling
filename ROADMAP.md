@@ -3482,9 +3482,9 @@ release)*
       and generated tests follow. Pinned in `contract/list-query.json`
       (`ListQueryContractE2ETest`); run on a real boot over H2 (`ListRouteBootE2ETest`).
       ADR-096 records the contract; ADR-079 Amendment 1 the list operation's response set.
-- [ ] **TS half (codegen-ts track).** The list sends its sort, filters and page to the route
+- [ ] **TS half (codegen-ts track, #298).** The list sends its sort, filters and page to the route
       instead of working on loaded rows; the detail view's related-record links become panels that
-      fetch `?<fk>=<id>`; `service-gen.ts` and `store-gen.ts` stay on `Page<T>`, read
+      fetch `?<base>Id=<uuid>`; `service-gen.ts` and `store-gen.ts` stay on `Page<T>`, read
       `contract/list-query.json` in a spec, and send a filter only for a property of a type in its
       `filterableScalarTypes` or an enum. **Gates the cut together with the Java half**: a list that
       pages in the browser now holds only the first page.
