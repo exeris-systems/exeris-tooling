@@ -43,6 +43,7 @@ interface ListQueryContract {
     filter: { format: string; booleanValues: string[]; foreignKey: string };
   };
   reserved: string[];
+  properties: { sortable: string; filterable: string; neverOffered: string };
   filterableScalarTypes: string[];
   envelope: string[];
 }
@@ -198,6 +199,19 @@ describe('contract/list-query.json — the query the front sends', () => {
   });
 });
 
+describe('contract/list-query.json — the parameter names the service sends', () => {
+  it('sends only the reserved names and the route\'s filters', () => {
+    const literal = [...service.matchAll(/params\.set\('(\w+)'/g)].map((m) => m[1]);
+    expect(literal).toEqual(contract.reserved);
+    // Every other name the service sends is a key of its filter, which are exactly the route's filters.
+    expect(service).toContain('for (const [key, value] of Object.entries(filter)) {');
+    const filter = service.match(/export interface OrderFilter \{\n([\s\S]*?)\n\}/)![1];
+    const keys = filter.split('\n').map((line) => line.trim().split('?')[0]);
+    expect(keys).toEqual(filterProperties(order, isEnum).map((p) => p.name));
+    for (const key of keys) expect(contract.reserved, key).not.toContain(key);
+  });
+});
+
 describe('contract/list-query.json — the page envelope', () => {
   it('reads exactly the envelope\'s members, in order', () => {
     expect([...PAGE_ENVELOPE]).toEqual(contract.envelope);
@@ -226,6 +240,31 @@ describe('contract/list-query.json — which properties sort and filter', () => 
         fields: [{ name: 'value', type, filterable: true }],
       });
       expect(filterProperties(d).map((p) => p.name), type).toEqual(['value']);
+    }
+  });
+
+  it('never sends a neverOffered name as a sort key or a filter', () => {
+    expect(contract.properties.neverOffered).toContain('the primary key');
+    const never = [...listQuerySystemFieldNames(order)];
+    const sortKeys = service.match(/export type OrderSortField = (.*);/)![1];
+    const filter = service.match(/export interface OrderFilter \{\n([\s\S]*?)\n\}/)![1];
+    for (const name of never) {
+      expect(sortKeys, name).not.toContain(`'${name}'`);
+      expect(filter, name).not.toMatch(new RegExp(`^\\s*${name}\\?:`, 'm'));
+      expect(list, name).not.toContain(`onSort('${name}')`);
+      expect(list, name).not.toContain(`data-testid="filter-${name}"`);
+      expect(store, name).not.toContain(`'${name}'`);
+    }
+  });
+
+  it('names a MANY_TO_ONE filter <base>Id whether or not the relationship name ends in Id', () => {
+    for (const name of ['customer', 'customerId']) {
+      const d = DomainMetadataSchema.parse({
+        packageName: 'com.shop',
+        entityName: 'Invoice',
+        relationships: [{ name, targetEntity: 'Customer', type: 'MANY_TO_ONE' }],
+      });
+      expect(filterProperties(d).map((p) => p.name), name).toEqual(['customerId']);
     }
   });
 
