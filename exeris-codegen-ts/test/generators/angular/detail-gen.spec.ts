@@ -7,7 +7,8 @@
  *   - display-type matrix (enum / boolean / date / datetime / number /
  *     text fallback), dates through DatePipe
  *   - the enum rule (explicit enumType, else a type naming a declared enum)
- *   - sections, the related-records links and the action buttons
+ *   - sections, the related-records panels (children read through the list route's `<base>Id`
+ *     filter, ADR-096) and links, and the action buttons
  *   - collectEnumTypes dedup
  *   - getTitle fallback (name/title field → idField)
  */
@@ -702,11 +703,94 @@ describe('DetailGenerator — related records', () => {
     expect(notes).toBeGreaterThan(lines);
     expect(content).toContain('>View all OrderLines</a>');
     expect(content).toContain('<span class="font-medium text-gray-900 dark:text-white">Lines</span>');
-    // The children are never fetched by the detail view.
+    // Neither target has a MANY_TO_ONE back to Order, so no child is fetched.
     expect(content).not.toContain('OrderLineService');
+    expect(content).not.toContain('findAll');
   });
 
-  it('links nothing for a MANY_TO_MANY, an unloaded target, a target without a list, or with lists off', () => {
+  describe('a child with a MANY_TO_ONE back to the record', () => {
+    const child = (extra: Record<string, unknown> = {}) => domain({
+      entityName: 'OrderLine',
+      fields: [field({ name: 'id', type: 'java.util.UUID' }), field({ name: 'sku', type: 'String' })],
+      relationships: [{ name: 'order', targetEntity: 'com.shop.Order', type: 'MANY_TO_ONE' }] as never,
+      ...extra,
+    });
+    const parent = (rel: Record<string, unknown> = {}) =>
+      order([{ name: 'lines', targetEntity: 'OrderLine', type: 'ONE_TO_MANY', ...rel }]);
+
+    it('reads the first rows through the child service, filtered by <base>Id, and links each to its detail', () => {
+      const d = parent({ displayField: 'sku' });
+      const content = gen.generate(d, createGeneratorContext({}, [d, child()]))!.content;
+      expect(content).toContain("import { OrderLineService } from '../services/order-line.service';");
+      expect(content).toContain('  private readonly orderLineService = inject(OrderLineService);');
+      expect(content).toContain([
+        '  protected readonly relatedLinesResource = rxResource({',
+        '    params: () => this.id(),',
+        '    stream: ({ params }) => this.orderLineService.findAll({ size: 10 }, { orderId: params }),',
+        '  });',
+        '  readonly relatedLines = computed(() => (this.relatedLinesResource.hasValue() ? this.relatedLinesResource.value().content : []));',
+      ].join('\n'));
+      expect(content).toContain('data-testid="related-lines-rows"');
+      expect(content).toContain('@for (row of relatedLines(); track row.id) {');
+      expect(content).toContain(`<a [routerLink]="['/order-lines', row.id]" [attr.data-testid]="'related-lines-' + row.id" class="text-exeris-primary hover:underline">{{ row.sku || row.id }}</a>`);
+      // The link to the whole list stays, under its test id.
+      expect(content).toContain('<a routerLink="/order-lines" data-testid="related-lines" class="text-exeris-primary hover:underline">View all OrderLines</a>');
+      expect(content).toContain('@if (relatedLinesResource.error()) {');
+    });
+
+    it('labels a row by its id when the relationship names no field the child declares', () => {
+      const d = parent({ displayField: 'missing' });
+      const content = gen.generate(d, createGeneratorContext({}, [d, child()]))!.content;
+      expect(content).toContain(`'related-lines-' + row.id" class="text-exeris-primary hover:underline">{{ row.id }}</a>`);
+    });
+
+    it('lists the children without a "View all" link when the child has no list page, and as text without a detail page', () => {
+      const d = parent();
+      const hidden = child({ uiMetadata: { listView: false, detailView: false } });
+      const content = gen.generate(d, createGeneratorContext({}, [d, hidden]))!.content;
+      expect(content).not.toContain('View all');
+      expect(content).toContain(`<span [attr.data-testid]="'related-lines-' + row.id">{{ row.id }}</span>`);
+    });
+
+    it('takes the back-reference mappedBy names, by relationship, field or <base>Id name', () => {
+      const two = child({
+        relationships: [
+          { name: 'order', targetEntity: 'Order', type: 'MANY_TO_ONE' },
+          { name: 'replacedOrderId', targetEntity: 'Order', type: 'MANY_TO_ONE' },
+        ],
+      });
+      for (const mappedBy of ['replacedOrderId', 'replacedOrder']) {
+        const d = parent({ mappedBy });
+        const content = gen.generate(d, createGeneratorContext({}, [d, two]))!.content;
+        expect(content, mappedBy).toContain('findAll({ size: 10 }, { replacedOrderId: params })');
+      }
+      const ambiguous = parent();
+      expect(gen.generate(ambiguous, createGeneratorContext({}, [ambiguous, two]))!.content).not.toContain('findAll');
+    });
+
+    it('fetches nothing without generated services, or when the child has no id', () => {
+      const d = parent();
+      expect(gen.generate(d, createGeneratorContext({ generateServices: false }, [d, child()]))!.content).not.toContain('findAll');
+      const idless = child({ fields: [field({ name: 'sku', type: 'String' })] });
+      expect(gen.generate(d, createGeneratorContext({}, [d, idless]))!.content).not.toContain('findAll');
+    });
+
+    it('reads a ONE_TO_MANY to the entity itself through its own service', () => {
+      const node = domain({
+        entityName: 'Node',
+        fields: [field({ name: 'id', type: 'java.util.UUID' })],
+        relationships: [
+          { name: 'parent', targetEntity: 'Node', type: 'MANY_TO_ONE' },
+          { name: 'children', targetEntity: 'Node', type: 'ONE_TO_MANY', mappedBy: 'parent' },
+        ] as never,
+      });
+      const content = gen.generate(node, createGeneratorContext({}, [node]))!.content;
+      expect(content).toContain('this.service.findAll({ size: 10 }, { parentId: params })');
+      expect(content.match(/NodeService/g)).toHaveLength(2);
+    });
+  });
+
+  it('shows nothing for a MANY_TO_MANY, an unloaded target, or a target it can neither list nor link', () => {
     const unlisted = domain({ entityName: 'Note', fields: [field({ name: 'id', type: 'java.util.UUID' })], uiMetadata: { listView: false } as never });
     const cases: Array<[DomainMetadata, GeneratorContext]> = [];
     const m2m = order([{ name: 'notes', targetEntity: 'Note', type: 'MANY_TO_MANY' }]);

@@ -10,6 +10,7 @@ import { modelTypeName } from '../../models/model-naming.js';
 import type { GeneratorConfig } from '../../config.js';
 import type { CodeGenerator, GeneratedFile, GeneratorContext } from '../../core/generator-registry.js';
 import type { BackendType } from '../../core/backend-strategy.js';
+import { filterProperties } from '../angular/list-query.js';
 
 export { GeneratedFile };
 
@@ -114,15 +115,18 @@ export class TypeGenerator implements CodeGenerator {
     lines.push(...updateDtoDeclaration(interfaceName, metadata));
     lines.push(``);
 
-    // Filter type
-    const filterableFields = metadata.fields.filter(f => f.filterable);
-    if (filterableFields.length > 0) {
+    // Filter type: the list route's equality filters (ADR-096), the keys the service's filter has.
+    const enums = context.enums ?? [];
+    const filters = filterProperties(
+      metadata,
+      (field) => field.enumType !== undefined || enums.some((e) => e.qualifiedName === field.type || e.name === field.type),
+    );
+    if (filters.length > 0) {
       lines.push(`export interface ${interfaceName}Filter {`);
-      for (const field of filterableFields) {
-        const mapping = DslMapper.mapType(field.type);
-        lines.push(`  ${field.name}?: ${mapping.tsType};`);
+      for (const filter of filters) {
+        const tsType = filter.field ? DslMapper.mapType(filter.field.type).tsType : 'string';
+        lines.push(`  ${filter.name}?: ${tsType};`);
       }
-      lines.push(`  search?: string;`);
       lines.push(`}`);
       lines.push(``);
     }

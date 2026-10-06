@@ -5,7 +5,8 @@
  * - Signal-based state management
  * - rxResource (RxJS-interop Resource) for data fetching
  * - Loading/error states
- * - A "Details" section, a "Related records" section and the system panel
+ * - A "Details" section, a "Related records" section and the system panel; a related record
+ *   panel lists the first rows of a child the list route filters by this record's id (ADR-096)
  * - Buttons for the entity's parameterless actions
  * - Full a11y support
  * - i18n-ready strings
@@ -19,7 +20,9 @@ import type { BackendType } from '../../core/backend-strategy.js';
 import { outPath } from '../../core/paths.js';
 import { tsSingleQuoted } from './ts-literal.js';
 import { auditFieldNames, updateVersionField, viewSystemFieldNames } from '../api/type-gen.js';
-import { fieldRenderContext, resolveFieldRenders, toTitleCase } from './field-render.js';
+import { fieldRenderContext, isEnumField, resolveFieldRenders, toTitleCase } from './field-render.js';
+import { filterProperties, foreignKeyBase, foreignKeyParam } from './list-query.js';
+import type { RelationshipMetadata } from '../../models/domain-model.js';
 import { entityExitRoute, entityViews } from './entity-views.js';
 
 export class DetailGenerator implements CodeGenerator {
@@ -63,7 +66,8 @@ export class DetailGenerator implements CodeGenerator {
       fieldRenderContext(domain, context.allDomains, context.config.generateDetails !== false, context.enums ?? []),
     );
     const displayFields = renders.filter((r) => r.displayed);
-    const related = relatedListLinks(domain, context.allDomains, context.config.generateLists !== false);
+    const related = relatedRecords(domain, context);
+    const relatedServices = relatedServiceMembers(domain, related);
     const actions = detailActions(domain);
     // Every field's enum is imported, a hidden or system one included, in declaration order.
     const enumTypes = [...new Set(renders.flatMap((r) => (r.detail.enumType ? [r.detail.enumType] : [])))];
@@ -99,6 +103,9 @@ export class DetailGenerator implements CodeGenerator {
       : `import { CommonModule } from '@angular/common';`);
     lines.push(`import { RouterModule, Router } from '@angular/router';`);
     lines.push(`import { ${entityName}Service } from '../services/${kebab}.service';`);
+    for (const target of [...relatedServices.keys()].filter((t) => t !== entityName)) {
+      lines.push(`import { ${target}Service } from '../services/${DslMapper.toKebabCase(target)}.service';`);
+    }
     lines.push(`import { httpErrorMessage } from '../core/http-error';`);
     lines.push(`import type { ${modelName} } from '../types/${kebab}.types';`);
 
@@ -211,15 +218,39 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`          </dl>`);
     lines.push(`        </section>`);
     if (related.length > 0) {
-      // Each link opens the target's whole list: the generated list endpoint takes no filter, so
-      // a panel of only this entity's children cannot be fetched without loading every row.
       lines.push(`        <section aria-labelledby="related-title" class="exeris-card mt-8">`);
       lines.push(`          <h2 id="related-title" class="exeris-card-header text-sm font-medium text-gray-500 dark:text-gray-400">Related records</h2>`);
       lines.push(`          <ul class="exeris-card-body divide-y divide-gray-200 dark:divide-gray-700">`);
-      for (const link of related) {
-        lines.push(`            <li class="flex items-center justify-between py-3 text-sm">`);
-        lines.push(`              <span class="font-medium text-gray-900 dark:text-white">${link.label}</span>`);
-        lines.push(`              <a routerLink="${link.route}" data-testid="related-${link.testId}" class="text-exeris-primary hover:underline">View all ${link.targetLabel}</a>`);
+      for (const rel of related) {
+        lines.push(`            <li class="py-3 text-sm">`);
+        lines.push(`              <div class="flex items-center justify-between">`);
+        lines.push(`                <span class="font-medium text-gray-900 dark:text-white">${rel.label}</span>`);
+        if (rel.listRoute) {
+          // The list opens on every row: it filters by what its own controls hold.
+          lines.push(`                <a routerLink="${rel.listRoute}" data-testid="related-${rel.testId}" class="text-exeris-primary hover:underline">View all ${rel.targetLabel}</a>`);
+        }
+        lines.push(`              </div>`);
+        if (rel.fetch) {
+          const { member, labelField, detailRoute } = rel.fetch;
+          const text = labelField ? `{{ row.${labelField} || row.id }}` : `{{ row.id }}`;
+          lines.push(`              @if (${member}Resource.error()) {`);
+          lines.push(`                <p role="alert" class="mt-2 text-gray-500 dark:text-gray-400">${rel.targetLabel} could not be loaded.</p>`);
+          lines.push(`              } @else {`);
+          lines.push(`                <ul class="mt-2 space-y-1" data-testid="related-${rel.testId}-rows">`);
+          lines.push(`                  @for (row of ${member}(); track row.id) {`);
+          lines.push(`                    <li>`);
+          if (detailRoute) {
+            lines.push(`                      <a [routerLink]="['${detailRoute}', row.id]" [attr.data-testid]="'related-${rel.testId}-' + row.id" class="text-exeris-primary hover:underline">${text}</a>`);
+          } else {
+            lines.push(`                      <span [attr.data-testid]="'related-${rel.testId}-' + row.id">${text}</span>`);
+          }
+          lines.push(`                    </li>`);
+          lines.push(`                  } @empty {`);
+          lines.push(`                    <li class="text-gray-500 dark:text-gray-400">None</li>`);
+          lines.push(`                  }`);
+          lines.push(`                </ul>`);
+          lines.push(`              }`);
+        }
         lines.push(`            </li>`);
       }
       lines.push(`          </ul>`);
@@ -250,6 +281,9 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`export class ${entityName}DetailComponent {`);
     lines.push(`  private readonly router = inject(Router);`);
     lines.push(`  private readonly service = inject(${entityName}Service);`);
+    for (const [target, member] of relatedServices) {
+      if (target !== entityName) lines.push(`  private readonly ${member} = inject(${target}Service);`);
+    }
     lines.push(``);
     lines.push(`  readonly id = input.required<string>();`);
     lines.push(`  readonly displayFields = DISPLAY_FIELDS;`);
@@ -273,6 +307,18 @@ export class DetailGenerator implements CodeGenerator {
     lines.push(`    const err = this.entityResource.error();`);
     lines.push(`    return err ? httpErrorMessage(err, { entity: '${noun}', action: 'load' }) : null;`);
     lines.push(`  });`);
+    for (const rel of related) {
+      if (!rel.fetch) continue;
+      const { member, target, param } = rel.fetch;
+      lines.push(``);
+      lines.push(`  /** The first ${RELATED_PAGE_SIZE} ${tsTemplateText(rel.targetLabel)} whose ${param} is this record's id. */`);
+      lines.push(`  protected readonly ${member}Resource = rxResource({`);
+      lines.push(`    params: () => this.id(),`);
+      lines.push(`    stream: ({ params }) => this.${relatedServices.get(target)}.findAll({ size: ${RELATED_PAGE_SIZE} }, { ${param}: params }),`);
+      lines.push(`  });`);
+      lines.push(`  readonly ${member} = computed(() => (this.${member}Resource.hasValue() ? this.${member}Resource.value().content : []));`);
+    }
+    if (related.some((rel) => rel.fetch)) lines.push(``);
     lines.push(`  readonly deleteError = signal<string | null>(null);`);
     if (actions.length > 0) {
       lines.push(`  readonly actionError = signal<string | null>(null);`);
@@ -401,46 +447,125 @@ export class DetailGenerator implements CodeGenerator {
   }
 }
 
-/** A link in the detail view's "Related records" section. */
-interface RelatedListLink {
+/** The rows a related-records panel shows: at most this many, the rest behind "View all". */
+const RELATED_PAGE_SIZE = 10;
+
+/** One relationship in the detail view's "Related records" section. */
+interface RelatedRecords {
   /** The relationship's label: its humanized name. */
   label: string;
-  /** The absolute route of the target's list page. */
-  route: string;
   /** The target's plural, as the list page names it. */
   targetLabel: string;
   testId: string;
+  /** The absolute route of the target's list page, when one is emitted. */
+  listRoute?: string;
+  /** How the panel reads this record's children, when the list route can filter them. */
+  fetch?: RelatedFetch;
+}
+
+/** The children of one record, read through the target's service filtered by the back-reference. */
+interface RelatedFetch {
+  /** The target's simple entity name; its service is `<target>Service`. */
+  target: string;
+  /** The filter parameter: `<base>Id` of the target's MANY_TO_ONE back to this entity. */
+  param: string;
+  /** The component member holding the rows; its resource is `<member>Resource`. */
+  member: string;
+  /** The target field a row is labelled with, when the relationship names one the target declares. */
+  labelField?: string;
+  /** The route prefix of the target's detail page, when one is emitted. */
+  detailRoute?: string;
 }
 
 /**
- * One link per ONE_TO_MANY relationship, in declaration order, to the list page of its target.
+ * One entry per ONE_TO_MANY relationship, in declaration order.
  *
- * The target must be a loaded domain whose list page is emitted: the config generates lists and the
- * target's `@UI` keeps its list view. A MANY_TO_MANY relationship has no link: the generated
- * backend keeps no join table for it, so no route lists its other side. ONE_TO_ONE and MANY_TO_ONE
- * point at a single record and are linked from the field table when the foreign key is a field.
+ * A panel lists the record's children when the target is a loaded domain with an `id`, its service
+ * is generated, and it has one MANY_TO_ONE back to this entity — the one `mappedBy` names, else the
+ * only one — whose `<base>Id` the target's list route filters on. It reads them through
+ * `findAll({ size }, { <base>Id: id })`. The entry links to the target's list page when that is
+ * emitted. A relationship with neither has no entry. A MANY_TO_MANY has none: the generated
+ * backend keeps no join table for it. ONE_TO_ONE and MANY_TO_ONE point at a single record and are
+ * linked from the field table when the foreign key is a field.
  */
-function relatedListLinks(
-  domain: DomainMetadata,
-  allDomains: readonly DomainMetadata[],
-  listsGenerated: boolean,
-): RelatedListLink[] {
-  if (!listsGenerated) return [];
-  const listed = new Set(allDomains.filter((d) => entityViews(d).list).map((d) => d.entityName));
-  const links: RelatedListLink[] = [];
+function relatedRecords(domain: DomainMetadata, context: GeneratorContext): RelatedRecords[] {
+  const listsGenerated = context.config.generateLists !== false;
+  const servicesGenerated = context.config.generateServices !== false;
+  const entries: RelatedRecords[] = [];
   for (const rel of domain.relationships ?? []) {
     if (rel.type !== 'ONE_TO_MANY') continue;
-    // The processor's fallback may record a qualified name; entity names are simple names.
-    const target = rel.targetEntity.includes('.') ? rel.targetEntity.split('.').pop()! : rel.targetEntity;
-    if (!listed.has(target)) continue;
-    links.push({
+    const target = simpleEntityName(rel.targetEntity);
+    const targetDomain = context.allDomains.find((d) => d.entityName === target);
+    if (!targetDomain) continue;
+    const views = entityViews(targetDomain);
+    const listRoute = listsGenerated && views.list ? `/${DslMapper.routePlural(target)}` : undefined;
+    const backReference = servicesGenerated ? childBackReference(rel, domain, targetDomain) : undefined;
+    const param = backReference ? foreignKeyParam(backReference.name) : undefined;
+    const filterable = param !== undefined && targetDomain.fields.some((f) => f.name === 'id')
+      && filterProperties(targetDomain, (f) => isEnumField(f, context.enums ?? [])).some((p) => p.name === param);
+    const labelField = rel.displayField && targetDomain.fields.some((f) => f.name === rel.displayField)
+      ? rel.displayField
+      : undefined;
+    const fetch: RelatedFetch | undefined = filterable
+      ? {
+          target,
+          param: param!,
+          member: `related${rel.name.charAt(0).toUpperCase()}${rel.name.slice(1)}`,
+          ...(labelField ? { labelField } : {}),
+          ...(views.detail ? { detailRoute: `/${DslMapper.routePlural(target)}` } : {}),
+        }
+      : undefined;
+    if (!listRoute && !fetch) continue;
+    entries.push({
       label: tsTemplateText(DslMapper.humanize(rel.name)),
-      route: `/${DslMapper.routePlural(target)}`,
       targetLabel: tsTemplateText(DslMapper.pluralName(target)),
       testId: DslMapper.toKebabCase(rel.name),
+      ...(listRoute ? { listRoute } : {}),
+      ...(fetch ? { fetch } : {}),
     });
   }
-  return links;
+  return entries;
+}
+
+/**
+ * The target's MANY_TO_ONE back to `domain` that a ONE_TO_MANY's rows are held by: the one
+ * `mappedBy` names (by relationship name, field name, `<base>` or `<base>Id`), else the only one there is.
+ */
+function childBackReference(
+  rel: RelationshipMetadata,
+  domain: DomainMetadata,
+  target: DomainMetadata,
+): RelationshipMetadata | undefined {
+  const candidates = (target.relationships ?? []).filter(
+    (r) => r.type === 'MANY_TO_ONE' && simpleEntityName(r.targetEntity) === domain.entityName,
+  );
+  if (rel.mappedBy) {
+    return candidates.find(
+      (r) => [r.name, r.fieldName, foreignKeyBase(r.name), foreignKeyParam(r.name)].includes(rel.mappedBy),
+    );
+  }
+  return candidates.length === 1 ? candidates[0] : undefined;
+}
+
+/** The processor's fallback may record a qualified name; entity names are simple names. */
+function simpleEntityName(name: string): string {
+  return name.includes('.') ? name.split('.').pop()! : name;
+}
+
+/**
+ * The service member each fetched target is read through, by target: the component's own
+ * `service` for this entity, else `<camel(target)>Service`, one per target.
+ */
+function relatedServiceMembers(domain: DomainMetadata, related: readonly RelatedRecords[]): Map<string, string> {
+  const members = new Map<string, string>();
+  for (const rel of related) {
+    if (!rel.fetch || members.has(rel.fetch.target)) continue;
+    members.set(
+      rel.fetch.target,
+      rel.fetch.target === domain.entityName ? 'service' : `${DslMapper.toCamelCase(rel.fetch.target)}Service`,
+    );
+  }
+  return members;
 }
 
 /** A button in the detail view's header, running one of the entity's actions on the shown record. */
