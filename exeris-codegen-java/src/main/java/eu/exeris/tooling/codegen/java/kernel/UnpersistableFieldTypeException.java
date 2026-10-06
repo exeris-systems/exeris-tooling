@@ -25,6 +25,10 @@ public final class UnpersistableFieldTypeException extends RuntimeException {
     private final List<String> fields;
 
     /**
+     * Creates the refusal for the given fields. The message is prefixed with {@code EXT-GEN-3003}
+     * and lists the fields in the order given, followed by the ways out; {@link #fields()} returns
+     * an unmodifiable copy of the list.
+     *
      * @param fields one entry per refused field, each naming the entity, the field, its type and
      *               why it is refused; in a stable order
      */

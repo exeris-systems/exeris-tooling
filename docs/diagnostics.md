@@ -4,7 +4,7 @@ type: reference
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-10-04
+last-verified: 2026-10-06
 ---
 
 # Diagnostic identifiers
