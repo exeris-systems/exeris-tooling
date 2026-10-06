@@ -30,7 +30,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
-import java.util.regex.Pattern;
 
 /**
  * Kernel Repository Generator.
@@ -93,12 +92,6 @@ import java.util.regex.Pattern;
  */
 public class KernelRepositoryGenerator implements KernelArtifactGenerator {
 
-    /**
-     * A type name {@code ClassName.bestGuess} accepts: lower-case package segments, then a class
-     * name that starts upper-case, optionally followed by nested class names.
-     */
-    private static final Pattern PLAIN_TYPE_NAME =
-            Pattern.compile("(?:[a-z_$][\\w$]*\\.)*[A-Z][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)*");
     private static final ClassName UUID_TYPE = ClassName.get("java.util", "UUID");
     private static final ClassName OPTIONAL = ClassName.get("java.util", "Optional");
     private static final ClassName LIST_TYPE = ClassName.get("java.util", "List");
@@ -237,10 +230,31 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
      * name as a class — a plain, possibly qualified type name, not a parameterised type, an array or
      * a wildcard.
      */
+
+    /**
+     * Whether {@code name} is a type name {@code ClassName.bestGuess} accepts: dot-separated Java
+     * identifiers, lower-case package segments first, then a class name that starts upper-case and
+     * any nested class names. A parameterised name, an array or a wildcard is not.
+     */
+    static boolean isPlainTypeName(String name) {
+        boolean inClass = false;
+        for (String segment : name.split("\\.", -1)) {
+            if (segment.isEmpty() || !Character.isJavaIdentifierStart(segment.charAt(0))
+                    || !segment.chars().skip(1).allMatch(Character::isJavaIdentifierPart)) {
+                return false;
+            }
+            inClass = inClass || Character.isUpperCase(segment.charAt(0));
+            if (!inClass && !Character.isLowerCase(segment.charAt(0)) && segment.charAt(0) != '_'
+                    && segment.charAt(0) != '$') {
+                return false;
+            }
+        }
+        return inClass;
+    }
     private static boolean storable(DomainTypeKind kind, String type) {
         return switch (kind) {
             case UNSTORABLE -> false;
-            case LIST -> PLAIN_TYPE_NAME.matcher(listElementType(type)).matches();
+            case LIST -> isPlainTypeName(listElementType(type));
             default -> true;
         };
     }
@@ -926,9 +940,8 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
             case INT -> guarded(primitive, index, value, CodeBlock.of("stmt.bindInt($L, $L)", index, value));
             case SHORT -> guarded(primitive, index, value, CodeBlock.of("stmt.bindShort($L, $L)", index, value));
             // SMALLINT: a byte widens to short; a Byte unboxes through shortValue().
-            case BYTE -> guarded(primitive, index, value, primitive
-                    ? CodeBlock.of("stmt.bindShort($L, $L)", index, value)
-                    : CodeBlock.of("stmt.bindShort($L, $L.shortValue())", index, value));
+            case BYTE -> guarded(primitive, index, value, CodeBlock.of(
+                    primitive ? "stmt.bindShort($L, $L)" : "stmt.bindShort($L, $L.shortValue())", index, value));
             case BOOL -> guarded(primitive, index, value, CodeBlock.of("stmt.bindBoolean($L, $L)", index, value));
             case FLOAT -> guarded(primitive, index, value, CodeBlock.of("stmt.bindFloat($L, $L)", index, value));
             case DOUBLE -> guarded(primitive, index, value, CodeBlock.of("stmt.bindDouble($L, $L)", index, value));

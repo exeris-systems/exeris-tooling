@@ -714,7 +714,8 @@ class KernelRepositoryGeneratorTest {
                 .enumType("com.example.domain.Duration").build());
 
         assertThat(src).contains("entity.setWindow(Duration.valueOf(v));");
-        assertThatThrownBy(() -> repositoryFor(FieldMetadata.builder("window", "Duration").build()))
+        FieldMetadata unresolved = FieldMetadata.builder("window", "Duration").build();
+        assertThatThrownBy(() -> repositoryFor(unresolved))
                 .isInstanceOf(UnpersistableFieldTypeException.class);
     }
 

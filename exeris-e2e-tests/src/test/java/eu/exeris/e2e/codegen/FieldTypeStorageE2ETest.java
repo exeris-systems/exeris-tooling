@@ -168,8 +168,9 @@ class FieldTypeStorageE2ETest {
         ProcessorCompiler.compile(refused.resolve("src/main/java"), classes, null, Map.of(
                 "com/yard/domain/Shift.java", shiftSource()));
 
-        assertThatThrownBy(() -> CodegenPipeline.createDefault()
-                .run(classes.resolve("exeris-metadata"), generated, BASE_PACKAGE))
+        CodegenPipeline pipeline = CodegenPipeline.createDefault();
+        Path metadata = classes.resolve("exeris-metadata");
+        assertThatThrownBy(() -> pipeline.run(metadata, generated, BASE_PACKAGE))
                 .isInstanceOf(UnpersistableFieldTypeException.class)
                 .hasMessageStartingWith("[Exeris] EXT-GEN-3003: ")
                 .hasMessageContaining("com.yard.domain.Shift.startsAt : java.time.LocalTime")

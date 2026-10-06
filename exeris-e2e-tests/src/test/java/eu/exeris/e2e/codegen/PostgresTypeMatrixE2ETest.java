@@ -403,7 +403,7 @@ class PostgresTypeMatrixE2ETest {
     private static Method getter(Class<?> entityType) throws NoSuchMethodException {
         try {
             return entityType.getMethod("getProbe");
-        } catch (NoSuchMethodException e) {
+        } catch (NoSuchMethodException _) {
             return entityType.getMethod("isProbe");
         }
     }
@@ -465,9 +465,9 @@ class PostgresTypeMatrixE2ETest {
         try {
             String head = git("rev-parse", "HEAD");
             return head.isEmpty() ? "unknown" : git("status", "--porcelain").isEmpty() ? head : head + "-dirty";
-        } catch (IOException e) {
+        } catch (IOException _) {
             return "unknown";
-        } catch (InterruptedException e) {
+        } catch (InterruptedException _) {
             Thread.currentThread().interrupt();
             return "unknown";
         }

@@ -2,8 +2,10 @@ package eu.exeris.tooling.codegen.java.support;
 
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -137,6 +139,28 @@ public enum DomainTypeKind {
             "java.time.ZoneOffset", "java.util.Date", "java.util.Currency", "java.util.Locale",
             "java.net.URI", "java.net.URL");
 
+    /** Every exact type spelling with a fixed kind; the sets above are disjoint. */
+    private static final Map<String, DomainTypeKind> EXACT = exactKinds();
+
+    private static Map<String, DomainTypeKind> exactKinds() {
+        Map<String, DomainTypeKind> kinds = new HashMap<>();
+        UUID_TYPES.forEach(t -> kinds.put(t, UUID));
+        STRING_TYPES.forEach(t -> kinds.put(t, STRING));
+        LONG_TYPES.forEach(t -> kinds.put(t, LONG));
+        INT_TYPES.forEach(t -> kinds.put(t, INT));
+        SHORT_TYPES.forEach(t -> kinds.put(t, SHORT));
+        BYTE_TYPES.forEach(t -> kinds.put(t, BYTE));
+        BOOL_TYPES.forEach(t -> kinds.put(t, BOOL));
+        FLOAT_TYPES.forEach(t -> kinds.put(t, FLOAT));
+        DOUBLE_TYPES.forEach(t -> kinds.put(t, DOUBLE));
+        BIG_DECIMAL_TYPES.forEach(t -> kinds.put(t, BIG_DECIMAL));
+        OFFSET_DATE_TIME_TYPES.forEach(t -> kinds.put(t, OFFSET_DATE_TIME));
+        ZONED_DATE_TIME_TYPES.forEach(t -> kinds.put(t, ZONED_DATE_TIME));
+        UNSTORABLE_TYPES.forEach(t -> kinds.put(t, UNSTORABLE));
+        kinds.put("char", UNSTORABLE);
+        return Map.copyOf(kinds);
+    }
+
     /**
      * The kind of a field: {@link #ENUM} when its {@code enumType} is set and its type is not a
      * recognised scalar — an enum the application named like a refused JDK type included, since
@@ -165,19 +189,8 @@ public enum DomainTypeKind {
         // recognised type (Map<String, LocalDate>, Instant[]), which the containment checks below
         // would match.
         if (type.contains("<") || type.endsWith("[]")) return UNSTORABLE;
-        if (UUID_TYPES.contains(type)) return UUID;
-        if (STRING_TYPES.contains(type)) return STRING;
-        if (LONG_TYPES.contains(type)) return LONG;
-        if (INT_TYPES.contains(type)) return INT;
-        if (SHORT_TYPES.contains(type)) return SHORT;
-        if (BYTE_TYPES.contains(type)) return BYTE;
-        if (BOOL_TYPES.contains(type)) return BOOL;
-        if (FLOAT_TYPES.contains(type)) return FLOAT;
-        if (DOUBLE_TYPES.contains(type)) return DOUBLE;
-        if (BIG_DECIMAL_TYPES.contains(type)) return BIG_DECIMAL;
-        if (OFFSET_DATE_TIME_TYPES.contains(type)) return OFFSET_DATE_TIME;
-        if (ZONED_DATE_TIME_TYPES.contains(type)) return ZONED_DATE_TIME;
-        if ("char".equals(type) || UNSTORABLE_TYPES.contains(type)) return UNSTORABLE;
+        DomainTypeKind exact = EXACT.get(type);
+        if (exact != null) return exact;
         if (type.contains("Instant")) return INSTANT_LIKE;
         // LocalDateTime before LocalDate: "LocalDateTime".contains("LocalDate").
         if (type.contains("LocalDateTime")) return LOCAL_DATE_TIME;
