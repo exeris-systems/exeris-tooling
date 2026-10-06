@@ -37,37 +37,69 @@ export const PAGE_ENVELOPE: readonly string[] = [
 
 /** The metadata type strings a filter parses, both spellings. An enum is filterable under its own type. */
 export const FILTERABLE_SCALAR_TYPES: readonly string[] = [
-  'BigDecimal', 'Boolean', 'Double', 'Integer', 'LocalDate', 'Long', 'String', 'UUID', 'boolean',
-  'double', 'int', 'java.lang.Boolean', 'java.lang.Double', 'java.lang.Integer', 'java.lang.Long',
-  'java.lang.String', 'java.math.BigDecimal', 'java.time.LocalDate', 'java.util.UUID', 'long',
+  'BigDecimal', 'Boolean', 'Byte', 'Double', 'Float', 'Integer', 'LocalDate', 'Long', 'Short',
+  'String', 'UUID', 'boolean', 'byte', 'double', 'float', 'int', 'java.lang.Boolean',
+  'java.lang.Byte', 'java.lang.Double', 'java.lang.Float', 'java.lang.Integer', 'java.lang.Long',
+  'java.lang.Short', 'java.lang.String', 'java.math.BigDecimal', 'java.time.LocalDate',
+  'java.util.UUID', 'long', 'short',
+];
+
+/** The metadata type strings `sort` orders by, both spellings. An enum is sortable under its own type. */
+export const SORTABLE_SCALAR_TYPES: readonly string[] = [
+  'BigDecimal', 'Boolean', 'Byte', 'Double', 'Float', 'Instant', 'Integer', 'LocalDate',
+  'LocalDateTime', 'Long', 'OffsetDateTime', 'Short', 'String', 'UUID', 'ZonedDateTime',
+  'boolean', 'byte', 'double', 'float', 'int', 'java.lang.Boolean', 'java.lang.Byte',
+  'java.lang.Double', 'java.lang.Float', 'java.lang.Integer', 'java.lang.Long',
+  'java.lang.Short', 'java.lang.String', 'java.math.BigDecimal', 'java.time.Instant',
+  'java.time.LocalDate', 'java.time.LocalDateTime', 'java.time.OffsetDateTime',
+  'java.time.ZonedDateTime', 'java.util.UUID', 'long', 'short',
 ];
 
 /**
  * How the list route treats a metadata type string — the classification of `DomainTypeKind` in
- * `exeris-codegen-java`, rule for rule: a `List<…>` in either spelling, the recognised scalars in
- * either spelling, then anything containing `Instant`, `LocalDateTime` or `LocalDate`, and
- * `other` for everything else.
+ * `exeris-codegen-java`, rule for rule: a `List<…>` in either spelling; any other parameterised type
+ * or an array is `unstorable`; the recognised scalars in either spelling; `char` and the JDK types
+ * with no column encoding are `unstorable`; then anything containing `Instant`, `LocalDateTime` or
+ * `LocalDate`; and `other` for everything else.
  */
 export type ListQueryKind =
-  | 'list' | 'uuid' | 'string' | 'long' | 'int' | 'bool' | 'double' | 'bigDecimal'
-  | 'instant' | 'localDateTime' | 'localDate' | 'other';
+  | 'list' | 'uuid' | 'string' | 'long' | 'int' | 'short' | 'byte' | 'bool' | 'float' | 'double'
+  | 'bigDecimal' | 'offsetDateTime' | 'zonedDateTime' | 'instant' | 'localDateTime' | 'localDate'
+  | 'unstorable' | 'other';
 
 const KIND_BY_TYPE: ReadonlyMap<string, ListQueryKind> = new Map<string, ListQueryKind>([
   ['UUID', 'uuid'], ['java.util.UUID', 'uuid'],
   ['String', 'string'], ['java.lang.String', 'string'],
   ['Long', 'long'], ['long', 'long'], ['java.lang.Long', 'long'],
   ['Integer', 'int'], ['int', 'int'], ['java.lang.Integer', 'int'],
+  ['Short', 'short'], ['short', 'short'], ['java.lang.Short', 'short'],
+  ['Byte', 'byte'], ['byte', 'byte'], ['java.lang.Byte', 'byte'],
   ['Boolean', 'bool'], ['boolean', 'bool'], ['java.lang.Boolean', 'bool'],
+  ['Float', 'float'], ['float', 'float'], ['java.lang.Float', 'float'],
   ['Double', 'double'], ['double', 'double'], ['java.lang.Double', 'double'],
   ['BigDecimal', 'bigDecimal'], ['java.math.BigDecimal', 'bigDecimal'],
+  ['OffsetDateTime', 'offsetDateTime'], ['java.time.OffsetDateTime', 'offsetDateTime'],
+  ['ZonedDateTime', 'zonedDateTime'], ['java.time.ZonedDateTime', 'zonedDateTime'],
 ]);
+
+/** JDK types the generated repository has no column encoding for, in both spellings. */
+const UNSTORABLE_TYPES: ReadonlySet<string> = new Set(
+  [
+    'java.math.BigInteger', 'java.lang.Character', 'java.lang.Object', 'java.time.LocalTime',
+    'java.time.OffsetTime', 'java.time.Duration', 'java.time.Period',
+  ].flatMap((t) => [t, t.slice(t.lastIndexOf('.') + 1)]),
+);
 
 export function listQueryKind(type: string): ListQueryKind {
   for (const prefix of ['List<', 'java.util.List<']) {
     if (type.startsWith(prefix) && type.endsWith('>')) return 'list';
   }
+  // Any other parameterised type or an array: its arguments or component may name a recognised type
+  // (`Map<String, LocalDate>`, `Instant[]`), which the containment checks below would match.
+  if (type.includes('<') || type.endsWith('[]')) return 'unstorable';
   const scalar = KIND_BY_TYPE.get(type);
   if (scalar) return scalar;
+  if (type === 'char' || UNSTORABLE_TYPES.has(type)) return 'unstorable';
   if (type.includes('Instant')) return 'instant';
   // LocalDateTime before LocalDate: "LocalDateTime" contains "LocalDate".
   if (type.includes('LocalDateTime')) return 'localDateTime';
@@ -77,8 +109,22 @@ export function listQueryKind(type: string): ListQueryKind {
 
 /** The kinds a filter value parses into. `other` is filterable only when it is an enum. */
 const SCALAR_FILTER_KINDS: ReadonlySet<ListQueryKind> = new Set<ListQueryKind>([
-  'uuid', 'string', 'long', 'int', 'bool', 'double', 'bigDecimal', 'localDate',
+  'uuid', 'string', 'long', 'int', 'short', 'byte', 'bool', 'float', 'double', 'bigDecimal', 'localDate',
 ]);
+
+/** The kinds `sort` orders by. `other` is sortable only when it is an enum. */
+const SCALAR_SORT_KINDS: ReadonlySet<ListQueryKind> = new Set<ListQueryKind>([
+  'uuid', 'string', 'long', 'int', 'short', 'byte', 'bool', 'float', 'double', 'bigDecimal',
+  'instant', 'localDateTime', 'offsetDateTime', 'zonedDateTime', 'localDate',
+]);
+
+/**
+ * Whether a field of this type may be an enum: an unrecognised type, or a simple JDK name an
+ * application's own enum can shadow — never a parameterised type or an array.
+ */
+function enumCandidate(type: string, kind: ListQueryKind): boolean {
+  return kind === 'other' || (kind === 'unstorable' && !type.includes('<') && !type.endsWith('[]'));
+}
 
 /** One property the list route sorts or filters on. */
 export interface ListQueryProperty {
@@ -154,13 +200,18 @@ export function listQuerySystemFieldNames(metadata: DomainMetadata): ReadonlySet
  * The properties `sort` accepts: every field the metadata marks sortable, except a `List` field and
  * a system field. `ListQuerySupport.sortable`.
  */
-export function sortableProperties(metadata: DomainMetadata): ListQueryProperty[] {
+export function sortableProperties(
+  metadata: DomainMetadata,
+  isEnum: (field: FieldMetadata) => boolean = (field) => field.enumType !== undefined,
+): ListQueryProperty[] {
   const system = listQuerySystemFieldNames(metadata);
   const found = new Map<string, ListQueryProperty>();
   for (const field of metadata.fields ?? []) {
     const kind = listQueryKind(field.type);
-    if (field.sortable && kind !== 'list' && !system.has(field.name) && !found.has(field.name)) {
-      found.set(field.name, { name: field.name, type: field.type, kind, field });
+    const enumeration = enumCandidate(field.type, kind) && isEnum(field);
+    if (field.sortable && (SCALAR_SORT_KINDS.has(kind) || enumeration)
+        && !system.has(field.name) && !found.has(field.name)) {
+      found.set(field.name, { name: field.name, type: field.type, kind, field, ...(enumeration ? { enumeration } : {}) });
     }
   }
   return [...found.values()].sort(byName);
@@ -185,7 +236,7 @@ export function filterProperties(
   const found = new Map<string, ListQueryProperty>();
   for (const field of metadata.fields ?? []) {
     const kind = listQueryKind(field.type);
-    const enumeration = kind === 'other' && isEnum(field);
+    const enumeration = enumCandidate(field.type, kind) && isEnum(field);
     if (field.filterable && (SCALAR_FILTER_KINDS.has(kind) || enumeration)
         && !RESERVED_PARAMS.includes(field.name) && !system.has(field.name) && !found.has(field.name)) {
       found.set(field.name, { name: field.name, type: field.type, kind, field, ...(enumeration ? { enumeration } : {}) });

@@ -231,7 +231,7 @@ export function isEnumField(field: FieldMetadata, enums: readonly KnownEnum[]): 
 /** The list route's sort keys and filters of `domain`, and the control each filter gets. */
 export function listQueryContext(domain: DomainMetadata, enums: readonly EnumMetadata[] = []): ListQueryContext {
   return {
-    sortable: new Set(sortableProperties(domain).map((property) => property.name)),
+    sortable: new Set(sortableProperties(domain, (field) => isEnumField(field, enums)).map((property) => property.name)),
     filters: new Map(
       filterProperties(domain, (field) => isEnumField(field, enums))
         .map((property) => [property.name, listFilterKind(property, enums)] as const),
@@ -249,6 +249,9 @@ export function listFilterKind(property: ListQueryProperty, enums: readonly Enum
     case 'localDate': return 'date';
     case 'long':
     case 'int':
+    case 'short':
+    case 'byte':
+    case 'float':
     case 'double':
     case 'bigDecimal': return 'number';
     default: return 'text';

@@ -91,7 +91,7 @@ interface ListFilterControl {
 }
 
 /** Kinds the service's filter types as a number. */
-const NUMBER_FILTER_KINDS: ReadonlySet<ListQueryKind> = new Set<ListQueryKind>(['long', 'int', 'double']);
+const NUMBER_FILTER_KINDS: ReadonlySet<ListQueryKind> = new Set<ListQueryKind>(['long', 'int', 'short', 'byte', 'float', 'double']);
 
 export class ListGenerator implements CodeGenerator {
   readonly name = 'ListGenerator';

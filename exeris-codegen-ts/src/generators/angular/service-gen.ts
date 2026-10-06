@@ -23,6 +23,7 @@ const KNOWN_JAVA_TYPES = new Set([
   'Double', 'java.lang.Double', 'double',
   'Float', 'java.lang.Float', 'float',
   'Short', 'java.lang.Short', 'short',
+  'Byte', 'java.lang.Byte', 'byte',
   'Boolean', 'java.lang.Boolean', 'boolean',
   'BigDecimal', 'java.math.BigDecimal',
   'BigInteger', 'java.math.BigInteger',
@@ -32,6 +33,7 @@ const KNOWN_JAVA_TYPES = new Set([
   'LocalDateTime', 'java.time.LocalDateTime',
   'LocalTime', 'java.time.LocalTime',
   'ZonedDateTime', 'java.time.ZonedDateTime',
+  'OffsetDateTime', 'java.time.OffsetDateTime',
   'Duration', 'java.time.Duration',
   'Period', 'java.time.Period',
   'Date', 'java.util.Date',
@@ -127,7 +129,7 @@ export class ServiceGenerator implements CodeGenerator {
     // The list route's equality filters and sort keys (ADR-096): exactly what the server reads.
     const filterableFields = filterProperties(metadata, (field) => enumTypeOf(field, context.enums ?? []) !== undefined)
       .map((property) => ({ name: property.name, filterType: this.filterType(property, enumTypes, context) }));
-    const sortFields = sortableProperties(metadata).map((property) => property.name);
+    const sortFields = sortableProperties(metadata, (field) => enumTypeOf(field, context.enums ?? []) !== undefined).map((property) => property.name);
 
     // T1: actions are served at POST {base}/{id}/actions/{kebab(name)} (matches the
     // OpenAPI path + the kernel route), and the server responds with the updated

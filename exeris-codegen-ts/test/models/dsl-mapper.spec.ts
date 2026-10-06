@@ -469,3 +469,16 @@ describe('DslMapper.mapType — types as the processor writes them', () => {
     }
   });
 });
+
+describe('DslMapper.mapType — the smaller integer types', () => {
+  it.each([
+    ['short', 'number', 'z.number().int()'],
+    ['Short', 'number | null', 'z.number().int().nullable()'],
+    ['java.lang.Short', 'number | null', 'z.number().int().nullable()'],
+    ['byte', 'number', 'z.number().int()'],
+    ['Byte', 'number | null', 'z.number().int().nullable()'],
+    ['java.lang.Byte', 'number | null', 'z.number().int().nullable()'],
+  ])('%s → %s', (type, tsType, zodType) => {
+    expect(DslMapper.mapType(type)).toMatchObject({ tsType, zodType });
+  });
+});
