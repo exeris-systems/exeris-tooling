@@ -435,8 +435,9 @@ public class KernelListQueryGenerator implements KernelArtifactGenerator {
                 .addModifiers(Modifier.PUBLIC)
                 .returns(String.class)
                 .addJavadoc("This query as a query string {@link #parse} reads back to an equal query —\n")
-                .addJavadoc("what the generated client sends. Filter values are written with\n")
-                .addJavadoc("{@code String.valueOf}, the form the repository stores them in.\n")
+                .addJavadoc("what the generated client sends. An enum filter is written as its constant's\n")
+                .addJavadoc("{@code name()}, which {@link #parse} reads with {@code valueOf}; any other filter\n")
+                .addJavadoc("value is written with {@code String.valueOf}.\n")
                 .addJavadoc("\n")
                 .addJavadoc("@return the query string, without a leading {@code ?}\n")
                 .addStatement("StringBuilder query = new StringBuilder()")
@@ -446,8 +447,11 @@ public class KernelListQueryGenerator implements KernelArtifactGenerator {
                         "&sort=", ",desc", ",asc")
                 .endControlFlow();
         for (Property property : filters) {
+            String write = property.kind() == DomainTypeKind.ENUM
+                    ? "filter.$L().name()"
+                    : "String.valueOf(filter.$L())";
             method.beginControlFlow("if (filter.$L() != null)", property.name())
-                    .addStatement("query.append($S).append(encode(String.valueOf(filter.$L())))",
+                    .addStatement("query.append($S).append(encode(" + write + "))",
                             "&" + property.name() + "=", property.name())
                     .endControlFlow();
         }

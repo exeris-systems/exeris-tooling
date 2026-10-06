@@ -159,7 +159,7 @@ class KernelListQueryGeneratorTest {
         assertThat(query)
                 .contains("query.append(\"page=\").append(page).append(\"&size=\").append(size);")
                 .contains("query.append(\"&sort=\").append(encode(sort)).append(descending ? \",desc\" : \",asc\");")
-                .contains("query.append(\"&status=\").append(encode(String.valueOf(filter.status())));");
+                .contains("query.append(\"&status=\").append(encode(filter.status().name()));");
     }
 
     @Test

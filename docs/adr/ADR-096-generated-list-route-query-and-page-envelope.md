@@ -109,8 +109,10 @@ everything else with `400`, runs one bound, whitelisted page query and one count
    `findAll()` is removed.
 9. **The cross-build pin.** `exeris-e2e-tests/src/test/resources/contract/list-query.json` states the
    parameter names, defaults and bounds, the reserved names, the filterable and sortable scalar
-   types, the property rules and the envelope. The Java build tests against it; the TypeScript emitter's tests
-   read the same file. Changing the contract means changing that file and both emitters together.
+   types, the property rules and the envelope. The Java build tests against it
+   (`ListQueryContractE2ETest`). The TypeScript emitter's tests must read the same file; that spec is
+   owed by the TypeScript half (exeris-tooling#298), and the 0.9.0 cut waits for it. Changing the
+   contract means changing that file and both emitters together.
 10. **The OpenAPI list operation** declares `page`, `size` (with its default and maximum), `sort` (an
     enum of `<property>,asc` and `<property>,desc` for the sortable properties, absent when there is
     none) and one typed query parameter per filter; it answers `200` with the `<Entity>Page` schema
