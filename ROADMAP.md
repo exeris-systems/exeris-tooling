@@ -3399,6 +3399,11 @@ dependency is a final release on Central (B0): kernel `0.12.0`, SDK `0.12.0`.
   `Application` Javadoc names each requirement by coordinate and phase (T30, still open for builds
   not on the starter).
 
+**Regenerating changes the output.** 0.9.0 carries breaking changes to both emitters: the Java
+ones are recorded in MIGRATION's 0.9.0 sections under ADR-015 and in ADR-090, ADR-095 and ADR-096;
+the TypeScript ones are the `since 0.9` entries of `exeris-codegen-ts/api/accepted-api-changes.json`
+(ADR-092). A consumer regenerates and reads the MIGRATION 0.9.0 sections before upgrading.
+
 **What the train taught, recorded in the entries above.** A green suite on H2 said nothing about
 PostgreSQL: every string-bound typed column passed there and failed on the real engine, which only
 an opt-in matrix against a real server showed. And a change to one emitter's contract is a change to
