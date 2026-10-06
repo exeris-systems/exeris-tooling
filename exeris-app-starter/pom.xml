@@ -6,7 +6,7 @@
     <parent>
         <groupId>eu.exeris.tooling</groupId>
         <artifactId>exeris-app-bom</artifactId>
-        <version>0.9.0-SNAPSHOT</version>
+        <version>0.9.0</version>
         <relativePath>../exeris-app-bom/pom.xml</relativePath>
     </parent>
 
