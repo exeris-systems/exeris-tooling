@@ -864,9 +864,9 @@ class KernelHandlerGeneratorTest {
         // caller's 400. Both catches must sit on the same try, or one of the two answers is lost.
         assertThat(handler.split("exchange\\.respond\\(HttpStatus\\.BAD_REQUEST\\)", -1).length - 1)
                 .as("three body decodes, the three path-id guards on getById/update/delete, "
-                        + "and one per action - appendPathIdGuard runs for both, not only the "
-                        + "one that carries a body")
-                .isEqualTo(8);
+                        + "one per action - appendPathIdGuard runs for both, not only the "
+                        + "one that carries a body - and the list query's refusal")
+                .isEqualTo(9);
 
         int parse = handler.indexOf("parseBody(exchange, ApplyDiscountRequest.class)");
         int badRequest = handler.indexOf("exchange.respond(HttpStatus.BAD_REQUEST)", parse);
@@ -874,5 +874,37 @@ class KernelHandlerGeneratorTest {
         assertThat(decoderFault)
                 .as("the decoder-fault catch closes the same try that the 400 catch opens")
                 .isGreaterThan(badRequest);
+    }
+
+    @Test
+    @DisplayName("handleGetAll parses the query string into the list query, answers 400 for what it "
+            + "refuses before the service is reached, and responds with the page")
+    void handleGetAllServesOnePage() {
+        String handler = new KernelHandlerGenerator().generate(KernelListQueryGeneratorTest.order())
+                .content().replaceAll("\\s+", " ");
+
+        assertThat(handler)
+                .contains("public void handleGetAll(HttpExchange exchange) { OrderListQuery query; try { "
+                        + "query = OrderListQuery.parse(rawQuery(exchange)); } catch (IllegalArgumentException e) { "
+                        + "exchange.respond(HttpStatus.BAD_REQUEST); return; } try { "
+                        + "OrderPage page = service.findPage(query); exchange.respond(HttpStatus.OK, page);")
+                .contains("private static String rawQuery(HttpExchange exchange) { "
+                        + "String target = exchange.request().path(); int start = target.indexOf('?'); "
+                        + "return start < 0 ? \"\" : target.substring(start + 1); }")
+                .doesNotContain("service.findAll()");
+    }
+
+    @Test
+    @DisplayName("a tenant-scoped list refuses an unbound tenant before it parses the query")
+    void tenantGuardPrecedesTheListQuery() {
+        DomainMetadata tenantScoped = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders").tenantScoped(true).build();
+        String handler = new KernelHandlerGenerator().generate(tenantScoped).content();
+        String getAll = handler.substring(handler.indexOf("public void handleGetAll"),
+                handler.indexOf("public void handleGetById"));
+
+        assertThat(getAll.indexOf("respondTenantUnbound(exchange)"))
+                .isNotNegative()
+                .isLessThan(getAll.indexOf("OrderListQuery.parse"));
     }
 }

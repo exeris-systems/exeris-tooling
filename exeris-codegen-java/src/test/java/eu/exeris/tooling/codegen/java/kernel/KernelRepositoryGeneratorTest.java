@@ -850,6 +850,22 @@ class KernelRepositoryGeneratorTest {
     }
 
     @Test
+    @DisplayName("an explicit-UUID foreign key without @Field gets one finder, not a field finder and an FK "
+            + "finder of the same name")
+    void explicitForeignKeyFieldIsNotFoundTwice() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                // FieldMetadata.simple: how the processor records a field that carries no @Field.
+                .fields(List.of(FieldMetadata.simple("customerId", "java.util.UUID")))
+                .relationships(List.of(RelationshipMetadata.manyToOne("customerId", "Customer")))
+                .build();
+
+        assertThat(KernelRepositoryGenerator.finderSpecs(metadata))
+                .extracting(KernelRepositoryGenerator.FinderSpec::methodName)
+                .containsExactly("findByCustomerId");
+    }
+
+    @Test
     @DisplayName("T8: soft-delete finders include the AND deleted = false filter")
     void shouldApplySoftDeleteFilterToFinders() {
         DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
@@ -910,5 +926,88 @@ class KernelRepositoryGeneratorTest {
 
         assertThat(repository.content()).containsOnlyOnce("findById(UUID id)");
         assertThat(repository.content()).contains("findByStatus(");
+    }
+
+    // ------------------------------------------------------------------ the list route's query
+
+    private static String listRepositoryOf(DomainMetadata metadata) {
+        return new KernelRepositoryGenerator().generate(metadata).content().replaceAll("\\s+", " ");
+    }
+
+    @Test
+    @DisplayName("findPage builds WHERE from fixed predicates, one per set filter, after soft delete")
+    void findPageAppendsAFixedPredicatePerFilter() {
+        String src = listRepositoryOf(KernelListQueryGeneratorTest.order());
+
+        assertThat(src)
+                .contains("public OrderPage findPage(OrderListQuery query)")
+                .contains("predicates.add(\"deleted = false\");")
+                .contains("if (filter.customerId() != null) { predicates.add(\"customer_id = ?\"); }")
+                .contains("if (filter.status() != null) { predicates.add(\"status = ?\"); }")
+                .contains("String where = predicates.isEmpty() ? \"\" : \" WHERE \" + String.join(\" AND \", predicates);")
+                .contains("String countSql = \"SELECT COUNT(*) FROM orders\" + where;")
+                .contains("+ where + order + \" LIMIT ? OFFSET ?\";");
+        // The soft-delete predicate precedes every filter, as on findAll.
+        assertThat(src.indexOf("deleted = false")).isLessThan(src.indexOf("customer_id = ?"));
+    }
+
+    @Test
+    @DisplayName("findPage orders by a column from a fixed table, id last, and binds limit then offset")
+    void findPageOrdersFromAFixedTableAndBindsLimitThenOffset() {
+        String src = listRepositoryOf(KernelListQueryGeneratorTest.order());
+
+        assertThat(src)
+                .contains("String order = query.sort() == null ? \" ORDER BY id\" : \" ORDER BY \" "
+                        + "+ sortColumn(query.sort()) + (query.descending() ? \" DESC, id\" : \" ASC, id\");")
+                .contains("private static String sortColumn(String property) { return switch (property) {")
+                .contains("case \"orderNumber\" -> \"order_number\";")
+                .contains("default -> throw new IllegalArgumentException(\"not a sortable property: \" + property);")
+                .contains("int next = bindListFilter(stmt, filter); stmt.bindInt(next, query.size()); "
+                        + "stmt.bindLong(next + 1, (long) query.page() * query.size());")
+                .contains("return OrderPage.of(content, total, query.page(), query.size());");
+        // A JSON column is never an ORDER BY target.
+        assertThat(src).doesNotContain("case \"tags\" ->");
+    }
+
+    @Test
+    @DisplayName("bindListFilter binds each set filter through the bind its column's writes use, in "
+            + "predicate order")
+    void bindListFilterFollowsThePredicateOrder() {
+        String src = listRepositoryOf(KernelListQueryGeneratorTest.order());
+
+        assertThat(src)
+                .contains("if (filter.customerId() != null) { stmt.bindUuid(index++, filter.customerId()); }")
+                .contains("if (filter.dueOn() != null) { stmt.bindString(index++, filter.dueOn().toString()); }")
+                .contains("if (filter.orderNumber() != null) { stmt.bindString(index++, filter.orderNumber()); }")
+                .contains("if (filter.status() != null) { stmt.bindString(index++, filter.status().toString()); }")
+                .contains("if (filter.urgent() != null) { stmt.bindBoolean(index++, filter.urgent()); }");
+        assertThat(src.indexOf("bindUuid(index++, filter.customerId())"))
+                .isLessThan(src.indexOf("filter.dueOn().toString()"));
+    }
+
+    @Test
+    @DisplayName("findPage binds no tenant: the list reads what row-level security shows, as findAll does")
+    void findPageLeavesTenantVisibilityToRowLevelSecurity() {
+        DomainMetadata tenantScoped = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .tenantScoped(true)
+                .fields(List.of(FieldMetadata.builder("orderNumber", "String").filterable(true).build()))
+                .build();
+        String src = listRepositoryOf(tenantScoped);
+        String findPage = src.substring(src.indexOf("public OrderPage findPage"),
+                src.indexOf("return OrderPage.of("));
+
+        // tenant_id is selected, as findAll selects it; it is never a predicate or a bind.
+        assertThat(findPage).doesNotContain("tenant_id = ?").doesNotContain("actingTenantId")
+                .doesNotContain("KernelProviders");
+    }
+
+    @Test
+    @DisplayName("an entity with nothing sortable orders by id alone and emits no sortColumn")
+    void nothingSortable() {
+        DomainMetadata bare = DomainMetadata.builder("Tag", "com.example.domain").path("/tags").build();
+        String src = listRepositoryOf(bare);
+
+        assertThat(src).contains("String order = \" ORDER BY id\";").doesNotContain("sortColumn");
     }
 }

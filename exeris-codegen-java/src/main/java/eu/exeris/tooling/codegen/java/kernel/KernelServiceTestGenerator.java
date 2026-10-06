@@ -112,6 +112,7 @@ public final class KernelServiceTestGenerator {
 
         type.addMethod(findByIdTest(entityType, serviceType, stubType));
         type.addMethod(findAllTest(entityType, serviceType, stubType));
+        type.addMethod(findPageTest(metadata, entityType, serviceType, stubType));
         for (FinderSpec finder : finders) {
             type.addMethod(finderTest(entityType, serviceType, stubType, finder));
         }
@@ -119,7 +120,7 @@ public final class KernelServiceTestGenerator {
         type.addMethod(updateTest(entityType, serviceType, stubType));
         type.addMethod(deleteTest(serviceType, stubType));
         type.addMethod(countTest(serviceType, stubType));
-        type.addType(stubRepository(entityType, repositoryType, stubType, finders));
+        type.addType(stubRepository(metadata, entityType, repositoryType, stubType, finders));
 
         return new GeneratedFile(packageName, className,
                 KernelScaffold.render(packageName, type.build()), ArtifactType.TEST);
@@ -144,6 +145,24 @@ public final class KernelServiceTestGenerator {
                 .addStatement("repository.all = $T.of(new $T())", LIST, entityType)
                 .addStatement("$T service = new $T(repository)", serviceType, serviceType)
                 .addStatement("$T.assertThat(service.findAll()).isSameAs(repository.all)", ASSERTIONS)
+                .build();
+    }
+
+    /**
+     * The list route's read: the query arrives at the repository unchanged, and the repository's page
+     * is what comes back.
+     */
+    private MethodSpec findPageTest(DomainMetadata metadata, ClassName entityType, ClassName serviceType,
+                                    ClassName stubType) {
+        ClassName queryType = KernelListQueryGenerator.listQueryType(metadata);
+        ClassName pageType = KernelListQueryGenerator.pageType(metadata);
+        return test("findPageDelegatesTheQueryAndReturnsTheRepositoryPage")
+                .addStatement("$T repository = new $T()", stubType, stubType)
+                .addStatement("repository.page = $T.of($T.of(new $T()), 1L, 0, 1)", pageType, LIST, entityType)
+                .addStatement("$T service = new $T(repository)", serviceType, serviceType)
+                .addStatement("$T query = $T.of(0, 1)", queryType, queryType)
+                .addStatement("$T.assertThat(service.findPage(query)).isSameAs(repository.page)", ASSERTIONS)
+                .addStatement("$T.assertThat(repository.listQuery).isSameAs(query)", ASSERTIONS)
                 .build();
     }
 
@@ -225,8 +244,10 @@ public final class KernelServiceTestGenerator {
      * The nested repository double. Fields are package-private and set directly by each test — a
      * generated double has no callers to protect, and accessors would be noise.
      */
-    private TypeSpec stubRepository(ClassName entityType, ClassName repositoryType,
+    private TypeSpec stubRepository(DomainMetadata metadata, ClassName entityType, ClassName repositoryType,
                                     ClassName stubType, List<FinderSpec> finders) {
+        ClassName pageType = KernelListQueryGenerator.pageType(metadata);
+        ClassName queryType = KernelListQueryGenerator.listQueryType(metadata);
         TypeName listOfEntity = ParameterizedTypeName.get(LIST, entityType);
         TypeName optionalOfEntity = ParameterizedTypeName.get(OPTIONAL, entityType);
 
@@ -239,6 +260,8 @@ public final class KernelServiceTestGenerator {
                 .addJavadoc("overridden here reads it — so no database, driver or transaction is\n")
                 .addJavadoc("involved in a service test.\n")
                 .addField(FieldSpec.builder(listOfEntity, "all").initializer("$T.of()", LIST).build())
+                .addField(FieldSpec.builder(pageType, "page").build())
+                .addField(FieldSpec.builder(queryType, "listQuery").build())
                 .addField(FieldSpec.builder(optionalOfEntity, "byId")
                         .initializer("$T.empty()", OPTIONAL).build())
                 .addField(FieldSpec.builder(listOfEntity, "byFinder")
@@ -261,6 +284,14 @@ public final class KernelServiceTestGenerator {
                         .addModifiers(Modifier.PUBLIC)
                         .returns(listOfEntity)
                         .addStatement("return all")
+                        .build())
+                .addMethod(MethodSpec.methodBuilder("findPage")
+                        .addAnnotation(Override.class)
+                        .addModifiers(Modifier.PUBLIC)
+                        .returns(pageType)
+                        .addParameter(queryType, "query")
+                        .addStatement("this.listQuery = query")
+                        .addStatement("return page")
                         .build())
                 .addMethod(MethodSpec.methodBuilder("findById")
                         .addAnnotation(Override.class)

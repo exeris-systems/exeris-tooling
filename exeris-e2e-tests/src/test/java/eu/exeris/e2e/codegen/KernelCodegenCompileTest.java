@@ -96,10 +96,15 @@ class KernelCodegenCompileTest {
                         // null-check, String minLength/maxLength/pattern, and numeric
                         // (BigDecimal) min/max — so the generated checks must compile
                         // against the real getters.
+                        // The list route: sortable and filterable fields of a String, a
+                        // BigDecimal, a boolean and an enum (below), plus the foreign key, drive
+                        // every bind the emitted list filter makes and the sort-column table.
                         FieldMetadata.builder("orderNumber", "String")
                                 .required(true)
                                 .unique(true)
                                 .searchable(true)
+                                .sortable(true)
+                                .filterable(true)
                                 .minLength(3)
                                 .pattern("[A-Z0-9-]+")
                                 .build(),
@@ -110,6 +115,8 @@ class KernelCodegenCompileTest {
                                 .build(),
                         FieldMetadata.builder("amount", "BigDecimal")
                                 .required(true)
+                                .sortable(true)
+                                .filterable(true)
                                 .min(0L)
                                 .max(1000000L)
                                 .build(),
@@ -121,6 +128,7 @@ class KernelCodegenCompileTest {
                         // emitting row.getInstant() straight into a LocalDateTime setter
                         // would not compile. This makes javac the regression guard.
                         FieldMetadata.builder("scheduledFor", "java.time.LocalDateTime")
+                                .sortable(true)
                                 .build(),
                         // Enum field: exercises the Repository generator's
                         // fall-through emit path. Must be FQCN so JavaPoet
@@ -138,6 +146,7 @@ class KernelCodegenCompileTest {
                         // `isX()` accessor in the generated publisher — the gate
                         // javac-compiles entity.isExpedited() against the entity.
                         FieldMetadata.builder("expedited", "boolean")
+                                .filterable(true)
                                 .build()))
                 // T8: a MANY_TO_ONE relationship drives the FK finder
                 // findByCustomerId(UUID) on the Repository + Service — javac is the

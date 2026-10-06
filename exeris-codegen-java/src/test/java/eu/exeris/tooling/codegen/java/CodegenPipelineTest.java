@@ -3,6 +3,8 @@ package eu.exeris.tooling.codegen.java;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import eu.exeris.sdk.sourcemodel.ast.CapabilityModuleMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
+import eu.exeris.sdk.sourcemodel.ast.EnumMetadata;
+import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 import eu.exeris.sdk.sourcemodel.ast.ProvidesMetadata;
 import eu.exeris.sdk.sourcemodel.ast.RequiresMetadata;
 import eu.exeris.tooling.codegen.core.capability.CapTierWallException;
@@ -419,6 +421,35 @@ class CodegenPipelineTest {
             List<DomainMetadata> loaded = pipeline.loadMetadata(metadataDir);
 
             assertThat(loaded).extracting(DomainMetadata::entityName).containsExactly("Product");
+        }
+
+        @Test
+        @DisplayName("a field's enumType is the emitted enum it names, by qualified or simple type, "
+                + "and is cleared when it names none")
+        void resolvesEnumTypesFromTheEmittedEnums() throws IOException {
+            writeDomainJson("Order.json", DomainMetadata.builder("Order", "com.shop.domain")
+                    .module("sales").path("/orders")
+                    .fields(List.of(
+                            FieldMetadata.simple("status", "com.shop.domain.OrderStatus"),
+                            FieldMetadata.simple("priority", "Priority"),
+                            FieldMetadata.simple("phase", "com.shop.domain.OrderPhase"),
+                            FieldMetadata.builder("stale", "String").enumType("com.shop.domain.Gone").build(),
+                            FieldMetadata.simple("placedAt", "java.time.OffsetDateTime")))
+                    .build());
+            mapper.writeValue(metadataDir.resolve("enum_OrderStatus.json").toFile(), new EnumMetadata(
+                    "OrderStatus", "com.shop.domain.OrderStatus", "com.shop.domain", null, List.of()));
+            mapper.writeValue(metadataDir.resolve("enum_Priority.json").toFile(), new EnumMetadata(
+                    "Priority", "com.shop.domain.Priority", "com.shop.domain", null, List.of()));
+
+            DomainMetadata order = pipeline.loadMetadata(metadataDir).getFirst();
+
+            assertThat(order.fields()).extracting(FieldMetadata::name, FieldMetadata::enumType)
+                    .containsExactly(
+                            org.assertj.core.groups.Tuple.tuple("status", "com.shop.domain.OrderStatus"),
+                            org.assertj.core.groups.Tuple.tuple("priority", "com.shop.domain.Priority"),
+                            org.assertj.core.groups.Tuple.tuple("phase", null),
+                            org.assertj.core.groups.Tuple.tuple("stale", null),
+                            org.assertj.core.groups.Tuple.tuple("placedAt", null));
         }
 
         @Test

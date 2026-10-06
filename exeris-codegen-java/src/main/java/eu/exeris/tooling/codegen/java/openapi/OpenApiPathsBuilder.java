@@ -2,14 +2,20 @@ package eu.exeris.tooling.codegen.java.openapi;
 
 import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
+import eu.exeris.tooling.codegen.java.support.ListQuerySupport;
 import eu.exeris.tooling.codegen.java.support.NameCasing;
 import io.swagger.v3.oas.models.Operation;
 import io.swagger.v3.oas.models.PathItem;
+import io.swagger.v3.oas.models.media.Content;
+import io.swagger.v3.oas.models.media.MediaType;
+import io.swagger.v3.oas.models.media.Schema;
 import io.swagger.v3.oas.models.Paths;
 import io.swagger.v3.oas.models.parameters.Parameter;
 import io.swagger.v3.oas.models.responses.ApiResponse;
 import io.swagger.v3.oas.models.responses.ApiResponses;
 
+import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -27,7 +33,7 @@ public final class OpenApiPathsBuilder {
         String entityName = metadata.entityName();
 
         PathItem collectionPath = new PathItem();
-        collectionPath.setGet(buildListOperation(entityName));
+        collectionPath.setGet(buildListOperation(metadata));
         collectionPath.setPost(buildCreateOperation(entityName));
         paths.addPathItem(basePath, collectionPath);
 
@@ -48,13 +54,66 @@ public final class OpenApiPathsBuilder {
         return paths;
     }
 
-    private static Operation buildListOperation(String entity) {
+    /**
+     * The list operation: the query parameters {@code <Entity>ListQuery.parse} reads — {@code page},
+     * {@code size}, {@code sort} over the entity's sortable properties, and one equality filter per
+     * filter property — and the {@code <Entity>Page} envelope. {@code sort} is declared only when
+     * something is sortable, since the route refuses it otherwise. {@code 400} is what the handler
+     * answers for every parameter the query refuses.
+     */
+    private static Operation buildListOperation(DomainMetadata metadata) {
+        String entity = metadata.entityName();
         Operation op = new Operation();
         op.setOperationId("list" + entity);
-        op.setSummary("List all " + entity);
+        op.setSummary("List " + entity + ", one page at a time");
         op.setTags(List.of(entity));
-        op.setResponses(Responses.of("200", "List of " + entity).serverError());
+
+        op.addParametersItem(queryParam(ListQuerySupport.PAGE, "Zero-based page index",
+                new Schema<Integer>().type("integer").format("int32")
+                        .minimum(BigDecimal.ZERO)._default(0)));
+        op.addParametersItem(queryParam(ListQuerySupport.SIZE, "Page size",
+                new Schema<Integer>().type("integer").format("int32")
+                        .minimum(BigDecimal.ONE).maximum(BigDecimal.valueOf(ListQuerySupport.MAX_SIZE))
+                        ._default(ListQuerySupport.DEFAULT_SIZE)));
+        List<ListQuerySupport.Property> sortable = ListQuerySupport.sortable(metadata);
+        if (!sortable.isEmpty()) {
+            List<String> values = new ArrayList<>();
+            for (ListQuerySupport.Property property : sortable) {
+                values.add(property.name() + ",asc");
+                values.add(property.name() + ",desc");
+            }
+            Schema<String> sortSchema = new Schema<String>().type("string");
+            sortSchema.setEnum(values);
+            op.addParametersItem(queryParam(ListQuerySupport.SORT,
+                    "<property>,<asc|desc>; unsorted, rows come in id order", sortSchema));
+        }
+        for (ListQuerySupport.Property filter : ListQuerySupport.filters(metadata)) {
+            Schema<Object> schema = new Schema<>();
+            schema.setType(TypeMapper.toOpenApiType(filter.javaType()));
+            String format = TypeMapper.toOpenApiFormat(filter.javaType());
+            if (format != null) {
+                schema.setFormat(format);
+            }
+            op.addParametersItem(queryParam(filter.name(), "Only rows whose " + filter.name()
+                    + " equals this value", schema));
+        }
+
+        ApiResponses responses = Responses.of("200", "One page of " + entity).badRequest().serverError();
+        responses.get("200").setContent(new Content().addMediaType("application/json",
+                new MediaType().schema(new Schema<>().$ref(
+                        "#/components/schemas/" + OpenApiComponentsBuilder.pageSchemaName(entity)))));
+        op.setResponses(responses);
         return op;
+    }
+
+    private static Parameter queryParam(String name, String description, Schema<?> schema) {
+        Parameter param = new Parameter();
+        param.setName(name);
+        param.setIn("query");
+        param.setRequired(false);
+        param.setDescription(description);
+        param.setSchema(schema);
+        return param;
     }
 
     private static Operation buildGetOperation(String entity) {

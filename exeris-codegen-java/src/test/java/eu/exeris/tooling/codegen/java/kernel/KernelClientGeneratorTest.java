@@ -221,4 +221,22 @@ class KernelClientGeneratorTest {
                 .contains("if (e.isNotFound())")
                 .contains("return Optional.empty()");
     }
+
+    @Test
+    @DisplayName("findAll returns the page envelope: by page and size, or by a full list query whose own "
+            + "query string it sends")
+    void findAllReturnsThePage() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain").path("/orders").build();
+        String client = new KernelClientGenerator().generate(metadata).content();
+
+        assertThat(client)
+                .contains("public OrderPage findAll(int page, int size)")
+                .contains("return findAll(OrderListQuery.of(page, size));")
+                .contains("public OrderPage findAll(OrderListQuery query)")
+                .contains("return client.get(BASE_PATH + \"?\" + query.toQueryString(), OrderPage.class);")
+                .contains("import com.example.repository.OrderPage;")
+                // The unpaged findAll() is gone rather than quietly returning one page.
+                .doesNotContain("public List<Order> findAll()")
+                .doesNotContain("Order[].class");
+    }
 }

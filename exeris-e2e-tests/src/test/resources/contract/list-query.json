@@ -1,0 +1,47 @@
+{
+  "description": "The query the list route GET {base} reads and the envelope it answers with. ListQueryContractE2ETest (exeris-e2e-tests) proves the generated list query, handler, page record, client and OpenAPI document state exactly this; the TypeScript service and store are to be held to the same file from exeris-codegen-ts. The two builds never run together, so this file is the one place they meet: change it only together with the generated list query.",
+  "route": { "operation": "list", "method": "GET", "path": "{base}" },
+  "parameters": {
+    "page": { "meaning": "zero-based page index", "default": 0, "minimum": 0 },
+    "size": { "meaning": "page size", "default": 20, "minimum": 1, "maximum": 100 },
+    "sort": {
+      "meaning": "one sortable property and a direction; without it rows come in id order",
+      "format": "<property>,<direction>",
+      "directions": ["asc", "desc"]
+    },
+    "filter": {
+      "meaning": "one equality filter per filterable property: rows whose property equals the value",
+      "format": "<property>=<value>",
+      "booleanValues": ["true", "false"],
+      "foreignKey": "<relationship>Id=<uuid>, for every MANY_TO_ONE relationship"
+    }
+  },
+  "reserved": ["page", "size", "sort"],
+  "properties": {
+    "sortable": "@Field(sortable = true), and every field without @Field, of a type in sortableScalarTypes or an enum; never a List field",
+    "filterable": "@Field(filterable = true) and every field without @Field, of a type in filterableScalarTypes or an enum; and <relationship>Id for every MANY_TO_ONE",
+    "enum": "a field is an enum when its enumType, else its type, names an enum the processor emitted beside the entities (enum_*.json): by qualified name, else by simple name. A type merely named like an enum is not one",
+    "unrecognised": "a field whose type is in neither list and names no emitted enum (a Map, a Set, a record, OffsetDateTime, ZonedDateTime, BigInteger, Float, Short) is neither a sort key nor a filter",
+    "neverOffered": "the primary key (it is the ORDER BY tiebreak only), the owning tenant, the shared-scope field, the audit fields (created and updated at and by), the version and the soft-delete fields, under their declared or canonical names"
+  },
+  "filterableScalarTypes": [
+    "BigDecimal", "Boolean", "Double", "Integer", "LocalDate", "Long", "String", "UUID", "boolean",
+    "double", "int", "java.lang.Boolean", "java.lang.Double", "java.lang.Integer", "java.lang.Long",
+    "java.lang.String", "java.math.BigDecimal", "java.time.LocalDate", "java.util.UUID", "long"
+  ],
+  "sortableScalarTypes": [
+    "BigDecimal", "Boolean", "Double", "Instant", "Integer", "LocalDate", "LocalDateTime", "Long",
+    "String", "UUID", "boolean", "double", "int", "java.lang.Boolean", "java.lang.Double",
+    "java.lang.Integer", "java.lang.Long", "java.lang.String", "java.math.BigDecimal",
+    "java.time.Instant", "java.time.LocalDate", "java.time.LocalDateTime", "java.util.UUID", "long"
+  ],
+  "filterableEnums": "an enum field is filterable by its constant's name",
+  "refusedWith400": [
+    "an unknown parameter name",
+    "a repeated parameter",
+    "a sort property that is not sortable, or a direction other than asc or desc",
+    "a filter value that does not parse as its property's type",
+    "a negative page, or a size outside 1..maximum"
+  ],
+  "envelope": ["content", "totalElements", "totalPages", "size", "number", "first", "last"]
+}

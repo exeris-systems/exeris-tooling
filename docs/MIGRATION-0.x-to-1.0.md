@@ -1523,6 +1523,15 @@ not as the table owner (or keep tables `FORCE`d, as the generated migrations do)
   `PATCH {base}/{id}` route to reach the generated server can remove it.
 - A hand-written TS client that copied the generated `PATCH` should switch to `PUT`.
 
+### An explicit-UUID foreign key without `@Field` no longer emits its finder twice
+
+A `MANY_TO_ONE` relationship declared on a UUID field with no `@Field`
+(`@Relationship(targetEntity = Customer.class) private UUID customerId;`) emitted
+`findByCustomerId(UUID)` twice in the generated repository and service — once because the processor
+records a field without `@Field` as filterable, once as the relationship's foreign-key finder — and
+the generated tree did not compile (`method findByCustomerId(UUID) is already defined`). The finder is
+emitted once, over the same `customer_id` column. Regenerate; no code change.
+
 ### `exeris-codegen-ts`: the edit route edits, and a routed form navigates
 
 The emitted app routes `/<plural>/:id/edit` to `<Entity>FormComponent`, but the form had no input
@@ -2505,6 +2514,100 @@ by coordinate, adds `exeris-diagnostics` to that list.
 ### `eu.exeris.tooling.codegen.java.dsl` is removed
 
 No build step ran its six classes, so generated output is unchanged. ADR-015 records `exeris-codegen-java` as internal tooling with no downstream Maven consumers; code that nevertheless called them from the jar no longer compiles, and there is no replacement.
+
+### The list route pages, sorts and filters on the server, and answers a page envelope
+
+`Compatibility impact: breaking (ADR-015, ADR-096)` for the generated Java: the list route's response shape
+changes from a JSON array to an envelope, its query string is now read, and the generated client's
+`findAll` changes signature.
+
+**The wire.** `GET {base}` reads its query string and answers one page:
+
+| Parameter | Meaning | Default | Refused with `400` when |
+|---|---|---|---|
+| `page` | zero-based page index | `0` | negative, or not an integer |
+| `size` | page size | `20` | below `1`, above `100`, or not an integer |
+| `sort` | `<property>,asc` or `<property>,desc` (a bare `<property>` sorts ascending) | `id` order | the property is not sortable, or the direction is neither `asc` nor `desc` |
+| `<property>` | equality filter, one per filterable property; `<base>Id=<uuid>` for every `MANY_TO_ONE` | none | the value does not parse as the property's type (a boolean is exactly `true` or `false`; an enum is a constant's name; a date is `yyyy-MM-dd`) |
+
+Any other parameter name, and any parameter given twice, is refused with `400` as well — a mistyped
+filter is an error rather than an unfiltered answer. The response is
+
+```json
+{ "content": [ … ], "totalElements": 42, "totalPages": 3, "size": 20, "number": 0, "first": true, "last": false }
+```
+
+the members the generated Angular service reads as `Page<T>`. Before, the route read no parameter
+and answered every row as a bare array.
+
+**Which properties.** A field is sortable with `@Field(sortable = true)` and filterable with
+`@Field(filterable = true)`. A field that carries **no** `@Field` is recorded by the processor as
+both, so check the entity's `<Entity>ListQuery.SORTABLE` and its `Filter` record after
+regenerating. System fields are never either, with or without `@Field`: the primary key, the owning
+tenant, the shared-scope field, the audit fields (created and updated at and by), the version and
+the soft-delete fields, under their declared or canonical names, for each role the entity's flags
+switch on. A `List` field is neither; an `Instant` or `LocalDateTime` field is sortable but not
+filterable (equality on an instant matches nothing a person types); a field named `page`, `size` or
+`sort` is sortable but never a filter. An enum field is both, when the processor emitted the enum —
+which it does for every `@ExerisDomain` field whose Java type is an `enum`; hand-written metadata
+passes the enum beside the entities (`enum_*.json`). A field of any other type — a `Map`, a `Set`, a
+record, `OffsetDateTime`, `ZonedDateTime`, `BigInteger`, `Float`, `Short`, or a type merely named
+like an enum — is neither. Rows that tie on the sort column are ordered by `id`, so a
+row does not move between pages. Where `NULL` values sort is the database's default. See ADR-096.
+
+**New emitted types.** Per entity, in the generated **repository** package:
+`<Entity>ListQuery` — the parsed query, with `parse(String rawQuery)`, `of(page, size)`,
+`toQueryString()`, the `DEFAULT_SIZE` / `MAX_SIZE` / `SORTABLE` constants and a nested `Filter`
+record — and `<Entity>Page`, the envelope record. They are plain JDK types and add no dependency to
+your build.
+
+**Generated Java.**
+
+- `<Entity>Repository` gains `findPage(<Entity>ListQuery)`: a `COUNT(*)` and a
+  `… ORDER BY <column> <dir>, id LIMIT ? OFFSET ?` with the same `WHERE`, run in one
+  `executor.query`. The soft-delete predicate is applied as `findAll` applies it; tenant and
+  shared-scope visibility stays with row-level security exactly as on `findAll` — nothing binds a
+  tenant. Every filter value, the limit and the offset are bound; the sort column comes from a fixed
+  table in the repository. `findAll()` is unchanged and still returns every row.
+- `<Entity>Service` gains `findPage(<Entity>ListQuery)`; `findAll()` stays.
+- `<Entity>Handler.handleGetAll` parses the query (`400` with no body for anything it refuses,
+  before the service is reached) and responds with the page. A tenant-scoped entity's tenant guard
+  still runs first.
+- `<Entity>Client`: `findAll()` returning `List<Entity>` is **removed**, and `findAll(int page,
+  int size)` now returns `<Entity>Page`. `findAll(<Entity>ListQuery)` sends sort and filters too.
+  The no-argument form is removed rather than kept, because it could only have returned the first
+  page while its name and type said "everything": a call site now fails to compile instead of
+  silently reading twenty rows.
+- The OpenAPI list operation declares `page`, `size`, `sort` (an enum of the entity's sortable
+  `<property>,<dir>` values, absent when nothing is sortable) and one typed parameter per filter,
+  answers `200` with the `<Entity>Page` schema (new under `components.schemas`) and declares `400`
+  (ADR-079, Amendment 1).
+- Generated tests (`exeris.tests`): `Stub<Entity>Service` overrides `findPage` instead of `findAll`
+  and records the query (`listQuery`); its `all` field is gone. `handleGetAll` has cases for the
+  default page, page and size, a sort and a filter where the entity has them, and four `400`s. The
+  service and repository tests gain a `findPage` case each.
+
+**What to do.**
+
+1. Regenerate. Code that calls the generated client's `findAll()` must page: `findAll(0,
+   <Entity>ListQuery.MAX_SIZE)` and follow `last()`, or pass an `<Entity>ListQuery`.
+2. A hand-written client of `GET {base}` must read `content` instead of the array, and page with
+   `page` / `size` — the default page is twenty rows. One that sends a parameter the route does not
+   read now gets `400`.
+3. A subclass of the generated service that overrides `findAll()` to change what the list route
+   returns must override `findPage` instead; the handler no longer calls `findAll()`.
+4. **Regenerate the Angular front end from the same release.** A list that loads the collection
+   once and pages in the browser would now hold only the first twenty rows; the `exeris-codegen-ts`
+   list sends its page, sort and filters to this route instead.
+
+**If you ran `exeris:detach`.** The generated tree is yours, and nothing regenerates it. The old
+array-returning route keeps working for your own front end; to adopt the paged route, regenerate
+into a scratch directory and port `<Entity>ListQuery`, `<Entity>Page`, the repository's `findPage`,
+`sortColumn` and `bindListFilter`, the service's `findPage` and the handler's `handleGetAll` and
+`rawQuery` by hand. A front end regenerated by 0.9.0 expects the envelope and the parameters above.
+
+The query names, the size bounds and the envelope members are pinned in
+`exeris-e2e-tests/src/test/resources/contract/list-query.json`, which both builds test against.
 
 ### `@exeris/codegen-ts` installs from npmjs, at the tooling version
 

@@ -98,4 +98,15 @@ class KernelServiceGeneratorTest {
         assertThat(service.content()).containsOnlyOnce("findById(UUID id)");
         assertThat(service.content()).contains("findByStatus(");
     }
+
+    @Test
+    @DisplayName("findPage delegates the list query to the repository; the unpaged findAll stays")
+    void findPageDelegates() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain").path("/orders").build();
+        String service = new KernelServiceGenerator().generate(metadata).content().replaceAll("\\s+", " ");
+
+        assertThat(service)
+                .contains("public OrderPage findPage(OrderListQuery query) { return repository.findPage(query); }")
+                .contains("public List<Order> findAll() { return repository.findAll(); }");
+    }
 }

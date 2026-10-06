@@ -103,6 +103,8 @@ class KernelArtifactGeneratorTest {
                 // ADR-076: the per-entity write-rejection exceptions the repository throws and
                 // the handler maps to 404/409.
                 ArtifactType.DOMAIN_ERROR,
+                // The list route's parsed query and its page envelope.
+                ArtifactType.LIST_QUERY,
                 ArtifactType.CONFIGURATION,
                 ArtifactType.OPENAPI_SPEC,
                 // T2/ADR-058: generated tests are their own artefact kind — they are the only one

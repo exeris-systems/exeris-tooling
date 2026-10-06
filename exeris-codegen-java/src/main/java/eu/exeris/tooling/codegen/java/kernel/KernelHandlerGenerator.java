@@ -87,7 +87,6 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
             ClassName.get("java.lang", "IllegalStateException");
     private static final ClassName UUID = ClassName.get("java.util", "UUID");
     private static final ClassName OPTIONAL = ClassName.get("java.util", "Optional");
-    private static final ClassName LIST = ClassName.get("java.util", "List");
     private static final ClassName BIG_DECIMAL = ClassName.get("java.math", "BigDecimal");
     private static final ClassName ILLEGAL_ARGUMENT_EXCEPTION =
             ClassName.get("java.lang", "IllegalArgumentException");
@@ -110,7 +109,6 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         ClassName entityType = ClassName.get(metadata.packageName(), entity);
         ClassName serviceType = ClassName.get(basePackage + ".service", serviceSimpleName);
         ClassName selfType = ClassName.get(packageName, className);
-        TypeName listOfEntity = ParameterizedTypeName.get(LIST, entityType);
         TypeName optionalOfEntity = ParameterizedTypeName.get(OPTIONAL, entityType);
 
         // A tenant-scoped entity cannot be served without a tenant; a global one can. The guard is
@@ -161,7 +159,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         }
 
         handlerBuilder.addMethod(constructor.build())
-                .addMethod(buildHandleGetAll(entityLower, listOfEntity, tenantPartitioned))
+                .addMethod(buildHandleGetAll(entityLower, metadata, tenantPartitioned))
                 .addMethod(buildHandleGetById(entityLower, optionalOfEntity, tenantPartitioned))
                 .addMethod(buildHandleCreate(entityLower, entityType, metadata, tenantPartitioned))
                 .addMethod(buildHandleUpdate(entityLower, entityType, metadata, tenantPartitioned))
@@ -196,6 +194,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         if (tenantPartitioned) {
             handlerBuilder.addMethod(buildRespondTenantUnbound(entityLower));
         }
+        handlerBuilder.addMethod(buildRawQuery());
         handlerBuilder.addMethod(buildExtractPathId());
         handlerBuilder.addMethod(buildRespondDecoderUnavailable(entityLower));
         handlerBuilder.addMethod(buildRespondDecodeFailed(entityLower));
@@ -207,13 +206,46 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                 KernelScaffold.render(packageName, handler), ArtifactType.CONTROLLER);
     }
 
-    private MethodSpec buildHandleGetAll(String entityLower, TypeName listOfEntity, boolean tenantPartitioned) {
+    /**
+     * The list route: parse the query string into an {@code <Entity>ListQuery}, read that page, and
+     * answer it as an {@code <Entity>Page}.
+     *
+     * <p>A query the list query refuses — an unknown or repeated parameter, a property outside the
+     * sort or filter whitelist, a value that does not parse, a negative page, a size out of range —
+     * is the caller's fault and answers {@code 400} with no body and no log, like every other
+     * malformed request this handler refuses. It is refused before the service is reached.
+     */
+    private MethodSpec buildHandleGetAll(String entityLower, DomainMetadata metadata, boolean tenantPartitioned) {
+        ClassName queryType = KernelListQueryGenerator.listQueryType(metadata);
         MethodSpec.Builder method = crudHandler("handleGetAll");
         appendTenantGuard(method, tenantPartitioned);
-        method.beginControlFlow("try")
-                .addStatement("$T entities = service.findAll()", listOfEntity)
-                .addStatement("exchange.respond($T.OK, entities)", HTTP_STATUS);
+        method.addStatement("$T query", queryType)
+                .beginControlFlow("try")
+                .addStatement("query = $T.parse(rawQuery(exchange))", queryType)
+                .nextControlFlow("catch ($T e)", ILLEGAL_ARGUMENT_EXCEPTION)
+                .addStatement("exchange.respond($T.BAD_REQUEST)", HTTP_STATUS)
+                .addStatement("return")
+                .endControlFlow()
+                .beginControlFlow("try")
+                .addStatement("$T page = service.findPage(query)", KernelListQueryGenerator.pageType(metadata))
+                .addStatement("exchange.respond($T.OK, page)", HTTP_STATUS);
         return appendServerErrorCatch(method, "Failed to get all " + entityLower + "s").build();
+    }
+
+    /**
+     * The query string of the request target — what follows {@code ?}, still percent-encoded, or
+     * {@code ""}. The kernel carries the whole request target in {@code HttpRequest.path()}; its
+     * router matches the route on the part before {@code ?}.
+     */
+    private static MethodSpec buildRawQuery() {
+        return MethodSpec.methodBuilder("rawQuery")
+                .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+                .returns(String.class)
+                .addParameter(HTTP_EXCHANGE, EXCHANGE_PARAM)
+                .addStatement("String target = exchange.request().path()")
+                .addStatement("int start = target.indexOf('?')")
+                .addStatement("return start < 0 ? $S : target.substring(start + 1)", "")
+                .build();
     }
 
     private MethodSpec buildHandleGetById(String entityLower, TypeName optionalOfEntity, boolean tenantPartitioned) {

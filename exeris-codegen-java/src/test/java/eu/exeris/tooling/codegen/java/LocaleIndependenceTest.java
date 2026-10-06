@@ -121,8 +121,11 @@ class LocaleIndependenceTest {
                 .fields(List.of(
                         FieldMetadata.builder("id", "java.util.UUID").required(true).build(),
                         FieldMetadata.builder("itemId", "java.util.UUID").filterable(true).build(),
-                        FieldMetadata.builder("issuerEmail", "String").format("EMAIL").build(),
-                        FieldMetadata.builder("isPaid", "boolean").build(),
+                        // Sortable and filterable, so the list query's whitelist, parse switch and
+                        // the repository's sort-column table are generated under both locales.
+                        FieldMetadata.builder("issuerEmail", "String").format("EMAIL")
+                                .sortable(true).filterable(true).build(),
+                        FieldMetadata.builder("isPaid", "boolean").filterable(true).build(),
                         FieldMetadata.builder("lineIds", "List<java.util.UUID>").build(),
                         FieldMetadata.builder("tenantId", "java.util.UUID").build(),
                         FieldMetadata.builder("version", "long").build(),

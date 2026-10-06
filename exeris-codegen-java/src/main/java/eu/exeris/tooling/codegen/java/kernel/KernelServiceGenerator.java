@@ -58,7 +58,8 @@ public class KernelServiceGenerator implements KernelArtifactGenerator {
 
         builder.addMethod(buildConstructor(repoType))
                 .addMethod(buildFindById(optionalOfEntity))
-                .addMethod(buildFindAll(listOfEntity));
+                .addMethod(buildFindAll(listOfEntity))
+                .addMethod(buildFindPage(metadata));
 
         // T8: delegating finders mirroring the repository surface (parity), in
         // the same stable sorted order — filterable fields by name, then
@@ -121,6 +122,20 @@ public class KernelServiceGenerator implements KernelArtifactGenerator {
                 .addModifiers(Modifier.PUBLIC)
                 .returns(listOfEntity)
                 .addStatement("return repository.findAll()")
+                .build();
+    }
+
+    /**
+     * The list route's read: one page of the rows the query's filters select. Every row, unpaged,
+     * stays available as {@code findAll()} for the consumer's own code; the generated handler reads
+     * through this method only.
+     */
+    private MethodSpec buildFindPage(DomainMetadata metadata) {
+        return MethodSpec.methodBuilder("findPage")
+                .addModifiers(Modifier.PUBLIC)
+                .returns(KernelListQueryGenerator.pageType(metadata))
+                .addParameter(KernelListQueryGenerator.listQueryType(metadata), "query")
+                .addStatement("return repository.findPage(query)")
                 .build();
     }
 
