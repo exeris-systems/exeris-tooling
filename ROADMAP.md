@@ -3372,6 +3372,42 @@ results, and a line-number citation that expired between being measured and bein
 
 **Not in it, and why:** everything gated on a final kernel or SDK `0.12.0` — neither exists yet.
 
+## 0.9.0 — shipped
+
+Release PR 2026-10-06; the tag and the Central and npm publication follow it (Versioning policy).
+The train's own entries carry the evidence; this is the close-out.
+
+**What it was about.** Catching up with kernel 0.12 and SDK 0.12, and making the first publication
+on Maven Central something a consumer can build on without hand-writing a POM. Every Exeris
+dependency is a final release on Central (B0): kernel `0.12.0`, SDK `0.12.0`.
+
+**Shipped:**
+- *Catch-up:* T6 (table names), the `@RouteAccess` refusal, `@Channel` reserved, S6, K9 (decorate
+  and stream routes through `StreamRouteResolver`, ADR-070 Amendment 3), K6, `SUBSYSTEMS` derived
+  from metadata, `FaultOrigin` read on body decode (ADR-083), and the 0.12 MIGRATION notes (#227).
+- *Starter and publication:* `exeris-app-bom`, `exeris-app-parent` and `exeris-app-starter`
+  (ADR-091) behind an invoker fixture; Maven Central release profile and tag-triggered workflow;
+  `@exeris/codegen-ts` in lockstep and published to npmjs from the same tag.
+- *Contracts:* stable diagnostic identifiers in `exeris-diagnostics` (D4, ADR-095); a write naming
+  another tenant answers `400` (T36, ADR-090); `realTimeApi` on a tenant-partitioned entity is
+  refused until stream events carry an isolation key (T59, ADR-044 Amendment 1); the list route
+  pages, sorts and filters on the server in both emitters (ADR-096 and its two amendments).
+- *Storage:* every field type the generator accepts saves, reads, finds, filters and sorts on
+  PostgreSQL 16 (`PostgresTypeMatrixE2ETest`, opt-in), and the types it cannot store are refused
+  with `EXT-GEN-3003` instead of emitting code that does not compile.
+- *Cleanups:* the unreachable `dsl` package removed; unused test dependencies dropped; the emitted
+  `Application` Javadoc names each requirement by coordinate and phase (T30, still open for builds
+  not on the starter).
+
+**What the train taught, recorded in the entries above.** A green suite on H2 said nothing about
+PostgreSQL: every string-bound typed column passed there and failed on the real engine, which only
+an opt-in matrix against a real server showed. And a change to one emitter's contract is a change to
+both: each list-route rule landed with the contract file both builds read, or it drifted within a day.
+
+**Not in it, and why:** the EV1-stream per-action driver and T53 (authorization) are 0.10.0 scope;
+`search`, range filters and multi-property sort are outside ADR-096; a stream isolation key needs a
+kernel change first; CI does not yet run the PostgreSQL matrix.
+
 ## 0.9.0 sequencing
 
 ### Scope — set 2026-09-30
@@ -3489,13 +3525,13 @@ release)*
       and generated tests follow. Pinned in `contract/list-query.json`
       (`ListQueryContractE2ETest`); run on a real boot over H2 (`ListRouteBootE2ETest`).
       ADR-096 records the contract; ADR-079 Amendment 1 the list operation's response set.
-- [ ] **TS half (codegen-ts track, #298).** The list sends its sort, filters and page to the route
+- [x] **TS half (codegen-ts track, #298; shipped in #299 and #303).** The list sends its sort, filters and page to the route
       instead of working on loaded rows; the detail view's related-record links become panels that
       fetch `?<base>Id=<uuid>`; `service-gen.ts` and `store-gen.ts` stay on `Page<T>`, read
       `contract/list-query.json` in a spec, and send a filter only for a property of a type in its
       `filterableScalarTypes` or an enum. **Gates the cut together with the Java half**: a list that
       pages in the browser now holds only the first page.
-- [ ] Not in this slice: `search` (the front sends it; the route refuses it as an unknown
+- Not in this slice, and not in 0.9.0: `search` (the front sends it; the route refuses it as an unknown
       parameter until a server-side search exists), range filters for dates and numbers, multi-column
       sort.
 
@@ -3508,7 +3544,8 @@ decision for `KernelStrategy.generateClientCode` and `getRealTimeConfig` (codege
 `0.9.0` → tag → deploy to Central → Publish in the Central Portal → `@exeris/codegen-ts@0.9.0` to
 npmjs from the same tag → `0.10.0-SNAPSHOT` (Versioning policy, including the one-time npm setup the
 first npm release needs). *The first two steps are done: both are final on Central, and the BOM pins
-both (B0). Next is the release PR.*
+both (B0). The release PR sets the reactor, `exeris-app-bom` and `@exeris/codegen-ts` to `0.9.0`;
+next is the tag.*
 
 ### Gate groups, carried forward (placement: Scope above and 0.10.0)
 
