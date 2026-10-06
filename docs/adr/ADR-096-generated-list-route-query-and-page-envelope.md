@@ -301,11 +301,11 @@ and the other's refused.
 
 `contract/list-query.json` (obligation 9) lists the nine new spellings in both
 `filterableScalarTypes` and `sortableScalarTypes`, and its `unrecognised` examples drop `Float` and
-`Short`. The TypeScript half is to be held to the same file; until it reads it, the TypeScript
-emitter's own sort and filter offer for these types is not checked against this list.
+`Short`. `list-query-contract.spec.ts` (exeris-codegen-ts) holds the TypeScript emitter's sort and
+filter lists to the same file.
 
 Verification: `ListQuerySupportTest` and `DomainTypeKindTest` pin the kinds and the sets;
 `KernelListQueryGeneratorTest` pins the parse of each new type; `ListQueryContractE2ETest` holds
-both lists to the contract file; `FieldTypeStorageE2ETest` filters on a `Short`, `Byte`, `Float`,
+both Java lists to the contract file and `list-query-contract.spec.ts` the TypeScript ones; `FieldTypeStorageE2ETest` filters on a `Short`, `Byte`, `Float`,
 `BigDecimal` and `LocalDate` column on H2, and `PostgresTypeMatrixE2ETest` (opt-in) sorts and
 filters on every offered type on PostgreSQL 16.

@@ -1,5 +1,5 @@
 {
-  "description": "The query the list route GET {base} reads and the envelope it answers with. ListQueryContractE2ETest (exeris-e2e-tests) proves the generated list query, handler, page record, client and OpenAPI document state exactly this; the TypeScript service and store are to be held to the same file from exeris-codegen-ts. The two builds never run together, so this file is the one place they meet: change it only together with the generated list query.",
+  "description": "The query the list route GET {base} reads and the envelope it answers with. ListQueryContractE2ETest (exeris-e2e-tests) proves the generated list query, handler, page record, client and OpenAPI document state exactly this; list-query-contract.spec.ts (exeris-codegen-ts) holds the TypeScript service, store and list to the same file. The two builds never run together, so this file is the one place they meet: change it only together with the generated list query.",
   "route": { "operation": "list", "method": "GET", "path": "{base}" },
   "parameters": {
     "page": { "meaning": "zero-based page index", "default": 0, "minimum": 0 },
