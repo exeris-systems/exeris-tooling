@@ -11,6 +11,7 @@ import {
   QueryBuilderGenerator,
   generateQueryBuilder,
 } from '../../../src/generators/api/query-builder-gen.js';
+import { ServiceGenerator } from '../../../src/generators/angular/service-gen.js';
 import {
   createGeneratorContext,
   type GeneratorContext,
@@ -218,5 +219,28 @@ describe('generateQueryBuilder — top-level convenience function', () => {
     const file = generateQueryBuilder(domain({ entityName: 'Order' }), partialConfig);
     expect(file.path).toBe('queries/order.query.ts');
     expect(file.content).toContain('export class OrderQueryBuilder');
+  });
+});
+
+describe('QueryBuilderGenerator — the service\'s sort and filter sets', () => {
+  it('a field whose type names an emitted enum sorts and filters in the query builder as in the service', () => {
+    const ctx = createGeneratorContext({}, [], [{
+      name: 'Status', qualifiedName: 'com.shop.Status', packageName: 'com.shop',
+      values: [{ name: 'OPEN', displayName: 'Open', ordinal: 0 }],
+    }]);
+    const d = domain({
+      entityName: 'Order',
+      fields: [
+        field({ name: 'id', type: 'java.util.UUID' }),
+        field({ name: 'status', type: 'com.shop.Status', sortable: true, filterable: true }),
+        field({ name: 'note', type: 'String', sortable: true, filterable: true }),
+      ],
+    });
+    const builder = new QueryBuilderGenerator().generate(d, ctx)!.content;
+    const service = new ServiceGenerator().generate(d, ctx)!.content;
+    const sortUnion = (content: string) => /export type OrderSortField = ([^;]+);/.exec(content)?.[1];
+    expect(sortUnion(builder)).toBe("'note' | 'status'");
+    expect(sortUnion(builder)).toBe(sortUnion(service));
+    expect(builder).toContain('status?:');
   });
 });
