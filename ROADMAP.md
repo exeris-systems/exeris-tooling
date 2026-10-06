@@ -3869,33 +3869,27 @@ keeps compiling where it still uses one. 0.10.0 removes them.
   hold it: `npm run check:version` in the `vitest run --coverage (exeris-codegen-ts)` job on every
   PR, the tag check in `release.yml` (a tag whose version differs from `package.json` releases
   nothing), and `tools/release-readiness/release-readiness.sh`.
-- **The npm half of a cut goes second.** `release.yml` publishes `@exeris/codegen-ts` to npmjs from
-  the same tag, in a job that needs the Maven job and runs in the `npm-publish` environment. Maven
-  goes first because it is the half with an undo: an unpublished Central deployment can be Dropped,
-  an npm version can never be reused. The cut therefore continues: tag → Maven deployment uploaded
-  and gated → **Publish in the Central Portal** → approve the `npm-publish` job → it waits until the
-  release's POM is on Maven Central, runs the tests, and publishes with provenance. A Dropped
-  deployment leaves npm untouched; if the npm job fails after Maven is published, re-run it (it
-  skips a version npm already has). A `workflow_dispatch` never publishes to npm: it packs, uploads
-  the tarball as a run artifact and runs `npm publish --dry-run`. Every PR runs
-  `npm pack --dry-run` and fails on a tarball holding anything beyond `dist/**/*.js`,
-  `package.json`, `README.md` and `LICENSE`; the readiness gate checks the publication metadata
-  (`repository`, `files`, `publishConfig.access`, the bin, LICENSE) and refuses a `-SNAPSHOT`.
-- **One-time npm setup, before the first tag that publishes.** On npmjs: create the `exeris`
-  organisation (it owns the `@exeris` scope). The first version of a package cannot be published by
-  trusted publishing alone, because the trusted-publisher setting lives on the package's own page
-  and npm creates that page at the first publish. So the first release goes through a token: put a
-  short-lived granular access token with read-write on the `@exeris` scope in the repository
-  secret `NPM_TOKEN`, which the job uses when OIDC is not configured, and the workflow still
-  publishes it with provenance. (Publishing the first version by hand from a laptop also works,
-  but that version carries no provenance.) Then, on the package's settings page, add a **trusted publisher**:
-  GitHub Actions, organisation `exeris-systems`, repository `exeris-tooling`, workflow
-  `release.yml`, environment `npm-publish`. Once that works, delete `NPM_TOKEN` and set the
-  package's publishing access to require two-factor authentication and disallow tokens. On GitHub:
-  create the `npm-publish` environment with yourself as a required reviewer, which makes the
-  approval the hold point between Publish in the Central Portal and the npm release. Without a
-  reviewer the job starts at once and fails after its wait if the Maven release is not yet on
-  Central; re-run it once it is.
+- **The npm half of a cut goes second, and it is staged.** `release.yml` stages `@exeris/codegen-ts`
+  on npmjs from the same tag, in a job that needs the Maven job and runs in the `npm-publish`
+  environment. Maven goes first because it is the half with an undo: an unpublished Central
+  deployment can be Dropped, an npm version can never be reused. The cut therefore continues: tag →
+  Maven deployment uploaded and gated → **Publish in the Central Portal** → approve the
+  `npm-publish` job → it waits until the release's POM is on Maven Central, runs the tests, and runs
+  `npm stage publish` with provenance → **approve the staged version with 2FA** (`npm stage approve
+  <stage-id>`, or the package's Staged Packages tab on npmjs.com), and only then is it live. This is
+  the model `exeris-sdk` uses for `@exeris/ui-kit` (ADR-094 Amendment 1): CI holds a token that can
+  only stage, never make a version live. A Dropped deployment leaves npm untouched; if the npm job
+  fails after Maven is published, re-run it (it skips a version npm already has). A
+  `workflow_dispatch` never stages to npm: it packs, uploads the tarball as a run artifact and runs
+  `npm stage publish --dry-run`. Every PR runs `npm pack --dry-run` and fails on a tarball holding
+  anything beyond `dist/**/*.js`, `package.json`, `README.md` and `LICENSE`; the readiness gate
+  checks the publication metadata (`repository`, `files`, `publishConfig.access`, the bin, LICENSE)
+  and refuses a `-SNAPSHOT`.
+- **npm setup the job relies on.** On npmjs, the `exeris` organisation owns the `@exeris` scope. The
+  repository secret `NPM_TOKEN` is a granular access token with "Read and write (stage only)" on
+  `@exeris`, as in `exeris-sdk`. On GitHub, the `npm-publish` environment has the founder as a
+  required reviewer, which makes the approval the hold point between Publish in the Central Portal
+  and staging the npm half.
 
 ## Tracking
 
