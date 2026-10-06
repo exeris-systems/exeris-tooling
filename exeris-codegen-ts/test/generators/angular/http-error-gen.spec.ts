@@ -167,7 +167,7 @@ describe('call sites — every emitted error display goes through httpErrorMessa
   it('list: the page load and the delete, with no alert()', () => {
     const c = generateList(ORDER, DEFAULT_CONFIG)!.content;
     expect(c).toContain("import { httpErrorMessage } from '../core/http-error';");
-    expect(c).toContain("this.error.set(httpErrorMessage(err, { entity: 'orders', action: 'load' }));");
+    expect(c).toContain("return err ? httpErrorMessage(err, { entity: 'orders', action: 'load' }) : null;");
     expect(c).toContain('readonly deleteError = signal<string | null>(null);');
     expect(c).toContain("this.deleteError.set(httpErrorMessage(err, { entity: 'order', action: 'delete' }));");
     expect(c).toContain('data-testid="delete-error"');

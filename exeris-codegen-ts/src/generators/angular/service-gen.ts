@@ -9,6 +9,8 @@ import { DslMapper, modelTypeName } from '../../models/index.js';
 import type { GeneratorConfig } from '../../config.js';
  import type { CodeGenerator, GeneratedFile, GeneratorContext } from '../../core/generator-registry.js';
 import type { BackendType } from '../../core/backend-strategy.js';
+import { enumTypeOf } from './field-render.js';
+import { filterProperties, sortableProperties, type ListQueryProperty } from './list-query.js';
 
 
 // Java types that map to a built-in TS type and therefore never need an enum
@@ -122,15 +124,10 @@ export class ServiceGenerator implements CodeGenerator {
     // Collect enum types for imports (fields + action params — T20a)
     const enumTypes = this.collectEnumTypes(metadata);
 
-    const filterableFields = metadata.fields
-      .filter((f) => f.filterable)
-      .map((field) => {
-        const mapping = DslMapper.mapType(field.type);
-        return {
-          name: field.name,
-          filterType: `${mapping.tsType} | undefined`,
-        };
-      });
+    // The list route's equality filters and sort keys (ADR-096): exactly what the server reads.
+    const filterableFields = filterProperties(metadata, (field) => enumTypeOf(field, context.enums ?? []) !== undefined)
+      .map((property) => ({ name: property.name, filterType: this.filterType(property, enumTypes, context) }));
+    const sortFields = sortableProperties(metadata).map((property) => property.name);
 
     // T1: actions are served at POST {base}/{id}/actions/{kebab(name)} (matches the
     // OpenAPI path + the kernel route), and the server responds with the updated
@@ -161,6 +158,7 @@ export class ServiceGenerator implements CodeGenerator {
       generateZod: context.config.generateZod,
       softDelete: metadata.softDelete,
       filterableFields,
+      sortFields,
       actions,
       systemFields,
       enumTypes,
@@ -168,13 +166,14 @@ export class ServiceGenerator implements CodeGenerator {
   }
 
   private renderService(data: Record<string, unknown>): string {
-    const { entityName, apiBasePath, apiPath, generateZod, softDelete, filterableFields, actions, systemFields, enumTypes } = data as {
+    const { entityName, apiBasePath, apiPath, generateZod, softDelete, filterableFields, sortFields, actions, systemFields, enumTypes } = data as {
       entityName: string;
       apiBasePath: string;
       apiPath: string;
       generateZod: boolean;
       softDelete: boolean;
       filterableFields: Array<{ name: string; filterType: string }>;
+      sortFields: string[];
       actions: Array<{ name: string; description: string; methodName: string; kebabName: string; hasParams: boolean; params: Array<{ name: string; tsType: string }> }>;
       systemFields: string[];
       enumTypes: string[];
@@ -230,6 +229,11 @@ export class ServiceGenerator implements CodeGenerator {
     lines.push(`}`);
     lines.push(``);
 
+    lines.push(`/**`);
+    lines.push(` * A page of the list route: \`page\` is zero-based, \`size\` lies within 1..100 (the route serves`);
+    lines.push(` * 20 when it is absent), and \`sort\` names one property the route sorts on, ascending unless`);
+    lines.push(` * \`direction\` says otherwise. Without \`sort\` the rows come in id order.`);
+    lines.push(` */`);
     lines.push(`export interface PageRequest {`);
     lines.push(`  page?: number;`);
     lines.push(`  size?: number;`);
@@ -238,12 +242,16 @@ export class ServiceGenerator implements CodeGenerator {
     lines.push(`}`);
     lines.push(``);
 
+    lines.push(`/** The properties the list route sorts ${entityName} rows on. */`);
+    lines.push(`export type ${modelName}SortField = ${sortFields.length > 0 ? sortFields.map((f) => `'${f}'`).join(' | ') : 'never'};`);
+    lines.push(``);
+
     // Filter interface
+    lines.push(`/** The list route's equality filters: a row matches when each given property equals its value. */`);
     lines.push(`export interface ${modelName}Filter {`);
     for (const ff of filterableFields) {
       lines.push(`  ${ff.name}?: ${ff.filterType};`);
     }
-    lines.push(`  search?: string;`);
     lines.push(`}`);
     lines.push(``);
 
@@ -257,16 +265,17 @@ export class ServiceGenerator implements CodeGenerator {
     lines.push(`  private readonly http = inject(HttpClient);`);
     lines.push(`  private readonly baseUrl = '${apiBasePath}${apiPath}';`);
     lines.push(``);
-    lines.push(`  findAll(pageRequest: PageRequest = {}, filter: ${modelName}Filter = {}): Observable<Page<${modelName}>> {`);
+    lines.push(`  /** One page of rows: the route pages, sorts and filters them, and answers the page envelope. */`);
+    lines.push(`  findAll(pageRequest: PageRequest & { sort?: ${modelName}SortField } = {}, filter: ${modelName}Filter = {}): Observable<Page<${modelName}>> {`);
     lines.push(`    let params = new HttpParams();`);
-    lines.push(`    if (pageRequest.page !== undefined) params = params.set('page', pageRequest.page.toString());`);
-    lines.push(`    if (pageRequest.size !== undefined) params = params.set('size', pageRequest.size.toString());`);
+    lines.push(`    if (pageRequest.page !== undefined) params = params.set('page', String(pageRequest.page));`);
+    lines.push(`    if (pageRequest.size !== undefined) params = params.set('size', String(pageRequest.size));`);
     lines.push(`    if (pageRequest.sort) params = params.set('sort', \`\${pageRequest.sort},\${pageRequest.direction ?? 'asc'}\`);`);
-    lines.push(`    Object.entries(filter).forEach(([key, value]) => {`);
+    lines.push(`    for (const [key, value] of Object.entries(filter)) {`);
     lines.push(`      if (value !== undefined && value !== null && value !== '') {`);
     lines.push(`        params = params.set(key, String(value));`);
     lines.push(`      }`);
-    lines.push(`    });`);
+    lines.push(`    }`);
     lines.push(`    return this.http.get<Page<${modelName}>>(this.baseUrl, { params });`);
     lines.push(`  }`);
     lines.push(``);
@@ -330,6 +339,20 @@ export class ServiceGenerator implements CodeGenerator {
     lines.push(`}`);
 
     return lines.join('\n');
+  }
+
+  /**
+   * The TypeScript type of one filter value: the DTO type of a scalar, the enum's type when the
+   * service imports it (else its constant's name as a string), and a string for a foreign key.
+   */
+  private filterType(property: ListQueryProperty, enumTypes: readonly string[], context: GeneratorContext): string {
+    if (property.enumeration && property.field) {
+      const name = enumTypeOf(property.field, context.enums ?? []);
+      return name !== undefined && enumTypes.includes(name) ? name : 'string';
+    }
+    if (!property.field) return 'string';
+    const ts = DslMapper.mapType(property.type).tsType.replace(/ \| null$/, '');
+    return ts === 'boolean' || ts === 'number' ? ts : 'string';
   }
 
   private getSystemFields(metadata: DomainMetadata): string[] {

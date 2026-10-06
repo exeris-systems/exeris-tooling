@@ -11,7 +11,8 @@
  * say: an entity without a detail page can still be fetched by id, and one without a create form
  * can still be created through its service.
  *
- * `exportable` is not resolved: nothing exports on either side.
+ * `exportable` is not resolved: nothing exports on either side. Nor is `searchable`: the list route
+ * has no search parameter (ADR-096), so no search box is emitted.
  */
 
 import type { DomainMetadata } from '../../models/domain-model.js';
@@ -26,13 +27,11 @@ export interface EntityViews {
   readonly create: boolean;
   /** The edit route and every button that opens it. */
   readonly edit: boolean;
-  /** The list page's search box. */
-  readonly search: boolean;
   /** The list page's filter controls. */
   readonly filter: boolean;
 }
 
-/** Reads all six switches unconditionally, so every emitter sees the same answer. */
+/** Reads all five switches unconditionally, so every emitter sees the same answer. */
 export function entityViews(domain: DomainMetadata): EntityViews {
   const ui = domain.uiMetadata;
   return {
@@ -40,7 +39,6 @@ export function entityViews(domain: DomainMetadata): EntityViews {
     detail: ui?.detailView !== false,
     create: ui?.createForm !== false,
     edit: ui?.editForm !== false,
-    search: ui?.searchable !== false,
     filter: ui?.filterable !== false,
   };
 }

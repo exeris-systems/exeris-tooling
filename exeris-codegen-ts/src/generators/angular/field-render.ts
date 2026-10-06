@@ -22,7 +22,9 @@
  *
  * The list's rules: a boolean or a number is any type the DTO carries as one, an enum is a type
  * the processor emitted an enum for (the only enums `types/enums` exports), and a date-time type
- * renders with its time.
+ * renders with its time. Whether a column sorts and which filter control a field gets are the list
+ * route's rules (`list-query.ts`, ADR-096): the list sorts and filters on the server, so it offers
+ * exactly what the route reads.
  */
 
 import type { DomainMetadata, FieldMetadata } from '../../models/domain-model.js';
@@ -30,6 +32,7 @@ import type { EnumMetadata } from '../../core/generator-registry.js';
 import { DslMapper } from '../../models/dsl-mapper.js';
 import { viewSystemFieldNames } from '../api/type-gen.js';
 import { foreignKeyLinks, foreignKeyPickers, type ForeignKeyPicker } from './relationship-links.js';
+import { filterProperties, sortableProperties, type ListQueryProperty } from './list-query.js';
 
 /**
  * The per-field render facet from `@View`, the second input of the model.
@@ -54,6 +57,14 @@ export interface FieldRenderContext {
    * one is an enum (`enumTypeOf`), and the list takes its constants for the badges.
    */
   readonly enums?: readonly EnumMetadata[];
+  /** What the list route sorts and filters on (`listQueryContext`); without it no column sorts and no field filters. */
+  readonly listQuery?: ListQueryContext;
+}
+
+/** The list route's sort keys, and its filters with the control each gets. */
+export interface ListQueryContext {
+  readonly sortable: ReadonlySet<string>;
+  readonly filters: ReadonlyMap<string, ListFilterKind>;
 }
 
 /** An enum the app's enum module (`types/enums.ts`) declares, as far as type resolution needs it. */
@@ -66,8 +77,12 @@ export interface KnownEnum {
 export type ListCellKind =
   | 'link' | 'boolean' | 'enum' | 'date' | 'datetime' | 'number' | 'currency' | 'percent' | 'url' | 'text';
 
-/** The filter control a filterable list column gets, by what its cell holds. */
-export type ListFilterKind = 'boolean' | 'enum' | 'text' | 'date-range' | 'number-range';
+/**
+ * The control of one equality filter: a select of `true` / `false` or of an enum's constants, a
+ * `date` input for a calendar date, and a text input for a number, a string, a UUID, a foreign key
+ * and an enum whose constants the app's enum module does not declare.
+ */
+export type ListFilterKind = 'boolean' | 'enum' | 'text' | 'number' | 'date';
 
 /**
  * The colour of an enum constant's badge. Without a per-constant colour in the metadata it is a
@@ -114,13 +129,15 @@ export interface FieldRenderModel {
     readonly cell: ListCellKind;
     /** Numbers, amounts and percentages align right so their digits line up. */
     readonly align: 'left' | 'right';
+    /** Whether the list route sorts on the field. */
     readonly sortable: boolean;
+    /** Whether the list route filters on the field. */
     readonly filterable: boolean;
     /** The filter control of a filterable field; `undefined` when the field is not filterable. */
     readonly filter?: ListFilterKind;
     /** The simple enum name, when the cell is an enum. */
     readonly enumType?: string;
-    /** The enum's constants in declaration order with their badge tone, when the cell is an enum. */
+    /** The enum's constants in declaration order with their badge tone, when the cell or the filter is an enum. */
     readonly enumValues?: readonly { readonly value: string; readonly tone: BadgeTone }[];
   };
   readonly detail: {
@@ -202,7 +219,40 @@ export function fieldRenderContext(
     links: foreignKeyLinks(domain, allDomains, detailRouted),
     pickers: foreignKeyPickers(domain, allDomains, servicesGenerated),
     enums,
+    listQuery: listQueryContext(domain, enums),
   };
+}
+
+/** Whether a field holds an enum, by the shared enum rule. */
+export function isEnumField(field: FieldMetadata, enums: readonly KnownEnum[]): boolean {
+  return enumTypeOf(field, enums) !== undefined;
+}
+
+/** The list route's sort keys and filters of `domain`, and the control each filter gets. */
+export function listQueryContext(domain: DomainMetadata, enums: readonly EnumMetadata[] = []): ListQueryContext {
+  return {
+    sortable: new Set(sortableProperties(domain).map((property) => property.name)),
+    filters: new Map(
+      filterProperties(domain, (field) => isEnumField(field, enums))
+        .map((property) => [property.name, listFilterKind(property, enums)] as const),
+    ),
+  };
+}
+
+/** The control of one filter, by the kind of value the route parses for it. */
+export function listFilterKind(property: ListQueryProperty, enums: readonly EnumMetadata[]): ListFilterKind {
+  if (property.enumeration) {
+    return property.field && listEnum(property.field, enums) ? 'enum' : 'text';
+  }
+  switch (property.kind) {
+    case 'bool': return 'boolean';
+    case 'localDate': return 'date';
+    case 'long':
+    case 'int':
+    case 'double':
+    case 'bigDecimal': return 'number';
+    default: return 'text';
+  }
 }
 
 /** Resolves every field of `domain`, in declaration order. */
@@ -228,7 +278,7 @@ export function resolveFieldRender(
     system,
     displayed: !field.hidden && !system,
     link,
-    list: listRender(field, link, context.enums ?? []),
+    list: listRender(field, link, context.enums ?? [], context.listQuery),
     detail: {
       display: detailDisplay(field, context.enums ?? []),
       enumType: enumTypeOf(field, context.enums ?? []),
@@ -276,26 +326,15 @@ function listCell(field: FieldMetadata, link: string | undefined, isEnum: boolea
   return 'text';
 }
 
-function listFilter(cell: ListCellKind): ListFilterKind {
-  switch (cell) {
-    case 'boolean': return 'boolean';
-    case 'enum': return 'enum';
-    case 'date':
-    case 'datetime': return 'date-range';
-    case 'number':
-    case 'currency':
-    case 'percent': return 'number-range';
-    default: return 'text';
-  }
-}
-
 function listRender(
   field: FieldMetadata,
   link: string | undefined,
   enums: readonly EnumMetadata[],
+  listQuery: ListQueryContext | undefined,
 ): FieldRenderModel['list'] {
   const enumMeta = link ? undefined : listEnum(field, enums);
   const cell = listCell(field, link, enumMeta !== undefined);
+  const filter = listQuery?.filters.get(field.name);
   const enumValues = cell === 'enum' && enumMeta
     ? [...enumMeta.values]
         .sort((a, b) => a.ordinal - b.ordinal)
@@ -304,9 +343,9 @@ function listRender(
   return {
     cell,
     align: cell === 'number' || cell === 'currency' || cell === 'percent' ? 'right' : 'left',
-    sortable: field.sortable,
-    filterable: field.filterable,
-    filter: field.filterable ? listFilter(cell) : undefined,
+    sortable: listQuery?.sortable.has(field.name) ?? false,
+    filterable: filter !== undefined,
+    filter,
     enumType: cell === 'enum' ? enumMeta?.name : undefined,
     enumValues,
   };

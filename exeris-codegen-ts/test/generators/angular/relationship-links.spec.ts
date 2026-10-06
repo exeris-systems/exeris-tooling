@@ -5,7 +5,8 @@
  *   - a UUID foreign key links to `/<routePlural(target)>/<id>` in list and detail
  *   - a qualified targetEntity resolves by its simple name
  *   - a target that is not loaded renders as plain text
- *   - a non-UUID field, an entity-typed field and the other three kinds are unchanged
+ *   - a non-UUID field, an entity-typed field and the other three kinds are unchanged, but for the
+ *     list's `<base>Id` equality filter, which every MANY_TO_ONE adds (ADR-096)
  *   - no new router import: RouterModule, already imported by both components, carries RouterLink
  *   - the form's picker: the same keys, resolved against a target whose service is generated
  */
@@ -101,24 +102,36 @@ describe('MANY_TO_ONE UUID foreign key', () => {
   });
 });
 
+/**
+ * No link: the detail view is the one without the relationship, and the list cell is plain text. The
+ * list differs only by the `<base>Id` filter of the list route, which a MANY_TO_ONE adds whether or
+ * not its key links.
+ */
+function expectNoLink(out: { list: string; detail: string }, plain: { list: string; detail: string }): void {
+  expect(out.detail).toEqual(plain.detail);
+  expect(out.list).not.toContain(`[routerLink]="['${CATEGORY_ROUTE}'`);
+  expect(out.list).not.toContain('link-categoryId');
+  expect(out.list).toContain('data-testid="filter-categoryId"');
+}
+
 describe('no link — rendered exactly as before', () => {
   const baseline = emit(product([]), [product([]), category]);
 
   it('when the target is not loaded', () => {
     const p = product([FK]);
-    expect(emit(p, [p])).toEqual(baseline);
+    expectNoLink(emit(p, [p]), baseline);
   });
 
   it('when the local field is not a UUID', () => {
     const p = product([FK], 'String');
     const plain = product([], 'String');
-    expect(emit(p, [p, category])).toEqual(emit(plain, [plain, category]));
+    expectNoLink(emit(p, [p, category]), emit(plain, [plain, category]));
   });
 
   it('when the relationship field is entity-typed', () => {
     const p = product([FK], 'com.shop.Category');
     const plain = product([], 'com.shop.Category');
-    expect(emit(p, [p, category])).toEqual(emit(plain, [plain, category]));
+    expectNoLink(emit(p, [p, category]), emit(plain, [plain, category]));
   });
 
   it.each(['ONE_TO_ONE', 'MANY_TO_MANY'] as const)('for %s', (type) => {
@@ -136,7 +149,7 @@ describe('no link — rendered exactly as before', () => {
 
   it('when the relationship names no declared field', () => {
     const p = product([{ ...FK, name: 'category' }]);
-    expect(emit(p, [p, category])).toEqual(baseline);
+    expectNoLink(emit(p, [p, category]), baseline);
   });
 });
 

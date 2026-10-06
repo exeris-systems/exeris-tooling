@@ -7,8 +7,8 @@
  * Exercises:
  *   - apiPath construction precedence: explicit apiPath > apiVersion+path
  *     > /<kebab>s default
- *   - Filter interface fields built from filterable=true fields with
- *     "<tsType> | undefined" filterType
+ *   - Filter interface and SortField type built from the list route's
+ *     filter and sort properties (ADR-096)
  *   - softDelete flag adds a softDelete method on the served DELETE route
  *   - Custom actions: httpMethod GET vs POST/PATCH/DELETE body-shape;
  *     hasParams gate; default returnType 'void'; description fallback
@@ -98,7 +98,9 @@ describe('ServiceGenerator emitted content — top-level structure', () => {
   it('always emits findAll / findById / create / update / delete methods', () => {
     const content = gen.generate(domain({ entityName: 'Order' }), CTX)!.content;
 
-    expect(content).toContain('findAll(pageRequest: PageRequest = {}, filter: OrderFilter = {}): Observable<Page<Order>>');
+    expect(content).toContain(
+      'findAll(pageRequest: PageRequest & { sort?: OrderSortField } = {}, filter: OrderFilter = {}): Observable<Page<Order>>',
+    );
     expect(content).toContain('findById(id: string): Observable<Order>');
     expect(content).toContain('create(data: OrderCreate): Observable<Order>');
     expect(content).toContain('update(id: string, data: OrderUpdate): Observable<Order>');
@@ -162,38 +164,80 @@ describe('ServiceGenerator apiPath construction precedence', () => {
 describe('ServiceGenerator Filter interface generation', () => {
   const gen = new ServiceGenerator();
 
-  it('every filterable field gets a "<name>?: <tsType> | undefined" entry', () => {
+  it('a filterable field of a filterable type is a filter, typed as its DTO value', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
       fields: [
         field({ name: 'status', type: 'String', filterable: true }),
         field({ name: 'amount', type: 'Long', filterable: true }),
+        field({ name: 'paid', type: 'boolean', filterable: true }),
+        field({ name: 'due', type: 'java.time.LocalDate', filterable: true }),
+        field({ name: 'price', type: 'java.math.BigDecimal', filterable: true }),
         field({ name: 'notFilterable', type: 'String' }),
       ],
     }), CTX)!.content;
 
-    expect(content).toContain('status?: string | undefined;');
-    expect(content).toContain('amount?: number | null | undefined;');
+    const filter = content.slice(content.indexOf('export interface OrderFilter {'));
+    expect(filter).toMatch(
+      /^export interface OrderFilter \{\n {2}amount\?: number;\n {2}due\?: string;\n {2}paid\?: boolean;\n {2}price\?: string;\n {2}status\?: string;\n\}/,
+    );
     expect(content).not.toContain('notFilterable');
   });
 
-  it('always appends a search?: string field at the end of the Filter interface', () => {
+  it('an Instant, a LocalDateTime and a List field are never a filter', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
-      fields: [field({ name: 'status', type: 'String', filterable: true })],
+      fields: [
+        field({ name: 'at', type: 'java.time.Instant', filterable: true }),
+        field({ name: 'localAt', type: 'java.time.LocalDateTime', filterable: true }),
+        field({ name: 'tags', type: 'java.util.List<java.lang.String>', filterable: true }),
+      ],
     }), CTX)!.content;
 
-    expect(content).toContain('search?: string;');
+    expect(content).toContain('export interface OrderFilter {\n}');
   });
 
-  it('emits an empty Filter (just search?) when no filterable fields exist', () => {
+  it('a MANY_TO_ONE adds its <base>Id filter, a string', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
-      fields: [field({ name: 'name', type: 'String' })],
+      fields: [field({ name: 'id', type: 'java.util.UUID' })],
+      relationships: [{ name: 'customer', targetEntity: 'Customer', type: 'MANY_TO_ONE' }],
+    }), CTX)!.content;
+
+    expect(content).toContain('  customerId?: string;');
+  });
+
+  it('declares no search filter: the list route has no search parameter', () => {
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      fields: [field({ name: 'name', type: 'String', searchable: true, filterable: true })],
     }), CTX)!.content;
 
     expect(content).toContain('export interface OrderFilter {');
-    expect(content).toContain('search?: string;');
+    expect(content).not.toContain('search');
+  });
+
+  it('the sort keys are the sortable non-system, non-List fields, sorted by name', () => {
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      versioned: true,
+      fields: [
+        field({ name: 'id', type: 'java.util.UUID', sortable: true }),
+        field({ name: 'title', type: 'String', sortable: true }),
+        field({ name: 'at', type: 'java.time.Instant', sortable: true }),
+        field({ name: 'version', type: 'long', sortable: true }),
+        field({ name: 'tags', type: 'java.util.List<java.lang.String>', sortable: true }),
+        field({ name: 'note', type: 'String' }),
+      ],
+    }), CTX)!.content;
+
+    expect(content).toContain("export type OrderSortField = 'at' | 'title';");
+  });
+
+  it('an entity with nothing sortable has no sort key', () => {
+    const content = gen.generate(domain({ entityName: 'Order', fields: [field({ name: 'name', type: 'String' })] }), CTX)!.content;
+
+    expect(content).toContain('export type OrderSortField = never;');
   });
 });
 

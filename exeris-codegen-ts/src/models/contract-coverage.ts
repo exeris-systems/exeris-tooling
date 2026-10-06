@@ -117,7 +117,11 @@ export const FIELD_CONTRACT_COVERAGE = {
     written: true,
     reason: 'No emitter reads it: the migration indexes searchable, unique and filterable fields, not indexed ones.',
   },
-  searchable: { state: 'READ', written: true },
+  searchable: {
+    state: 'JAVA_ONLY',
+    written: true,
+    reason: 'Indexes the column in the Flyway migration. The list route has no search parameter (ADR-096), so the front has no search.',
+  },
   sortable: { state: 'READ', written: true },
   filterable: { state: 'READ', written: true },
   audited: {
@@ -149,7 +153,11 @@ export const UI_CONTRACT_COVERAGE = {
   detailView: { state: 'READ', written: true },
   createForm: { state: 'READ', written: true },
   editForm: { state: 'READ', written: true },
-  searchable: { state: 'READ', written: true },
+  searchable: {
+    state: 'RESERVED',
+    written: true,
+    reason: 'Written from @UI; the list route has no search parameter (ADR-096), so no search box is emitted on either side.',
+  },
   filterable: { state: 'READ', written: true },
   exportable: {
     state: 'RESERVED',
@@ -224,7 +232,7 @@ export const RELATIONSHIP_CONTRACT_COVERAGE = {
   fieldName: { state: 'READ', written: true },
   targetEntity: { state: 'READ', written: true },
   type: { state: 'READ', written: true },
-  mappedBy: { state: 'RESERVED', written: true, reason: 'Written from @Relationship; no emitter reads it.' },
+  mappedBy: { state: 'READ', written: true },
   fetch: { state: 'RESERVED', written: false, reason: RECORD_DEFAULT },
   cascade: {
     state: 'JAVA_ONLY',
