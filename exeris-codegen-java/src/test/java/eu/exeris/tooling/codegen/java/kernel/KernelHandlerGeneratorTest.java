@@ -416,12 +416,9 @@ class KernelHandlerGeneratorTest {
                 .orElseThrow()
                 .content();
 
-        // KernelProviders.MEMORY_ALLOCATOR is a ScopedValue. Its binding is established around
-        // the bootstrap callback; a request is served on a virtual thread started with
-        // Thread.ofVirtual().start(), which inherits no ScopedValue binding — only
-        // StructuredTaskScope forks do, and the kernel documents that start as its one
-        // deliberate exception to the STS mandate. So reading it from a request could only ever
-        // have found it unbound. T43 made that honest (a 5xx naming the wiring); this removes it.
+        // KernelProviders.MEMORY_ALLOCATOR is a ScopedValue bound around the bootstrap callback.
+        // The handler takes the allocator as a constructor argument resolved there, and reads no
+        // binding per request.
         assertThat(handler)
                 .contains("private final MemoryAllocator allocator;")
                 .contains("public OrderHandler(OrderService service, MemoryAllocator allocator)")

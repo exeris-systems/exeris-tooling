@@ -139,18 +139,11 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         MethodSpec.Builder constructor = MethodSpec.constructorBuilder()
                 .addModifiers(Modifier.PUBLIC)
                 .addJavadoc("<p><b>The {@code allocator} is a constructor argument, not a per-request\n")
-                .addJavadoc("lookup, and it has to be.</b> {@code KernelProviders.MEMORY_ALLOCATOR} is a\n")
-                .addJavadoc("{@link java.lang.ScopedValue}. Its binding is established once, around the\n")
-                .addJavadoc("bootstrap callback that constructs this handler, and a {@code ScopedValue} is\n")
-                .addJavadoc("visible only inside that dynamic scope and in {@code StructuredTaskScope}\n")
-                .addJavadoc("forks of it. The kernel serves each request on a virtual thread started with\n")
-                .addJavadoc("{@code Thread.ofVirtual().start()} — documented as the sole deliberate\n")
-                .addJavadoc("exception to the structured-concurrency mandate, because the carrier threads\n")
-                .addJavadoc("that dispatch streams own no shared scope — so that thread inherits nothing,\n")
-                .addJavadoc("and reading the value from a request would find it unbound.\n")
-                .addJavadoc("<p>Resolving it where the binding is live and holding the instance is what\n")
-                .addJavadoc("the kernel's own benchmark runtime does. A wiring fault now fails at boot,\n")
-                .addJavadoc("with the composition on the stack, instead of on the first request.\n")
+                .addJavadoc("lookup.</b> {@code KernelProviders.MEMORY_ALLOCATOR} is a\n")
+                .addJavadoc("{@link java.lang.ScopedValue} bound around the bootstrap callback that\n")
+                .addJavadoc("constructs this handler. Resolving it there and holding the instance makes a\n")
+                .addJavadoc("wiring fault fail the boot, with the composition on the stack, rather than the\n")
+                .addJavadoc("first request that carries a body. The handler reads no binding per request.\n")
                 .addParameter(serviceType, "service")
                 .addParameter(MEMORY_ALLOCATOR, "allocator")
                 .addStatement("this.service = service")
@@ -914,12 +907,8 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                 //
                 // The allocator is not read here. It arrives as a constructor argument,
                 // captured by RuntimeComponents inside the bootstrap callback where the
-                // MEMORY_ALLOCATOR ScopedValue binding is live. Reading that ScopedValue here
-                // would fail on every request with a NoSuchElementException from the unbound
-                // .get() — a deployment fault, answered 500, for a body never read. The request
-                // runs on a virtual thread started with Thread.ofVirtual().start(), which inherits no
-                // ScopedValue binding (only StructuredTaskScope forks do), and the kernel
-                // documents that start as its one deliberate exception to the STS mandate.
+                // MEMORY_ALLOCATOR ScopedValue binding is live, so a missing binding fails the
+                // boot instead of a request.
                 .beginControlFlow("try")
                 .addStatement("$T registry = $T.httpRequestBodyDecoderRegistry()\n"
                                 + ".orElseThrow(() -> new $T($S))",
