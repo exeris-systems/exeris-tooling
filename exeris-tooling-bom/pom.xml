@@ -4,7 +4,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>eu.exeris.tooling</groupId>
+        <groupId>eu.exeris</groupId>
         <artifactId>exeris-tooling-root</artifactId>
         <version>0.10.0-SNAPSHOT</version>
     </parent>
@@ -164,22 +164,22 @@
 
             <!-- Internal tooling modules -->
             <dependency>
-                <groupId>eu.exeris.tooling</groupId>
+                <groupId>eu.exeris</groupId>
                 <artifactId>exeris-diagnostics</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>eu.exeris.tooling</groupId>
+                <groupId>eu.exeris</groupId>
                 <artifactId>exeris-processor</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>eu.exeris.tooling</groupId>
+                <groupId>eu.exeris</groupId>
                 <artifactId>exeris-codegen-core</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>eu.exeris.tooling</groupId>
+                <groupId>eu.exeris</groupId>
                 <artifactId>exeris-codegen-java</artifactId>
                 <version>${project.version}</version>
             </dependency>

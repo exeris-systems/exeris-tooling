@@ -9,7 +9,7 @@ slug: adr/ADR-091
 
 # ADR-091 — Publish an opt-in application starter, so a consumer does not hand-write its build
 
-- **Status:** ACCEPTED (2026-09-30) · amended 2026-10-01 (Amendment 1 — backend, frontend and backend + frontend; Amendment 2 — starter scope, publication metadata, starter version) · amended 2026-10-02 (Amendment 3 — the release profile list)
+- **Status:** ACCEPTED (2026-09-30) · amended 2026-10-01 (Amendment 1 — backend, frontend and backend + frontend; Amendment 2 — starter scope, publication metadata, starter version) · amended 2026-10-02 (Amendment 3 — the release profile list) · amended 2026-10-06 (Amendment 4 — Maven coordinates move to the eu.exeris group)
 - **Deciders:** the founder (scope); `exeris-tooling` (module layout)
 - **Repo:** `exeris-tooling`
 - **Scope:** tooling / build (consumer-build contract)
@@ -342,3 +342,27 @@ registry, and `.github/maven-settings.xml` no longer declares the `github-packag
 `release.yml` passes `-P 'release,exeris-tooling-release'`. What obligation 4 requires is unchanged:
 `exeris-tooling-release` is activated beside `release`, and a consumer's `-P release` activates
 nothing from the starter chain.
+
+## Amendment 4 — Maven coordinates move to the eu.exeris group (2026-10-06)
+
+- **Status:** ACCEPTED (2026-10-06).
+- **Amends:** the groupId of every coordinate this ADR names for a tooling artefact — the
+  `exeris-processor` and `exeris-codegen-maven-plugin` rows of the Context table, and the
+  `exeris-app-bom`, `exeris-app-parent` and `exeris-app-starter` modules of the Decision. Nothing
+  else changes.
+- **Deciders:** the founder.
+
+From 0.10.0 every `exeris-tooling` module is published under the groupId `eu.exeris`, the group of
+the kernel (`eu.exeris:exeris-kernel-*`) and SDK (`eu.exeris:exeris-sdk-*`) artefacts. The
+artifactIds are unchanged and none collides with a kernel or SDK artifactId. Where this ADR writes
+`eu.exeris.tooling:exeris-processor` or `eu.exeris.tooling:exeris-codegen-maven-plugin`, a consumer
+on 0.10.0 or later names `eu.exeris:exeris-processor` and `eu.exeris:exeris-codegen-maven-plugin`,
+and the three starter modules are `eu.exeris:exeris-app-bom`, `eu.exeris:exeris-app-parent` and
+`eu.exeris:exeris-app-starter`.
+
+Releases up to and including 0.9.0 stay published under `eu.exeris.tooling`, and no relocation POM
+is published under that group: a consumer changes the groupId when it moves to 0.10.0
+(`docs/MIGRATION-0.x-to-1.0.md`, "Maven coordinates move to the `eu.exeris` group"). Java package
+names stay `eu.exeris.tooling.*`. Obligations 1–7, the parenting of obligation 4 and the invoker
+fixture of obligation 7 are unchanged; the fixture resolves the parent, starter, processor and plugin
+under `eu.exeris`.

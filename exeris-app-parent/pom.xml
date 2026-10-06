@@ -6,7 +6,7 @@
     <!-- Inherits exeris-app-bom rather than importing it: properties of an imported BOM do not reach
          <build><pluginManagement>, and inheritance is what carries the plugin version here. -->
     <parent>
-        <groupId>eu.exeris.tooling</groupId>
+        <groupId>eu.exeris</groupId>
         <artifactId>exeris-app-bom</artifactId>
         <version>0.10.0-SNAPSHOT</version>
         <relativePath>../exeris-app-bom/pom.xml</relativePath>
@@ -123,7 +123,7 @@
                 <configuration>
                     <annotationProcessorPaths>
                         <path>
-                            <groupId>eu.exeris.tooling</groupId>
+                            <groupId>eu.exeris</groupId>
                             <artifactId>exeris-processor</artifactId>
                             <version>${exeris.tooling.version}</version>
                         </path>
@@ -131,7 +131,7 @@
                 </configuration>
             </plugin>
             <plugin>
-                <groupId>eu.exeris.tooling</groupId>
+                <groupId>eu.exeris</groupId>
                 <artifactId>exeris-codegen-maven-plugin</artifactId>
                 <version>${exeris.tooling.version}</version>
                 <executions>

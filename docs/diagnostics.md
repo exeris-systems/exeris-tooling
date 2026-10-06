@@ -25,7 +25,7 @@ person and may be reworded in any release, the identifier may not. A regular exp
 every one of them, anywhere in a line, is `\[Exeris\] (EXT-[A-Z]+-\d{4}): `.
 
 [ADR-095](adr/ADR-095-stable-diagnostic-identifiers.md) is the contract. The registry is
-`eu.exeris.tooling.diagnostics.DiagnosticId` in the `eu.exeris.tooling:exeris-diagnostics` artefact.
+`eu.exeris.tooling.diagnostics.DiagnosticId` in the `eu.exeris:exeris-diagnostics` artefact.
 `DiagnosticIdTest` fails the build when this table and the registry disagree.
 
 ## Format

@@ -450,7 +450,7 @@ jobs:
           WANT: ${{ needs.release.outputs.version }}
         run: |
           set -euo pipefail
-          url="https://repo1.maven.org/maven2/eu/exeris/tooling/exeris-codegen-core/$WANT/exeris-codegen-core-$WANT.pom"
+          url="https://repo1.maven.org/maven2/eu/exeris/exeris-codegen-core/$WANT/exeris-codegen-core-$WANT.pom"
           for attempt in $(seq 1 30); do
             if curl -fsSIL -o /dev/null "$url"; then
               echo "Maven release $WANT is on Maven Central"
@@ -459,7 +459,7 @@ jobs:
             echo "attempt $attempt: $url not on Maven Central yet"
             sleep 60
           done
-          echo "::error::eu.exeris.tooling $WANT is not on Maven Central. Publish the deployment in the Central Portal, then re-run this job. Nothing was published to npm." >&2
+          echo "::error::eu.exeris:exeris-codegen-core:$WANT is not on Maven Central. Publish the deployment in the Central Portal, then re-run this job. Nothing was published to npm." >&2
           exit 1
 
       # A version npm already holds can never be staged again, so a re-run after an approved

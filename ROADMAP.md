@@ -3821,6 +3821,13 @@ Expected to pair with kernel 0.13, and with SDK 0.13 if one is needed.
       own tenant's events. The key is a kernel ask: `EventDescriptor` carries none. Removes the 0.9.0
       `EXT-PROC-1014` refusal; `exeris-codegen-ts` then emits stream clients for tenant-partitioned
       entities.
+- [x] **Maven coordinates move to the `eu.exeris` group** (founder decision 2026-10-06). Every
+      module is published as `eu.exeris:<artifactId>`, the group of the kernel and SDK artefacts; the
+      artifactIds and the Java packages (`eu.exeris.tooling.*`) are unchanged. 0.9.0 and earlier stay
+      under `eu.exeris.tooling`, with no relocation POM. Recorded in ADR-091 Amendment 4 and ADR-095
+      Amendment 1; consumer steps in `docs/MIGRATION-0.x-to-1.0.md`, 0.10.0 train.
+- [ ] **The 0.10.0 release PR switches the README quick start to `eu.exeris` and `0.10.0`.** Until
+      then the snippets show the published `eu.exeris.tooling:0.9.0`, which a consumer can resolve.
 - [ ] The removals below.
 
 **Not placed in a milestone**, because the next step belongs to another repository: C2
