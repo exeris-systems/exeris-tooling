@@ -44,26 +44,32 @@ const domains = [
       // dataType exercises the detail view's currency branch, and the audit stamps exercise
       // its DatePipe branch — both are emitted per-entity, so a fixture without them builds
       // only half of what the generator can produce.
-      { name: 'total', type: 'java.math.BigDecimal', dataType: 'currency' },
+      // The list route's sort and equality filters (ADR-096): every filter kind is on this entity — a
+      // boolean, an enum, a string, a number, a BigDecimal, a LocalDate and the productId foreign key —
+      // and a sortable column, so the list's server-side sort, filter and paging state all compile.
+      { name: 'total', type: 'java.math.BigDecimal', dataType: 'currency', sortable: true, filterable: true },
       { name: 'createdAt', type: 'java.time.Instant' },
       { name: 'updatedAt', type: 'java.time.Instant' },
       // Filterable, so the store's and the service's filter both name the enum and must import it.
-      { name: 'status', type: 'com.shop.OrderStatus', enumType: 'com.shop.OrderStatus', required: true, filterable: true },
+      { name: 'status', type: 'com.shop.OrderStatus', enumType: 'com.shop.OrderStatus', required: true, filterable: true, sortable: true },
       // Bounded boxed number: its Zod schema and its Signal Forms validators both carry min and max.
-      { name: 'quantity', type: 'java.lang.Integer', required: true, min: 1, max: 99 },
+      { name: 'quantity', type: 'java.lang.Integer', required: true, min: 1, max: 99, sortable: true, filterable: true },
       // An offset date-time and two collections, typed as the processor writes them. A collection
       // renders as text in the list and detail and has no form control.
       { name: 'placedAt', type: 'java.time.OffsetDateTime' },
-      { name: 'labels', type: 'java.util.List<java.lang.String>' },
+      // Sortable and filterable by its flags, neither on the list route: a List is a JSON column.
+      { name: 'labels', type: 'java.util.List<java.lang.String>', sortable: true, filterable: true },
       { name: 'attributes', type: 'java.util.Map<java.lang.String,java.lang.String>' },
       { name: 'productId', type: 'java.util.UUID' },
       // T20d: a *primitive* boolean. The sample carried no boolean of either kind, which
       // is why a text-input-and-'' -seeded checkbox field type-checked here for two trains.
       // The wrapper was always handled; the primitive is the one that fell through.
-      { name: 'expedited', type: 'boolean' },
+      { name: 'expedited', type: 'boolean', filterable: true },
       // A calendar date: the detail view renders it through DatePipe with mediumDate, an arm no
       // other fixture field reaches.
-      { name: 'deliveryDate', type: 'java.time.LocalDate' },
+      { name: 'deliveryDate', type: 'java.time.LocalDate', sortable: true, filterable: true },
+      // An instant sorts on the list route and is no filter: equality on an instant matches nothing typed.
+      { name: 'shippedAt', type: 'java.time.Instant', sortable: true, filterable: true },
       // The form's type rules, one control kind each: a primitive number is a number input
       // holding number | null; a type naming the emitted enum, with no explicit enumType, is a
       // select; a zone-free date-time is a datetime-local input; a zoned one and an integer
@@ -75,7 +81,7 @@ const domains = [
       { name: 'loyaltyPoints', type: 'java.math.BigInteger' },
       // inUpdate = false: the edit form disables the control through a Signal Forms rule bound to
       // edit mode, and the field is required, so the rule sits beside a validator.
-      { name: 'orderNumber', type: 'String', required: true, maxLength: 20, inUpdate: false },
+      { name: 'orderNumber', type: 'String', required: true, maxLength: 20, inUpdate: false, sortable: true, filterable: true },
     ],
     // The foreign key renders as a routerLink to the target's detail page in the list cell and
     // the detail row, and the form picks it from Product's records labelled by their name. The
@@ -123,9 +129,10 @@ const domains = [
   d({
     entityName: 'Product',
     fields: [{ name: 'id', type: 'java.util.UUID' }, { name: 'name', type: 'String' }],
-    // The other side of Order's foreign key: the detail view's related-records link to the
-    // order list, the only section an entity without a ONE_TO_MANY never emits.
-    relationships: [{ name: 'orders', targetEntity: 'com.shop.Order', type: 'ONE_TO_MANY', mappedBy: 'productId' }],
+    // The other side of Order's foreign key: the detail view's related-records panel lists this
+    // product's orders through the order list route's productId filter, labelled by orderNumber,
+    // beside the link to the whole order list.
+    relationships: [{ name: 'orders', targetEntity: 'com.shop.Order', type: 'ONE_TO_MANY', mappedBy: 'productId', displayField: 'orderNumber' }],
     realTimeApi: true,
     actions: [{ name: 'watchStock', methodName: 'watchStock', streaming: true }],
     sagaMetadata: {

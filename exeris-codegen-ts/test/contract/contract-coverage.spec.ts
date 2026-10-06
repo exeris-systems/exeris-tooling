@@ -206,7 +206,7 @@ const MAXIMAL = {
     },
     // Hand-built metadata may omit fieldName; the processor writes it equal to the name.
     { name: 'tenantId', targetEntity: 'com.shop.Tenant', type: 'MANY_TO_ONE' },
-    { name: 'lines', targetEntity: 'com.shop.OrderLine', type: 'ONE_TO_MANY' },
+    { name: 'lines', targetEntity: 'com.shop.OrderLine', type: 'ONE_TO_MANY', mappedBy: 'order' },
   ],
   projections: [{ name: 'OrderSummary', fields: ['id', 'total'] }],
   // Every page on, explicitly: the field keys are read by the list, detail and form emitters, so
@@ -384,6 +384,12 @@ function fixture(recs: Recorders) {
         filterable: false,
         exportable: false,
       },
+    }),
+    // The child of Order's ONE_TO_MANY, with the MANY_TO_ONE back its detail panel filters by.
+    d({
+      entityName: 'OrderLine',
+      fields: [{ name: 'id', type: 'java.util.UUID' }],
+      relationships: [{ name: 'order', targetEntity: 'com.shop.Order', type: 'MANY_TO_ONE' }],
     }),
     // Tenant-scoped through the deprecated boolean only, with no systemFields block.
     d({ entityName: 'Address', tenantScoped: true, fields: [{ name: 'id', type: 'java.util.UUID' }, { name: 'city', type: 'String' }] }),
