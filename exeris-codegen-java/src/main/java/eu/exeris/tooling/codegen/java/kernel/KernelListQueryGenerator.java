@@ -94,7 +94,10 @@ public class KernelListQueryGenerator implements KernelArtifactGenerator {
             case STRING -> ClassName.get(String.class);
             case LONG -> TypeName.LONG.box();
             case INT -> TypeName.INT.box();
+            case SHORT -> TypeName.SHORT.box();
+            case BYTE -> TypeName.BYTE.box();
             case BOOL -> TypeName.BOOLEAN.box();
+            case FLOAT -> TypeName.FLOAT.box();
             case DOUBLE -> TypeName.DOUBLE.box();
             case BIG_DECIMAL -> BIG_DECIMAL;
             case LOCAL_DATE -> LOCAL_DATE;
@@ -421,7 +424,10 @@ public class KernelListQueryGenerator implements KernelArtifactGenerator {
             case STRING -> CodeBlock.of("value");
             case LONG -> CodeBlock.of("Long.parseLong(value)");
             case INT -> CodeBlock.of("Integer.parseInt(value)");
+            case SHORT -> CodeBlock.of("Short.parseShort(value)");
+            case BYTE -> CodeBlock.of("Byte.parseByte(value)");
             case BOOL -> CodeBlock.of("parseBoolean(value)");
+            case FLOAT -> CodeBlock.of("Float.parseFloat(value)");
             case DOUBLE -> CodeBlock.of("Double.parseDouble(value)");
             case BIG_DECIMAL -> CodeBlock.of("new $T(value)", BIG_DECIMAL);
             case LOCAL_DATE -> CodeBlock.of("parseDate(value)");

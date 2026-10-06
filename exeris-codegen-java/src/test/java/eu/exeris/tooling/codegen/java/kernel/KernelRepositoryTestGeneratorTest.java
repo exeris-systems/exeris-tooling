@@ -99,6 +99,23 @@ class KernelRepositoryTestGeneratorTest {
     }
 
     @Test
+    @DisplayName("stages a typed literal for Short, Byte and Float, so their binds are round-tripped")
+    void stagesNarrowNumerics() {
+        String source = generate(DomainMetadata.builder("Crate", "com.example.domain")
+                .path("/crates")
+                .fields(List.of(
+                        FieldMetadata.builder("layers", "java.lang.Short").build(),
+                        FieldMetadata.builder("grade", "byte").build(),
+                        FieldMetadata.builder("ratio", "Float").build()))
+                .build());
+
+        assertThat(source)
+                .contains("original.setLayers((short) 7)")
+                .contains("original.setGrade((byte) 7)")
+                .contains("original.setRatio(7.0f)");
+    }
+
+    @Test
     @DisplayName("asserts no SQL text — that check would be circular, not a check")
     void assertsBehaviourNotEmittedSql() {
         String source = generate(ORDER);

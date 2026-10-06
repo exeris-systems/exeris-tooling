@@ -33,6 +33,9 @@ final class KernelTypeMapping {
             case "boolean" -> TypeName.BOOLEAN;
             case "int" -> TypeName.INT;
             case "long" -> TypeName.LONG;
+            case "short" -> TypeName.SHORT;
+            case "byte" -> TypeName.BYTE;
+            case "float" -> TypeName.FLOAT;
             case "double" -> TypeName.DOUBLE;
             case "BigDecimal" -> BIG_DECIMAL;
             case "Instant" -> INSTANT;

@@ -64,8 +64,8 @@ public final class ListQuerySupport {
      */
     private static final Set<DomainTypeKind> FILTER_KINDS = EnumSet.of(
             DomainTypeKind.UUID, DomainTypeKind.STRING, DomainTypeKind.LONG, DomainTypeKind.INT,
-            DomainTypeKind.BOOL, DomainTypeKind.DOUBLE, DomainTypeKind.BIG_DECIMAL,
-            DomainTypeKind.LOCAL_DATE, DomainTypeKind.ENUM);
+            DomainTypeKind.SHORT, DomainTypeKind.BYTE, DomainTypeKind.BOOL, DomainTypeKind.FLOAT,
+            DomainTypeKind.DOUBLE, DomainTypeKind.BIG_DECIMAL, DomainTypeKind.LOCAL_DATE, DomainTypeKind.ENUM);
 
     /**
      * The kinds a column can be ordered by: the filter kinds and the four timestamp kinds, each a
@@ -75,7 +75,8 @@ public final class ListQuerySupport {
      */
     private static final Set<DomainTypeKind> SORT_KINDS = EnumSet.of(
             DomainTypeKind.UUID, DomainTypeKind.STRING, DomainTypeKind.LONG, DomainTypeKind.INT,
-            DomainTypeKind.BOOL, DomainTypeKind.DOUBLE, DomainTypeKind.BIG_DECIMAL,
+            DomainTypeKind.SHORT, DomainTypeKind.BYTE, DomainTypeKind.BOOL, DomainTypeKind.FLOAT,
+            DomainTypeKind.DOUBLE, DomainTypeKind.BIG_DECIMAL,
             DomainTypeKind.INSTANT_LIKE, DomainTypeKind.LOCAL_DATE_TIME, DomainTypeKind.OFFSET_DATE_TIME,
             DomainTypeKind.ZONED_DATE_TIME, DomainTypeKind.LOCAL_DATE, DomainTypeKind.ENUM);
 
@@ -220,8 +221,10 @@ public final class ListQuerySupport {
     public static List<String> filterableScalarTypes() {
         List<String> types = new ArrayList<>(List.of(
                 "UUID", "java.util.UUID", "String", "java.lang.String", "long", "Long", "java.lang.Long",
-                "int", "Integer", "java.lang.Integer", "boolean", "Boolean", "java.lang.Boolean",
-                "double", "Double", "java.lang.Double", "BigDecimal", "java.math.BigDecimal",
+                "int", "Integer", "java.lang.Integer", "short", "Short", "java.lang.Short",
+                "byte", "Byte", "java.lang.Byte", "boolean", "Boolean", "java.lang.Boolean",
+                "float", "Float", "java.lang.Float", "double", "Double", "java.lang.Double",
+                "BigDecimal", "java.math.BigDecimal",
                 "LocalDate", "java.time.LocalDate"));
         types.sort(null);
         return List.copyOf(types);

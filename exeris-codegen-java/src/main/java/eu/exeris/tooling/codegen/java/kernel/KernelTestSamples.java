@@ -47,6 +47,9 @@ final class KernelTestSamples {
             case "boolean", "Boolean", "java.lang.Boolean" -> CodeBlock.of("true");
             case "int", "Integer", "java.lang.Integer" -> CodeBlock.of("$L", SAMPLE_NUMBER);
             case "long", "Long", "java.lang.Long" -> CodeBlock.of("$LL", SAMPLE_NUMBER);
+            case "short", "Short", "java.lang.Short" -> CodeBlock.of("(short) $L", SAMPLE_NUMBER);
+            case "byte", "Byte", "java.lang.Byte" -> CodeBlock.of("(byte) $L", SAMPLE_NUMBER);
+            case "float", "Float", "java.lang.Float" -> CodeBlock.of("$L.0f", SAMPLE_NUMBER);
             case "double", "Double", "java.lang.Double" -> CodeBlock.of("$L.0", SAMPLE_NUMBER);
             // toPlainString() → new BigDecimal(String) is the repository's round-trip, and it
             // preserves scale, so an unscaled literal compares equal after it.

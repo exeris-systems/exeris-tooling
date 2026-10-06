@@ -73,7 +73,8 @@ class KernelRepositoryGeneratorTest {
                 .contains("row.getString(")
                 // Explicit column list — RowCursor is index-only.
                 .contains("SELECT id, order_number, amount FROM orders WHERE id = ?")
-                .contains("INSERT INTO orders (id, order_number, amount) VALUES (?, ?, ?)")
+                // BigDecimal is bound as text, so its placeholder casts to the migration's column type.
+                .contains("INSERT INTO orders (id, order_number, amount) VALUES (?, ?, CAST(? AS DECIMAL(19,4)))")
                 .doesNotContain("SELECT * FROM")
                 // No JDBC residue.
                 .doesNotContain("import java.sql.")
@@ -548,6 +549,177 @@ class KernelRepositoryGeneratorTest {
     }
 
     @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"BigDecimal", "java.math.BigDecimal"})
+    @DisplayName("BigDecimal: every placeholder it fills is cast to the migration's DECIMAL type")
+    void bigDecimalPlaceholdersAreCast(String type) {
+        String src = repositoryFor(FieldMetadata.builder("weight", type).filterable(true).build());
+        String cast = "CAST(? AS " + new KernelFlywayGenerator().domainColumnType(type) + ")";
+
+        assertThat(cast).isEqualTo("CAST(? AS DECIMAL(19,4))");
+        assertThat(src)
+                .contains("INSERT INTO shipments (id, name, weight) VALUES (?, ?, " + cast + ")")
+                .contains("UPDATE shipments SET name = ?, weight = " + cast + " WHERE id = ?")
+                .contains("WHERE weight = " + cast + " ORDER BY id")
+                .contains("predicates.add(\"weight = " + cast + "\")")
+                .contains("stmt.bindString(1, entity.getWeight() == null ? null : entity.getWeight().toPlainString());")
+                .contains("stmt.bindString(0, weight == null ? null : weight.toPlainString());")
+                .contains("{ String v = row.getString(2); if (v != null) entity.setWeight(new BigDecimal(v)); }");
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"LocalDate", "java.time.LocalDate"})
+    @DisplayName("LocalDate: every placeholder it fills is cast to DATE")
+    void localDatePlaceholdersAreCast(String type) {
+        String src = repositoryFor(FieldMetadata.builder("shippedOn", type).filterable(true).build());
+
+        assertThat(new KernelFlywayGenerator().domainColumnType(type)).isEqualTo("DATE");
+        assertThat(src)
+                .contains("INSERT INTO shipments (id, name, shipped_on) VALUES (?, ?, CAST(? AS DATE))")
+                .contains("UPDATE shipments SET name = ?, shipped_on = CAST(? AS DATE) WHERE id = ?")
+                .contains("WHERE shipped_on = CAST(? AS DATE) ORDER BY id")
+                .contains("predicates.add(\"shipped_on = CAST(? AS DATE)\")")
+                .contains("{ String v = row.getString(2); if (v != null) entity.setShippedOn(LocalDate.parse(v)); }");
+    }
+
+    @Test
+    @DisplayName("a column bound through a typed accessor gets a bare placeholder")
+    void typedColumnsAreNotCast() {
+        assertThat(repositoryFor(FieldMetadata.builder("count", "Integer").build()))
+                .contains("VALUES (?, ?, ?)")
+                .doesNotContain("CAST(");
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"Short", "java.lang.Short"})
+    @DisplayName("Short: bindShort, null-guarded, read through getShort unless the column is NULL")
+    void boxedShortIsTyped(String type) {
+        String src = repositoryFor(FieldMetadata.builder("crates", type).filterable(true).build());
+
+        assertThat(src)
+                .contains("if (entity.getCrates() == null) stmt.bindNull(1); else stmt.bindShort(1, entity.getCrates());")
+                .contains("if (!row.isNull(2)) entity.setCrates(row.getShort(2));")
+                .contains("if (crates == null) stmt.bindNull(0); else stmt.bindShort(0, crates);")
+                .contains("stmt.bindShort(index++, filter.crates());")
+                .doesNotContain("valueOf(");
+    }
+
+    @Test
+    @DisplayName("Byte: bindShort through shortValue(), read back narrowed from getShort")
+    void boxedByteIsTyped() {
+        String src = repositoryFor(FieldMetadata.builder("grade", "java.lang.Byte").filterable(true).build());
+
+        assertThat(src)
+                .contains("if (entity.getGrade() == null) stmt.bindNull(1); "
+                        + "else stmt.bindShort(1, entity.getGrade().shortValue());")
+                .contains("if (!row.isNull(2)) entity.setGrade((byte) row.getShort(2));")
+                .contains("stmt.bindShort(index++, filter.grade().shortValue());");
+    }
+
+    @Test
+    @DisplayName("Float: bindFloat, null-guarded, read through getFloat unless the column is NULL")
+    void boxedFloatIsTyped() {
+        String src = repositoryFor(FieldMetadata.builder("ratio", "Float").filterable(true).build());
+
+        assertThat(src)
+                .contains("if (entity.getRatio() == null) stmt.bindNull(1); else stmt.bindFloat(1, entity.getRatio());")
+                .contains("if (!row.isNull(2)) entity.setRatio(row.getFloat(2));")
+                .contains("stmt.bindFloat(index++, filter.ratio());");
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"short", "byte", "float"})
+    @DisplayName("primitive short, byte and float generate, bound and read without a null guard")
+    void primitiveNarrowNumericsGenerate(String type) {
+        String src = repositoryFor(FieldMetadata.builder("size", type).filterable(true).build());
+        String bind = "float".equals(type) ? "bindFloat" : "bindShort";
+
+        assertThat(src)
+                .contains("stmt." + bind + "(1, entity.getSize());")
+                .contains("public List<Shipment> findBySize(" + type + " size)")
+                .contains("stmt." + bind + "(0, size);")
+                .doesNotContain("if (entity.getSize() == null)")
+                .doesNotContain("row.isNull(2)");
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"Long", "java.lang.Long", "Integer", "Boolean", "Double", "java.lang.Double"})
+    @DisplayName("a wrapper-typed scalar binds NULL for null and reads NULL back as null")
+    void boxedScalarsAreNullSafe(String type) {
+        String src = repositoryFor(FieldMetadata.builder("level", type).filterable(true).build());
+
+        assertThat(src)
+                .contains("if (entity.getLevel() == null) stmt.bindNull(1); else stmt.bind")
+                .contains("if (!row.isNull(2)) entity.setLevel(row.get")
+                .contains("if (level == null) stmt.bindNull(0); else stmt.bind");
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"long", "int", "double"})
+    @DisplayName("a primitive scalar is bound and read as it is")
+    void primitiveScalarsAreUnguarded(String type) {
+        String src = repositoryFor(FieldMetadata.builder("level", type).build());
+
+        assertThat(src)
+                .doesNotContain("if (entity.getLevel() == null)")
+                .doesNotContain("row.isNull(");
+    }
+
+    @Test
+    @DisplayName("Instant and LocalDateTime finders bind the instant the write path stores")
+    void instantFindersBindTheInstant() {
+        assertThat(repositoryFor(FieldMetadata.builder("pickedAt", "java.time.Instant").filterable(true).build()))
+                .contains("if (pickedAt == null) stmt.bindNull(0); else stmt.bindInstant(0, pickedAt);")
+                .doesNotContain("pickedAt.toString()");
+        assertThat(repositoryFor(FieldMetadata.builder("pickedAt", "LocalDateTime").filterable(true).build()))
+                .contains("if (pickedAt == null) stmt.bindNull(0); "
+                        + "else stmt.bindInstant(0, pickedAt.toInstant(ZoneOffset.UTC));")
+                .doesNotContain("pickedAt.toString()");
+    }
+
+    @Test
+    @DisplayName("a List field gets no finder: its column is JSON text, which equality cannot match")
+    void listFieldHasNoFinder() {
+        DomainMetadata metadata = shipment(FieldMetadata.builder("tags", "java.util.List<java.lang.String>")
+                .filterable(true).build());
+
+        assertThat(new KernelRepositoryGenerator().generate(metadata).content())
+                .doesNotContain("findByTags");
+        assertThat(KernelRepositoryGenerator.finderSpecs(metadata)).isEmpty();
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"java.util.List<java.lang.String>", "List<UUID>", "java.util.List<java.time.Instant>",
+            "java.util.List<com.example.domain.Shipment.Leg>"})
+    @DisplayName("a List of a plain element type, nested class included, is stored as JSON")
+    void listOfPlainElementIsKept(String type) {
+        KernelRepositoryGenerator.requirePersistableFields(List.of(shipment(FieldMetadata.builder("payload", type).build())));
+
+        assertThat(repositoryFor(FieldMetadata.builder("payload", type).build())).contains("entity.setPayload(");
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"java.time.DayOfWeek", "com.example.domain.Money", "java.sql.Timestamp"})
+    @DisplayName("a type with a valueOf(String) the generator cannot rule out keeps the string round-trip")
+    void opaqueValueTypesAreKept(String type) {
+        String src = repositoryFor(FieldMetadata.builder("payload", type).build());
+        String simple = type.substring(type.lastIndexOf('.') + 1);
+
+        assertThat(src).contains("entity.setPayload(" + simple + ".valueOf(v));");
+    }
+
+    @Test
+    @DisplayName("an enum named like a refused JDK type is stored as an enum once its enumType is set")
+    void enumNamedLikeARefusedTypeIsKept() {
+        String src = repositoryFor(FieldMetadata.builder("window", "Duration")
+                .enumType("com.example.domain.Duration").build());
+
+        assertThat(src).contains("entity.setWindow(Duration.valueOf(v));");
+        FieldMetadata unresolved = FieldMetadata.builder("window", "Duration").build();
+        assertThatThrownBy(() -> repositoryFor(unresolved))
+                .isInstanceOf(UnpersistableFieldTypeException.class);
+    }
+
+    @ParameterizedTest(name = "{0}")
     @ValueSource(strings = {
             "java.util.Map<java.lang.String,java.lang.String>",
             "java.util.Set<java.util.UUID>",
@@ -556,7 +728,18 @@ class KernelRepositoryGeneratorTest {
             "java.util.Map<java.lang.String,java.time.LocalDate>",
             "Map<String, Integer>",
             "java.math.BigInteger",
-            "BigInteger"})
+            "BigInteger",
+            // No static valueOf(String), so no read-back.
+            "java.time.LocalTime", "LocalTime", "java.time.Duration", "java.time.Period",
+            "java.util.Date", "java.lang.Character",
+            // A primitive char or an array has no column encoding.
+            "char", "byte[]",
+            // A List element must be a plain type: the JSON read names it as a class.
+            "java.util.List<java.util.Map<java.lang.String,java.lang.String>>",
+            "java.util.List<java.util.List<java.lang.String>>",
+            "java.util.List<java.util.Optional<java.util.UUID>>",
+            "List<Map<String, String>>", "java.util.List<java.lang.String[]>",
+            "java.util.List<? extends java.lang.Number>"})
     @DisplayName("EXT-GEN-3003: a field type with no column encoding is refused, naming entity, field and type")
     void unpersistableTypeIsRefused(String type) {
         DomainMetadata metadata = shipment(FieldMetadata.builder("payload", type).build());
@@ -575,7 +758,10 @@ class KernelRepositoryGeneratorTest {
     void refusalListsEveryField() {
         DomainMetadata shipment = shipment(
                 FieldMetadata.builder("tags", "java.util.Set<java.lang.String>").build(),
-                FieldMetadata.builder("weight", "java.math.BigInteger").build());
+                FieldMetadata.builder("weight", "java.math.BigInteger").build(),
+                FieldMetadata.builder("window", "java.time.Duration").build(),
+                FieldMetadata.builder("blob", "byte[]").build(),
+                FieldMetadata.builder("nested", "java.util.List<java.util.List<java.lang.String>>").build());
         DomainMetadata crate = DomainMetadata.builder("Crate", "com.example.domain")
                 .fields(List.of(FieldMetadata.builder("labels", "java.util.Map<java.lang.String,java.lang.String>").build()))
                 .build();
@@ -585,10 +771,15 @@ class KernelRepositoryGeneratorTest {
                         .containsExactly(
                                 "com.example.domain.Crate.labels : java.util.Map<java.lang.String,java.lang.String>"
                                         + " (a parameterised type other than List<…>)",
+                                "com.example.domain.Shipment.blob : byte[] (an array)",
+                                "com.example.domain.Shipment.nested : java.util.List<java.util.List<java.lang.String>>"
+                                        + " (a List element must be a plain type)",
                                 "com.example.domain.Shipment.tags : java.util.Set<java.lang.String>"
                                         + " (a parameterised type other than List<…>)",
                                 "com.example.domain.Shipment.weight : java.math.BigInteger"
-                                        + " (no typed SPI accessor and no valueOf(String); BigDecimal is stored)"));
+                                        + " (no typed SPI accessor and no valueOf(String); BigDecimal is stored)",
+                                "com.example.domain.Shipment.window : java.time.Duration"
+                                        + " (no typed SPI accessor and no valueOf(String))"));
     }
 
     @Test
@@ -879,13 +1070,14 @@ class KernelRepositoryGeneratorTest {
                 .contains("public List<Order> findByActive(Boolean active)")
                 // Each filters on its own column, ends with a stable ORDER BY id.
                 .contains("SELECT id, order_number, status, amount, quantity, active FROM orders WHERE status = ? ORDER BY id")
-                .contains("WHERE amount = ? ORDER BY id")
+                .contains("WHERE amount = CAST(? AS DECIMAL(19,4)) ORDER BY id")
                 .contains("WHERE quantity = ? ORDER BY id")
-                // Binds dispatch on the field type (enum/BigDecimal via null-guarded String; int via bindInt; Boolean via bindBoolean).
+                // Binds dispatch on the field type: an enum as its string, BigDecimal as its plain
+                // string (the write path's encoding), int via bindInt, Boolean via a null-guarded bindBoolean.
                 .contains("stmt.bindString(0, status == null ? null : status.toString())")
-                .contains("stmt.bindString(0, amount == null ? null : amount.toString())")
+                .contains("stmt.bindString(0, amount == null ? null : amount.toPlainString())")
                 .contains("stmt.bindInt(0, quantity)")
-                .contains("stmt.bindBoolean(0, active)")
+                .contains("if (active == null) stmt.bindNull(0); else stmt.bindBoolean(0, active);")
                 // Same kernel-SPI read shape as findAll: query + prepare + mapRow into a List.
                 .contains("result.add(mapRow(qr.row()))")
                 // A non-filterable field gets no finder.

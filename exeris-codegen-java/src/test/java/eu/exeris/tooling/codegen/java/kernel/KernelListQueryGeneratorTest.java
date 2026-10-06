@@ -107,6 +107,27 @@ class KernelListQueryGeneratorTest {
     }
 
     @Test
+    @DisplayName("Short, Byte and Float are sort keys and filters, parsed by their own type (ADR-096 Amendment 2)")
+    void narrowNumericsAreParameters() {
+        DomainMetadata metadata = DomainMetadata.builder("Crate", "com.example.domain")
+                .path("/crates")
+                .fields(List.of(
+                        FieldMetadata.simple("layers", "java.lang.Short"),
+                        FieldMetadata.simple("grade", "byte"),
+                        FieldMetadata.simple("ratio", "java.lang.Float")))
+                .build();
+
+        String query = flat(generator.generateMultiple(metadata).get(0));
+
+        assertThat(query)
+                .contains("public static final List<String> SORTABLE = List.of(\"grade\", \"layers\", \"ratio\");")
+                .contains("record Filter(Byte grade, Short layers, Float ratio)")
+                .contains("case \"grade\" -> filterGrade = Byte.parseByte(value);")
+                .contains("case \"layers\" -> filterLayers = Short.parseShort(value);")
+                .contains("case \"ratio\" -> filterRatio = Float.parseFloat(value);");
+    }
+
+    @Test
     @DisplayName("the filter record has one nullable component per filter, foreign key included")
     void filterRecord() {
         String query = flat(generator.generateMultiple(order()).get(0));

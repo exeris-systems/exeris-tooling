@@ -25,6 +25,15 @@ class TypeMapperTest {
         assertThat(TypeMapper.toOpenApiType("double")).isEqualTo("number");
         assertThat(TypeMapper.toOpenApiType("Double")).isEqualTo("number");
         assertThat(TypeMapper.toOpenApiType("BigDecimal")).isEqualTo("number");
+        for (String type : new String[] {"short", "Short", "java.lang.Short", "byte", "Byte", "java.lang.Byte"}) {
+            assertThat(TypeMapper.toOpenApiType(type)).as(type).isEqualTo("integer");
+            assertThat(TypeMapper.toOpenApiFormat(type)).as(type).isEqualTo("int32");
+        }
+        // The spelling the processor writes, javac's fully qualified one.
+        assertThat(TypeMapper.toOpenApiType("java.lang.Float")).isEqualTo("number");
+        assertThat(TypeMapper.toOpenApiFormat("java.lang.Float")).isEqualTo("float");
+        assertThat(TypeMapper.toOpenApiType("java.lang.Double")).isEqualTo("number");
+        assertThat(TypeMapper.toOpenApiFormat("java.lang.Double")).isEqualTo("double");
     }
 
     @Test

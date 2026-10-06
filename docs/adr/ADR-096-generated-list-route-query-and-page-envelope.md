@@ -12,6 +12,8 @@ slug: adr/ADR-096
 - **Status:** ACCEPTED (2026-10-04) · accepted-on-merge per the per-repo pattern (ADR-047 / ADR-058)
   · amended 2026-10-06 (Amendment 1 — `OffsetDateTime` and `ZonedDateTime` are sort keys; `BigInteger`,
   `Map` and `Set` fields are refused by generation)
+  · amended 2026-10-06 (Amendment 2 — `Short`, `Byte` and `Float` are sort keys and filters; a
+  `BigDecimal` or `LocalDate` filter binds through a cast placeholder)
 - **Deciders:** the founder (server-side paging in 0.9.0; parameter strictness; system fields;
   size bounds)
 - **Repo:** `exeris-tooling`
@@ -72,11 +74,14 @@ everything else with `400`, runs one bound, whitelisted page query and one count
    - Sortable: a field with `@Field(sortable = true)`, and a field without `@Field`, which the
      processor records as sortable, whose type is a filterable scalar type, `Instant` or
      `LocalDateTime` (either spelling), or an enum. A `List` field is not sortable. *(Amendment 1,
-     2026-10-06: `OffsetDateTime` and `ZonedDateTime` are sort keys too.)*
+     2026-10-06: `OffsetDateTime` and `ZonedDateTime` are sort keys too.)* *(Amendment 2,
+     2026-10-06: `Short`, `Byte` and `Float`, in every spelling, are sort keys too.)*
    - Filterable: a field with `@Field(filterable = true)`, and a field without `@Field`, whose type
      is a UUID, `String`, `long`, `int`, `boolean`, `double`, `BigDecimal`, `LocalDate` (either
      spelling, boxed or not) or an enum; and the `MANY_TO_ONE` foreign keys of obligation 2. A field
-     named `page`, `size` or `sort` is not a filter.
+     named `page`, `size` or `sort` is not a filter. *(Amendment 2, 2026-10-06: `Short`, `Byte`
+     and `Float`, in every spelling, are filters too; a `BigDecimal` or `LocalDate` filter binds
+     through `CAST(? AS <column type>)`.)*
    - An enum is a field whose `enumType`, else whose `type`, names an enum the processor emitted
      beside the entities (`enum_*.json`) — by qualified name, else by simple name: the rule the
      TypeScript emitter applies to the same two inputs. The pipeline records the resolution in the
@@ -86,6 +91,9 @@ everything else with `400`, runs one bound, whitelisted page query and one count
      engine-specific rendering, so neither equality on its text nor its text order is the value's.
      *(Amendment 1, 2026-10-06: `OffsetDateTime` and `ZonedDateTime` are sort keys; a `Map`, a
      `Set` or a `BigInteger` field is refused by generation and never reaches the list route.)*
+     *(Amendment 2, 2026-10-06: `Float` and `Short` are sort keys and filters, superseding
+     Amendment 1 on those two; `LocalTime`, `Duration`, `char`, an array, a `List` whose element
+     is not a plain type, among others, are refused by generation and never reach the list route.)*
    - Never a sort key or a filter, with or without `@Field`: the primary key, the owning tenant,
      the shared-scope field, the audit fields (created and updated at and by), the version and the
      soft-delete fields — under their declared `SystemFieldsMetadata` names or the canonical
@@ -250,3 +258,54 @@ Verification: `ListQuerySupportTest` and `DomainTypeKindTest` pin the kinds and 
 `ListQueryContractE2ETest` holds `ListQuerySupport.sortableScalarTypes()` to the contract file and
 parses `sort=<offsetDateTimeField>,asc` through a generated `<Entity>ListQuery`;
 `ZonedTemporalFieldE2ETest` round-trips both types through the emitted repository on H2.
+
+## Amendment 2 — `Short`, `Byte` and `Float` are sort keys and filters (2026-10-06)
+
+**Status:** Accepted *(widens the sortable and filterable sets of obligation 5 and their lists in the
+contract file of obligation 9; fixes how a `BigDecimal` or `LocalDate` filter value reaches its
+predicate; the grammar and every other obligation are unchanged)*
+
+The generated repository binds a `Short` or `Byte` field through `bindShort` into a `SMALLINT`
+column and a `Float` field through `bindFloat` into a `REAL` column, and reads each back through its
+typed accessor. Before, it had no encoding for them: they were written as text, which PostgreSQL
+refuses against a numeric column, and obligation 5 counted them among the types whose stored text
+need not order as their values do. Their columns now hold numbers, which order and compare as
+`Integer` and `Double` columns do.
+
+Obligation 5 reads, from this amendment:
+
+- **Sortable** and **filterable** add `Short`, `Byte` and `Float` in every spelling (`short`,
+  `Short`, `java.lang.Short`, and so for the other two). A filter value is parsed with
+  `Short.parseShort`, `Byte.parseByte` or `Float.parseFloat`; a value that does not parse is refused
+  with `400`, as for every other filter. Equality on a `Float` filter is exact, as it is on a
+  `Double` one.
+- **A `BigDecimal` or `LocalDate` filter** is still bound as text (the kernel SPI has no decimal or
+  date bind), and its predicate is now `<column> = CAST(? AS <type>)`, where `<type>` is the column
+  type the generated migration declares (`DECIMAL(19,4)`, `DATE`). Without the cast PostgreSQL
+  refuses the comparison (`42883`). The cast type is read from the same mapping the migration is
+  emitted from, so the two cannot disagree.
+- **Any other type** no longer lists `Float` or `Short`. This supersedes Amendment 1 where it says
+  a record, `Float` or `Short` remains neither a sort key nor a filter: it holds for a record, not
+  for `Float` or `Short`. A record or another type of the application's own remains neither a sort
+  key nor a filter. A type the repository cannot store — `LocalTime`, `Duration`, `char`, an
+  array, a `List` whose element is not a plain type (`List<Map<String, String>>`,
+  `List<List<X>>`), among others — is not reached by the list route at all: generation refuses the
+  entity (`EXT-GEN-3003`).
+
+**`EXT-GEN-3003` is a refusal of the Java pipeline only.** The limit it enforces is the Java
+repository's column encoding over the kernel SPI, which has no decimal, date or time-of-day bind
+and no read-back for a type without a static `valueOf(String)`. The TypeScript emitter only types
+the field and can type every one of these. A generated application with such a field fails at
+`exeris:generate` for its Java tree, so no application ships with one emitter's output generated
+and the other's refused.
+
+`contract/list-query.json` (obligation 9) lists the nine new spellings in both
+`filterableScalarTypes` and `sortableScalarTypes`, and its `unrecognised` examples drop `Float` and
+`Short`. `list-query-contract.spec.ts` (exeris-codegen-ts) holds the TypeScript emitter's sort and
+filter lists to the same file.
+
+Verification: `ListQuerySupportTest` and `DomainTypeKindTest` pin the kinds and the sets;
+`KernelListQueryGeneratorTest` pins the parse of each new type; `ListQueryContractE2ETest` holds
+both Java lists to the contract file and `list-query-contract.spec.ts` the TypeScript ones; `FieldTypeStorageE2ETest` filters on a `Short`, `Byte`, `Float`,
+`BigDecimal` and `LocalDate` column on H2, and `PostgresTypeMatrixE2ETest` (opt-in) sorts and
+filters on every offered type on PostgreSQL 16.

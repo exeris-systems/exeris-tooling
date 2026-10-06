@@ -22,6 +22,7 @@ import { createGeneratorContext } from '../../../src/core/generator-registry.js'
 import {
   DEFAULT_PAGE_SIZE,
   FILTERABLE_SCALAR_TYPES,
+  SORTABLE_SCALAR_TYPES,
   MAX_PAGE_SIZE,
   PAGE_ENVELOPE,
   PAGE_PARAM,
@@ -45,6 +46,7 @@ interface ListQueryContract {
   reserved: string[];
   properties: { sortable: string; filterable: string; neverOffered: string };
   filterableScalarTypes: string[];
+  sortableScalarTypes: string[];
   envelope: string[];
 }
 
@@ -232,6 +234,7 @@ describe('contract/list-query.json — the page envelope', () => {
 
 describe('contract/list-query.json — which properties sort and filter', () => {
   it('filters on exactly the contract\'s scalar types', () => {
+    expect([...SORTABLE_SCALAR_TYPES]).toEqual(contract.sortableScalarTypes);
     expect([...FILTERABLE_SCALAR_TYPES]).toEqual(contract.filterableScalarTypes);
     for (const type of contract.filterableScalarTypes) {
       const d = DomainMetadataSchema.parse({
@@ -290,7 +293,7 @@ describe('contract/list-query.json — which properties sort and filter', () => 
     const expected = [
       'code', 'deliveryDate', 'page', 'paid', 'pickupAt', 'placedAt', 'quantity', 'status', 'total', 'updatedBy',
     ];
-    expect(sortableProperties(order).map((p) => p.name)).toEqual(expected);
+    expect(sortableProperties(order, isEnum).map((p) => p.name)).toEqual(expected);
     expect(service).toContain(`export type OrderSortField = ${expected.map((n) => `'${n}'`).join(' | ')};`);
   });
 
@@ -310,5 +313,42 @@ describe('contract/list-query.json — which properties sort and filter', () => 
     for (const name of ['placedAt', 'pickupAt', 'labels', 'page', 'note', 'createdAt', 'tenantId', 'archived', 'id']) {
       expect(list, name).not.toContain(`data-testid="filter-${name}"`);
     }
+  });
+});
+
+describe('contract/list-query.json — the kind of each listed type', () => {
+  const field = (name: string, type: string) => ({ name, type, sortable: true, filterable: true });
+  const entity = (fields: ReturnType<typeof field>[]) => DomainMetadataSchema.parse({
+    entityName: 'Probe', packageName: 'com.shop', fields: [{ name: 'id', type: 'java.util.UUID' }, ...fields],
+  });
+
+  it('sorts and filters on every listed type, and on nothing it does not list', () => {
+    const sortTypes = new Set(contract.sortableScalarTypes);
+    const filterTypes = new Set(contract.filterableScalarTypes);
+    const probes = [...new Set([...contract.sortableScalarTypes, ...contract.filterableScalarTypes])]
+      .map((type, i) => field(`p${i}`, type));
+    const probe = entity(probes);
+    const sorted = new Set(sortableProperties(probe).map((p) => p.type));
+    const filtered = new Set(filterProperties(probe).map((p) => p.type));
+    for (const { type } of probes) {
+      expect(sorted.has(type), `sort ${type}`).toBe(sortTypes.has(type));
+      expect(filtered.has(type), `filter ${type}`).toBe(filterTypes.has(type));
+    }
+  });
+
+  it('offers no unstorable or parameterised type, even when its argument is a listed one', () => {
+    const probe = entity([
+      field('a', 'java.util.Map<java.lang.String,java.time.LocalDate>'),
+      field('b', 'java.time.Instant[]'),
+      field('c', 'java.math.BigInteger'),
+      field('d', 'char'),
+      field('e', 'java.time.Duration'),
+      field('g', 'java.time.YearMonth'),
+      field('h', 'java.util.Date'),
+      field('i', 'java.net.URI'),
+      field('f', 'java.util.List<java.lang.String>'),
+    ]);
+    expect(sortableProperties(probe)).toEqual([]);
+    expect(filterProperties(probe).filter((p) => p.field)).toEqual([]);
   });
 });

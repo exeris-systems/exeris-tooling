@@ -94,5 +94,11 @@
     "since": "0.9",
     "adr": "ADR-096",
     "justification": "The front's half of ADR-096: the generated list route pages, sorts and filters on the server, answers the page envelope and refuses with 400 a parameter it does not read, including search. The service's <Model>Filter and the types module's <Model>Filter hold exactly the route's equality filters (no search), <Model>SortField names its sort keys, and findAll sends sort only when set. The store reads the envelope, starts unsorted and holds its page size within 1..100; setSearch, filteredEntities and filteredCount are removed. The list reads one page through an rxResource keyed on page, size, sort and filters: the search box and the range filters are removed (data-testid search-input, filter-<field>-from/-to/-min/-max), each filter is one equality control (filter-<field>), sort headers appear only for the route's sort keys, and page sizes are 10/20/25/50/100. The query builder loses search(). The foreign-key picker requests findAll({ size: 100 }). A detail view whose ONE_TO_MANY target has a MANY_TO_ONE back lists the first ten children through findAll({ size: 10 }, { <base>Id: id }) and injects the target's service; the related-<relationship> link is unchanged. docs/MIGRATION-0.x-to-1.0.md 0.9.0 carries the step. Classified breaking under ADR-096; the output shape follows ADR-092."
+  },
+  {
+    "signature": "<entity>.service.ts / query builder <Model>SortField: - fields of an unrecognised, parameterised, array or unstorable type; <Model>Filter: + short, byte, float fields",
+    "since": "0.9",
+    "adr": "ADR-096",
+    "justification": "The emitted sort keys and filters are exactly the properties the list route sorts and filters on (ADR-096 Amendment 2, contract/list-query.json): Short, Byte and Float sort and filter, OffsetDateTime and ZonedDateTime sort, and a field of an unrecognised, parameterised, array or unstorable type is neither a sort key nor a filter, since the route refuses it with 400. docs/MIGRATION-0.x-to-1.0.md 0.9.0 carries the step."
   }
 ]
