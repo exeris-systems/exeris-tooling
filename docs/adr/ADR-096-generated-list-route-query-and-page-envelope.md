@@ -71,7 +71,8 @@ everything else with `400`, runs one bound, whitelisted page query and one count
 5. **Which properties.**
    - Sortable: a field with `@Field(sortable = true)`, and a field without `@Field`, which the
      processor records as sortable, whose type is a filterable scalar type, `Instant` or
-     `LocalDateTime` (either spelling), or an enum. A `List` field is not sortable.
+     `LocalDateTime` (either spelling), or an enum. A `List` field is not sortable. *(Amendment 1,
+     2026-10-06: `OffsetDateTime` and `ZonedDateTime` are sort keys too.)*
    - Filterable: a field with `@Field(filterable = true)`, and a field without `@Field`, whose type
      is a UUID, `String`, `long`, `int`, `boolean`, `double`, `BigDecimal`, `LocalDate` (either
      spelling, boxed or not) or an enum; and the `MANY_TO_ONE` foreign keys of obligation 2. A field
@@ -83,6 +84,8 @@ everything else with `400`, runs one bound, whitelisted page query and one count
    - Any other type — a `Map`, a `Set`, a record, `OffsetDateTime`, `ZonedDateTime`, `BigInteger`,
      `Float`, `Short` — is neither a sort key nor a filter. Its column may hold JSON or an
      engine-specific rendering, so neither equality on its text nor its text order is the value's.
+     *(Amendment 1, 2026-10-06: `OffsetDateTime` and `ZonedDateTime` are sort keys; a `Map`, a
+     `Set` or a `BigInteger` field is refused by generation and never reaches the list route.)*
    - Never a sort key or a filter, with or without `@Field`: the primary key, the owning tenant,
      the shared-scope field, the audit fields (created and updated at and by), the version and the
      soft-delete fields — under their declared `SystemFieldsMetadata` names or the canonical
