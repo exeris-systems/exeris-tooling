@@ -2278,7 +2278,7 @@ instead (`selectOption` by value or label); a test backend answers the target's 
 
 ### `exeris-codegen-ts`: the list, store, picker and related-records panels use the list route's query
 
-`Compatibility impact: breaking (ADR-092)` for every regenerated list, store, service, query builder
+`Compatibility impact: breaking (ADR-096), shape per ADR-092` for every regenerated list, store, service, query builder
 and types module, and for the detail view and form of an entity with a `ONE_TO_MANY` or a picked
 foreign key. It is the front's half of
 [ADR-096](adr/ADR-096-generated-list-route-query-and-page-envelope.md): the generated list route
