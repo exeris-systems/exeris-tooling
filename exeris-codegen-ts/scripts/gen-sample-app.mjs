@@ -78,9 +78,10 @@ const domains = [
       { name: 'orderNumber', type: 'String', required: true, maxLength: 20, inUpdate: false },
     ],
     // The foreign key renders as a routerLink to the target's detail page in the list cell and
-    // the detail row. The target is qualified, as the processor's fallback can record it, so the
-    // build also covers the simple-name resolution.
-    relationships: [{ name: 'productId', targetEntity: 'com.shop.Product', type: 'MANY_TO_ONE' }],
+    // the detail row, and the form picks it from Product's records labelled by their name. The
+    // target is qualified, as the processor's fallback can record it, so the build also covers the
+    // simple-name resolution.
+    relationships: [{ name: 'productId', targetEntity: 'com.shop.Product', type: 'MANY_TO_ONE', displayField: 'name' }],
     // Domain events drive the per-entity handler AND the shared event bus. Without one in the
     // fixture, neither half of the event generator is ever built.
     events: [
@@ -143,7 +144,18 @@ const domains = [
   // Named for the plural, not for the shop: an entity already ending in 's' routes to
   // '/address', while detail-gen used to navigate to '/addresss' after a delete — a URL the
   // route table never declares. No fixture entity ended in 's', which is why nothing caught it.
-  d({ entityName: 'Address', fields: [{ name: 'id', type: 'java.util.UUID' }, { name: 'city', type: 'String' }] }),
+  // Its required foreign key to `Component` is picked from that entity's records: the form imports
+  // the target's service beside the framework's `Component`, and a required picker offers no empty
+  // choice.
+  d({
+    entityName: 'Address',
+    fields: [
+      { name: 'id', type: 'java.util.UUID' },
+      { name: 'city', type: 'String' },
+      { name: 'componentId', type: 'java.util.UUID', required: true },
+    ],
+    relationships: [{ name: 'componentId', targetEntity: 'Component', type: 'MANY_TO_ONE', displayField: 'name' }],
+  }),
   // Named for the overrides, not for the shop: the only fixture entity declaring a systemFields
   // block at all, which is why four of that block's ten keys could be spelled wrong on the TS
   // side for two trains without any gate noticing.
@@ -195,7 +207,9 @@ const domains = [
   // entity takes with a switch off are compiled only here. Tag has a list and an edit form and
   // nothing else — no detail page, no create route, no search box, no filter control although a
   // field is filterable — and its foreign key to itself renders as text, the target having no
-  // detail page. Its form serves the edit route alone and leaves to the list.
+  // detail page. Its form serves the edit route alone and leaves to the list, and picks the key
+  // from Tag's own records through its own service, labelled by id: the relationship names no
+  // display field.
   d({
     entityName: 'Tag',
     fields: [

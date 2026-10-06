@@ -806,3 +806,15 @@ describe('DetailGenerator — collection values', () => {
     );
   });
 });
+
+describe('DetailGenerator — by-id resource', () => {
+  it('reads the loaded entity only when the resource holds one, since value() throws after a failed load', () => {
+    const content = new DetailGenerator().generate(domain({
+      entityName: 'Order',
+      fields: [{ name: 'id', type: 'java.util.UUID' }],
+    }), CTX)!.content;
+    expect(content).toContain(
+      'readonly entity = computed(() => (this.entityResource.hasValue() ? this.entityResource.value() : null) ?? null);',
+    );
+  });
+});
