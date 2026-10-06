@@ -2272,8 +2272,8 @@ and refuses with `400` a parameter it does not read.
   (`setSearch`, `filteredEntities`, `filteredCount`) and the query builder (`search()`).
   `@Field(searchable = true)` still indexes the column; `@UI(searchable)` changes nothing.
 - **Equality filters, on the route's properties only.** A filter is offered for a field the route
-  filters on: one marked filterable whose type is a UUID, `String`, `long`, `int`, `boolean`,
-  `double`, `BigDecimal`, `LocalDate` or an enum, never a system field (primary key, owning tenant,
+  filters on: one marked filterable whose type is a UUID, `String`, `long`, `int`, `short`, `byte`,
+  `boolean`, `float`, `double`, `BigDecimal`, `LocalDate` or an enum, never a system field (primary key, owning tenant,
   shared-scope field, audit, version and soft-delete fields) or a field named `page`, `size` or
   `sort`, plus `<base>Id` for every `MANY_TO_ONE`. A boolean is a Yes/No select, an emitted enum a
   select of its constants, a `LocalDate` a `date` input, and every other filter a text input applied
@@ -2286,8 +2286,11 @@ and refuses with `400` a parameter it does not read.
   keyed on `currentPage`, `pageSize`, `sortField`, `sortDirection` and the filter signals; the
   members `rows`, `filtered` and `sorted` and the in-browser comparator are gone, `items`,
   `totalElements`, `totalPages` and `page` come from the envelope, and `ngOnInit` is gone. A sort
-  header (`sort-<field>`) appears only for a column the route sorts on — never a `List` or system
-  field — and sorting or filtering returns to the first page. The page size offers 10, 20, 25, 50 or
+  header (`sort-<field>`) appears only for a column the route sorts on — a field of a scalar,
+  `Instant`, `LocalDateTime`, `OffsetDateTime`, `ZonedDateTime` or `LocalDate` type or an enum, never
+  a `List`, a parameterised, array or unstorable type, or a system field — and sorting or filtering
+  returns to the first page. `<Model>SortField` names exactly those keys: TypeScript that named a key
+  of another type (which the route refused with `400`) no longer compiles. The page size offers 10, 20, 25, 50 or
   100 rows (20 by default). The service's `findAll` takes `PageRequest & { sort?: <Model>SortField }`
   and sends `sort` only when one is set; `<Model>SortField` names the sort keys. The store sorts by
   nothing until `setSort` (it sorted by `id` descending, which the route refuses), reads the envelope

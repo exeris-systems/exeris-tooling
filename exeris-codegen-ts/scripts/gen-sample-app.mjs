@@ -57,6 +57,10 @@ const domains = [
       // An offset date-time and two collections, typed as the processor writes them. A collection
       // renders as text in the list and detail and has no form control.
       { name: 'placedAt', type: 'java.time.OffsetDateTime' },
+      // The smaller numeric types: filterable as numbers and sortable, as the list route serves them.
+      { name: 'priority', type: 'java.lang.Short', sortable: true, filterable: true },
+      { name: 'rank', type: 'byte', sortable: true, filterable: true },
+      { name: 'weight', type: 'java.lang.Float', sortable: true, filterable: true },
       // Sortable and filterable by its flags, neither on the list route: a List is a JSON column.
       { name: 'labels', type: 'java.util.List<java.lang.String>', sortable: true, filterable: true },
       { name: 'attributes', type: 'java.util.Map<java.lang.String,java.lang.String>' },

@@ -17,6 +17,7 @@ import type { GeneratorConfig } from '../../config.js';
 import type { BackendType } from '../../core/backend-strategy.js';
 import { outPath } from '../../core/paths.js';
 import { filterProperties, sortableProperties } from '../angular/list-query.js';
+import { enumTypeOf } from '../angular/field-render.js';
 
 export class QueryBuilderGenerator implements CodeGenerator {
   readonly name = 'QueryBuilderGenerator';
@@ -53,9 +54,11 @@ export class QueryBuilderGenerator implements CodeGenerator {
     const kebab = DslMapper.toKebabCase(domain.entityName);
 
     // A foreign key no field carries filters as the target's id, a UUID.
-    const filterableFields = filterProperties(domain)
+    // The service's enum rule: an explicit enumType, or a type naming an enum the app emitted.
+    const isEnum = (field: FieldMetadata) => enumTypeOf(field, context.enums ?? []) !== undefined;
+    const filterableFields = filterProperties(domain, isEnum)
       .map((p) => p.field ?? ({ name: p.name, type: 'java.util.UUID' } as FieldMetadata));
-    const sortableFields = sortableProperties(domain);
+    const sortableFields = sortableProperties(domain, isEnum);
     const enumTypes = this.collectEnumTypes(filterableFields);
 
     const lines: string[] = [];
