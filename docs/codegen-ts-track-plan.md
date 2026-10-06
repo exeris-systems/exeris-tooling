@@ -270,6 +270,10 @@ same model — no second rendering path. `@View` block depth stays gated on the 
 
 ### Stage 4 — remaining parity, tests, release
 
+The 0.10.0 share of this stage — the tenant and GET spectate stream clients, lint in CI, the 0.9 removals and
+the issues placed in that release — is ordered in the TypeScript track of
+[`0.10.0-release-plan.md`](0.10.0-release-plan.md).
+
 - The per-action stream producer (EV1-stream): the action stream handler still sends only the
   keep-alive scaffold and never runs the action. No SDK widening is needed — an `ACTION`-triggered
   `@DomainEvent` already names its action — but the invoke-then-stream semantics wait on an
