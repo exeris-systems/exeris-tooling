@@ -228,5 +228,5 @@ appear in the printed line, what keeps an identifier stable, and where does the 
 From 0.10.0 every `exeris-tooling` module is published under the groupId `eu.exeris`, the group of
 the kernel and SDK artefacts, so the registry's artefact is `eu.exeris:exeris-diagnostics`. Releases
 up to and including 0.9.0 publish it as `eu.exeris.tooling:exeris-diagnostics`, and no relocation POM
-is published under the old group. The registry class stays
-`eu.exeris.tooling.diagnostics.DiagnosticId`: the move changes Maven coordinates, not Java packages.
+is published under the old group. The move changes Maven coordinates, not Java packages: the
+registry class `DiagnosticId` keeps its package.
