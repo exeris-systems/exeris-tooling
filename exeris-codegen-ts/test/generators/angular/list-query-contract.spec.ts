@@ -343,6 +343,9 @@ describe('contract/list-query.json — the kind of each listed type', () => {
       field('c', 'java.math.BigInteger'),
       field('d', 'char'),
       field('e', 'java.time.Duration'),
+      field('g', 'java.time.YearMonth'),
+      field('h', 'java.util.Date'),
+      field('i', 'java.net.URI'),
       field('f', 'java.util.List<java.lang.String>'),
     ]);
     expect(sortableProperties(probe)).toEqual([]);

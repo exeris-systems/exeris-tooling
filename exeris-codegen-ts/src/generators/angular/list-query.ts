@@ -86,7 +86,9 @@ const KIND_BY_TYPE: ReadonlyMap<string, ListQueryKind> = new Map<string, ListQue
 const UNSTORABLE_TYPES: ReadonlySet<string> = new Set(
   [
     'java.math.BigInteger', 'java.lang.Character', 'java.lang.Object', 'java.time.LocalTime',
-    'java.time.OffsetTime', 'java.time.Duration', 'java.time.Period',
+    'java.time.OffsetTime', 'java.time.Duration', 'java.time.Period', 'java.time.Year',
+    'java.time.YearMonth', 'java.time.MonthDay', 'java.time.ZoneId', 'java.time.ZoneOffset',
+    'java.util.Date', 'java.util.Currency', 'java.util.Locale', 'java.net.URI', 'java.net.URL',
   ].flatMap((t) => [t, t.slice(t.lastIndexOf('.') + 1)]),
 );
 
