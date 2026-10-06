@@ -54,7 +54,7 @@ criterion below is proposed.
 
 ## 0.9.0 — what the TS side ships with the cut
 
-The 0.9.0 cut waits for this scope. Each row is one pull request; the order respects the
+The 0.9.0 cut waits for this scope, and every row in it is merged. Each row is one pull request; the order respects the
 dependency column. The cost is the whole release's: the Maven artefacts reach Maven Central only
 with this scope, so a slip in any row — P11 is the largest, and P14 and P15 depend on the SDK moving
 the ui-kit to npmjs and on the `@exeris` org there — delays the Java side too.
