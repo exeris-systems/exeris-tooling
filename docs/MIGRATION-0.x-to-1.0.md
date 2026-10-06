@@ -2511,6 +2511,46 @@ keep-alives only and reads nothing (`EXT-PROC-1107`, above).
 The check runs in the annotation processor. Metadata JSON that reaches `exeris:generate` without
 passing through the processor is not checked.
 
+### `OffsetDateTime` and `ZonedDateTime` fields persist; a `Map`, `Set`, `Optional` or `BigInteger` field is refused (`EXT-GEN-3003`)
+
+**`OffsetDateTime` and `ZonedDateTime` entity fields now generate a repository that compiles.**
+Before, the repository wrote them through `toString()` and read them back through
+`OffsetDateTime.valueOf(String)` / `ZonedDateTime.valueOf(String)`, which do not exist, so an entity
+with such a field did not compile. The migration already declared the column `TIMESTAMPTZ`, and is
+unchanged. The regenerated repository:
+- writes the value's instant (`bindInstant(value.toInstant())`, `NULL` for `null`);
+- reads it back with `getInstant` as `OffsetDateTime.ofInstant(v, ZoneOffset.UTC)` /
+  `ZonedDateTime.ofInstant(v, ZoneOffset.UTC)`;
+- binds a `findBy<Field>` finder's argument the same way, so the finder matches on the instant: the
+  same instant written at another offset finds the row.
+- offers the field as a list-route sort key, ordered by instant, and not as a filter — the rule for
+  `Instant` and `LocalDateTime` (ADR-096 Amendment 1).
+
+**The instant is what is stored; the offset or zone is not.** A value written as
+`2026-10-04T10:00+02:00`, or in `Europe/Warsaw`, reads back as `2026-10-04T08:00Z`. If the offset or
+zone matters to your domain, store it in a field of its own (a `String` zone id, say). The emitted
+OpenAPI now gives a `ZonedDateTime` property `format: date-time`, as it did for `OffsetDateTime`.
+
+**A field whose type the repository cannot store and read back now fails `exeris:generate`** before
+anything is written, naming every such field:
+
+```
+[ERROR] Failed to execute goal …: [Exeris] EXT-GEN-3003: The generated repository cannot store and read back this entity field:
+  com.shop.domain.Product.attributes : java.util.Map<java.lang.String,java.lang.String> (a parameterised type other than List<…>)
+```
+
+The refused types are a parameterised type other than `List<…>` (`Map`, `Set`, `Optional`, …), which
+failed generation before inside JavaPoet with an `IllegalArgumentException` that named no field, and
+`BigInteger`, whose repository did not compile. Declare the field as a `List<…>`, which is stored as a
+JSON column, or as a supported scalar; use `BigDecimal` in place of `BigInteger`. `CodegenMain`
+prints the same message and exits with status 1.
+
+Every entity that generated before generates byte-identically: the change reaches only fields of
+these types, which either did not compile or did not generate.
+
+The check runs in the code-generation pipeline, not the annotation processor, so the annotated
+source compiles and the build fails at `exeris:generate`.
+
 ### Every diagnostic carries a stable identifier (D4)
 
 Every message the annotation processor prints, every warning the code-generation pipeline logs, and
@@ -2580,13 +2620,14 @@ both, so check the entity's `<Entity>ListQuery.SORTABLE` and its `Filter` record
 regenerating. System fields are never either, with or without `@Field`: the primary key, the owning
 tenant, the shared-scope field, the audit fields (created and updated at and by), the version and
 the soft-delete fields, under their declared or canonical names, for each role the entity's flags
-switch on. A `List` field is neither; an `Instant` or `LocalDateTime` field is sortable but not
-filterable (equality on an instant matches nothing a person types); a field named `page`, `size` or
+switch on. A `List` field is neither; an `Instant`, `LocalDateTime`, `OffsetDateTime` or
+`ZonedDateTime` field is sortable, by instant, but not filterable (equality on an instant matches
+nothing a person types); a field named `page`, `size` or
 `sort` is sortable but never a filter. An enum field is both, when the processor emitted the enum —
 which it does for every `@ExerisDomain` field whose Java type is an `enum`; hand-written metadata
-passes the enum beside the entities (`enum_*.json`). A field of any other type — a `Map`, a `Set`, a
-record, `OffsetDateTime`, `ZonedDateTime`, `BigInteger`, `Float`, `Short`, or a type merely named
-like an enum — is neither. Rows that tie on the sort column are ordered by `id`, so a
+passes the enum beside the entities (`enum_*.json`). A field of any other type — a record, `Float`,
+`Short`, or a type merely named like an enum — is neither; a `Map`, `Set` or `BigInteger` field
+fails generation (`EXT-GEN-3003`, above). Rows that tie on the sort column are ordered by `id`, so a
 row does not move between pages. Where `NULL` values sort is the database's default. See ADR-096.
 
 **New emitted types.** Per entity, in the generated **repository** package:

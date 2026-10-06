@@ -9,10 +9,13 @@ import eu.exeris.sdk.sourcemodel.ast.SystemFieldsMetadata;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Per-generator test for {@link KernelRepositoryGenerator}.
@@ -508,6 +511,110 @@ class KernelRepositoryGeneratorTest {
                 .contains("entity.getPlacedOn() == null ? null : entity.getPlacedOn().toString()")
                 // Enum import — JavaPoet emits the ClassName for ENUM_LIKE.
                 .contains("import com.example.OrderStatus");
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"OffsetDateTime", "java.time.OffsetDateTime"})
+    @DisplayName("OffsetDateTime: binds its instant, reads it back at UTC, and its finder binds the instant")
+    void offsetDateTimeTravelsAsItsInstant(String type) {
+        String src = repositoryFor(FieldMetadata.builder("departedAt", type).filterable(true).build());
+        // Columns: id 0, name 1, departedAt 2; the UPDATE binds name at 0 and departedAt at 1.
+
+        assertThat(src)
+                .contains("{ Instant v = row.getInstant(2); if (v != null) "
+                        + "entity.setDepartedAt(OffsetDateTime.ofInstant(v, ZoneOffset.UTC)); }")
+                .contains("if (entity.getDepartedAt() == null) stmt.bindNull(1); "
+                        + "else stmt.bindInstant(1, entity.getDepartedAt().toInstant());")
+                .contains("public List<Shipment> findByDepartedAt(OffsetDateTime departedAt)")
+                .contains("if (departedAt == null) stmt.bindNull(0); else stmt.bindInstant(0, departedAt.toInstant());")
+                .contains("import java.time.OffsetDateTime;")
+                .doesNotContain("OffsetDateTime.valueOf(")
+                .doesNotContain("departedAt.toString()");
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"ZonedDateTime", "java.time.ZonedDateTime"})
+    @DisplayName("ZonedDateTime: binds its instant and reads it back at UTC")
+    void zonedDateTimeTravelsAsItsInstant(String type) {
+        String src = repositoryFor(FieldMetadata.builder("arrivedAt", type).build());
+
+        assertThat(src)
+                .contains("{ Instant v = row.getInstant(2); if (v != null) "
+                        + "entity.setArrivedAt(ZonedDateTime.ofInstant(v, ZoneOffset.UTC)); }")
+                .contains("if (entity.getArrivedAt() == null) stmt.bindNull(1); "
+                        + "else stmt.bindInstant(1, entity.getArrivedAt().toInstant());")
+                .contains("import java.time.ZonedDateTime;")
+                .doesNotContain("ZonedDateTime.valueOf(");
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {
+            "java.util.Map<java.lang.String,java.lang.String>",
+            "java.util.Set<java.util.UUID>",
+            "java.util.Optional<java.lang.String>",
+            // Its type argument names a recognised type; the field is still refused, not read as a LocalDate.
+            "java.util.Map<java.lang.String,java.time.LocalDate>",
+            "Map<String, Integer>",
+            "java.math.BigInteger",
+            "BigInteger"})
+    @DisplayName("EXT-GEN-3003: a field type with no column encoding is refused, naming entity, field and type")
+    void unpersistableTypeIsRefused(String type) {
+        DomainMetadata metadata = shipment(FieldMetadata.builder("payload", type).build());
+
+        assertThatThrownBy(() -> strategy.generate(metadata))
+                .isInstanceOf(UnpersistableFieldTypeException.class)
+                .hasMessageStartingWith("[Exeris] EXT-GEN-3003: ")
+                .hasMessageContaining("com.example.domain.Shipment.payload : " + type)
+                .hasMessageContaining("List<…>");
+        assertThatThrownBy(() -> KernelRepositoryGenerator.requirePersistableFields(List.of(metadata)))
+                .isInstanceOf(UnpersistableFieldTypeException.class);
+    }
+
+    @Test
+    @DisplayName("EXT-GEN-3003: the refusal lists every refused field of every entity, sorted, with its reason")
+    void refusalListsEveryField() {
+        DomainMetadata shipment = shipment(
+                FieldMetadata.builder("tags", "java.util.Set<java.lang.String>").build(),
+                FieldMetadata.builder("weight", "java.math.BigInteger").build());
+        DomainMetadata crate = DomainMetadata.builder("Crate", "com.example.domain")
+                .fields(List.of(FieldMetadata.builder("labels", "java.util.Map<java.lang.String,java.lang.String>").build()))
+                .build();
+
+        assertThatThrownBy(() -> KernelRepositoryGenerator.requirePersistableFields(List.of(shipment, crate)))
+                .isInstanceOfSatisfying(UnpersistableFieldTypeException.class, e -> assertThat(e.fields())
+                        .containsExactly(
+                                "com.example.domain.Crate.labels : java.util.Map<java.lang.String,java.lang.String>"
+                                        + " (a parameterised type other than List<…>)",
+                                "com.example.domain.Shipment.tags : java.util.Set<java.lang.String>"
+                                        + " (a parameterised type other than List<…>)",
+                                "com.example.domain.Shipment.weight : java.math.BigInteger"
+                                        + " (no typed SPI accessor and no valueOf(String); BigDecimal is stored)"));
+    }
+
+    @Test
+    @DisplayName("a field that is not a column (it shadows a system column) is not refused, whatever its type")
+    void shadowedFieldIsNotRefused() {
+        DomainMetadata metadata = DomainMetadata.builder("Shipment", "com.example.domain")
+                .versioned(true)
+                .fields(List.of(
+                        FieldMetadata.builder("name", "String").build(),
+                        FieldMetadata.builder("version", "java.util.Optional<java.lang.Long>").build()))
+                .build();
+
+        KernelRepositoryGenerator.requirePersistableFields(List.of(metadata));
+        assertThat(new KernelRepositoryGenerator().generate(metadata).content())
+                .contains("SELECT id, name, version FROM shipments");
+    }
+
+    private static DomainMetadata shipment(FieldMetadata... fields) {
+        List<FieldMetadata> all = new java.util.ArrayList<>();
+        all.add(FieldMetadata.builder("name", "String").build());
+        all.addAll(List.of(fields));
+        return DomainMetadata.builder("Shipment", "com.example.domain").fields(all).build();
+    }
+
+    private static String repositoryFor(FieldMetadata field) {
+        return new KernelRepositoryGenerator().generate(shipment(field)).content();
     }
 
     @Test

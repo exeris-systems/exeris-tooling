@@ -94,10 +94,12 @@ class KernelListQueryGeneratorTest {
         String query = flat(generator.generateMultiple(metadata).get(0));
 
         assertThat(query)
-                .contains("public static final List<String> SORTABLE = List.of(\"carrier\");")
+                // An OffsetDateTime is a sort key (ADR-096 Amendment 1), never a filter.
+                .contains("public static final List<String> SORTABLE = List.of(\"carrier\", \"placedAt\");")
                 .contains("record Filter(Carrier carrier)")
                 .contains("case \"carrier\" -> filterCarrier = Carrier.valueOf(value);")
                 .doesNotContain("OffsetDateTime")
+                .doesNotContain("case \"placedAt\"")
                 .doesNotContain("Map")
                 .doesNotContain("BigInteger")
                 .doesNotContain("ShipmentPhase")

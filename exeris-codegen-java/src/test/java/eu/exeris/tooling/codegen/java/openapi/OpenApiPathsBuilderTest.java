@@ -255,7 +255,9 @@ class OpenApiPathsBuilderTest {
 
         assertThat(list.getParameters()).extracting(p -> p.getName())
                 .containsExactly("page", "size", "sort", "status");
-        assertThat(list.getParameters().get(2).getSchema().getEnum()).containsExactly("status,asc", "status,desc");
+        // An OffsetDateTime is a sort key (ADR-096 Amendment 1), never a filter parameter.
+        assertThat(list.getParameters().get(2).getSchema().getEnum())
+                .containsExactly("placedAt,asc", "placedAt,desc", "status,asc", "status,desc");
         assertThat(list.getParameters().get(3).getSchema().getType()).isEqualTo("string");
     }
 }

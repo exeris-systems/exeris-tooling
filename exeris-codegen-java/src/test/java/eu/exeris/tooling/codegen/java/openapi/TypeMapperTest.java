@@ -58,6 +58,9 @@ class TypeMapperTest {
         assertThat(TypeMapper.toOpenApiFormat("LocalDate")).isEqualTo("date");
         assertThat(TypeMapper.toOpenApiFormat("LocalDateTime")).isEqualTo("date-time");
         assertThat(TypeMapper.toOpenApiFormat("OffsetDateTime")).isEqualTo("date-time");
+        assertThat(TypeMapper.toOpenApiFormat("ZonedDateTime")).isEqualTo("date-time");
+        assertThat(TypeMapper.toOpenApiFormat("java.time.ZonedDateTime")).isEqualTo("date-time");
+        assertThat(TypeMapper.toOpenApiType("java.time.ZonedDateTime")).isEqualTo("string");
         assertThat(TypeMapper.toOpenApiFormat("Instant")).isEqualTo("date-time");
         assertThat(TypeMapper.toOpenApiFormat("UUID")).isEqualTo("uuid");
     }

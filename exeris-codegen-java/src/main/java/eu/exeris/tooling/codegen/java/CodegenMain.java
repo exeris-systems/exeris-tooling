@@ -1,5 +1,6 @@
 package eu.exeris.tooling.codegen.java;
 
+import eu.exeris.tooling.codegen.java.kernel.UnpersistableFieldTypeException;
 import eu.exeris.tooling.diagnostics.DiagnosticId;
 
 import java.io.PrintStream;
@@ -87,6 +88,11 @@ public final class CodegenMain {
                     parsed.basePackage()
             );
             return 0;
+        } catch (UnpersistableFieldTypeException refused) {
+            // A refusal of the input, not a failure of the generator: the message names the fields
+            // and carries its own identifier, and a stack trace would add nothing to it.
+            err.println(refused.getMessage());
+            return 1;
         } catch (Exception e) {
             LOG.log(Level.ERROR, DiagnosticId.CLI_GENERATION_FAILED.format("Code generation failed"), e);
             return 1;

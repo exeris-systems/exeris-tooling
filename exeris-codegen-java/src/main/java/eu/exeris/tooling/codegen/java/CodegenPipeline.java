@@ -24,6 +24,7 @@ import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelApplicationGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelGeneratorStrategy;
 import eu.exeris.tooling.codegen.java.kernel.KernelHandlerTestGenerator;
+import eu.exeris.tooling.codegen.java.kernel.KernelRepositoryGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelRepositoryTestGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelSagaTestGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelServiceTestGenerator;
@@ -176,6 +177,9 @@ public final class CodegenPipeline {
      *         capability graph cannot be resolved — an unsatisfied non-optional
      *         {@code @Requires}, version mismatch, or dependency cycle. Callers
      *         that wrap {@code run} should catch it alongside {@link IOException}.
+     * @throws eu.exeris.tooling.codegen.java.kernel.UnpersistableFieldTypeException
+     *         (unchecked, {@code EXT-GEN-3003}) if an entity has a field whose type the generated
+     *         repository cannot store and read back; nothing is written
      * @since 0.6.0
      */
     public int run(Path metadataDir, Path outputDir, String explicitBasePackage, boolean allowEmpty,
@@ -215,6 +219,9 @@ public final class CodegenPipeline {
             }
             return 0;
         }
+
+        // Refused before the first write, so a refused run leaves the generated tree as it was.
+        KernelRepositoryGenerator.requirePersistableFields(domains);
 
         Files.createDirectories(outputDir);
         OutputWriter writer = new OutputWriter(outputDir);

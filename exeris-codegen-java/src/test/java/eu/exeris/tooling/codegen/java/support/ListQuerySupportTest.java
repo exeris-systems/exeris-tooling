@@ -70,7 +70,8 @@ class ListQuerySupportTest {
     }
 
     @Test
-    @DisplayName("a type nothing recognises is neither a sort key nor a filter; an enum is both")
+    @DisplayName("a type nothing recognises is neither a sort key nor a filter; an enum is both; "
+            + "an offset or zoned date-time is a sort key only")
     void unrecognisedTypesAreNeitherSortKeysNorFilters() {
         DomainMetadata metadata = entity(List.of(
                 FieldMetadata.simple("placedAt", "java.time.OffsetDateTime"),
@@ -87,7 +88,10 @@ class ListQuerySupportTest {
 
         assertThat(ListQuerySupport.sortable(metadata))
                 .extracting(ListQuerySupport.Property::name, ListQuerySupport.Property::kind)
-                .containsExactly(org.assertj.core.groups.Tuple.tuple("status", DomainTypeKind.ENUM));
+                .containsExactlyInAnyOrder(
+                        org.assertj.core.groups.Tuple.tuple("dueAt", DomainTypeKind.ZONED_DATE_TIME),
+                        org.assertj.core.groups.Tuple.tuple("placedAt", DomainTypeKind.OFFSET_DATE_TIME),
+                        org.assertj.core.groups.Tuple.tuple("status", DomainTypeKind.ENUM));
         assertThat(ListQuerySupport.filters(metadata))
                 .extracting(ListQuerySupport.Property::name, ListQuerySupport.Property::kind)
                 .containsExactly(org.assertj.core.groups.Tuple.tuple("status", DomainTypeKind.ENUM));
@@ -106,8 +110,11 @@ class ListQuerySupportTest {
                 .doesNotContain("java.time.Instant", "java.time.LocalDateTime");
         assertThat(ListQuerySupport.sortableScalarTypes()).isSorted()
                 .containsAll(ListQuerySupport.filterableScalarTypes())
-                .contains("java.time.Instant", "java.time.LocalDateTime")
-                .doesNotContain("java.time.OffsetDateTime", "java.math.BigInteger");
+                .contains("java.time.Instant", "java.time.LocalDateTime",
+                        "java.time.OffsetDateTime", "java.time.ZonedDateTime")
+                .doesNotContain("java.math.BigInteger");
+        assertThat(ListQuerySupport.filterableScalarTypes())
+                .doesNotContain("java.time.OffsetDateTime", "java.time.ZonedDateTime");
     }
 
     @Test
