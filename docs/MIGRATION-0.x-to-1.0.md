@@ -2081,7 +2081,9 @@ any other. The switches are presentation only and TS only: the generated Java ap
 every CRUD route of the entity whatever they say, and its OpenAPI document is unchanged.
 
 A type-level `@UI` used to change nothing the front emitted. A regenerated app now honours
-`listView`, `detailView`, `createForm`, `editForm`, `searchable` and `filterable`. An unset attribute
+`listView`, `detailView`, `createForm`, `editForm` and `filterable`. `searchable` changes nothing:
+the list has no search box (see *the list, store, picker and related-records panels use the list
+route's query* below). An unset attribute
 on a present `@UI` reads as `true`, and an entity without `@UI` keeps every page, so **an app that
 sets no switch to `false` regenerates byte-identical**. With a switch off:
 
@@ -2100,8 +2102,6 @@ sets no switch to `false` regenerates byte-identical**. With a switch off:
   (`action-edit-<id>`).
 - **both form switches off** — no `<entity>-form.component.ts` and no `<Entity>FormComponent`
   export. With either on, the form component is emitted and serves the remaining route.
-- **`searchable = false`** — the list has no search box (`search-input`), and no `searchQuery`,
-  `onSearch` or debounce subscription.
 - **`filterable = false`** — the list has no filter control (`filter-<field>`), whatever the fields'
   own `filterable` says. The service, the store and the generated `<Model>Filter` type keep the
   filter parameters.
@@ -2157,9 +2157,10 @@ server ignores, so against a generated server it showed no rows. The regenerated
   collect its input.
 
 **What to do.** Regenerate. Code or tests that read a removed member (`data`, `filter`,
-`searchSubject`, `onFilterChange`) or rely on the initial `id` sort must change. Expect a list to
-hold the whole collection in the browser: an entity with many rows needs a server-side list route
-before this shape scales, which the generated server does not provide yet.
+`searchSubject`, `onFilterChange`) or rely on the initial `id` sort must change. The same release
+moves paging, sorting and filtering to the server: see *the list, store, picker and related-records
+panels use the list route's query* below, which supersedes the in-browser paging, search and range
+filters described here.
 
 ### `exeris-codegen-ts`: emitted forms are Signal Forms (ADR-093)
 
@@ -2275,6 +2276,59 @@ so are the DTOs and the requests the form sends. TS only: the Java side does not
 
 **What to do.** Regenerate. End-to-end tests that type an id into the field select an option
 instead (`selectOption` by value or label); a test backend answers the target's list route.
+
+### `exeris-codegen-ts`: the list, store, picker and related-records panels use the list route's query
+
+`Compatibility impact: breaking (ADR-092)` for every regenerated list, store, service, query builder
+and types module, and for the detail view and form of an entity with a `ONE_TO_MANY` or a picked
+foreign key. It is the front's half of
+[ADR-096](adr/ADR-096-generated-list-route-query-and-page-envelope.md): the generated list route
+(*The list route pages, sorts and filters on the server* below) pages, sorts and filters on the
+server, answers `{content, totalElements, totalPages, size, number, first, last}`, has no search,
+and refuses with `400` a parameter it does not read.
+
+- **No search.** The list's search box (`search-input`) is gone, and so are `searchQuery` and
+  `onSearch`. `search` is gone from the service's and the types module's `<Model>Filter`, the store
+  (`setSearch`, `filteredEntities`, `filteredCount`) and the query builder (`search()`).
+  `@Field(searchable = true)` still indexes the column; `@UI(searchable)` changes nothing.
+- **Equality filters, on the route's properties only.** A filter is offered for a field the route
+  filters on: one marked filterable whose type is a UUID, `String`, `long`, `int`, `boolean`,
+  `double`, `BigDecimal`, `LocalDate` or an enum, never a system field (primary key, owning tenant,
+  shared-scope field, audit, version and soft-delete fields) or a field named `page`, `size` or
+  `sort`, plus `<base>Id` for every `MANY_TO_ONE`. A boolean is a Yes/No select, an emitted enum a
+  select of its constants, a `LocalDate` a `date` input, and every other filter a text input applied
+  on Enter or when it loses focus (numbers with a numeric keyboard). The from/to day range and the
+  min/max number range are gone: `filter-<field>-from`, `filter-<field>-to`, `filter-<field>-min` and
+  `filter-<field>-max` no longer exist, and a `LocalDate` or number filter is `filter-<field>`. An
+  `Instant` or `LocalDateTime` field has no filter. The service's `<Model>Filter` holds exactly
+  these keys, typed as the values they send.
+- **Server-side paging and sorting.** The list reads one page at a time through an `rxResource`
+  keyed on `currentPage`, `pageSize`, `sortField`, `sortDirection` and the filter signals; the
+  members `rows`, `filtered` and `sorted` and the in-browser comparator are gone, `items`,
+  `totalElements`, `totalPages` and `page` come from the envelope, and `ngOnInit` is gone. A sort
+  header (`sort-<field>`) appears only for a column the route sorts on — never a `List` or system
+  field — and sorting or filtering returns to the first page. The page size offers 10, 20, 25, 50 or
+  100 rows (20 by default). The service's `findAll` takes `PageRequest & { sort?: <Model>SortField }`
+  and sends `sort` only when one is set; `<Model>SortField` names the sort keys. The store sorts by
+  nothing until `setSort` (it sorted by `id` descending, which the route refuses), reads the envelope
+  and holds `setPageSize` within 1..100.
+- **The picker asks for 100 rows.** A foreign-key `<select>` lists the first page of 100 of the
+  target's records — the most the route serves. A target with more rows offers its first 100; the
+  value the control holds stays an option.
+- **Related-records panels list the children.** In the detail view, a `ONE_TO_MANY` whose target has
+  a `MANY_TO_ONE` back to the entity (the one `mappedBy` names, else the only one) lists the first ten
+  children through `findAll({ size: 10 }, { <base>Id: <id> })`, labelled by
+  `@Relationship.displayField` when the target declares it and linking to their detail pages
+  (`related-<relationship>-rows`, `related-<relationship>-<id>`). The "View all" link keeps
+  `related-<relationship>`. The detail view injects the target's service. A `ONE_TO_MANY` without
+  such a back-reference keeps the link alone.
+
+**What to do.** Regenerate the front from the same release as the server: a list regenerated
+earlier sends `search` and gets `400`. End-to-end tests that select `search-input` or a
+`-from` / `-to` / `-min` / `-max` filter must use `filter-<field>` with one value, and a test backend
+must answer the list route with the page envelope and honour `page`, `size`, `sort` and the filters.
+Code that called the store's `setSearch` or read `filteredEntities` / `filteredCount` reads
+`entities` and sets a filter instead.
 
 ### SDK 0.12.0 needs no source change for S6
 
