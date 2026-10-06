@@ -98,17 +98,17 @@ public class KernelListQueryGenerator implements KernelArtifactGenerator {
             case DOUBLE -> TypeName.DOUBLE.box();
             case BIG_DECIMAL -> BIG_DECIMAL;
             case LOCAL_DATE -> LOCAL_DATE;
-            case ENUM_LIKE -> enumLikeType(property.javaType(), metadata);
+            case ENUM -> enumClass(property.javaType(), metadata);
             default -> throw new IllegalArgumentException(
                     "not a filterable kind: " + property.kind() + " (" + property.name() + ")");
         };
     }
 
     /**
-     * The class an {@link DomainTypeKind#ENUM_LIKE} field is read back through — the same
-     * resolution the repository's {@code mapRow} uses, so the two name the same type.
+     * The class an {@link DomainTypeKind#ENUM} field is read back through — the same resolution
+     * the repository's {@code mapRow} uses, so the two name the same type.
      */
-    static ClassName enumLikeType(String type, DomainMetadata metadata) {
+    static ClassName enumClass(String type, DomainMetadata metadata) {
         return type.contains(".")
                 ? ClassName.bestGuess(type)
                 : ClassName.get(metadata.packageName(), type);
@@ -425,7 +425,7 @@ public class KernelListQueryGenerator implements KernelArtifactGenerator {
             case DOUBLE -> CodeBlock.of("Double.parseDouble(value)");
             case BIG_DECIMAL -> CodeBlock.of("new $T(value)", BIG_DECIMAL);
             case LOCAL_DATE -> CodeBlock.of("parseDate(value)");
-            case ENUM_LIKE -> CodeBlock.of("$T.valueOf(value)", enumLikeType(property.javaType(), metadata));
+            case ENUM -> CodeBlock.of("$T.valueOf(value)", enumClass(property.javaType(), metadata));
             default -> throw new IllegalArgumentException("not a filterable kind: " + property.kind());
         };
     }

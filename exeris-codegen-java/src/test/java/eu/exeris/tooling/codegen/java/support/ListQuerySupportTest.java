@@ -46,7 +46,8 @@ class ListQuerySupportTest {
             + "reserved name, an instant or a JSON column, each name once")
     void filters() {
         DomainMetadata metadata = entity(List.of(
-                FieldMetadata.builder("status", "com.example.domain.OrderStatus").filterable(true).build(),
+                FieldMetadata.builder("status", "com.example.domain.OrderStatus")
+                        .enumType("com.example.domain.OrderStatus").filterable(true).build(),
                 FieldMetadata.builder("placedAt", "java.time.Instant").filterable(true).build(),
                 FieldMetadata.builder("scheduledFor", "java.time.LocalDateTime").filterable(true).build(),
                 FieldMetadata.builder("tags", "java.util.List<String>").filterable(true).build(),
@@ -63,9 +64,33 @@ class ListQuerySupportTest {
                         ListQuerySupport.Property::kind)
                 .containsExactly(
                         org.assertj.core.groups.Tuple.tuple("customerId", "customer_id", DomainTypeKind.UUID),
-                        org.assertj.core.groups.Tuple.tuple("status", "status", DomainTypeKind.ENUM_LIKE),
+                        org.assertj.core.groups.Tuple.tuple("status", "status", DomainTypeKind.ENUM),
                         org.assertj.core.groups.Tuple.tuple("urgent", "urgent", DomainTypeKind.BOOL),
                         org.assertj.core.groups.Tuple.tuple("warehouseId", "warehouse_id", DomainTypeKind.UUID));
+    }
+
+    @Test
+    @DisplayName("a type nothing recognises is neither a sort key nor a filter; an enum is both")
+    void unrecognisedTypesAreNeitherSortKeysNorFilters() {
+        DomainMetadata metadata = entity(List.of(
+                FieldMetadata.simple("placedAt", "java.time.OffsetDateTime"),
+                FieldMetadata.simple("dueAt", "java.time.ZonedDateTime"),
+                FieldMetadata.simple("attributes", "java.util.Map<java.lang.String,java.lang.String>"),
+                FieldMetadata.simple("labels", "java.util.Set<java.lang.String>"),
+                FieldMetadata.simple("serial", "java.math.BigInteger"),
+                FieldMetadata.simple("address", "com.example.domain.Address"),
+                // Named like an enum, emitted as none: enumType unset.
+                FieldMetadata.simple("phase", "com.example.domain.OrderPhase"),
+                FieldMetadata.builder("status", "com.example.domain.OrderStatus")
+                        .enumType("com.example.domain.OrderStatus")
+                        .sortable(true).filterable(true).build()), List.of());
+
+        assertThat(ListQuerySupport.sortable(metadata))
+                .extracting(ListQuerySupport.Property::name, ListQuerySupport.Property::kind)
+                .containsExactly(org.assertj.core.groups.Tuple.tuple("status", DomainTypeKind.ENUM));
+        assertThat(ListQuerySupport.filters(metadata))
+                .extracting(ListQuerySupport.Property::name, ListQuerySupport.Property::kind)
+                .containsExactly(org.assertj.core.groups.Tuple.tuple("status", DomainTypeKind.ENUM));
     }
 
     @Test
@@ -79,6 +104,10 @@ class ListQuerySupportTest {
         assertThat(ListQuerySupport.filterableScalarTypes()).isSorted()
                 .contains("java.util.UUID", "boolean", "java.time.LocalDate")
                 .doesNotContain("java.time.Instant", "java.time.LocalDateTime");
+        assertThat(ListQuerySupport.sortableScalarTypes()).isSorted()
+                .containsAll(ListQuerySupport.filterableScalarTypes())
+                .contains("java.time.Instant", "java.time.LocalDateTime")
+                .doesNotContain("java.time.OffsetDateTime", "java.math.BigInteger");
     }
 
     @Test

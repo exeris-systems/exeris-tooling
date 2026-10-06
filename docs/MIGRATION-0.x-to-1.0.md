@@ -2547,7 +2547,11 @@ tenant, the shared-scope field, the audit fields (created and updated at and by)
 the soft-delete fields, under their declared or canonical names, for each role the entity's flags
 switch on. A `List` field is neither; an `Instant` or `LocalDateTime` field is sortable but not
 filterable (equality on an instant matches nothing a person types); a field named `page`, `size` or
-`sort` is sortable but never a filter. Rows that tie on the sort column are ordered by `id`, so a
+`sort` is sortable but never a filter. An enum field is both, when the processor emitted the enum —
+which it does for every `@ExerisDomain` field whose Java type is an `enum`; hand-written metadata
+passes the enum beside the entities (`enum_*.json`). A field of any other type — a `Map`, a `Set`, a
+record, `OffsetDateTime`, `ZonedDateTime`, `BigInteger`, `Float`, `Short`, or a type merely named
+like an enum — is neither. Rows that tie on the sort column are ordered by `id`, so a
 row does not move between pages. Where `NULL` values sort is the database's default. See ADR-096.
 
 **New emitted types.** Per entity, in the generated **repository** package:

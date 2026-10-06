@@ -1332,7 +1332,9 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
             case LOCAL_DATE -> map.addCode(CodeBlock.of(
                     "{ String v = row.getString($L); if (v != null) $L($T.parse(v)); }\n",
                     idx, setter, LOCAL_DATE));
-            case ENUM_LIKE -> emitReadEnumLike(map, type, setter, idx, ctx);
+            // A type string never classifies as ENUM (DomainTypeKind.of(String)); an enum and a
+            // type nothing recognises are both read back through the type's valueOf(String).
+            case ENUM, OPAQUE -> emitReadEnumLike(map, type, setter, idx, ctx);
         }
     }
 
@@ -1431,7 +1433,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                     getter, idx, idx, getter, ZONE_OFFSET);
             // SPI has no bindLocalDate / enum binds — round-trip via String.toString();
             // null-guarded.
-            case LOCAL_DATE, ENUM_LIKE ->
+            case LOCAL_DATE, ENUM, OPAQUE ->
                     body.addStatement(BIND_STRING_NULL_GUARDED, idx, getter, getter);
         }
     }

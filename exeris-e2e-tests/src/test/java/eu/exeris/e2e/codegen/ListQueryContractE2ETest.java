@@ -1,8 +1,12 @@
 package eu.exeris.e2e.codegen;
 
 import eu.exeris.e2e.codegen.compile.GeneratedTree;
+import eu.exeris.e2e.codegen.compile.ProcessorCompiler;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.tooling.codegen.core.MetadataLoader;
+import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
+import eu.exeris.tooling.codegen.java.CodegenPipeline;
+import eu.exeris.tooling.codegen.java.kernel.KernelListQueryGenerator;
 import eu.exeris.tooling.codegen.java.openapi.OpenApiComponentsBuilder;
 import eu.exeris.tooling.codegen.java.openapi.OpenApiPathsBuilder;
 import eu.exeris.tooling.codegen.java.support.ListQuerySupport;
@@ -18,12 +22,19 @@ import org.junit.jupiter.api.io.TempDir;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
+import javax.tools.ToolProvider;
+import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.RecordComponent;
 import java.math.BigDecimal;
+import java.net.URL;
+import java.net.URLClassLoader;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -99,6 +110,8 @@ class ListQueryContractE2ETest {
                 .containsExactly(ListQuerySupport.PAGE, ListQuerySupport.SIZE, ListQuerySupport.SORT);
         assertThat(strings(contract.get("filterableScalarTypes")))
                 .isEqualTo(ListQuerySupport.filterableScalarTypes());
+        assertThat(strings(contract.get("sortableScalarTypes")))
+                .isEqualTo(ListQuerySupport.sortableScalarTypes());
         assertThat(strings(contract.at("/parameters/sort/directions"))).containsExactly("asc", "desc");
     }
 
@@ -109,15 +122,16 @@ class ListQueryContractE2ETest {
         // customerId carries @Relationship and no @Field, and the processor records a field without
         // @Field as sortable and filterable alike — so it is sortable here too. id, tenantId,
         // createdAt and updatedAt are recorded the same way and are system fields: never offered.
+        // grade is an enum with no @Field: sortable and filterable, like any field without @Field.
         assertThat((List<Object>) queryType.getField("SORTABLE").get(null))
-                .containsExactly("customerId", "name", "price");
+                .containsExactly("customerId", "grade", "name", "price");
         Class<?> filterType = app.loader().loadClass(BASE_PACKAGE + ".repository.ProductListQuery$Filter");
         assertThat(Arrays.stream(filterType.getRecordComponents()).map(RecordComponent::getName))
                 // active: @Field(filterable); customerId: the @Relationship's foreign key, a field
                 // the processor records without @Field and so as filterable, once — not twice for
-                // the field and the relationship; price and status: @Field(filterable). name is
-                // sortable only, note neither.
-                .containsExactly("active", "customerId", "price", "status");
+                // the field and the relationship; price and status: @Field(filterable); grade: an
+                // enum without @Field. name is sortable only, note neither.
+                .containsExactly("active", "customerId", "grade", "price", "status");
     }
 
     @Test
@@ -199,20 +213,80 @@ class ListQueryContractE2ETest {
         Operation list = OpenApiPathsBuilder.buildPaths(productMetadata).get("/products").getGet();
 
         assertThat(list.getParameters()).extracting(Parameter::getName)
-                .containsExactly("page", "size", "sort", "active", "customerId", "price", "status");
+                .containsExactly("page", "size", "sort", "active", "customerId", "grade", "price", "status");
         assertThat(list.getParameters()).extracting(Parameter::getIn).containsOnly("query");
         Parameter size = list.getParameters().get(1);
         assertThat(size.getSchema().getDefault()).isEqualTo(contract.at("/parameters/size/default").asInt());
         assertThat(size.getSchema().getMaximum().intValue()).isEqualTo(contract.at("/parameters/size/maximum").asInt());
         assertThat(list.getParameters().get(2).getSchema().getEnum())
-                .containsExactly("customerId,asc", "customerId,desc", "name,asc", "name,desc",
-                        "price,asc", "price,desc");
+                .containsExactly("customerId,asc", "customerId,desc", "grade,asc", "grade,desc",
+                        "name,asc", "name,desc", "price,asc", "price,desc");
         assertThat(list.getResponses()).containsOnlyKeys("200", "400", "500");
         assertThat(list.getResponses().get("200").getContent().get("application/json").getSchema().get$ref())
                 .isEqualTo("#/components/schemas/ProductPage");
     }
 
+    @Test
+    @DisplayName("through the real processor, a type nothing recognises is neither a sort key nor a "
+            + "filter, and the list query for it compiles; an enum is both")
+    @SuppressWarnings("unchecked")
+    void unrecognisedTypesAreNeitherSortKeysNorFilters(@TempDir Path root) throws Exception {
+        // The generated repository reads an unrecognised column through the type's valueOf(String),
+        // which OffsetDateTime, Map, Set and BigInteger lack, so this entity's whole tree does not
+        // compile; the list query and page are compiled on their own.
+        ProcessorCompiler.compile(root.resolve("src/main/java"), root.resolve("target/classes"), null,
+                shipmentSources());
+        DomainMetadata shipment = metadata(root, "Shipment");
+        Path generated = root.resolve("generated");
+        List<String> files = new ArrayList<>();
+        for (GeneratedFile file : new KernelListQueryGenerator().generateMultiple(shipment)) {
+            Path path = generated.resolve(file.packageName().replace('.', '/')).resolve(file.className() + ".java");
+            Files.createDirectories(path.getParent());
+            Files.writeString(path, file.content());
+            files.add(path.toString());
+        }
+        Path classes = root.resolve("target/list-classes");
+        javac(files, classes, root.resolve("target/classes"));
+
+        try (URLClassLoader loader = new URLClassLoader(
+                new URL[]{classes.toUri().toURL(), root.resolve("target/classes").toUri().toURL()},
+                ListQueryContractE2ETest.class.getClassLoader())) {
+            Class<?> query = loader.loadClass("eu.exeris.e2e.freight.repository.ShipmentListQuery");
+            assertThat((List<Object>) query.getField("SORTABLE").get(null)).containsExactly("carrier");
+            Class<?> filter = loader.loadClass("eu.exeris.e2e.freight.repository.ShipmentListQuery$Filter");
+            assertThat(Arrays.stream(filter.getRecordComponents()).map(RecordComponent::getName))
+                    .containsExactly("carrier");
+            Object parsed = query.getMethod("parse", String.class).invoke(null, "carrier=ROAD&sort=carrier,desc");
+            assertThat(component(component(parsed, "filter"), "carrier")).hasToString("ROAD");
+            for (String raw : List.of("placedAt=2026-10-06T10:00:00Z", "attributes=a", "labels=a",
+                    "serial=1", "sort=placedAt")) {
+                assertThatThrownBy(() -> {
+                    try {
+                        query.getMethod("parse", String.class).invoke(null, raw);
+                    } catch (InvocationTargetException e) {
+                        throw e.getCause();
+                    }
+                }).as(raw).isInstanceOf(IllegalArgumentException.class);
+            }
+        }
+        Operation list = OpenApiPathsBuilder.buildPaths(shipment).get("/shipments").getGet();
+        assertThat(list.getParameters()).extracting(Parameter::getName)
+                .containsExactly("page", "size", "sort", "carrier");
+    }
+
     // ------------------------------------------------------------------ harness
+
+    private static void javac(List<String> files, Path outputDir, Path entityClasses) throws IOException {
+        Files.createDirectories(outputDir);
+        List<String> args = new ArrayList<>(List.of(
+                "-d", outputDir.toString(),
+                "-classpath", System.getProperty("java.class.path") + File.pathSeparator + entityClasses,
+                "--release", "25", "-nowarn"));
+        args.addAll(files);
+        ByteArrayOutputStream diagnostics = new ByteArrayOutputStream();
+        int rc = ToolProvider.getSystemJavaCompiler().run(null, null, diagnostics, args.toArray(String[]::new));
+        assertThat(rc).as(diagnostics.toString(StandardCharsets.UTF_8)).isZero();
+    }
 
     private static Object parse(String raw) throws Exception {
         try {
@@ -237,7 +311,61 @@ class ListQueryContractE2ETest {
 
     /** The processor's own metadata for one entity, read the way the pipeline reads it. */
     private static DomainMetadata metadata(String entity) throws IOException {
-        return new MetadataLoader(workspace.resolve("target/classes")).load(entity, DomainMetadata.class);
+        return metadata(workspace, entity);
+    }
+
+    private static DomainMetadata metadata(Path root, String entity) throws IOException {
+        return CodegenPipeline.createDefault()
+                .loadMetadata(root.resolve("target/classes").resolve(MetadataLoader.METADATA_DIR)).stream()
+                .filter(m -> m.entityName().equals(entity))
+                .findFirst().orElseThrow();
+    }
+
+    private static Map<String, String> shipmentSources() {
+        Map<String, String> sources = new LinkedHashMap<>();
+        sources.put("eu/exeris/e2e/freight/domain/Carrier.java",
+                """
+                package eu.exeris.e2e.freight.domain;
+
+                public enum Carrier { ROAD, RAIL }
+                """);
+        sources.put("eu/exeris/e2e/freight/domain/Shipment.java",
+                """
+                package eu.exeris.e2e.freight.domain;
+
+                import eu.exeris.sdk.annotation.ExerisDomain;
+
+                import java.math.BigInteger;
+                import java.time.OffsetDateTime;
+                import java.util.Map;
+                import java.util.Set;
+                import java.util.UUID;
+
+                // No @Field anywhere: the processor records every field sortable and filterable.
+                @ExerisDomain(module = "freight", path = "/shipments")
+                public class Shipment {
+                    private UUID id;
+                    private OffsetDateTime placedAt;
+                    private Map<String, String> attributes;
+                    private Set<String> labels;
+                    private BigInteger serial;
+                    private Carrier carrier;
+
+                    public UUID getId() { return id; }
+                    public void setId(UUID id) { this.id = id; }
+                    public OffsetDateTime getPlacedAt() { return placedAt; }
+                    public void setPlacedAt(OffsetDateTime placedAt) { this.placedAt = placedAt; }
+                    public Map<String, String> getAttributes() { return attributes; }
+                    public void setAttributes(Map<String, String> attributes) { this.attributes = attributes; }
+                    public Set<String> getLabels() { return labels; }
+                    public void setLabels(Set<String> labels) { this.labels = labels; }
+                    public BigInteger getSerial() { return serial; }
+                    public void setSerial(BigInteger serial) { this.serial = serial; }
+                    public Carrier getCarrier() { return carrier; }
+                    public void setCarrier(Carrier carrier) { this.carrier = carrier; }
+                }
+                """);
+        return sources;
     }
 
     private static Map<String, String> domainSources() {
@@ -247,6 +375,12 @@ class ListQueryContractE2ETest {
                 package eu.exeris.e2e.catalog.domain;
 
                 public enum ProductStatus { ACTIVE, DRAFT }
+                """);
+        sources.put("eu/exeris/e2e/catalog/domain/ProductGrade.java",
+                """
+                package eu.exeris.e2e.catalog.domain;
+
+                public enum ProductGrade { STANDARD, PREMIUM }
                 """);
         sources.put("eu/exeris/e2e/catalog/domain/Customer.java",
                 """
@@ -316,6 +450,8 @@ class ListQueryContractE2ETest {
                     @Relationship(targetEntity = Customer.class, displayField = "name")
                     private UUID customerId;
 
+                    private ProductGrade grade;
+
                     public UUID getId() { return id; }
                     public void setId(UUID id) { this.id = id; }
                     public UUID getTenantId() { return tenantId; }
@@ -336,6 +472,8 @@ class ListQueryContractE2ETest {
                     public void setNote(String note) { this.note = note; }
                     public UUID getCustomerId() { return customerId; }
                     public void setCustomerId(UUID customerId) { this.customerId = customerId; }
+                    public ProductGrade getGrade() { return grade; }
+                    public void setGrade(ProductGrade grade) { this.grade = grade; }
                 }
                 """);
         return sources;

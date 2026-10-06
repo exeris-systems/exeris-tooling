@@ -18,8 +18,10 @@
   },
   "reserved": ["page", "size", "sort"],
   "properties": {
-    "sortable": "@Field(sortable = true), and every field without @Field; never a List field",
+    "sortable": "@Field(sortable = true), and every field without @Field, of a type in sortableScalarTypes or an enum; never a List field",
     "filterable": "@Field(filterable = true) and every field without @Field, of a type in filterableScalarTypes or an enum; and <relationship>Id for every MANY_TO_ONE",
+    "enum": "a field is an enum when its enumType, else its type, names an enum the processor emitted beside the entities (enum_*.json): by qualified name, else by simple name. A type merely named like an enum is not one",
+    "unrecognised": "a field whose type is in neither list and names no emitted enum (a Map, a Set, a record, OffsetDateTime, ZonedDateTime, BigInteger, Float, Short) is neither a sort key nor a filter",
     "neverOffered": "the primary key (it is the ORDER BY tiebreak only), the owning tenant, the shared-scope field, the audit fields (created and updated at and by), the version and the soft-delete fields, under their declared or canonical names"
   },
   "filterableScalarTypes": [
@@ -27,7 +29,13 @@
     "double", "int", "java.lang.Boolean", "java.lang.Double", "java.lang.Integer", "java.lang.Long",
     "java.lang.String", "java.math.BigDecimal", "java.time.LocalDate", "java.util.UUID", "long"
   ],
-  "filterableEnums": "an enum-typed field is filterable by its constant's name, under its own type",
+  "sortableScalarTypes": [
+    "BigDecimal", "Boolean", "Double", "Instant", "Integer", "LocalDate", "LocalDateTime", "Long",
+    "String", "UUID", "boolean", "double", "int", "java.lang.Boolean", "java.lang.Double",
+    "java.lang.Integer", "java.lang.Long", "java.lang.String", "java.math.BigDecimal",
+    "java.time.Instant", "java.time.LocalDate", "java.time.LocalDateTime", "java.util.UUID", "long"
+  ],
+  "filterableEnums": "an enum field is filterable by its constant's name",
   "refusedWith400": [
     "an unknown parameter name",
     "a repeated parameter",

@@ -32,7 +32,9 @@ class KernelListQueryGeneratorTest {
                 .softDelete(true)
                 .fields(List.of(
                         FieldMetadata.builder("orderNumber", "java.lang.String").sortable(true).filterable(true).build(),
-                        FieldMetadata.builder("status", "com.example.domain.OrderStatus").filterable(true).build(),
+                        // An enum: the pipeline sets enumType when the processor emitted the enum.
+                        FieldMetadata.builder("status", "com.example.domain.OrderStatus")
+                                .enumType("com.example.domain.OrderStatus").filterable(true).build(),
                         FieldMetadata.builder("amount", "java.math.BigDecimal").sortable(true).build(),
                         FieldMetadata.builder("urgent", "boolean").filterable(true).build(),
                         FieldMetadata.builder("dueOn", "java.time.LocalDate").filterable(true).sortable(true).build(),
@@ -69,6 +71,37 @@ class KernelListQueryGeneratorTest {
         assertThat(query).contains(
                 "public static final List<String> SORTABLE = List.of(\"amount\", \"dueOn\", \"orderNumber\", "
                         + "\"placedAt\", \"size\");");
+    }
+
+    @Test
+    @DisplayName("a type nothing recognises is neither sorted nor filtered, and is never parsed; an "
+            + "enum is both")
+    void unrecognisedTypesAreNotParameters() {
+        DomainMetadata metadata = DomainMetadata.builder("Shipment", "com.example.domain")
+                .path("/shipments")
+                .fields(List.of(
+                        FieldMetadata.simple("placedAt", "java.time.OffsetDateTime"),
+                        FieldMetadata.simple("attributes", "java.util.Map<java.lang.String,java.lang.String>"),
+                        FieldMetadata.simple("labels", "java.util.Set<java.lang.String>"),
+                        FieldMetadata.simple("serial", "java.math.BigInteger"),
+                        // Named like an enum, emitted as none.
+                        FieldMetadata.simple("phase", "com.example.domain.ShipmentPhase"),
+                        FieldMetadata.builder("carrier", "com.example.domain.Carrier")
+                                .enumType("com.example.domain.Carrier")
+                                .sortable(true).filterable(true).build()))
+                .build();
+
+        String query = flat(generator.generateMultiple(metadata).get(0));
+
+        assertThat(query)
+                .contains("public static final List<String> SORTABLE = List.of(\"carrier\");")
+                .contains("record Filter(Carrier carrier)")
+                .contains("case \"carrier\" -> filterCarrier = Carrier.valueOf(value);")
+                .doesNotContain("OffsetDateTime")
+                .doesNotContain("Map")
+                .doesNotContain("BigInteger")
+                .doesNotContain("ShipmentPhase")
+                .doesNotContain("case \"labels\"");
     }
 
     @Test

@@ -235,4 +235,27 @@ class OpenApiPathsBuilderTest {
         assertThat(list.getResponses().get("200").getContent().get("application/json").getSchema().get$ref())
                 .isEqualTo("#/components/schemas/OrderPage");
     }
+
+    @Test
+    @DisplayName("the list operation declares no parameter and no sort value for a type nothing "
+            + "recognises, and a string parameter for an enum")
+    void listOperationSkipsUnrecognisedTypes() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .fields(List.of(
+                        eu.exeris.sdk.sourcemodel.ast.FieldMetadata.simple("placedAt", "java.time.OffsetDateTime"),
+                        eu.exeris.sdk.sourcemodel.ast.FieldMetadata.simple("attributes",
+                                "java.util.Map<java.lang.String,java.lang.String>"),
+                        eu.exeris.sdk.sourcemodel.ast.FieldMetadata.simple("serial", "java.math.BigInteger"),
+                        eu.exeris.sdk.sourcemodel.ast.FieldMetadata.builder("status", "com.example.domain.OrderStatus")
+                                .enumType("com.example.domain.OrderStatus").sortable(true).filterable(true).build()))
+                .build();
+
+        Operation list = OpenApiPathsBuilder.buildPaths(metadata).get("/orders").getGet();
+
+        assertThat(list.getParameters()).extracting(p -> p.getName())
+                .containsExactly("page", "size", "sort", "status");
+        assertThat(list.getParameters().get(2).getSchema().getEnum()).containsExactly("status,asc", "status,desc");
+        assertThat(list.getParameters().get(3).getSchema().getType()).isEqualTo("string");
+    }
 }

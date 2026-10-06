@@ -3,9 +3,12 @@ package eu.exeris.tooling.codegen.java;
 import com.fasterxml.jackson.core.util.DefaultIndenter;
 import com.fasterxml.jackson.core.util.DefaultPrettyPrinter;
 import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
+import eu.exeris.sdk.sourcemodel.ast.EnumMetadata;
 import eu.exeris.tooling.codegen.core.OutputWriter;
 import eu.exeris.tooling.codegen.core.capability.CapTierWall;
 import eu.exeris.tooling.codegen.core.capability.CapTierWallException;
@@ -25,6 +28,7 @@ import eu.exeris.tooling.codegen.java.kernel.KernelRepositoryTestGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelSagaTestGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelServiceTestGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelTestSupportGenerator;
+import eu.exeris.tooling.codegen.java.support.EnumTypes;
 import eu.exeris.tooling.diagnostics.DiagnosticId;
 
 import java.io.IOException;
@@ -310,13 +314,26 @@ public final class CodegenPipeline {
         return filesGenerated;
     }
 
-    List<DomainMetadata> loadMetadata(Path metadataDir) throws IOException {
+    /**
+     * Loads the domain metadata in {@code metadataDir} the way every run reads it: each
+     * {@code enum_*.json} and {@code capability_*.json} sibling is skipped, and each field's
+     * {@code enumType} is set to the qualified name of the emitted enum it resolves to under
+     * {@link EnumTypes#resolve}, or cleared when it resolves to none. The processor writes the enums
+     * beside the entities and no {@code enumType}; the TypeScript emitter reads the same two inputs
+     * by the same rule, so the Java and TypeScript emitters agree on which fields are enums.
+     *
+     * @param metadataDir directory holding processor-emitted JSON
+     * @return the domains; empty when the directory does not exist
+     * @throws IOException if the metadata cannot be read
+     */
+    public List<DomainMetadata> loadMetadata(Path metadataDir) throws IOException {
         List<DomainMetadata> result = new ArrayList<>();
 
         if (!Files.exists(metadataDir)) {
             return result;
         }
 
+        List<EnumMetadata> enums = EnumTypes.sorted(loadEnums(metadataDir));
         try (Stream<Path> files = Files.list(metadataDir)) {
             List<Path> jsonFiles = files
                     .filter(p -> p.toString().endsWith(".json"))
@@ -325,7 +342,9 @@ public final class CodegenPipeline {
                     .toList();
 
             for (Path jsonFile : jsonFiles) {
-                DomainMetadata metadata = mapper.readValue(jsonFile.toFile(), DomainMetadata.class);
+                JsonNode tree = mapper.readTree(jsonFile.toFile());
+                resolveEnumTypes(tree, enums);
+                DomainMetadata metadata = mapper.treeToValue(tree, DomainMetadata.class);
                 if (metadata.entityName() != null && !metadata.entityName().isBlank()) {
                     result.add(metadata);
                 }
@@ -333,6 +352,43 @@ public final class CodegenPipeline {
         }
 
         return result;
+    }
+
+    private List<EnumMetadata> loadEnums(Path metadataDir) throws IOException {
+        List<EnumMetadata> result = new ArrayList<>();
+        try (Stream<Path> files = Files.list(metadataDir)) {
+            List<Path> jsonFiles = files
+                    .filter(p -> p.toString().endsWith(".json"))
+                    .filter(p -> p.getFileName().toString().startsWith("enum_"))
+                    .toList();
+            for (Path jsonFile : jsonFiles) {
+                result.add(mapper.readValue(jsonFile.toFile(), EnumMetadata.class));
+            }
+        }
+        return result;
+    }
+
+    private static void resolveEnumTypes(JsonNode domain, List<EnumMetadata> enums) {
+        JsonNode fields = domain.get("fields");
+        if (fields == null || !fields.isArray()) {
+            return;
+        }
+        for (JsonNode field : fields) {
+            if (!(field instanceof ObjectNode object)) {
+                continue;
+            }
+            EnumMetadata resolved = EnumTypes.resolve(text(object.get("enumType")),
+                    text(object.get("type")), enums);
+            if (resolved != null) {
+                object.put("enumType", resolved.qualifiedName());
+            } else {
+                object.remove("enumType");
+            }
+        }
+    }
+
+    private static String text(JsonNode node) {
+        return node == null || !node.isTextual() ? null : node.asText();
     }
 
     /**

@@ -68,11 +68,19 @@ everything else with `400`, runs one bound, whitelisted page query and one count
    `DEFAULT_SIZE` and `MAX_SIZE`.
 5. **Which properties.**
    - Sortable: a field with `@Field(sortable = true)`, and a field without `@Field`, which the
-     processor records as sortable. A `List` field is not sortable.
+     processor records as sortable, whose type is a filterable scalar type, `Instant` or
+     `LocalDateTime` (either spelling), or an enum. A `List` field is not sortable.
    - Filterable: a field with `@Field(filterable = true)`, and a field without `@Field`, whose type
      is a UUID, `String`, `long`, `int`, `boolean`, `double`, `BigDecimal`, `LocalDate` (either
      spelling, boxed or not) or an enum; and the `MANY_TO_ONE` foreign keys of obligation 2. A field
      named `page`, `size` or `sort` is not a filter.
+   - An enum is a field whose `enumType`, else whose `type`, names an enum the processor emitted
+     beside the entities (`enum_*.json`) — by qualified name, else by simple name: the rule the
+     TypeScript emitter applies to the same two inputs. The pipeline records the resolution in the
+     field's `enumType` when it loads the metadata; the processor's output is unchanged.
+   - Any other type — a `Map`, a `Set`, a record, `OffsetDateTime`, `ZonedDateTime`, `BigInteger`,
+     `Float`, `Short` — is neither a sort key nor a filter. Its column may hold JSON or an
+     engine-specific rendering, so neither equality on its text nor its text order is the value's.
    - Never a sort key or a filter, with or without `@Field`: the primary key, the owning tenant,
      the shared-scope field, the audit fields (created and updated at and by), the version and the
      soft-delete fields — under their declared `SystemFieldsMetadata` names or the canonical
@@ -100,8 +108,8 @@ everything else with `400`, runs one bound, whitelisted page query and one count
    client sends `<Entity>ListQuery.toQueryString()` and decodes `<Entity>Page`; its unpaged
    `findAll()` is removed.
 9. **The cross-build pin.** `exeris-e2e-tests/src/test/resources/contract/list-query.json` states the
-   parameter names, defaults and bounds, the reserved names, the filterable scalar types, the
-   property rules and the envelope. The Java build tests against it; the TypeScript emitter's tests
+   parameter names, defaults and bounds, the reserved names, the filterable and sortable scalar
+   types, the property rules and the envelope. The Java build tests against it; the TypeScript emitter's tests
    read the same file. Changing the contract means changing that file and both emitters together.
 10. **The OpenAPI list operation** declares `page`, `size` (with its default and maximum), `sort` (an
     enum of `<property>,asc` and `<property>,desc` for the sortable properties, absent when there is

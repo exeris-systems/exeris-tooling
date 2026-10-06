@@ -1,5 +1,7 @@
 package eu.exeris.tooling.codegen.java.support;
 
+import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
+
 import java.util.List;
 import java.util.Set;
 
@@ -15,6 +17,10 @@ import java.util.Set;
  * <p>Both spellings of every type are accepted: {@code FieldMetadata.type()} comes from
  * {@code VariableElement.asType().toString()}, which javac renders fully qualified, while
  * hand-built metadata usually carries the short form.
+ *
+ * <p>A type string alone cannot say whether it names an enum, so {@link #of(String)} never answers
+ * {@link #ENUM}; {@link #of(FieldMetadata)} does, for a field whose {@code enumType} is set. The
+ * pipeline sets it from the enums the processor emitted ({@link EnumTypes}).
  *
  * @since 0.9.0
  */
@@ -33,10 +39,18 @@ public enum DomainTypeKind {
     LOCAL_DATE_TIME,
     LOCAL_DATE,
     /**
-     * Everything else: stored through {@code toString()} and read back through the type's static
-     * {@code valueOf(String)} — an enum, in practice.
+     * A field typed as an enum: stored as its constant's name and read back through the enum's
+     * {@code valueOf(String)}. A list filter and a sort key.
      */
-    ENUM_LIKE;
+    ENUM,
+    /**
+     * A type nothing here recognises — a map, a set, a record, {@code OffsetDateTime},
+     * {@code BigInteger}. The repository stores it through {@code toString()} and reads it back
+     * through the type's static {@code valueOf(String)}, which compiles only for a type that has
+     * one; its column may hold JSON or an engine-specific rendering, so it is never a list filter
+     * or a sort key.
+     */
+    OPAQUE;
 
     private static final String LIST_PREFIX = "List<";
     private static final String QUALIFIED_LIST_PREFIX = "java.util.List<";
@@ -49,13 +63,28 @@ public enum DomainTypeKind {
     private static final Set<String> BIG_DECIMAL_TYPES = Set.of("BigDecimal", "java.math.BigDecimal");
 
     /**
+     * The kind of a field: {@link #ENUM} when its type is not otherwise recognised and its
+     * {@code enumType} is set, else the kind of its type string.
+     *
+     * @param field the field
+     * @return its kind
+     */
+    public static DomainTypeKind of(FieldMetadata field) {
+        DomainTypeKind kind = of(field.type());
+        return kind == OPAQUE && field.isEnum() ? ENUM : kind;
+    }
+
+    /**
      * The kind of a metadata type string.
      *
      * @param type a {@code FieldMetadata.type()} value
-     * @return its kind; {@link #ENUM_LIKE} for anything not otherwise recognised
+     * @return its kind; {@link #OPAQUE} for anything not otherwise recognised, an enum included
      */
     public static DomainTypeKind of(String type) {
         if (listElementType(type) != null) return LIST;
+        // Any other parameterised type: its arguments may name a recognised type
+        // (Map<String, LocalDate>), which the containment checks below would match.
+        if (type.contains("<")) return OPAQUE;
         if (UUID_TYPES.contains(type)) return UUID;
         if (STRING_TYPES.contains(type)) return STRING;
         if (LONG_TYPES.contains(type)) return LONG;
@@ -67,7 +96,7 @@ public enum DomainTypeKind {
         // LocalDateTime before LocalDate: "LocalDateTime".contains("LocalDate").
         if (type.contains("LocalDateTime")) return LOCAL_DATE_TIME;
         if (type.contains("LocalDate")) return LOCAL_DATE;
-        return ENUM_LIKE;
+        return OPAQUE;
     }
 
     /**

@@ -58,12 +58,24 @@ public final class ListQuerySupport {
     /**
      * The kinds a filter value can be parsed into from a query parameter. A {@code List} column is
      * JSON text, so equality on it is not meaningful; {@code Instant} and {@code LocalDateTime}
-     * equality matches one instant and nothing a person types, so those wait for range filters.
+     * equality matches one instant and nothing a person types, so those wait for range filters; an
+     * {@link DomainTypeKind#OPAQUE} type has no parse this route knows.
      */
     private static final Set<DomainTypeKind> FILTER_KINDS = EnumSet.of(
             DomainTypeKind.UUID, DomainTypeKind.STRING, DomainTypeKind.LONG, DomainTypeKind.INT,
             DomainTypeKind.BOOL, DomainTypeKind.DOUBLE, DomainTypeKind.BIG_DECIMAL,
-            DomainTypeKind.LOCAL_DATE, DomainTypeKind.ENUM_LIKE);
+            DomainTypeKind.LOCAL_DATE, DomainTypeKind.ENUM);
+
+    /**
+     * The kinds a column can be ordered by: the filter kinds and the two timestamps. Not a
+     * {@code List} column, which is JSON text, and not an {@link DomainTypeKind#OPAQUE} one, whose
+     * stored text need not order as its values do.
+     */
+    private static final Set<DomainTypeKind> SORT_KINDS = EnumSet.of(
+            DomainTypeKind.UUID, DomainTypeKind.STRING, DomainTypeKind.LONG, DomainTypeKind.INT,
+            DomainTypeKind.BOOL, DomainTypeKind.DOUBLE, DomainTypeKind.BIG_DECIMAL,
+            DomainTypeKind.INSTANT_LIKE, DomainTypeKind.LOCAL_DATE_TIME, DomainTypeKind.LOCAL_DATE,
+            DomainTypeKind.ENUM);
 
     private ListQuerySupport() {}
 
@@ -80,9 +92,11 @@ public final class ListQuerySupport {
 
     /**
      * The properties {@code sort} accepts: every {@code @Field(sortable = true)} field — and every
-     * field the processor recorded without {@code @Field}, which it marks sortable — except a
-     * {@code List} field, whose column is JSON text, and a {@link #systemFieldNames system field}.
-     * Sorted by name.
+     * field the processor recorded without {@code @Field}, which it marks sortable — of a kind in
+     * which a column can be ordered: a type in {@link #sortableScalarTypes()} or an enum (a field
+     * {@link DomainTypeKind#of(FieldMetadata)} classifies as {@link DomainTypeKind#ENUM}). Never a
+     * {@code List} field, a field of a type nothing here recognises, or a
+     * {@link #systemFieldNames system field}. Sorted by name.
      *
      * @param metadata the entity
      * @return the sortable properties
@@ -91,8 +105,8 @@ public final class ListQuerySupport {
         Set<String> system = systemFieldNames(metadata);
         Map<String, Property> byName = new TreeMap<>();
         for (FieldMetadata field : metadata.fields()) {
-            DomainTypeKind kind = DomainTypeKind.of(field.type());
-            if (field.sortable() && kind != DomainTypeKind.LIST && !system.contains(field.name())) {
+            DomainTypeKind kind = DomainTypeKind.of(field);
+            if (field.sortable() && SORT_KINDS.contains(kind) && !system.contains(field.name())) {
                 byName.putIfAbsent(field.name(), new Property(field.name(), field.type(), kind,
                         ColumnNaming.snakeCase(field.name())));
             }
@@ -102,7 +116,9 @@ public final class ListQuerySupport {
 
     /**
      * The filter parameters: every {@code @Field(filterable = true)} field of a kind in which a
-     * query-parameter value can be parsed, then every {@code MANY_TO_ONE} relationship's foreign key
+     * query-parameter value can be parsed — a type in {@link #filterableScalarTypes()} or an enum (a
+     * field {@link DomainTypeKind#of(FieldMetadata)} classifies as {@link DomainTypeKind#ENUM}) —
+     * then every {@code MANY_TO_ONE} relationship's foreign key
      * as {@code <base>Id=<uuid>}. A field named after a reserved parameter ({@code page},
      * {@code size}, {@code sort}) is not a filter, because the parameter means the other thing, and
      * a {@link #systemFieldNames system field} is never one. A foreign key whose parameter name a
@@ -115,7 +131,7 @@ public final class ListQuerySupport {
         Set<String> system = systemFieldNames(metadata);
         Map<String, Property> byName = new TreeMap<>();
         for (FieldMetadata field : metadata.fields()) {
-            DomainTypeKind kind = DomainTypeKind.of(field.type());
+            DomainTypeKind kind = DomainTypeKind.of(field);
             if (field.filterable() && FILTER_KINDS.contains(kind) && !RESERVED.contains(field.name())
                     && !system.contains(field.name())) {
                 byName.putIfAbsent(field.name(), new Property(field.name(), field.type(), kind,
@@ -194,7 +210,8 @@ public final class ListQuerySupport {
     /**
      * The metadata type strings a filter accepts, both spellings, sorted — published in the
      * contract file so the front sends a filter only for a field the server parses. An enum is
-     * accepted under its own type name and is not in this list.
+     * accepted under its own type name and is not in this list; a type that is neither in it nor
+     * an emitted enum is not a filter.
      *
      * @return the filterable scalar type names
      */
@@ -204,6 +221,20 @@ public final class ListQuerySupport {
                 "int", "Integer", "java.lang.Integer", "boolean", "Boolean", "java.lang.Boolean",
                 "double", "Double", "java.lang.Double", "BigDecimal", "java.math.BigDecimal",
                 "LocalDate", "java.time.LocalDate"));
+        types.sort(null);
+        return List.copyOf(types);
+    }
+
+    /**
+     * The metadata type strings a sort key may have besides an enum, both spellings, sorted — the
+     * filterable scalar types and {@code Instant} and {@code LocalDateTime}. Published in the
+     * contract file so the front offers a sort only on a column the server orders.
+     *
+     * @return the sortable scalar type names
+     */
+    public static List<String> sortableScalarTypes() {
+        List<String> types = new ArrayList<>(filterableScalarTypes());
+        types.addAll(List.of("Instant", "java.time.Instant", "LocalDateTime", "java.time.LocalDateTime"));
         types.sort(null);
         return List.copyOf(types);
     }
