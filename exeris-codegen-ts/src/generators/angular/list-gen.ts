@@ -3,10 +3,12 @@
  *
  * Generates one standalone, OnPush, signal-driven list component per entity.
  *
- * The generated server's list route answers with the entity's whole collection as a JSON array and
- * reads no query parameter: it neither pages, sorts, searches nor filters. The component therefore
- * loads the collection once and does all four in the browser, over every row the server returned,
- * through `computed` signals. Nothing it offers depends on a parameter the server ignores.
+ * The generated list route pages, sorts and filters on the server and answers a page envelope
+ * (ADR-096). The component holds the page, the page size, the sort and the filters as signals, reads
+ * the page through an `rxResource` keyed on them, and shows the envelope it answers. It offers a
+ * sortable header only for a property the route sorts on and a filter only for one it filters on,
+ * by the rules of `list-query.ts`; the route refuses any other parameter with `400`, and has no
+ * search.
  */
 
 import type { ActionMetadata, DomainMetadata } from '../../models/domain-model.js';
@@ -18,19 +20,21 @@ import type { BackendType } from '../../core/backend-strategy.js';
 import { outPath } from '../../core/paths.js';
 import {
   fieldRenderContext,
+  isEnumField,
   resolveFieldRenders,
   toTitleCase,
   type BadgeTone,
   type FieldRenderModel,
+  type ListFilterKind,
 } from './field-render.js';
+import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, filterProperties, type ListQueryKind } from './list-query.js';
 import { tsSingleQuoted } from './ts-literal.js';
 import { entityViews } from './entity-views.js';
 
 export { GeneratedFile };
 
-/** The page sizes the selector offers; the default is one of them. */
-const PAGE_SIZES = [10, 20, 25, 50] as const;
-const DEFAULT_PAGE_SIZE = 20;
+/** The page sizes the selector offers: within the route's 1..100, the default among them. */
+const PAGE_SIZES = [10, 20, 25, 50, 100] as const;
 
 const BADGE_BASE = 'inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ring-1 ring-inset';
 
@@ -52,7 +56,7 @@ const BADGE_TONE_CLASSES: Readonly<Record<BadgeTone, string>> = {
 
 /**
  * The filter controls. The kit's field classes are full width, so a filter takes its own line on a
- * narrow screen and its natural width beside the search box from `sm` on.
+ * narrow screen and its natural width beside the others from `sm` on.
  */
 const FILTER_SELECT_CLASS = 'exeris-select sm:w-auto';
 const FILTER_INPUT_CLASS = 'exeris-input sm:w-auto';
@@ -73,6 +77,21 @@ function capitalize(name: string): string {
 export function rowActions(domain: DomainMetadata): ActionMetadata[] {
   return (domain.actions ?? []).filter((action) => !action.streaming && (action.params ?? []).length === 0);
 }
+
+/** One equality filter the list offers: a filter of the list route, with its control. */
+interface ListFilterControl {
+  /** The query parameter, and the key of the service's filter. */
+  readonly name: string;
+  readonly label: string;
+  readonly kind: ListFilterKind;
+  /** The kind of value the route parses, which decides the value the filter sends. */
+  readonly valueKind: ListQueryKind;
+  /** The field the filter is, absent for a foreign key no field carries. */
+  readonly render?: FieldRenderModel;
+}
+
+/** Kinds the service's filter types as a number. */
+const NUMBER_FILTER_KINDS: ReadonlySet<ListQueryKind> = new Set<ListQueryKind>(['long', 'int', 'double']);
 
 export class ListGenerator implements CodeGenerator {
   readonly name = 'ListGenerator';
@@ -113,27 +132,23 @@ export class ListGenerator implements CodeGenerator {
     // honours it, and the emitted app would then request the wrong identifier.
     const idField = 'id';
 
-    const renders = resolveFieldRenders(
-      metadata,
-      fieldRenderContext(metadata, context.allDomains, context.config.generateDetails !== false, context.enums ?? []),
+    const renderContext = fieldRenderContext(
+      metadata, context.allDomains, context.config.generateDetails !== false, context.enums ?? [],
     );
+    const renders = resolveFieldRenders(metadata, renderContext);
     const listColumns = this.listColumnNames(renders)
       .map((name) => renders.find((r) => r.name === name)!);
 
     const views = entityViews(metadata);
     // With the entity's filter switch off no field gets a control, whatever the field says.
-    const filterControls = views.filter ? renders.filter((r) => r.list.filter !== undefined) : [];
-    // Search matches the fields marked searchable, else every column the list shows.
-    const searchFields = views.search
-      ? (renders.some((r) => r.field.searchable) ? renders.filter((r) => r.field.searchable) : listColumns)
-      : [];
+    const filterControls = views.filter ? this.filterControls(metadata, renders, renderContext.listQuery?.filters, context.enums ?? []) : [];
     const sortable = listColumns.some((c) => c.list.sortable);
     const enumColumns = listColumns.filter((c) => c.list.cell === 'enum');
-    const enumFilters = filterControls.filter((r) => r.list.filter === 'enum');
+    const enumFilters = filterControls.flatMap((f) => (f.kind === 'enum' && f.render ? [f.render] : []));
     const enumTypes = [...new Set([...enumColumns, ...enumFilters].map((r) => r.list.enumType!))].sort();
     const badgeFields = [...new Map([...enumColumns, ...enumFilters].map((r) => [r.name, r])).values()];
     const actions = rowActions(metadata);
-    const hasControls = views.search || filterControls.length > 0;
+    const hasFilters = filterControls.length > 0;
 
     const pipes = new Set<string>();
     for (const col of listColumns) {
@@ -143,12 +158,12 @@ export class ListGenerator implements CodeGenerator {
       if (col.list.cell === 'percent') pipes.add('PercentPipe');
     }
     const pipeImports = [...pipes].sort();
-
-    const helpers = new Set<string>();
-    if (searchFields.length > 0 || filterControls.some((r) => r.list.filter === 'text')) helpers.add('textOf');
-    if (filterControls.some((r) => r.list.filter === 'date-range')) helpers.add('inDayRange');
-    if (filterControls.some((r) => r.list.filter === 'number-range')) helpers.add('inNumberRange');
-    if (sortable) helpers.add('compareValues');
+    const numberFilters = filterControls.some((f) => NUMBER_FILTER_KINDS.has(f.valueKind));
+    const serviceImports = [
+      modelName, `${entityName}Service`, 'Page',
+      ...(hasFilters ? [`${modelName}Filter`] : []),
+      ...(sortable ? [`${modelName}SortField`] : []),
+    ];
 
     const lines: string[] = [];
 
@@ -157,8 +172,8 @@ export class ListGenerator implements CodeGenerator {
     lines.push(` * ${entityName} List Component`);
     lines.push(` * Generated by @exeris/codegen-ts`);
     lines.push(` *`);
-    lines.push(` * The server's list route returns every ${displayName.toLowerCase()} at once and reads no query`);
-    lines.push(` * parameter, so paging, sorting, search and filters run here, over every loaded row.`);
+    lines.push(` * The list route pages, sorts and filters ${pluralName.toLowerCase()} on the server; this component sends`);
+    lines.push(` * it the page, size, sort and filters it holds and shows the page it answers.`);
     lines.push(` *`);
     lines.push(` * DO NOT EDIT - This file is auto-generated`);
     lines.push(` */`);
@@ -171,105 +186,30 @@ export class ListGenerator implements CodeGenerator {
     lines.push(`  inject,`);
     lines.push(`  signal,`);
     lines.push(`  computed,`);
-    lines.push(`  OnInit,`);
-    if (filterControls.length > 0) {
+    lines.push(`  linkedSignal,`);
+    if (hasFilters) {
       lines.push(`  WritableSignal,`);
     }
     lines.push(`} from '@angular/core';`);
+    lines.push(`import { rxResource } from '@angular/core/rxjs-interop';`);
     if (pipeImports.length > 0) {
       lines.push(`import { ${pipeImports.join(', ')} } from '@angular/common';`);
     }
     lines.push(`import { RouterModule } from '@angular/router';`);
-    lines.push(`import { ${modelName}, ${entityName}Service, Page } from '../services/${kebabName}.service';`);
+    lines.push(`import { ${serviceImports.join(', ')} } from '../services/${kebabName}.service';`);
     if (enumTypes.length > 0) {
       lines.push(`import { ${enumTypes.map((e) => `${e}DisplayNames`).join(', ')} } from '../types/enums';`);
     }
     lines.push(`import { httpErrorMessage } from '../core/http-error';`);
     lines.push(``);
 
-    // Module-level helpers
-    lines.push(`/**`);
-    lines.push(` * The rows of a list response. The server answers the list route with a JSON array; a paged`);
-    lines.push(` * envelope is read through its content.`);
-    lines.push(` */`);
-    lines.push(`function listRows<T>(result: Page<T> | T[]): T[] {`);
-    lines.push(`  return Array.isArray(result) ? result : (result.content ?? []);`);
-    lines.push(`}`);
+    lines.push(`/** The page sizes the list route serves. */`);
+    lines.push(`const MAX_PAGE_SIZE = ${MAX_PAGE_SIZE};`);
     lines.push(``);
-    if (helpers.has('textOf')) {
-      lines.push(`/** A value as lower-case text for a contains match; absent values are empty. */`);
-      lines.push(`function textOf(value: unknown): string {`);
-      lines.push(`  return value === null || value === undefined ? '' : String(value).toLowerCase();`);
-      lines.push(`}`);
-      lines.push(``);
-    }
-    if (helpers.has('inDayRange')) {
-      lines.push(`/**`);
-      lines.push(` * Whether an ISO date or date-time falls within an inclusive range of calendar days, compared`);
-      lines.push(` * on its leading \`yyyy-MM-dd\`. An empty bound is open; with a bound set, an absent value is out.`);
-      lines.push(` */`);
-      lines.push(`function inDayRange(value: unknown, from: string, to: string): boolean {`);
-      lines.push(`  if (from === '' && to === '') return true;`);
-      lines.push(`  if (value === null || value === undefined || value === '') return false;`);
-      lines.push(`  const day = String(value).slice(0, 10);`);
-      lines.push(`  return (from === '' || day >= from) && (to === '' || day <= to);`);
-      lines.push(`}`);
-      lines.push(``);
-    }
-    if (helpers.has('inNumberRange')) {
-      lines.push(`/** Whether a number lies within an inclusive range. An empty bound is open; with a bound set, an absent value is out. */`);
-      lines.push(`function inNumberRange(value: unknown, min: string, max: string): boolean {`);
-      lines.push(`  if (min === '' && max === '') return true;`);
-      lines.push(`  if (value === null || value === undefined || value === '') return false;`);
-      lines.push(`  const n = Number(value);`);
-      lines.push(`  return (min === '' || n >= Number(min)) && (max === '' || n <= Number(max));`);
-      lines.push(`}`);
-      lines.push(``);
-    }
-    if (helpers.has('compareValues')) {
-      lines.push(`/** A plain decimal: an optional minus, digits, and an optional fraction. */`);
-      lines.push(`const DECIMAL = /^-?\\d+(?:\\.\\d+)?$/;`);
-      lines.push(``);
-      lines.push(`/**`);
-      lines.push(` * Orders two non-negative decimal strings exactly: integer digits by length then by digit, then`);
-      lines.push(` * the fractions padded to one length. A BigDecimal arrives as such a string, and converting it to`);
-      lines.push(` * a number would round it.`);
-      lines.push(` */`);
-      lines.push(`function compareMagnitudes(a: string, b: string): number {`);
-      lines.push(`  const [aInt, aFrac = ''] = a.split('.');`);
-      lines.push(`  const [bInt, bFrac = ''] = b.split('.');`);
-      lines.push(`  const ai = aInt.replace(/^0+(?=\\d)/, '');`);
-      lines.push(`  const bi = bInt.replace(/^0+(?=\\d)/, '');`);
-      lines.push(`  if (ai.length !== bi.length) return ai.length - bi.length;`);
-      lines.push(`  if (ai !== bi) return ai < bi ? -1 : 1;`);
-      lines.push(`  const width = Math.max(aFrac.length, bFrac.length);`);
-      lines.push(`  const af = aFrac.padEnd(width, '0');`);
-      lines.push(`  const bf = bFrac.padEnd(width, '0');`);
-      lines.push(`  return af === bf ? 0 : af < bf ? -1 : 1;`);
-      lines.push(`}`);
-      lines.push(``);
-      lines.push(`/** Orders two decimal strings by value, sign included. */`);
-      lines.push(`function compareDecimals(a: string, b: string): number {`);
-      lines.push(`  const aNegative = a.startsWith('-');`);
-      lines.push(`  const bNegative = b.startsWith('-');`);
-      lines.push(`  if (aNegative !== bNegative) return aNegative ? -1 : 1;`);
-      lines.push(`  const magnitude = compareMagnitudes(aNegative ? a.slice(1) : a, bNegative ? b.slice(1) : b);`);
-      lines.push(`  return aNegative ? -magnitude : magnitude;`);
-      lines.push(`}`);
-      lines.push(``);
-      lines.push(`/**`);
-      lines.push(` * Orders two cell values: absent values last in either direction, numbers and decimal strings by`);
-      lines.push(` * value, everything else as text with numeric collation, so ISO dates order correctly.`);
-      lines.push(` */`);
-      lines.push(`function compareValues(a: unknown, b: unknown, direction: 1 | -1): number {`);
-      lines.push(`  const aAbsent = a === null || a === undefined || a === '';`);
-      lines.push(`  const bAbsent = b === null || b === undefined || b === '';`);
-      lines.push(`  if (aAbsent || bAbsent) return aAbsent === bAbsent ? 0 : aAbsent ? 1 : -1;`);
-      lines.push(`  if (typeof a === 'number' && typeof b === 'number') return direction * (a - b);`);
-      lines.push(`  const aText = String(a);`);
-      lines.push(`  const bText = String(b);`);
-      lines.push(`  if (DECIMAL.test(aText) && DECIMAL.test(bText)) return direction * compareDecimals(aText, bText);`);
-      lines.push(`  return direction * aText.localeCompare(bText, undefined, { numeric: true });`);
+    if (numberFilters) {
+      lines.push(`/** A number filter's text as the number it sends; blank is no filter. Text that is no number is refused by the route. */`);
+      lines.push(`function numberFilter(text: string): number | undefined {`);
+      lines.push(`  return text === '' ? undefined : Number(text);`);
       lines.push(`}`);
       lines.push(``);
     }
@@ -311,8 +251,10 @@ export class ListGenerator implements CodeGenerator {
     lines.push(`          <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">`);
     lines.push(`            @if (totalElements() > 0) {`);
     lines.push(`              {{ totalElements() }} {{ totalElements() === 1 ? '${displayName.toLowerCase()}' : '${pluralName.toLowerCase()}' }} found`);
-    lines.push(`            } @else if (rows().length > 0) {`);
-    lines.push(`              No ${pluralName.toLowerCase()} match`);
+    if (hasFilters) {
+      lines.push(`            } @else if (filtersActive()) {`);
+      lines.push(`              No ${pluralName.toLowerCase()} match`);
+    }
     lines.push(`            } @else {`);
     lines.push(`              No ${pluralName.toLowerCase()} yet`);
     lines.push(`            }`);
@@ -345,30 +287,12 @@ export class ListGenerator implements CodeGenerator {
     }
     lines.push(``);
 
-    // Search & Filters — the row exists when it holds a control.
-    if (hasControls) {
-      lines.push(`      <!-- Search & Filters -->`);
+    // Filters — the row exists when it holds a control.
+    if (hasFilters) {
+      lines.push(`      <!-- Filters -->`);
       lines.push(`      <div class="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center">`);
-      if (views.search) {
-        lines.push(`        <div class="relative flex-1">`);
-        lines.push(`          <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">`);
-        lines.push(`            <svg class="h-5 w-5 text-gray-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">`);
-        lines.push(`              <path fill-rule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clip-rule="evenodd" />`);
-        lines.push(`            </svg>`);
-        lines.push(`          </div>`);
-        lines.push(`          <input`);
-        lines.push(`            #searchBox`);
-        lines.push(`            type="search"`);
-        lines.push(`            (input)="onSearch(searchBox.value)"`);
-        lines.push(`            placeholder="Search ${pluralName.toLowerCase()}..."`);
-        lines.push(`            aria-label="Search ${pluralName.toLowerCase()}"`);
-        lines.push(`            data-testid="search-input"`);
-        lines.push(`            class="exeris-input pl-10"`);
-        lines.push(`          />`);
-        lines.push(`        </div>`);
-      }
-      for (const field of filterControls) {
-        lines.push(...this.filterControl(field));
+      for (const filter of filterControls) {
+        lines.push(...this.filterControl(filter));
       }
       lines.push(`      </div>`);
       lines.push(``);
@@ -403,7 +327,7 @@ export class ListGenerator implements CodeGenerator {
     lines.push(`              <button type="button" (click)="loadData()" class="exeris-btn exeris-btn-secondary exeris-btn-sm mt-4">Try again</button>`);
     lines.push(`            </div>`);
     lines.push(`          } @else {`);
-    lines.push(`            <table class="exeris-table" aria-label="${pluralName} table" data-testid="data-table">`);
+    lines.push(`            <table class="exeris-table" aria-label="${pluralName} table" data-testid="data-table" [attr.aria-busy]="isLoading()" [class.opacity-60]="isLoading()">`);
     lines.push(`              <thead>`);
     lines.push(`                <tr>`);
 
@@ -504,8 +428,8 @@ export class ListGenerator implements CodeGenerator {
     lines.push(`        <nav class="flex items-center justify-between border-t border-gray-200 dark:border-gray-700 px-4 py-3 sm:px-0" aria-label="Pagination">`);
     lines.push(`          <div class="hidden sm:flex sm:items-center sm:gap-4">`);
     lines.push(`            <p class="text-sm text-gray-700 dark:text-gray-300">`);
-    lines.push(`              Showing <span class="font-medium">{{ (page() * pageSize()) + 1 }}</span>`);
-    lines.push(`              to <span class="font-medium">{{ Math.min((page() + 1) * pageSize(), totalElements()) }}</span>`);
+    lines.push(`              Showing <span class="font-medium">{{ rangeStart() }}</span>`);
+    lines.push(`              to <span class="font-medium">{{ rangeEnd() }}</span>`);
     lines.push(`              of <span class="font-medium">{{ totalElements() }}</span> results`);
     lines.push(`            </p>`);
     lines.push(`            <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">`);
@@ -521,7 +445,7 @@ export class ListGenerator implements CodeGenerator {
     lines.push(`            <button`);
     lines.push(`              type="button"`);
     lines.push(`              (click)="onPageChange(page() - 1)"`);
-    lines.push(`              [disabled]="page() === 0"`);
+    lines.push(`              [disabled]="isFirst()"`);
     lines.push(`              data-testid="pagination-prev"`);
     lines.push(`              class="${navButton}"`);
     lines.push(`            >`);
@@ -530,7 +454,7 @@ export class ListGenerator implements CodeGenerator {
     lines.push(`            <button`);
     lines.push(`              type="button"`);
     lines.push(`              (click)="onPageChange(page() + 1)"`);
-    lines.push(`              [disabled]="page() >= totalPages() - 1"`);
+    lines.push(`              [disabled]="isLast()"`);
     lines.push(`              data-testid="pagination-next"`);
     lines.push(`              class="${navButton}"`);
     lines.push(`            >`);
@@ -544,74 +468,86 @@ export class ListGenerator implements CodeGenerator {
     lines.push(`})`);
 
     // Class
-    lines.push(`export class ${entityName}ListComponent implements OnInit {`);
+    lines.push(`export class ${entityName}ListComponent {`);
     lines.push(`  private readonly service = inject(${entityName}Service);`);
     lines.push(``);
-    lines.push(`  /** Every row the server returned. */`);
-    lines.push(`  readonly rows = signal<${modelName}[]>([]);`);
-    lines.push(`  readonly isLoading = signal(false);`);
-    lines.push(`  readonly error = signal<string | null>(null);`);
     lines.push(`  readonly deleteError = signal<string | null>(null);`);
     if (actions.length > 0) {
       lines.push(`  readonly actionError = signal<string | null>(null);`);
     }
     lines.push(``);
-    if (views.search) {
-      lines.push(`  readonly searchQuery = signal('');`);
-    }
-    for (const field of filterControls) {
-      for (const name of this.filterSignalNames(field)) {
-        lines.push(`  readonly ${name} = signal('');`);
-      }
-    }
+    lines.push(`  /** The requested page, zero-based. */`);
+    lines.push(`  readonly currentPage = signal(0);`);
+    lines.push(`  readonly pageSize = signal(${DEFAULT_PAGE_SIZE});`);
     if (sortable) {
-      lines.push(`  readonly sortField = signal<keyof ${modelName} | null>(null);`);
+      lines.push(`  /** The sorted property; \`null\` leaves the rows in id order. */`);
+      lines.push(`  readonly sortField = signal<${modelName}SortField | null>(null);`);
       lines.push(`  readonly sortDirection = signal<'asc' | 'desc'>('asc');`);
     }
-    lines.push(`  readonly pageSize = signal(${DEFAULT_PAGE_SIZE});`);
-    lines.push(`  readonly currentPage = signal(0);`);
-    lines.push(``);
-
-    // Filtering
-    const predicates = this.predicates(searchFields, filterControls);
-    lines.push(`  /** The rows that pass the search and every filter. */`);
-    if (predicates.reads.length === 0) {
-      lines.push(`  readonly filtered = computed(() => this.rows());`);
-    } else {
-      lines.push(`  readonly filtered = computed(() => {`);
-      for (const read of predicates.reads) {
-        lines.push(`    ${read}`);
-      }
-      lines.push(`    return this.rows().filter((item) =>`);
-      predicates.tests.forEach((test, index) => {
-        lines.push(`      ${index === 0 ? '' : '&& '}${test}`);
-      });
-      lines.push(`    );`);
-      lines.push(`  });`);
+    for (const filter of filterControls) {
+      lines.push(`  readonly ${filterSignalName(filter.name)} = signal('');`);
     }
     lines.push(``);
-    if (sortable) {
-      lines.push(`  /** The filtered rows in the order of the sorted column; unsorted, the server's order. */`);
-      lines.push(`  readonly sorted = computed(() => {`);
-      lines.push(`    const rows = this.filtered();`);
-      lines.push(`    const field = this.sortField();`);
-      lines.push(`    if (field === null) return rows;`);
-      lines.push(`    const direction: 1 | -1 = this.sortDirection() === 'asc' ? 1 : -1;`);
-      lines.push(`    return [...rows].sort((a, b) => compareValues(a[field], b[field], direction));`);
-      lines.push(`  });`);
+    if (hasFilters) {
+      lines.push(`  /** The filters the route applies: each control that holds a value. */`);
+      lines.push(`  private readonly filter = computed<${modelName}Filter>(() => ({`);
+      for (const filter of filterControls) {
+        lines.push(`    ${filter.name}: ${this.filterValue(filter, modelName)},`);
+      }
+      lines.push(`  }));`);
+      lines.push(`  readonly filtersActive = computed(() => Object.values(this.filter()).some((value) => value !== undefined));`);
       lines.push(``);
     }
-    const ordered = sortable ? 'sorted' : 'filtered';
-    lines.push(`  readonly totalElements = computed(() => this.filtered().length);`);
-    lines.push(`  readonly totalPages = computed(() => Math.ceil(this.totalElements() / this.pageSize()));`);
-    lines.push(`  /** The page shown: the requested one, held within the pages the filtered rows fill. */`);
-    lines.push(`  readonly page = computed(() => Math.min(this.currentPage(), Math.max(this.totalPages() - 1, 0)));`);
-    lines.push(`  readonly items = computed(() => {`);
-    lines.push(`    const start = this.page() * this.pageSize();`);
-    lines.push(`    return this.${ordered}().slice(start, start + this.pageSize());`);
+    lines.push(`  /** One page from the list route, read again whenever the page, size, sort or a filter changes. */`);
+    lines.push(`  private readonly pageResource = rxResource({`);
+    if (sortable) {
+      lines.push(`    params: () => {`);
+      lines.push(`      const sort = this.sortField();`);
+      lines.push(`      return {`);
+      lines.push(`        request: {`);
+      lines.push(`          page: this.currentPage(),`);
+      lines.push(`          size: this.pageSize(),`);
+      lines.push(`          ...(sort !== null ? { sort, direction: this.sortDirection() } : {}),`);
+      lines.push(`        },`);
+      lines.push(`        filter: ${hasFilters ? 'this.filter()' : '{}'},`);
+      lines.push(`      };`);
+      lines.push(`    },`);
+    } else {
+      lines.push(`    params: () => ({`);
+      lines.push(`      request: { page: this.currentPage(), size: this.pageSize() },`);
+      lines.push(`      filter: ${hasFilters ? 'this.filter()' : '{}'},`);
+      lines.push(`    }),`);
+    }
+    lines.push(`    stream: ({ params }) => this.service.findAll(params.request, params.filter),`);
     lines.push(`  });`);
     lines.push(``);
-    lines.push(`  protected readonly Math = Math;`);
+    lines.push(`  /** The page the route last answered, held while the next one loads. */`);
+    lines.push(`  private readonly result = linkedSignal<Page<${modelName}> | undefined, Page<${modelName}> | undefined>({`);
+    lines.push(`    source: () => (this.pageResource.hasValue() ? this.pageResource.value() : undefined),`);
+    lines.push(`    computation: (value, previous) => value ?? previous?.value,`);
+    lines.push(`  });`);
+    lines.push(``);
+    lines.push(`  readonly items = computed(() => this.result()?.content ?? []);`);
+    lines.push(`  readonly totalElements = computed(() => this.result()?.totalElements ?? 0);`);
+    lines.push(`  readonly totalPages = computed(() => this.result()?.totalPages ?? 0);`);
+    lines.push(`  /** The page shown, zero-based, as the route numbered it. */`);
+    lines.push(`  readonly page = computed(() => this.result()?.number ?? this.currentPage());`);
+    lines.push(`  readonly isFirst = computed(() => this.result()?.first ?? true);`);
+    lines.push(`  readonly isLast = computed(() => this.result()?.last ?? true);`);
+    lines.push(`  /** The one-based positions of the first and last row shown, among every row the filters match. */`);
+    lines.push(`  readonly rangeStart = computed(() => {`);
+    lines.push(`    const result = this.result();`);
+    lines.push(`    return result && result.content.length > 0 ? result.number * result.size + 1 : 0;`);
+    lines.push(`  });`);
+    lines.push(`  readonly rangeEnd = computed(() => {`);
+    lines.push(`    const result = this.result();`);
+    lines.push(`    return result ? result.number * result.size + result.content.length : 0;`);
+    lines.push(`  });`);
+    lines.push(`  readonly isLoading = computed(() => this.pageResource.isLoading());`);
+    lines.push(`  readonly error = computed(() => {`);
+    lines.push(`    const err = this.pageResource.error();`);
+    lines.push(`    return err ? httpErrorMessage(err, { entity: '${tsSingleQuoted(pluralName.toLowerCase())}', action: 'load' }) : null;`);
+    lines.push(`  });`);
     for (const field of badgeFields) {
       const enumType = field.list.enumType!;
       lines.push(``);
@@ -622,47 +558,26 @@ export class ListGenerator implements CodeGenerator {
       lines.push(`  };`);
     }
     lines.push(``);
-    lines.push(`  ngOnInit(): void {`);
-    lines.push(`    this.loadData();`);
-    lines.push(`  }`);
-    lines.push(``);
     lines.push(`  loadData(): void {`);
-    lines.push(`    this.isLoading.set(true);`);
-    lines.push(`    this.error.set(null);`);
-    lines.push(`    this.service.findAll().subscribe({`);
-    lines.push(`      next: (result) => {`);
-    lines.push(`        this.rows.set(listRows(result));`);
-    lines.push(`        this.isLoading.set(false);`);
-    lines.push(`      },`);
-    lines.push(`      error: (err) => {`);
-    lines.push(`        this.error.set(httpErrorMessage(err, { entity: '${tsSingleQuoted(pluralName.toLowerCase())}', action: 'load' }));`);
-    lines.push(`        this.isLoading.set(false);`);
-    lines.push(`      },`);
-    lines.push(`    });`);
+    lines.push(`    this.pageResource.reload();`);
     lines.push(`  }`);
     lines.push(``);
-    if (views.search) {
-      lines.push(`  onSearch(query: string): void {`);
-      lines.push(`    this.searchQuery.set(query);`);
-      lines.push(`    this.currentPage.set(0);`);
-      lines.push(`  }`);
-      lines.push(``);
-    }
-    if (filterControls.length > 0) {
+    if (hasFilters) {
       lines.push(`  setFilter(target: WritableSignal<string>, value: string): void {`);
-      lines.push(`    target.set(value);`);
+      lines.push(`    target.set(value.trim());`);
       lines.push(`    this.currentPage.set(0);`);
       lines.push(`  }`);
       lines.push(``);
     }
     if (sortable) {
-      lines.push(`  onSort(field: keyof ${modelName}): void {`);
+      lines.push(`  onSort(field: ${modelName}SortField): void {`);
       lines.push(`    if (this.sortField() === field) {`);
       lines.push(`      this.sortDirection.update((d) => (d === 'asc' ? 'desc' : 'asc'));`);
       lines.push(`    } else {`);
       lines.push(`      this.sortField.set(field);`);
       lines.push(`      this.sortDirection.set('asc');`);
       lines.push(`    }`);
+      lines.push(`    this.currentPage.set(0);`);
       lines.push(`  }`);
       lines.push(``);
     }
@@ -672,9 +587,23 @@ export class ListGenerator implements CodeGenerator {
     lines.push(`    }`);
     lines.push(`  }`);
     lines.push(``);
+    lines.push(`  /** A size outside the route's 1..MAX_PAGE_SIZE is never requested. */`);
     lines.push(`  onPageSizeChange(size: string): void {`);
-    lines.push(`    this.pageSize.set(Number(size));`);
-    lines.push(`    this.currentPage.set(0);`);
+    lines.push(`    const value = Number(size);`);
+    lines.push(`    if (Number.isInteger(value) && value >= 1 && value <= MAX_PAGE_SIZE) {`);
+    lines.push(`      this.pageSize.set(value);`);
+    lines.push(`      this.currentPage.set(0);`);
+    lines.push(`    }`);
+    lines.push(`  }`);
+    lines.push(``);
+    lines.push(`  /** Reloads the page a row left; a later page left with no row gives way to the page before it. */`);
+    lines.push(`  private afterRemoval(): void {`);
+    lines.push(`    const page = this.page();`);
+    lines.push(`    if (this.items().length === 1 && page > 0) {`);
+    lines.push(`      this.currentPage.set(page - 1);`);
+    lines.push(`    } else {`);
+    lines.push(`      this.pageResource.reload();`);
+    lines.push(`    }`);
     lines.push(`  }`);
     lines.push(``);
     if (badgeFields.length > 0) {
@@ -690,7 +619,7 @@ export class ListGenerator implements CodeGenerator {
       lines.push(`    this.actionError.set(null);`);
       lines.push(`    this.service.${method}(String(item.${idField})).subscribe({`);
       lines.push(`      next: () => {`);
-      lines.push(`        this.loadData();`);
+      lines.push(`        this.pageResource.reload();`);
       lines.push(`      },`);
       lines.push(`      error: (err) => {`);
       lines.push(`        this.actionError.set(httpErrorMessage(err, { entity: '${tsSingleQuoted(displayName.toLowerCase())}', action: 'save' }));`);
@@ -704,7 +633,7 @@ export class ListGenerator implements CodeGenerator {
     lines.push(`      this.deleteError.set(null);`);
     lines.push(`      this.service.delete(String(item.${idField})).subscribe({`);
     lines.push(`        next: () => {`);
-    lines.push(`          this.loadData();`);
+    lines.push(`          this.afterRemoval();`);
     lines.push(`        },`);
     lines.push(`        error: (err) => {`);
     lines.push(`          this.deleteError.set(httpErrorMessage(err, { entity: '${tsSingleQuoted(displayName.toLowerCase())}', action: 'delete' }));`);
@@ -763,108 +692,85 @@ export class ListGenerator implements CodeGenerator {
     }
   }
 
-  /** The signals one filter control writes: one value, or the two bounds of a range. */
-  private filterSignalNames(field: FieldRenderModel): string[] {
-    const base = `filter${capitalize(field.name)}`;
-    switch (field.list.filter) {
-      case 'date-range': return [`${base}From`, `${base}To`];
-      case 'number-range': return [`${base}Min`, `${base}Max`];
-      default: return [base];
+  /**
+   * The list's filters: the list route's filters (`filterProperties`), except a hidden field's.
+   * Fields come in declaration order, then the foreign keys no field carries in relationship order.
+   */
+  private filterControls(
+    metadata: DomainMetadata,
+    renders: readonly FieldRenderModel[],
+    kinds: ReadonlyMap<string, ListFilterKind> | undefined,
+    enums: readonly EnumMetadata[],
+  ): ListFilterControl[] {
+    const properties = filterProperties(metadata, (field) => isEnumField(field, enums));
+    const controls: ListFilterControl[] = [];
+    for (const render of renders) {
+      const property = properties.find((p) => p.name === render.name);
+      if (!property || render.field.hidden) continue;
+      controls.push({ name: property.name, label: render.label, kind: kinds?.get(property.name) ?? 'text', valueKind: property.kind, render });
     }
+    for (const rel of metadata.relationships ?? []) {
+      const property = properties.find((p) => p.relationship === rel);
+      if (!property || renders.some((r) => r.name === property.name)) continue;
+      controls.push({ name: property.name, label: DslMapper.humanize(rel.name), kind: kinds?.get(property.name) ?? 'text', valueKind: property.kind });
+    }
+    return controls;
+  }
+
+  /** The value one filter sends, read from its control's text: blank is no filter. */
+  private filterValue(filter: ListFilterControl, modelName: string): string {
+    const text = `this.${filterSignalName(filter.name)}()`;
+    if (filter.kind === 'boolean') return `${text} === '' ? undefined : ${text} === 'true'`;
+    if (NUMBER_FILTER_KINDS.has(filter.valueKind)) return `numberFilter(${text})`;
+    if (filter.kind === 'enum') return `(${text} || undefined) as ${modelName}Filter['${filter.name}']`;
+    return `${text} || undefined`;
   }
 
   /** The markup of one filter control. Every control writes its signal through `setFilter`. */
-  private filterControl(field: FieldRenderModel): string[] {
-    const base = `filter${capitalize(field.name)}`;
-    const label = field.label;
+  private filterControl(filter: ListFilterControl): string[] {
+    const signalName = filterSignalName(filter.name);
+    const ref = `${signalName}Control`;
+    const label = filter.label;
     const out: string[] = [];
-    const input = (signalName: string, ref: string, type: string, testid: string, aria: string, placeholder: string): void => {
-      out.push(`        <input`);
+    if (filter.kind === 'boolean' || filter.kind === 'enum') {
+      out.push(`        <select`);
       out.push(`          #${ref}`);
-      out.push(`          type="${type}"`);
-      out.push(`          (input)="setFilter(${signalName}, ${ref}.value)"`);
-      if (placeholder) out.push(`          placeholder="${placeholder}"`);
-      out.push(`          aria-label="${aria}"`);
-      out.push(`          data-testid="${testid}"`);
-      out.push(`          class="${FILTER_INPUT_CLASS}"`);
-      out.push(`        />`);
-    };
-    switch (field.list.filter) {
-      case 'boolean':
-      case 'enum': {
-        const ref = `${base}Control`;
-        out.push(`        <select`);
-        out.push(`          #${ref}`);
-        out.push(`          (change)="setFilter(${base}, ${ref}.value)"`);
-        out.push(`          aria-label="Filter by ${label}"`);
-        out.push(`          data-testid="filter-${field.name}"`);
-        out.push(`          class="${FILTER_SELECT_CLASS}"`);
-        out.push(`        >`);
-        out.push(`          <option value="">All ${label}</option>`);
-        if (field.list.filter === 'boolean') {
-          out.push(`          <option value="true">Yes</option>`);
-          out.push(`          <option value="false">No</option>`);
-        } else {
-          for (const { value } of field.list.enumValues ?? []) {
-            out.push(`          <option value="${value}">{{ ${field.name}Badges['${value}'].label }}</option>`);
-          }
+      out.push(`          (change)="setFilter(${signalName}, ${ref}.value)"`);
+      out.push(`          aria-label="Filter by ${label}"`);
+      out.push(`          data-testid="filter-${filter.name}"`);
+      out.push(`          class="${FILTER_SELECT_CLASS}"`);
+      out.push(`        >`);
+      out.push(`          <option value="">All ${label}</option>`);
+      if (filter.kind === 'boolean') {
+        out.push(`          <option value="true">Yes</option>`);
+        out.push(`          <option value="false">No</option>`);
+      } else {
+        for (const { value } of filter.render?.list.enumValues ?? []) {
+          out.push(`          <option value="${value}">{{ ${filter.name}Badges['${value}'].label }}</option>`);
         }
-        out.push(`        </select>`);
-        break;
       }
-      case 'date-range':
-        input(`${base}From`, `${base}FromControl`, 'date', `filter-${field.name}-from`, `${label} from`, '');
-        input(`${base}To`, `${base}ToControl`, 'date', `filter-${field.name}-to`, `${label} to`, '');
-        break;
-      case 'number-range':
-        input(`${base}Min`, `${base}MinControl`, 'number', `filter-${field.name}-min`, `${label} minimum`, `Min ${label}`);
-        input(`${base}Max`, `${base}MaxControl`, 'number', `filter-${field.name}-max`, `${label} maximum`, `Max ${label}`);
-        break;
-      default:
-        input(base, `${base}Control`, 'search', `filter-${field.name}`, `Filter by ${label}`, `Filter by ${label}`);
+      out.push(`        </select>`);
+      return out;
     }
+    // A text value is applied when it is committed (Enter or leaving the field): the route matches
+    // whole values, so a partly typed one would match nothing.
+    out.push(`        <input`);
+    out.push(`          #${ref}`);
+    if (filter.kind === 'date') {
+      out.push(`          type="date"`);
+    } else if (filter.kind === 'number') {
+      out.push(`          type="text"`);
+      out.push(`          inputmode="${filter.valueKind === 'long' || filter.valueKind === 'int' ? 'numeric' : 'decimal'}"`);
+    } else {
+      out.push(`          type="text"`);
+    }
+    out.push(`          (change)="setFilter(${signalName}, ${ref}.value)"`);
+    if (filter.kind !== 'date') out.push(`          placeholder="Filter by ${label}"`);
+    out.push(`          aria-label="Filter by ${label}"`);
+    out.push(`          data-testid="filter-${filter.name}"`);
+    out.push(`          class="${FILTER_INPUT_CLASS}"`);
+    out.push(`        />`);
     return out;
-  }
-
-  /**
-   * The body of the `filtered` computed: the signal reads it starts with, and one test per
-   * control, in field declaration order.
-   */
-  private predicates(
-    searchFields: readonly FieldRenderModel[],
-    filterControls: readonly FieldRenderModel[],
-  ): { reads: string[]; tests: string[] } {
-    const reads: string[] = [];
-    const tests: string[] = [];
-    if (searchFields.length > 0) {
-      reads.push(`const query = this.searchQuery().trim().toLowerCase();`);
-      const values = searchFields.map((f) => `item.${f.name}`).join(', ');
-      tests.push(`(query === '' || [${values}].some((value) => textOf(value).includes(query)))`);
-    }
-    for (const field of filterControls) {
-      const base = `filter${capitalize(field.name)}`;
-      const value = `item.${field.name}`;
-      switch (field.list.filter) {
-        case 'boolean':
-          reads.push(`const ${field.name}Filter = this.${base}();`);
-          tests.push(`(${field.name}Filter === '' || ${value} === (${field.name}Filter === 'true'))`);
-          break;
-        case 'enum':
-          reads.push(`const ${field.name}Filter = this.${base}();`);
-          tests.push(`(${field.name}Filter === '' || String(${value}) === ${field.name}Filter)`);
-          break;
-        case 'date-range':
-          tests.push(`inDayRange(${value}, this.${base}From(), this.${base}To())`);
-          break;
-        case 'number-range':
-          tests.push(`inNumberRange(${value}, this.${base}Min(), this.${base}Max())`);
-          break;
-        default:
-          reads.push(`const ${field.name}Filter = this.${base}().trim().toLowerCase();`);
-          tests.push(`(${field.name}Filter === '' || textOf(${value}).includes(${field.name}Filter))`);
-      }
-    }
-    return { reads, tests };
   }
 
   /**
@@ -877,6 +783,11 @@ export class ListGenerator implements CodeGenerator {
       .slice(0, 5)
       .map((f) => f.name);
   }
+}
+
+/** `status` → `filterStatus`: the signal holding one filter control's text. */
+function filterSignalName(name: string): string {
+  return `filter${capitalize(name)}`;
 }
 
 export function generateList(
