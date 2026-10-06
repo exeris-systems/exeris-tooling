@@ -2473,7 +2473,7 @@ Each now has the status the code settles, and every other mention in this file a
 | T13 | Codegen emits per-entity output but never prunes it — a removed/renamed entity breaks the build | Medium | ✅ 0.5.x — `.exeris-codegen-manifest` pruner in both emitters, `CodegenPipeline` and the TS CLI (re-verified 2026-09-26) |
 | T18 | Capability validation × two-pass build deadlock; `mvn clean` + T13 prune wipes the committed L1 tree | Medium | ✅ 0.6.0 (#129 + `exeris:verify-capabilities` deferred-validation gate) |
 | T19 | Repository binds `Instant` as ISO string but DDL declares `TIMESTAMPTZ` — round-trip latent-broken on real Postgres | Medium | **Done 0.6.0** (native `bindInstant`/`getInstant`, kernel 0.10 SPI) |
-| —   | Repository field types outside its type switch were written through `toString()` and read through `X.valueOf(String)`: an `OffsetDateTime` / `ZonedDateTime` field emitted a repository that did not compile (the migration already declared `TIMESTAMPTZ`), and a parameterised non-`List` field (`Map`, `Set`, `Optional`) failed generation inside `ClassName.bestGuess` with no field named | Medium | ✅ 0.9.0 — `OffsetDateTime` / `ZonedDateTime` bind and compare their instant (`bindInstant`) and read back at `ZoneOffset.UTC`; a parameterised non-`List` type or `BigInteger` is refused before anything is written (`EXT-GEN-3003`). `ZonedTemporalFieldE2ETest` round-trips both on H2. ✅ 0.9.0, the rest of the path — `Short` / `Byte` / `Float` (both spellings) bind through `bindShort` / `bindFloat`; `LocalTime`, `Duration`, `Period`, `java.util.Date`, the other `java.time` value types, `char` / `Character` and arrays are refused (`EXT-GEN-3003`). Open: a non-enum type of the application's own without a static `valueOf(String)` still emits a repository that does not compile — generation sees a type name, not the type, so only the processor could tell (a `DomainMetadata` field) |
+| —   | Repository field types outside its type switch were written through `toString()` and read through `X.valueOf(String)`: an `OffsetDateTime` / `ZonedDateTime` field emitted a repository that did not compile (the migration already declared `TIMESTAMPTZ`), and a parameterised non-`List` field (`Map`, `Set`, `Optional`) failed generation inside `ClassName.bestGuess` with no field named | Medium | ✅ 0.9.0 — `OffsetDateTime` / `ZonedDateTime` bind and compare their instant (`bindInstant`) and read back at `ZoneOffset.UTC`; a parameterised non-`List` type or `BigInteger` is refused before anything is written (`EXT-GEN-3003`). `ZonedTemporalFieldE2ETest` round-trips both on H2. ✅ 0.9.0, the rest of the path — `Short` / `Byte` / `Float` (both spellings) bind through `bindShort` / `bindFloat`; `LocalTime`, `Duration`, `Period`, `java.util.Date`, the other `java.time` value types, `char` / `Character` and arrays are refused (`EXT-GEN-3003`), and so is a `List` whose element type is itself parameterised (`List<Map<String, String>>`, `List<List<X>>`, `List<Optional<X>>`). Open: a non-enum type of the application's own without a static `valueOf(String)` still emits a repository that does not compile — generation sees a type name, not the type, so only the processor could tell (a `DomainMetadata` field) |
 | T7  | TS app-structure seams — per-entity path vs `app.routes` import mismatch breaks the build; hardcoded title/redirect | Medium | ✅ 0.6.0 (routes fix + `--app-name` title/redirect, #120) |
 | T6  | Naive English pluralization (`colony → colonys`) in SQL tables + Angular routes | Low | ✅ 0.9.0 — tables take the SDK `effectiveTableName()`, the processor extracts `@ExerisDomain.tableName` and warns where a default table moves, Angular routes take the SDK plural (see "Follow SDK 0.12.0") |
 
@@ -2810,12 +2810,13 @@ Each now has the status the code settles, and every other mention in this file a
 `@exeris/codegen-ts` is versioned in lockstep with this reactor and released on the same tag, to
 npmjs under `@exeris`. Its plan: [`docs/codegen-ts-track-plan.md`](docs/codegen-ts-track-plan.md).
 It measures what the front reads from `DomainMetadata` against what the Java side acts on, and
-lists the TS scope the 0.9.0 cut waits for (P1–P20 there): lockstep version, field-schema and
+lists the TS scope the 0.9.0 cut waits for (P1–P21 there): lockstep version, field-schema and
 strict-audit honesty, backend-less emission, the TS output-stability and Signal Forms ADRs, the
 ADR-047 amendment, `FieldRenderModel` and on it U2 / U5 / U3 with a relationship picker, the
 ui-kit from npmjs, the npm release step, nested schemas that follow the processor, the entity-level
 `@UI` view flags taking effect, emitted headers without a per-release value, the kit's styles on
-Tailwind v4, and generated components styled through the kit's component classes.
+Tailwind v4, generated components styled through the kit's component classes, and the list query
+of ADR-096 (server paging, sort and equality filters).
 
 - [x] **Stage 1 — contract parity.** The emitted edit route edits (#235) · a `versioned` update
       carries its version (#236) · ADR-076 status mapping (#239) · `audited` panel (#240) ·
@@ -2826,9 +2827,11 @@ Tailwind v4, and generated components styled through the kit's component classes
       SSE routes serve: the live-view client listens for each `@DomainEvent` by name, a streaming
       action gets its stream client and no respond-once service method, and
       `contract/stream-routes.json` pins the routes on both sides.
-- [ ] **TS output-stability ADR** — ADR-015 covers codegen-core and codegen-java only; needed before
-      the first npm publication.
-- [ ] **TS 0.9.0 scope** — P1–P20 in the plan; the 0.9.0 cut waits for it.
+- [x] **TS output-stability ADR** — ADR-092 (emitted TypeScript) and ADR-093 (Signal Forms),
+      exeris-tooling #255.
+- [x] **TS 0.9.0 scope** — P1–P21 in the plan, all merged; every breaking change to
+      `@exeris/codegen-ts` or its emitted output since 0.8.0 is recorded in
+      `exeris-codegen-ts/api/accepted-api-changes.json`.
 
 ### UI fidelity & theming (`exeris-codegen-ts`)
 
@@ -3781,7 +3784,7 @@ Expected to pair with kernel 0.13, and with SDK 0.13 if one is needed.
 (a kernel contract for concurrent flow steps). Each gets a milestone when its upstream half lands.
 
 **`@exeris/codegen-ts` → npmjs** ships in 0.9.0, in lockstep with the reactor; the 0.9.0 cut
-waits for the TS scope in [`docs/codegen-ts-track-plan.md`](docs/codegen-ts-track-plan.md) (P1–P20).
+waits for the TS scope in [`docs/codegen-ts-track-plan.md`](docs/codegen-ts-track-plan.md) (P1–P21).
 The TS side is further behind than the Java side, and it is what a `@View` front end is generated
 from. **`@Channel` emission** is 0.12.0.
 
