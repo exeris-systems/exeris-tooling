@@ -30,8 +30,8 @@
 #
 # @exeris/codegen-ts (npm) is released by the same tag: this gate also fails when its package.json
 # or package-lock.json version differs from the reactor's, when that version is a -SNAPSHOT, and
-# when package.json lacks what publishing to npmjs depends on: the `repository` npm provenance and
-# trusted publishing match against this repository, a `files` list, `publishConfig.access` public
+# when package.json lacks what publishing to npmjs depends on: the `repository` npm provenance
+# matches against this repository, a `files` list, `publishConfig.access` public
 # (a scoped package is otherwise published restricted), the `exeris-gen` bin under dist/, and the
 # LICENSE file its `license` names.
 #
@@ -282,7 +282,7 @@ if lock_versions != {npm_version}:
 if npm_version.endswith('-SNAPSHOT'):
     failures.append(f'exeris-codegen-ts/package.json is at {npm_version}; npm receives final versions only')
 
-# What publishing to npmjs depends on. Trusted publishing and provenance compare `repository` with
+# What publishing to npmjs depends on. Provenance compares `repository` with
 # the repository the workflow runs in.
 pkg = json.loads((npm_dir / 'package.json').read_text())
 repo = pkg.get('repository') if isinstance(pkg.get('repository'), dict) else {}

@@ -31,24 +31,23 @@ name: release to maven central and npmjs
 # environment, and before publishing it waits for the Maven release to be visible on Maven Central.
 # The order a release follows is therefore: tag → Maven deployment uploaded → a person presses
 # Publish in the Central Portal → the npm job (approved in the environment, when it has a required
-# reviewer) sees the release on Central and publishes. A deployment that is Dropped leaves npm
-# untouched; the only half-release left is an npm publish that fails after Maven is published, and
-# that is finished by re-running the npm job, which never publishes a version twice.
+# reviewer) sees the release on Central and stages the npm version → a maintainer approves the
+# staged version with 2FA, and only then is it live. A deployment that is Dropped leaves npm
+# untouched; the only half-release left is an npm stage that fails after Maven is published, and
+# that is finished by re-running the npm job, which never stages a version npm already holds.
 #
-# npm authenticates by trusted publishing (OIDC): npmjs trusts this repository, this file and the
-# `npm-publish` environment, and no token is stored. Provenance is attached to the published
-# version. A dispatch never publishes to npm, whatever `upload` says: it packs, and runs
-# `npm publish --dry-run`.
+# npm releases are staged, as @exeris/ui-kit's are in exeris-sdk: CI holds a token that can only
+# stage, and a version goes live when a maintainer approves it with 2FA. Provenance is attached
+# through this workflow's OIDC token (`publishConfig.provenance`). A dispatch never stages to npm,
+# whatever `upload` says: it packs, and runs `npm stage publish --dry-run`.
 #
 # Required repository (or organisation) secrets:
 #   GPG_PRIVATE_KEY         armoured private key whose public half is on a keyserver Central reads
 #   GPG_PASSPHRASE          its passphrase
 #   CENTRAL_TOKEN_USERNAME  Central Portal user token, username half (central.sonatype.com/usertoken)
 #   CENTRAL_TOKEN_PASSWORD  Central Portal user token, password half
-# Optional:
-#   NPM_TOKEN               npm granular access token with publish rights on @exeris/codegen-ts.
-#                           A fallback for when trusted publishing is not configured: npm tries
-#                           OIDC first and uses the token only when that fails.
+#   NPM_TOKEN               npm granular access token with "Read and write (stage only)" on the
+#                           @exeris scope; it can stage a version, never make one live
 
 on:
   push:
@@ -313,7 +312,7 @@ jobs:
   # The dry run of the npm half. Same checks as the publishing job, then a tarball and
   # `npm publish --dry-run`, which reports what it would upload and needs no credentials.
   npm-dry-run:
-    name: npm — pack and publish --dry-run
+    name: npm — pack and stage publish --dry-run
     needs: release
     if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
@@ -334,6 +333,9 @@ jobs:
           cache: npm
           cache-dependency-path: exeris-codegen-ts/package-lock.json
 
+      - name: Install npm with `npm stage`
+        run: npm install -g npm@^11.15.0
+
       - name: Set the release version and refuse an unreleasable one
         env:
           WANT: ${{ needs.release.outputs.version }}
@@ -352,11 +354,11 @@ jobs:
 
       # `npm pack` runs `prepack`, which cleans and rebuilds dist/, so the tarball holds what this
       # commit's sources compile to and nothing a previous build left behind.
-      - name: Pack, and publish --dry-run
+      - name: Pack, and stage publish --dry-run
         run: |
           set -euo pipefail
           npm pack --pack-destination "$RUNNER_TEMP"
-          npm publish --dry-run --access public
+          npm stage publish --dry-run
 
       - name: Upload the tarball as a run artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -373,13 +375,16 @@ jobs:
     # not on main, or whose package.json disagrees with it; `needs` carries those refusals here.
     if: ${{ github.event_name == 'push' && needs.release.outputs.upload == 'true' }}
     runs-on: ubuntu-latest
-    # npmjs's trusted-publisher entry names this environment, so a publish from any other job or
-    # workflow is refused by the registry. A required reviewer on it is the hold point between
-    # pressing Publish in the Central Portal and releasing the npm half.
+    # Staged, not published, as @exeris/ui-kit is in exeris-sdk: `npm stage publish` submits the
+    # version for review, and it goes live only when a maintainer approves it with 2FA
+    # (`npm stage approve <stage-id>`, or Approve under the package's Staged Packages tab on
+    # npmjs.com). CI therefore holds no credential that can put a version on the registry by
+    # itself. A required reviewer on this environment is the hold point between pressing Publish
+    # in the Central Portal and staging the npm half.
     environment: npm-publish
     permissions:
       contents: read
-      id-token: write   # OIDC token exchanged for a short-lived npm publish credential
+      id-token: write   # OIDC token that signs the provenance statement (publishConfig.provenance)
     defaults:
       run:
         working-directory: exeris-codegen-ts
@@ -388,8 +393,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # registry-url writes an .npmrc for npmjs. Trusted publishing needs npm >= 11.5.1 and
-      # Node >= 22.14.0; the step below checks the npm half.
+      # registry-url writes an .npmrc for npmjs that reads NODE_AUTH_TOKEN.
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -398,7 +402,10 @@ jobs:
           cache: npm
           cache-dependency-path: exeris-codegen-ts/package-lock.json
 
-      - name: Refuse an unreleasable version or an npm without trusted publishing
+      - name: Install npm with `npm stage`
+        run: npm install -g npm@^11.15.0
+
+      - name: Refuse an unreleasable version or an npm without `npm stage`
         env:
           WANT: ${{ needs.release.outputs.version }}
         run: |
@@ -418,12 +425,12 @@ jobs:
           npm_version="$(npm --version)"
           if ! node -e '
             const [a, b, c] = process.argv[1].split(".").map(Number);
-            process.exit(a > 11 || (a === 11 && (b > 5 || (b === 5 && c >= 1))) ? 0 : 1);
+            process.exit(a > 11 || (a === 11 && b >= 15) ? 0 : 1);
           ' "$npm_version"; then
-            echo "::error::npm $npm_version cannot use trusted publishing (needs >= 11.5.1)." >&2
+            echo "::error::npm $npm_version has no npm stage (needs >= 11.15.0)." >&2
             exit 1
           fi
-          echo "publishing @exeris/codegen-ts@$have with npm $npm_version"
+          echo "staging @exeris/codegen-ts@$have with npm $npm_version"
 
       - name: npm ci + test
         run: |
@@ -451,17 +458,22 @@ jobs:
           echo "::error::eu.exeris.tooling $WANT is not on Maven Central. Publish the deployment in the Central Portal, then re-run this job. Nothing was published to npm." >&2
           exit 1
 
-      # A version npm already holds can never be published again, so a re-run after a successful
-      # publish finds it and stops.
-      - name: Publish to npmjs (trusted publishing, provenance)
+      # A version npm already holds can never be staged again, so a re-run after an approved
+      # release finds it and stops. Auth: the NPM_TOKEN repository secret, an npm granular access
+      # token with "Read and write (stage only)" on the @exeris scope.
+      - name: Stage the publish on npmjs (provenance, approved with 2FA)
         env:
           WANT: ${{ needs.release.outputs.version }}
-          # Empty unless the fallback secret exists; OIDC is tried first either way.
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
           if published="$(npm view "@exeris/codegen-ts@$WANT" version 2>/dev/null)" && [ "$published" = "$WANT" ]; then
-            echo "@exeris/codegen-ts@$WANT is already on npmjs; nothing to publish."
+            echo "@exeris/codegen-ts@$WANT is already on npmjs; nothing to stage."
             exit 0
           fi
-          npm publish --provenance --access public
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "::error::NPM_TOKEN is not set. Add an npm granular access token with stage rights on @exeris as the NPM_TOKEN repository secret. Nothing was staged." >&2
+            exit 1
+          fi
+          npm stage publish
+          echo "::notice::@exeris/codegen-ts@$WANT is staged, not live. Approve it with 2FA: npm stage approve <stage-id>, or the Staged Packages tab on npmjs.com."
