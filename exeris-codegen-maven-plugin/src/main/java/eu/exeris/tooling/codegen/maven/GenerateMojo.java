@@ -3,6 +3,7 @@ package eu.exeris.tooling.codegen.maven;
 import eu.exeris.tooling.codegen.core.capability.CapabilityGraphException;
 import eu.exeris.tooling.codegen.java.CodegenPipeline;
 import eu.exeris.tooling.codegen.java.EmptyMetadataException;
+import eu.exeris.tooling.codegen.java.kernel.UnpersistableFieldTypeException;
 import eu.exeris.tooling.diagnostics.DiagnosticId;
 import org.apache.maven.model.Plugin;
 import org.apache.maven.model.PluginExecution;
@@ -201,6 +202,10 @@ public class GenerateMojo extends AbstractMojo {
         } catch (EmptyMetadataException e) {
             // Empty metadata from a masked compile failure (T18) — user-side, as above.
             throw new MojoFailureException(DiagnosticId.EMPTY_METADATA_REFUSED.format(e.getMessage()), e);
+        } catch (UnpersistableFieldTypeException e) {
+            // A field type the repository cannot persist — user-side. The message already carries
+            // its own identifier (EXT-GEN-3003), so it is passed through, not re-labelled.
+            throw new MojoFailureException(e.getMessage(), e);
         } catch (IOException e) {
             throw new MojoExecutionException(DiagnosticId.GENERATION_FAILED.format(
                     "Code generation failed (metadataDir=" + metadataDir + "): " + e), e);

@@ -59,6 +59,14 @@ import java.util.Set;
  *       TIMESTAMPTZ and the stored value is the UTC-offset instant of the
  *       wall-clock time, reversed symmetrically on read. Callers must treat
  *       persisted {@code LocalDateTime} values as UTC.</li>
+ *   <li>{@code OffsetDateTime} and {@code ZonedDateTime} bind their instant
+ *       through {@code bindInstant} into a TIMESTAMPTZ column and read back
+ *       through {@code getInstant} <b>at {@code ZoneOffset.UTC}</b>: the instant
+ *       is preserved, the offset or zone the value carried is not.</li>
+ *   <li>A field whose type has no column encoding — a parameterised type other
+ *       than {@code List<X>}, or {@code BigInteger} — is refused before
+ *       anything is emitted ({@link UnpersistableFieldTypeException},
+ *       {@code EXT-GEN-3003}).</li>
  * </ul>
  *
  * @implNote Emission is JavaPoet-based (ADR-015).
@@ -77,6 +85,8 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     private static final ClassName INSTANT = ClassName.get("java.time", INSTANT_TYPE);
     private static final ClassName LOCAL_DATE = ClassName.get("java.time", "LocalDate");
     private static final ClassName LOCAL_DATE_TIME = ClassName.get("java.time", "LocalDateTime");
+    private static final ClassName OFFSET_DATE_TIME = ClassName.get("java.time", "OffsetDateTime");
+    private static final ClassName ZONED_DATE_TIME = ClassName.get("java.time", "ZonedDateTime");
     private static final ClassName ZONE_OFFSET = ClassName.get("java.time", "ZoneOffset");
     private static final ClassName BIG_DECIMAL = ClassName.get("java.math", "BigDecimal");
     /**
@@ -165,8 +175,55 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         return DomainTypeKind.of(type);
     }
 
+    /**
+     * Refuses the entity set when any entity has a domain column whose type the repository cannot
+     * store and read back: a parameterised type other than {@code List<…>}, or {@code BigInteger}.
+     * A field that is not a column — one shadowing the primary key or an active system column — is
+     * not checked, since nothing binds or reads it.
+     *
+     * <p>Called by the pipeline before it writes anything, so a refused build leaves the generated
+     * tree as it was; {@link #generate} applies the same check to its one entity.
+     *
+     * @param domains the entities of one generation run
+     * @throws UnpersistableFieldTypeException naming every refused field, sorted
+     */
+    public static void requirePersistableFields(List<DomainMetadata> domains) {
+        List<String> refused = new ArrayList<>();
+        for (DomainMetadata metadata : domains) {
+            refused.addAll(unpersistableFields(metadata));
+        }
+        if (!refused.isEmpty()) {
+            throw new UnpersistableFieldTypeException(refused.stream().sorted().toList());
+        }
+    }
+
+    private static List<String> unpersistableFields(DomainMetadata metadata) {
+        List<String> refused = new ArrayList<>();
+        for (Column col : buildColumnLayout(metadata.fields(), metadata, resolveSystemFieldNames(metadata))) {
+            if (col.kind() == ColumnKind.DOMAIN && !persistable(col.javaType())) {
+                String reason = col.javaType().contains("<")
+                        ? "a parameterised type other than List<…>"
+                        : "no typed SPI accessor and no valueOf(String); BigDecimal is stored";
+                refused.add(metadata.packageName() + "." + metadata.entityName() + "." + col.javaName()
+                        + " : " + col.javaType() + " (" + reason + ")");
+            }
+        }
+        return refused;
+    }
+
+    /**
+     * Whether the repository has a column encoding for {@code type}: every kind but
+     * {@code BIG_INTEGER} and a parameterised {@code OPAQUE} type, which has no {@code valueOf(String)}
+     * and whose type arguments may name a recognised type.
+     */
+    private static boolean persistable(String type) {
+        DomainTypeKind kind = classifyDomainType(type);
+        return kind != DomainTypeKind.BIG_INTEGER && !(kind == DomainTypeKind.OPAQUE && type.contains("<"));
+    }
+
     @Override
     public GeneratedFile generate(DomainMetadata metadata) {
+        requirePersistableFields(List.of(metadata));
         String basePackage = metadata.packageName().replace(".domain", "");
         String packageName = basePackage + ".repository";
         String entity = metadata.entityName();
@@ -769,9 +826,10 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     /**
      * Binds the single finder parameter at index 0, dispatching on the
      * parameter's domain type via the same {@link #classifyDomainType} the CRUD
-     * binds use. Types the SPI has no typed binder for (BigDecimal / LocalDate /
-     * enum / temporal) round-trip via a null-guarded {@code String}, matching
-     * {@link #emitBindDomain}.
+     * binds use. An {@code OffsetDateTime} or {@code ZonedDateTime} binds its
+     * instant, as {@link #emitBindDomain} does; every other type the SPI has no
+     * typed binder for (BigDecimal / LocalDate / enum / Instant / LocalDateTime)
+     * is bound as a null-guarded {@code String}.
      */
     private CodeBlock finderBind(String paramTypeName, String paramName) {
         return switch (classifyDomainType(paramTypeName)) {
@@ -781,6 +839,10 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
             case INT -> CodeBlock.of("stmt.bindInt(0, $L);", paramName);
             case BOOL -> CodeBlock.of("stmt.bindBoolean(0, $L);", paramName);
             case DOUBLE -> CodeBlock.of("stmt.bindDouble(0, $L);", paramName);
+            // Compared as the stored instant, the encoding the write path binds.
+            case OFFSET_DATE_TIME, ZONED_DATE_TIME -> CodeBlock.of(
+                    "if ($L == null) stmt.bindNull(0); else stmt.bindInstant(0, $L.toInstant());",
+                    paramName, paramName);
             default -> CodeBlock.of("stmt.bindString(0, $L == null ? null : $L.toString());",
                     paramName, paramName);
         };
@@ -1332,10 +1394,29 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
             case LOCAL_DATE -> map.addCode(CodeBlock.of(
                     "{ String v = row.getString($L); if (v != null) $L($T.parse(v)); }\n",
                     idx, setter, LOCAL_DATE));
+            // The column holds the instant; the offset or zone the value was written with is not
+            // stored, so it is read back at UTC (null-guarded, as for LocalDateTime).
+            case OFFSET_DATE_TIME -> map.addCode(CodeBlock.of(
+                    "{ $T v = row.getInstant($L); if (v != null) $L($T.ofInstant(v, $T.UTC)); }\n",
+                    INSTANT, idx, setter, OFFSET_DATE_TIME, ZONE_OFFSET));
+            case ZONED_DATE_TIME -> map.addCode(CodeBlock.of(
+                    "{ $T v = row.getInstant($L); if (v != null) $L($T.ofInstant(v, $T.UTC)); }\n",
+                    INSTANT, idx, setter, ZONED_DATE_TIME, ZONE_OFFSET));
+            case BIG_INTEGER -> throw unsupported(type);
             // A type string never classifies as ENUM (DomainTypeKind.of(String)); an enum and a
             // type nothing recognises are both read back through the type's valueOf(String).
             case ENUM, OPAQUE -> emitReadEnumLike(map, type, setter, idx, ctx);
         }
+    }
+
+    /**
+     * What an emit switch throws on a {@code BIG_INTEGER} column. {@link #generate} refuses such an
+     * entity before emitting anything, so no switch reaches it; one that did would otherwise emit a
+     * column with no encoding.
+     */
+    private static IllegalStateException unsupported(String type) {
+        return new IllegalStateException("no column encoding for " + type
+                + "; generate() refuses it through requirePersistableFields");
     }
 
     private void emitReadList(MethodSpec.Builder map, String type, String setter, int idx) {
@@ -1431,6 +1512,11 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
             case LOCAL_DATE_TIME -> body.add(
                     "if ($L == null) stmt.bindNull($L); else stmt.bindInstant($L, $L.toInstant($T.UTC));\n",
                     getter, idx, idx, getter, ZONE_OFFSET);
+            // The instant is what is stored; the offset or zone is not (read back at UTC).
+            case OFFSET_DATE_TIME, ZONED_DATE_TIME -> body.add(
+                    "if ($L == null) stmt.bindNull($L); else stmt.bindInstant($L, $L.toInstant());\n",
+                    getter, idx, idx, getter);
+            case BIG_INTEGER -> throw unsupported(type);
             // SPI has no bindLocalDate / enum binds — round-trip via String.toString();
             // null-guarded.
             case LOCAL_DATE, ENUM, OPAQUE ->

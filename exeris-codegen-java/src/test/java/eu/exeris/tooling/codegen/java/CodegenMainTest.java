@@ -2,6 +2,7 @@ package eu.exeris.tooling.codegen.java;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
+import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 import eu.exeris.tooling.diagnostics.DiagnosticId;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -14,6 +15,8 @@ import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -131,6 +134,30 @@ class CodegenMainTest {
     @Nested
     @DisplayName("exit code 1 — pipeline failure")
     class PipelineFailure {
+
+        @Test
+        @DisplayName("a field type the repository cannot persist → exit 1, EXT-GEN-3003 on stderr, nothing written")
+        void unpersistableFieldTypeIsPrinted() throws IOException {
+            DomainMetadata domain = DomainMetadata.builder("Product", "com.shop.domain")
+                    .module("catalog").path("/products")
+                    .fields(List.of(FieldMetadata.simple(
+                            "attributes", "java.util.Map<java.lang.String,java.lang.String>")))
+                    .build();
+            mapper.writeValue(metadataDir.resolve("Product.json").toFile(), domain);
+
+            ByteArrayOutputStream err = new ByteArrayOutputStream();
+            int exitCode = CodegenMain.runOrPrintError(
+                    argsFor(metadataDir, outputDir, "com.shop"),
+                    new PrintStream(err, true, StandardCharsets.UTF_8));
+
+            assertThat(exitCode).isOne();
+            assertThat(capture(err))
+                    .startsWith(DiagnosticId.FIELD_TYPE_NOT_PERSISTABLE.format(""))
+                    .contains("com.shop.domain.Product.attributes");
+            try (Stream<Path> written = Files.list(outputDir)) {
+                assertThat(written).isEmpty();
+            }
+        }
 
         @Test
         @DisplayName("malformed JSON in metadata dir → exit 1, no stderr (failure goes to logger)")

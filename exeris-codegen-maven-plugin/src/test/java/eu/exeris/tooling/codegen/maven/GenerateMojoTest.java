@@ -2,6 +2,7 @@ package eu.exeris.tooling.codegen.maven;
 
 import eu.exeris.tooling.codegen.core.capability.CapabilityGraphException;
 import eu.exeris.tooling.codegen.java.EmptyMetadataException;
+import eu.exeris.tooling.codegen.java.kernel.UnpersistableFieldTypeException;
 import org.apache.maven.model.Build;
 import org.apache.maven.model.Plugin;
 import org.apache.maven.model.PluginExecution;
@@ -112,6 +113,25 @@ class GenerateMojoTest {
                 .hasMessageContaining("Refusing to wipe")
                 .hasMessageContaining("allowEmpty=true");
         // failure occurs before the compile source root is registered
+        assertThat(mojo.project.getCompileSourceRoots())
+                .doesNotContain(mojo.outputDir.getAbsolutePath());
+    }
+
+    @Test
+    @DisplayName("surfaces an UnpersistableFieldTypeException as MojoFailureException carrying EXT-GEN-3003 unchanged")
+    void surfacesUnpersistableFieldType(@TempDir Path tmp) {
+        GenerateMojo mojo = mojo(tmp, new ArrayList<>());
+        mojo.pipeline = (m, o, b, ae, defer) -> {
+            throw new UnpersistableFieldTypeException(List.of(
+                    "com.shop.domain.Product.attributes : java.util.Map<java.lang.String,java.lang.String>"
+                            + " (a parameterised type other than List<…>)"));
+        };
+
+        assertThatThrownBy(mojo::execute)
+                .isInstanceOf(MojoFailureException.class)
+                .hasMessageStartingWith("[Exeris] EXT-GEN-3003: ")
+                .hasMessageNotContaining("EXT-PLUG-")
+                .hasMessageContaining("com.shop.domain.Product.attributes");
         assertThat(mojo.project.getCompileSourceRoots())
                 .doesNotContain(mojo.outputDir.getAbsolutePath());
     }

@@ -39,16 +39,32 @@ public enum DomainTypeKind {
     LOCAL_DATE_TIME,
     LOCAL_DATE,
     /**
+     * {@code OffsetDateTime}: stored as its instant in a {@code TIMESTAMPTZ} column and read back at
+     * {@code ZoneOffset.UTC}. A sort key, ordered by instant.
+     */
+    OFFSET_DATE_TIME,
+    /**
+     * {@code ZonedDateTime}: stored as its instant in a {@code TIMESTAMPTZ} column and read back at
+     * {@code ZoneOffset.UTC}. A sort key, ordered by instant.
+     */
+    ZONED_DATE_TIME,
+    /**
+     * {@code BigInteger}: no typed SPI accessor and no {@code valueOf(String)}, so the repository
+     * has no column encoding for it and generation refuses the field ({@code EXT-GEN-3003}).
+     */
+    BIG_INTEGER,
+    /**
      * A field typed as an enum: stored as its constant's name and read back through the enum's
      * {@code valueOf(String)}. A list filter and a sort key.
      */
     ENUM,
     /**
-     * A type nothing here recognises — a map, a set, a record, {@code OffsetDateTime},
-     * {@code BigInteger}. The repository stores it through {@code toString()} and reads it back
-     * through the type's static {@code valueOf(String)}, which compiles only for a type that has
-     * one; its column may hold JSON or an engine-specific rendering, so it is never a list filter
-     * or a sort key.
+     * A type nothing here recognises — a record, a value type, {@code Float}, {@code Short}, or a
+     * parameterised type other than {@code List}. The repository stores it through
+     * {@code toString()} and reads it back through the type's static {@code valueOf(String)}, which
+     * compiles only for a type that has one; its column may hold an engine-specific rendering, so
+     * it is never a list filter or a sort key. A parameterised one has no such method, and
+     * generation refuses the field ({@code EXT-GEN-3003}).
      */
     OPAQUE;
 
@@ -61,6 +77,9 @@ public enum DomainTypeKind {
     private static final Set<String> BOOL_TYPES = Set.of("Boolean", "boolean", "java.lang.Boolean");
     private static final Set<String> DOUBLE_TYPES = Set.of("Double", "double", "java.lang.Double");
     private static final Set<String> BIG_DECIMAL_TYPES = Set.of("BigDecimal", "java.math.BigDecimal");
+    private static final Set<String> OFFSET_DATE_TIME_TYPES = Set.of("OffsetDateTime", "java.time.OffsetDateTime");
+    private static final Set<String> ZONED_DATE_TIME_TYPES = Set.of("ZonedDateTime", "java.time.ZonedDateTime");
+    private static final Set<String> BIG_INTEGER_TYPES = Set.of("BigInteger", "java.math.BigInteger");
 
     /**
      * The kind of a field: {@link #ENUM} when its type is not otherwise recognised and its
@@ -92,6 +111,9 @@ public enum DomainTypeKind {
         if (BOOL_TYPES.contains(type)) return BOOL;
         if (DOUBLE_TYPES.contains(type)) return DOUBLE;
         if (BIG_DECIMAL_TYPES.contains(type)) return BIG_DECIMAL;
+        if (OFFSET_DATE_TIME_TYPES.contains(type)) return OFFSET_DATE_TIME;
+        if (ZONED_DATE_TIME_TYPES.contains(type)) return ZONED_DATE_TIME;
+        if (BIG_INTEGER_TYPES.contains(type)) return BIG_INTEGER;
         if (type.contains("Instant")) return INSTANT_LIKE;
         // LocalDateTime before LocalDate: "LocalDateTime".contains("LocalDate").
         if (type.contains("LocalDateTime")) return LOCAL_DATE_TIME;

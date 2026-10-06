@@ -89,6 +89,7 @@ class DiagnosticIdTest {
         m.put(DiagnosticId.RUNTIME_DRIVER_MISSING, "EXT-PLUG-2302");
         m.put(DiagnosticId.CLI_GENERATION_FAILED, "EXT-GEN-3001");
         m.put(DiagnosticId.CLI_ARGUMENTS_INVALID, "EXT-GEN-3002");
+        m.put(DiagnosticId.FIELD_TYPE_NOT_PERSISTABLE, "EXT-GEN-3003");
         m.put(DiagnosticId.NO_METADATA_FOUND, "EXT-GEN-3101");
         m.put(DiagnosticId.OPTIONAL_REQUIREMENT_UNSATISFIED, "EXT-GEN-3102");
         m.put(DiagnosticId.CAPABILITY_GRAPH_DEFERRED, "EXT-GEN-3103");

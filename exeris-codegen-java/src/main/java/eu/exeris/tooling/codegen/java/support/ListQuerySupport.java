@@ -57,8 +57,9 @@ public final class ListQuerySupport {
 
     /**
      * The kinds a filter value can be parsed into from a query parameter. A {@code List} column is
-     * JSON text, so equality on it is not meaningful; {@code Instant} and {@code LocalDateTime}
-     * equality matches one instant and nothing a person types, so those wait for range filters; an
+     * JSON text, so equality on it is not meaningful; {@code Instant}, {@code LocalDateTime},
+     * {@code OffsetDateTime} and {@code ZonedDateTime} equality matches one instant and nothing a
+     * person types, so those wait for range filters; an
      * {@link DomainTypeKind#OPAQUE} type has no parse this route knows.
      */
     private static final Set<DomainTypeKind> FILTER_KINDS = EnumSet.of(
@@ -67,15 +68,16 @@ public final class ListQuerySupport {
             DomainTypeKind.LOCAL_DATE, DomainTypeKind.ENUM);
 
     /**
-     * The kinds a column can be ordered by: the filter kinds and the two timestamps. Not a
+     * The kinds a column can be ordered by: the filter kinds and the four timestamp kinds, each a
+     * {@code TIMESTAMPTZ} column ordered by instant. Not a
      * {@code List} column, which is JSON text, and not an {@link DomainTypeKind#OPAQUE} one, whose
      * stored text need not order as its values do.
      */
     private static final Set<DomainTypeKind> SORT_KINDS = EnumSet.of(
             DomainTypeKind.UUID, DomainTypeKind.STRING, DomainTypeKind.LONG, DomainTypeKind.INT,
             DomainTypeKind.BOOL, DomainTypeKind.DOUBLE, DomainTypeKind.BIG_DECIMAL,
-            DomainTypeKind.INSTANT_LIKE, DomainTypeKind.LOCAL_DATE_TIME, DomainTypeKind.LOCAL_DATE,
-            DomainTypeKind.ENUM);
+            DomainTypeKind.INSTANT_LIKE, DomainTypeKind.LOCAL_DATE_TIME, DomainTypeKind.OFFSET_DATE_TIME,
+            DomainTypeKind.ZONED_DATE_TIME, DomainTypeKind.LOCAL_DATE, DomainTypeKind.ENUM);
 
     private ListQuerySupport() {}
 
@@ -227,14 +229,16 @@ public final class ListQuerySupport {
 
     /**
      * The metadata type strings a sort key may have besides an enum, both spellings, sorted — the
-     * filterable scalar types and {@code Instant} and {@code LocalDateTime}. Published in the
+     * filterable scalar types and {@code Instant}, {@code LocalDateTime}, {@code OffsetDateTime} and
+     * {@code ZonedDateTime}, each ordered by instant. Published in the
      * contract file so the front offers a sort only on a column the server orders.
      *
      * @return the sortable scalar type names
      */
     public static List<String> sortableScalarTypes() {
         List<String> types = new ArrayList<>(filterableScalarTypes());
-        types.addAll(List.of("Instant", "java.time.Instant", "LocalDateTime", "java.time.LocalDateTime"));
+        types.addAll(List.of("Instant", "java.time.Instant", "LocalDateTime", "java.time.LocalDateTime",
+                "OffsetDateTime", "java.time.OffsetDateTime", "ZonedDateTime", "java.time.ZonedDateTime"));
         types.sort(null);
         return List.copyOf(types);
     }

@@ -139,7 +139,9 @@ is bound to take the verdict.
 ## Code-generation pipeline — `EXT-GEN`
 
 Logged by the pipeline in `exeris-codegen-java` through `System.Logger`, so they appear inside a
-Maven build as well as from the `CodegenMain` command line.
+Maven build as well as from the `CodegenMain` command line. A refusal (`EXT-GEN-3003`) fails the
+run instead: `exeris:generate` prints it as its goal failure, and `CodegenMain` prints it and exits
+with status 1.
 
 ### 30xx — errors
 
@@ -147,6 +149,7 @@ Maven build as well as from the `CodegenMain` command line.
 |---|---|---|
 | `EXT-GEN-3001` | The codegen command line failed to generate code. | Read the exception logged with it, which names the cause. |
 | `EXT-GEN-3002` | The codegen command line was given missing or malformed arguments. | Pass `--metadata-dir` and `--output-dir`, as the usage text printed under it says. |
+| `EXT-GEN-3003` | An entity field has a type the generated repository cannot store and read back: a parameterised type other than `List<…>` (`Map`, `Set`, `Optional`, …), or `BigInteger`. Nothing is generated. | Declare the field as a `List<…>` (stored as a JSON column) or as a supported scalar — `BigDecimal` in place of `BigInteger`. The message names every such field. |
 
 ### 31xx — warnings
 

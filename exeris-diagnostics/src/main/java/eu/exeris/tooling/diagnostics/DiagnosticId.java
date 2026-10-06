@@ -258,6 +258,13 @@ public enum DiagnosticId {
     CLI_ARGUMENTS_INVALID("EXT-GEN-3002",
             "The codegen command line was given missing or malformed arguments."),
 
+    /**
+     * An entity field's type is one the generated repository cannot store and read back — a
+     * parameterised type other than {@code List<…>}, or {@code BigInteger}. Nothing is generated.
+     */
+    FIELD_TYPE_NOT_PERSISTABLE("EXT-GEN-3003",
+            "An entity field has a type the generated repository cannot store and read back."),
+
     // -----------------------------------------------------------------------
     // EXT-GEN-31xx — code-generation pipeline warnings
     // -----------------------------------------------------------------------

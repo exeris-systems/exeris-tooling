@@ -12,13 +12,21 @@ class DomainTypeKindTest {
     @Test
     @DisplayName("a type string nothing recognises is OPAQUE, an enum's included")
     void unrecognisedTypeStringsAreOpaque() {
-        assertThat(DomainTypeKind.of("java.time.OffsetDateTime")).isEqualTo(DomainTypeKind.OPAQUE);
-        assertThat(DomainTypeKind.of("java.time.ZonedDateTime")).isEqualTo(DomainTypeKind.OPAQUE);
-        assertThat(DomainTypeKind.of("java.math.BigInteger")).isEqualTo(DomainTypeKind.OPAQUE);
         assertThat(DomainTypeKind.of("java.lang.Float")).isEqualTo(DomainTypeKind.OPAQUE);
         assertThat(DomainTypeKind.of("short")).isEqualTo(DomainTypeKind.OPAQUE);
         assertThat(DomainTypeKind.of("java.util.Set<java.lang.String>")).isEqualTo(DomainTypeKind.OPAQUE);
         assertThat(DomainTypeKind.of("com.example.domain.OrderStatus")).isEqualTo(DomainTypeKind.OPAQUE);
+    }
+
+    @Test
+    @DisplayName("OffsetDateTime, ZonedDateTime and BigInteger have kinds of their own, in both spellings")
+    void zonedDateTimesAndBigIntegerAreRecognised() {
+        assertThat(DomainTypeKind.of("java.time.OffsetDateTime")).isEqualTo(DomainTypeKind.OFFSET_DATE_TIME);
+        assertThat(DomainTypeKind.of("OffsetDateTime")).isEqualTo(DomainTypeKind.OFFSET_DATE_TIME);
+        assertThat(DomainTypeKind.of("java.time.ZonedDateTime")).isEqualTo(DomainTypeKind.ZONED_DATE_TIME);
+        assertThat(DomainTypeKind.of("ZonedDateTime")).isEqualTo(DomainTypeKind.ZONED_DATE_TIME);
+        assertThat(DomainTypeKind.of("java.math.BigInteger")).isEqualTo(DomainTypeKind.BIG_INTEGER);
+        assertThat(DomainTypeKind.of("BigInteger")).isEqualTo(DomainTypeKind.BIG_INTEGER);
     }
 
     @Test

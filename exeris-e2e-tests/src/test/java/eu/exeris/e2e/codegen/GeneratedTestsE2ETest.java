@@ -305,6 +305,7 @@ class GeneratedTestsE2ETest {
 
                 import java.math.BigDecimal;
                 import java.time.Instant;
+                import java.time.OffsetDateTime;
                 import java.util.UUID;
 
                 @ExerisDomain(module = "sales", path = "/orders")
@@ -354,6 +355,11 @@ class GeneratedTestsE2ETest {
                     @Field(label = "Placed At")
                     private Instant placedAt;
 
+                    // Bound and read as its instant; the emitted tests have to compile against
+                    // that repository and pass.
+                    @Field(label = "Promised For")
+                    private OffsetDateTime promisedFor;
+
                     public UUID getId() {
                         return id;
                     }
@@ -400,6 +406,14 @@ class GeneratedTestsE2ETest {
 
                     public void setPlacedAt(Instant placedAt) {
                         this.placedAt = placedAt;
+                    }
+
+                    public OffsetDateTime getPromisedFor() {
+                        return promisedFor;
+                    }
+
+                    public void setPromisedFor(OffsetDateTime promisedFor) {
+                        this.promisedFor = promisedFor;
                     }
 
                     @SagaStep(order = 0, name = "reserveStock", service = "inventory",

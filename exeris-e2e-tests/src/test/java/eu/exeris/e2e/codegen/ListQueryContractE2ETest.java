@@ -228,12 +228,11 @@ class ListQueryContractE2ETest {
 
     @Test
     @DisplayName("through the real processor, a type nothing recognises is neither a sort key nor a "
-            + "filter, and the list query for it compiles; an enum is both")
+            + "filter, and the list query for it compiles; an enum is both; an OffsetDateTime is a sort key only")
     @SuppressWarnings("unchecked")
     void unrecognisedTypesAreNeitherSortKeysNorFilters(@TempDir Path root) throws Exception {
-        // The generated repository reads an unrecognised column through the type's valueOf(String),
-        // which OffsetDateTime, Map, Set and BigInteger lack, so this entity's whole tree does not
-        // compile; the list query and page are compiled on their own.
+        // Generation refuses the Map, Set and BigInteger fields (EXT-GEN-3003), so this entity has
+        // no generated tree; the list query and page are generated and compiled on their own.
         ProcessorCompiler.compile(root.resolve("src/main/java"), root.resolve("target/classes"), null,
                 shipmentSources());
         DomainMetadata shipment = metadata(root, "Shipment");
@@ -252,14 +251,16 @@ class ListQueryContractE2ETest {
                 new URL[]{classes.toUri().toURL(), root.resolve("target/classes").toUri().toURL()},
                 ListQueryContractE2ETest.class.getClassLoader())) {
             Class<?> query = loader.loadClass("eu.exeris.e2e.freight.repository.ShipmentListQuery");
-            assertThat((List<Object>) query.getField("SORTABLE").get(null)).containsExactly("carrier");
+            assertThat((List<Object>) query.getField("SORTABLE").get(null)).containsExactly("carrier", "placedAt");
             Class<?> filter = loader.loadClass("eu.exeris.e2e.freight.repository.ShipmentListQuery$Filter");
             assertThat(Arrays.stream(filter.getRecordComponents()).map(RecordComponent::getName))
                     .containsExactly("carrier");
             Object parsed = query.getMethod("parse", String.class).invoke(null, "carrier=ROAD&sort=carrier,desc");
             assertThat(component(component(parsed, "filter"), "carrier")).hasToString("ROAD");
+            assertThat(component(query.getMethod("parse", String.class).invoke(null, "sort=placedAt,asc"), "sort"))
+                    .hasToString("placedAt");
             for (String raw : List.of("placedAt=2026-10-06T10:00:00Z", "attributes=a", "labels=a",
-                    "serial=1", "sort=placedAt")) {
+                    "serial=1", "sort=serial")) {
                 assertThatThrownBy(() -> {
                     try {
                         query.getMethod("parse", String.class).invoke(null, raw);

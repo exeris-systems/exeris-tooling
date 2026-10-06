@@ -10,6 +10,8 @@ slug: adr/ADR-096
 # ADR-096 — The generated list route pages, sorts and filters on the server, and answers a page envelope
 
 - **Status:** ACCEPTED (2026-10-04) · accepted-on-merge per the per-repo pattern (ADR-047 / ADR-058)
+  · amended 2026-10-06 (Amendment 1 — `OffsetDateTime` and `ZonedDateTime` are sort keys; `BigInteger`,
+  `Map` and `Set` fields are refused by generation)
 - **Deciders:** the founder (server-side paging in 0.9.0; parameter strictness; system fields;
   size bounds)
 - **Repo:** `exeris-tooling`
@@ -210,3 +212,34 @@ everything else with `400`, runs one bound, whitelisted page query and one count
    the kernel SPI; **`GeneratedTestsE2ETest`** runs the emitted list-route tests.
 6. **`docs/MIGRATION-0.x-to-1.0.md`** carries the consumer-facing change for 0.9.0.
 7. Migration owner: `exeris-tooling`, target 0.9.0.
+
+## Amendment 1 — `OffsetDateTime` and `ZonedDateTime` are sort keys (2026-10-06)
+
+**Status:** Accepted *(changes the sortable set of obligation 5 and its list in the contract file of
+obligation 9; the filterable set, the grammar and every other obligation are unchanged)*
+
+The generated repository stores an `OffsetDateTime` or `ZonedDateTime` field as its instant in a
+`TIMESTAMPTZ` column (`bindInstant(value.toInstant())`) and reads it back at `ZoneOffset.UTC`. Its
+column therefore orders by instant, as an `Instant` or `LocalDateTime` column does. Before, the
+repository had no encoding for either type, so obligation 5 counted them among the types whose stored
+text need not order as their values do.
+
+Obligation 5 reads, from this amendment:
+
+- **Sortable** adds `OffsetDateTime` and `ZonedDateTime` (either spelling) to `Instant` and
+  `LocalDateTime`: a field of one of the four timestamp types is a sort key, ordered by instant.
+- **Filterable** is unchanged. Equality on an instant matches nothing a person types, so none of the
+  four timestamp types is a filter until range filters exist.
+- **Any other type** no longer lists `OffsetDateTime` and `ZonedDateTime`. A `Map`, a `Set` or a
+  `BigInteger` field is not reached by the list route at all: generation refuses the entity
+  (`EXT-GEN-3003`), because the repository has no column encoding for it. A record, `Float` or
+  `Short` remains neither a sort key nor a filter.
+
+`contract/list-query.json` (obligation 9) lists the four new spellings in `sortableScalarTypes` and
+drops `OffsetDateTime`, `ZonedDateTime` and `BigInteger` from its `unrecognised` examples; the
+TypeScript half reads the same file, so it offers the sort on the same fields.
+
+Verification: `ListQuerySupportTest` and `DomainTypeKindTest` pin the kinds and the sets;
+`ListQueryContractE2ETest` holds `ListQuerySupport.sortableScalarTypes()` to the contract file and
+parses `sort=<offsetDateTimeField>,asc` through a generated `<Entity>ListQuery`;
+`ZonedTemporalFieldE2ETest` round-trips both types through the emitted repository on H2.
