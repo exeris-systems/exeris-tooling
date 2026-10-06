@@ -4,7 +4,7 @@ type: design-note
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-10-04
+last-verified: 2026-10-06
 ---
 
 # codegen-ts track — the emitted front consumes what the backend serves
@@ -81,13 +81,15 @@ the ui-kit to npmjs and on the `@exeris` org there — delays the Java side too.
 | P18 | Emitted headers and footers carry no per-release value: the hard-coded versions in file headers, the landing and app footers go, and the CLI `--version` reads `package.json`; a spec keeps them out (ADR-092) | codegen-ts | — | — | S |
 | P19 | The emitted app imports `@exeris/ui-kit/styles` (the `.exeris-*` component classes) after `/theme`, a CARD block uses `exeris-card`, rich text gets `@tailwindcss/typography`, and the scaffold, shell and `@View` pages are Tailwind v4 only, guarded by a spec | codegen-ts | — | P14 | S |
 | P20 | The generated list, detail and form components — their controls, tables, actions, and error and conflict panels — style themselves through the kit's component classes (`exeris-btn` with `-primary`, `-secondary`, `-danger`, `-ghost`, `-sm`; `exeris-input`, `exeris-select`, `exeris-checkbox`, `exeris-label`, `exeris-help-text`, `exeris-error-text`, `exeris-input-error`, `exeris-table`, `exeris-card` with `-header`, `-body`; `exeris-alert` with `-danger`, `-warning`; `exeris-badge` with `-success`) instead of inline utility strings — which fixes their v3 class names and the form controls drawn without a border — and the Tailwind v4 class scan extends to them, so a consumer restyles them in `styles.css` without editing generated files | codegen-ts | ADR-092 | P9, P10, P11, P19; `@exeris/ui-kit` 0.2.1 (the classes complete on Tailwind v4) | M |
+| P21 | The list, store, picker and related-records panels use the ADR-096 list query: server paging, sort and equality filters, no search | codegen-ts | ADR-096, ADR-092 | P9, P10, P13; the Java list route (#296) | M |
 
 **P13: the relationship picker is a native `<select>`.** `@angular/aria` 22.2.1, the npm `latest`,
 carries no stability marker in its `.d.ts` — neither `@publicApi` nor `@developerPreview` appears in
 any of its `types/*.d.ts` — so the emitted form uses none of its symbols and the emitted
 `package.json` does not depend on it. A `MANY_TO_ONE` UUID foreign key whose target is in the same
 generation with its service generated is a `<select>` over the records the target service's
-`findAll()` returns, valued by `id` and labelled by the target's `@Relationship.displayField` value
+`findAll({ size: 100 })` returns (the first page of the largest size the list route serves, P21),
+valued by `id` and labelled by the target's `@Relationship.displayField` value
 (the id when the target declares no such field or the value is empty); a value the loaded records do
 not contain stays an option, so an edit never blanks the key while they load. Moving the picker to
 Angular Aria is a later change, gated on the installed package marking the symbols stable; no CI check
@@ -138,12 +140,39 @@ is a `type="number"` input; `BigDecimal` / `BigInteger` stay string text inputs 
 Forms `disabled` rule; the update sends the loaded value back, because the generated update writes
 every column.
 
-P10's related-records section links each `ONE_TO_MANY` to the target's whole list: the generated
-list handler (`KernelHandlerGenerator.handleGetAll`) calls `service.findAll()` and reads no query
-parameter, and the OpenAPI list operation declares none, although the repository and service
-already carry a `findBy<Rel>Id` finder for every `MANY_TO_ONE`. A panel listing one record's
-children needs that finder exposed as a filter on the list route first — a Java change; until
-then the front does not fetch all rows to filter them client-side.
+**P21: the front reads the list route's page.** The generated list route pages, sorts and filters
+on the server and answers `{content, totalElements, totalPages, size, number, first, last}`
+([ADR-096](adr/ADR-096-generated-list-route-query-and-page-envelope.md)); it refuses an unknown
+parameter, so the front sends only what the route reads. `list-query.ts` states the contract —
+`page`, `size` (default 20, 1..100), `sort=<property>,<asc|desc>`, the envelope — and the property
+rules of `ListQuerySupport`, rule for rule: a sort key is a field the metadata marks sortable that
+is neither a `List` nor a system field; a filter is a field marked filterable whose type is a UUID,
+`String`, `long`, `int`, `boolean`, `double`, `BigDecimal`, `LocalDate` or an enum, never a system
+field or a field named `page` / `size` / `sort`, plus `<base>Id` for every `MANY_TO_ONE`. The
+system fields are the primary key, the owning tenant, the shared-scope field and the audit, version
+and soft-delete fields the entity's flags switch on, under their declared names or the canonical
+ones. Where Java accepts a field of any unrecognised type as an enum, the front offers it only when
+it knows the type is one, so it never sends a filter the server's parse would not hold.
+`contract/list-query.json` pins both sides (`ListQueryContractE2ETest`,
+`list-query-contract.spec.ts`).
+
+The service's `findAll(pageRequest, filter)` sends `page`, `size`, `sort` only when a property is
+sorted, and one equality filter per key of `<Model>Filter`, whose keys are the route's filters;
+`<Model>SortField` names its sort keys. The store reads the envelope and holds its size within
+1..100. The list holds the page, size, sort and filter signals and reads one page through an
+`rxResource` keyed on them: a sortable header for each column the route sorts on, an equality
+control per filter (a select for a boolean or an emitted enum, a `date` input for `LocalDate`, a
+text input otherwise), page sizes 10 / 20 / 25 / 50 / 100, and the totals and paging from the
+envelope. There is no search box: the route has no search parameter. The relationship picker asks
+for one page of 100, the most the route serves, so a target with more rows offers its first 100;
+the value the control holds stays an option.
+
+P10's related-records section lists a record's children: for each `ONE_TO_MANY` whose target has a
+`MANY_TO_ONE` back to the entity (the one `mappedBy` names, else the only one), the panel reads
+`findAll({ size: 10 }, { <base>Id: id })` from the target's service and shows the rows, labelled by
+`displayField` when the target declares it, each linking to the target's detail page, beside a
+"View all" link to the target's list. A `ONE_TO_MANY` without such a back-reference keeps the link
+alone.
 
 **Out of 0.9:** the ADR-047 facet and the `@UI` deprecation (1.x, per the SDK roadmap); `@View`
 G1–G6 (an SDK RFC); field-level server errors (a Java error body and an ADR-036 amendment first);
@@ -167,11 +196,13 @@ the orchestrator over proxied metadata. Four states:
 
 The last three carry a reason. A field added to the schema, or one a generator starts or stops
 reading, fails the build until it is classified. Today: 18 `READ`, 4 `JAVA_ONLY`, 15 `RESERVED`,
-no `GAP`. No table one level down has a `GAP` either: `FIELD_CONTRACT_COVERAGE` (23 `READ`, 1
-`JAVA_ONLY`, 3 `RESERVED`), `RELATIONSHIP_CONTRACT_COVERAGE` (5 `READ` — `displayField` labels the
-form's foreign-key picker, P13 — 1 `JAVA_ONLY`, 7 `RESERVED`), `UI_CONTRACT_COVERAGE` (the six view
-switches `READ` (P17); `icon`, `color` and `exportable` `RESERVED`), and the action, event, saga-step,
-`eventSourced` and `internalApi` tables.
+no `GAP`. No table one level down has a `GAP` either: `FIELD_CONTRACT_COVERAGE` (22 `READ`, 2
+`JAVA_ONLY` — `searchable` only indexes the column, the list route having no search — 3 `RESERVED`),
+`RELATIONSHIP_CONTRACT_COVERAGE` (6 `READ` — `displayField` labels the form's foreign-key picker,
+P13, and a related-records panel's rows, and `mappedBy` picks the panel's back-reference, P21 — 1
+`JAVA_ONLY`, 6 `RESERVED`), `UI_CONTRACT_COVERAGE` (five view switches `READ` (P17); `searchable`,
+`icon`, `color` and `exportable` `RESERVED`), and the action, event, saga-step, `eventSourced` and
+`internalApi` tables.
 
 **Proposed TS 1.0 criterion: no field in `GAP`** — no field the backend acts on is silently ignored
 by the front. Not yet in the ROADMAP's 1.0 list.
@@ -276,8 +307,7 @@ detail, native `animate.enter`. What each stage takes from the release:
 | after 3 | WebMCP from Signal Forms | experimental | flag-gated, off by default, last |
 
 Kept deliberately: the explicit `ChangeDetectionStrategy.OnPush` (v22's default is a scaffold
-default, and the emitted code should not depend on it); the stable `Subject` + `debounceTime`
-search over the experimental `debounced()`.
+default, and the emitted code should not depend on it).
 
 ## Dependencies on other work
 
