@@ -74,11 +74,14 @@ everything else with `400`, runs one bound, whitelisted page query and one count
    - Sortable: a field with `@Field(sortable = true)`, and a field without `@Field`, which the
      processor records as sortable, whose type is a filterable scalar type, `Instant` or
      `LocalDateTime` (either spelling), or an enum. A `List` field is not sortable. *(Amendment 1,
-     2026-10-06: `OffsetDateTime` and `ZonedDateTime` are sort keys too.)*
+     2026-10-06: `OffsetDateTime` and `ZonedDateTime` are sort keys too.)* *(Amendment 2,
+     2026-10-06: `Short`, `Byte` and `Float`, in every spelling, are sort keys too.)*
    - Filterable: a field with `@Field(filterable = true)`, and a field without `@Field`, whose type
      is a UUID, `String`, `long`, `int`, `boolean`, `double`, `BigDecimal`, `LocalDate` (either
      spelling, boxed or not) or an enum; and the `MANY_TO_ONE` foreign keys of obligation 2. A field
-     named `page`, `size` or `sort` is not a filter.
+     named `page`, `size` or `sort` is not a filter. *(Amendment 2, 2026-10-06: `Short`, `Byte`
+     and `Float`, in every spelling, are filters too; a `BigDecimal` or `LocalDate` filter binds
+     through `CAST(? AS <column type>)`.)*
    - An enum is a field whose `enumType`, else whose `type`, names an enum the processor emitted
      beside the entities (`enum_*.json`) — by qualified name, else by simple name: the rule the
      TypeScript emitter applies to the same two inputs. The pipeline records the resolution in the
@@ -88,6 +91,9 @@ everything else with `400`, runs one bound, whitelisted page query and one count
      engine-specific rendering, so neither equality on its text nor its text order is the value's.
      *(Amendment 1, 2026-10-06: `OffsetDateTime` and `ZonedDateTime` are sort keys; a `Map`, a
      `Set` or a `BigInteger` field is refused by generation and never reaches the list route.)*
+     *(Amendment 2, 2026-10-06: `Float` and `Short` are sort keys and filters, superseding
+     Amendment 1 on those two; `LocalTime`, `Duration`, `char`, an array, a `List` whose element
+     is not a plain type, among others, are refused by generation and never reach the list route.)*
    - Never a sort key or a filter, with or without `@Field`: the primary key, the owning tenant,
      the shared-scope field, the audit fields (created and updated at and by), the version and the
      soft-delete fields — under their declared `SystemFieldsMetadata` names or the canonical
@@ -278,10 +284,20 @@ Obligation 5 reads, from this amendment:
   type the generated migration declares (`DECIMAL(19,4)`, `DATE`). Without the cast PostgreSQL
   refuses the comparison (`42883`). The cast type is read from the same mapping the migration is
   emitted from, so the two cannot disagree.
-- **Any other type** no longer lists `Float` or `Short`. A record or another type of the
-  application's own remains neither a sort key nor a filter. A type the repository cannot store —
-  `LocalTime`, `Duration`, `char`, an array, among others — is not reached by the list route at
-  all: generation refuses the entity (`EXT-GEN-3003`).
+- **Any other type** no longer lists `Float` or `Short`. This supersedes Amendment 1 where it says
+  a record, `Float` or `Short` remains neither a sort key nor a filter: it holds for a record, not
+  for `Float` or `Short`. A record or another type of the application's own remains neither a sort
+  key nor a filter. A type the repository cannot store — `LocalTime`, `Duration`, `char`, an
+  array, a `List` whose element is not a plain type (`List<Map<String, String>>`,
+  `List<List<X>>`), among others — is not reached by the list route at all: generation refuses the
+  entity (`EXT-GEN-3003`).
+
+**`EXT-GEN-3003` is a refusal of the Java pipeline only.** The limit it enforces is the Java
+repository's column encoding over the kernel SPI, which has no decimal, date or time-of-day bind
+and no read-back for a type without a static `valueOf(String)`. The TypeScript emitter only types
+the field and can type every one of these. A generated application with such a field fails at
+`exeris:generate` for its Java tree, so no application ships with one emitter's output generated
+and the other's refused.
 
 `contract/list-query.json` (obligation 9) lists the nine new spellings in both
 `filterableScalarTypes` and `sortableScalarTypes`, and its `unrecognised` examples drop `Float` and

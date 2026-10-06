@@ -2599,9 +2599,15 @@ these types:
   repository read each back through `X.valueOf(String)`, which none of them has, so the generated
   repository did not compile;
 - `char` and any array (`byte[]`, …) — generation failed inside JavaPoet, naming no field, or
-  emitted a repository that did not compile.
+  emitted a repository that did not compile;
+- a `List` whose element type is not a plain type — `List<Map<String, String>>`, `List<List<X>>`,
+  `List<Optional<X>>`, `List<X[]>`, a wildcard — generation failed inside JavaPoet reading the
+  JSON column back, naming no field. The refusal reads "a List element must be a plain type".
 
 Each of these failed before, so no entity that generated a compiling repository is newly refused.
+The refusal is the Java pipeline's: the TypeScript emitter types these fields, and a build that
+refuses one fails at `exeris:generate`, so no application ships with one tree generated and the
+other refused.
 Declare a time of day or a duration as a `String` (or as a supported scalar such as a `Long` of
 seconds). A type of your own with a static `valueOf(String)`, `java.sql.Date` / `Time` /
 `Timestamp`, and the enums `DayOfWeek` and `Month` are kept: they are stored through `toString()`
@@ -2692,8 +2698,8 @@ nothing a person types); a field named `page`, `size` or
 which it does for every `@ExerisDomain` field whose Java type is an `enum`; hand-written metadata
 passes the enum beside the entities (`enum_*.json`). `Short`, `Byte` and `Float` fields are both
 (ADR-096 Amendment 2). A field of any other type — a record, or a type merely named like an enum —
-is neither; a `Map`, `Set`, `BigInteger`, `LocalTime`, `Duration`, `char` or array field fails
-generation (`EXT-GEN-3003`, above). Rows that tie on the sort column are ordered by `id`, so a
+is neither; a `Map`, `Set`, `BigInteger`, `LocalTime`, `Duration`, `char` or array field, or a
+`List` of a parameterised type, fails generation (`EXT-GEN-3003`, above). Rows that tie on the sort column are ordered by `id`, so a
 row does not move between pages. Where `NULL` values sort is the database's default. See ADR-096.
 
 **New emitted types.** Per entity, in the generated **repository** package:
