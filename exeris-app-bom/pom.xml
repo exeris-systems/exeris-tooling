@@ -14,7 +14,7 @@
     -->
     <groupId>eu.exeris.tooling</groupId>
     <artifactId>exeris-app-bom</artifactId>
-    <version>0.9.0</version>
+    <version>0.10.0-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <name>Exeris Tooling :: Application BOM</name>
@@ -67,7 +67,7 @@
         where either does not hold, or where any of the three Exeris versions is a -SNAPSHOT.
     -->
     <properties>
-        <exeris.tooling.version>0.9.0</exeris.tooling.version>
+        <exeris.tooling.version>0.10.0-SNAPSHOT</exeris.tooling.version>
         <exeris.kernel.version>0.12.0</exeris.kernel.version>
         <exeris.sdk.version>0.12.0</exeris.sdk.version>
         <!-- The kernel's Jackson 3 line. Emitted main code imports tools.jackson for an entity

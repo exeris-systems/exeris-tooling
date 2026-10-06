@@ -1,6 +1,6 @@
 {
   "name": "@exeris/codegen-ts",
-  "version": "0.9.0",
+  "version": "0.10.0-SNAPSHOT",
   "description": "Exeris front-end generator: emits an Angular 22 application from Exeris domain metadata",
   "keywords": [
     "exeris",
