@@ -67,7 +67,7 @@
         <palantir.javapoet.version>0.15.0</palantir.javapoet.version>
         <!-- 2.18.9 closes the jackson-databind advisories Dependabot raises against
              2.18.x. Patch-level, no API change. -->
-        <jackson.version>2.18.9</jackson.version>
+        <jackson.version>2.18.11</jackson.version>
         <!-- The Jackson 3 version the pinned kernel pins (exeris-kernel-bom); it moves with
              the kernel pin. The comment below says this dep tracks "the same Jackson 3 line
              the Open-Core kernel runtime uses", and management here beats the kernel's own
