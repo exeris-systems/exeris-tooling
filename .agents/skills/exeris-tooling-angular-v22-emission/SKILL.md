@@ -50,8 +50,8 @@ phase that owns the change.
   (now `undefined`, not `null`).
   - **NOT adopted — `debounced()`:** it is an **experimental** v22 API (`@angular/core`) and returns a
     `Resource<T>` (`.value()`), not a debounced signal. Per the no-experimental-by-default rule it stays
-    out of default emission. `list-gen` searches through a `computed` over the loaded rows, which needs
-    no debounce.
+    out of default emission. `list-gen` has no search box (the list route serves no search, ADR-096),
+    and its filters apply on `(change)`, so nothing needs a debounce.
   - **NOT adopted — dropping explicit `OnPush`:** v22's OnPush-default is a CLI-scaffold-level default on
     new apps, not a framework behaviour change for components without an explicit strategy. Keep the
     explicit `ChangeDetectionStrategy.OnPush` to avoid depending on that default.

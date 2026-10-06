@@ -628,6 +628,7 @@ describe('ListGenerator filters — the list route\'s equality filters', () => {
     expect(content).toContain('    weight: numberFilter(this.filterWeight()),');
     expect(content).toContain('    total: this.filterTotal() || undefined,');
     expect(content).toContain('function numberFilter(text: string): number | undefined {');
+    expect(content).toContain("  return text.trim() === '' || !Number.isFinite(value) ? undefined : value;");
   });
 
   it('an Instant, a LocalDateTime, a List, a system field and a hidden field get no control', () => {

@@ -207,9 +207,10 @@ export class ListGenerator implements CodeGenerator {
     lines.push(`const MAX_PAGE_SIZE = ${MAX_PAGE_SIZE};`);
     lines.push(``);
     if (numberFilters) {
-      lines.push(`/** A number filter's text as the number it sends; blank is no filter. Text that is no number is refused by the route. */`);
+      lines.push(`/** A number filter's text as the number it sends; blank, or text that is no number, is no filter. */`);
       lines.push(`function numberFilter(text: string): number | undefined {`);
-      lines.push(`  return text === '' ? undefined : Number(text);`);
+      lines.push(`  const value = Number(text);`);
+      lines.push(`  return text.trim() === '' || !Number.isFinite(value) ? undefined : value;`);
       lines.push(`}`);
       lines.push(``);
     }
