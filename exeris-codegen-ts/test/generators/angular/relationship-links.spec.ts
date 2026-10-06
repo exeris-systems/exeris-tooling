@@ -7,12 +7,13 @@
  *   - a target that is not loaded renders as plain text
  *   - a non-UUID field, an entity-typed field and the other three kinds are unchanged
  *   - no new router import: RouterModule, already imported by both components, carries RouterLink
+ *   - the form's picker: the same keys, resolved against a target whose service is generated
  */
 
 import { describe, expect, it } from 'vitest';
 import { ListGenerator } from '../../../src/generators/angular/list-gen.js';
 import { DetailGenerator } from '../../../src/generators/angular/detail-gen.js';
-import { foreignKeyLinks } from '../../../src/generators/angular/relationship-links.js';
+import { foreignKeyLinks, foreignKeyPickers } from '../../../src/generators/angular/relationship-links.js';
 import { createGeneratorContext } from '../../../src/core/generator-registry.js';
 import { DslMapper } from '../../../src/models/dsl-mapper.js';
 import {
@@ -146,5 +147,60 @@ describe('foreignKeyLinks — detail views off', () => {
     const list = new ListGenerator().generate(p, createGeneratorContext({ generateDetails: false }, [p, category]))!.content;
     expect(list).not.toContain(`[routerLink]="['${CATEGORY_ROUTE}'`);
     expect(list).toContain('{{ item.categoryId }}');
+  });
+});
+
+describe('foreignKeyPickers', () => {
+  const named = domain({
+    entityName: 'Category',
+    fields: [{ name: 'id', type: 'java.util.UUID' }, { name: 'title', type: 'String' }],
+  });
+
+  it('picks a UUID MANY_TO_ONE key from its target, labelled by the display field the target declares', () => {
+    const p = product([{ ...FK, displayField: 'title' }]);
+    expect(foreignKeyPickers(p, [p, named], true).get('categoryId')).toEqual({
+      target: 'Category',
+      serviceModule: 'category.service',
+      labelField: 'title',
+    });
+  });
+
+  it('labels by id when the target declares no field named by displayField', () => {
+    const p = product([{ ...FK, displayField: 'missing' }]);
+    expect(foreignKeyPickers(p, [p, named], true).get('categoryId')).toEqual({
+      target: 'Category',
+      serviceModule: 'category.service',
+    });
+  });
+
+  it('resolves a qualified target by its simple name', () => {
+    const p = product([{ ...FK, targetEntity: 'com.shop.Category', displayField: 'title' }]);
+    expect(foreignKeyPickers(p, [p, named], true).get('categoryId')?.target).toBe('Category');
+  });
+
+  it('has no picker without generated services, for an absent target, or a target without an id', () => {
+    const p = product([{ ...FK, displayField: 'title' }]);
+    expect(foreignKeyPickers(p, [p, named], false).size).toBe(0);
+    expect(foreignKeyPickers(p, [p], true).size).toBe(0);
+    const idless = domain({ entityName: 'Category', fields: [{ name: 'title', type: 'String' }] });
+    expect(foreignKeyPickers(p, [p, idless], true).size).toBe(0);
+  });
+
+  it('has no picker for a non-UUID field or another relationship kind', () => {
+    const asString = product([{ ...FK, displayField: 'title' }], 'String');
+    expect(foreignKeyPickers(asString, [asString, named], true).size).toBe(0);
+    const oneToOne = product([{ ...FK, type: 'ONE_TO_ONE', displayField: 'title' }]);
+    expect(foreignKeyPickers(oneToOne, [oneToOne, named], true).size).toBe(0);
+  });
+
+  it('does not depend on the target having a detail page', () => {
+    const noDetail = domain({
+      entityName: 'Category',
+      fields: [{ name: 'id', type: 'java.util.UUID' }],
+      uiMetadata: { detailView: false } as DomainMetadata['uiMetadata'],
+    });
+    const p = product([FK]);
+    expect(foreignKeyLinks(p, [p, noDetail]).size).toBe(0);
+    expect(foreignKeyPickers(p, [p, noDetail], true).get('categoryId')?.target).toBe('Category');
   });
 });

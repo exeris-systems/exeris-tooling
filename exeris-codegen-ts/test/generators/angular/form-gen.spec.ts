@@ -14,6 +14,7 @@
  *   - Order-based sort + label fallback (displayName ?? toTitleCase(name))
  *   - Mode-driven submit dispatch (create vs update)
  *   - Enum imports + enumValues + enumDisplayNames properties
+ *   - MANY_TO_ONE foreign key: a select of the target's records labelled by displayField
  */
 
 import { describe, expect, it } from 'vitest';
@@ -1022,7 +1023,7 @@ describe('FormGenerator — routed by id', () => {
   });
 
   it('prefers the entity input over the loaded entity, and derives edit mode from the id', () => {
-    expect(content).toContain('readonly current = computed<Address | null>(() => this.entity() ?? this.entityResource.value() ?? null);');
+    expect(content).toContain('readonly current = computed<Address | null>(() => this.entity() ?? (this.entityResource.hasValue() ? this.entityResource.value() : null) ?? null);');
     expect(content).toContain("readonly editMode = computed(() => this.id() !== undefined || this.mode() === 'edit');");
     expect(content).toContain("{{ editMode() ? 'Update' : 'Create' }} Address");
   });
@@ -1318,5 +1319,120 @@ describe('FormGenerator styles its controls, errors and buttons through the kit 
   it('Cancel is a secondary button and submit the primary one', () => {
     expect(content).toContain('data-testid="cancel-button" class="exeris-btn exeris-btn-secondary">Cancel</button>');
     expect(content).toContain('data-testid="submit-button" class="exeris-btn exeris-btn-primary">');
+  });
+});
+
+// ---------- foreign-key picker ----------
+
+describe('FormGenerator — a MANY_TO_ONE foreign key is picked from its target records', () => {
+  const gen = new FormGenerator();
+  const product = domain({
+    entityName: 'Product',
+    fields: [field({ name: 'id', type: 'java.util.UUID' }), field({ name: 'name', type: 'String' })],
+  });
+  function order(required: boolean, displayField = 'name'): DomainMetadata {
+    return domain({
+      entityName: 'Order',
+      fields: [field({ name: 'id', type: 'java.util.UUID' }), field({ name: 'productId', type: 'java.util.UUID', required })],
+      relationships: [
+        { name: 'productId', targetEntity: 'com.shop.Product', type: 'MANY_TO_ONE', displayField } as DomainMetadata['relationships'][number],
+      ],
+    });
+  }
+  function emit(d: DomainMetadata, all: DomainMetadata[], config: Record<string, unknown> = {}): string {
+    return gen.generate(d, createGeneratorContext(config, all))!.content;
+  }
+
+  it('renders a kit select keeping the field testid and binding', () => {
+    const content = emit(order(false), [order(false), product]);
+    expect(content).toContain(
+      '<select id="productId" data-testid="field-productId" [formField]="form.productId" class="exeris-select mt-1" [class.exeris-input-error]="form.productId().invalid() && form.productId().touched()">',
+    );
+    expect(content).not.toContain('data-testid="field-productId" type="text"');
+    expect(content).toContain('@for (option of productIdOptions(); track option.value) {');
+    expect(content).toContain('<option [value]="option.value">{{ option.label }}</option>');
+  });
+
+  it('loads the options from the target service findAll, reading an array or a paged envelope', () => {
+    const content = emit(order(false), [order(false), product]);
+    expect(content).toContain("import { ProductService } from '../services/product.service';");
+    expect(content).toContain('private readonly productService = inject(ProductService);');
+    expect(content).toContain('private readonly productIdOptionsResource = rxResource({ stream: () => this.productService.findAll() });');
+    expect(content).toContain(
+      'pickerOptions(this.productIdOptionsResource.hasValue() ? this.productIdOptionsResource.value() : undefined, (row) => row.name),',
+    );
+    expect(content).toContain('Array.isArray(result) ? result : (result.content ?? [])');
+  });
+
+  it('labels an option by displayField, and by id when the value is empty or the target has no such field', () => {
+    const content = emit(order(false), [order(false), product]);
+    expect(content).toContain("return { value, label: text == null || String(text) === '' ? value : String(text) };");
+    const unknownField = emit(order(false, 'title'), [order(false, 'title'), product]);
+    expect(unknownField).toContain('pickerOptions(this.productIdOptionsResource.hasValue() ? this.productIdOptionsResource.value() : undefined),');
+    expect(unknownField).toContain('label: (row: T) => unknown = (row) => row.id,');
+  });
+
+  it('offers an empty option for an optional key, and only a disabled placeholder for a required one', () => {
+    expect(emit(order(false), [order(false), product])).toContain('<option value="">—</option>');
+    const required = emit(order(true), [order(true), product]);
+    expect(required).toContain('<option value="" disabled>Select...</option>');
+    expect(required).not.toContain('<option value="">—</option>');
+    expect(required).toContain('required(path.productId);');
+  });
+
+  it('keeps the held value an option while it is not among the loaded records', () => {
+    const content = emit(order(false), [order(false), product]);
+    expect(content).toContain('@if (productIdUnlisted()) {');
+    expect(content).toContain('<option [value]="form.productId().value()">{{ form.productId().value() }}</option>');
+    expect(content).toContain(
+      "return value !== '' && !this.productIdOptions().some((option) => option.value === value);",
+    );
+    // The held value's option precedes the loaded ones, inside the select.
+    const select = content.slice(content.indexOf('<select id="productId"'), content.indexOf('</select>', content.indexOf('<select id="productId"')));
+    expect(select.indexOf('productIdUnlisted()')).toBeLessThan(select.indexOf('productIdOptions()'));
+  });
+
+  it('keeps a text input when the target service is not generated or the target is not loaded', () => {
+    for (const content of [
+      emit(order(false), [order(false), product], { generateServices: false }),
+      emit(order(false), [order(false)]),
+    ]) {
+      expect(content).toContain('data-testid="field-productId" type="text" [formField]="form.productId" class="exeris-input mt-1"');
+      expect(content).not.toContain('pickerOptions');
+      expect(content).not.toContain('ProductService');
+    }
+  });
+
+  it('serves a relationship to the entity itself through its own service', () => {
+    const tag = domain({
+      entityName: 'Tag',
+      fields: [field({ name: 'id', type: 'java.util.UUID' }), field({ name: 'parentId', type: 'java.util.UUID' })],
+      relationships: [{ name: 'parentId', targetEntity: 'Tag', type: 'MANY_TO_ONE' } as DomainMetadata['relationships'][number]],
+    });
+    const content = emit(tag, [tag]);
+    expect(content).toContain('rxResource({ stream: () => this.service.findAll() })');
+    expect(content.match(/TagService/g)).toHaveLength(2);
+  });
+
+  it('imports a target named like a framework symbol by its service class only', () => {
+    const component = domain({
+      entityName: 'Component',
+      fields: [field({ name: 'id', type: 'java.util.UUID' }), field({ name: 'name', type: 'String' })],
+    });
+    const address = domain({
+      entityName: 'Address',
+      fields: [field({ name: 'id', type: 'java.util.UUID' }), field({ name: 'componentId', type: 'java.util.UUID' })],
+      relationships: [
+        { name: 'componentId', targetEntity: 'Component', type: 'MANY_TO_ONE', displayField: 'name' } as DomainMetadata['relationships'][number],
+      ],
+    });
+    const content = emit(address, [address, component]);
+    expect(content).toContain("import { ComponentService } from '../services/component.service';");
+    expect(content).toContain('private readonly componentService = inject(ComponentService);');
+  });
+
+  it('generateForm resolves pickers against the domain set it is given', () => {
+    expect(generateForm(order(false), CTX.config, [], [order(false), product])!.content).toContain('ProductService');
+    expect(generateForm(order(false), CTX.config)!.content).not.toContain('ProductService');
   });
 });
