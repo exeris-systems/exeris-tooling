@@ -6,7 +6,8 @@
  * - Type-safe filter methods
  * - Pagination support
  * - Sorting support
- * - Full-text search
+ *
+ * The parameters are the list route's (ADR-096): its sort keys and equality filters, and no search.
  */
 
 import type { DomainMetadata, FieldMetadata, CodeGenerator, GeneratedFile, GeneratorContext } from '../../core/generator-registry.js';
@@ -15,6 +16,7 @@ import { modelTypeName } from '../../models/model-naming.js';
 import type { GeneratorConfig } from '../../config.js';
 import type { BackendType } from '../../core/backend-strategy.js';
 import { outPath } from '../../core/paths.js';
+import { filterProperties, sortableProperties } from '../angular/list-query.js';
 
 export class QueryBuilderGenerator implements CodeGenerator {
   readonly name = 'QueryBuilderGenerator';
@@ -46,19 +48,14 @@ export class QueryBuilderGenerator implements CodeGenerator {
   }
 
   private generateQueryBuilderContent(domain: DomainMetadata, context: GeneratorContext): string {
-    const { entityName, fields = [] } = domain;
+    const { entityName } = domain;
     const modelName = modelTypeName(entityName);
     const kebab = DslMapper.toKebabCase(domain.entityName);
 
-    const filterableFields = fields.filter(f => f.filterable);
-    const sortableFields = fields.filter(f => f.sortable);
-    // The literal 'id', deliberately, not systemFields.primaryKeyField. Nothing in the pipeline
-    // honours that override: KernelFlywayGenerator emits `id UUID PRIMARY KEY` unconditionally,
-    // KernelRepositoryGenerator's WHERE clause is the constant " WHERE id = ?", every by-id
-    // handler binds the {id} path variable, and the processor says so outright ("generators leave
-    // the primary key as the literal id"). Reading it here would make this the only layer that
-    // honours it, and the emitted app would then request the wrong identifier.
-    const idField = 'id';
+    // A foreign key no field carries filters as the target's id, a UUID.
+    const filterableFields = filterProperties(domain)
+      .map((p) => p.field ?? ({ name: p.name, type: 'java.util.UUID' } as FieldMetadata));
+    const sortableFields = sortableProperties(domain);
     const enumTypes = this.collectEnumTypes(filterableFields);
 
     const lines: string[] = [];
@@ -79,7 +76,7 @@ export class QueryBuilderGenerator implements CodeGenerator {
 
     const sortFields = sortableFields.length > 0
       ? sortableFields.map(f => `'${f.name}'`).join(' | ')
-      : `'${idField}'`;
+      : 'never';
 
     lines.push(`export type ${entityName}SortField = ${sortFields};`);
     lines.push(`export type SortDirection = 'asc' | 'desc';`);
@@ -90,7 +87,6 @@ export class QueryBuilderGenerator implements CodeGenerator {
     lines.push(`  size?: number;`);
     lines.push(`  sort?: ${entityName}SortField;`);
     lines.push(`  direction?: SortDirection;`);
-    lines.push(`  search?: string;`);
     for (const field of filterableFields) {
       const tsType = this.getFilterType(field);
       lines.push(`  ${field.name}?: ${tsType};`);
@@ -126,12 +122,6 @@ export class QueryBuilderGenerator implements CodeGenerator {
     lines.push(`  desc(field: ${entityName}SortField): this { return this.sortBy(field, 'desc'); }`);
     lines.push(``);
 
-    lines.push(`  search(query: string): this {`);
-    lines.push(`    this.params.search = query;`);
-    lines.push(`    return this;`);
-    lines.push(`  }`);
-    lines.push(``);
-
     for (const field of filterableFields) {
       const tsType = this.getFilterType(field);
       lines.push(`  ${field.name}(value: ${tsType}): this {`);
@@ -151,8 +141,7 @@ export class QueryBuilderGenerator implements CodeGenerator {
     lines.push(`    if (this.params.page !== undefined) params = params.set('page', String(this.params.page));`);
     lines.push(`    if (this.params.size !== undefined) params = params.set('size', String(this.params.size));`);
     lines.push(`    if (this.params.sort) params = params.set('sort', \`\${this.params.sort},\${this.params.direction ?? 'asc'}\`);`);
-    lines.push(`    if (this.params.search) params = params.set('search', this.params.search);`);
-    lines.push(`    const skipKeys = ['page', 'size', 'sort', 'direction', 'search'];`);
+    lines.push(`    const skipKeys = ['page', 'size', 'sort', 'direction'];`);
     lines.push(`    for (const [key, value] of Object.entries(this.params)) {`);
     lines.push(`      if (skipKeys.includes(key) || value === undefined || value === null || value === '') continue;`);
     lines.push(`      params = params.set(key, String(value));`);
@@ -221,7 +210,7 @@ export class QueryBuilderGenerator implements CodeGenerator {
         enums.add(simpleName);
       }
     }
-    return [...enums];
+    return [...enums].sort();
   }
 }
 

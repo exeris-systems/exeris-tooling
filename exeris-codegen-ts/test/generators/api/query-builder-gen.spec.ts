@@ -77,7 +77,7 @@ describe('QueryBuilderGenerator.generate — per-domain', () => {
     expect(content).toContain("import type { OrderLine } from '../types/order-line.types'");
   });
 
-  it('SortField type unions every sortable field; falls back to id when none are sortable', () => {
+  it('SortField type unions the fields the list route sorts on; never when there is none', () => {
     const sortable = gen.generate(domain({
       entityName: 'Order',
       fields: [
@@ -88,18 +88,12 @@ describe('QueryBuilderGenerator.generate — per-domain', () => {
     }), CTX)!.content;
     expect(sortable).toContain("export type OrderSortField = 'createdAt' | 'total';");
 
-    // The fallback is `id` whatever primaryKeyField says, for the reason recorded at
-    // query-builder-gen.ts's idField: no layer of the pipeline honours that override.
-    const fallback = gen.generate(domain({
+    // The id is never a sort key: it is the route's tiebreak only.
+    const none = gen.generate(domain({
       entityName: 'Order',
-      systemFields: { primaryKeyField: 'uuid' },
+      fields: [field({ name: 'id', type: 'java.util.UUID', sortable: true })],
     }), CTX)!.content;
-    expect(fallback).toContain("export type OrderSortField = 'id';");
-  });
-
-  it('falls back to id when systemFields is absent and no sortable fields exist', () => {
-    const content = gen.generate(domain({ entityName: 'Order' }), CTX)!.content;
-    expect(content).toContain("export type OrderSortField = 'id';");
+    expect(none).toContain('export type OrderSortField = never;');
   });
 
   it('QueryParams interface lists every filterable field with its mapped TS type', () => {
@@ -163,7 +157,7 @@ describe('QueryBuilderGenerator.generate — per-domain', () => {
     expect(content).toContain('return this');
   });
 
-  it('builder always emits the fixed core methods (page/size/sortBy/asc/desc/search/build/toHttpParams/getParams/reset/clone)', () => {
+  it('builder always emits the fixed core methods (page/size/sortBy/asc/desc/build/toHttpParams/getParams/reset/clone), and no search', () => {
     const content = gen.generate(domain({ entityName: 'Order' }), CTX)!.content;
 
     for (const method of [
@@ -172,7 +166,6 @@ describe('QueryBuilderGenerator.generate — per-domain', () => {
       "sortBy(field: OrderSortField, direction: SortDirection = 'asc'): this",
       "asc(field: OrderSortField): this",
       "desc(field: OrderSortField): this",
-      'search(query: string): this',
       'build(): string',
       'toHttpParams(): HttpParams',
       'getParams(): OrderQueryParams',
@@ -181,6 +174,7 @@ describe('QueryBuilderGenerator.generate — per-domain', () => {
     ]) {
       expect(content).toContain(method);
     }
+    expect(content).not.toContain('search');
   });
 });
 
