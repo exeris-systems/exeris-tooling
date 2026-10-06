@@ -825,14 +825,10 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 addComponent(type, sagaFlowType, sagaAccessor(sagaFlowType),
                         CodeBlock.of("new $T($T.flowEngine())", sagaFlowType, KERNEL_PROVIDERS));
             }
-            // T43-follow-up: KernelProviders.MEMORY_ALLOCATOR is resolved HERE and handed to the
-            // handler, rather than read per request inside parseBody. This factory runs inside the
-            // KernelBootstrap.boot(...) callback, which the kernel executes inside the enriched
-            // ScopedValue carrier — so the binding is live at exactly this point and nowhere the
-            // handler will later run: a request is served on a virtual thread started with
-            // Thread.ofVirtual().start(), which inherits no ScopedValue binding. Same shape the
-            // kernel's own CommunityBenchmarkRuntimeLifecycle uses, and it turns a wiring fault
-            // into a boot failure instead of a 5xx on the first request with a body.
+            // KernelProviders.MEMORY_ALLOCATOR is resolved here and handed to the handler, rather
+            // than read per request inside parseBody. This factory runs inside the
+            // KernelBootstrap.boot(...) callback, where the binding is live, so a wiring fault is a
+            // boot failure instead of a 5xx on the first request with a body.
             CodeBlock allocator = CodeBlock.of("$T.MEMORY_ALLOCATOR.get()", KERNEL_PROVIDERS);
             read(readers, Scope.MEMORY_ALLOCATOR, factoryReference(entityLower + "Handler"));
             // Request scopes are read by the handler and repository emitters, under these same
