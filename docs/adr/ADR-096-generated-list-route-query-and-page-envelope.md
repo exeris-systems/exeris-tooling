@@ -236,8 +236,12 @@ Obligation 5 reads, from this amendment:
   `Short` remains neither a sort key nor a filter.
 
 `contract/list-query.json` (obligation 9) lists the four new spellings in `sortableScalarTypes` and
-drops `OffsetDateTime`, `ZonedDateTime` and `BigInteger` from its `unrecognised` examples; the
-TypeScript half reads the same file, so it offers the sort on the same fields.
+keeps in its `unrecognised` examples only types the list route can see (a record, `Float`,
+`Short`); `Map`, `Set` and `BigInteger` are refused by generation and never reach it. The
+TypeScript emitter's `list-query.ts` does not read `sortableScalarTypes`: it applies its own rules,
+and offers a sort on every field that is neither a `List` nor a system field. It therefore offers
+the sort on the four timestamp types, and also on an unrecognised type, which this route refuses
+with `400`; holding its sort offer to `sortableScalarTypes` is owed by the TypeScript emitter.
 
 Verification: `ListQuerySupportTest` and `DomainTypeKindTest` pin the kinds and the sets;
 `ListQueryContractE2ETest` holds `ListQuerySupport.sortableScalarTypes()` to the contract file and
