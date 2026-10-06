@@ -2572,7 +2572,7 @@ of these failed; H2, which converts a string parameter silently, passed them all
 | `Instant`, `LocalDateTime` finder | compared the argument's `toString()` with the `TIMESTAMPTZ` column: `42883` | binds the instant, as `save` does (`LocalDateTime` at `ZoneOffset.UTC`) |
 | `Long`, `Integer`, `Boolean`, `Double` holding `null` | `save` and `update` threw `NullPointerException` unboxing it | bind SQL `NULL` |
 
-Reading was already right for all of them. A `BigDecimal` reads back with the column's scale
+Reading a non-NULL value was already right for all of them. A `BigDecimal` reads back with the column's scale
 (`12.34` stored in `DECIMAL(19,4)` reads as `12.3400`), as it did before.
 
 **Wrapper fields and `NULL`.** A field declared as a wrapper — `Long`, `Integer`, `Short`, `Byte`,

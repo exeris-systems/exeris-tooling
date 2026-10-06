@@ -225,13 +225,6 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     }
 
     /**
-     * Whether a domain column of this kind has a column encoding: not
-     * {@link DomainTypeKind#UNSTORABLE}, and, for a {@code List}, an element type the JSON read can
-     * name as a class — a plain, possibly qualified type name, not a parameterised type, an array or
-     * a wildcard.
-     */
-
-    /**
      * Whether {@code name} is a type name {@code ClassName.bestGuess} accepts: dot-separated Java
      * identifiers, lower-case package segments first, then a class name that starts upper-case and
      * any nested class names. A parameterised name, an array or a wildcard is not.
@@ -251,6 +244,13 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         }
         return inClass;
     }
+
+    /**
+     * Whether a domain column of this kind has a column encoding: not
+     * {@link DomainTypeKind#UNSTORABLE}, and, for a {@code List}, an element type the JSON read can
+     * name as a class — a plain, possibly qualified type name, not a parameterised type, an array or
+     * a wildcard.
+     */
     private static boolean storable(DomainTypeKind kind, String type) {
         return switch (kind) {
             case UNSTORABLE -> false;
@@ -925,8 +925,11 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
 
     /**
      * One {@code stmt.bind…} statement for {@code value} at {@code index}, by kind — the single
-     * dispatch the writes and the finders share. A reference-typed value is null-guarded with
-     * {@code bindNull}; a primitive one ({@link DomainTypeKind#isPrimitive}) is bound as it is.
+     * dispatch the writes and the finders share. The numeric, boolean and timestamp kinds bind a
+     * {@code null} reference through {@code bindNull}, and a primitive one
+     * ({@link DomainTypeKind#isPrimitive}) is bound as it is; the text and UUID kinds ({@code List},
+     * {@code String}, UUID, {@code BigDecimal}, {@code LocalDate}, an enum, an opaque type) pass a
+     * {@code null} to {@code bindString} or {@code bindUuid}, which bind SQL {@code NULL}.
      * {@code value} is an expression and may be evaluated twice, so it must have no side effect.
      * The block ends with {@code ;} and no line break.
      */
