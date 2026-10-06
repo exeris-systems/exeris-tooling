@@ -24,6 +24,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.Instant;
@@ -46,7 +47,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
@@ -75,7 +76,9 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * is offered at all is asserted, not skipped). When {@code save} fails, the row is seeded through an
  * untyped SQL literal so the remaining cells are still measured. Every cell must be {@code OK}.
  *
- * <p>{@code -Dexeris.e2e.postgres.matrixReport=<file>} also writes the matrix as a Markdown table.
+ * <p>{@code -Dexeris.e2e.postgres.matrixReport=<file>} also writes the matrix as a Markdown table,
+ * headed by the server's {@code SELECT version()} and the checked-out commit, followed by the
+ * refusals and the {@code EXT-GEN-3003} entry each produced.
  */
 @Tag("e2e")
 @Tag("postgres")
@@ -96,6 +99,8 @@ class PostgresTypeMatrixE2ETest {
 
     private static final Map<String, Map<String, String>> MATRIX = new LinkedHashMap<>();
     private static final Map<String, Map<String, String>> EXPECTED = new LinkedHashMap<>();
+    private static final Map<String, String> REFUSALS = new LinkedHashMap<>();
+    private static String serverVersion;
     private static final List<GeneratedTree> TREES = new ArrayList<>();
     private static String adminUrl;
     private static String schemaUrl;
@@ -122,6 +127,9 @@ class PostgresTypeMatrixE2ETest {
         try (Connection admin = DriverManager.getConnection(adminUrl); Statement st = admin.createStatement()) {
             st.execute("DROP SCHEMA IF EXISTS " + SCHEMA + " CASCADE");
             st.execute("CREATE SCHEMA " + SCHEMA);
+            try (ResultSet version = st.executeQuery("SELECT version()")) {
+                serverVersion = version.next() ? version.getString(1) : "unknown";
+            }
         }
         database = EmbeddedPersistenceEngineFixtures.forJdbcUrl(schemaUrl, false);
         database.start();
@@ -138,11 +146,13 @@ class PostgresTypeMatrixE2ETest {
                 measure(tree, executor, admin, probe);
             }
         }
-        writeReport();
     }
 
     @AfterAll
     static void close() throws IOException, SQLException {
+        if (adminUrl != null) {
+            writeReport();
+        }
         if (database != null) {
             database.close();
         }
@@ -174,14 +184,21 @@ class PostgresTypeMatrixE2ETest {
                         new String[] {"char", null, "char"},
                         new String[] {"Character", null, "java.lang.Character"},
                         new String[] {"byte[]", null, "byte[]"},
-                        new String[] {"BigInteger", "java.math.BigInteger", "java.math.BigInteger"})
+                        new String[] {"BigInteger", "java.math.BigInteger", "java.math.BigInteger"},
+                        new String[] {"List<Map<String, String>>", "java.util.List,java.util.Map",
+                                "java.util.List<java.util.Map<java.lang.String,java.lang.String>>"},
+                        new String[] {"List<List<String>>", "java.util.List", "java.util.List<java.util.List<java.lang.String>>"})
                 .map(refused -> DynamicTest.dynamicTest(refused[0], () -> {
                     String entity = "Refused" + refused[0].replaceAll("[^A-Za-z]", "");
-                    List<String> imports = refused[1] == null ? List.of() : List.of(refused[1]);
+                    List<String> imports = refused[1] == null ? List.of() : List.of(refused[1].split(","));
                     Map<String, String> sources = Map.of("com/lab/domain/" + entity + ".java",
                             entitySource(entity, refused[0], imports, ""));
                     Path dir = workspace.resolve("refused-" + entity.toLowerCase(Locale.ROOT));
-                    assertThatThrownBy(() -> GeneratedTree.build(dir, BASE_PACKAGE, sources, Map.of()))
+                    Throwable thrown = catchThrowable(() -> GeneratedTree.build(dir, BASE_PACKAGE, sources, Map.of()));
+                    REFUSALS.put(refused[0], thrown instanceof UnpersistableFieldTypeException e
+                            ? String.join("; ", e.fields())
+                            : "NOT REFUSED: " + thrown);
+                    assertThat(thrown)
                             .isInstanceOf(UnpersistableFieldTypeException.class)
                             .hasMessageStartingWith("[Exeris] EXT-GEN-3003: ")
                             .hasMessageContaining("com.lab.domain." + entity + ".probe : " + refused[2]);
@@ -425,18 +442,43 @@ class PostgresTypeMatrixE2ETest {
         if (target == null || target.isBlank()) {
             return;
         }
-        StringBuilder out = new StringBuilder("| type | ").append(String.join(" | ", OPERATIONS)).append(" |\n");
+        StringBuilder out = new StringBuilder("PostgreSQL: ").append(serverVersion).append("\n\n")
+                .append("Commit: ").append(commit()).append("\n\n")
+                .append("| type | ").append(String.join(" | ", OPERATIONS)).append(" |\n");
         out.append("|---".repeat(OPERATIONS.size() + 1)).append("|\n");
         MATRIX.forEach((type, row) -> {
             out.append("| ").append(type);
             OPERATIONS.forEach(op -> out.append(" | ").append(row.getOrDefault(op, NOT_OFFERED)));
             out.append(" |\n");
         });
+        out.append("\n| refused type | EXT-GEN-3003 entry |\n|---|---|\n");
+        REFUSALS.forEach((type, entry) -> out.append("| `").append(type).append("` | `").append(entry).append("` |\n"));
         Path report = Path.of(target);
         if (report.getParent() != null) {
             Files.createDirectories(report.getParent());
         }
         Files.writeString(report, out.toString());
+    }
+
+    /** {@code git rev-parse HEAD}, suffixed {@code -dirty} when the working tree has changes; {@code unknown} without git. */
+    private static String commit() {
+        try {
+            String head = git("rev-parse", "HEAD");
+            return head.isEmpty() ? "unknown" : git("status", "--porcelain").isEmpty() ? head : head + "-dirty";
+        } catch (IOException e) {
+            return "unknown";
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return "unknown";
+        }
+    }
+
+    private static String git(String... args) throws IOException, InterruptedException {
+        List<String> command = new ArrayList<>(List.of("git"));
+        command.addAll(List.of(args));
+        Process git = new ProcessBuilder(command).redirectErrorStream(true).start();
+        String output = new String(git.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
+        return git.waitFor() == 0 ? output : "";
     }
 
     private static String entitySource(String entity, String type, List<String> imports, String annotation) {

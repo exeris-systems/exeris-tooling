@@ -160,7 +160,7 @@ class FieldTypeStorageE2ETest {
     }
 
     @Test
-    @DisplayName("EXT-GEN-3003: LocalTime, Duration, char and byte[] fields fail the run, and nothing is written")
+    @DisplayName("EXT-GEN-3003: LocalTime, Duration, char, byte[] and List-of-parameterised fields fail the run, and nothing is written")
     void typesWithoutAColumnEncodingAreRefused() throws IOException {
         Path refused = workspace.resolve("refused");
         Path classes = refused.resolve("target/classes");
@@ -175,7 +175,10 @@ class FieldTypeStorageE2ETest {
                 .hasMessageContaining("com.yard.domain.Shift.startsAt : java.time.LocalTime")
                 .hasMessageContaining("com.yard.domain.Shift.length : java.time.Duration")
                 .hasMessageContaining("com.yard.domain.Shift.code : char")
-                .hasMessageContaining("com.yard.domain.Shift.badge : byte[]");
+                .hasMessageContaining("com.yard.domain.Shift.badge : byte[]")
+                .hasMessageContaining("com.yard.domain.Shift.labels : java.util.List<java.util.Map<")
+                .hasMessageContaining("com.yard.domain.Shift.grid : java.util.List<java.util.List<java.lang.String>>"
+                        + " (a List element must be a plain type)");
         assertThat(generated).doesNotExist();
     }
 
@@ -314,6 +317,8 @@ class FieldTypeStorageE2ETest {
                 import eu.exeris.sdk.annotation.ExerisDomain;
                 import java.time.Duration;
                 import java.time.LocalTime;
+                import java.util.List;
+                import java.util.Map;
                 import java.util.UUID;
 
                 @ExerisDomain(module = "yard", path = "/shifts", dataScope = ExerisDomain.DataScope.GLOBAL)
@@ -325,6 +330,8 @@ class FieldTypeStorageE2ETest {
                     private Duration length;
                     private char code;
                     private byte[] badge;
+                    private List<Map<String, String>> labels;
+                    private List<List<String>> grid;
 
                     public UUID getId() { return id; }
                     public void setId(UUID id) { this.id = id; }
@@ -338,6 +345,10 @@ class FieldTypeStorageE2ETest {
                     public void setCode(char code) { this.code = code; }
                     public byte[] getBadge() { return badge; }
                     public void setBadge(byte[] badge) { this.badge = badge; }
+                    public List<Map<String, String>> getLabels() { return labels; }
+                    public void setLabels(List<Map<String, String>> labels) { this.labels = labels; }
+                    public List<List<String>> getGrid() { return grid; }
+                    public void setGrid(List<List<String>> grid) { this.grid = grid; }
                 }
                 """;
     }

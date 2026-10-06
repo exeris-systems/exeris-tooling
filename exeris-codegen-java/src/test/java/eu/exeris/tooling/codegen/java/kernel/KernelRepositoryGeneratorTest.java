@@ -688,6 +688,16 @@ class KernelRepositoryGeneratorTest {
     }
 
     @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"java.util.List<java.lang.String>", "List<UUID>", "java.util.List<java.time.Instant>",
+            "java.util.List<com.example.domain.Shipment.Leg>"})
+    @DisplayName("a List of a plain element type, nested class included, is stored as JSON")
+    void listOfPlainElementIsKept(String type) {
+        KernelRepositoryGenerator.requirePersistableFields(List.of(shipment(FieldMetadata.builder("payload", type).build())));
+
+        assertThat(repositoryFor(FieldMetadata.builder("payload", type).build())).contains("entity.setPayload(");
+    }
+
+    @ParameterizedTest(name = "{0}")
     @ValueSource(strings = {"java.time.DayOfWeek", "com.example.domain.Money", "java.sql.Timestamp"})
     @DisplayName("a type with a valueOf(String) the generator cannot rule out keeps the string round-trip")
     void opaqueValueTypesAreKept(String type) {
@@ -718,11 +728,17 @@ class KernelRepositoryGeneratorTest {
             "Map<String, Integer>",
             "java.math.BigInteger",
             "BigInteger",
-            // No valueOf(String): the repository's read did not compile.
+            // No static valueOf(String), so no read-back.
             "java.time.LocalTime", "LocalTime", "java.time.Duration", "java.time.Period",
             "java.util.Date", "java.lang.Character",
-            // A primitive char or an array failed generation inside JavaPoet.
-            "char", "byte[]"})
+            // A primitive char or an array has no column encoding.
+            "char", "byte[]",
+            // A List element must be a plain type: the JSON read names it as a class.
+            "java.util.List<java.util.Map<java.lang.String,java.lang.String>>",
+            "java.util.List<java.util.List<java.lang.String>>",
+            "java.util.List<java.util.Optional<java.util.UUID>>",
+            "List<Map<String, String>>", "java.util.List<java.lang.String[]>",
+            "java.util.List<? extends java.lang.Number>"})
     @DisplayName("EXT-GEN-3003: a field type with no column encoding is refused, naming entity, field and type")
     void unpersistableTypeIsRefused(String type) {
         DomainMetadata metadata = shipment(FieldMetadata.builder("payload", type).build());
@@ -743,7 +759,8 @@ class KernelRepositoryGeneratorTest {
                 FieldMetadata.builder("tags", "java.util.Set<java.lang.String>").build(),
                 FieldMetadata.builder("weight", "java.math.BigInteger").build(),
                 FieldMetadata.builder("window", "java.time.Duration").build(),
-                FieldMetadata.builder("blob", "byte[]").build());
+                FieldMetadata.builder("blob", "byte[]").build(),
+                FieldMetadata.builder("nested", "java.util.List<java.util.List<java.lang.String>>").build());
         DomainMetadata crate = DomainMetadata.builder("Crate", "com.example.domain")
                 .fields(List.of(FieldMetadata.builder("labels", "java.util.Map<java.lang.String,java.lang.String>").build()))
                 .build();
@@ -754,6 +771,8 @@ class KernelRepositoryGeneratorTest {
                                 "com.example.domain.Crate.labels : java.util.Map<java.lang.String,java.lang.String>"
                                         + " (a parameterised type other than List<…>)",
                                 "com.example.domain.Shipment.blob : byte[] (an array)",
+                                "com.example.domain.Shipment.nested : java.util.List<java.util.List<java.lang.String>>"
+                                        + " (a List element must be a plain type)",
                                 "com.example.domain.Shipment.tags : java.util.Set<java.lang.String>"
                                         + " (a parameterised type other than List<…>)",
                                 "com.example.domain.Shipment.weight : java.math.BigInteger"

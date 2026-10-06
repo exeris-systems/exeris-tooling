@@ -30,7 +30,11 @@ import java.util.Set;
  * @since 0.9.0
  */
 public enum DomainTypeKind {
-    /** {@code List<X>}, persisted as a JSON text column. */
+    /**
+     * {@code List<X>}, persisted as a JSON text column. The repository refuses a list whose element
+     * {@code X} is not a plain type name — a parameterised type, an array or a wildcard
+     * ({@code EXT-GEN-3003}).
+     */
     LIST,
     UUID,
     STRING,
@@ -85,8 +89,8 @@ public enum DomainTypeKind {
      * {@code valueOf(String)}: {@code LocalTime}, {@code OffsetTime}, {@code Duration},
      * {@code Period}, {@code Year}, {@code YearMonth}, {@code MonthDay}, {@code ZoneId},
      * {@code ZoneOffset}, {@code java.util.Date}, {@code Currency}, {@code Locale}, {@code URI},
-     * {@code URL} and {@code Object}. Each of these produced either a generator failure or a
-     * repository that did not compile.
+     * {@code URL} and {@code Object}. None has a column encoding in the generated repository: no
+     * typed SPI accessor and no static {@code valueOf(String)} to read it back through.
      */
     UNSTORABLE,
     /**

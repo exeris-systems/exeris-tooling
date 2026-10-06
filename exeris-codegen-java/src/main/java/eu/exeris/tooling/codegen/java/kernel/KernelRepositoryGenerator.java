@@ -30,6 +30,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 /**
  * Kernel Repository Generator.
@@ -79,8 +80,10 @@ import java.util.Set;
  *   <li>A field whose type has no column encoding ({@link DomainTypeKind#UNSTORABLE}:
  *       a parameterised type other than {@code List<X>}, an array, {@code char},
  *       {@code BigInteger}, or a JDK value type with no {@code valueOf(String)}
- *       such as {@code LocalTime} or {@code Duration}) is refused before anything
- *       is emitted ({@link UnpersistableFieldTypeException}, {@code EXT-GEN-3003}).</li>
+ *       such as {@code LocalTime} or {@code Duration}), and a {@code List} whose
+ *       element is not a plain type ({@code List<Map<String, String>>},
+ *       {@code List<List<X>>}), is refused before anything is emitted
+ *       ({@link UnpersistableFieldTypeException}, {@code EXT-GEN-3003}).</li>
  * </ul>
  *
  * @implNote Emission is JavaPoet-based (ADR-015).
@@ -90,6 +93,12 @@ import java.util.Set;
  */
 public class KernelRepositoryGenerator implements KernelArtifactGenerator {
 
+    /**
+     * A type name {@code ClassName.bestGuess} accepts: lower-case package segments, then a class
+     * name that starts upper-case, optionally followed by nested class names.
+     */
+    private static final Pattern PLAIN_TYPE_NAME =
+            Pattern.compile("(?:[a-z_$][\\w$]*\\.)*[A-Z][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)*");
     private static final ClassName UUID_TYPE = ClassName.get("java.util", "UUID");
     private static final ClassName OPTIONAL = ClassName.get("java.util", "Optional");
     private static final ClassName LIST_TYPE = ClassName.get("java.util", "List");
@@ -189,8 +198,9 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
 
     /**
      * Refuses the entity set when any entity has a domain column whose type the repository cannot
-     * store and read back — a {@link DomainTypeKind#UNSTORABLE} field. An enum field is never
-     * refused, whatever its type is named, when its {@code enumType} is set.
+     * store and read back — a {@link DomainTypeKind#UNSTORABLE} field, or a {@code List} whose
+     * element type is not a plain type name (a parameterised type, an array, a wildcard). An enum
+     * field is never refused, whatever its type is named, when its {@code enumType} is set.
      * A field that is not a column — one shadowing the primary key or an active system column — is
      * not checked, since nothing binds or reads it.
      *
@@ -213,7 +223,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     private static List<String> unpersistableFields(DomainMetadata metadata) {
         List<String> refused = new ArrayList<>();
         for (Column col : buildColumnLayout(metadata.fields(), metadata, resolveSystemFieldNames(metadata))) {
-            if (col.kind() == ColumnKind.DOMAIN && kindOf(col, metadata) == DomainTypeKind.UNSTORABLE) {
+            if (col.kind() == ColumnKind.DOMAIN && !storable(kindOf(col, metadata), col.javaType())) {
                 refused.add(metadata.packageName() + "." + metadata.entityName() + "." + col.javaName()
                         + " : " + col.javaType() + " (" + refusalReason(col.javaType()) + ")");
             }
@@ -221,7 +231,24 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         return refused;
     }
 
+    /**
+     * Whether a domain column of this kind has a column encoding: not
+     * {@link DomainTypeKind#UNSTORABLE}, and, for a {@code List}, an element type the JSON read can
+     * name as a class — a plain, possibly qualified type name, not a parameterised type, an array or
+     * a wildcard.
+     */
+    private static boolean storable(DomainTypeKind kind, String type) {
+        return switch (kind) {
+            case UNSTORABLE -> false;
+            case LIST -> PLAIN_TYPE_NAME.matcher(listElementType(type)).matches();
+            default -> true;
+        };
+    }
+
     private static String refusalReason(String type) {
+        if (listElementType(type) != null) {
+            return "a List element must be a plain type";
+        }
         if (type.contains("<")) {
             return "a parameterised type other than List<…>";
         }
