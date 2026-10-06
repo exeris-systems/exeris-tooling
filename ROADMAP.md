@@ -3540,10 +3540,12 @@ release)*
       parameter until a server-side search exists), range filters for dates and numbers, multi-column
       sort.
 
-**5. Alongside, no gate:** the `npm start` proxy prefix (`proxy.conf.js` with a `bypass`), the
-`warnInertAttributes` call sites for `Saga` / `SagaStep`, codegen-ts lint in CI (`npm run lint` has no `eslint.config.*` and is not in `build.yml`), and the delete-or-wire
-decision for `KernelStrategy.generateClientCode` and `getRealTimeConfig` (codegen-ts plan). The
-`dsl` half is done: the package is deleted (2026-10-02).
+**5. Alongside, no gate:** the `warnInertAttributes` call sites for `Saga` / `SagaStep` shipped
+(#260), and the `dsl` package is deleted (2026-10-02). The `npm start` proxy prefix
+(`proxy.conf.js` with a `bypass`), codegen-ts lint in CI (`npm run lint` has no `eslint.config.*`
+and is not in `build.yml`) and the delete-or-wire decision for `KernelStrategy.generateClientCode`
+and `getRealTimeConfig` did not ship in 0.9.0 and are placed in 0.10.0 (wave S2 of
+[`docs/0.10.0-release-plan.md`](docs/0.10.0-release-plan.md)).
 
 **6. The cut:** kernel `0.12.0` and SDK `0.12.0` final on Central → pins move → release PR at
 `0.9.0` → tag → deploy to Central → Publish in the Central Portal → `@exeris/codegen-ts@0.9.0` to
@@ -3561,7 +3563,7 @@ groups, by what blocks them —
 
 - **No external gate:** D10 (whose *resolution* is a T53 question — do not settle it before that
   RFC), the `npm start` proxy prefix, C1, C2, T53. *(2026-09-30: D10 and T53 are 0.10.0; C1 shipped
-  as #213; C2 is two asks on other repos; the proxy prefix is in 0.9.0's scope.)* The TS `GraphEdgeMetadataSchema` parity gap, two
+  as #213; C2 is two asks on other repos; the proxy prefix is 0.10.0 (wave S2).)* The TS `GraphEdgeMetadataSchema` parity gap, two
   of the three residual `/api` sites and the `<Entity>Store` barrel question shipped from this
   group; the proxy prefix now carries its measurement and the one shape left open to it
   (`proxy.conf.js` with a `bypass`, verified against a real `ng serve`).
@@ -3579,8 +3581,8 @@ groups, by what blocks them —
   `@SagaTransition`: the kernel routes no outcome or tag, so the flip is deferred to 0.10 (its entry
   under the annotation-surface debt).
 
-Also open and independent of all four: the missing `warnInertAttributes` call sites for `Saga` and
-`SagaStep`, and a comment naming the processor as the saga-step sorter.
+Independent of all four, and shipped: the `warnInertAttributes` call sites for `Saga` and `SagaStep`
+(#260), and a comment naming the processor as the saga-step sorter (#276).
 
 - [x] **B0 — the 0.12 pin bump. Final on both halves.**
       `exeris.sdk.version` → `0.12.0` and `exeris.kernel.version` → `0.12.0`, both final releases
@@ -3807,19 +3809,23 @@ first, a final release for both, is what the 0.9.0 cut waits on. B0 itself is ap
 
 ## 0.10.0 — scope set 2026-09-30
 
-Expected to pair with kernel 0.13, and with SDK 0.13 if one is needed.
+Expected to pair with kernel 0.13, and with SDK 0.13 if one is needed; if neither is final before
+the cut, 0.10.0 cuts on the `0.12.0` pins. Order, gates and the Java/TS pairing of every item below
+are in [`docs/0.10.0-release-plan.md`](docs/0.10.0-release-plan.md). T12 + T17 is the stretch wave
+there, and does not hold the cut. Track C, `@SagaTransition` and T48 slice C2 are conditional: each
+enters only if its upstream half is final first.
 
 - [ ] **T53 in full** (RFC, then ADR): `@RouteAccess` + `permissions` compiled into `RouteRequirement`. D10 resolves
       with it.
-- [ ] Track C (SDK record changes), `@SagaTransition`, T12 + T17, `@PrimaryKey`, unless one lands in 0.9.0 by its gate opening early.
+- [ ] Track C (SDK record changes), `@SagaTransition`, T12 + T17, `@PrimaryKey`.
 - [ ] **EV1-stream per-action driver** (ADR-044 amendment first): the streaming action runs, and its
       triggered events stream back. Moved from 0.9.0 on 2026-10-02; the open questions are under
       **EV1-stream**. Removes the 0.9.0 streaming-action warning.
 - [ ] **T59 — tenant isolation on stream routes** (the same ADR-044 amendment): the tenant guard in
       the entity-level and the per-action stream handler, an RLS `findById` before a per-action stream
       opens, and an isolation key on the events a live view forwards, so a stream delivers only its
-      own tenant's events. The key is a kernel ask: `EventDescriptor` carries none. Removes the 0.9.0
-      `EXT-PROC-1014` refusal; `exeris-codegen-ts` then emits stream clients for tenant-partitioned
+      own tenant's events. The key is a kernel ask: `EventDescriptor` carries none. If the kernel adds
+      the key, removes the 0.9.0 `EXT-PROC-1014` refusal; `exeris-codegen-ts` then emits stream clients for tenant-partitioned
       entities.
 - [x] **Maven coordinates move to the `eu.exeris` group** (founder decision 2026-10-06). Every
       module is published as `eu.exeris:<artifactId>`, the group of the kernel and SDK artefacts; the
@@ -3828,6 +3834,22 @@ Expected to pair with kernel 0.13, and with SDK 0.13 if one is needed.
       Amendment 1; consumer steps in `docs/MIGRATION-0.x-to-1.0.md`, 0.10.0 train.
 - [ ] **The 0.10.0 release PR switches the README quick start to `eu.exeris` and `0.10.0`.** Until
       then the snippets show the published `eu.exeris.tooling:0.9.0`, which a consumer can resolve.
+- [ ] **Carried from 0.9.0 "Alongside, no gate"** (TS wave S2): the `npm start` proxy prefix
+      (`proxy.conf.js` with a header-based `bypass`, verified against a real `ng serve`), codegen-ts
+      lint in CI, and deleting `KernelStrategy.generateClientCode` / `getRealTimeConfig`, which have
+      no production caller.
+- [ ] **Issues placed in 0.10.0:** #304 (form gaps), #271 (one header helper), #309
+      (`GraphMetadata.queries` written `null` when not extracted), #310 (an entity with no `id`
+      field — a processor error, and the TS model always carries `id`).
+- [ ] **Debts with no gate** (Java wave J2, TS wave S2): the `@DomainEvent` strict-mode call site
+      (T11), the T30 classpath check in `exeris:generate`, a golden OpenAPI document compared on
+      both JDK rows, a reflective check of the inert-registry keys against the SDK, the T58 residue
+      (`Partial<Create>` sent over `PUT`), and the `TODO` that `form-gen.ts` writes into generated
+      code.
+- [ ] **ADR-044 Amendment 2** also decides the GET route for a per-action stream (`EventSource` is
+      GET-only) and the `EventBusService` default endpoint, which no server route serves.
+- [ ] **Triage two dog-food findings this file does not record yet:** the repository's
+      `save`/`update` split with no upsert, and codegen-ts writing LF into a CRLF tree.
 - [ ] The removals below.
 
 **Not placed in a milestone**, because the next step belongs to another repository: C2
