@@ -9,8 +9,8 @@
  *     renders as text, and the form leaves to the list;
  *   - createForm=false / editForm=false: no route and no button for that form; the form component
  *     is emitted while either is on, and neither component nor export when both are off;
- *   - searchable=false: no search box and no debounce plumbing; filterable=false: no filter control;
- *     with both off and no control, no search-and-filter row.
+ *   - no search box whatever searchable says (the list route has no search parameter, ADR-096);
+ *     filterable=false: no filter control and no filter row.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -90,7 +90,6 @@ describe('@UI view switches — defaults', () => {
     for (const path of [`'${TAGS}'`, `'${TAGS}/new'`, `'${TAGS}/:id'`, `'${TAGS}/:id/edit'`]) {
       expect(routes).toContain(`path: ${path}`);
     }
-    expect(file(out, LIST)).toContain('data-testid="search-input"');
     expect(file(out, LIST)).toContain('data-testid="filter-pinned"');
   });
 });
@@ -188,28 +187,21 @@ describe('@UI(createForm = false) / @UI(editForm = false)', () => {
   });
 });
 
-describe('@UI(searchable = false) / @UI(filterable = false)', () => {
-  it('searchable=false drops the search box and its debounce plumbing, and keeps the filters', () => {
-    const list = file(emit({ searchable: false }), LIST);
-    expect(list).not.toContain('search-input');
-    expect(list).not.toContain('searchSubject');
-    expect(list).not.toContain('onSearch');
-    expect(list).not.toContain("from 'rxjs'");
-    expect(list).not.toContain('takeUntilDestroyed');
-    expect(list).toContain('data-testid="filter-pinned"');
+describe('@UI(searchable) / @UI(filterable = false)', () => {
+  it('no search box is emitted, searchable or not', () => {
+    for (const ui of [{ searchable: true }, { searchable: false }]) {
+      const list = file(emit(ui), LIST);
+      expect(list).not.toContain('search-input');
+      expect(list).not.toContain('onSearch');
+      expect(list).toContain('data-testid="filter-pinned"');
+    }
   });
 
-  it('filterable=false drops the filter controls whatever the fields say, and keeps search', () => {
+  it('filterable=false drops the filter controls and the filter row, whatever the fields say', () => {
     const list = file(emit({ filterable: false }), LIST);
     expect(list).not.toContain('filter-pinned');
     expect(list).not.toContain('filterPinned');
-    expect(list).toContain('data-testid="search-input"');
-  });
-
-  it('both off: no search-and-filter row at all', () => {
-    const list = file(emit({ searchable: false, filterable: false }), LIST);
-    expect(list).not.toContain('<!-- Search & Filters -->');
-    // ngModel is bound by nothing, so FormsModule is neither imported nor declared.
+    expect(list).not.toContain('<!-- Filters -->');
     expect(list).not.toContain('FormsModule');
   });
 });
