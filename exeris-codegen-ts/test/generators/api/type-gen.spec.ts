@@ -192,7 +192,7 @@ describe('TypeGenerator.generate — per-domain interface emission', () => {
     }), CTX)!.content;
     expect(withFilter).toContain('export interface OrderFilter {');
     expect(withFilter).toContain('status?: string;');
-    expect(withFilter).toContain('search?: string;'); // always last in filter block
+    expect(withFilter).not.toContain('search');
 
     const withoutFilter = gen.generate(domain({
       entityName: 'Order',

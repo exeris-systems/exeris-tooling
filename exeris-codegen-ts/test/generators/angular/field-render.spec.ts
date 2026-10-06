@@ -155,18 +155,34 @@ describe('resolveFieldRender — facets, enums and links', () => {
     expect(r.detail.display).toBe('text');
   });
 
-  it('every filterable field gets the filter its list cell calls for; a field not filterable gets none', () => {
+  it('a field the list route filters on gets the equality control of its value; any other gets none', () => {
     const filterOf = (field: Record<string, unknown>) => render({ ...field, filterable: true }).list.filter;
     expect(filterOf({ type: 'Boolean' })).toBe('boolean');
     expect(filterOf({ type: 'boolean' })).toBe('boolean');
     expect(filterOf({ type: 'String' })).toBe('text');
     expect(filterOf({ type: 'java.util.UUID' })).toBe('text');
     expect(filterOf({ type: 'String', dataType: 'url' })).toBe('text');
-    expect(filterOf({ type: 'java.time.LocalDate' })).toBe('date-range');
-    expect(filterOf({ type: 'java.time.Instant' })).toBe('date-range');
-    expect(filterOf({ type: 'java.lang.Integer' })).toBe('number-range');
-    expect(filterOf({ type: 'java.math.BigDecimal', dataType: 'currency' })).toBe('number-range');
+    expect(filterOf({ type: 'java.time.LocalDate' })).toBe('date');
+    expect(filterOf({ type: 'java.lang.Integer' })).toBe('number');
+    expect(filterOf({ type: 'long' })).toBe('number');
+    expect(filterOf({ type: 'java.math.BigDecimal', dataType: 'currency' })).toBe('number');
+    // The route filters no instant, date-time, list or unknown type: those have no control.
+    expect(filterOf({ type: 'java.time.Instant' })).toBeUndefined();
+    expect(filterOf({ type: 'java.time.LocalDateTime' })).toBeUndefined();
+    expect(filterOf({ type: 'java.util.List<java.lang.String>' })).toBeUndefined();
+    expect(filterOf({ type: 'java.time.OffsetDateTime' })).toBeUndefined();
     expect(render({ type: 'Boolean' }).list.filter).toBeUndefined();
+    expect(render({ type: 'Boolean' }).list.filterable).toBe(false);
+  });
+
+  it('a column sorts when the list route sorts on its field', () => {
+    expect(render({ type: 'String', sortable: true }).list.sortable).toBe(true);
+    expect(render({ type: 'java.time.Instant', sortable: true }).list.sortable).toBe(true);
+    expect(render({ type: 'String' }).list.sortable).toBe(false);
+    expect(render({ type: 'java.util.List<java.lang.String>', sortable: true }).list.sortable).toBe(false);
+    // A system field is never a sort key or a filter, whatever the field says.
+    const stamp = render({ name: 'createdAt', type: 'java.time.Instant', sortable: true, filterable: true }, { audited: true });
+    expect(stamp.list).toMatchObject({ sortable: false, filterable: false, filter: undefined });
   });
 });
 

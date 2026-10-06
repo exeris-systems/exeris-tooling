@@ -1,7 +1,7 @@
 /**
  * Coverage for src/generators/angular/list-gen.ts — ListGenerator emits a standalone, OnPush,
- * signal-driven list component that loads the whole collection (the server's list route returns
- * an array and reads no query parameter) and pages, sorts, searches and filters it in the browser.
+ * signal-driven list component that reads one page at a time from the list route, which pages,
+ * sorts and filters on the server and answers a page envelope (ADR-096).
  *
  * Exercises:
  *   - list columns: the first 5 non-hidden non-system fields
@@ -9,10 +9,10 @@
  *   - systemFields.primaryKeyField alias in track / data-testid / delete dispatch
  *   - per-column rendering: boolean badge, enum badge, number / currency / percent right-aligned,
  *     date against date-time, url and foreign-key links
- *   - sortable headers, every filterable field's control, search, page size and row actions
+ *   - sortable headers and equality filters for exactly what the route reads, no search, page size
+ *     within the route's bounds, paging from the envelope, and row actions
  */
 
-import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import { ListGenerator, generateList } from '../../../src/generators/angular/list-gen.js';
 import {
@@ -125,61 +125,123 @@ describe('ListGenerator emitted content — top-level structure', () => {
     expect(content).not.toContain('[@listAnimation]');
   });
 
-  it('ListComponent class holds every loaded row and derives filtered, paged items from it', () => {
-    const content = gen.generate(domain({ entityName: 'Order' }), CTX)!.content;
+  it('reads one page through an rxResource keyed on the page, size, sort and filters', () => {
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      fields: [
+        field({ name: 'code', type: 'String', sortable: true, filterable: true }),
+      ],
+    }), CTX)!.content;
 
-    expect(content).toContain('export class OrderListComponent implements OnInit {');
-    expect(content).toContain('readonly rows = signal<Order[]>([]);');
+    expect(content).toContain('export class OrderListComponent {');
+    expect(content).not.toContain('OnInit');
+    expect(content).toContain("import { rxResource } from '@angular/core/rxjs-interop';");
+    expect(content).toContain("import { Order, OrderService, Page, OrderFilter, OrderSortField } from '../services/order.service';");
     expect(content).toContain('readonly currentPage = signal(0);');
     expect(content).toContain('readonly pageSize = signal(20);');
-    expect(content).toContain('readonly isLoading = signal(false);');
-    expect(content).toContain('readonly error = signal<string | null>(null);');
-    expect(content).toContain('readonly totalElements = computed(() => this.filtered().length);');
-    expect(content).toContain('readonly totalPages = computed(() => Math.ceil(this.totalElements() / this.pageSize()));');
-    expect(content).toContain('readonly page = computed(() => Math.min(this.currentPage(), Math.max(this.totalPages() - 1, 0)));');
-    expect(content).toContain('return this.filtered().slice(start, start + this.pageSize());');
+    expect(content).toContain('readonly sortField = signal<OrderSortField | null>(null);');
+    expect(content).toContain("readonly sortDirection = signal<'asc' | 'desc'>('asc');");
+    expect(content).toContain([
+      '  private readonly pageResource = rxResource({',
+      '    params: () => {',
+      '      const sort = this.sortField();',
+      '      return {',
+      '        request: {',
+      '          page: this.currentPage(),',
+      '          size: this.pageSize(),',
+      '          ...(sort !== null ? { sort, direction: this.sortDirection() } : {}),',
+      '        },',
+      '        filter: this.filter(),',
+      '      };',
+      '    },',
+      '    stream: ({ params }) => this.service.findAll(params.request, params.filter),',
+      '  });',
+    ].join('\n'));
   });
 
-  it('search is a signal the filtered rows read; no debounce plumbing', () => {
-    const content = gen.generate(domain({
-      entityName: 'Order',
-      fields: [field({ name: 'code', type: 'String' }), field({ name: 'note', type: 'String' })],
-    }), CTX)!.content;
-
-    expect(content).toContain('(input)="onSearch(searchBox.value)"');
-    expect(content).toContain("readonly searchQuery = signal('');");
-    expect(content).toContain('const query = this.searchQuery().trim().toLowerCase();');
-    // No field is marked searchable, so search covers the columns.
-    expect(content).toContain("(query === '' || [item.code, item.note].some((value) => textOf(value).includes(query)))");
-    expect(content).not.toContain('searchSubject');
-    expect(content).not.toContain('debounceTime');
-  });
-
-  it('search covers only the searchable fields when any is marked', () => {
-    const content = gen.generate(domain({
-      entityName: 'Order',
-      fields: [field({ name: 'code', type: 'String', searchable: true }), field({ name: 'note', type: 'String' })],
-    }), CTX)!.content;
-    expect(content).toContain('[item.code].some((value) => textOf(value).includes(query))');
-  });
-
-  it('loadData asks for the whole collection and reads the array the server answers with', () => {
+  it('shows the page envelope the route answers, holding the last one while the next loads', () => {
     const content = gen.generate(domain({ entityName: 'Order' }), CTX)!.content;
 
-    expect(content).toContain('this.service.findAll().subscribe({');
-    expect(content).toContain('this.rows.set(listRows(result));');
-    expect(content).toContain('function listRows<T>(result: Page<T> | T[]): T[] {');
-    expect(content).toContain('return Array.isArray(result) ? result : (result.content ?? []);');
-    expect(content).not.toContain('page: this.currentPage()');
+    expect(content).toContain('private readonly result = linkedSignal<Page<Order> | undefined, Page<Order> | undefined>({');
+    expect(content).toContain('    computation: (value, previous) => value ?? previous?.value,');
+    expect(content).toContain('readonly items = computed(() => this.result()?.content ?? []);');
+    expect(content).toContain('readonly totalElements = computed(() => this.result()?.totalElements ?? 0);');
+    expect(content).toContain('readonly totalPages = computed(() => this.result()?.totalPages ?? 0);');
+    expect(content).toContain('readonly page = computed(() => this.result()?.number ?? this.currentPage());');
+    expect(content).toContain('readonly isFirst = computed(() => this.result()?.first ?? true);');
+    expect(content).toContain('readonly isLast = computed(() => this.result()?.last ?? true);');
+    expect(content).toContain('[disabled]="isFirst()"');
+    expect(content).toContain('[disabled]="isLast()"');
+    expect(content).toContain('Showing <span class="font-medium">{{ rangeStart() }}</span>');
+    expect(content).toContain('readonly isLoading = computed(() => this.pageResource.isLoading());');
   });
 
-  it('page size is a selector over 10 / 20 / 25 / 50 that returns to the first page', () => {
+  it('without a sortable column or a filter, the request is the page and size alone', () => {
+    const content = gen.generate(domain({ entityName: 'Order', fields: [field({ name: 'code', type: 'String' })] }), CTX)!.content;
+
+    expect(content).toContain([
+      '    params: () => ({',
+      '      request: { page: this.currentPage(), size: this.pageSize() },',
+      '      filter: {},',
+      '    }),',
+    ].join('\n'));
+    expect(content).not.toContain('sortField');
+    expect(content).not.toContain('OrderFilter');
+    expect(content).not.toContain('WritableSignal');
+  });
+
+  it('keeps no client-side paging, sorting, filtering or search', () => {
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      fields: [
+        field({ name: 'code', type: 'String', searchable: true, sortable: true, filterable: true }),
+        field({ name: 'total', type: 'java.math.BigDecimal', sortable: true, filterable: true }),
+        field({ name: 'placedOn', type: 'java.time.LocalDate', filterable: true }),
+      ],
+    }), CTX)!.content;
+
+    for (const gone of [
+      'readonly rows', 'readonly filtered', 'readonly sorted', 'listRows', 'textOf', 'inDayRange', 'inNumberRange',
+      'compareValues', 'compareDecimals', '.slice(', 'search', 'Math.',
+    ]) {
+      expect(content, gone).not.toContain(gone);
+    }
+  });
+
+  it('reloads the page after an action or a delete; the last row of a later page steps back a page', () => {
+    const content = gen.generate(domain({ entityName: 'Order', actions: [{ name: 'cancel', params: [] }] }), CTX)!.content;
+
+    expect(content).toContain('  loadData(): void {\n    this.pageResource.reload();\n  }');
+    expect(content).toContain([
+      '  private afterRemoval(): void {',
+      '    const page = this.page();',
+      '    if (this.items().length === 1 && page > 0) {',
+      '      this.currentPage.set(page - 1);',
+      '    } else {',
+      '      this.pageResource.reload();',
+      '    }',
+      '  }',
+    ].join('\n'));
+    expect(content).toContain('        next: () => {\n          this.afterRemoval();\n        },');
+    expect(content).toContain('      next: () => {\n        this.pageResource.reload();\n      },');
+  });
+
+  it('page size is a selector over 10 / 20 / 25 / 50 / 100 that returns to the first page and never leaves 1..100', () => {
     const content = gen.generate(domain({ entityName: 'Order' }), CTX)!.content;
     expect(content).toContain('data-testid="page-size"');
-    for (const size of [10, 20, 25, 50]) {
+    for (const size of [10, 20, 25, 50, 100]) {
       expect(content).toContain(`<option value="${size}" [selected]="pageSize() === ${size}">${size}</option>`);
     }
-    expect(content).toContain('this.pageSize.set(Number(size));');
+    expect(content).toContain('const MAX_PAGE_SIZE = 100;');
+    expect(content).toContain([
+      '  onPageSizeChange(size: string): void {',
+      '    const value = Number(size);',
+      '    if (Number.isInteger(value) && value >= 1 && value <= MAX_PAGE_SIZE) {',
+      '      this.pageSize.set(value);',
+      '      this.currentPage.set(0);',
+      '    }',
+      '  }',
+    ].join('\n'));
   });
 });
 
@@ -191,7 +253,6 @@ describe('ListGenerator displayName / pluralName fallbacks', () => {
     // Singular displayName 'Order' + plural fallback 'Orders'.
     expect(content).toContain('<h1 class="text-2xl font-bold tracking-tight text-gray-900 dark:text-white">Orders</h1>');
     expect(content).toContain('No orders yet');
-    expect(content).toContain("Search orders...");
   });
 
   it('explicit displayName + pluralName both flow into emitted markup', () => {
@@ -412,6 +473,21 @@ describe('ListGenerator sortable column markers', () => {
     expect(content).not.toContain("(click)=\"onSort('orderNumber')\"");
     expect(content).not.toContain('aria-sort');
   });
+
+  it('a column the route does not sort on has no sort control, whatever the field says', () => {
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      audited: true,
+      fields: [
+        field({ name: 'tags', type: 'java.util.List<java.lang.String>', sortable: true }),
+        field({ name: 'placedAt', type: 'java.time.Instant', sortable: true }),
+      ],
+    }), CTX)!.content;
+
+    expect(content).not.toContain("onSort('tags')");
+    expect(content).toContain("onSort('placedAt')");
+    expect(content).toContain("readonly sortField = signal<OrderSortField | null>(null);");
+  });
 });
 
 // ---------- systemFields.primaryKeyField alias ----------
@@ -446,68 +522,44 @@ describe('ListGenerator systemFields.primaryKeyField alias propagation', () => {
 
 // ---------- sorting ----------
 
-describe('ListGenerator client-side sorting', () => {
+describe('ListGenerator server-side sorting', () => {
   const gen = new ListGenerator();
 
-  it('a sortable column sorts the filtered rows; unsorted keeps the server order', () => {
+  it('a sort header sets the sorted property, flips the direction on a second click, and returns to the first page', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
       fields: [field({ name: 'orderNumber', type: 'String', sortable: true })],
     }), CTX)!.content;
 
-    expect(content).toContain("readonly sortField = signal<keyof Order | null>(null);");
-    expect(content).toContain("readonly sortDirection = signal<'asc' | 'desc'>('asc');");
-    expect(content).toContain('return [...rows].sort((a, b) => compareValues(a[field], b[field], direction));');
-    expect(content).toContain('return this.sorted().slice(start, start + this.pageSize());');
-    expect(content).toContain('function compareValues(a: unknown, b: unknown, direction: 1 | -1): number {');
-    expect(content).toContain('onSort(field: keyof Order): void {');
+    expect(content).toContain([
+      '  onSort(field: OrderSortField): void {',
+      '    if (this.sortField() === field) {',
+      "      this.sortDirection.update((d) => (d === 'asc' ? 'desc' : 'asc'));",
+      '    } else {',
+      '      this.sortField.set(field);',
+      "      this.sortDirection.set('asc');",
+      '    }',
+      '    this.currentPage.set(0);',
+      '  }',
+    ].join('\n'));
   });
 
-  it('the emitted comparator orders decimal strings by value, sign and fraction length included', () => {
-    const content = gen.generate(domain({
-      entityName: 'Account',
-      fields: [field({ name: 'balance', type: 'java.math.BigDecimal', sortable: true })],
-    }), CTX)!.content;
-    const start = content.indexOf('const DECIMAL = ');
-    const end = content.indexOf('\n}\n', content.indexOf('function compareValues(')) + 3;
-    const js = ts.transpileModule(`${content.slice(start, end)}\nreturn compareValues;`, {
-      compilerOptions: { target: ts.ScriptTarget.ES2022 },
-    }).outputText;
-    const compareValues = new Function(js)() as (a: unknown, b: unknown, direction: 1 | -1) => number;
-    const sort = (values: unknown[], direction: 1 | -1 = 1) => [...values].sort((a, b) => compareValues(a, b, direction));
-
-    expect(sort(['2.5', '2.25', '1.10', '1.5', '-5', '0', '10', '-0.5', '9.99'])).toEqual(
-      ['-5', '-0.5', '0', '1.10', '1.5', '2.25', '2.5', '9.99', '10'],
-    );
-    expect(sort(['2.5', '2.25', '-5', '10'], -1)).toEqual(['10', '2.5', '2.25', '-5']);
-    // Digits beyond a double's precision still order exactly.
-    expect(sort(['12345678901234567890.02', '12345678901234567890.01'])).toEqual(
-      ['12345678901234567890.01', '12345678901234567890.02'],
-    );
-    expect(compareValues('1.50', '1.5', 1)).toBe(0);
-    // Absent values sort last in both directions; numbers compare by value; dates stay textual.
-    expect(sort([null, '3', '', '1'])).toEqual(['1', '3', null, '']);
-    expect(sort([null, '3', '1'], -1)).toEqual(['3', '1', null]);
-    expect(sort([10, 9, 100])).toEqual([9, 10, 100]);
-    expect(sort(['2026-10-04', '2026-01-15'])).toEqual(['2026-01-15', '2026-10-04']);
-  });
-
-  it('no sortable column: no sort state, no comparator', () => {
+  it('no sortable column: no sort state', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
       fields: [field({ name: 'orderNumber', type: 'String' })],
     }), CTX)!.content;
     expect(content).not.toContain('sortField');
-    expect(content).not.toContain('compareValues');
+    expect(content).not.toContain('onSort');
   });
 });
 
 // ---------- filters ----------
 
-describe('ListGenerator filters — every filterable field, client-side', () => {
+describe('ListGenerator filters — the list route\'s equality filters', () => {
   const gen = new ListGenerator();
 
-  it('every filterable field gets a control: no first-two limit', () => {
+  it('every filter of the route gets a control: no first-two limit', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
       fields: [
@@ -520,53 +572,113 @@ describe('ListGenerator filters — every filterable field, client-side', () => 
     expect(content).toContain('data-testid="filter-active"');
     expect(content).toContain('data-testid="filter-paid"');
     expect(content).toContain('data-testid="filter-shipped"');
-    expect(content).toContain("(activeFilter === '' || item.active === (activeFilter === 'true'))");
+    expect(content).toContain("    active: this.filterActive() === '' ? undefined : this.filterActive() === 'true',");
     expect(content).toContain("readonly filterActive = signal('');");
     expect(content).toContain('(change)="setFilter(filterActive, filterActiveControl.value)"');
+    expect(content).toContain('<option value="true">Yes</option>');
   });
 
-  it('a text field filters by contains, case-insensitively', () => {
+  it('a change to a filter returns to the first page', () => {
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      fields: [field({ name: 'status', type: 'String', filterable: true })],
+    }), CTX)!.content;
+    expect(content).toContain([
+      '  setFilter(target: WritableSignal<string>, value: string): void {',
+      '    target.set(value.trim());',
+      '    this.currentPage.set(0);',
+      '  }',
+    ].join('\n'));
+  });
+
+  it('a string filter is a text input applied when committed, sent as typed', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
       fields: [field({ name: 'status', type: 'String', filterable: true })],
     }), CTX)!.content;
     expect(content).toContain('data-testid="filter-status"');
-    expect(content).toContain('type="search"');
-    expect(content).toContain("const statusFilter = this.filterStatus().trim().toLowerCase();");
-    expect(content).toContain("(statusFilter === '' || textOf(item.status).includes(statusFilter))");
+    expect(content).toContain('          type="text"\n          (change)="setFilter(filterStatus, filterStatusControl.value)"');
+    expect(content).toContain('    status: this.filterStatus() || undefined,');
   });
 
-  it('a date or date-time field filters by an inclusive day range', () => {
+  it('a LocalDate filter is a date input', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
-      fields: [field({ name: 'placedAt', type: 'java.time.Instant', filterable: true })],
+      fields: [field({ name: 'placedOn', type: 'java.time.LocalDate', filterable: true })],
     }), CTX)!.content;
-    expect(content).toContain('data-testid="filter-placedAt-from"');
-    expect(content).toContain('data-testid="filter-placedAt-to"');
-    expect(content).toContain('type="date"');
-    expect(content).toContain('inDayRange(item.placedAt, this.filterPlacedAtFrom(), this.filterPlacedAtTo())');
-    expect(content).toContain('function inDayRange(value: unknown, from: string, to: string): boolean {');
+    expect(content).toContain('data-testid="filter-placedOn"');
+    expect(content).toContain('          type="date"\n          (change)="setFilter(filterPlacedOn, filterPlacedOnControl.value)"');
+    expect(content).toContain('    placedOn: this.filterPlacedOn() || undefined,');
   });
 
-  it('a numeric field filters by an inclusive range', () => {
+  it('a number filter is a text input with a numeric keyboard, sent as a number; a BigDecimal as its text', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
-      fields: [field({ name: 'priority', type: 'Integer', filterable: true })],
+      fields: [
+        field({ name: 'priority', type: 'Integer', filterable: true }),
+        field({ name: 'weight', type: 'double', filterable: true }),
+        field({ name: 'total', type: 'java.math.BigDecimal', filterable: true }),
+      ],
     }), CTX)!.content;
-    expect(content).toContain('data-testid="filter-priority-min"');
-    expect(content).toContain('data-testid="filter-priority-max"');
-    expect(content).toContain('inNumberRange(item.priority, this.filterPriorityMin(), this.filterPriorityMax())');
+    expect(content).toContain('data-testid="filter-priority"');
+    expect(content).toContain('          type="text"\n          inputmode="numeric"\n          (change)="setFilter(filterPriority, filterPriorityControl.value)"');
+    expect(content).toContain('          inputmode="decimal"\n          (change)="setFilter(filterWeight, filterWeightControl.value)"');
+    expect(content).toContain('          inputmode="decimal"\n          (change)="setFilter(filterTotal, filterTotalControl.value)"');
+    expect(content).toContain('    priority: numberFilter(this.filterPriority()),');
+    expect(content).toContain('    weight: numberFilter(this.filterWeight()),');
+    expect(content).toContain('    total: this.filterTotal() || undefined,');
+    expect(content).toContain('function numberFilter(text: string): number | undefined {');
+    expect(content).toContain("  return text.trim() === '' || !Number.isFinite(value) ? undefined : value;");
   });
 
-  it('without a filterable field or search the filtered rows are the loaded rows', () => {
+  it('an Instant, a LocalDateTime, a List, a system field and a hidden field get no control', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
-      uiMetadata: { searchable: false },
+      audited: true,
+      fields: [
+        field({ name: 'placedAt', type: 'java.time.Instant', filterable: true }),
+        field({ name: 'pickupAt', type: 'java.time.LocalDateTime', filterable: true }),
+        field({ name: 'tags', type: 'java.util.List<java.lang.String>', filterable: true }),
+        field({ name: 'createdAt', type: 'java.time.Instant', filterable: true }),
+        field({ name: 'secret', type: 'String', filterable: true, hidden: true }),
+      ],
+    }), CTX)!.content;
+    expect(content).not.toContain('data-testid="filter-');
+    expect(content).not.toContain('setFilter');
+    expect(content).not.toContain('-from"');
+    expect(content).not.toContain('-min"');
+  });
+
+  it('a MANY_TO_ONE filters by its <base>Id, a text input, after the fields', () => {
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      fields: [field({ name: 'code', type: 'String', filterable: true })],
+      relationships: [{ name: 'customer', targetEntity: 'Customer', type: 'MANY_TO_ONE' }],
+    }), CTX)!.content;
+    expect(content).toContain('aria-label="Filter by Customer"');
+    expect(content).toContain('data-testid="filter-customerId"');
+    expect(content).toContain('    customerId: this.filterCustomerId() || undefined,');
+    expect(content.indexOf('filter-code')).toBeLessThan(content.indexOf('filter-customerId'));
+  });
+
+  it('a filter row reports when the filters match nothing', () => {
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      fields: [field({ name: 'code', type: 'String', filterable: true })],
+    }), CTX)!.content;
+    expect(content).toContain('readonly filtersActive = computed(() => Object.values(this.filter()).some((value) => value !== undefined));');
+    expect(content).toContain('} @else if (filtersActive()) {\n              No orders match');
+  });
+
+  it('without a filter there is no filter row, state or setter', () => {
+    const content = gen.generate(domain({
+      entityName: 'Order',
       fields: [field({ name: 'status', type: 'String' })],
     }), CTX)!.content;
-    expect(content).toContain('readonly filtered = computed(() => this.rows());');
+    expect(content).not.toContain('<!-- Filters -->');
     expect(content).not.toContain('setFilter');
     expect(content).not.toContain('WritableSignal');
+    expect(content).not.toContain('filtersActive');
   });
 });
 
@@ -603,7 +715,12 @@ describe('ListGenerator enum columns and filters', () => {
     const content = gen.generate(order(true), ctx)!.content;
     expect(content).toContain('data-testid="filter-status"');
     expect(content).toContain(`<option value="NEW">{{ statusBadges['NEW'].label }}</option>`);
-    expect(content).toContain("(statusFilter === '' || String(item.status) === statusFilter)");
+    expect(content).toContain("    status: (this.filterStatus() || undefined) as OrderFilter['status'],");
+  });
+
+  it('an enum the front cannot recognise is not a filter', () => {
+    const content = gen.generate(order(true), CTX)!.content;
+    expect(content).not.toContain('filter-status');
   });
 
   it('a type no enum was emitted for renders as text and imports nothing from types/enums', () => {
@@ -718,18 +835,17 @@ describe('ListGenerator styles its controls, table, actions and panels through t
 
   it('the table is an exeris-table in an exeris-card, and its cells carry only their alignment', () => {
     expect(content).toContain('<div class="exeris-card overflow-hidden">');
-    expect(content).toContain('<table class="exeris-table" aria-label="Orders table" data-testid="data-table">');
+    expect(content).toContain('<table class="exeris-table" aria-label="Orders table" data-testid="data-table" [attr.aria-busy]="isLoading()" [class.opacity-60]="isLoading()">');
     expect(content).toContain('<thead>');
     expect(content).toContain('<tbody>');
     expect(content).toContain('<td class="text-right tabular-nums">');
     expect(content).not.toMatch(/<t[hd][^>]*\bpx-6\b/);
   });
 
-  it('search, filters and the page size are kit fields', () => {
-    expect(content).toContain('class="exeris-input pl-10"');
+  it('filters and the page size are kit fields', () => {
     expect(content).toMatch(/data-testid="filter-note"\s+class="exeris-input sm:w-auto"/);
     expect(content).toMatch(/data-testid="filter-paid"\s+class="exeris-select sm:w-auto"/);
-    expect(content).toMatch(/data-testid="filter-total-min"\s+class="exeris-input sm:w-auto"/);
+    expect(content).toMatch(/data-testid="filter-total"\s+class="exeris-input sm:w-auto"/);
     expect(content).toMatch(/data-testid="filter-status"\s+class="exeris-select sm:w-auto"/);
     expect(content).toContain('data-testid="page-size" class="exeris-select w-auto"');
   });

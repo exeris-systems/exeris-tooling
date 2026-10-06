@@ -4,12 +4,13 @@
  *   - Filter + StoreState interfaces
  *   - 12 private signals (entities/selected/loading/saving/error/filter/
  *     page/size/totalElements/totalPages/sortField/sortDirection)
- *   - 9 computed derived signals (filteredEntities/count/filteredCount/
- *     isEmpty/hasActiveFilter/hasNextPage/hasPrevPage/state)
+ *   - computed derived signals (count/isEmpty/hasActiveFilter/
+ *     hasNextPage/hasPrevPage/state)
  *   - CRUD actions with optimistic update + rollback on error
  *   - Selection / filter / pagination / sort / state-management actions
  *   - Optional softDelete branch (archive method; restore deprecated — nothing serves one)
- *   - Private helpers (getSearchableText / extractErrorMessage)
+ *   - Private helper extractErrorMessage
+ *   - loadAll reads the list route's page envelope (ADR-096)
  *
  * Unique-to-store contracts pinned here:
  *   - NO generateAggregate method (no barrel file)
@@ -91,7 +92,7 @@ describe('StoreGenerator emitted content — top-level structure', () => {
     expect(content).toContain("import { takeUntilDestroyed } from '@angular/core/rxjs-interop';");
     expect(content).toContain("import { OrderService } from '../services/order.service';");
     expect(content).toContain("import type { Order, OrderCreate, OrderUpdate } from '../types/order.types';");
-    expect(content).toContain("import type { Page, PageRequest, OrderFilter } from '../services/order.service';");
+    expect(content).toContain("import type { PageRequest, OrderFilter, OrderSortField } from '../services/order.service';");
   });
 
   it('re-exports the service\'s Filter instead of declaring a second one', () => {
@@ -100,7 +101,7 @@ describe('StoreGenerator emitted content — top-level structure', () => {
       fields: [field({ name: 'status', type: 'com.shop.OrderStatus', filterable: true })],
     }), CTX)!.content;
 
-    expect(content).toContain('export type { OrderFilter };');
+    expect(content).toContain('export type { OrderFilter, OrderSortField };');
     expect(content).not.toContain('export interface OrderFilter');
     // The enum the filter names is the service's import, so the store needs none of its own.
     expect(content).not.toContain("from '../types/enums'");
@@ -117,7 +118,7 @@ describe('StoreGenerator emitted content — top-level structure', () => {
     expect(content).toContain('error: string | null;');
     expect(content).toContain('filter: OrderFilter;');
     expect(content).toContain('pagination: {');
-    expect(content).toContain("sort: {\n    field: string;\n    direction: 'asc' | 'desc';\n  };");
+    expect(content).toContain("sort: {\n    /** The sorted property; `null` leaves the rows in id order. */\n    field: OrderSortField | null;\n    direction: 'asc' | 'desc';\n  };");
   });
 
   it('emits @Injectable({ providedIn: \'root\' }) decorator on the entityName-suffixed Store class', () => {
@@ -148,8 +149,8 @@ describe('StoreGenerator private signal declarations', () => {
     expect(content).toContain('private readonly _size = signal(20);');
     expect(content).toContain('private readonly _totalElements = signal(0);');
     expect(content).toContain('private readonly _totalPages = signal(0);');
-    expect(content).toContain("private readonly _sortField = signal<string>('id');");
-    expect(content).toContain("private readonly _sortDirection = signal<'asc' | 'desc'>('desc');");
+    expect(content).toContain('private readonly _sortField = signal<OrderSortField | null>(null);');
+    expect(content).toContain("private readonly _sortDirection = signal<'asc' | 'desc'>('asc');");
   });
 
   it('public readonly signal surface exposes each private signal via .asReadonly()', () => {
@@ -164,17 +165,15 @@ describe('StoreGenerator private signal declarations', () => {
   });
 });
 
-// ---------- 9 computed derived signals ----------
+// ---------- computed derived signals ----------
 
 describe('StoreGenerator computed-signal declarations', () => {
   const gen = new StoreGenerator();
 
-  it('declares filteredEntities / count / filteredCount / isEmpty / hasActiveFilter / hasNextPage / hasPrevPage / state', () => {
+  it('declares count / isEmpty / hasActiveFilter / hasNextPage / hasPrevPage / state', () => {
     const content = gen.generate(domain({ entityName: 'Order' }), CTX)!.content;
 
-    expect(content).toContain('readonly filteredEntities = computed(() => {');
     expect(content).toContain('readonly count = computed(() => this._entities().length);');
-    expect(content).toContain('readonly filteredCount = computed(() => this.filteredEntities().length);');
     expect(content).toContain('readonly isEmpty = computed(() => this._entities().length === 0);');
     expect(content).toContain('readonly hasActiveFilter = computed(() => {');
     expect(content).toContain('readonly hasNextPage = computed(() => this._page() < this._totalPages() - 1);');
@@ -263,16 +262,28 @@ describe('StoreGenerator action surface', () => {
     expect(content).toContain('this._entities().find(e => e.id === id)');
   });
 
-  it('filter actions: setFilter / updateFilter / clearFilter / setSearch + each resets page to 0 and reloads', () => {
+  it('filter actions: setFilter / updateFilter / clearFilter, each resetting page to 0 and reloading', () => {
     const content = gen.generate(domain({ entityName: 'Order' }), CTX)!.content;
 
     expect(content).toContain('async setFilter(filter: OrderFilter): Promise<void> {');
     expect(content).toContain('async updateFilter<K extends keyof OrderFilter>(');
     expect(content).toContain('async clearFilter(): Promise<void> {');
-    expect(content).toContain('async setSearch(query: string): Promise<void> {');
+  });
 
-    // setSearch routes through updateFilter('search', query || undefined)
-    expect(content).toContain("await this.updateFilter('search', query || undefined);");
+  it('has no search: the list route reads no search parameter', () => {
+    const content = gen.generate(domain({
+      entityName: 'Order',
+      fields: [field({ name: 'name', type: 'String', searchable: true, filterable: true })],
+    }), CTX)!.content;
+
+    expect(content).not.toMatch(/search/i);
+    expect(content).not.toContain('filteredEntities');
+  });
+
+  it('an active filter is any filter value that is set', () => {
+    const content = gen.generate(domain({ entityName: 'Order' }), CTX)!.content;
+
+    expect(content).toContain("return Object.values(filter).some((value) => value !== undefined && value !== null && value !== '');");
   });
 
   it('pagination actions: goToPage / nextPage / prevPage / setPageSize with bounds-guarded behaviour', () => {
@@ -285,13 +296,17 @@ describe('StoreGenerator action surface', () => {
     expect(content).toContain('async prevPage(): Promise<void> {');
     expect(content).toContain('if (this.hasPrevPage()) {');
     expect(content).toContain('async setPageSize(size: number): Promise<void> {');
+    // A size the route would refuse is never sent.
+    expect(content).toContain('const MIN_PAGE_SIZE = 1;');
+    expect(content).toContain('const MAX_PAGE_SIZE = 100;');
+    expect(content).toContain('this._size.set(Math.min(Math.max(Math.trunc(size), MIN_PAGE_SIZE), MAX_PAGE_SIZE));');
   });
 
   it('sorting actions: setSort(field, direction) + toggleSort(field) with same-field flip-or-set logic', () => {
     const content = gen.generate(domain({ entityName: 'Order' }), CTX)!.content;
 
-    expect(content).toContain("async setSort(field: string, direction: 'asc' | 'desc' = 'asc'): Promise<void> {");
-    expect(content).toContain('async toggleSort(field: string): Promise<void> {');
+    expect(content).toContain("async setSort(field: OrderSortField | null, direction: 'asc' | 'desc' = 'asc'): Promise<void> {");
+    expect(content).toContain('async toggleSort(field: OrderSortField): Promise<void> {');
     expect(content).toContain("this._sortDirection.update(d => d === 'asc' ? 'desc' : 'asc');");
   });
 
@@ -301,7 +316,7 @@ describe('StoreGenerator action surface', () => {
     expect(content).toContain('clearError(): void {');
     expect(content).toContain('reset(): void {');
     // reset sets every signal back to its constructed-default state.
-    expect(content).toMatch(/reset\(\): void \{[\s\S]*?this\._entities\.set\(\[\]\);[\s\S]*?this\._size\.set\(20\);[\s\S]*?this\._sortDirection\.set\('desc'\);[\s\S]*?\}/);
+    expect(content).toMatch(/reset\(\): void \{[\s\S]*?this\._entities\.set\(\[\]\);[\s\S]*?this\._size\.set\(20\);[\s\S]*?this\._sortField\.set\(null\);[\s\S]*?this\._sortDirection\.set\('asc'\);[\s\S]*?\}/);
   });
 });
 
@@ -310,44 +325,39 @@ describe('StoreGenerator action surface', () => {
 describe('StoreGenerator systemFields.primaryKeyField alias propagation', () => {
   const gen = new StoreGenerator();
 
-  it('default idField "id" used in ALL 9 ${idField} substitution sites across the emitted store', () => {
+  it('default idField "id" used in ALL 7 ${idField} substitution sites across the emitted store', () => {
     const content = gen.generate(domain({ entityName: 'Order' }), CTX)!.content;
 
-    // 9 substitution sites in store-gen.ts:
-    expect(content).toContain("private readonly _sortField = signal<string>('id');");        // 1 — _sortField init
-    expect(content).toContain('entities.map(e => e.id === id ? entity : e)');                  // 2 — loadById map
-    expect(content).toContain('entities.map(e => e.id === id ? { ...e, ...data }');           // 3 — update optimistic map
-    expect(content).toContain('entities.map(e => e.id === id ? updated : e)');                // 4 — update server-replace map
-    expect(content).toContain('entities.filter(e => e.id !== id)');                            // 5 — delete optimistic filter
-    expect(content).toContain('this._entities().find(e => e.id === id)');                      // 6 — select find
-    expect(content).toContain("this._sortField.set('id');");                                   // 7 — reset re-init
-    // selected-match checks fire in BOTH update AND delete (sites 8 + 9).
+    // 7 substitution sites in store-gen.ts:
+    expect(content).toContain('entities.map(e => e.id === id ? entity : e)');                  // 1 — loadById map
+    expect(content).toContain('entities.map(e => e.id === id ? { ...e, ...data }');           // 2 — update optimistic map
+    expect(content).toContain('entities.map(e => e.id === id ? updated : e)');                // 3 — update server-replace map
+    expect(content).toContain('entities.filter(e => e.id !== id)');                            // 4 — delete optimistic filter
+    expect(content).toContain('this._entities().find(e => e.id === id)');                      // 5 — select find
+    // selected-match checks fire in BOTH update AND delete (sites 6 + 7).
     expect((content.match(/this\._selected\(\)\?\.id === id/g) ?? []).length).toBe(2);
   });
 
-  it('a systemFields.primaryKeyField override moves NONE of the 9 substitution sites', () => {
+  it('a systemFields.primaryKeyField override moves NONE of the 7 substitution sites', () => {
     // The override must NOT move the emitted identity. Nothing in the pipeline honours
     // `primaryKeyField`: Flyway emits `id UUID PRIMARY KEY`, the repository's clause is the
     // constant " WHERE id = ?", every by-id handler binds `{id}`, and the processor records the
     // same ("generators leave the primary key as the literal id"). An emitted app that honoured
     // it here would be the only layer doing so, and would request the wrong REST identifier.
     //
-    // The nine sites are enumerated for the reason the #57 reviewer gave: an earlier version
-    // checked five, and the four it missed — update()'s optimistic map, server-replace map and
-    // selected-match, plus delete()'s selected-match — are exactly where a partial change hides.
+    // Every site is enumerated: update()'s optimistic map, server-replace map and selected-match,
+    // and delete()'s selected-match, are exactly where a partial change hides.
     const content = gen.generate(domain({
       entityName: 'Order',
       systemFields: { primaryKeyField: 'uuid' },
     }), CTX)!.content;
 
-    expect(content).toContain("private readonly _sortField = signal<string>('id');");        // 1
-    expect(content).toContain('entities.map(e => e.id === id ? entity : e)');                 // 2 — loadById
-    expect(content).toContain('entities.map(e => e.id === id ? { ...e, ...data }');           // 3 — update optimistic
-    expect(content).toContain('entities.map(e => e.id === id ? updated : e)');                // 4 — update server-replace
-    expect(content).toContain('entities.filter(e => e.id !== id)');                           // 5 — delete optimistic
-    expect(content).toContain('this._entities().find(e => e.id === id)');                     // 6 — select find
-    expect(content).toContain("this._sortField.set('id');");                                  // 7 — reset re-init
-    expect((content.match(/this\._selected\(\)\?\.id === id/g) ?? []).length).toBe(2);       // 8 + 9 — selected match in update + delete
+    expect(content).toContain('entities.map(e => e.id === id ? entity : e)');                 // 1 — loadById
+    expect(content).toContain('entities.map(e => e.id === id ? { ...e, ...data }');           // 2 — update optimistic
+    expect(content).toContain('entities.map(e => e.id === id ? updated : e)');                // 3 — update server-replace
+    expect(content).toContain('entities.filter(e => e.id !== id)');                           // 4 — delete optimistic
+    expect(content).toContain('this._entities().find(e => e.id === id)');                     // 5 — select find
+    expect((content.match(/this\._selected\(\)\?\.id === id/g) ?? []).length).toBe(2);       // 6 + 7 — selected match in update + delete
     // Negative: the override reaches no site at all.
     expect(content).not.toContain('uuid');
   });
@@ -416,62 +426,6 @@ describe('StoreGenerator softDelete branch', () => {
   });
 });
 
-// ---------- generateFieldFilters branch ----------
-
-describe('StoreGenerator filteredEntities filter-loop emission', () => {
-  const gen = new StoreGenerator();
-
-  it('emits per-field equality guard for each filterable field', () => {
-    const content = gen.generate(domain({
-      entityName: 'Order',
-      fields: [
-        field({ name: 'status', type: 'String', filterable: true }),
-        field({ name: 'paid', type: 'Boolean', filterable: true }),
-      ],
-    }), CTX)!.content;
-
-    expect(content).toContain('if (filter.status !== undefined && entity.status !== filter.status) {');
-    expect(content).toContain('if (filter.paid !== undefined && entity.paid !== filter.paid) {');
-  });
-
-  it('no filterable fields → emits the "// No filterable fields" sentinel comment inside the loop body', () => {
-    const content = gen.generate(domain({
-      entityName: 'Order',
-      fields: [field({ name: 'name', type: 'String' })], // not filterable
-    }), CTX)!.content;
-
-    expect(content).toContain('// No filterable fields');
-  });
-});
-
-// ---------- generateSearchableFieldAccess branch ----------
-
-describe('StoreGenerator getSearchableText emission', () => {
-  const gen = new StoreGenerator();
-
-  it('emits a parts.push line per searchable field', () => {
-    const content = gen.generate(domain({
-      entityName: 'Order',
-      fields: [
-        field({ name: 'name', type: 'String', searchable: true }),
-        field({ name: 'description', type: 'String', searchable: true }),
-      ],
-    }), CTX)!.content;
-
-    expect(content).toContain('if (entity.name) parts.push(String(entity.name));');
-    expect(content).toContain('if (entity.description) parts.push(String(entity.description));');
-  });
-
-  it('no searchable fields → emits the "// No searchable fields defined" sentinel comment', () => {
-    const content = gen.generate(domain({
-      entityName: 'Order',
-      fields: [field({ name: 'name', type: 'String' })], // not searchable
-    }), CTX)!.content;
-
-    expect(content).toContain('// No searchable fields defined');
-  });
-});
-
 // ---------- extractErrorMessage helper ----------
 
 describe('StoreGenerator extractErrorMessage — every failure goes through the shared status helper', () => {
@@ -503,13 +457,11 @@ describe('StoreGenerator extractErrorMessage — every failure goes through the 
 describe('StoreGenerator emitted imports — every symbol from the module that exports it', () => {
   const gen = new StoreGenerator();
 
-  it('imports Page/PageRequest from the service, which is where service-gen declares them', () => {
-    // They were imported from `../types/<kebab>.types`, which does not export them —
-    // service-gen emits both interfaces into the service module. TS2305 on every store.
+  it('imports PageRequest and the list query types from the service, which is where service-gen declares them', () => {
     const content = gen.generate(domain({ entityName: 'Order' }), CTX)!.content;
 
-    expect(content).toContain("import type { Page, PageRequest, OrderFilter } from '../services/order.service';");
-    expect(content).not.toContain("Page, PageRequest } from '../types/order.types'");
+    expect(content).toContain("import type { PageRequest, OrderFilter, OrderSortField } from '../services/order.service';");
+    expect(content).not.toContain("PageRequest } from '../types/order.types'");
   });
 
   it('imports the entity shapes from the types module', () => {
@@ -521,13 +473,18 @@ describe('StoreGenerator emitted imports — every symbol from the module that e
 // ---------- generateStore convenience ----------
 
 describe('StoreGenerator loadAll — reads what the list route answers', () => {
-  it('takes the rows from a JSON array, and from a paged envelope through its content and totals', () => {
+  it('takes the rows and the totals from the page envelope', () => {
     const content = new StoreGenerator().generate(domain({ entityName: 'Order' }), CTX)!.content;
-    expect(content).toContain('const response: Page<Order> | Order[] = await firstValueFrom(');
-    expect(content).toContain("const rows = Array.isArray(response) ? response : (response.content ?? []);");
-    expect(content).toContain('this._entities.set(rows);');
-    expect(content).toContain('this._totalElements.set(Array.isArray(response) ? rows.length : response.totalElements);');
-    expect(content).not.toContain('this._entities.set(response.content);');
+    expect(content).toContain('const response = await firstValueFrom(this.service.findAll(pageRequest, this._filter()));');
+    expect(content).toContain('this._entities.set(response.content);');
+    expect(content).toContain('this._totalElements.set(response.totalElements);');
+    expect(content).toContain('this._totalPages.set(response.totalPages);');
+    expect(content).not.toContain('Array.isArray(response)');
+  });
+
+  it('sends sort only when a property is sorted, and the page and size always', () => {
+    const content = new StoreGenerator().generate(domain({ entityName: 'Order' }), CTX)!.content;
+    expect(content).toContain('        page: this._page(),\n        size: this._size(),\n        ...(sort !== null ? { sort, direction: this._sortDirection() } : {}),');
   });
 });
 

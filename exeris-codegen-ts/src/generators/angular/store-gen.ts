@@ -6,7 +6,7 @@
  * - Signal-based reactive state
  * - Computed derived state
  * - CRUD operations with loading/error tracking
- * - Filter/search support
+ * - Server-side paging, sorting and equality filters (ADR-096)
  * - Optimistic updates
  *
  * **No `$localize` in emitted output.** The fallback error message does not use
@@ -26,6 +26,7 @@ import type { BackendType } from '../../core/backend-strategy.js';
 import { DslMapper } from '../../models/dsl-mapper.js';
 import { RESTORE_UNSUPPORTED } from './service-gen.js';
 import { tsSingleQuoted } from './ts-literal.js';
+import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from './list-query.js';
 
 export class StoreGenerator implements CodeGenerator {
   readonly name = 'StoreGenerator';
@@ -46,7 +47,7 @@ export class StoreGenerator implements CodeGenerator {
   }
 
   private generateStoreContent(domain: DomainMetadata, context: GeneratorContext): string {
-    const { entityName, fields = [], softDelete } = domain;
+    const { entityName, softDelete } = domain;
     const modelName = modelTypeName(entityName);
     const kebab = DslMapper.toKebabCase(entityName);
     const camel = DslMapper.toCamelCase(entityName);
@@ -54,9 +55,6 @@ export class StoreGenerator implements CodeGenerator {
     const noun = tsSingleQuoted((domain.displayName ?? entityName).toLowerCase());
     const pluralNoun = tsSingleQuoted((domain.pluralName ?? DslMapper.pluralName(entityName)).toLowerCase());
 
-    // Identify searchable and filterable fields
-    const searchableFields = fields.filter(f => f.searchable);
-    const filterableFields = fields.filter(f => f.filterable);
     // The literal 'id', deliberately, not systemFields.primaryKeyField. Nothing in the pipeline
     // honours that override: KernelFlywayGenerator emits `id UUID PRIMARY KEY` unconditionally,
     // KernelRepositoryGenerator's WHERE clause is the constant " WHERE id = ?", every by-id
@@ -87,11 +85,15 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { firstValueFrom } from 'rxjs';
 import { ${entityName}Service } from '../services/${kebab}.service';
 import { httpErrorMessage, type HttpErrorAction } from '../core/http-error';
-import type { Page, PageRequest, ${modelName}Filter } from '../services/${kebab}.service';
+import type { PageRequest, ${modelName}Filter, ${modelName}SortField } from '../services/${kebab}.service';
 import type { ${modelName}, ${modelName}Create, ${modelName}Update } from '../types/${kebab}.types';
 
-// The filter is the service's: one declaration, typed against the enums the service imports.
-export type { ${modelName}Filter };
+// The filter and the sort keys are the service's: one declaration each, the list route's own.
+export type { ${modelName}Filter, ${modelName}SortField };
+
+/** The page sizes the list route serves. */
+const MIN_PAGE_SIZE = 1;
+const MAX_PAGE_SIZE = ${MAX_PAGE_SIZE};
 
 // ============================================================================
 // Store State Interface
@@ -111,7 +113,8 @@ export interface ${entityName}StoreState {
     totalPages: number;
   };
   sort: {
-    field: string;
+    /** The sorted property; \`null\` leaves the rows in id order. */
+    field: ${modelName}SortField | null;
     direction: 'asc' | 'desc';
   };
 }
@@ -136,11 +139,11 @@ export class ${entityName}Store {
   private readonly _error = signal<string | null>(null);
   private readonly _filter = signal<${modelName}Filter>({});
   private readonly _page = signal(0);
-  private readonly _size = signal(20);
+  private readonly _size = signal(${DEFAULT_PAGE_SIZE});
   private readonly _totalElements = signal(0);
   private readonly _totalPages = signal(0);
-  private readonly _sortField = signal<string>('${idField}');
-  private readonly _sortDirection = signal<'asc' | 'desc'>('desc');
+  private readonly _sortField = signal<${modelName}SortField | null>(null);
+  private readonly _sortDirection = signal<'asc' | 'desc'>('asc');
 
   // ═══════════════════════════════════════════════════════════════════════════
   // Public Read-Only Signals
@@ -186,37 +189,8 @@ export class ${entityName}Store {
   // Computed Derived State
   // ═══════════════════════════════════════════════════════════════════════════
 
-  /** Filtered entities (client-side filtering for already loaded data) */
-  readonly filteredEntities = computed(() => {
-    const entities = this._entities();
-    const filter = this._filter();
-    
-    if (!filter.search && Object.keys(filter).length <= 1) {
-      return entities;
-    }
-
-    return entities.filter(entity => {
-      // Full-text search
-      if (filter.search) {
-        const searchLower = filter.search.toLowerCase();
-        const searchable = this.getSearchableText(entity);
-        if (!searchable.toLowerCase().includes(searchLower)) {
-          return false;
-        }
-      }
-      
-      // Field-specific filters
-      ${this.generateFieldFilters(filterableFields)}
-      
-      return true;
-    });
-  });
-
   /** Count of loaded entities */
   readonly count = computed(() => this._entities().length);
-  
-  /** Count of filtered entities */
-  readonly filteredCount = computed(() => this.filteredEntities().length);
   
   /** Whether entity list is empty */
   readonly isEmpty = computed(() => this._entities().length === 0);
@@ -224,7 +198,7 @@ export class ${entityName}Store {
   /** Whether there is an active filter */
   readonly hasActiveFilter = computed(() => {
     const filter = this._filter();
-    return !!filter.search || Object.keys(filter).some(k => k !== 'search' && filter[k as keyof ${modelName}Filter] !== undefined);
+    return Object.values(filter).some((value) => value !== undefined && value !== null && value !== '');
   });
 
   /** Whether there are more pages to load */
@@ -258,29 +232,25 @@ export class ${entityName}Store {
   // ═══════════════════════════════════════════════════════════════════════════
 
   /**
-   * Load entities from server with current pagination/filter/sort.
+   * Load the current page from the server: the list route pages, sorts and filters, and answers
+   * the page envelope.
    */
   async loadAll(): Promise<void> {
     this._loading.set(true);
     this._error.set(null);
 
     try {
-      const pageRequest: PageRequest = {
+      const sort = this._sortField();
+      const pageRequest: PageRequest & { sort?: ${modelName}SortField } = {
         page: this._page(),
         size: this._size(),
-        sort: this._sortField(),
-        direction: this._sortDirection(),
+        ...(sort !== null ? { sort, direction: this._sortDirection() } : {}),
       };
 
-      // The server answers the list route with a JSON array; a paged envelope is read through
-      // its content and totals.
-      const response: Page<${modelName}> | ${modelName}[] = await firstValueFrom(
-        this.service.findAll(pageRequest, this._filter()),
-      );
-      const rows = Array.isArray(response) ? response : (response.content ?? []);
-      this._entities.set(rows);
-      this._totalElements.set(Array.isArray(response) ? rows.length : response.totalElements);
-      this._totalPages.set(Array.isArray(response) ? (rows.length > 0 ? 1 : 0) : response.totalPages);
+      const response = await firstValueFrom(this.service.findAll(pageRequest, this._filter()));
+      this._entities.set(response.content);
+      this._totalElements.set(response.totalElements);
+      this._totalPages.set(response.totalPages);
     } catch (err) {
       this._error.set(this.extractErrorMessage(err, 'load', '${pluralNoun}'));
       throw err;
@@ -464,13 +434,6 @@ ${softDelete ? this.generateSoftDeleteMethods(entityName, idField) : ''}
   }
 
   /**
-   * Set search query.
-   */
-  async setSearch(query: string): Promise<void> {
-    await this.updateFilter('search', query || undefined);
-  }
-
-  /**
    * Go to specific page.
    */
   async goToPage(page: number): Promise<void> {
@@ -498,10 +461,10 @@ ${softDelete ? this.generateSoftDeleteMethods(entityName, idField) : ''}
   }
 
   /**
-   * Change page size.
+   * Change page size, held within the sizes the list route serves.
    */
   async setPageSize(size: number): Promise<void> {
-    this._size.set(size);
+    this._size.set(Math.min(Math.max(Math.trunc(size), MIN_PAGE_SIZE), MAX_PAGE_SIZE));
     this._page.set(0);
     await this.loadAll();
   }
@@ -513,7 +476,7 @@ ${softDelete ? this.generateSoftDeleteMethods(entityName, idField) : ''}
   /**
    * Set sort field and direction.
    */
-  async setSort(field: string, direction: 'asc' | 'desc' = 'asc'): Promise<void> {
+  async setSort(field: ${modelName}SortField | null, direction: 'asc' | 'desc' = 'asc'): Promise<void> {
     this._sortField.set(field);
     this._sortDirection.set(direction);
     this._page.set(0);
@@ -523,7 +486,7 @@ ${softDelete ? this.generateSoftDeleteMethods(entityName, idField) : ''}
   /**
    * Toggle sort direction for a field.
    */
-  async toggleSort(field: string): Promise<void> {
+  async toggleSort(field: ${modelName}SortField): Promise<void> {
     if (this._sortField() === field) {
       this._sortDirection.update(d => d === 'asc' ? 'desc' : 'asc');
     } else {
@@ -556,49 +519,22 @@ ${softDelete ? this.generateSoftDeleteMethods(entityName, idField) : ''}
     this._error.set(null);
     this._filter.set({});
     this._page.set(0);
-    this._size.set(20);
+    this._size.set(${DEFAULT_PAGE_SIZE});
     this._totalElements.set(0);
     this._totalPages.set(0);
-    this._sortField.set('${idField}');
-    this._sortDirection.set('desc');
+    this._sortField.set(null);
+    this._sortDirection.set('asc');
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
   // Private Helpers
   // ═══════════════════════════════════════════════════════════════════════════
 
-  private getSearchableText(entity: ${modelName}): string {
-    // Combine searchable fields for full-text search
-    const parts: string[] = [];
-${this.generateSearchableFieldAccess(searchableFields)}
-    return parts.join(' ');
-  }
-
   private extractErrorMessage(err: unknown, action: HttpErrorAction, entity = '${noun}'): string {
     return httpErrorMessage(err, { entity, action });
   }
 }
 `;
-  }
-
-  private generateFieldFilters(fields: { name: string; type: string }[]): string {
-    if (fields.length === 0) return '// No filterable fields';
-
-    return fields.map(f => {
-      return `      if (filter.${f.name} !== undefined && entity.${f.name} !== filter.${f.name}) {
-        return false;
-      }`;
-    }).join('\n');
-  }
-
-  private generateSearchableFieldAccess(fields: { name: string }[]): string {
-    if (fields.length === 0) {
-      return '    // No searchable fields defined';
-    }
-
-    return fields.map(f =>
-      `    if (entity.${f.name}) parts.push(String(entity.${f.name}));`
-    ).join('\n');
   }
 
   private generateSoftDeleteMethods(entityName: string, idField: string): string {
