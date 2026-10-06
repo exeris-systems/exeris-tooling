@@ -197,8 +197,8 @@ export function listQuerySystemFieldNames(metadata: DomainMetadata): ReadonlySet
 }
 
 /**
- * The properties `sort` accepts: every field the metadata marks sortable, except a `List` field and
- * a system field. `ListQuerySupport.sortable`.
+ * The properties `sort` accepts: every field the metadata marks sortable whose type is of a sort kind
+ * or an enum, except a system field. `ListQuerySupport.sortable`.
  */
 export function sortableProperties(
   metadata: DomainMetadata,
@@ -223,7 +223,7 @@ export function sortableProperties(
  * system field are never a filter; a foreign key whose name a field already took is that field.
  * `ListQuerySupport.filters`.
  *
- * `isEnum` answers whether a field of kind `other` is an enum. The Java side accepts every such
+ * `isEnum` answers whether an enum candidate (`enumCandidate`) is an enum. The Java side accepts every such
  * type and reads it back through its `valueOf(String)`, which only an enum has; here only a field
  * the front knows to be an enum is offered, so the front never sends a filter the server's parse
  * would not hold.
