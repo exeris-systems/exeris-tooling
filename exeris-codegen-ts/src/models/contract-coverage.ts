@@ -232,7 +232,7 @@ export const RELATIONSHIP_CONTRACT_COVERAGE = {
   fieldName: { state: 'READ', written: true },
   targetEntity: { state: 'READ', written: true },
   type: { state: 'READ', written: true },
-  mappedBy: { state: 'RESERVED', written: true, reason: 'Written from @Relationship; no emitter reads it.' },
+  mappedBy: { state: 'READ', written: true },
   fetch: { state: 'RESERVED', written: false, reason: RECORD_DEFAULT },
   cascade: {
     state: 'JAVA_ONLY',
