@@ -3,67 +3,67 @@
     "signature": "<Entity>Update (versioned entity): Partial<<Entity>Create> -> Partial<<Entity>Create> & { <versionField>: number | null }",
     "since": "0.9",
     "adr": "ADR-076",
-    "justification": "The generated repository reads the version in the PUT body as the version the edit was loaded at and answers 409 when the row moved on; the front never sent it, so every update after the first was refused. A versioned entity's update DTO and schema require the version, and the edit form sends the loaded one. Unversioned entities are unchanged. docs/MIGRATION-0.x-to-1.0.md 0.9.0 carries the step (exeris-tooling #236)."
+    "justification": "The generated repository reads the version in the PUT body as the version the edit was loaded at and answers 409 when the row has moved on. A versioned entity's update DTO and schema require that version, and the edit form sends the one it loaded. Unversioned entities are unaffected. docs/MIGRATION-0.x-to-1.0.md 0.9.0 carries the step."
   },
   {
     "signature": "emitted list / detail / form / store / saga error display: HttpErrorResponse text and alert() -> httpErrorMessage(err, { entity, action }) from core/http-error.ts",
     "since": "0.9",
     "adr": "ADR-076",
-    "justification": "The generated handler answers a failure with a status and no body (ADR-076). Every emitted error display maps the status to a fixed sentence through one helper; a failed delete shows a role=alert banner (deleteError, data-testid delete-error) where it opened alert(). A zero-entity app is unchanged. docs/MIGRATION-0.x-to-1.0.md 0.9.0 carries the step (exeris-tooling #239)."
+    "justification": "The generated handler answers a failure with a status and no body (ADR-076). Every emitted error display maps the status to a fixed sentence through core/http-error.ts and never shows the response's own text; a failed delete shows a role=alert banner (deleteError, data-testid delete-error). An app with no visible entity is unaffected. docs/MIGRATION-0.x-to-1.0.md 0.9.0 carries the step."
   },
   {
     "signature": "services/<entity>.stream.ts, services/<entity>.action-streams.ts: SSE stream clients; a streaming @Action has no respond-once service method",
     "since": "0.9",
     "adr": "ADR-044",
-    "justification": "The generated kernel application serves GET {base}/stream for a realTimeApi entity and each @Action(streaming = true) as a stream only (ADR-044). The front gets a client per stream route of a GLOBAL entity, and the service drops the respond-once method for a streaming action, whose route never answered once. Tenant-partitioned entities get no stream client. docs/MIGRATION-0.x-to-1.0.md 0.9.0 carries the step (exeris-tooling #249)."
+    "justification": "The generated kernel application serves GET {base}/stream for a realTimeApi entity and each @Action(streaming = true) as a stream only (ADR-044). A GLOBAL entity gets a client per stream route, and a streaming action has no respond-once service method, since its route answers as a stream. A tenant-partitioned entity gets no stream client. docs/MIGRATION-0.x-to-1.0.md 0.9.0 carries the step."
   },
   {
     "signature": "FieldMetadata: - inList, inDetail, order, ui, dependencies; UIMetadata: - listColumns, searchFields, filterFields, formLayout, + listView, detailView, createForm, editForm, searchable, filterable, exportable",
     "since": "0.9",
     "adr": "ADR-092",
-    "justification": "The exported metadata types declare what the processor writes: the removed keys are no component of the SDK records, so no metadata document carried one, and the added ones are the @UI view switches the processor extracts. Generated output is unchanged by the schema change alone. docs/MIGRATION-0.x-to-1.0.md 0.9.0 carries the step (exeris-tooling #263)."
+    "justification": "The exported metadata types declare what the processor writes: every key is a component of the SDK record it mirrors, and UIMetadata carries the @UI view switches the processor extracts. The schema change alone changes no generated output. docs/MIGRATION-0.x-to-1.0.md 0.9.0 carries the step."
   },
   {
     "signature": "app scaffold without a visible entity: - provideHttpClient(), proxy.conf.json, --proxy-config, environment apiUrl / apiVersion",
     "since": "0.9",
     "adr": "ADR-092",
-    "justification": "An app whose metadata declares no visible entity has no API to call, so its scaffold wires no backend piece; an app with a visible entity emits what it did. docs/MIGRATION-0.x-to-1.0.md 0.9.0 carries the step (exeris-tooling #265)."
+    "justification": "An app whose metadata declares no visible entity has no API to call, so its scaffold wires no HTTP client, dev proxy or API environment; an app with a visible entity is unaffected. docs/MIGRATION-0.x-to-1.0.md 0.9.0 carries the step."
   },
   {
     "signature": "emitted package.json / styles.css: @exeris-systems/ui-kit ^0.1.0 (GitHub Packages) -> @exeris/ui-kit (npmjs); .npmrc and tailwind.config.js no longer emitted",
     "since": "0.9",
     "adr": "ADR-092",
-    "justification": "The UI kit moved to the public npm registry as @exeris/ui-kit, Tailwind v4 only (ADR-094). The emitted dependency and theme import are renamed, and the files that only served GitHub Packages and the v3 preset are no longer produced. docs/MIGRATION-0.x-to-1.0.md 0.9.0 carries the step (exeris-tooling #270)."
+    "justification": "The UI kit is the public npm package @exeris/ui-kit, Tailwind v4 only (ADR-094). The emitted app depends on it and imports its theme under that name, and no file that serves GitHub Packages or a Tailwind v3 preset is emitted. docs/MIGRATION-0.x-to-1.0.md 0.9.0 carries the step."
   },
   {
     "signature": "entity with @UI(listView | detailView | createForm | editForm | filterable = false): the matching component, route, link and export are not emitted",
     "since": "0.9",
     "adr": "ADR-092",
-    "justification": "The entity-level @UI view switches take effect on the front; an app that sets no switch to false regenerates byte-identical. The Java application serves every CRUD route regardless. docs/MIGRATION-0.x-to-1.0.md 0.9.0 carries the step (exeris-tooling #273)."
+    "justification": "The entity-level @UI view switches decide what the front emits; an app that sets no switch to false is unaffected. The Java application serves every CRUD route regardless. docs/MIGRATION-0.x-to-1.0.md 0.9.0 carries the step."
   },
   {
     "signature": "SagaStepMetadata: action, compensatingAction, retries -> command, compensation, maxRetries, + service; ActionMetadata: - path, returnType, requiresAuth, + methodName, resultType, producesEvents, routeAccess; DomainEventMetadata: - displayName, payloadType, fields, + topic, aggregateType; EventSourcedMetadata: snapshotInterval -> snapshotEvery; InternalApiMetadata: - hidden",
     "since": "0.9",
     "adr": "ADR-092",
-    "justification": "The nested exported metadata types declare the keys the processor writes, so a real build's keys are no longer stripped on parse; the emitted saga state machine carries each step's compensation. docs/MIGRATION-0.x-to-1.0.md 0.9.0 carries the step (exeris-tooling #274)."
+    "justification": "The nested exported metadata types declare the keys the processor writes, so a real build's keys survive parsing, and the emitted saga state machine carries each step's compensation. docs/MIGRATION-0.x-to-1.0.md 0.9.0 carries the step."
   },
   {
     "signature": "<entity>-list.component.ts: - data, filter, searchSubject, onFilterChange and the FormsModule / CommonModule / rxjs imports; typed columns, sort headers, row action buttons",
     "since": "0.9",
     "adr": "ADR-092",
-    "justification": "The list renders each column by its type and offers sort headers and row actions; the members of the paged-envelope list it replaced are gone. Paging, sorting and filtering go through the list route (ADR-096 entry). docs/MIGRATION-0.x-to-1.0.md 0.9.0 carries the step (exeris-tooling #279)."
+    "justification": "The list renders each column by its type and offers sort headers and row actions; paging, sorting and filtering go through the list route (ADR-096). docs/MIGRATION-0.x-to-1.0.md 0.9.0 carries the step."
   },
   {
     "signature": "<entity>-detail.component.ts: Details / Related records / System sections, typed values through DatePipe, @Action buttons",
     "since": "0.9",
     "adr": "ADR-092",
-    "justification": "The detail view groups its fields in labelled sections, formats values by type, lists related records and offers the entity's actions; the system panel heading becomes an h2. docs/MIGRATION-0.x-to-1.0.md 0.9.0 carries the step (exeris-tooling #280)."
+    "justification": "The detail view groups its fields in labelled sections, formats values by type, lists related records and offers the entity's actions. docs/MIGRATION-0.x-to-1.0.md 0.9.0 carries the step."
   },
   {
     "signature": "<entity>-form.component.ts: Reactive Forms (FormBuilder, FormGroup, Validators, formControlName) -> Signal Forms (form, FormField, submit, FieldTree)",
     "since": "0.9",
     "adr": "ADR-092",
-    "justification": "Emitted forms are Angular Signal Forms, the shape ADR-093 fixes; selector, inputs, outputs, routes, labels, messages, classes, data-testids and the requests sent are unchanged. A subclass or wrapper built on the Reactive Forms API must be rewritten against the FieldTree. docs/MIGRATION-0.x-to-1.0.md 0.9.0 carries the step (exeris-tooling #281)."
+    "justification": "Emitted forms are Angular Signal Forms, the shape ADR-093 fixes; selector, inputs, outputs, routes, labels, messages, classes, data-testids and the requests sent are those of the Reactive Forms version. A subclass or wrapper built on the Reactive Forms API is rewritten against the FieldTree. docs/MIGRATION-0.x-to-1.0.md 0.9.0 carries the step."
   },
   {
     "signature": "@exeris/codegen-ts main / types -> exports { \"./package.json\" }",
