@@ -2114,53 +2114,32 @@ change, or the switch must be set back to `true`. A link you write by hand to an
 detail page is off has no route to open. `generateDetail()`, the package's exported convenience,
 now returns `GeneratedFile | null`, `null` for an entity whose detail view is off.
 
-### `exeris-codegen-ts`: lists page, sort, search and filter every loaded row, and render by type
+### `exeris-codegen-ts`: lists render each column by its type, and offer row actions
 
-`Compatibility impact: breaking (ADR-092)` for every regenerated `<entity>-list.component.ts`. TS
-only: the generated server, its OpenAPI document, the service and the store are unchanged.
+`Compatibility impact: breaking (ADR-092)` for every regenerated `<entity>-list.component.ts`.
+Paging, sorting and filtering go through the list route; *the list, store, picker and
+related-records panels use the list route's query* below describes them. The regenerated list:
 
-The generated server's list route (`GET {base}`) answers with the entity's whole collection as a
-JSON array and reads no query parameter: it does not page, sort, search or filter. The emitted list
-expected a paged envelope (`Page.content`) and sent `page`, `size`, `sort` and filter parameters the
-server ignores, so against a generated server it showed no rows. The regenerated list:
-
-- **Loads the collection once and works on it in the browser.** `findAll()` is called with no
-  arguments, and the response is read as an array (a paged envelope is still read through
-  `content`). Paging, sorting, search and filters are `computed` signals over every loaded row, so
-  they cover the whole collection rather than one page. The state is `rows`, `filtered`, `sorted`
-  (with a sortable column), `items`, `page`, `totalElements` and `totalPages`; the old `data`,
-  `filter` and `searchSubject` members and the `onFilterChange` method are gone, and with them the
-  `FormsModule`, `CommonModule` and `rxjs` imports. Only the pipes the columns use are imported.
 - **Renders each column by its type.** Every boolean type (`boolean`, `Boolean`,
   `java.lang.Boolean`) gets the Yes/No badge, not only `Boolean`. A field whose type is an enum the
   processor emitted gets a badge with the constant's display name, coloured from a fixed six-tone
   palette in declaration order. Integers, decimals and `BigDecimal` / `BigInteger` render through
   the `number` pipe; they, currency and percent columns are right-aligned. `LocalDateTime`,
-  `OffsetDateTime`, `ZonedDateTime` and `java.util.Date` now render with their time
-  (`date:'medium'`), as `Instant` did; `LocalDate` stays `date:'mediumDate'`.
+  `OffsetDateTime`, `ZonedDateTime` and `java.util.Date` render with their time (`date:'medium'`),
+  as `Instant` does; `LocalDate` stays `date:'mediumDate'`.
 - **Sorts by a sortable column's header.** The header holds a button (`sort-<field>`) that toggles
-  ascending and descending and sets `aria-sort`. Numbers and decimal strings (`BigDecimal`,
-  `BigInteger`) order by value, sign and fraction length included; absent values sort last in both
-  directions. With no column sorted the rows keep the server's order; the old initial sort on `id`,
-  descending, is gone.
-- **Filters by every filterable field**, not the first two `Boolean` ones: a Yes/No select for a
-  boolean, a select of constants for an enum, a contains match for text, a from/to day range for a
-  date or date-time (`filter-<field>-from` / `-to`), and a min/max range for a number
-  (`filter-<field>-min` / `-max`). The entity's `@UI(filterable = false)` still removes them all.
-- **Searches the fields marked `@Field(searchable = true)`**, or every list column when none is,
-  as a contains match on each keystroke. `@UI(searchable = false)` still removes the box.
-- **Offers a page size** of 10, 20, 25 or 50 rows (`page-size`), 20 by default. The pagination bar
-  shows whenever a row passes the filters.
+  ascending and descending and sets `aria-sort`. With no column sorted the rows come in the route's
+  id order; the old initial sort on `id`, descending, is gone.
 - **Offers a row button for each `@Action`** that is not streaming and takes no parameters
   (`action-<kebab-name>-<id>`). It calls the service's action method and reloads; a failure shows in
   `action-error`. An action with parameters stays on the service, because the list has nowhere to
   collect its input.
+- The old `data`, `filter` and `searchSubject` members and the `onFilterChange` method are gone,
+  and with them the `FormsModule`, `CommonModule` and `rxjs` imports. Only the pipes the columns use
+  are imported.
 
 **What to do.** Regenerate. Code or tests that read a removed member (`data`, `filter`,
-`searchSubject`, `onFilterChange`) or rely on the initial `id` sort must change. The same release
-moves paging, sorting and filtering to the server: see *the list, store, picker and related-records
-panels use the list route's query* below, which supersedes the in-browser paging, search and range
-filters described here.
+`searchSubject`, `onFilterChange`) or rely on the initial `id` sort must change.
 
 ### `exeris-codegen-ts`: emitted forms are Signal Forms (ADR-093)
 
