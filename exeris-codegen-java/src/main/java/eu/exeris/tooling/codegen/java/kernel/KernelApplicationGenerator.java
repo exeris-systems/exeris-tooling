@@ -577,7 +577,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .addJavadoc("database the persistence provider is configured with. A driver at\n")
                 .addJavadoc("runtime scope does not reach the compile classpath, so it does not\n")
                 .addJavadoc("satisfy a compile requirement above, even one it depends on itself.\n")
-                .addJavadoc("<p>{@code eu.exeris.tooling:exeris-app-starter} (type {@code pom})\n")
+                .addJavadoc("<p>{@code eu.exeris:exeris-app-starter} (type {@code pom})\n")
                 .addJavadoc("declares every artefact named above except the JDBC driver: the compile\n")
                 .addJavadoc("requirements at compile scope, the Community driver at runtime scope.\n")
                 .addJavadoc("Generated tests, where enabled, also import JUnit 5 and AssertJ, which\n")

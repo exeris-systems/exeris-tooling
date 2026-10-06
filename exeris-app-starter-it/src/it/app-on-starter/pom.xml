@@ -13,7 +13,7 @@
         BOM chain derived from ${project.version} would resolve to 1.0.0 here and fail.
     -->
     <parent>
-        <groupId>eu.exeris.tooling</groupId>
+        <groupId>eu.exeris</groupId>
         <artifactId>exeris-app-parent</artifactId>
         <version>@project.version@</version>
         <relativePath/>
@@ -47,7 +47,7 @@
 
     <dependencies>
         <dependency>
-            <groupId>eu.exeris.tooling</groupId>
+            <groupId>eu.exeris</groupId>
             <artifactId>exeris-app-starter</artifactId>
             <type>pom</type>
         </dependency>

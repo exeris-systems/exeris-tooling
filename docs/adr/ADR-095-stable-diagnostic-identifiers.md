@@ -9,7 +9,7 @@ slug: adr/ADR-095
 
 # ADR-095 — Every diagnostic exeris-tooling prints carries a stable EXT- identifier
 
-- **Status:** ACCEPTED (2026-10-02)
+- **Status:** ACCEPTED (2026-10-02) · amended 2026-10-06 (Amendment 1 — Maven coordinates move to the eu.exeris group)
 - **Deciders:** the founder (scope, a dedicated artefact); `exeris-tooling` (registry layout)
 - **Repo:** `exeris-tooling`
 - **Scope:** tooling / build — cross-repo: `exeris-ai-bridge` consumes the identifiers
@@ -217,3 +217,16 @@ appear in the printed line, what keeps an identifier stable, and where does the 
    identifier-first lookup (obligation 9).
 5. **`docs/MIGRATION-0.x-to-1.0.md`** carries the consumer-facing change under D4.
 6. Migration owner: `exeris-tooling`, target 0.9.0.
+
+## Amendment 1 — Maven coordinates move to the eu.exeris group (2026-10-06)
+
+- **Status:** ACCEPTED (2026-10-06).
+- **Amends:** the artefact coordinate in the Decision statement. The registry class, its package,
+  the identifiers and every obligation are unchanged.
+- **Deciders:** the founder.
+
+From 0.10.0 every `exeris-tooling` module is published under the groupId `eu.exeris`, the group of
+the kernel and SDK artefacts, so the registry's artefact is `eu.exeris:exeris-diagnostics`. Releases
+up to and including 0.9.0 publish it as `eu.exeris.tooling:exeris-diagnostics`, and no relocation POM
+is published under the old group. The move changes Maven coordinates, not Java packages: the
+registry class `DiagnosticId` keeps its package.

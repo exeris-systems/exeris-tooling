@@ -125,7 +125,7 @@ class DiagnosticIdTest {
     @Test
     @DisplayName("the consumer regex finds the identifier anywhere in a line, as Maven prints it")
     void consumerRegexFindsIdentifierInsideALine() {
-        String line = "[ERROR] Failed to execute goal eu.exeris.tooling:exeris-codegen-maven-plugin:"
+        String line = "[ERROR] Failed to execute goal eu.exeris:exeris-codegen-maven-plugin:"
                 + "0.9.0:generate (exeris-generate) on project shop: "
                 + DiagnosticId.EMPTY_METADATA_REFUSED.format("Refusing to wipe the committed tree");
         Matcher m = CONSUMER.matcher(line);

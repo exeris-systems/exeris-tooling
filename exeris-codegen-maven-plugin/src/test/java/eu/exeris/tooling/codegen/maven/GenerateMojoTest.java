@@ -25,7 +25,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @DisplayName("GenerateMojo — thin shell over CodegenPipeline")
 class GenerateMojoTest {
 
-    private static final String PLUGIN_GROUP_ID = "eu.exeris.tooling";
+    private static final String PLUGIN_GROUP_ID = "eu.exeris";
     private static final String PLUGIN_ARTIFACT_ID = "exeris-codegen-maven-plugin";
 
     /** Records pipeline invocations so we assert control flow without real generation. */

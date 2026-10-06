@@ -17,7 +17,7 @@ Generates TypeScript interfaces, Angular services, form components, and list com
 
 ## Installation
 
-Published to npmjs under the `@exeris` scope, at the same version as the `eu.exeris.tooling` Maven
+Published to npmjs under the `@exeris` scope, at the same version as the `eu.exeris` Maven
 artefacts it releases with. Pin it to the tooling version your build uses.
 
 ```bash

@@ -88,6 +88,10 @@ all versioned with tooling, from 0.9.0:
   against: the SDK annotations, kernel SPI and Core, the community driver at runtime, the
   composition runtime and Jackson 3.
 
+**From 0.10.0, every tooling artefact is published under the `eu.exeris` group**, the group of the
+kernel and SDK artefacts. 0.9.0 and earlier, including the snippets below, are under
+`eu.exeris.tooling`; the artifactIds are the same in both groups ([MIGRATION](docs/MIGRATION-0.x-to-1.0.md#maven-coordinates-move-to-the-euexeris-group)).
+
 **The JDBC driver and the logging backend are the application's choice.** The starter declares
 neither. Generated code logs through `System.Logger`; to route it, put a `System.LoggerFinder`
 provider on the classpath. To run on a driver other than the community one, exclude

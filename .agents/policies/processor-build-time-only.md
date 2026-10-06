@@ -8,7 +8,7 @@
    `exeris-processor` may depend strictly on:
    - `javax.lang.model` (standard JDK annotation processing model),
    - `eu.exeris:exeris-sdk-source-model` (SDK source model records),
-   - `eu.exeris.tooling:exeris-diagnostics` (the stable diagnostic identifiers, ADR-095). It uses nothing beyond `java.lang`, has no dependencies of its own and registers no service, so it can never put a runtime type or a second processor on the `javac` path,
+   - `eu.exeris:exeris-diagnostics` (the stable diagnostic identifiers, ADR-095). It uses nothing beyond `java.lang`, has no dependencies of its own and registers no service, so it can never put a runtime type or a second processor on the `javac` path,
    - Standard Java runtime library.
 2. **Zero runtime libraries.**
    - No Jackson on the processor classpath for serialization choices that leak runtime types (`DomainMetadata` write-out is the sole, well-scoped exception).
