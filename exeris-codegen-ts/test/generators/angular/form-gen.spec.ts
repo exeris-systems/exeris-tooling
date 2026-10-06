@@ -1353,15 +1353,17 @@ describe('FormGenerator — a MANY_TO_ONE foreign key is picked from its target 
     expect(content).toContain('<option [value]="option.value">{{ option.label }}</option>');
   });
 
-  it('loads the options from the target service findAll, reading an array or a paged envelope', () => {
+  it('loads the options from the first page of the largest size the target\'s list route serves', () => {
     const content = emit(order(false), [order(false), product]);
     expect(content).toContain("import { ProductService } from '../services/product.service';");
     expect(content).toContain('private readonly productService = inject(ProductService);');
-    expect(content).toContain('private readonly productIdOptionsResource = rxResource({ stream: () => this.productService.findAll() });');
+    expect(content).toContain('private readonly productIdOptionsResource = rxResource({ stream: () => this.productService.findAll({ size: 100 }) });');
     expect(content).toContain(
       'pickerOptions(this.productIdOptionsResource.hasValue() ? this.productIdOptionsResource.value() : undefined, (row) => row.name),',
     );
-    expect(content).toContain('Array.isArray(result) ? result : (result.content ?? [])');
+    expect(content).toContain('  page: { content: T[] } | undefined,');
+    expect(content).toContain('  const rows = page?.content ?? [];');
+    expect(content).not.toContain('Array.isArray');
   });
 
   it('labels an option by displayField, and by id when the value is empty or the target has no such field', () => {
@@ -1410,7 +1412,7 @@ describe('FormGenerator — a MANY_TO_ONE foreign key is picked from its target 
       relationships: [{ name: 'parentId', targetEntity: 'Tag', type: 'MANY_TO_ONE' } as DomainMetadata['relationships'][number]],
     });
     const content = emit(tag, [tag]);
-    expect(content).toContain('rxResource({ stream: () => this.service.findAll() })');
+    expect(content).toContain('rxResource({ stream: () => this.service.findAll({ size: 100 }) })');
     expect(content.match(/TagService/g)).toHaveLength(2);
   });
 

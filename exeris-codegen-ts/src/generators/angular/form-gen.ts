@@ -14,6 +14,7 @@ import { updateVersionField } from '../api/type-gen.js';
 import { fieldRenderContext, resolveFieldRenders, toTitleCase, type FieldRenderModel } from './field-render.js';
 import { tsSingleQuoted } from './ts-literal.js';
 import { entityExitRoute, entityViews, hasFormPage } from './entity-views.js';
+import { MAX_PAGE_SIZE } from './list-query.js';
 
 export { GeneratedFile };
 
@@ -127,15 +128,15 @@ export class FormGenerator implements CodeGenerator {
     lines.push('');
     if (pickerFields.length > 0) {
       lines.push('/**');
-      lines.push(' * The options of a foreign-key select: one per listed record with an id, valued by the id and');
-      lines.push(' * labelled by `label` (the relationship\'s display field), or by the id when that is empty. The');
-      lines.push(' * list route answers with a JSON array; a paged envelope is read through its content.');
+      lines.push(' * The options of a foreign-key select: one per record of the page the list route answered that');
+      lines.push(' * has an id, valued by the id and labelled by `label` (the relationship\'s display field), or by');
+      lines.push(' * the id when that is empty.');
       lines.push(' */');
       lines.push('function pickerOptions<T extends { id?: unknown }>(');
-      lines.push('  result: { content?: T[] } | T[] | undefined,');
+      lines.push('  page: { content: T[] } | undefined,');
       lines.push('  label: (row: T) => unknown = (row) => row.id,');
       lines.push('): { value: string; label: string }[] {');
-      lines.push('  const rows = result === undefined ? [] : Array.isArray(result) ? result : (result.content ?? []);');
+      lines.push('  const rows = page?.content ?? [];');
       lines.push("  return rows.filter((row) => row.id != null && row.id !== '').map((row) => {");
       lines.push('    const value = String(row.id);');
       lines.push('    const text = label(row);');
@@ -335,13 +336,15 @@ export class FormGenerator implements CodeGenerator {
       lines.push('  readonly form = form(this.formModel);');
     }
 
-    // A foreign-key select lists its target's records once, when the form is created.
+    // A foreign-key select lists its target's records once, when the form is created: the first
+    // page of the largest size the list route serves. A target with more rows offers those first
+    // ones, and the value the control holds stays an option whether or not it is among them.
     for (const f of pickerFields) {
       const picker = f.form.picker!;
       const resource = `${pickerOptionsName(f.name)}Resource`;
       const labelArg = picker.labelField ? `, (row) => row.${picker.labelField}` : '';
       lines.push('');
-      lines.push(`  private readonly ${resource} = rxResource({ stream: () => this.${pickerServiceMember(picker.target)}.findAll() });`);
+      lines.push(`  private readonly ${resource} = rxResource({ stream: () => this.${pickerServiceMember(picker.target)}.findAll({ size: ${MAX_PAGE_SIZE} }) });`);
       lines.push(`  readonly ${pickerOptionsName(f.name)} = computed(() =>`);
       lines.push(`    pickerOptions(this.${resource}.hasValue() ? this.${resource}.value() : undefined${labelArg}),`);
       lines.push('  );');
