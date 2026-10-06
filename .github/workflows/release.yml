@@ -34,7 +34,8 @@ name: release to maven central and npmjs
 # reviewer) sees the release on Central and stages the npm version → a maintainer approves the
 # staged version with 2FA, and only then is it live. A deployment that is Dropped leaves npm
 # untouched; the only half-release left is an npm stage that fails after Maven is published, and
-# that is finished by re-running the npm job, which never stages a version npm already holds.
+# that is finished by re-running the npm job, which never stages a version npm already holds. A
+# stage still awaiting approval is not held yet, so approve or reject it before any re-run.
 #
 # npm releases are staged, as @exeris/ui-kit's are in exeris-sdk: CI holds a token that can only
 # stage, and a version goes live when a maintainer approves it with 2FA. Provenance is attached
@@ -310,7 +311,10 @@ jobs:
           retention-days: 90
 
   # The dry run of the npm half. Same checks as the publishing job, then a tarball and
-  # `npm publish --dry-run`, which reports what it would upload and needs no credentials.
+  # `npm stage publish --dry-run`, which reports what it would stage. It needs neither an npm token
+  # nor an OIDC token: under --dry-run npm only warns that it is not logged in, and signs no
+  # provenance even with `publishConfig.provenance` set. So this job holds no secret and no
+  # `id-token: write`, and the publishing job is the only one that can stage.
   npm-dry-run:
     name: npm — pack and stage publish --dry-run
     needs: release
@@ -459,7 +463,9 @@ jobs:
           exit 1
 
       # A version npm already holds can never be staged again, so a re-run after an approved
-      # release finds it and stops. Auth: the NPM_TOKEN repository secret, an npm granular access
+      # release finds it and stops. A staged version that is not yet approved is not on the
+      # registry, so this check does not see it: re-run this job only after the earlier stage was
+      # approved, or rejected (`npm stage list @exeris/codegen-ts` shows it). Auth: the NPM_TOKEN repository secret, an npm granular access
       # token with "Read and write (stage only)" on the @exeris scope.
       - name: Stage the publish on npmjs (provenance, approved with 2FA)
         env:
