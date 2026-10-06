@@ -69,9 +69,19 @@ export class FormGenerator implements CodeGenerator {
     // No control for a system field (type-gen's viewSystemFieldNames). That includes a UNIVERSE
     // entity's shared-scope key, which is server-owned like its tenant: the repository stamps it
     // from the bound storage context and the create DTO omits it, so the form never sends it.
-    // The form renders no link, so the context resolves none.
-    const renders = resolveFieldRenders(domain, fieldRenderContext(domain, [], false, context.enums ?? []));
+    // The form renders no link, so the context resolves none; a foreign key is picked from its
+    // target's records when the target's service is generated.
+    const renders = resolveFieldRenders(
+      domain,
+      fieldRenderContext(domain, context.allDomains, false, context.enums ?? [], context.config.generateServices !== false),
+    );
     const createFields = renders.filter((r) => r.form.placement === 'control');
+    const pickerFields = createFields.filter((r) => r.form.picker !== undefined);
+    // One injected service per picked target, in field order; the entity's own service serves a
+    // relationship to itself.
+    const pickerTargets = [...new Set(pickerFields.map((r) => r.form.picker!.target))];
+    const pickerServiceMember = (target: string): string =>
+      target === entityName ? 'service' : `${target.charAt(0).toLowerCase()}${target.slice(1)}Service`;
     // Computed fields render read-only, for information, and are kept out of the submitted DTO.
     const computedFields = renders.filter((r) => r.form.placement === 'computed');
 
@@ -95,6 +105,11 @@ export class FormGenerator implements CodeGenerator {
     lines.push("import { ActivatedRoute, Router } from '@angular/router';");
     lines.push(`import { ${modelName}, ${modelName}Create, ${modelName}Update, ${entityName}Service } from '../services/${kebabName}.service';`);
     lines.push("import { httpErrorMessage } from '../core/http-error';");
+    for (const target of pickerTargets) {
+      if (target === entityName) continue;
+      const picker = pickerFields.find((r) => r.form.picker!.target === target)!.form.picker!;
+      lines.push(`import { ${target}Service } from '../services/${picker.serviceModule}';`);
+    }
 
     // Collect enum types used in create fields
     const enumTypes = new Set<string>();
@@ -110,6 +125,25 @@ export class FormGenerator implements CodeGenerator {
     }
 
     lines.push('');
+    if (pickerFields.length > 0) {
+      lines.push('/**');
+      lines.push(' * The options of a foreign-key select: one per listed record with an id, valued by the id and');
+      lines.push(' * labelled by `label` (the relationship\'s display field), or by the id when that is empty. The');
+      lines.push(' * list route answers with a JSON array; a paged envelope is read through its content.');
+      lines.push(' */');
+      lines.push('function pickerOptions<T extends { id?: unknown }>(');
+      lines.push('  result: { content?: T[] } | T[] | undefined,');
+      lines.push('  label: (row: T) => unknown = (row) => row.id,');
+      lines.push('): { value: string; label: string }[] {');
+      lines.push('  const rows = result === undefined ? [] : Array.isArray(result) ? result : (result.content ?? []);');
+      lines.push("  return rows.filter((row) => row.id != null && row.id !== '').map((row) => {");
+      lines.push('    const value = String(row.id);');
+      lines.push('    const text = label(row);');
+      lines.push("    return { value, label: text == null || String(text) === '' ? value : String(text) };");
+      lines.push('  });');
+      lines.push('}');
+      lines.push('');
+    }
     // The value the form edits: one property per control, typed as the control holds it.
     lines.push(`interface ${formModelName} {`);
     for (const f of createFields) {
@@ -153,6 +187,22 @@ export class FormGenerator implements CodeGenerator {
         lines.push('          <option value="">Select...</option>');
         lines.push(`          @for (value of ${enumTypeName}Values; track value) {`);
         lines.push(`            <option [value]="value">{{ ${enumTypeName}DisplayNames[value] }}</option>`);
+        lines.push('          }');
+        lines.push('        </select>');
+      } else if (control === 'picker') {
+        lines.push(`        <label for="${f.name}" class="exeris-label">${label} ${requiredMark}</label>`);
+        lines.push(`        <select id="${f.name}" data-testid="field-${f.name}" ${binding} class="exeris-select mt-1" ${errorClass}>`);
+        // A required key cannot be set back to none; an optional one can.
+        lines.push(f.form.required
+          ? '          <option value="" disabled>Select...</option>'
+          : '          <option value="">—</option>');
+        // The value the control holds stays an option while the records load, and when the list
+        // does not return its record, so the select never shows another value or none.
+        lines.push(`          @if (${pickerUnlistedName(f.name)}()) {`);
+        lines.push(`            <option [value]="${state}.value()">{{ ${state}.value() }}</option>`);
+        lines.push('          }');
+        lines.push(`          @for (option of ${pickerOptionsName(f.name)}(); track option.value) {`);
+        lines.push('            <option [value]="option.value">{{ option.label }}</option>');
         lines.push('          }');
         lines.push('        </select>');
       } else if (control === 'checkbox') {
@@ -224,6 +274,10 @@ export class FormGenerator implements CodeGenerator {
     // host template it sees the host's route instead (or none), and leaves the next step to
     // the host listening on `saved` / `cancelled`.
     lines.push(`  private readonly routed = inject(ActivatedRoute, { optional: true })?.component === ${entityName}FormComponent;`);
+    for (const target of pickerTargets) {
+      if (target === entityName) continue;
+      lines.push(`  private readonly ${pickerServiceMember(target)} = inject(${target}Service);`);
+    }
     lines.push('');
 
     // Generate enum arrays
@@ -244,7 +298,8 @@ export class FormGenerator implements CodeGenerator {
     lines.push('  });');
     lines.push('');
     // An embedding host's `entity` wins over the by-id load; an `id` always means edit.
-    lines.push(`  readonly current = computed<${modelName} | null>(() => this.entity() ?? this.entityResource.value() ?? null);`);
+    // A resource's value() throws once its load has failed, so it is read only when it holds one.
+    lines.push(`  readonly current = computed<${modelName} | null>(() => this.entity() ?? (this.entityResource.hasValue() ? this.entityResource.value() : null) ?? null);`);
     lines.push("  readonly editMode = computed(() => this.id() !== undefined || this.mode() === 'edit');");
     lines.push('  readonly isLoading = computed(() => this.entityResource.isLoading());');
     lines.push('  readonly loadError = computed(() => {');
@@ -278,6 +333,22 @@ export class FormGenerator implements CodeGenerator {
       lines.push('  });');
     } else {
       lines.push('  readonly form = form(this.formModel);');
+    }
+
+    // A foreign-key select lists its target's records once, when the form is created.
+    for (const f of pickerFields) {
+      const picker = f.form.picker!;
+      const resource = `${pickerOptionsName(f.name)}Resource`;
+      const labelArg = picker.labelField ? `, (row) => row.${picker.labelField}` : '';
+      lines.push('');
+      lines.push(`  private readonly ${resource} = rxResource({ stream: () => this.${pickerServiceMember(picker.target)}.findAll() });`);
+      lines.push(`  readonly ${pickerOptionsName(f.name)} = computed(() =>`);
+      lines.push(`    pickerOptions(this.${resource}.hasValue() ? this.${resource}.value() : undefined${labelArg}),`);
+      lines.push('  );');
+      lines.push(`  readonly ${pickerUnlistedName(f.name)} = computed(() => {`);
+      lines.push(`    const value = this.formModel().${f.name};`);
+      lines.push(`    return value !== '' && !this.${pickerOptionsName(f.name)}().some((option) => option.value === value);`);
+      lines.push('  });');
     }
 
     // A computed field is derived from the values it depends on, read from the form model when
@@ -438,13 +509,18 @@ export class FormGenerator implements CodeGenerator {
   }
 }
 
+/**
+ * `allDomains` is the app's domain set: a foreign key whose target is in it, with a generated
+ * service, is picked from the target's records.
+ */
 export function generateForm(
   metadata: DomainMetadata,
   config: GeneratorConfig,
   enums: EnumMetadata[] = [],
+  allDomains: DomainMetadata[] = [metadata],
 ): GeneratedFile | null {
   const generator = new FormGenerator();
-  const context: GeneratorContext = { config, backend: config.backend ?? 'KERNEL', allDomains: [metadata], enums };
+  const context: GeneratorContext = { config, backend: config.backend ?? 'KERNEL', allDomains, enums };
   return generator.generate(metadata, context);
 }
 
@@ -518,6 +594,16 @@ function signalFormsImports(validation: FormValidation): string[] {
 /** `fullName` to `FullName`, the suffix of a computed field's member names. */
 function memberSuffix(name: string): string {
   return toTitleCase(name).replace(/ /g, '');
+}
+
+/** The options signal of a foreign-key select. */
+function pickerOptionsName(name: string): string {
+  return `${name}Options`;
+}
+
+/** Whether a foreign-key select's value is missing from its options, which then still show it. */
+function pickerUnlistedName(name: string): string {
+  return `${name}Unlisted`;
 }
 
 function computedSignalName(name: string): string {
