@@ -87,6 +87,10 @@ class CodegenCliJarIT {
 
         assertThat(result.status()).as(result.stderr()).isZero();
         assertThat(result.stdout()).isEmpty();
+        assertThat(result.stderr().lines())
+                .as("the jar binds slf4j-api, so stderr carries no SLF4J provider warning")
+                .isNotEmpty()
+                .noneMatch(line -> line.contains("SLF4J"));
         Map<String, byte[]> main = tree(jarMain);
         Map<String, byte[]> test = tree(jarTest);
         assertThat(main).containsKeys(OutputWriter.MANIFEST_NAME, "cap-manifest.json",

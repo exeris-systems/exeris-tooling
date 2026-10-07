@@ -22,12 +22,43 @@
     </description>
     <url>https://github.com/exeris-systems/exeris-tooling</url>
 
+    <properties>
+        <!-- The slf4j-api swagger-core brings, and the binding this jar adds for it. One property
+             for both: a binding of another minor version prints its own warning. -->
+        <slf4j.version>2.0.17</slf4j.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.slf4j</groupId>
+                <artifactId>slf4j-api</artifactId>
+                <version>${slf4j.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.slf4j</groupId>
+                <artifactId>slf4j-nop</artifactId>
+                <version>${slf4j.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
     <!-- No sources of its own. CodegenMain and CliArgs live in exeris-codegen-java, beside the
          diagnostic print sites ADR-095 places there; this module only packages them. -->
     <dependencies>
         <dependency>
             <groupId>eu.exeris</groupId>
             <artifactId>exeris-codegen-java</artifactId>
+        </dependency>
+
+        <!-- swagger-parser logs through slf4j-api, which finds no provider in a self-contained jar
+             and says so on stderr at every run. The no-operation binding keeps stderr to the
+             generator's own lines. In this jar only: exeris-codegen-java leaves the binding to
+             whoever puts it on a classpath. -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-nop</artifactId>
+            <scope>runtime</scope>
         </dependency>
 
         <!-- The integration test produces its metadata by running the real processor over
