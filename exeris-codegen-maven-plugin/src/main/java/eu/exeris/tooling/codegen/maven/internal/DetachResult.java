@@ -16,12 +16,23 @@ import java.util.List;
  */
 public record DetachResult(List<Path> moved, List<Path> conflicts, boolean gitignoreUpdated) {
 
+    /**
+     * Creates a result holding unmodifiable copies of both path lists.
+     *
+     * @throws NullPointerException if {@code moved} or {@code conflicts}, or any element of
+     *         either, is {@code null}
+     */
     public DetachResult {
         moved = List.copyOf(moved);
         conflicts = List.copyOf(conflicts);
     }
 
-    /** {@code true} when no files were promoted (nothing to detach, or all conflicted). */
+    /**
+     * Reports whether the run promoted nothing, either because there was nothing to detach or
+     * because every file conflicted.
+     *
+     * @return {@code true} when no file was promoted
+     */
     public boolean isEmpty() {
         return moved.isEmpty();
     }
