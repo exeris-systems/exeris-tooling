@@ -38,7 +38,7 @@ import java.util.*;
  * For each processed domain class, generates a JSON file in
  * {@code exeris-metadata/} containing complete domain metadata.
  *
- * @since 0.1.0
+ * @since 0.1
  */
 @AutoService(Processor.class)
 @SupportedAnnotationTypes({
@@ -793,7 +793,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     private boolean verbose;
     private boolean strict;
 
-    /** Collected enums from all processed entities */
+    /** Enum types referenced by the fields of processed entities, including as type arguments. */
     private final Set<TypeElement> discoveredEnums = new HashSet<>();
 
     /**
