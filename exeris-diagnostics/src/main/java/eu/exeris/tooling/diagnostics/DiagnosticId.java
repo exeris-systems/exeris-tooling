@@ -118,6 +118,13 @@ public enum DiagnosticId {
     REAL_TIME_API_ON_TENANT_PARTITIONED("EXT-PROC-1014",
             "@ExerisDomain(realTimeApi = true) is on a TENANT or UNIVERSE entity; its live view cannot be isolated per tenant."),
 
+    /**
+     * An {@code @ExerisDomain} type declares no field {@code id}, the primary key every generated
+     * artefact identifies a row by.
+     */
+    ENTITY_WITHOUT_ID_FIELD("EXT-PROC-1015",
+            "An @ExerisDomain type declares no field 'id'."),
+
     // -----------------------------------------------------------------------
     // EXT-PROC-11xx — warnings on an ordinary build (javac WARNING)
     // -----------------------------------------------------------------------

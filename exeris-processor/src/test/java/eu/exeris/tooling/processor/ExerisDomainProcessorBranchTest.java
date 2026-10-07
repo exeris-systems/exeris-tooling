@@ -79,7 +79,7 @@ class ExerisDomainProcessorBranchTest {
                         searchConfig = "english",
                         tableName = "all_attrs"
                     )
-                    public class AllAttrs {}
+                    public class AllAttrs { private java.util.UUID id; }
                     """
             );
 
@@ -123,7 +123,7 @@ class ExerisDomainProcessorBranchTest {
                     import eu.exeris.sdk.annotation.ExerisDomain;
 
                     @ExerisDomain(module = "sales", path = "/versioned", apiVersion = "v2")
-                    public class Versioned {}
+                    public class Versioned { private java.util.UUID id; }
                     """
             );
 
@@ -168,7 +168,7 @@ class ExerisDomainProcessorBranchTest {
                     import eu.exeris.sdk.annotation.Field;
 
                     @ExerisDomain(module = "sales", path = "/orders")
-                    public class Order {
+                    public class Order { private java.util.UUID id;
                         @Field(label = "Status")
                         private OrderStatus status;
                     }
@@ -222,7 +222,7 @@ class ExerisDomainProcessorBranchTest {
                     import java.util.List;
 
                     @ExerisDomain(module = "support", path = "/tickets")
-                    public class Ticket {
+                    public class Ticket { private java.util.UUID id;
                         @Field(label = "Priorities")
                         private List<Priority> priorities;
                     }
@@ -294,7 +294,7 @@ class ExerisDomainProcessorBranchTest {
 
                     @ExerisDomain(module = "sales", path = "/order-flow")
                     @Saga(name = "OrderFlow")
-                    public class OrderFlow {
+                    public class OrderFlow { private java.util.UUID id;
                         @SagaStep(order = 0, name = "validate", service = "orders",
                                 command = "Validate")
                         public void step1() {}
@@ -331,7 +331,7 @@ class ExerisDomainProcessorBranchTest {
                     import eu.exeris.sdk.annotation.Field;
 
                     @ExerisDomain(module = "sales", path = "/field-attrs")
-                    public class FieldAttrFixture {
+                    public class FieldAttrFixture { private java.util.UUID id;
 
                         @Field(
                             label = "Display Name",
@@ -398,7 +398,7 @@ class ExerisDomainProcessorBranchTest {
                     import eu.exeris.sdk.annotation.Action;
 
                     @ExerisDomain(module = "sales", path = "/action-attrs")
-                    public class ActionAttrFixture {
+                    public class ActionAttrFixture { private java.util.UUID id;
 
                         @Action(
                             name = "approve",
@@ -450,7 +450,7 @@ class ExerisDomainProcessorBranchTest {
                             topic = "ts.action")
                     @DomainEvent(trigger = Trigger.STATE_TRANSITION,
                             stateTransition = "OPEN->CLOSED", topic = "ts.state")
-                    public class TriggerProbe {}
+                    public class TriggerProbe { private java.util.UUID id; }
                     """
             );
 
@@ -537,7 +537,7 @@ class ExerisDomainProcessorBranchTest {
 
                     @ExerisDomain(module = "graph", path = "/graph-node")
                     @Graph(nodeClass = "CustomNodeLabel")
-                    public class GraphNode {}
+                    public class GraphNode { private java.util.UUID id; }
                     """
             );
 
@@ -561,7 +561,7 @@ class ExerisDomainProcessorBranchTest {
 
                     @ExerisDomain(module = "events", path = "/es-only")
                     @EventSourced(streamPrefix = "ESOnly")
-                    public class EsLedger {}
+                    public class EsLedger { private java.util.UUID id; }
                     """
             );
 
@@ -623,7 +623,7 @@ class ExerisDomainProcessorBranchTest {
 
                     @ExerisDomain(module = "sales", path = "/ui-bare")
                     @UI
-                    public class UIBare {}
+                    public class UIBare { private java.util.UUID id; }
                     """
             );
 
@@ -657,7 +657,7 @@ class ExerisDomainProcessorBranchTest {
                     @UI(listView = false, detailView = false, createForm = false,
                         editForm = false, searchable = false, filterable = false,
                         exportable = true)
-                    public class UIOverride {}
+                    public class UIOverride { private java.util.UUID id; }
                     """
             );
 
