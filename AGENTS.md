@@ -4,7 +4,7 @@ type: reference
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-09-26
+last-verified: 2026-10-07
 ---
 
 # exeris-tooling
@@ -66,6 +66,9 @@ Coordinates: groupId `eu.exeris`, packages `eu.exeris.tooling.*`.
    changes and milestone scope.
 3. Upstream & downstream references: `exeris-sdk/exeris-sdk-source-model/`, `exeris-kernel/exeris-kernel-spi/`,
    downstream consumer applications ([reference](.agents/references/cross-repo-dependencies.md)).
+4. [`docs/generators.md`](docs/generators.md) for which generator writes each emitted path and when
+   ([ADR-097](docs/adr/ADR-097-generator-catalogue-and-launchable-generator.md)). A change that adds
+   or moves an emitted file adds its row in the same change.
 
 ## `.agents/` — the canonical semantic source
 

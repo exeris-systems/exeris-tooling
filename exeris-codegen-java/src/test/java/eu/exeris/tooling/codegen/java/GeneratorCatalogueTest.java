@@ -468,7 +468,8 @@ class GeneratorCatalogueTest {
 
     /**
      * The parts of {@code docs/generators.md} that restate the catalogue: the row tables under the
-     * {@code ### <Root> root, <scope> scope} headings, the ambiguity table, and the retired section.
+     * {@code ### <Root> root, <scope> scope} headings of {@code ## Rows}, the ambiguity table, and
+     * the retired section. The TypeScript section is descriptive and is not read here.
      */
     private static final class Doc {
 
@@ -508,7 +509,7 @@ class GeneratorCatalogueTest {
                 List<String> cells = cells(line);
                 if (h2.equals("Ambiguous rows")) {
                     doc.ambiguous.put(cells.get(0), cells.get(1));
-                } else if (root != null) {
+                } else if (root != null && h2.equals("Rows")) {
                     List<String> row = new ArrayList<>(List.of(root, scope));
                     row.addAll(cells);
                     doc.rows.add(row);

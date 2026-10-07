@@ -265,7 +265,9 @@ for `.domain`. The generators substitute every occurrence of `.domain`, so a pac
 ### 📋 What is NOT in scope
 
 - **A TypeScript catalogue.** `outputRoot: ts` is reserved. A catalogue for `@exeris/codegen-ts`
-  output is published with that package, under ADR-092, by a later decision.
+  output is published with that package, under ADR-092, by a later decision. Until then the
+  TypeScript generators are described in `docs/generators.md`, with a guard that holds the table to
+  the `*-gen.ts` files and no machine-readable rows.
 - **The content of generated files.** The catalogue describes paths, not what a file contains.
 - **Detached trees.** After `exeris:detach` the files are the consumer's own (ADR-015's L2); the
   catalogue still explains the paths, but no row promises the file still matches its generator.

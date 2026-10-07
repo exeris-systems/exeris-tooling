@@ -13,7 +13,7 @@ Every file the Java code-generation pipeline writes has a row here: the generato
 what the file is, and when it is written. The machine-readable form is
 `META-INF/exeris/generator-catalogue.json` in the `eu.exeris:exeris-codegen-java` artefact
 (`exeris-codegen-java/src/main/resources/` in this repository); this page is the same rows for a
-person.
+person. The TypeScript generators are described in the last section, without machine-readable rows.
 
 [ADR-097](adr/ADR-097-generator-catalogue-and-launchable-generator.md) is the contract.
 `GeneratorCatalogueTest` fails the build when this page and the JSON disagree, or when a generator
@@ -28,7 +28,9 @@ and matches the paths it lists, and nothing else: not a directory listing, and n
 the metadata. The pipeline writes two trees, each with its own manifest: `main`, the tree
 `exeris:generate` writes (`src/main/generated/java` by default), and `test`, the tree written under
 `-Dexeris.tests=true` (`src/test/generated/java`, ADR-058). A manifest path is relative to its tree
-and uses forward slashes.
+and uses forward slashes. The TypeScript generator's manifest records its project-root scaffold
+files with a leading `./` (`./package.json`), as composed; strip a leading `./` before matching. The
+Java manifests never carry one.
 
 For each path, take the first row, in catalogue order, whose `outputRoot` is the tree the manifest
 sits in and whose `pathPattern` matches the whole path. That row names the generator. When the row
@@ -38,6 +40,11 @@ with the entity names the metadata directory holds, or report every candidate.
 `condition` is text for a person. A tool never evaluates it: most generators decide inside
 `generate(...)` whether to write a file, and evaluating the condition would be a second
 implementation of that decision.
+
+`CodegenPipeline` calls every registered generator for every entity and keeps what it returns; it
+does not consult `supports()`, so a generator's own guard decides whether a file is written. Classes
+named `*Generator` that write no file have no row: `OpenApiGenerator` renders the YAML that
+`KernelOpenApiGenerator` writes, and `KernelGeneratorStrategy` is the registry.
 
 A detached tree (`exeris:detach`) belongs to the application. The rows still explain its paths, but
 none of them promises that a file still matches what its generator wrote.
@@ -51,10 +58,10 @@ none of them promises that a file still matches what its generator wrote.
 | `{E}` | The entity's simple class name. |
 | `{Action}` | A streaming action's `@Action(name)` in Pascal case: each character that is not a letter or digit dropped, and the character after it upper-cased. |
 | `{Flow}` | The saga's flow class name, as the `saga-flow` row's condition says. |
-| `{table}` | The entity's table: `@ExerisDomain(tableName)` lower-cased, else the snake-cased plural of `{E}`. |
+| `{table}` | The entity's table: the `@ExerisDomain(tableName)` override trimmed and lower-cased, else the snake-cased English plural of `{E}` (`ConstructionOrder` → `construction_orders`). |
 | `{tier}` | The migration tier digit, as the `create-table-migration` row's condition says. |
-| `{nnnnnn}` | Six digits derived from the entity's qualified name. |
-| `{kebab(E)}` | `{E}` with a hyphen between each ASCII lower-case letter and an ASCII upper-case letter after it, then lower-cased. |
+| `{nnnnnn}` | `Math.floorMod(qualifiedName.hashCode(), 1_000_000)` over the entity's qualified class name, written with six digits: a migration version is `{tier} × 1000000 + {nnnnnn}`, so it always has seven digits and its first is the tier. |
+| `{kebab(E)}` | `{E}` with a hyphen between each ASCII lower-case letter and an ASCII upper-case letter after it, then lower-cased (`Locale.ROOT` in Java). The TypeScript generator's `DslMapper.toKebabCase` applies the same rule. |
 
 In the `test-support` row, `Recording{HttpExchange,Persistence,…}` stands for one file per name in
 the braces.
@@ -147,3 +154,58 @@ A retired row names a path shape the pipeline does not write, and its `id` is ne
 Retiring one moves its row here, with the release that retired it and the row that replaces it.
 
 None yet.
+
+## TypeScript generators
+
+This section is descriptive. ADR-097 reserves `outputRoot: ts` for machine-readable rows that
+`@exeris/codegen-ts` will publish; the JSON carries none yet, and nothing here is held to a run's
+output. `generator-catalogue.spec.ts` in `exeris-codegen-ts` fails when a `src/generators/**/*-gen.ts`
+file has no row in the table below, or a row names a file that does not exist. A changed path or
+condition is kept current by the change that makes it.
+
+**Output root.** `outputPath` in the config file (`exeris-codegen.json`), or `--output`, defaulting
+to `src/app/generated`. The CLI (`src/index.ts`) writes every file `buildGeneratedFiles` returns
+under that root and records each path in the root's `.exeris-codegen-manifest`, including files it
+skipped because they already existed and `overwrite` is off.
+
+**How generators are invoked.** `orchestrator.ts` (`buildGeneratedFiles`) composes the run.
+Per-entity and per-view output, the type surface and the peer trees are composed relative to an app
+tree, then prefixed with `src/app/`. `app-structure-gen.ts` writes the project scaffold around it, at
+paths relative to the output root; the project-root files carry a leading `./`. A contracts-only run
+has peers and no entity, enum or view: it drops the `src/app/` prefix, so peer trees land at
+`peers/{peer}/…`, and it writes no scaffold.
+
+The `generate*` keys below are configuration keys, set off by the matching `--no-zod`,
+`--no-services`, `--no-forms`, `--no-lists`, `--no-details`, `--no-stores`, `--no-sagas` and
+`--no-events` options; each defaults to true. `generateTests` (`--tests`) defaults to false.
+`{kebab(E)}` is as above; `{kebab(V)}` is the same rule over a view's `name`, and `{peer}` is a peer's
+declared name.
+
+<!-- catalogue:ts:begin -->
+| Generator | Output path (relative to the output root) | Emitted when | Scope |
+|---|---|---|---|
+| `api/type-gen.ts` | `src/app/types/{kebab(E)}.types.ts`; `src/app/schemas/{kebab(E)}.schema.ts`; `src/app/types/index.ts`; `src/app/schemas/index.ts` | `{kebab(E)}.types.ts` for every entity. `TypeGenerator.generateAggregate`, once when at least one entity or enum is loaded: `{kebab(E)}.schema.ts` per entity and `schemas/index.ts` under `generateZod` (the barrel only with at least one entity), and `types/index.ts` always. | entity (types, schemas); project (barrels) |
+| `api/enum-module-gen.ts` | `src/app/types/enums.ts` | At least one entity or enum is loaded; written even with no enum, so the barrels' re-export resolves. Its Zod enum schemas follow `generateZod`. Also called by `peer-type-gen.ts` for each peer's tree. | project |
+| `api/peer-type-gen.ts` | `src/app/peers/{peer}/types/enums.ts`; `src/app/peers/{peer}/types/{kebab(E)}.types.ts`; `src/app/peers/{peer}/schemas/{kebab(E)}.schema.ts`; `src/app/peers/{peer}/index.ts` | Once per peer declared by `--peer {peer}=<path>` or `peers` in the config; `schemas/…` under `generateZod`. | project (one tree per peer) |
+| `angular/service-gen.ts` | `src/app/services/{kebab(E)}.service.ts` | `generateServices`; every entity. | entity |
+| `angular/stream-client-gen.ts` | `src/app/services/{kebab(E)}.stream.ts`; `src/app/services/streams.index.ts` | `generateServices`, `realTimeApi` true, and the entity is not tenant-partitioned (`hasLiveViewClient`). The barrel is written once when any entity qualifies. | entity (client); project (barrel) |
+| `angular/action-stream-client-gen.ts` | `src/app/services/{kebab(E)}.action-streams.ts`; `src/app/services/stream-types.ts`; `src/app/services/action-streams.index.ts` | `generateServices`, at least one action with `streaming` true, and the entity is not tenant-partitioned (`hasActionStreamClients`). `stream-types.ts` and the barrel are written once when any entity qualifies. | entity (client); project (shared module, barrel) |
+| `angular/form-gen.ts` | `src/app/components/{kebab(E)}-form.component.ts` | `generateForms`, and `uiMetadata.createForm` or `uiMetadata.editForm` is not `false`. | entity |
+| `angular/list-gen.ts` | `src/app/components/{kebab(E)}-list.component.ts` | `generateLists`, and `uiMetadata.listView` is not `false`. | entity |
+| `angular/detail-gen.ts` | `src/app/components/{kebab(E)}-detail.component.ts` | `generateDetails`, and `uiMetadata.detailView` is not `false`. | entity |
+| `angular/store-gen.ts` | `src/app/stores/{kebab(E)}.store.ts` | `generateStores`; every entity. | entity |
+| `angular/saga-gen.ts` | `src/app/sagas/{kebab(E)}.saga.ts` | `generateSagas`, and `sagaMetadata` is present. | entity |
+| `angular/event-gen.ts` | `src/app/events/{kebab(E)}.events.ts`; `src/app/events/event-bus.service.ts` | `generateEvents`, and `events` is non-empty. The bus is written once when any entity qualifies. | entity (handler); project (bus) |
+| `angular/spec-gen.ts` | `src/app/schemas/{kebab(E)}.schema.spec.ts`; `src/app/services/{kebab(E)}.service.spec.ts` | `generateTests`; the schema spec also needs `generateZod`, the service spec `generateServices`. Every entity. | entity |
+| `angular/http-error-gen.ts` | `src/app/core/http-error.ts` | At least one entity is loaded and at least one of `generateDetails`, `generateLists`, `generateForms`, `generateStores`, `generateSagas` is on (`needsHttpErrorHelper`). | project |
+| `angular/view-gen.ts` | `src/app/pages/{kebab(V)}.component.ts`; `src/app/pages/{kebab(V)}.route.ts` | One pair per `view_*.json` in the metadata directory. | per view |
+| `angular/app-structure-gen.ts` | `./package.json`; `./angular.json`; `./tsconfig.json`; `./tsconfig.app.json`; `./tsconfig.spec.json`; `./.postcssrc.json`; `./proxy.conf.json`; `src/styles.css`; `src/index.html`; `src/favicon.ico`; `src/main.ts`; `src/environments/environment.ts`; `src/environments/environment.development.ts`; `src/app/app.config.ts`; `src/app/app.component.ts`; `src/app/app.routes.ts`; `src/app/index.ts` | Every run that is not contracts-only. `tsconfig.spec.json` only under `generateTests`. `proxy.conf.json` only when the app has a backend: at least one entity, or an emitted file that imports `@angular/common/http`. `src/app/index.ts` only when at least one entity or enum is loaded. | project |
+| `api/enum-gen.ts` | none in a CLI run | Not invoked by `orchestrator.ts`; registered only by `registerAllGenerators`, which no production path calls. `src/app/types/enums.ts` comes from `enum-module-gen.ts`. | none |
+| `api/query-builder-gen.ts` | none in a CLI run | Not invoked by `orchestrator.ts`; registered only by `registerAllGenerators`. | none |
+| `angular/guard-gen.ts` | none in a CLI run | Not invoked by `orchestrator.ts`; registered only by `registerAllGenerators`. | none |
+| `angular/landing-gen.ts` | none in a CLI run | Not invoked by `orchestrator.ts`; registered only by `registerAllGenerators`. | none |
+<!-- catalogue:ts:end -->
+
+The four generators with no CLI output stay in the table so that the guard holds the whole
+`*-gen.ts` set. No path in a CLI manifest maps to them: a `queries/`, `guards/` or
+`features/pitch-deck/` path in an output tree was not written by this version of the CLI.
