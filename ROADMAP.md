@@ -3812,21 +3812,16 @@ first, a final release for both, is what the 0.9.0 cut waits on. B0 itself is ap
 
 Expected to pair with kernel 0.13, and with SDK 0.13 if one is needed; if neither is final before
 the cut, 0.10.0 cuts on the `0.12.0` pins. Order, gates and the Java/TS pairing of every item below
-are in [`docs/0.10.0-release-plan.md`](docs/0.10.0-release-plan.md). T12 + T17, `@Blob` and
-`@Channel` are the stretch waves there, and do not hold the cut. Track C, `@SagaTransition` and T48
-slice C2 are conditional: each enters only if its upstream half is final first.
+are in [`docs/0.10.0-release-plan.md`](docs/0.10.0-release-plan.md). T12 + T17 is the stretch wave
+there, and does not hold the cut. Track C, `@SagaTransition` and T48 slice C2 are conditional: each
+enters only if its upstream half is final first.
 
 - [ ] **J0 build hygiene** (no gate, does not hold the cut): Checkstyle and PMD on the tooling's own
       Java (warn-only first, then enforcing per module), ArchUnit policy tests, the javadoc gate in diff
       mode, and lint of emitted Java in the e2e compile gate.
 - [ ] **T53 in full** (RFC, then ADR): `@RouteAccess` + `permissions` compiled into `RouteRequirement`. D10 resolves
       with it.
-- [ ] Track C (SDK record changes), `@SagaTransition`, T12 + T17, `@PrimaryKey`.
-- [ ] **Annotations to emitted output** (plan section *Annotation coverage*): `@GraphProperty` into
-      the graph-sync node upsert, and `@UIGroup` into sections in the generated forms and detail
-      views (J7 + S6), each with its `-io` reader half (exeris-sdk#187). Stretch: `@Blob` (J8 + S7)
-      and `@Channel` (J9 + S8), each after its RFC/ADR. Conditional on SDK carriers
-      (exeris-sdk#186): `@QueryParam`, `@NavMenu`, `@Tab`.
+- [ ] Track C (SDK record changes), `@SagaTransition`, T12 + T17.
 - [ ] **EV1-stream per-action driver** (ADR-044 amendment first): the streaming action runs, and its
       triggered events stream back. Moved from 0.9.0 on 2026-10-02; the open questions are under
       **EV1-stream**. Removes the 0.9.0 streaming-action warning.
@@ -3864,8 +3859,6 @@ slice C2 are conditional: each enters only if its upstream half is final first.
 **Not placed in a milestone**, because the next step belongs to another repository: C2
 (`@Encrypted` / `@RowLevelSecurity`, two asks on the kernel and the SDK) and `@SagaStep.parallel`
 (a kernel contract for concurrent flow steps). Each gets a milestone when its upstream half lands.
-`@GraphQuery` waits on a decision between the kernel and the SDK: it declares a Cypher string, and
-the kernel's graph SPI is dialect-neutral and has no named-query entry point.
 
 **`@exeris/codegen-ts` → npmjs** ships in 0.9.0, in lockstep with the reactor; the 0.9.0 cut
 waits for the TS scope in [`docs/codegen-ts-track-plan.md`](docs/codegen-ts-track-plan.md) (P1–P21).
@@ -3888,6 +3881,24 @@ keeps compiling where it still uses one. 0.10.0 removes them.
       omit it as the OpenAPI does.
 - [x] **`apiVersion` in the emitted environment files (T38).** Delete it from
       `generateEnvironmentFile`, `resolveApiSettings` and the KERNEL strategy's `ClientConfig`.
+
+## 0.11.0 — SDK annotations to emitted output, scope set 2026-10-07
+
+Pairs with SDK 0.13, which 0.10.0 does not wait for. Order, gates and the Java/TS pairing are in
+[`docs/0.11.0-release-plan.md`](docs/0.11.0-release-plan.md). Every row needs an SDK 0.13 half: the
+`-io` reader half under ADR-042 (exeris-sdk#187) or a carrier (exeris-sdk#186).
+
+- [ ] **Wave 0, decisions** (may start during 0.10.0): RFC/ADR for the `@Blob` routes and the
+      `@Channel` message shape; the graph-property payload encoding (kernel ask); the `@GraphQuery`
+      decision between the kernel and the SDK.
+- [ ] **J1 `@PrimaryKey`**: the declared primary key across SQL, repository and route template.
+- [ ] **J2 + S1 `@GraphProperty`, `@UIGroup`**: graph node properties in the graph-sync upsert;
+      grouped sections in the generated forms and detail views.
+- [ ] **J3 + S2 `@Blob`**, **J4 + S3 `@Channel`**: each after its wave 0 ADR.
+- [ ] **J5 + S4 `@QueryParam`, `@NavMenu`, `@Tab`**: after exeris-sdk#186.
+
+Not in 0.11.0: `@Encrypted` / `@RowLevelSecurity` (C2) and `@GraphQuery`, with the reasons in the
+plan.
 
 ## Versioning policy
 
