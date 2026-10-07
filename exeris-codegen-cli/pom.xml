@@ -1,0 +1,258 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>eu.exeris</groupId>
+        <artifactId>exeris-tooling-parent</artifactId>
+        <version>0.10.0-SNAPSHOT</version>
+        <relativePath>../exeris-tooling-parent</relativePath>
+    </parent>
+
+    <artifactId>exeris-codegen-cli</artifactId>
+    <packaging>jar</packaging>
+    <name>Exeris Tooling :: Codegen CLI</name>
+    <description>
+        The Java code generator as one self-contained jar (ADR-097): exeris-codegen-java and its
+        runtime dependencies, shaded, with CodegenMain as Main-Class. `java -jar` over a metadata
+        directory writes what exeris:generate writes. A tool, not an application dependency: it is
+        managed in exeris-tooling-bom and in none of the application artefacts (ADR-091).
+    </description>
+    <url>https://github.com/exeris-systems/exeris-tooling</url>
+
+    <properties>
+        <!-- The slf4j-api swagger-core brings, and the binding this jar adds for it. One property
+             for both: a binding of another minor version prints its own warning. -->
+        <slf4j.version>2.0.17</slf4j.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.slf4j</groupId>
+                <artifactId>slf4j-api</artifactId>
+                <version>${slf4j.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.slf4j</groupId>
+                <artifactId>slf4j-nop</artifactId>
+                <version>${slf4j.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <!-- No sources of its own. CodegenMain and CliArgs live in exeris-codegen-java, beside the
+         diagnostic print sites ADR-095 places there; this module only packages them. -->
+    <dependencies>
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-codegen-java</artifactId>
+        </dependency>
+
+        <!-- swagger-parser logs through slf4j-api, which finds no provider in a self-contained jar
+             and says so on stderr at every run. The no-operation binding keeps stderr to the
+             generator's own lines. In this jar only: exeris-codegen-java leaves the binding to
+             whoever puts it on a classpath. -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-nop</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- The integration test produces its metadata by running the real processor over
+             annotated fixtures, as a consumer's javac does. -->
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-processor</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!-- Shade replaces the module jar in place. Without forceCreation an incremental build
+                 keeps that shaded jar as "up to date" and shades it a second time. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <configuration>
+                    <forceCreation>true</forceCreation>
+                </configuration>
+            </plugin>
+
+            <!--
+                The shade configuration follows exeris-kernel-diagnostics-cli (ADR-097 obligation 10).
+
+                Licence and notice files: every bundled jar that carries one carries it at the same
+                path, so the default (first wins) would keep one dependency's text and drop the
+                rest. The licence files, and the DEPENDENCIES lists that name each dependency's
+                licence, are appended into one file per path, and the NOTICE files merged. Licence
+                texts the json-schema jars carry under a shared name (ASL-2.0.txt, LGPL-3.0.txt) are
+                one text each, so first-wins keeps it. ApacheLicenseResourceTransformer is not used: it drops licence files rather
+                than keeping them.
+
+                module-info.class is dropped: a shaded jar is not one module, and a descriptor
+                taken from whichever dependency comes first would misname it.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.6.2</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals><goal>shade</goal></goals>
+                        <configuration>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <transformers>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <mainClass>eu.exeris.tooling.codegen.java.CodegenMain</mainClass>
+                                    <manifestEntries>
+                                        <Implementation-Version>${project.version}</Implementation-Version>
+                                    </manifestEntries>
+                                </transformer>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
+                                    <resource>META-INF/LICENSE</resource>
+                                </transformer>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
+                                    <resource>META-INF/LICENSE.txt</resource>
+                                </transformer>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
+                                    <resource>META-INF/LICENSE.md</resource>
+                                </transformer>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
+                                    <resource>META-INF/DEPENDENCIES</resource>
+                                </transformer>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ApacheNoticeResourceTransformer">
+                                    <addHeader>false</addHeader>
+                                </transformer>
+                            </transformers>
+                            <filters>
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                        <exclude>module-info.class</exclude>
+                                        <exclude>META-INF/versions/*/module-info.class</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!--
+                ADR-097 obligation 14: the suite that runs the jar this module ships. Bound to
+                failsafe because it needs the shaded jar `package` produces. The jar is named, not
+                globbed out of target/, so a leftover from another version cannot be tested.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <version>3.2.5</version>
+                <configuration>
+                    <includes>
+                        <include>**/*IT.java</include>
+                    </includes>
+                    <systemPropertyVariables>
+                        <exeris.cli.jar>${project.build.directory}/${project.build.finalName}.jar</exeris.cli.jar>
+                        <exeris.cli.version>${project.version}</exeris.cli.version>
+                    </systemPropertyVariables>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+    <profiles>
+        <!--
+            Central requires a sources jar and a javadoc jar beside the jar, and
+            tools/release-readiness requires the javadoc jar to carry an index.html. This module has
+            no source of its own, so both are built from the exeris-codegen-java sources it bundles
+            (ADR-097 Engineering Protocol 1): the sources jar exeris-codegen-java attaches in the
+            same release build is unpacked, packaged again under this module's coordinates, and
+            handed to the javadoc run the root pom's `release` profile declares.
+        -->
+        <profile>
+            <id>release</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-dependency-plugin</artifactId>
+                        <version>3.8.1</version>
+                        <executions>
+                            <execution>
+                                <id>unpack-bundled-sources</id>
+                                <phase>prepare-package</phase>
+                                <goals>
+                                    <goal>unpack</goal>
+                                </goals>
+                                <configuration>
+                                    <artifactItems>
+                                        <artifactItem>
+                                            <groupId>eu.exeris</groupId>
+                                            <artifactId>exeris-codegen-java</artifactId>
+                                            <version>${project.version}</version>
+                                            <classifier>sources</classifier>
+                                            <type>jar</type>
+                                        </artifactItem>
+                                    </artifactItems>
+                                    <outputDirectory>${project.build.directory}/bundled-sources</outputDirectory>
+                                    <excludes>META-INF/MANIFEST.MF,META-INF/maven/**</excludes>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-jar-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>bundled-sources-jar</id>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>jar</goal>
+                                </goals>
+                                <configuration>
+                                    <classifier>sources</classifier>
+                                    <classesDirectory>${project.build.directory}/bundled-sources</classesDirectory>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-javadoc-plugin</artifactId>
+                        <configuration>
+                            <sourcepath>${project.build.directory}/bundled-sources</sourcepath>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+</project>

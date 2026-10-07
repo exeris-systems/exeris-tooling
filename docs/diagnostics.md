@@ -104,7 +104,7 @@ so it is visible without `mvn -e`.
 
 | ID | Meaning | What to do |
 |---|---|---|
-| `EXT-PLUG-2001` | No `@ExerisDomain` metadata was found, and generation refused to delete the committed generated tree. | Make the project compile (`mvn compile -Dexeris.codegen.skip=true`), then rerun `exeris:generate`. If you removed every entity on purpose, pass `-Dexeris.codegen.allowEmpty=true`. |
+| `EXT-PLUG-2001` | No `@ExerisDomain` metadata was found, and generation refused to delete the committed generated tree. | Make the project compile (`mvn compile -Dexeris.codegen.skip=true`), then rerun `exeris:generate`. If you removed every entity on purpose, pass `-Dexeris.codegen.allowEmpty=true` (`--allow-empty` on the `CodegenMain` command line, which also prints this identifier). |
 | `EXT-PLUG-2002` | Source generation failed reading metadata or writing the generated tree. | Check the cause for the path; check permissions and disk space on the metadata and output directories. |
 | `EXT-PLUG-2003` | Test generation failed reading metadata or writing the generated test tree. | As 2002, for the generated-test output directory. |
 
@@ -118,7 +118,7 @@ so it is visible without `mvn -e`.
 ### 22xx — `exeris:verify-capabilities`
 
 `EXT-PLUG-2201` is also raised by `exeris:generate` when no later `verify-capabilities` execution
-is bound to take the verdict.
+is bound to take the verdict, and by the `CodegenMain` command line, which has no later gate.
 
 | ID | Meaning | What to do |
 |---|---|---|
@@ -143,13 +143,21 @@ Maven build as well as from the `CodegenMain` command line. A refusal (`EXT-GEN-
 run instead: `exeris:generate` prints it as its goal failure, and `CodegenMain` prints it and exits
 with status 1.
 
+`CodegenMain` (the `exeris-codegen-cli` jar, ADR-097) exits with `0` on success, `1` when generation
+was refused or failed, and `2` when its arguments were invalid, and prints a line carrying an
+identifier on every non-zero exit. The events it shares with `exeris:generate` carry the plugin's
+identifiers: `EXT-PLUG-2001` for the empty-metadata refusal (pass `--allow-empty` for the teardown)
+and `EXT-PLUG-2201` for an unresolved capability graph, which the command line always validates
+fail-fast.
+
 ### 30xx — errors
 
 | ID | Meaning | What to do |
 |---|---|---|
-| `EXT-GEN-3001` | The codegen command line failed to generate code. | Read the exception logged with it, which names the cause. |
-| `EXT-GEN-3002` | The codegen command line was given missing or malformed arguments. | Pass `--metadata-dir` and `--output-dir`, as the usage text printed under it says. |
+| `EXT-GEN-3001` | The codegen command line failed to generate code. | Read the cause printed with it: for an I/O failure, check the path, permissions and disk space of the metadata and output directories. |
+| `EXT-GEN-3002` | The codegen command line was given missing or malformed arguments, or a switch it does not know. Exit status 2. | Pass `--metadata-dir` and `--output-dir`, and only the switches the usage text printed under it lists. A switch a newer release added fails on an older jar. |
 | `EXT-GEN-3003` | An entity field has a type the generated repository cannot store and read back: a parameterised type other than `List<…>` (`Map`, `Set`, `Optional`, …), a `List` whose element is not a plain type (`List<Map<String, String>>`, `List<List<X>>`, `List<X[]>`), an array (`byte[]`, …), `char` / `Character`, `BigInteger`, or a JDK value type with no static `valueOf(String)` (`LocalTime`, `OffsetTime`, `Duration`, `Period`, `Year`, `YearMonth`, `MonthDay`, `ZoneId`, `ZoneOffset`, `java.util.Date`, `Currency`, `Locale`, `URI`, `URL`, `Object`). An enum is never refused. Nothing is generated. Raised by the Java pipeline only: the limit is the Java repository's column encoding. | Declare the field as a `List<…>` of a plain element type (stored as a JSON column) or as a supported scalar (`String`, `UUID`, `Long`, `Integer`, `Short`, `Byte`, `Boolean`, `Float`, `Double`, `BigDecimal`, `Instant`, `LocalDateTime`, `OffsetDateTime`, `ZonedDateTime`, `LocalDate`, an enum) — `BigDecimal` in place of `BigInteger`, a `String` for a time of day or a duration. The message names every such field. |
+| `EXT-GEN-3004` | The codegen command line could not read the generator catalogue it carries. | `--print-catalogue` found no `META-INF/exeris/generator-catalogue.json` on its classpath: run it from the `exeris-codegen-cli` jar, or with `exeris-codegen-java` on the classpath, of one release. |
 
 ### 31xx — warnings
 

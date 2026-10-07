@@ -55,6 +55,7 @@ src/main/generated/typescript/...  ← Studio-friendly clean output
 | [`exeris-processor`](exeris-processor) | Java 25 | Annotation processor — extracts `DomainMetadata` from annotated sources at compile time. Self-registered via `@AutoService`. |
 | [`exeris-codegen-core`](exeris-codegen-core) | Java 25 | Shared infrastructure: `MetadataLoader`, `GeneratorRegistry`, `KernelArtifactGenerator` interface. |
 | [`exeris-codegen-java`](exeris-codegen-java) | Java 25 | Java code generators — kernel-target only (handlers, services, repositories, sagas, events, OpenAPI). |
+| [`exeris-codegen-cli`](exeris-codegen-cli) | Java 25 | The Java generator as one runnable jar (`java -jar`), for tools that generate outside a Maven build ([below](#running-the-java-generator-without-maven), ADR-097). Not an application dependency. |
 | [`exeris-codegen-ts`](exeris-codegen-ts) | Node 18+ / TypeScript | Angular generators — component, service, store, guard, form, list, detail, app structure, sagas. |
 | [`exeris-e2e-tests`](exeris-e2e-tests) | JUnit 5 | Codegen output verification. Heavyweight runtime integration tests (Postgres, RestAssured) live in downstream platform repos. |
 | `exeris-tooling-bom` | — | Bill of materials for this reactor's own build. Not for applications. |
@@ -270,6 +271,27 @@ To own the code outright, run `mvn exeris:detach`. It moves the generated source
 Set `<exeris.tests>true</exeris.tests>` to emit tests for the generated code under
 `src/test/generated/java` ([ADR-058](docs/adr/ADR-058-generated-test-emission-channel.md)). They need JUnit 5 and AssertJ in your `test` scope
 and nothing else; the starter carries neither.
+
+## Running the Java generator without Maven
+
+From 0.10.0, `eu.exeris:exeris-codegen-cli` is the Java generator and its dependencies in one jar
+([ADR-097](docs/adr/ADR-097-generator-catalogue-and-launchable-generator.md)). It runs on JDK 25 or
+newer over the metadata the processor wrote, and writes what `exeris:generate` writes:
+
+```bash
+java -jar exeris-codegen-cli-<version>.jar \
+    --metadata-dir=target/classes/exeris-metadata \
+    --output-dir=src/main/generated/java \
+    --base-package=com.example.shop \
+    --tests --test-output-dir=src/test/generated/java   # optional, ADR-058
+```
+
+`--allow-empty` permits deleting a previously generated tree when no `@ExerisDomain` is found, as
+`-Dexeris.codegen.allowEmpty=true` does. `--print-catalogue` prints the generator catalogue
+([`docs/generators.md`](docs/generators.md)) and exits. The exit status is `0` on success, `1`
+when generation was refused or failed, and `2` when the arguments were invalid, an unknown switch
+included; each non-zero exit prints an `EXT-` identifier ([`docs/diagnostics.md`](docs/diagnostics.md)).
+An application builds through the Maven plugin; the jar is for tools.
 
 ## Build
 
