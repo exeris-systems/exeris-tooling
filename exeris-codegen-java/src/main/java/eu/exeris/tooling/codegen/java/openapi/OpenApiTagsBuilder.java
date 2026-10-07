@@ -9,13 +9,20 @@ import java.util.List;
 /**
  * Builds OpenAPI tags from domain metadata.
  *
- * @author Exeris Team
- * @since 0.1.0
+ * @since 0.1
  */
 public final class OpenApiTagsBuilder {
 
     private OpenApiTagsBuilder() {}
 
+    /**
+     * Builds the tags one entity contributes: one named after the entity, described by the
+     * entity's description when it has one, and a second {@code <Entity> Actions} tag when the
+     * entity declares actions.
+     *
+     * @param metadata the entity to describe
+     * @return one or two tags, the entity tag first
+     */
     public static List<Tag> buildTags(DomainMetadata metadata) {
         List<Tag> tags = new ArrayList<>();
 

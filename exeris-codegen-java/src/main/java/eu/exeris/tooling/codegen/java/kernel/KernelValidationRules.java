@@ -23,7 +23,7 @@ import java.util.List;
  * <p>Rule order per field is fixed and matches emission order, so the handler's guards and the
  * generated tests stay in step and output stays deterministic (hard-constraint #3).
  *
- * @since 0.7.0
+ * @since 0.7
  */
 final class KernelValidationRules {
 

@@ -32,7 +32,7 @@ import java.util.Map;
  * Kernel Application Generator.
  * <p>
  * Emits the application bootstrap skeleton: an {@code Application}
- * entry point that drives {@link
+ * entry point that drives {@code
  * eu.exeris.kernel.core.bootstrap.KernelBootstrap} and a
  * {@code RuntimeLifecycle} that composes the per-entity Repository →
  * Service → Handler chain and registers HTTP routes. Canonical wiring
@@ -59,7 +59,7 @@ import java.util.Map;
  *       components(transactionalExecutor())).run())}.
  *       The {@code transactionalExecutor()} method is {@code protected}
  *       so consumers can subclass and substitute a custom
- *       {@link eu.exeris.kernel.spi.persistence.TransactionalExecutor}; the
+ *       {@code eu.exeris.kernel.spi.persistence.TransactionalExecutor}; the
  *       default body composes {@code new TransactionOrchestrator(
  *       KernelProviders.persistenceEngine())} once the kernel has bound
  *       the {@code PERSISTENCE_ENGINE} {@link java.lang.ScopedValue}.</li>
@@ -79,7 +79,7 @@ import java.util.Map;
  *       handler slot holds, and answers {@code 503} while the slot is empty. Its
  *       {@code run()} receives the {@code RuntimeComponents}, takes each declared
  *       entity's {@code *Handler} and stream handler from it, builds one
- *       {@link eu.exeris.kernel.core.http.routing.HttpRouter} with the five canonical
+ *       {@code eu.exeris.kernel.core.http.routing.HttpRouter} with the five canonical
  *       CRUD routes per entity (GET-all / GET-by-id / POST-create / PUT-update /
  *       DELETE), one per action and every generated stream route, publishes the
  *       (decorated) router, and parks on a
@@ -97,8 +97,7 @@ import java.util.Map;
  *
  * @implNote Emission is JavaPoet-based (ADR-015).
  *
- * @author Exeris Team
- * @since 0.1.0
+ * @since 0.1
  */
 public class KernelApplicationGenerator implements KernelArtifactGenerator {
 
@@ -197,6 +196,14 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
 
     private enum Phase { COMPOSITION, OPTIONAL_COMPOSITION, REQUEST }
 
+    /**
+     * Creates the generator. It keeps no per-domain state, so one instance serves every domain
+     * in a build.
+     */
+    public KernelApplicationGenerator() {
+        // no state to initialise
+    }
+
     @Override
     public GeneratedFile generate(DomainMetadata metadata) {
         // Application emission is project-wide, not per-entity. Real
@@ -236,7 +243,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
      *                 {@link #buildApplication(String, boolean, boolean, String)}
      * @return the three emitted files; always
      *         {@code [Application, RuntimeComponents, RuntimeLifecycle]}
-     * @since 0.7.0
+     * @since 0.7
      */
     public List<GeneratedFile> generateAll(List<DomainMetadata> domains, String basePackage,
                                            boolean composed) {
@@ -701,8 +708,8 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
      *
      * <p><b>Consumer-build contract:</b> this file imports the same two kernel coordinates
      * {@code RuntimeLifecycle} already imported ({@code exeris-kernel-spi} for
-     * {@link eu.exeris.kernel.spi.persistence.TransactionalExecutor}, {@code exeris-kernel-core}
-     * for {@link eu.exeris.kernel.core.http.routing.HttpRouter}) plus the project's own
+     * {@code eu.exeris.kernel.spi.persistence.TransactionalExecutor}, {@code exeris-kernel-core}
+     * for {@code eu.exeris.kernel.core.http.routing.HttpRouter}) plus the project's own
      * generated types. It adds no requirement to the consumer's build.
      */
     private GeneratedFile buildRuntimeComponents(List<DomainMetadata> domains, String basePackage) {

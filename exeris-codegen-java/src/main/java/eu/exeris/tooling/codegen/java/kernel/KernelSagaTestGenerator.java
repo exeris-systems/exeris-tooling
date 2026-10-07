@@ -48,7 +48,7 @@ import javax.lang.model.element.Modifier;
  * <p>Emitted only for entities that declare a saga, mirroring {@link KernelSagaGenerator}.
  *
  * @implNote Emission is JavaPoet-based (ADR-015).
- * @since 0.7.0
+ * @since 0.7
  */
 public final class KernelSagaTestGenerator {
 
@@ -60,6 +60,16 @@ public final class KernelSagaTestGenerator {
             ClassName.get("eu.exeris.kernel.spi.flow.model", "FlowStepAction");
 
     /**
+     * Creates the generator. It keeps no per-domain state, so one instance serves every domain
+     * in a build.
+     */
+    public KernelSagaTestGenerator() {
+        // no state to initialise
+    }
+
+    /**
+     * Emits the JUnit 5 test for the entity's generated saga flow.
+     *
      * @param metadata    the entity whose saga is under test
      * @param basePackage the project base package (the {@code testsupport} package is resolved
      *                    from it, since the flow double is project-wide)
