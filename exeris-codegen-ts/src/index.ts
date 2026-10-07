@@ -13,9 +13,10 @@
 
 import { Command } from 'commander';
 import pc from 'picocolors';
-import { writeFileSync, mkdirSync, existsSync, readFileSync } from 'node:fs';
-import { join, dirname, basename, resolve } from 'node:path';
+import { writeFileSync, existsSync, readFileSync } from 'node:fs';
+import { join, basename, resolve } from 'node:path';
 import { pruneOrphansAndWriteManifest, MANIFEST_NAME } from './output/manifest.js';
+import { planWrites, writeGeneratedFiles, type WriteAction } from './output/writer.js';
 import { loadConfig, cliOverrides, type GeneratorConfig, DEFAULT_CONFIG } from './config.js';
 import { findMetadataFiles, loadMetadataFamilies } from './models/metadata-files.js';
 import { loadPeerContracts, type PeerContract } from './peers/peer-contract.js';
@@ -84,7 +85,10 @@ program
     (value: string, previous: string[] = []) => [...previous, value],
     [] as string[],
   )
-  .option('--overwrite', 'Overwrite existing files')
+  .option(
+    '--overwrite',
+    'Also replace existing files no previous run generated, and the files written once for you to edit',
+  )
   .option('--dry-run', 'Show what would be generated without writing files')
   .option('-v, --verbose', 'Verbose output')
   .action(async (options: Record<string, unknown>, command: Command) => {
@@ -126,6 +130,14 @@ program
 // ============================================================================
 // Generate Logic
 // ============================================================================
+
+const DRY_RUN_LABEL: Record<WriteAction, string> = {
+  create: 'Would create:',
+  rewrite: 'Would rewrite:',
+  unchanged: 'Unchanged:',
+  'keep-seed': 'Would keep (yours to edit):',
+  'skip-unowned': 'Would skip (not generated here):',
+};
 
 async function runGenerate(config: GeneratorConfig): Promise<void> {
   const inputPath = resolve(process.cwd(), config.inputPath);
@@ -196,46 +208,40 @@ async function runGenerate(config: GeneratorConfig): Promise<void> {
 
   if (config.dryRun) {
     console.log(pc.yellow('Dry run - no files written'));
-    for (const file of generatedFiles) {
-      console.log(pc.dim('  Would write:'), file.path);
+    for (const entry of planWrites(outputPath, generatedFiles, { overwrite: config.overwrite })) {
+      console.log(pc.dim(`  ${DRY_RUN_LABEL[entry.action]}`), entry.path);
     }
   } else {
-    let written = 0;
-    let skipped = 0;
+    // Ownership is the previous run's manifest (output/writer.ts): an owned file is rewritten when it
+    // differs, an owned seed file is kept, and an existing file the manifest does not record is
+    // replaced only under --overwrite. Orphans are pruned and this run's manifest recorded.
+    const { plan, pruned } = writeGeneratedFiles(outputPath, generatedFiles, { overwrite: config.overwrite });
+    const count = (action: WriteAction): number => plan.filter((entry) => entry.action === action).length;
 
-    for (const file of generatedFiles) {
-      // file.path is relative, combine with outputPath
-      const fullPath = join(outputPath, file.path);
-
-      if (existsSync(fullPath) && !config.overwrite) {
-        if (config.verbose) {
-          console.log(pc.yellow('  Skipped (exists):'), basename(fullPath));
-        }
-        skipped++;
-        continue;
+    for (const entry of plan) {
+      if (entry.action === 'create' || entry.action === 'rewrite') {
+        console.log(pc.green('  ✓'), basename(entry.path));
+      } else if (config.verbose && entry.action === 'skip-unowned') {
+        console.log(pc.yellow('  Skipped (not generated here):'), entry.path);
+      } else if (config.verbose && entry.action === 'keep-seed') {
+        console.log(pc.dim('  Kept (yours to edit):'), entry.path);
       }
-
-      // Ensure directory exists
-      const dir = dirname(fullPath);
-      if (!existsSync(dir)) {
-        mkdirSync(dir, { recursive: true });
-      }
-
-      writeFileSync(fullPath, file.content);
-      console.log(pc.green('  ✓'), basename(fullPath));
-      written++;
     }
 
-    // T13: generation owns its output tree — delete files a previous run
-    // emitted that this run no longer produces (e.g. a removed/re-homed entity),
-    // then persist the manifest of this run's intended output set.
-    const producedPaths = generatedFiles.map((f) => f.path.replace(/\\/g, '/'));
-    const pruned = pruneOrphansAndWriteManifest(outputPath, producedPaths);
-
     console.log(pc.dim('─'.repeat(50)));
-    console.log(pc.green('Generated:'), written, 'file(s)');
-    if (skipped > 0) {
-      console.log(pc.yellow('Skipped:'), skipped, 'file(s) (use --overwrite to replace)');
+    console.log(pc.green('Generated:'), count('create') + count('rewrite'), 'file(s)');
+    if (count('unchanged') > 0) {
+      console.log(pc.dim('Unchanged:'), count('unchanged'), 'file(s)');
+    }
+    if (count('keep-seed') > 0) {
+      console.log(pc.dim('Kept:'), count('keep-seed'), 'file(s) written once for you to edit (use --overwrite to replace)');
+    }
+    if (count('skip-unowned') > 0) {
+      console.log(
+        pc.yellow('Skipped:'),
+        count('skip-unowned'),
+        'existing file(s) a previous run did not generate (use --overwrite to replace them)',
+      );
     }
     if (pruned > 0) {
       console.log(pc.yellow('Pruned:'), pruned, 'orphaned file(s)');

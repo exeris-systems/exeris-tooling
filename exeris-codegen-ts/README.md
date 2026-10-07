@@ -86,7 +86,9 @@ Options:
   --peer <name=path>     Import a peer's DTOs. <name> is the name YOU give the peer — it
                          becomes the directory and import path its types are reached by.
                          <path> is the peer's contract artifact. Repeatable.
-  --overwrite            Overwrite existing files
+  --overwrite            Also replace the files the generator would keep: an existing file
+                         no previous run generated, and a file written once for you to edit
+                         (see "Regenerating" below)
   --dry-run              Show what would be generated without writing files
   -v, --verbose          Verbose output
 ```
@@ -158,6 +160,28 @@ or its name when it declares none. `"none"` emits no `<h1>`, for pages whose own
 headline, such as a HERO with one; the rest of the page is unchanged. Either way the page's route
 keeps the view's `title`, which sets the document title, and the navigation label stays the same.
 The option applies to every `@View` page of the run. It is file-only; it has no CLI flag.
+
+## Regenerating
+
+The generator records every file it owns in `.exeris-codegen-manifest` at the output root. On the
+next run, the previous manifest decides what it may replace:
+
+| On disk | Without `--overwrite` | With `--overwrite` |
+|---|---|---|
+| absent | written, then owned | written, then owned |
+| owned, content differs | rewritten | rewritten |
+| owned, written once for you to edit (`package.json`, `angular.json`, the `tsconfig` files, `src/main.ts`, `environment.ts`, `app.config.ts`, `app.component.ts`, `app.routes.ts`) | kept | rewritten |
+| present, not in the manifest (hand-written, or a first run into a populated directory) | kept, and not owned | rewritten, then owned |
+| owned, no longer generated | deleted | deleted |
+
+A regenerated page whose metadata changed is therefore rewritten without any flag, and a removed
+`@View` or entity takes its files with it. A file you write beside the generated ones is never
+touched, because it is not in the manifest. To take a generated file over, move it out of the output
+directory and stop generating it (remove the view or turn its generator off); a file the generator
+still produces is created again at its old path.
+
+Commit the output directory, manifest included: the manifest is what tells the next run, on any
+machine, which files are the generator's.
 
 ## Generating into an existing Angular app (`scaffold: false`)
 

@@ -74,7 +74,12 @@ export const GeneratorConfigSchema = z.object({
   /** Backend strategy — kernel-target-only (single supported target) */
   backend: z.enum(['KERNEL']).default('KERNEL'),
 
-  /** Whether to overwrite existing files */
+  /** Replace existing files the generator would otherwise keep.
+   *
+   *  Without it, a file the previous run's manifest records is rewritten when its content differs,
+   *  except a seed file written once for the consumer to edit (`package.json`, `app.routes.ts`,
+   *  `environment.ts`, …), which is kept; and an existing file the manifest does not record is never
+   *  replaced. With it, every differing file is written and owned from then on (output/writer.ts). */
   overwrite: z.boolean().default(false),
 
   /** Dry run - show what would be generated without writing files */

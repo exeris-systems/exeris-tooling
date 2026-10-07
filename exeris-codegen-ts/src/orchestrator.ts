@@ -34,12 +34,15 @@ import { generatePeerTypes } from './generators/api/peer-type-gen.js';
 import type { PeerContract } from './peers/peer-contract.js';
 import { deriveScaffoldNeeds } from './core/scaffold-needs.js';
 
-/** Minimal output-file shape the writer consumes (path + content). The per-shape
- *  generators return richer objects (artifactType/overwritable); those are structurally
- *  assignable here, and nothing downstream of composition needs the extra fields. */
+/** The output-file shape the writer consumes. The per-shape generators return richer objects
+ *  (artifactType and the rest); those are structurally assignable here, and composition copies
+ *  each file whole, so `overwritable` reaches the writer. */
 export interface OutputFile {
   path: string;
   content: string;
+  /** `false` marks a seed file the consumer is expected to edit: the writer creates it when
+   *  absent and replaces it only under `--overwrite` (output/writer.ts). */
+  overwritable?: boolean;
 }
 
 // The enum module is emitted by `generators/api/enum-module-gen.ts` — the peer-types

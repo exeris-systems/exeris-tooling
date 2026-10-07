@@ -46,6 +46,21 @@ function canonicalSet(paths: Iterable<string>): Set<string> {
 }
 
 /**
+ * The paths the previous run's manifest records, in canonical form: the files this tool owns in
+ * `outputPath`. Empty when there is no manifest.
+ */
+export function readManifest(outputPath: string): Set<string> {
+  const manifestPath = join(outputPath, MANIFEST_NAME);
+  if (!existsSync(manifestPath)) return new Set<string>();
+  return canonicalSet(
+    readFileSync(manifestPath, 'utf-8')
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0 && !l.startsWith('#')),
+  );
+}
+
+/**
  * Generation owns its output tree (T13). Deletes files emitted by a previous run
  * that the current run no longer produces (orphans), prunes directories left
  * empty by that removal, and writes a sorted (deterministic) manifest of the
@@ -55,8 +70,8 @@ function canonicalSet(paths: Iterable<string>): Set<string> {
  * deletion, so user-authored files (never in the manifest) are never removed.
  *
  * @param outputPath the generated-output root
- * @param producedPaths every relative path this run intends to own (written or
- *   skipped-because-unchanged); recorded in canonical form (see {@link canonicalManifestPath})
+ * @param producedPaths every relative path this run owns (written, unchanged, or an owned file kept
+ *   as it is); recorded in canonical form (see {@link canonicalManifestPath})
  * @returns the number of orphaned files deleted
  */
 export function pruneOrphansAndWriteManifest(outputPath: string, producedPaths: string[]): number {
@@ -64,15 +79,7 @@ export function pruneOrphansAndWriteManifest(outputPath: string, producedPaths: 
   const produced = canonicalSet(producedPaths);
   const root = resolve(outputPath);
 
-  let previous = new Set<string>();
-  if (existsSync(manifestPath)) {
-    previous = canonicalSet(
-      readFileSync(manifestPath, 'utf-8')
-        .split('\n')
-        .map((l) => l.trim())
-        .filter((l) => l.length > 0 && !l.startsWith('#')),
-    );
-  }
+  const previous = readManifest(outputPath);
 
   let pruned = 0;
   const touchedDirs = new Set<string>();
