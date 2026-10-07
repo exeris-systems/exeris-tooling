@@ -35,6 +35,10 @@
 # (a scoped package is otherwise published restricted), the `exeris-gen` bin under dist/, and the
 # LICENSE file its `license` names.
 #
+# The release's MIGRATION train is assembled from per-change fragments in the release PR
+# (docs/migration/README.md). This gate fails while docs/migration/<version>/ still holds a fragment
+# or MIGRATION still carries the train's marker block, as `assemble-migration.py --pending` reports.
+#
 # Usage:
 #   tools/release-readiness/release-readiness.sh             # release.yml: full gate
 #   tools/release-readiness/release-readiness.sh --unsigned  # local: after -Dgpg.skip, no signatures
@@ -45,7 +49,7 @@ set -euo pipefail
 
 UNSIGNED=0
 case "${1:-}" in
-  -h|--help) sed -n '2,43p' "$0"; exit 0 ;;
+  -h|--help) sed -n '2,47p' "$0"; exit 0 ;;
   --unsigned) UNSIGNED=1 ;;
   "") ;;
   *) echo "unknown argument: $1" >&2; exit 2 ;;
@@ -313,6 +317,14 @@ if not pkg.get('license'):
 if not (npm_dir / 'LICENSE').is_file():
     failures.append('exeris-codegen-ts/LICENSE is missing; npm packs a LICENSE from the package '
                     'directory only')
+
+# The release's MIGRATION train is assembled in the release PR, and its fragments deleted.
+migration_version = reactor_version.removesuffix('-SNAPSHOT')
+pending = subprocess.run([sys.executable, 'tools/migration/assemble-migration.py',
+                          '--pending', migration_version], capture_output=True, text=True)
+if pending.returncode != 0:
+    failures.append((pending.stdout or pending.stderr).strip()
+                    or f'assemble-migration.py --pending {migration_version} failed')
 
 for owner, listed in excluded_by.items():
     governed_skips = {a for a in deploy_skipped if governing(a) == owner}
