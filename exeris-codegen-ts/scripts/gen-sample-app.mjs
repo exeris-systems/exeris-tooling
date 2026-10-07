@@ -239,6 +239,18 @@ const domains = [
     fields: [{ name: 'id', type: 'java.util.UUID' }, { name: 'amount', type: 'java.math.BigDecimal', dataType: 'currency' }],
     uiMetadata: { listView: false, detailView: true, createForm: true, editForm: false },
   }),
+  // Account is tenant-partitioned with no systemFields block: the server owns its required
+  // tenantId, so the entity type carries it while AccountCreate, AccountUpdate and the create
+  // schema omit it, and the form, store and service must compile against that split.
+  d({
+    entityName: 'Account',
+    dataScope: 'TENANT',
+    fields: [
+      { name: 'id', type: 'java.util.UUID' },
+      { name: 'tenantId', type: 'java.util.UUID', required: true },
+      { name: 'name', type: 'String', required: true },
+    ],
+  }),
 ];
 const enums = [{
   name: 'OrderStatus',

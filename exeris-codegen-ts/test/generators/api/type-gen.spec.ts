@@ -524,6 +524,8 @@ describe('TypeGenerator system-field resolution (exercised via .omit set in the 
   it('every optional systemFields.* alias, when declared as a field, flows into the omit set', () => {
     const files = gen.generateAggregate([domain({
       entityName: 'Thing',
+      // tenantIdField names the owner only on a tenant-partitioned entity.
+      dataScope: 'TENANT',
       systemFields: {
         primaryKeyField: 'id',
         versionField: 'rev',
@@ -652,6 +654,43 @@ describe('TypeGenerator — a tenant-partitioned owner without a systemFields bl
     });
 
     expect(createSliceOf(new TypeGenerator().generate(declared, CTX)!.content)).not.toContain('tenantId');
+  });
+
+  // The owner is DataScopeSupport.ownerFieldName on the Java side, which the emitted OpenAPI
+  // reads: tenant-partitioned only, the declared tenantIdField when non-blank, else tenantId.
+  const ownerRows: Array<[string, Partial<DomainMetadata>, boolean]> = [
+    ['GLOBAL with a block naming tenantIdField keeps it', { dataScope: 'GLOBAL', systemFields: { primaryKeyField: 'id', tenantIdField: 'tenantId', versionField: 'version' } }, true],
+    ['TENANT with a block and no tenantIdField omits it', { dataScope: 'TENANT', systemFields: { primaryKeyField: 'id', versionField: 'version' } }, false],
+    ['TENANT with a block and a blank tenantIdField omits it', { dataScope: 'TENANT', systemFields: { primaryKeyField: 'id', tenantIdField: '  ' } }, false],
+    ['UNIVERSE with no block omits it', { dataScope: 'UNIVERSE' }, false],
+    ['tenantScoped: true with no block omits it', { tenantScoped: true }, false],
+    ['GLOBAL with no block keeps it', { dataScope: 'GLOBAL' }, true],
+  ];
+  it.each(ownerRows)('%s', (_title, overrides, keeps) => {
+    const metadata = domain({
+      entityName: 'Fleet',
+      ...overrides,
+      fields: [
+        field({ name: 'id', type: 'UUID' }),
+        field({ name: 'name', type: 'String' }),
+        field({ name: 'tenantId', type: 'UUID' }),
+      ],
+    });
+    const createSlice = createSliceOf(new TypeGenerator().generate(metadata, CTX)!.content);
+    const schema = new TypeGenerator().generateAggregate([metadata], CTX)
+      .find(f => f.path === 'schemas/fleet.schema.ts')!.content;
+    const createSchema = schema.slice(schema.indexOf('FleetCreateSchema'));
+
+    expect(createSlice).toContain('name?: string;');
+    if (keeps) {
+      expect(systemFieldNames(metadata)).not.toContain('tenantId');
+      expect(createSlice).toContain('  tenantId?: string;');
+      expect(createSchema).not.toContain('tenantId: true');
+    } else {
+      expect(systemFieldNames(metadata)).toContain('tenantId');
+      expect(createSlice).not.toContain('tenantId');
+      expect(createSchema).toContain('  tenantId: true,');
+    }
   });
 });
 

@@ -4,7 +4,7 @@
  */
 
 import { outPath } from '../../core/paths.js';
-import { effectiveDataScope, type DomainMetadata, type FieldMetadata } from '../../models/domain-model.js';
+import { ownerFieldName, type DomainMetadata, type FieldMetadata } from '../../models/domain-model.js';
 import { DslMapper } from '../../models/dsl-mapper.js';
 import { modelTypeName } from '../../models/model-naming.js';
 import type { GeneratorConfig } from '../../config.js';
@@ -287,11 +287,13 @@ export function buildZodType(field: FieldMetadata): string {
 
 /**
  * The fields the server owns: the id, plus whatever the entity's `systemFields` block
- * declares (or the `version`/`createdAt`/`updatedAt` default when it declares none).
+ * declares (or the `version`/`createdAt`/`updatedAt` default when it declares none), plus the
+ * owner of a tenant-partitioned entity.
  *
- * Without a block, a tenant-partitioned entity's owner is `tenantId`, and the server owns it: the
- * generated repository stamps the bound tenant, answers 400 to another one and never updates it,
- * and the emitted OpenAPI marks it read-only and leaves it out of both DTOs (ADR-090).
+ * The owner is `ownerFieldName`: the generated repository stamps the bound tenant, answers 400 to
+ * another one and never updates it, and the emitted OpenAPI marks it read-only and leaves it out of
+ * both DTOs (ADR-090). A GLOBAL entity has no owner, so a field it declares as `tenantId` is
+ * writable even when its block names `tenantIdField`, as it is in the OpenAPI.
  *
  * A UNIVERSE entity's `sharedScopeField` is server-owned exactly like its `tenantIdField`: the
  * generated repository stamps it from the bound storage context, and the emitted OpenAPI marks it
@@ -300,6 +302,7 @@ export function buildZodType(field: FieldMetadata): string {
 export function systemFieldNames(metadata: DomainMetadata): string[] {
   const fields = ['id'];
   const sf = metadata.systemFields;
+  const owner = ownerFieldName(metadata);
 
   if (sf) {
     if (sf.versionField) fields.push(sf.versionField);
@@ -307,7 +310,7 @@ export function systemFieldNames(metadata: DomainMetadata): string[] {
     if (sf.updatedAtField) fields.push(sf.updatedAtField);
     if (sf.createdByField) fields.push(sf.createdByField);
     if (sf.updatedByField) fields.push(sf.updatedByField);
-    if (sf.tenantIdField) fields.push(sf.tenantIdField);
+    if (owner) fields.push(owner);
     if (sf.softDeleteField) fields.push(sf.softDeleteField);
     if (sf.softDeleteTimestampField) fields.push(sf.softDeleteTimestampField);
     if (sf.softDeletedByField) fields.push(sf.softDeletedByField);
@@ -315,7 +318,7 @@ export function systemFieldNames(metadata: DomainMetadata): string[] {
   } else {
     // Default system fields
     fields.push('version', 'createdAt', 'updatedAt');
-    if (effectiveDataScope(metadata) !== 'GLOBAL') fields.push('tenantId');
+    if (owner) fields.push(owner);
   }
 
   return [...new Set(fields)];

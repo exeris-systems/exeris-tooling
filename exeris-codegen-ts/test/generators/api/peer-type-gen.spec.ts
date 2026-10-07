@@ -94,6 +94,26 @@ describe('generatePeerTypes', () => {
     expect(schema.slice(schema.indexOf('FleetCreateSchema'))).toContain('  tenantId: true,');
   });
 
+  // The peer's server derives its OpenAPI the same way, so a GLOBAL peer entity keeps a field
+  // named tenantId even when its systemFields block names tenantIdField.
+  it('keeps a GLOBAL peer entity\'s tenantId in the Create shape and create schema', () => {
+    const fleet = DomainMetadataSchema.parse({
+      packageName: 'com.billing',
+      entityName: 'Fleet',
+      dataScope: 'GLOBAL',
+      systemFields: { primaryKeyField: 'id', tenantIdField: 'tenantId' },
+      fields: [
+        { name: 'id', type: 'java.util.UUID' },
+        { name: 'tenantId', type: 'java.util.UUID' },
+      ],
+    });
+    const files = generatePeerTypes({ ...billing, domains: [fleet] }, { ...DEFAULT_CONFIG, generateZod: true });
+    const types = byPath(files, 'types/fleet.types.ts');
+    const schema = byPath(files, 'schemas/fleet.schema.ts');
+    expect(types.slice(types.indexOf('export interface FleetCreate'))).toContain('tenantId?: string;');
+    expect(schema.slice(schema.indexOf('FleetCreateSchema'))).not.toContain('tenantId: true');
+  });
+
   it('carries the peer name and the field description into the emitted text', () => {
     const types = byPath(generatePeerTypes(billing, DEFAULT_CONFIG), 'types/order.types.ts');
     expect(types).toContain("Peer contract: 'billing'");

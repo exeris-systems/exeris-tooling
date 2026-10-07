@@ -108,10 +108,10 @@
     "justification": "Nothing on the generated server un-sets the soft-delete flag: no route, handler or repository method restores an archived row. The service and the store of a soft-delete entity keep softDelete(id) and archive(id), which call the served DELETE, and emit no restore. An entity without @SoftDelete is unaffected. docs/MIGRATION-0.x-to-1.0.md 0.10.0 carries the step."
   },
   {
-    "signature": "<Entity>Create, <Entity>Update, <Entity>CreateSchema (tenant-partitioned entity, no systemFields block): - tenantId; local and peer DTOs",
+    "signature": "<Entity>Create, <Entity>Update, <Entity>CreateSchema: - tenantId (tenant-partitioned entity, no systemFields block); + tenantId (GLOBAL entity with a systemFields block that declares the field); local and peer DTOs",
     "since": "0.10",
     "adr": "ADR-090",
-    "justification": "The server owns a tenant-partitioned entity's owner: the generated repository stamps the bound tenant, answers 400 to another one and never updates it, and the emitted OpenAPI marks it readOnly and leaves it out of both DTOs (ADR-090). Without a systemFields block the owner is tenantId, and the create and update types and the create schema omit it as they omit an owner a block names; the entity type keeps it. A GLOBAL entity's tenantId field is unaffected. docs/MIGRATION-0.x-to-1.0.md 0.10.0 carries the step."
+    "justification": "The server owns a tenant-partitioned entity's owner: the generated repository stamps the bound tenant, answers 400 to another one and never updates it, and the emitted OpenAPI marks it readOnly and leaves it out of both DTOs (ADR-090). The create and update types and the create schema omit the same owner the OpenAPI does: on a tenant-partitioned entity, the systemFields.tenantIdField it names, else tenantId, with or without a block; the entity type keeps it. A GLOBAL entity has no owner, so a tenantId field it declares stays in its DTOs, including when its systemFields block names tenantIdField. docs/MIGRATION-0.x-to-1.0.md 0.10.0 carries the step."
   },
   {
     "signature": "src/environments/environment.ts, environment.development.ts: - apiVersion",
