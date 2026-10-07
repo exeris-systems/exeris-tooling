@@ -16,7 +16,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { generateView, generateViewRoute } from '../../../src/generators/angular/view-gen.js';
+import { generateView, generateViewRoute, ViewGenerationError } from '../../../src/generators/angular/view-gen.js';
 import { ViewMetadataSchema, type ViewMetadata } from '../../../src/models/domain-model.js';
 import { DEFAULT_CONFIG } from '../../../src/config.js';
 
@@ -250,7 +250,11 @@ describe('generateView — CUSTOM + FORM blocks', () => {
         { type: 'CUSTOM', customType: 'StarRating' },
       ] }],
     });
-    const f = generateView(view, DEFAULT_CONFIG);
+    const config = {
+      ...DEFAULT_CONFIG,
+      customBlocks: { StarRating: { import: '../blocks/star-rating.component', symbol: 'StarRatingComponent' } },
+    };
+    const f = generateView(view, config);
     expect(f.content).toContain('<star-rating></star-rating>');
   });
 
@@ -390,5 +394,182 @@ describe('generateView — a collection block BOUND to an entity iterates its st
 
   it('is deterministic — same input yields byte-identical output', () => {
     expect(generateView(roster, DEFAULT_CONFIG).content).toBe(file.content);
+  });
+});
+
+describe('generateView — CUSTOM blocks import their component from customBlocks', () => {
+  const customBlocks = {
+    StarRating: { import: '../blocks/star-rating.component', symbol: 'StarRatingComponent' },
+    'com.shop.PriceTag': { import: '@shop/blocks', symbol: 'PriceTagComponent' },
+  };
+  const config = { ...DEFAULT_CONFIG, customBlocks };
+
+  const view = (components: Array<Record<string, unknown>>, name = 'CustomView'): ViewMetadata =>
+    ViewMetadataSchema.parse({ name, regions: [{ slot: 'main', components }] });
+
+  it('imports the mapped component and lists it in the component imports', () => {
+    const f = generateView(view([{ type: 'CUSTOM', customType: 'StarRating' }]), config);
+    expect(f.content).toContain("import { StarRatingComponent } from '../blocks/star-rating.component';");
+    expect(f.content).toContain('  imports: [CommonModule, StarRatingComponent],');
+  });
+
+  it('a view with no CUSTOM block imports CommonModule only, whatever customBlocks maps', () => {
+    const f = generateView(view([{ type: 'HERO', props: 'Hi' }]), config);
+    expect(f.content).toContain('  imports: [CommonModule],');
+    expect(f.content).not.toContain('StarRatingComponent');
+  });
+
+  it('two blocks are imported once each, ordered by symbol, whatever the template order', () => {
+    const f = generateView(view([
+      { type: 'CUSTOM', customType: 'StarRating' },
+      { type: 'CUSTOM', customType: 'com.shop.PriceTag' },
+      { type: 'CUSTOM', customType: 'StarRating' },
+    ]), config);
+    const price = f.content.indexOf("import { PriceTagComponent } from '@shop/blocks';");
+    const star = f.content.indexOf("import { StarRatingComponent } from '../blocks/star-rating.component';");
+    expect(price).toBeGreaterThan(-1);
+    expect(star).toBeGreaterThan(price);
+    expect(f.content.split('import { StarRatingComponent }').length).toBe(2);
+    expect(f.content).toContain('  imports: [CommonModule, PriceTagComponent, StarRatingComponent],');
+    // The selector is the kebab-cased simple name of the customType.
+    expect(f.content).toContain('<price-tag></price-tag>');
+  });
+
+  it('is deterministic — the same view and config yield byte-identical output', () => {
+    const v = view([
+      { type: 'CUSTOM', customType: 'StarRating', props: '{"max":5}' },
+      { type: 'CUSTOM', customType: 'com.shop.PriceTag', props: '{"currency":"EUR"}' },
+    ]);
+    expect(generateView(v, config).content).toBe(generateView(v, config).content);
+  });
+
+  it('a customType with no entry fails generation, naming the view, the customType and customBlocks', () => {
+    const v = view([{ type: 'GRID', children: [{ type: 'CUSTOM', customType: 'Carousel' }] }], 'Gallery');
+    expect(() => generateView(v, config)).toThrow(ViewGenerationError);
+    expect(() => generateView(v, config)).toThrow(
+      /view 'Gallery': the CUSTOM block at regions\[0\]\.components\[0\]\.children\[0\] has customType 'Carousel', and customBlocks has no entry for it/,
+    );
+  });
+
+  it('a CUSTOM block with no customType fails generation', () => {
+    expect(() => generateView(view([{ type: 'CUSTOM' }], 'Bare'), config)).toThrow(
+      /view 'Bare': the CUSTOM block at regions\[0\]\.components\[0\] declares no customType/,
+    );
+  });
+
+  it('one symbol imported from two modules fails generation', () => {
+    const clashing = {
+      ...DEFAULT_CONFIG,
+      customBlocks: {
+        A: { import: './a', symbol: 'BlockComponent' },
+        B: { import: './b', symbol: 'BlockComponent' },
+      },
+    };
+    const v = view([{ type: 'CUSTOM', customType: 'A' }, { type: 'CUSTOM', customType: 'B' }]);
+    expect(() => generateView(v, clashing)).toThrow(/imports 'BlockComponent' from both '\.\/a' and '\.\/b'/);
+  });
+});
+
+describe('generateView — CUSTOM block props are a field bound as [props]', () => {
+  const config = {
+    ...DEFAULT_CONFIG,
+    customBlocks: { StatTile: { import: '../blocks/stat-tile.component', symbol: 'StatTileComponent' } },
+  };
+  const view = (components: Array<Record<string, unknown>>): ViewMetadata =>
+    ViewMetadataSchema.parse({ name: 'Stats', regions: [{ slot: 'main', components }] });
+
+  it('emits each props JSON as a numbered field, in template order, and binds it', () => {
+    const f = generateView(view([
+      { type: 'CUSTOM', customType: 'StatTile', props: '{ "label": "Users", "value": 42, "tags": ["a", "b"] }' },
+      { type: 'CUSTOM', customType: 'StatTile', props: '{"label":"Teams"}' },
+    ]), config);
+    expect(f.content).toContain('<stat-tile [props]="blockProps1"></stat-tile>');
+    expect(f.content).toContain('<stat-tile [props]="blockProps2"></stat-tile>');
+    expect(f.content).toContain('  protected readonly blockProps1 = {"label":"Users","value":42,"tags":["a","b"]};');
+    expect(f.content).toContain('  protected readonly blockProps2 = {"label":"Teams"};');
+  });
+
+  it('keeps the source key order of the props JSON', () => {
+    const f = generateView(view([{ type: 'CUSTOM', customType: 'StatTile', props: '{"z":1,"a":2}' }]), config);
+    expect(f.content).toContain('protected readonly blockProps1 = {"z":1,"a":2};');
+  });
+
+  it('a block with no props gets no binding and no field', () => {
+    const f = generateView(view([{ type: 'CUSTOM', customType: 'StatTile' }]), config);
+    expect(f.content).toContain('<stat-tile></stat-tile>');
+    expect(f.content).not.toContain('[props]');
+    expect(f.content).not.toContain('blockProps');
+  });
+
+  it('a block with children binds its props on the opening tag', () => {
+    const f = generateView(view([
+      { type: 'CUSTOM', customType: 'StatTile', props: '{"label":"Users"}', children: [{ type: 'CARD', props: 'Inside' }] },
+    ]), config);
+    expect(f.content).toContain('<stat-tile [props]="blockProps1">');
+    expect(f.content).toContain('</stat-tile>');
+  });
+
+  it('props that are not JSON fail generation, naming the view and the block', () => {
+    const v = view([{ type: 'CUSTOM', customType: 'StatTile', props: 'Users: 42' }]);
+    expect(() => generateView(v, config)).toThrow(ViewGenerationError);
+    expect(() => generateView(v, config)).toThrow(
+      /view 'Stats': the CUSTOM block at regions\[0\]\.components\[0\] \(customType 'StatTile'\) has props that are not valid JSON/,
+    );
+  });
+
+  it('only CUSTOM blocks bind props — other blocks keep the authored text', () => {
+    const f = generateView(view([{ type: 'CARD', binding: { source: 'STATIC' }, props: '{"label":"Users"}' }]), config);
+    expect(f.content).not.toContain('[props]');
+    expect(f.content).not.toContain('blockProps');
+  });
+});
+
+describe('generateView — a LIST renders its items as <li>', () => {
+  it('wraps each child of an unbound LIST in its own <li>', () => {
+    const f = generateView(ViewMetadataSchema.parse({
+      name: 'Links',
+      regions: [{ slot: 'main', components: [
+        { type: 'LIST', children: [
+          { type: 'CARD', props: 'First' },
+          { type: 'CARD', props: 'Second' },
+        ] },
+      ] }],
+    }), DEFAULT_CONFIG);
+    const ul = f.content.slice(f.content.indexOf('data-block="LIST"'), f.content.indexOf('</ul>'));
+    expect(ul.match(/<li>/g)).toHaveLength(2);
+    expect(ul.match(/<\/li>/g)).toHaveLength(2);
+    expect(ul).toMatch(/<li>\s*<article class="exeris-card p-4" data-block="CARD">\s*First\s*<\/article>\s*<\/li>/);
+  });
+
+  it('a LIST bound to an entity emits one <li> per row inside the @for', () => {
+    const f = generateView(ViewMetadataSchema.parse({
+      name: 'Roster',
+      regions: [{ slot: 'main', components: [
+        { type: 'LIST', binding: { source: 'ENTITY', ref: 'Commander' }, children: [
+          { type: 'CARD', binding: { source: 'ENTITY', ref: 'Commander', path: 'name' } },
+          { type: 'CARD', binding: { source: 'ENTITY', ref: 'Commander', path: 'rank' } },
+        ] },
+      ] }],
+    }), DEFAULT_CONFIG);
+    expect(f.content).toMatch(
+      /@for \(commander of commanderStore\.entities\(\); track commander\.id\) \{\n\s*<li>\n[\s\S]*\{\{ commander\.name \}\}[\s\S]*\{\{ commander\.rank \}\}[\s\S]*<\/li>\n\s*\}/,
+    );
+    expect(f.content.match(/<li>/g)).toHaveLength(1);
+  });
+
+  it('authored text on a LIST is an item too', () => {
+    const f = generateView(ViewMetadataSchema.parse({
+      name: 'Nav',
+      regions: [{ slot: 'main', components: [{ type: 'LIST', binding: { source: 'STATIC' }, props: 'Links' }] }],
+    }), DEFAULT_CONFIG);
+    expect(f.content).toContain('<li>Links</li>');
+  });
+
+  it('a GRID keeps its children unwrapped', () => {
+    const f = generateView(ViewMetadataSchema.parse({
+      name: 'Tiles',
+      regions: [{ slot: 'main', components: [{ type: 'GRID', children: [{ type: 'CARD', props: 'One' }] }] }],
+    }), DEFAULT_CONFIG);
+    expect(f.content).not.toContain('<li>');
   });
 });

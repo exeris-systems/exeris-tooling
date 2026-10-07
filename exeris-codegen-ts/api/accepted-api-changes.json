@@ -124,5 +124,11 @@
     "since": "0.10",
     "adr": "ADR-092",
     "justification": "The metadata names a computed field's dependencies and no formula, so the form computes nothing: it emits no compute<Name>() stub, whose body was a TODO and return null, and computed<Name> is this.current()?.<name> ?? null. In edit mode the read-only field shows the value the server returned; on create it is empty. The input, its data-testid, the label and the Computed from note are unchanged. docs/MIGRATION-0.x-to-1.0.md 0.10.0 carries the step."
+  },
+  {
+    "signature": "GeneratorConfig: + customBlocks (Record<customType, { import, symbol }>, default {}); pages/<view>.component.ts: CUSTOM block imports its component, binds [props]=\"blockProps<N>\"; LIST children in <li>",
+    "since": "0.10",
+    "adr": "ADR-092",
+    "justification": "A CUSTOM block's element compiles only when the page imports the component behind it, so customBlocks maps each customType to the module and class the page imports and lists in its component imports; a view with a CUSTOM block whose customType has no entry, or whose props are not JSON, fails generation naming the view and the block. The block's props JSON is a blockProps<N> field of the page, bound as [props]. A LIST wraps each child in an <li>, and one <li> per row when it iterates an entity collection. A view without CUSTOM or LIST blocks is unaffected. docs/MIGRATION-0.x-to-1.0.md 0.10.0 carries the step."
   }
 ]
