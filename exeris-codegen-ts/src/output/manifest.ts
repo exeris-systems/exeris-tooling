@@ -128,8 +128,8 @@ export interface PrunePlan {
  * The orphans of this run: entries of the previous manifest that are not among `producedPaths`.
  * Reads the disk and the manifest only.
  *
- * @param producedPaths every path this run produced, owned or not; an entry among them is no orphan
- * @param seedPaths the paths of seed files, in canonical form; an orphaned seed is released, never
+ * @param producedPaths - every path this run produced, owned or not; an entry among them is no orphan
+ * @param seedPaths - the paths of seed files, in canonical form; an orphaned seed is released, never
  *   deleted
  */
 export function planPrune(
@@ -183,8 +183,8 @@ export interface PruneOptions {
  * deletion, so user-authored files (never in the manifest) are never removed, and neither is a
  * seed file, a link, or anything reached through a link.
  *
- * @param outputPath the generated-output root
- * @param producedPaths every relative path this run produced; recorded in canonical form (see
+ * @param outputPath - the generated-output root
+ * @param producedPaths - every relative path this run produced; recorded in canonical form (see
  *   {@link canonicalManifestPath}) unless `options.ownedPaths` narrows the record
  * @returns the number of orphaned files deleted
  */
