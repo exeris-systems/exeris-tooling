@@ -24,7 +24,6 @@ import type { GeneratorConfig } from '../../config.js';
 import type { CodeGenerator, GeneratedFile, GeneratorContext } from '../../core/generator-registry.js';
 import type { BackendType } from '../../core/backend-strategy.js';
 import { DslMapper } from '../../models/dsl-mapper.js';
-import { RESTORE_UNSUPPORTED } from './service-gen.js';
 import { tsSingleQuoted } from './ts-literal.js';
 import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from './list-query.js';
 
@@ -373,7 +372,7 @@ export class ${entityName}Store {
     }
   }
 
-${softDelete ? this.generateSoftDeleteMethods(entityName, idField) : ''}
+${softDelete ? this.generateSoftDeleteMethods(idField) : ''}
 
   // ═══════════════════════════════════════════════════════════════════════════
   // Actions - Selection
@@ -537,11 +536,9 @@ ${softDelete ? this.generateSoftDeleteMethods(entityName, idField) : ''}
 `;
   }
 
-  private generateSoftDeleteMethods(entityName: string, idField: string): string {
+  private generateSoftDeleteMethods(idField: string): string {
     // The generated server has no route, handler or repository method that un-sets the
-    // soft-delete flag. restore() stays for one release, deprecated, so a call site keeps
-    // compiling; it reaches no service call, sets the error and rejects. 0.10.0 stops emitting it.
-    const modelName = modelTypeName(entityName);
+    // soft-delete flag, so the store emits archive and no restore.
     return `
   // ═══════════════════════════════════════════════════════════════════════════
   // Actions - Soft Delete
@@ -570,16 +567,6 @@ ${softDelete ? this.generateSoftDeleteMethods(entityName, idField) : ''}
     } finally {
       this._saving.set(false);
     }
-  }
-
-  /**
-   * @deprecated The server has no route that restores an archived row, so this calls nothing,
-   * sets the error and rejects with that reason. exeris-tooling 0.10.0 stops emitting it.
-   */
-  async restore(id: string): Promise<${modelName}> {
-    const message = \`${entityName}Store.restore(\${id}): ${RESTORE_UNSUPPORTED}\`;
-    this._error.set(message);
-    throw new Error(message);
   }
 `;
   }
