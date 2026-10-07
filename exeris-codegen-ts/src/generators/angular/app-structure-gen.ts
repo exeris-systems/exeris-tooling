@@ -64,6 +64,34 @@ interface EnumMetadata {
   qualifiedName: string;
 }
 
+/**
+ * The scaffold's seed files: written when absent and kept once they exist, because the consumer
+ * edits them (dependencies, builder options, providers, routes, styles, the page shell, the dev
+ * proxy, environments). Each is emitted with `overwritable: false`, and an orphaned one is dropped
+ * from the manifest rather than deleted (output/writer.ts).
+ *
+ * `.postcssrc.json` is a seed too: its content never depends on the metadata, so rewriting it could
+ * only undo a PostCSS plugin the consumer added. `favicon.ico` is not: nothing in it is the
+ * consumer's to edit. Paths are in the scaffold's layout, as the manifest records them.
+ */
+export const SCAFFOLD_SEED_PATHS: readonly string[] = [
+  'package.json',
+  'angular.json',
+  'tsconfig.json',
+  'tsconfig.app.json',
+  'tsconfig.spec.json',
+  '.postcssrc.json',
+  'proxy.conf.json',
+  'src/styles.css',
+  'src/index.html',
+  'src/main.ts',
+  'src/environments/environment.ts',
+  'src/environments/environment.development.ts',
+  'src/app/app.config.ts',
+  'src/app/app.component.ts',
+  'src/app/app.routes.ts',
+];
+
 export function generateAppStructure(
   domains: DomainMetadata[],
   enums: EnumMetadata[],
@@ -96,21 +124,21 @@ export function generateAppStructure(
   if (config.generateTests) {
     files.push({ path: 'tsconfig.spec.json', content: generateTsConfigSpec(), overwritable: false });
   }
-  files.push({ path: '.postcssrc.json', content: generatePostcssConfig(), overwritable: true });
+  files.push({ path: '.postcssrc.json', content: generatePostcssConfig(), overwritable: false });
   if (needs.backend) {
-    files.push({ path: 'proxy.conf.json', content: generateProxyConfig(), overwritable: true });
+    files.push({ path: 'proxy.conf.json', content: generateProxyConfig(), overwritable: false });
   }
 
   // Static files under src/
-  files.push({ path: `${srcRoot}/styles.css`, content: generateStylesCss(needs.typography), overwritable: true });
-  files.push({ path: `${srcRoot}/index.html`, content: generateIndexHtml(appName), overwritable: true });
+  files.push({ path: `${srcRoot}/styles.css`, content: generateStylesCss(needs.typography), overwritable: false });
+  files.push({ path: `${srcRoot}/index.html`, content: generateIndexHtml(appName), overwritable: false });
   files.push({ path: `${srcRoot}/favicon.ico`, content: generateFavicon(), overwritable: true });
   // main.ts under src/
   files.push({ path: `${srcRoot}/main.ts`, content: generateMainTs(), overwritable: false });
 
   // Environment files under src/environments
   files.push({ path: `${envRoot}/environment.ts`, content: generateEnvironmentFile({ production: true, api }), overwritable: false });
-  files.push({ path: `${envRoot}/environment.development.ts`, content: generateEnvironmentFile({ production: false, api }), overwritable: true });
+  files.push({ path: `${envRoot}/environment.development.ts`, content: generateEnvironmentFile({ production: false, api }), overwritable: false });
 
   // Views are sorted deterministically (by effective route path, then name) so the
   // emitted route imports/spreads + nav links are order-stable regardless of the
