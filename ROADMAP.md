@@ -1877,13 +1877,14 @@ never-invoked emitter start emitting, and its output did not build.
         connect to (fan-in over the per-entity streams, a consumer-supplied aggregate endpoint, or
         nothing until the kernel serves one) is a design question, not a transcription, which is
         why it is filed here rather than folded into the prefix fix.
-      - [ ] `backend-strategy.ts:310` — `KernelStrategy.generateClientCode` builds
+      - [x] `backend-strategy.ts:310` — `KernelStrategy.generateClientCode` builds
         `transformPath('/api', entityPath)` with the prefix hardcoded past any config. It has **no
         production caller at all** (only its own two tests), making it a third emitter wired by
         nobody, alongside `enum-gen.ts` and the D10 bearer path. Re-measured 0.9.0:
         `getRealTimeConfig` is in the same state — no caller but its own test, which pins
         `/api/events/stream`, an endpoint no emitted route serves. Both belong with the
-        delete-or-wire decision, not with a prefix correction.
+        delete-or-wire decision, not with a prefix correction. Both are deleted in 0.10.0, with
+        `RealTimeConfig`; `getDefaultHeaders` stays for T53 (D10).
 
 - [x] **Three config flags were declared, default `true`, and read by nothing — all wired in
       0.8.0.** `generateDetails`, `generateEvents` and `generateSagas`, each in its own change with

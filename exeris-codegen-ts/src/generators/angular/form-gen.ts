@@ -357,24 +357,11 @@ export class FormGenerator implements CodeGenerator {
       lines.push('  });');
     }
 
-    // A computed field is derived from the values it depends on, read from the form model when
-    // the dependency is a control and from the loaded entity otherwise.
-    const controlNames = new Set(createFields.map((f) => f.name));
-    const declaredNames = new Set((domain.fields ?? []).map((f) => f.name));
+    // The metadata names a computed field's dependencies but not its formula, so the form shows
+    // the value the loaded entity carries and computes nothing itself.
     for (const cf of computedFields) {
-      const deps = cf.form.computedFrom;
-      const values = deps.map((dep) => {
-        const source = controlNames.has(dep)
-          ? `this.formModel().${dep}`
-          : declaredNames.has(dep) ? `this.current()?.${dep}` : 'undefined';
-        return `${dep}: ${source}`;
-      });
       lines.push('');
-      if (deps.length > 0) {
-        lines.push(`  // Auto-sync ${cf.name} based on ${deps.join(', ')}`);
-      }
-      const argument = values.length > 0 ? `{ ${values.join(', ')} }` : '{}';
-      lines.push(`  readonly ${computedSignalName(cf.name)} = computed(() => this.${computeMethodName(cf.name)}(${argument}));`);
+      lines.push(`  readonly ${computedSignalName(cf.name)} = computed(() => this.current()?.${cf.name} ?? null);`);
     }
     lines.push('');
     lines.push('  constructor() {');
@@ -498,17 +485,6 @@ export class FormGenerator implements CodeGenerator {
       lines.push('  }');
     }
 
-    // Generate compute methods for computed fields
-    for (const cf of computedFields) {
-      const deps = cf.form.computedFrom;
-      lines.push('');
-      lines.push(`  private ${computeMethodName(cf.name)}(values: { ${deps.map(d => `${d}: any`).join(', ')} }): any {`);
-      lines.push('    // TODO: Implement computation logic');
-      lines.push(`    // Depends on: ${deps.join(', ')}`);
-      lines.push('    return null;');
-      lines.push('  }');
-    }
-
     lines.push('}');
 
     return lines.join('\n');
@@ -614,8 +590,4 @@ function pickerUnlistedName(name: string): string {
 
 function computedSignalName(name: string): string {
   return `computed${memberSuffix(name)}`;
-}
-
-function computeMethodName(name: string): string {
-  return `compute${memberSuffix(name)}`;
 }

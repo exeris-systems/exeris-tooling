@@ -24,6 +24,14 @@
     </description>
     <url>https://github.com/exeris-systems/exeris-tooling</url>
 
+    <!-- Lint enforced: a Checkstyle or PMD finding in this module's main sources fails the build;
+         the parent's default is warn-only. -->
+    <properties>
+        <checkstyle.failOnViolation>true</checkstyle.failOnViolation>
+        <checkstyle.failsOnError>true</checkstyle.failsOnError>
+        <pmd.failOnViolation>true</pmd.failOnViolation>
+    </properties>
+
     <!-- Minimum Maven is implied by the provided maven-core 3.9.9. <prerequisites>
          is ignored by Maven 3+ (emits a build warning); the hard floor is the
          root-POM requireMavenVersion [3.9,) enforcer rule, inherited by this module.

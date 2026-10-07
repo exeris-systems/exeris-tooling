@@ -171,14 +171,14 @@ describe.each(Object.entries(apps))('the %s app is Tailwind v4 only', (_name, fi
   });
 
   it('installs the v4 PostCSS plugin and none of the v3 PostCSS setup', () => {
-    const pkg = JSON.parse(fileAt(files, './package.json'));
+    const pkg = JSON.parse(fileAt(files, 'package.json'));
     expect(pkg.devDependencies.tailwindcss).toBe('^4.0.0');
     expect(pkg.devDependencies['@tailwindcss/postcss']).toBe('^4.0.0');
     for (const v3 of ['autoprefixer', 'postcss-import']) {
       expect(pkg.devDependencies[v3], v3).toBeUndefined();
       expect(pkg.dependencies[v3], v3).toBeUndefined();
     }
-    expect(JSON.parse(fileAt(files, './.postcssrc.json'))).toEqual({ plugins: { '@tailwindcss/postcss': {} } });
+    expect(JSON.parse(fileAt(files, '.postcssrc.json'))).toEqual({ plugins: { '@tailwindcss/postcss': {} } });
   });
 
   it('the shell header carries shadow-sm, not the bare v3 shadow', () => {
@@ -220,7 +220,7 @@ describe('the entity components are scanned and style their controls through the
 });
 
 describe('the typography plugin is installed exactly when a template uses prose', () => {
-  const pkg = (files: OutputFile[]) => JSON.parse(fileAt(files, './package.json'));
+  const pkg = (files: OutputFile[]) => JSON.parse(fileAt(files, 'package.json'));
 
   it('an app with a RICH_TEXT block installs it beside tailwindcss and loads it after the imports', () => {
     const files = apps['view-only'];
