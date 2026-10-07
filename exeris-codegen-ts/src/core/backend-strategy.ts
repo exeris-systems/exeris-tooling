@@ -75,17 +75,6 @@ export interface ApiError {
   details?: Record<string, string>;
 }
 
-export interface RealTimeConfig {
-  /** WebSocket/WebTransport endpoint */
-  endpoint: string;
-  /** Reconnection strategy */
-  reconnectAttempts: number;
-  /** Reconnection delay in ms */
-  reconnectDelayMs: number;
-  /** Heartbeat interval in ms */
-  heartbeatIntervalMs: number;
-}
-
 // ============================================================================
 // Strategy Interface
 // ============================================================================
@@ -130,19 +119,9 @@ export interface BackendStrategy {
   supportsRealtime(): boolean;
 
   /**
-   * Get real-time configuration (if supported).
-   */
-  getRealTimeConfig?(): RealTimeConfig;
-
-  /**
    * Generate TypeScript import statements for this strategy.
    */
   getRequiredImports(): string[];
-
-  /**
-   * Generate HTTP client code snippet for this strategy.
-   */
-  generateClientCode(entityName: string, entityPath: string): string;
 }
 
 // ============================================================================
@@ -278,47 +257,12 @@ export class KernelStrategy implements BackendStrategy {
     return true;
   }
 
-  getRealTimeConfig(): RealTimeConfig {
-    return {
-      // Version-free, for the reason given on transformPath: the router serves no version segment.
-      endpoint: '/api/events/stream',
-      reconnectAttempts: 5,
-      reconnectDelayMs: 1000,
-      heartbeatIntervalMs: 30000,
-    };
-  }
-
   getRequiredImports(): string[] {
     return [
       "import { HttpClient, HttpParams, HttpHeaders } from '@angular/common/http';",
       "import { inject, Injectable, signal, computed } from '@angular/core';",
       "import { TenantContextService } from '../core/tenant-context.service';",
     ];
-  }
-
-  generateClientCode(entityName: string, entityPath: string): string {
-    const baseUrl = this.transformPath('/api', entityPath);
-    return `
-  private readonly http = inject(HttpClient);
-  private readonly tenantContext = inject(TenantContextService);
-  
-  private readonly baseUrl = '${baseUrl}';
-
-  private getHeaders(): HttpHeaders {
-    const context = this.tenantContext.getContext();
-    let headers = new HttpHeaders()
-      .set('Content-Type', 'application/json')
-      .set('Accept', 'application/json');
-    
-    if (context.tenantId) {
-      headers = headers.set('X-Tenant-Id', context.tenantId);
-    }
-    if (context.correlationId) {
-      headers = headers.set('X-Correlation-Id', context.correlationId);
-    }
-    
-    return headers;
-  }`;
   }
 }
 
