@@ -68,6 +68,13 @@ export default defineConfig({
           branches: 85,
           statements: 85,
         },
+        // The emitted file header every generator writes through.
+        'src/generators/file-header.ts': {
+          lines: 85,
+          functions: 85,
+          branches: 85,
+          statements: 85,
+        },
         // T2: the spec emitters. Their real proof is the CI `ng test` on the generated
         // sample; this pins the generator itself against silent erosion like every other.
         'src/generators/angular/spec-gen.ts': {
