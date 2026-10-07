@@ -8,8 +8,7 @@ import io.swagger.v3.oas.models.parameters.RequestBody;
 
 /**
  * Factory for OpenAPI request body definitions.
- * @author Exeris Team
- * @since 0.1.0
+ * @since 0.1
  */
 public final class RequestBodyFactory {
 
@@ -17,6 +16,12 @@ public final class RequestBodyFactory {
 
     private RequestBodyFactory() {}
 
+    /**
+     * Builds the required JSON request body of an entity's create operation.
+     *
+     * @param entityName the entity's simple name
+     * @return a body referencing the {@code <Entity>CreateDto} schema
+     */
     public static RequestBody buildCreateRequestBody(String entityName) {
         RequestBody requestBody = new RequestBody();
         requestBody.setDescription("Create " + entityName + " request");
@@ -29,6 +34,12 @@ public final class RequestBodyFactory {
         return requestBody;
     }
 
+    /**
+     * Builds the required JSON request body of an entity's update operation.
+     *
+     * @param entityName the entity's simple name
+     * @return a body referencing the {@code <Entity>UpdateDto} schema
+     */
     public static RequestBody buildUpdateRequestBody(String entityName) {
         RequestBody requestBody = new RequestBody();
         requestBody.setDescription("Update " + entityName + " request");
@@ -41,6 +52,13 @@ public final class RequestBodyFactory {
         return requestBody;
     }
 
+    /**
+     * Builds the required JSON request body of one entity action.
+     *
+     * @param entityName the entity's simple name
+     * @param action     the action the body is for
+     * @return a body referencing the {@code <Entity><Action>Request} schema
+     */
     public static RequestBody buildActionRequestBody(String entityName, ActionMetadata action) {
         RequestBody requestBody = new RequestBody();
         requestBody.setDescription("Request for " + action.name() + " action");

@@ -20,7 +20,7 @@ import com.palantir.javapoet.CodeBlock;
  * <p>Every literal is fixed, never derived from the clock or a random source — the emitted source
  * has to be byte-identical across runs (hard-constraint #3).
  *
- * @since 0.7.0
+ * @since 0.7
  */
 final class KernelTestSamples {
 

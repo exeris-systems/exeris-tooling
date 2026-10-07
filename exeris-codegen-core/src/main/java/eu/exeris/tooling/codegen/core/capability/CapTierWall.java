@@ -64,7 +64,7 @@ import java.util.stream.Stream;
  * cap for logging the word "springframework". The Wall is an import-boundary guard, not a
  * sandbox.
  *
- * @since 0.7.0
+ * @since 0.7
  */
 public final class CapTierWall {
 
@@ -117,6 +117,12 @@ public final class CapTierWall {
      */
     public record ScanResult(int classesScanned, List<WallViolation> violations) {
 
+        /**
+         * Creates a scan result holding an unmodifiable copy of the violations.
+         *
+         * @throws NullPointerException if {@code violations}, or any element of it, is
+         *         {@code null}
+         */
         public ScanResult {
             violations = List.copyOf(violations);
         }
@@ -133,6 +139,7 @@ public final class CapTierWall {
      *                    {@link #ownCapNames(List)}. References into
      *                    {@code eu.exeris.caps.<name>.internal.*} are legal for these and
      *                    forbidden for every other name — a cap may use its own internals.
+     * @return how many class files were read and every forbidden reference found, sorted
      * @throws UncheckedIOException if a class file exists but cannot be read
      */
     public static ScanResult scan(Path classesDir, Set<String> ownCapNames) {
@@ -172,6 +179,9 @@ public final class CapTierWall {
      * {@code @CapabilityModule}'s package. A module outside that namespace (a third-party cap
      * in its own package space) contributes no name, which is deliberate: it then gets no
      * licence to read any {@code eu.exeris.caps.*.internal} package.
+     *
+     * @param modules the capability modules this build declares
+     * @return the owned cap names, unmodifiable, in the order of {@code modules}
      */
     public static Set<String> ownCapNames(List<CapabilityModuleDescriptor> modules) {
         Set<String> names = new LinkedHashSet<>();

@@ -9,7 +9,7 @@ package eu.exeris.tooling.codegen.core.capability;
  * @param rule            which Wall rule was broken — user-facing, so it names the
  *                        boundary rather than an internal enum constant
  *
- * @since 0.7.0
+ * @since 0.7
  */
 public record WallViolation(String violatingClass, String forbiddenType, Rule rule)
         implements Comparable<WallViolation> {
@@ -44,13 +44,21 @@ public record WallViolation(String violatingClass, String forbiddenType, Rule ru
             this.description = description;
         }
 
-        /** Human-readable boundary description, used verbatim in the build failure. */
+        /**
+         * Returns the human-readable boundary description, used verbatim in the build failure.
+         *
+         * @return the boundary description
+         */
         public String description() {
             return description;
         }
     }
 
-    /** One line of the build failure, e.g. {@code com.acme.Foo -> org.springframework.X (host-runtime package …)}. */
+    /**
+     * Returns this violation as one line of the build failure.
+     *
+     * @return e.g. {@code com.acme.Foo -> org.springframework.X (host-runtime package …)}
+     */
     public String message() {
         return violatingClass + " -> " + forbiddenType + " (" + rule.description() + ")";
     }

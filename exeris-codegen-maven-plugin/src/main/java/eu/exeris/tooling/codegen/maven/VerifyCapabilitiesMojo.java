@@ -38,7 +38,7 @@ import java.nio.file.Path;
  * the domain two-pass has always had). A run that finds no capability metadata
  * logs and passes — there is nothing to validate.
  *
- * @since 0.6.0
+ * @since 0.6
  */
 @Mojo(name = VerifyCapabilitiesMojo.GOAL, defaultPhase = LifecyclePhase.PROCESS_CLASSES, threadSafe = true)
 public class VerifyCapabilitiesMojo extends AbstractMojo {
@@ -104,6 +104,14 @@ public class VerifyCapabilitiesMojo extends AbstractMojo {
     CapabilityValidator validator = pipeline::validateCapabilities;
 
     WallVerifier wallVerifier = pipeline::verifyCapTierWall;
+
+    /**
+     * Creates the mojo. Maven constructs it reflectively and injects the {@code @Parameter}
+     * fields before calling {@link #execute()}.
+     */
+    public VerifyCapabilitiesMojo() {
+        // parameters are injected by Maven after construction
+    }
 
     @Override
     public void execute() throws MojoExecutionException, MojoFailureException {

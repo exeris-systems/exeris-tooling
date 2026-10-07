@@ -18,7 +18,7 @@ import java.util.Locale;
  *   <li>served by the Kernel as {@code /api/docs/openapi.yaml}</li>
  *   <li>consumed by Swagger UI</li>
  *   <li>imported into Postman / Insomnia</li>
- *   <li>used to generate clients in other languages</li>
+ *   <li>the input for client generators in other languages</li>
  * </ul>
  *
  * @see OpenApiGenerator
@@ -27,6 +27,9 @@ public class KernelOpenApiGenerator implements KernelArtifactGenerator {
 
     private final OpenApiGenerator openApiGenerator;
 
+    /**
+     * Creates the adapter over a fresh {@link OpenApiGenerator}.
+     */
     public KernelOpenApiGenerator() {
         this.openApiGenerator = new OpenApiGenerator();
     }

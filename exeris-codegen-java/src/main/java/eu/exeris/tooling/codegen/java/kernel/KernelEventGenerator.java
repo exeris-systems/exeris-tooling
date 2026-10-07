@@ -82,20 +82,19 @@ import javax.lang.model.element.Modifier;
  * default content-type {@code application/json}), and publishes the encoded
  * {@code EventPayload}. The registry is captured at construction — by
  * {@code RuntimeComponents}, inside the boot callback, from
- * {@link eu.exeris.kernel.spi.context.KernelProviders#eventPayloadCodecRegistry()} —
+ * {@code eu.exeris.kernel.spi.context.KernelProviders#eventPayloadCodecRegistry()} —
  * because the publish runs on the request thread, and the kernel binds
  * {@code EVENT_PAYLOAD_CODEC_REGISTRY} only in its boot scope: resolved per publish,
  * the slot would always be empty there and every payload would ship empty. When
  * no registry was bound at construction or no codec supports the payload, it falls back to
- * {@link eu.exeris.kernel.spi.events.EventPayload#empty()} (the latter emitting a
+ * {@code eu.exeris.kernel.spi.events.EventPayload#empty()} (the latter emitting a
  * producer-side codec-resolution-failure JFR). Redaction is the publisher's job,
  * applied before encode; the generated code names only SPI symbols (never a codec
  * driver / Jackson — the Wall).
  *
  * @implNote Emission is JavaPoet-based (ADR-015).
  *
- * @author Exeris Team
- * @since 0.1.0
+ * @since 0.1
  */
 public class KernelEventGenerator implements KernelArtifactGenerator {
 
@@ -120,6 +119,14 @@ public class KernelEventGenerator implements KernelArtifactGenerator {
     private static final String ENCODE_HELPER = "encodePayload";
     private static final String CODEC_REGISTRY_FIELD = "codecRegistry";
     private static final String JFR_EVENT_NAME = "CodecUnresolvedEvent";
+
+    /**
+     * Creates the generator. It keeps no per-domain state, so one instance serves every domain
+     * in a build.
+     */
+    public KernelEventGenerator() {
+        // no state to initialise
+    }
 
     @Override
     public GeneratedFile generate(DomainMetadata metadata) {

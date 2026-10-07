@@ -71,11 +71,10 @@ import java.util.Optional;
  * </ul>
  *
  * @implNote Emission is a Java text block (ADR-015 — JavaPoet does not apply to SQL). Returns
- * {@code null} — the registry's "nothing to emit" sentinel — for every entity that is not a
- * transcribable UNIVERSE entity.
+ *     {@code null} — the registry's "nothing to emit" sentinel — for every entity that is not a
+ *     transcribable UNIVERSE entity.
  *
- * @author Exeris Team
- * @since 0.9.0
+ * @since 0.9
  */
 public class KernelSharedScopeMigrationGenerator implements KernelArtifactGenerator {
 
@@ -106,6 +105,14 @@ public class KernelSharedScopeMigrationGenerator implements KernelArtifactGenera
 
     /** The CREATE-migration generator, consulted for the column's name and SQL type. */
     private final KernelFlywayGenerator tableMigration = new KernelFlywayGenerator();
+
+    /**
+     * Creates the generator. It keeps no per-domain state, so one instance serves every domain
+     * in a build.
+     */
+    public KernelSharedScopeMigrationGenerator() {
+        // tableMigration is initialised at its declaration
+    }
 
     @Override
     public GeneratedFile generate(DomainMetadata metadata) {
