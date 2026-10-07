@@ -186,3 +186,20 @@ jobs:
         run: |
           npm install --no-audit --no-fund --prefer-offline
           npx ng build --configuration development
+
+  # MIGRATION's open release train is written one file per change under docs/migration/<version>/
+  # and assembled at the cut (docs/migration/README.md). The check holds every fragment to the
+  # format the assembler needs, so the release pull request cannot meet a malformed one. Not a
+  # required check; making it one is a branch-protection edit.
+  migration-fragments:
+    name: migration fragments
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exeris-tooling
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: assembler tests
+        run: python3 -B -m unittest discover -s tools/migration -v
+
+      - name: assemble-migration --check
+        run: python3 -B tools/migration/assemble-migration.py --check

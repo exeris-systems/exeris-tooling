@@ -26,7 +26,7 @@ The TS package is intentionally outside the Maven reactor — coordination is ma
 2. **Classify surface scope** — `JAVA_ONLY`, `TS_ONLY`, `SHARED`. Most DomainMetadata fields are SHARED by default.
 3. **For SHARED**: check both sides emit / read consistently. Missing TS side = parity gap.
 4. **For JAVA_ONLY / TS_ONLY**: require explicit justification — why is this not shared?
-5. **Migration check** — does `docs/MIGRATION-0.x-to-1.0.md` (or future MIGRATION) need an entry? Downstream user apps regenerate; user-visible field renames are a migration story.
+5. **Migration check** — does MIGRATION need an entry? Downstream user apps regenerate; user-visible field renames are a migration story. An entry for the open release train is a fragment under `docs/migration/<version>/` (`docs/migration/README.md`), not an edit of `docs/MIGRATION-0.x-to-1.0.md`.
 6. **Cross-build evidence** — was both `mvn install` AND `npm test` run? If only one, flag.
 7. **Decision and report** — produce one of: `APPROVE`, `CONDITIONAL`, `REJECT`.
 

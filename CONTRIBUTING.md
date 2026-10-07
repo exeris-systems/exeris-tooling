@@ -139,4 +139,7 @@ Development standards are binding per [ADR-085](docs/adr/ADR-085.link.md) and ho
 - [`javadoc-conventions.md`](https://github.com/exeris-systems/exeris-docs/blob/main/standards/javadoc-conventions.md) — Oracle doc-comment standards.
 - [`docs-style-guide.md`](https://github.com/exeris-systems/exeris-docs/blob/main/standards/docs-style-guide.md) — validated frontmatter and naming conventions.
 - [`agents-md-schema.md`](https://github.com/exeris-systems/exeris-docs/blob/main/standards/agents-md-schema.md) — [`AGENTS.md`](AGENTS.md) as the canonical entry point and [`.agents/`](.agents) as the semantic source.
+- A change a consumer sees after regenerating writes its MIGRATION step as one file under
+  `docs/migration/<version>/`, never as an edit of `docs/MIGRATION-0.x-to-1.0.md`; the release
+  assembles them ([format](docs/migration/README.md)).
 - Language: English everywhere (code, identifiers, comments, commit messages, PR titles/bodies, documentation).

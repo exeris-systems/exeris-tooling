@@ -36,7 +36,7 @@ Return exactly:
 - `PROCESSOR_IMPLEMENTATION`: `exeris-processor` logic, diagnostics, `javax.lang.model` extraction, `@AutoService` wiring.
 - `GENERATOR_IMPLEMENTATION`: any `*Generator.java` or TS emitter (`*-gen.ts`) change.
 - `VERIFICATION`: e2e snapshot, compile-gate, determinism harness, TS parity check.
-- `DOCS_ADR`: ADR-015 amendment, MIGRATION entry, README/ROADMAP sync.
+- `DOCS_ADR`: ADR-015 amendment, MIGRATION entry (a fragment under `docs/migration/<version>/`, see `docs/migration/README.md`), README/ROADMAP sync.
 - `CROSS_BUILD`: change requires coordination across the Maven reactor and the TS npm package.
 - `MULTI_DOMAIN`: at least two classes above are first-order concerns.
 

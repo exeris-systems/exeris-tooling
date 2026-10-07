@@ -22,7 +22,7 @@ Architect/reviewer for the build-time pipeline. Prioritize pipeline contract int
 ## Preflight
 - Always read `docs/adr/ADR-015-codegen-emission-strategy.md` for any change in `*Generator.java`.
 - Always read `README.md` pipeline diagram + module table.
-- Read `docs/MIGRATION-0.x-to-1.0.md` when proposing breaking changes.
+- Read `docs/MIGRATION-0.x-to-1.0.md`, and the open train's fragments under `docs/migration/<version>/`, when proposing breaking changes.
 - Read `ROADMAP.md` for milestone scope (0.2.0 quality gates, 0.3.0 Maven plugin, 0.4.0 emission refactor, 1.0.0 GA stability promise).
 - If docs are missing/stale, rely on source layout + ADR-015 and state assumptions explicitly.
 
