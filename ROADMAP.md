@@ -3819,6 +3819,11 @@ enters only if its upstream half is final first.
 - [ ] **J0 build hygiene** (no gate, does not hold the cut): Checkstyle and PMD on the tooling's own
       Java (warn-only first, then enforcing per module), ArchUnit policy tests, the javadoc gate in diff
       mode, and lint of emitted Java in the e2e compile gate.
+      *Landed:* the warn-only lint and its baseline (#321), the ArchUnit policy tests and the enforcer
+      dependency ban (#325), the javadoc gate over modules brought to it (#326), and enforcement in
+      `exeris-diagnostics`, `exeris-codegen-core` and `exeris-codegen-maven-plugin` (#327).
+      *Open:* enforcement in `exeris-codegen-java` and `exeris-processor`, lint of emitted Java, and
+      SonarCloud analysis from CI with coverage in place of automatic analysis.
 - [ ] **T53 in full** (RFC, then ADR): `@RouteAccess` + `permissions` compiled into `RouteRequirement`. D10 resolves
       with it.
 - [ ] Track C (SDK record changes), `@SagaTransition`, T12 + T17.
@@ -3836,6 +3841,8 @@ enters only if its upstream half is final first.
       end-to-end conformance test; and `exeris-codegen-cli`, a launchable shaded jar of the Java
       generator, in `exeris-tooling-bom` only. For `exeris-ai-bridge`'s `build-explain_artefacts`
       and `build-preview_generation`. Does not hold the cut.
+      *Landed:* ADR-097 and the catalogue, with `docs/generators.md` (#328). *Open:*
+      `exeris-codegen-cli`, and the bridge's `ADR-097.link.md` stub.
 - [x] **Maven coordinates move to the `eu.exeris` group** (founder decision 2026-10-06). Every
       module is published as `eu.exeris:<artifactId>`, the group of the kernel and SDK artefacts; the
       artifactIds and the Java packages (`eu.exeris.tooling.*`) are unchanged. 0.9.0 and earlier stay
@@ -3847,19 +3854,25 @@ enters only if its upstream half is final first.
       (`proxy.conf.js` with a header-based `bypass`, verified against a real `ng serve`), codegen-ts
       lint in CI, and deleting `KernelStrategy.generateClientCode` / `getRealTimeConfig`, which have
       no production caller.
-- [ ] **Issues placed in 0.10.0:** #304 (form gaps), #271 (one header helper, done), #309
-      (`GraphMetadata.queries` written `null` when not extracted), #310 (an entity with no `id`
-      field — a processor error, and the TS model always carries `id`).
+      *Landed:* the dead `KernelStrategy` methods are deleted (#323). *Open:* the proxy prefix and
+      codegen-ts lint in CI.
+- [ ] **Issues placed in 0.10.0:** #304 (form gaps), #271 (one header helper, done in #322), #309
+      (`GraphMetadata.queries` written `null` when not extracted, done in #317), #310 (an entity
+      with no `id` field — a processor error, done in #316 as `EXT-PROC-1015`; the TS model always
+      carrying `id` is open, wave S2).
 - [ ] **Debts with no gate** (Java wave J2, TS wave S2): the `@DomainEvent` strict-mode call site
       (T11), the T30 classpath check in `exeris:generate`, a golden OpenAPI document compared on
       both JDK rows, a reflective check of the inert-registry keys against the SDK, the T58 residue
       (`Partial<Create>` sent over `PUT`), and the `TODO` that `form-gen.ts` writes into generated
-      code.
+      code. *Landed:* the `form-gen.ts` TODO (#323), and a debt this list did not name: metadata is
+      read in a defined order, so the auto-detected base package does not depend on the
+      filesystem (#320, `EXT-GEN-3104`). *Open:* T11, T30, the OpenAPI golden, the registry-key
+      check and the T58 residue.
 - [ ] **ADR-044 Amendment 2** also decides the GET route for a per-action stream (`EventSource` is
       GET-only) and the `EventBusService` default endpoint, which no server route serves.
 - [ ] **Triage two dog-food findings this file does not record yet:** the repository's
       `save`/`update` split with no upsert, and codegen-ts writing LF into a CRLF tree.
-- [ ] The removals below.
+- [x] The removals below.
 
 **Not placed in a milestone**, because the next step belongs to another repository: C2
 (`@Encrypted` / `@RowLevelSecurity`, two asks on the kernel and the SDK) and `@SagaStep.parallel`
