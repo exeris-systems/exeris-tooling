@@ -418,6 +418,36 @@ class ExerisDomainProcessorTest {
         }
 
         @Test
+        @DisplayName("graph properties and queries are absent, not empty: neither is extracted")
+        void graphPropertiesAndQueriesAreNotCarried() throws IOException {
+            JavaFileObject source = JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Graph;
+
+                    @ExerisDomain(module = "sales", path = "/orders")
+                    @Graph(nodeClass = "Order")
+                    public class Order {
+                        private java.util.UUID id;
+                    }
+                    """
+            );
+
+            Compilation compilation = compileWithProcessor(source);
+            assertThat(compilation).succeeded();
+
+            JsonNode graph = readMetadataRoot(compilation, "Order").path("graphMetadata");
+
+            assertThat(graph.path("label").asText()).isEqualTo("Order");
+            assertThat(graph.has("edges")).isTrue();
+            assertThat(graph.has("properties")).as("properties").isFalse();
+            assertThat(graph.has("queries")).as("queries").isFalse();
+        }
+
+        @Test
         @DisplayName("T57: the target class supplies the label when targetLabel is not written")
         void graphEdgeTargetClassSuppliesTheLabel() throws IOException {
             JavaFileObject source = JavaFileObjects.forSourceString(

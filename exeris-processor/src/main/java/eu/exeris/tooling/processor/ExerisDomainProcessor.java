@@ -2861,11 +2861,13 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             label = (String) values.get("nodeClass");
         }
 
+        // properties and queries are not extracted, so both are null: NON_NULL keeps them off the
+        // wire, which reads as "not carried". An empty list would claim the entity declares none.
         return new GraphMetadata(
                 label,
                 null,
                 graphEdges(element),
-                List.of()
+                null
         );
     }
 
