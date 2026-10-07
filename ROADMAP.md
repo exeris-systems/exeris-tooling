@@ -3821,7 +3821,7 @@ enters only if its upstream half is final first.
       mode, and lint of emitted Java in the e2e compile gate.
 - [ ] **T53 in full** (RFC, then ADR): `@RouteAccess` + `permissions` compiled into `RouteRequirement`. D10 resolves
       with it.
-- [ ] Track C (SDK record changes), `@SagaTransition`, T12 + T17, `@PrimaryKey`.
+- [ ] Track C (SDK record changes), `@SagaTransition`, T12 + T17.
 - [ ] **EV1-stream per-action driver** (ADR-044 amendment first): the streaming action runs, and its
       triggered events stream back. Moved from 0.9.0 on 2026-10-02; the open questions are under
       **EV1-stream**. Removes the 0.9.0 streaming-action warning.
@@ -3868,7 +3868,7 @@ enters only if its upstream half is final first.
 **`@exeris/codegen-ts` → npmjs** ships in 0.9.0, in lockstep with the reactor; the 0.9.0 cut
 waits for the TS scope in [`docs/codegen-ts-track-plan.md`](docs/codegen-ts-track-plan.md) (P1–P21).
 The TS side is further behind than the Java side, and it is what a `@View` front end is generated
-from. **`@Channel` emission** is 0.12.0.
+from.
 
 ### Removals due in 0.10.0
 
@@ -3886,6 +3886,24 @@ keeps compiling where it still uses one. 0.10.0 removes them.
       omit it as the OpenAPI does.
 - [x] **`apiVersion` in the emitted environment files (T38).** Delete it from
       `generateEnvironmentFile`, `resolveApiSettings` and the KERNEL strategy's `ClientConfig`.
+
+## 0.11.0 — SDK annotations to emitted output, scope set 2026-10-07
+
+Pairs with SDK 0.13, which 0.10.0 does not wait for. Order, gates and the Java/TS pairing are in
+[`docs/0.11.0-release-plan.md`](docs/0.11.0-release-plan.md). Every row needs an SDK 0.13 half: the
+`-io` reader half under ADR-042 (exeris-sdk#187) or a carrier (exeris-sdk#186).
+
+- [ ] **Wave 0, decisions** (may start during 0.10.0): RFC/ADR for the `@Blob` routes and the
+      `@Channel` message shape; the graph-property payload encoding (kernel ask); the `@GraphQuery`
+      decision between the kernel and the SDK.
+- [ ] **J1 `@PrimaryKey`**: the declared primary key across SQL, repository and route template.
+- [ ] **J2 + S1 `@GraphProperty`, `@UIGroup`**: graph node properties in the graph-sync upsert;
+      grouped sections in the generated forms and detail views.
+- [ ] **J3 + S2 `@Blob`**, **J4 + S3 `@Channel`**: each after its wave 0 ADR.
+- [ ] **J5 + S4 `@QueryParam`, `@NavMenu`, `@Tab`**: after exeris-sdk#186.
+
+Not in 0.11.0: `@Encrypted` / `@RowLevelSecurity` (C2) and `@GraphQuery`, with the reasons in the
+plan.
 
 ## Versioning policy
 
