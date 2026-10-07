@@ -3841,7 +3841,7 @@ enters only if its upstream half is final first.
       (`proxy.conf.js` with a header-based `bypass`, verified against a real `ng serve`), codegen-ts
       lint in CI, and deleting `KernelStrategy.generateClientCode` / `getRealTimeConfig`, which have
       no production caller.
-- [ ] **Issues placed in 0.10.0:** #304 (form gaps), #271 (one header helper), #309
+- [ ] **Issues placed in 0.10.0:** #304 (form gaps), #271 (one header helper, done), #309
       (`GraphMetadata.queries` written `null` when not extracted), #310 (an entity with no `id`
       field — a processor error, and the TS model always carries `id`).
 - [ ] **Debts with no gate** (Java wave J2, TS wave S2): the `@DomainEvent` strict-mode call site
