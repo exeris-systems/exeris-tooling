@@ -49,11 +49,9 @@ describe('backend-less emission — a view-only app', () => {
 
   it('emits exactly the shell, the view page and its route', () => {
     expect([...paths(files)].sort()).toEqual([
-      './.postcssrc.json',
-      './angular.json',
-      './package.json',
-      './tsconfig.app.json',
-      './tsconfig.json',
+      '.postcssrc.json',
+      'angular.json',
+      'package.json',
       'src/app/app.component.ts',
       'src/app/app.config.ts',
       'src/app/app.routes.ts',
@@ -65,6 +63,8 @@ describe('backend-less emission — a view-only app', () => {
       'src/index.html',
       'src/main.ts',
       'src/styles.css',
+      'tsconfig.app.json',
+      'tsconfig.json',
     ]);
   });
 
@@ -77,8 +77,8 @@ describe('backend-less emission — a view-only app', () => {
   });
 
   it('emits no dev-server proxy and starts without one', () => {
-    expect(paths(files)).not.toContain('./proxy.conf.json');
-    const pkg = JSON.parse(content(files, './package.json'));
+    expect(paths(files)).not.toContain('proxy.conf.json');
+    const pkg = JSON.parse(content(files, 'package.json'));
     expect(pkg.scripts.start).toBe('ng serve');
   });
 
@@ -92,7 +92,7 @@ describe('backend-less emission — a view-only app', () => {
   });
 
   it('package.json drops zod, @angular/cdk and @angular/forms, and keeps what Angular itself needs', () => {
-    const deps = Object.keys(JSON.parse(content(files, './package.json')).dependencies);
+    const deps = Object.keys(JSON.parse(content(files, 'package.json')).dependencies);
     expect(deps).toEqual([
       '@angular/common',
       '@angular/compiler',
@@ -126,7 +126,7 @@ describe('backend-less emission — a view-only app', () => {
 describe('backend-less emission — what the emitted files use is still provided', () => {
   it('an enum emitted with its Zod schema keeps zod, the enum module and a barrel that re-exports it', () => {
     const files = buildGeneratedFiles([], [TIER], DEFAULT_CONFIG, [STATIC_HOME]);
-    expect(JSON.parse(content(files, './package.json')).dependencies.zod).toBe('^3.24.0');
+    expect(JSON.parse(content(files, 'package.json')).dependencies.zod).toBe('^3.24.0');
     expect(content(files, 'src/app/types/enums.ts')).toContain("import { z } from 'zod';");
     expect(content(files, 'src/app/index.ts')).toContain("export * from './types/enums';");
     expect(paths(files)).not.toContain('src/app/schemas/index.ts');
@@ -136,13 +136,13 @@ describe('backend-less emission — what the emitted files use is still provided
 
   it('the same enum under --no-zod drops zod again', () => {
     const files = buildGeneratedFiles([], [TIER], { ...DEFAULT_CONFIG, generateZod: false }, [STATIC_HOME]);
-    expect(JSON.parse(content(files, './package.json')).dependencies.zod).toBeUndefined();
+    expect(JSON.parse(content(files, 'package.json')).dependencies.zod).toBeUndefined();
   });
 
   it('a peer contract keeps zod for its schemas', () => {
     const peer = { name: 'billing', domains: [domain({ entityName: 'Invoice', fields: [{ name: 'id', type: 'java.util.UUID' }] })], enums: [] };
     const files = buildGeneratedFiles([], [], DEFAULT_CONFIG, [STATIC_HOME], [peer]);
-    expect(JSON.parse(content(files, './package.json')).dependencies.zod).toBe('^3.24.0');
+    expect(JSON.parse(content(files, 'package.json')).dependencies.zod).toBe('^3.24.0');
   });
 });
 
@@ -150,7 +150,7 @@ describe('backend-less emission — an app with neither entity nor view', () => 
   const files = buildGeneratedFiles([], [], DEFAULT_CONFIG);
 
   it('emits the bare shell: no HTTP wiring, no proxy, no barrels', () => {
-    expect(paths(files)).not.toContain('./proxy.conf.json');
+    expect(paths(files)).not.toContain('proxy.conf.json');
     expect(paths(files)).not.toContain('src/app/index.ts');
     expect(paths(files).some((p) => p.startsWith('src/app/types/'))).toBe(false);
     expect(content(files, 'src/app/app.config.ts')).not.toContain('provideHttpClient');
@@ -191,6 +191,6 @@ describe('backend-less emission — an app with a visible entity is unchanged', 
     const standalone = generateAppStructure([order], [], config, [...views]);
     expect(composed).toEqual(standalone);
     expect(content(composed, 'src/app/app.config.ts')).toContain('provideHttpClient()');
-    expect(paths(composed)).toContain('./proxy.conf.json');
+    expect(paths(composed)).toContain('proxy.conf.json');
   });
 });

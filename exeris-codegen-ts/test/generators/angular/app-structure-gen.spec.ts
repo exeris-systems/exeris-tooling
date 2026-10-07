@@ -76,12 +76,12 @@ describe('generateAppStructure — static skeleton', () => {
   const files = generateAppStructure([], [], cfg());
 
   it.each([
-    ['./package.json', false],
-    ['./angular.json', false],
-    ['./tsconfig.json', false],
-    ['./tsconfig.app.json', false],
-    ['./.postcssrc.json', true],
-    ['./proxy.conf.json', true],
+    ['package.json', false],
+    ['angular.json', false],
+    ['tsconfig.json', false],
+    ['tsconfig.app.json', false],
+    ['.postcssrc.json', true],
+    ['proxy.conf.json', true],
     ['src/styles.css', true],
     ['src/index.html', true],
     ['src/favicon.ico', true],
@@ -127,7 +127,7 @@ describe('generateAppStructure — static skeleton', () => {
   });
 
   it('package.json pins the Angular v22 toolchain (Phase A compat bump)', () => {
-    const pkg = fileAt(files, './package.json')!;
+    const pkg = fileAt(files, 'package.json')!;
     // @angular/* and devkit/cli/compiler-cli all on ^22; no lingering ^21 pin.
     expect(pkg.content).toContain('"@angular/core": "^22.0.0"');
     expect(pkg.content).toContain('"@angular/cli": "^22.0.0"');
@@ -141,8 +141,8 @@ describe('generateAppStructure — static skeleton', () => {
   });
 
   it('Phase B scaffold cleanup: no platform-browser-dynamic, Node floor 22, @angular/build builder', () => {
-    const pkg = fileAt(files, './package.json')!;
-    const ng = fileAt(files, './angular.json')!;
+    const pkg = fileAt(files, 'package.json')!;
+    const ng = fileAt(files, 'angular.json')!;
     // bootstrapApplication() scaffold — platformBrowserDynamic is never used.
     expect(pkg.content).not.toContain('@angular/platform-browser-dynamic');
     // v22 floor is Node 22 (Active LTS), not 24.
@@ -197,7 +197,7 @@ describe('generateAppStructure — @exeris/ui-kit token wiring (T25)', () => {
   });
 
   it('package.json declares the @exeris/ui-kit dependency at ^0.2.1, and not the GitHub Packages name', () => {
-    const pkg = JSON.parse(fileAt(files, './package.json')!.content);
+    const pkg = JSON.parse(fileAt(files, 'package.json')!.content);
     expect(pkg.dependencies['@exeris/ui-kit']).toBe('^0.2.1');
     expect(pkg.dependencies['@exeris-systems/ui-kit']).toBeUndefined();
   });
@@ -216,13 +216,13 @@ describe('generateAppStructure — @exeris/ui-kit token wiring (T25)', () => {
   });
 
   it('angular.json lists only the global stylesheet, which Tailwind processes, and no ui-kit CSS', () => {
-    const angular = JSON.parse(fileAt(files, './angular.json')!.content);
+    const angular = JSON.parse(fileAt(files, 'angular.json')!.content);
     const project = Object.values(angular.projects)[0] as { architect: { build: { options: { styles: string[] } } } };
     expect(project.architect.build.options.styles).toEqual(['src/styles.css']);
   });
 
   it('.postcssrc.json wires the Tailwind v4 PostCSS plugin', () => {
-    expect(JSON.parse(fileAt(files, './.postcssrc.json')!.content)).toEqual({ plugins: { '@tailwindcss/postcss': {} } });
+    expect(JSON.parse(fileAt(files, '.postcssrc.json')!.content)).toEqual({ plugins: { '@tailwindcss/postcss': {} } });
   });
 
   it('no emitted template (scaffold or per-shape) ships the hardcoded bg-indigo-600 accent', () => {
@@ -244,7 +244,7 @@ describe('generateAppStructure — configurable appName (T7/U5)', () => {
     const comp = fileAt(files, 'src/app/app.component.ts')!;
     const html = fileAt(files, 'src/index.html')!;
     const routes = fileAt(files, 'src/app/app.routes.ts')!;
-    const pkg = fileAt(files, './package.json')!;
+    const pkg = fileAt(files, 'package.json')!;
     expect(comp.content).toContain('🚀 Exeris Foundation');
     expect(comp.content).toContain("title = 'Exeris Foundation';");
     expect(html.content).toContain('<title>Exeris Foundation</title>');
@@ -261,8 +261,8 @@ describe('generateAppStructure — configurable appName (T7/U5)', () => {
     const comp = fileAt(files, 'src/app/app.component.ts')!;
     const html = fileAt(files, 'src/index.html')!;
     const routes = fileAt(files, 'src/app/app.routes.ts')!;
-    const pkg = fileAt(files, './package.json')!;
-    const ng = fileAt(files, './angular.json')!;
+    const pkg = fileAt(files, 'package.json')!;
+    const ng = fileAt(files, 'angular.json')!;
     // Logo + Angular component title field.
     expect(comp.content).toContain('🚀 Acme Portal');
     expect(comp.content).toContain("title = 'Acme Portal';");
@@ -287,7 +287,7 @@ describe('generateAppStructure — configurable appName (T7/U5)', () => {
   it('escapes a dangerous appName so the emitted package.json stays valid JSON', () => {
     const evil = 'Foo "Bar" & Co';
     const files = generateAppStructure([domain({ entityName: 'Order' })], [], cfg({ appName: evil }));
-    const pkg = fileAt(files, './package.json')!;
+    const pkg = fileAt(files, 'package.json')!;
     expect(() => JSON.parse(pkg.content)).not.toThrow();
     expect(JSON.parse(pkg.content).description).toBe(`${evil} - Generated Angular Frontend`);
   });
