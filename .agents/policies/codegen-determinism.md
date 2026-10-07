@@ -18,5 +18,11 @@ Emitted code must be deterministic: identical `DomainMetadata` input must yield 
 ## Verification
 
 - Run determinism check: regenerate twice, diff bytes (`diff -r`), assert zero differences.
+- `CodegenCoreArchitectureTest` and `CodegenJavaArchitectureTest` (`reads_no_clock_and_no_randomness`)
+  hold rules 1 and 2 on the generators' bytecode: no call to `Instant`/`LocalDate`/`LocalDateTime`/
+  `OffsetDateTime`/`ZonedDateTime.now`, `System.currentTimeMillis`, `System.nanoTime`, `UUID.randomUUID`,
+  `Math.random` or `ThreadLocalRandom.current`, and no `new Random`, `new SecureRandom` or `new Date()`.
+  The rules match calls, not text, so an emitted `"$T.randomUUID()"` is not one. Rules 3 to 5 are
+  not bytecode-checkable and stay with the determinism check and the review skill.
 - Review with `exeris-tooling-codegen-determinism-review` skill.
 - End-to-end assertions via `KernelCodegenE2ETest`.
