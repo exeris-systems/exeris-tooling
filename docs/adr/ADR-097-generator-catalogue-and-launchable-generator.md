@@ -157,7 +157,8 @@ maps every path the Java pipeline writes to the generator that wrote it, and a l
 11. **Arguments.** Beyond `--metadata-dir`, `--output-dir` and `--base-package`:
     - `--tests` also writes the generated tests into `--test-output-dir`, which `--tests` requires;
     - `--allow-empty` permits the teardown that deletes a previously generated tree when no
-      `@ExerisDomain` is found;
+      `@ExerisDomain` is found. It prunes the main root only: the test root is never pruned on
+      empty metadata, as under `exeris:generate`;
     - `--print-catalogue` writes the bundled catalogue to standard output and exits, and needs no
       other argument.
 
