@@ -69,6 +69,22 @@ import java.nio.file.Path;
 @Mojo(name = "generate", defaultPhase = LifecyclePhase.GENERATE_SOURCES, threadSafe = true)
 public class GenerateMojo extends AbstractMojo {
 
+    /**
+     * Default-lifecycle phases from {@code process-classes} onwards — the phases
+     * at which a bound {@code verify-capabilities} execution is guaranteed to see
+     * the metadata the processor (re)emits during {@code compile}. An execution
+     * explicitly rebound to an earlier phase (or to an unknown/custom phase)
+     * would itself validate stale input, so it does NOT count as the gate.
+     */
+    private static final java.util.Set<String> PHASES_AFTER_COMPILE = java.util.Set.of(
+            "process-classes",
+            "generate-test-sources", "process-test-sources",
+            "generate-test-resources", "process-test-resources",
+            "test-compile", "process-test-classes", "test",
+            "prepare-package", "package",
+            "pre-integration-test", "integration-test", "post-integration-test",
+            "verify", "install", "deploy");
+
     /** Directory holding processor-emitted {@code *.json} {@code DomainMetadata}. */
     @Parameter(property = "exeris.metadataDir",
             defaultValue = "${project.build.outputDirectory}/exeris-metadata")
@@ -268,22 +284,6 @@ public class GenerateMojo extends AbstractMojo {
         }
         registerTestSourceRoot();
     }
-
-    /**
-     * Default-lifecycle phases from {@code process-classes} onwards — the phases
-     * at which a bound {@code verify-capabilities} execution is guaranteed to see
-     * the metadata the processor (re)emits during {@code compile}. An execution
-     * explicitly rebound to an earlier phase (or to an unknown/custom phase)
-     * would itself validate stale input, so it does NOT count as the gate.
-     */
-    private static final java.util.Set<String> PHASES_AFTER_COMPILE = java.util.Set.of(
-            "process-classes",
-            "generate-test-sources", "process-test-sources",
-            "generate-test-resources", "process-test-resources",
-            "test-compile", "process-test-classes", "test",
-            "prepare-package", "package",
-            "pre-integration-test", "integration-test", "post-integration-test",
-            "verify", "install", "deploy");
 
     /**
      * Whether this project's effective build binds the

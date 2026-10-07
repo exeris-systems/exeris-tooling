@@ -49,16 +49,6 @@ public record CapabilityGraph(
 ) {
 
     /**
-     * Every graph is produced by {@link #build} on the validation-success path, so it is
-     * always stamped. The guard makes that invariant explicit — a {@code null} stamp (e.g.
-     * a stampless v1 manifest deserialized into this record) fails fast at construction
-     * rather than NPE-ing later in {@code stamp().validated()}.
-     */
-    public CapabilityGraph {
-        Objects.requireNonNull(stamp, "stamp");
-    }
-
-    /**
      * Manifest schema version. Any breaking shape change to the serialized manifest —
      * a new/removed/renamed record component on {@link CapabilityGraph} or
      * {@link Resolution}, or a changed field meaning — must bump this and ship a
@@ -69,6 +59,16 @@ public record CapabilityGraph(
      * composition version + content binding) the platform composition runtime asserts.
      */
     public static final int SCHEMA_VERSION = 2;
+
+    /**
+     * Every graph is produced by {@link #build} on the validation-success path, so it is
+     * always stamped. The guard makes that invariant explicit — a {@code null} stamp (e.g.
+     * a stampless v1 manifest deserialized into this record) fails fast at construction
+     * rather than NPE-ing later in {@code stamp().validated()}.
+     */
+    public CapabilityGraph {
+        Objects.requireNonNull(stamp, "stamp");
+    }
 
     /**
      * One resolved {@code @Requires} edge.

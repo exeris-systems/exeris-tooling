@@ -112,7 +112,7 @@ public final class RuntimeDriverCheck {
                     collectFromArchive(element, requiredSpis, found);
                 }
                 scanned++;
-            } catch (IOException | UncheckedIOException e) {
+            } catch (IOException | UncheckedIOException _) {
                 // Unreadable element — see the method javadoc. Deliberately silent at this
                 // layer: the caller owns diagnostics, and this class owns no logger.
             }

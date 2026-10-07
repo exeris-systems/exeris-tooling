@@ -16,8 +16,14 @@
     <rule ref="category/java/errorprone.xml/UseLocaleWithCaseConversions"/>
     <!-- Readers and file handles in the processor and the Maven plugin live inside a long-running JVM. -->
     <rule ref="category/java/errorprone.xml/CloseResource"/>
-    <!-- A swallowed exception is a diagnostic that never reaches javac or the Maven log. -->
-    <rule ref="category/java/errorprone.xml/EmptyCatchBlock"/>
+    <!-- A swallowed exception is a diagnostic that never reaches javac or the Maven log. As in the
+         kernel, a catch that says why it is empty, or names its exception _, is deliberate. -->
+    <rule ref="category/java/errorprone.xml/EmptyCatchBlock">
+        <properties>
+            <property name="allowCommentedBlocks" value="true"/>
+            <property name="allowExceptionNameRegex" value="^(_|ignored|expected)$"/>
+        </properties>
+    </rule>
     <!-- Metadata records and strings are compared by value; == on them is a latent bug. -->
     <rule ref="category/java/errorprone.xml/CompareObjectsWithEquals"/>
     <!-- Generators iterate what MetadataLoader returns; a null collection is an NPE in a generator. -->
