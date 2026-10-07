@@ -1,0 +1,334 @@
+openapi: 3.1.0
+info:
+  title: Exeris API - Order API
+  description: Customer order
+  version: 1.0.0
+servers:
+- url: http://localhost:8080
+  description: Development server
+tags:
+- name: Order
+  description: Customer order
+- name: Order Actions
+  description: Custom actions for Order
+paths:
+  /orders:
+    get:
+      tags:
+      - Order
+      summary: "List Order, one page at a time"
+      operationId: listOrder
+      parameters:
+      - name: page
+        in: query
+        description: Zero-based page index
+        required: false
+        schema:
+          format: int32
+          default: 0
+          minimum: 0
+      - name: size
+        in: query
+        description: Page size
+        required: false
+        schema:
+          format: int32
+          default: 20
+          maximum: 100
+          minimum: 1
+      - name: sort
+        in: query
+        description: "<property>,<asc|desc>; unsorted, rows come in id order"
+        required: false
+        schema:
+          enum:
+          - "amount,asc"
+          - "amount,desc"
+          - "dueOn,asc"
+          - "dueOn,desc"
+          - "orderNumber,asc"
+          - "orderNumber,desc"
+          - "placedAt,asc"
+          - "placedAt,desc"
+          - "status,asc"
+          - "status,desc"
+      - name: dueOn
+        in: query
+        description: Only rows whose dueOn equals this value
+        required: false
+        schema:
+          format: date
+      - name: orderNumber
+        in: query
+        description: Only rows whose orderNumber equals this value
+        required: false
+        schema: {}
+      - name: status
+        in: query
+        description: Only rows whose status equals this value
+        required: false
+        schema: {}
+      - name: urgent
+        in: query
+        description: Only rows whose urgent equals this value
+        required: false
+        schema: {}
+      responses:
+        "200":
+          description: One page of Order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderPage"
+        "400":
+          description: Bad request
+        "500":
+          description: Internal server error
+    post:
+      tags:
+      - Order
+      summary: Create new Order
+      operationId: createOrder
+      requestBody:
+        description: Create Order request
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrderCreateDto"
+        required: true
+      responses:
+        "201":
+          description: Created Order
+        "400":
+          description: Bad request
+        "500":
+          description: Internal server error
+  /orders/{id}:
+    get:
+      tags:
+      - Order
+      summary: Get Order by ID
+      operationId: getOrderById
+      parameters:
+      - name: id
+        in: path
+        description: Entity ID (UUID)
+        required: true
+        schema:
+          format: uuid
+      responses:
+        "200":
+          description: Order details
+        "400":
+          description: Bad request
+        "404":
+          description: Not found
+        "500":
+          description: Internal server error
+    put:
+      tags:
+      - Order
+      summary: Update Order
+      operationId: updateOrder
+      parameters:
+      - name: id
+        in: path
+        description: Entity ID (UUID)
+        required: true
+        schema:
+          format: uuid
+      requestBody:
+        description: Update Order request
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrderUpdateDto"
+        required: true
+      responses:
+        "200":
+          description: Updated Order
+        "400":
+          description: Bad request
+        "409":
+          description: Version conflict — re-read and retry
+        "500":
+          description: Internal server error
+    delete:
+      tags:
+      - Order
+      summary: Delete Order
+      operationId: deleteOrder
+      parameters:
+      - name: id
+        in: path
+        description: Entity ID (UUID)
+        required: true
+        schema:
+          format: uuid
+      responses:
+        "204":
+          description: Order deleted
+        "400":
+          description: Bad request
+        "404":
+          description: Not found
+        "500":
+          description: Internal server error
+  /orders/{id}/actions/approve:
+    post:
+      tags:
+      - Order Actions
+      summary: Approve the order
+      operationId: approveOrder
+      parameters:
+      - name: id
+        in: path
+        description: Entity ID (UUID)
+        required: true
+        schema:
+          format: uuid
+      requestBody:
+        description: Request for approve action
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrderApproveRequest"
+        required: true
+      responses:
+        "200":
+          description: Action result
+        "400":
+          description: Bad request
+        "404":
+          description: Not found
+        "409":
+          description: Version conflict — re-read and retry
+        "500":
+          description: Internal server error
+  /orders/{id}/actions/cancel:
+    post:
+      tags:
+      - Order Actions
+      summary: Execute cancel
+      operationId: cancelOrder
+      parameters:
+      - name: id
+        in: path
+        description: Entity ID (UUID)
+        required: true
+        schema:
+          format: uuid
+      responses:
+        "200":
+          description: Action result
+        "400":
+          description: Bad request
+        "404":
+          description: Not found
+        "409":
+          description: Version conflict — re-read and retry
+        "500":
+          description: Internal server error
+components:
+  schemas:
+    Order:
+      description: Customer order
+      properties:
+        id:
+          format: uuid
+        orderNumber:
+          description: Human-facing order number
+          maxLength: 32
+          minLength: 3
+          pattern: "^ORD-[0-9]+$"
+        status: {}
+        amount:
+          maximum: 1000000
+          minimum: 0
+        urgent: {}
+        dueOn:
+          format: date
+        placedAt:
+          format: date-time
+        website:
+          format: uri
+        tenantId:
+          format: uuid
+          readOnly: true
+        createdAt:
+          format: date-time
+          description: Creation timestamp
+        updatedAt:
+          format: date-time
+          description: Last update timestamp
+    OrderCreateDto:
+      description: DTO for creating Order
+      properties:
+        orderNumber:
+          description: Human-facing order number
+          maxLength: 32
+          minLength: 3
+          pattern: "^ORD-[0-9]+$"
+        status: {}
+        amount:
+          maximum: 1000000
+          minimum: 0
+        urgent: {}
+        dueOn:
+          format: date
+        placedAt:
+          format: date-time
+        website:
+          format: uri
+      required:
+      - orderNumber
+    OrderUpdateDto:
+      description: DTO for updating Order
+      properties:
+        orderNumber:
+          description: Human-facing order number
+          maxLength: 32
+          minLength: 3
+          pattern: "^ORD-[0-9]+$"
+        status: {}
+        amount:
+          maximum: 1000000
+          minimum: 0
+        urgent: {}
+        dueOn:
+          format: date
+        placedAt:
+          format: date-time
+        website:
+          format: uri
+    OrderPage:
+      description: One page of Order
+      properties:
+        content:
+          description: "The rows of this page, in the query's order"
+          items:
+            $ref: "#/components/schemas/Order"
+        totalElements:
+          format: int64
+          description: The number of rows the query matched
+        totalPages:
+          format: int32
+          description: The number of pages of size those rows fill
+        size:
+          format: int32
+          description: The page size
+        number:
+          format: int32
+          description: The zero-based page index
+        first:
+          description: Whether this is the first page
+        last:
+          description: Whether no page follows this one
+      required:
+      - content
+      - first
+      - last
+      - number
+      - size
+      - totalElements
+      - totalPages
