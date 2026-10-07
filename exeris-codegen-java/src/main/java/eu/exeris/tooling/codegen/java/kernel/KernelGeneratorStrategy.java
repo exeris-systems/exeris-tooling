@@ -18,6 +18,10 @@ import java.util.List;
  *   <li>{@link KernelActionStreamHandlerGenerator} — per-action SSE stream handlers against the same streaming SPI (one per {@code @Action(streaming=true)}; ADR-044 Slice 2)</li>
  *   <li>{@link KernelServiceGenerator} — POJO domain services (delegates to {@code *Repository}; no direct Kernel API surface)</li>
  *   <li>{@link KernelRepositoryGenerator} — repositories against {@code spi.persistence.{TransactionalExecutor, PersistenceStatement, QueryResult, RowCursor}}</li>
+ *   <li>{@link KernelErrorGenerator} — the typed exceptions the repository raises and the handler
+ *       maps to a status: {@code <Entity>NotFoundException} for every entity, and the version
+ *       conflict, tenant mismatch and shared-scope mismatch exceptions where the entity has a
+ *       version, an owner or a shared scope</li>
  *   <li>{@link KernelListQueryGenerator} — the list route's {@code <Entity>ListQuery} and
  *       {@code <Entity>Page} records (plain JDK types; no kernel API surface)</li>
  *   <li>{@link KernelEventGenerator} — domain-event publisher against {@code spi.events.{EventEngine, EventDescriptor, EventPayload, EventTypeSpec}}</li>
@@ -42,13 +46,17 @@ import java.util.List;
  *
  * <h2>Project-wide (invoked separately by {@code CodegenPipeline})</h2>
  * <p>{@link KernelApplicationGenerator} is <b>not</b> part of the
- * per-entity strategy — it emits two project-wide files
- * ({@code Application.java} + {@code RuntimeComponents.java} +
- * {@code RuntimeLifecycle.java}) and
- * therefore needs the full domain list, not a single
- * {@link DomainMetadata}. {@code CodegenPipeline} invokes it explicitly
- * after the per-entity loop via
- * {@link KernelApplicationGenerator#generateAll(java.util.List, String)}.
+ * per-entity strategy: its files are project-wide and need the full domain list, not a single
+ * {@link DomainMetadata}. {@code CodegenPipeline} invokes it after the per-entity loop, through
+ * {@link KernelApplicationGenerator#generateAll(java.util.List, String, boolean)} for
+ * {@code Application.java}, {@code RuntimeComponents.java} and {@code RuntimeLifecycle.java}, and
+ * through {@link KernelApplicationGenerator#generateForeignKeys(java.util.List)} for the foreign-key
+ * migration. The pipeline also writes {@code cap-manifest.json} itself, and drives the generated-test
+ * generators into a separate output root.
+ *
+ * <p>Which generator writes which path, for the registered set and for every writer outside it, is
+ * the generator catalogue: {@code META-INF/exeris/generator-catalogue.json} and
+ * {@code docs/generators.md} (ADR-097).
  *
  * <p>The canonical SPI/CORE wiring shape for the emitted artifacts is the
  * working community benchmark app in
