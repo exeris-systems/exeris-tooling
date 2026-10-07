@@ -21,7 +21,7 @@ import eu.exeris.sdk.sourcemodel.ast.CapabilityModuleMetadata;
  * @param qualifiedName its fully-qualified name — the stable graph node id
  * @param module        the SDK capability metadata (provides/requires/lifecycleOwner)
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record CapabilityModuleDescriptor(
@@ -30,7 +30,11 @@ public record CapabilityModuleDescriptor(
         String qualifiedName,
         CapabilityModuleMetadata module
 ) {
-    /** Never-null view of the module body (an absent body reads as {@link CapabilityModuleMetadata#empty()}). */
+    /**
+     * Returns the module body, never {@code null}.
+     *
+     * @return {@code module}, or {@link CapabilityModuleMetadata#empty()} when it is absent
+     */
     public CapabilityModuleMetadata moduleOrEmpty() {
         return module != null ? module : CapabilityModuleMetadata.empty();
     }

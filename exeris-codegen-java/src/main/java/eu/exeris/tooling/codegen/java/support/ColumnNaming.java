@@ -8,7 +8,7 @@ import java.util.Locale;
  * <p>The schema, the repository's SQL and the list route's sort and filter whitelist all name the
  * same columns, so they derive the names here and nowhere else.
  *
- * @since 0.9.0
+ * @since 0.9
  */
 public final class ColumnNaming {
 

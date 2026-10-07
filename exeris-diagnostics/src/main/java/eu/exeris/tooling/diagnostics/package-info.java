@@ -6,6 +6,6 @@
  * beyond {@code java.lang}, so a dependency on it adds nothing else to any module's dependency
  * set.
  *
- * @since 0.9.0
+ * @since 0.9
  */
 package eu.exeris.tooling.diagnostics;

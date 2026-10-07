@@ -17,7 +17,7 @@ import java.util.Objects;
  * only for such a field. This class applies the same rule on the Java side, so the list route
  * accepts an enum filter for exactly the fields the front sends one for.
  *
- * @since 0.9.0
+ * @since 0.9
  */
 public final class EnumTypes {
 

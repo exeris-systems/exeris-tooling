@@ -56,8 +56,7 @@ import java.util.stream.Stream;
  * generator set or the {@link ObjectMapper}. Production callers should use
  * {@link #createDefault()}.
  *
- * @author Exeris Team
- * @since 0.1.0
+ * @since 0.1
  */
 public final class CodegenPipeline {
 
@@ -97,6 +96,14 @@ public final class CodegenPipeline {
     private final KernelRepositoryTestGenerator repositoryTestGenerator = new KernelRepositoryTestGenerator();
     private final KernelSagaTestGenerator sagaTestGenerator = new KernelSagaTestGenerator();
 
+    /**
+     * Creates a pipeline over the given generators and metadata reader.
+     *
+     * @param registry             the per-entity generators to dispatch to
+     * @param applicationGenerator the generator of the application-bootstrap artefacts
+     * @param mapper               the JSON mapper that reads processor-emitted metadata
+     * @throws NullPointerException if any argument is {@code null}
+     */
     public CodegenPipeline(GeneratorRegistry registry,
                            KernelApplicationGenerator applicationGenerator,
                            ObjectMapper mapper) {
@@ -109,6 +116,8 @@ public final class CodegenPipeline {
      * Default wiring: the Kernel SPI-aligned strategy + the bootstrap
      * generator + a Jackson mapper configured to tolerate forward-compatible
      * metadata fields and the {@code java.time} module.
+     *
+     * @return a pipeline with the default kernel generator roster
      */
     public static CodegenPipeline createDefault() {
         return new CodegenPipeline(
@@ -129,7 +138,8 @@ public final class CodegenPipeline {
      * @param metadataDir         directory holding processor-emitted JSON
      * @param outputDir           target for generated sources (created if absent)
      * @param explicitBasePackage caller-supplied base package, or {@code null}
-     *                            to auto-detect it (see {@link #autoDetectBasePackage(List)})
+     *                            to auto-detect it from the first domain in qualified-name order
+     * @return the number of files written
      * @throws IOException if metadata or output cannot be read/written
      * @throws eu.exeris.tooling.codegen.core.capability.CapabilityGraphException
      *         (unchecked) if the capability graph cannot be resolved — an
@@ -149,7 +159,16 @@ public final class CodegenPipeline {
      * {@link #run(Path, Path, String, boolean, boolean)} for the full contract
      * and the T18(a) deferred alternative.
      *
-     * @since 0.6.0
+     * @param metadataDir         directory holding processor-emitted JSON
+     * @param outputDir           target for generated sources (created if absent)
+     * @param explicitBasePackage caller-supplied base package, or {@code null}
+     *                            to auto-detect from the first domain
+     * @param allowEmpty          when {@code true}, a run that loads zero
+     *                            {@code @ExerisDomain} entities may prune a
+     *                            previously-generated tree
+     * @return the number of files written
+     * @throws IOException if metadata or output cannot be read/written
+     * @since 0.6
      */
     public int run(Path metadataDir, Path outputDir, String explicitBasePackage, boolean allowEmpty)
             throws IOException {
@@ -167,7 +186,7 @@ public final class CodegenPipeline {
      * @param metadataDir         directory holding processor-emitted JSON
      * @param outputDir           target for generated sources (created if absent)
      * @param explicitBasePackage caller-supplied base package, or {@code null}
-     *                            to auto-detect it (see {@link #autoDetectBasePackage(List)})
+     *                            to auto-detect it from the first domain in qualified-name order
      * @param allowEmpty          when {@code true}, a run that loads zero
      *                            {@code @ExerisDomain} entities is permitted to
      *                            prune a previously-generated tree — the explicit
@@ -197,7 +216,7 @@ public final class CodegenPipeline {
      * @throws eu.exeris.tooling.codegen.java.kernel.UnpersistableFieldTypeException
      *         (unchecked, {@code EXT-GEN-3003}) if an entity has a field whose type the generated
      *         repository cannot store and read back; nothing is written
-     * @since 0.6.0
+     * @since 0.6
      */
     public int run(Path metadataDir, Path outputDir, String explicitBasePackage, boolean allowEmpty,
                    boolean deferCapabilityFailure) throws IOException {
@@ -529,7 +548,7 @@ public final class CodegenPipeline {
      *                            hangs off it)
      * @return the number of test files written
      * @throws IOException if metadata or output cannot be read/written
-     * @since 0.7.0
+     * @since 0.7
      */
     public int runTests(Path metadataDir, Path testOutputDir, String explicitBasePackage)
             throws IOException {
@@ -630,7 +649,7 @@ public final class CodegenPipeline {
      * @throws eu.exeris.tooling.codegen.core.capability.CapabilityGraphException
      *         (unchecked) on an unsatisfied non-optional {@code @Requires},
      *         version mismatch, or dependency cycle
-     * @since 0.6.0
+     * @since 0.6
      */
     public int validateCapabilities(Path metadataDir) throws IOException {
         Objects.requireNonNull(metadataDir, "metadataDir");
@@ -678,7 +697,7 @@ public final class CodegenPipeline {
      * @throws IOException if metadata cannot be read
      * @throws eu.exeris.tooling.codegen.core.capability.CapTierWallException (unchecked)
      *         when any class crosses a forbidden boundary
-     * @since 0.7.0
+     * @since 0.7
      */
     public int verifyCapTierWall(Path classesDir, Path metadataDir) throws IOException {
         Objects.requireNonNull(classesDir, "classesDir");

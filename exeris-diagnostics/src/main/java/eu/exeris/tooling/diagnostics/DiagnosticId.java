@@ -47,7 +47,7 @@ package eu.exeris.tooling.diagnostics;
  * <p>{@code docs/diagnostics.md} lists every identifier with what to do about it; a test keeps
  * that table and this registry in step.
  *
- * @since 0.9.0
+ * @since 0.9
  */
 public enum DiagnosticId {
 
@@ -309,12 +309,20 @@ public enum DiagnosticId {
         this.meaning = meaning;
     }
 
-    /** The identifier as printed, e.g. {@code EXT-PROC-1001}. */
+    /**
+     * Returns the stable identifier as it is printed in a message, e.g. {@code EXT-PROC-1001}.
+     *
+     * @return the identifier, in the form {@code EXT-<STAGE>-<nnnn>}
+     */
     public String code() {
         return code;
     }
 
-    /** One line saying what the diagnostic means. */
+    /**
+     * Returns one line saying what the diagnostic means, independent of the element it is reported on.
+     *
+     * @return the one-line meaning of this identifier
+     */
     public String meaning() {
         return meaning;
     }
@@ -323,6 +331,7 @@ public enum DiagnosticId {
      * The message as printed: {@code [Exeris] <code>: <message>}.
      *
      * @param message the human-readable text; it follows the identifier unchanged
+     * @return {@link #PREFIX}, the identifier, a colon and a space, then {@code message}
      */
     public String format(String message) {
         return PREFIX + code + ": " + message;

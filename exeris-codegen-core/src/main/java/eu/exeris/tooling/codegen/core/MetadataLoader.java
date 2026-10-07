@@ -21,13 +21,12 @@ import java.util.stream.Stream;
  * within the build output (typically {@code target/classes/}).
  *
  * <h2>Usage</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * var loader = new MetadataLoader(Path.of("target/classes"));
  * List<DomainMetadata> domains = loader.loadAll();
- * }</pre>
+ * }
  *
- * @author Exeris Team
- * @since 0.1.0
+ * @since 0.1
  */
 public final class MetadataLoader {
 

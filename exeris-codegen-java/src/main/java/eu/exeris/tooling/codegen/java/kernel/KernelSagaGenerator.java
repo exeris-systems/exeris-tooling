@@ -27,7 +27,7 @@ import java.util.stream.Collectors;
  * FlowDefinitionBuilder, FlowExecutionPlan, FlowContext, FlowOutcome}}).
  * The emitted class is a <b>skeleton</b> — step actions and their
  * compensations default to logging stubs that return
- * {@link eu.exeris.kernel.spi.flow.model.FlowOutcome#CONTINUE};
+ * {@code eu.exeris.kernel.spi.flow.model.FlowOutcome#CONTINUE};
  * downstream consumers extend the generated class and override the
  * {@code protected} step methods to supply real business logic.
  * Canonical wiring shape mirrors the working community benchmark
@@ -37,7 +37,7 @@ import java.util.stream.Collectors;
  * Emitted skeleton contract:
  * <ul>
  *   <li>{@code public synchronized FlowExecutionPlan initialize()} —
- *       lazy-builds and compiles the {@link
+ *       lazy-builds and compiles the {@code
  *       eu.exeris.kernel.spi.flow.model.FlowDefinition} via
  *       {@code flowEngine.plans().newDefinition(NAME).step(...).step(...)
  *       .transition(...).build()}; idempotent.</li>
@@ -104,8 +104,7 @@ import java.util.stream.Collectors;
  *
  * @implNote Emission is JavaPoet-based (ADR-015).
  *
- * @author Exeris Team
- * @since 0.1.0
+ * @since 0.1
  */
 public class KernelSagaGenerator implements KernelArtifactGenerator {
 
@@ -129,6 +128,14 @@ public class KernelSagaGenerator implements KernelArtifactGenerator {
      * {@code @Saga.version} and of {@code SagaMetadata.version}.
      */
     private static final int INITIAL_VERSION = 1;
+
+    /**
+     * Creates the generator. It keeps no per-domain state, so one instance serves every domain
+     * in a build.
+     */
+    public KernelSagaGenerator() {
+        // no state to initialise
+    }
 
     @Override
     public GeneratedFile generate(DomainMetadata metadata) {

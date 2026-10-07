@@ -57,7 +57,7 @@ import java.util.List;
  * {@code UUID.randomUUID()}, and the finder order is the repository's.
  *
  * @implNote Emission is JavaPoet-based (ADR-015).
- * @since 0.7.0
+ * @since 0.7
  */
 public final class KernelServiceTestGenerator {
 
@@ -79,7 +79,21 @@ public final class KernelServiceTestGenerator {
     private static final ClassName LIST = ClassName.get("java.util", "List");
     private static final ClassName OPTIONAL = ClassName.get("java.util", "Optional");
 
-    /** @param metadata the entity whose service is under test */
+    /**
+     * Creates the generator. It keeps no per-domain state, so one instance serves every domain
+     * in a build.
+     */
+    public KernelServiceTestGenerator() {
+        // no state to initialise
+    }
+
+    /**
+     * Emits the JUnit 5 test for the entity's generated service.
+     *
+     * @param metadata the entity whose service is under test
+     * @return the emitted test; never {@code null}
+     * @throws IllegalArgumentException if the entity's package does not end in {@code .domain}
+     */
     public GeneratedFile generate(DomainMetadata metadata) {
         String entity = metadata.entityName();
         String domainPackage = metadata.packageName();
