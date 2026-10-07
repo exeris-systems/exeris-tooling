@@ -2335,7 +2335,8 @@ an entity that moves, the repository's SQL, the `CREATE TABLE`, the migration fi
 it, a UNIVERSE entity's shared-scope migration and a graph-sync node descriptor all name the new
 table. On an existing database that table does not exist yet.
 
-The processor warns once for each such entity, with the value that keeps the old name:
+In 0.9.0 the processor warned once for each such entity, with the value that keeps the old name
+(0.10.0 retires the warning; see [`EXT-PROC-1104` is retired](#ext-proc-1104-is-retired)):
 
     warning: [Exeris] EXT-PROC-1104: Colony: default table changes from 'colonys' to 'colonies'; set @ExerisDomain(tableName = "colonys") to keep the existing table and migration
 
@@ -2343,8 +2344,8 @@ To keep the existing table and the migration that created it, set the attribute:
 
     @ExerisDomain(module = "empire", path = "/colonies", tableName = "colonys")
 
-The processor now reads `@ExerisDomain.tableName` (SDK 0.12.0) into `DomainMetadata.tableName`,
-and an entity that sets it draws no warning. The value is trimmed and lower-cased. It is also how
+The processor reads `@ExerisDomain.tableName` (SDK 0.12.0) into `DomainMetadata.tableName`; in
+0.9.0 an entity that set it drew no warning. The value is trimmed and lower-cased. It is also how
 an irregular or pre-existing table is named (`tableName = "people"`). A blank value derives the
 name.
 
@@ -2829,6 +2830,14 @@ nothing from 0.10.0.
 `-Aexeris.*` processor option or a diagnostic identifier is unaffected. Generated code changes in one
 Javadoc line: the generated `Application` names the starter as `eu.exeris:exeris-app-starter`.
 `@exeris/codegen-ts` keeps its npm name and still versions in lockstep with the Maven artefacts.
+
+### `EXT-PROC-1104` is retired
+
+The processor prints no warning for an entity whose derived default table differs from the
+snake-cased class name plus "s" (0.9.0's `EXT-PROC-1104`, T6). Nothing changes in generated code or
+in the table an entity gets: `effectiveTableName()` names it, and `@ExerisDomain(tableName = …)`
+overrides it, as in 0.9.0. A `tableName` set only to silence the warning can stay. The identifier is
+listed under *Retired identifiers* in [`diagnostics.md`](diagnostics.md) and is never reused.
 
 ### The auto-detected base package no longer depends on the filesystem (`EXT-GEN-3104`)
 

@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<!DOCTYPE suppressions PUBLIC
+        "-//Checkstyle//DTD SuppressionFilter Configuration 1.2//EN"
+        "https://checkstyle.org/dtds/suppressions_1_2.dtd">
+<!--
+    File-level exemptions from config/checkstyle/checkstyle.xml. Each entry names the file and the
+    check, and carries a comment stating why the rule does not fit that file.
+-->
+<suppressions>
+</suppressions>

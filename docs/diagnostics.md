@@ -73,7 +73,6 @@ Printed by `javac` while it compiles your sources. `-Aexeris.strict=true` enable
 | `EXT-PROC-1101` | `@ExerisDomain.tenantScoped` is deprecated for removal; it is read as a fallback. | Replace it with the `dataScope` the message names. |
 | `EXT-PROC-1102` | A deprecated `@Validation` attribute is set; it is read as a fallback. | Move to the replacement the message names (see `MIGRATION.md` in exeris-sdk). |
 | `EXT-PROC-1103` | `@Validation.validateOn` holds a value other than `CREATE` or `UPDATE`, which is dropped. | Use `@Field.inCreate` / `@Field.inUpdate` instead. |
-| `EXT-PROC-1104` | An entity's derived default table name differs from the plain plural of its class name. | To keep an existing table, set the `tableName` the message names; otherwise migrate to the new name. |
 | `EXT-PROC-1105` | `@SharedScope` is on an entity that is not `DataScope.UNIVERSE`, so it has no effect. | Declare `dataScope = DataScope.UNIVERSE`, or remove the marker. |
 | `EXT-PROC-1106` | `@Bind` with `source = STATIC` or `NONE` carries attributes that are ignored. | Put authored content in `@Block(props)`, or bind with `source = ENTITY`, `PROJECTION` or `ACTION`. |
 | `EXT-PROC-1107` | `@Action(streaming = true)`: the generated stream route does not run the action. | Expect keep-alives only on that route; the per-action stream driver is tracked in the ROADMAP (EV1-stream). |
@@ -165,4 +164,6 @@ with status 1.
 A retired identifier is no longer printed, and its number is never allocated again. Retiring one
 moves its row here; `DiagnosticIdTest` fails if a registered identifier is listed in this section.
 
-None yet.
+| ID | Meaning | Retired in |
+|---|---|---|
+| `EXT-PROC-1104` | An entity's derived default table name differs from the plain plural of its class name. | 0.10.0. The default table has followed the SDK plural since 0.9.0; set `tableName` to name any other table. |
