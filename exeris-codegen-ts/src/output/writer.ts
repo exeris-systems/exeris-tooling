@@ -1,6 +1,6 @@
 /**
  * Writes a run's files into the output tree, deciding per file whether the tool may replace what is
- * on disk.
+ * on disk, and which files a previous run wrote it may delete.
  *
  * Ownership is the generated-output manifest (`.exeris-codegen-manifest`): a path the previous run
  * recorded is the tool's, and any other existing file is not. The rule:
@@ -8,22 +8,35 @@
  * - a file that does not exist is written, and becomes owned;
  * - an owned file is rewritten when its content differs, so a regenerated file never goes stale;
  * - an owned seed file (`overwritable: false`: `package.json`, `app.routes.ts`, `environment.ts`, …,
- *   the files a consumer is expected to edit) is written only when absent and kept as it is
- *   otherwise;
+ *   the files a consumer is expected to edit) is written only when absent and kept otherwise;
  * - an existing file the manifest does not record (hand-written, or in a directory generated into
- *   for the first time) is never replaced, and does not become owned.
+ *   for the first time) is never replaced, and does not become owned;
+ * - a manifest without the ownership line (the 0.9.x format) also recorded files skipped
+ *   because they existed, so an entry of it is owned only when the file on disk already holds what
+ *   this run produces, or is a seed; an entry whose file differs is treated as not owned;
+ * - a symbolic link at a generated path, or a path reached through a link below the output root, is
+ *   never written through; it is treated as not owned, and `overwrite` replaces a link at the path
+ *   itself, never its target.
  *
  * `overwrite` replaces every differing file, seed or unowned, and takes ownership of what it writes.
  *
- * Nothing outside the output tree is read or written, so a file a consumer has moved out of the tree
- * to own it is out of reach; and a file the manifest no longer records is never touched again.
- * Orphans, the owned files this run no longer produces, are pruned by
- * {@link pruneOrphansAndWriteManifest}, which is called here with the paths this run owns.
+ * An owned file this run no longer produces is deleted, except a seed file or a link, which is
+ * dropped from the manifest and left in place ({@link planPrune}). Nothing outside the output tree is
+ * written or deleted, so a file a consumer has moved out of the tree to own it is out of reach.
  */
 
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { canonicalManifestPath, pruneOrphansAndWriteManifest, readManifest } from './manifest.js';
+import {
+  canonicalManifestPath,
+  lstatOrNull,
+  planPrune,
+  pruneOrphansAndWriteManifest,
+  readManifestState,
+  throughSymlink,
+  writeManifest,
+  type PrunePlan,
+} from './manifest.js';
 
 /** A file to write, relative to the output root. */
 export interface FileToWrite {
@@ -53,6 +66,12 @@ export interface PlannedWrite {
   owned: boolean;
 }
 
+export interface WriteOptions {
+  overwrite: boolean;
+  /** Seed paths in canonical form: an orphaned seed is released, never deleted. */
+  seedPaths?: ReadonlySet<string>;
+}
+
 export interface WriteResult {
   plan: PlannedWrite[];
   /** Owned files a previous run wrote and this run no longer produces, deleted. */
@@ -65,43 +84,86 @@ export function planWrites(
   files: readonly FileToWrite[],
   options: { overwrite: boolean },
 ): PlannedWrite[] {
-  const owned = readManifest(outputPath);
-  return files.map((file) => {
-    const full = join(outputPath, file.path);
-    if (!existsSync(full)) return { path: file.path, action: 'create', owned: true };
+  const manifest = readManifestState(outputPath);
+  return files.map((file): PlannedWrite => {
+    const result = (action: WriteAction, owned: boolean): PlannedWrite => ({ path: file.path, action, owned });
 
+    // Nothing is written through a link below the root, --overwrite included: the link may lead
+    // anywhere.
+    if (throughSymlink(outputPath, file.path)) return result('skip-unowned', false);
+
+    const stat = lstatOrNull(join(outputPath, file.path));
+    if (stat === null) return result('create', true);
+    if (stat.isSymbolicLink()) return options.overwrite ? result('rewrite', true) : result('skip-unowned', false);
+    if (!stat.isFile()) return result('skip-unowned', false);
+
+    const same = readFileSync(join(outputPath, file.path)).equals(Buffer.from(file.content));
+    const seed = file.overwritable === false;
     const canonical = canonicalManifestPath(file.path);
-    const isOwned = canonical !== null && owned.has(canonical);
-    const same = statSync(full).isFile() && readFileSync(full).equals(Buffer.from(file.content));
+    const listed = canonical !== null && manifest.entries.has(canonical);
+    // A legacy entry proves ownership only when the file is what this run produces, or is a seed
+    // (kept either way).
+    const owned = listed && (!manifest.legacy || same || seed);
 
-    if (!isOwned && !options.overwrite) return { path: file.path, action: 'skip-unowned', owned: false };
-    if (same) return { path: file.path, action: 'unchanged', owned: true };
-    if (isOwned && file.overwritable === false && !options.overwrite) {
-      return { path: file.path, action: 'keep-seed', owned: true };
-    }
-    return { path: file.path, action: 'rewrite', owned: true };
+    if (options.overwrite) return same ? result('unchanged', true) : result('rewrite', true);
+    if (!owned) return result('skip-unowned', false);
+    if (same) return result('unchanged', true);
+    if (seed) return result('keep-seed', true);
+    return result('rewrite', true);
   });
+}
+
+/** The orphans of a run that would write `files`: what is deleted, and what is only released. */
+export function planOrphans(
+  outputPath: string,
+  files: readonly FileToWrite[],
+  seedPaths?: ReadonlySet<string>,
+): PrunePlan {
+  return planPrune(outputPath, files.map((file) => file.path), seedPaths);
 }
 
 /**
  * Writes `files` under `outputPath` by {@link planWrites}, prunes orphans and records the manifest
  * of the paths this run owns.
+ *
+ * If a write fails, nothing is pruned and the error is rethrown; the manifest records the previous
+ * run's entries plus the files written so far, so a file the run wrote stays owned (a legacy
+ * manifest is left unchanged).
  */
 export function writeGeneratedFiles(
   outputPath: string,
   files: readonly FileToWrite[],
-  options: { overwrite: boolean },
+  options: WriteOptions,
 ): WriteResult {
   const plan = planWrites(outputPath, files, options);
+  const previous = readManifestState(outputPath);
+  const written: string[] = [];
 
-  plan.forEach((entry, i) => {
-    if (entry.action !== 'create' && entry.action !== 'rewrite') return;
-    const full = join(outputPath, entry.path);
-    mkdirSync(dirname(full), { recursive: true });
-    writeFileSync(full, files[i].content);
-  });
+  try {
+    plan.forEach((entry, i) => {
+      if (entry.action !== 'create' && entry.action !== 'rewrite') return;
+      const full = join(outputPath, entry.path);
+      // A link at the path is replaced, never written through (planWrites rewrites one only under
+      // --overwrite).
+      if (lstatOrNull(full)?.isSymbolicLink()) unlinkSync(full);
+      mkdirSync(dirname(full), { recursive: true });
+      writeFileSync(full, files[i].content);
+      written.push(entry.path);
+    });
+  } catch (error) {
+    // A legacy manifest is left as it is: rewriting it in the ownership format would turn its
+    // unproven entries into owned ones.
+    if (!previous.legacy) writeManifest(outputPath, [...previous.entries, ...written]);
+    throw error;
+  }
 
-  const ownedPaths = plan.filter((entry) => entry.owned).map((entry) => entry.path);
-  const pruned = pruneOrphansAndWriteManifest(outputPath, ownedPaths);
+  const pruned = pruneOrphansAndWriteManifest(
+    outputPath,
+    files.map((file) => file.path),
+    {
+      ownedPaths: plan.filter((entry) => entry.owned).map((entry) => entry.path),
+      seedPaths: options.seedPaths,
+    },
+  );
   return { plan, pruned };
 }

@@ -14,13 +14,12 @@
 import { Command } from 'commander';
 import pc from 'picocolors';
 import { writeFileSync, existsSync, readFileSync } from 'node:fs';
-import { join, basename, resolve } from 'node:path';
-import { pruneOrphansAndWriteManifest, MANIFEST_NAME } from './output/manifest.js';
-import { planWrites, writeGeneratedFiles, type WriteAction } from './output/writer.js';
+import { basename, resolve } from 'node:path';
+import { planOrphans, planWrites, writeGeneratedFiles, type WriteAction } from './output/writer.js';
 import { loadConfig, cliOverrides, initConfig, type GeneratorConfig } from './config.js';
 import { findMetadataFiles, loadMetadataFamilies } from './models/metadata-files.js';
 import { loadPeerContracts, type PeerContract } from './peers/peer-contract.js';
-import { buildGeneratedFiles } from './orchestrator.js';
+import { buildGeneratedFiles, SEED_PATHS } from './orchestrator.js';
 
 import { getStrategy } from './core/backend-strategy.js';
 
@@ -179,17 +178,17 @@ async function runGenerate(config: GeneratorConfig): Promise<void> {
   const metadataFiles = findMetadataFiles(inputPath);
 
   if (metadataFiles.length === 0 && peers.length === 0) {
-    console.error(pc.yellow('No metadata files found in'), inputPath);
-    console.log(pc.dim('Make sure to run Maven compile first to generate metadata.'));
-    // T13 (parity with the Java pipeline): "no entities" is a valid output
-    // state — every @ExerisDomain was removed. If a previous run owned this
-    // tree (a manifest is present), this run must own it too and prune the
-    // orphans rather than leaving a stale tree behind. A never-generated dir
-    // (no manifest) is left untouched. Skipped under --dry-run (no mutation).
-    if (!config.dryRun && existsSync(join(outputPath, MANIFEST_NAME))) {
-      const pruned = pruneOrphansAndWriteManifest(outputPath, []);
-      if (pruned > 0) console.log(pc.yellow('Pruned:'), pruned, 'orphaned file(s)');
+    // A run with no input deletes nothing. A missing or empty metadata directory is far more often
+    // a wrong --input, or a `mvn clean` that has not been followed by a compile, than an app whose
+    // every @ExerisDomain was removed, and pruning on it would delete every generated file and
+    // release every seed. The output tree and its manifest are left as they are.
+    if (!existsSync(inputPath)) {
+      console.error(pc.red('Input path does not exist:'), inputPath);
+      console.error(pc.dim('Nothing was generated or deleted. Run Maven compile first, or pass --input.'));
+      process.exit(1);
     }
+    console.error(pc.yellow('No metadata files found in'), inputPath);
+    console.log(pc.dim('Nothing was generated or deleted. Make sure to run Maven compile first to generate metadata.'));
     return;
   }
 
@@ -220,11 +219,22 @@ async function runGenerate(config: GeneratorConfig): Promise<void> {
     for (const entry of planWrites(outputPath, generatedFiles, { overwrite: config.overwrite })) {
       console.log(pc.dim(`  ${DRY_RUN_LABEL[entry.action]}`), entry.path);
     }
+    const orphans = planOrphans(outputPath, generatedFiles, SEED_PATHS);
+    for (const path of orphans.prune) {
+      console.log(pc.dim('  Would prune:'), path);
+    }
+    for (const path of orphans.release) {
+      console.log(pc.dim('  Would release (kept, no longer generated):'), path);
+    }
   } else {
     // Ownership is the previous run's manifest (output/writer.ts): an owned file is rewritten when it
     // differs, an owned seed file is kept, and an existing file the manifest does not record is
-    // replaced only under --overwrite. Orphans are pruned and this run's manifest recorded.
-    const { plan, pruned } = writeGeneratedFiles(outputPath, generatedFiles, { overwrite: config.overwrite });
+    // replaced only under --overwrite. Orphans are pruned, orphaned seeds released, and this run's
+    // manifest recorded.
+    const { plan, pruned } = writeGeneratedFiles(outputPath, generatedFiles, {
+      overwrite: config.overwrite,
+      seedPaths: SEED_PATHS,
+    });
     const count = (action: WriteAction): number => plan.filter((entry) => entry.action === action).length;
 
     for (const entry of plan) {

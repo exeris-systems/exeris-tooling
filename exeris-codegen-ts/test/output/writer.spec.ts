@@ -4,16 +4,18 @@
  * Pinned: an owned file is rewritten when it differs, without `--overwrite`; an owned seed file
  * (`overwritable: false`) is kept; an existing file the manifest does not record is neither
  * replaced nor recorded, unless `--overwrite`; an owned file the run no longer produces is pruned.
- * The last describe block runs the rule over the orchestrator's real output for `@View` pages.
+ * A manifest without the ownership line proves ownership only for a file that already matches;
+ * seed files are released, never deleted; nothing is written or deleted through a symbolic link.
+ * The orchestrator-backed blocks run the rule over real output for `@View` pages and the scaffold.
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { planWrites, writeGeneratedFiles, type FileToWrite } from '../../src/output/writer.js';
-import { MANIFEST_NAME, readManifest } from '../../src/output/manifest.js';
-import { buildGeneratedFiles } from '../../src/orchestrator.js';
+import { planOrphans, planWrites, writeGeneratedFiles, type FileToWrite } from '../../src/output/writer.js';
+import { MANIFEST_NAME, MANIFEST_OWNERSHIP_LINE, readManifest, readManifestState } from '../../src/output/manifest.js';
+import { buildGeneratedFiles, SEED_PATHS } from '../../src/orchestrator.js';
 import { DEFAULT_CONFIG, type GeneratorConfig } from '../../src/config.js';
 import { ViewMetadataSchema, type ViewMetadata } from '../../src/models/domain-model.js';
 
@@ -135,7 +137,7 @@ describe('writeGeneratedFiles', () => {
 
   it('reads an owned path recorded with a ./ prefix as the same file', () => {
     onDisk('package.json', 'old');
-    writeFileSync(join(out, MANIFEST_NAME), '# header\n./package.json\n');
+    writeFileSync(join(out, MANIFEST_NAME), '# header\n# ownership: written\n./package.json\n');
 
     const { plan } = writeGeneratedFiles(out, [{ path: 'package.json', content: 'new' }], keep);
 
@@ -202,5 +204,206 @@ describe('regenerating @View pages', () => {
 
     expect(read('pages/custom.component.ts')).toBe('hand-written');
     expect(existsSync(join(out, 'pages/about.component.ts'))).toBe(false);
+  });
+});
+
+/** A manifest in the format that recorded every produced path, skipped ones included. */
+function legacyManifest(...entries: string[]): void {
+  writeFileSync(
+    join(out, MANIFEST_NAME),
+    '# Exeris Tooling generated-output manifest - DO NOT EDIT MANUALLY\n' + entries.map((e) => `${e}\n`).join(''),
+  );
+}
+
+describe('a manifest without the ownership line', () => {
+  it('does not take over a listed file whose content differs, and neither records nor prunes it', () => {
+    onDisk('pages/about.component.ts', 'hand-written');
+    legacyManifest('pages/about.component.ts');
+
+    const plan = planWrites(out, [{ path: 'pages/about.component.ts', content: 'generated' }], keep);
+    expect(plan[0]).toEqual({ path: 'pages/about.component.ts', action: 'skip-unowned', owned: false });
+
+    const { pruned } = writeGeneratedFiles(out, [{ path: 'pages/about.component.ts', content: 'generated' }], keep);
+
+    expect(pruned).toBe(0);
+    expect(read('pages/about.component.ts')).toBe('hand-written');
+    expect(readManifest(out).has('pages/about.component.ts')).toBe(false);
+  });
+
+  it('adopts a listed file whose content is what the run produces', () => {
+    onDisk('pages/about.component.ts', 'generated');
+    legacyManifest('pages/about.component.ts');
+
+    const { plan } = writeGeneratedFiles(out, [{ path: 'pages/about.component.ts', content: 'generated' }], keep);
+
+    expect(plan[0]).toEqual({ path: 'pages/about.component.ts', action: 'unchanged', owned: true });
+    expect(readManifest(out).has('pages/about.component.ts')).toBe(true);
+  });
+
+  it('keeps a listed seed file and keeps it owned', () => {
+    onDisk('src/styles.css', 'edited');
+    legacyManifest('src/styles.css');
+
+    const { plan } = writeGeneratedFiles(out, [{ path: 'src/styles.css', content: 'generated', overwritable: false }], keep);
+
+    expect(plan[0].action).toBe('keep-seed');
+    expect(read('src/styles.css')).toBe('edited');
+    expect(readManifest(out).has('src/styles.css')).toBe(true);
+  });
+
+  it('is rewritten in the ownership format', () => {
+    legacyManifest('pages/a.ts');
+    writeGeneratedFiles(out, [{ path: 'pages/a.ts', content: 'A' }], keep);
+
+    expect(readManifestState(out).legacy).toBe(false);
+    expect(read(MANIFEST_NAME).split('\n')[1]).toBe(MANIFEST_OWNERSHIP_LINE);
+  });
+
+  it('makes an adopted file owned on the next run', () => {
+    onDisk('pages/a.ts', 'A1');
+    legacyManifest('pages/a.ts');
+    writeGeneratedFiles(out, [{ path: 'pages/a.ts', content: 'A1' }], keep);
+
+    const { plan } = writeGeneratedFiles(out, [{ path: 'pages/a.ts', content: 'A2' }], keep);
+
+    expect(plan[0].action).toBe('rewrite');
+    expect(read('pages/a.ts')).toBe('A2');
+  });
+});
+
+describe('seed files no longer produced', () => {
+  it('releases an orphaned seed: kept on disk, dropped from the manifest', () => {
+    const seed: FileToWrite = { path: 'package.json', content: 'generated', overwritable: false };
+    writeGeneratedFiles(out, [seed, { path: 'pages/a.ts', content: 'A' }], keep);
+
+    expect(planOrphans(out, [], SEED_PATHS)).toEqual({ prune: ['pages/a.ts'], release: ['package.json'] });
+    const { pruned } = writeGeneratedFiles(out, [], { ...keep, seedPaths: SEED_PATHS });
+
+    expect(pruned).toBe(1);
+    expect(read('package.json')).toBe('generated');
+    expect(readManifest(out).size).toBe(0);
+  });
+
+  it('keeps every scaffold seed, edited or not, when the scaffold is switched off', () => {
+    const page = ViewMetadataSchema.parse({
+      name: 'About',
+      route: 'about',
+      regions: [{ slot: 'main', components: [{ type: 'HERO', binding: { source: 'STATIC' }, props: 'Hi' }] }],
+    });
+    const scaffolded = buildGeneratedFiles([], [], DEFAULT_CONFIG, [page]);
+    writeGeneratedFiles(out, scaffolded, { ...keep, seedPaths: SEED_PATHS });
+    onDisk('package.json', 'edited');
+    onDisk('src/app/app.routes.ts', 'edited');
+    const seeds = scaffolded.filter((f) => f.overwritable === false).map((f) => f.path);
+    const before = Object.fromEntries(seeds.map((p) => [p, read(p)]));
+
+    const { pruned } = writeGeneratedFiles(
+      out,
+      buildGeneratedFiles([], [], { ...DEFAULT_CONFIG, scaffold: false }, [page]),
+      { ...keep, seedPaths: SEED_PATHS },
+    );
+
+    for (const path of seeds) expect(read(path), path).toBe(before[path]);
+    expect(read('package.json')).toBe('edited');
+    expect(read('src/app/app.routes.ts')).toBe('edited');
+    expect(existsSync(join(out, 'src/app/pages/about.component.ts'))).toBe(false);
+    expect(existsSync(join(out, 'pages/about.component.ts'))).toBe(true);
+    expect(pruned).toBe(scaffolded.length - seeds.length);
+    for (const path of seeds) expect(readManifest(out).has(path), path).toBe(false);
+  });
+
+  it('names every seed the scaffold emits', () => {
+    const emittedSeeds = buildGeneratedFiles([], [], { ...DEFAULT_CONFIG, generateTests: true }, [
+      ViewMetadataSchema.parse({ name: 'About', regions: [] }),
+    ])
+      .filter((f) => f.overwritable === false)
+      .map((f) => f.path);
+    expect(emittedSeeds.length).toBeGreaterThan(0);
+    for (const path of emittedSeeds) expect(SEED_PATHS.has(path), path).toBe(true);
+  });
+});
+
+describe('symbolic links', () => {
+  let outside: string;
+
+  beforeEach(() => {
+    outside = mkdtempSync(join(tmpdir(), 'exeris-writer-outside-'));
+    writeFileSync(join(outside, 'target.txt'), 'precious');
+  });
+
+  afterEach(() => {
+    rmSync(outside, { recursive: true, force: true });
+  });
+
+  function replaceWithLink(rel: string, target: string): void {
+    rmSync(join(out, rel), { recursive: true, force: true });
+    symlinkSync(target, join(out, rel));
+  }
+
+  it('never writes through a link at an owned path', () => {
+    writeGeneratedFiles(out, [{ path: 'a.ts', content: 'A1' }], keep);
+    replaceWithLink('a.ts', join(outside, 'target.txt'));
+
+    const { plan } = writeGeneratedFiles(out, [{ path: 'a.ts', content: 'A2' }], keep);
+
+    expect(plan[0]).toEqual({ path: 'a.ts', action: 'skip-unowned', owned: false });
+    expect(readFileSync(join(outside, 'target.txt'), 'utf-8')).toBe('precious');
+  });
+
+  it('replaces the link itself under overwrite, never its target', () => {
+    writeGeneratedFiles(out, [{ path: 'a.ts', content: 'A1' }], keep);
+    replaceWithLink('a.ts', join(outside, 'target.txt'));
+
+    writeGeneratedFiles(out, [{ path: 'a.ts', content: 'A2' }], { overwrite: true });
+
+    expect(lstatSync(join(out, 'a.ts')).isSymbolicLink()).toBe(false);
+    expect(read('a.ts')).toBe('A2');
+    expect(readFileSync(join(outside, 'target.txt'), 'utf-8')).toBe('precious');
+  });
+
+  it('never writes through a linked directory, overwrite included', () => {
+    writeGeneratedFiles(out, [{ path: 'pages/a.ts', content: 'A1' }], keep);
+    replaceWithLink('pages', outside);
+
+    const { plan } = writeGeneratedFiles(out, [{ path: 'pages/target.txt', content: 'clobbered' }], { overwrite: true });
+
+    expect(plan[0].action).toBe('skip-unowned');
+    expect(readFileSync(join(outside, 'target.txt'), 'utf-8')).toBe('precious');
+  });
+
+  it('releases, never deletes, an orphan that is a link or lies under one', () => {
+    writeGeneratedFiles(out, [{ path: 'a.ts', content: 'A' }, { path: 'pages/target.txt', content: 'T' }], keep);
+    replaceWithLink('a.ts', join(outside, 'target.txt'));
+    replaceWithLink('pages', outside);
+
+    const { pruned } = writeGeneratedFiles(out, [], keep);
+
+    expect(pruned).toBe(0);
+    expect(readFileSync(join(outside, 'target.txt'), 'utf-8')).toBe('precious');
+    expect(lstatSync(join(out, 'a.ts')).isSymbolicLink()).toBe(true);
+    expect(readManifest(out).size).toBe(0);
+  });
+});
+
+describe('a write that fails', () => {
+  // `a.ts` is written first, so `a.ts/b.ts` cannot get its directory.
+  const failing: FileToWrite[] = [{ path: 'a.ts', content: 'A' }, { path: 'a.ts/b.ts', content: 'B' }];
+
+  it('keeps the files written before it owned, and prunes nothing', () => {
+    writeGeneratedFiles(out, [{ path: 'old.ts', content: 'O' }], keep);
+
+    expect(() => writeGeneratedFiles(out, failing, keep)).toThrow();
+
+    expect(existsSync(join(out, 'old.ts'))).toBe(true);
+    expect([...readManifest(out)].sort()).toEqual(['a.ts', 'old.ts']);
+  });
+
+  it('leaves a manifest without the ownership line as it is', () => {
+    legacyManifest('old.ts');
+    const before = read(MANIFEST_NAME);
+
+    expect(() => writeGeneratedFiles(out, failing, keep)).toThrow();
+
+    expect(read(MANIFEST_NAME)).toBe(before);
   });
 });

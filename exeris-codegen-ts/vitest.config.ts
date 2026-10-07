@@ -68,6 +68,13 @@ export default defineConfig({
           branches: 85,
           statements: 85,
         },
+        // The output tree's writer and manifest: what a run may replace, prune or release.
+        'src/output/**/*.ts': {
+          lines: 85,
+          functions: 85,
+          branches: 85,
+          statements: 85,
+        },
         // The emitted file header every generator writes through.
         'src/generators/file-header.ts': {
           lines: 85,

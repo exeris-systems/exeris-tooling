@@ -176,21 +176,44 @@ The option applies to every `@View` page of the run. It is file-only; it has no 
 ## Regenerating
 
 The generator records every file it owns in `.exeris-codegen-manifest` at the output root. On the
-next run, the previous manifest decides what it may replace:
+next run, the previous manifest decides what it may replace and delete.
+
+**Seed files** are written once for you to edit: `package.json`, `angular.json`, `tsconfig.json`,
+`tsconfig.app.json`, `tsconfig.spec.json`, `.postcssrc.json`, `proxy.conf.json`, `src/main.ts`,
+`src/index.html`, `src/styles.css`, `src/environments/environment.ts`,
+`src/environments/environment.development.ts`, `src/app/app.config.ts`, `src/app/app.component.ts`,
+`src/app/app.routes.ts`, and the auth service template `core/auth.service.ts`.
 
 | On disk | Without `--overwrite` | With `--overwrite` |
 |---|---|---|
 | absent | written, then owned | written, then owned |
 | owned, content differs | rewritten | rewritten |
-| owned, written once for you to edit (`package.json`, `angular.json`, the `tsconfig` files, `src/main.ts`, `environment.ts`, `app.config.ts`, `app.component.ts`, `app.routes.ts`) | kept | rewritten |
+| owned seed file | kept | rewritten |
 | present, not in the manifest (hand-written, or a first run into a populated directory) | kept, and not owned | rewritten, then owned |
+| a symbolic link, or reached through one below the output root | kept, and not owned | a link at the path is replaced, never written through; nothing is written through a linked directory |
 | owned, no longer generated | deleted | deleted |
+| owned seed file or link, no longer generated | kept, and no longer owned | kept, and no longer owned |
 
 A regenerated page whose metadata changed is therefore rewritten without any flag, and a removed
 `@View` or entity takes its files with it. A file you write beside the generated ones is never
 touched, because it is not in the manifest. To take a generated file over, move it out of the output
 directory and stop generating it (remove the view or turn its generator off); a file the generator
 still produces is created again at its old path.
+
+**A manifest written by 0.9.x or earlier** carries no `# ownership: written` line. Those releases
+recorded every file they produced, including files they skipped because they already existed, so
+on the first run with such a manifest an entry is owned only when the file already holds what this
+run generates, or is a seed file. An entry whose file differs is kept and dropped from the manifest:
+check it, and pass `--overwrite` once if it is the generator's. The run writes the manifest in the
+current format.
+
+**A missing or empty metadata directory** generates and deletes nothing: a wrong `--input`, or a
+`mvn clean` without a compile after it, must not empty the output tree. A missing directory fails
+the run. To remove everything after deleting the last entity and view, delete the generated files
+yourself.
+
+`--dry-run` lists what each file would get (create, rewrite, unchanged, keep, skip) and every file
+the run would prune or release, and changes nothing.
 
 Commit the output directory, manifest included: the manifest is what tells the next run, on any
 machine, which files are the generator's.
@@ -229,9 +252,10 @@ dependencies the emitted files import (`zod`, `@angular/cdk`, `@angular/forms`, 
 generators require). A page bound to an entity (`binding.source = ENTITY`) injects that entity's
 store, which needs the store, service and type generators on.
 
-Switching an existing output directory from the scaffold to no scaffold prunes the scaffold files
-the previous run wrote there, because the generator owned them; generate into a new directory, or
-commit first and keep what you need.
+Switching an existing output directory from the scaffold to no scaffold deletes the generated files
+under `src/app/` that the previous run wrote, because the tree moves to the output root. The seed
+files (`package.json`, `angular.json`, `app.routes.ts`, …) are kept and are no longer the
+generator's; delete them yourself if the directory is no longer an app.
 
 ## Peer contracts (mesh)
 
