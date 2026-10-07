@@ -1791,6 +1791,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
 
         DomainMetadata metadata = builder.build();
         if (domainAnnotation != null) {
+            refuseEntityWithoutIdField(element, domainAnnotation);
             warnDefaultTableChange(element, metadata);
             // Not on a contradicted declaration: its tier is undecided until the author fixes the
             // line EXT-PROC-1003 already reports.
@@ -1831,6 +1832,46 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                         + "DataScope.GLOBAL if the rows are not tenant-owned, or drop realTimeApi "
                         + "until stream events carry an isolation key.",
                 element, domainAnnotation);
+    }
+
+    /** The primary-key field every generator reads by this literal name. */
+    private static final String ID_FIELD = "id";
+
+    /**
+     * Refuses an {@code @ExerisDomain} type that declares no field {@code id}, its own or inherited.
+     *
+     * <p>Every generated artefact identifies a row by the literal {@code id}: the migration's
+     * {@code id UUID PRIMARY KEY}, the repository's {@code WHERE id = ?}, the by-id routes'
+     * {@code {id}} path variable, the {@code getId()} and {@code setId(...)} calls in handlers and
+     * services, and the Angular model the list, detail, form and store read {@code id} from.
+     * {@code primaryKeyField} renames none of them, so the field is looked up by that literal
+     * whatever the attribute says. A superclass field counts: the generated Java reaches it
+     * through the inherited accessors.
+     */
+    private void refuseEntityWithoutIdField(TypeElement element, AnnotationMirror domainAnnotation) {
+        if (declaresIdField(element)) {
+            return;
+        }
+        error(DiagnosticId.ENTITY_WITHOUT_ID_FIELD,
+                "@ExerisDomain type '" + element.getSimpleName() + "' declares no field 'id'. "
+                        + "The generated schema, repository, routes and Angular model all identify a "
+                        + "row by id, and primaryKeyField does not rename it. Declare "
+                        + "'private UUID id;' with its getter and setter.",
+                element, domainAnnotation);
+    }
+
+    /** Whether {@code element} or one of its superclasses declares a non-static field {@code id}. */
+    private static boolean declaresIdField(TypeElement element) {
+        TypeElement current = element;
+        while (current != null) {
+            if (instanceField(current, ID_FIELD) != null) {
+                return true;
+            }
+            current = current.getSuperclass() instanceof DeclaredType superType
+                    && superType.asElement() instanceof TypeElement superElement
+                    ? superElement : null;
+        }
+        return false;
     }
 
     /**
