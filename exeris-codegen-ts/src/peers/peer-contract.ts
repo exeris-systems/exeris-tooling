@@ -124,9 +124,9 @@ export function parsePeerRef(spec: string): PeerContractRef {
 /**
  * Reads a peer's contract artifact from disk.
  *
- * Entities are sorted by name. The local generation path uses `readdirSync` order, which is
- * stable for one tree on one machine; a *published* artifact is unpacked by different tools
- * onto different filesystems, so peer order is made explicit rather than inherited.
+ * Entities are sorted by name. A published artifact is unpacked by different tools onto
+ * different filesystems, so peer order is made explicit rather than taken from the directory
+ * listing, as the local generation path's `findMetadataFiles` does too.
  *
  * @throws PeerContractError when the directory, the manifest, or the manifest's
  *         `schemaVersion` does not hold up — always naming the peer, since a consumer with

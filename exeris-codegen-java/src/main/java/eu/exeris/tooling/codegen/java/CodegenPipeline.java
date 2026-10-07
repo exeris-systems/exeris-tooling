@@ -73,8 +73,7 @@ public final class CodegenPipeline {
      * The order every run sees the domains in: by fully-qualified entity name. Project-wide
      * artefacts ({@code RuntimeComponents}, {@code RuntimeLifecycle}) list the entities in this
      * order, so it comes from the metadata rather than from the directory listing, whose order
-     * differs between filesystems. Within one package it is the order of the simple names, which
-     * is also the order of the processor's {@code <Entity>.json} file names.
+     * differs between filesystems.
      */
     static final Comparator<DomainMetadata> DOMAIN_ORDER =
             Comparator.comparing(CodegenPipeline::qualifiedName);
