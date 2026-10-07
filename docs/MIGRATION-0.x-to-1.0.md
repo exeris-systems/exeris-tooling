@@ -2830,6 +2830,14 @@ nothing from 0.10.0.
 Javadoc line: the generated `Application` names the starter as `eu.exeris:exeris-app-starter`.
 `@exeris/codegen-ts` keeps its npm name and still versions in lockstep with the Maven artefacts.
 
+### `EXT-PROC-1104` is retired
+
+The processor prints no warning for an entity whose derived default table differs from the
+snake-cased class name plus "s" (0.9.0's `EXT-PROC-1104`, T6). Nothing changes in generated code or
+in the table an entity gets: `effectiveTableName()` names it, and `@ExerisDomain(tableName = …)`
+overrides it, as in 0.9.0. A `tableName` set only to silence the warning can stay. The identifier is
+listed under *Retired identifiers* in [`diagnostics.md`](diagnostics.md) and is never reused.
+
 ---
 
 ## Reference
