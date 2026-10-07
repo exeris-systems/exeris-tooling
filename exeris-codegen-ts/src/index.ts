@@ -74,6 +74,12 @@ program
     'Emit no Angular project or app-shell file: the generated tree is written at the output root, '
       + 'for an app that owns its own package.json, angular.json, app.config.ts and app.routes.ts',
   )
+  .option(
+    '--render <mode>',
+    'How the scaffolded app renders: csr (browser only) or ssg (static prerender of the param-less '
+      + '@View pages; adds the Angular server entry, server routes and @angular/ssr)',
+    'csr',
+  )
   .option('--no-stores', 'Skip Signal store generation')
   .option('--no-sagas', 'Skip Saga UI generation')
   .option('--no-events', 'Skip Event handler generation')
@@ -163,6 +169,12 @@ async function runGenerate(config: GeneratorConfig): Promise<void> {
   console.log(pc.dim('Backend:'), config.backend, strategyConfig.useHttp3 ? '(HTTP/3)' : '');
   console.log(pc.dim('Styling:'), config.styling);
   console.log(pc.dim('─'.repeat(50)));
+  if (config.render === 'ssg' && !config.scaffold) {
+    console.log(
+      pc.yellow('render "ssg" emits nothing without the scaffold:'),
+      'the server entry, server routes and builder options belong to the app that owns angular.json',
+    );
+  }
 
   // Peer contracts (T42, ADR-048), loaded BEFORE the empty-input return: a declared peer
   // must never be silently dropped, and an app whose whole domain is a peer's is a real

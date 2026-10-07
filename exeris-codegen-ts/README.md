@@ -80,6 +80,8 @@ Options:
   --no-events            Skip domain-event handler generation
   --no-scaffold          Emit no Angular project or app-shell file; write the generated
                          tree at the output root, for an app you already own (see below)
+  --render <mode>        How the scaffolded app renders: csr (default, browser only) or
+                         ssg (static prerender of the @View pages; see below)
   --tests                Emit specs for the generated surface plus the Vitest runner that
                          executes them (adds a test target, tsconfig.spec.json and the
                          vitest + jsdom devDependencies). Opt-in; off by default.
@@ -185,7 +187,9 @@ next run, the previous manifest decides what it may replace and delete.
 `tsconfig.app.json`, `tsconfig.spec.json`, `.postcssrc.json`, `proxy.conf.json`, `src/main.ts`,
 `src/index.html`, `src/styles.css`, `src/environments/environment.ts`,
 `src/environments/environment.development.ts`, `src/app/app.config.ts`, `src/app/app.component.ts`,
-`src/app/app.routes.ts`, and the auth service template `core/auth.service.ts`.
+`src/app/app.routes.ts`, under `render: 'ssg'` also `src/main.server.ts`,
+`src/app/app.config.server.ts` and `src/app/app.routes.server.ts`, and the auth service template
+`core/auth.service.ts`.
 
 | On disk | Without `--overwrite` | With `--overwrite` |
 |---|---|---|
@@ -263,6 +267,47 @@ Switching an existing output directory from the scaffold to no scaffold deletes 
 under `src/app/` that the previous run wrote, because the tree moves to the output root. The seed
 files (`package.json`, `angular.json`, `app.routes.ts`, …) are kept and are no longer the
 generator's; delete them yourself if the directory is no longer an app.
+
+## Static prerender (`render: 'ssg'`)
+
+With `"render": "ssg"` (or `--render ssg`) the scaffold is a static site: `ng build` writes an HTML
+file for each page it can render at build time, and a static file host serves them. The default,
+`"csr"`, is a browser-only app.
+
+`ssg` adds three files, each a seed:
+
+- `src/main.server.ts`, the server entry the build bootstraps for each prerendered route;
+- `src/app/app.config.server.ts`, the browser configuration plus
+  `provideServerRendering(withRoutes(serverRoutes))`;
+- `src/app/app.routes.server.ts`, the render mode of every route.
+
+and changes four: `angular.json` (`"server": "src/main.server.ts"`, `"outputMode": "static"`),
+`package.json` (`@angular/ssr`, `@angular/platform-server`), `tsconfig.app.json` (the server entry)
+and `app.config.ts` (`provideClientHydration()`, so the browser takes over the prerendered DOM).
+
+The server routes decide what is prerendered:
+
+| Route | Render mode | Why |
+|---|---|---|
+| a `@View` page whose path has no `:param` or wildcard and that binds no entity | `Prerender` | its content is authored, so the HTML the build writes is the page |
+| `''`, when the app redirects it | `Prerender` | written as the root `index.html`, a page that sends the browser on to the redirect target |
+| a page with a `:param` in its path | `Client` (through `**`) | the metadata does not list the parameter's values; add `getPrerenderParams` to its entry to prerender it |
+| a page bound to an entity (`binding.source = ENTITY`), and every entity list, detail and form route | `Client` (through `**`) | it loads its data from the kernel API on init, which no build reaches |
+| anything else, including routes you add | `Client` (`**`) | |
+
+`ng build` writes `dist/<app>/browser/<route>/index.html` for each prerendered route and
+`index.csr.html`, the browser shell, for the rest; configure the host to serve `index.csr.html` for a
+path with no file of its own. No server bundle is produced.
+
+The server routes are a seed, written from the metadata of the first `ssg` run: a page added later
+is rendered in the browser until you add its entry. Switching an existing app from `csr` to `ssg`
+writes the three new files, but keeps the four changed seeds as they are; merge their `ssg` form
+(regenerate into an empty directory to see it) or rerun with `--overwrite`. Until `@angular/ssr`
+is installed the build fails on the new files, and until `angular.json` names the server entry it
+prerenders nothing.
+
+With `scaffold: false` there is no `angular.json` or app configuration to change, so `render` has no
+effect: the server setup belongs to the app that owns them.
 
 ## Peer contracts (mesh)
 

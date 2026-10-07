@@ -234,6 +234,14 @@ export function isPageView(view: ViewMetadata): boolean {
   return effectiveViewKind(view) === 'PAGE';
 }
 
+/**
+ * Whether a view's page reads entity data: a node bound to an ENTITY injects that entity's store and
+ * loads it on init, which calls the kernel API.
+ */
+export function viewReadsEntityData(view: ViewMetadata): boolean {
+  return collectBindings(view).entityRefs.length > 0;
+}
+
 interface ViewGenState {
   /** ENTITY refs to inject as <Ref>Service (deduped, declaration-ordered). */
   readonly entityRefs: string[];

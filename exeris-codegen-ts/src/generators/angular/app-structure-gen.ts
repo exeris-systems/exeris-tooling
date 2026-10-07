@@ -9,6 +9,7 @@
  * - angular.json
  * - tsconfig.json
  * - .postcssrc.json and src/styles.css (Tailwind CSS v4, CSS-first: no tailwind.config.js)
+ * - under `render: 'ssg'`: main.server.ts, app.config.server.ts and app.routes.server.ts
  */
 
 import type { DomainMetadata, ViewMetadata } from '../../models/domain-model.js';
@@ -20,6 +21,7 @@ import {
   viewRouteConstName,
   viewRouteImportPath,
   isPageView,
+  viewReadsEntityData,
 } from './view-gen.js';
 import { tsSingleQuoted } from './ts-literal.js';
 import { sagaMachineName } from './saga-gen.js';
@@ -73,6 +75,9 @@ interface EnumMetadata {
  * `.postcssrc.json` is a seed too: its content never depends on the metadata, so rewriting it could
  * only undo a PostCSS plugin the consumer added. `favicon.ico` is not: nothing in it is the
  * consumer's to edit. Paths are in the scaffold's layout, as the manifest records them.
+ *
+ * The three server files of `render: 'ssg'` are seeds for the same reason as `app.routes.ts`: the
+ * server routes are where a consumer adds `getPrerenderParams` to prerender a parameterised route.
  */
 export const SCAFFOLD_SEED_PATHS: readonly string[] = [
   'package.json',
@@ -90,6 +95,9 @@ export const SCAFFOLD_SEED_PATHS: readonly string[] = [
   'src/app/app.config.ts',
   'src/app/app.component.ts',
   'src/app/app.routes.ts',
+  'src/main.server.ts',
+  'src/app/app.config.server.ts',
+  'src/app/app.routes.server.ts',
 ];
 
 export function generateAppStructure(
@@ -113,12 +121,13 @@ export function generateAppStructure(
   // The API environment entries exist only for code that calls the API.
   const api = needs.backend ? resolveApiSettings(config) : null;
   const appName = config.appName;
+  const ssg = config.render === 'ssg';
 
   // Config files at the project root
   files.push({ path: 'package.json', content: generatePackageJson(appName, config, needs), overwritable: false });
-  files.push({ path: 'angular.json', content: generateAngularJson(appName, config), overwritable: false });
+  files.push({ path: 'angular.json', content: generateAngularJson(appName, config, ssg), overwritable: false });
   files.push({ path: 'tsconfig.json', content: generateTsConfig(), overwritable: false });
-  files.push({ path: 'tsconfig.app.json', content: generateTsConfigApp(config), overwritable: false });
+  files.push({ path: 'tsconfig.app.json', content: generateTsConfigApp(config, ssg), overwritable: false });
   // T2 (ADR-058): the spec tsconfig only exists when specs do. It is the counterpart of the Java
   // half's second output root — specs compile under their own config, never the app's.
   if (config.generateTests) {
@@ -135,6 +144,9 @@ export function generateAppStructure(
   files.push({ path: `${srcRoot}/favicon.ico`, content: generateFavicon(), overwritable: true });
   // main.ts under src/
   files.push({ path: `${srcRoot}/main.ts`, content: generateMainTs(), overwritable: false });
+  if (ssg) {
+    files.push({ path: `${srcRoot}/main.server.ts`, content: generateMainServerTs(), overwritable: false });
+  }
 
   // Environment files under src/environments
   files.push({ path: `${envRoot}/environment.ts`, content: generateEnvironmentFile({ production: true, api }), overwritable: false });
@@ -147,7 +159,11 @@ export function generateAppStructure(
   const sortedViews = sortViews(views);
 
   // App shell under src/app
-  files.push({ path: `${appRoot}/app.config.ts`, content: generateAppConfig(needs.backend), overwritable: false });
+  files.push({ path: `${appRoot}/app.config.ts`, content: generateAppConfig(needs.backend, ssg), overwritable: false });
+  if (ssg) {
+    files.push({ path: `${appRoot}/app.config.server.ts`, content: generateAppConfigServer(), overwritable: false });
+    files.push({ path: `${appRoot}/app.routes.server.ts`, content: generateServerRoutes(domains, sortedViews), overwritable: false });
+  }
   files.push({ path: `${appRoot}/app.component.ts`, content: generateAppComponent(domains, appName, sortedViews), overwritable: false });
   files.push({ path: `${appRoot}/app.routes.ts`, content: generateAppRoutes(domains, appName, sortedViews), overwritable: false });
   const barrel = generateAppBarrel(domains, enums, config);
@@ -176,13 +192,18 @@ bootstrapApplication(AppComponent, appConfig)
 `;
 }
 
-function generateAppConfig(backend: boolean): string {
+function generateAppConfig(backend: boolean, ssg: boolean): string {
   // provideHttpClient() is wired only when the app has an API (core/scaffold-needs); an app
   // without one has no HttpClient consumer to provide for.
   const httpImport = backend ? `\nimport { provideHttpClient } from '@angular/common/http';` : '';
   const httpProvider = backend
     ? `\n    // v22: fetch is the default HttpClient transport (the old explicit opt-in is now redundant).\n    provideHttpClient(),`
     : '';
+  // A prerendered page is hydrated: the browser takes over the DOM the build wrote instead of
+  // rendering it again. A route the server routes leave to the client has no such DOM and renders
+  // as in a browser-only app.
+  const hydrationImport = ssg ? `\nimport { provideClientHydration } from '@angular/platform-browser';` : '';
+  const hydrationProvider = ssg ? `\n    provideClientHydration(),` : '';
   return `${fileHeader({
     title: 'Angular Application Configuration',
     notes: ['', 'Uses Angular 22 Zoneless mode with Signals'],
@@ -191,7 +212,7 @@ function generateAppConfig(backend: boolean): string {
   })}
 
 import { ApplicationConfig, provideZonelessChangeDetection } from '@angular/core';
-import { provideRouter, withComponentInputBinding } from '@angular/router';${httpImport}
+import { provideRouter, withComponentInputBinding } from '@angular/router';${httpImport}${hydrationImport}
 
 import { routes } from './app.routes';
 
@@ -199,11 +220,89 @@ export const appConfig: ApplicationConfig = {
   providers: [
     // Zoneless mode - no zone.js needed for change detection
     provideZonelessChangeDetection(),
-    provideRouter(routes, withComponentInputBinding()),${httpProvider}
+    provideRouter(routes, withComponentInputBinding()),${httpProvider}${hydrationProvider}
     // Row enter/leave animations are native (animate.enter, Angular 22) — a
     // compiler feature, so no @angular/animations package or provider is needed.
   ],
 };
+`;
+}
+
+/**
+ * The server entry `angular.json` names as `server`. The build calls its default export once per
+ * prerendered route, with the context that route renders in.
+ */
+function generateMainServerTs(): string {
+  return `${fileHeader({ title: 'Angular Server Entry Point (static prerender)', doNotEdit: 'omit' })}
+
+import { BootstrapContext, bootstrapApplication } from '@angular/platform-browser';
+import { AppComponent } from './app/app.component';
+import { config } from './app/app.config.server';
+
+const bootstrap = (context: BootstrapContext) => bootstrapApplication(AppComponent, config, context);
+
+export default bootstrap;
+`;
+}
+
+/** The browser configuration, plus server rendering bound to the server routes. */
+function generateAppConfigServer(): string {
+  return `${fileHeader({ title: 'Angular Server Configuration (static prerender)', doNotEdit: 'omit' })}
+
+import { ApplicationConfig, mergeApplicationConfig } from '@angular/core';
+import { provideServerRendering, withRoutes } from '@angular/ssr';
+
+import { appConfig } from './app.config';
+import { serverRoutes } from './app.routes.server';
+
+const serverConfig: ApplicationConfig = {
+  providers: [provideServerRendering(withRoutes(serverRoutes))],
+};
+
+export const config = mergeApplicationConfig(appConfig, serverConfig);
+`;
+}
+
+/**
+ * Whether a route path names one page: no `:param` segment and no wildcard. Only such a path can be
+ * prerendered without `getPrerenderParams` listing the values of its parameters.
+ */
+function isStaticRoutePath(path: string): boolean {
+  return path.split('/').every((segment) => !segment.startsWith(':') && !segment.includes('*'));
+}
+
+/**
+ * The render mode of every route, for `outputMode: "static"`, where a route is either written to
+ * HTML at build time or rendered in the browser.
+ *
+ * A `@View` page is prerendered when its path names one page and it reads no entity data: its
+ * content is authored, so the HTML the build writes is the page. A page bound to an entity loads it
+ * from the kernel API on init, which no build reaches, so it renders in the browser, as does a
+ * parameterised page, whose parameter values the metadata does not list. The entity CRUD routes
+ * read the API on every page and are left to the browser by the same rule, through the `**` entry,
+ * which also covers every route the consumer adds; the browser routes are served from the build's
+ * `index.csr.html`.
+ *
+ * The `''` redirect, when the app has one, is prerendered: the build writes it as the root
+ * `index.html`, a page that sends the browser on to the redirect target, so the site root resolves
+ * on a host that serves files only. Views arrive in the sorted order the app routes use.
+ */
+function generateServerRoutes(domains: DomainMetadata[], views: ViewMetadata[]): string {
+  const paths = views
+    .map(viewRoutePath)
+    .filter((path, i) => isStaticRoutePath(path) && !viewReadsEntityData(views[i]))
+    .filter((path, i, all) => all.indexOf(path) === i);
+  if (defaultRedirectPath(domains, views) !== '' && !paths.includes('')) paths.unshift('');
+  const prerendered = paths
+    .map((path) => `\n  { path: '${tsSingleQuoted(path)}', renderMode: RenderMode.Prerender },`)
+    .join('');
+  return `${fileHeader({ title: 'Server Routes (static prerender)', doNotEdit: 'omit' })}
+
+import { RenderMode, ServerRoute } from '@angular/ssr';
+
+export const serverRoutes: ServerRoute[] = [${prerendered}
+  { path: '**', renderMode: RenderMode.Client },
+];
 `;
 }
 
@@ -319,6 +418,18 @@ export class AppComponent {
 `;
 }
 
+/**
+ * Where `''` redirects to. The FIRST PAGE view when any exists (a generated standalone front then
+ * lands on a @View page out of the box); otherwise the first entity with a list page, and `''`
+ * when neither is present, which means no redirect. Views arrive sorted.
+ */
+function defaultRedirectPath(domains: DomainMetadata[], views: ViewMetadata[]): string {
+  const firstPageView = views.find(isPageView);
+  if (firstPageView) return viewRoutePath(firstPageView);
+  const firstListed = domains.find((d) => entityViews(d).list);
+  return firstListed ? routePlural(firstListed.entityName) : '';
+}
+
 function generateAppRoutes(domains: DomainMetadata[], appName: string, views: ViewMetadata[] = []): string {
   const routes: string[] = [];
   for (const domain of domains) {
@@ -358,17 +469,7 @@ function generateAppRoutes(domains: DomainMetadata[], appName: string, views: Vi
     .join('\n');
   const viewSpreads = views.map((v) => `\n  ...${viewRouteConstName(v)},`).join('');
 
-  // The default redirect prefers the FIRST PAGE view when any exists (a generated
-  // standalone front then lands on a @View page out of the box); otherwise it keeps
-  // the existing entity-based default (first domain), and falls back to ''
-  // when neither is present. With zero views the entity branch is taken unchanged.
-  const firstPageView = views.find(isPageView);
-  const firstListed = domains.find((d) => entityViews(d).list);
-  const defaultRedirect = firstPageView
-    ? viewRoutePath(firstPageView)
-    : firstListed
-      ? routePlural(firstListed.entityName)
-      : '';
+  const defaultRedirect = defaultRedirectPath(domains, views);
 
   // Additive guard (determinism #3): with zero views, NO import line and NO spread
   // are emitted, so app.routes.ts is byte-identical to the pre-route-assembly output.
@@ -565,9 +666,10 @@ function generateBarrelExport(
  * router`, `rxjs` (a peer dependency of `@angular/core`) and `tslib` (`importHelpers`) — and the
  * ui-kit the styles import is always present. `@angular/cdk`, `@angular/forms`
  * and `zod` are used only by some emitters: an app with a backend keeps its fixed set, and an app
- * without one lists each only when an emitted file imports it.
+ * without one lists each only when an emitted file imports it. `@angular/ssr` and
+ * `@angular/platform-server` are the server rendering `render: 'ssg'` prerenders with.
  */
-function runtimeDependencies(needs: ScaffoldNeeds): string {
+function runtimeDependencies(needs: ScaffoldNeeds, ssg: boolean): string {
   const used = (pkg: string): boolean => needs.backend || needs.packages.has(pkg);
   const entries: Array<[string, string, boolean]> = [
     ['@angular/cdk', '^22.0.0', used('@angular/cdk')],
@@ -576,7 +678,9 @@ function runtimeDependencies(needs: ScaffoldNeeds): string {
     ['@angular/core', '^22.0.0', true],
     ['@angular/forms', '^22.0.0', used('@angular/forms')],
     ['@angular/platform-browser', '^22.0.0', true],
+    ['@angular/platform-server', '^22.0.0', ssg],
     ['@angular/router', '^22.0.0', true],
+    ['@angular/ssr', '^22.0.0', ssg],
     ['@exeris/ui-kit', '^0.2.1', true],
     ['rxjs', '~7.8.1', true],
     ['tslib', '^2.8.1', true],
@@ -619,7 +723,7 @@ function generatePackageJson(appName: string, config: GeneratorConfig, needs: Sc
   },
   "private": true,
   "dependencies": {
-${runtimeDependencies(needs)}
+${runtimeDependencies(needs, config.render === 'ssg')}
   },
   "devDependencies": {
     "@angular/build": "^22.0.0",
@@ -635,8 +739,11 @@ ${runtimeDependencies(needs)}
 `;
 }
 
-function generateAngularJson(appName: string, config: GeneratorConfig): string {
+function generateAngularJson(appName: string, config: GeneratorConfig, ssg: boolean): string {
   const slug = frontendSlug(appName);
+  // `outputMode: "static"` writes the prerendered routes as HTML and emits no server bundle to
+  // deploy; `server` is the entry the prerender bootstraps.
+  const server = ssg ? `\n            "server": "src/main.server.ts",\n            "outputMode": "static",` : '';
   return `{
   "$schema": "./node_modules/@angular/cli/lib/config/schema.json",
   "version": 1,
@@ -660,7 +767,7 @@ function generateAngularJson(appName: string, config: GeneratorConfig): string {
           "options": {
             "outputPath": "dist/${slug}",
             "index": "src/index.html",
-            "browser": "src/main.ts",
+            "browser": "src/main.ts",${server}
             "polyfills": [],
             "tsConfig": "tsconfig.app.json",
             "inlineStyleLanguage": "css",
@@ -738,7 +845,7 @@ function generateTsConfig(): string {
 `;
 }
 
-function generateTsConfigApp(config: GeneratorConfig): string {
+function generateTsConfigApp(config: GeneratorConfig, ssg: boolean): string {
   // Specs are excluded from the APP config on purpose. `include` covers `src/**/*.ts`, so without
   // this a consumer's production `ng build` would type-check the emitted specs and therefore
   // require `vitest` to be installed — a test-only dependency leaking into the build path, which
@@ -750,7 +857,7 @@ function generateTsConfigApp(config: GeneratorConfig): string {
     "outDir": "./out-tsc/app",
     "types": []
   },
-  "files": ["src/main.ts"],
+  "files": ${ssg ? '["src/main.ts", "src/main.server.ts"]' : '["src/main.ts"]'},
   "include": ["src/**/*.ts", "src/**/*.d.ts"]${exclude}
 }
 `;
