@@ -3,13 +3,13 @@ title: "ADR-097 — exeris-tooling publishes a generator catalogue and a launcha
 type: adr
 visibility: public
 owning-repo: exeris-tooling
-status: draft
+status: active
 slug: adr/ADR-097
 ---
 
 # ADR-097 — exeris-tooling publishes a generator catalogue and a launchable generator
 
-- **Status:** PROPOSED (2026-10-07)
+- **Status:** ACCEPTED (2026-10-07) · accepted-on-merge per the per-repo pattern (ADR-047 / ADR-058)
 - **Deciders:** the founder; `exeris-tooling` (catalogue format, module layout)
 - **Repo:** `exeris-tooling`
 - **Scope:** tooling / build — cross-repo: `exeris-ai-bridge` consumes the catalogue and the launchable generator
