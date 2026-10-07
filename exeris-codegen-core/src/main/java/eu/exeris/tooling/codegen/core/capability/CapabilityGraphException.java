@@ -8,21 +8,32 @@ import java.util.List;
  * cycle. Carries every problem found (not just the first) so a build failure
  * surfaces the whole picture at once.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class CapabilityGraphException extends RuntimeException {
 
-    // Non-transient so problems() is retained if this exception is ever serialized.
-    // RuntimeException is Serializable; the List.copyOf instance is serializable on
-    // the JDK in practice — this class declares no formal Serializable contract.
+    /**
+     * Every problem found, in deterministic order. Non-transient so {@link #problems()} is
+     * retained if this exception is serialized; the class declares no formal
+     * {@code Serializable} contract beyond the one {@code RuntimeException} carries.
+     */
     private final List<String> problems;
 
+    /**
+     * Creates the exception with a message listing every problem, one per line.
+     *
+     * @param problems the problems found, in deterministic order; must not be empty
+     */
     public CapabilityGraphException(List<String> problems) {
         super("Capability graph could not be resolved:\n  - " + String.join("\n  - ", problems));
         this.problems = List.copyOf(problems);
     }
 
-    /** The individual problems, in deterministic order. */
+    /**
+     * Returns the individual problems, each a one-line description.
+     *
+     * @return the problems, unmodifiable, in deterministic order
+     */
     public List<String> problems() {
         return problems;
     }
