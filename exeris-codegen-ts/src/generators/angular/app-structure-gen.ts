@@ -200,10 +200,12 @@ function generateAppConfig(backend: boolean, ssg: boolean): string {
     ? `\n    // v22: fetch is the default HttpClient transport (the old explicit opt-in is now redundant).\n    provideHttpClient(),`
     : '';
   // A prerendered page is hydrated: the browser takes over the DOM the build wrote instead of
-  // rendering it again. A route the server routes leave to the client has no such DOM and renders
-  // as in a browser-only app.
-  const hydrationImport = ssg ? `\nimport { provideClientHydration } from '@angular/platform-browser';` : '';
-  const hydrationProvider = ssg ? `\n    provideClientHydration(),` : '';
+  // rendering it again, and replays the clicks made on it before hydration finished. A route the
+  // server routes leave to the client has no such DOM and renders as in a browser-only app.
+  const hydrationImport = ssg
+    ? `\nimport { provideClientHydration, withEventReplay } from '@angular/platform-browser';`
+    : '';
+  const hydrationProvider = ssg ? `\n    provideClientHydration(withEventReplay()),` : '';
   return `${fileHeader({
     title: 'Angular Application Configuration',
     notes: ['', 'Uses Angular 22 Zoneless mode with Signals'],

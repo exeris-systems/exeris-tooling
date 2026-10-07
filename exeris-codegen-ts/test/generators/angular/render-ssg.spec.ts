@@ -120,10 +120,10 @@ describe("render: 'ssg' — what changes", () => {
     expect(server).not.toContain('provideServerRoutesConfig');
   });
 
-  it('app.config.ts hydrates the prerendered pages, zoneless as before', () => {
+  it('app.config.ts hydrates the prerendered pages with event replay, zoneless', () => {
     const app = ssg.get('src/app/app.config.ts')?.content ?? '';
-    expect(app).toContain("import { provideClientHydration } from '@angular/platform-browser';");
-    expect(app).toContain('    provideClientHydration(),');
+    expect(app).toContain("import { provideClientHydration, withEventReplay } from '@angular/platform-browser';");
+    expect(app).toContain('    provideClientHydration(withEventReplay()),');
     expect(app).toContain('provideZonelessChangeDetection(),');
   });
 

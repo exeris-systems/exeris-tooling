@@ -283,7 +283,8 @@ file for each page it can render at build time, and a static file host serves th
 
 and changes four: `angular.json` (`"server": "src/main.server.ts"`, `"outputMode": "static"`),
 `package.json` (`@angular/ssr`, `@angular/platform-server`), `tsconfig.app.json` (the server entry)
-and `app.config.ts` (`provideClientHydration()`, so the browser takes over the prerendered DOM).
+and `app.config.ts` (`provideClientHydration(withEventReplay())`, so the browser takes over the
+prerendered DOM and replays clicks made before hydration finished).
 
 The server routes decide what is prerendered:
 
@@ -304,7 +305,8 @@ is rendered in the browser until you add its entry. Switching an existing app fr
 writes the three new files, but keeps the four changed seeds as they are; merge their `ssg` form
 (regenerate into an empty directory to see it) or rerun with `--overwrite`. Until `@angular/ssr`
 is installed the build fails on the new files, and until `angular.json` names the server entry it
-prerenders nothing.
+prerenders nothing. A run under `ssg` that keeps an existing `angular.json`, as a seed or as a file
+no previous run generated, prints a warning naming the four files; `--dry-run` prints it too.
 
 With `scaffold: false` there is no `angular.json` or app configuration to change, so `render` has no
 effect: the server setup belongs to the app that owns them.

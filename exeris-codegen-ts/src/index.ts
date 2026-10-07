@@ -153,6 +153,27 @@ const DRY_RUN_LABEL: Record<WriteAction, string> = {
   'skip-unowned': 'Would skip (not generated here):',
 };
 
+/**
+ * Under `render: 'ssg'`, a run that keeps an existing `angular.json` keeps the browser-only form of
+ * the four seeds the static setup changes. With `@angular/ssr` installed the build then succeeds and
+ * prerenders nothing, so the run says so. The server routes, the server config and the server entry
+ * are written regardless; `angular.json` stands for the four because it is the one that names the
+ * server entry.
+ */
+function warnKeptCsrScaffold(
+  config: GeneratorConfig,
+  plan: ReadonlyArray<{ readonly path: string; readonly action: WriteAction }>,
+): void {
+  if (config.render !== 'ssg' || !config.scaffold) return;
+  const angularJson = plan.find((entry) => entry.path === 'angular.json');
+  if (angularJson?.action !== 'keep-seed' && angularJson?.action !== 'skip-unowned') return;
+  console.log(
+    pc.yellow('render "ssg": angular.json, package.json, tsconfig.app.json and src/app/app.config.ts were kept as they are.'),
+    'Until they carry the server entry, @angular/ssr and client hydration, ng build prerenders nothing.',
+    'Compare with --dry-run, rerun with --overwrite, or generate into a fresh directory and merge.',
+  );
+}
+
 async function runGenerate(config: GeneratorConfig): Promise<void> {
   const inputPath = resolve(process.cwd(), config.inputPath);
   const outputPath = resolve(process.cwd(), config.outputPath);
@@ -228,9 +249,11 @@ async function runGenerate(config: GeneratorConfig): Promise<void> {
 
   if (config.dryRun) {
     console.log(pc.yellow('Dry run - no files written'));
-    for (const entry of planWrites(outputPath, generatedFiles, { overwrite: config.overwrite })) {
+    const dryPlan = planWrites(outputPath, generatedFiles, { overwrite: config.overwrite });
+    for (const entry of dryPlan) {
       console.log(pc.dim(`  ${DRY_RUN_LABEL[entry.action]}`), entry.path);
     }
+    warnKeptCsrScaffold(config, dryPlan);
     const orphans = planOrphans(outputPath, generatedFiles, SEED_PATHS);
     for (const path of orphans.prune) {
       console.log(pc.dim('  Would prune:'), path);
@@ -248,6 +271,7 @@ async function runGenerate(config: GeneratorConfig): Promise<void> {
       seedPaths: SEED_PATHS,
     });
     const count = (action: WriteAction): number => plan.filter((entry) => entry.action === action).length;
+    warnKeptCsrScaffold(config, plan);
 
     for (const entry of plan) {
       if (entry.action === 'create' || entry.action === 'rewrite') {
