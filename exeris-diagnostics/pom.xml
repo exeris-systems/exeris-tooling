@@ -22,6 +22,14 @@
     </description>
     <url>https://github.com/exeris-systems/exeris-tooling</url>
 
+    <!-- Lint enforced: a Checkstyle or PMD finding in this module's main sources fails the build;
+         the parent's default is warn-only. -->
+    <properties>
+        <checkstyle.failOnViolation>true</checkstyle.failOnViolation>
+        <checkstyle.failsOnError>true</checkstyle.failsOnError>
+        <pmd.failOnViolation>true</pmd.failOnViolation>
+    </properties>
+
     <!-- No compile or runtime dependency, by contract: the annotation processor depends on this
          module, and the processor's dependency set is closed (build-time-only policy). -->
     <dependencies>

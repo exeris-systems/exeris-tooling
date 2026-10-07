@@ -26,7 +26,8 @@ public record GeneratedFile(
      * @param content      the full source code content
      * @param artifactType the type of artifact
      */
-    public GeneratedFile(String packageName, String className, String content, KernelArtifactGenerator.ArtifactType artifactType) {
+    public GeneratedFile(String packageName, String className, String content,
+                         KernelArtifactGenerator.ArtifactType artifactType) {
         this(packageName, className, content, artifactType, "java");
     }
 
@@ -84,7 +85,10 @@ public record GeneratedFile(
          * @param v the dot-separated package, or empty for the default package
          * @return this builder
          */
-        public Builder packageName(String v) { this.packageName = v; return this; }
+        public Builder packageName(String v) {
+            this.packageName = v;
+            return this;
+        }
 
         /**
          * Sets the simple file name.
@@ -92,7 +96,10 @@ public record GeneratedFile(
          * @param v the file name without extension
          * @return this builder
          */
-        public Builder className(String v) { this.className = v; return this; }
+        public Builder className(String v) {
+            this.className = v;
+            return this;
+        }
 
         /**
          * Sets the file's full text.
@@ -100,7 +107,10 @@ public record GeneratedFile(
          * @param v the complete file content
          * @return this builder
          */
-        public Builder content(String v) { this.content = v; return this; }
+        public Builder content(String v) {
+            this.content = v;
+            return this;
+        }
 
         /**
          * Sets the kind of artefact the file is.
@@ -108,7 +118,10 @@ public record GeneratedFile(
          * @param v the artefact type
          * @return this builder
          */
-        public Builder artifactType(KernelArtifactGenerator.ArtifactType v) { this.artifactType = v; return this; }
+        public Builder artifactType(KernelArtifactGenerator.ArtifactType v) {
+            this.artifactType = v;
+            return this;
+        }
 
         /**
          * Sets the file extension.
@@ -116,7 +129,10 @@ public record GeneratedFile(
          * @param v the extension without the leading dot, e.g. {@code java}, {@code sql}, {@code ts}
          * @return this builder
          */
-        public Builder extension(String v) { this.extension = v; return this; }
+        public Builder extension(String v) {
+            this.extension = v;
+            return this;
+        }
 
         /**
          * Creates the file from the values set so far.

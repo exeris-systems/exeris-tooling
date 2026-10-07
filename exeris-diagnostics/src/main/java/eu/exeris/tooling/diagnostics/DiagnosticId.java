@@ -116,7 +116,8 @@ public enum DiagnosticId {
      * every subscriber.
      */
     REAL_TIME_API_ON_TENANT_PARTITIONED("EXT-PROC-1014",
-            "@ExerisDomain(realTimeApi = true) is on a TENANT or UNIVERSE entity; its live view cannot be isolated per tenant."),
+            "@ExerisDomain(realTimeApi = true) is on a TENANT or UNIVERSE entity; "
+                    + "its live view cannot be isolated per tenant."),
 
     /**
      * An {@code @ExerisDomain} type declares no field {@code id}, the primary key every generated
