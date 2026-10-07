@@ -42,7 +42,8 @@ jobs:
       # Empty: no module here is held to the whole-module bar (javadoc-conventions.md rule 11).
       modules: ""
       # The published Java modules with a `src/main/java`. Not listed: the BOMs and parents, which
-      # carry no Java; exeris-app-starter, which carries no Java of its own; exeris-e2e-tests,
+      # carry no Java; exeris-app-starter and exeris-codegen-cli, which have no `src/main/java`
+      # (the CLI jar shades exeris-codegen-java, which is listed); exeris-e2e-tests,
       # exeris-app-starter-it and exeris-coverage-aggregate, which are not published; and
       # exeris-codegen-ts, which is not a Maven module.
       diff-modules: exeris-diagnostics,exeris-processor,exeris-codegen-core,exeris-codegen-java,exeris-codegen-maven-plugin
