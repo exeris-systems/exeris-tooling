@@ -265,8 +265,10 @@ coordinated `UIFieldMetadata` → `ViewFieldMetadata` rename and `@UI`'s depreca
 The entity-side cascade does not wait for it: **U2** lists, **U5** detail and **U3** forms (on
 Signal Forms, with the relationship picker) ship in 0.9.0 through `FieldRenderModel` (see the 0.9.0
 section above). In 1.x the processor populates the facet, the TS schema types it, and it feeds the
-same model — no second rendering path. `@View` block depth stays gated on the page corpus (ROADMAP,
-*Presentation views*).
+same model — no second rendering path. `@View` block depth is gated on the page corpus (ROADMAP,
+*Presentation views*). exeris-web is that corpus for the block-depth rows TS wave S6 of
+[`0.10.0-release-plan.md`](0.10.0-release-plan.md) places in 0.10.0: CUSTOM blocks and their props,
+LIST items, the page heading, pages-only output and SSG. The rest of the stage stays here.
 
 ### Stage 4 — remaining parity, tests, release
 
