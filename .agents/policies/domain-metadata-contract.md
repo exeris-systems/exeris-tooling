@@ -16,5 +16,9 @@ The intermediate JSON model `DomainMetadata` is the single contract boundary sep
 
 ## Verification
 
-- Maven module dependency boundaries (`exeris-codegen-*` do not depend on compiler APIs).
+- `CodegenCoreArchitectureTest` and `CodegenJavaArchitectureTest` (`reads_no_language_model`): no class in
+  `exeris-codegen-core` or `exeris-codegen-java` depends on `javax.lang.model..` other than
+  `javax.lang.model.element.Modifier` (the modifier enum JavaPoet takes), or on
+  `javax.annotation.processing..`. Maven dependency boundaries cannot hold this rule: both packages ship
+  with the JDK and are on every module's compile path.
 - Processor and generator unit tests verifying clean JSON round-trip through `MetadataLoader`.

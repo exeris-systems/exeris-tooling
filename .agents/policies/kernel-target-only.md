@@ -15,3 +15,12 @@
 
 - `KernelCodegenCompileTest` in `exeris-e2e-tests` compiles generated handler, service, and repository code against the Exeris kernel SPI.
 - Architecture review via `exeris-tooling-kernel-target-discipline` skill.
+- `no_host_framework` in `ProcessorArchitectureTest`, `CodegenCoreArchitectureTest`,
+  `CodegenJavaArchitectureTest`, `MavenPluginArchitectureTest` and `DiagnosticsArchitectureTest`: no
+  main class depends on `org.springframework..`, `io.quarkus..`, `io.micronaut..`, `jakarta.inject..` or
+  `javax.inject..`.
+- The `ban-host-and-kernel-runtime` enforcer execution (`exeris-tooling-parent`, enabled in
+  `exeris-processor`, `exeris-codegen-core` and `exeris-codegen-java`) fails the build when
+  `org.springframework*`, `io.quarkus*`, `io.micronaut*`, `eu.exeris:exeris-kernel-core` or
+  `eu.exeris:exeris-kernel-community*` appears anywhere on the resolved dependency graph, transitive
+  and test scope included. `exeris-kernel-spi` is the target and is not banned.

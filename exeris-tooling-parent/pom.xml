@@ -18,6 +18,10 @@
     <url>https://github.com/exeris-systems/exeris-tooling</url>
 
     <properties>
+        <!-- The ban-host-and-kernel-runtime enforcer execution below runs in the modules that set
+             this to false: exeris-processor, exeris-codegen-core and exeris-codegen-java. -->
+        <exeris.ban-host-and-kernel-runtime.skip>true</exeris.ban-host-and-kernel-runtime.skip>
+
         <!--
             Lint of the tooling's own main sources: Checkstyle at validate, PMD at verify, with the
             rulesets in config/ at the reactor root. Bound here and nowhere else in the chain:
@@ -73,6 +77,40 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
+            </plugin>
+            <!-- kernel-target-only.md and processor-build-time-only.md, held on the resolved
+                 dependency graph, every scope and every transitive edge: no host framework, and
+                 none of the kernel's runtime (core, the community driver and its testkit). The
+                 kernel SPI is the contract emitted code is written against, and stays allowed.
+                 The JDK-provided compiler APIs are outside Maven's reach; the ArchUnit tests in
+                 each module hold those. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>ban-host-and-kernel-runtime</id>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <skip>${exeris.ban-host-and-kernel-runtime.skip}</skip>
+                            <rules>
+                                <bannedDependencies>
+                                    <searchTransitive>true</searchTransitive>
+                                    <excludes>
+                                        <exclude>org.springframework*</exclude>
+                                        <exclude>io.quarkus*</exclude>
+                                        <exclude>io.micronaut*</exclude>
+                                        <exclude>eu.exeris:exeris-kernel-core</exclude>
+                                        <exclude>eu.exeris:exeris-kernel-community*</exclude>
+                                    </excludes>
+                                    <message>${project.artifactId} targets the Exeris kernel at build time only: no host framework and no kernel runtime on its dependency graph (.agents/policies/kernel-target-only.md, processor-build-time-only.md).</message>
+                                </bannedDependencies>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
 
             <!-- Plugin and engine versions match exeris-kernel-parent; the engine is pinned because
