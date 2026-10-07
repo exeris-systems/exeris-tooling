@@ -71,10 +71,10 @@ public final class CodegenMain {
 
     /**
      * Runs the generator from the command line and exits the JVM with the run's status:
-     * {@code 0} on success, {@code 1} on malformed arguments or a pipeline failure.
+     * {@code 0} on success, {@code 1} when generation is refused or fails, {@code 2} when the
+     * arguments are invalid.
      *
-     * @param args {@code --metadata-dir=<path>}, {@code --output-dir=<path>} and an optional
-     *             {@code --base-package=<package>}
+     * @param args the command-line switches, as {@link CliArgs#parse(String[])} reads them
      */
     public static void main(String[] args) {
         System.exit(runOrPrintError(args, System.out, System.err));

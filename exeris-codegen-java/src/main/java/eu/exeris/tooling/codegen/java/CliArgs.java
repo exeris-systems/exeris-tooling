@@ -51,7 +51,10 @@ public record CliArgs(Path metadataDir, Path outputDir, String basePackage, bool
     /**
      * Creates the parsed arguments.
      *
-     * @throws NullPointerException if {@code metadataDir} or {@code outputDir} is {@code null}
+     * @throws NullPointerException     if {@code metadataDir} or {@code outputDir} is {@code null}
+     *                                  and {@code printCatalogue} is not set, or if {@code tests}
+     *                                  is set and {@code testOutputDir} is {@code null}
+     * @throws IllegalArgumentException if {@code testOutputDir} is set without {@code tests}
      */
     public CliArgs {
         if (!printCatalogue) {
