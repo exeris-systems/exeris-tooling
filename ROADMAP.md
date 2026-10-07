@@ -3826,6 +3826,12 @@ enters only if its upstream half is final first.
       SonarCloud analysis from CI with coverage in place of automatic analysis.
 - [ ] **T53 in full** (RFC, then ADR): `@RouteAccess` + `permissions` compiled into `RouteRequirement`. D10 resolves
       with it.
+- [ ] **S6 — `@View` pages for exeris-web** (TS wave S6): CUSTOM blocks compile with their props, LIST
+      items are `<li>`, the generated `<h1>` can be omitted, pages-only output into an existing app with
+      manifest-owned rewrites, a views-only `init`, and opt-in SSG. HERO's look waits on `.exeris-hero`
+      in `@exeris/ui-kit` 0.5; SEO fields, a per-view heading switch and typed block props wait on the
+      SDK presentation IR.
+      *Open:* #334 (CUSTOM blocks, props, LIST, heading), #335 (pages-only, owned writes, init), SSG.
 - [ ] Track C (SDK record changes), `@SagaTransition`, T12 + T17.
 - [ ] **EV1-stream per-action driver** (ADR-044 amendment first): the streaming action runs, and its
       triggered events stream back. Moved from 0.9.0 on 2026-10-02; the open questions are under
