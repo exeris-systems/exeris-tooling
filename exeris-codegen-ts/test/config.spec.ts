@@ -96,6 +96,18 @@ describe('GeneratorConfigSchema', () => {
     expect(() => GeneratorConfigSchema.parse({ customBlocks: { A: { import: './a', symbol: 'star-rating' } } })).toThrow();
     expect(() => GeneratorConfigSchema.parse({ customBlocks: { A: { import: '', symbol: 'A' } } })).toThrow();
   });
+
+  it("viewHeading defaults to 'title' and accepts 'title' and 'none'", () => {
+    expect(GeneratorConfigSchema.parse({}).viewHeading).toBe('title');
+    expect(DEFAULT_CONFIG.viewHeading).toBe('title');
+    expect(GeneratorConfigSchema.parse({ viewHeading: 'title' }).viewHeading).toBe('title');
+    expect(GeneratorConfigSchema.parse({ viewHeading: 'none' }).viewHeading).toBe('none');
+  });
+
+  it('viewHeading rejects any other value', () => {
+    expect(() => GeneratorConfigSchema.parse({ viewHeading: 'hidden' })).toThrow();
+    expect(() => GeneratorConfigSchema.parse({ viewHeading: false })).toThrow();
+  });
 });
 
 // ---------- DEFAULT_CONFIG ----------

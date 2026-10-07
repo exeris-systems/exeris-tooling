@@ -126,7 +126,8 @@ put settings you want to keep.
   ],
   "customBlocks": {
     "StarRating": { "import": "../blocks/star-rating.component", "symbol": "StarRatingComponent" }
-  }
+  },
+  "viewHeading": "title"
 }
 ```
 
@@ -146,6 +147,14 @@ in template order) bound as `[props]="blockProps<N>"`, so the component declares
 Generation fails, naming the view, the block and `customBlocks`, when a view uses a CUSTOM block
 whose `customType` has no entry, or whose props are not valid JSON. This option is file-only; it
 has no CLI flag.
+
+### `viewHeading`: the heading of a `@View` page
+
+`"title"`, the default, heads every emitted `@View` page with an `<h1>` holding the view's `title`,
+or its name when it declares none. `"none"` emits no `<h1>`, for pages whose own blocks carry the
+headline, such as a HERO with one; the rest of the page is unchanged. Either way the page's route
+keeps the view's `title`, which sets the document title, and the navigation label stays the same.
+The option applies to every `@View` page of the run. It is file-only; it has no CLI flag.
 
 ## Peer contracts (mesh)
 

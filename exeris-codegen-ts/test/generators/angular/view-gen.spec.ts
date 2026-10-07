@@ -573,3 +573,31 @@ describe('generateView — a LIST renders its items as <li>', () => {
     expect(f.content).not.toContain('<li>');
   });
 });
+
+describe('generateView — viewHeading', () => {
+  const heading = '      <h1 class="text-2xl font-bold font-exeris mb-6">Products</h1>\n';
+
+  it("'title' heads the page with the view title as its h1", () => {
+    const file = generateView(productLanding(), { ...DEFAULT_CONFIG, viewHeading: 'title' });
+    expect(file.content).toContain(`<main class="exeris-page" data-view="ProductLanding">\n${heading}`);
+  });
+
+  it('the default config emits the title heading', () => {
+    expect(generateView(productLanding(), DEFAULT_CONFIG).content).toBe(
+      generateView(productLanding(), { ...DEFAULT_CONFIG, viewHeading: 'title' }).content,
+    );
+  });
+
+  it("'none' emits no h1 and the rest of the component as 'title' emits it", () => {
+    const titled = generateView(productLanding(), DEFAULT_CONFIG).content;
+    const bare = generateView(productLanding(), { ...DEFAULT_CONFIG, viewHeading: 'none' }).content;
+    expect(bare).not.toContain('<h1');
+    expect(bare).toBe(titled.replace(heading, ''));
+  });
+
+  it("'none' keeps the route title, which sets the document title", () => {
+    const route = generateViewRoute(productLanding(), { ...DEFAULT_CONFIG, viewHeading: 'none' });
+    expect(route.content).toContain("title: 'Products',");
+    expect(route.content).toBe(generateViewRoute(productLanding(), DEFAULT_CONFIG).content);
+  });
+});

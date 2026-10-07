@@ -120,6 +120,12 @@ export const GeneratorConfigSchema = z.object({
     )
     .default({}),
 
+  /** What heads every `@View` page component. `'title'` emits the view's title (else its name) as
+   *  the page's `<h1>`; `'none'` emits no heading, for pages whose own blocks carry the headline.
+   *  The route `title`, which sets the document title, and the navigation label read the view's
+   *  title either way. */
+  viewHeading: z.enum(['title', 'none']).default('title'),
+
 });
 
 export type GeneratorConfig = z.infer<typeof GeneratorConfigSchema>;
@@ -153,6 +159,7 @@ export const DEFAULT_CONFIG: GeneratorConfig = {
   peers: [],
   generateTests: false,
   customBlocks: {},
+  viewHeading: 'title',
 };
 
 /**

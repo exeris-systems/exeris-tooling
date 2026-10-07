@@ -130,5 +130,11 @@
     "since": "0.10",
     "adr": "ADR-092",
     "justification": "A CUSTOM block's element compiles only when the page imports the component behind it, so customBlocks maps each customType to the module and class the page imports and lists in its component imports; a view with a CUSTOM block whose customType has no entry, or whose props are not JSON, fails generation naming the view and the block. The block's props JSON is a blockProps<N> field of the page, bound as [props]. A LIST wraps each child in an <li>, and one <li> per row when it iterates an entity collection. A view without CUSTOM or LIST blocks is unaffected. docs/MIGRATION-0.x-to-1.0.md 0.10.0 carries the step."
+  },
+  {
+    "signature": "GeneratorConfig: + viewHeading ('title' | 'none', default 'title'); pages/<view>.component.ts: no <h1> when 'none'",
+    "since": "0.10",
+    "adr": "ADR-092",
+    "justification": "A page whose blocks carry their own headline, such as a HERO, got a second <h1> from the generated title heading. viewHeading 'none' omits that <h1> on every @View page and leaves the rest of the page, the route title that sets the document title, and the navigation label as 'title' emits them. The default is 'title', whose output is byte-identical to a run without the key, so no consumer has to act and MIGRATION carries no step."
   }
 ]

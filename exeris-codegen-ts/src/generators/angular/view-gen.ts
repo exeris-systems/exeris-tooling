@@ -626,7 +626,9 @@ export function generateView(view: ViewMetadata, config: GeneratorConfig): Outpu
   lines.push('  changeDetection: ChangeDetectionStrategy.OnPush,');
   lines.push('  template: `');
   lines.push(`    <main class="exeris-page" data-view="${escapeAttr(view.name)}">`);
-  lines.push(`      <h1 class="text-2xl font-bold font-exeris mb-6">${escapeText(title)}</h1>`);
+  if (config.viewHeading !== 'none') {
+    lines.push(`      <h1 class="text-2xl font-bold font-exeris mb-6">${escapeText(title)}</h1>`);
+  }
   lines.push(...templateLines);
   lines.push('    </main>');
   lines.push('  `,');
