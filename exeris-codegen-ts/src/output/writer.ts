@@ -11,8 +11,8 @@
  *   the files a consumer is expected to edit) is written only when absent and kept otherwise;
  * - an existing file the manifest does not record (hand-written, or in a directory generated into
  *   for the first time) is never replaced, and does not become owned;
- * - a manifest without the ownership line (the 0.9.x format) also recorded files skipped
- *   because they existed, so an entry of it is owned only when the file on disk already holds what
+ * - a manifest without the ownership line may also record files a run skipped because they
+ *   existed, so an entry of it is owned only when the file on disk already holds what
  *   this run produces, starts with the header the generator writes ({@link carriesGeneratorMarker}),
  *   or is a seed; any other entry is treated as not owned;
  * - a symbolic link at a generated path, or a path reached through a link below the output root, is

@@ -49,10 +49,10 @@ function canonicalSet(paths: Iterable<string>): Set<string> {
 
 /**
  * The second header line of a manifest whose entries are exactly the files the tool wrote or
- * found byte-identical to what it would write. A manifest without it is in the 0.9.x format,
- * which also recorded files skipped because they already existed, so its entries do not prove
- * ownership (see {@link ManifestState.legacy}). Readers ignore `#` lines, so the Java side and
- * 0.9.x read this manifest unchanged.
+ * found byte-identical to what it would write. A manifest without it may also record files a run
+ * skipped because they already existed, so its entries do not prove ownership (see
+ * {@link ManifestState.legacy}). Readers ignore `#` lines, so a reader that does not know this line
+ * reads the manifest unchanged.
  */
 export const MANIFEST_OWNERSHIP_LINE = '# ownership: written';
 
@@ -118,8 +118,8 @@ export interface PrunePlan {
   readonly prune: string[];
   /**
    * Entries dropped from the manifest and left on disk: a seed file (written once for the
-   * consumer to edit), a path that is a link or is reached through one, or an entry of a 0.9.x
-   * manifest whose file lacks the generator header. Sorted, canonical.
+   * consumer to edit), a path that is a link or is reached through one, or an entry of a manifest
+   * without the ownership line whose file lacks the generator header. Sorted, canonical.
    */
   readonly release: string[];
 }
@@ -154,8 +154,8 @@ export function planPrune(
     if (seedPaths.has(rel) || stat.isSymbolicLink() || throughSymlink(outputPath, rel)) {
       release.push(rel);
     } else if (stat.isFile()) {
-      // A 0.9.x entry may name a hand-written file that release skipped: it is deleted only when it
-      // starts with the header the generator writes.
+      // An entry of a manifest without the ownership line does not prove ownership: its file is
+      // deleted only when it starts with the header the generator writes.
       const proven = !manifest.legacy || carriesGeneratorMarker(readFileSync(full, 'utf-8'));
       (proven ? prune : release).push(rel);
     }

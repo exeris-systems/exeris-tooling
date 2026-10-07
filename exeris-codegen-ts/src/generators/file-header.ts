@@ -78,9 +78,8 @@ export const GENERATOR_MARKER_LINES = 10;
 /**
  * Whether `content` starts with a header this package writes: its first
  * {@link GENERATOR_MARKER_LINES} lines carry the provenance line or the do-not-edit notice. Every
- * emitted file except the scaffold's seed files and `favicon.ico` has one, in 0.9.x as in this
- * release, so the writer accepts it as proof that a file a 0.9.x manifest lists is generated output
- * rather than a hand-written file 0.9.x skipped.
+ * emitted file except the scaffold's seed files and `favicon.ico` has one, so a file that carries
+ * it is generated output.
  */
 export function carriesGeneratorMarker(content: string): boolean {
   const head = content.split('\n', GENERATOR_MARKER_LINES).join('\n');
