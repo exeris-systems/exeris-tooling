@@ -230,7 +230,7 @@ describe('GraphEdgeMetadataSchema + GraphMetadataSchema', () => {
     expect(result.edges).toEqual([
       { name: 'placedBy', targetLabel: 'User', relationType: 'PLACED_BY' },
     ]);
-    expect(result.queries[0].cypher).toBe('MATCH (o:Order) RETURN o');
+    expect(result.queries?.[0].cypher).toBe('MATCH (o:Order) RETURN o');
   });
 
   it('accepts an edge whose optional components are absent from the wire', () => {
@@ -245,18 +245,31 @@ describe('GraphEdgeMetadataSchema + GraphMetadataSchema', () => {
     expect('direction' in result).toBe(false);
   });
 
-  it('GraphMetadata defaults all three collections to []', () => {
-    const result = GraphMetadataSchema.parse({});
+  it('leaves absent properties and queries absent: not carried is not "none declared"', () => {
+    // The document the processor writes for @Graph(nodeClass = "Order"): properties and
+    // queries are null, so NON_NULL keeps them off the wire.
+    const result = GraphMetadataSchema.parse({ label: 'Order', edges: [] });
+
+    expect('properties' in result).toBe(false);
+    expect('queries' in result).toBe(false);
+    expect(result.edges).toEqual([]);
+  });
+
+  it('keeps an empty properties or queries list as written', () => {
+    const result = GraphMetadataSchema.parse({ properties: [], queries: [] });
 
     expect(result.properties).toEqual([]);
-    expect(result.edges).toEqual([]);
     expect(result.queries).toEqual([]);
+  });
+
+  it('defaults edges to [] when the document omits them', () => {
+    expect(GraphMetadataSchema.parse({}).edges).toEqual([]);
   });
 
   it('defaults GraphProperty.indexed to false when the producer omits it', () => {
     const result = GraphMetadataSchema.parse({ properties: [{ name: 'total' }] });
 
-    expect(result.properties[0].indexed).toBe(false);
+    expect(result.properties?.[0].indexed).toBe(false);
   });
 });
 
