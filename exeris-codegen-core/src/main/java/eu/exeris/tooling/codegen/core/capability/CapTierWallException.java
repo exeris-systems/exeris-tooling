@@ -14,13 +14,21 @@ import java.util.List;
  * <p>Carries every violation found rather than the first, so a cap author sees the whole
  * boundary problem in one build.
  *
- * @since 0.7.0
+ * @since 0.7
  */
 public final class CapTierWallException extends RuntimeException {
 
-    // Non-transient so violations() survives serialization, matching CapabilityGraphException.
+    /**
+     * Every violation found, in deterministic order. Non-transient so {@link #violations()}
+     * survives serialization, as in {@link CapabilityGraphException}.
+     */
     private final List<WallViolation> violations;
 
+    /**
+     * Creates the exception with a message listing every violation, one per line.
+     *
+     * @param violations the violations found, in deterministic order
+     */
     public CapTierWallException(List<WallViolation> violations) {
         super("Cap-tier Wall violated (ADR-024 predicate 4) — "
                 + violations.size() + " forbidden reference(s):\n  - "
@@ -28,7 +36,11 @@ public final class CapTierWallException extends RuntimeException {
         this.violations = List.copyOf(violations);
     }
 
-    /** The individual violations, in deterministic order. */
+    /**
+     * Returns the individual violations.
+     *
+     * @return the violations, unmodifiable, in deterministic order
+     */
     public List<WallViolation> violations() {
         return violations;
     }

@@ -4,7 +4,7 @@ type: reference
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-10-06
+last-verified: 2026-10-07
 ---
 
 # Diagnostic identifiers
@@ -65,6 +65,7 @@ Printed by `javac` while it compiles your sources. `-Aexeris.strict=true` enable
 | `EXT-PROC-1012` | A system-field role marker and the matching `@ExerisDomain` override name different fields. | Remove whichever of the two is wrong. |
 | `EXT-PROC-1013` | `@GraphEdge` is declared more than once on one field. | Declare each edge on its own field. |
 | `EXT-PROC-1014` | `@ExerisDomain(realTimeApi = true)` is on a `TENANT` or `UNIVERSE` entity. Kernel events carry no tenant, so the generated live view would send every tenant's events to every subscriber. | Declare `dataScope = DataScope.GLOBAL` if the rows are not tenant-owned; otherwise drop `realTimeApi` until stream events carry an isolation key. |
+| `EXT-PROC-1015` | An `@ExerisDomain` type declares no field `id`, inherited or its own. The generated schema, repository, routes and Angular model all identify a row by `id`; `primaryKeyField` does not rename it. | Declare `private UUID id;` with its getter and setter. |
 
 ### 11xx — warnings on an ordinary build
 
@@ -73,7 +74,6 @@ Printed by `javac` while it compiles your sources. `-Aexeris.strict=true` enable
 | `EXT-PROC-1101` | `@ExerisDomain.tenantScoped` is deprecated for removal; it is read as a fallback. | Replace it with the `dataScope` the message names. |
 | `EXT-PROC-1102` | A deprecated `@Validation` attribute is set; it is read as a fallback. | Move to the replacement the message names (see `MIGRATION.md` in exeris-sdk). |
 | `EXT-PROC-1103` | `@Validation.validateOn` holds a value other than `CREATE` or `UPDATE`, which is dropped. | Use `@Field.inCreate` / `@Field.inUpdate` instead. |
-| `EXT-PROC-1104` | An entity's derived default table name differs from the plain plural of its class name. | To keep an existing table, set the `tableName` the message names; otherwise migrate to the new name. |
 | `EXT-PROC-1105` | `@SharedScope` is on an entity that is not `DataScope.UNIVERSE`, so it has no effect. | Declare `dataScope = DataScope.UNIVERSE`, or remove the marker. |
 | `EXT-PROC-1106` | `@Bind` with `source = STATIC` or `NONE` carries attributes that are ignored. | Put authored content in `@Block(props)`, or bind with `source = ENTITY`, `PROJECTION` or `ACTION`. |
 | `EXT-PROC-1107` | `@Action(streaming = true)`: the generated stream route does not run the action. | Expect keep-alives only on that route; the per-action stream driver is tracked in the ROADMAP (EV1-stream). |
@@ -158,10 +158,13 @@ with status 1.
 | `EXT-GEN-3101` | Generation found no domain or capability metadata to generate from. | Usually a compile that failed before the processor ran: fix the compile, then rerun. Nothing is generated and nothing committed is deleted (see `EXT-PLUG-2001`). |
 | `EXT-GEN-3102` | An optional `@Requires` has no matching provider, so the requirement is skipped. | Nothing, if the capability is meant to be optional. Otherwise add the `@Provides` the message names, or widen its version range. |
 | `EXT-GEN-3103` | The capability graph did not resolve on possibly stale metadata; the post-compile gate decides. | Nothing yet: `exeris:verify-capabilities` checks the freshly compiled metadata later in the same build and fails it with `EXT-PLUG-2201` if the graph is still unresolved. |
+| `EXT-GEN-3104` | No base package was given and the entities span more than one package. `Application`, `RuntimeComponents`, `RuntimeLifecycle` and the generated `testsupport` package go to the package of the entity whose fully-qualified name sorts first, with `.domain` removed (`com.shop.billing.domain.Invoice` and `com.shop.order.domain.Order` give `com.shop.billing`). | Nothing, if that package suits you. Otherwise set `exeris.basePackage` (`--base-package` on the command line) to the package you want; the warning is not printed when it is set. |
 
 ## Retired identifiers
 
 A retired identifier is no longer printed, and its number is never allocated again. Retiring one
 moves its row here; `DiagnosticIdTest` fails if a registered identifier is listed in this section.
 
-None yet.
+| ID | Meaning | Retired in |
+|---|---|---|
+| `EXT-PROC-1104` | An entity's derived default table name differs from the plain plural of its class name. | 0.10.0. The default table has followed the SDK plural since 0.9.0; set `tableName` to name any other table. |

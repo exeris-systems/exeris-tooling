@@ -4,7 +4,7 @@ type: reference
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-10-04
+last-verified: 2026-10-07
 ---
 
 # Contributing to Exeris Tooling
@@ -30,6 +30,37 @@ cd exeris-codegen-ts && npm install && npm test
 
 **JDK 25 LTS is the baseline** across the reactor (`maven.compiler.release=25`, per kernel ADR-066 / SDK ADR-069).
 Maven 3.9+ for Java modules; Node 18+ for `exeris-codegen-ts`.
+
+### Javadoc gate
+
+A pull request that changes a Java file under `src/main/java` of `exeris-diagnostics`,
+`exeris-processor`, `exeris-codegen-core`, `exeris-codegen-java` or `exeris-codegen-maven-plugin`
+is held to the organisation Javadoc gate ([ADR-085](docs/adr/ADR-085.link.md),
+[`javadoc-conventions.md`](https://github.com/exeris-systems/exeris-docs/blob/main/standards/javadoc-conventions.md)
+rule 11). The workflow is `.github/workflows/javadoc.yml`. The unit is the file: a changed file
+must be clean as a whole, not only on the lines the pull request touched. Javadoc that a generator
+emits through `addJavadoc(...)` or a text block is generated output and is changed only together
+with the emitted code it documents.
+
+The gate has two halves, and both can be run locally against a checkout of
+[`exeris-systems/.github`](https://github.com/exeris-systems/.github) (here `../.github`), from
+the repository root, after `mvn install -DskipTests`:
+
+```bash
+# Checkstyle: the organisation ruleset, on the engine version the bundle pins
+mvn -q -f ../.github/java/checkstyle-engine-pom.xml dependency:build-classpath -Dmdep.outputFile=/tmp/cs-cp.txt
+java -cp "$(cat /tmp/cs-cp.txt)" com.puppycrawl.tools.checkstyle.Main \
+  -c ../.github/java/checkstyle-javadoc.xml exeris-codegen-core/src/main/java
+
+# doclint: javadoc with the flags the gate uses, on the files to check
+mvn -q -pl exeris-codegen-core dependency:build-classpath -Dmdep.outputFile=/tmp/cp.txt
+javadoc -Xdoclint:all -quiet --release 25 \
+  -tag 'apiNote:a:API Note:' -tag 'implSpec:a:Implementation Requirements:' -tag 'implNote:a:Implementation Note:' \
+  -cp "$(cat /tmp/cp.txt):exeris-codegen-core/target/classes" -d /tmp/javadoc-out \
+  $(find exeris-codegen-core/src/main/java -name '*.java')
+```
+
+Either half reporting a finding fails the gate; a doclint warning counts as a finding.
 
 ## `exeris-codegen-ts`
 
@@ -108,4 +139,7 @@ Development standards are binding per [ADR-085](docs/adr/ADR-085.link.md) and ho
 - [`javadoc-conventions.md`](https://github.com/exeris-systems/exeris-docs/blob/main/standards/javadoc-conventions.md) — Oracle doc-comment standards.
 - [`docs-style-guide.md`](https://github.com/exeris-systems/exeris-docs/blob/main/standards/docs-style-guide.md) — validated frontmatter and naming conventions.
 - [`agents-md-schema.md`](https://github.com/exeris-systems/exeris-docs/blob/main/standards/agents-md-schema.md) — [`AGENTS.md`](AGENTS.md) as the canonical entry point and [`.agents/`](.agents) as the semantic source.
+- A change a consumer sees after regenerating writes its MIGRATION step as one file under
+  `docs/migration/<version>/`, never as an edit of `docs/MIGRATION-0.x-to-1.0.md`; the release
+  assembles them ([format](docs/migration/README.md)).
 - Language: English everywhere (code, identifiers, comments, commit messages, PR titles/bodies, documentation).

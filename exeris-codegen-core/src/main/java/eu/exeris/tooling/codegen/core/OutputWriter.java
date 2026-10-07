@@ -34,8 +34,7 @@ import java.util.TreeSet;
  * so it is never touched. The manifest is sorted, so its content is
  * deterministic for the same set of generated files (hard-constraint #3).
  *
- * @author Exeris Team
- * @since 0.1.0
+ * @since 0.1
  */
 public final class OutputWriter {
 
@@ -146,7 +145,7 @@ public final class OutputWriter {
      *
      * @return the number of orphans the next prune would remove
      * @throws IOException if reading the previous manifest fails
-     * @since 0.6.0
+     * @since 0.6
      */
     public int countOrphans() throws IOException {
         Set<String> previous = readManifest();
@@ -175,7 +174,7 @@ public final class OutputWriter {
      * @param relativePath forward-slash relative path within the output directory
      * @return {@code true} if the file was preserved (previously owned and present)
      * @throws IOException if reading the previous manifest fails
-     * @since 0.6.0
+     * @since 0.6
      */
     public boolean preserve(String relativePath) throws IOException {
         Objects.requireNonNull(relativePath, "relativePath must not be null");
@@ -301,14 +300,18 @@ public final class OutputWriter {
     }
 
     /**
-     * Returns the output directory.
+     * Returns the root directory generated files are written under.
+     *
+     * @return the output root
      */
     public Path getOutputDir() {
         return outputDir;
     }
 
     /**
-     * Checks if header addition is enabled.
+     * Reports whether the writer prepends the generated-file header to the Java sources it writes.
+     *
+     * @return {@code true} when the header is added
      */
     public boolean isAddHeader() {
         return addHeader;

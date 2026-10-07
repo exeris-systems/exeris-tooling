@@ -66,6 +66,9 @@ public class KernelGeneratorStrategy {
 
     private final GeneratorRegistry registry;
 
+    /**
+     * Creates the strategy with the full per-entity generator roster registered.
+     */
     public KernelGeneratorStrategy() {
         this.registry = new GeneratorRegistry();
 
@@ -86,9 +89,20 @@ public class KernelGeneratorStrategy {
         registry.register(new KernelClientGenerator());
     }
 
+    /**
+     * Runs every registered generator that supports the entity.
+     *
+     * @param metadata the entity to generate for
+     * @return the generated files, in the registry's dispatch order
+     */
     public List<GeneratedFile> generate(DomainMetadata metadata) {
         return registry.generateAll(metadata);
     }
 
+    /**
+     * Returns the registry holding this strategy's generators.
+     *
+     * @return the registry; shared, not a copy
+     */
     public GeneratorRegistry getRegistry() { return registry; }
 }

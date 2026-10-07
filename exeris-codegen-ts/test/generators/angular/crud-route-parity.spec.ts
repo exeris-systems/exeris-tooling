@@ -83,7 +83,7 @@ function serviceMethods(content: string): Array<{ method: string; body: string }
 /** The HTTP call each request-issuing method makes, as a contract endpoint. */
 function serviceCalls(content: string): Array<{ method: string; endpoint: string }> {
   const calls: Array<{ method: string; endpoint: string }> = [];
-  for (const { method, body } of serviceMethods(content).filter(m => m.method !== 'restore')) {
+  for (const { method, body } of serviceMethods(content)) {
     const call = /this\.http\.(\w+)<.*?>\((this\.baseUrl|`[^`]*`)/.exec(body);
     expect(call, `HTTP call in ${method}`).not.toBeNull();
     calls.push({ method, endpoint: `${call![1].toUpperCase()} ${template(call![2])}` });
@@ -99,8 +99,8 @@ describe('CRUD route parity — generated TypeScript service vs the generated ro
     expect(calls.map(c => c.method)).toEqual(Object.keys(SERVICE_OPERATION));
   });
 
-  it('finds no other method but the deprecated restore()', () => {
-    expect(serviceMethods(service).map(m => m.method).sort()).toEqual([...Object.keys(SERVICE_OPERATION), 'restore'].sort());
+  it('finds no other method: every emitted method issues a served request', () => {
+    expect(serviceMethods(service).map(m => m.method).sort()).toEqual(Object.keys(SERVICE_OPERATION).sort());
   });
 
   it.each(Object.entries(SERVICE_OPERATION))('%s calls a route the router serves for %s', (method, operation) => {
@@ -114,12 +114,10 @@ describe('CRUD route parity — generated TypeScript service vs the generated ro
     expect(service).not.toContain('this.http.patch');
   });
 
-  // Nothing on the server un-sets the soft-delete flag, so restore() has no route to call. It stays
-  // one release, deprecated, and issues no request at all.
-  it('restore() calls no route: it issues no request', () => {
-    const restore = serviceMethods(service).find(m => m.method === 'restore')!;
-    expect(restore.body).not.toContain('this.http');
-    expect(restore.body).toMatch(/^ {4}return throwError\(/);
+  // Nothing on the server un-sets the soft-delete flag, so the service emits no restore().
+  it('emits no restore(): no route un-sets the soft-delete flag', () => {
+    expect(serviceMethods(service).map(m => m.method)).not.toContain('restore');
+    expect(service).not.toContain('throwError');
   });
 });
 

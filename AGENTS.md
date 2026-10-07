@@ -63,7 +63,8 @@ Coordinates: groupId `eu.exeris`, packages `eu.exeris.tooling.*`.
    [ADR-070](docs/adr/ADR-070-generated-composition-root-seam.md) (RuntimeComponents seam),
    [ADR-085](docs/adr/ADR-085.link.md) (federated documentation and hygiene).
 2. [`docs/MIGRATION-0.x-to-1.0.md`](docs/MIGRATION-0.x-to-1.0.md) and [`ROADMAP.md`](ROADMAP.md) for breaking
-   changes and milestone scope.
+   changes and milestone scope. A consumer-visible change adds its MIGRATION step as a fragment under
+   `docs/migration/<version>/` ([format](docs/migration/README.md)), never by editing the open train.
 3. Upstream & downstream references: `exeris-sdk/exeris-sdk-source-model/`, `exeris-kernel/exeris-kernel-spi/`,
    downstream consumer applications ([reference](.agents/references/cross-repo-dependencies.md)).
 4. [`docs/generators.md`](docs/generators.md) for which generator writes each emitted path and when

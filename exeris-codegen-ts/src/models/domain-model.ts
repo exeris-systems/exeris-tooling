@@ -194,11 +194,13 @@ export type UIMetadata = z.infer<typeof UIMetadataSchema>;
 // ============================================================================
 
 // Mirrors eu.exeris.sdk.sourcemodel.ast.GraphMetadata and its three element records
-// (GraphPropertyMetadata / GraphEdgeMetadata / GraphQueryMetadata). Every reference-typed
-// component is .optional() because those records carry @JsonInclude(NON_NULL), so a null
-// component is absent from the wire rather than null: the processor passes
-// GraphMetadata.properties as null today, and an edge's targetLabel / relationType are null
-// whenever the annotation left them blank.
+// (GraphPropertyMetadata / GraphEdgeMetadata / GraphQueryMetadata). Those records carry
+// @JsonInclude(NON_NULL), so a null component is absent from the wire rather than null, and an
+// absent component is "not carried" where an empty list is "carried, and there are none". The
+// processor extracts neither GraphMetadata.properties nor .queries and writes both as null, so
+// both are .optional() with no default: a [] here would claim the entity declares none. Edges
+// are extracted and always written, so their default changes nothing for processor output. An
+// edge's targetLabel / relationType are null whenever the annotation left them blank.
 //
 // @GraphEdge.direction has no component on GraphEdgeMetadata — one of the attributes with no
 // carrier listed in ROADMAP's annotation-surface debt — so no metadata document carries it.
@@ -231,9 +233,9 @@ export type GraphQueryMetadata = z.infer<typeof GraphQueryMetadataSchema>;
 
 export const GraphMetadataSchema = z.object({
   label: z.string().optional(),
-  properties: z.array(GraphPropertyMetadataSchema).default([]),
+  properties: z.array(GraphPropertyMetadataSchema).optional(),
   edges: z.array(GraphEdgeMetadataSchema).default([]),
-  queries: z.array(GraphQueryMetadataSchema).default([]),
+  queries: z.array(GraphQueryMetadataSchema).optional(),
 });
 
 export type GraphMetadata = z.infer<typeof GraphMetadataSchema>;
@@ -598,6 +600,20 @@ export function effectiveDataScope(
  */
 export function isTenantPartitioned(metadata: Pick<DomainMetadata, 'dataScope' | 'tenantScoped'>): boolean {
   return effectiveDataScope(metadata) !== 'GLOBAL';
+}
+
+/**
+ * The field that holds a row's owning tenant, or `undefined` for a GLOBAL entity:
+ * `systemFields.tenantIdField` when it is non-blank, else `tenantId`, whether or not the entity
+ * declares a block. The TS twin of the Java side's `DataScopeSupport.ownerFieldName`, so the
+ * TypeScript DTOs and the emitted OpenAPI agree on which field the server owns.
+ */
+export function ownerFieldName(
+  metadata: Pick<DomainMetadata, 'dataScope' | 'tenantScoped' | 'systemFields'>,
+): string | undefined {
+  if (!isTenantPartitioned(metadata)) return undefined;
+  const declared = metadata.systemFields?.tenantIdField;
+  return declared === undefined || declared.trim() === '' ? 'tenantId' : declared;
 }
 
 /**

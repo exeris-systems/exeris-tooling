@@ -29,7 +29,7 @@ import java.util.List;
  * Kernel Handler Generator.
  * <p>
  * Emits a per-entity {@code *Handler} class whose methods match the
- * {@link eu.exeris.kernel.spi.http.HttpHandler} functional interface
+ * {@code eu.exeris.kernel.spi.http.HttpHandler} functional interface
  * (each handler method is wired into the router individually by reference).
  * <p>
  * Wired against Open-Core SPI:
@@ -39,23 +39,22 @@ import java.util.List;
  *   <li>{@code eu.exeris.kernel.spi.memory.LoanedBuffer} — zero-copy request body</li>
  * </ul>
  * Response bodies are serialised by the exchange's typed-response encoder
- * via {@link eu.exeris.kernel.spi.http.HttpExchange#respond(eu.exeris.kernel.spi.http.HttpStatus, Object)};
+ * via {@code eu.exeris.kernel.spi.http.HttpExchange#respond(eu.exeris.kernel.spi.http.HttpStatus, Object)};
  * the handler does not run its own response writer.
  * <p>
  * Request bodies are decoded through the server-side request-body codec SPI
  * (ADR-036): the handler resolves an {@code HttpRequestBodyDecoder} from
- * {@link eu.exeris.kernel.spi.http.HttpKernelProviders#httpRequestBodyDecoderRegistry()}
+ * {@code eu.exeris.kernel.spi.http.HttpKernelProviders#httpRequestBodyDecoderRegistry()}
  * and hands it the {@code LoanedBuffer} directly (no heap {@code byte[] + String}
  * round-trip). No Jackson type is emitted into generated code — the JSON binding
  * lives behind the SPI in the active codec driver (Community Jackson today,
  * alternative bindings tomorrow).
  *
  * @implNote Emission is JavaPoet-based (ADR-015). Output style is owned by
- * JavaPoet's pretty-printer; substring assertions in the E2E suite still hold,
- * compile-gate verifies semantics against real {@code exeris-kernel-spi}.
+ *     JavaPoet's pretty-printer; substring assertions in the E2E suite still hold,
+ *     compile-gate verifies semantics against real {@code exeris-kernel-spi}.
  *
- * @author Exeris Team
- * @since 0.1.0
+ * @since 0.1
  */
 public class KernelHandlerGenerator implements KernelArtifactGenerator {
 
@@ -96,6 +95,14 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
     private static final String EXCHANGE_PARAM = "exchange";
     /** The 500 tail every deployment-fault refusal ends on (T41, T52, and the service-call catch). */
     private static final String RESPOND_SERVER_ERROR = "exchange.respond($T.INTERNAL_SERVER_ERROR)";
+
+    /**
+     * Creates the generator. It keeps no per-domain state, so one instance serves every domain
+     * in a build.
+     */
+    public KernelHandlerGenerator() {
+        // no state to initialise
+    }
 
     @Override
     public GeneratedFile generate(DomainMetadata metadata) {

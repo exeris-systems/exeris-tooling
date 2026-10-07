@@ -37,20 +37,23 @@ import java.util.List;
  * SPI ({@code emit}/{@code close}), emit no {@code text/event-stream} literal, and
  * let {@code StreamClosedException} from {@code emit} propagate.
  *
- * @author Exeris Team
- * @since 0.6.0
+ * @since 0.6
  */
 public final class KernelStreamScaffold {
 
     private KernelStreamScaffold() {
     }
 
+    /** {@code eu.exeris.kernel.spi.http.HttpStreamHandler} — the interface every emitted stream handler implements. */
     public static final ClassName HTTP_STREAM_HANDLER =
             ClassName.get("eu.exeris.kernel.spi.http", "HttpStreamHandler");
+    /** {@code eu.exeris.kernel.spi.http.HttpStreamExchange} — the parameter of {@code handle}. */
     public static final ClassName HTTP_STREAM_EXCHANGE =
             ClassName.get("eu.exeris.kernel.spi.http", "HttpStreamExchange");
+    /** {@code eu.exeris.kernel.spi.http.StreamEvent} — one SSE frame passed to {@code emit}. */
     public static final ClassName STREAM_EVENT =
             ClassName.get("eu.exeris.kernel.spi.http", "StreamEvent");
+    /** {@code java.lang.Thread}, for restoring the interrupt flag. */
     public static final ClassName THREAD = ClassName.get("java.lang", "Thread");
 
     // --- EV1 producer SPI (ADR-043 stream + ADR-046 codec) ------------------
@@ -71,15 +74,21 @@ public final class KernelStreamScaffold {
      *  unchecked disconnect signal thrown by {@code emit}; let it propagate. */
     public static final ClassName STREAM_CLOSED_EXCEPTION =
             ClassName.get("eu.exeris.kernel.spi.exceptions.http", "StreamClosedException");
+    /** {@code java.lang.foreign.ValueLayout}, for copying a payload segment to a byte array. */
     public static final ClassName VALUE_LAYOUT =
             ClassName.get("java.lang.foreign", "ValueLayout");
+    /** {@code java.nio.charset.StandardCharsets}, for decoding payload bytes as UTF-8. */
     public static final ClassName STANDARD_CHARSETS =
             ClassName.get("java.nio.charset", "StandardCharsets");
+    /** {@code java.util.concurrent.BlockingQueue} — the declared type of the producer's hand-off queue. */
     public static final ClassName BLOCKING_QUEUE =
             ClassName.get("java.util.concurrent", "BlockingQueue");
+    /** {@code java.util.concurrent.ArrayBlockingQueue} — the bounded implementation of that queue. */
     public static final ClassName ARRAY_BLOCKING_QUEUE =
             ClassName.get("java.util.concurrent", "ArrayBlockingQueue");
+    /** {@code java.util.List}. */
     public static final ClassName LIST = ClassName.get("java.util", "List");
+    /** {@code java.util.ArrayList}. */
     public static final ClassName ARRAY_LIST = ClassName.get("java.util", "ArrayList");
 
     /**
@@ -107,13 +116,20 @@ public final class KernelStreamScaffold {
      * The window (in seconds) the scaffold holds the stream open before closing —
      * {@code KEEPALIVE_ITERATIONS × KEEPALIVE_INTERVAL_MILLIS / 1000}. Used in the
      * generated handler's Javadoc.
+     *
+     * @return the keep-alive window in whole seconds
      */
     public static long keepAliveWindowSeconds() {
         return (KEEPALIVE_ITERATIONS * KEEPALIVE_INTERVAL_MILLIS) / 1000;
     }
 
-    /** The {@code LOG} field every stream handler carries — one shape for all generated
-     *  classes, see {@link KernelScaffold#loggerField(ClassName)}. */
+    /**
+     * Returns the {@code LOG} field every stream handler carries — one shape for all generated
+     * classes, see {@link KernelScaffold#loggerField(ClassName)}.
+     *
+     * @param selfType the generated class's own name
+     * @return the logger field
+     */
     public static FieldSpec loggerField(ClassName selfType) {
         return KernelScaffold.loggerField(selfType);
     }
@@ -122,6 +138,10 @@ public final class KernelStreamScaffold {
      * The {@code LOG} field plus the two keep-alive constant fields the
      * keep-alive body ({@link #keepAliveScaffold(List, List)}) reads. {@code selfType}
      * is the generated class's own {@link ClassName}.
+     *
+     * @param selfType the generated class's own name
+     * @return the logger field, then {@code KEEPALIVE_INTERVAL_MILLIS} and
+     *         {@code KEEPALIVE_ITERATIONS}
      */
     public static List<FieldSpec> commonFields(ClassName selfType) {
         return List.of(
@@ -142,6 +162,9 @@ public final class KernelStreamScaffold {
      * reads. No keep-alive constants — the producer never sleeps. {@code selfType} is
      * the generated class's own {@link ClassName}; pair with
      * {@link #producerConstructor()}.
+     *
+     * @param selfType the generated class's own name
+     * @return the logger field, then {@code STREAM_BUFFER_CAPACITY} and {@code eventEngine}
      */
     public static List<FieldSpec> producerFields(ClassName selfType) {
         return List.of(
@@ -169,6 +192,8 @@ public final class KernelStreamScaffold {
      * written. {@code RuntimeComponents} resolves the engine inside the boot
      * callback, where it is bound — the same shape as the handler's
      * constructor-injected {@code MemoryAllocator}.
+     *
+     * @return a public constructor taking and storing the {@code EventEngine}
      */
     public static MethodSpec producerConstructor() {
         return MethodSpec.constructorBuilder()
@@ -222,6 +247,7 @@ public final class KernelStreamScaffold {
      * @param bindings the events to project, in deterministic declaration order;
      *                 never {@code null} or empty (the caller routes the no-event
      *                 entity to {@link #keepAliveScaffold(List, List)} instead)
+     * @return the subscribe-and-drain block, through its {@code finally} teardown
      */
     public static CodeBlock eventProducerScaffold(List<StreamEventBinding> bindings) {
         // Variable types are parameterized; the `new` side uses the diamond
@@ -308,6 +334,7 @@ public final class KernelStreamScaffold {
      *                      opening line; never {@code null}
      * @param heartbeatNote comment lines emitted inside the loop, above the
      *                      {@code emit(...)} call; never {@code null}
+     * @return the block from the keep-alive comment to {@code close()}
      */
     public static CodeBlock keepAliveScaffold(List<String> reason, List<String> heartbeatNote) {
         CodeBlock.Builder body = CodeBlock.builder()

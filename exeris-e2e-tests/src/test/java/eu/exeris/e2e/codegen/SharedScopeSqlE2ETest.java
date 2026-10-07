@@ -194,6 +194,8 @@ class SharedScopeSqlE2ETest {
                               dataScope = ExerisDomain.DataScope.UNIVERSE)
                 public class GalaxyPresence {
 
+                    private java.util.UUID id;
+
                     @Field(label = "X")
                     private int x;
 
@@ -217,6 +219,8 @@ class SharedScopeSqlE2ETest {
                 @ExerisDomain(module = "universe", path = "/fleets",
                               dataScope = ExerisDomain.DataScope.TENANT)
                 public class Fleet {
+
+                    private java.util.UUID id;
 
                     @Field(label = "Name")
                     private String name;

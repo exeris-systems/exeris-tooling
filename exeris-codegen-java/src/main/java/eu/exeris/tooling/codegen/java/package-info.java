@@ -14,6 +14,6 @@
  * infrastructure. Detachment to community/enterprise tiers is a runtime
  * dependency swap, not a codegen variation.
  *
- * @since 0.1.0
+ * @since 0.1
  */
 package eu.exeris.tooling.codegen.java;

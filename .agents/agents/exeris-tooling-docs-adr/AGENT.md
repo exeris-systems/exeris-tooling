@@ -21,6 +21,7 @@ Maintain knowledge integrity between the build-time pipeline implementation and 
 ## Primary Responsibilities
 - Detect drift between changed code and `docs/adr/ADR-015-codegen-emission-strategy.md`, `docs/MIGRATION-0.x-to-1.0.md`, `README.md` pipeline diagram + module table, `ROADMAP.md` milestone scope.
 - Determine whether a change should trigger a new ADR, an ADR-015 amendment, a MIGRATION entry, or just a README/ROADMAP edit.
+- A MIGRATION entry for the open release train is a new fragment, `docs/migration/<version>/<area>-<NN>-<slug>.md`, in the format `docs/migration/README.md` gives, never an edit of the open train in `docs/MIGRATION-0.x-to-1.0.md`, which the release cut assembles. `python3 tools/migration/assemble-migration.py --check` must pass.
 - Reserve ADR numbers in the central registry in `exeris-docs/adr-index.md` BEFORE drafting. Tooling-only ADRs still enter that single namespace.
 - Keep docs realistic to current repository state.
 - Do not let docs outrun code: planned Maven plugin / detachment levels stay marked as target/placeholder until shipped.

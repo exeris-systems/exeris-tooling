@@ -1140,6 +1140,24 @@ class KernelApplicationGeneratorTest {
         assertThat(fkVersion).isGreaterThan(customerCreate);
     }
 
+    @Test
+    @DisplayName("code examples in the emitted Javadoc are {@snippet} blocks, composed or not")
+    void emittedJavadocExamplesAreSnippets() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        List<DomainMetadata> domains = List.of(
+                DomainMetadata.builder("Order", "com.example.domain").path("/orders").build());
+
+        for (boolean composed : new boolean[] {false, true}) {
+            List<GeneratedFile> files = gen.generateAll(domains, "com.example.foundation", composed);
+
+            assertThat(application(files)).contains("{@snippet :");
+            assertThat(components(files)).contains("{@snippet :");
+            assertThat(files).allSatisfy(file -> assertThat(file.content())
+                    .doesNotContain("<pre>")
+                    .doesNotContain("</pre>"));
+        }
+    }
+
     /** Extracts the numeric version from a {@code "V<n>__…"} migration filename. */
     private static long versionNumber(String className) {
         return Long.parseLong(className.substring(1, className.indexOf("__")));

@@ -83,6 +83,19 @@ class KernelClientGeneratorTest {
     }
 
     @Test
+    @DisplayName("the code example in the emitted Javadoc is a {@snippet} block")
+    void emittedJavadocExampleIsASnippet() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .build();
+
+        assertThat(generator.generate(metadata).content())
+                .contains("{@snippet :")
+                .doesNotContain("<pre>")
+                .doesNotContain("</pre>");
+    }
+
+    @Test
     @DisplayName("generate derives /<kebab>s base via SDK effectivePath() when path() is unset")
     void generateWithoutExplicitPath() {
         // buildApiPath delegates to DomainMetadata#effectivePath(), the SDK-canonical

@@ -38,9 +38,12 @@ import java.lang.System.Logger.Level;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.SortedSet;
+import java.util.TreeSet;
 import java.util.stream.Stream;
 
 /**
@@ -53,8 +56,7 @@ import java.util.stream.Stream;
  * generator set or the {@link ObjectMapper}. Production callers should use
  * {@link #createDefault()}.
  *
- * @author Exeris Team
- * @since 0.1.0
+ * @since 0.1
  */
 public final class CodegenPipeline {
 
@@ -66,6 +68,19 @@ public final class CodegenPipeline {
      * capability-failure path. Package-private for test visibility.
      */
     static final String CAP_MANIFEST = "cap-manifest.json";
+
+    /**
+     * The order every run sees the domains in: by fully-qualified entity name. Project-wide
+     * artefacts ({@code RuntimeComponents}, {@code RuntimeLifecycle}) list the entities in this
+     * order, so it comes from the metadata rather than from the directory listing, whose order
+     * differs between filesystems.
+     */
+    static final Comparator<DomainMetadata> DOMAIN_ORDER =
+            Comparator.comparing(CodegenPipeline::qualifiedName);
+
+    /** Orders directory entries by file name, so each file is read in the same order everywhere. */
+    private static final Comparator<Path> FILE_NAME_ORDER =
+            Comparator.comparing(p -> p.getFileName().toString());
 
     private final GeneratorRegistry registry;
     private final KernelApplicationGenerator applicationGenerator;
@@ -80,6 +95,14 @@ public final class CodegenPipeline {
     private final KernelRepositoryTestGenerator repositoryTestGenerator = new KernelRepositoryTestGenerator();
     private final KernelSagaTestGenerator sagaTestGenerator = new KernelSagaTestGenerator();
 
+    /**
+     * Creates a pipeline over the given generators and metadata reader.
+     *
+     * @param registry             the per-entity generators to dispatch to
+     * @param applicationGenerator the generator of the application-bootstrap artefacts
+     * @param mapper               the JSON mapper that reads processor-emitted metadata
+     * @throws NullPointerException if any argument is {@code null}
+     */
     public CodegenPipeline(GeneratorRegistry registry,
                            KernelApplicationGenerator applicationGenerator,
                            ObjectMapper mapper) {
@@ -92,6 +115,8 @@ public final class CodegenPipeline {
      * Default wiring: the Kernel SPI-aligned strategy + the bootstrap
      * generator + a Jackson mapper configured to tolerate forward-compatible
      * metadata fields and the {@code java.time} module.
+     *
+     * @return a pipeline with the default kernel generator roster
      */
     public static CodegenPipeline createDefault() {
         return new CodegenPipeline(
@@ -112,7 +137,8 @@ public final class CodegenPipeline {
      * @param metadataDir         directory holding processor-emitted JSON
      * @param outputDir           target for generated sources (created if absent)
      * @param explicitBasePackage caller-supplied base package, or {@code null}
-     *                            to auto-detect from the first domain
+     *                            to auto-detect it from the first domain in qualified-name order
+     * @return the number of files written
      * @throws IOException if metadata or output cannot be read/written
      * @throws eu.exeris.tooling.codegen.core.capability.CapabilityGraphException
      *         (unchecked) if the capability graph cannot be resolved — an
@@ -132,7 +158,16 @@ public final class CodegenPipeline {
      * {@link #run(Path, Path, String, boolean, boolean)} for the full contract
      * and the T18(a) deferred alternative.
      *
-     * @since 0.6.0
+     * @param metadataDir         directory holding processor-emitted JSON
+     * @param outputDir           target for generated sources (created if absent)
+     * @param explicitBasePackage caller-supplied base package, or {@code null}
+     *                            to auto-detect from the first domain
+     * @param allowEmpty          when {@code true}, a run that loads zero
+     *                            {@code @ExerisDomain} entities may prune a
+     *                            previously-generated tree
+     * @return the number of files written
+     * @throws IOException if metadata or output cannot be read/written
+     * @since 0.6
      */
     public int run(Path metadataDir, Path outputDir, String explicitBasePackage, boolean allowEmpty)
             throws IOException {
@@ -150,7 +185,7 @@ public final class CodegenPipeline {
      * @param metadataDir         directory holding processor-emitted JSON
      * @param outputDir           target for generated sources (created if absent)
      * @param explicitBasePackage caller-supplied base package, or {@code null}
-     *                            to auto-detect from the first domain
+     *                            to auto-detect it from the first domain in qualified-name order
      * @param allowEmpty          when {@code true}, a run that loads zero
      *                            {@code @ExerisDomain} entities is permitted to
      *                            prune a previously-generated tree — the explicit
@@ -180,7 +215,7 @@ public final class CodegenPipeline {
      * @throws eu.exeris.tooling.codegen.java.kernel.UnpersistableFieldTypeException
      *         (unchecked, {@code EXT-GEN-3003}) if an entity has a field whose type the generated
      *         repository cannot store and read back; nothing is written
-     * @since 0.6.0
+     * @since 0.6
      */
     public int run(Path metadataDir, Path outputDir, String explicitBasePackage, boolean allowEmpty,
                    boolean deferCapabilityFailure) throws IOException {
@@ -239,8 +274,16 @@ public final class CodegenPipeline {
 
             String basePackage = explicitBasePackage;
             if (basePackage == null) {
-                basePackage = domains.get(0).packageName().replace(".domain", "");
+                basePackage = autoDetectBasePackage(domains);
                 LOG.log(Level.INFO, "Auto-detected base-package=" + basePackage);
+                SortedSet<String> packages = entityBasePackages(domains);
+                if (packages.size() > 1) {
+                    LOG.log(Level.WARNING, DiagnosticId.BASE_PACKAGE_INFERRED.format(
+                            "No base package given and the entities span " + packages.size()
+                                    + " packages " + packages + "; Application, RuntimeComponents and "
+                                    + "RuntimeLifecycle are emitted in " + basePackage
+                                    + " (set exeris.basePackage to choose the package)"));
+                }
             }
 
             LOG.log(Level.INFO, "Generating per-entity code");
@@ -329,8 +372,12 @@ public final class CodegenPipeline {
      * beside the entities and no {@code enumType}; the TypeScript emitter reads the same two inputs
      * by the same rule, so the Java and TypeScript emitters agree on which fields are enums.
      *
+     * <p>The domains are returned in {@link #DOMAIN_ORDER}, whatever order the directory lists
+     * the files in.
+     *
      * @param metadataDir directory holding processor-emitted JSON
-     * @return the domains; empty when the directory does not exist
+     * @return the domains, sorted by fully-qualified entity name; empty when the directory does
+     *         not exist
      * @throws IOException if the metadata cannot be read
      */
     public List<DomainMetadata> loadMetadata(Path metadataDir) throws IOException {
@@ -346,6 +393,7 @@ public final class CodegenPipeline {
                     .filter(p -> p.toString().endsWith(".json"))
                     .filter(p -> !p.getFileName().toString().startsWith("enum_"))
                     .filter(p -> !p.getFileName().toString().startsWith("capability_"))
+                    .sorted(FILE_NAME_ORDER)
                     .toList();
 
             for (Path jsonFile : jsonFiles) {
@@ -358,7 +406,47 @@ public final class CodegenPipeline {
             }
         }
 
+        result.sort(DOMAIN_ORDER);
         return result;
+    }
+
+    /**
+     * The package {@code Application}, {@code RuntimeComponents}, {@code RuntimeLifecycle} and
+     * the generated {@code testsupport} package are emitted in when the caller names none.
+     *
+     * <p>It is the package of the first domain in {@link #DOMAIN_ORDER}, with {@code .domain}
+     * removed (ADR-076). When every entity shares one package, that package is the answer; when
+     * they span several, it is the package of the entity whose fully-qualified name sorts first.
+     * The answer never depends on the order of {@code domains} or of the directory listing.
+     *
+     * @param domains the loaded domains; must not be empty
+     * @return the base package
+     */
+    static String autoDetectBasePackage(List<DomainMetadata> domains) {
+        DomainMetadata first = domains.stream().min(DOMAIN_ORDER)
+                .orElseThrow(() -> new IllegalArgumentException("no domains to detect a base package from"));
+        return basePackageOf(first);
+    }
+
+    /** Each domain's package with {@code .domain} removed, sorted and without duplicates. */
+    private static SortedSet<String> entityBasePackages(List<DomainMetadata> domains) {
+        SortedSet<String> packages = new TreeSet<>();
+        for (DomainMetadata domain : domains) {
+            packages.add(basePackageOf(domain));
+        }
+        return packages;
+    }
+
+    private static String basePackageOf(DomainMetadata domain) {
+        String packageName = domain.packageName() == null ? "" : domain.packageName();
+        return packageName.replace(".domain", "");
+    }
+
+    private static String qualifiedName(DomainMetadata domain) {
+        String packageName = domain.packageName();
+        return packageName == null || packageName.isEmpty()
+                ? domain.entityName()
+                : packageName + "." + domain.entityName();
     }
 
     private List<EnumMetadata> loadEnums(Path metadataDir) throws IOException {
@@ -367,6 +455,7 @@ public final class CodegenPipeline {
             List<Path> jsonFiles = files
                     .filter(p -> p.toString().endsWith(".json"))
                     .filter(p -> p.getFileName().toString().startsWith("enum_"))
+                    .sorted(FILE_NAME_ORDER)
                     .toList();
             for (Path jsonFile : jsonFiles) {
                 result.add(mapper.readValue(jsonFile.toFile(), EnumMetadata.class));
@@ -414,6 +503,7 @@ public final class CodegenPipeline {
             List<Path> jsonFiles = files
                     .filter(p -> p.toString().endsWith(".json"))
                     .filter(p -> p.getFileName().toString().startsWith("capability_"))
+                    .sorted(FILE_NAME_ORDER)
                     .toList();
 
             for (Path jsonFile : jsonFiles) {
@@ -452,12 +542,12 @@ public final class CodegenPipeline {
      * @param metadataDir         directory holding processor-emitted JSON
      * @param testOutputDir       target root for generated tests (created if absent); typically
      *                            {@code src/test/generated/java}
-     * @param explicitBasePackage caller-supplied base package, or {@code null} to auto-detect from
-     *                            the first domain (the shared {@code testsupport} package hangs
-     *                            off it)
+     * @param explicitBasePackage caller-supplied base package, or {@code null} to auto-detect it
+     *                            as {@link #run} does (the shared {@code testsupport} package
+     *                            hangs off it)
      * @return the number of test files written
      * @throws IOException if metadata or output cannot be read/written
-     * @since 0.7.0
+     * @since 0.7
      */
     public int runTests(Path metadataDir, Path testOutputDir, String explicitBasePackage)
             throws IOException {
@@ -473,7 +563,7 @@ public final class CodegenPipeline {
 
         String basePackage = explicitBasePackage;
         if (basePackage == null) {
-            basePackage = domains.get(0).packageName().replace(".domain", "");
+            basePackage = autoDetectBasePackage(domains);
         }
 
         Files.createDirectories(testOutputDir);
@@ -558,7 +648,7 @@ public final class CodegenPipeline {
      * @throws eu.exeris.tooling.codegen.core.capability.CapabilityGraphException
      *         (unchecked) on an unsatisfied non-optional {@code @Requires},
      *         version mismatch, or dependency cycle
-     * @since 0.6.0
+     * @since 0.6
      */
     public int validateCapabilities(Path metadataDir) throws IOException {
         Objects.requireNonNull(metadataDir, "metadataDir");
@@ -606,7 +696,7 @@ public final class CodegenPipeline {
      * @throws IOException if metadata cannot be read
      * @throws eu.exeris.tooling.codegen.core.capability.CapTierWallException (unchecked)
      *         when any class crosses a forbidden boundary
-     * @since 0.7.0
+     * @since 0.7
      */
     public int verifyCapTierWall(Path classesDir, Path metadataDir) throws IOException {
         Objects.requireNonNull(classesDir, "classesDir");

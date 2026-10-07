@@ -51,15 +51,10 @@ import java.nio.file.Path;
  * input — the historical hard-fail at {@code generate-sources} is kept
  * (fail-closed, deadlock and all — bind the gate to escape it).
  *
- * <p><b>Safe-build recipe</b> (L1-committed output). Bind both goals:
- * <pre>{@code
- * <execution>
- *   <goals>
- *     <goal>generate</goal>            <!-- generate-sources -->
- *     <goal>verify-capabilities</goal> <!-- process-classes: fresh-metadata gate -->
- *   </goals>
- * </execution>
- * }</pre>
+ * <p><b>Safe-build recipe</b> (L1-committed output). Bind both goals in one
+ * {@code <execution>}: {@code <goal>generate</goal>}, which runs at
+ * {@code generate-sources}, and {@code <goal>verify-capabilities</goal>}, which runs at
+ * {@code process-classes} as the fresh-metadata gate;
  * and never {@code mvn clean compile} in one shot on a metadata-less tree —
  * seed the metadata first with {@code mvn compile -Dexeris.codegen.skip=true},
  * then build normally (the masked-compile guard refuses the wipe otherwise).
@@ -69,7 +64,7 @@ import java.nio.file.Path;
  * processor↔generator contract is unchanged — the plugin only chooses where to
  * read metadata and where to write sources.
  *
- * @since 0.3.0
+ * @since 0.3
  */
 @Mojo(name = "generate", defaultPhase = LifecyclePhase.GENERATE_SOURCES, threadSafe = true)
 public class GenerateMojo extends AbstractMojo {
@@ -84,8 +79,8 @@ public class GenerateMojo extends AbstractMojo {
             defaultValue = "${project.basedir}/src/main/generated/java")
     File outputDir;
 
-    /** Base package for the application-bootstrap classes; auto-detected from the
-     *  first domain's package when unset. */
+    /** Base package for the application-bootstrap classes; when unset, the package of the
+     *  entity whose fully-qualified name sorts first, with {@code .domain} removed. */
     @Parameter(property = "exeris.basePackage")
     String basePackage;
 
@@ -159,6 +154,14 @@ public class GenerateMojo extends AbstractMojo {
     PipelineRunner pipeline = defaultPipeline::run;
 
     TestRunner testPipeline = defaultPipeline::runTests;
+
+    /**
+     * Creates the mojo. Maven constructs it reflectively and injects the {@code @Parameter}
+     * fields before calling {@link #execute()}.
+     */
+    public GenerateMojo() {
+        // parameters are injected by Maven after construction
+    }
 
     @Override
     public void execute() throws MojoExecutionException, MojoFailureException {

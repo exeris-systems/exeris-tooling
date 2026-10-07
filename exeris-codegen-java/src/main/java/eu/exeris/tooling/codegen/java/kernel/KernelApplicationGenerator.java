@@ -32,7 +32,7 @@ import java.util.Map;
  * Kernel Application Generator.
  * <p>
  * Emits the application bootstrap skeleton: an {@code Application}
- * entry point that drives {@link
+ * entry point that drives {@code
  * eu.exeris.kernel.core.bootstrap.KernelBootstrap} and a
  * {@code RuntimeLifecycle} that composes the per-entity Repository →
  * Service → Handler chain and registers HTTP routes. Canonical wiring
@@ -59,7 +59,7 @@ import java.util.Map;
  *       components(transactionalExecutor())).run())}.
  *       The {@code transactionalExecutor()} method is {@code protected}
  *       so consumers can subclass and substitute a custom
- *       {@link eu.exeris.kernel.spi.persistence.TransactionalExecutor}; the
+ *       {@code eu.exeris.kernel.spi.persistence.TransactionalExecutor}; the
  *       default body composes {@code new TransactionOrchestrator(
  *       KernelProviders.persistenceEngine())} once the kernel has bound
  *       the {@code PERSISTENCE_ENGINE} {@link java.lang.ScopedValue}.</li>
@@ -79,7 +79,7 @@ import java.util.Map;
  *       handler slot holds, and answers {@code 503} while the slot is empty. Its
  *       {@code run()} receives the {@code RuntimeComponents}, takes each declared
  *       entity's {@code *Handler} and stream handler from it, builds one
- *       {@link eu.exeris.kernel.core.http.routing.HttpRouter} with the five canonical
+ *       {@code eu.exeris.kernel.core.http.routing.HttpRouter} with the five canonical
  *       CRUD routes per entity (GET-all / GET-by-id / POST-create / PUT-update /
  *       DELETE), one per action and every generated stream route, publishes the
  *       (decorated) router, and parks on a
@@ -97,8 +97,7 @@ import java.util.Map;
  *
  * @implNote Emission is JavaPoet-based (ADR-015).
  *
- * @author Exeris Team
- * @since 0.1.0
+ * @since 0.1
  */
 public class KernelApplicationGenerator implements KernelArtifactGenerator {
 
@@ -197,6 +196,14 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
 
     private enum Phase { COMPOSITION, OPTIONAL_COMPOSITION, REQUEST }
 
+    /**
+     * Creates the generator. It keeps no per-domain state, so one instance serves every domain
+     * in a build.
+     */
+    public KernelApplicationGenerator() {
+        // no state to initialise
+    }
+
     @Override
     public GeneratedFile generate(DomainMetadata metadata) {
         // Application emission is project-wide, not per-entity. Real
@@ -236,7 +243,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
      *                 {@link #buildApplication(String, boolean, boolean, String)}
      * @return the three emitted files; always
      *         {@code [Application, RuntimeComponents, RuntimeLifecycle]}
-     * @since 0.7.0
+     * @since 0.7
      */
     public List<GeneratedFile> generateAll(List<DomainMetadata> domains, String basePackage,
                                            boolean composed) {
@@ -408,11 +415,11 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                         COMPONENTS_METHOD, TRANSACTIONAL_EXECUTOR)
                 .addJavadoc("(or any other hook) is <b>not</b> reached through this entry point.\n")
                 .addJavadoc("Give the subclass its own {@code main}:\n")
-                .addJavadoc("<pre>{@code\n")
+                .addJavadoc("{@snippet :\n")
                 .addJavadoc("public static void main(String[] args) {\n")
                 .addJavadoc("    new MyApplication().run();\n")
                 .addJavadoc("}\n")
-                .addJavadoc("}</pre>\n")
+                .addJavadoc("}\n")
                 .addJavadoc("and point the launcher at it.\n")
                 .addStatement("new $T().run()", selfType)
                 .build();
@@ -507,14 +514,14 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .addJavadoc("Service and Handler is built by an overridable factory method on\n")
                 .addJavadoc("{@link $T}; subclass it, override the one factory you\n", componentsType)
                 .addJavadoc("care about, and return your subclass here:\n")
-                .addJavadoc("<pre>{@code\n")
+                .addJavadoc("{@snippet :\n")
                 .addJavadoc("class MyApplication extends Application {\n")
                 .addJavadoc("    @Override protected $L $L($T $L) {\n",
                         COMPONENTS_TYPE_NAME, COMPONENTS_METHOD, TRANSACTIONAL_EXECUTOR, TX_EXECUTOR_NAME)
                 .addJavadoc("        return new My$L($L);\n", COMPONENTS_TYPE_NAME, TX_EXECUTOR_NAME)
                 .addJavadoc("    }\n")
                 .addJavadoc("}\n")
-                .addJavadoc("}</pre>\n")
+                .addJavadoc("}\n")
                 .addJavadoc("<p>Called inside the {@code KernelBootstrap.boot(...)} callback, so a\n")
                 .addJavadoc("factory body may resolve any bound {@link $T} —\n", SCOPED_VALUE)
                 .addJavadoc("{@code KernelProviders.flowEngine()}, {@code KernelProviders.eventEngine()}\n")
@@ -701,8 +708,8 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
      *
      * <p><b>Consumer-build contract:</b> this file imports the same two kernel coordinates
      * {@code RuntimeLifecycle} already imported ({@code exeris-kernel-spi} for
-     * {@link eu.exeris.kernel.spi.persistence.TransactionalExecutor}, {@code exeris-kernel-core}
-     * for {@link eu.exeris.kernel.core.http.routing.HttpRouter}) plus the project's own
+     * {@code eu.exeris.kernel.spi.persistence.TransactionalExecutor}, {@code exeris-kernel-core}
+     * for {@code eu.exeris.kernel.core.http.routing.HttpRouter}) plus the project's own
      * generated types. It adds no requirement to the consumer's build.
      */
     private GeneratedFile buildRuntimeComponents(List<DomainMetadata> domains, String basePackage) {
@@ -718,7 +725,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .addJavadoc("Each component has a {@code protected create*} factory carrying the\n")
                 .addJavadoc("default construction; override one, and every consumer of that\n")
                 .addJavadoc("component sees the replacement.\n")
-                .addJavadoc("<pre>{@code\n")
+                .addJavadoc("{@snippet :\n")
                 .addJavadoc("class MyComponents extends $L {\n", COMPONENTS_TYPE_NAME)
                 .addJavadoc("    MyComponents(TransactionalExecutor tx) { super(tx); }\n")
                 .addJavadoc("\n")
@@ -727,7 +734,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .addJavadoc("                new OrderEventPublisher(KernelProviders.eventEngine()));\n")
                 .addJavadoc("    }\n")
                 .addJavadoc("}\n")
-                .addJavadoc("}</pre>\n")
+                .addJavadoc("}\n")
                 .addJavadoc("<p>Install it by overriding {@link $T#$L($T)}.\n",
                         applicationType, COMPONENTS_METHOD, TRANSACTIONAL_EXECUTOR)
                 .addJavadoc("<p>Every factory runs on the boot thread inside the kernel boot\n")
@@ -895,14 +902,14 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .addJavadoc("before {@code build()}, so a hand-written route may shadow nothing\n")
                 .addJavadoc("and add anything. The accessors above are already usable here — the\n")
                 .addJavadoc("point of the hook is to build a collaborator out of generated parts:\n")
-                .addJavadoc("<pre>{@code\n")
+                .addJavadoc("{@snippet :\n")
                 .addJavadoc("@Override public void $L($T.Builder routes) {\n",
                         CONFIGURE_ROUTES_METHOD, HTTP_ROUTER)
                 .addJavadoc("    var saga = new OrderSagaOrchestrator(KernelProviders.flowEngine(),\n")
                 .addJavadoc("            orderRepository(), $L());\n", TX_EXECUTOR_NAME)
                 .addJavadoc("    routes.route(HttpMethod.POST, \"/checkout\", new CheckoutHandler(saga)::handle);\n")
                 .addJavadoc("}\n")
-                .addJavadoc("}</pre>\n")
+                .addJavadoc("}\n")
                 .addJavadoc("<p><b>Stream routes too.</b> A {@code routes.streamRoute(...)} registered\n")
                 .addJavadoc("here lands in the same router as the generated stream routes, and the\n")
                 .addJavadoc("kernel resolves it the same way. One at a method and path a generated\n")
@@ -941,7 +948,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                         CONFIGURE_ROUTES_METHOD)
                 .addJavadoc("no stream route takes any wrapper.</li>\n")
                 .addJavadoc("</ul>\n")
-                .addJavadoc("<pre>{@code\n")
+                .addJavadoc("{@snippet :\n")
                 .addJavadoc("@Override public HttpHandler $L(HttpRouter router) {\n", DECORATE_METHOD)
                 .addJavadoc("    return new TenantBinding(router);\n")
                 .addJavadoc("}\n")
@@ -963,7 +970,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .addJavadoc("                match.params());\n")
                 .addJavadoc("    }\n")
                 .addJavadoc("}\n")
-                .addJavadoc("}</pre>\n")
+                .addJavadoc("}\n")
                 .addJavadoc("<p>{@code resolveStream} runs before route authorization and outside every\n")
                 .addJavadoc("kernel binding, so it decides from the method and path alone; per-request\n")
                 .addJavadoc("work belongs in the stream handler it returns. A binding around a stream\n")
