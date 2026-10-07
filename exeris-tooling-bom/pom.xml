@@ -186,6 +186,13 @@
                 <artifactId>exeris-codegen-java</artifactId>
                 <version>${project.version}</version>
             </dependency>
+            <!-- ADR-097: a tool, not an application dependency, so it is managed here only and not
+                 in exeris-app-bom (ADR-091). -->
+            <dependency>
+                <groupId>eu.exeris</groupId>
+                <artifactId>exeris-codegen-cli</artifactId>
+                <version>${project.version}</version>
+            </dependency>
 
             <!-- Google Auto Service (annotation processor self-registration) -->
             <dependency>

@@ -260,7 +260,10 @@ public enum DiagnosticId {
     CLI_GENERATION_FAILED("EXT-GEN-3001",
             "The codegen command line failed to generate code."),
 
-    /** The {@code CodegenMain} command line was given missing or malformed arguments. */
+    /**
+     * The {@code CodegenMain} command line was given missing or malformed arguments, or a switch it
+     * does not know; it exits with status 2.
+     */
     CLI_ARGUMENTS_INVALID("EXT-GEN-3002",
             "The codegen command line was given missing or malformed arguments."),
 
@@ -272,6 +275,13 @@ public enum DiagnosticId {
      */
     FIELD_TYPE_NOT_PERSISTABLE("EXT-GEN-3003",
             "An entity field has a type the generated repository cannot store and read back."),
+
+    /**
+     * {@code CodegenMain --print-catalogue} could not read the generator catalogue
+     * ({@code META-INF/exeris/generator-catalogue.json}) from its own classpath (ADR-097).
+     */
+    CLI_CATALOGUE_UNREADABLE("EXT-GEN-3004",
+            "The codegen command line could not read the generator catalogue it carries."),
 
     // -----------------------------------------------------------------------
     // EXT-GEN-31xx — code-generation pipeline warnings
