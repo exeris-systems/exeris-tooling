@@ -1,0 +1,51 @@
+# ADR-085 §F.21, in a file of its own and not in `guardrails.yml`.
+#
+# THE SPLIT IS NOT TIDINESS. `claude-code-action` refuses to start when the workflow it runs under
+# differs in any byte from the copy on the default branch, so `guardrails.yml` has to be one blob
+# on every branch. The module lists this gate holds are a property of a tree rather than a rule, so
+# they live here, where a change to them does not touch the file the reviewer enters through. No
+# action of that kind runs here, so nothing compares this file across branches.
+#
+# THIS TREE IS GATED ON CHANGED FILES ONLY. javadoc-conventions.md rule 11 puts tooling in the
+# diff-only set: rules 2-9 apply to the Java files a pull request changes, with no backfill mandate.
+# That half runs `javadoc` and Checkstyle directly over those files rather than through the Maven
+# plugin, so it needs no pom change and no `javadoc-gate` profile. `modules`, the whole-module half,
+# is empty because rule 11 asks nothing of it here: every whole-module step in the called workflow
+# is guarded on `modules != ''`, so empty gates no module in full and claims nothing.
+#
+# THE TWO SETS MAY NOT BOTH BE EMPTY. The called workflow joins them into one list and refuses an
+# empty result — `neither 'modules' nor 'diff-modules' was given — the gate has nothing to check`,
+# exit 1 — so emptying `diff-modules` as well fails this job on every pull request rather than
+# passing quietly.
+#
+# A FILE A PULL REQUEST TOUCHES CARRIES ITS WHOLE BACKLOG. The unit is the file, not the changed
+# lines: touching one line of a file with forty findings fails the gate on all forty.
+#
+# Whether a merge requires it is decided by the repository's rulesets, not by this workflow.
+name: javadoc
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review, reopened]
+concurrency:
+  group: javadoc-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+# What the called workflow declares, and nothing beyond it: it builds and reads, and publishes no
+# check of its own beyond this job's own conclusion. Every remote dependency of the reactor resolves
+# from Maven Central, so it needs no `packages: read` and no settings file.
+permissions:
+  contents: read
+
+jobs:
+  javadoc:
+    uses: exeris-systems/.github/.github/workflows/javadoc-gate.yml@bfb55570c910290c92e1c537aab785a725997fa0 # exeris-systems/.github@main
+    with:
+      # Empty: no module here is held to the whole-module bar (javadoc-conventions.md rule 11).
+      modules: ""
+      # The published Java modules with a `src/main/java`. Not listed: the BOMs and parents, which
+      # carry no Java; exeris-app-starter, which carries no Java of its own; exeris-e2e-tests,
+      # exeris-app-starter-it and exeris-coverage-aggregate, which are not published; and
+      # exeris-codegen-ts, which is not a Maven module.
+      diff-modules: exeris-diagnostics,exeris-processor,exeris-codegen-core,exeris-codegen-java,exeris-codegen-maven-plugin
+      # `documented`, rule 1 as written: every public member carries a doc comment. `exempt` is for a
+      # repository where something else carries that coverage, and nothing does here.
+      trivial-accessors: documented

@@ -34,7 +34,7 @@ import java.util.zip.ZipFile;
  * its main artefact, so an application built against SPI + Core alone fails here rather than
  * at boot.
  *
- * @since 0.8.0
+ * @since 0.8
  */
 public final class RuntimeDriverCheck {
 
@@ -56,16 +56,30 @@ public final class RuntimeDriverCheck {
      */
     public record Result(List<String> required, List<String> missing, int scanned) {
 
+        /**
+         * Creates a verdict holding unmodifiable copies of both lists.
+         *
+         * @throws NullPointerException if either list, or any element of it, is {@code null}
+         */
         public Result {
             required = List.copyOf(required);
             missing = List.copyOf(missing);
         }
 
+        /**
+         * Reports whether every required SPI has a registered provider.
+         *
+         * @return {@code true} when {@code missing} is empty
+         */
         public boolean satisfied() {
             return missing.isEmpty();
         }
 
-        /** True when nothing was required — no emitted application, so no driver to demand. */
+        /**
+         * Reports whether nothing was required — no emitted application, so no driver to demand.
+         *
+         * @return {@code true} when {@code required} is empty
+         */
         public boolean vacuous() {
             return required.isEmpty();
         }

@@ -47,7 +47,7 @@ package eu.exeris.tooling.diagnostics;
  * <p>{@code docs/diagnostics.md} lists every identifier with what to do about it; a test keeps
  * that table and this registry in step.
  *
- * @since 0.9.0
+ * @since 0.9
  */
 public enum DiagnosticId {
 
@@ -117,6 +117,13 @@ public enum DiagnosticId {
      */
     REAL_TIME_API_ON_TENANT_PARTITIONED("EXT-PROC-1014",
             "@ExerisDomain(realTimeApi = true) is on a TENANT or UNIVERSE entity; its live view cannot be isolated per tenant."),
+
+    /**
+     * An {@code @ExerisDomain} type declares no field {@code id}, the primary key every generated
+     * artefact identifies a row by.
+     */
+    ENTITY_WITHOUT_ID_FIELD("EXT-PROC-1015",
+            "An @ExerisDomain type declares no field 'id'."),
 
     // -----------------------------------------------------------------------
     // EXT-PROC-11xx — warnings on an ordinary build (javac WARNING)
@@ -282,7 +289,14 @@ public enum DiagnosticId {
      * the post-compile {@code exeris:verify-capabilities} gate.
      */
     CAPABILITY_GRAPH_DEFERRED("EXT-GEN-3103",
-            "The capability graph did not resolve on possibly stale metadata; the post-compile gate decides.");
+            "The capability graph did not resolve on possibly stale metadata; the post-compile gate decides."),
+
+    /**
+     * No base package was given and the entities span more than one package; the bootstrap
+     * classes go to the package of the entity whose fully-qualified name sorts first.
+     */
+    BASE_PACKAGE_INFERRED("EXT-GEN-3104",
+            "No base package was given and the entities span several packages; the first entity's package is used.");
 
     /** Prepended to every message, ahead of the identifier. */
     public static final String PREFIX = "[Exeris] ";
@@ -295,12 +309,20 @@ public enum DiagnosticId {
         this.meaning = meaning;
     }
 
-    /** The identifier as printed, e.g. {@code EXT-PROC-1001}. */
+    /**
+     * Returns the stable identifier as it is printed in a message, e.g. {@code EXT-PROC-1001}.
+     *
+     * @return the identifier, in the form {@code EXT-<STAGE>-<nnnn>}
+     */
     public String code() {
         return code;
     }
 
-    /** One line saying what the diagnostic means. */
+    /**
+     * Returns one line saying what the diagnostic means, independent of the element it is reported on.
+     *
+     * @return the one-line meaning of this identifier
+     */
     public String meaning() {
         return meaning;
     }
@@ -309,6 +331,7 @@ public enum DiagnosticId {
      * The message as printed: {@code [Exeris] <code>: <message>}.
      *
      * @param message the human-readable text; it follows the identifier unchanged
+     * @return {@link #PREFIX}, the identifier, a colon and a space, then {@code message}
      */
     public String format(String message) {
         return PREFIX + code + ": " + message;

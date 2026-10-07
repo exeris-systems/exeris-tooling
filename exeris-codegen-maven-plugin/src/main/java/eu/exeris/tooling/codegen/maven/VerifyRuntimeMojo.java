@@ -37,7 +37,7 @@ import java.util.List;
  * what a pass does and does not prove, and {@link RequiredDrivers} for why each required SPI
  * is derived from an emitted artefact rather than from the emitted subsystem name list.
  *
- * @since 0.8.0
+ * @since 0.8
  */
 @Mojo(name = VerifyRuntimeMojo.GOAL,
         defaultPhase = LifecyclePhase.PROCESS_CLASSES,
@@ -96,6 +96,14 @@ public class VerifyRuntimeMojo extends AbstractMojo {
     private final CodegenPipeline pipeline = CodegenPipeline.createDefault();
 
     DriverVerifier verifier = pipeline::verifyRuntimeDrivers;
+
+    /**
+     * Creates the mojo. Maven constructs it reflectively and injects the {@code @Parameter}
+     * fields before calling {@link #execute()}.
+     */
+    public VerifyRuntimeMojo() {
+        // parameters are injected by Maven after construction
+    }
 
     @Override
     public void execute() throws MojoExecutionException, MojoFailureException {

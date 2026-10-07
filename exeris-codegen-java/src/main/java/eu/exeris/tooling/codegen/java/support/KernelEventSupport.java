@@ -32,12 +32,16 @@ public final class KernelEventSupport {
 
     /**
      * Normalises a {@link DomainEventMetadata#name()} to a canonical
-     * {@code <Name>Event} identifier:
+     * {@code <Name>Event} identifier.
      * <ul>
      *   <li>blank/null name → {@code <EntityName>Event}</li>
      *   <li>name not ending in {@code Event} → name + {@code Event}</li>
      *   <li>otherwise → name unchanged</li>
      * </ul>
+     *
+     * @param event      the declared event
+     * @param entityName the owning entity's simple name, used when the event has no name
+     * @return the normalised event name, always ending in {@code Event}
      */
     public static String eventName(DomainEventMetadata event, String entityName) {
         String raw = event.name();
@@ -51,6 +55,10 @@ public final class KernelEventSupport {
      * Converts a {@code CamelCase} or {@code camelCase} identifier into
      * {@code UPPER_SNAKE_CASE} suitable for use as a {@code static final}
      * constant name in emitted code.
+     *
+     * @param camelCase the identifier to convert
+     * @return the identifier upper-cased, with an underscore before every upper-case letter
+     *         other than the first character
      */
     public static String toConstantCase(String camelCase) {
         StringBuilder sb = new StringBuilder(camelCase.length() + 4);
@@ -71,6 +79,9 @@ public final class KernelEventSupport {
      * this guard the publisher would emit duplicate {@code static final}
      * constant fields (non-compiling output) and both generators would
      * collide at runtime on the same routing key / SPI registration.
+     *
+     * @param metadata the entity whose declared events are checked
+     * @throws IllegalArgumentException if two events normalise to the same name
      */
     public static void assertDistinctEventNames(DomainMetadata metadata) {
         String entity = metadata.entityName();

@@ -20,7 +20,7 @@ import java.nio.file.Path;
  * the processor emit before generation runs:
  * {@code mvn compile -Dexeris.codegen.skip=true} then {@code exeris:generate}.
  *
- * @since 0.6.0
+ * @since 0.6
  */
 public final class EmptyMetadataException extends RuntimeException {
 
@@ -30,12 +30,24 @@ public final class EmptyMetadataException extends RuntimeException {
      *  (a {@code transient} primitive would deserialize back to {@code 0}). */
     private final int orphanCount;
 
+    /**
+     * Creates the exception with a message naming both directories, the number of files the
+     * prune would delete, and the metadata-only recipe that recovers the build.
+     *
+     * @param orphanCount the number of committed generated files the refused prune would delete
+     * @param metadataDir the metadata directory that held no domain
+     * @param outputDir   the generated-source root the prune would have cleared
+     */
     public EmptyMetadataException(int orphanCount, Path metadataDir, Path outputDir) {
         super(buildMessage(orphanCount, metadataDir, outputDir));
         this.orphanCount = orphanCount;
     }
 
-    /** The number of committed generated files the refused prune would have deleted. */
+    /**
+     * Returns how many committed generated files the refused prune would have deleted.
+     *
+     * @return the orphan count
+     */
     public int orphanCount() {
         return orphanCount;
     }

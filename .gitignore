@@ -12,6 +12,9 @@ dist/
 *.tsbuildinfo
 .angular/
 
+# Python (tools/)
+__pycache__/
+
 # IDE
 .idea/
 .vscode/

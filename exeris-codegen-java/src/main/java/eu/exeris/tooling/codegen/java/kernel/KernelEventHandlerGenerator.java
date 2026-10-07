@@ -30,16 +30,16 @@ import javax.lang.model.element.Modifier;
  *       {@code EventBus} dispatches on).</li>
  *   <li>One {@code protected void handle<EventName>(EventDescriptor descriptor,
  *       EventPayload payload)} method. Each method matches the SPI's
- *       {@link eu.exeris.kernel.spi.events.EventHandler} functional
+ *       {@code eu.exeris.kernel.spi.events.EventHandler} functional
  *       interface and is subscribed individually by method reference.</li>
  * </ul>
  * The generated class exposes {@code subscribe()} and {@code unsubscribe()}
  * for lifecycle control; subscriptions are tracked via the
- * {@link eu.exeris.kernel.spi.events.SubscriptionToken}s the bus hands back.
+ * {@code eu.exeris.kernel.spi.events.SubscriptionToken}s the bus hands back.
  * <p>
  * The default {@code handle<EventName>} body is a logging stub that closes
  * the payload (per the SPI's refCount contract — the handler that consumes
- * the {@link eu.exeris.kernel.spi.events.EventPayload} <b>must</b> call
+ * the {@code eu.exeris.kernel.spi.events.EventPayload} <b>must</b> call
  * {@code close()} or use {@code try-with-resources} to release the slab).
  * Downstream consumers subclass the generated subscriber and override the
  * handler methods to add behaviour.
@@ -60,8 +60,7 @@ import javax.lang.model.element.Modifier;
  *
  * @implNote Emission is JavaPoet-based (ADR-015).
  *
- * @author Exeris Team
- * @since 0.1.0
+ * @since 0.1
  */
 public class KernelEventHandlerGenerator implements KernelArtifactGenerator {
 
@@ -73,6 +72,14 @@ public class KernelEventHandlerGenerator implements KernelArtifactGenerator {
     private static final ClassName EVENT_PAYLOAD = KernelEventSupport.EVENT_PAYLOAD;
     private static final ClassName SUBSCRIPTION_TOKEN =
             ClassName.get("eu.exeris.kernel.spi.events", "SubscriptionToken");
+
+    /**
+     * Creates the generator. It keeps no per-domain state, so one instance serves every domain
+     * in a build.
+     */
+    public KernelEventHandlerGenerator() {
+        // no state to initialise
+    }
 
     @Override
     public GeneratedFile generate(DomainMetadata metadata) {

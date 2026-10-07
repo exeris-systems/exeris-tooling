@@ -15,7 +15,7 @@ import java.util.List;
  * that fails without naming the field. The message is already formatted with the identifier, so a
  * caller prints it unchanged.
  *
- * @since 0.9.0
+ * @since 0.9
  */
 public final class UnpersistableFieldTypeException extends RuntimeException {
 
@@ -37,7 +37,11 @@ public final class UnpersistableFieldTypeException extends RuntimeException {
         this.fields = List.copyOf(fields);
     }
 
-    /** The refused fields, one entry each, as the message lists them. */
+    /**
+     * Returns the refused fields, one entry each, as the message lists them.
+     *
+     * @return the refused fields, unmodifiable
+     */
     public List<String> fields() {
         return fields;
     }

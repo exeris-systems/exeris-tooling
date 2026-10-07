@@ -203,7 +203,7 @@ class CodegenPipelineTest {
         }
 
         @Test
-        @DisplayName("auto-detects base package from first domain when null is passed")
+        @DisplayName("auto-detects the base package from the entity package when null is passed")
         void autoDetectsBasePackage() throws IOException {
             // packageName ends in .domain — auto-detect strips that suffix.
             DomainMetadata domain = DomainMetadata.builder("Product", "com.shop.domain")
@@ -241,6 +241,117 @@ class CodegenPipelineTest {
             // Two entities × per-entity generators + one bootstrap trio
             // (Application + RuntimeComponents + RuntimeLifecycle).
             assertThat(filesGenerated).isGreaterThan(4);
+        }
+    }
+
+    /**
+     * The directory listing's order is the filesystem's, so neither the domain order nor the
+     * auto-detected base package may follow it. Each test writes the same metadata into two
+     * directories in opposite creation orders and requires identical results.
+     */
+    @Nested
+    @DisplayName("metadata load order and the auto-detected base package")
+    class LoadOrder {
+
+        @TempDir
+        Path otherMetadataDir;
+
+        @TempDir
+        Path otherOutputDir;
+
+        private final List<DomainMetadata> twoPackages = List.of(
+                DomainMetadata.builder("Order", "com.shop.order.domain").path("/orders").build(),
+                DomainMetadata.builder("Invoice", "com.shop.billing.domain").path("/invoices").build(),
+                DomainMetadata.builder("Customer", "com.shop.order.domain").path("/customers").build());
+
+        private void writeAll(Path dir, List<DomainMetadata> domains) throws IOException {
+            for (DomainMetadata domain : domains) {
+                mapper.writeValue(dir.resolve(domain.entityName() + ".json").toFile(), domain);
+            }
+        }
+
+        private List<String> qualifiedNames(List<DomainMetadata> domains) {
+            return domains.stream().map(d -> d.packageName() + "." + d.entityName()).toList();
+        }
+
+        @Test
+        @DisplayName("loads domains by fully-qualified name, whatever order the files were written in")
+        void loadsInQualifiedNameOrder() throws IOException {
+            writeAll(metadataDir, twoPackages);
+            writeAll(otherMetadataDir, twoPackages.reversed());
+
+            List<String> expected = List.of(
+                    "com.shop.billing.domain.Invoice",
+                    "com.shop.order.domain.Customer",
+                    "com.shop.order.domain.Order");
+            assertThat(qualifiedNames(pipeline.loadMetadata(metadataDir))).isEqualTo(expected);
+            assertThat(qualifiedNames(pipeline.loadMetadata(otherMetadataDir))).isEqualTo(expected);
+        }
+
+        @Test
+        @DisplayName("entities in several packages: the same tree, byte for byte, with the bootstrap in the first domain's package")
+        void sameTreeWhateverTheWriteOrder() throws IOException {
+            writeAll(metadataDir, twoPackages);
+            writeAll(otherMetadataDir, twoPackages.reversed());
+
+            pipeline.run(metadataDir, outputDir, null);
+            pipeline.run(otherMetadataDir, otherOutputDir, null);
+
+            // com.shop.billing.domain.Invoice sorts first by qualified name, although
+            // Customer.json sorts first by file name.
+            assertThat(outputDir.resolve("com/shop/billing/Application.java")).exists();
+            assertThat(outputDir.resolve("com/shop/billing/RuntimeComponents.java")).exists();
+            assertThat(outputDir.resolve("com/shop/billing/RuntimeLifecycle.java")).exists();
+            assertThat(outputDir.resolve("com/shop/order/Application.java")).doesNotExist();
+            assertSameTree(outputDir, otherOutputDir);
+        }
+
+        @Test
+        @DisplayName("generated tests: the testsupport package does not depend on the write order either")
+        void sameTestTreeWhateverTheWriteOrder() throws IOException {
+            writeAll(metadataDir, twoPackages);
+            writeAll(otherMetadataDir, twoPackages.reversed());
+
+            pipeline.runTests(metadataDir, outputDir, null);
+            pipeline.runTests(otherMetadataDir, otherOutputDir, null);
+
+            assertThat(outputDir.resolve("com/shop/billing/testsupport/RecordingHttpExchange.java")).exists();
+            assertSameTree(outputDir, otherOutputDir);
+        }
+
+        @Test
+        @DisplayName("one package: the base package is that package with .domain removed")
+        void onePackage() {
+            assertThat(CodegenPipeline.autoDetectBasePackage(List.of(
+                    DomainMetadata.builder("Product", "com.shop.domain").build(),
+                    DomainMetadata.builder("Order", "com.shop.domain").build())))
+                    .isEqualTo("com.shop");
+        }
+
+        @Test
+        @DisplayName("several packages: the first domain by qualified name, in either input order")
+        void firstDomainByQualifiedName() {
+            DomainMetadata order = DomainMetadata.builder("Order", "org.shop.domain").build();
+            DomainMetadata invoice = DomainMetadata.builder("Invoice", "com.billing.domain").build();
+
+            assertThat(CodegenPipeline.autoDetectBasePackage(List.of(order, invoice))).isEqualTo("com.billing");
+            assertThat(CodegenPipeline.autoDetectBasePackage(List.of(invoice, order))).isEqualTo("com.billing");
+        }
+
+        private void assertSameTree(Path left, Path right) throws IOException {
+            List<Path> leftFiles = relativeFiles(left);
+            assertThat(relativeFiles(right)).isEqualTo(leftFiles);
+            for (Path relative : leftFiles) {
+                assertThat(Files.readAllBytes(right.resolve(relative)))
+                        .as(relative.toString())
+                        .isEqualTo(Files.readAllBytes(left.resolve(relative)));
+            }
+        }
+
+        private List<Path> relativeFiles(Path root) throws IOException {
+            try (var walk = Files.walk(root)) {
+                return walk.filter(Files::isRegularFile).map(root::relativize).sorted().toList();
+            }
         }
     }
 
@@ -1074,6 +1185,36 @@ class CodegenPipelineTest {
 
             assertThat(warnings).singleElement().asString()
                     .startsWith(DiagnosticId.CAPABILITY_GRAPH_DEFERRED.format("Capability graph invalid"));
+        }
+
+        @Test
+        @DisplayName("an auto-detected base package over entities in several packages → EXT-GEN-3104")
+        void basePackageInferred() throws IOException {
+            writeDomainJson("Order.json", DomainMetadata.builder("Order", "com.shop.order.domain")
+                    .path("/orders").build());
+            writeDomainJson("Invoice.json", DomainMetadata.builder("Invoice", "com.shop.billing.domain")
+                    .path("/invoices").build());
+
+            pipeline.run(metadataDir, outputDir, null);
+
+            assertThat(warnings).singleElement().asString()
+                    .startsWith(DiagnosticId.BASE_PACKAGE_INFERRED.format("No base package given"))
+                    .contains("[com.shop.billing, com.shop.order]")
+                    .contains("emitted in com.shop.billing ")
+                    .contains("exeris.basePackage");
+        }
+
+        @Test
+        @DisplayName("one entity package, or an explicit base package, prints no EXT-GEN-3104")
+        void basePackageNotInferredAcrossPackages() throws IOException {
+            writeDomainJson("Product.json", productDomain());
+            pipeline.run(metadataDir, outputDir, null);
+
+            writeDomainJson("Invoice.json", DomainMetadata.builder("Invoice", "com.shop.billing.domain")
+                    .path("/invoices").build());
+            pipeline.run(metadataDir, outputDir, "com.shop");
+
+            assertThat(warnings).isEmpty();
         }
 
         @Test

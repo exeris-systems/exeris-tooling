@@ -4,7 +4,7 @@ type: roadmap
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-10-06
+last-verified: 2026-10-07
 ---
 
 # Exeris Tooling — Roadmap to 1.0.0 GA
@@ -744,11 +744,11 @@ each fix.
       `bidirectional`, `inverseType`, `weighted`, `weightField`, `description`, `properties`,
       `propertyMappings`, `staticProperties`, `computedProperties`, and `target`/`targetName` beyond
       the label rule above. Same shape as the saga family: an SDK record change is the prerequisite,
-      so they are recorded rather than half-read. Two sibling gaps stay open alongside them —
-      `GraphMetadata.properties` is passed as `null` (not `List.of()`) and `queries` as an empty
-      literal, and `@GraphProperty` / `@GraphQuery` are among the annotations C0 reports as unread.
-      Nothing reads either field today, so neither is a live defect; changing the `null` would
-      change the emitted JSON shape, which is a decision rather than a tidy-up.
+      so they are recorded rather than half-read. A sibling gap stays open alongside them:
+      `@GraphProperty` / `@GraphQuery` are not extracted and are among the annotations C0 reports as
+      unread. `GraphMetadata.properties` and `queries` are both written `null`, which
+      `@JsonInclude(NON_NULL)` keeps off the wire as "not carried", and the TS schema keeps them
+      absent rather than defaulting them to `[]`.
 
       Evidence: 108 processor tests, up from 103; full reactor `clean install` green. Two
       perturbations: restoring the empty edge literal fails the tests that assert an edge and leaves
@@ -3841,7 +3841,7 @@ enters only if its upstream half is final first.
       (`proxy.conf.js` with a header-based `bypass`, verified against a real `ng serve`), codegen-ts
       lint in CI, and deleting `KernelStrategy.generateClientCode` / `getRealTimeConfig`, which have
       no production caller.
-- [ ] **Issues placed in 0.10.0:** #304 (form gaps), #271 (one header helper), #309
+- [ ] **Issues placed in 0.10.0:** #304 (form gaps), #271 (one header helper, done), #309
       (`GraphMetadata.queries` written `null` when not extracted), #310 (an entity with no `id`
       field — a processor error, and the TS model always carries `id`).
 - [ ] **Debts with no gate** (Java wave J2, TS wave S2): the `@DomainEvent` strict-mode call site
@@ -3871,14 +3871,14 @@ keeps compiling where it still uses one. 0.10.0 removes them.
 - [x] **The default-table-change warning (T6).** It exists for the 0.8 → 0.9 regeneration, and it
       warns on every build of an entity whose derived table moved, including in a project that never
       had the old table. Delete `warnDefaultTableChange` and its tests.
-- [ ] **`restore()` on a soft-delete entity's `<Entity>Service` and `<Entity>Store` (T58).** Delete
+- [x] **`restore()` on a soft-delete entity's `<Entity>Service` and `<Entity>Store` (T58).** Delete
       its emission from `service-gen.ts` and `store-gen.ts`, the conditional `throwError` import,
       and `RESTORE_UNSUPPORTED`.
-- [ ] **`tenantId` in the DTOs of a tenant-partitioned entity with no `systemFields` block (T36).**
+- [x] **`tenantId` in the DTOs of a tenant-partitioned entity with no `systemFields` block (T36).**
       Delete `deprecatedDtoOwner` and `DEPRECATED_OWNER_DOC`, and add the owner to
       `systemFieldNames`' no-block branch, so the `…Create`/`…Update` types and the create schema
       omit it as the OpenAPI does.
-- [ ] **`apiVersion` in the emitted environment files (T38).** Delete it from
+- [x] **`apiVersion` in the emitted environment files (T38).** Delete it from
       `generateEnvironmentFile`, `resolveApiSettings` and the KERNEL strategy's `ClientConfig`.
 
 ## Versioning policy
@@ -3893,6 +3893,13 @@ keeps compiling where it still uses one. 0.10.0 removes them.
   tag that commit → deploy (Maven Central, from 0.9.0) → a follow-up PR opens the next cycle at `X+1-SNAPSHOT`. Separately and still
   binding: no cross-repo dependency may be a SNAPSHOT at a cut — release upstream first, pin the
   final, then tag.
+- **MIGRATION's open train is assembled at the cut.** Each change writes its consumer step as one
+  file under `docs/migration/<version>/` instead of editing `docs/MIGRATION-0.x-to-1.0.md`, so open
+  pull requests do not conflict on it ([format](docs/migration/README.md)); `build.yml` checks every
+  fragment. The release PR runs `python3 tools/migration/assemble-migration.py --release <version>`,
+  which inlines the fragments into the train in filename order and deletes them, and
+  `tools/release-readiness/release-readiness.sh` fails a release whose fragments remain. The
+  next-cycle PR opens the next train's heading and marker block.
 - **`@exeris/codegen-ts` versions in lockstep with the Maven reactor.** One tag `vX.Y.Z` releases
   both, so `exeris-codegen-ts/package.json` (and its `package-lock.json`) carries the root POM's
   project version at every commit, `-SNAPSHOT` line included. Both the release PR and the

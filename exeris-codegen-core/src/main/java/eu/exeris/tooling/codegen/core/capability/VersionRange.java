@@ -20,7 +20,7 @@ package eu.exeris.tooling.codegen.core.capability;
  * both segments parse as integers, lexically otherwise. Missing trailing segments read as 0
  * ({@code 1.2} == {@code 1.2.0}).
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class VersionRange {
 
@@ -88,6 +88,8 @@ public final class VersionRange {
     }
 
     /**
+     * Tests a provider's declared version against this range.
+     *
      * @param version the provider's declared version, or {@code null} when unversioned
      * @return whether {@code version} satisfies this range
      */

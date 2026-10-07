@@ -39,20 +39,26 @@ import java.util.Set;
  * list rather than about this pipeline's output — the very reasoning this class avoids. The
  * kernel's crypto subsystem also boots without a provider: it is left not running.
  *
- * @since 0.8.0
+ * @since 0.8
  */
 public final class RequiredDrivers {
 
+    /** Kernel bootstrap SPI; required by every build that emits an application. */
     public static final String SUBSYSTEM_PROVIDER =
             "eu.exeris.kernel.spi.bootstrap.SubsystemProvider";
+    /** Kernel persistence SPI; required by every build that emits an application. */
     public static final String PERSISTENCE_PROVIDER =
             "eu.exeris.kernel.spi.persistence.PersistenceProvider";
+    /** Kernel HTTP SPI; required by every build that emits an application. */
     public static final String HTTP_PROVIDER =
             "eu.exeris.kernel.spi.http.HttpProvider";
+    /** Kernel events SPI; required when some entity declares a {@code @DomainEvent}. */
     public static final String EVENT_PROVIDER =
             "eu.exeris.kernel.spi.events.EventProvider";
+    /** Kernel graph SPI; required when some entity carries graph metadata. */
     public static final String GRAPH_PROVIDER =
             "eu.exeris.kernel.spi.graph.GraphProvider";
+    /** Kernel flow SPI; required when some entity declares a saga. */
     public static final String FLOW_PROVIDER =
             "eu.exeris.kernel.spi.flow.FlowProvider";
 
@@ -60,6 +66,8 @@ public final class RequiredDrivers {
     }
 
     /**
+     * Returns the fully qualified names of the kernel SPIs the emitted code needs a provider for.
+     *
      * @param domains every entity this build emitted code for
      * @return the SPIs a provider must be registered for, in a stable order (the always-on
      *         three first, so the message a failing build prints reads the same way twice);
@@ -91,6 +99,8 @@ public final class RequiredDrivers {
      * message so the build reports a dependency to add rather than a subsystem that would not
      * start. Enterprise and third-party drivers register the same SPIs and satisfy the check
      * equally; this is the answer for the consumer who has none.
+     *
+     * @return the {@code groupId:artifactId} of the open-core driver artefact
      */
     public static String suggestedArtifact() {
         return "eu.exeris:exeris-kernel-community";

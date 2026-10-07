@@ -71,7 +71,7 @@ import java.util.Map;
  * a fixed literal rather than {@code UUID.randomUUID()}, so regenerating twice is byte-identical.
  *
  * @implNote Emission is JavaPoet-based (ADR-015).
- * @since 0.7.0
+ * @since 0.7
  */
 public final class KernelHandlerTestGenerator {
 
@@ -114,6 +114,16 @@ public final class KernelHandlerTestGenerator {
     private static final int MAX_EMITTED_STRING = 512;
 
     /**
+     * Creates the generator. It keeps no per-domain state, so one instance serves every domain
+     * in a build.
+     */
+    public KernelHandlerTestGenerator() {
+        // no state to initialise
+    }
+
+    /**
+     * Emits the JUnit 5 test for the entity's generated HTTP handler.
+     *
      * @param metadata    the entity whose handler is under test
      * @param basePackage the project base package (the {@code testsupport} package is resolved
      *                    from it, since the exchange double is project-wide)

@@ -42,8 +42,7 @@ import java.util.Optional;
  * names a field it does not declare fails generation: a policy over a missing column would
  * be a migration that cannot apply.
  *
- * @author Exeris Team
- * @since 0.7.0
+ * @since 0.7
  */
 public final class DataScopeSupport {
 
