@@ -2335,7 +2335,8 @@ an entity that moves, the repository's SQL, the `CREATE TABLE`, the migration fi
 it, a UNIVERSE entity's shared-scope migration and a graph-sync node descriptor all name the new
 table. On an existing database that table does not exist yet.
 
-The processor warns once for each such entity, with the value that keeps the old name:
+In 0.9.0 the processor warned once for each such entity, with the value that keeps the old name
+(0.10.0 retires the warning; see [`EXT-PROC-1104` is retired](#ext-proc-1104-is-retired)):
 
     warning: [Exeris] EXT-PROC-1104: Colony: default table changes from 'colonys' to 'colonies'; set @ExerisDomain(tableName = "colonys") to keep the existing table and migration
 
@@ -2343,8 +2344,8 @@ To keep the existing table and the migration that created it, set the attribute:
 
     @ExerisDomain(module = "empire", path = "/colonies", tableName = "colonys")
 
-The processor now reads `@ExerisDomain.tableName` (SDK 0.12.0) into `DomainMetadata.tableName`,
-and an entity that sets it draws no warning. The value is trimmed and lower-cased. It is also how
+The processor reads `@ExerisDomain.tableName` (SDK 0.12.0) into `DomainMetadata.tableName`; in
+0.9.0 an entity that set it drew no warning. The value is trimmed and lower-cased. It is also how
 an irregular or pre-existing table is named (`tableName = "people"`). A blank value derives the
 name.
 
