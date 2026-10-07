@@ -4,7 +4,7 @@
  *   - isLifecycleField / isSystemField skip filter
  *   - inCreate=false / hidden=true / readOnly=true / computed exclusion
  *   - Computed field detection + separate rendering with dependsOn note +
- *     compute method stub + a computed signal per computed field
+ *     a computed signal per computed field reading the loaded entity
  *   - the input type by the shared type rules (number, date, date-time, zoned date-time as text)
  *   - enum select for an enum the app's enum module declares; any other type a text input
  *   - inUpdate = false: disabled in edit mode, its loaded value sent back on update
@@ -892,7 +892,7 @@ describe('FormGenerator computed fields', () => {
     expect(content).toContain('Computed from: first, last');
   });
 
-  it('each computed field derives a computed signal from its dependencies + a compute<Name> method stub', () => {
+  it('each computed field reads the loaded entity into a computed signal', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
       fields: [
@@ -902,33 +902,31 @@ describe('FormGenerator computed fields', () => {
       ],
     }), CTX)!.content;
 
-    // Derived signal, rendered read-only.
-    expect(content).toContain("// Auto-sync sum based on a, b");
-    expect(content).toContain('readonly computedSum = computed(() => this.computeSum({ a: this.formModel().a, b: this.formModel().b }));');
+    expect(content).toContain('readonly computedSum = computed(() => this.current()?.sum ?? null);');
     expect(content).toContain(`[value]="computedSum() ?? ''" readonly`);
     // Kept out of the form model, and so out of the submitted DTO.
     expect(modelInterface(content)).not.toMatch(/^\s*sum: /m);
     expect(seedBlock(content)).not.toMatch(/^\s*sum: /m);
-
-    // Compute stub at the bottom.
-    expect(content).toContain('private computeSum(values: { a: any, b: any }): any {');
-    expect(content).toContain('// TODO: Implement computation logic');
   });
 
-  it('computed field without computedFrom → no effect block emitted', () => {
+  it('a computed field emits no compute method and no TODO, since the metadata carries no formula', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
       fields: [
+        field({ name: 'a', type: 'String' }),
+        field({ name: 'sum', type: 'String', computed: true, computedFrom: ['a'] }),
         field({ name: 'static', type: 'String', computed: true }),
       ],
     }), CTX)!.content;
 
-    // No "Auto-sync" note; the signal calls the stub with no values.
-    expect(content).not.toContain('Auto-sync static');
-    expect(content).toContain('readonly computedStatic = computed(() => this.computeStatic({}));');
+    expect(content).not.toContain('TODO');
+    expect(content).not.toContain('computeSum');
+    expect(content).not.toContain('computeStatic');
+    expect(content).not.toContain('Auto-sync');
+    expect(content).toContain('readonly computedStatic = computed(() => this.current()?.static ?? null);');
   });
 
-  it('a camelCase computed field gets valid member names, and a non-control dependency reads the loaded entity', () => {
+  it('a camelCase computed field gets valid member names', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
       fields: [
@@ -938,8 +936,8 @@ describe('FormGenerator computed fields', () => {
       ],
     }), CTX)!.content;
 
-    expect(content).toContain('readonly computedFullName = computed(() => this.computeFullName({ firstName: this.formModel().firstName, id: this.current()?.id, unknown: undefined }));');
-    expect(content).toContain('private computeFullName(');
+    expect(content).toContain('readonly computedFullName = computed(() => this.current()?.fullName ?? null);');
+    expect(content).toContain(`[value]="computedFullName() ?? ''" readonly`);
   });
 
 });
