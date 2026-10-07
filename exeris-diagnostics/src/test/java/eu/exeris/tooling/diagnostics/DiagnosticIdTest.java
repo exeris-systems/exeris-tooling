@@ -93,6 +93,7 @@ class DiagnosticIdTest {
         m.put(DiagnosticId.NO_METADATA_FOUND, "EXT-GEN-3101");
         m.put(DiagnosticId.OPTIONAL_REQUIREMENT_UNSATISFIED, "EXT-GEN-3102");
         m.put(DiagnosticId.CAPABILITY_GRAPH_DEFERRED, "EXT-GEN-3103");
+        m.put(DiagnosticId.BASE_PACKAGE_INFERRED, "EXT-GEN-3104");
         return m;
     }
 

@@ -84,8 +84,8 @@ public class GenerateMojo extends AbstractMojo {
             defaultValue = "${project.basedir}/src/main/generated/java")
     File outputDir;
 
-    /** Base package for the application-bootstrap classes; auto-detected from the
-     *  first domain's package when unset. */
+    /** Base package for the application-bootstrap classes; when unset, the package that
+     *  encloses every entity's package with {@code .domain} removed. */
     @Parameter(property = "exeris.basePackage")
     String basePackage;
 

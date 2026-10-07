@@ -52,7 +52,7 @@ class MetadataLoaderTest {
     }
 
     @Test
-    @DisplayName("loadAll deserialises every .json file in the metadata directory")
+    @DisplayName("loadAll deserialises every .json file in the metadata directory, in file-name order")
     void loadAllReadsJsonFiles() throws IOException {
         Path metaDir = Files.createDirectories(tempDir.resolve(MetadataLoader.METADATA_DIR));
         Files.writeString(metaDir.resolve("Foo.json"), "{\"name\":\"Foo\",\"value\":1}");
@@ -65,7 +65,7 @@ class MetadataLoaderTest {
         assertThat(all)
                 .hasSize(2)
                 .extracting(SampleMeta::getName)
-                .containsExactlyInAnyOrder("Foo", "Bar");
+                .containsExactly("Bar", "Foo");
     }
 
     @Test
@@ -118,13 +118,13 @@ class MetadataLoaderTest {
     }
 
     @Test
-    @DisplayName("listEntities returns the entity name for every .json file (without extension)")
+    @DisplayName("listEntities returns the entity name for every .json file (without extension), in file-name order")
     void listEntitiesReturnsFileBasenames() throws IOException {
         Path metaDir = Files.createDirectories(tempDir.resolve(MetadataLoader.METADATA_DIR));
         Files.writeString(metaDir.resolve("Foo.json"), "{\"name\":\"Foo\",\"value\":0}");
         Files.writeString(metaDir.resolve("Bar.json"), "{\"name\":\"Bar\",\"value\":0}");
         Files.writeString(metaDir.resolve("notes.txt"), "ignored");
 
-        assertThat(loader.listEntities()).containsExactlyInAnyOrder("Foo", "Bar");
+        assertThat(loader.listEntities()).containsExactly("Bar", "Foo");
     }
 }
