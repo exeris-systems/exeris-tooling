@@ -145,7 +145,8 @@ in template order) bound as `[props]="blockProps<N>"`, so the component declares
 `props`. A block without props gets no binding.
 
 Generation fails, naming the view, the block and `customBlocks`, when a view uses a CUSTOM block
-whose `customType` has no entry, or whose props are not valid JSON. This option is file-only; it
+that declares no `customType`, whose `customType` has no entry, or whose props are not valid JSON,
+and when `customBlocks` maps one class name (`symbol`) from two different modules. This option is file-only; it
 has no CLI flag.
 
 ### `viewHeading`: the heading of a `@View` page
