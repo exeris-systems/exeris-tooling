@@ -27,7 +27,7 @@ import { hasLiveViewClient } from './stream-client-gen.js';
 import { hasActionStreamClients } from './action-stream-client-gen.js';
 import { BACKEND_SCAFFOLD_NEEDS, type ScaffoldNeeds } from '../../core/scaffold-needs.js';
 import { entityViews, hasFormPage } from './entity-views.js';
-import { fileHeader } from '../file-header.js';
+import { fileHeader, lineHeaderLines } from '../file-header.js';
 
 export interface GeneratedFile {
   path: string;
@@ -375,8 +375,7 @@ function generateBarrelExport(
   config: GeneratorConfig,
 ): string {
   const exports: string[] = [
-    "// Generated barrel export",
-    "// DO NOT EDIT - This file is auto-generated",
+    ...lineHeaderLines('Generated barrel export'),
     "",
     "// Enums",
     "export * from './types/enums';",
