@@ -743,7 +743,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "not, and GraphMetadata.properties is passed as null in consequence"),
             new UnreadAnnotation("GraphQuery",
                     "the type-level @Graph and the field-level @GraphEdge are read — this one is "
-                            + "not, and GraphMetadata.queries is passed as an empty list"),
+                            + "not, and GraphMetadata.queries is passed as null in consequence"),
             new UnreadAnnotation("SagaTransition",
                     "held back, and the gate is the kernel, not "
                             + "a generator. The kernel's flow plan precomputes exactly one next "
