@@ -34,9 +34,12 @@
         <!-- Explicit imports keep the processor's javax.lang.model-only surface reviewable. -->
         <module name="AvoidStarImport"/>
         <module name="UnusedImports"/>
-        <!-- JDK-internal packages are not an API, and the processor runs on the consumer's JDK. -->
+        <!-- JDK-internal packages are not an API, and the processor runs on the consumer's JDK.
+             com.sun.source is the exception: the Compiler Tree API, exported by jdk.compiler, which the
+             processor uses for the source digest. -->
         <module name="IllegalImport">
-            <property name="illegalPkgs" value="sun,com.sun"/>
+            <property name="regexp" value="true"/>
+            <property name="illegalPkgs" value="^sun\..*, ^com\.sun\.(?!source\.).*"/>
         </module>
 
         <module name="PackageName">
