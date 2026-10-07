@@ -24,6 +24,7 @@ paths:
         description: Zero-based page index
         required: false
         schema:
+          type: integer
           format: int32
           default: 0
           minimum: 0
@@ -32,6 +33,7 @@ paths:
         description: Page size
         required: false
         schema:
+          type: integer
           format: int32
           default: 20
           maximum: 100
@@ -41,6 +43,7 @@ paths:
         description: "<property>,<asc|desc>; unsorted, rows come in id order"
         required: false
         schema:
+          type: string
           enum:
           - "amount,asc"
           - "amount,desc"
@@ -57,22 +60,26 @@ paths:
         description: Only rows whose dueOn equals this value
         required: false
         schema:
+          type: string
           format: date
       - name: orderNumber
         in: query
         description: Only rows whose orderNumber equals this value
         required: false
-        schema: {}
+        schema:
+          type: string
       - name: status
         in: query
         description: Only rows whose status equals this value
         required: false
-        schema: {}
+        schema:
+          type: string
       - name: urgent
         in: query
         description: Only rows whose urgent equals this value
         required: false
-        schema: {}
+        schema:
+          type: boolean
       responses:
         "200":
           description: One page of Order
@@ -115,6 +122,7 @@ paths:
         description: Entity ID (UUID)
         required: true
         schema:
+          type: string
           format: uuid
       responses:
         "200":
@@ -136,6 +144,7 @@ paths:
         description: Entity ID (UUID)
         required: true
         schema:
+          type: string
           format: uuid
       requestBody:
         description: Update Order request
@@ -164,6 +173,7 @@ paths:
         description: Entity ID (UUID)
         required: true
         schema:
+          type: string
           format: uuid
       responses:
         "204":
@@ -186,6 +196,7 @@ paths:
         description: Entity ID (UUID)
         required: true
         schema:
+          type: string
           format: uuid
       requestBody:
         description: Request for approve action
@@ -217,6 +228,7 @@ paths:
         description: Entity ID (UUID)
         required: true
         schema:
+          type: string
           format: uuid
       responses:
         "200":
@@ -232,97 +244,133 @@ paths:
 components:
   schemas:
     Order:
+      type: object
       description: Customer order
       properties:
         id:
+          type: string
           format: uuid
         orderNumber:
+          type: string
           description: Human-facing order number
           maxLength: 32
           minLength: 3
           pattern: "^ORD-[0-9]+$"
-        status: {}
+        status:
+          type: string
         amount:
+          type: number
           maximum: 1000000
           minimum: 0
-        urgent: {}
+        urgent:
+          type: boolean
         dueOn:
+          type: string
           format: date
         placedAt:
+          type: string
           format: date-time
         website:
+          type: string
           format: uri
         tenantId:
+          type: string
           format: uuid
           readOnly: true
         createdAt:
+          type: string
           format: date-time
           description: Creation timestamp
         updatedAt:
+          type: string
           format: date-time
           description: Last update timestamp
     OrderCreateDto:
+      type: object
       description: DTO for creating Order
       properties:
         orderNumber:
+          type: string
           description: Human-facing order number
           maxLength: 32
           minLength: 3
           pattern: "^ORD-[0-9]+$"
-        status: {}
+        status:
+          type: string
         amount:
+          type: number
           maximum: 1000000
           minimum: 0
-        urgent: {}
+        urgent:
+          type: boolean
         dueOn:
+          type: string
           format: date
         placedAt:
+          type: string
           format: date-time
         website:
+          type: string
           format: uri
       required:
       - orderNumber
     OrderUpdateDto:
+      type: object
       description: DTO for updating Order
       properties:
         orderNumber:
+          type: string
           description: Human-facing order number
           maxLength: 32
           minLength: 3
           pattern: "^ORD-[0-9]+$"
-        status: {}
+        status:
+          type: string
         amount:
+          type: number
           maximum: 1000000
           minimum: 0
-        urgent: {}
+        urgent:
+          type: boolean
         dueOn:
+          type: string
           format: date
         placedAt:
+          type: string
           format: date-time
         website:
+          type: string
           format: uri
     OrderPage:
+      type: object
       description: One page of Order
       properties:
         content:
+          type: array
           description: "The rows of this page, in the query's order"
           items:
             $ref: "#/components/schemas/Order"
         totalElements:
+          type: integer
           format: int64
           description: The number of rows the query matched
         totalPages:
+          type: integer
           format: int32
           description: The number of pages of size those rows fill
         size:
+          type: integer
           format: int32
           description: The page size
         number:
+          type: integer
           format: int32
           description: The zero-based page index
         first:
+          type: boolean
           description: Whether this is the first page
         last:
+          type: boolean
           description: Whether no page follows this one
       required:
       - content
@@ -332,3 +380,9 @@ components:
       - size
       - totalElements
       - totalPages
+    OrderApproveRequest:
+      type: object
+      description: Request for the approve action
+      properties:
+        note:
+          type: string
