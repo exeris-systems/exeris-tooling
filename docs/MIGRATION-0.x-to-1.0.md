@@ -2336,7 +2336,7 @@ it, a UNIVERSE entity's shared-scope migration and a graph-sync node descriptor 
 table. On an existing database that table does not exist yet.
 
 In 0.9.0 the processor warned once for each such entity, with the value that keeps the old name
-(0.10.0 retires the warning; see [`EXT-PROC-1104` is retired](#ext-proc-1104-is-retired)):
+(0.10.0 retires the warning; see "`EXT-PROC-1104` is retired" in the [0.10.0 train](#0100-train--regeneration-deltas)):
 
     warning: [Exeris] EXT-PROC-1104: Colony: default table changes from 'colonys' to 'colonies'; set @ExerisDomain(tableName = "colonys") to keep the existing table and migration
 
