@@ -101,7 +101,19 @@ Create a configuration file.
 exeris-gen init [options]
 
 Options:
-  -f, --force    Overwrite existing config file
+  -f, --force          Overwrite existing config file
+  --views-only         Preset for @View pages generated into an app you own: every entity
+                       generator off and "scaffold": false
+  --app-name <name>    Application name to write into the config (either preset;
+                       default: "Exeris Foundation")
+```
+
+Without `--views-only` the file holds every configuration key at its default. With it, a run emits
+the `@View` pages, their routes and `view.routes.ts`, and nothing else:
+
+```bash
+exeris-gen init --views-only --app-name "Exeris Web"
+exeris-gen generate
 ```
 
 ## Configuration File

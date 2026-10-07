@@ -7,7 +7,7 @@
  *
  * Usage:
  *   exeris-gen generate --input <path> --output <path>
- *   exeris-gen init
+ *   exeris-gen init [--views-only] [--app-name <name>]
  *   exeris-gen --help
  */
 
@@ -17,7 +17,7 @@ import { writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { join, basename, resolve } from 'node:path';
 import { pruneOrphansAndWriteManifest, MANIFEST_NAME } from './output/manifest.js';
 import { planWrites, writeGeneratedFiles, type WriteAction } from './output/writer.js';
-import { loadConfig, cliOverrides, type GeneratorConfig, DEFAULT_CONFIG } from './config.js';
+import { loadConfig, cliOverrides, initConfig, type GeneratorConfig } from './config.js';
 import { findMetadataFiles, loadMetadataFamilies } from './models/metadata-files.js';
 import { loadPeerContracts, type PeerContract } from './peers/peer-contract.js';
 import { buildGeneratedFiles } from './orchestrator.js';
@@ -115,6 +115,11 @@ program
   .command('init')
   .description('Initialize configuration file')
   .option('-f, --force', 'Overwrite existing config file')
+  .option(
+    '--views-only',
+    'Preset for @View pages generated into an app you own: entity generators off, scaffold off',
+  )
+  .option('--app-name <name>', 'Application name to write into the config (either preset)')
   .action((options: Record<string, unknown>) => {
     const configPath = 'exeris-codegen.json';
 
@@ -123,7 +128,11 @@ program
       process.exit(1);
     }
 
-    writeFileSync(configPath, JSON.stringify(DEFAULT_CONFIG, null, 2));
+    const config = initConfig({
+      viewsOnly: options.viewsOnly === true,
+      appName: typeof options.appName === 'string' ? options.appName : undefined,
+    });
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
     console.log(pc.green('✓'), `Created ${configPath}`);
   });
 

@@ -182,6 +182,37 @@ export const DEFAULT_CONFIG: GeneratorConfig = {
   scaffold: true,
 };
 
+/** The generators that emit per-entity output; the views-only preset turns each of them off. */
+const ENTITY_GENERATOR_KEYS = [
+  'generateZod',
+  'generateServices',
+  'generateForms',
+  'generateLists',
+  'generateDetails',
+  'generateStores',
+  'generateSagas',
+  'generateEvents',
+  'generateTests',
+] as const;
+
+/**
+ * The configuration `exeris-gen init` writes.
+ *
+ * The default preset is DEFAULT_CONFIG. `viewsOnly` is the preset for `@View` pages generated into
+ * an app the consumer owns: every entity generator off and the scaffold off, so a run emits the
+ * pages, their routes and the view-routes aggregate. `appName` replaces the default name in
+ * either preset. Keys keep DEFAULT_CONFIG's order, so the written file depends on the options only.
+ */
+export function initConfig(options: { viewsOnly?: boolean; appName?: string } = {}): GeneratorConfig {
+  const config: GeneratorConfig = { ...DEFAULT_CONFIG };
+  if (options.viewsOnly) {
+    for (const key of ENTITY_GENERATOR_KEYS) config[key] = false;
+    config.scaffold = false;
+  }
+  if (options.appName !== undefined) config.appName = options.appName;
+  return config;
+}
+
 /**
  * Turns parsed CLI options into config overrides, keeping only the flags the user actually
  * **passed**.

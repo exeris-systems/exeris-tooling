@@ -8,7 +8,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { buildGeneratedFiles } from '../src/orchestrator.js';
-import { DEFAULT_CONFIG, type GeneratorConfig } from '../src/config.js';
+import { DEFAULT_CONFIG, initConfig, type GeneratorConfig } from '../src/config.js';
 import { DomainMetadataSchema, ViewMetadataSchema, type ViewMetadata } from '../src/models/domain-model.js';
 
 const order = DomainMetadataSchema.parse({
@@ -93,6 +93,19 @@ describe('scaffold off', () => {
     expect(viewsOnly.map((f) => f.path).sort()).toEqual([
       'pages/about.component.ts',
       'pages/about.route.ts',
+      'view.routes.ts',
+    ]);
+  });
+});
+
+describe('the views-only init preset', () => {
+  it('emits only the pages, their routes and the aggregate', () => {
+    const files = buildGeneratedFiles([], [], initConfig({ viewsOnly: true }), [view('About', 'about'), view('Home', '')]);
+    expect(files.map((f) => f.path).sort()).toEqual([
+      'pages/about.component.ts',
+      'pages/about.route.ts',
+      'pages/home.component.ts',
+      'pages/home.route.ts',
       'view.routes.ts',
     ]);
   });

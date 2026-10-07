@@ -148,5 +148,11 @@
     "since": "0.10",
     "adr": "ADR-092",
     "justification": "The manifest records what the generator owns, and it already bounds pruning. Writing by the same rule keeps a regenerated file in step with its metadata: an owned file whose content differs is rewritten, an owned file emitted with overwritable false (package.json, angular.json, the tsconfig files, src/main.ts, environment.ts, app.config.ts, app.component.ts, app.routes.ts) is kept once written, and an existing file the manifest does not record is neither replaced nor taken over. A file skipped as unrecorded is left out of the next manifest, so a later run never prunes it. Default-config output for a fresh directory is unchanged. docs/MIGRATION-0.x-to-1.0.md 0.10.0 carries the step."
+  },
+  {
+    "signature": "exeris-gen init: + --views-only, + --app-name <name>; the written exeris-codegen.json: + scaffold",
+    "since": "0.10",
+    "adr": "ADR-092",
+    "justification": "Additive: two new flags, and without them init writes the configuration defaults as before, now including the scaffold key at its default, true. --views-only writes every entity generator (generateZod, generateServices, generateForms, generateLists, generateDetails, generateStores, generateSagas, generateEvents, generateTests) off and scaffold false, so generate emits the @View pages, their routes and view.routes.ts. --app-name sets appName in either preset. The keys keep the order of the defaults, so the file depends on the flags only."
   }
 ]

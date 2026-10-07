@@ -32,6 +32,7 @@ import {
   loadConfigFile,
   loadConfig,
   cliOverrides,
+  initConfig,
   resolveInputPath,
   resolveOutputPath,
   type GeneratorConfig,
@@ -350,5 +351,54 @@ describe('loadConfig — a config file survives untyped flags', () => {
   it('falls back to the schema default of an empty apiBasePath, never /api', () => {
     process.chdir(tempRoot);
     expect(loadConfig(cliOverrides({ apiBase: '/api' }, nothingPassed)).apiBasePath).toBe('');
+  });
+});
+
+describe('initConfig (exeris-gen init)', () => {
+  const entityGenerators = [
+    'generateZod', 'generateServices', 'generateForms', 'generateLists', 'generateDetails',
+    'generateStores', 'generateSagas', 'generateEvents', 'generateTests',
+  ] as const;
+
+  it('is DEFAULT_CONFIG with no option', () => {
+    expect(initConfig()).toEqual(DEFAULT_CONFIG);
+  });
+
+  it('turns every entity generator and the scaffold off for --views-only', () => {
+    const config = initConfig({ viewsOnly: true });
+    for (const key of entityGenerators) expect(config[key], key).toBe(false);
+    expect(config.scaffold).toBe(false);
+    expect(config.appName).toBe('Exeris Foundation');
+  });
+
+  it('leaves every other key at its default for --views-only', () => {
+    const { scaffold: _scaffold, ...rest } = initConfig({ viewsOnly: true });
+    const { scaffold: _defaultScaffold, ...defaults } = DEFAULT_CONFIG;
+    for (const key of entityGenerators) {
+      delete (rest as Partial<GeneratorConfig>)[key];
+      delete (defaults as Partial<GeneratorConfig>)[key];
+    }
+    expect(rest).toEqual(defaults);
+  });
+
+  it('writes --app-name in either preset', () => {
+    expect(initConfig({ appName: 'Exeris Web' }).appName).toBe('Exeris Web');
+    expect(initConfig({ viewsOnly: true, appName: 'Exeris Web' }).appName).toBe('Exeris Web');
+  });
+
+  it('keeps the key order of DEFAULT_CONFIG, so the written file depends on the options only', () => {
+    expect(Object.keys(initConfig({ viewsOnly: true, appName: 'x' }))).toEqual(Object.keys(DEFAULT_CONFIG));
+  });
+
+  it('writes a file the schema reads back unchanged', () => {
+    const config = initConfig({ viewsOnly: true, appName: 'Exeris Web' });
+    expect(GeneratorConfigSchema.parse(JSON.parse(JSON.stringify(config)))).toEqual(config);
+  });
+
+  it('does not mutate DEFAULT_CONFIG', () => {
+    initConfig({ viewsOnly: true, appName: 'x' });
+    expect(DEFAULT_CONFIG.scaffold).toBe(true);
+    expect(DEFAULT_CONFIG.generateServices).toBe(true);
+    expect(DEFAULT_CONFIG.appName).toBe('Exeris Foundation');
   });
 });
