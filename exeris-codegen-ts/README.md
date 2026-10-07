@@ -108,8 +108,11 @@ Options:
                        default: "Exeris Foundation")
 ```
 
-Without `--views-only` the file holds every configuration key at its default. With it, a run emits
-the `@View` pages, their routes and `view.routes.ts`, and nothing else:
+Without `--views-only` the file holds every configuration key at its default. With it, the entity
+generators (services, forms, lists, details, stores, sagas, events, Zod schemas and tests) are off,
+so for metadata that declares no entity or enum a run emits the `@View` pages, their routes and
+`view.routes.ts`, and nothing else. An entity or enum still gets its types, the enum module and the
+barrel `index.ts`:
 
 ```bash
 exeris-gen init --views-only --app-name "Exeris Web"
