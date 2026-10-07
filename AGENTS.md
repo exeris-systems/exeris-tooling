@@ -66,6 +66,8 @@ Coordinates: groupId `eu.exeris`, packages `eu.exeris.tooling.*`.
    changes and milestone scope.
 3. Upstream & downstream references: `exeris-sdk/exeris-sdk-source-model/`, `exeris-kernel/exeris-kernel-spi/`,
    downstream consumer applications ([reference](.agents/references/cross-repo-dependencies.md)).
+4. [`docs/generator-catalogue.md`](docs/generator-catalogue.md) for every Java and TypeScript generator, the
+   paths it writes and the condition that emits them.
 
 ## `.agents/` — the canonical semantic source
 
