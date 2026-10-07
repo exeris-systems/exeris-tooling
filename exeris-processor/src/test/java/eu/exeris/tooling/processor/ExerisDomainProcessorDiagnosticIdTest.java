@@ -57,7 +57,7 @@ class ExerisDomainProcessorDiagnosticIdTest {
                         @ExerisDomain(module = "catalog", path = "/items", tenantScoped = true,
                                 apiVersion = "v2")
                         @RouteAccess(RouteAccess.Level.AUTHENTICATED)
-                        public class Item {
+                        public class Item { private java.util.UUID id;
                             private String name;
 
                             @Action(name = "approve", label = "Approve", path = "/approve")
