@@ -141,9 +141,7 @@ public enum DiagnosticId {
     VALIDATE_ON_UNRECOGNISED("EXT-PROC-1103",
             "@Validation.validateOn holds an unrecognised value, which is dropped."),
 
-    /** The entity's derived default table name differs from the plain plural of its class name. */
-    DEFAULT_TABLE_NAME_CHANGED("EXT-PROC-1104",
-            "An entity's derived default table name differs from the plain plural of its class name."),
+    // EXT-PROC-1104 is retired (docs/diagnostics.md, "Retired identifiers") and is never allocated again.
 
     /** {@code @SharedScope} on an entity that is not {@code DataScope.UNIVERSE}; it is not recorded. */
     SHARED_SCOPE_OUTSIDE_UNIVERSE("EXT-PROC-1105",

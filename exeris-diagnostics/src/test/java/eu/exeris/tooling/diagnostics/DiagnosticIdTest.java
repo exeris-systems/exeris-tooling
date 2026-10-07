@@ -66,7 +66,6 @@ class DiagnosticIdTest {
         m.put(DiagnosticId.TENANT_SCOPED_DEPRECATED, "EXT-PROC-1101");
         m.put(DiagnosticId.VALIDATION_ATTRIBUTE_DEPRECATED, "EXT-PROC-1102");
         m.put(DiagnosticId.VALIDATE_ON_UNRECOGNISED, "EXT-PROC-1103");
-        m.put(DiagnosticId.DEFAULT_TABLE_NAME_CHANGED, "EXT-PROC-1104");
         m.put(DiagnosticId.SHARED_SCOPE_OUTSIDE_UNIVERSE, "EXT-PROC-1105");
         m.put(DiagnosticId.BIND_WITHOUT_SOURCE_IGNORED, "EXT-PROC-1106");
         m.put(DiagnosticId.STREAMING_ACTION_NOT_INVOKED, "EXT-PROC-1107");

@@ -1792,7 +1792,6 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         DomainMetadata metadata = builder.build();
         if (domainAnnotation != null) {
             refuseEntityWithoutIdField(element, domainAnnotation);
-            warnDefaultTableChange(element, metadata);
             // Not on a contradicted declaration: its tier is undecided until the author fixes the
             // line EXT-PROC-1003 already reports.
             if (!scopeContradicted) {
@@ -1872,33 +1871,6 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                     ? superElement : null;
         }
         return false;
-    }
-
-    /**
-     * Warns when the derived table differs from the one {@code toSnakeCase(entityName) + "s"}
-     * gives, naming the {@code tableName} value that keeps the existing table. The derived name
-     * comes from {@link DomainMetadata#effectiveTableName()}, whose plural moves only names that
-     * end in a consonant plus {@code y} or in {@code s}, {@code x}, {@code z}, {@code ch} or
-     * {@code sh}; every other entity derives the same table under both rules and draws nothing.
-     * An entity that sets {@code tableName} has chosen its table and draws nothing either.
-     */
-    private void warnDefaultTableChange(TypeElement element, DomainMetadata metadata) {
-        String override = metadata.tableName();
-        if (override != null && !override.isBlank()) {
-            return;
-        }
-        String entityName = metadata.entityName();
-        String plainPlural = entityName.replaceAll("([a-z])([A-Z])", "$1_$2")
-                .toLowerCase(Locale.ROOT) + "s";
-        String derived = metadata.effectiveTableName();
-        if (plainPlural.equals(derived)) {
-            return;
-        }
-        warning(DiagnosticId.DEFAULT_TABLE_NAME_CHANGED,
-                entityName + ": default table changes from '" + plainPlural
-                        + "' to '" + derived + "'; set @ExerisDomain(tableName = \"" + plainPlural
-                        + "\") to keep the existing table and migration",
-                element);
     }
 
     /**

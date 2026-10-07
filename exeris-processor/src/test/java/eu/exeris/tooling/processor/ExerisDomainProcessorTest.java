@@ -1743,13 +1743,6 @@ class ExerisDomainProcessorTest {
                     """.formatted(extraAttributes, name));
         }
 
-        private List<String> tableWarnings(Compilation compilation) {
-            return compilation.warnings().stream()
-                    .map(d -> d.getMessage(null))
-                    .filter(m -> m != null && m.contains("default table changes"))
-                    .toList();
-        }
-
         @Test
         @DisplayName("tableName reaches the metadata as written")
         void tableNameIsExtracted() throws IOException {
@@ -1770,55 +1763,21 @@ class ExerisDomainProcessorTest {
             assertThat(tableName).isEmpty();
         }
 
-        @ParameterizedTest(name = "{0}: {1} → {2}")
-        @org.junit.jupiter.params.provider.CsvSource({
-                "Colony, colonys, colonies",
-                "Box, boxs, boxes",
-                "Address, addresss, addresses",
-                "Branch, branchs, branches",
-                "StarSystem, star_systems, star_systems",
-        })
-        @DisplayName("warns once for an entity whose default table moves, naming the override")
-        void warnsWhenTheDefaultTableMoves(String name, String oldTable, String newTable) {
-            Compilation compilation = compileWithProcessor(entity(name, ""));
-
-            assertThat(compilation).succeeded();
-            List<String> warnings = tableWarnings(compilation);
-            if (oldTable.equals(newTable)) {
-                assertThat(warnings).isEmpty();
-                return;
-            }
-            assertThat(warnings).containsExactly(
-                    "[Exeris] EXT-PROC-1104: " + name + ": default table changes from '" + oldTable + "' to '"
-                            + newTable + "'; set @ExerisDomain(tableName = \"" + oldTable
-                            + "\") to keep the existing table and migration");
-        }
-
         @ParameterizedTest(name = "{0}")
-        @ValueSource(strings = {"Order", "ConstructionOrder", "Key", "Day"})
-        @DisplayName("stays quiet when the plural is a plain s")
-        void quietWhenThePluralIsPlainS(String name) {
+        @ValueSource(strings = {"Order", "ConstructionOrder", "Key", "Day", "Colony", "Box", "Address", "Branch"})
+        @DisplayName("an entity that derives its table compiles without warnings")
+        void derivedTableDrawsNoWarning(String name) {
             Compilation compilation = compileWithProcessor(entity(name, ""));
 
             assertThat(compilation).succeededWithoutWarnings();
         }
 
         @Test
-        @DisplayName("stays quiet when tableName is set")
-        void quietWhenOverridden() {
-            Compilation compilation = compileWithProcessor(
-                    entity("Colony", ", tableName = \"colonies\""));
-
-            assertThat(compilation).succeededWithoutWarnings();
-        }
-
-        @Test
-        @DisplayName("a blank tableName derives the table, so the warning still fires")
-        void blankTableNameStillWarns() {
+        @DisplayName("a blank tableName derives the table and compiles without warnings")
+        void blankTableNameDrawsNoWarning() {
             Compilation compilation = compileWithProcessor(entity("Colony", ", tableName = \"  \""));
 
-            assertThat(compilation).succeeded();
-            assertThat(tableWarnings(compilation)).hasSize(1);
+            assertThat(compilation).succeededWithoutWarnings();
         }
 
         @Test
