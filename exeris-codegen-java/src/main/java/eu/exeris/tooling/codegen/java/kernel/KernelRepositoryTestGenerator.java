@@ -54,7 +54,7 @@ import java.util.List;
  * ADR-058 dependency contract stays JUnit 5 + AssertJ.
  *
  * @implNote Emission is JavaPoet-based (ADR-015).
- * @since 0.7.0
+ * @since 0.7
  */
 public final class KernelRepositoryTestGenerator {
 
@@ -96,9 +96,21 @@ public final class KernelRepositoryTestGenerator {
     private static final String AS_TENANT = "asTenant";
 
     /**
+     * Creates the generator. It keeps no per-domain state, so one instance serves every domain
+     * in a build.
+     */
+    public KernelRepositoryTestGenerator() {
+        // no state to initialise
+    }
+
+    /**
+     * Emits the JUnit 5 test for the entity's generated repository.
+     *
      * @param metadata    the entity whose repository is under test
      * @param basePackage the project base package (the {@code testsupport} package is resolved from
      *                    it, since the persistence double is project-wide)
+     * @return the emitted test; never {@code null}
+     * @throws IllegalArgumentException if the entity's package does not end in {@code .domain}
      */
     public GeneratedFile generate(DomainMetadata metadata, String basePackage) {
         String entity = metadata.entityName();

@@ -51,7 +51,7 @@ import java.util.stream.Collectors;
  * <p>Neither type is an ADR-070 component: nothing constructs it through a {@code create*} factory.
  *
  * @implNote Emission is JavaPoet-based (ADR-015).
- * @since 0.9.0
+ * @since 0.9
  */
 public class KernelListQueryGenerator implements KernelArtifactGenerator {
 
@@ -68,6 +68,14 @@ public class KernelListQueryGenerator implements KernelArtifactGenerator {
     private static final ClassName ILLEGAL_ARGUMENT = ClassName.get(IllegalArgumentException.class);
 
     private static final String FILTER = "Filter";
+
+    /**
+     * Creates the generator. It keeps no per-domain state, so one instance serves every domain
+     * in a build.
+     */
+    public KernelListQueryGenerator() {
+        // no state to initialise
+    }
 
     /** {@code <Entity>Page} in the generated repository package. */
     static ClassName pageType(DomainMetadata metadata) {

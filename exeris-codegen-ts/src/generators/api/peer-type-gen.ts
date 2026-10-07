@@ -38,8 +38,6 @@ import {
   buildZodType,
   collectEnumTypes,
   createDtoFields,
-  DEPRECATED_OWNER_DOC,
-  deprecatedDtoOwner,
   systemFieldNames,
   updateDtoDeclaration,
   updateSchemaDeclaration,
@@ -115,11 +113,9 @@ function peerInterface(peerName: string, metadata: DomainMetadata): string {
   }
   lines.push('}', '');
 
-  const deprecatedOwner = deprecatedDtoOwner(metadata);
   lines.push(`export interface ${typeName}Create {`);
   for (const field of createDtoFields(metadata)) {
     const optional = field.required ? '' : '?';
-    if (field.name === deprecatedOwner) lines.push(DEPRECATED_OWNER_DOC);
     lines.push(`  ${field.name}${optional}: ${DslMapper.mapType(field.type).tsType};`);
   }
   lines.push('}', '');

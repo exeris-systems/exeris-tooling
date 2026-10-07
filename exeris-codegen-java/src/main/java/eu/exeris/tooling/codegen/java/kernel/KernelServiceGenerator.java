@@ -28,14 +28,21 @@ import java.util.List;
  *
  * @implNote Emission is JavaPoet-based (ADR-015).
  *
- * @author Exeris Team
- * @since 0.1.0
+ * @since 0.1
  */
 public class KernelServiceGenerator implements KernelArtifactGenerator {
 
     private static final ClassName UUID = ClassName.get("java.util", "UUID");
     private static final ClassName OPTIONAL = ClassName.get("java.util", "Optional");
     private static final ClassName LIST = ClassName.get("java.util", "List");
+
+    /**
+     * Creates the generator. It keeps no per-domain state, so one instance serves every domain
+     * in a build.
+     */
+    public KernelServiceGenerator() {
+        // no state to initialise
+    }
 
     @Override
     public GeneratedFile generate(DomainMetadata metadata) {

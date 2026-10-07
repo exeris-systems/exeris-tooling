@@ -20,13 +20,18 @@ import java.util.List;
 
 /**
  * Builds OpenAPI paths from domain metadata.
- * @author Exeris Team
- * @since 0.1.0
+ * @since 0.1
  */
 public final class OpenApiPathsBuilder {
 
     private OpenApiPathsBuilder() {}
 
+    /**
+     * Builds the path items one entity exposes, rooted at its effective REST path.
+     *
+     * @param metadata the entity to describe
+     * @return the entity's paths and their operations
+     */
     public static Paths buildPaths(DomainMetadata metadata) {
         Paths paths = new Paths();
         String basePath = metadata.effectivePath();

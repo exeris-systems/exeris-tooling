@@ -18,8 +18,7 @@ import java.util.*;
 /**
  * Generates OpenAPI 3.1 specifications from domain metadata.
  *
- * @author Exeris Team
- * @since 0.1.0
+ * @since 0.1
  */
 public class OpenApiGenerator {
 
@@ -50,7 +49,13 @@ public class OpenApiGenerator {
     }
 
     /**
-     * Generates OpenAPI specification from domain metadata.
+     * Builds the OpenAPI 3.1 specification for one entity and writes it as YAML to
+     * {@code <outputDirectory>/<entity>-api.yaml}, creating the directory if needed.
+     *
+     * @param metadata the entity to describe
+     * @return the specification that was written
+     * @throws IOException if the directory or the file cannot be written
+     * @throws IllegalArgumentException if {@code metadata} is {@code null} or has no entity name
      */
     public OpenAPI generate(DomainMetadata metadata) throws IOException {
         validateMetadata(metadata);
@@ -66,7 +71,13 @@ public class OpenApiGenerator {
     }
 
     /**
-     * Generates OpenAPI specification as YAML string (no file I/O).
+     * Builds the OpenAPI 3.1 specification for one entity and returns it as YAML, without
+     * touching the file system.
+     *
+     * @param metadata the entity to describe
+     * @return the specification as YAML text
+     * @throws IOException if serialization fails
+     * @throws IllegalArgumentException if {@code metadata} is {@code null} or has no entity name
      */
     public String generateYaml(DomainMetadata metadata) throws IOException {
         validateMetadata(metadata);
@@ -75,7 +86,16 @@ public class OpenApiGenerator {
     }
 
     /**
-     * Generates aggregated OpenAPI specification for multiple entities.
+     * Builds one OpenAPI 3.1 specification covering every given entity and writes it as YAML to
+     * {@code <outputDirectory>/<moduleName>-api.yaml}, creating the directory if needed. Tags,
+     * paths and schemas are merged in list order; a later entity's schema replaces an earlier
+     * one of the same name.
+     *
+     * @param metadataList the entities to describe; must not be empty
+     * @param moduleName   the module name used in the title and the file name
+     * @return the specification that was written
+     * @throws IOException if the directory or the file cannot be written
+     * @throws IllegalArgumentException if {@code metadataList} is {@code null} or empty
      */
     public OpenAPI generateAggregated(List<DomainMetadata> metadataList, String moduleName) throws IOException {
         if (metadataList == null || metadataList.isEmpty()) {
@@ -169,11 +189,45 @@ public class OpenApiGenerator {
         return Character.toUpperCase(str.charAt(0)) + str.substring(1);
     }
 
-    // Setters
+    /**
+     * Sets the directory {@link #generate} and {@link #generateAggregated} write into.
+     *
+     * @param outputDirectory the output directory; {@code target/generated-openapi} by default
+     */
     public void setOutputDirectory(Path outputDirectory) { this.outputDirectory = outputDirectory; }
+
+    /**
+     * Returns the directory {@link #generate} and {@link #generateAggregated} write into.
+     *
+     * @return the output directory
+     */
     public Path getOutputDirectory() { return outputDirectory; }
+
+    /**
+     * Sets the URL of the single server entry every specification lists.
+     *
+     * @param baseUrl the server URL; {@code http://localhost:8080} by default
+     */
     public void setBaseUrl(String baseUrl) { this.baseUrl = baseUrl; }
+
+    /**
+     * Sets the title prefix of every specification's {@code info.title}.
+     *
+     * @param apiTitle the title prefix; {@code Exeris API} by default
+     */
     public void setApiTitle(String apiTitle) { this.apiTitle = apiTitle; }
+
+    /**
+     * Sets the contact placed in every specification's {@code info}.
+     *
+     * @param contact the contact, or {@code null} for none
+     */
     public void setContact(Contact contact) { this.contact = contact; }
+
+    /**
+     * Sets the licence placed in every specification's {@code info}.
+     *
+     * @param license the licence, or {@code null} for none
+     */
     public void setLicense(License license) { this.license = license; }
 }

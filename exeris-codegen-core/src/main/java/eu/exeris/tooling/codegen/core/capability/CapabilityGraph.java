@@ -30,7 +30,14 @@ import java.util.TreeMap;
  * mismatch, or dependency cycle. An unsatisfied <em>optional</em> requirement is a warning, not an
  * error. Output is fully deterministic (all collections sorted) so the manifest is byte-stable.
  *
- * @since 0.5.0
+ * @param schemaVersion the manifest schema version, {@link #SCHEMA_VERSION} for a built graph
+ * @param stamp         the composition validation stamp; never {@code null}
+ * @param modules       every capability module, sorted by qualified name
+ * @param resolutions   one entry per {@code @Requires} edge, in module order
+ * @param initOrder     module qualified names with every provider ahead of the modules that
+ *                      require it
+ * @param warnings      one line per unsatisfied optional requirement, sorted
+ * @since 0.5
  */
 public record CapabilityGraph(
         int schemaVersion,

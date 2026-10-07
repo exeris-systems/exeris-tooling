@@ -4,8 +4,7 @@ import java.util.Map;
 
 /**
  * Maps Java types to OpenAPI types and formats.
- * @author Exeris Team
- * @since 0.1.0
+ * @since 0.1
  */
 public final class TypeMapper {
 
@@ -84,12 +83,27 @@ public final class TypeMapper {
 
     private TypeMapper() {}
 
+    /**
+     * Maps a Java type name to an OpenAPI schema type. Generic arguments are ignored, and a
+     * qualified name outside {@code java.*} is reduced to its simple name before the lookup.
+     *
+     * @param javaType the Java type as recorded in the metadata, or {@code null}
+     * @return the OpenAPI type; {@code string} for {@code null} or an unmapped type
+     */
     public static String toOpenApiType(String javaType) {
         if (javaType == null) return "string";
         String simple = simplifyType(javaType);
         return TYPE_MAPPINGS.getOrDefault(simple, "string");
     }
 
+    /**
+     * Maps a Java type name to an OpenAPI {@code format}, normalised as for
+     * {@link #toOpenApiType(String)}.
+     *
+     * @param javaType the Java type as recorded in the metadata, or {@code null}
+     * @return the format, such as {@code date-time} or {@code uuid}; {@code null} when the type
+     *         carries none
+     */
     public static String toOpenApiFormat(String javaType) {
         if (javaType == null) return null;
         String simple = simplifyType(javaType);

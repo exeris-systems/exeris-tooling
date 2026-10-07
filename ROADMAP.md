@@ -4,7 +4,7 @@ type: roadmap
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-10-06
+last-verified: 2026-10-07
 ---
 
 # Exeris Tooling — Roadmap to 1.0.0 GA
@@ -744,11 +744,11 @@ each fix.
       `bidirectional`, `inverseType`, `weighted`, `weightField`, `description`, `properties`,
       `propertyMappings`, `staticProperties`, `computedProperties`, and `target`/`targetName` beyond
       the label rule above. Same shape as the saga family: an SDK record change is the prerequisite,
-      so they are recorded rather than half-read. Two sibling gaps stay open alongside them —
-      `GraphMetadata.properties` is passed as `null` (not `List.of()`) and `queries` as an empty
-      literal, and `@GraphProperty` / `@GraphQuery` are among the annotations C0 reports as unread.
-      Nothing reads either field today, so neither is a live defect; changing the `null` would
-      change the emitted JSON shape, which is a decision rather than a tidy-up.
+      so they are recorded rather than half-read. A sibling gap stays open alongside them:
+      `@GraphProperty` / `@GraphQuery` are not extracted and are among the annotations C0 reports as
+      unread. `GraphMetadata.properties` and `queries` are both written `null`, which
+      `@JsonInclude(NON_NULL)` keeps off the wire as "not carried", and the TS schema keeps them
+      absent rather than defaulting them to `[]`.
 
       Evidence: 108 processor tests, up from 103; full reactor `clean install` green. Two
       perturbations: restoring the empty edge literal fails the tests that assert an edge and leaves
@@ -3815,6 +3815,9 @@ are in [`docs/0.10.0-release-plan.md`](docs/0.10.0-release-plan.md). T12 + T17 i
 there, and does not hold the cut. Track C, `@SagaTransition` and T48 slice C2 are conditional: each
 enters only if its upstream half is final first.
 
+- [ ] **J0 build hygiene** (no gate, does not hold the cut): Checkstyle and PMD on the tooling's own
+      Java (warn-only first, then enforcing per module), ArchUnit policy tests, the javadoc gate in diff
+      mode, and lint of emitted Java in the e2e compile gate.
 - [ ] **T53 in full** (RFC, then ADR): `@RouteAccess` + `permissions` compiled into `RouteRequirement`. D10 resolves
       with it.
 - [ ] Track C (SDK record changes), `@SagaTransition`, T12 + T17, `@PrimaryKey`.
@@ -3865,17 +3868,17 @@ from. **`@Channel` emission** is 0.12.0.
 
 Each of these is deprecated in 0.9.0 and kept for that one release, so an app regenerated on 0.9.0
 keeps compiling where it still uses one. 0.10.0 removes them.
-- [ ] **The default-table-change warning (T6).** It exists for the 0.8 → 0.9 regeneration, and it
+- [x] **The default-table-change warning (T6).** It exists for the 0.8 → 0.9 regeneration, and it
       warns on every build of an entity whose derived table moved, including in a project that never
       had the old table. Delete `warnDefaultTableChange` and its tests.
-- [ ] **`restore()` on a soft-delete entity's `<Entity>Service` and `<Entity>Store` (T58).** Delete
+- [x] **`restore()` on a soft-delete entity's `<Entity>Service` and `<Entity>Store` (T58).** Delete
       its emission from `service-gen.ts` and `store-gen.ts`, the conditional `throwError` import,
       and `RESTORE_UNSUPPORTED`.
-- [ ] **`tenantId` in the DTOs of a tenant-partitioned entity with no `systemFields` block (T36).**
+- [x] **`tenantId` in the DTOs of a tenant-partitioned entity with no `systemFields` block (T36).**
       Delete `deprecatedDtoOwner` and `DEPRECATED_OWNER_DOC`, and add the owner to
       `systemFieldNames`' no-block branch, so the `…Create`/`…Update` types and the create schema
       omit it as the OpenAPI does.
-- [ ] **`apiVersion` in the emitted environment files (T38).** Delete it from
+- [x] **`apiVersion` in the emitted environment files (T38).** Delete it from
       `generateEnvironmentFile`, `resolveApiSettings` and the KERNEL strategy's `ClientConfig`.
 
 ## Versioning policy

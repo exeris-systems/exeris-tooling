@@ -38,7 +38,7 @@ import java.util.*;
  * For each processed domain class, generates a JSON file in
  * {@code exeris-metadata/} containing complete domain metadata.
  *
- * @since 0.1.0
+ * @since 0.1
  */
 @AutoService(Processor.class)
 @SupportedAnnotationTypes({
@@ -743,7 +743,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "not, and GraphMetadata.properties is passed as null in consequence"),
             new UnreadAnnotation("GraphQuery",
                     "the type-level @Graph and the field-level @GraphEdge are read — this one is "
-                            + "not, and GraphMetadata.queries is passed as an empty list"),
+                            + "not, and GraphMetadata.queries is passed as null in consequence"),
             new UnreadAnnotation("SagaTransition",
                     "held back, and the gate is the kernel, not "
                             + "a generator. The kernel's flow plan precomputes exactly one next "
@@ -793,7 +793,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     private boolean verbose;
     private boolean strict;
 
-    /** Collected enums from all processed entities */
+    /** Enum types referenced by the fields of processed entities, including as type arguments. */
     private final Set<TypeElement> discoveredEnums = new HashSet<>();
 
     /**
@@ -1791,7 +1791,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
 
         DomainMetadata metadata = builder.build();
         if (domainAnnotation != null) {
-            warnDefaultTableChange(element, metadata);
+            refuseEntityWithoutIdField(element, domainAnnotation);
             // Not on a contradicted declaration: its tier is undecided until the author fixes the
             // line EXT-PROC-1003 already reports.
             if (!scopeContradicted) {
@@ -1833,31 +1833,44 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                 element, domainAnnotation);
     }
 
+    /** The primary-key field every generator reads by this literal name. */
+    private static final String ID_FIELD = "id";
+
     /**
-     * Warns when the derived table differs from the one {@code toSnakeCase(entityName) + "s"}
-     * gives, naming the {@code tableName} value that keeps the existing table. The derived name
-     * comes from {@link DomainMetadata#effectiveTableName()}, whose plural moves only names that
-     * end in a consonant plus {@code y} or in {@code s}, {@code x}, {@code z}, {@code ch} or
-     * {@code sh}; every other entity derives the same table under both rules and draws nothing.
-     * An entity that sets {@code tableName} has chosen its table and draws nothing either.
+     * Refuses an {@code @ExerisDomain} type that declares no field {@code id}, its own or inherited.
+     *
+     * <p>Every generated artefact identifies a row by the literal {@code id}: the migration's
+     * {@code id UUID PRIMARY KEY}, the repository's {@code WHERE id = ?}, the by-id routes'
+     * {@code {id}} path variable, the {@code getId()} and {@code setId(...)} calls in handlers and
+     * services, and the Angular model the list, detail, form and store read {@code id} from.
+     * {@code primaryKeyField} renames none of them, so the field is looked up by that literal
+     * whatever the attribute says. A superclass field counts: the generated Java reaches it
+     * through the inherited accessors.
      */
-    private void warnDefaultTableChange(TypeElement element, DomainMetadata metadata) {
-        String override = metadata.tableName();
-        if (override != null && !override.isBlank()) {
+    private void refuseEntityWithoutIdField(TypeElement element, AnnotationMirror domainAnnotation) {
+        if (declaresIdField(element)) {
             return;
         }
-        String entityName = metadata.entityName();
-        String plainPlural = entityName.replaceAll("([a-z])([A-Z])", "$1_$2")
-                .toLowerCase(Locale.ROOT) + "s";
-        String derived = metadata.effectiveTableName();
-        if (plainPlural.equals(derived)) {
-            return;
+        error(DiagnosticId.ENTITY_WITHOUT_ID_FIELD,
+                "@ExerisDomain type '" + element.getSimpleName() + "' declares no field 'id'. "
+                        + "The generated schema, repository, routes and Angular model all identify a "
+                        + "row by id, and primaryKeyField does not rename it. Declare "
+                        + "'private UUID id;' with its getter and setter.",
+                element, domainAnnotation);
+    }
+
+    /** Whether {@code element} or one of its superclasses declares a non-static field {@code id}. */
+    private static boolean declaresIdField(TypeElement element) {
+        TypeElement current = element;
+        while (current != null) {
+            if (instanceField(current, ID_FIELD) != null) {
+                return true;
+            }
+            current = current.getSuperclass() instanceof DeclaredType superType
+                    && superType.asElement() instanceof TypeElement superElement
+                    ? superElement : null;
         }
-        warning(DiagnosticId.DEFAULT_TABLE_NAME_CHANGED,
-                entityName + ": default table changes from '" + plainPlural
-                        + "' to '" + derived + "'; set @ExerisDomain(tableName = \"" + plainPlural
-                        + "\") to keep the existing table and migration",
-                element);
+        return false;
     }
 
     /**
@@ -2861,11 +2874,13 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             label = (String) values.get("nodeClass");
         }
 
+        // properties and queries are not extracted, so both are null: NON_NULL keeps them off the
+        // wire, which reads as "not carried". An empty list would claim the entity declares none.
         return new GraphMetadata(
                 label,
                 null,
                 graphEdges(element),
-                List.of()
+                null
         );
     }
 

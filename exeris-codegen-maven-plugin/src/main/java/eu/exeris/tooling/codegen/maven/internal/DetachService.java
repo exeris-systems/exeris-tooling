@@ -9,7 +9,8 @@ import java.util.List;
 import java.util.stream.Stream;
 
 /**
- * L2 detachment logic, factored out of {@link DetachMojo} so it is unit-testable
+ * L2 detachment logic, factored out of
+ * {@link eu.exeris.tooling.codegen.maven.DetachMojo} so it is unit-testable
  * without a Maven session (the mojo is a thin shell, mirroring
  * {@code CodegenMain} → {@code CodegenPipeline}).
  *
@@ -29,6 +30,14 @@ import java.util.stream.Stream;
  * </ul>
  */
 public class DetachService {
+
+    /**
+     * Creates a detach service. It holds no state, so one instance may serve any number of
+     * {@link #detach} calls.
+     */
+    public DetachService() {
+        // stateless
+    }
 
     /**
      * Promotes every regular file under {@code generatedRoot} into

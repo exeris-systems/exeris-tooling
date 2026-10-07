@@ -26,8 +26,7 @@ import java.util.Objects;
  * {@code codegen-core} would force JavaPoet onto that module's classpath and
  * violate ADR-015 §4 (pure-AST scope of {@code codegen-core}).
  *
- * @author Exeris Team
- * @since 0.1.0
+ * @since 0.1
  */
 public final class KernelScaffold {
 
@@ -60,6 +59,7 @@ public final class KernelScaffold {
      * {@code X.class}.
      *
      * @param selfType must not be null
+     * @return a {@code private static final System.Logger LOG} field named after {@code selfType}
      */
     public static FieldSpec loggerField(ClassName selfType) {
         Objects.requireNonNull(selfType, "selfType must not be null");
@@ -74,6 +74,7 @@ public final class KernelScaffold {
      * name. Caller chains Javadoc, fields, and methods.
      *
      * @param className must not be null
+     * @return a class builder with the {@code public} modifier and nothing else
      */
     public static TypeSpec.Builder publicClass(String className) {
         Objects.requireNonNull(className, "className must not be null");
@@ -93,6 +94,7 @@ public final class KernelScaffold {
      * {@code log(Level, String)} overload does no formatting at all.
      *
      * @param pattern must not be null
+     * @return {@code pattern} with every single quote doubled
      */
     public static String escapeQuotes(String pattern) {
         Objects.requireNonNull(pattern, "pattern must not be null");
@@ -105,6 +107,7 @@ public final class KernelScaffold {
      *
      * @param packageName must not be null
      * @param type        must not be null
+     * @return the Java source text of a compilation unit holding {@code type}
      */
     public static String render(String packageName, TypeSpec type) {
         Objects.requireNonNull(packageName, "packageName must not be null");

@@ -11,7 +11,7 @@ package eu.exeris.tooling.codegen.java.support;
  * to the column's type, and the type it casts to has to be the one the migration declared — so it
  * is read here, from the same function, and the two cannot drift apart.
  *
- * @since 0.9.0
+ * @since 0.9
  */
 public final class SqlColumnTypes {
 

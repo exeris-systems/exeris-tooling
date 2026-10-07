@@ -24,9 +24,8 @@
  *   - generateBarrelExport: Page/PageRequest exported ONLY ONCE
  *     (from the first domain's service), other domains export bare
  *     {Service, Filter}.
- *   - resolveApiSettings: apiBasePath wins when truthy; falls back to
- *     strategy.getClientConfig().baseUrl when empty/missing; apiVersion
- *     always comes from the strategy.
+ *   - resolveApiSettings: apiUrl is config.apiBasePath, the empty default
+ *     included; the environments carry no apiVersion.
  *
  * Conventions:
  *   - Domains/fields are built through Zod parse so we lean on the
@@ -515,18 +514,13 @@ describe('generateAppStructure — resolveApiSettings', () => {
     expect(env.content).toContain("apiUrl: ''");
   });
 
-  it('always pulls apiVersion from the strategy (KERNEL → "v1")', () => {
-    const files = generateAppStructure([], [], cfg());
-    const env = fileAt(files, 'src/environments/environment.ts')!;
-    expect(env.content).toContain("apiVersion: 'v1'");
-  });
-
-  it('marks apiVersion deprecated in both environment files: no generated code reads it', () => {
+  it('emits no apiVersion in either environment file: no generated code reads one', () => {
     const files = generateAppStructure([], [], cfg());
     for (const path of ['src/environments/environment.ts', 'src/environments/environment.development.ts']) {
-      expect(fileAt(files, path)!.content).toContain(
-        "  /** @deprecated No generated code reads it. exeris-tooling 0.10.0 stops emitting it. */\n  apiVersion: 'v1',",
-      );
+      const content = fileAt(files, path)!.content;
+      expect(content).toContain("apiUrl: ''");
+      expect(content).not.toContain('apiVersion');
+      expect(content).not.toContain('@deprecated');
     }
   });
 });

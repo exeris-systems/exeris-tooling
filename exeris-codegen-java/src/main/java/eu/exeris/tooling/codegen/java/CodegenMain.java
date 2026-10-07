@@ -45,8 +45,7 @@ import java.lang.System.Logger.Level;
  * Uses {@link System.Logger} (JDK-standard, JSR 264). No third-party
  * logging dependency is pulled in.
  *
- * @author Exeris Team
- * @since 0.1.0
+ * @since 0.1
  */
 public final class CodegenMain {
 
@@ -56,6 +55,13 @@ public final class CodegenMain {
         // CLI entry point — not instantiable.
     }
 
+    /**
+     * Runs the generator from the command line and exits the JVM with the run's status:
+     * {@code 0} on success, {@code 1} on malformed arguments or a pipeline failure.
+     *
+     * @param args {@code --metadata-dir=<path>}, {@code --output-dir=<path>} and an optional
+     *             {@code --base-package=<package>}
+     */
     public static void main(String[] args) {
         System.exit(runOrPrintError(args, System.err));
     }

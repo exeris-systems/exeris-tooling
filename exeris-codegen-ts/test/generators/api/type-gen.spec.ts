@@ -13,12 +13,11 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import {
-  DEPRECATED_OWNER_DOC,
   TypeGenerator,
   auditFieldNames,
   buildZodType,
-  deprecatedDtoOwner,
   generateTypes,
+  systemFieldNames,
   viewSystemFieldNames,
 } from '../../../src/generators/api/type-gen.js';
 import {
@@ -525,6 +524,8 @@ describe('TypeGenerator system-field resolution (exercised via .omit set in the 
   it('every optional systemFields.* alias, when declared as a field, flows into the omit set', () => {
     const files = gen.generateAggregate([domain({
       entityName: 'Thing',
+      // tenantIdField names the owner only on a tenant-partitioned entity.
+      dataScope: 'TENANT',
       systemFields: {
         primaryKeyField: 'id',
         versionField: 'rev',
@@ -601,7 +602,7 @@ describe('TypeGenerator — a UNIVERSE entity\'s sharedScopeField is server-owne
   });
 });
 
-describe('TypeGenerator — a tenant-partitioned owner without a systemFields block is deprecated in the DTOs', () => {
+describe('TypeGenerator — a tenant-partitioned owner without a systemFields block is server-owned', () => {
   const entity = (dataScope: 'GLOBAL' | 'TENANT') => domain({
     entityName: 'Fleet',
     dataScope,
@@ -616,26 +617,35 @@ describe('TypeGenerator — a tenant-partitioned owner without a systemFields bl
     return content.slice(start, content.indexOf('}', start));
   };
 
-  // The server owns it (stamped, a foreign one refused with 400, never updated), but a call
-  // site may still set it, so it stays one release and says so; 0.10.0 drops it.
-  it('keeps tenantId in the TENANT Create DTO and create schema, marked deprecated', () => {
+  // The server owns it (stamped, a foreign one refused with 400, never updated), and the emitted
+  // OpenAPI leaves it out of both DTOs (ADR-090), so the TS DTOs and the create schema do too.
+  it('omits tenantId from the TENANT Create DTO and create schema, keeping it on the entity', () => {
     const schema = new TypeGenerator().generateAggregate([entity('TENANT')], CTX)
       .find(f => f.path === 'schemas/fleet.schema.ts')!.content;
-    const createSlice = createSliceOf(new TypeGenerator().generate(entity('TENANT'), CTX)!.content);
+    const content = new TypeGenerator().generate(entity('TENANT'), CTX)!.content;
+    const createSlice = createSliceOf(content);
+    const entityStart = content.indexOf('export interface Fleet {');
 
-    expect(schema.slice(schema.indexOf('FleetCreateSchema'))).not.toContain('tenantId: true');
+    expect(systemFieldNames(entity('TENANT'))).toContain('tenantId');
+    expect(schema.slice(schema.indexOf('FleetCreateSchema'))).toContain('  tenantId: true,');
     expect(createSlice).toContain('name?: string;');
-    expect(createSlice).toContain(`${DEPRECATED_OWNER_DOC}\n  tenantId?: string;`);
+    expect(createSlice).not.toContain('tenantId');
+    expect(content).toContain('export type FleetUpdate = Partial<FleetCreate>;');
+    expect(content).not.toContain('@deprecated');
+    expect(content.slice(entityStart, content.indexOf('}', entityStart))).toContain('tenantId?: string;');
   });
 
-  it('leaves a GLOBAL entity\'s tenantId-named field writable and unmarked — it is not an owner there', () => {
+  it('leaves a GLOBAL entity\'s tenantId-named field writable — it is not an owner there', () => {
+    const schema = new TypeGenerator().generateAggregate([entity('GLOBAL')], CTX)
+      .find(f => f.path === 'schemas/fleet.schema.ts')!.content;
     const createSlice = createSliceOf(new TypeGenerator().generate(entity('GLOBAL'), CTX)!.content);
 
+    expect(systemFieldNames(entity('GLOBAL'))).not.toContain('tenantId');
+    expect(schema.slice(schema.indexOf('FleetCreateSchema'))).not.toContain('tenantId: true');
     expect(createSlice).toContain('  tenantId?: string;');
-    expect(createSlice).not.toContain('@deprecated');
   });
 
-  it('names no deprecated owner once a systemFields block names the owner — that one is omitted', () => {
+  it('omits the owner a systemFields block names', () => {
     const declared = domain({
       entityName: 'Fleet',
       dataScope: 'TENANT',
@@ -643,8 +653,44 @@ describe('TypeGenerator — a tenant-partitioned owner without a systemFields bl
       fields: [field({ name: 'id', type: 'UUID' }), field({ name: 'tenantId', type: 'UUID' })],
     });
 
-    expect(deprecatedDtoOwner(declared)).toBeUndefined();
     expect(createSliceOf(new TypeGenerator().generate(declared, CTX)!.content)).not.toContain('tenantId');
+  });
+
+  // The owner is DataScopeSupport.ownerFieldName on the Java side, which the emitted OpenAPI
+  // reads: tenant-partitioned only, the declared tenantIdField when non-blank, else tenantId.
+  const ownerRows: Array<[string, Partial<DomainMetadata>, boolean]> = [
+    ['GLOBAL with a block naming tenantIdField keeps it', { dataScope: 'GLOBAL', systemFields: { primaryKeyField: 'id', tenantIdField: 'tenantId', versionField: 'version' } }, true],
+    ['TENANT with a block and no tenantIdField omits it', { dataScope: 'TENANT', systemFields: { primaryKeyField: 'id', versionField: 'version' } }, false],
+    ['TENANT with a block and a blank tenantIdField omits it', { dataScope: 'TENANT', systemFields: { primaryKeyField: 'id', tenantIdField: '  ' } }, false],
+    ['UNIVERSE with no block omits it', { dataScope: 'UNIVERSE' }, false],
+    ['tenantScoped: true with no block omits it', { tenantScoped: true }, false],
+    ['GLOBAL with no block keeps it', { dataScope: 'GLOBAL' }, true],
+  ];
+  it.each(ownerRows)('%s', (_title, overrides, keeps) => {
+    const metadata = domain({
+      entityName: 'Fleet',
+      ...overrides,
+      fields: [
+        field({ name: 'id', type: 'UUID' }),
+        field({ name: 'name', type: 'String' }),
+        field({ name: 'tenantId', type: 'UUID' }),
+      ],
+    });
+    const createSlice = createSliceOf(new TypeGenerator().generate(metadata, CTX)!.content);
+    const schema = new TypeGenerator().generateAggregate([metadata], CTX)
+      .find(f => f.path === 'schemas/fleet.schema.ts')!.content;
+    const createSchema = schema.slice(schema.indexOf('FleetCreateSchema'));
+
+    expect(createSlice).toContain('name?: string;');
+    if (keeps) {
+      expect(systemFieldNames(metadata)).not.toContain('tenantId');
+      expect(createSlice).toContain('  tenantId?: string;');
+      expect(createSchema).not.toContain('tenantId: true');
+    } else {
+      expect(systemFieldNames(metadata)).toContain('tenantId');
+      expect(createSlice).not.toContain('tenantId');
+      expect(createSchema).toContain('  tenantId: true,');
+    }
   });
 });
 

@@ -29,7 +29,7 @@ import java.nio.file.Path;
  * it. The inverse ({@code exeris:reattach}) is planned and depends on the SDK
  * source-model round-trip (SDK 0.3.0) to re-derive metadata from owned sources.
  *
- * @since 0.3.0
+ * @since 0.3
  */
 @Mojo(name = "detach", threadSafe = true)
 public class DetachMojo extends AbstractMojo {
@@ -60,6 +60,14 @@ public class DetachMojo extends AbstractMojo {
 
     /** Logic seam (mirrors GenerateMojo's pipeline seam). */
     DetachService service = new DetachService();
+
+    /**
+     * Creates the mojo. Maven constructs it reflectively and injects the {@code @Parameter}
+     * fields before calling {@link #execute()}.
+     */
+    public DetachMojo() {
+        // parameters are injected by Maven after construction
+    }
 
     @Override
     public void execute() throws MojoExecutionException, MojoFailureException {

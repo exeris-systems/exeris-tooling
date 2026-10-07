@@ -23,19 +23,19 @@ import java.util.stream.Collectors;
  * <p>
  * Emits a per-entity {@code *GraphSync} class that projects the relational
  * aggregate into the Open-Core graph subsystem through
- * {@link eu.exeris.kernel.spi.graph.GraphEngine}. Canonical wiring shape
+ * {@code eu.exeris.kernel.spi.graph.GraphEngine}. Canonical wiring shape
  * matches the working community benchmark app's {@code GraphShopAdapter}
  * (under {@code exeris-benchmarks/targets/exeris-community-app}).
  * <p>
  * The emitted class exposes:
  * <ul>
  *   <li>A {@code public static final}
- *       {@link eu.exeris.kernel.spi.graph.model.GraphNodeDescriptor}
+ *       {@code eu.exeris.kernel.spi.graph.model.GraphNodeDescriptor}
  *       {@code NODE_DESCRIPTOR} constant constructed via
  *       {@code GraphNodeDescriptor.create(label, sourceTable)} — pass it to
  *       {@code GraphEngine.registerNodes(...)} at bootstrap.</li>
  *   <li>One {@code public static final}
- *       {@link eu.exeris.kernel.spi.graph.model.GraphEdgeDescriptor}
+ *       {@code eu.exeris.kernel.spi.graph.model.GraphEdgeDescriptor}
  *       constant per declared {@link GraphEdgeMetadata}, built via
  *       {@code GraphEdgeDescriptor.create(sourceLabel, edgeType, targetLabel)}.
  *       Pass them to {@code GraphEngine.registerEdges(...)} at bootstrap.</li>
@@ -50,20 +50,19 @@ import java.util.stream.Collectors;
  * Node properties default to {@code null} per the SPI contract
  * ("Pass {@code null} if there are no properties to set"). Downstream
  * consumers that need to ship property bytes override {@code syncToGraph}
- * and pass a {@link eu.exeris.kernel.spi.memory.LoanedBuffer} they have
+ * and pass a {@code eu.exeris.kernel.spi.memory.LoanedBuffer} they have
  * allocated (the session reads but does not own the buffer's lifecycle).
  * Same for edge weights/properties: defaults to {@code 1.0} weight and
  * {@code null} properties; override to set them.
  * <p>
  * The legacy generator's {@code buildNodeProperties(entity) → Map<String,
  * Object>} pathway is dropped — the SPI's {@code upsertNode} signature
- * takes a {@link eu.exeris.kernel.spi.memory.LoanedBuffer}, not a heap
+ * takes a {@code eu.exeris.kernel.spi.memory.LoanedBuffer}, not a heap
  * {@code Map}.
  *
  * @implNote Emission is JavaPoet-based (ADR-015).
  *
- * @author Exeris Team
- * @since 0.1.0
+ * @since 0.1
  */
 public class KernelGraphSyncGenerator implements KernelArtifactGenerator {
 
@@ -78,6 +77,14 @@ public class KernelGraphSyncGenerator implements KernelArtifactGenerator {
             ClassName.get("eu.exeris.kernel.spi.graph.model", "GraphNodeDescriptor");
     private static final ClassName GRAPH_EDGE_DESCRIPTOR =
             ClassName.get("eu.exeris.kernel.spi.graph.model", "GraphEdgeDescriptor");
+
+    /**
+     * Creates the generator. It keeps no per-domain state, so one instance serves every domain
+     * in a build.
+     */
+    public KernelGraphSyncGenerator() {
+        // no state to initialise
+    }
 
     @Override
     public GeneratedFile generate(DomainMetadata metadata) {

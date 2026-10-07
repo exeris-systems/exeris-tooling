@@ -47,7 +47,7 @@ package eu.exeris.tooling.diagnostics;
  * <p>{@code docs/diagnostics.md} lists every identifier with what to do about it; a test keeps
  * that table and this registry in step.
  *
- * @since 0.9.0
+ * @since 0.9
  */
 public enum DiagnosticId {
 
@@ -118,6 +118,13 @@ public enum DiagnosticId {
     REAL_TIME_API_ON_TENANT_PARTITIONED("EXT-PROC-1014",
             "@ExerisDomain(realTimeApi = true) is on a TENANT or UNIVERSE entity; its live view cannot be isolated per tenant."),
 
+    /**
+     * An {@code @ExerisDomain} type declares no field {@code id}, the primary key every generated
+     * artefact identifies a row by.
+     */
+    ENTITY_WITHOUT_ID_FIELD("EXT-PROC-1015",
+            "An @ExerisDomain type declares no field 'id'."),
+
     // -----------------------------------------------------------------------
     // EXT-PROC-11xx — warnings on an ordinary build (javac WARNING)
     // -----------------------------------------------------------------------
@@ -134,9 +141,7 @@ public enum DiagnosticId {
     VALIDATE_ON_UNRECOGNISED("EXT-PROC-1103",
             "@Validation.validateOn holds an unrecognised value, which is dropped."),
 
-    /** The entity's derived default table name differs from the plain plural of its class name. */
-    DEFAULT_TABLE_NAME_CHANGED("EXT-PROC-1104",
-            "An entity's derived default table name differs from the plain plural of its class name."),
+    // EXT-PROC-1104 is retired (docs/diagnostics.md, "Retired identifiers") and is never allocated again.
 
     /** {@code @SharedScope} on an entity that is not {@code DataScope.UNIVERSE}; it is not recorded. */
     SHARED_SCOPE_OUTSIDE_UNIVERSE("EXT-PROC-1105",
@@ -297,12 +302,20 @@ public enum DiagnosticId {
         this.meaning = meaning;
     }
 
-    /** The identifier as printed, e.g. {@code EXT-PROC-1001}. */
+    /**
+     * Returns the stable identifier as it is printed in a message, e.g. {@code EXT-PROC-1001}.
+     *
+     * @return the identifier, in the form {@code EXT-<STAGE>-<nnnn>}
+     */
     public String code() {
         return code;
     }
 
-    /** One line saying what the diagnostic means. */
+    /**
+     * Returns one line saying what the diagnostic means, independent of the element it is reported on.
+     *
+     * @return the one-line meaning of this identifier
+     */
     public String meaning() {
         return meaning;
     }
@@ -311,6 +324,7 @@ public enum DiagnosticId {
      * The message as printed: {@code [Exeris] <code>: <message>}.
      *
      * @param message the human-readable text; it follows the identifier unchanged
+     * @return {@link #PREFIX}, the identifier, a colon and a space, then {@code message}
      */
     public String format(String message) {
         return PREFIX + code + ": " + message;

@@ -4,7 +4,7 @@ type: migration-guide
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-10-06
+last-verified: 2026-10-07
 ---
 
 # Migration: 0.x → 1.0
@@ -2335,7 +2335,8 @@ an entity that moves, the repository's SQL, the `CREATE TABLE`, the migration fi
 it, a UNIVERSE entity's shared-scope migration and a graph-sync node descriptor all name the new
 table. On an existing database that table does not exist yet.
 
-The processor warns once for each such entity, with the value that keeps the old name:
+In 0.9.0 the processor warned once for each such entity, with the value that keeps the old name
+(0.10.0 retires the warning; see [`EXT-PROC-1104` is retired](#ext-proc-1104-is-retired)):
 
     warning: [Exeris] EXT-PROC-1104: Colony: default table changes from 'colonys' to 'colonies'; set @ExerisDomain(tableName = "colonys") to keep the existing table and migration
 
@@ -2343,8 +2344,8 @@ To keep the existing table and the migration that created it, set the attribute:
 
     @ExerisDomain(module = "empire", path = "/colonies", tableName = "colonys")
 
-The processor now reads `@ExerisDomain.tableName` (SDK 0.12.0) into `DomainMetadata.tableName`,
-and an entity that sets it draws no warning. The value is trimmed and lower-cased. It is also how
+The processor reads `@ExerisDomain.tableName` (SDK 0.12.0) into `DomainMetadata.tableName`; in
+0.9.0 an entity that set it drew no warning. The value is trimmed and lower-cased. It is also how
 an irregular or pre-existing table is named (`tableName = "people"`). A blank value derives the
 name.
 
@@ -2829,6 +2830,124 @@ nothing from 0.10.0.
 `-Aexeris.*` processor option or a diagnostic identifier is unaffected. Generated code changes in one
 Javadoc line: the generated `Application` names the starter as `eu.exeris:exeris-app-starter`.
 `@exeris/codegen-ts` keeps its npm name and still versions in lockstep with the Maven artefacts.
+
+### `EXT-PROC-1104` is retired
+
+The processor prints no warning for an entity whose derived default table differs from the
+snake-cased class name plus "s" (0.9.0's `EXT-PROC-1104`, T6). Nothing changes in generated code or
+in the table an entity gets: `effectiveTableName()` names it, and `@ExerisDomain(tableName = …)`
+overrides it, as in 0.9.0. A `tableName` set only to silence the warning can stay. The identifier is
+listed under *Retired identifiers* in [`diagnostics.md`](diagnostics.md) and is never reused.
+
+### An `@ExerisDomain` type without an `id` field is a compile error (`EXT-PROC-1015`)
+
+From 0.10.0 the annotation processor refuses an `@ExerisDomain` type that declares no field named
+`id`, at the annotation:
+
+```
+[Exeris] EXT-PROC-1015: @ExerisDomain type 'Workspace' declares no field 'id'. The generated schema,
+repository, routes and Angular model all identify a row by id, and primaryKeyField does not rename
+it. Declare 'private UUID id;' with its getter and setter.
+```
+
+Every generated artefact identifies a row by the literal `id`: the migration's `id UUID PRIMARY KEY`,
+the repository's `WHERE id = ?`, the `{id}` path variable of the by-id routes, the `getId()` and
+`setId(...)` calls in the generated handlers and services, and the list, detail, form and store the
+TypeScript generator emits. Through 0.9.0 an entity without the field passed the processor, and the
+failure surfaced downstream: in the generated repository and handler, which call accessors the
+entity does not have, and at `ng build` of the generated Angular app, with
+`TS2339: Property 'id' does not exist on type '<Entity>'`.
+
+**What to do:** declare the key on the entity, with its accessors:
+
+```java
+private UUID id;
+
+public UUID getId() { return id; }
+public void setId(UUID id) { this.id = id; }
+```
+
+A field inherited from a superclass satisfies the check. `@ExerisDomain(primaryKeyField = …)` does
+not: no generator uses it as the key (the list route only keeps that field out of sort and filter),
+so an entity whose key is named otherwise is refused as well, and the field has to be called `id`.
+A build that compiled on 0.9.0 and declares `id` is unaffected; its emitted output is
+byte-identical.
+
+**An `id` inherited from a superclass** passes the check, but the processor records only the
+fields the entity type declares itself, so the generated Angular model of such an entity still has
+no `id` and `ng build` still reports TS2339 until the TypeScript generator always emits it (release
+plan wave S2). Declaring `id` on the entity itself avoids both.
+
+The check runs in the annotation processor. Metadata JSON that reaches `exeris:generate` without
+passing through the processor is not checked.
+
+### Code examples in generated Javadoc are `{@snippet}` blocks
+
+Regeneration rewrites the code examples in the Javadoc of the generated `Application`,
+`RuntimeComponents` and `<Entity>Client` from `<pre>{@code … }</pre>` to `{@snippet : … }`. The
+example text inside is unchanged, and so are the API and the behaviour. Expect a two-line diff per
+example in a committed generated tree. `{@snippet}` needs a `javadoc` from JDK 18 or later, below
+the JDK 25 the generated code already requires.
+
+### `GraphMetadata.queries` is absent from the metadata, as `properties` is
+
+An `@Graph` entity's metadata JSON carries no `queries` key from 0.10.0; through 0.9.0 it carried
+`"queries" : [ ]`. The processor extracts neither `@GraphQuery` nor `@GraphProperty`, and an empty
+list claimed the entity declares no queries. Both components are written `null`, and
+`@JsonInclude(NON_NULL)` keeps them off the wire: absent means "not carried", `[]` means "carried,
+and there are none".
+
+Generated Java and TypeScript are unchanged: no generator reads either component.
+
+**If you read the metadata JSON yourself,** treat an absent `queries` as unknown, not as an empty
+list.
+
+### `exeris-codegen-ts`: `restore()` is removed from a soft-delete entity's service and store (T58)
+
+`<Entity>Service` and `<Entity>Store` of a `@SoftDelete` entity no longer have `restore(id)`. In
+0.9.0 it was deprecated and sent no request: the service's Observable errored and the store set its
+error and rejected, because nothing on the generated server un-sets the soft-delete flag. The service
+also drops the `throwError` import that only `restore` used. `softDelete(id)` on the service and
+`archive(id)` on the store are unchanged: they call `DELETE {base}/{id}`, which on a `@SoftDelete`
+entity is the archive.
+
+**What to do:** remove every call to `restore(...)`; the TypeScript compiler names each one. There is
+no generated replacement. An app that needs to restore an archived row writes the route and the
+repository statement by hand.
+
+### `exeris-codegen-ts`: a tenant-partitioned entity's DTOs omit `tenantId` (T36)
+
+A tenant-partitioned (TENANT or UNIVERSE) entity with no `systemFields` block no longer has
+`tenantId` in its `<Entity>Create` and `<Entity>Update` types or in its `<Entity>CreateSchema`; the
+`<Entity>` type and `<Entity>Schema` keep it. 0.9.0 kept it there, marked `@deprecated`. The server
+owns it: the generated repository stamps the bound tenant, answers 400 to another one and never
+updates it, and the emitted OpenAPI marks it `readOnly` and leaves it out of `…CreateDto` and
+`…UpdateDto` (ADR-090). The TypeScript DTOs now say the same. Peer DTOs (`peers/<peer>/…`) follow the
+same rule.
+
+The DTOs omit exactly the field the OpenAPI marks `readOnly`: on a TENANT or UNIVERSE entity, the
+`systemFields.tenantIdField` it names, else `tenantId`, with or without a block. A GLOBAL entity has
+no owner, so a field it declares as `tenantId` is an ordinary field and stays in its DTOs. That
+includes a GLOBAL entity with a `systemFields` block, which the processor writes for any system-field
+override and always with `tenantIdField = "tenantId"`: 0.9.0 omitted such an entity's `tenantId` from
+the `…Create` and `…Update` types and the create schema while its OpenAPI accepted it, and 0.10.0
+puts it back.
+
+**What to do:** on a tenant-partitioned entity, stop setting `tenantId` on the objects you pass to
+`create` and `update`. A literal that still sets it fails to compile (an excess property), and
+`CreateSchema.parse` strips it. On a GLOBAL entity with a block and a declared `tenantId` field, the
+field is back in `…Create`; if it is required, a create call that does not set it fails to compile.
+
+### `exeris-codegen-ts`: the environments carry no `apiVersion` (T38)
+
+The emitted `environment.development.ts` no longer carries `apiVersion`, and a newly written
+`environment.ts` does not either. No emitted service, store or client reads it, and no generated
+route has a version segment. `ClientConfig`, the shape the KERNEL strategy's `getClientConfig()`
+returns, loses the field with it.
+
+**What to do:** remove any read of `environment.apiVersion` from your own code. `environment.ts` is
+written only when it is absent, so an existing app keeps the key there until you delete it; the key
+is harmless, but nothing reads it.
 
 ---
 

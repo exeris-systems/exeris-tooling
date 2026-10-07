@@ -13,7 +13,7 @@
  * This module is part of the Exeris Tooling layer (L2) and depends ONLY on SDK (L0).
  * It MUST NOT depend on Kernel (L1) or Platform (L3).
  *
- * @since 0.1.0
+ * @since 0.1
  */
 package eu.exeris.tooling.codegen.core;
 
