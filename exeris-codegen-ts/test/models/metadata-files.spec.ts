@@ -34,8 +34,16 @@ describe('findMetadataFiles', () => {
     write('Order.json', entity('Order'));
     write('nested/Product.json', entity('Product'));
     write('notes.txt', 'ignored');
-    expect(findMetadataFiles(root).sort().map((f) => f.slice(root.length + 1)))
+    expect(findMetadataFiles(root).map((f) => f.slice(root.length + 1)))
       .toEqual(['Order.json', 'nested/Product.json']);
+  });
+
+  it('returns the files sorted by path, whatever order they were written in', () => {
+    for (const name of ['Zone', 'Order', 'Invoice', 'Customer']) {
+      write(`${name}.json`, entity(name));
+    }
+    expect(findMetadataFiles(root).map((f) => f.slice(root.length + 1)))
+      .toEqual(['Customer.json', 'Invoice.json', 'Order.json', 'Zone.json']);
   });
 
   it('returns a JSON file path given directly, and nothing for a non-JSON one', () => {

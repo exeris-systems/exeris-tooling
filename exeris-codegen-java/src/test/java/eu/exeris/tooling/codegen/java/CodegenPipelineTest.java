@@ -289,7 +289,7 @@ class CodegenPipelineTest {
         }
 
         @Test
-        @DisplayName("entities in several packages: the same tree, byte for byte, with the bootstrap in the enclosing package")
+        @DisplayName("entities in several packages: the same tree, byte for byte, with the bootstrap in the first domain's package")
         void sameTreeWhateverTheWriteOrder() throws IOException {
             writeAll(metadataDir, twoPackages);
             writeAll(otherMetadataDir, twoPackages.reversed());
@@ -297,11 +297,12 @@ class CodegenPipelineTest {
             pipeline.run(metadataDir, outputDir, null);
             pipeline.run(otherMetadataDir, otherOutputDir, null);
 
-            assertThat(outputDir.resolve("com/shop/Application.java")).exists();
-            assertThat(outputDir.resolve("com/shop/RuntimeComponents.java")).exists();
-            assertThat(outputDir.resolve("com/shop/RuntimeLifecycle.java")).exists();
+            // com.shop.billing.domain.Invoice sorts first by qualified name, although
+            // Customer.json sorts first by file name.
+            assertThat(outputDir.resolve("com/shop/billing/Application.java")).exists();
+            assertThat(outputDir.resolve("com/shop/billing/RuntimeComponents.java")).exists();
+            assertThat(outputDir.resolve("com/shop/billing/RuntimeLifecycle.java")).exists();
             assertThat(outputDir.resolve("com/shop/order/Application.java")).doesNotExist();
-            assertThat(outputDir.resolve("com/shop/billing/Application.java")).doesNotExist();
             assertSameTree(outputDir, otherOutputDir);
         }
 
@@ -314,7 +315,7 @@ class CodegenPipelineTest {
             pipeline.runTests(metadataDir, outputDir, null);
             pipeline.runTests(otherMetadataDir, otherOutputDir, null);
 
-            assertThat(outputDir.resolve("com/shop/testsupport/RecordingHttpExchange.java")).exists();
+            assertThat(outputDir.resolve("com/shop/billing/testsupport/RecordingHttpExchange.java")).exists();
             assertSameTree(outputDir, otherOutputDir);
         }
 
@@ -328,31 +329,13 @@ class CodegenPipelineTest {
         }
 
         @Test
-        @DisplayName("nested packages: the outer one encloses the inner one")
-        void nestedPackages() {
-            assertThat(CodegenPipeline.autoDetectBasePackage(List.of(
-                    DomainMetadata.builder("Order", "com.shop.domain").build(),
-                    DomainMetadata.builder("Invoice", "com.shop.billing.domain").build())))
-                    .isEqualTo("com.shop");
-        }
+        @DisplayName("several packages: the first domain by qualified name, in either input order")
+        void firstDomainByQualifiedName() {
+            DomainMetadata order = DomainMetadata.builder("Order", "org.shop.domain").build();
+            DomainMetadata invoice = DomainMetadata.builder("Invoice", "com.billing.domain").build();
 
-        @Test
-        @DisplayName("the prefix is taken by whole segments, not by characters")
-        void wholeSegments() {
-            assertThat(CodegenPipeline.autoDetectBasePackage(List.of(
-                    DomainMetadata.builder("Order", "com.shop.orders.domain").build(),
-                    DomainMetadata.builder("Item", "com.shop.order.domain").build())))
-                    .isEqualTo("com.shop");
-        }
-
-        @Test
-        @DisplayName("no shared segment: the alphabetically first package, in either order")
-        void noSharedSegment() {
-            DomainMetadata org = DomainMetadata.builder("Order", "org.shop.domain").build();
-            DomainMetadata com = DomainMetadata.builder("Invoice", "com.billing.domain").build();
-
-            assertThat(CodegenPipeline.autoDetectBasePackage(List.of(org, com))).isEqualTo("com.billing");
-            assertThat(CodegenPipeline.autoDetectBasePackage(List.of(com, org))).isEqualTo("com.billing");
+            assertThat(CodegenPipeline.autoDetectBasePackage(List.of(order, invoice))).isEqualTo("com.billing");
+            assertThat(CodegenPipeline.autoDetectBasePackage(List.of(invoice, order))).isEqualTo("com.billing");
         }
 
         private void assertSameTree(Path left, Path right) throws IOException {
@@ -1217,7 +1200,8 @@ class CodegenPipelineTest {
             assertThat(warnings).singleElement().asString()
                     .startsWith(DiagnosticId.BASE_PACKAGE_INFERRED.format("No base package given"))
                     .contains("[com.shop.billing, com.shop.order]")
-                    .contains("emitted in com.shop ");
+                    .contains("emitted in com.shop.billing ")
+                    .contains("exeris.basePackage");
         }
 
         @Test

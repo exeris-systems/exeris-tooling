@@ -396,55 +396,32 @@ public final class CodegenPipeline {
      * The package {@code Application}, {@code RuntimeComponents}, {@code RuntimeLifecycle} and
      * the generated {@code testsupport} package are emitted in when the caller names none.
      *
-     * <p>Each entity contributes its package with {@code .domain} removed. When every entity
-     * contributes the same package, that package is the answer. When they differ, the answer is
-     * the longest package prefix they all share, segment by segment ({@code com.shop.order} and
-     * {@code com.shop.billing} give {@code com.shop}): the package that encloses every entity.
-     * When they share no segment at all, the alphabetically first of their packages is used,
-     * because an application in the unnamed package could not be imported.
-     *
-     * <p>The answer depends only on the set of packages, never on the order of {@code domains}.
+     * <p>It is the package of the first domain in {@link #DOMAIN_ORDER}, with {@code .domain}
+     * removed (ADR-076). When every entity shares one package, that package is the answer; when
+     * they span several, it is the package of the entity whose fully-qualified name sorts first.
+     * The answer never depends on the order of {@code domains} or of the directory listing.
      *
      * @param domains the loaded domains; must not be empty
      * @return the base package
      */
     static String autoDetectBasePackage(List<DomainMetadata> domains) {
-        SortedSet<String> packages = entityBasePackages(domains);
-        if (packages.isEmpty()) {
-            throw new IllegalArgumentException("no domains to detect a base package from");
-        }
-        String common = packages.first();
-        for (String candidate : packages) {
-            common = commonPackagePrefix(common, candidate);
-        }
-        if (!common.isEmpty()) {
-            return common;
-        }
-        return packages.stream().filter(p -> !p.isEmpty()).findFirst().orElse("");
+        DomainMetadata first = domains.stream().min(DOMAIN_ORDER)
+                .orElseThrow(() -> new IllegalArgumentException("no domains to detect a base package from"));
+        return basePackageOf(first);
     }
 
     /** Each domain's package with {@code .domain} removed, sorted and without duplicates. */
     private static SortedSet<String> entityBasePackages(List<DomainMetadata> domains) {
         SortedSet<String> packages = new TreeSet<>();
         for (DomainMetadata domain : domains) {
-            String packageName = domain.packageName() == null ? "" : domain.packageName();
-            packages.add(packageName.replace(".domain", ""));
+            packages.add(basePackageOf(domain));
         }
         return packages;
     }
 
-    /** The longest run of leading package segments {@code a} and {@code b} share. */
-    private static String commonPackagePrefix(String a, String b) {
-        String[] left = a.split("\\.", -1);
-        String[] right = b.split("\\.", -1);
-        StringBuilder prefix = new StringBuilder();
-        for (int i = 0; i < Math.min(left.length, right.length) && left[i].equals(right[i]); i++) {
-            if (!prefix.isEmpty()) {
-                prefix.append('.');
-            }
-            prefix.append(left[i]);
-        }
-        return prefix.toString();
+    private static String basePackageOf(DomainMetadata domain) {
+        String packageName = domain.packageName() == null ? "" : domain.packageName();
+        return packageName.replace(".domain", "");
     }
 
     private static String qualifiedName(DomainMetadata domain) {

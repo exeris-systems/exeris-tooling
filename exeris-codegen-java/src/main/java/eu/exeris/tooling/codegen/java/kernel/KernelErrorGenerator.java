@@ -43,7 +43,7 @@ import java.util.List;
  * <h2>Why per entity rather than one shared type</h2>
  * A single {@code EntityNotFoundException} would have to live under the project base package,
  * and a per-domain emitter cannot resolve that: {@code basePackage} is a pipeline-level input
- * (explicit {@code -Aexeris.basePackage}, else auto-detected from the entities' packages), while a
+ * (explicit {@code -Aexeris.basePackage}, else auto-detected from the first domain), while a
  * {@link KernelArtifactGenerator} sees only {@code metadata.packageName()}. The
  * {@code .replace(".domain", ".repository")} derivation every emitter already uses is correct
  * under both. The cost is that a consumer cannot catch one supertype across entities; that is
