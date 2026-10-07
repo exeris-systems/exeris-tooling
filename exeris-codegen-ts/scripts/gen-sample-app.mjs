@@ -86,6 +86,9 @@ const domains = [
       // inUpdate = false: the edit form disables the control through a Signal Forms rule bound to
       // edit mode, and the field is required, so the rule sits beside a validator.
       { name: 'orderNumber', type: 'String', required: true, maxLength: 20, inUpdate: false, sortable: true, filterable: true },
+      // A computed field: the form shows the loaded entity's value in a read-only input, outside
+      // the form model.
+      { name: 'lineTotal', type: 'java.math.BigDecimal', computed: true, computedFrom: ['quantity', 'total'] },
     ],
     // The foreign key renders as a routerLink to the target's detail page in the list cell and
     // the detail row, and the form picks it from Product's records labelled by their name. The
