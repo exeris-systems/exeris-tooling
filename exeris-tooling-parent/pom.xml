@@ -17,6 +17,31 @@
     <description>Common build configuration for Exeris tooling modules.</description>
     <url>https://github.com/exeris-systems/exeris-tooling</url>
 
+    <properties>
+        <!--
+            Lint of the tooling's own main sources: Checkstyle at validate, PMD at verify, with the
+            rulesets in config/ at the reactor root. Bound here and nowhere else in the chain:
+            exeris-app-bom has no parent and exeris-app-parent / exeris-app-starter inherit it, so a
+            consumer application never reaches this POM and never runs these rules.
+
+            ${maven.multiModuleProjectDirectory} is the directory holding .mvn/, which is why the
+            reactor root carries one: without it the variable falls back to the working directory, and
+            a build started inside a module would look for config/ there.
+
+            Each setting is a property, and the plugin configuration below reads the property rather
+            than holding a literal. An explicit literal beats the plugin's own user property silently,
+            so `-Dcheckstyle.config.location=...` or `-Dpmd.failOnViolation=true` would neither apply
+            nor fail. A module that is made clean flips its own failOnViolation property to true.
+        -->
+        <exeris.lint.config.dir>${maven.multiModuleProjectDirectory}/config</exeris.lint.config.dir>
+        <checkstyle.config.location>${exeris.lint.config.dir}/checkstyle/checkstyle.xml</checkstyle.config.location>
+        <checkstyle.suppressions.location>${exeris.lint.config.dir}/checkstyle/suppressions.xml</checkstyle.suppressions.location>
+        <exeris.pmd.ruleset>${exeris.lint.config.dir}/pmd/pmd-ruleset.xml</exeris.pmd.ruleset>
+        <checkstyle.failOnViolation>false</checkstyle.failOnViolation>
+        <checkstyle.failsOnError>false</checkstyle.failsOnError>
+        <pmd.failOnViolation>false</pmd.failOnViolation>
+    </properties>
+
     <dependencyManagement>
         <dependencies>
             <dependency>
@@ -48,6 +73,84 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
+            </plugin>
+
+            <!-- Plugin and engine versions match exeris-kernel-parent; the engine is pinned because
+                 the plugin's default Checkstyle predates record patterns. Main sources only:
+                 sourceDirectories excludes generated-sources, which no person writes. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-checkstyle-plugin</artifactId>
+                <version>3.6.0</version>
+                <dependencies>
+                    <dependency>
+                        <groupId>com.puppycrawl.tools</groupId>
+                        <artifactId>checkstyle</artifactId>
+                        <version>13.11.0</version>
+                    </dependency>
+                </dependencies>
+                <configuration>
+                    <configLocation>${checkstyle.config.location}</configLocation>
+                    <suppressionsLocation>${checkstyle.suppressions.location}</suppressionsLocation>
+                    <sourceDirectories>
+                        <sourceDirectory>${project.build.sourceDirectory}</sourceDirectory>
+                    </sourceDirectories>
+                    <includeResources>false</includeResources>
+                    <includeTestResources>false</includeTestResources>
+                    <consoleOutput>true</consoleOutput>
+                    <failOnViolation>${checkstyle.failOnViolation}</failOnViolation>
+                    <failsOnError>${checkstyle.failsOnError}</failsOnError>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>checkstyle-validate</id>
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- check forks pmd:pmd; at verify the classes exist, so type-resolving rules
+                 (UnusedPrivateMethod, CloseResource) see the auxclasspath. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-pmd-plugin</artifactId>
+                <version>3.28.0</version>
+                <dependencies>
+                    <dependency>
+                        <groupId>net.sourceforge.pmd</groupId>
+                        <artifactId>pmd-core</artifactId>
+                        <version>7.28.0</version>
+                    </dependency>
+                    <dependency>
+                        <groupId>net.sourceforge.pmd</groupId>
+                        <artifactId>pmd-java</artifactId>
+                        <version>7.28.0</version>
+                    </dependency>
+                </dependencies>
+                <configuration>
+                    <rulesets>
+                        <ruleset>${exeris.pmd.ruleset}</ruleset>
+                    </rulesets>
+                    <compileSourceRoots>
+                        <compileSourceRoot>${project.build.sourceDirectory}</compileSourceRoot>
+                    </compileSourceRoots>
+                    <targetJdk>25</targetJdk>
+                    <linkXRef>false</linkXRef>
+                    <printFailingErrors>true</printFailingErrors>
+                    <failOnViolation>${pmd.failOnViolation}</failOnViolation>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>pmd-verify</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
 
             <!-- Coverage: prepare-agent attaches the JaCoCo runtime agent so

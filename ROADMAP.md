@@ -3815,6 +3815,9 @@ are in [`docs/0.10.0-release-plan.md`](docs/0.10.0-release-plan.md). T12 + T17 i
 there, and does not hold the cut. Track C, `@SagaTransition` and T48 slice C2 are conditional: each
 enters only if its upstream half is final first.
 
+- [ ] **J0 build hygiene** (no gate, does not hold the cut): Checkstyle and PMD on the tooling's own
+      Java (warn-only first, then enforcing per module), ArchUnit policy tests, the javadoc gate in diff
+      mode, and lint of emitted Java in the e2e compile gate.
 - [ ] **T53 in full** (RFC, then ADR): `@RouteAccess` + `permissions` compiled into `RouteRequirement`. D10 resolves
       with it.
 - [ ] Track C (SDK record changes), `@SagaTransition`, T12 + T17, `@PrimaryKey`.
