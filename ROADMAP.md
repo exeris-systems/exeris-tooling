@@ -4,7 +4,7 @@ type: roadmap
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-10-06
+last-verified: 2026-10-07
 ---
 
 # Exeris Tooling — Roadmap to 1.0.0 GA
@@ -744,11 +744,11 @@ each fix.
       `bidirectional`, `inverseType`, `weighted`, `weightField`, `description`, `properties`,
       `propertyMappings`, `staticProperties`, `computedProperties`, and `target`/`targetName` beyond
       the label rule above. Same shape as the saga family: an SDK record change is the prerequisite,
-      so they are recorded rather than half-read. Two sibling gaps stay open alongside them —
-      `GraphMetadata.properties` is passed as `null` (not `List.of()`) and `queries` as an empty
-      literal, and `@GraphProperty` / `@GraphQuery` are among the annotations C0 reports as unread.
-      Nothing reads either field today, so neither is a live defect; changing the `null` would
-      change the emitted JSON shape, which is a decision rather than a tidy-up.
+      so they are recorded rather than half-read. A sibling gap stays open alongside them:
+      `@GraphProperty` / `@GraphQuery` are not extracted and are among the annotations C0 reports as
+      unread. `GraphMetadata.properties` and `queries` are both written `null`, which
+      `@JsonInclude(NON_NULL)` keeps off the wire as "not carried", and the TS schema keeps them
+      absent rather than defaulting them to `[]`.
 
       Evidence: 108 processor tests, up from 103; full reactor `clean install` green. Two
       perturbations: restoring the empty edge literal fails the tests that assert an edge and leaves
