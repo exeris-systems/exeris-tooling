@@ -2902,6 +2902,44 @@ Generated Java and TypeScript are unchanged: no generator reads either component
 **If you read the metadata JSON yourself,** treat an absent `queries` as unknown, not as an empty
 list.
 
+### `exeris-codegen-ts`: `restore()` is removed from a soft-delete entity's service and store (T58)
+
+`<Entity>Service` and `<Entity>Store` of a `@SoftDelete` entity no longer have `restore(id)`. In
+0.9.0 it was deprecated and sent no request: the service's Observable errored and the store set its
+error and rejected, because nothing on the generated server un-sets the soft-delete flag. The service
+also drops the `throwError` import that only `restore` used. `softDelete(id)` on the service and
+`archive(id)` on the store are unchanged: they call `DELETE {base}/{id}`, which on a `@SoftDelete`
+entity is the archive.
+
+**What to do:** remove every call to `restore(...)`; the TypeScript compiler names each one. There is
+no generated replacement. An app that needs to restore an archived row writes the route and the
+repository statement by hand.
+
+### `exeris-codegen-ts`: a tenant-partitioned entity's DTOs omit `tenantId` (T36)
+
+A tenant-partitioned (TENANT or UNIVERSE) entity with no `systemFields` block no longer has
+`tenantId` in its `<Entity>Create` and `<Entity>Update` types or in its `<Entity>CreateSchema`; the
+`<Entity>` type and `<Entity>Schema` keep it. 0.9.0 kept it there, marked `@deprecated`. The server
+owns it: the generated repository stamps the bound tenant, answers 400 to another one and never
+updates it, and the emitted OpenAPI marks it `readOnly` and leaves it out of `…CreateDto` and
+`…UpdateDto` (ADR-090). The TypeScript DTOs now say the same. Peer DTOs (`peers/<peer>/…`) follow the
+same rule. An owner named by a `systemFields` block was already omitted, and a GLOBAL entity's field
+called `tenantId` is an ordinary field and stays.
+
+**What to do:** stop setting `tenantId` on the objects you pass to `create` and `update`. A literal
+that still sets it fails to compile (an excess property), and `CreateSchema.parse` strips it.
+
+### `exeris-codegen-ts`: the environments carry no `apiVersion` (T38)
+
+The emitted `environment.development.ts` no longer carries `apiVersion`, and a newly written
+`environment.ts` does not either. No emitted service, store or client reads it, and no generated
+route has a version segment. `ClientConfig`, the shape the KERNEL strategy's `getClientConfig()`
+returns, loses the field with it.
+
+**What to do:** remove any read of `environment.apiVersion` from your own code. `environment.ts` is
+written only when it is absent, so an existing app keeps the key there until you delete it; the key
+is harmless, but nothing reads it.
+
 ---
 
 ## Reference

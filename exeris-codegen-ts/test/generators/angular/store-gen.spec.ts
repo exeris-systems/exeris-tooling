@@ -8,7 +8,7 @@
  *     hasNextPage/hasPrevPage/state)
  *   - CRUD actions with optimistic update + rollback on error
  *   - Selection / filter / pagination / sort / state-management actions
- *   - Optional softDelete branch (archive method; restore deprecated — nothing serves one)
+ *   - Optional softDelete branch (archive method; no restore — nothing serves one)
  *   - Private helper extractErrorMessage
  *   - loadAll reads the list route's page envelope (ADR-096)
  *
@@ -20,7 +20,6 @@
 
 import { describe, expect, it } from 'vitest';
 import { StoreGenerator, generateStore } from '../../../src/generators/angular/store-gen.js';
-import { RESTORE_UNSUPPORTED } from '../../../src/generators/angular/service-gen.js';
 import {
   createGeneratorContext,
   type GeneratorContext,
@@ -380,19 +379,12 @@ describe('StoreGenerator softDelete branch', () => {
   });
 
   // The generated server has no route that un-sets the soft-delete flag (PATCH/PUT parity), so
-  // restore() stays one release, deprecated: it calls nothing, sets the error and rejects.
-  it('softDelete=true keeps restore() deprecated: no service call, the error set, a rejection', () => {
+  // the store emits archive and no restore.
+  it('softDelete=true emits no restore()', () => {
     const content = gen.generate(domain({ entityName: 'Order', softDelete: true }), CTX)!.content;
-    const restore = content.slice(content.indexOf('async restore('));
 
-    expect(content).toContain('exeris-tooling 0.10.0 stops emitting it.');
-    expect(restore).toContain(
-      'async restore(id: string): Promise<Order> {\n'
-      + `    const message = \`OrderStore.restore(\${id}): ${RESTORE_UNSUPPORTED}\`;\n`
-      + '    this._error.set(message);\n'
-      + '    throw new Error(message);\n'
-      + '  }',
-    );
+    expect(content).not.toContain('restore(');
+    expect(content).not.toContain('@deprecated');
     expect(content).not.toContain('this.service.restore(');
   });
 

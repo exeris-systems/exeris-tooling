@@ -98,13 +98,11 @@ export class TypeGenerator implements CodeGenerator {
     lines.push(``);
 
     const createFields = createDtoFields(metadata);
-    const deprecatedOwner = deprecatedDtoOwner(metadata);
 
     lines.push(`export interface ${interfaceName}Create {`);
     for (const field of createFields) {
       const mapping = DslMapper.mapType(field.type);
       const optional = !field.required ? '?' : '';
-      if (field.name === deprecatedOwner) lines.push(DEPRECATED_OWNER_DOC);
       lines.push(`  ${field.name}${optional}: ${mapping.tsType};`);
     }
     lines.push(`}`);
@@ -291,6 +289,10 @@ export function buildZodType(field: FieldMetadata): string {
  * The fields the server owns: the id, plus whatever the entity's `systemFields` block
  * declares (or the `version`/`createdAt`/`updatedAt` default when it declares none).
  *
+ * Without a block, a tenant-partitioned entity's owner is `tenantId`, and the server owns it: the
+ * generated repository stamps the bound tenant, answers 400 to another one and never updates it,
+ * and the emitted OpenAPI marks it read-only and leaves it out of both DTOs (ADR-090).
+ *
  * A UNIVERSE entity's `sharedScopeField` is server-owned exactly like its `tenantIdField`: the
  * generated repository stamps it from the bound storage context, and the emitted OpenAPI marks it
  * read-only, so the create/update DTOs never carry it.
@@ -313,6 +315,7 @@ export function systemFieldNames(metadata: DomainMetadata): string[] {
   } else {
     // Default system fields
     fields.push('version', 'createdAt', 'updatedAt');
+    if (effectiveDataScope(metadata) !== 'GLOBAL') fields.push('tenantId');
   }
 
   return [...new Set(fields)];
@@ -410,26 +413,6 @@ export function updateSchemaDeclaration(typeName: string, metadata: DomainMetada
     ? `export const ${typeName}UpdateSchema = ${typeName}CreateSchema.partial().extend({ ${version.name}: ${version.zodType} });`
     : `export const ${typeName}UpdateSchema = ${typeName}CreateSchema.partial();`;
 }
-
-/**
- * The owner a create DTO still carries, marked deprecated: `tenantId` on a tenant-partitioned
- * entity that declares no `systemFields` block. The server owns it — the repository stamps the
- * bound tenant, refuses another one with 400 and never updates it, and the emitted OpenAPI marks
- * it readOnly and leaves it out of both DTOs — but a call site may still set it. So it stays in the
- * DTOs and their schemas for one release, and exeris-tooling 0.10.0 moves it into
- * `systemFieldNames`.
- */
-export function deprecatedDtoOwner(metadata: DomainMetadata): string | undefined {
-  return !metadata.systemFields && effectiveDataScope(metadata) !== 'GLOBAL' ? 'tenantId' : undefined;
-}
-
-/** The JSDoc an emitted create DTO carries on the owner `deprecatedDtoOwner` names. */
-export const DEPRECATED_OWNER_DOC = [
-  '  /**',
-  '   * @deprecated The server owns this field: it stamps the bound tenant, answers 400 to another',
-  '   * one and never updates it. exeris-tooling 0.10.0 drops it from this type.',
-  '   */',
-].join('\n');
 
 /**
  * Collects enum type names from fields that reference enums.

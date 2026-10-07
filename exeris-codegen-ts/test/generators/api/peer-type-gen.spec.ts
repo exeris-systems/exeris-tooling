@@ -10,7 +10,6 @@
 
 import { describe, expect, it } from 'vitest';
 import { generatePeerTypes, peerRoot } from '../../../src/generators/api/peer-type-gen.js';
-import { DEPRECATED_OWNER_DOC } from '../../../src/generators/api/type-gen.js';
 import { DEFAULT_CONFIG } from '../../../src/config.js';
 import { DomainMetadataSchema } from '../../../src/models/domain-model.js';
 import type { PeerContract } from '../../../src/peers/peer-contract.js';
@@ -74,8 +73,8 @@ describe('generatePeerTypes', () => {
   });
 
   // A peer is a generated app too: its server owns the owner exactly as ours does, so the
-  // peer's Create shape keeps it one release, marked deprecated, like the local DTO.
-  it('marks a tenant-partitioned peer\'s owner deprecated in the Create shape', () => {
+  // peer's Create shape and create schema omit it, like the local DTO.
+  it('omits a tenant-partitioned peer\'s owner from the Create shape and create schema', () => {
     const fleet = DomainMetadataSchema.parse({
       packageName: 'com.billing',
       entityName: 'Fleet',
@@ -85,10 +84,14 @@ describe('generatePeerTypes', () => {
         { name: 'tenantId', type: 'java.util.UUID' },
       ],
     });
-    const types = byPath(generatePeerTypes({ ...billing, domains: [fleet] }, DEFAULT_CONFIG), 'types/fleet.types.ts');
+    const files = generatePeerTypes({ ...billing, domains: [fleet] }, { ...DEFAULT_CONFIG, generateZod: true });
+    const types = byPath(files, 'types/fleet.types.ts');
+    const schema = byPath(files, 'schemas/fleet.schema.ts');
     const create = types.slice(types.indexOf('export interface FleetCreate'));
-    expect(create).toContain(`${DEPRECATED_OWNER_DOC}\n  tenantId?: string;`);
-    expect(types.slice(0, types.indexOf('export interface FleetCreate'))).not.toContain('@deprecated');
+    expect(create).not.toContain('tenantId');
+    expect(types).not.toContain('@deprecated');
+    expect(types.slice(0, types.indexOf('export interface FleetCreate'))).toContain('tenantId?: string;');
+    expect(schema.slice(schema.indexOf('FleetCreateSchema'))).toContain('  tenantId: true,');
   });
 
   it('carries the peer name and the field description into the emitted text', () => {
