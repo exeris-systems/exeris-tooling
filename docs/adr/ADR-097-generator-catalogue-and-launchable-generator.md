@@ -186,9 +186,12 @@ maps every path the Java pipeline writes to the generator that wrote it, and a l
     `exeris-app-bom`, `exeris-app-parent` or `exeris-app-starter` (ADR-091): an application builds
     through the Maven plugin, and the jar is a tool, not a dependency.
 
-**The catalogue as of this decision.** `{base}` is the entity's package with its trailing `.domain`
-removed, written as a path. `{app}` is the run's base package (`--base-package`, else the first
-domain's package with `.domain` removed). Rows in catalogue order:
+**The catalogue as of this decision.** An entity's package ends in `.domain`; the run fails
+otherwise. `{base}` is that package without its `.domain` segment, written as a path, and the
+segment a template puts after it (`handler/`, `repository/`, …) is the one the generator substitutes
+for `.domain`. The generators substitute every occurrence of `.domain`, so a package that also has
+`.domain` in an inner segment is outside the catalogue's guarantee. `{app}` is the run's base package
+(`--base-package`, else the first domain's package with `.domain` removed). Rows in catalogue order:
 
 *Main root, entity scope*
 

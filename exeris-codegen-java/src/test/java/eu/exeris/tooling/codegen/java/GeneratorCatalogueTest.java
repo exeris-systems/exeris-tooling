@@ -222,6 +222,32 @@ class GeneratorCatalogueTest {
     }
 
     @Test
+    @DisplayName("within an ambiguity group, a row with a narrower shape comes before the wider one")
+    void narrowerAmbiguousRowsComeFirst() {
+        Map<String, JsonNode> byId = byId();
+        List<String> order = rows.stream().map(row -> row.get("id").asText()).toList();
+        for (JsonNode wide : rows) {
+            String wideId = wide.get("id").asText();
+            Pattern widePattern = Pattern.compile(wide.get("pathPattern").asText());
+            for (String narrowId : texts(wide.get("ambiguousWith"))) {
+                JsonNode narrow = byId.get(narrowId);
+                Pattern narrowPattern = Pattern.compile(narrow.get("pathPattern").asText());
+                // Narrower: the wide row's pattern takes the narrow row's paths, and not the reverse.
+                boolean wideTakesNarrow = instantiate(narrow.get("pathTemplate").asText()).stream()
+                        .allMatch(path -> widePattern.matcher(path).matches());
+                boolean narrowTakesWide = instantiate(wide.get("pathTemplate").asText()).stream()
+                        .allMatch(path -> narrowPattern.matcher(path).matches());
+                if (wideTakesNarrow && !narrowTakesWide) {
+                    assertThat(order.indexOf(narrowId)).as(narrowId + " before " + wideId)
+                            .isLessThan(order.indexOf(wideId));
+                }
+            }
+        }
+        assertThat(order.indexOf("stream-handler")).isLessThan(order.indexOf("handler"));
+        assertThat(order.indexOf("action-stream-handler")).isLessThan(order.indexOf("handler"));
+    }
+
+    @Test
     @DisplayName("each row's template, filled in, is first matched by that row or a row it lists")
     void everyTemplateIsFirstMatchedByItsOwnRow() {
         for (JsonNode row : rows) {

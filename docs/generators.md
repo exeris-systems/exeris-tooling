@@ -46,7 +46,7 @@ none of them promises that a file still matches what its generator wrote.
 
 | Placeholder | Meaning |
 |---|---|
-| `{base}` | The entity's package with its trailing `.domain` removed, written as a path. |
+| `{base}` | The entity's package without its `.domain` segment, written as a path; the segment a template puts after it (`handler/`, `repository/`, …) is the one the generator substitutes for `.domain`. The package must end in `.domain`, or the run fails. The generators substitute every occurrence of `.domain`, so a package that also has `.domain` in an inner segment is outside the catalogue's guarantee. |
 | `{app}` | The run's base package (`--base-package`, else the first domain's package with `.domain` removed), written as a path. |
 | `{E}` | The entity's simple class name. |
 | `{Action}` | A streaming action's `@Action(name)` in Pascal case: each character that is not a letter or digit dropped, and the character after it upper-cased. |
