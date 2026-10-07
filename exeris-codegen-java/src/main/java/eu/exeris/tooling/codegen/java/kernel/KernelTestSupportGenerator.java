@@ -17,7 +17,7 @@ import java.util.List;
 
 /**
  * Emits the one piece of test infrastructure the generated tests share:
- * {@code RecordingHttpExchange}, a hand-rolled {@link eu.exeris.kernel.spi.http.HttpExchange}
+ * {@code RecordingHttpExchange}, a hand-rolled {@code eu.exeris.kernel.spi.http.HttpExchange}
  * double that captures what a handler responded.
  *
  * <p><b>Why hand-rolled and not a mock (ADR-058).</b> Tooling emits no {@code pom.xml}, so every
@@ -35,7 +35,7 @@ import java.util.List;
  * <p>Project-wide, like {@link KernelApplicationGenerator}: one copy per application under
  * {@code <basePackage>.testsupport}, not one per entity.
  *
- * @since 0.7.0
+ * @since 0.7
  */
 public final class KernelTestSupportGenerator {
 
@@ -132,10 +132,18 @@ public final class KernelTestSupportGenerator {
     private static final ClassName ARRAY_LIST = ClassName.get("java.util", "ArrayList");
 
     /**
+     * Creates the generator. It keeps no state between calls.
+     */
+    public KernelTestSupportGenerator() {
+        // no state to initialise
+    }
+
+    /**
      * Every shared double, in emission order.
      *
      * @param basePackage the project base package; the support types land in
      *                    {@code <basePackage>.testsupport}
+     * @return one file per double, in emission order
      */
     public List<GeneratedFile> generateAll(String basePackage) {
         return List.of(generate(basePackage), generatePersistence(basePackage),
@@ -144,6 +152,9 @@ public final class KernelTestSupportGenerator {
     }
 
     /**
+     * Emits {@code RecordingHttpExchange}, the HTTP exchange double the generated handler tests
+     * drive.
+     *
      * @param basePackage the project base package; the support type lands in
      *                    {@code <basePackage>.testsupport}
      * @return the single emitted file; never {@code null}
@@ -275,6 +286,10 @@ public final class KernelTestSupportGenerator {
      *
      * <p>{@code getSegment} / {@code getLength} throw: no emitted repository reads a column that
      * way, and a double that silently returned {@code null} would hide the day one does.
+     *
+     * @param basePackage the project base package; the support type lands in
+     *                    {@code <basePackage>.testsupport}
+     * @return the single emitted file; never {@code null}
      */
     public GeneratedFile generatePersistence(String basePackage) {
         String packageName = supportPackage(basePackage);
@@ -470,6 +485,10 @@ public final class KernelTestSupportGenerator {
      * {@code definitionVersion()} answers, since this object plays the plan as well. Emitted
      * unconditionally because the double is project-wide and cannot know whether any saga
      * declares a version, and because a hand-written test may drive it with any saga.
+     *
+     * @param basePackage the project base package; the support type lands in
+     *                    {@code <basePackage>.testsupport}
+     * @return the single emitted file; never {@code null}
      */
     public GeneratedFile generateFlow(String basePackage) {
         String packageName = supportPackage(basePackage);
@@ -688,7 +707,6 @@ public final class KernelTestSupportGenerator {
                 .build();
     }
 
-    /** {@code <basePackage>.testsupport} — where the shared doubles live. */
     /**
      * Emits {@code RecordingEventEngine} — one object playing the three roles of the events SPI a
      * generated publisher walks: the {@code EventEngine} it is constructed with, the
@@ -797,6 +815,12 @@ public final class KernelTestSupportGenerator {
                 .returns(returns);
     }
 
+    /**
+     * Returns the package the shared test doubles live in.
+     *
+     * @param basePackage the project base package
+     * @return {@code <basePackage>.testsupport}
+     */
     public static String supportPackage(String basePackage) {
         return basePackage + "." + TEST_SUPPORT_PACKAGE;
     }
@@ -854,6 +878,10 @@ public final class KernelTestSupportGenerator {
      * <p>The buffer and allocator roles are inert: every accessor throws, because nothing reads
      * them. The decoder ignores the buffer and answers with {@code next}, so a double that returned
      * bytes would be staging input no code path consumes.
+     *
+     * @param basePackage the project base package; the support type lands in
+     *                    {@code <basePackage>.testsupport}
+     * @return the single emitted file; never {@code null}
      */
     public GeneratedFile generateRequestBody(String basePackage) {
         String packageName = supportPackage(basePackage);

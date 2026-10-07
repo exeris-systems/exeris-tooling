@@ -2881,6 +2881,14 @@ plan wave S2). Declaring `id` on the entity itself avoids both.
 The check runs in the annotation processor. Metadata JSON that reaches `exeris:generate` without
 passing through the processor is not checked.
 
+### Code examples in generated Javadoc are `{@snippet}` blocks
+
+Regeneration rewrites the code examples in the Javadoc of the generated `Application`,
+`RuntimeComponents` and `<Entity>Client` from `<pre>{@code … }</pre>` to `{@snippet : … }`. The
+example text inside is unchanged, and so are the API and the behaviour. Expect a two-line diff per
+example in a committed generated tree. `{@snippet}` needs a `javadoc` from JDK 18 or later, below
+the JDK 25 the generated code already requires.
+
 ### `GraphMetadata.queries` is absent from the metadata, as `properties` is
 
 An `@Graph` entity's metadata JSON carries no `queries` key from 0.10.0; through 0.9.0 it carried

@@ -35,7 +35,7 @@ import java.util.Set;
  * Kernel Repository Generator.
  *
  * <p>Emits a thin persistence adapter wired against the Open-Core SPI
- * {@link eu.exeris.kernel.spi.persistence.TransactionalExecutor} —
+ * {@code eu.exeris.kernel.spi.persistence.TransactionalExecutor} —
  * {@code conn.prepare(sql)} + typed {@code bind*} / {@code RowCursor} index
  * accessors. No JDBC, no {@code DataSource}, no by-name column lookups.
  *
@@ -87,8 +87,7 @@ import java.util.Set;
  *
  * @implNote Emission is JavaPoet-based (ADR-015).
  *
- * @author Exeris Team
- * @since 0.1.0
+ * @since 0.1
  */
 public class KernelRepositoryGenerator implements KernelArtifactGenerator {
 
@@ -164,6 +163,14 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     private static final String EXECUTE_MANAGED_LAMBDA = "executor.executeManaged(conn -> ";
     private static final String TRY_PREPARE_STMT = "try ($T stmt = conn.prepare(sql))";
     private static final String RETURN_ENTITY_STMT = "return entity";
+
+    /**
+     * Creates the generator. It keeps no per-domain state, so one instance serves every domain
+     * in a build.
+     */
+    public KernelRepositoryGenerator() {
+        // no state to initialise
+    }
 
     /**
      * Whether the emitted repository for {@code metadata} imports Jackson 3 — true exactly when a
@@ -753,13 +760,6 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         return method.addStatement("return index").build();
     }
 
-    /**
-     * T8: builds the cross-aggregate finders in a stable, byte-deterministic
-     * order — filterable-field finders first (sorted by field name), then
-     * MANY_TO_ONE FK finders (sorted by relationship name). Each returns
-     * {@code List<Entity>}, applies the same soft-delete filter the CRUD reads
-     * use, and ends with {@code ORDER BY id} so the row order is deterministic.
-     */
     /** The primary-key lookup every generated repository and service already declares. */
     private static final String PRIMARY_KEY_LOOKUP = "findById";
 
@@ -866,6 +866,13 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         return specs;
     }
 
+    /**
+     * Builds the cross-aggregate finders in a stable, byte-deterministic
+     * order — filterable-field finders first (sorted by field name), then
+     * MANY_TO_ONE FK finders (sorted by relationship name). Each returns
+     * {@code List<Entity>}, applies the same soft-delete filter the CRUD reads
+     * use, and ends with {@code ORDER BY id} so the row order is deterministic.
+     */
     private List<MethodSpec> buildFinders(Context ctx, TypeName listOfEntity) {
         return finderSpecs(ctx.metadata()).stream()
                 .map(spec -> buildFinder(ctx, listOfEntity, spec))

@@ -34,11 +34,10 @@ import java.util.List;
  * carry a type so the handler can answer each with its own status instead of the {@code 500} a bare
  * {@code RuntimeException} gets.
  *
- * <p>They exist because "no row matched" used to be carried only by the message of a bare
- * {@code RuntimeException}, which the emitted handler could not tell apart from an
- * infrastructure failure — so a {@code PUT} or {@code DELETE} against an absent id answered
- * {@code 500} while the emitted OpenAPI spec promised {@code 404}. A type is the smallest
- * thing a {@code catch} clause can act on.
+ * <p>A message is not enough: a bare {@code RuntimeException} saying "no row matched" is
+ * indistinguishable, to the emitted handler, from an infrastructure failure, so a {@code PUT} or
+ * {@code DELETE} against an absent id would answer {@code 500} where the emitted OpenAPI spec
+ * promises {@code 404}. A type is the smallest thing a {@code catch} clause can act on.
  *
  * <h2>Why per entity rather than one shared type</h2>
  * A single {@code EntityNotFoundException} would have to live under the project base package,
@@ -59,12 +58,19 @@ import java.util.List;
  *
  * @implNote Emission is JavaPoet-based (ADR-015).
  *
- * @author Exeris Team
- * @since 0.8.0
+ * @since 0.8
  */
 public class KernelErrorGenerator implements KernelArtifactGenerator {
 
     private static final ClassName UUID = ClassName.get("java.util", "UUID");
+
+    /**
+     * Creates the generator. It keeps no per-domain state, so one instance serves every domain
+     * in a build.
+     */
+    public KernelErrorGenerator() {
+        // no state to initialise
+    }
 
     /** The package the emitted repository lives in, and where these types join it. */
     static String errorPackage(DomainMetadata metadata) {

@@ -71,17 +71,15 @@ import java.util.List;
  * queue — back-pressure parks the virtual thread inside {@code emit}.
  *
  * @implNote Emission is JavaPoet-based (ADR-015), routed through
- * {@link KernelScaffold} like the other Java emitters. The driver is a
- * <em>collection</em> ({@code domain.actions()} filtered by {@code streaming()}),
- * so this generator overrides {@link #generateMultiple(DomainMetadata)} to emit
- * one file per streaming action; {@link #generate(DomainMetadata)} returns the
- * first (or {@code null}) only for the single-generator path.
+ *     {@link KernelScaffold} like the other Java emitters. The driver is a
+ *     <em>collection</em> ({@code domain.actions()} filtered by {@code streaming()}),
+ *     so this generator overrides {@link #generateMultiple(DomainMetadata)} to emit
+ *     one file per streaming action; {@link #generate(DomainMetadata)} returns the
+ *     first (or {@code null}) only for the single-generator path.
  *
+ * @since 0.6
  * @see "docs/adr/ADR-044-tooling-sse-stream-emitter-shape.md — Slice 2."
  * @see KernelStreamHandlerGenerator
- *
- * @author Exeris Team
- * @since 0.6.0
  */
 public class KernelActionStreamHandlerGenerator implements KernelArtifactGenerator {
 
@@ -91,6 +89,14 @@ public class KernelActionStreamHandlerGenerator implements KernelArtifactGenerat
     private static final ClassName HTTP_STREAM_HANDLER = KernelStreamScaffold.HTTP_STREAM_HANDLER;
     private static final ClassName HTTP_STREAM_EXCHANGE = KernelStreamScaffold.HTTP_STREAM_EXCHANGE;
     private static final ClassName STREAM_EVENT = KernelStreamScaffold.STREAM_EVENT;
+
+    /**
+     * Creates the generator. It keeps no per-domain state, so one instance serves every domain
+     * in a build.
+     */
+    public KernelActionStreamHandlerGenerator() {
+        // no state to initialise
+    }
 
     @Override
     public boolean supports(DomainMetadata metadata) {

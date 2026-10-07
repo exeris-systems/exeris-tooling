@@ -39,15 +39,21 @@ import java.util.List;
  * {@link RequiredDrivers} reads the same three predicates, so the SPIs the build requires and the
  * names the default list boots agree.
  *
- * @since 0.9.0
+ * @since 0.9
  */
 public final class RequiredSubsystems {
 
+    /** Subsystem name of the HTTP server; always listed. */
     public static final String HTTP = "http";
+    /** Subsystem name of persistence; always listed. */
     public static final String PERSISTENCE = "persistence";
+    /** Subsystem name of the graph engine; listed when {@link #usesGraph} holds. */
     public static final String GRAPH = "graph";
+    /** Subsystem name of the flow (saga) engine; listed when {@link #usesFlow} holds. */
     public static final String FLOW = "flow";
+    /** Subsystem name of the event bus; listed when {@link #usesEvents} holds. */
     public static final String EVENTS = "events";
+    /** Subsystem name of crypto; always listed. */
     public static final String CRYPTO = "crypto";
 
     private RequiredSubsystems() {
@@ -88,19 +94,34 @@ public final class RequiredSubsystems {
         return String.join(",", forDomains(domains));
     }
 
-    /** Some entity carries graph metadata — the predicate {@code KernelGraphSyncGenerator} emits under. */
+    /**
+     * Reports whether some entity carries graph metadata — the predicate
+     * {@code KernelGraphSyncGenerator} emits under.
+     *
+     * @param domains every entity this build emits code for
+     * @return {@code true} when at least one entity has graph metadata
+     */
     public static boolean usesGraph(List<DomainMetadata> domains) {
         return domains.stream().anyMatch(DomainMetadata::hasGraphMetadata);
     }
 
-    /** Some entity declares a saga — the predicate {@code KernelSagaGenerator} emits under. */
+    /**
+     * Reports whether some entity declares a saga — the predicate {@code KernelSagaGenerator}
+     * emits under.
+     *
+     * @param domains every entity this build emits code for
+     * @return {@code true} when at least one entity is a saga with saga metadata
+     */
     public static boolean usesFlow(List<DomainMetadata> domains) {
         return domains.stream().anyMatch(d -> d.isSaga() && d.sagaMetadata() != null);
     }
 
     /**
-     * Some entity declares a {@code @DomainEvent} — the predicate the publisher, subscriber and EV1
-     * stream-producer emitters all emit under.
+     * Reports whether some entity declares a {@code @DomainEvent} — the predicate the publisher,
+     * subscriber and event stream-producer emitters all emit under.
+     *
+     * @param domains every entity this build emits code for
+     * @return {@code true} when at least one entity declares an event
      */
     public static boolean usesEvents(List<DomainMetadata> domains) {
         return domains.stream().anyMatch(DomainMetadata::hasEvents);

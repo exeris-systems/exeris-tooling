@@ -84,14 +84,12 @@ import java.util.List;
  * handler.
  *
  * @implNote Emission is JavaPoet-based (ADR-015), routed through
- * {@link KernelScaffold} like the other Java emitters.
+ *     {@link KernelScaffold} like the other Java emitters.
  *
+ * @since 0.6
  * @see "docs/adr/ADR-043.link.md — cross-repo stub; kernel-side authoritative
  *      copy owns the streaming SPI."
  * @see "docs/rfc/RFC-2026-06-22-sse-stream-emitter-tooling.md — Slice 1."
- *
- * @author Exeris Team
- * @since 0.6.0
  */
 public class KernelStreamHandlerGenerator implements KernelArtifactGenerator {
 
@@ -101,6 +99,14 @@ public class KernelStreamHandlerGenerator implements KernelArtifactGenerator {
     private static final ClassName HTTP_STREAM_HANDLER = KernelStreamScaffold.HTTP_STREAM_HANDLER;
     private static final ClassName HTTP_STREAM_EXCHANGE = KernelStreamScaffold.HTTP_STREAM_EXCHANGE;
     private static final ClassName STREAM_EVENT = KernelStreamScaffold.STREAM_EVENT;
+
+    /**
+     * Creates the generator. It keeps no per-domain state, so one instance serves every domain
+     * in a build.
+     */
+    public KernelStreamHandlerGenerator() {
+        // no state to initialise
+    }
 
     @Override
     public boolean supports(DomainMetadata metadata) {

@@ -26,7 +26,7 @@ import java.util.TreeSet;
  * <p>Every list this class returns is sorted by property name, so the emitted text is a pure function
  * of the metadata.
  *
- * @since 0.9.0
+ * @since 0.9
  */
 public final class ListQuerySupport {
 

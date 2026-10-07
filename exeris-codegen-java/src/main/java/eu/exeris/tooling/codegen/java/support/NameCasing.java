@@ -24,8 +24,7 @@ import java.util.Locale;
  * <p>Both transforms are locale-independent ({@link Locale#ROOT}) to honour the determinism
  * constraint — same metadata, byte-identical output, regardless of the build machine's locale.
  *
- * @author Exeris Team
- * @since 0.6.0
+ * @since 0.6
  */
 public final class NameCasing {
 
@@ -36,6 +35,9 @@ public final class NameCasing {
      * Kebab-cases an action identity for use as a URL path segment
      * ({@code markUrgent} → {@code mark-urgent}). Already-kebab or snake input passes through
      * unchanged apart from lower-casing.
+     *
+     * @param input the action identity
+     * @return the identity in lower-case kebab form
      */
     public static String kebab(String input) {
         return input.replaceAll("([a-z])([A-Z])", "$1-$2").toLowerCase(Locale.ROOT);
@@ -46,6 +48,9 @@ public final class NameCasing {
      * identifier fragment ({@code mark-urgent} / {@code mark_urgent} / {@code markUrgent}
      * → {@code MarkUrgent}). Non-alphanumeric separators are dropped and the following
      * letter is upper-cased.
+     *
+     * @param name the action identity
+     * @return the identity in PascalCase
      */
     public static String pascal(String name) {
         StringBuilder sb = new StringBuilder(name.length());

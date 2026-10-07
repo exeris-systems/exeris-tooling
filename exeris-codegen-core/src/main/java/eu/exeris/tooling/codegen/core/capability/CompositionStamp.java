@@ -32,7 +32,12 @@ import java.util.List;
  * catches <em>honest</em> mistakes; it is explicitly <b>not</b> a tamper-proof lock or a
  * licence gate (ADR-023 enforcement is contractual, not technical).
  *
- * @since 0.6.0
+ * @param validated          the verdict; {@code true} in every emitted manifest
+ * @param compositionVersion the composition's release identity, {@link #UNVERSIONED} when the
+ *                           build supplies none
+ * @param contentBinding     {@code "sha256:"} and the hex SHA-256 of the canonical cap-set
+ *                           serialization defined by {@link CompositionBinding}
+ * @since 0.6
  */
 public record CompositionStamp(
         boolean validated,
@@ -49,6 +54,7 @@ public record CompositionStamp(
      *
      * @param sortedModules      modules sorted by qualified name (as {@link CapabilityGraph#build} sorts them)
      * @param compositionVersion the composition release identity, or {@code null}/blank → {@link #UNVERSIONED}
+     * @return a stamp with {@code validated = true}, the effective version and the content binding
      */
     public static CompositionStamp of(List<CapabilityModuleDescriptor> sortedModules, String compositionVersion) {
         String version = (compositionVersion == null || compositionVersion.isBlank())

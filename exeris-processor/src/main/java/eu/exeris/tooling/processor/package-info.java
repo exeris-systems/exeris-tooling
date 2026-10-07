@@ -29,7 +29,7 @@
  *     PaymentSaga.json
  * </pre>
  *
- * @since 0.1.0
+ * @since 0.1
  */
 package eu.exeris.tooling.processor;
 

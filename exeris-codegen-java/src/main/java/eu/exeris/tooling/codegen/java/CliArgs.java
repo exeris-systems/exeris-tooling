@@ -19,6 +19,11 @@ import java.util.Objects;
  */
 public record CliArgs(Path metadataDir, Path outputDir, String basePackage) {
 
+    /**
+     * Creates the parsed arguments.
+     *
+     * @throws NullPointerException if {@code metadataDir} or {@code outputDir} is {@code null}
+     */
     public CliArgs {
         Objects.requireNonNull(metadataDir, "metadataDir");
         Objects.requireNonNull(outputDir, "outputDir");
@@ -29,6 +34,10 @@ public record CliArgs(Path metadataDir, Path outputDir, String basePackage) {
      * {@code --base-package=} switches. Throws {@link IllegalArgumentException}
      * with a message naming the missing switch when either required arg is
      * absent — the CLI shell turns that into a usage hint + non-zero exit.
+     *
+     * @param args the command-line arguments, as passed to {@code main}
+     * @return the parsed arguments
+     * @throws IllegalArgumentException if {@code --metadata-dir=} or {@code --output-dir=} is absent
      */
     public static CliArgs parse(String[] args) {
         Path metadataDir = null;

@@ -29,7 +29,7 @@ import java.util.Set;
  * neither sorted nor filtered on, unless its type is spelled like a refused JDK type
  * ({@code Duration}, say), which is then refused as that type.
  *
- * @since 0.9.0
+ * @since 0.9
  */
 public enum DomainTypeKind {
     /**
@@ -38,9 +38,13 @@ public enum DomainTypeKind {
      * ({@code EXT-GEN-3003}).
      */
     LIST,
+    /** {@code UUID}: written through {@code bindUuid} and read through {@code getUuid}. */
     UUID,
+    /** {@code String}: written through {@code bindString} and read through {@code getString}. */
     STRING,
+    /** {@code Long} or {@code long}: written through {@code bindLong} and read through {@code getLong}. */
     LONG,
+    /** {@code Integer} or {@code int}: written through {@code bindInt} and read through {@code getInt}. */
     INT,
     /**
      * {@code Short}: a {@code SMALLINT} column, written through {@code bindShort} and read through
@@ -53,12 +57,17 @@ public enum DomainTypeKind {
      * a sort key.
      */
     BYTE,
+    /**
+     * {@code Boolean} or {@code boolean}: written through {@code bindBoolean} and read through
+     * {@code getBoolean}.
+     */
     BOOL,
     /**
      * {@code Float}: a {@code REAL} column, written through {@code bindFloat} and read through
      * {@code getFloat}. A list filter and a sort key, as {@code Double} is.
      */
     FLOAT,
+    /** {@code Double} or {@code double}: written through {@code bindDouble} and read through {@code getDouble}. */
     DOUBLE,
     /**
      * {@code BigDecimal}: no typed SPI accessor, so it is written as its plain string and the
@@ -68,6 +77,10 @@ public enum DomainTypeKind {
     BIG_DECIMAL,
     /** {@code Instant} and anything else whose name contains it — a {@code TIMESTAMPTZ} column. */
     INSTANT_LIKE,
+    /**
+     * {@code LocalDateTime}: stored as its instant at {@code ZoneOffset.UTC} in a
+     * {@code TIMESTAMPTZ} column, through {@code bindInstant}, and read back at the same offset.
+     */
     LOCAL_DATE_TIME,
     /**
      * {@code LocalDate}: no typed SPI accessor, so it is written as its ISO string and the statement

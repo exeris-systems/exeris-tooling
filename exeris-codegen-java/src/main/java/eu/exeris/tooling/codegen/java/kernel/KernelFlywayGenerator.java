@@ -62,9 +62,9 @@ import java.util.Set;
  * </ul>
  *
  * @implNote Emission uses Java text blocks + {@link String#join} over a list
- * of column definitions (ADR-015 — JavaPoet does not apply to non-Java
- * artifacts). The {@code KernelFlywayGeneratorTest} golden snapshots are the
- * regression gate.
+ *     of column definitions (ADR-015 — JavaPoet does not apply to non-Java
+ *     artifacts). The {@code KernelFlywayGeneratorTest} golden snapshots are the
+ *     regression gate.
  */
 public class KernelFlywayGenerator implements KernelArtifactGenerator {
 
@@ -95,6 +95,14 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
                 USING (%2$s = NULLIF(current_setting('exeris.tenant_id', true), '')::uuid)
                 WITH CHECK (%2$s = NULLIF(current_setting('exeris.tenant_id', true), '')::uuid);
             """;
+
+    /**
+     * Creates the generator. It keeps no per-domain state, so one instance serves every domain
+     * in a build.
+     */
+    public KernelFlywayGenerator() {
+        // no state to initialise
+    }
 
     @Override
     public GeneratedFile generate(DomainMetadata metadata) {

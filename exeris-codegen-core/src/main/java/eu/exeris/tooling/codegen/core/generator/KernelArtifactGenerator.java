@@ -18,7 +18,7 @@ import java.util.List;
  *   <li>Generated code must be readable (Glass Box principle)</li>
  * </ul>
  *
- * @since 0.1.0
+ * @since 0.1
  */
 public interface KernelArtifactGenerator {
 
@@ -93,22 +93,55 @@ public interface KernelArtifactGenerator {
      * Types of artifacts that can be generated.
      */
     enum ArtifactType {
+        /** Per-entity repository over the kernel persistence SPI. */
         REPOSITORY,
+        /** Per-entity service carrying the domain's operations. */
         SERVICE,
+        /** Per-entity HTTP handler that routes requests to the service. */
         CONTROLLER,
-        STREAM_HANDLER,         // entity-level SSE live-view handler (eu.exeris.kernel.spi.http.HttpStreamHandler) — @ExerisDomain(realTimeApi) (ADR-043 Slice 1)
-        ACTION_STREAM_HANDLER,  // per-action SSE stream handler (eu.exeris.kernel.spi.http.HttpStreamHandler) — @Action(streaming) (ADR-044 Slice 2); distinct from STREAM_HANDLER so the per-type registry lookup is unambiguous
-        CLIENT,          // service-to-service client for HTTP-layer communication
-        EVENT,           // domain-event publisher (eu.exeris.kernel.spi.events.*)
-        EVENT_HANDLER,   // domain-event subscriber (eu.exeris.kernel.spi.events.EventBus)
-        GRAPH_SYNC,      // graph-sync projection (eu.exeris.kernel.spi.graph.*)
-        SAGA,            // saga skeleton (eu.exeris.kernel.spi.flow.*)
-        APPLICATION,     // application bootstrap (Application + RuntimeComponents + RuntimeLifecycle)
-        LIST_QUERY,     // per-entity list-route types (<Entity>ListQuery, <Entity>Page): the parsed page/sort/filter query and the page envelope the list route answers with
-        DOMAIN_ERROR,   // per-entity write-rejection exception (<Entity>NotFoundException, <Entity>VersionConflictException) raised by the repository and mapped to 404/409 by the handler (ADR-076)
+        /**
+         * Entity-level SSE live-view handler ({@code eu.exeris.kernel.spi.http.HttpStreamHandler}),
+         * emitted for {@code @ExerisDomain(realTimeApi)} (ADR-043).
+         */
+        STREAM_HANDLER,
+        /**
+         * Per-action SSE stream handler ({@code eu.exeris.kernel.spi.http.HttpStreamHandler}),
+         * emitted for {@code @Action(streaming)} (ADR-044); distinct from {@link #STREAM_HANDLER}
+         * so the per-type registry lookup is unambiguous.
+         */
+        ACTION_STREAM_HANDLER,
+        /** Service-to-service client for HTTP-layer communication. */
+        CLIENT,
+        /** Domain-event publisher ({@code eu.exeris.kernel.spi.events.*}). */
+        EVENT,
+        /** Domain-event subscriber ({@code eu.exeris.kernel.spi.events.EventBus}). */
+        EVENT_HANDLER,
+        /** Graph-sync projection ({@code eu.exeris.kernel.spi.graph.*}). */
+        GRAPH_SYNC,
+        /** Saga skeleton ({@code eu.exeris.kernel.spi.flow.*}). */
+        SAGA,
+        /** Application bootstrap: {@code Application}, {@code RuntimeComponents} and {@code RuntimeLifecycle}. */
+        APPLICATION,
+        /**
+         * Per-entity list-route types ({@code <Entity>ListQuery}, {@code <Entity>Page}): the parsed
+         * page/sort/filter query and the page envelope the list route answers with.
+         */
+        LIST_QUERY,
+        /**
+         * Per-entity write-rejection exceptions ({@code <Entity>NotFoundException},
+         * {@code <Entity>VersionConflictException}) raised by the repository and mapped to 404/409
+         * by the handler (ADR-076).
+         */
+        DOMAIN_ERROR,
+        /** Non-Java configuration artefact, such as a Flyway SQL migration. */
         CONFIGURATION,
-        OPENAPI_SPEC,    // OpenAPI 3.1 specification (YAML)
-        TEST             // generated test for a generated artefact (T2/ADR-058) — lands in the TEST output root, never in src/main
+        /** OpenAPI 3.1 specification (YAML). */
+        OPENAPI_SPEC,
+        /**
+         * Generated test for a generated artefact (ADR-058); it lands in the test output root,
+         * never in {@code src/main}.
+         */
+        TEST
     }
 }
 

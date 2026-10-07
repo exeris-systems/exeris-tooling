@@ -14,13 +14,19 @@ import java.util.Set;
 
 /**
  * Builds OpenAPI components (schemas) from domain metadata.
- * @author Exeris Team
- * @since 0.1.0
+ * @since 0.1
  */
 public final class OpenApiComponentsBuilder {
 
     private OpenApiComponentsBuilder() {}
 
+    /**
+     * Builds the schemas one entity contributes: the entity itself, its create and update DTOs,
+     * and its list-page envelope.
+     *
+     * @param metadata the entity to describe
+     * @return the components, with schemas in that order
+     */
     public static Components buildComponents(DomainMetadata metadata) {
         Components components = new Components();
         Map<String, Schema> schemas = new LinkedHashMap<>();
