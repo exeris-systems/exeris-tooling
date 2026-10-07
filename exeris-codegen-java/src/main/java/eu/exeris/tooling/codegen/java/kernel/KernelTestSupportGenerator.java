@@ -131,6 +131,40 @@ public final class KernelTestSupportGenerator {
     private static final ClassName FLOW_STATE = ClassName.get(SPI_FLOW_MODEL, "FlowState");
     private static final ClassName ARRAY_LIST = ClassName.get("java.util", "ArrayList");
 
+    private static final List<Bind> BINDS = List.of(
+            new Bind("bindInt", TypeName.INT),
+            new Bind("bindLong", TypeName.LONG),
+            new Bind("bindShort", TypeName.SHORT),
+            new Bind("bindFloat", TypeName.FLOAT),
+            new Bind("bindDouble", TypeName.DOUBLE),
+            new Bind("bindBoolean", TypeName.BOOLEAN),
+            new Bind("bindString", ClassName.get(String.class)),
+            new Bind("bindUuid", ClassName.get("java.util", "UUID")),
+            new Bind("bindBytes", ArrayTypeName.of(TypeName.BYTE)),
+            new Bind("bindInstant", ClassName.get("java.time", "Instant")));
+
+    private static final List<Unbox> UNBOXED = List.of(
+            new Unbox("getInt", TypeName.INT, TypeName.INT.box(), "0"),
+            new Unbox("getLong", TypeName.LONG, TypeName.LONG.box(), "0L"),
+            new Unbox("getShort", TypeName.SHORT, TypeName.SHORT.box(), "(short) 0"),
+            new Unbox("getFloat", TypeName.FLOAT, TypeName.FLOAT.box(), "0f"),
+            new Unbox("getDouble", TypeName.DOUBLE, TypeName.DOUBLE.box(), "0d"),
+            new Unbox("getBoolean", TypeName.BOOLEAN, TypeName.BOOLEAN.box(), "false"));
+
+    private static final List<Cast> CASTS = List.of(
+            new Cast("getString", ClassName.get(String.class)),
+            new Cast("getBytes", ArrayTypeName.of(TypeName.BYTE)),
+            new Cast("getUuid", ClassName.get("java.util", "UUID")),
+            new Cast("getInstant", ClassName.get("java.time", "Instant")));
+
+    private static final String BUFFER_UNREAD =
+            "the request buffer is never read — the decoder bound for a generated test answers"
+                    + " with a staged object";
+
+    private static final String ALLOCATOR_UNUSED =
+            "the decoding context requires an allocator to exist, not to allocate — nothing in a"
+                    + " generated test allocates";
+
     /**
      * Creates the generator. It keeps no state between calls.
      */
@@ -647,32 +681,6 @@ public final class KernelTestSupportGenerator {
     /** One reference-typed {@code RowCursor} accessor: a plain cast of the staged value. */
     private record Cast(String method, TypeName type) {}
 
-    private static final List<Bind> BINDS = List.of(
-            new Bind("bindInt", TypeName.INT),
-            new Bind("bindLong", TypeName.LONG),
-            new Bind("bindShort", TypeName.SHORT),
-            new Bind("bindFloat", TypeName.FLOAT),
-            new Bind("bindDouble", TypeName.DOUBLE),
-            new Bind("bindBoolean", TypeName.BOOLEAN),
-            new Bind("bindString", ClassName.get(String.class)),
-            new Bind("bindUuid", ClassName.get("java.util", "UUID")),
-            new Bind("bindBytes", ArrayTypeName.of(TypeName.BYTE)),
-            new Bind("bindInstant", ClassName.get("java.time", "Instant")));
-
-    private static final List<Unbox> UNBOXED = List.of(
-            new Unbox("getInt", TypeName.INT, TypeName.INT.box(), "0"),
-            new Unbox("getLong", TypeName.LONG, TypeName.LONG.box(), "0L"),
-            new Unbox("getShort", TypeName.SHORT, TypeName.SHORT.box(), "(short) 0"),
-            new Unbox("getFloat", TypeName.FLOAT, TypeName.FLOAT.box(), "0f"),
-            new Unbox("getDouble", TypeName.DOUBLE, TypeName.DOUBLE.box(), "0d"),
-            new Unbox("getBoolean", TypeName.BOOLEAN, TypeName.BOOLEAN.box(), "false"));
-
-    private static final List<Cast> CASTS = List.of(
-            new Cast("getString", ClassName.get(String.class)),
-            new Cast("getBytes", ArrayTypeName.of(TypeName.BYTE)),
-            new Cast("getUuid", ClassName.get("java.util", "UUID")),
-            new Cast("getInstant", ClassName.get("java.time", "Instant")));
-
     private static MethodSpec.Builder override(String name) {
         return MethodSpec.methodBuilder(name)
                 .addAnnotation(Override.class)
@@ -1010,14 +1018,6 @@ public final class KernelTestSupportGenerator {
         return new GeneratedFile(packageName, RECORDING_REQUEST_BODY,
                 KernelScaffold.render(packageName, type.build()), ArtifactType.TEST);
     }
-
-    private static final String BUFFER_UNREAD =
-            "the request buffer is never read — the decoder bound for a generated test answers"
-                    + " with a staged object";
-
-    private static final String ALLOCATOR_UNUSED =
-            "the decoding context requires an allocator to exist, not to allocate — nothing in a"
-                    + " generated test allocates";
 
     /** A no-arg {@code LoanedBuffer} accessor that would hand out bytes nobody staged. */
     private static MethodSpec unreadBuffer(String name, TypeName returnType) {

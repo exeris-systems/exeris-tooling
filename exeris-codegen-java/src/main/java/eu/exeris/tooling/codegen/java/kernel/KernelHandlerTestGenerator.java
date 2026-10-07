@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * Emits {@code <Entity>HandlerTest} — the generated test for the generated handler (T2, ADR-058).
@@ -185,21 +186,21 @@ public final class KernelHandlerTestGenerator {
 
         addListTests(type, metadata, entityType, handlerType, exchangeType, stubType, basePath,
                 tenantScoped);
-        type.addMethod(getByIdFoundTest(entity, entityType, handlerType, exchangeType, stubType, basePath,
+        type.addMethod(getByIdFoundTest(entityType, handlerType, exchangeType, stubType, basePath,
                 tenantScoped));
-        type.addMethod(getByIdAbsentTest(entity, handlerType, exchangeType, stubType, basePath,
+        type.addMethod(getByIdAbsentTest(handlerType, exchangeType, stubType, basePath,
                 tenantScoped));
-        type.addMethod(getByIdMalformedTest(entity, handlerType, exchangeType, stubType, basePath,
+        type.addMethod(getByIdMalformedTest(handlerType, exchangeType, stubType, basePath,
                 tenantScoped));
-        type.addMethod(deleteTest(entity, handlerType, exchangeType, stubType, basePath,
+        type.addMethod(deleteTest(handlerType, exchangeType, stubType, basePath,
                 tenantScoped));
         type.addMethod(deleteAbsentTest(handlerType, exchangeType, stubType, basePath,
                 tenantScoped));
-        type.addMethod(createMissingBodyTest(entity, handlerType, exchangeType, stubType, basePath,
+        type.addMethod(createMissingBodyTest(handlerType, exchangeType, stubType, basePath,
                 tenantScoped));
-        type.addMethod(updateMalformedIdTest(entity, handlerType, exchangeType, stubType, basePath,
+        type.addMethod(updateMalformedIdTest(handlerType, exchangeType, stubType, basePath,
                 tenantScoped));
-        type.addMethod(updateMissingBodyTest(entity, handlerType, exchangeType, stubType, basePath,
+        type.addMethod(updateMissingBodyTest(handlerType, exchangeType, stubType, basePath,
                 tenantScoped));
         addDecodeFaultTests(type, entityType, handlerType, exchangeType, bodyType, stubType,
                 basePath, tenantScoped);
@@ -231,7 +232,7 @@ public final class KernelHandlerTestGenerator {
                 .addJavadoc("never decode a body.\n")
                 .addStatement("return newHandler(service, new $T())", bodyType)
                 .build());
-        type.addType(stubService(entity, entityType, serviceType, repositoryType, stubType,
+        type.addType(stubService(entityType, serviceType, repositoryType, stubType,
                 metadata));
 
         return new GeneratedFile(packageName, className,
@@ -412,7 +413,7 @@ public final class KernelHandlerTestGenerator {
         };
     }
 
-    private MethodSpec getByIdFoundTest(String entity, ClassName entityType, ClassName handlerType,
+    private MethodSpec getByIdFoundTest(ClassName entityType, ClassName handlerType,
                                         ClassName exchangeType, ClassName stubType, String basePath,
                                   boolean tenantScoped) {
         return test("handleGetByIdRespondsOkWhenTheEntityExists")
@@ -428,7 +429,7 @@ public final class KernelHandlerTestGenerator {
                 .build();
     }
 
-    private MethodSpec getByIdAbsentTest(String entity, ClassName handlerType, ClassName exchangeType,
+    private MethodSpec getByIdAbsentTest(ClassName handlerType, ClassName exchangeType,
                                          ClassName stubType, String basePath,
                                   boolean tenantScoped) {
         return test("handleGetByIdRespondsNotFoundWhenTheEntityIsAbsent")
@@ -443,7 +444,7 @@ public final class KernelHandlerTestGenerator {
                 .build();
     }
 
-    private MethodSpec getByIdMalformedTest(String entity, ClassName handlerType, ClassName exchangeType,
+    private MethodSpec getByIdMalformedTest(ClassName handlerType, ClassName exchangeType,
                                             ClassName stubType, String basePath,
                                   boolean tenantScoped) {
         return test("handleGetByIdRespondsBadRequestOnAMalformedId")
@@ -460,7 +461,7 @@ public final class KernelHandlerTestGenerator {
                 .build();
     }
 
-    private MethodSpec deleteTest(String entity, ClassName handlerType, ClassName exchangeType,
+    private MethodSpec deleteTest(ClassName handlerType, ClassName exchangeType,
                                   ClassName stubType, String basePath,
                                   boolean tenantScoped) {
         return test("handleDeleteRespondsNoContentAndDelegatesTheId")
@@ -502,7 +503,7 @@ public final class KernelHandlerTestGenerator {
                 .build();
     }
 
-    private MethodSpec createMissingBodyTest(String entity, ClassName handlerType, ClassName exchangeType,
+    private MethodSpec createMissingBodyTest(ClassName handlerType, ClassName exchangeType,
                                              ClassName stubType, String basePath,
                                   boolean tenantScoped) {
         return test("handleCreateRespondsBadRequestWhenTheBodyIsMissing")
@@ -518,7 +519,7 @@ public final class KernelHandlerTestGenerator {
                 .build();
     }
 
-    private MethodSpec updateMalformedIdTest(String entity, ClassName handlerType, ClassName exchangeType,
+    private MethodSpec updateMalformedIdTest(ClassName handlerType, ClassName exchangeType,
                                              ClassName stubType, String basePath,
                                   boolean tenantScoped) {
         return test("handleUpdateRespondsBadRequestOnAMalformedId")
@@ -535,7 +536,7 @@ public final class KernelHandlerTestGenerator {
                 .build();
     }
 
-    private MethodSpec updateMissingBodyTest(String entity, ClassName handlerType, ClassName exchangeType,
+    private MethodSpec updateMissingBodyTest(ClassName handlerType, ClassName exchangeType,
                                              ClassName stubType, String basePath,
                                   boolean tenantScoped) {
         return test("handleUpdateRespondsBadRequestWhenTheBodyIsMissing")
@@ -684,10 +685,11 @@ public final class KernelHandlerTestGenerator {
             return;
         }
 
-        Map<String, CodeBlock> baseline = baselineFor(rules);
-        if (baseline == null) {
+        Optional<Map<String, CodeBlock>> baselineOrEmpty = baselineFor(rules);
+        if (baselineOrEmpty.isEmpty()) {
             return;
         }
+        Map<String, CodeBlock> baseline = baselineOrEmpty.get();
 
         Scaffold scaffold = new Scaffold(entityType, handlerType, exchangeType, bodyType, stubType,
                 basePath, rules, baseline, tenantScoped);
@@ -890,19 +892,19 @@ public final class KernelHandlerTestGenerator {
     }
 
     /**
-     * A valid value for every rule-carrying field, or {@code null} when one cannot be synthesized —
+     * A valid value for every rule-carrying field, or empty when one cannot be synthesized —
      * a case staged with an invalid field would be rejected for the wrong reason and pass anyway.
      */
-    private Map<String, CodeBlock> baselineFor(List<KernelValidationRules.FieldRules> rules) {
+    private Optional<Map<String, CodeBlock>> baselineFor(List<KernelValidationRules.FieldRules> rules) {
         Map<String, CodeBlock> baseline = new LinkedHashMap<>();
         for (KernelValidationRules.FieldRules fr : rules) {
             CodeBlock value = baselineFor(fr);
             if (value == null) {
-                return null;
+                return Optional.empty();
             }
             baseline.put(fr.field().name(), value);
         }
-        return baseline;
+        return Optional.of(baseline);
     }
 
     /**
@@ -925,10 +927,11 @@ public final class KernelHandlerTestGenerator {
             return;
         }
         List<KernelValidationRules.FieldRules> rules = KernelValidationRules.of(metadata.fields());
-        Map<String, CodeBlock> baseline = baselineFor(rules);
-        if (baseline == null) {
+        Optional<Map<String, CodeBlock>> baselineOrEmpty = baselineFor(rules);
+        if (baselineOrEmpty.isEmpty()) {
             return;
         }
+        Map<String, CodeBlock> baseline = baselineOrEmpty.get();
         Scaffold scaffold = new Scaffold(entityType, handlerType, exchangeType, bodyType, stubType,
                 basePath, rules, baseline, true);
         CodeBlock foreignTenant = CodeBlock.of("new $T($T.fromString($S))", tenantMismatch, UUID, FIXED_ID);
@@ -1086,7 +1089,7 @@ public final class KernelHandlerTestGenerator {
      * The nested service double. Fields are package-private and set directly by each test — a
      * generated double has no callers to protect, and accessors would be noise.
      */
-    private TypeSpec stubService(String entity, ClassName entityType, ClassName serviceType,
+    private TypeSpec stubService(ClassName entityType, ClassName serviceType,
                                  ClassName repositoryType, ClassName stubType,
                                  DomainMetadata metadata) {
         TypeName optionalOfEntity = ParameterizedTypeName.get(OPTIONAL, entityType);
