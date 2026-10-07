@@ -131,6 +131,8 @@ class SystemFieldSqlE2ETest {
                               dataScope = ExerisDomain.DataScope.TENANT)
                 public class Invoice {
 
+                    private java.util.UUID id;
+
                     @Field(label = "Number")
                     private String number;
 

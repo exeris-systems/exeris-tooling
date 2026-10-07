@@ -70,7 +70,7 @@ class ExerisDomainProcessorGapsTest {
 
                     @ExerisDomain(module = "sales", path = "/single-event")
                     @DomainEvent(trigger = Trigger.CREATE, topic = "se.created")
-                    public class SingleEvent {}
+                    public class SingleEvent { private java.util.UUID id; }
                     """
             );
 
@@ -105,7 +105,7 @@ class ExerisDomainProcessorGapsTest {
                             action = "finalise",
                             topic = "billing.invoice.finalised",
                             description = "Fired once an invoice transitions to FINAL")
-                    public class ExplicitNameEvent {}
+                    public class ExplicitNameEvent { private java.util.UUID id; }
                     """
             );
 
@@ -145,7 +145,7 @@ class ExerisDomainProcessorGapsTest {
                     import eu.exeris.sdk.annotation.DomainEvent.Trigger;
 
                     @ExerisDomain(module = "sales", path = "/nested-event")
-                    public class OrderWithNested {
+                    public class OrderWithNested { private java.util.UUID id;
 
                         @DomainEvent(trigger = Trigger.CREATE, topic = "nested.created")
                         public static class OrderPlacedEvent {}
@@ -181,7 +181,7 @@ class ExerisDomainProcessorGapsTest {
                     import eu.exeris.sdk.annotation.ExerisDomain;
 
                     @ExerisDomain(module = "sales", path = "/inner-helper")
-                    public class OrderWithInnerHelper {
+                    public class OrderWithInnerHelper { private java.util.UUID id;
 
                         public static class Helper {
                             public String label;
@@ -240,7 +240,7 @@ class ExerisDomainProcessorGapsTest {
                     import eu.exeris.sdk.annotation.Validation;
 
                     @ExerisDomain(module = "catalog", path = "/items")
-                    public class Item {
+                    public class Item { private java.util.UUID id;
                         @Field(label = "Name")
                         @Validation(required = false)
                         private String name;
@@ -280,7 +280,7 @@ class ExerisDomainProcessorGapsTest {
                     import eu.exeris.sdk.annotation.Validation;
 
                     @ExerisDomain(module = "catalog", path = "/items")
-                    public class Item {
+                    public class Item { private java.util.UUID id;
                         @Field(label = "Code")
                         @Validation(minLength = 3, maxLength = 20, pattern = "^[A-Z]+$")
                         private String code;
@@ -348,7 +348,7 @@ class ExerisDomainProcessorGapsTest {
                     import eu.exeris.sdk.annotation.Field;
 
                     @ExerisDomain(module = "sales", path = "/has-computed")
-                    public class HasComputed {
+                    public class HasComputed { private java.util.UUID id;
                         @Field(label = "First Name")
                         private String firstName;
 
@@ -386,7 +386,7 @@ class ExerisDomainProcessorGapsTest {
                     import eu.exeris.sdk.annotation.Field;
 
                     @ExerisDomain(module = "sales", path = "/empty-computed")
-                    public class EmptyComputed {
+                    public class EmptyComputed { private java.util.UUID id;
                         @Field(label = "Derived", computed = true, computedFrom = {})
                         private String derived;
                     }
@@ -415,7 +415,7 @@ class ExerisDomainProcessorGapsTest {
 
                     @ExerisDomain(module = "billing", path = "/billing")
                     @EventSourced(streamPrefix = "Billing", snapshotThreshold = 25)
-                    public class BillingAggregate {}
+                    public class BillingAggregate { private java.util.UUID id; }
                     """
             );
 
@@ -449,7 +449,7 @@ class ExerisDomainProcessorGapsTest {
 
                     @ExerisDomain(module = "sales", path = "/explicit-empty")
                     @EventSourced(streamPrefix = "")
-                    public class ExplicitEmptyPrefix {}
+                    public class ExplicitEmptyPrefix { private java.util.UUID id; }
                     """
             );
 
@@ -477,7 +477,7 @@ class ExerisDomainProcessorGapsTest {
 
                     @ExerisDomain(module = "sales", path = "/orders")
                     @EventSourced
-                    public class OrderAggregate {}
+                    public class OrderAggregate { private java.util.UUID id; }
                     """
             );
 

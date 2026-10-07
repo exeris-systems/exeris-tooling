@@ -69,7 +69,7 @@ class ExerisDomainProcessorTest {
                     import eu.exeris.sdk.annotation.Field;
                     
                     @ExerisDomain(module = "sales", path = "/orders")
-                    public class Order {
+                    public class Order { private java.util.UUID id;
                         
                         @Field(label = "Customer ID", required = true)
                         private String customerId;
@@ -117,7 +117,7 @@ class ExerisDomainProcessorTest {
                     import eu.exeris.sdk.annotation.Field;
                     
                     @ExerisDomain(module = "crm", path = "/customers")
-                    public class Customer {
+                    public class Customer { private java.util.UUID id;
                         
                         @Field(label = "Email", required = true, unique = true, indexed = true)
                         private String email;
@@ -155,7 +155,7 @@ class ExerisDomainProcessorTest {
                     import eu.exeris.sdk.annotation.Field;
 
                     @ExerisDomain(module = "billing", path = "/invoices")
-                    public class Invoice {
+                    public class Invoice { private java.util.UUID id;
 
                         @Field(label = "Amount", dataType = "currency")
                         private java.math.BigDecimal amount;
@@ -395,7 +395,7 @@ class ExerisDomainProcessorTest {
 
                     @ExerisDomain(module = "sales", path = "/orders")
                     @Graph(nodeClass = "Order", syncToGraph = true)
-                    public class Order {
+                    public class Order { private java.util.UUID id;
                         @GraphEdge(type = "OWNED_BY", targetLabel = "User")
                         private String ownerId;
                     }
@@ -461,7 +461,7 @@ class ExerisDomainProcessorTest {
 
                     @ExerisDomain(module = "sales", path = "/orders")
                     @Graph(nodeClass = "Order")
-                    public class Order {
+                    public class Order { private java.util.UUID id;
                         // The obvious way to write an edge, and the one that used to produce a
                         // descriptor pointing at the generator's "Node" fallback: GraphEdgeMetadata
                         // holds one label, the annotation offers three ways to name a target.
@@ -494,7 +494,7 @@ class ExerisDomainProcessorTest {
 
                     @ExerisDomain(module = "sales", path = "/orders")
                     @Graph(nodeClass = "Order")
-                    public class Order {
+                    public class Order { private java.util.UUID id;
                         @GraphEdge(type = "OWNED_BY", targetLabel = "User")
                         @GraphEdge(type = "BILLED_TO", targetLabel = "Account")
                         private String partyId;
@@ -533,7 +533,7 @@ class ExerisDomainProcessorTest {
 
                     @ExerisDomain(module = "m", path = "/p")
                     @Graph
-                    public class EdgesMixed {
+                    public class EdgesMixed { private java.util.UUID id;
                         @GraphEdge(type = "DIRECT")
                         @GraphEdges({@GraphEdge(type = "CONTAINED")})
                         private UUID mixed;
@@ -590,7 +590,7 @@ class ExerisDomainProcessorTest {
 
                     @ExerisDomain(module = "sales", path = "/orders")
                     @Graph(nodeClass = "Order")
-                    public class Order {
+                    public class Order { private java.util.UUID id;
                         @GraphEdges({@GraphEdge(type = "OWNED_BY", targetLabel = "User")})
                         private String ownerId;
                     }
@@ -619,7 +619,7 @@ class ExerisDomainProcessorTest {
 
                     @ExerisDomain(module = "sales", path = "/orders")
                     @Graph(nodeClass = "Order")
-                    public class Order {
+                    public class Order { private java.util.UUID id;
                         private String reference;
                     }
                     """
@@ -647,7 +647,7 @@ class ExerisDomainProcessorTest {
                     import java.util.List;
                     
                     @ExerisDomain(module = "billing", path = "/invoices")
-                    public class Invoice {
+                    public class Invoice { private java.util.UUID id;
                         
                         @Field(label = "Invoice Number", required = true)
                         private String invoiceNumber;
@@ -700,7 +700,7 @@ class ExerisDomainProcessorTest {
                     import java.util.UUID;
 
                     @ExerisDomain(module = "sales", path = "/orders")
-                    public class Order {
+                    public class Order { private java.util.UUID id;
 
                         @Relationship(targetEntity = Object.class, displayField = "name",
                                 relationshipType = RelationshipType.ONE_TO_MANY)
@@ -741,7 +741,7 @@ class ExerisDomainProcessorTest {
                     import java.util.UUID;
 
                     @ExerisDomain(module = "sales", path = "/orders")
-                    public class Order {
+                    public class Order { private java.util.UUID id;
 
                         @Relationship(targetEntity = Object.class, displayField = "name",
                                 cascadeDelete = true)
@@ -783,7 +783,7 @@ class ExerisDomainProcessorTest {
                     import eu.exeris.sdk.annotation.Field;
 
                     @ExerisDomain(module = "billing", path = "/customers")
-                    public class Customer {
+                    public class Customer { private java.util.UUID id;
                         @Field(label = "Name")
                         private String name;
                     }
@@ -799,7 +799,7 @@ class ExerisDomainProcessorTest {
                     import java.util.UUID;
 
                     @ExerisDomain(module = "sales", path = "/orders")
-                    public class Order {
+                    public class Order { private java.util.UUID id;
 
                         // Explicit-UUID-FK style: the field type is UUID, but the
                         // relationship targets Customer — targetEntity must win.
@@ -843,7 +843,7 @@ class ExerisDomainProcessorTest {
                     
                     @ExerisDomain(module = "social", path = "/persons")
                     @Graph(nodeClass = "Person", syncToGraph = true)
-                    public class Person {
+                    public class Person { private java.util.UUID id;
                         
                         @Field(label = "Name", required = true)
                         private String name;
@@ -894,7 +894,7 @@ class ExerisDomainProcessorTest {
                         softDelete = true,
                         audited = true
                     )
-                    public class Product {}
+                    public class Product { private java.util.UUID id; }
                     """
             );
 
@@ -927,7 +927,7 @@ class ExerisDomainProcessorTest {
                     
                     @ExerisDomain(module = "banking", path = "/accounts")
                     @EventSourced(streamPrefix = "Account", snapshotThreshold = 50)
-                    public class Account {}
+                    public class Account { private java.util.UUID id; }
                     """
             );
 
@@ -960,7 +960,7 @@ class ExerisDomainProcessorTest {
                     
                     @ExerisDomain(module = "system", path = "/audit-logs")
                     @InternalApi(consumers = {"admin-service"}, rateLimit = 100)
-                    public class AuditLog {}
+                    public class AuditLog { private java.util.UUID id; }
                     """
             );
 
@@ -997,7 +997,7 @@ class ExerisDomainProcessorTest {
                     import eu.exeris.sdk.annotation.ActionParam;
                     
                     @ExerisDomain(module = "sales", path = "/orders")
-                    public class Order {
+                    public class Order { private java.util.UUID id;
                         
                         @Action(name = "cancel", label = "Cancel Order", path = "/{id}/cancel", roles = {"order:cancel"})
                         public void cancel(@ActionParam(label = "Reason", required = true) String reason) {}
@@ -1036,7 +1036,7 @@ class ExerisDomainProcessorTest {
                     import eu.exeris.sdk.annotation.Action;
 
                     @ExerisDomain(module = "tactics", path = "/squads")
-                    public class Squad {
+                    public class Squad { private java.util.UUID id;
 
                         // Bean-setter-shaped method: its simple name would collide with
                         // the generated setter — the action must be identified by `name`.
@@ -1081,7 +1081,7 @@ class ExerisDomainProcessorTest {
 
                     @ExerisDomain(module = "catalog", path = "/items",
                             dataScope = ExerisDomain.DataScope.TENANT)
-                    public class Item {
+                    public class Item { private java.util.UUID id;
                     }
                     """
             );
@@ -1106,7 +1106,7 @@ class ExerisDomainProcessorTest {
 
                     @ExerisDomain(module = "catalog", path = "/items",
                             dataScope = ExerisDomain.DataScope.UNSPECIFIED)
-                    public class Item {
+                    public class Item { private java.util.UUID id;
                     }
                     """
             );
@@ -1134,7 +1134,7 @@ class ExerisDomainProcessorTest {
                     import eu.exeris.sdk.annotation.ExerisDomain;
 
                     @ExerisDomain(module = "catalog", path = "/items", tenantScoped = true)
-                    public class Item {
+                    public class Item { private java.util.UUID id;
                     }
                     """
             );
@@ -1167,7 +1167,7 @@ class ExerisDomainProcessorTest {
 
                     @ExerisDomain(module = "catalog", path = "/items",
                             dataScope = ExerisDomain.DataScope.TENANT, tenantScoped = true)
-                    public class Item {
+                    public class Item { private java.util.UUID id;
                     }
                     """
             );
@@ -1194,7 +1194,7 @@ class ExerisDomainProcessorTest {
 
                     @ExerisDomain(module = "catalog", path = "/items",
                             dataScope = ExerisDomain.DataScope.GLOBAL, tenantScoped = true)
-                    public class Item {
+                    public class Item { private java.util.UUID id;
                     }
                     """
             );
@@ -1218,7 +1218,7 @@ class ExerisDomainProcessorTest {
 
                     @ExerisDomain(module = "catalog", path = "/items",
                             dataScope = ExerisDomain.DataScope.UNIVERSE, tenantScoped = %s)
-                    public class Item {
+                    public class Item { private java.util.UUID id;
                     }
                     """.formatted(tenantScoped)
             );
@@ -1253,7 +1253,7 @@ class ExerisDomainProcessorTest {
 
                     @ExerisDomain(module = "catalog", path = "/items",
                             dataScope = ExerisDomain.DataScope.UNIVERSE)
-                    public class Item {
+                    public class Item { private java.util.UUID id;
                     %s
                     }
                     """.formatted(fields));
@@ -1405,7 +1405,7 @@ class ExerisDomainProcessorTest {
 
                     @ExerisDomain(module = "catalog", path = "/items",
                             dataScope = ExerisDomain.DataScope.TENANT)
-                    public class Item {
+                    public class Item { private java.util.UUID id;
                         private UUID tenantId;
                         @SharedScope private UUID universeId;
                     }
@@ -1453,7 +1453,7 @@ class ExerisDomainProcessorTest {
 
                     @ExerisDomain(module = "catalog", path = "/items",
                             dataScope = ExerisDomain.DataScope.UNIVERSE, tenantScoped = true)
-                    public class Item {
+                    public class Item { private java.util.UUID id;
                     }
                     """
             );
@@ -1463,6 +1463,110 @@ class ExerisDomainProcessorTest {
             assertThat(compilation).failed();
             assertThat(compilation).hadErrorContaining("tenantScoped");
             assertThat(compilation).hadErrorCount(1);
+        }
+    }
+
+    @Nested
+    @DisplayName("an entity without an id field is refused (EXT-PROC-1015)")
+    class EntityWithoutIdFieldTests {
+
+        private static final String REFUSAL = "[Exeris] EXT-PROC-1015: ";
+
+        /** An entity with {@code attributes} appended to {@code @ExerisDomain}; the annotation is on line 6. */
+        private JavaFileObject workspace(String attributes, String body) {
+            return JavaFileObjects.forSourceString(
+                    "com.example.Workspace",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.Field;
+
+                    @ExerisDomain(module = "studio", path = "workspaces"%s)
+                    public class Workspace %s
+                    """.formatted(attributes, body));
+        }
+
+        @Test
+        @DisplayName("no id field: refused on the @ExerisDomain line, naming the type and the declaration to add")
+        void missingIdIsRefused() {
+            JavaFileObject source = workspace("", """
+                    {
+                        @Field(label = "Name", required = true) private String name;
+                    }""");
+
+            Compilation compilation = compileWithProcessor(source);
+
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorCount(1);
+            assertThat(compilation)
+                    .hadErrorContaining(REFUSAL + "@ExerisDomain type 'Workspace' declares no field 'id'. "
+                            + "The generated schema, repository, routes and Angular model all identify a "
+                            + "row by id, and primaryKeyField does not rename it. Declare "
+                            + "'private UUID id;' with its getter and setter.")
+                    .inFile(source)
+                    .onLine(6);
+        }
+
+        @Test
+        @DisplayName("an id field passes without a diagnostic")
+        void declaredIdPasses() {
+            Compilation compilation = compileWithProcessor(workspace("", """
+                    {
+                        private java.util.UUID id;
+                        @Field(label = "Name", required = true) private String name;
+                    }"""));
+
+            assertThat(compilation).succeededWithoutWarnings();
+        }
+
+        @Test
+        @DisplayName("an id inherited from a superclass passes: the generated Java reaches it through the accessors")
+        void inheritedIdPasses() {
+            JavaFileObject base = JavaFileObjects.forSourceString(
+                    "com.example.Identified",
+                    """
+                    package com.example;
+
+                    public abstract class Identified {
+                        private java.util.UUID id;
+                        public java.util.UUID getId() { return id; }
+                        public void setId(java.util.UUID id) { this.id = id; }
+                    }
+                    """);
+
+            Compilation compilation = compileWithProcessor(base, workspace("", """
+                    extends Identified {
+                        @Field(label = "Name", required = true) private String name;
+                    }"""));
+
+            assertThat(compilation).succeededWithoutWarnings();
+        }
+
+        @Test
+        @DisplayName("primaryKeyField does not stand in for id: no generator renames the key")
+        void primaryKeyFieldDoesNotReplaceId() {
+            Compilation compilation = compileWithProcessor(workspace(", primaryKeyField = \"key\"", """
+                    {
+                        private java.util.UUID key;
+                    }"""));
+
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorCount(1);
+            assertThat(compilation).hadErrorContaining(REFUSAL + "@ExerisDomain type 'Workspace' declares no field 'id'.");
+        }
+
+        @Test
+        @DisplayName("a static id is not a row's key and is refused")
+        void staticIdIsRefused() {
+            Compilation compilation = compileWithProcessor(workspace("", """
+                    {
+                        private static java.util.UUID id;
+                    }"""));
+
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorCount(1);
+            assertThat(compilation).hadErrorContaining(REFUSAL);
         }
     }
 
@@ -1665,8 +1769,7 @@ class ExerisDomainProcessorTest {
                     import eu.exeris.sdk.annotation.ExerisDomain;
 
                     @ExerisDomain(module = "empire", path = "/things"%s)
-                    public class %s {
-                    }
+                    public class %s { private java.util.UUID id; }
                     """.formatted(extraAttributes, name));
         }
 
@@ -1739,7 +1842,7 @@ class ExerisDomainProcessorTest {
                     import eu.exeris.sdk.annotation.Field;
 
                     @ExerisDomain(module = "catalog", path = "/items")
-                    public class Item {
+                    public class Item { private java.util.UUID id;
                         @Field(label = "Name", required = true)
                         private String name;
                     }
@@ -1767,7 +1870,7 @@ class ExerisDomainProcessorTest {
                     import eu.exeris.sdk.annotation.Validation;
 
                     @ExerisDomain(module = "catalog", path = "/items")
-                    public class Item {
+                    public class Item { private java.util.UUID id;
                         @Field(label = "Name")
                         @Validation(required = true)
                         private String name;
@@ -1801,7 +1904,7 @@ class ExerisDomainProcessorTest {
                     import eu.exeris.sdk.annotation.Validation;
 
                     @ExerisDomain(module = "catalog", path = "/items")
-                    public class Item {
+                    public class Item { private java.util.UUID id;
                         @Field(label = "Name", required = true)
                         @Validation(required = true)
                         private String name;
@@ -1832,7 +1935,7 @@ class ExerisDomainProcessorTest {
                     import eu.exeris.sdk.annotation.Validation;
 
                     @ExerisDomain(module = "catalog", path = "/items")
-                    public class Item {
+                    public class Item { private java.util.UUID id;
                         @Field(label = "Created At")
                         @Validation(validateOn = "CREATE")
                         private String createdAt;
@@ -1870,7 +1973,7 @@ class ExerisDomainProcessorTest {
                     import eu.exeris.sdk.annotation.Validation;
 
                     @ExerisDomain(module = "catalog", path = "/items")
-                    public class Item {
+                    public class Item { private java.util.UUID id;
                         @Field(label = "Modified At")
                         @Validation(validateOn = "UPDATE")
                         private String modifiedAt;
@@ -1904,7 +2007,7 @@ class ExerisDomainProcessorTest {
                     import eu.exeris.sdk.annotation.Validation;
 
                     @ExerisDomain(module = "catalog", path = "/items")
-                    public class Item {
+                    public class Item { private java.util.UUID id;
                         @Field(label = "Created At", inUpdate = false)
                         @Validation(validateOn = "CREATE")
                         private String createdAt;
@@ -1936,7 +2039,7 @@ class ExerisDomainProcessorTest {
                     import eu.exeris.sdk.annotation.Validation;
 
                     @ExerisDomain(module = "catalog", path = "/items")
-                    public class Item {
+                    public class Item { private java.util.UUID id;
                         @Field(label = "Mystery")
                         @Validation(validateOn = "MAYBE")
                         private String mystery;
@@ -1974,7 +2077,7 @@ class ExerisDomainProcessorTest {
                     import eu.exeris.sdk.annotation.Validation;
 
                     @ExerisDomain(module = "catalog", path = "/items")
-                    public class Item {
+                    public class Item { private java.util.UUID id;
                         @Field(label = "Email")
                         @Validation(email = true, minLength = 3)
                         private String email;
@@ -2006,17 +2109,23 @@ class ExerisDomainProcessorTest {
 
         /**
          * Parses the generated {@code exeris-metadata/<entity>.json} and returns
-         * its first {@code fields[]} entry as a JsonNode. Using JsonNode rather
-         * than asserting on raw string substrings makes the inCreate/inUpdate
-         * checks robust against {@code @JsonInclude(NON_DEFAULT)} dropping
-         * primitive-default values from the wire form.
+         * its first {@code fields[]} entry other than the {@code id} every entity
+         * declares, as a JsonNode. Using JsonNode rather than asserting on raw
+         * string substrings makes the inCreate/inUpdate checks robust against
+         * {@code @JsonInclude(NON_DEFAULT)} dropping primitive-default values
+         * from the wire form.
          */
         private JsonNode readFirstField(Compilation compilation, String entity) throws IOException {
             JavaFileObject metadataFile = compilation.generatedFile(
                     StandardLocation.CLASS_OUTPUT, "exeris-metadata/" + entity + ".json")
                     .orElseThrow();
             JsonNode root = new ObjectMapper().readTree(readContent(metadataFile));
-            return root.path("fields").get(0);
+            for (JsonNode field : root.path("fields")) {
+                if (!"id".equals(field.path("name").asText())) {
+                    return field;
+                }
+            }
+            throw new AssertionError("no field other than id in " + entity);
         }
     }
 
@@ -2047,7 +2156,7 @@ class ExerisDomainProcessorTest {
                     @DomainEvent(trigger = Trigger.FIELD_CHANGED,    topic = "orders.changed", field  = "status")
                     @DomainEvent(trigger = Trigger.ACTION,           topic = "orders.action",  action = "cancel")
                     @DomainEvent(trigger = Trigger.STATE_TRANSITION, topic = "orders.state")
-                    public class Order {
+                    public class Order { private java.util.UUID id;
                     }
                     """
             );
@@ -2128,7 +2237,7 @@ class ExerisDomainProcessorTest {
                     import eu.exeris.sdk.annotation.ExerisDomain;
 
                     @ExerisDomain(module = "core", path = "/widgets")
-                    public class Widget {
+                    public class Widget { private java.util.UUID id;
                         private String name;
                     }
                     """
@@ -2179,7 +2288,7 @@ class ExerisDomainProcessorTest {
 
                     @ExerisDomain(module = "core", path = "/accounts")
                     @NavMenu(label = "Accounts")
-                    public class Account {
+                    public class Account { private java.util.UUID id;
                         private String name;
                     }
                     """
@@ -2213,7 +2322,7 @@ class ExerisDomainProcessorTest {
                     import eu.exeris.sdk.annotation.ExerisDomain;
 
                     @ExerisDomain(module = "core", path = "/accounts")
-                    public class Account {
+                    public class Account { private java.util.UUID id;
                         @Derived(expression = "first + last")
                         private String fullName;
                     }
@@ -2250,7 +2359,7 @@ class ExerisDomainProcessorTest {
 
                     @ExerisDomain(module = "cms", path = "/articles")
                     @Channel(messageType = "ArticleEdit")
-                    public class Article {
+                    public class Article { private java.util.UUID id;
                     }
                     """
             );
@@ -2286,7 +2395,7 @@ class ExerisDomainProcessorTest {
 
                     @ExerisDomain(module = "cms", path = "/articles")
                     @Channel
-                    public class Article {
+                    public class Article { private java.util.UUID id;
                     }
                     """
             );
@@ -2364,7 +2473,7 @@ class ExerisDomainProcessorTest {
                     import eu.exeris.sdk.annotation.QueryParam;
 
                     @ExerisDomain(module = "core", path = "/accounts")
-                    public class Account {
+                    public class Account { private java.util.UUID id;
                         private String name;
 
                         @Action(name = "search", label = "Search")
@@ -2431,7 +2540,7 @@ class ExerisDomainProcessorTest {
                             @ExerisDomain(module = "core", path = "/orders")
                             @DomainEvent(trigger = Trigger.CREATE, topic = "orders.created")
                             @DomainEvent(trigger = Trigger.DELETE, topic = "orders.deleted")
-                            public class Subject {
+                            public class Subject { private java.util.UUID id;
                                 private String reference;
                             }
                             """));
@@ -2468,7 +2577,7 @@ class ExerisDomainProcessorTest {
 
                     @ExerisDomain(module = "sales", path = "/orders")
                     @Graph(nodeClass = "Order")
-                    public class Order {
+                    public class Order { private java.util.UUID id;
                         @GraphEdge(type = "OWNED_BY", targetLabel = "User")
                         private String ownerId;
                     }
@@ -2502,7 +2611,7 @@ class ExerisDomainProcessorTest {
 
                     @ExerisDomain(module = "core", path = "/accounts")
                     @NavMenu(label = "Accounts")
-                    public class Account {
+                    public class Account { private java.util.UUID id;
                         private String name;
                     }
                     """
@@ -2529,7 +2638,7 @@ class ExerisDomainProcessorTest {
                     import eu.exeris.sdk.annotation.Field;
 
                     @ExerisDomain(module = "core", path = "/accounts")
-                    public class Account {
+                    public class Account { private java.util.UUID id;
                         @Field(label = "Name")
                         private String name;
 
@@ -2570,7 +2679,7 @@ class ExerisDomainProcessorTest {
 
                     @ExerisDomain(module = "sales", path = "/orders"%s)
                     %s
-                    public class Order {
+                    public class Order { private java.util.UUID id;
                     %s
                     }
                     """.formatted(domainExtras, typeAnnotations, methods));
@@ -2774,7 +2883,7 @@ class ExerisDomainProcessorTest {
                     import eu.exeris.sdk.annotation.ExerisDomain;
 
                     @ExerisDomain(module = "sales", path = "/orders")
-                    public class Order {
+                    public class Order { private java.util.UUID id;
                     %s
                     }
                     """.formatted(methods));
@@ -2920,7 +3029,7 @@ class ExerisDomainProcessorTest {
 
                             @ExerisDomain(module = "billing", path = "/invoices",
                                           primaryKeyField = "invoiceNo")
-                            public class Invoice {
+                            public class Invoice { private java.util.UUID id;
                                 private String invoiceNo;
                             }
                             """));
@@ -2960,7 +3069,7 @@ class ExerisDomainProcessorTest {
 
                     @ExerisDomain(module = "core", path = "/orders",
                             roles = {"ROLE_MANAGER"}, permissions = {"order:read"})
-                    public class Order {
+                    public class Order { private java.util.UUID id;
                         @Action(name = "approve", label = "Approve",
                                 roles = {"ROLE_MANAGER"}, permissions = {"order:approve"})
                         public void approve() {
@@ -3000,7 +3109,7 @@ class ExerisDomainProcessorTest {
                     import eu.exeris.sdk.annotation.ActionParam;
 
                     @ExerisDomain(module = "core", path = "/orders")
-                    public class Order {
+                    public class Order { private java.util.UUID id;
                         @Action(name = "approve", label = "Approve")
                         public void approve(
                                 @ActionParam(label = "Reason", required = false) String reason) {
@@ -3036,7 +3145,7 @@ class ExerisDomainProcessorTest {
 
                     @ExerisDomain(module = "core", path = "/accounts")
                     @EventSourced
-                    public class Account {
+                    public class Account { private java.util.UUID id;
                         private String name;
                     }
                     """
@@ -3069,7 +3178,7 @@ class ExerisDomainProcessorTest {
 
                     @ExerisDomain(module = "core", path = "/accounts")
                     @EventSourced
-                    public class Account {
+                    public class Account { private java.util.UUID id;
                         private String name;
                     }
                     """
@@ -3097,7 +3206,7 @@ class ExerisDomainProcessorTest {
                     import eu.exeris.sdk.annotation.Field;
 
                     @ExerisDomain(module = "core", path = "/widgets")
-                    public class Widget {
+                    public class Widget { private java.util.UUID id;
                         @Field(label = "Name")
                         private String name;
                     }
@@ -3125,7 +3234,7 @@ class ExerisDomainProcessorTest {
                     import eu.exeris.sdk.annotation.Field;
 
                     @ExerisDomain(module = "core", path = "/widgets")
-                    public class Widget {
+                    public class Widget { private java.util.UUID id;
                         @Field(label = "Name", dataType = "text")
                         private String name;
                     }
@@ -3380,7 +3489,7 @@ class ExerisDomainProcessorTest {
                     @ExerisDomain(module = "core", path = "/documents")
                     @EventSourced
                     @RouteAccess(RouteAccess.Level.AUTHENTICATED)
-                    public class Document {
+                    public class Document { private java.util.UUID id;
                         @Blob
                         private byte[] content;
 
@@ -3408,7 +3517,7 @@ class ExerisDomainProcessorTest {
                     import eu.exeris.sdk.annotation.ExerisDomain;
 
                     @ExerisDomain(module = "core", path = "/documents")
-                    public class Document {
+                    public class Document { private java.util.UUID id;
                         @Blob
                         private byte[] content;
                     }
@@ -3426,7 +3535,7 @@ class ExerisDomainProcessorTest {
                     import eu.exeris.sdk.annotation.Schedule;
 
                     @ExerisDomain(module = "core", path = "/documents")
-                    public class Document {
+                    public class Document { private java.util.UUID id;
                         @Schedule(every = "PT1H")
                         public void sweep() {
                         }
@@ -3449,7 +3558,7 @@ class ExerisDomainProcessorTest {
 
                     @ExerisDomain(module = "core", path = "/orders", apiVersion = "v1")
                     @Saga(name = "OrderApproval", description = "Approves an order end to end")
-                    public class Order {
+                    public class Order { private java.util.UUID id;
                         @Action(name = "approve", label = "Approve", path = "/{id}/approve",
                                 httpMethod = "GET")
                         public void approve(
@@ -3505,7 +3614,7 @@ class ExerisDomainProcessorTest {
                     import eu.exeris.sdk.annotation.Action;
 
                     @ExerisDomain(module = "core", path = "/orders")
-                    public class Order {
+                    public class Order { private java.util.UUID id;
                         @Action(name = "approve", label = "Approve")
                         public void approve() {
                         }
@@ -3525,7 +3634,7 @@ class ExerisDomainProcessorTest {
                     import eu.exeris.sdk.annotation.ActionParam;
 
                     @ExerisDomain(module = "core", path = "/orders")
-                    public class Order {
+                    public class Order { private java.util.UUID id;
                         @Action(name = "approve", label = "Approve")
                         public void approve(
                                 @ActionParam(label = "Reason",
@@ -3555,7 +3664,7 @@ class ExerisDomainProcessorTest {
                     import eu.exeris.sdk.annotation.Field;
 
                     @ExerisDomain(module = "sales", path = "/orders")
-                    public class Order {
+                    public class Order { private java.util.UUID id;
                         @Field(label = "Number")
                         private String number;
                     }
@@ -4022,7 +4131,7 @@ class ExerisDomainProcessorTest {
 
                     @ExerisDomain(module = "sales", path = "/orders",
                             updatedAtField = "modifiedAt", tenantIdField = "orgId")
-                    public class Order {
+                    public class Order { private java.util.UUID id;
                         private String name;
                     }
                     """
@@ -4057,7 +4166,7 @@ class ExerisDomainProcessorTest {
                     import eu.exeris.sdk.annotation.ExerisDomain;
 
                     @ExerisDomain(module = "sales", path = "/orders")
-                    public class Order {
+                    public class Order { private java.util.UUID id;
                         private String name;
                     }
                     """
@@ -4082,7 +4191,7 @@ class ExerisDomainProcessorTest {
                     import eu.exeris.sdk.annotation.ExerisDomain;
 
                     @ExerisDomain(module = "sales", path = "/orders", primaryKeyField = "id")
-                    public class Order {
+                    public class Order { private java.util.UUID id;
                         private String name;
                     }
                     """
@@ -4128,7 +4237,7 @@ class ExerisDomainProcessorTest {
                     import eu.exeris.sdk.annotation.system.AuditUpdatedBy;
 
                     @ExerisDomain(module = "sales", path = "/orders")
-                    public class Order {
+                    public class Order { private java.util.UUID id;
                         @TenantId private String orgId;
                         @Version private long rev;
                         @SoftDelete private boolean archived;
@@ -4168,7 +4277,7 @@ class ExerisDomainProcessorTest {
                     import eu.exeris.sdk.annotation.system.TenantId;
 
                     @ExerisDomain(module = "sales", path = "/orders", tenantIdField = "orgId")
-                    public class Order {
+                    public class Order { private java.util.UUID id;
                         @TenantId private String orgId;
                     }
                     """));
@@ -4191,7 +4300,7 @@ class ExerisDomainProcessorTest {
                     import eu.exeris.sdk.annotation.system.TenantId;
 
                     @ExerisDomain(module = "sales", path = "/orders", tenantIdField = "somethingElse")
-                    public class Order {
+                    public class Order { private java.util.UUID id;
                         @TenantId private String orgId;
                     }
                     """));
@@ -4212,7 +4321,7 @@ class ExerisDomainProcessorTest {
                     import eu.exeris.sdk.annotation.system.TenantId;
 
                     @ExerisDomain(module = "sales", path = "/orders")
-                    public class Order {
+                    public class Order { private java.util.UUID id;
                         @TenantId private String orgId;
                         @TenantId private String otherOrgId;
                     }
@@ -4234,7 +4343,7 @@ class ExerisDomainProcessorTest {
                     import eu.exeris.sdk.annotation.system.TenantId;
 
                     @ExerisDomain(module = "sales", path = "/orders")
-                    public class Order {
+                    public class Order { private java.util.UUID id;
                         @TenantId private String orgId;
                         @TenantId private String otherOrgId;
                         @TenantId private String thirdOrgId;
@@ -4263,7 +4372,7 @@ class ExerisDomainProcessorTest {
                     import eu.exeris.sdk.annotation.ExerisDomain;
 
                     @ExerisDomain(module = "sales", path = "/orders")
-                    public class Order {
+                    public class Order { private java.util.UUID id;
                         private String name;
                     }
                     """));
@@ -4325,7 +4434,7 @@ class ExerisDomainProcessorTest {
                             import eu.exeris.sdk.annotation.system.SoftDelete;
 
                             @ExerisDomain(module = "sales", path = "/orders")
-                            public class Order {
+                            public class Order { private java.util.UUID id;
                                 @SoftDelete(retentionPeriod = "P30D") private boolean archived;
                             }
                             """));
@@ -4355,7 +4464,7 @@ class ExerisDomainProcessorTest {
                             import eu.exeris.sdk.annotation.system.SoftDeletedBy;
 
                             @ExerisDomain(module = "sales", path = "/orders")
-                            public class Order {
+                            public class Order { private java.util.UUID id;
                                 @SoftDelete private boolean archived;
                                 @SoftDeleteTimestamp(clearOnRestore = false) private String archivedAt;
                                 @SoftDeletedBy(clearOnRestore = false) private String archivedBy;
@@ -4398,7 +4507,7 @@ class ExerisDomainProcessorTest {
                 @DomainEvent(name = "OrderBoth", trigger = Trigger.DELETE, topic = "orders.both",
                         includeFields = {"amount", "orderNumber", "customerEmail"},
                         excludeFields = {"customerEmail"})
-                public class Order {
+                public class Order { private java.util.UUID id;
                     @Field(label = "Order Number", required = true) private String orderNumber;
                     @Field(label = "Amount") private java.math.BigDecimal amount;
                     @Field(label = "Customer Email") private String customerEmail;
@@ -4574,7 +4683,7 @@ class ExerisDomainProcessorTest {
                     import eu.exeris.sdk.annotation.UI;
 
                     @ExerisDomain(module = "core", path = "/widgets")
-                    public class Widget {
+                    public class Widget { private java.util.UUID id;
                         @Field(label = "Name")
                         @UI(placeholder = "Your name", gridSpan = 6)
                         private String name;
@@ -4606,7 +4715,7 @@ class ExerisDomainProcessorTest {
                     @UI(listView = false, detailView = false, createForm = false, editForm = false,
                         searchable = false, filterable = false,
                         exportable = true, icon = "box", placeholder = "x")
-                    public class Widget {
+                    public class Widget { private java.util.UUID id;
                         @Field(label = "Name")
                         private String name;
                     }
@@ -4638,7 +4747,7 @@ class ExerisDomainProcessorTest {
 
                     @ExerisDomain(module = "core", path = "/widgets")
                     @UI(listView = false, searchable = false)
-                    public class Widget {
+                    public class Widget { private java.util.UUID id;
                         @Field(label = "Name")
                         private String name;
                     }
@@ -4663,7 +4772,7 @@ class ExerisDomainProcessorTest {
 
                             @ExerisDomain(module = "core", path = "/widgets")
                             @UI(listView = false)
-                            public class Widget {
+                            public class Widget { private java.util.UUID id;
                                 @Field(label = "Name", inList = true)
                                 @UI(placeholder = "x")
                                 private String name;
@@ -4688,7 +4797,7 @@ class ExerisDomainProcessorTest {
                     import eu.exeris.sdk.annotation.Validation;
 
                     @ExerisDomain(module = "core", path = "/widgets")
-                    public class Widget {
+                    public class Widget { private java.util.UUID id;
                         @Field(label = "Name", %s)
                         private String name;
                     }
@@ -4710,7 +4819,7 @@ class ExerisDomainProcessorTest {
                     import eu.exeris.sdk.annotation.Field;
 
                     @ExerisDomain(module = "core", path = "/widgets")
-                    public class Widget {
+                    public class Widget { private java.util.UUID id;
                         @Field(label = "Name", description = "d", required = true, unique = true,
                                searchable = true, sortable = true, filterable = true,
                                readOnly = true, inCreate = false, inUpdate = false,
@@ -4738,7 +4847,7 @@ class ExerisDomainProcessorTest {
                     import eu.exeris.sdk.annotation.%1$s;
 
                     @ExerisDomain(module = "core", path = "/widgets")
-                    public class Widget {
+                    public class Widget { private java.util.UUID id;
                         @Field(label = "Name")
                         @%1$s(name = "general")
                         private String name;
