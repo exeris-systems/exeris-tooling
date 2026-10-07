@@ -3893,6 +3893,13 @@ keeps compiling where it still uses one. 0.10.0 removes them.
   tag that commit → deploy (Maven Central, from 0.9.0) → a follow-up PR opens the next cycle at `X+1-SNAPSHOT`. Separately and still
   binding: no cross-repo dependency may be a SNAPSHOT at a cut — release upstream first, pin the
   final, then tag.
+- **MIGRATION's open train is assembled at the cut.** Each change writes its consumer step as one
+  file under `docs/migration/<version>/` instead of editing `docs/MIGRATION-0.x-to-1.0.md`, so open
+  pull requests do not conflict on it ([format](docs/migration/README.md)); `build.yml` checks every
+  fragment. The release PR runs `python3 tools/migration/assemble-migration.py --release <version>`,
+  which inlines the fragments into the train in filename order and deletes them, and
+  `tools/release-readiness/release-readiness.sh` fails a release whose fragments remain. The
+  next-cycle PR opens the next train's heading and marker block.
 - **`@exeris/codegen-ts` versions in lockstep with the Maven reactor.** One tag `vX.Y.Z` releases
   both, so `exeris-codegen-ts/package.json` (and its `package-lock.json`) carries the root POM's
   project version at every commit, `-SNAPSHOT` line included. Both the release PR and the
