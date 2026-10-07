@@ -107,6 +107,8 @@ class RelationshipSqlE2ETest {
                 @ExerisDomain(module = "sales", path = "/customers")
                 public class Customer {
 
+                    private java.util.UUID id;
+
                     @Field(label = "Name")
                     private String name;
                 }
@@ -121,6 +123,8 @@ class RelationshipSqlE2ETest {
                 @ExerisDomain(module = "sales", path = "/carriers")
                 public class Carrier {
 
+                    private java.util.UUID id;
+
                     @Field(label = "Name")
                     private String name;
                 }
@@ -134,6 +138,8 @@ class RelationshipSqlE2ETest {
 
                 @ExerisDomain(module = "sales", path = "/order-items")
                 public class OrderItem {
+
+                    private java.util.UUID id;
 
                     @Field(label = "Description")
                     private String description;
@@ -153,6 +159,8 @@ class RelationshipSqlE2ETest {
 
                 @ExerisDomain(module = "sales", path = "/orders")
                 public class Order {
+
+                    private java.util.UUID id;
 
                     @Field(label = "Order Number")
                     private String orderNumber;
