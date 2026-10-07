@@ -603,6 +603,20 @@ export function isTenantPartitioned(metadata: Pick<DomainMetadata, 'dataScope' |
 }
 
 /**
+ * The field that holds a row's owning tenant, or `undefined` for a GLOBAL entity:
+ * `systemFields.tenantIdField` when it is non-blank, else `tenantId`, whether or not the entity
+ * declares a block. The TS twin of the Java side's `DataScopeSupport.ownerFieldName`, so the
+ * TypeScript DTOs and the emitted OpenAPI agree on which field the server owns.
+ */
+export function ownerFieldName(
+  metadata: Pick<DomainMetadata, 'dataScope' | 'tenantScoped' | 'systemFields'>,
+): string | undefined {
+  if (!isTenantPartitioned(metadata)) return undefined;
+  const declared = metadata.systemFields?.tenantIdField;
+  return declared === undefined || declared.trim() === '' ? 'tenantId' : declared;
+}
+
+/**
  * Parse a processor `view_*.json` (the ViewJson wrapper) and return the inner
  * ViewMetadata. The wrapper's `name` is the view's own name (identical to
  * `view.name` by construction), so the inner record carries the identity the

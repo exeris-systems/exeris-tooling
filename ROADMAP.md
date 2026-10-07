@@ -3871,14 +3871,14 @@ keeps compiling where it still uses one. 0.10.0 removes them.
 - [x] **The default-table-change warning (T6).** It exists for the 0.8 → 0.9 regeneration, and it
       warns on every build of an entity whose derived table moved, including in a project that never
       had the old table. Delete `warnDefaultTableChange` and its tests.
-- [ ] **`restore()` on a soft-delete entity's `<Entity>Service` and `<Entity>Store` (T58).** Delete
+- [x] **`restore()` on a soft-delete entity's `<Entity>Service` and `<Entity>Store` (T58).** Delete
       its emission from `service-gen.ts` and `store-gen.ts`, the conditional `throwError` import,
       and `RESTORE_UNSUPPORTED`.
-- [ ] **`tenantId` in the DTOs of a tenant-partitioned entity with no `systemFields` block (T36).**
+- [x] **`tenantId` in the DTOs of a tenant-partitioned entity with no `systemFields` block (T36).**
       Delete `deprecatedDtoOwner` and `DEPRECATED_OWNER_DOC`, and add the owner to
       `systemFieldNames`' no-block branch, so the `…Create`/`…Update` types and the create schema
       omit it as the OpenAPI does.
-- [ ] **`apiVersion` in the emitted environment files (T38).** Delete it from
+- [x] **`apiVersion` in the emitted environment files (T38).** Delete it from
       `generateEnvironmentFile`, `resolveApiSettings` and the KERNEL strategy's `ClientConfig`.
 
 ## Versioning policy

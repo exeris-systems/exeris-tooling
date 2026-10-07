@@ -15,7 +15,6 @@ import type { DomainMetadata, ViewMetadata } from '../../models/domain-model.js'
 import type { GeneratorConfig } from '../../config.js';
 import { DslMapper } from '../../models/dsl-mapper.js';
 import { modelTypeName } from '../../models/model-naming.js';
-import { getStrategy } from '../../core/backend-strategy.js';
 import {
   viewRoutePath,
   viewRouteConstName,
@@ -878,14 +877,12 @@ function getEntityIcon(entityName: string): string {
 
 function generateEnvironmentFile(params: {
   production: boolean;
-  api: { apiUrl: string; apiVersion: string } | null;
+  api: { apiUrl: string } | null;
 }): string {
   const { production, api } = params;
   const apiEntries = api
     ? `
-  apiUrl: '${api.apiUrl}',
-  /** @deprecated No generated code reads it. exeris-tooling 0.10.0 stops emitting it. */
-  apiVersion: '${api.apiVersion}',`
+  apiUrl: '${api.apiUrl}',`
     : '';
   return `/**
  * Angular Environment Configuration
@@ -902,11 +899,6 @@ export const environment = {
  * `environment.apiUrl` states the prefix the emitted services actually use, which is
  * `config.apiBasePath` and nothing else — `service-gen` interpolates that value directly.
  */
-function resolveApiSettings(config: GeneratorConfig): { apiUrl: string; apiVersion: string } {
-  const strategy = getStrategy(config.backend);
-  const clientConfig = strategy.getClientConfig();
-  return {
-    apiUrl: config.apiBasePath,
-    apiVersion: clientConfig.apiVersion ?? 'v1',
-  };
+function resolveApiSettings(config: GeneratorConfig): { apiUrl: string } {
+  return { apiUrl: config.apiBasePath };
 }
