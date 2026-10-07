@@ -123,9 +123,39 @@ put settings you want to keep.
   "apiBasePath": "",
   "peers": [
     { "name": "billing", "path": "../billing-service/target/contract" }
-  ]
+  ],
+  "customBlocks": {
+    "StarRating": { "import": "../blocks/star-rating.component", "symbol": "StarRatingComponent" }
+  },
+  "viewHeading": "title"
 }
 ```
+
+### `customBlocks`: the components behind `@View` CUSTOM blocks
+
+A CUSTOM block renders the element its `customType` names, kebab-cased (`StarRating` →
+`<star-rating>`). The emitted page imports the component behind it from the `customBlocks` entry
+keyed by that `customType`, exactly as the IR writes it, and lists the class in its `imports`.
+`import` is written verbatim into the page, which is emitted at `src/app/pages/<view>.component.ts`,
+so a relative specifier resolves from there. The component's selector must be the kebab-cased
+`customType`.
+
+A block's `@Block(props)` is JSON. It becomes a field of the page (`blockProps1`, `blockProps2`, …
+in template order) bound as `[props]="blockProps<N>"`, so the component declares an input named
+`props`. A block without props gets no binding.
+
+Generation fails, naming the view, the block and `customBlocks`, when a view uses a CUSTOM block
+that declares no `customType`, whose `customType` has no entry, or whose props are not valid JSON,
+and when `customBlocks` maps one class name (`symbol`) from two different modules. This option is file-only; it
+has no CLI flag.
+
+### `viewHeading`: the heading of a `@View` page
+
+`"title"`, the default, heads every emitted `@View` page with an `<h1>` holding the view's `title`,
+or its name when it declares none. `"none"` emits no `<h1>`, for pages whose own blocks carry the
+headline, such as a HERO with one; the rest of the page is unchanged. Either way the page's route
+keeps the view's `title`, which sets the document title, and the navigation label stays the same.
+The option applies to every `@View` page of the run. It is file-only; it has no CLI flag.
 
 ## Peer contracts (mesh)
 
