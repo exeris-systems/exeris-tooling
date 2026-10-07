@@ -278,6 +278,13 @@ def check(root: Path) -> tuple[Findings, dict[str, list[Fragment]], str, dict[st
     text = migration.read_text(encoding="utf-8")
     blocks = train_versions(text, findings, MIGRATION)
     trains = collect(root, findings)
+    for version, (_, end) in blocks.items():
+        following = re.search(r"^## ", text[end:], re.M)
+        tail = text[end:end + following.start()] if following else text[end:]
+        for stray in re.finditer(r"^### .*$", tail, re.M):
+            findings.add(MIGRATION, f"the open {version} train holds a step written into {MIGRATION} "
+                                    f"('{stray.group(0)[4:]}'); a step of an open train is a fragment "
+                                    f"in {FRAGMENTS}/{version}/")
     for version, fragments in trains.items():
         if fragments and version not in blocks:
             findings.add(FRAGMENTS / version,

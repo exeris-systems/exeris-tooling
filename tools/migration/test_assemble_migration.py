@@ -150,6 +150,16 @@ class CheckTest(unittest.TestCase):
         (self.repo.root / "docs" / "migration" / "java-01-a.md").write_text(FRONT + "### A\n")
         self.assertFails("goes in its version's directory")
 
+    def test_step_written_into_an_open_train_is_refused(self):
+        stray = MIGRATION.replace("<!-- END migration-fragments 0.10.0 -->\n",
+                                  "<!-- END migration-fragments 0.10.0 -->\n\n### Written here\n\nText.\n", 1)
+        (self.repo.root / am.MIGRATION).write_text(stray)
+        self.assertFails("holds a step written into")
+
+    def test_steps_of_a_closed_train_stay(self):
+        rc, _, err = self.repo.run("--check")
+        self.assertEqual(0, rc, err)
+
 
 class ReleaseTest(unittest.TestCase):
     def setUp(self):
