@@ -205,13 +205,16 @@ recorded every file they produced, including files they skipped because they alr
 on the first run with such a manifest an entry is owned only when the file already holds what this
 run generates, starts with the header the generator writes (its provenance line or its do-not-edit
 notice, within the first 10 lines), or is a seed file. A generated file whose content changed is
-therefore rewritten as usual; a hand-written file at a generated path, which has no such header, is
-kept and dropped from the manifest. The run writes the manifest in the current format.
+therefore rewritten as usual, and deleted when no longer generated; a hand-written file at a
+generated path, which has no such header, is kept and dropped from the manifest, generated or not.
+A file copied from generated output keeps the header and is treated as generated. The run writes
+the manifest in the current format.
 
 **A missing or empty metadata directory** generates and deletes nothing: a wrong `--input`, or a
 `mvn clean` without a compile after it, must not empty the output tree. A missing directory fails
-the run. To remove everything after deleting the last entity and view, delete the generated files
-yourself.
+the run. This differs from the Java `OutputWriter`, for which a run with no entities is a valid
+state that prunes the tree. To remove everything after deleting the last entity and view, delete
+the generated files yourself.
 
 `--dry-run` lists what each file would get (create, rewrite, unchanged, keep, skip) and every file
 the run would prune or release, and changes nothing.

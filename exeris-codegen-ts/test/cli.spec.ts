@@ -101,6 +101,18 @@ describe('exeris-gen generate', () => {
     expect(existsSync(join(work, 'out', 'package.json'))).toBe(true);
   });
 
+  it('names the files it releases in the summary', () => {
+    view(join(work, 'meta'), 'About');
+    generate('-i', 'meta', '-o', 'out');
+
+    const run = generate('-i', 'meta', '-o', 'out', '--no-scaffold');
+
+    expect(run.status).toBe(0);
+    expect(run.output).toMatch(/Released: \d+ file\(s\) \(kept, no longer generated\)/);
+    expect(run.output).toContain('Released: package.json');
+    expect(existsSync(join(work, 'out', 'package.json'))).toBe(true);
+  });
+
   it('shows a file a pre-ownership manifest lists but the run does not take over, under --dry-run', () => {
     view(join(work, 'meta'), 'About');
     mkdirSync(join(work, 'out', 'pages'), { recursive: true });

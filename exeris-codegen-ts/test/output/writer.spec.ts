@@ -254,6 +254,29 @@ describe('a manifest without the ownership line', () => {
     expect(plan[0].action).toBe('skip-unowned');
   });
 
+  it('releases, not deletes, a listed file without the header that the run no longer produces', () => {
+    onDisk('pages/about.component.ts', 'hand-written');
+    legacyManifest('pages/about.component.ts');
+
+    expect(planOrphans(out, [])).toEqual({ prune: [], release: ['pages/about.component.ts'] });
+    const { pruned, released } = writeGeneratedFiles(out, [], keep);
+
+    expect(pruned).toBe(0);
+    expect(released).toEqual(['pages/about.component.ts']);
+    expect(read('pages/about.component.ts')).toBe('hand-written');
+    expect(readManifest(out).has('pages/about.component.ts')).toBe(false);
+  });
+
+  it('prunes a listed file with the header that the run no longer produces', () => {
+    onDisk('pages/about.component.ts', `${fileHeader({ title: 'About Page Component' })}\n`);
+    legacyManifest('pages/about.component.ts');
+
+    const { pruned } = writeGeneratedFiles(out, [], keep);
+
+    expect(pruned).toBe(1);
+    expect(existsSync(join(out, 'pages/about.component.ts'))).toBe(false);
+  });
+
   it('adopts a listed file whose content is what the run produces', () => {
     onDisk('pages/about.component.ts', 'generated');
     legacyManifest('pages/about.component.ts');

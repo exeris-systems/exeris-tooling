@@ -78,6 +78,8 @@ export interface WriteResult {
   plan: PlannedWrite[];
   /** Owned files a previous run wrote and this run no longer produces, deleted. */
   pruned: number;
+  /** Previous entries this run no longer produces, kept on disk and dropped from the manifest. */
+  released: string[];
 }
 
 /** Decides what happens to each file, reading the disk and the previous manifest only. */
@@ -161,6 +163,7 @@ export function writeGeneratedFiles(
     throw error;
   }
 
+  const { release: released } = planOrphans(outputPath, files, options.seedPaths);
   const pruned = pruneOrphansAndWriteManifest(
     outputPath,
     files.map((file) => file.path),
@@ -169,5 +172,5 @@ export function writeGeneratedFiles(
       seedPaths: options.seedPaths,
     },
   );
-  return { plan, pruned };
+  return { plan, pruned, released };
 }

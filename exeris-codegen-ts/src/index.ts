@@ -231,7 +231,7 @@ async function runGenerate(config: GeneratorConfig): Promise<void> {
     // differs, an owned seed file is kept, and an existing file the manifest does not record is
     // replaced only under --overwrite. Orphans are pruned, orphaned seeds released, and this run's
     // manifest recorded.
-    const { plan, pruned } = writeGeneratedFiles(outputPath, generatedFiles, {
+    const { plan, pruned, released } = writeGeneratedFiles(outputPath, generatedFiles, {
       overwrite: config.overwrite,
       seedPaths: SEED_PATHS,
     });
@@ -264,6 +264,12 @@ async function runGenerate(config: GeneratorConfig): Promise<void> {
     }
     if (pruned > 0) {
       console.log(pc.yellow('Pruned:'), pruned, 'orphaned file(s)');
+    }
+    if (released.length > 0) {
+      console.log(pc.yellow('Released:'), released.length, 'file(s) (kept, no longer generated)');
+      for (const path of released) {
+        console.log(pc.dim('  Released:'), path);
+      }
     }
   }
 

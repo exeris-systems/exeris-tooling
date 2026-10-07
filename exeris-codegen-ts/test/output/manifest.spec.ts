@@ -139,7 +139,7 @@ describe('pruneOrphansAndWriteManifest (T13 — output-tree ownership)', () => {
   const WRITTEN = HEADER + '# ownership: written\n';
 
   function writeManifest(...entries: string[]): void {
-    writeFileSync(join(out, MANIFEST_NAME), HEADER + entries.map((e) => `${e}\n`).join(''));
+    writeFileSync(join(out, MANIFEST_NAME), WRITTEN + entries.map((e) => `${e}\n`).join(''));
   }
 
   it('a previous manifest entry ./package.json and a produced package.json are the same file', () => {

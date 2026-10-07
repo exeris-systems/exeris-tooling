@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, unlinkSync, rmdirSync, lstatSync, type Stats } from 'node:fs';
 import { join, dirname, resolve, sep } from 'node:path';
+import { carriesGeneratorMarker } from '../generators/file-header.js';
 
 /**
  * Name of the per-output-tree manifest file (mirrors the Java
@@ -117,7 +118,8 @@ export interface PrunePlan {
   readonly prune: string[];
   /**
    * Entries dropped from the manifest and left on disk: a seed file (written once for the
-   * consumer to edit), or a path that is a link or is reached through one. Sorted, canonical.
+   * consumer to edit), a path that is a link or is reached through one, or an entry of a 0.9.x
+   * manifest whose file lacks the generator header. Sorted, canonical.
    */
   readonly release: string[];
 }
@@ -140,7 +142,8 @@ export function planPrune(
   const prune: string[] = [];
   const release: string[] = [];
 
-  for (const rel of [...readManifestState(outputPath).entries].sort()) {
+  const manifest = readManifestState(outputPath);
+  for (const rel of [...manifest.entries].sort()) {
     if (produced.has(rel) || rel === MANIFEST_NAME) continue;
     const full = resolve(join(outputPath, rel));
     // Defence in depth (mirrors the Java OutputWriter): a tampered/corrupted
@@ -151,7 +154,10 @@ export function planPrune(
     if (seedPaths.has(rel) || stat.isSymbolicLink() || throughSymlink(outputPath, rel)) {
       release.push(rel);
     } else if (stat.isFile()) {
-      prune.push(rel);
+      // A 0.9.x entry may name a hand-written file that release skipped: it is deleted only when it
+      // starts with the header the generator writes.
+      const proven = !manifest.legacy || carriesGeneratorMarker(readFileSync(full, 'utf-8'));
+      (proven ? prune : release).push(rel);
     }
   }
   return { prune, release };
