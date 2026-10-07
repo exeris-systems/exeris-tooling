@@ -239,11 +239,12 @@
 
                     <!--
                         Central requires a javadoc jar beside every jar it accepts; it does not
-                        inspect its content. doclint is off and failOnError false because no
-                        javadoc gate holds these modules' prose, and the ability to publish must not
-                        depend on ungated prose. What does gate the release is the jar's presence:
-                        tools/release-readiness fails a published jar with no javadoc jar beside it,
-                        which is where a javadoc run that failed quietly here surfaces.
+                        inspect its content. doclint is off and failOnError false because the
+                        javadoc gate (.github/workflows/javadoc.yml) holds only the Java files a
+                        pull request changes, not whole modules, and the ability to publish must not
+                        depend on prose no gate has read. What does gate the release is the jar's
+                        presence: tools/release-readiness fails a published jar with no javadoc jar
+                        beside it, which is where a javadoc run that failed quietly here surfaces.
 
                         The three OpenJDK contract tags are registered because an unregistered
                         custom tag under `doclint none` is a swallowed warning, and its body is then
