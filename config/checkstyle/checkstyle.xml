@@ -1,0 +1,69 @@
+<?xml version="1.0"?>
+<!DOCTYPE module PUBLIC "-//Checkstyle//DTD Checkstyle Configuration 1.3//EN"
+        "https://checkstyle.org/dtds/configuration_1_3.dtd">
+<!--
+    Checkstyle for the tooling's own Java: the main sources of every module that inherits
+    exeris-tooling-parent. Never applied to emitted code, and never inherited by a consumer
+    (exeris-app-parent does not reach exeris-tooling-parent).
+
+    Derived from exeris-kernel-build-config's checkstyle.xml without its [EXERIS L0] bans. Those
+    bans (ThreadLocal, unstructured concurrency, Unsafe, direct Arena allocation, DI frameworks,
+    java.util.Date, MemoryManager) are runtime-kernel rules. This code runs inside javac and Maven,
+    and the boundaries that do apply to it are in .agents/policies/.
+-->
+<module name="Checker">
+    <property name="charset" value="UTF-8"/>
+    <property name="severity" value="error"/>
+    <property name="fileExtensions" value="java"/>
+
+    <!-- A file past this size is a split waiting to happen, and generators grow by accretion. -->
+    <module name="FileLength">
+        <property name="max" value="1500"/>
+    </module>
+
+    <!-- Reviewed in diffs side by side; long string literals and URLs are exempt. -->
+    <module name="LineLength">
+        <property name="max" value="120"/>
+        <property name="ignorePattern" value="^package.*|^import.*|a href|href|http://|https://"/>
+    </module>
+
+    <module name="TreeWalker">
+        <!-- CHECKSTYLE:OFF / CHECKSTYLE:ON, for a span a rule cannot express; each needs a reason. -->
+        <module name="SuppressionCommentFilter"/>
+
+        <!-- Explicit imports keep the processor's javax.lang.model-only surface reviewable. -->
+        <module name="AvoidStarImport"/>
+        <module name="UnusedImports"/>
+        <!-- JDK-internal packages are not an API, and the processor runs on the consumer's JDK. -->
+        <module name="IllegalImport">
+            <property name="illegalPkgs" value="sun,com.sun"/>
+        </module>
+
+        <module name="PackageName">
+            <property name="format" value="^[a-z]+(\.[a-z][a-z0-9]*)*$"/>
+        </module>
+        <module name="TypeName">
+            <property name="format" value="^[A-Z][a-zA-Z0-9]*$"/>
+        </module>
+        <module name="MethodName">
+            <property name="format" value="^[a-z][a-zA-Z0-9]*$"/>
+        </module>
+        <module name="ConstantName">
+            <property name="format" value="^[A-Z][A-Z0-9]*(_[A-Z0-9]+)*$"/>
+        </module>
+
+        <module name="ModifierOrder"/>
+        <module name="RedundantModifier"/>
+        <module name="AvoidNestedBlocks"/>
+        <module name="LeftCurly"/>
+        <module name="RightCurly"/>
+        <module name="NeedBraces"/>
+        <module name="OneStatementPerLine"/>
+        <module name="DeclarationOrder"/>
+
+        <!-- A swallowed exception in the processor is a diagnostic that never reaches javac. -->
+        <module name="EmptyCatchBlock">
+            <property name="exceptionVariableName" value="expected|_"/>
+        </module>
+    </module>
+</module>

@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ruleset name="Exeris Tooling PMD Ruleset"
+    xmlns="http://pmd.sourceforge.net/ruleset/2.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://pmd.sourceforge.net/ruleset/2.0.0 https://pmd.sourceforge.io/ruleset_2_0_0.xsd">
+
+    <description>
+        PMD for the tooling's own Java: the main sources of every module that inherits
+        exeris-tooling-parent. Individual rules, not whole categories, so that adding a rule is a
+        reviewed change and a PMD upgrade cannot widen the set.
+    </description>
+
+    <!-- ===== errorprone ===== -->
+
+    <!-- Determinism: toUpperCase()/toLowerCase() without Locale.ROOT changes emitted names under tr_TR. -->
+    <rule ref="category/java/errorprone.xml/UseLocaleWithCaseConversions"/>
+    <!-- Readers and file handles in the processor and the Maven plugin live inside a long-running JVM. -->
+    <rule ref="category/java/errorprone.xml/CloseResource"/>
+    <!-- A swallowed exception is a diagnostic that never reaches javac or the Maven log. -->
+    <rule ref="category/java/errorprone.xml/EmptyCatchBlock"/>
+    <!-- Metadata records and strings are compared by value; == on them is a latent bug. -->
+    <rule ref="category/java/errorprone.xml/CompareObjectsWithEquals"/>
+    <!-- Generators iterate what MetadataLoader returns; a null collection is an NPE in a generator. -->
+    <rule ref="category/java/errorprone.xml/ReturnEmptyCollectionRatherThanNull"/>
+    <!-- Switches over metadata kinds pick the emitted shape; a silent fall-through emits the wrong one. -->
+    <rule ref="category/java/errorprone.xml/ImplicitSwitchFallThrough"/>
+    <!-- Assignment hidden in a condition obscures the state a generator branch depends on. -->
+    <rule ref="category/java/errorprone.xml/AssignmentInOperand"/>
+
+    <!-- ===== bestpractices ===== -->
+
+    <!-- Unused members are left-over emission paths that read as live code. -->
+    <rule ref="category/java/bestpractices.xml/UnusedPrivateField"/>
+    <rule ref="category/java/bestpractices.xml/UnusedPrivateMethod"/>
+    <rule ref="category/java/bestpractices.xml/UnusedLocalVariable"/>
+    <!-- A parameter nobody reads is often a metadata attribute nobody consumes (strict-mode territory). -->
+    <rule ref="category/java/bestpractices.xml/UnusedFormalParameter"/>
+    <!-- An overwritten value is usually a computed piece of output that was meant to be emitted. -->
+    <rule ref="category/java/bestpractices.xml/UnusedAssignment"/>
+    <!-- A rethrow without its cause loses the javac/Maven context the failure diagnostic needs. -->
+    <rule ref="category/java/bestpractices.xml/PreserveStackTrace"/>
+    <!-- Processor output goes through Messager and plugin output through the Maven Log, not stderr. -->
+    <rule ref="category/java/bestpractices.xml/AvoidPrintStackTrace"/>
+    <rule ref="category/java/bestpractices.xml/SystemPrintln"/>
+    <!-- "x".equals(value) cannot throw on a null attribute read from metadata. -->
+    <rule ref="category/java/bestpractices.xml/LiteralsFirstInComparisons"/>
+    <!-- Visitor and SPI overrides break silently when the javax.lang.model signature moves. -->
+    <rule ref="category/java/bestpractices.xml/MissingOverride"/>
+
+    <!-- ===== design ===== -->
+
+    <!-- if (c) return true; else return false; hides the predicate a reviewer needs to read. -->
+    <rule ref="category/java/design.xml/SimplifyBooleanReturns"/>
+    <!-- Nested ifs with no else are one condition, and the generators already nest deeply. -->
+    <rule ref="category/java/design.xml/CollapsibleIfStatements"/>
+    <!-- A field assigned once belongs final; generators are expected to hold no mutable state. -->
+    <rule ref="category/java/design.xml/ImmutableField"/>
+    <!-- A field used in one method only is state that outlives the call that needed it. -->
+    <rule ref="category/java/design.xml/SingularField"/>
+    <!-- A raw RuntimeException gives the caller nothing to report to the user but its message. -->
+    <rule ref="category/java/design.xml/AvoidThrowingRawExceptionTypes"/>
+</ruleset>

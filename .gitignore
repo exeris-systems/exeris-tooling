@@ -1,6 +1,9 @@
 # Maven
 target/
-.mvn/
+# .mvn/ marks the reactor root for ${maven.multiModuleProjectDirectory}, which exeris-tooling-parent
+# resolves config/ against; only the marker is tracked, local Maven configuration stays untracked.
+.mvn/*
+!.mvn/.gitkeep
 *.versionsBackup
 
 # Node
