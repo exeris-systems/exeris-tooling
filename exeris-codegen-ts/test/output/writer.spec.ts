@@ -4,7 +4,8 @@
  * Pinned: an owned file is rewritten when it differs, without `--overwrite`; an owned seed file
  * (`overwritable: false`) is kept; an existing file the manifest does not record is neither
  * replaced nor recorded, unless `--overwrite`; an owned file the run no longer produces is pruned.
- * A manifest without the ownership line proves ownership only for a file that already matches;
+ * A manifest without the ownership line proves ownership only for a file that already matches or
+ * starts with the generator header;
  * seed files are released, never deleted; nothing is written or deleted through a symbolic link.
  * The orchestrator-backed blocks run the rule over real output for `@View` pages and the scaffold.
  */
@@ -17,6 +18,7 @@ import { planOrphans, planWrites, writeGeneratedFiles, type FileToWrite } from '
 import { MANIFEST_NAME, MANIFEST_OWNERSHIP_LINE, readManifest, readManifestState } from '../../src/output/manifest.js';
 import { buildGeneratedFiles, SEED_PATHS } from '../../src/orchestrator.js';
 import { DEFAULT_CONFIG, type GeneratorConfig } from '../../src/config.js';
+import { fileHeader } from '../../src/generators/file-header.js';
 import { ViewMetadataSchema, type ViewMetadata } from '../../src/models/domain-model.js';
 
 let out: string;
@@ -228,6 +230,28 @@ describe('a manifest without the ownership line', () => {
     expect(pruned).toBe(0);
     expect(read('pages/about.component.ts')).toBe('hand-written');
     expect(readManifest(out).has('pages/about.component.ts')).toBe(false);
+  });
+
+  it('rewrites and owns a listed file that differs but starts with the generator header', () => {
+    const generated09 = `${fileHeader({ title: 'Order Service' })}\n\nrestore(id: string) {}\n`;
+    const generated010 = `${fileHeader({ title: 'Order Service' })}\n\narchive(id: string) {}\n`;
+    onDisk('services/order.service.ts', generated09);
+    legacyManifest('services/order.service.ts');
+
+    const { plan } = writeGeneratedFiles(out, [{ path: 'services/order.service.ts', content: generated010 }], keep);
+
+    expect(plan[0]).toEqual({ path: 'services/order.service.ts', action: 'rewrite', owned: true });
+    expect(read('services/order.service.ts')).toBe(generated010);
+    expect(readManifest(out).has('services/order.service.ts')).toBe(true);
+  });
+
+  it('does not accept the header as proof for a file the manifest does not list', () => {
+    onDisk('services/order.service.ts', `${fileHeader({ title: 'Order Service' })}\n`);
+    legacyManifest();
+
+    const { plan } = writeGeneratedFiles(out, [{ path: 'services/order.service.ts', content: 'generated' }], keep);
+
+    expect(plan[0].action).toBe('skip-unowned');
   });
 
   it('adopts a listed file whose content is what the run produces', () => {

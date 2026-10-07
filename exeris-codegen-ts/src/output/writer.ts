@@ -13,7 +13,8 @@
  *   for the first time) is never replaced, and does not become owned;
  * - a manifest without the ownership line (the 0.9.x format) also recorded files skipped
  *   because they existed, so an entry of it is owned only when the file on disk already holds what
- *   this run produces, or is a seed; an entry whose file differs is treated as not owned;
+ *   this run produces, starts with the header the generator writes ({@link carriesGeneratorMarker}),
+ *   or is a seed; any other entry is treated as not owned;
  * - a symbolic link at a generated path, or a path reached through a link below the output root, is
  *   never written through; it is treated as not owned, and `overwrite` replaces a link at the path
  *   itself, never its target.
@@ -27,6 +28,7 @@
 
 import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { carriesGeneratorMarker } from '../generators/file-header.js';
 import {
   canonicalManifestPath,
   lstatOrNull,
@@ -97,13 +99,15 @@ export function planWrites(
     if (stat.isSymbolicLink()) return options.overwrite ? result('rewrite', true) : result('skip-unowned', false);
     if (!stat.isFile()) return result('skip-unowned', false);
 
-    const same = readFileSync(join(outputPath, file.path)).equals(Buffer.from(file.content));
+    const onDisk = readFileSync(join(outputPath, file.path));
+    const same = onDisk.equals(Buffer.from(file.content));
     const seed = file.overwritable === false;
     const canonical = canonicalManifestPath(file.path);
     const listed = canonical !== null && manifest.entries.has(canonical);
-    // A legacy entry proves ownership only when the file is what this run produces, or is a seed
-    // (kept either way).
-    const owned = listed && (!manifest.legacy || same || seed);
+    // A legacy entry proves ownership only when the file is what this run produces, starts with the
+    // header the generator writes, or is a seed (kept either way).
+    const owned = listed
+      && (!manifest.legacy || same || seed || carriesGeneratorMarker(onDisk.toString('utf-8')));
 
     if (options.overwrite) return same ? result('unchanged', true) : result('rewrite', true);
     if (!owned) return result('skip-unowned', false);

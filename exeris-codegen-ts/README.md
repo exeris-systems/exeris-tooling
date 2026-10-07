@@ -203,9 +203,10 @@ still produces is created again at its old path.
 **A manifest written by 0.9.x or earlier** carries no `# ownership: written` line. Those releases
 recorded every file they produced, including files they skipped because they already existed, so
 on the first run with such a manifest an entry is owned only when the file already holds what this
-run generates, or is a seed file. An entry whose file differs is kept and dropped from the manifest:
-check it, and pass `--overwrite` once if it is the generator's. The run writes the manifest in the
-current format.
+run generates, starts with the header the generator writes (its provenance line or its do-not-edit
+notice, within the first 10 lines), or is a seed file. A generated file whose content changed is
+therefore rewritten as usual; a hand-written file at a generated path, which has no such header, is
+kept and dropped from the manifest. The run writes the manifest in the current format.
 
 **A missing or empty metadata directory** generates and deletes nothing: a wrong `--input`, or a
 `mvn clean` without a compile after it, must not empty the output tree. A missing directory fails
