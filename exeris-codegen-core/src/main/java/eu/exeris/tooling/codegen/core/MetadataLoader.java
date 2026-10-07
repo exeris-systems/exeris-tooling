@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Stream;
@@ -34,6 +35,10 @@ public final class MetadataLoader {
      */
     public static final String METADATA_DIR = "exeris-metadata";
 
+    /** Directory listing order differs between filesystems; file-name order does not. */
+    private static final Comparator<Path> FILE_NAME_ORDER =
+            Comparator.comparing(p -> p.getFileName().toString());
+
     private final Path classesDir;
     private final ObjectMapper objectMapper;
 
@@ -48,11 +53,11 @@ public final class MetadataLoader {
     }
 
     /**
-     * Loads all domain metadata files from the metadata directory.
+     * Loads all domain metadata files from the metadata directory, in file-name order.
      *
      * @param <T> Metadata type
      * @param metadataClass Class of metadata to deserialize
-     * @return List of loaded metadata objects
+     * @return List of loaded metadata objects, ordered by the name of the file each came from
      * @throws IOException if loading fails
      */
     public <T> List<T> loadAll(Class<T> metadataClass) throws IOException {
@@ -67,6 +72,7 @@ public final class MetadataLoader {
         try (Stream<Path> files = Files.list(metadataDir)) {
             List<Path> jsonFiles = files
                     .filter(p -> p.toString().endsWith(".json"))
+                    .sorted(FILE_NAME_ORDER)
                     .toList();
 
             for (Path jsonFile : jsonFiles) {
@@ -115,7 +121,7 @@ public final class MetadataLoader {
     /**
      * Lists all available entity names with metadata.
      *
-     * @return List of entity names
+     * @return List of entity names, in file-name order
      * @throws IOException if reading directory fails
      */
     public List<String> listEntities() throws IOException {
@@ -128,6 +134,7 @@ public final class MetadataLoader {
         try (Stream<Path> files = Files.list(metadataDir)) {
             return files
                     .filter(p -> p.toString().endsWith(".json"))
+                    .sorted(FILE_NAME_ORDER)
                     .map(p -> p.getFileName().toString())
                     .map(name -> name.substring(0, name.length() - 5)) // Remove .json
                     .toList();

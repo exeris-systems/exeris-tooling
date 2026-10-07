@@ -31,9 +31,9 @@ export type OnMetadataFile = (family: 'domain' | 'enum' | 'view', file: string) 
  * Every `*.json` under `inputPath`, recursively. A file path is returned as-is when it
  * is itself a `.json`; a non-JSON file and a missing path both yield none.
  *
- * Order is `readdirSync` order (filesystem order). Callers that need stable order across
- * machines (a *published* artifact unpacked by different tools onto different filesystems)
- * sort the result themselves.
+ * Sorted by path, comparing UTF-16 code units, so the order is the same on every filesystem
+ * and locale. In one directory that is file-name order: for the processor's `<Entity>.json`
+ * files of one package, the order the Java pipeline loads the same entities in.
  */
 export function findMetadataFiles(inputPath: string): string[] {
   if (!existsSync(inputPath)) {
@@ -56,7 +56,8 @@ export function findMetadataFiles(inputPath: string): string[] {
     }
   }
 
-  return files;
+  // Array.prototype.sort without a comparator compares UTF-16 code units, not the locale.
+  return files.sort();
 }
 
 /**

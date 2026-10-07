@@ -289,7 +289,14 @@ public enum DiagnosticId {
      * the post-compile {@code exeris:verify-capabilities} gate.
      */
     CAPABILITY_GRAPH_DEFERRED("EXT-GEN-3103",
-            "The capability graph did not resolve on possibly stale metadata; the post-compile gate decides.");
+            "The capability graph did not resolve on possibly stale metadata; the post-compile gate decides."),
+
+    /**
+     * No base package was given and the entities span more than one package; the bootstrap
+     * classes go to the package of the entity whose fully-qualified name sorts first.
+     */
+    BASE_PACKAGE_INFERRED("EXT-GEN-3104",
+            "No base package was given and the entities span several packages; the first entity's package is used.");
 
     /** Prepended to every message, ahead of the identifier. */
     public static final String PREFIX = "[Exeris] ";

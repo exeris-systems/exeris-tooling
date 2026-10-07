@@ -15,7 +15,7 @@ import java.util.Objects;
  * @param metadataDir  required — path to the {@code exeris-metadata} JSON dir
  * @param outputDir    required — path to write generated sources into
  * @param basePackage  optional — base package for application classes;
- *                     {@code null} means auto-detect from the first domain
+ *                     {@code null} means auto-detect from the first domain by qualified name
  */
 public record CliArgs(Path metadataDir, Path outputDir, String basePackage) {
 
