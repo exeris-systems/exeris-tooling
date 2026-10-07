@@ -49,8 +49,9 @@ last-verified: YYYY-MM-DD
 - The front matter is the one the organisation docs-lint requires of every page. The assembler
   drops it.
 
-`python3 tools/migration/assemble-migration.py --check` validates every fragment and runs in
-`build.yml` on every pull request.
+`python3 tools/migration/assemble-migration.py --check` validates every fragment, and fails when a
+`###` step sits in MIGRATION under a train that still has its marker block: a branch merged from
+before the fragments existed can carry its step there. It runs in `build.yml` on every pull request.
 
 ## The cut
 
