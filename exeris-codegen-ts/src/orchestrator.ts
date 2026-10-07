@@ -26,7 +26,8 @@ import { EventHandlerGenerator } from './generators/angular/event-gen.js';
 import { generateSchemaSpec, generateServiceSpec } from './generators/angular/spec-gen.js';
 import { generateSaga } from './generators/angular/saga-gen.js';
 import { generateStore } from './generators/angular/store-gen.js';
-import { generateAppStructure } from './generators/angular/app-structure-gen.js';
+import { generateAppBarrel, generateAppStructure } from './generators/angular/app-structure-gen.js';
+import { generateViewRoutesAggregate } from './generators/angular/view-routes-gen.js';
 import { generateView, generateViewRoute } from './generators/angular/view-gen.js';
 import { generateHttpErrorHelper, needsHttpErrorHelper } from './generators/angular/http-error-gen.js';
 import { generatePeerTypes } from './generators/api/peer-type-gen.js';
@@ -51,7 +52,9 @@ export { generateEnumTypes, type EnumMetadataForGen } from './generators/api/enu
  * Compose the full set of files to write from parsed metadata. Per-entity output
  * (types + Zod schemas + services and SSE stream clients + form/list components), the enum module, and
  * the per-view page components / routes are re-rooted under `src/app/` (the
- * Angular sourceRoot); the scaffold is appended as-is.
+ * Angular sourceRoot); the scaffold is appended as-is. With `config.scaffold` off there is no
+ * scaffold and no re-rooting: the tree, its barrel and the view-routes aggregate are written at
+ * the output root.
  *
  * `views` is the presentation-IR family (RFC-2026-06-28): each parsed
  * `view_*.json` ViewMetadata emits one standalone, signal-first page component
@@ -192,7 +195,19 @@ export function buildGeneratedFiles(
   // (`peers/<name>/…`) and no app scaffold is emitted. A local enum is part of the app's own type
   // surface (`types/`), which lives under `src/app/` beside the scaffold, so it keeps the app layout.
   const contractsOnly = peers.length > 0 && domains.length === 0 && enums.length === 0 && views.length === 0;
-  const treeRoot = contractsOnly ? '' : 'src/app/';
+
+  // With the scaffold off (`config.scaffold`) the output directory sits inside an app the consumer
+  // owns, so the tree is written at its root and nothing configures a project or an app shell. What
+  // the shell would have provided for the generated code itself is emitted in its place: the
+  // barrel, and the view routes as one array for the consumer's routes file.
+  if (!contractsOnly && !config.scaffold) {
+    const barrel = generateAppBarrel(domains, enums, config);
+    if (barrel) appTree.push(barrel);
+    const viewRoutes = generateViewRoutesAggregate(views);
+    if (viewRoutes) appTree.push(viewRoutes);
+  }
+
+  const treeRoot = contractsOnly || !config.scaffold ? '' : 'src/app/';
 
   for (const file of appTree) {
     generatedFiles.push({ ...file, path: `${treeRoot}${file.path}` });
@@ -203,7 +218,7 @@ export function buildGeneratedFiles(
   // each per-view route export (RFC-2026-06-28 §5 route-assembly). What the scaffold wires
   // (HTTP client, dev proxy, API environment, optional dependencies) is read off the composed
   // tree, so it never carries a backend piece no emitted file uses.
-  if (!contractsOnly) {
+  if (!contractsOnly && config.scaffold) {
     generatedFiles.push(...generateAppStructure(domains, enums, config, views, deriveScaffoldNeeds(domains, appTree)));
   }
 

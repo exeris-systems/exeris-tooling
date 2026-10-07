@@ -69,6 +69,11 @@ program
     'Emit specs for the generated surface plus the Vitest runner that executes them '
       + '(adds a test target, tsconfig.spec.json and the vitest + jsdom devDependencies)',
   )
+  .option(
+    '--no-scaffold',
+    'Emit no Angular project or app-shell file: the generated tree is written at the output root, '
+      + 'for an app that owns its own package.json, angular.json, app.config.ts and app.routes.ts',
+  )
   .option('--no-stores', 'Skip Signal store generation')
   .option('--no-sagas', 'Skip Saga UI generation')
   .option('--no-events', 'Skip Event handler generation')

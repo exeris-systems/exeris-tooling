@@ -122,10 +122,9 @@ export function generateAppStructure(
   files.push({ path: `${appRoot}/app.config.ts`, content: generateAppConfig(needs.backend), overwritable: false });
   files.push({ path: `${appRoot}/app.component.ts`, content: generateAppComponent(domains, appName, sortedViews), overwritable: false });
   files.push({ path: `${appRoot}/app.routes.ts`, content: generateAppRoutes(domains, appName, sortedViews), overwritable: false });
-  // The app barrel re-exports the generated types, services, stores and components. With no
-  // entity and no enum there is nothing to re-export, and no barrel.
-  if (domains.length > 0 || enums.length > 0) {
-    files.push({ path: `${appRoot}/index.ts`, content: generateBarrelExport(domains, enums, config), overwritable: true });
+  const barrel = generateAppBarrel(domains, enums, config);
+  if (barrel) {
+    files.push({ ...barrel, path: `${appRoot}/${barrel.path}` });
   }
 
   // T20: per-entity components/services/types/schemas and enums are emitted by the
@@ -198,7 +197,7 @@ function routePlural(entityName: string): string {
  * comparison, never the OS locale — hard-constraint #3). Returns a new array;
  * the input is not mutated.
  */
-function sortViews(views: ViewMetadata[]): ViewMetadata[] {
+export function sortViews(views: ViewMetadata[]): ViewMetadata[] {
   return [...views].sort((a, b) => {
     const pa = viewRoutePath(a);
     const pb = viewRoutePath(b);
@@ -359,6 +358,20 @@ import { Routes } from '@angular/router';${importBlock}
 export const routes: Routes = [${redirect}${routes.join('')}${viewSpreads}
 ];
 `;
+}
+
+/**
+ * The app barrel, at `index.ts` relative to the generated tree's root. It re-exports the
+ * generated types, services, stores and components, so it is emitted with or without the
+ * scaffold; with no entity and no enum there is nothing to re-export, and no barrel.
+ */
+export function generateAppBarrel(
+  domains: DomainMetadata[],
+  enums: EnumMetadata[],
+  config: GeneratorConfig,
+): GeneratedFile | null {
+  if (domains.length === 0 && enums.length === 0) return null;
+  return { path: 'index.ts', content: generateBarrelExport(domains, enums, config), overwritable: true };
 }
 
 /**

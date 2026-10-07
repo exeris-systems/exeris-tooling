@@ -126,6 +126,20 @@ export const GeneratorConfigSchema = z.object({
    *  title either way. */
   viewHeading: z.enum(['title', 'none']).default('title'),
 
+  /** Emit the Angular project and app shell around the generated tree.
+   *
+   *  On (the default), the output is a complete Angular application: `package.json`,
+   *  `angular.json`, the `tsconfig` files, `src/main.ts`, `src/index.html`, the styles, the
+   *  environment files and the `src/app` shell (`app.config.ts`, `app.component.ts`,
+   *  `app.routes.ts`), with the generated tree under `src/app/`.
+   *
+   *  Off, the output directory is a folder inside an Angular app the consumer already owns: the
+   *  generated tree is written at its root, no project or app-shell file is emitted, and the
+   *  view routes are exported as one array from `view.routes.ts` for the consumer's own routes
+   *  file to spread. The app barrel (`index.ts`) is kept, since it re-exports generated code
+   *  rather than configuring an app. */
+  scaffold: z.boolean().default(true),
+
 });
 
 export type GeneratorConfig = z.infer<typeof GeneratorConfigSchema>;
@@ -160,6 +174,7 @@ export const DEFAULT_CONFIG: GeneratorConfig = {
   generateTests: false,
   customBlocks: {},
   viewHeading: 'title',
+  scaffold: true,
 };
 
 /**
@@ -217,6 +232,7 @@ export function cliOverrides(
   take('lists', 'generateLists', () => options.lists !== false);
   take('details', 'generateDetails', () => options.details !== false);
   take('tests', 'generateTests', () => options.tests === true);
+  take('scaffold', 'scaffold', () => options.scaffold !== false);
   take('stores', 'generateStores', () => options.stores !== false);
   take('sagas', 'generateSagas', () => options.sagas !== false);
   take('events', 'generateEvents', () => options.events !== false);

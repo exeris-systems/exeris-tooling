@@ -15,7 +15,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildGeneratedFiles } from '../../../src/orchestrator.js';
 import { DEFAULT_CONFIG, type GeneratorConfig } from '../../../src/config.js';
-import { DomainMetadataSchema } from '../../../src/models/domain-model.js';
+import { DomainMetadataSchema, ViewMetadataSchema, type ViewMetadata } from '../../../src/models/domain-model.js';
 
 const order = DomainMetadataSchema.parse({
   packageName: 'com.shop',
@@ -110,5 +110,74 @@ describe('app barrel resolves', () => {
     expect(barrel).toContain("export { OrderFulfilmentStateMachine } from './sagas/order.saga';");
     expect(barrel).toContain("export { ProductRestockStateMachine } from './sagas/product.saga';");
     expect((barrel.match(/export type \{ SagaState,/g) ?? []).length).toBe(1);
+  });
+});
+
+// With the scaffold off the tree is written at the output root and the shell that imported it is
+// gone, so the invariant widens from the barrel to every emitted module: no relative specifier, in
+// a static import, an export or a lazy `import()`, may name a file the run did not emit.
+describe('scaffold-off tree resolves', () => {
+  const unbound: ViewMetadata = ViewMetadataSchema.parse({
+    name: 'Landing',
+    route: '/',
+    regions: [{ slot: 'main', components: [{ type: 'HERO', binding: { source: 'STATIC' }, props: 'Hi' }] }],
+  });
+  const bound: ViewMetadata = ViewMetadataSchema.parse({
+    name: 'OrderBoard',
+    regions: [{ slot: 'main', components: [{ type: 'LIST', binding: { source: 'ENTITY', ref: 'Order' } }] }],
+  });
+
+  /** Every relative specifier in every emitted .ts file that resolves to no emitted file. */
+  function danglingRelativeImports(files: { path: string; content: string }[]): string[] {
+    const emitted = new Set(files.map((f) => f.path));
+    const dangling: string[] = [];
+    for (const file of files.filter((f) => f.path.endsWith('.ts'))) {
+      const dir = file.path.includes('/') ? file.path.slice(0, file.path.lastIndexOf('/')) : '';
+      const specifiers = [
+        ...file.content.matchAll(/from '(\.\.?\/[^']+)'/g),
+        ...file.content.matchAll(/import\('(\.\.?\/[^']+)'\)/g),
+      ].map((m) => m[1]);
+      for (const spec of specifiers) {
+        const segments = dir === '' ? [] : dir.split('/');
+        for (const part of spec.split('/')) {
+          if (part === '.') continue;
+          if (part === '..') segments.pop();
+          else segments.push(part);
+        }
+        const target = segments.join('/');
+        if (!emitted.has(`${target}.ts`) && !emitted.has(`${target}/index.ts`)) {
+          dangling.push(`${file.path} -> ${spec}`);
+        }
+      }
+    }
+    return dangling;
+  }
+
+  const scaffoldOff: GeneratorConfig = { ...DEFAULT_CONFIG, scaffold: false };
+
+  it('names only emitted files with every generator on', () => {
+    expect(danglingRelativeImports(buildGeneratedFiles([order], [], scaffoldOff, [unbound, bound]))).toEqual([]);
+  });
+
+  // The form, list and detail components and the store inject the entity service, so
+  // generateServices off on its own leaves their imports unresolved, scaffold on or off; it is
+  // covered below together with the generators that depend on it.
+  const independentFlags = FLAGS.filter((flag) => flag !== 'generateServices');
+
+  it.each(independentFlags)('names only emitted files with %s off', (flag) => {
+    const config = { ...scaffoldOff, [flag]: false };
+    expect(danglingRelativeImports(buildGeneratedFiles([order], [], config, [unbound]))).toEqual([]);
+  });
+
+  it('names only emitted files for a views-only tree with every entity generator off', () => {
+    const allOff = FLAGS.reduce<GeneratorConfig>((config, flag) => ({ ...config, [flag]: false }), scaffoldOff);
+    expect(danglingRelativeImports(buildGeneratedFiles([], [], allOff, [unbound]))).toEqual([]);
+    expect(danglingRelativeImports(buildGeneratedFiles([order], [], allOff, [unbound]))).toEqual([]);
+  });
+
+  it('keeps the barrel, at the tree root', () => {
+    const files = buildGeneratedFiles([order], [], scaffoldOff, [unbound]);
+    const barrel = files.find((f) => f.path === 'index.ts')?.content ?? '';
+    expect(barrel).toContain("export * from './types/order.types';");
   });
 });

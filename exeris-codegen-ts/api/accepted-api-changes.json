@@ -136,5 +136,11 @@
     "since": "0.10",
     "adr": "ADR-092",
     "justification": "A page whose blocks carry their own headline, such as a HERO, got a second <h1> from the generated title heading. viewHeading 'none' omits that <h1> on every @View page and leaves the rest of the page, the route title that sets the document title, and the navigation label as 'title' emits them. The default is 'title', whose output is byte-identical to a run without the key, so no consumer has to act and MIGRATION carries no step."
+  },
+  {
+    "signature": "GeneratorConfig: + scaffold (default true); exeris-gen generate: + --no-scaffold; scaffold false: the tree at the output root, + view.routes.ts (viewRoutes), no project-root or app-shell file",
+    "since": "0.10",
+    "adr": "ADR-092",
+    "justification": "Additive: a new configuration key whose default keeps the old output. With scaffold false the output directory sits inside an Angular app the consumer owns, so no package.json, angular.json, tsconfig, src/main.ts, index.html, styles, environment or app shell (app.config.ts, app.component.ts, app.routes.ts) is emitted; the generated tree, its barrel index.ts and the per-view pages and routes are written at the output root, and view.routes.ts exports every view route as one viewRoutes array for the consumer's routes file. A consumer that keeps the default regenerates byte-identical output."
   }
 ]

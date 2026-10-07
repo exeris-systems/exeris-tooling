@@ -78,6 +78,8 @@ Options:
   --no-stores            Skip Signal store generation
   --no-sagas             Skip saga state-machine generation
   --no-events            Skip domain-event handler generation
+  --no-scaffold          Emit no Angular project or app-shell file; write the generated
+                         tree at the output root, for an app you already own (see below)
   --tests                Emit specs for the generated surface plus the Vitest runner that
                          executes them (adds a test target, tsconfig.spec.json and the
                          vitest + jsdom devDependencies). Opt-in; off by default.
@@ -156,6 +158,44 @@ or its name when it declares none. `"none"` emits no `<h1>`, for pages whose own
 headline, such as a HERO with one; the rest of the page is unchanged. Either way the page's route
 keeps the view's `title`, which sets the document title, and the navigation label stays the same.
 The option applies to every `@View` page of the run. It is file-only; it has no CLI flag.
+
+## Generating into an existing Angular app (`scaffold: false`)
+
+By default the output is a complete Angular application: `package.json`, `angular.json`, the
+`tsconfig` files, `src/main.ts`, `src/index.html`, the styles and environments, and the app shell
+(`app.config.ts`, `app.component.ts`, `app.routes.ts`), with the generated tree under `src/app/`.
+
+With `"scaffold": false` (or `--no-scaffold`) the output directory is a folder inside an app you
+already own, such as `src/app/generated`. No project or app-shell file is emitted, and the
+generated tree is written at the output root:
+
+```
+src/app/generated/
+├── pages/
+│   ├── about.component.ts
+│   └── about.route.ts
+├── view.routes.ts            # every @View route, as one array
+└── index.ts                  # the barrel, when the metadata declares an entity or an enum
+```
+
+Spread the view routes into your own routes file; which page `''` redirects to is yours to decide:
+
+```typescript
+import { Routes } from '@angular/router';
+import { viewRoutes } from './generated/view.routes';
+
+export const routes: Routes = [...viewRoutes];
+```
+
+What the scaffold would otherwise provide is then your app's to provide: `provideHttpClient()` when
+an emitted service or store calls the API, the `@exeris/ui-kit` styles and Tailwind, and the npm
+dependencies the emitted files import (`zod`, `@angular/cdk`, `@angular/forms`, as the enabled
+generators require). A page bound to an entity (`binding.source = ENTITY`) injects that entity's
+store, which needs the store, service and type generators on.
+
+Switching an existing output directory from the scaffold to no scaffold prunes the scaffold files
+the previous run wrote there, because the generator owned them; generate into a new directory, or
+commit first and keep what you need.
 
 ## Peer contracts (mesh)
 
