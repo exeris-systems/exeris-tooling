@@ -140,13 +140,16 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
      * unscoped ones; within a tier the order is a stable FQN hash. A {@code tenants}
      * table, if the consumer declares one, is pinned to tier 1 regardless of its flags.
      *
-     * <p>This generator emits <em>no</em> cross-table references, so the ordering
-     * is not load-bearing. A {@code REFERENCES tenants(id)} FK is not emitted: it
-     * would point at a table no generator produces, and the schema would not apply
-     * to an empty database. The tiering is kept deliberately: it costs nothing,
-     * keeps filenames stable for already-committed migrations, and is the hook the
-     * FK work (T9) needs. <b>T9 must revisit it</b> — a general inter-entity FK
-     * needs dependency-ordered versions, which two tiers cannot express.
+     * <p>The order among {@code CREATE TABLE} migrations is not load-bearing: this
+     * generator emits <em>no</em> cross-table references. Every inter-entity
+     * {@code FOREIGN KEY} is added by the single trailing migration
+     * {@link KernelApplicationGenerator#generateForeignKeys(java.util.List)} emits at
+     * tier 3, which sorts after every tier-1 and tier-2 {@code CREATE TABLE}, so each
+     * referenced table exists before its constraint is added whatever the hash order.
+     * A {@code REFERENCES tenants(id)} FK is not emitted: it would point at a table no
+     * generator produces, and the schema would not apply to an empty database. The
+     * tiers stay because a migration version is part of an applied migration's
+     * identity: changing it renames files a database has already recorded.
      *
      * <p><b>Collision:</b> the discriminator space is 1,000,000 per tier. For
      * realistic models (far fewer than ~1,000 entities per tier) collisions are
@@ -219,8 +222,8 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
         // declared field column (the entity-typed `@Relationship Customer customer`
         // style has no FieldMetadata, so its `customer_id` column would otherwise
         // never be created — and the T8 FK index would then target a non-existent
-        // column). No REFERENCES / FK constraint is emitted here: that is T9, held
-        // back as a trailing ALTER migration to avoid the create-order hazard.
+        // column). No REFERENCES / FK constraint is emitted here: the trailing
+        // foreign-key migration adds it, after every table exists.
         for (String fkCol : foreignKeyColumns(metadata)) {
             if (emittedColumns.add(fkCol)) {
                 columns.add("    " + fkCol + " UUID");
@@ -322,7 +325,8 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
         }
         // T8: index each MANY_TO_ONE FK column (sorted by relationship name for
         // deterministic output). The FK index makes cross-aggregate finder lookups
-        // (findBy<Rel>Id) non-O(n). Index only — the REFERENCES constraint is T9.
+        // (findBy<Rel>Id) non-O(n). Index only — the REFERENCES constraint is in the
+        // trailing foreign-key migration.
         for (String fkCol : foreignKeyColumns(metadata)) {
             if (indexedColumns.add(fkCol)) {
                 indexes.add("CREATE INDEX IF NOT EXISTS idx_" + tableName + "_" + fkCol + " ON "
