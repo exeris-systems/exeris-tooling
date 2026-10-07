@@ -15,6 +15,9 @@ mvn -pl exeris-e2e-tests -am test -Dtest=KernelCodegenCompileTest -Dsurefire.fai
 # Targeted E2E substring snapshot suite: verifies exact emission shapes
 mvn -pl exeris-e2e-tests -am test -Dtest=KernelCodegenE2ETest -Dsurefire.failIfNoSpecifiedTests=false
 
+# Architecture rules (ArchUnit) across the tooling modules
+mvn -pl exeris-processor,exeris-codegen-core,exeris-codegen-java,exeris-codegen-maven-plugin,exeris-diagnostics -am test -Dtest='*ArchitectureTest' -Dsurefire.failIfNoSpecifiedTests=false
+
 # TypeScript codegen build and tests (standalone npm project)
 cd exeris-codegen-ts && npm install && npm test
 ```
@@ -39,6 +42,8 @@ cd exeris-codegen-ts && npm install && npm test
 | Layer | Module / Test Class | Verification Target |
 |:---|:---|:---|
 | Processor Unit | `exeris-processor/src/test/` | Element parsing, AST record extraction, diagnostic reporting |
+| Architecture | `*ArchitectureTest` in the processor, codegen-core, codegen-java, Maven plugin and diagnostics modules | ArchUnit rules over each module's main bytecode: dependency sets, banned calls, no host framework |
+| Dependency ban | `ban-host-and-kernel-runtime` enforcer execution | No host framework or kernel runtime on the processor's or the generators' resolved graph |
 | Codegen Compile Gate | `KernelCodegenCompileTest` | In-memory `JavaCompiler` compiles emitted code against kernel SPI |
 | Codegen Snapshot E2E | `KernelCodegenE2ETest` | Substring and structural assertions on emitted Java artefacts |
 | Generated Tests E2E | `GeneratedTestsE2ETest` | Executes emitted JUnit 5 + AssertJ tests against emitted services |

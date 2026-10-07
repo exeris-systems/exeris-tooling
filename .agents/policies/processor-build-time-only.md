@@ -7,6 +7,7 @@
 1. **Permitted dependencies only.**
    `exeris-processor` may depend strictly on:
    - `javax.lang.model` (standard JDK annotation processing model),
+   - the JDK compiler tree API `com.sun.source` (`Trees`, exported by `jdk.compiler`), read only for the source text behind the `SourceDigest`,
    - `eu.exeris:exeris-sdk-source-model` (SDK source model records),
    - `eu.exeris:exeris-diagnostics` (the stable diagnostic identifiers, ADR-095). It uses nothing beyond `java.lang`, has no dependencies of its own and registers no service, so it can never put a runtime type or a second processor on the `javac` path,
    - Standard Java runtime library.
@@ -27,4 +28,13 @@
 ## Verification
 
 - `mvn -pl exeris-processor test` exercises processor isolation.
+- `ProcessorArchitectureTest` holds rules 1, 3 and 4 on the processor's bytecode:
+  `depends_only_on_the_build_time_set` (rule 1's set, with Jackson and `@AutoService` from rules 2 and 5),
+  `never_loads_classes` (no `Class.forName`, `ClassLoader.loadClass` or `Thread.getContextClassLoader`),
+  `never_calls_throwable_get_message`, and `prints_only_from_the_printing_method`
+  (`Messager.printMessage` is called from `ExerisDomainProcessor.print` alone).
+- `DiagnosticsArchitectureTest` (`depends_only_on_the_jdk`): `exeris-diagnostics` depends on `java..`
+  alone.
+- The `ban-host-and-kernel-runtime` enforcer execution bans `exeris-kernel-core`, the community driver
+  and host frameworks from the processor's resolved dependency graph (see `kernel-target-only.md`).
 - Skill `exeris-tooling-processor-discipline-review`.

@@ -19,3 +19,17 @@ Consolidated hard bans across `exeris-tooling` modules.
 ## In `exeris-codegen-ts` Specifically
 
 - **Banned:** Maven module wrappers that pull TypeScript/npm builds into the Maven reactor. Toolchain and release cadences are intentionally independent.
+
+## Verification
+
+- `exeris-processor`: `ProcessorArchitectureTest` holds the class-loading ban (`never_loads_classes`), the
+  host-framework ban (`no_host_framework`) and the closed dependency set
+  (`depends_only_on_the_build_time_set`), which admits Jackson only under `com.fasterxml.jackson`.
+- `exeris-codegen-java` and `exeris-codegen-core`: `CodegenJavaArchitectureTest` and
+  `CodegenCoreArchitectureTest` hold the `javax.lang.model` ban (`reads_no_language_model`), the
+  timestamp and random-value ban (`reads_no_clock_and_no_randomness`) and the host-framework ban
+  (`no_host_framework`).
+- The `ban-host-and-kernel-runtime` enforcer execution holds the host-framework ban on the resolved
+  dependency graph of all three modules.
+- Locale formatting, `KernelScaffold` extraction and the `exeris-codegen-ts` bans are review-held:
+  `exeris-tooling-codegen-determinism-review`, `exeris-tooling-strict-audit-review`.
