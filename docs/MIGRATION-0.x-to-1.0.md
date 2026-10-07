@@ -2830,6 +2830,14 @@ nothing from 0.10.0.
 Javadoc line: the generated `Application` names the starter as `eu.exeris:exeris-app-starter`.
 `@exeris/codegen-ts` keeps its npm name and still versions in lockstep with the Maven artefacts.
 
+### Code examples in generated Javadoc are `{@snippet}` blocks
+
+Regeneration rewrites the code examples in the Javadoc of the generated `Application`,
+`RuntimeComponents` and `<Entity>Client` from `<pre>{@code … }</pre>` to `{@snippet : … }`. The
+example text inside is unchanged, and so are the API and the behaviour. Expect a two-line diff per
+example in a committed generated tree. `{@snippet}` needs a `javadoc` from JDK 18 or later, below
+the JDK 25 the generated code already requires.
+
 ---
 
 ## Reference
