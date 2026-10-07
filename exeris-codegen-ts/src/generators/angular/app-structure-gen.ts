@@ -77,8 +77,8 @@ export function generateAppStructure(
   needs: ScaffoldNeeds = BACKEND_SCAFFOLD_NEEDS
 ): GeneratedFile[] {
   const files: GeneratedFile[] = [];
-  // Output roots
-  const outputRoot = '.';
+  // Output roots. Project-root files carry no directory prefix: every path is in the
+  // canonical relative form the generated-output manifest records.
   const srcRoot = 'src';
   const appRoot = 'src/app';
   const envRoot = 'src/environments';
@@ -87,18 +87,18 @@ export function generateAppStructure(
   const appName = config.appName;
 
   // Config files at the project root
-  files.push({ path: `${outputRoot}/package.json`, content: generatePackageJson(appName, config, needs), overwritable: false });
-  files.push({ path: `${outputRoot}/angular.json`, content: generateAngularJson(appName, config), overwritable: false });
-  files.push({ path: `${outputRoot}/tsconfig.json`, content: generateTsConfig(), overwritable: false });
-  files.push({ path: `${outputRoot}/tsconfig.app.json`, content: generateTsConfigApp(config), overwritable: false });
+  files.push({ path: 'package.json', content: generatePackageJson(appName, config, needs), overwritable: false });
+  files.push({ path: 'angular.json', content: generateAngularJson(appName, config), overwritable: false });
+  files.push({ path: 'tsconfig.json', content: generateTsConfig(), overwritable: false });
+  files.push({ path: 'tsconfig.app.json', content: generateTsConfigApp(config), overwritable: false });
   // T2 (ADR-058): the spec tsconfig only exists when specs do. It is the counterpart of the Java
   // half's second output root — specs compile under their own config, never the app's.
   if (config.generateTests) {
-    files.push({ path: `${outputRoot}/tsconfig.spec.json`, content: generateTsConfigSpec(), overwritable: false });
+    files.push({ path: 'tsconfig.spec.json', content: generateTsConfigSpec(), overwritable: false });
   }
-  files.push({ path: `${outputRoot}/.postcssrc.json`, content: generatePostcssConfig(), overwritable: true });
+  files.push({ path: '.postcssrc.json', content: generatePostcssConfig(), overwritable: true });
   if (needs.backend) {
-    files.push({ path: `${outputRoot}/proxy.conf.json`, content: generateProxyConfig(), overwritable: true });
+    files.push({ path: 'proxy.conf.json', content: generateProxyConfig(), overwritable: true });
   }
 
   // Static files under src/

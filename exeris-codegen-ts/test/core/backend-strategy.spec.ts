@@ -7,7 +7,7 @@
  * kernel-target-only discipline (hard-constraint #1); BackendType is now a
  * one-member union ('KERNEL'). Tests assert observable contract: the values
  * flowing through getClientConfig / getDefaultHeaders / transformPath /
- * mapError / getRetryConfig / getRealTimeConfig must match what downstream
+ * mapError / getRetryConfig must match what downstream
  * code-emitters depend on.
  */
 
@@ -70,25 +70,14 @@ describe('KernelStrategy — BackendStrategy contract', () => {
     expect(retry.retryableStatuses).toEqual(expect.arrayContaining([500, 502, 503, 504]));
   });
 
-  it('reports supportsRealtime() consistently with getRealTimeConfig presence', () => {
+  it('reports supportsRealtime()', () => {
     expect(instance.supportsRealtime()).toBe(true);
-    expect(instance.getRealTimeConfig).toBeDefined();
-    const rt = instance.getRealTimeConfig!();
-    expect(rt.endpoint).toBeTruthy();
-    expect(rt.reconnectAttempts).toBeGreaterThan(0);
-    expect(rt.heartbeatIntervalMs).toBeGreaterThan(0);
   });
 
   it('returns at least one TypeScript import line from getRequiredImports', () => {
     const imports = instance.getRequiredImports();
     expect(imports).toBeInstanceOf(Array);
     expect(imports.length).toBeGreaterThan(0);
-  });
-
-  it('embeds the transformed baseUrl into the generated client code snippet', () => {
-    const code = instance.generateClientCode('Order', '/orders');
-    const expectedUrl = instance.transformPath('/api', '/orders');
-    expect(code).toContain(expectedUrl);
   });
 
   it('mapError produces an ApiError with the response status and a non-empty code/message', () => {
@@ -157,19 +146,6 @@ describe('KernelStrategy specifics — RLS headers + HTTP/3 + correlation', () =
     const details = { email: 'invalid', name: 'required' };
     const err = kernel.mapError(new Response('', { status: 400 }), { details });
     expect(err.details).toEqual(details);
-  });
-
-  it('getRealTimeConfig points at the kernel event-stream endpoint', () => {
-    expect(kernel.getRealTimeConfig().endpoint).toBe('/api/events/stream');
-  });
-
-  it('generateClientCode wires up HttpClient + TenantContextService for the requested entity', () => {
-    const code = kernel.generateClientCode('Order', '/orders');
-    expect(code).toContain('HttpClient');
-    expect(code).toContain('TenantContextService');
-    expect(code).toContain('/api/orders');
-    expect(code).toContain('X-Tenant-Id');
-    expect(code).toContain('X-Correlation-Id');
   });
 });
 

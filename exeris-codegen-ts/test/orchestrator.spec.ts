@@ -17,6 +17,7 @@ import {
   type DomainMetadata,
 } from '../src/models/domain-model.js';
 import { DEFAULT_CONFIG } from '../src/config.js';
+import { canonicalManifestPath } from '../src/output/manifest.js';
 
 function domain(overrides: Partial<DomainMetadata> & { entityName: string }): DomainMetadata {
   return DomainMetadataSchema.parse({ packageName: 'com.shop', ...overrides });
@@ -95,9 +96,14 @@ describe('buildGeneratedFiles — T20: one real tree under src/app', () => {
   });
 
   it('includes the scaffold (package.json, main.ts, app.config) alongside the one tree', () => {
-    expect(at('./package.json')).toBeDefined();
+    expect(at('package.json')).toBeDefined();
     expect(at('src/main.ts')).toBeDefined();
     expect(at('src/app/app.config.ts')).toBeDefined();
+  });
+
+  it('names every file by its canonical manifest path (no ./ prefix, no . or .. segment)', () => {
+    const noncanonical = files.map((f) => f.path).filter((p) => canonicalManifestPath(p) !== p);
+    expect(noncanonical).toEqual([]);
   });
 
 });
@@ -238,8 +244,8 @@ describe('buildGeneratedFiles — peer contracts', () => {
     expect(paths).toContain('peers/shipping/index.ts');
     expect(paths.every((p) => p.startsWith('peers/'))).toBe(true);
     expect(paths.some((p) => p.startsWith('src/'))).toBe(false);
-    expect(paths).not.toContain('./package.json');
-    expect(paths).not.toContain('./angular.json');
+    expect(paths).not.toContain('package.json');
+    expect(paths).not.toContain('angular.json');
   });
 
   it('a run with a local enum and no entity keeps the app layout: its type surface stays under src/app', () => {
@@ -252,14 +258,14 @@ describe('buildGeneratedFiles — peer contracts', () => {
     const paths = buildGeneratedFiles([], [status], DEFAULT_CONFIG, [], peers).map((f) => f.path);
     expect(paths).toContain('src/app/types/enums.ts');
     expect(paths).toContain('src/app/peers/billing/index.ts');
-    expect(paths).toContain('./package.json');
+    expect(paths).toContain('package.json');
     expect(paths.some((p) => p.startsWith('types/') || p.startsWith('peers/'))).toBe(false);
   });
 
   it('a run with a local entity keeps the peer trees under src/app and emits the scaffold', () => {
     const paths = buildGeneratedFiles([localOrder], [], DEFAULT_CONFIG, [], peers).map((f) => f.path);
     expect(paths).toContain('src/app/peers/billing/index.ts');
-    expect(paths).toContain('./package.json');
+    expect(paths).toContain('package.json');
   });
 });
 
@@ -535,23 +541,23 @@ describe('buildGeneratedFiles — generated specs', () => {
     const files = buildGeneratedFiles([order], [], DEFAULT_CONFIG);
     expect(files.some((f) => f.path.endsWith('.spec.ts'))).toBe(false);
     expect(files.some((f) => f.path.endsWith('tsconfig.spec.json'))).toBe(false);
-    expect(at(files, './package.json')).not.toContain('vitest');
-    expect(at(files, './angular.json')).not.toContain('unit-test');
+    expect(at(files, 'package.json')).not.toContain('vitest');
+    expect(at(files, 'angular.json')).not.toContain('unit-test');
   });
 
   it('emits both specs and the whole runner when asked', () => {
     const files = buildGeneratedFiles([order], [], withTests);
     expect(files.some((f) => f.path === 'src/app/schemas/order.schema.spec.ts')).toBe(true);
     expect(files.some((f) => f.path === 'src/app/services/order.service.spec.ts')).toBe(true);
-    expect(files.some((f) => f.path === './tsconfig.spec.json')).toBe(true);
-    expect(at(files, './angular.json')).toContain('"builder": "@angular/build:unit-test"');
+    expect(files.some((f) => f.path === 'tsconfig.spec.json')).toBe(true);
+    expect(at(files, 'angular.json')).toContain('"builder": "@angular/build:unit-test"');
   });
 
   // Both are consumer-build requirements the runner cannot start without: vitest is an OPTIONAL
   // peer of @angular/build, and the builder refuses to run without a DOM implementation, naming
   // jsdom or happy-dom itself.
   it('declares the two dependencies the runner needs, and only under the flag', () => {
-    const on = at(buildGeneratedFiles([order], [], withTests), './package.json');
+    const on = at(buildGeneratedFiles([order], [], withTests), 'package.json');
     expect(on).toContain('"vitest"');
     expect(on).toContain('"jsdom"');
   });
@@ -559,9 +565,9 @@ describe('buildGeneratedFiles — generated specs', () => {
   // Otherwise a consumer's production `ng build` type-checks the specs and therefore needs vitest
   // installed — a test-only dependency leaking into the build path.
   it('excludes specs from the app tsconfig so a production build never needs the runner', () => {
-    expect(at(buildGeneratedFiles([order], [], withTests), './tsconfig.app.json'))
+    expect(at(buildGeneratedFiles([order], [], withTests), 'tsconfig.app.json'))
       .toContain('"exclude": ["src/**/*.spec.ts"]');
-    expect(at(buildGeneratedFiles([order], [], DEFAULT_CONFIG), './tsconfig.app.json'))
+    expect(at(buildGeneratedFiles([order], [], DEFAULT_CONFIG), 'tsconfig.app.json'))
       .not.toContain('exclude');
   });
 
