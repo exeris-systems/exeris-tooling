@@ -118,5 +118,11 @@
     "since": "0.10",
     "adr": "ADR-092",
     "justification": "No emitted service, store or client requests a version segment, and no generated route serves one, so the environments carry apiUrl and no apiVersion. environment.ts is written only when it is absent, so an existing app keeps the key there until it is deleted. docs/MIGRATION-0.x-to-1.0.md 0.10.0 carries the step."
+  },
+  {
+    "signature": "<entity>-form.component.ts, @Field(computed = true): - private compute<Name>() stub; computed<Name> reads the loaded entity",
+    "since": "0.10",
+    "adr": "ADR-092",
+    "justification": "The metadata names a computed field's dependencies and no formula, so the form computes nothing: it emits no compute<Name>() stub, whose body was a TODO and return null, and computed<Name> is this.current()?.<name> ?? null. In edit mode the read-only field shows the value the server returned; on create it is empty. The input, its data-testid, the label and the Computed from note are unchanged. docs/MIGRATION-0.x-to-1.0.md 0.10.0 carries the step."
   }
 ]

@@ -87,6 +87,9 @@
         <swagger-core.version>2.2.52</swagger-core.version>
 
         <junit.version>5.11.4</junit.version>
+        <!-- The architecture tests that hold the processor, codegen and kernel-target policies
+             (ArchUnit). Test scope in the tooling modules only; never managed in exeris-app-bom. -->
+        <archunit.version>1.5.1</archunit.version>
         <!-- 3.27.7 is the floor: it closes GHSA-rqfh-9r24-8c9r — XXE in isXmlEqualTo when
              parsing untrusted XML. We do not use isXmlEqualTo anywhere
              in the test suite (`grep -r isXmlEqualTo` → zero hits), so
@@ -252,6 +255,12 @@
                 <groupId>org.junit.jupiter</groupId>
                 <artifactId>junit-jupiter</artifactId>
                 <version>${junit.version}</version>
+                <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>com.tngtech.archunit</groupId>
+                <artifactId>archunit-junit5</artifactId>
+                <version>${archunit.version}</version>
                 <scope>test</scope>
             </dependency>
             <!-- Programmatic JUnit execution — the T2 gate does not just compile the
