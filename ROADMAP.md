@@ -3831,6 +3831,11 @@ enters only if its upstream half is final first.
       own tenant's events. The key is a kernel ask: `EventDescriptor` carries none. If the kernel adds
       the key, removes the 0.9.0 `EXT-PROC-1014` refusal; `exeris-codegen-ts` then emits stream clients for tenant-partitioned
       entities.
+- [ ] **Bridge contracts (wave J2b, ADR-097):** a committed generator catalogue that maps every path
+      the Java pipeline writes to its generator, held to the code by a completeness test and an
+      end-to-end conformance test; and `exeris-codegen-cli`, a launchable shaded jar of the Java
+      generator, in `exeris-tooling-bom` only. For `exeris-ai-bridge`'s `build-explain_artefacts`
+      and `build-preview_generation`. Does not hold the cut.
 - [x] **Maven coordinates move to the `eu.exeris` group** (founder decision 2026-10-06). Every
       module is published as `eu.exeris:<artifactId>`, the group of the kernel and SDK artefacts; the
       artifactIds and the Java packages (`eu.exeris.tooling.*`) are unchanged. 0.9.0 and earlier stay
