@@ -131,6 +131,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     /** The simple name of the SDK annotation that declares a domain event. */
     private static final String DOMAIN_EVENT = "DomainEvent";
 
+    /** The {@code @DomainEvent} attribute naming the event; the nested-class form does not read it. */
+    private static final String EVENT_NAME_ATTRIBUTE = "name";
+
     /**
      * The frame names the generated SSE streams reserve: {@code stream-error} for a failure after
      * the response head, {@code keep-alive} for the heartbeat (ADR-044 obligation 2, Amendment 2
@@ -913,8 +916,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      * <p><b>{@code @PrimaryKey} is absent.</b> The key is named by
      * {@code @ExerisDomain(primaryKeyField)}, which the generators honour (ADR-104). The marker
      * would fill the same {@code SystemFieldsMetadata.primaryKeyField} component, and the processor
-     * may extract it only once the SDK source-model reader reads it the same way (ADR-042,
-     * exeris-sdk#187 item 1). Until then it is unread, and the never-read audit reports it.
+     * may extract it only once the SDK source-model reader reads it the same way (ADR-042).
+     * Until then it is unread, and the never-read audit reports it.
      */
     private static final List<SystemFieldRole> SYSTEM_FIELD_ROLES = List.of(
             new SystemFieldRole("TenantId", "tenantIdField"),
@@ -2867,6 +2870,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             if (eventAnnotation != null) {
                 Map<String, Object> values = extractAnnotationValues(eventAnnotation);
                 warnInertAttributes(DOMAIN_EVENT, values, nestedClass, eventAnnotation);
+                warnNestedEventName(values, nestedClass, eventAnnotation);
                 String eventName = nestedClass.getSimpleName().toString();
                 refuseReservedEventName(eventName, nestedClass, eventAnnotation);
                 String topic = values.containsKey("topic") ? (String) values.get("topic") : null;
@@ -3518,6 +3522,23 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                                 + inert.note() + STRICT_SUFFIX,
                         element, mirror);
             }
+        }
+    }
+
+    /**
+     * Under {@code -Aexeris.strict}, reports a {@code name} written on a nested-class
+     * {@code @DomainEvent}. That form takes its event name from the class's simple name, as the
+     * SDK source-model reader does (ADR-042), so the attribute is read by neither side. The
+     * type-level form consumes {@code name}, which is why the attribute is not an
+     * {@link #INERT_ATTRIBUTES} entry: the report is specific to this form.
+     */
+    private void warnNestedEventName(Map<String, Object> values, Element nestedClass, AnnotationMirror mirror) {
+        if (strict && values.containsKey(EVENT_NAME_ATTRIBUTE)) {
+            warning(DiagnosticId.STRICT_INERT_ATTRIBUTE,
+                    "@" + DOMAIN_EVENT + "." + EVENT_NAME_ATTRIBUTE + " is set but no code generator consumes it — "
+                            + "a nested-class event is named after its class, " + nestedClass.getSimpleName()
+                            + "; declare the event on the entity to name it" + STRICT_SUFFIX,
+                    nestedClass, mirror);
         }
     }
 

@@ -113,7 +113,7 @@ describe('generatePeerTypes', () => {
     const types = byPath(files, 'types/fleet.types.ts');
     const schema = byPath(files, 'schemas/fleet.schema.ts');
     expect(types.slice(types.indexOf('export interface FleetCreate'))).toContain('tenantId?: string;');
-    expect(schema.slice(schema.indexOf('FleetCreateSchema'))).not.toContain('tenantId: true');
+    expect(schema.slice(schema.indexOf('FleetCreateSchema'), schema.indexOf('FleetUpdateSchema'))).not.toContain('tenantId: true');
   });
 
   it('carries the peer name and the field description into the emitted text', () => {

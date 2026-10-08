@@ -11,7 +11,7 @@ import type { CodeGenerator, EnumMetadata, GeneratedFile, GeneratorContext } fro
 import type { BackendType } from '../../core/backend-strategy.js';
 import { primaryKeyField } from '../../core/primary-key.js';
 import { outPath } from '../../core/paths.js';
-import { updateVersionField } from '../api/type-gen.js';
+import { updateOmittedFields, updateVersionField } from '../api/type-gen.js';
 import { fieldRenderContext, resolveFieldRenders, toTitleCase, type FieldRenderModel } from './field-render.js';
 import { tsSingleQuoted } from './ts-literal.js';
 import { entityExitRoute, entityViews, hasFormPage } from './entity-views.js';
@@ -419,23 +419,35 @@ export class FormGenerator implements CodeGenerator {
     lines.push('');
     // A number control holds `number | null`, the DTO's own type, so the model is the payload.
     lines.push('    const data = this.formModel();');
-    // The generated update writes every column of the row, so the edit payload is the loaded record
-    // with the form's values over it: a field the form does not offer (read-only, hidden, create-only)
-    // keeps its stored value. An `inUpdate = false` field is taken from the loaded record itself, not
-    // from the model, whose seed turns a stored null into the control's empty value.
+    // The edit payload is the loaded record less the fields the server owns, with the form's values
+    // over it: the update writes every domain column, so a field the form does not offer (read-only,
+    // hidden, create-only) keeps its stored value, while a server-owned field is never in the body.
+    // An `inUpdate = false` field is taken from the loaded record itself, not from the model, whose
+    // seed turns a stored null into the control's empty value. The cast is for the form model alone,
+    // whose controls hold wider values than the DTO (an enum as a string, an empty number as null).
+    const serverOwned = updateOmittedFields(domain);
     const fixedInEdit = createFields
-      .filter((r) => !r.form.inUpdate)
+      .filter((r) => !r.form.inUpdate && !serverOwned.includes(r.name))
       .map((r) => `, ${r.name}: current.${r.name}`)
       .join('');
-    const updatePayload = version
-      ? `{ ...current, ...data${fixedInEdit}, ${version.name}: this.loadedVersion() } as ${modelName}Update`
-      : `{ ...current, ...data${fixedInEdit} } as ${modelName}Update`;
+    const storedRecord = serverOwned.length > 0 ? 'stored' : 'current';
+    const updateBody = [
+      `  private updateBody(current: ${modelName}, data: ${formModelName}): ${modelName}Update {`,
+      ...(serverOwned.length > 0
+        ? [`    const { ${serverOwned.map((name) => `${name}: _${name}`).join(', ')}, ...stored } = current;`]
+        : []),
+      version
+        ? `    return { ...${storedRecord}, ...data${fixedInEdit}, ${version.name}: this.loadedVersion() } as ${modelName}Update;`
+        : `    return { ...${storedRecord}, ...data${fixedInEdit} } as ${modelName}Update;`,
+      '  }',
+      '',
+    ];
     // The create payload leaves out a field only the edit form offers (`inCreate = false`).
     const createMembers = createFields.filter((r) => r.form.inCreate).map((r) => `${r.name}: data.${r.name}`);
     const createPayload = createMembers.length === createFields.length
       ? `data as ${modelName}Create`
       : `${createMembers.length > 0 ? `{ ${createMembers.join(', ')} }` : '{}'} as ${modelName}Create`;
-    lines.push(`    const request$ = this.editMode() && current ? this.service.update(String(current.${idField}), ${updatePayload}) : this.service.create(${createPayload});`);
+    lines.push(`    const request$ = this.editMode() && current ? this.service.update(String(current.${idField}), this.updateBody(current, data)) : this.service.create(${createPayload});`);
     lines.push('');
     lines.push('    return new Promise((resolve) => {');
     lines.push('      request$.subscribe({');
@@ -465,6 +477,7 @@ export class FormGenerator implements CodeGenerator {
     lines.push('    });');
     lines.push('  }');
     lines.push('');
+    lines.push(...updateBody);
     lines.push('  onCancel(): void {');
     lines.push('    this.cancelled.emit();');
     lines.push('    if (this.routed) {');

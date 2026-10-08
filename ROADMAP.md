@@ -1697,9 +1697,9 @@ never-invoked emitter start emitting, and its output did not build.
       **Body shape (0.10.0, #349):** the server's update is a full replacement. The handler decodes
       the whole entity, and the repository writes every domain column, so a partial body over `PUT`
       nulls the omitted ones; the key, the owner and the audit and soft-delete columns keep their
-      stored value (ADR-090 Amendment 1). The TS `<Entity>Update` is
-      `Omit<<Entity>, key | owner>`, plus the version when the entity is versioned, and the update
-      schema follows it; the edit form already sent the loaded record. The Java OpenAPI
+      stored value (ADR-090 Amendment 1). The TS `<Entity>Update` is the entity record without those
+      server-owned fields, plus the version when the entity is versioned, and the update schema
+      follows it; the edit form sends the loaded record less them. The Java OpenAPI
       `<Entity>UpdateDto` still lists only the create-eligible properties and requires none of them
       (open).
 - [x] **Locale determinism — shipped 0.9.0 (2026-09-26).** Nineteen `toLowerCase()` calls in
@@ -3346,6 +3346,11 @@ Proposals, highest return-on-effort first:
       [ADR-105](docs/adr/ADR-105-generated-route-policy-emission.md);
       implementation J3-1 to J3-4.
 
+      *Landed:* J3-2, the seam: the generated `Application` binds `HTTP_ROUTE_POLICY` through
+      `routePolicy()`, `applicationPolicy()` and `unmatchedRoutes()`, and a generated
+      `GeneratedRoutePolicy` abstains on every route. Behaviour is unchanged. Extraction, the table,
+      the conformance test, the TypeScript guards and the OpenAPI security block remain.
+
 - [ ] **D10 — the TS side has a bearer-token code path that reaches no emitted output.**
       *Scheduled: 0.10.0, with T53.* Surfaced by
       the review of the D8 PR and verified: `KernelStrategy.getDefaultHeaders`
@@ -3912,15 +3917,16 @@ enters only if its upstream half is final first.
       and `build-preview_generation`. Does not hold the cut.
       *Landed:* ADR-097 and the catalogue, with `docs/generators.md` (#328); `exeris-codegen-cli`
       (#333); the bridge's `ADR-097.link.md` stub (exeris-ai-bridge#54).
-- [ ] **`@PrimaryKey` rename (wave J5, ADR-104):** `@ExerisDomain(primaryKeyField)` names the key
+- [x] **`@PrimaryKey` rename (wave J5, ADR-104):** `@ExerisDomain(primaryKeyField)` names the key
       across the migration, the repository, the foreign-key target, the Java and TS models and the
-      OpenAPI schema; the route variable stays `{id}`. The key is a `UUID`. The `@PrimaryKey` marker
-      is J5b, conditional on exeris-sdk#187 item 1.
-      *Landed:* J5-1 and J5-2. J5-2, the TypeScript resolver (`exeris-codegen-ts/src/core/primary-key.ts`): every
-      emitter that writes the entity key reads it from `primaryKeyField`, with output unchanged.
-      The view `@for` track key and the form's foreign-key picker helper read the default key
-      name, since neither holds the bound entity's metadata. J5-1, the Java resolver (#354): every
-      Java site reads the key through `PrimaryKeys`. *Open:* J5-3, the switch-over.
+      OpenAPI schema; the route variable stays `{id}`. The key is a `UUID`.
+      *Landed:* J5-1 (#354), J5-2 (#357) and J5-3 (#363, the switch-over). J5-2, the TypeScript
+      resolver (`exeris-codegen-ts/src/core/primary-key.ts`): every emitter that writes the entity
+      key reads it from `primaryKeyField`. The view `@for` track key and the form's foreign-key
+      picker helper read the default key name, since neither holds the bound entity's metadata.
+      J5-1, the Java resolver: every Java site reads the key through `PrimaryKeys`.
+- [ ] **J5b, the `@PrimaryKey` marker (ADR-104):** the processor reads the field marker into
+      `primaryKeyField`. Conditional on exeris-sdk#187 item 1, the `-io` reader half (ADR-042).
 - [x] **Maven coordinates move to the `eu.exeris` group** (founder decision 2026-10-06). Every
       module is published as `eu.exeris:<artifactId>`, the group of the kernel and SDK artefacts; the
       artifactIds and the Java packages (`eu.exeris.tooling.*`) are unchanged. 0.9.0 and earlier stay

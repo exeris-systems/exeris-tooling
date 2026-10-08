@@ -1,0 +1,41 @@
+{
+  "entityName": "AuditedRenamed",
+  "packageName": "com.example.parity",
+  "audited": true,
+  "systemFields": {
+    "createdAtField": "born",
+    "createdByField": "author",
+    "updatedAtField": "touched",
+    "updatedByField": "editor"
+  },
+  "fields": [
+    {
+      "name": "id",
+      "type": "java.util.UUID"
+    },
+    {
+      "name": "title",
+      "type": "java.lang.String"
+    },
+    {
+      "name": "born",
+      "type": "java.time.Instant"
+    },
+    {
+      "name": "author",
+      "type": "java.lang.String"
+    },
+    {
+      "name": "touched",
+      "type": "java.time.Instant"
+    },
+    {
+      "name": "editor",
+      "type": "java.lang.String"
+    },
+    {
+      "name": "createdAt",
+      "type": "java.time.Instant"
+    }
+  ]
+}

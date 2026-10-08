@@ -1,0 +1,26 @@
+{
+  "entityName": "TenantRenamed",
+  "packageName": "com.example.parity",
+  "dataScope": "TENANT",
+  "systemFields": {
+    "tenantIdField": "ownerId"
+  },
+  "fields": [
+    {
+      "name": "id",
+      "type": "java.util.UUID"
+    },
+    {
+      "name": "title",
+      "type": "java.lang.String"
+    },
+    {
+      "name": "ownerId",
+      "type": "java.util.UUID"
+    },
+    {
+      "name": "tenantId",
+      "type": "java.util.UUID"
+    }
+  ]
+}

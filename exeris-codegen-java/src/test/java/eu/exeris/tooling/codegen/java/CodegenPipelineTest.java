@@ -828,10 +828,11 @@ class CodegenPipelineTest {
 
             int filesGenerated = customPipeline.run(metadataDir, outputDir, "com.shop");
 
-            assertThat(filesGenerated).isEqualTo(3);
+            assertThat(filesGenerated).isEqualTo(4);
             assertThat(outputDir.resolve("com/shop/Application.java")).exists();
             assertThat(outputDir.resolve("com/shop/RuntimeComponents.java")).exists();
             assertThat(outputDir.resolve("com/shop/RuntimeLifecycle.java")).exists();
+            assertThat(outputDir.resolve("com/shop/GeneratedRoutePolicy.java")).exists();
         }
 
         @Test
@@ -848,8 +849,8 @@ class CodegenPipelineTest {
 
             int filesGenerated = customPipeline.run(metadataDir, outputDir, "com.shop");
 
-            // Null-returning generator emits 0; the bootstrap trio emits 3.
-            assertThat(filesGenerated).isEqualTo(3);
+            // Null-returning generator emits 0; the bootstrap files emit 4.
+            assertThat(filesGenerated).isEqualTo(4);
         }
     }
 

@@ -63,7 +63,13 @@ import java.util.Map;
  *       {@code eu.exeris.kernel.spi.persistence.TransactionalExecutor}; the
  *       default body composes {@code new TransactionOrchestrator(
  *       KernelProviders.persistenceEngine())} once the kernel has bound
- *       the {@code PERSISTENCE_ENGINE} {@link java.lang.ScopedValue}.</li>
+ *       the {@code PERSISTENCE_ENGINE} {@link java.lang.ScopedValue}. It also binds
+ *       {@code HTTP_ROUTE_POLICY} to {@code routePolicy()}, which folds
+ *       {@code applicationPolicy()}, the generated {@code GeneratedRoutePolicy} and
+ *       {@code unmatchedRoutes()} (ADR-105); all three are {@code protected} hooks.</li>
+ *   <li>{@code GeneratedRoutePolicy.java} — The generated half of the route policy
+ *       {@code Application} binds. Its {@code INSTANCE} declares a requirement only for a route
+ *       the domain model describes and abstains on every other route.</li>
  *   <li>{@code RuntimeComponents.java} — The composition-root seam (T49).
  *       One {@code protected create*} factory, one memoising {@code public}
  *       accessor and one field per generated {@code *Repository},
@@ -119,6 +125,11 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
     private static final String EDGE_HANDLER_TYPE = "EdgeHandler";
     private static final String REQUIRE_DECORATED_STREAM_ROUTE_METHOD = "requireDecoratedStreamRoute";
     private static final String HANDLER_SLOT = "handlerSlot";
+    // ADR-105: the three overridable hooks that compose the route policy the kernel is handed.
+    private static final String ROUTE_POLICY_METHOD = "routePolicy";
+    private static final String APPLICATION_POLICY_METHOD = "applicationPolicy";
+    private static final String UNMATCHED_ROUTES_METHOD = "unmatchedRoutes";
+    private static final String ROUTE_POLICY_TYPE_NAME = "GeneratedRoutePolicy";
 
     private static final ClassName ATOMIC_REFERENCE =
             ClassName.get("java.util.concurrent.atomic", "AtomicReference");
@@ -138,6 +149,10 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
             ClassName.get("eu.exeris.kernel.spi.http", "HttpHandler");
     private static final ClassName HTTP_KERNEL_PROVIDERS =
             ClassName.get("eu.exeris.kernel.spi.http", "HttpKernelProviders");
+    private static final ClassName HTTP_ROUTE_POLICY =
+            ClassName.get("eu.exeris.kernel.spi.http", "HttpRoutePolicy");
+    private static final ClassName ROUTE_REQUIREMENT =
+            ClassName.get("eu.exeris.kernel.spi.http", "RouteRequirement");
     private static final ClassName HTTP_METHOD =
             ClassName.get("eu.exeris.kernel.spi.http", "HttpMethod");
     private static final ClassName HTTP_ROUTER =
@@ -231,8 +246,8 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
      * @param basePackage the project base package (e.g.\ {@code "com.example.foundation"});
      *                    {@code Application}, {@code RuntimeComponents} and
      *                    {@code RuntimeLifecycle} are emitted here
-     * @return the three emitted files; always
-     *         {@code [Application, RuntimeComponents, RuntimeLifecycle]}
+     * @return the four emitted files; always
+     *         {@code [Application, RuntimeComponents, RuntimeLifecycle, GeneratedRoutePolicy]}
      */
     public List<GeneratedFile> generateAll(List<DomainMetadata> domains, String basePackage) {
         return generateAll(domains, basePackage, false);
@@ -252,19 +267,20 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
      *                 drives the SDK boot conductor around the runtime lifecycle; when
      *                 {@code false} not a single conductor symbol is emitted — see
      *                 {@link #buildApplication(String, boolean, boolean, String)}
-     * @return the three emitted files; always
-     *         {@code [Application, RuntimeComponents, RuntimeLifecycle]}
+     * @return the four emitted files; always
+     *         {@code [Application, RuntimeComponents, RuntimeLifecycle, GeneratedRoutePolicy]}
      * @since 0.7
      */
     public List<GeneratedFile> generateAll(List<DomainMetadata> domains, String basePackage,
                                            boolean composed) {
-        List<GeneratedFile> files = new ArrayList<>(3);
+        List<GeneratedFile> files = new ArrayList<>(4);
         // The Jackson 3 sentence is emitted only when a repository in this tree imports it.
         boolean importsJackson = domains.stream().anyMatch(KernelRepositoryGenerator::importsJackson);
         files.add(buildApplication(basePackage, composed, importsJackson,
                 RequiredSubsystems.selector(domains)));
         files.add(buildRuntimeComponents(domains, basePackage));
         files.add(buildRuntimeLifecycle(domains, basePackage));
+        files.add(buildRoutePolicy(basePackage));
         return files;
     }
 
@@ -411,6 +427,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                                            boolean importsJackson, String subsystems) {
         ClassName selfType = ClassName.get(basePackage, "Application");
         ClassName lifecycleType = ClassName.get(basePackage, "RuntimeLifecycle");
+        ClassName policyType = ClassName.get(basePackage, ROUTE_POLICY_TYPE_NAME);
         TypeName atomicHttpHandler = ParameterizedTypeName.get(ATOMIC_REFERENCE, HTTP_HANDLER);
 
         MethodSpec mainMethod = MethodSpec.methodBuilder("main")
@@ -556,14 +573,27 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                     .addJavadoc("capability lifecycle via {@link $T}\n", COMPOSITION_CONDUCTOR)
                     .addJavadoc("inside the kernel boot callback.\n")
                     .addJavadoc("<p>Subclass to override {@link #transactionalExecutor()},\n")
-                    .addJavadoc("{@link #subsystems()}, {@link #$L($T)} or {@link #$L()}.\n",
-                            COMPONENTS_METHOD, TRANSACTIONAL_EXECUTOR, CAP_MANIFEST_METHOD);
+                    .addJavadoc("{@link #subsystems()}, {@link #$L($T)}, {@link #$L()},\n",
+                            COMPONENTS_METHOD, TRANSACTIONAL_EXECUTOR, CAP_MANIFEST_METHOD)
+                    .addJavadoc("{@link #$L()}, {@link #$L()} or {@link #$L()}.\n",
+                            ROUTE_POLICY_METHOD, APPLICATION_POLICY_METHOD, UNMATCHED_ROUTES_METHOD);
         } else {
             applicationType
                     .addJavadoc("<p>Subclass to override {@link #transactionalExecutor()},\n")
-                    .addJavadoc("{@link #subsystems()} or {@link #$L($T)}.\n",
-                            COMPONENTS_METHOD, TRANSACTIONAL_EXECUTOR);
+                    .addJavadoc("{@link #subsystems()}, {@link #$L($T)},\n",
+                            COMPONENTS_METHOD, TRANSACTIONAL_EXECUTOR)
+                    .addJavadoc("{@link #$L()}, {@link #$L()} or {@link #$L()}.\n",
+                            ROUTE_POLICY_METHOD, APPLICATION_POLICY_METHOD, UNMATCHED_ROUTES_METHOD);
         }
+        applicationType
+                .addJavadoc("<p>Route access: the kernel is handed {@link #$L()}, which asks\n",
+                        ROUTE_POLICY_METHOD)
+                .addJavadoc("{@link #$L()} first, then {@link $T#INSTANCE}, and answers\n",
+                        APPLICATION_POLICY_METHOD, policyType)
+                .addJavadoc("{@link #$L()} for a route neither describes. That answer is\n",
+                        UNMATCHED_ROUTES_METHOD)
+                .addJavadoc("{@code permitAll()}: a route no policy describes is public, and its\n")
+                .addJavadoc("handler runs without a principal.\n");
         // Every import in the generated tree is a requirement on the consumer's compile
         // classpath that no emitted pom declares, so this Javadoc names each one by coordinate
         // and by phase: an import is a compile requirement, and therefore a runtime one too.
@@ -605,7 +635,10 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .addMethod(runMethod)
                 .addMethod(subsystemsMethod)
                 .addMethod(transactionalExecutorMethod)
-                .addMethod(componentsMethod);
+                .addMethod(componentsMethod)
+                .addMethod(routePolicyMethod(policyType))
+                .addMethod(applicationPolicyMethod())
+                .addMethod(unmatchedRoutesMethod());
         if (composed) {
             applicationType.addMethod(capManifestMethod());
         }
@@ -620,8 +653,11 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
      */
     private CodeBlock bootBlock(ClassName lifecycleType, boolean composed) {
         CodeBlock.Builder block = CodeBlock.builder()
-                .add("$T.where($T.HTTP_SERVER_HANDLER, $L).call(() -> {\n",
+                .add("$T.where($T.HTTP_SERVER_HANDLER, $L)\n",
                         SCOPED_VALUE, HTTP_KERNEL_PROVIDERS, EDGE_HANDLER_METHOD)
+                .add("    .where($T.HTTP_ROUTE_POLICY, $L())\n", HTTP_KERNEL_PROVIDERS, ROUTE_POLICY_METHOD)
+                .add("    .call(() -> {\n")
+                .indent()
                 .indent()
                 .add("$T.builder()\n", KERNEL_BOOTSTRAP)
                 .add("    .selector($T.forNames(subsystems().split($S)))\n", BOOTSTRAP_SELECTOR, ",")
@@ -644,8 +680,118 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
         }
         return block.add("return null;\n")
                 .unindent()
-                .addStatement("})")
+                .unindent()
+                .addStatement("    })")
                 .build();
+    }
+
+    /** The overridable composition of the route policy the kernel is handed. */
+    private MethodSpec routePolicyMethod(ClassName policyType) {
+        return MethodSpec.methodBuilder(ROUTE_POLICY_METHOD)
+                .addModifiers(Modifier.PROTECTED)
+                .returns(HTTP_ROUTE_POLICY)
+                .addJavadoc("The route policy bound as {@code HTTP_ROUTE_POLICY}: the first of\n")
+                .addJavadoc("{@link #$L()} and {@link $T#INSTANCE} to declare a requirement\n",
+                        APPLICATION_POLICY_METHOD, policyType)
+                .addJavadoc("for a route answers it, and {@link #$L()} answers the rest.\n",
+                        UNMATCHED_ROUTES_METHOD)
+                .addJavadoc("<p>Called before the kernel boots, because the http subsystem reads the\n")
+                .addJavadoc("policy once, when it starts: a body must not read a kernel\n")
+                .addJavadoc("{@link $T} that the boot binds.\n", SCOPED_VALUE)
+                .addStatement("return $T.firstDeclared($T.of($L(), $T.INSTANCE), $L())",
+                        HTTP_ROUTE_POLICY, LIST, APPLICATION_POLICY_METHOD, policyType,
+                        UNMATCHED_ROUTES_METHOD)
+                .build();
+    }
+
+    /** The application's own route rules, consulted before the generated ones. */
+    private MethodSpec applicationPolicyMethod() {
+        return MethodSpec.methodBuilder(APPLICATION_POLICY_METHOD)
+                .addModifiers(Modifier.PROTECTED)
+                .returns(HTTP_ROUTE_POLICY)
+                .addJavadoc("The application's own route rules. It is consulted before the\n")
+                .addJavadoc("generated policy, so it has the last word on any route, including one\n")
+                .addJavadoc("registered through {@code configureRoutes} under a generated path. The\n")
+                .addJavadoc("default abstains on every route.\n")
+                .addJavadoc("<p>Subclass {@code Application} and override to declare a requirement:\n")
+                .addJavadoc("{@snippet :\n")
+                .addJavadoc("@Override protected HttpRoutePolicy applicationPolicy() {\n")
+                .addJavadoc("    return (method, path) -> path.startsWith(\"/admin/\")\n")
+                .addJavadoc("            ? RouteRequirement.authenticated()\n")
+                .addJavadoc("            : RouteRequirement.abstain();\n")
+                .addJavadoc("}\n")
+                .addJavadoc("}\n")
+                .addJavadoc("A requirement other than {@code permitAll()} needs a security\n")
+                .addJavadoc("provider: add {@code security} to {@link #subsystems()}.\n")
+                .addStatement("return (method, path) -> $T.abstain()", ROUTE_REQUIREMENT)
+                .build();
+    }
+
+    /** The answer for a route no policy describes. */
+    private MethodSpec unmatchedRoutesMethod() {
+        return MethodSpec.methodBuilder(UNMATCHED_ROUTES_METHOD)
+                .addModifiers(Modifier.PROTECTED)
+                .returns(ROUTE_REQUIREMENT)
+                .addJavadoc("The requirement of a route neither {@link #$L()} nor the\n",
+                        APPLICATION_POLICY_METHOD)
+                .addJavadoc("generated policy describes. The default is {@code permitAll()}: such\n")
+                .addJavadoc("a route is public, and its handler runs without a principal.\n")
+                .addJavadoc("<p>Override to fail closed, with {@code RouteRequirement.authenticated()}.\n")
+                .addJavadoc("Declare the driver's own liveness, readiness and probe routes\n")
+                .addJavadoc("{@code permitAll()} in {@link #$L()} first, or an orchestrator's\n",
+                        APPLICATION_POLICY_METHOD)
+                .addJavadoc("probes fail against a healthy process. The answer must not be an\n")
+                .addJavadoc("abstention.\n")
+                .addStatement("return $T.permitAll()", ROUTE_REQUIREMENT)
+                .build();
+    }
+
+    /**
+     * Emits {@code GeneratedRoutePolicy}, the generated half of the route policy.
+     *
+     * <p>Its table holds no row, so the policy abstains on every route and the application's
+     * {@code unmatchedRoutes()} decides it.
+     */
+    private GeneratedFile buildRoutePolicy(String basePackage) {
+        FieldSpec abstain = FieldSpec.builder(ROUTE_REQUIREMENT, "ABSTAIN",
+                        Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                .initializer("$T.abstain()", ROUTE_REQUIREMENT)
+                .build();
+        ClassName selfType = ClassName.get(basePackage, ROUTE_POLICY_TYPE_NAME);
+        FieldSpec instance = FieldSpec.builder(selfType, "INSTANCE",
+                        Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
+                .addJavadoc("The one instance; built before the kernel boots.\n")
+                .initializer("new $T()", selfType)
+                .build();
+        MethodSpec requirementFor = MethodSpec.methodBuilder("requirementFor")
+                .addAnnotation(Override.class)
+                .addModifiers(Modifier.PUBLIC)
+                .returns(ROUTE_REQUIREMENT)
+                .addParameter(HTTP_METHOD, "method")
+                .addParameter(String.class, "path")
+                .addJavadoc("Answers an abstention: the table has no row, so no route is described.\n")
+                .addJavadoc("\n")
+                .addJavadoc("@param method the method of the route the request is dispatched to\n")
+                .addJavadoc("@param path the request path, without a query string\n")
+                .addJavadoc("@return an abstention\n")
+                .addStatement("return ABSTAIN")
+                .build();
+        TypeSpec type = KernelScaffold.publicClass(ROUTE_POLICY_TYPE_NAME)
+                .addModifiers(Modifier.FINAL)
+                .addSuperinterface(HTTP_ROUTE_POLICY)
+                .addJavadoc("Generated route policy: the generated half of the policy the application\n")
+                .addJavadoc("binds (ADR-105).\n")
+                .addJavadoc("<p>Its table holds no row, so it abstains on every route and the application\n")
+                .addJavadoc("decides each one. A requirement it declares for a stream route is a prompt one.\n")
+                .addJavadoc("<p>{@code Application} asks it after {@code applicationPolicy()}.\n")
+                .addJavadoc("<p><b>DO NOT EDIT</b> - Regenerate from domain models.\n")
+                .addField(abstain)
+                .addField(instance)
+                .addMethod(MethodSpec.constructorBuilder().addModifiers(Modifier.PRIVATE).build())
+                .addMethod(requirementFor)
+                .build();
+        return new GeneratedFile(basePackage, ROUTE_POLICY_TYPE_NAME,
+                KernelScaffold.render(basePackage, type), ArtifactType.APPLICATION);
     }
 
     /** The overridable manifest-location seam, emitted only into a composed application. */

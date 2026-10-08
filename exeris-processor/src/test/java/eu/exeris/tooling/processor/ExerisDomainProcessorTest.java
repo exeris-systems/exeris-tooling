@@ -3956,6 +3956,59 @@ class ExerisDomainProcessorTest {
         }
 
         @Test
+        @DisplayName("-Aexeris.strict warns that a nested @DomainEvent class ignores name, and the class name wins")
+        void strictWarnsThatNestedDomainEventIgnoresName() {
+            Compilation compilation = javac()
+                    .withOptions("-Aexeris.strict=true")
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(nestedEventNamed(", name = \"OrderShipped\""));
+
+            assertThat(compilation).succeeded();
+            assertThat(hasInertWarningFor(compilation, "@DomainEvent.name")).isTrue();
+        }
+
+        @Test
+        @DisplayName("A nested @DomainEvent class without name draws no name warning under -Aexeris.strict")
+        void strictStaysQuietOnNestedDomainEventWithoutName() {
+            Compilation compilation = javac()
+                    .withOptions("-Aexeris.strict=true")
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(nestedEventNamed(""));
+
+            assertThat(compilation).succeeded();
+            assertThat(hasInertWarningFor(compilation, "@DomainEvent.name")).isFalse();
+        }
+
+        @Test
+        @DisplayName("A default build stays quiet when a nested @DomainEvent class sets name")
+        void defaultBuildStaysQuietOnNestedDomainEventName() {
+            Compilation compilation = javac()
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(nestedEventNamed(", name = \"OrderShipped\""));
+
+            assertThat(compilation).succeeded();
+            assertThat(hasInertWarningFor(compilation, "@DomainEvent.name")).isFalse();
+        }
+
+        private JavaFileObject nestedEventNamed(String extraAttributes) {
+            return JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.DomainEvent;
+
+                    @ExerisDomain(module = "core", path = "/orders")
+                    public class Order { private java.util.UUID id;
+                        @DomainEvent(trigger = DomainEvent.Trigger.CREATE, topic = "orders.shipped"%s)
+                        public static class Shipped {
+                        }
+                    }
+                    """.formatted(extraAttributes));
+        }
+
+        @Test
         @DisplayName("Default build stays quiet when an inert @DomainEvent attribute is set")
         void defaultBuildDoesNotWarnOnInertDomainEventAttribute() {
             Compilation compilation = javac()
