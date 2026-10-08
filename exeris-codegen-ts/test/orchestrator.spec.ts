@@ -543,21 +543,28 @@ describe('buildGeneratedFiles — SSE stream clients', () => {
     expect(at(buildGeneratedFiles([plain], [], DEFAULT_CONFIG), 'src/app/index.ts')).not.toContain('stream');
   });
 
-  // Stream routes carry no tenant guard, so a tenant-partitioned entity gets no stream client.
+  // The per-action driver is isolated by the tenant guard, the row-level-security load and the
+  // stream-id filter; the entity-level live view has no isolation key, so it stays GLOBAL-only.
   it.each([
     ['TENANT', { dataScope: 'TENANT' }],
     ['UNIVERSE', { dataScope: 'UNIVERSE' }],
     ['legacy tenantScoped', { tenantScoped: true }],
-  ] as const)('emits no stream client and no barrel section for a %s entity', (_label, scope) => {
+  ] as const)('emits the action stream client and no live view for a %s entity', (_label, scope) => {
     const partitioned = domain({ ...plain, ...scope, realTimeApi: true, actions: [{ name: 'track', streaming: true }] });
     const files = buildGeneratedFiles([partitioned], [], DEFAULT_CONFIG);
-    expect(files.filter((f) => f.path.includes('stream')).map((f) => f.path)).toEqual([]);
-    expect(at(files, 'src/app/index.ts')).not.toContain('stream');
+    expect(files.filter((f) => f.path.includes('stream')).map((f) => f.path).sort()).toEqual([
+      'src/app/services/action-streams.index.ts',
+      'src/app/services/order.action-streams.ts',
+      'src/app/services/stream-types.ts',
+    ]);
+    const barrel = at(files, 'src/app/index.ts');
+    expect(barrel).toContain("export * from './services/action-streams.index';");
+    expect(barrel).not.toContain('services/streams.index');
     // Still served as a stream only, so no respond-once service method either.
     expect(at(files, 'src/app/services/order.service.ts')).not.toContain('/actions/track`');
   });
 
-  it('keeps the stream clients of a GLOBAL entity beside a tenant-partitioned one', () => {
+  it('keeps the live view of a GLOBAL entity beside a tenant-partitioned one that has none', () => {
     const tenant = domain({ ...live, entityName: 'Invoice', dataScope: 'TENANT' });
     const paths = buildGeneratedFiles([live, tenant], [], DEFAULT_CONFIG).map((f) => f.path);
     expect(paths).toContain('src/app/services/order.stream.ts');

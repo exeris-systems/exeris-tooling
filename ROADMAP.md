@@ -1743,7 +1743,7 @@ never-invoked emitter start emitting, and its output did not build.
       **0.9.0, the stopgap (founder decision 2026-10-04):** the processor refuses `realTimeApi = true`
       on a tenant-partitioned entity (`TENANT`, `UNIVERSE`, or the deprecated `tenantScoped = true`)
       with `EXT-PROC-1014`, also when the entity declares no `@DomainEvent`. Streaming actions are not
-      refused. `exeris-codegen-ts` emits no stream client for a tenant-partitioned entity. Metadata
+      refused. `exeris-codegen-ts` emits no live view for a tenant-partitioned entity. Metadata
       JSON that reaches `exeris:generate` without the processor is not checked.
 
       **0.10.0, the fix:** the tenant guard in every stream handler and an isolation key on stream
@@ -3034,7 +3034,8 @@ Proposals, highest return-on-effort first:
       **J4-2 implemented:** `realTimeApi` also emits `GET {base}/{id}/stream`
       (`KernelSpectateStreamHandlerGenerator`): one row's events, filtered on the row id, with a
       keep-alive and no deadline; described in the emitted OpenAPI. `message`, `open` and `error`
-      join the reserved frame names. Open: S4 (the spectate client among it), the tenant-partitioned
+      join the reserved frame names. S4 part 3 emits the per-action TS clients of tenant-partitioned
+      entities. Open: S4 (the spectate client), the tenant-partitioned
       spectate route (T53, exeris-kernel#600).
 
 - [ ] **EV2 — `@EventSourced` aggregate generator — log substrate delivered (kernel 0.10, ADR-049);
@@ -3913,7 +3914,8 @@ enters only if its upstream half is final first.
       *Landed:* J4-1 (#360): the handler runs the action and streams its triggered events; J4-2
       (#372): `realTimeApi` emits `GET {base}/{id}/stream`, and `message`, `open` and `error` join the
       reserved frame names.
-      *Open:* S4, the TS clients (the spectate client among them); the result frame, which waits on
+      *Landed (S4, part 3):* the per-action TS clients for tenant-partitioned entities.
+      *Open:* S4, the spectate client; the result frame, which waits on
       exeris-sdk#191.
 - [ ] **T59 — tenant isolation on stream routes** (the same ADR-044 amendment): the tenant guard in
       the entity-level and the per-action stream handler, an RLS `findById` before a per-action stream
@@ -3923,7 +3925,9 @@ enters only if its upstream half is final first.
       entities.
       *Landed:* the per-action half, J4-1 (#360); the spectate route, J4-2 (#372), `GLOBAL`-only
       while `EXT-PROC-1014` stands. *Open:* the entity level and the tenant-partitioned spectate
-      route wait on exeris-kernel#600; the TS clients for tenant-partitioned entities are wave S4.
+      route wait on exeris-kernel#600. The TS per-action clients for tenant-partitioned entities
+      are emitted (wave S4); each answers `stream-error` until the route policy binds the storage
+      context (T53).
 - [x] **Bridge contracts (wave J2b, ADR-097):** a committed generator catalogue that maps every path
       the Java pipeline writes to its generator, held to the code by a completeness test and an
       end-to-end conformance test; and `exeris-codegen-cli`, a launchable shaded jar of the Java

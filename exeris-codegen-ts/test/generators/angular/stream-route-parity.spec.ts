@@ -31,7 +31,7 @@ const CONTRACT_URL = new URL(
 const contract = JSON.parse(readFileSync(fileURLToPath(CONTRACT_URL), 'utf8')) as { routes: Route[] };
 
 // The entity StreamRouteParityE2ETest generates its application from. GLOBAL, as the default:
-// a tenant-partitioned entity gets no stream client, because its stream routes carry no tenant guard.
+// the live view is GLOBAL-only, so the contract's live-view route is read from a GLOBAL entity.
 const order = DomainMetadataSchema.parse({
   packageName: 'eu.exeris.e2e.parity.domain',
   entityName: 'Order',

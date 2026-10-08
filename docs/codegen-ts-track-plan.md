@@ -215,9 +215,9 @@ barrel, whenever services are generated: the live-view client (`<entity>.stream.
 (`<entity>.action-streams.ts`, `fetch` over `POST {base}/{id}/actions/{kebab}`) for each
 `@Action(streaming)`, which has no respond-once route and so no service method.
 `contract/stream-routes.json` pins those routes on both sides (`StreamRouteParityE2ETest`,
-`stream-route-parity.spec.ts`). A tenant-partitioned entity (`TENANT` or `UNIVERSE`) gets neither
-client until the server guards its stream routes — see the ROADMAP item *Stream endpoints carry no
-tenant guard*. `guard-gen` and `query-builder-gen` remain uncomposed.
+`stream-route-parity.spec.ts`). A tenant-partitioned entity (`TENANT` or `UNIVERSE`) gets the
+action stream clients and no live view, which waits on the isolation key — see the ROADMAP item
+*Stream endpoints carry no tenant guard*. `guard-gen` and `query-builder-gen` remain uncomposed.
 
 ### Stage 1 — contract parity with the emitted backend — shipped
 
@@ -277,7 +277,7 @@ the issues placed in that release — is ordered in the TypeScript track of
 [`0.10.0-release-plan.md`](0.10.0-release-plan.md).
 
 - The per-action stream producer (EV1-stream): the Java handler runs the action (J4-1, ADR-044
-  Amendment 2). The TS clients for tenant-partitioned entities and the spectate client are wave S4;
+  Amendment 2). The per-action TS clients for tenant-partitioned entities are emitted; the spectate client is wave S4;
   the TS client already parses the named frames.
 - Test-emitter coverage: `spec-gen` covers 2 of 18 TS emitters.
 - `npm run lint` runs `eslint .` in `build.yml` (#348).

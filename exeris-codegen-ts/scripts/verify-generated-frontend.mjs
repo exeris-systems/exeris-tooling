@@ -77,7 +77,8 @@ function check(label, domains, fixtureEnums, peers = [], consumer = null, withSe
       f.path.startsWith('src/app/schemas/') ||
       f.path.startsWith('src/app/peers/') ||
       // A stream client imports only @angular/core and rxjs, which the ambient stubs below stand in for.
-      (withServices && f.path.startsWith('src/app/services/') && f.path.endsWith('.stream.ts')),
+      (withServices && (/^src\/app\/services\/[a-z0-9-]+\.stream\.ts$/.test(f.path)
+        || /^src\/app\/services\/(stream-types|[a-z0-9-]+\.action-streams)\.ts$/.test(f.path))),
   );
   if (dataLayer.length === 0) {
     console.error(`verify:generated [${label}] — no data-layer files emitted; orchestrator changed?`);
@@ -108,6 +109,7 @@ function check(label, domains, fixtureEnums, peers = [], consumer = null, withSe
       "declare module 'rxjs' {",
       '  export interface Subscription { unsubscribe(): void }',
       '  export interface Observer<T> { next: (value: T) => void; error: (err: unknown) => void; complete: () => void }',
+      '  export interface Subscriber<T> extends Observer<T> {}',
       '  export class Observable<T> {',
       '    constructor(subscribe: (subscriber: Observer<T>) => (() => void) | void);',
       '    subscribe(observer: Partial<Observer<T>>): Subscription;',
@@ -487,5 +489,37 @@ check(
   true,
 );
 
+// (10) A streaming action on a tenant-partitioned entity gets the same per-action stream client as a
+// GLOBAL one: a consumer opens it by row id and reads every frame as the shared StreamFrame, and
+// an id that is not a string does not type-check.
+check(
+  'tenant-action-stream',
+  [DomainMetadataSchema.parse({
+    packageName: 'com.shop',
+    entityName: 'Shipment',
+    dataScope: 'TENANT',
+    fields: [{ name: 'id', type: 'java.util.UUID' }, { name: 'leg', type: 'java.lang.Integer' }],
+    actions: [{ name: 'trackShipment', streaming: true, streamEventType: 'ShipmentMoved' }],
+  })],
+  [],
+  [],
+  [
+    "import type { Observable } from 'rxjs';",
+    "import { ShipmentTrackShipmentStreamClient } from './services/shipment.action-streams';",
+    "import type { StreamFrame } from './services/stream-types';",
+    '',
+    'export const open = (client: ShipmentTrackShipmentStreamClient, id: string): Observable<StreamFrame> => client.stream(id);',
+    'export const eventName: string = ShipmentTrackShipmentStreamClient.STREAM_EVENT_TYPE;',
+    'export const names = (frames: Observable<StreamFrame>): void => {',
+    '  frames.subscribe({ next: (frame) => { const name: string = frame.event; const data: string = frame.data; void [name, data]; } });',
+    '};',
+    '',
+    "// @ts-expect-error — the row id is a string",
+    'export const numeric = (client: ShipmentTrackShipmentStreamClient): Observable<StreamFrame> => client.stream(1);',
+    '',
+  ].join('\n'),
+  true,
+);
+
 rmSync(join(pkgRoot, '.verify-tmp'), { recursive: true, force: true });
-console.log('✓ Generated frontend data layer type-checks (with-enums + zero-enums + two-peers-same-entity + versioned-update + full-replacement-update + inherited-key + server-owned-update + undeclared-version + spectate-stream).');
+console.log('✓ Generated frontend data layer type-checks (with-enums + zero-enums + two-peers-same-entity + versioned-update + full-replacement-update + inherited-key + server-owned-update + undeclared-version + spectate-stream + tenant-action-stream).');

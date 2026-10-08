@@ -383,6 +383,22 @@ Peers in one build are the same shape supplied from a local path — the degener
 second mode. What is emitted is DTOs only: the peer **client** and the capability registry are
 the next slice.
 
+## SSE stream clients
+
+With services generated (`generateServices`, the default), the emitted app has a client for each
+stream route the generated kernel application serves, under `src/app/services/`:
+
+- `<entity>.stream.ts`, for an `@ExerisDomain(realTimeApi = true)` entity: the live view, a native
+  `EventSource` on `GET {base}/stream`. Only a `GLOBAL` entity gets one; a tenant-partitioned
+  entity (`TENANT`, `UNIVERSE`, or the deprecated `tenantScoped`) has no live view.
+- `<entity>.action-streams.ts`, for each `@Action(streaming = true)`: `fetch` over
+  `POST {base}/{id}/actions/{action}`, parsed into `StreamFrame`s. The scope of the entity does
+  not change the client.
+
+A tenant-partitioned entity's stream answers `stream-error` until the route policy binds the
+storage context. Its action stream client is generated to the final shape and is unusable until
+then; the client of a `GLOBAL` entity is not affected.
+
 ## Generated Structure
 
 ```
