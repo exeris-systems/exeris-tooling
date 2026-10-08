@@ -145,6 +145,19 @@ export const GeneratorConfigSchema = z.object({
    *  rather than configuring an app. */
   scaffold: z.boolean().default(true),
 
+  /** How the scaffolded app is rendered: `csr` (the default) or `ssg`.
+   *
+   *  `csr` is a browser-only application. `ssg` adds Angular's static prerender setup to the
+   *  scaffold: `src/main.server.ts`, `src/app/app.config.server.ts` and
+   *  `src/app/app.routes.server.ts`, client hydration in `app.config.ts`, `outputMode: "static"`
+   *  and the `server` entry in `angular.json`, and `@angular/ssr` + `@angular/platform-server` in
+   *  `package.json`. `ng build` then writes one HTML file per param-less `@View` page that reads no
+   *  entity data; every other route renders in the browser.
+   *
+   *  Only the scaffold carries a render setup. With `scaffold` off the consumer owns
+   *  `angular.json` and its server configuration, so `ssg` emits nothing there. */
+  render: z.enum(['csr', 'ssg']).default('csr'),
+
 });
 
 export type GeneratorConfig = z.infer<typeof GeneratorConfigSchema>;
@@ -180,6 +193,7 @@ export const DEFAULT_CONFIG: GeneratorConfig = {
   customBlocks: {},
   viewHeading: 'title',
   scaffold: true,
+  render: 'csr',
 };
 
 /** The generators that emit per-entity output; the views-only preset turns each of them off. */
@@ -269,6 +283,7 @@ export function cliOverrides(
   take('details', 'generateDetails', () => options.details !== false);
   take('tests', 'generateTests', () => options.tests === true);
   take('scaffold', 'scaffold', () => options.scaffold !== false);
+  take('render', 'render', () => options.render as GeneratorConfig['render']);
   take('stores', 'generateStores', () => options.stores !== false);
   take('sagas', 'generateSagas', () => options.sagas !== false);
   take('events', 'generateEvents', () => options.events !== false);

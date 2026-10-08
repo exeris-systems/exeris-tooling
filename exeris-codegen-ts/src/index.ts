@@ -74,6 +74,12 @@ program
     'Emit no Angular project or app-shell file: the generated tree is written at the output root, '
       + 'for an app that owns its own package.json, angular.json, app.config.ts and app.routes.ts',
   )
+  .option(
+    '--render <mode>',
+    'How the scaffolded app renders: csr (browser only) or ssg (static prerender of the param-less '
+      + '@View pages; adds the Angular server entry, server routes and @angular/ssr)',
+    'csr',
+  )
   .option('--no-stores', 'Skip Signal store generation')
   .option('--no-sagas', 'Skip Saga UI generation')
   .option('--no-events', 'Skip Event handler generation')
@@ -147,6 +153,27 @@ const DRY_RUN_LABEL: Record<WriteAction, string> = {
   'skip-unowned': 'Would skip (not generated here):',
 };
 
+/**
+ * Under `render: 'ssg'`, a run that keeps an existing `angular.json` keeps the browser-only form of
+ * the four seeds the static setup changes. With `@angular/ssr` installed the build then succeeds and
+ * prerenders nothing, so the run says so. The server routes, the server config and the server entry
+ * are written regardless; `angular.json` stands for the four because it is the one that names the
+ * server entry.
+ */
+function warnKeptCsrScaffold(
+  config: GeneratorConfig,
+  plan: ReadonlyArray<{ readonly path: string; readonly action: WriteAction }>,
+): void {
+  if (config.render !== 'ssg' || !config.scaffold) return;
+  const angularJson = plan.find((entry) => entry.path === 'angular.json');
+  if (angularJson?.action !== 'keep-seed' && angularJson?.action !== 'skip-unowned') return;
+  console.log(
+    pc.yellow('render "ssg": angular.json, package.json, tsconfig.app.json and src/app/app.config.ts were kept as they are.'),
+    'Until they carry the server entry, @angular/ssr and client hydration, ng build prerenders nothing.',
+    'Compare with --dry-run, rerun with --overwrite, or generate into a fresh directory and merge.',
+  );
+}
+
 async function runGenerate(config: GeneratorConfig): Promise<void> {
   const inputPath = resolve(process.cwd(), config.inputPath);
   const outputPath = resolve(process.cwd(), config.outputPath);
@@ -163,6 +190,12 @@ async function runGenerate(config: GeneratorConfig): Promise<void> {
   console.log(pc.dim('Backend:'), config.backend, strategyConfig.useHttp3 ? '(HTTP/3)' : '');
   console.log(pc.dim('Styling:'), config.styling);
   console.log(pc.dim('─'.repeat(50)));
+  if (config.render === 'ssg' && !config.scaffold) {
+    console.log(
+      pc.yellow('render "ssg" emits nothing without the scaffold:'),
+      'the server entry, server routes and builder options belong to the app that owns angular.json',
+    );
+  }
 
   // Peer contracts (T42, ADR-048), loaded BEFORE the empty-input return: a declared peer
   // must never be silently dropped, and an app whose whole domain is a peer's is a real
@@ -216,9 +249,11 @@ async function runGenerate(config: GeneratorConfig): Promise<void> {
 
   if (config.dryRun) {
     console.log(pc.yellow('Dry run - no files written'));
-    for (const entry of planWrites(outputPath, generatedFiles, { overwrite: config.overwrite })) {
+    const dryPlan = planWrites(outputPath, generatedFiles, { overwrite: config.overwrite });
+    for (const entry of dryPlan) {
       console.log(pc.dim(`  ${DRY_RUN_LABEL[entry.action]}`), entry.path);
     }
+    warnKeptCsrScaffold(config, dryPlan);
     const orphans = planOrphans(outputPath, generatedFiles, SEED_PATHS);
     for (const path of orphans.prune) {
       console.log(pc.dim('  Would prune:'), path);
@@ -236,6 +271,7 @@ async function runGenerate(config: GeneratorConfig): Promise<void> {
       seedPaths: SEED_PATHS,
     });
     const count = (action: WriteAction): number => plan.filter((entry) => entry.action === action).length;
+    warnKeptCsrScaffold(config, plan);
 
     for (const entry of plan) {
       if (entry.action === 'create' || entry.action === 'rewrite') {
