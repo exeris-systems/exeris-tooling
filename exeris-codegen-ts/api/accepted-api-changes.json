@@ -172,5 +172,11 @@
     "since": "0.10",
     "adr": "ADR-092",
     "justification": "A field the user may change only after creation had no control in either form, so an edit could never change it. It now renders inside @if (editMode()), its model member is seeded from the loaded record, a disabled rule bound to create mode keeps a required one from blocking a create, the create payload lists the create-offered members and leaves it out, and the update sends it. A field with inCreate and inUpdate both false still has no control. A picker for a MANY_TO_ONE to the entity itself leaves out the edited record's id while the form edits, and every picker shows a failed options request through httpErrorMessage with the target's plural noun. A form without such a field or a picker is byte-identical. docs/MIGRATION-0.x-to-1.0.md 0.10.0 carries the step."
+  },
+  {
+    "signature": "app scaffold with a backend: proxy.conf.json -> proxy.conf.js (seed; one rule per apiBasePath + entity path, sorted, with an Accept: text/html bypass to /index.html); package.json start: ng serve --proxy-config proxy.conf.json -> proxy.conf.js",
+    "since": "0.10",
+    "adr": "ADR-092",
+    "justification": "The emitted services request apiBasePath + the entity path, '' + /orders by default, and the proxy's lone /api rule matched none of it, so npm start reached no backend. The same path is the entity's page route, so a rule for /orders alone would forward a browser navigation to the kernel application; a request is told apart by its Accept header, which a JSON config cannot test. proxy.conf.js forwards every entity path to http://localhost:8443 and answers a request accepting text/html with index.html. It is a seed, emitted under the same condition proxy.conf.json was. proxy.conf.json stays a seed path, so an existing copy is kept and released from the manifest, and an existing package.json is kept with the start script it has. docs/MIGRATION-0.x-to-1.0.md 0.10.0 carries the step."
   }
 ]

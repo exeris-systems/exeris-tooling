@@ -35,7 +35,7 @@ const SCAFFOLD_PATHS = [
   'tsconfig.app.json',
   'tsconfig.spec.json',
   '.postcssrc.json',
-  'proxy.conf.json',
+  'proxy.conf.js',
   'src/styles.css',
   'src/index.html',
   'src/favicon.ico',

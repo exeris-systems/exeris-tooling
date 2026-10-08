@@ -1,7 +1,7 @@
 /**
  * What the app scaffold has to provide, derived from the metadata and the files emitted beside it.
  *
- * The scaffold (`app.config.ts`, `package.json`, `proxy.conf.json`, the environment files) wires
+ * The scaffold (`app.config.ts`, `package.json`, `proxy.conf.js`, the environment files) wires
  * pieces that only some apps use. Which ones an app uses is a property of its emitted source, not
  * of any single config flag: a service, a store, a stream client, a spec or a `@View` page bound to
  * an entity each reach the network through a different emitter, and a new emitter must not need a
