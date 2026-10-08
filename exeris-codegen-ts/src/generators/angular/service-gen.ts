@@ -4,7 +4,7 @@
  */
 
 import { outPath } from '../../core/paths.js';
-import type { DomainMetadata, FieldMetadata } from '../../models/index.js';
+import type { DomainMetadata } from '../../models/index.js';
 import { DslMapper, modelTypeName } from '../../models/index.js';
 import type { GeneratorConfig } from '../../config.js';
  import type { CodeGenerator, GeneratedFile, GeneratorContext } from '../../core/generator-registry.js';
@@ -78,7 +78,7 @@ export class ServiceGenerator implements CodeGenerator {
     };
   }
 
-  generateAggregate(domains: DomainMetadata[], context: GeneratorContext): GeneratedFile[] {
+  generateAggregate(domains: DomainMetadata[], _context: GeneratorContext): GeneratedFile[] {
     return [
       {
         path: 'services/index.ts',
@@ -106,8 +106,6 @@ export class ServiceGenerator implements CodeGenerator {
   private generateServiceContent(domain: DomainMetadata, context: GeneratorContext): string {
     const metadata = domain;
     const entityName = metadata.entityName;
-    const modelName = modelTypeName(entityName);
-    const kebabName = DslMapper.toKebabCase(entityName);
 
     // The emitted service must request what the emitted server serves. The router registers the
     // entity's path with no version segment and the OpenAPI document publishes the same, so
@@ -160,7 +158,7 @@ export class ServiceGenerator implements CodeGenerator {
   }
 
   private renderService(data: Record<string, unknown>): string {
-    const { entityName, apiBasePath, apiPath, generateZod, softDelete, filterableFields, sortFields, actions, systemFields, enumTypes } = data as {
+    const { entityName, apiBasePath, apiPath, softDelete, filterableFields, sortFields, actions, enumTypes } = data as {
       entityName: string;
       apiBasePath: string;
       apiPath: string;

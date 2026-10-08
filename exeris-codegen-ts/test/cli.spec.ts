@@ -101,6 +101,31 @@ describe('exeris-gen generate', () => {
     expect(existsSync(join(work, 'out', 'package.json'))).toBe(true);
   });
 
+  it('names the start-script edit when proxy.conf.js is written beside a kept package.json', () => {
+    mkdirSync(join(work, 'meta'), { recursive: true });
+    writeFileSync(
+      join(work, 'meta', 'Order.json'),
+      JSON.stringify({ entityName: 'Order', packageName: 'com.shop', fields: [{ name: 'id', type: 'java.util.UUID' }] }),
+    );
+    expect(generate('-i', 'meta', '-o', 'out').status).toBe(0);
+    const rerun = generate('-i', 'meta', '-o', 'out');
+    expect(rerun.output).not.toContain('proxy.conf.js was written');
+
+    // An owned package.json whose start script passes proxy.conf.json, and no proxy.conf.js on disk.
+    rmSync(join(work, 'out', 'proxy.conf.js'));
+    writeFileSync(join(work, 'out', 'package.json'), '{"scripts":{"start":"ng serve --proxy-config proxy.conf.json"}}');
+
+    const dry = generate('-i', 'meta', '-o', 'out', '--dry-run');
+    expect(dry.output).toContain('Would create: proxy.conf.js');
+    expect(dry.output).toContain('proxy.conf.js was written and package.json was kept as it is.');
+
+    const run = generate('-i', 'meta', '-o', 'out');
+    expect(run.status).toBe(0);
+    expect(run.output).toContain('change it to proxy.conf.js');
+    expect(readFileSync(join(work, 'out', 'package.json'), 'utf-8')).toContain('proxy.conf.json');
+    expect(existsSync(join(work, 'out', 'proxy.conf.js'))).toBe(true);
+  });
+
   it('says that render ssg emits nothing without the scaffold', () => {
     view(join(work, 'meta'), 'About');
 

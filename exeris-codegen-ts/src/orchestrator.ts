@@ -26,7 +26,7 @@ import { EventHandlerGenerator } from './generators/angular/event-gen.js';
 import { generateSchemaSpec, generateServiceSpec } from './generators/angular/spec-gen.js';
 import { generateSaga } from './generators/angular/saga-gen.js';
 import { generateStore } from './generators/angular/store-gen.js';
-import { generateAppBarrel, generateAppStructure, SCAFFOLD_SEED_PATHS } from './generators/angular/app-structure-gen.js';
+import { generateAppBarrel, generateAppStructure, RETIRED_SCAFFOLD_SEED_PATHS, SCAFFOLD_SEED_PATHS } from './generators/angular/app-structure-gen.js';
 import { AUTH_SERVICE_PATH } from './generators/angular/guard-gen.js';
 import { generateViewRoutesAggregate } from './generators/angular/view-routes-gen.js';
 import { generateView, generateViewRoute } from './generators/angular/view-gen.js';
@@ -48,12 +48,13 @@ export interface OutputFile {
 
 /**
  * Every path a generator emits as a seed file (`overwritable: false`), in canonical manifest form:
- * the scaffold's, and the auth service template at the root of a tree with or without the
- * scaffold. The writer releases an orphaned seed instead of deleting it, which it can only do by
+ * the scaffold's, the scaffold's retired seeds an existing app may still own, and the auth service
+ * template at the root of a tree with or without the scaffold. The writer releases an orphaned seed instead of deleting it, which it can only do by
  * path, because an orphan is by definition no longer among the run's files.
  */
 export const SEED_PATHS: ReadonlySet<string> = new Set([
   ...SCAFFOLD_SEED_PATHS,
+  ...RETIRED_SCAFFOLD_SEED_PATHS,
   AUTH_SERVICE_PATH,
   `src/app/${AUTH_SERVICE_PATH}`,
 ]);

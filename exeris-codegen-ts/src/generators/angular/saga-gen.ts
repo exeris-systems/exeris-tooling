@@ -51,7 +51,7 @@ export class SagaGenerator implements CodeGenerator {
   readonly artifactType = 'SAGA' as const;
   readonly supportedBackends: BackendType[] = []; // All backends
 
-  generate(domain: DomainMetadata, context: GeneratorContext): GeneratedFile | null {
+  generate(domain: DomainMetadata, _context: GeneratorContext): GeneratedFile | null {
     // Only generate for domains with saga metadata
     if (!domain.sagaMetadata) {
       return null;
@@ -72,7 +72,6 @@ export class SagaGenerator implements CodeGenerator {
     const { entityName } = domain;
     const sagaName = saga.name || `${entityName}Saga`;
     const pascalSagaName = toPascalCase(sagaName);
-    const kebab = DslMapper.toKebabCase(entityName);
     const steps = saga.steps || [];
 
     return `${fileHeader({
