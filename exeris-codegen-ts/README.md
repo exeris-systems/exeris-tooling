@@ -179,18 +179,34 @@ headline, such as a HERO with one; the rest of the page is unchanged. Either way
 keeps the view's `title`, which sets the document title, and the navigation label stays the same.
 The option applies to every `@View` page of the run. It is file-only; it has no CLI flag.
 
+## The dev server (`npm start`)
+
+An app with a backend starts with `ng serve --proxy-config proxy.conf.js`. The kernel application
+serves each entity's API on the path its pages use: `/orders` is the list endpoint and the list
+page. `proxy.conf.js` has one rule per entity path (`apiBasePath` followed by the path, the URLs the
+emitted services call), and every rule forwards to `http://localhost:8443` except a request whose
+`Accept` header includes `text/html`. That request is a browser navigation, such as a deep link or a
+refresh, and the dev server answers it with `index.html`. An `HttpClient` call or an `EventSource`
+does not ask for HTML, so it reaches the kernel application.
+
+`proxy.conf.js` is a seed: change the target port there. Because a regeneration keeps it, an entity
+added after the file was written has no rule until you add one, copying an existing line; delete
+the file, or run with `--overwrite`, to have it written again with every entity. An app without a
+backend has no proxy and starts with `ng serve`.
+
 ## Regenerating
 
 The generator records every file it owns in `.exeris-codegen-manifest` at the output root. On the
 next run, the previous manifest decides what it may replace and delete.
 
 **Seed files** are written once for you to edit: `package.json`, `angular.json`, `tsconfig.json`,
-`tsconfig.app.json`, `tsconfig.spec.json`, `.postcssrc.json`, `proxy.conf.json`, `src/main.ts`,
+`tsconfig.app.json`, `tsconfig.spec.json`, `.postcssrc.json`, `proxy.conf.js`, `src/main.ts`,
 `src/index.html`, `src/styles.css`, `src/environments/environment.ts`,
 `src/environments/environment.development.ts`, `src/app/app.config.ts`, `src/app/app.component.ts`,
 `src/app/app.routes.ts`, under `render: 'ssg'` also `src/main.server.ts`,
 `src/app/app.config.server.ts` and `src/app/app.routes.server.ts`, and the auth service template
-`core/auth.service.ts`.
+`core/auth.service.ts`. `proxy.conf.json`, which the scaffold does not write, is treated as
+a seed: an app that has one keeps it, and the run drops it from the manifest.
 
 | On disk | Without `--overwrite` | With `--overwrite` |
 |---|---|---|

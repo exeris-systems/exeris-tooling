@@ -1822,7 +1822,7 @@ never-invoked emitter start emitting, and its output did not build.
       DTOs are **per-consumer copies** rather than a shared package. T42 is unblocked and gated on
       nothing: next action is the types slice itself.
 
-- [ ] **`npm start` proxies a prefix the emitted client no longer requests.** Measured while
+- [x] **`npm start` proxies a prefix the emitted client no longer requests.** Measured while
       fixing the CLI-override defect (which had every generated app calling `/api/<path>` at a
       router serving `/<path>`). With `apiBasePath` correctly empty, the emitted service requests
       `/orders`; the emitted `proxy.conf.json` still declares a single rule for `/api` with **no**
@@ -1853,8 +1853,17 @@ never-invoked emitter start emitting, and its output did not build.
       does not. A JSON proxy config cannot express that, so the remaining shape is `proxy.conf.js`
       with a `bypass`, wired as `ng serve --proxy-config proxy.conf.js` — and it needs verifying
       against a real `ng serve`, since Angular 22 runs the Vite dev server and it is the builder's
-      translation of the config, not Vite's own `bypass` support, that is in question. That
-      verification is the next action; the input and the constraint are both settled.
+      translation of the config, not Vite's own `bypass` support, that is in question.
+
+      **Closed in 0.10.0 (S2).** The scaffold writes `proxy.conf.js`: one rule per
+      `apiBasePath + effectivePath()`, sorted, each with a `bypass` returning `/index.html` when
+      `Accept` includes `text/html`. Measured on `@angular/build` 22.2.2: the builder passes the
+      entry through to Vite unchanged (`load-proxy-config.js` rewrites only glob keys and
+      `pathRewrite`), and against a real `ng serve` of the full sample a `text/html` GET of
+      `/orders` or `/orders/{id}/edit` returns `index.html` while a JSON GET, a POST and an
+      `EventSource` request reach the backend; under `render: 'ssg'` the navigation gets the client
+      shell. `proxy.conf.json` stays a seed path, so an existing copy is released, not deleted.
+      The `event-gen.ts` endpoint below is unchanged: it names a route no server serves (S4).
 
       **Three more `/api` sites survive the same fix** (found in the #191 review, verified against
       real CLI output). None reproduces the 404 today; all three are the same `''`-vs-`/api`
@@ -3877,12 +3886,13 @@ enters only if its upstream half is final first.
       Amendment 1; consumer steps in `docs/MIGRATION-0.x-to-1.0.md`, 0.10.0 train.
 - [ ] **The 0.10.0 release PR switches the README quick start to `eu.exeris` and `0.10.0`.** Until
       then the snippets show the published `eu.exeris.tooling:0.9.0`, which a consumer can resolve.
-- [ ] **Carried from 0.9.0 "Alongside, no gate"** (TS wave S2): the `npm start` proxy prefix
+- [x] **Carried from 0.9.0 "Alongside, no gate"** (TS wave S2): the `npm start` proxy prefix
       (`proxy.conf.js` with a header-based `bypass`, verified against a real `ng serve`), codegen-ts
       lint in CI, and deleting `KernelStrategy.generateClientCode` / `getRealTimeConfig`, which have
       no production caller.
       *Landed:* the dead `KernelStrategy` methods are deleted (#323); codegen-ts has an
-      `eslint.config.mjs` and `build.yml` runs `npm run lint` before vitest. *Open:* the proxy prefix.
+      `eslint.config.mjs` and `build.yml` runs `npm run lint` before vitest (#348); and `npm start`
+      proxies the entity paths through `proxy.conf.js` with the `bypass` (#351).
 - [ ] **Issues placed in 0.10.0:** #304 (form gaps), #271 (one header helper, done in #322), #309
       (`GraphMetadata.queries` written `null` when not extracted, done in #317), #310 (an entity
       with no `id` field — a processor error, done in #316 as `EXT-PROC-1015`; the TS model always

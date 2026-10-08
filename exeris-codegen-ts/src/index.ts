@@ -174,6 +174,23 @@ function warnKeptCsrScaffold(
   );
 }
 
+/**
+ * `proxy.conf.js` is a new seed beside an existing `package.json`, which is kept, so the app's
+ * `start` script still passes the proxy config it was written with. A run that creates the proxy
+ * and keeps `package.json` names the edit that points `npm start` at it.
+ */
+function warnKeptProxyStart(plan: ReadonlyArray<{ readonly path: string; readonly action: WriteAction }>): void {
+  const proxy = plan.find((entry) => entry.path === 'proxy.conf.js');
+  const packageJson = plan.find((entry) => entry.path === 'package.json');
+  if (proxy?.action !== 'create') return;
+  if (packageJson?.action !== 'keep-seed' && packageJson?.action !== 'skip-unowned') return;
+  console.log(
+    pc.yellow('proxy.conf.js was written and package.json was kept as it is.'),
+    'If its start script passes --proxy-config proxy.conf.json, change it to proxy.conf.js;',
+    'proxy.conf.json is not generated and is left in place.',
+  );
+}
+
 async function runGenerate(config: GeneratorConfig): Promise<void> {
   const inputPath = resolve(process.cwd(), config.inputPath);
   const outputPath = resolve(process.cwd(), config.outputPath);
@@ -254,6 +271,7 @@ async function runGenerate(config: GeneratorConfig): Promise<void> {
       console.log(pc.dim(`  ${DRY_RUN_LABEL[entry.action]}`), entry.path);
     }
     warnKeptCsrScaffold(config, dryPlan);
+    warnKeptProxyStart(dryPlan);
     const orphans = planOrphans(outputPath, generatedFiles, SEED_PATHS);
     for (const path of orphans.prune) {
       console.log(pc.dim('  Would prune:'), path);
@@ -272,6 +290,7 @@ async function runGenerate(config: GeneratorConfig): Promise<void> {
     });
     const count = (action: WriteAction): number => plan.filter((entry) => entry.action === action).length;
     warnKeptCsrScaffold(config, plan);
+    warnKeptProxyStart(plan);
 
     for (const entry of plan) {
       if (entry.action === 'create' || entry.action === 'rewrite') {

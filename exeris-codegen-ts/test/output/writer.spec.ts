@@ -19,7 +19,7 @@ import { MANIFEST_NAME, MANIFEST_OWNERSHIP_LINE, readManifest, readManifestState
 import { buildGeneratedFiles, SEED_PATHS } from '../../src/orchestrator.js';
 import { DEFAULT_CONFIG, type GeneratorConfig } from '../../src/config.js';
 import { fileHeader } from '../../src/generators/file-header.js';
-import { ViewMetadataSchema, type ViewMetadata } from '../../src/models/domain-model.js';
+import { DomainMetadataSchema, ViewMetadataSchema, type ViewMetadata } from '../../src/models/domain-model.js';
 
 let out: string;
 
@@ -40,6 +40,12 @@ function onDisk(rel: string, content: string): void {
 }
 
 const keep = { overwrite: false };
+
+const order = DomainMetadataSchema.parse({
+  entityName: 'Order',
+  packageName: 'com.shop',
+  fields: [{ name: 'id', type: 'java.util.UUID' }],
+});
 
 describe('writeGeneratedFiles', () => {
   it('creates absent files and records them as owned', () => {
@@ -357,6 +363,29 @@ describe('seed files no longer produced', () => {
     expect(existsSync(join(out, 'pages/about.component.ts'))).toBe(true);
     expect(pruned).toBe(scaffolded.length - seeds.length);
     for (const path of seeds) expect(readManifest(out).has(path), path).toBe(false);
+  });
+
+  it('releases an owned proxy.conf.json, edited, when the scaffold writes proxy.conf.js', () => {
+    writeGeneratedFiles(
+      out,
+      [
+        { path: 'package.json', content: '{"scripts":{"start":"ng serve --proxy-config proxy.conf.json"}}', overwritable: false },
+        { path: 'proxy.conf.json', content: '{"/api":{}}', overwritable: false },
+      ],
+      { ...keep, seedPaths: SEED_PATHS },
+    );
+    onDisk('proxy.conf.json', '{"/edited":{}}');
+
+    const { plan, pruned } = writeGeneratedFiles(out, buildGeneratedFiles([order], [], DEFAULT_CONFIG), {
+      ...keep,
+      seedPaths: SEED_PATHS,
+    });
+
+    expect(pruned).toBe(0);
+    expect(read('proxy.conf.json')).toBe('{"/edited":{}}');
+    expect(readManifest(out).has('proxy.conf.json')).toBe(false);
+    expect(plan.find((entry) => entry.path === 'proxy.conf.js')?.action).toBe('create');
+    expect(plan.find((entry) => entry.path === 'package.json')?.action).toBe('keep-seed');
   });
 
   it('names every seed the scaffold emits', () => {
