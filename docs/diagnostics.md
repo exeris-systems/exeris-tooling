@@ -4,7 +4,7 @@ type: reference
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-10-07
+last-verified: 2026-10-08
 ---
 
 # Diagnostic identifiers
@@ -65,7 +65,9 @@ Printed by `javac` while it compiles your sources. `-Aexeris.strict=true` enable
 | `EXT-PROC-1012` | A system-field role marker and the matching `@ExerisDomain` override name different fields. | Remove whichever of the two is wrong. |
 | `EXT-PROC-1013` | `@GraphEdge` is declared more than once on one field. | Declare each edge on its own field. |
 | `EXT-PROC-1014` | `@ExerisDomain(realTimeApi = true)` is on a `TENANT` or `UNIVERSE` entity. Kernel events carry no tenant, so the generated live view would send every tenant's events to every subscriber. | Declare `dataScope = DataScope.GLOBAL` if the rows are not tenant-owned; otherwise drop `realTimeApi` until stream events carry an isolation key. |
-| `EXT-PROC-1015` | An `@ExerisDomain` type declares no field `id`, inherited or its own. The generated schema, repository, routes and Angular model all identify a row by `id`; `primaryKeyField` does not rename it. | Declare `private UUID id;` with its getter and setter. |
+| `EXT-PROC-1015` | An `@ExerisDomain` type declares no field named by its primary key, inherited or its own. The key is the field `primaryKeyField` names, else `id`, and the generated schema, repository and Angular model identify a row by it. | Declare the key, `private UUID id;` or the field `primaryKeyField` names, with its getter and setter. |
+| `EXT-PROC-1018` | The primary key field of an `@ExerisDomain` type is not a `java.util.UUID`. The kernel identifies an entity's event stream and graph node by a UUID, and the generated repository fills a new row's key with `UUID.randomUUID()` ([ADR-104](adr/ADR-104-declared-primary-key-uuid-only.md)). | Declare the key as `UUID`; keep any other identifier, such as an order number, as an ordinary unique field. |
+| `EXT-PROC-1019` | An `@ExerisDomain` type names its primary key with `primaryKeyField` and also declares a field `id`, inherited or its own. The rename would move the key off the `id` column and change the entity's `CREATE TABLE` migration, which fails Flyway's checksum on every database that applied it. | Drop `primaryKeyField` to keep `id` as the key. If no database has applied the entity's migration, rename or remove the field `id` instead. |
 
 ### 11xx — warnings on an ordinary build
 

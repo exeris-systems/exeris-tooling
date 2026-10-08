@@ -63,6 +63,8 @@ class DiagnosticIdTest {
         m.put(DiagnosticId.GRAPH_EDGE_REPEATED_ON_FIELD, "EXT-PROC-1013");
         m.put(DiagnosticId.REAL_TIME_API_ON_TENANT_PARTITIONED, "EXT-PROC-1014");
         m.put(DiagnosticId.ENTITY_WITHOUT_ID_FIELD, "EXT-PROC-1015");
+        m.put(DiagnosticId.PRIMARY_KEY_NOT_UUID, "EXT-PROC-1018");
+        m.put(DiagnosticId.PRIMARY_KEY_RENAMED_BESIDE_ID, "EXT-PROC-1019");
         m.put(DiagnosticId.TENANT_SCOPED_DEPRECATED, "EXT-PROC-1101");
         m.put(DiagnosticId.VALIDATION_ATTRIBUTE_DEPRECATED, "EXT-PROC-1102");
         m.put(DiagnosticId.VALIDATE_ON_UNRECOGNISED, "EXT-PROC-1103");

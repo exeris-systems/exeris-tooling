@@ -120,11 +120,25 @@ public enum DiagnosticId {
                     + "its live view cannot be isolated per tenant."),
 
     /**
-     * An {@code @ExerisDomain} type declares no field {@code id}, the primary key every generated
-     * artefact identifies a row by.
+     * An {@code @ExerisDomain} type declares no field named by its primary key: the field
+     * {@code primaryKeyField} names, else {@code id}. Every generated artefact identifies a row by it.
      */
     ENTITY_WITHOUT_ID_FIELD("EXT-PROC-1015",
-            "An @ExerisDomain type declares no field 'id'."),
+            "An @ExerisDomain type declares no field with its primary key's name."),
+
+    /**
+     * The primary key field of an {@code @ExerisDomain} type is not a {@code java.util.UUID}: the
+     * kernel identifies an entity's event stream and graph node by a UUID (ADR-104).
+     */
+    PRIMARY_KEY_NOT_UUID("EXT-PROC-1018",
+            "The primary key field of an @ExerisDomain type is not a java.util.UUID."),
+
+    /**
+     * An {@code @ExerisDomain} type renames its primary key with {@code primaryKeyField} and also
+     * declares a field {@code id}: the rename would move the key off an existing {@code id} column.
+     */
+    PRIMARY_KEY_RENAMED_BESIDE_ID("EXT-PROC-1019",
+            "An @ExerisDomain type renames its primary key and also declares a field 'id'."),
 
     // -----------------------------------------------------------------------
     // EXT-PROC-11xx — warnings on an ordinary build (javac WARNING)

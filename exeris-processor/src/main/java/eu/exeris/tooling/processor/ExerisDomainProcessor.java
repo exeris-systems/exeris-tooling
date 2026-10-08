@@ -496,24 +496,6 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "kernel's RouteRequirement decides on named scopes, and a generated "
                             + "URL-to-policy table would carry these. That table is this "
                             + "repository's to emit and is not built (T53)"),
-            new InertAttribute("ExerisDomain", "primaryKeyField",
-                    "it is extracted — SystemFieldsMetadata carries it — but it is the one "
-                            + "extracted component of that record no generator reads. The other ten "
-                            + "are all honoured: KernelFlywayGenerator's sysCol maps tenantId, the four "
-                            + "audit stamps, the three soft-delete columns and version, "
-                            + "KernelRepositoryGenerator resolves five of them, and a UNIVERSE "
-                            + "entity's sharedScopeField reaches its shared-scope migration and the "
-                            + "repository's stamp. The primary key is "
-                            + "not among them anywhere. Flyway emits id UUID PRIMARY KEY "
-                            + "unconditionally, the repository identifies every row through the "
-                            + "constant WHERE id = ?, and every by-id handler binds the {id} path "
-                            + "variable, so a renamed key reaches neither the schema, the query nor "
-                            + "the route. The TypeScript emitters did read it for one change and "
-                            + "were corrected: honouring it on one side alone made the emitted app "
-                            + "request an identifier the router does not serve, which is worse than "
-                            + "ignoring it on both. Renaming the primary key is a change to the SQL, "
-                            + "the repository and the route template together — that is C1's scope, "
-                            + "and this entry is deleted in the change that lands it"),
             new InertAttribute("ExerisDomain", "roles",
                     "the processor does not extract it, and unlike permissions it has no route-level "
                             + "destination: the kernel decides a route on scopes and never on roles, "
@@ -821,14 +803,12 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     private static final List<UnreadAnnotation> UNREAD_NOTES = List.of(
             new UnreadAnnotation("PrimaryKey",
                     "the other ten annotation.system.* annotations are extracted and their "
-                            + "field names reach the schema and the repository. This one is held "
-                            + "back on purpose: SystemFieldsMetadata.primaryKeyField is the single "
-                            + "component no generator honours — KernelFlywayGenerator emits "
-                            + "id UUID PRIMARY KEY unconditionally, the repository identifies rows "
-                            + "through the constant WHERE id = ?, and every by-id handler binds the "
-                            + "{id} path variable. Extracting it would end this warning without "
-                            + "changing one byte of emitted output. Renaming a primary key is one "
-                            + "change across the SQL, the repository and the route template"),
+                            + "field names reach the schema and the repository. This one is not "
+                            + "read yet: the SDK source-model reader does not read the marker "
+                            + "(exeris-sdk#187 item 1), and the processor and that reader must "
+                            + "agree on every component they carry (ADR-042). The key is named "
+                            + "with @ExerisDomain(primaryKeyField = ...), which every generator "
+                            + "honours"),
             new UnreadAnnotation("Derived",
                     "DerivedMetadata exists in the source model and is filled by nobody: the "
                             + "processor performs no extraction and no emitter names the type. "
@@ -902,8 +882,11 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     private static final String SHARED_SCOPE_FQN = "eu.exeris.sdk.annotation.system.SharedScope";
     private static final String SHARED_SCOPE_ATTRIBUTE = "sharedScopeField";
 
-    /** The primary-key field every generator reads by this literal name. */
+    /** The primary key's field when {@code @ExerisDomain(primaryKeyField)} names no other. */
     private static final String ID_FIELD = "id";
+
+    /** The one type a primary key may have (ADR-104), and one of the two a shared-scope key may. */
+    private static final String UUID_FQN = "java.util.UUID";
 
     /**
      * The ten roles read from {@code annotation.system.*}. Ordered, and iterated in this order, so a
@@ -913,14 +896,11 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      * {@code sharedScopeField} lookup is always empty and the override-conflict refusal never
      * fires for it; the repeated-carrier refusal applies exactly as it does to the other nine.
      *
-     * <p><b>{@code @PrimaryKey} is deliberately absent.</b> Its component,
-     * {@code SystemFieldsMetadata.primaryKeyField}, is the one no generator honours — the schema
-     * emits {@code id UUID PRIMARY KEY} unconditionally, the repository identifies rows through
-     * {@code " WHERE id = ?"}, and every by-id handler binds {@code {id}}. Extracting it would move
-     * the annotation out of the never-read audit while leaving its effect at zero, so the audit
-     * would stop reporting an annotation that changes nothing. It stays unextracted, and C0 keeps
-     * reporting it, until the slice that renames the key across the SQL, the repository and the
-     * route template lands.
+     * <p><b>{@code @PrimaryKey} is absent.</b> The key is named by
+     * {@code @ExerisDomain(primaryKeyField)}, which the generators honour (ADR-104). The marker
+     * would fill the same {@code SystemFieldsMetadata.primaryKeyField} component, and the processor
+     * may extract it only once the SDK source-model reader reads it the same way (ADR-042,
+     * exeris-sdk#187 item 1). Until then it is unread, and the never-read audit reports it.
      */
     private static final List<SystemFieldRole> SYSTEM_FIELD_ROLES = List.of(
             new SystemFieldRole("TenantId", "tenantIdField"),
@@ -1742,7 +1722,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         VariableElement scope = scopeCarriers.getFirst();
         AnnotationMirror mirror = findAnnotation(scope, SHARED_SCOPE_FQN);
         String type = scope.asType().toString();
-        if (!"java.util.UUID".equals(type) && !"java.lang.String".equals(type)) {
+        if (!UUID_FQN.equals(type) && !"java.lang.String".equals(type)) {
             error(DiagnosticId.SHARED_SCOPE_WRONG_TYPE,
                     "@SharedScope is on field '" + scope.getSimpleName() + "' of type "
                             + type + ". The shared-scope key is compared with the session setting "
@@ -1946,7 +1926,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
 
         DomainMetadata metadata = builder.build();
         if (domainAnnotation != null) {
-            refuseEntityWithoutIdField(element, domainAnnotation);
+            refuseInvalidPrimaryKey(element, domainAnnotation, metadata);
             // Not on a contradicted declaration: its tier is undecided until the author fixes the
             // line EXT-PROC-1003 already reports.
             if (!scopeContradicted) {
@@ -1989,40 +1969,104 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     }
 
     /**
-     * Refuses an {@code @ExerisDomain} type that declares no field {@code id}, its own or inherited.
+     * Refuses an {@code @ExerisDomain} type whose primary key the generated code cannot use (ADR-104).
      *
-     * <p>Every generated artefact identifies a row by the literal {@code id}: the migration's
-     * {@code id UUID PRIMARY KEY}, the repository's {@code WHERE id = ?}, the by-id routes'
-     * {@code {id}} path variable, the {@code getId()} and {@code setId(...)} calls in handlers and
-     * services, and the Angular model the list, detail, form and store read {@code id} from.
-     * {@code primaryKeyField} renames none of them, so the field is looked up by that literal
-     * whatever the attribute says. A superclass field counts: the generated Java reaches it
-     * through the inherited accessors.
+     * <p>The key is the field {@code primaryKeyField} names, else {@code id}. Every generated
+     * artefact identifies a row by it: the migration's key column, the repository's identity clause
+     * and its save, the accessors the handler, service and graph sync call, the foreign keys that
+     * reference the entity, and the model the Angular list, detail, form and store read. A
+     * superclass field counts: the generated Java reaches it through the inherited accessors.
+     *
+     * <p>Three declarations are refused:
+     * <ul>
+     *   <li>no field with the key's name ({@code EXT-PROC-1015});</li>
+     *   <li>a key field of any type but {@code java.util.UUID} ({@code EXT-PROC-1018}): the kernel
+     *       identifies an entity's event stream and graph node by a UUID, and the repository fills
+     *       a new row's key with {@code UUID.randomUUID()};</li>
+     *   <li>a renamed key beside a field {@code id} ({@code EXT-PROC-1019}): moving the key off an
+     *       existing {@code id} column changes the entity's {@code CREATE TABLE} migration, which
+     *       fails Flyway's checksum on every database that applied it.</li>
+     * </ul>
      */
-    private void refuseEntityWithoutIdField(TypeElement element, AnnotationMirror domainAnnotation) {
-        if (declaresIdField(element)) {
-            return;
+    private void refuseInvalidPrimaryKey(TypeElement element, AnnotationMirror domainAnnotation,
+                                         DomainMetadata metadata) {
+        String key = primaryKeyField(metadata);
+        String entity = element.getSimpleName().toString();
+        VariableElement keyField = inheritedInstanceField(element, key);
+        if (keyField == null) {
+            error(DiagnosticId.ENTITY_WITHOUT_ID_FIELD, missingKeyMessage(entity, key), element, domainAnnotation);
+        } else if (!isUuid(keyField.asType())) {
+            String message = "The primary key '" + key + "' of @ExerisDomain type '" + entity + "' is "
+                    + keyField.asType() + "; it must be java.util.UUID. The kernel identifies an "
+                    + "entity's event stream and graph node by a UUID, and the generated repository "
+                    + "fills a new row's key with UUID.randomUUID(). Declare 'private UUID " + key
+                    + ";', and keep any other identifier as an ordinary unique field.";
+            if (keyField.getEnclosingElement().equals(element)) {
+                error(DiagnosticId.PRIMARY_KEY_NOT_UUID, message, keyField);
+            } else {
+                error(DiagnosticId.PRIMARY_KEY_NOT_UUID, message, element, domainAnnotation);
+            }
         }
-        error(DiagnosticId.ENTITY_WITHOUT_ID_FIELD,
-                "@ExerisDomain type '" + element.getSimpleName() + "' declares no field 'id'. "
-                        + "The generated schema, repository, routes and Angular model all identify a "
-                        + "row by id, and primaryKeyField does not rename it. Declare "
-                        + "'private UUID id;' with its getter and setter.",
-                element, domainAnnotation);
+        if (!ID_FIELD.equals(key) && inheritedInstanceField(element, ID_FIELD) != null) {
+            error(DiagnosticId.PRIMARY_KEY_RENAMED_BESIDE_ID,
+                    "@ExerisDomain type '" + entity + "' names '" + key + "' as its primary key and "
+                            + "also declares a field 'id'. Moving the key off an 'id' column changes "
+                            + "the entity's CREATE TABLE migration, which then fails Flyway's checksum "
+                            + "on every database that applied it. Drop primaryKeyField to keep 'id' "
+                            + "as the key; if no database has applied the migration, rename or remove "
+                            + "the field 'id' instead.",
+                    element, domainAnnotation);
+        }
     }
 
-    /** Whether {@code element} or one of its superclasses declares a non-static field {@code id}. */
-    private static boolean declaresIdField(TypeElement element) {
+    /** The EXT-PROC-1015 text, naming the key the entity lacks and where its name came from. */
+    private static String missingKeyMessage(String entity, String key) {
+        String declare = "Declare 'private UUID " + key + ";' with its getter and setter";
+        if (ID_FIELD.equals(key)) {
+            return "@ExerisDomain type '" + entity + "' declares no field 'id', its primary key. "
+                    + "The generated schema, repository and Angular model identify a row by the "
+                    + "primary key, which is 'id' unless primaryKeyField names another field. "
+                    + declare + ".";
+        }
+        return "@ExerisDomain type '" + entity + "' declares no field '" + key + "', the primary key "
+                + "primaryKeyField names. The generated schema, repository and Angular model "
+                + "identify a row by that field. " + declare + ", or name an existing UUID field "
+                + "in primaryKeyField.";
+    }
+
+    /**
+     * The entity's primary key field name: {@code systemFields.primaryKeyField} when present and
+     * non-blank, else {@code id}. The rule the generators resolve the key with.
+     */
+    private static String primaryKeyField(DomainMetadata metadata) {
+        SystemFieldsMetadata declared = metadata.systemFields();
+        String named = declared == null ? null : declared.primaryKeyField();
+        return named == null || named.isBlank() ? ID_FIELD : named;
+    }
+
+    /** Whether {@code type} is {@code java.util.UUID}. */
+    private static boolean isUuid(TypeMirror type) {
+        return type instanceof DeclaredType declared
+                && declared.asElement() instanceof TypeElement typeElement
+                && typeElement.getQualifiedName().contentEquals(UUID_FQN);
+    }
+
+    /**
+     * The non-static field {@code name} of {@code element}, or of its nearest superclass that
+     * declares one; null when none does.
+     */
+    private static VariableElement inheritedInstanceField(TypeElement element, String name) {
         TypeElement current = element;
         while (current != null) {
-            if (instanceField(current, ID_FIELD) != null) {
-                return true;
+            VariableElement field = instanceField(current, name);
+            if (field != null) {
+                return field;
             }
             current = current.getSuperclass() instanceof DeclaredType superType
                     && superType.asElement() instanceof TypeElement superElement
                     ? superElement : null;
         }
-        return false;
+        return null;
     }
 
     /**
@@ -2271,8 +2315,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      * the field roles resolved above. Returns {@code null} when neither source said anything.
      *
      * <p>Unset components are filled from {@link SystemFieldsMetadata#defaults()} so the record is
-     * internally complete. {@code primaryKeyField} defaults to {@code "id"} and is carried for
-     * completeness; no generator reads it (see {@link #SYSTEM_FIELD_ROLES}).
+     * internally complete. {@code primaryKeyField} defaults to {@code "id"}; it names the field the
+     * generated code identifies a row by (ADR-104).
      */
     private SystemFieldsMetadata extractSystemFieldsOverrides(
             Map<String, Object> values, Map<String, String> declared) {
