@@ -17,6 +17,7 @@ import { DslMapper } from '../../models/dsl-mapper.js';
 import type { GeneratorConfig } from '../../config.js';
 import type { CodeGenerator, EnumMetadata, GeneratedFile, GeneratorContext } from '../../core/generator-registry.js';
 import type { BackendType } from '../../core/backend-strategy.js';
+import { primaryKeyField } from '../../core/primary-key.js';
 import { outPath } from '../../core/paths.js';
 import {
   fieldRenderContext,
@@ -125,13 +126,7 @@ export class ListGenerator implements CodeGenerator {
     const displayName = metadata.displayName ?? entityName;
     const pluralName = metadata.pluralName ?? DslMapper.pluralName(entityName);
 
-    // The literal 'id', deliberately, not systemFields.primaryKeyField. Nothing in the pipeline
-    // honours that override: KernelFlywayGenerator emits `id UUID PRIMARY KEY` unconditionally,
-    // KernelRepositoryGenerator's WHERE clause is the constant " WHERE id = ?", every by-id
-    // handler binds the {id} path variable, and the processor says so outright ("generators leave
-    // the primary key as the literal id"). Reading it here would make this the only layer that
-    // honours it, and the emitted app would then request the wrong identifier.
-    const idField = 'id';
+    const idField = primaryKeyField(metadata);
 
     const renderContext = fieldRenderContext(
       metadata, context.allDomains, context.config.generateDetails !== false, context.enums ?? [],

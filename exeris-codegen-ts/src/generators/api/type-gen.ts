@@ -4,6 +4,7 @@
  */
 
 import { outPath } from '../../core/paths.js';
+import { primaryKeyField } from '../../core/primary-key.js';
 import { ownerFieldName, type DomainMetadata, type FieldMetadata } from '../../models/domain-model.js';
 import { DslMapper } from '../../models/dsl-mapper.js';
 import { modelTypeName } from '../../models/model-naming.js';
@@ -285,7 +286,7 @@ export function buildZodType(field: FieldMetadata): string {
  * read-only, so the create/update DTOs never carry it.
  */
 export function systemFieldNames(metadata: DomainMetadata): string[] {
-  const fields = ['id'];
+  const fields = [primaryKeyField(metadata)];
   const sf = metadata.systemFields;
   const owner = ownerFieldName(metadata);
 
@@ -387,7 +388,8 @@ export function updateVersionField(metadata: DomainMetadata): UpdateVersionField
 export function updateOmittedFields(metadata: DomainMetadata): string[] {
   const declared = new Set(metadata.fields.map((f) => f.name));
   const owner = ownerFieldName(metadata);
-  return [...new Set(owner ? ['id', owner] : ['id'])].filter((name) => declared.has(name));
+  const key = primaryKeyField(metadata);
+  return [...new Set(owner ? [key, owner] : [key])].filter((name) => declared.has(name));
 }
 
 /**

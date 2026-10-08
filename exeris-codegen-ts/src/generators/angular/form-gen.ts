@@ -9,6 +9,7 @@ import { DslMapper } from '../../models/dsl-mapper.js';
 import type { GeneratorConfig } from '../../config.js';
 import type { CodeGenerator, EnumMetadata, GeneratedFile, GeneratorContext } from '../../core/generator-registry.js';
 import type { BackendType } from '../../core/backend-strategy.js';
+import { DEFAULT_PRIMARY_KEY_FIELD, primaryKeyField } from '../../core/primary-key.js';
 import { outPath } from '../../core/paths.js';
 import { updateVersionField } from '../api/type-gen.js';
 import { fieldRenderContext, resolveFieldRenders, toTitleCase, type FieldRenderModel } from './field-render.js';
@@ -60,13 +61,7 @@ export class FormGenerator implements CodeGenerator {
     const modelName = modelTypeName(entityName);
     const kebabName = DslMapper.toKebabCase(entityName);
     const noun = tsSingleQuoted((domain.displayName ?? entityName).toLowerCase());
-    // The literal 'id', deliberately, not systemFields.primaryKeyField. Nothing in the pipeline
-    // honours that override: KernelFlywayGenerator emits `id UUID PRIMARY KEY` unconditionally,
-    // KernelRepositoryGenerator's WHERE clause is the constant " WHERE id = ?", every by-id
-    // handler binds the {id} path variable, and the processor says so outright ("generators leave
-    // the primary key as the literal id"). Reading it here would make this the only layer that
-    // honours it, and the emitted app would then request the wrong identifier.
-    const idField = 'id';
+    const idField = primaryKeyField(domain);
 
     // No control for a system field (type-gen's viewSystemFieldNames). That includes a UNIVERSE
     // entity's shared-scope key, which is server-owned like its tenant: the repository stamps it
@@ -130,18 +125,21 @@ export class FormGenerator implements CodeGenerator {
 
     lines.push('');
     if (pickerFields.length > 0) {
+      // One helper serves the pickers of every target, so it reads the default key name; a target
+      // that names another key needs the key passed in.
+      const pickerKey = DEFAULT_PRIMARY_KEY_FIELD;
       lines.push('/**');
       lines.push(' * The options of a foreign-key select: one per record of the page the list route answered that');
       lines.push(' * has an id, valued by the id and labelled by `label` (the relationship\'s display field), or by');
       lines.push(' * the id when that is empty.');
       lines.push(' */');
-      lines.push('function pickerOptions<T extends { id?: unknown }>(');
+      lines.push(`function pickerOptions<T extends { ${pickerKey}?: unknown }>(`);
       lines.push('  page: { content: T[] } | undefined,');
-      lines.push('  label: (row: T) => unknown = (row) => row.id,');
+      lines.push(`  label: (row: T) => unknown = (row) => row.${pickerKey},`);
       lines.push('): { value: string; label: string }[] {');
       lines.push('  const rows = page?.content ?? [];');
-      lines.push("  return rows.filter((row) => row.id != null && row.id !== '').map((row) => {");
-      lines.push('    const value = String(row.id);');
+      lines.push(`  return rows.filter((row) => row.${pickerKey} != null && row.${pickerKey} !== '').map((row) => {`);
+      lines.push(`    const value = String(row.${pickerKey});`);
       lines.push('    const text = label(row);');
       lines.push("    return { value, label: text == null || String(text) === '' ? value : String(text) };");
       lines.push('  });');

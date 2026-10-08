@@ -14,6 +14,7 @@
 
 import type { DomainMetadata, FieldMetadata, RelationshipMetadata } from '../../models/domain-model.js';
 import { effectiveDataScope, isTenantPartitioned } from '../../models/domain-model.js';
+import { primaryKeyField } from '../../core/primary-key.js';
 
 /** Zero-based page index. */
 export const PAGE_PARAM = 'page';
@@ -169,7 +170,7 @@ export function listQuerySystemFieldNames(metadata: DomainMetadata): ReadonlySet
   const declared = metadata.systemFields;
   const role = (name: string | undefined, fallback: string): string =>
     name === undefined || name.trim() === '' ? fallback : name;
-  const names = new Set<string>(['id']);
+  const names = new Set<string>([primaryKeyField(metadata)]);
   if (isTenantPartitioned(metadata)) names.add(role(declared?.tenantIdField, 'tenantId'));
   if (effectiveDataScope(metadata) === 'UNIVERSE' && declared?.sharedScopeField?.trim()) {
     names.add(declared.sharedScopeField);

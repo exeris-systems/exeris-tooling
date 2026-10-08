@@ -191,7 +191,7 @@ class KernelApplicationGeneratorTest {
                 // and close() (drain + terminate) runs after run() returns from its latch —
                 // both still inside boot(...), i.e. after KERNEL READY and before the kernel
                 // stops. That ordering is the whole point of the call site (ADR-024).
-                .contains("try (CompositionConductor conductor = CompositionConductor.from(capManifest()).start())")
+                .contains("try (CompositionConductor _ = CompositionConductor.from(capManifest()).start())")
                 .contains("new RuntimeLifecycle(handlerSlot, "
                         + "components(transactionalExecutor())).run();")
                 // ...and NOT the bare, unconducted boot line.

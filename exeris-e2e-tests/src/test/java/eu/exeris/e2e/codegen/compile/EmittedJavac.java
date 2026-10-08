@@ -46,10 +46,7 @@ public final class EmittedJavac {
      * The warnings the emitted text may produce; anything else javac reports fails the gate. An
      * entry is scoped to one code in one file, so a second occurrence elsewhere is still a defect.
      */
-    public static final List<Accepted> ACCEPTED = List.of(
-            new Accepted("compiler.warn.try.resource.not.referenced", "Application.java",
-                    "the composed bootstrap holds the boot conductor as a lifecycle bracket: start() and"
-                            + " close() are the effect, so the try body never names the resource"));
+    public static final List<Accepted> ACCEPTED = List.of();
 
     private EmittedJavac() {
     }
