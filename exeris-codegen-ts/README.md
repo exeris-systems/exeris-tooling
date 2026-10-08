@@ -491,8 +491,17 @@ same refusal. A source the browser has given up on errors the Observable too, an
 closes it. The stream has no end of its own.
 
 `message`, `open` and `error` are the event types `EventSource` dispatches itself, so no
-`@DomainEvent` may carry those names or `keep-alive` or `stream-error`. An entity in a tenant-partitioned
-scope gets no client: the kernel cannot yet filter the stream by tenant.
+`@DomainEvent` may carry those names or `keep-alive` or `stream-error`. An entity in a
+tenant-partitioned scope (`TENANT`, `UNIVERSE`, or the deprecated `tenantScoped`) gets neither
+stream: the events they forward carry no isolation key.
+
+Each `@Action(streaming = true)` gets `services/<entity>.action-streams.ts`, an
+`<Entity><Action>StreamClient` whose `stream(id)` opens `POST {base}/{id}/actions/{action}` with
+`fetch` and emits `StreamFrame`s (`services/stream-types.ts`), whatever the data scope of the
+entity. A tenant-partitioned entity's action stream answers `stream-error` until the route policy
+binds the storage context, so its client is generated in its final shape and is unusable until
+then; a `GLOBAL` entity's client is not affected. All of these are emitted with services
+(`generateServices`, the default).
 
 ## Type Mapping
 

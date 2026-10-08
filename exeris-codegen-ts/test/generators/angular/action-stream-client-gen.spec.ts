@@ -304,13 +304,34 @@ function loadClient(content: string, className: string): new () => { stream(id: 
 const KERNEL_FRAMES = 'event: ShipmentMoved\ndata: {"leg": 2, "note": "a: b "}\n\nevent: keep-alive\ndata: \n\n';
 
 describe('ActionStreamClientGenerator — tenant-partitioned entities', () => {
-  it('emits no client and no aggregate (stream routes carry no tenant guard)', () => {
-    const gen = new ActionStreamClientGenerator();
-    for (const scope of [{ dataScope: 'TENANT' }, { dataScope: 'UNIVERSE' }, { tenantScoped: true }] as const) {
-      const d = domain({ entityName: 'Order', actions: [streamingAction], ...scope });
-      expect(gen.generate(d, CTX)).toBeNull();
-      expect(gen.generateAggregate([d], CTX)).toEqual([]);
+  const gen = new ActionStreamClientGenerator();
+  const SCOPES = [{ dataScope: 'TENANT' }, { dataScope: 'UNIVERSE' }, { tenantScoped: true }] as const;
+
+  it('emits the client and the aggregate files of every data scope', () => {
+    for (const scope of SCOPES) {
+      const d = domain({ entityName: 'Order', path: '/orders', actions: [streamingAction], ...scope });
+      expect(gen.generate(d, CTX)?.path).toBe('services/order.action-streams.ts');
+      expect(gen.generateAggregate([d], CTX).map((f) => f.path))
+        .toEqual(['services/stream-types.ts', 'services/action-streams.index.ts']);
     }
+  });
+
+  it('opens the same POST route as a GLOBAL entity and states the unbound-context invariant', () => {
+    for (const scope of SCOPES) {
+      const tenant = gen.generate(domain({ entityName: 'Order', path: '/orders', actions: [streamingAction], ...scope }), CTX)!.content;
+      const global = gen.generate(domain({ entityName: 'Order', path: '/orders', actions: [streamingAction] }), CTX)!.content;
+      expect(tenant).toContain("method: 'POST'");
+      expect(tenant).toContain('/orders/${id}/actions/track-shipment');
+      expect(tenant).toContain("stream answers stream-error until the route policy");
+      expect(global).not.toContain('stream-error');
+      expect(tenant.replace(/ {3}\* A tenant-partitioned[^\n]*\n[^\n]*\n/, '')).toBe(global);
+    }
+  });
+
+  it('emits no client for a tenant-partitioned entity without a streaming action', () => {
+    const d = domain({ entityName: 'Order', dataScope: 'TENANT', actions: [plainAction] });
+    expect(gen.generate(d, CTX)).toBeNull();
+    expect(gen.generateAggregate([d], CTX)).toEqual([]);
   });
 });
 

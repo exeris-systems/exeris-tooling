@@ -125,8 +125,8 @@ export function buildGeneratedFiles(
       if (service) appTree.push(service);
       // SSE clients, one per stream route the kernel application serves: the live view at
       // GET {base}/stream for a realTimeApi entity, and POST {base}/{id}/actions/{kebab} for each
-      // streaming action. Each generator returns null for an entity with no such route, and for
-      // a tenant-partitioned entity, whose stream routes carry no tenant guard.
+      // streaming action. Each generator returns null for an entity with no such route; the live
+      // view is also withheld from a tenant-partitioned entity, whose events carry no isolation key.
       const streamClient = streamClientGenerator.generate(domain, ctx);
       if (streamClient) appTree.push(streamClient);
       const actionStreamClient = actionStreamClientGenerator.generate(domain, ctx);

@@ -393,8 +393,8 @@ function fixture(recs: Recorders) {
     }),
     // Tenant-scoped through the deprecated boolean only, with no systemFields block.
     d({ entityName: 'Address', tenantScoped: true, fields: [{ name: 'id', type: 'java.util.UUID' }, { name: 'city', type: 'String' }] }),
-    // GLOBAL with both stream routes: MAXIMAL is TENANT, whose stream clients are withheld, so
-    // only an unpartitioned entity reaches the stream-client emitters past their scope check.
+    // GLOBAL with both stream routes: MAXIMAL is TENANT, whose live view is withheld, so only an
+    // unpartitioned entity reaches the live-view emitter past its scope check.
     d({
       entityName: 'Shipment',
       realTimeApi: true,

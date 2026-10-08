@@ -114,6 +114,12 @@
     "justification": "The server owns a tenant-partitioned entity's owner: the generated repository stamps the bound tenant, answers 400 to another one and never updates it, and the emitted OpenAPI marks it readOnly and leaves it out of both DTOs (ADR-090). The create and update types and the create schema omit the same owner the OpenAPI does: on a tenant-partitioned entity, the systemFields.tenantIdField it names, else tenantId, with or without a block; the entity type keeps it. A GLOBAL entity has no owner, so a tenantId field it declares stays in its DTOs, including when its systemFields block names tenantIdField. docs/MIGRATION-0.x-to-1.0.md 0.10.0 carries the step."
   },
   {
+    "signature": "services/<entity>.action-streams.ts, services/stream-types.ts, services/action-streams.index.ts: + per-action stream client for a tenant-partitioned entity with a streaming @Action",
+    "since": "0.10",
+    "adr": "ADR-044",
+    "justification": "The per-action stream handler runs under the tenant guard, loads the row under row-level security and forwards only the events of that row's stream id (ADR-044 Amendment 2), so a tenant-partitioned entity (TENANT, UNIVERSE or the deprecated tenantScoped) with a streaming action gets the same client as a GLOBAL one: POST {base}/{id}/actions/{action}. Additive: a new file and a new barrel export, and the client documents that a tenant-partitioned entity's stream answers stream-error until the route policy binds the storage context. The entity-level live view stays GLOBAL-only. A GLOBAL entity's output is unchanged."
+  },
+  {
     "signature": "src/environments/environment.ts, environment.development.ts: - apiVersion",
     "since": "0.10",
     "adr": "ADR-092",

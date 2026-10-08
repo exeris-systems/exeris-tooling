@@ -46,14 +46,13 @@ export { GeneratedFile };
 /**
  * Whether the entity gets per-action stream clients (it declares a streaming action).
  *
- * Not for a tenant-partitioned entity: the kernel stream routes carry no tenant guard and the
- * handler's producer subscribes to the event bus unfiltered, so a tenant-partitioned entity's
- * stream would deliver every tenant's events to every subscriber. The client is emitted once the
- * server guards the route.
+ * The scope of the entity does not matter: the handler runs under the tenant guard, loads the row
+ * under row-level security and forwards only the events of that row's stream id (ADR-044), so the
+ * client of a tenant-partitioned entity has the shape of a GLOBAL one. The entity-level live view
+ * is a different driver and stays GLOBAL-only (`hasLiveViewClient`).
  */
 export function hasActionStreamClients(domain: DomainMetadata): boolean {
-  return !isTenantPartitioned(domain)
-    && (domain.actions ?? []).some(a => a.streaming);
+  return (domain.actions ?? []).some(a => a.streaming);
 }
 
 export class ActionStreamClientGenerator implements CodeGenerator {
@@ -240,6 +239,10 @@ export class ActionStreamClientGenerator implements CodeGenerator {
     lines.push(`   * '${eventName}' for domain events; 'keep-alive' for the heartbeat) — this`);
     lines.push(`   * hand-rolled parser reads the event: line, so nothing is silently dropped.`);
     lines.push(`   * The fetch is aborted when the subscription is torn down.`);
+    if (isTenantPartitioned(domain)) {
+      lines.push(`   * A tenant-partitioned entity's stream answers stream-error until the route policy`);
+      lines.push(`   * binds the storage context.`);
+    }
     lines.push(`   */`);
     lines.push(`  stream(id: string): Observable<StreamFrame> {`);
     lines.push(`    const url = \`${pathTemplate}\`;`);

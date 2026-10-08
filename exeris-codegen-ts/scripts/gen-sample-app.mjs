@@ -264,6 +264,9 @@ const domains = [
       { name: 'tenantId', type: 'java.util.UUID', required: true },
       { name: 'name', type: 'String', required: true },
     ],
+    // A streaming action on a tenant-partitioned entity gets the same action stream client as a
+    // GLOBAL entity; the live view is not emitted for it.
+    actions: [{ name: 'auditTrail', methodName: 'auditTrail', streaming: true }],
   }),
 ];
 const enums = [{
