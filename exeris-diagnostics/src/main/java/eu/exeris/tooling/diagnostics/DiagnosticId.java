@@ -200,6 +200,10 @@ public enum DiagnosticId {
     TEST_GENERATION_FAILED("EXT-PLUG-2003",
             "Test generation failed reading metadata or writing the generated test tree."),
 
+    /** The generated code imports an artefact the classpath that compiles it does not carry. */
+    GENERATED_IMPORT_NOT_ON_CLASSPATH("EXT-PLUG-2004",
+            "The generated code imports an artefact that is not on the classpath it is compiled against."),
+
     // -----------------------------------------------------------------------
     // EXT-PLUG-21xx — exeris:detach
     // -----------------------------------------------------------------------

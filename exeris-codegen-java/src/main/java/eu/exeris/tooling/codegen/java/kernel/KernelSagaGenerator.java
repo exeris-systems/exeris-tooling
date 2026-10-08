@@ -418,12 +418,16 @@ public class KernelSagaGenerator implements KernelArtifactGenerator {
     }
 
     private String toMethodName(String name) {
-        if (name == null || name.isBlank()) return "step";
+        if (name == null || name.isBlank()) {
+            return "step";
+        }
         String[] parts = name.split("[-_]+");
         StringBuilder sb = new StringBuilder(name.length());
         boolean first = true;
         for (String part : parts) {
-            if (part.isEmpty()) continue;
+            if (part.isEmpty()) {
+                continue;
+            }
             if (first) {
                 sb.append(Character.toLowerCase(part.charAt(0))).append(part.substring(1));
                 first = false;
@@ -435,7 +439,9 @@ public class KernelSagaGenerator implements KernelArtifactGenerator {
     }
 
     private String capitalize(String s) {
-        if (s == null || s.isEmpty()) return s;
+        if (s == null || s.isEmpty()) {
+            return s;
+        }
         return Character.toUpperCase(s.charAt(0)) + s.substring(1);
     }
 

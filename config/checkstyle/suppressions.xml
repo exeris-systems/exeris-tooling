@@ -7,4 +7,19 @@
     check, and carries a comment stating why the rule does not fit that file.
 -->
 <suppressions>
+    <!-- FileLength: the single registered annotation processor. Every extraction pass reads the same
+         round state (the ProcessingEnvironment, the Messager and the metadata collected so far), so
+         splitting it into collaborators is a structural change to the processor, held to the
+         processor-discipline review, not a formatting fix. -->
+    <suppress checks="FileLength" files="[\\/]tooling[\\/]processor[\\/]ExerisDomainProcessor\.java$"/>
+    <!-- FileLength: emits the whole repository of an entity (CRUD, the list query, the tenant and
+         shared-scope guards, and the bind and read of every column type) from one per-entity
+         context. Moving those emission paths into other classes is a change to emitted-code
+         ownership, verified against the generated corpus, not a formatting fix. -->
+    <suppress checks="FileLength" files="[\\/]codegen[\\/]java[\\/]kernel[\\/]KernelRepositoryGenerator\.java$"/>
+    <!-- FileLength: emits the application entry point, RuntimeComponents and the trailing
+         foreign-key migration, which share the scope ledger and the composition scaffold. Moving
+         those emission paths into other classes is a change to emitted-code ownership, verified
+         against the generated corpus, not a formatting fix. -->
+    <suppress checks="FileLength" files="[\\/]codegen[\\/]java[\\/]kernel[\\/]KernelApplicationGenerator\.java$"/>
 </suppressions>

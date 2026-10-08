@@ -65,18 +65,21 @@
 
         <auto-service.version>1.1.1</auto-service.version>
         <palantir.javapoet.version>0.15.0</palantir.javapoet.version>
-        <!-- 2.18.9 closes the jackson-databind advisories Dependabot raises against
-             2.18.x. Patch-level, no API change. -->
-        <jackson.version>2.18.9</jackson.version>
+        <!-- Stays on the 2.18 line and takes the patch release that closes each
+             jackson-databind advisory raised against 2.18.x. Patch-level only, no API
+             change. -->
+        <jackson.version>2.18.11</jackson.version>
         <!-- The Jackson 3 version the pinned kernel pins (exeris-kernel-bom); it moves with
              the kernel pin. The comment below says this dep tracks "the same Jackson 3 line
              the Open-Core kernel runtime uses", and management here beats the kernel's own
              transitive version, so a value a minor behind the kernel would run kernel classes
              in the e2e suite on an older Jackson than they were built against, and the compile
              gate would check emitted `tools.jackson.*` references against the wrong minor.
-             Patch-ahead of the kernel inside its minor is acceptable for a security bump; a
-             minor behind is not. -->
-        <jackson3.version>3.2.2</jackson3.version>
+             Patch-ahead of the kernel inside its minor is acceptable for a security bump;
+             behind is not. tools/release-readiness fails a release where this value is below
+             the jackson-databind version exeris-kernel-bom or exeris-sdk-bom, at the pinned
+             versions, manages. -->
+        <jackson3.version>3.2.3</jackson3.version>
         <swagger-parser.version>2.1.45</swagger-parser.version>
         <!-- swagger-core carries the OpenAPI model types and the 3.1 mappers this module
              compiles against directly. It arrives transitively through swagger-parser, so
