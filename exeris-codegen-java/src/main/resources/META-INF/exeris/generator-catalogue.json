@@ -319,6 +319,20 @@
       "since": "0.10.0"
     },
     {
+      "id": "generated-route-policy",
+      "generator": "KernelApplicationGenerator",
+      "artefact": "The route policy the application binds, declaring the access the domain model describes.",
+      "outputRoot": "main",
+      "pathPattern": "^(?:[^/]+/)*GeneratedRoutePolicy\\.java$",
+      "pathTemplate": "{app}/GeneratedRoutePolicy.java",
+      "scope": "project",
+      "cardinality": "one",
+      "condition": "at least one `@ExerisDomain`",
+      "ambiguousWith": [],
+      "adr": "ADR-105",
+      "since": "0.10.0"
+    },
+    {
       "id": "foreign-key-migration",
       "generator": "KernelApplicationGenerator",
       "artefact": "The Flyway migration adding every foreign key between the build's tables.",

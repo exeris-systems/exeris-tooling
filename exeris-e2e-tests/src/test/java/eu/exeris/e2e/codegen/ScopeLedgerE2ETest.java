@@ -68,7 +68,8 @@ class ScopeLedgerE2ETest {
             // inside the boot callback. A harness supplies its own executor instead.
             "KernelProviders.PERSISTENCE_ENGINE", "Application.java",
             // Bound by Application around the boot, not read.
-            "HttpKernelProviders.HTTP_SERVER_HANDLER", "Application.java");
+            "HttpKernelProviders.HTTP_SERVER_HANDLER", "Application.java",
+            "HttpKernelProviders.HTTP_ROUTE_POLICY", "Application.java");
 
     /** Read at composition, but optional: unbound, payloads publish empty. Named, not listed. */
     private static final String OPTIONAL = "KernelProviders.EVENT_PAYLOAD_CODEC_REGISTRY";
