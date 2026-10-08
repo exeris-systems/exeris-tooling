@@ -1,8 +1,9 @@
 /**
  * Type-checks the emitted `<Entity>Update` against what the generated server's PUT accepts: the
- * handler decodes the body into the whole entity and the repository writes every column but the
- * key and the owner, so a body that drops a required field must not compile, and the record as
- * read must.
+ * handler decodes the body into the whole entity and the request update writes every column but the
+ * server-owned and the read-only ones, so a body that drops a required field must not compile, a
+ * body that names a read-only field must not compile, and the record as read less those fields
+ * must.
  */
 
 import ts from 'typescript';
@@ -45,7 +46,7 @@ const ledger = DomainMetadataSchema.parse({
     { name: 'id', type: 'java.util.UUID' },
     { name: 'title', type: 'String', required: true },
     { name: 'code', type: 'String', readOnly: true, required: true },
-    { name: 'note', type: 'String' },
+    { name: 'note', type: 'String', required: true },
     { name: 'tenantId', type: 'java.util.UUID' },
   ],
 });
@@ -56,18 +57,26 @@ describe('<Entity>Update — the PUT body the generated server accepts', () => {
   it('accepts the loaded record with its version', () => {
     const usage = [
       "import type { Ledger, LedgerUpdate } from './types';",
-      'declare const loaded: Ledger;',
+      'declare const loaded: Omit<Ledger, "id" | "tenantId" | "code">;',
       'export const body: LedgerUpdate = { ...loaded, title: "renamed", version: 3 };',
     ].join('\n');
     expect(diagnostics(types, usage)).toEqual([]);
   });
 
-  it('refuses a body that leaves out a required field, read-only ones included', () => {
+  it('refuses a body that leaves out a required field', () => {
     const usage = [
       "import type { LedgerUpdate } from './types';",
       'export const body: LedgerUpdate = { title: "renamed", version: 3 };',
     ].join('\n');
-    expect(diagnostics(types, usage).join('\n')).toContain("Property 'code' is missing");
+    expect(diagnostics(types, usage).join('\n')).toContain("Property 'note' is missing");
+  });
+
+  it('refuses a body that names a read-only field', () => {
+    const usage = [
+      "import type { LedgerUpdate } from './types';",
+      'export const body: LedgerUpdate = { title: "renamed", note: "n", version: 3, code: "x" };',
+    ].join('\n');
+    expect(diagnostics(types, usage).join('\n')).toContain("'code' does not exist");
   });
 
   it('refuses a body without the version the edit was loaded at', () => {
