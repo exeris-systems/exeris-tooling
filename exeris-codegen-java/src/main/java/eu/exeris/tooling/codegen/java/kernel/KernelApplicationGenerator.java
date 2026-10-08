@@ -17,6 +17,7 @@ import eu.exeris.tooling.codegen.java.support.KernelScaffold;
 import eu.exeris.tooling.codegen.java.support.KernelStreamScaffold;
 import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
 import eu.exeris.tooling.codegen.java.support.NameCasing;
+import eu.exeris.tooling.codegen.java.support.PrimaryKeys;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.RelationshipMetadata;
 
@@ -305,8 +306,10 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
         // generated entities are referenceable; an external target is absent
         // here and therefore skipped below.
         Map<String, String> tableByEntity = new HashMap<>();
+        Map<String, String> keyColumnByEntity = new HashMap<>();
         for (DomainMetadata domain : domains) {
             tableByEntity.put(domain.entityName(), KernelTableNaming.effectiveTable(domain));
+            keyColumnByEntity.put(domain.entityName(), PrimaryKeys.column(domain));
         }
 
         List<ForeignKey> foreignKeys = new ArrayList<>();
@@ -327,7 +330,8 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 }
                 String column = KernelTableNaming.foreignKeyColumn(rel.name());
                 String constraint = "fk_" + table + "_" + column;
-                foreignKeys.add(new ForeignKey(table, constraint, column, targetTable, deletePolicy(rel)));
+                foreignKeys.add(new ForeignKey(table, constraint, column, targetTable,
+                        keyColumnByEntity.get(rel.targetEntity()), deletePolicy(rel)));
             }
         }
 
@@ -350,7 +354,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                     .append(" ADD CONSTRAINT ").append(fk.constraint())
                     .append(" FOREIGN KEY (").append(fk.column())
                     .append(") REFERENCES ").append(fk.targetTable())
-                    .append("(id) ON DELETE ").append(fk.deletePolicy())
+                    .append("(").append(fk.targetKeyColumn()).append(") ON DELETE ").append(fk.deletePolicy())
                     .append(";\n");
         }
 
@@ -375,7 +379,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
 
     /** One resolved foreign-key constraint, ready to emit. */
     private record ForeignKey(String table, String constraint, String column,
-                              String targetTable, String deletePolicy) {
+                              String targetTable, String targetKeyColumn, String deletePolicy) {
     }
 
     /**
@@ -622,9 +626,10 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
         if (composed) {
             // try-with-resources over the CONCRETE conductor type, not AutoCloseable: the
             // concrete close() declares no checked exception, which is what lets this sit
-            // inside boot(Runnable) without a catch.
+            // inside boot(Runnable) without a catch. The resource is the unnamed variable: the
+            // body never names it, and a named unreferenced resource trips -Xlint:try.
             block.add("    .boot(() -> {\n")
-                    .add("        try ($T conductor = $T.from($L()).start()) {\n",
+                    .add("        try ($T _ = $T.from($L()).start()) {\n",
                             COMPOSITION_CONDUCTOR, COMPOSITION_CONDUCTOR, CAP_MANIFEST_METHOD)
                     .add("            new $T($L, $L($L())).run();\n",
                             lifecycleType, HANDLER_SLOT, COMPONENTS_METHOD, TX_EXECUTOR_NAME)

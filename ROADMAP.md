@@ -3902,19 +3902,50 @@ enters only if its upstream half is final first.
       (`GraphMetadata.queries` written `null` when not extracted, done in #317), #310 (an entity
       with no `id` field — a processor error, done in #316 as `EXT-PROC-1015`; the TS model always
       carrying `id` is open, wave S2).
+      *Landed:* #304 items 1-3 (#350): an `inCreate = false, inUpdate = true` field gets an edit
+      control, a self-referencing picker skips the record being edited, a failed options request
+      shows an error. *Open:* #304 item 4, the 100-row picker: server search on the list route
+      (outside ADR-096, Java) or a recorded limit, a founder decision; and the TS half of #310.
 - [ ] **Debts with no gate** (Java wave J2, TS wave S2): the `@DomainEvent` strict-mode call site
       (T11), the T30 classpath check in `exeris:generate`, a golden OpenAPI document compared on
       both JDK rows, a reflective check of the inert-registry keys against the SDK, the T58 residue
       (`Partial<Create>` sent over `PUT`), and the `TODO` that `form-gen.ts` writes into generated
-      code. *Landed:* the `form-gen.ts` TODO (#323), and a debt this list did not name: metadata is
+      code. *Landed:* the `form-gen.ts` TODO (#323); a debt this list did not name: metadata is
       read in a defined order, so the auto-detected base package does not depend on the
-      filesystem (#320, `EXT-GEN-3104`). The T58 residue, TS side: `<Entity>Update` is the whole
-      record (#349). *Open:* T11, T30, the OpenAPI golden, the registry-key check and the OpenAPI
-      `UpdateDto` shape.
+      filesystem (#320, `EXT-GEN-3104`); the T58 residue, TS side: `<Entity>Update` is the whole
+      record (#349); T30: `exeris:generate` warns `EXT-PLUG-2004` naming a compile dependency the
+      generated code imports and the build lacks (#341); the OpenAPI golden, compared byte for
+      byte, with every schema typed and each action's request schema defined (#342); the
+      registry-key check, every strict-audit key resolved against the SDK annotations jar (#339).
+      *In review:* T11, the `@DomainEvent` call site under `-Aexeris.strict` (#352, open).
+      *Open:* the Java OpenAPI `<Entity>UpdateDto`, which under-describes the full-replacement
+      `PUT` body (the TS side sends the whole record, #349), and the question whether the Java
+      update keeps writing read-only columns and `created_at`, to settle before the schema shape.
 - [ ] **ADR-044 Amendment 2** also decides the GET route for a per-action stream (`EventSource` is
       GET-only) and the `EventBusService` default endpoint, which no server route serves.
 - [ ] **Triage two dog-food findings this file does not record yet:** the repository's
-      `save`/`update` split with no upsert, and codegen-ts writing LF into a CRLF tree.
+      `save`/`update` split with no upsert (open, Java), and codegen-ts writing LF into a CRLF tree
+      (triaged below).
+      *CRLF disposition: a tooling defect, placed in TS wave S2.* Read from the source: every
+      emitted string is `\n` (the only `\r` in `exeris-codegen-ts/src` is a regex that strips one),
+      and `writeGeneratedFiles` writes with `writeFileSync(full, content)`, no conversion. The
+      rewrite decision is `planWrites` in `src/output/writer.ts`:
+      `onDisk.equals(Buffer.from(content))`, a byte comparison. A file the consumer keeps as CRLF
+      never equals the LF content, so every owned, non-seed file is `rewrite` on every run, however
+      little changed: the run reports them as rewritten and touches the working tree. Under git
+      `core.autocrlf=true` the checkout is CRLF, so each regeneration rewrites the whole tree to LF;
+      git normalizes on `add`, so `git diff` is mostly empty and the cost is mtime churn, watcher
+      rebuilds and a misleading rewrite count; where CRLF is committed (`autocrlf=false`), the diff
+      is the whole tree. Seed files are unaffected (an owned seed that differs is `keep-seed`), and
+      the manifest reader (`split('\n')` then `trim`) and `carriesGeneratorMarker` already tolerate
+      CRLF. The Java `OutputWriter` writes every file unconditionally with `Files.writeString`,
+      never compares, and is LF too, so it has no equal-content decision to get wrong. Neither the
+      scaffold nor the Java output includes a `.gitattributes` or `.editorconfig`, so nothing tells
+      git or the editor what the tree's line endings are. The fix is small and local: compare with
+      CRLF folded to LF, so an unchanged file stays `unchanged`, and when a differing file on disk
+      is CRLF write the content as CRLF, keeping the consumer's convention. Row "Line endings" in
+      [`docs/0.10.0-release-plan.md`](docs/0.10.0-release-plan.md), wave S2. Not implemented by this
+      entry.
 - [x] The removals below.
 
 **Not placed in a milestone**, because the next step belongs to another repository: C2

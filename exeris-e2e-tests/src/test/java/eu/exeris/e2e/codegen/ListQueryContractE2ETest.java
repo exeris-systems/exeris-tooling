@@ -1,5 +1,6 @@
 package eu.exeris.e2e.codegen;
 
+import eu.exeris.e2e.codegen.compile.EmittedJavac;
 import eu.exeris.e2e.codegen.compile.GeneratedTree;
 import eu.exeris.e2e.codegen.compile.ProcessorCompiler;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
@@ -22,8 +23,6 @@ import org.junit.jupiter.api.io.TempDir;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
-import javax.tools.ToolProvider;
-import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
@@ -33,7 +32,6 @@ import java.lang.reflect.RecordComponent;
 import java.math.BigDecimal;
 import java.net.URL;
 import java.net.URLClassLoader;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -278,15 +276,9 @@ class ListQueryContractE2ETest {
     // ------------------------------------------------------------------ harness
 
     private static void javac(List<String> files, Path outputDir, Path entityClasses) throws IOException {
-        Files.createDirectories(outputDir);
-        List<String> args = new ArrayList<>(List.of(
-                "-d", outputDir.toString(),
-                "-classpath", System.getProperty("java.class.path") + File.pathSeparator + entityClasses,
-                "--release", "25", "-nowarn"));
-        args.addAll(files);
-        ByteArrayOutputStream diagnostics = new ByteArrayOutputStream();
-        int rc = ToolProvider.getSystemJavaCompiler().run(null, null, diagnostics, args.toArray(String[]::new));
-        assertThat(rc).as(diagnostics.toString(StandardCharsets.UTF_8)).isZero();
+        EmittedJavac.Result result = EmittedJavac.compile(files, outputDir,
+                System.getProperty("java.class.path") + File.pathSeparator + entityClasses);
+        assertThat(result.clean()).as(result.render()).isTrue();
     }
 
     private static Object parse(String raw) throws Exception {
