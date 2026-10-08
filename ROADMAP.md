@@ -3944,8 +3944,9 @@ enters only if its upstream half is final first.
       git or the editor what the tree's line endings are. The fix is small and local: compare with
       CRLF folded to LF, so an unchanged file stays `unchanged`, and when a differing file on disk
       is CRLF write the content as CRLF, keeping the consumer's convention. Row "Line endings" in
-      [`docs/0.10.0-release-plan.md`](docs/0.10.0-release-plan.md), wave S2. Not implemented by this
-      entry.
+      [`docs/0.10.0-release-plan.md`](docs/0.10.0-release-plan.md), wave S2. Landed in #361: a file is
+      compared with CRLF folded to LF, and a replaced file that is CRLF on disk (a line ending, every LF
+      preceded by CR) is written as CRLF; a mixed file is written as LF.
 - [x] The removals below.
 
 **Not placed in a milestone**, because the next step belongs to another repository: C2
