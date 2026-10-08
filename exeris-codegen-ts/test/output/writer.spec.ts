@@ -360,7 +360,7 @@ describe('seed files no longer produced', () => {
   });
 
   it('names every seed the scaffold emits', () => {
-    const emittedSeeds = buildGeneratedFiles([], [], { ...DEFAULT_CONFIG, generateTests: true }, [
+    const emittedSeeds = buildGeneratedFiles([], [], { ...DEFAULT_CONFIG, generateTests: true, render: 'ssg' }, [
       ViewMetadataSchema.parse({ name: 'About', regions: [] }),
     ])
       .filter((f) => f.overwritable === false)

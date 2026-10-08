@@ -187,6 +187,29 @@ jobs:
           npm install --no-audit --no-fund --prefer-offline
           npx ng build --configuration development
 
+      # render: 'ssg' — the view-only shape with the static prerender setup and a parameterised
+      # page. The build must report 4 prerendered routes, write each param-less page as HTML holding
+      # its heading and the root as a redirect page, and leave the parameterised page to the browser
+      # shell (index.csr.html).
+      - name: Generate view-only Angular app (render ssg)
+        working-directory: exeris-codegen-ts
+        run: node scripts/gen-sample-app.mjs "$RUNNER_TEMP/fe-ssg" --ssg
+
+      - name: npm install + ng build + prerendered pages (render ssg)
+        working-directory: ${{ runner.temp }}/fe-ssg
+        run: |
+          set -euo pipefail
+          npm install --no-audit --no-fund --prefer-offline
+          npx ng build --configuration development 2>&1 | tee "$RUNNER_TEMP/fe-ssg-build.log"
+          grep -q 'Prerendered 4 static routes' "$RUNNER_TEMP/fe-ssg-build.log"
+          out=dist/exeris-foundation-frontend/browser
+          grep -q '>Welcome</h1>' "$out/home/index.html"
+          grep -q '>About</h1>' "$out/about-us/index.html"
+          grep -q '>Footer</h1>' "$out/footer/index.html"
+          grep -q 'url=/about-us' "$out/index.html"
+          test -f "$out/index.csr.html"
+          test ! -e "$out/posts"
+
   # MIGRATION's open release train is written one file per change under docs/migration/<version>/
   # and assembled at the cut (docs/migration/README.md). The check holds every fragment to the
   # format the assembler needs, so the release pull request cannot meet a malformed one. Not a
