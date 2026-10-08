@@ -56,7 +56,9 @@ public final class OpenApiComponentsBuilder {
     private static Schema<?> buildEntitySchema(DomainMetadata metadata) {
         Schema<Object> schema = new Schema<>();
         schema.setType("object");
-        schema.setDescription(metadata.description() != null ? metadata.description() : metadata.entityName() + " entity");
+        schema.setDescription(metadata.description() != null
+                ? metadata.description()
+                : metadata.entityName() + " entity");
         Map<String, Schema> properties = new LinkedHashMap<>();
         properties.put("id", new Schema<String>().type("string").format("uuid").description("Unique identifier"));
         Set<String> serverOwned = serverOwnedFields(metadata);
@@ -69,8 +71,10 @@ public final class OpenApiComponentsBuilder {
                 properties.put(field.name(), fieldSchema);
             }
         }
-        properties.put("createdAt", new Schema<String>().type("string").format("date-time").description("Creation timestamp"));
-        properties.put("updatedAt", new Schema<String>().type("string").format("date-time").description("Last update timestamp"));
+        properties.put("createdAt", new Schema<String>().type("string").format("date-time")
+                .description("Creation timestamp"));
+        properties.put("updatedAt", new Schema<String>().type("string").format("date-time")
+                .description("Last update timestamp"));
         schema.setProperties(properties);
         return schema;
     }
@@ -122,12 +126,16 @@ public final class OpenApiComponentsBuilder {
             for (FieldMetadata field : metadata.fields()) {
                 if (!field.readOnly() && !"id".equals(field.name()) && !serverOwned.contains(field.name())) {
                     properties.put(field.name(), buildFieldSchema(field));
-                    if (field.required()) required.add(field.name());
+                    if (field.required()) {
+                        required.add(field.name());
+                    }
                 }
             }
         }
         schema.setProperties(properties);
-        if (!required.isEmpty()) schema.setRequired(required);
+        if (!required.isEmpty()) {
+            schema.setRequired(required);
+        }
         return schema;
     }
 
@@ -152,20 +160,36 @@ public final class OpenApiComponentsBuilder {
         Schema<Object> schema = new Schema<>();
         schema.setType(TypeMapper.toOpenApiType(field.type()));
         String format = TypeMapper.toOpenApiFormat(field.type());
-        if (format != null) schema.setFormat(format);
+        if (format != null) {
+            schema.setFormat(format);
+        }
         // @Field.dataType=url is a front-presentation hint with a standard OpenAPI
         // format counterpart ("uri"); apply it as a cheap, additive parity hint
         // (Wave 1A, Java∪TS union). Other dataType values are FE-only facets.
         // This is deliberately last so the explicit author hint wins over any
         // type-derived format above — a field is only `dataType=url` when the author
         // declared it, and "uri" is the intended contract for that field.
-        if ("url".equals(field.dataType())) schema.setFormat("uri");
-        if (field.description() != null) schema.setDescription(field.description());
-        if (field.minLength() != null) schema.setMinLength(field.minLength());
-        if (field.maxLength() != null) schema.setMaxLength(field.maxLength());
-        if (field.min() != null) schema.setMinimum(java.math.BigDecimal.valueOf(field.min()));
-        if (field.max() != null) schema.setMaximum(java.math.BigDecimal.valueOf(field.max()));
-        if (field.pattern() != null) schema.setPattern(field.pattern());
+        if ("url".equals(field.dataType())) {
+            schema.setFormat("uri");
+        }
+        if (field.description() != null) {
+            schema.setDescription(field.description());
+        }
+        if (field.minLength() != null) {
+            schema.setMinLength(field.minLength());
+        }
+        if (field.maxLength() != null) {
+            schema.setMaxLength(field.maxLength());
+        }
+        if (field.min() != null) {
+            schema.setMinimum(java.math.BigDecimal.valueOf(field.min()));
+        }
+        if (field.max() != null) {
+            schema.setMaximum(java.math.BigDecimal.valueOf(field.max()));
+        }
+        if (field.pattern() != null) {
+            schema.setPattern(field.pattern());
+        }
         return schema;
     }
 }
