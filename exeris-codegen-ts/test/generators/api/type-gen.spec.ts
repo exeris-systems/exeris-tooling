@@ -76,7 +76,7 @@ describe('TypeGenerator.generate — per-domain interface emission', () => {
     // compile — so the fix is one name, decided in one place, for declarer and importer alike.
     expect(content).toContain('export interface CustomerEntity {');
     expect(content).toContain('export interface CustomerEntityCreate {');
-    expect(content).toContain('export type CustomerEntityUpdate = Partial<CustomerEntityCreate>;');
+    expect(content).toContain('export type CustomerEntityUpdate = CustomerEntity;');
     expect(content).toContain('export interface CustomerEntityListResponse {');
   });
 
@@ -452,9 +452,10 @@ describe('TypeGenerator buildZodType — validation chain (exercised via emitted
     expect(content).toContain('version: true');
   });
 
-  it('UpdateSchema is CreateSchema.partial()', () => {
-    expect(schemaFor([field({ name: 'name', type: 'String' })]))
-      .toContain('ThingUpdateSchema = ThingCreateSchema.partial();');
+  it('UpdateSchema is the entity schema without its key, never a partial', () => {
+    const content = schemaFor([field({ name: 'id', type: 'UUID' }), field({ name: 'name', type: 'String' })]);
+    expect(content).toContain('ThingUpdateSchema = ThingSchema.omit({ id: true });');
+    expect(content).not.toContain('.partial()');
   });
 
   it('schema imports its enum dependencies under <name>Schema suffix from ../types/enums', () => {
@@ -630,7 +631,7 @@ describe('TypeGenerator — a tenant-partitioned owner without a systemFields bl
     expect(schema.slice(schema.indexOf('FleetCreateSchema'))).toContain('  tenantId: true,');
     expect(createSlice).toContain('name?: string;');
     expect(createSlice).not.toContain('tenantId');
-    expect(content).toContain('export type FleetUpdate = Partial<FleetCreate>;');
+    expect(content).toContain("export type FleetUpdate = Omit<Fleet, 'id' | 'tenantId'>;");
     expect(content).not.toContain('@deprecated');
     expect(content.slice(entityStart, content.indexOf('}', entityStart))).toContain('tenantId?: string;');
   });
@@ -737,8 +738,8 @@ describe('TypeGenerator — versioned update DTO and schema', () => {
 
   it('a versioned entity requires the version on update, typed as the entity declares it', () => {
     const { types, schema } = emit({ versioned: true });
-    expect(types).toContain('export type ThingUpdate = Partial<ThingCreate> & { version: number | null };');
-    expect(schema).toContain('export const ThingUpdateSchema = ThingCreateSchema.partial().extend({ version: z.number().nullable() });');
+    expect(types).toContain("export type ThingUpdate = Omit<Thing, 'id'> & { version: number | null };");
+    expect(schema).toContain('export const ThingUpdateSchema = ThingSchema.omit({ id: true }).extend({ version: z.number().nullable() });');
   });
 
   it('the create DTO and schema still leave the version out (the server owns the initial one)', () => {
@@ -755,8 +756,8 @@ describe('TypeGenerator — versioned update DTO and schema', () => {
       fields: [field({ name: 'id', type: 'UUID' }), field({ name: 'rev', type: 'long' })],
       systemFields: { versionField: 'rev' } as DomainMetadata['systemFields'],
     });
-    expect(types).toContain('export type ThingUpdate = Partial<ThingCreate> & { rev: number };');
-    expect(schema).toContain('.partial().extend({ rev: z.number() });');
+    expect(types).toContain("export type ThingUpdate = Omit<Thing, 'id'> & { rev: number };");
+    expect(schema).toContain('ThingSchema.omit({ id: true }).extend({ rev: z.number() });');
     // T20: `rev` is a key of ThingSchema, so it is omitted from create; `version` is not, so it is not.
     expect(schema).toContain('  rev: true,');
     expect(schema).not.toContain('  version: true,');
@@ -767,16 +768,88 @@ describe('TypeGenerator — versioned update DTO and schema', () => {
       versioned: true,
       fields: [field({ name: 'id', type: 'UUID' }), field({ name: 'name', type: 'String' })],
     });
-    expect(types).toContain('export type ThingUpdate = Partial<ThingCreate> & { version: number };');
-    expect(schema).toContain('.partial().extend({ version: z.number() });');
+    expect(types).toContain("export type ThingUpdate = Omit<Thing, 'id'> & { version: number };");
+    expect(schema).toContain('ThingSchema.omit({ id: true }).extend({ version: z.number() });');
     expect(schema).not.toContain('  version: true,');
   });
 
-  it('an unversioned entity keeps the plain partial update', () => {
+  it('an unversioned entity\'s update is the record without its key', () => {
     const { types, schema } = emit({ versioned: false });
-    expect(types).toContain('export type ThingUpdate = Partial<ThingCreate>;');
-    expect(schema).toContain('export const ThingUpdateSchema = ThingCreateSchema.partial();');
+    expect(types).toContain("export type ThingUpdate = Omit<Thing, 'id'>;");
+    expect(schema).toContain('export const ThingUpdateSchema = ThingSchema.omit({ id: true });');
     expect(schema).not.toContain('.extend(');
+  });
+});
+
+// ---------- the update is a full replacement: the DTO is the whole record ----------
+
+describe('TypeGenerator — the update DTO is the record the server writes back', () => {
+  const gen = new TypeGenerator();
+  const ctx = createGeneratorContext({ generateZod: true });
+
+  function emit(metadata: DomainMetadata): { types: string; schema: string } {
+    const kebab = metadata.entityName.toLowerCase();
+    return {
+      types: gen.generate(metadata, ctx)!.content,
+      schema: gen.generateAggregate([metadata], ctx).find(f => f.path === `schemas/${kebab}.schema.ts`)!.content,
+    };
+  }
+
+  // The generated handler decodes the PUT body into the whole entity and the repository's UPDATE
+  // writes every column but the key and the owner, so a property left out is stored as null.
+  it('keeps read-only, audit and create-only fields, and every required field stays required', () => {
+    const { types, schema } = emit(domain({
+      entityName: 'Ledger',
+      audited: true,
+      fields: [
+        field({ name: 'id', type: 'UUID' }),
+        field({ name: 'title', type: 'String', required: true }),
+        field({ name: 'code', type: 'String', readOnly: true }),
+        field({ name: 'origin', type: 'String', inCreate: false }),
+        field({ name: 'createdAt', type: 'java.time.Instant' }),
+      ],
+    }));
+    expect(types).toContain("export type LedgerUpdate = Omit<Ledger, 'id'>;");
+    expect(types).not.toMatch(/LedgerUpdate = Partial</);
+    expect(types).toContain('title: string;');
+    expect(schema).toContain('export const LedgerUpdateSchema = LedgerSchema.omit({ id: true });');
+  });
+
+  it('leaves out the owner of a tenant-partitioned entity, which the update never writes', () => {
+    const { types, schema } = emit(domain({
+      entityName: 'Fleet',
+      dataScope: 'TENANT',
+      fields: [
+        field({ name: 'id', type: 'UUID' }),
+        field({ name: 'name', type: 'String' }),
+        field({ name: 'tenantId', type: 'UUID' }),
+      ],
+    }));
+    expect(types).toContain("export type FleetUpdate = Omit<Fleet, 'id' | 'tenantId'>;");
+    expect(schema).toContain('export const FleetUpdateSchema = FleetSchema.omit({ id: true, tenantId: true });');
+  });
+
+  it('keeps a UNIVERSE entity\'s shared scope, which the update writes from the body', () => {
+    const { types } = emit(domain({
+      entityName: 'Atlas',
+      dataScope: 'UNIVERSE',
+      systemFields: { tenantIdField: 'ownerId', sharedScopeField: 'scopeId' } as DomainMetadata['systemFields'],
+      fields: [
+        field({ name: 'id', type: 'UUID' }),
+        field({ name: 'ownerId', type: 'UUID' }),
+        field({ name: 'scopeId', type: 'UUID' }),
+      ],
+    }));
+    expect(types).toContain("export type AtlasUpdate = Omit<Atlas, 'id' | 'ownerId'>;");
+  });
+
+  it('omits only declared keys, so an entity without an id field is its own update type', () => {
+    const { types, schema } = emit(domain({
+      entityName: 'Note',
+      fields: [field({ name: 'body', type: 'String' })],
+    }));
+    expect(types).toContain('export type NoteUpdate = Note;');
+    expect(schema).toContain('export const NoteUpdateSchema = NoteSchema;');
   });
 });
 

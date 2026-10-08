@@ -104,8 +104,7 @@ export class TypeGenerator implements CodeGenerator {
     lines.push(`}`);
     lines.push(``);
 
-    // Update DTO (all fields optional, excluding lifecycle and read-only; a versioned entity
-    // additionally requires its optimistic-lock version)
+    // Update DTO: the whole record, which the server's update writes back in full
     lines.push(...updateDtoDeclaration(interfaceName, metadata));
     lines.push(``);
 
@@ -380,27 +379,59 @@ export function updateVersionField(metadata: DomainMetadata): UpdateVersionField
 }
 
 /**
- * The `…Update` type declaration: the create DTO made partial, plus the required version on a
- * versioned entity. Shared by the local and the peer emitter so the two cannot drift.
+ * The declared fields an update body leaves out: the key, which the route's path carries and which
+ * the generated handler sets over whatever the body says, and the owner of a tenant-partitioned
+ * entity, which the generated repository never writes on update. Only declared fields are listed,
+ * because `z.omit()` rejects a key the object does not declare (TS2322).
+ */
+export function updateOmittedFields(metadata: DomainMetadata): string[] {
+  const declared = new Set(metadata.fields.map((f) => f.name));
+  const owner = ownerFieldName(metadata);
+  return [...new Set(owner ? ['id', owner] : ['id'])].filter((name) => declared.has(name));
+}
+
+/**
+ * The `…Update` type declaration: the entity record without the key and the owner, plus the
+ * required version on a versioned entity. Shared by the local and the peer emitter so the two
+ * cannot drift.
+ *
+ * The generated server's update is a full replacement: the handler decodes the body into the whole
+ * entity and the repository's `UPDATE` writes every column but the key and the owner, read-only
+ * fields, the audit `createdAt` and a UNIVERSE entity's shared scope included. A property the body
+ * leaves out is written as null, so the update type is the record as read, not a subset of the
+ * create DTO.
  */
 export function updateDtoDeclaration(typeName: string, metadata: DomainMetadata): string[] {
+  const omitted = updateOmittedFields(metadata);
+  const record = omitted.length > 0
+    ? `Omit<${typeName}, ${omitted.map((name) => `'${name}'`).join(' | ')}>`
+    : typeName;
   const version = updateVersionField(metadata);
-  if (!version) return [`export type ${typeName}Update = Partial<${typeName}Create>;`];
+  if (!version) {
+    return [
+      `/** The whole record: the server's update replaces the row, and a property left out is stored as null. */`,
+      `export type ${typeName}Update = ${record};`,
+    ];
+  }
   return [
-    `/** The version this edit was loaded at: the server refuses the update with 409 when the row has moved on. */`,
-    `export type ${typeName}Update = Partial<${typeName}Create> & { ${version.name}: ${version.tsType} };`,
+    `/** The whole record and the version this edit was loaded at: the server's update replaces the row, and refuses it with 409 when the row has moved on. */`,
+    `export type ${typeName}Update = ${record} & { ${version.name}: ${version.tsType} };`,
   ];
 }
 
 /**
- * The `…UpdateSchema` declaration, kept in step with `updateDtoDeclaration`: the create schema
- * made partial, extended with the required version on a versioned entity.
+ * The `…UpdateSchema` declaration, kept in step with `updateDtoDeclaration`: the entity schema
+ * without the key and the owner, extended with the required version on a versioned entity.
  */
 export function updateSchemaDeclaration(typeName: string, metadata: DomainMetadata): string {
+  const omitted = updateOmittedFields(metadata);
+  const record = omitted.length > 0
+    ? `${typeName}Schema.omit({ ${omitted.map((name) => `${name}: true`).join(', ')} })`
+    : `${typeName}Schema`;
   const version = updateVersionField(metadata);
   return version
-    ? `export const ${typeName}UpdateSchema = ${typeName}CreateSchema.partial().extend({ ${version.name}: ${version.zodType} });`
-    : `export const ${typeName}UpdateSchema = ${typeName}CreateSchema.partial();`;
+    ? `export const ${typeName}UpdateSchema = ${record}.extend({ ${version.name}: ${version.zodType} });`
+    : `export const ${typeName}UpdateSchema = ${record};`;
 }
 
 /**

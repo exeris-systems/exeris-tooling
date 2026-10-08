@@ -51,7 +51,7 @@ describe('generatePeerTypes', () => {
     const types = byPath(generatePeerTypes(billing, DEFAULT_CONFIG), 'types/order.types.ts');
     expect(types).toContain('export interface Order {');
     expect(types).toContain('export interface OrderCreate {');
-    expect(types).toContain('export type OrderUpdate = Partial<OrderCreate>;');
+    expect(types).toContain("export type OrderUpdate = Omit<Order, 'id'>;");
   });
 
   // Filter and ListResponse describe THIS app's list/query surface. For a peer whose client
@@ -87,8 +87,10 @@ describe('generatePeerTypes', () => {
     const files = generatePeerTypes({ ...billing, domains: [fleet] }, { ...DEFAULT_CONFIG, generateZod: true });
     const types = byPath(files, 'types/fleet.types.ts');
     const schema = byPath(files, 'schemas/fleet.schema.ts');
-    const create = types.slice(types.indexOf('export interface FleetCreate'));
+    const createStart = types.indexOf('export interface FleetCreate');
+    const create = types.slice(createStart, types.indexOf('}', createStart));
     expect(create).not.toContain('tenantId');
+    expect(types).toContain("export type FleetUpdate = Omit<Fleet, 'id' | 'tenantId'>;");
     expect(types).not.toContain('@deprecated');
     expect(types.slice(0, types.indexOf('export interface FleetCreate'))).toContain('tenantId?: string;');
     expect(schema.slice(schema.indexOf('FleetCreateSchema'))).toContain('  tenantId: true,');
@@ -139,7 +141,7 @@ describe('generatePeerTypes', () => {
     expect(schema).toContain('export const OrderSchema = z.object({');
     expect(schema).toContain('export const OrderCreateSchema = OrderSchema.omit({');
     expect(schema).toContain('  id: true,');
-    expect(schema).toContain('export const OrderUpdateSchema = OrderCreateSchema.partial();');
+    expect(schema).toContain('export const OrderUpdateSchema = OrderSchema.omit({ id: true });');
   });
 
   it('omits schemas and their barrel lines under --no-zod', () => {
@@ -183,8 +185,8 @@ describe('generatePeerTypes — versioned peer entity', () => {
   it('the peer Update type and schema carry the version, as the local emitter does', () => {
     const files = generatePeerTypes(versioned, { ...DEFAULT_CONFIG, generateZod: true });
     expect(byPath(files, 'types/order.types.ts'))
-      .toContain('export type OrderUpdate = Partial<OrderCreate> & { version: number | null };');
+      .toContain("export type OrderUpdate = Omit<Order, 'id'> & { version: number | null };");
     expect(byPath(files, 'schemas/order.schema.ts'))
-      .toContain('export const OrderUpdateSchema = OrderCreateSchema.partial().extend({ version: z.number().nullable() });');
+      .toContain('export const OrderUpdateSchema = OrderSchema.omit({ id: true }).extend({ version: z.number().nullable() });');
   });
 });
