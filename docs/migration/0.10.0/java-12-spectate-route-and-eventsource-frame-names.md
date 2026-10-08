@@ -28,8 +28,8 @@ stream then closes. Row visibility is checked once, when the stream opens. The e
 document describes the route as a `text/event-stream` response. The live view and the spectate route
 do not shadow each other: a path placeholder matches exactly one segment.
 
-The generated TypeScript emits no client for the spectate route yet; it is served, and listed under
-`withoutClient` in the stream route contract.
+The generated TypeScript opens the route through `spectate(id)` on the entity's `<Entity>StreamClient`;
+the stream route contract lists it under `routes`.
 
 **What to do:**
 

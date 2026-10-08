@@ -92,10 +92,10 @@ class StreamRouteParityE2ETest {
     }
 
     @Test
-    @DisplayName("the spectate route is served, and no generated client opens it yet (wave S4)")
-    void spectateRouteHasNoClientYet() {
-        assertThat(contract.withoutClient()).extracting(Route::operation).containsExactly("spectate");
-        assertThat(contract.routes()).extracting(Route::operation).doesNotContain("spectate");
+    @DisplayName("the spectate route is served, and a generated client opens it")
+    void spectateRouteHasAClient() {
+        assertThat(contract.withoutClient()).extracting(Route::operation).doesNotContain("spectate");
+        assertThat(contract.routes()).extracting(Route::operation).contains("spectate");
         assertThat(application).contains("routerBuilder.streamRoute(HttpMethod.GET, \"/orders/{id}/stream\", "
                 + "orderSpectateStreamHandler);");
     }

@@ -238,6 +238,167 @@ describe('StreamClientGenerator — emitted client behaviour', () => {
   });
 });
 
+// ---------- spectate ----------
+
+describe('StreamClientGenerator — spectate stream', () => {
+  const gen = new StreamClientGenerator();
+  const orders = domain({
+    entityName: 'Order',
+    realTimeApi: true,
+    path: '/orders',
+    fields: [
+      { name: 'id', type: 'java.util.UUID' },
+      { name: 'total', type: 'java.math.BigDecimal' },
+    ],
+    events: [
+      { name: 'OrderPlaced', payloadFields: ['id', 'total'], sensitiveFields: ['total'] },
+      { name: 'OrderCancelled', payloadFields: ['id'] },
+    ],
+  });
+  const content = gen.generate(orders, CTX)!.content;
+
+  it('opens GET {base}/{id}/stream on the same client, the id encoded', () => {
+    expect(content).toContain('spectate(id: string): Observable<OrderSpectateFrame>');
+    expect(content).toContain('return `/orders/${encodeURIComponent(id)}/stream`;');
+    expect(content).toContain('new EventSource(this.spectateUrl(id), { withCredentials: true })');
+  });
+
+  it('follows the apiBasePath and an explicit apiPath like the live view', () => {
+    const custom = domain({ entityName: 'Order', realTimeApi: true, apiPath: '/custom/orders', apiVersion: 'v2' });
+    const out = gen.generate(custom, createGeneratorContext({ apiBasePath: '/api' }))!.content;
+    expect(out).toContain('return `/api/custom/orders/${encodeURIComponent(id)}/stream`;');
+  });
+
+  it('types each frame by the payload of the @DomainEvent that names it', () => {
+    expect(content).toContain('export interface OrderOrderPlacedSpectatePayload {');
+    expect(content).toContain('// sensitive: redacted before publish');
+    expect(content).toContain("| { readonly event: 'OrderPlaced'; readonly data: OrderOrderPlacedSpectatePayload }");
+    expect(content).toContain("| { readonly event: 'OrderCancelled'; readonly data: OrderOrderCancelledSpectatePayload }");
+  });
+
+  it('types an entity with no @DomainEvent as a stream of no frame', () => {
+    const out = gen.generate(domain({ entityName: 'Order', realTimeApi: true }), CTX)!.content;
+    expect(out).toContain('export type OrderSpectateFrame = never;');
+  });
+
+  it('keeps a payload type per event whose names collapse to one identifier', () => {
+    const out = gen.generate(domain({
+      entityName: 'Order',
+      realTimeApi: true,
+      events: [{ name: 'order-placed' }, { name: 'orderPlaced' }, { name: 'order-placed' }],
+    }), CTX)!.content;
+    expect(out).toContain('export interface OrderOrderPlacedSpectatePayload {');
+    expect(out).toContain('export interface OrderOrderPlacedSpectatePayload2 {');
+    expect(out).not.toContain('SpectatePayload3');
+  });
+
+  it('is not emitted for a tenant-partitioned entity', () => {
+    expect(gen.generate(domain({ entityName: 'Order', realTimeApi: true, dataScope: 'TENANT' }), CTX)).toBeNull();
+  });
+});
+
+describe('StreamClientGenerator — spectate behaviour', () => {
+  const content = new StreamClientGenerator().generate(
+    domain({ entityName: 'Order', realTimeApi: true, path: '/orders', events: [{ name: 'OrderPlaced' }, { name: 'OrderCancelled' }] }),
+    CTX,
+  )!.content;
+
+  interface SpectateClient {
+    spectate(id: string): StubObservable;
+  }
+  const load = (): { Client: new () => SpectateClient; SpectateError: { fromFrame(d: string): unknown } } => {
+    const source = content.replace(/^import .*;$/gm, '');
+    const js = ts.transpileModule(source, {
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+    }).outputText;
+    const exports: Record<string, unknown> = {};
+    new Function('exports', 'Injectable', 'Observable', 'EventSource', js)(
+      exports, () => () => undefined, StubObservable, StubEventSource,
+    );
+    return {
+      Client: exports.OrderStreamClient as new () => SpectateClient,
+      SpectateError: exports.OrderSpectateError as { fromFrame(d: string): unknown },
+    };
+  };
+
+  it('opens the row route and delivers each named event with its payload parsed', () => {
+    const { Client } = load();
+    const seen: unknown[] = [];
+    new Client().spectate('a b').subscribe({ next: (e) => seen.push(e), error: () => {}, complete: () => {} });
+    const source = StubEventSource.last!;
+
+    expect(source.url).toBe('/orders/a%20b/stream');
+    expect(source.init).toEqual({ withCredentials: true });
+    expect([...source.listeners.keys()]).toEqual(['OrderPlaced', 'OrderCancelled', 'stream-error']);
+
+    source.listeners.get('OrderPlaced')!({ type: 'OrderPlaced', data: '{"id":"1"}' });
+    expect(seen).toEqual([{ event: 'OrderPlaced', data: { id: '1' } }]);
+  });
+
+  it('has no listener for the keep-alive heartbeat', () => {
+    const { Client } = load();
+    new Client().spectate('1').subscribe({ next: () => {}, error: () => {}, complete: () => {} });
+    expect(StubEventSource.last!.listeners.has('keep-alive')).toBe(false);
+  });
+
+  it('errors and closes the source on a stream-error frame, with the problem members', () => {
+    const { Client } = load();
+    const errors: unknown[] = [];
+    new Client().spectate('1').subscribe({
+      next: () => {},
+      error: (e) => errors.push(e),
+      complete: () => {},
+    });
+    const source = StubEventSource.last!;
+
+    source.listeners.get('stream-error')!({
+      type: 'stream-error',
+      data: '{"status":404,"title":"Not Found","detail":"no such order"}',
+    });
+
+    expect(source.closed).toBe(true);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({ status: 404, title: 'Not Found', detail: 'no such order', message: 'no such order' });
+  });
+
+  it('reads a stream-error frame whose data is not a problem object', () => {
+    const { SpectateError } = load();
+    expect(SpectateError.fromFrame('not json')).toMatchObject({ message: 'Order spectate stream failed' });
+  });
+
+  it('errors and closes the source on a payload that is not JSON', () => {
+    const { Client } = load();
+    const errors: unknown[] = [];
+    const seen: unknown[] = [];
+    new Client().spectate('1').subscribe({ next: (e) => seen.push(e), error: (e) => errors.push(e), complete: () => {} });
+    const source = StubEventSource.last!;
+
+    source.listeners.get('OrderPlaced')!({ type: 'OrderPlaced', data: '{' });
+
+    expect(errors).toHaveLength(1);
+    expect(seen).toHaveLength(0);
+    expect(source.closed).toBe(true);
+  });
+
+  it('errors only once the source is closed, and closes on unsubscribe', () => {
+    const { Client } = load();
+    const errors: unknown[] = [];
+    const sub = new Client().spectate('1').subscribe({ next: () => {}, error: (e) => errors.push(e), complete: () => {} });
+    const source = StubEventSource.last!;
+
+    source.readyState = StubEventSource.CONNECTING;
+    source.onerror!();
+    expect(errors).toHaveLength(0);
+
+    source.readyState = StubEventSource.CLOSED;
+    source.onerror!();
+    expect(errors).toHaveLength(1);
+
+    sub.unsubscribe();
+    expect(source.closed).toBe(true);
+  });
+});
+
 // ---------- determinism ----------
 
 describe('StreamClientGenerator — determinism', () => {

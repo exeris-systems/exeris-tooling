@@ -69,13 +69,15 @@ const tscBin = join(pkgRoot, 'node_modules', 'typescript', 'bin', 'tsc');
 /** Generate a fixture app, write its data layer to a temp dir, and `tsc --noEmit`.
  *  The data layer (types + schemas + the enum module) imports only `zod` + itself,
  *  so it type-checks without an Angular install. */
-function check(label, domains, fixtureEnums, peers = [], consumer = null) {
+function check(label, domains, fixtureEnums, peers = [], consumer = null, withServices = false) {
   const files = buildGeneratedFiles(domains, fixtureEnums, DEFAULT_CONFIG, [], peers);
   const dataLayer = files.filter(
     (f) =>
       f.path.startsWith('src/app/types/') ||
       f.path.startsWith('src/app/schemas/') ||
-      f.path.startsWith('src/app/peers/'),
+      f.path.startsWith('src/app/peers/') ||
+      // A stream client imports only @angular/core and rxjs, which the ambient stubs below stand in for.
+      (withServices && f.path.startsWith('src/app/services/') && f.path.endsWith('.stream.ts')),
   );
   if (dataLayer.length === 0) {
     console.error(`verify:generated [${label}] — no data-layer files emitted; orchestrator changed?`);
@@ -96,6 +98,24 @@ function check(label, domains, fixtureEnums, peers = [], consumer = null) {
     mkdirSync(dirname(full), { recursive: true });
     writeFileSync(full, consumer);
   }
+  if (withServices) {
+    const stubs = join(tmp, 'src/app/stubs/ambient.d.ts');
+    mkdirSync(dirname(stubs), { recursive: true });
+    writeFileSync(stubs, [
+      "declare module '@angular/core' {",
+      '  export function Injectable(options?: { providedIn?: string }): (value: unknown, context?: unknown) => void;',
+      '}',
+      "declare module 'rxjs' {",
+      '  export interface Subscription { unsubscribe(): void }',
+      '  export interface Observer<T> { next: (value: T) => void; error: (err: unknown) => void; complete: () => void }',
+      '  export class Observable<T> {',
+      '    constructor(subscribe: (subscriber: Observer<T>) => (() => void) | void);',
+      '    subscribe(observer: Partial<Observer<T>>): Subscription;',
+      '  }',
+      '}',
+      '',
+    ].join('\n'));
+  }
   writeFileSync(join(tmp, 'tsconfig.json'), JSON.stringify({
     compilerOptions: {
       target: 'ES2022',
@@ -104,9 +124,17 @@ function check(label, domains, fixtureEnums, peers = [], consumer = null) {
       strict: true,
       noEmit: true,
       skipLibCheck: true,
+      lib: ['ES2022', 'DOM'],
       types: [],
     },
-    include: ['src/app/types/**/*.ts', 'src/app/schemas/**/*.ts', 'src/app/peers/**/*.ts', 'src/app/consumer.ts'],
+    include: [
+      'src/app/types/**/*.ts',
+      'src/app/schemas/**/*.ts',
+      'src/app/peers/**/*.ts',
+      'src/app/services/**/*.ts',
+      'src/app/stubs/**/*.d.ts',
+      'src/app/consumer.ts',
+    ],
   }, null, 2));
 
   console.log(`verify:generated [${label}] — type-checking ${dataLayer.length} data-layer file(s)…`);
@@ -398,5 +426,66 @@ check(
   ].join('\n'),
 );
 
+// (9) The spectate stream of a realTimeApi entity: a consumer subscribes to one row's events and
+// narrows each frame by its event name to the payload that event declares. A frame named for an
+// event the entity does not declare does not type-check, a stream-error arrives as the entity's
+// SpectateError, and an entity with no event has a stream of no frame.
+check(
+  'spectate-stream',
+  [
+    DomainMetadataSchema.parse({
+      packageName: 'com.shop',
+      entityName: 'Order',
+      path: '/orders',
+      realTimeApi: true,
+      fields: [
+        { name: 'id', type: 'java.util.UUID' },
+        { name: 'total', type: 'java.math.BigDecimal' },
+        { name: 'note', type: 'String' },
+      ],
+      events: [
+        { name: 'OrderPlaced', payloadFields: ['id', 'total'] },
+        { name: 'OrderCancelled', payloadFields: ['id'] },
+      ],
+    }),
+    DomainMetadataSchema.parse({
+      packageName: 'com.shop',
+      entityName: 'Quiet',
+      path: '/quiet',
+      realTimeApi: true,
+      fields: [{ name: 'id', type: 'java.util.UUID' }],
+    }),
+  ],
+  [],
+  [],
+  [
+    "import { OrderStreamClient, OrderSpectateError, type OrderSpectateFrame } from './services/order.stream';",
+    "import { QuietStreamClient, type QuietSpectateFrame } from './services/quiet.stream';",
+    '',
+    'export function watch(client: OrderStreamClient, id: string) {',
+    '  return client.spectate(id).subscribe({',
+    '    next: (frame: OrderSpectateFrame) => {',
+    '      switch (frame.event) {',
+    "        case 'OrderPlaced': return frame.data.total;",
+    "        case 'OrderCancelled': return frame.data.id;",
+    '      }',
+    '    },',
+    '    error: (e: unknown) => (e instanceof OrderSpectateError ? e.status : undefined),',
+    '  });',
+    '}',
+    '',
+    "// @ts-expect-error — the payload of an OrderCancelled frame carries no total",
+    "export const total = (f: Extract<OrderSpectateFrame, { event: 'OrderCancelled' }>) => f.data.total;",
+    "// @ts-expect-error — Order declares no such event",
+    "export const unknown: OrderSpectateFrame = { event: 'OrderShipped', data: { id: 'x' } };",
+    '',
+    'export const quiet = (client: QuietStreamClient, id: string, frame: QuietSpectateFrame) => [client.spectate(id), frame];',
+    "// @ts-expect-error — Quiet declares no event, so no frame exists",
+    "export const none: QuietSpectateFrame = { event: 'any', data: {} };",
+    '',
+  ].join('\n'),
+  true,
+);
+
 rmSync(join(pkgRoot, '.verify-tmp'), { recursive: true, force: true });
-console.log('✓ Generated frontend data layer type-checks (with-enums + zero-enums + two-peers-same-entity + versioned-update + full-replacement-update + inherited-key + server-owned-update + undeclared-version).');
+console.log('✓ Generated frontend data layer type-checks (with-enums + zero-enums + two-peers-same-entity + versioned-update + full-replacement-update + inherited-key + server-owned-update + undeclared-version + spectate-stream).');
