@@ -76,6 +76,11 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
             "version"
     );
 
+    /** Logical names of every system column {@link #sysCol} can resolve (T5). */
+    private static final List<String> SYSTEM_LOGICAL_NAMES = List.of(
+            "tenantId", "createdAt", "createdBy", "updatedAt", "updatedBy",
+            "deleted", "deletedAt", "deletedBy", "version");
+
     // Substituted via String.formatted: %1$s = table name, %2$s = tenant
     // column. Safe because both are snake-cased Java identifiers (no `%`
     // possible); never pass arbitrary external input through this template.
@@ -211,7 +216,9 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
         }
 
         for (FieldMetadata field : metadata.fields()) {
-            if (isSystemField(metadata, field.name())) continue;
+            if (isSystemField(metadata, field.name())) {
+                continue;
+            }
             columns.add("    " + toSnakeCase(field.name()) + " " + mapJavaTypeToSql(field.type())
                     + (field.required() ? " NOT NULL" : "")
                     + (field.unique() ? " UNIQUE" : ""));
@@ -314,7 +321,9 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
         // still yields a single index). Source order preserved, matching the prior
         // behaviour for searchable/unique fields.
         for (FieldMetadata field : metadata.fields()) {
-            if (isSystemField(metadata, field.name())) continue;
+            if (isSystemField(metadata, field.name())) {
+                continue;
+            }
             if (field.searchable() || field.unique() || field.filterable()) {
                 String col = toSnakeCase(field.name());
                 if (indexedColumns.add(col)) {
@@ -355,7 +364,9 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
     private List<String> buildCheckConstraints(DomainMetadata metadata, String tableName) {
         List<String> checks = new ArrayList<>();
         for (FieldMetadata field : metadata.fields()) {
-            if (isSystemField(metadata, field.name())) continue;
+            if (isSystemField(metadata, field.name())) {
+                continue;
+            }
             String col = toSnakeCase(field.name());
             if (isNumericType(field.type())) {
                 if (field.min() != null) {
@@ -384,7 +395,9 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
     }
 
     private static String simpleTypeName(String javaType) {
-        if (javaType == null) return "";
+        if (javaType == null) {
+            return "";
+        }
         return javaType.contains(".") ? javaType.substring(javaType.lastIndexOf('.') + 1) : javaType;
     }
 
@@ -404,11 +417,6 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
             default -> false;
         };
     }
-
-    /** Logical names of every system column {@link #sysCol} can resolve (T5). */
-    private static final List<String> SYSTEM_LOGICAL_NAMES = List.of(
-            "tenantId", "createdAt", "createdBy", "updatedAt", "updatedBy",
-            "deleted", "deletedAt", "deletedBy", "version");
 
     private boolean isSystemField(DomainMetadata metadata, String fieldName) {
         if (SYSTEM_FIELDS.contains(fieldName) || SYSTEM_FIELDS.contains(toSnakeCase(fieldName))) {
@@ -436,5 +444,7 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
     }
 
     @Override
-    public ArtifactType artifactType() { return ArtifactType.CONFIGURATION; }
+    public ArtifactType artifactType() {
+        return ArtifactType.CONFIGURATION;
+    }
 }

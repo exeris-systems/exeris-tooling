@@ -91,11 +91,23 @@ import java.util.Set;
  */
 public class KernelRepositoryGenerator implements KernelArtifactGenerator {
 
+    /** Name of the emitted acting-tenant resolver — see {@link #buildActingTenantId}. */
+    static final String ACTING_TENANT_METHOD = "actingTenantId";
+    /** Name of the emitted acting-shared-scope resolver — see {@link #buildActingSharedScope}. */
+    static final String ACTING_SHARED_SCOPE_METHOD = "actingSharedScope";
+    /** Name of the emitted foreign-tenant refusal — see {@link #buildRefuseForeignTenant}. */
+    static final String REFUSE_FOREIGN_TENANT_METHOD = "refuseForeignTenant";
+    /** Name of the emitted foreign-shared-scope refusal — see {@link #buildRefuseForeignSharedScope}. */
+    static final String REFUSE_FOREIGN_SHARED_SCOPE_METHOD = "refuseForeignSharedScope";
+
     private static final ClassName UUID_TYPE = ClassName.get("java.util", "UUID");
     private static final ClassName OPTIONAL = ClassName.get("java.util", "Optional");
     private static final ClassName LIST_TYPE = ClassName.get("java.util", "List");
     private static final ClassName ARRAY_LIST = ClassName.get("java.util", "ArrayList");
-    /** Simple JVM type name for {@link java.time.Instant}; also the domain-type tag matched in {@link #classifyDomainType}. */
+    /**
+     * Simple JVM type name for {@link java.time.Instant}; also the domain-type tag matched in
+     * {@link #classifyDomainType}.
+     */
     private static final String INSTANT_TYPE = "Instant";
     private static final ClassName INSTANT = ClassName.get("java.time", INSTANT_TYPE);
     private static final ClassName LOCAL_DATE = ClassName.get("java.time", "LocalDate");
@@ -135,14 +147,6 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     private static final ClassName ILLEGAL_ARGUMENT_EXCEPTION =
             ClassName.get(IllegalArgumentException.class);
 
-    /** Name of the emitted acting-tenant resolver — see {@link #buildActingTenantId}. */
-    static final String ACTING_TENANT_METHOD = "actingTenantId";
-    /** Name of the emitted acting-shared-scope resolver — see {@link #buildActingSharedScope}. */
-    static final String ACTING_SHARED_SCOPE_METHOD = "actingSharedScope";
-    /** Name of the emitted foreign-tenant refusal — see {@link #buildRefuseForeignTenant}. */
-    static final String REFUSE_FOREIGN_TENANT_METHOD = "refuseForeignTenant";
-    /** Name of the emitted foreign-shared-scope refusal — see {@link #buildRefuseForeignSharedScope}. */
-    static final String REFUSE_FOREIGN_SHARED_SCOPE_METHOD = "refuseForeignSharedScope";
     /** Emitted message constants, so the resolver's own body stays one readable line per step. */
     private static final String SYSTEM_SCOPE_FIELD = "TENANT_SCOPE_REQUIRED";
     private static final String NOT_A_UUID_FIELD = "TENANT_KEY_NOT_A_UUID";
@@ -163,6 +167,9 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     private static final String EXECUTE_MANAGED_LAMBDA = "executor.executeManaged(conn -> ";
     private static final String TRY_PREPARE_STMT = "try ($T stmt = conn.prepare(sql))";
     private static final String RETURN_ENTITY_STMT = "return entity";
+
+    /** The primary-key lookup every generated repository and service already declares. */
+    private static final String PRIMARY_KEY_LOOKUP = "findById";
 
     /**
      * Creates the generator. It keeps no per-domain state, so one instance serves every domain
@@ -759,9 +766,6 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         }
         return method.addStatement("return index").build();
     }
-
-    /** The primary-key lookup every generated repository and service already declares. */
-    private static final String PRIMARY_KEY_LOOKUP = "findById";
 
     /**
      * Finder name a filterable field emits — on the repository and, in lock-step, on the service.
@@ -1480,7 +1484,8 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
 
         int idx = 0;
         for (Column col : ctx.columns()) {
-            emitReadCol(map, col, idx++, ctx);
+            emitReadCol(map, col, idx, ctx);
+            idx++;
         }
         return map.addStatement("return entity").build();
     }
@@ -1592,7 +1597,8 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     private void emitInsertBinds(CodeBlock.Builder body, Context ctx) {
         int idx = 0;
         for (Column col : ctx.columns()) {
-            emitBindCol(body, col, idx++, ENTITY_SRC, ctx.metadata());
+            emitBindCol(body, col, idx, ENTITY_SRC, ctx.metadata());
+            idx++;
         }
     }
 
@@ -1600,11 +1606,13 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                                  DomainMetadata metadata) {
         int idx = 0;
         for (Column col : updatable) {
-            emitBindCol(body, col, idx++, ENTITY_SRC, metadata);
+            emitBindCol(body, col, idx, ENTITY_SRC, metadata);
+            idx++;
         }
         // id bind terminates WHERE clause; for versioned entities, the
         // expectedVersion bind enforces the optimistic-lock guard.
-        body.addStatement("stmt.bindUuid($L, id)", idx++);
+        body.addStatement("stmt.bindUuid($L, id)", idx);
+        idx++;
         if (versioned) {
             body.addStatement("stmt.bindLong($L, expectedVersion)", idx);
         }

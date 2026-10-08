@@ -1,9 +1,12 @@
 package eu.exeris.tooling.codegen.java.openapi;
 
 import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
+import eu.exeris.sdk.sourcemodel.ast.ActionParamMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 import io.swagger.v3.oas.models.OpenAPI;
+import io.swagger.v3.oas.models.media.Schema;
+import io.swagger.v3.oas.models.parameters.Parameter;
 import io.swagger.v3.parser.OpenAPIV3Parser;
 import io.swagger.v3.parser.core.models.SwaggerParseResult;
 import io.swagger.v3.oas.models.info.Contact;
@@ -16,7 +19,10 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -234,6 +240,168 @@ class OpenApiGeneratorTest {
                 .containsKeys("/orders", "/orders/{id}", "/orders/{id}/actions/approve");
         assertThat(parsed.getOpenAPI().getComponents().getSchemas())
                 .containsKeys("Order", "OrderCreateDto", "OrderUpdateDto");
+    }
+
+    @Test
+    @DisplayName("every schema in the emitted document has a type, a $ref or a composition")
+    void everyEmittedSchemaIsTyped() throws IOException {
+        OpenAPI single = new OpenAPIV3Parser().readContents(generator.generateYaml(richOrder())).getOpenAPI();
+        generator.generateAggregated(List.of(richOrder(), product()), "catalog");
+        OpenAPI aggregate = new OpenAPIV3Parser()
+                .readContents(Files.readString(tempDir.resolve("catalog-api.yaml"))).getOpenAPI();
+
+        // Read back from the YAML, not taken from the model: the 3.1 writer drops a schema's
+        // type unless it is in the model's `types` set, which a model-level check cannot see.
+        assertThat(untypedSchemas(single)).isEmpty();
+        assertThat(untypedSchemas(aggregate)).isEmpty();
+        assertThat(allSchemas(single)).hasSizeGreaterThan(40);
+    }
+
+    @Test
+    @DisplayName("every $ref in the emitted document resolves to a schema the document defines")
+    void everyEmittedReferenceResolves() throws IOException {
+        OpenAPI single = new OpenAPIV3Parser().readContents(generator.generateYaml(richOrder())).getOpenAPI();
+        generator.generateAggregated(List.of(richOrder(), product()), "catalog");
+        OpenAPI aggregate = new OpenAPIV3Parser()
+                .readContents(Files.readString(tempDir.resolve("catalog-api.yaml"))).getOpenAPI();
+
+        assertThat(danglingReferences(single)).isEmpty();
+        assertThat(danglingReferences(aggregate)).isEmpty();
+        assertThat(single.getComponents().getSchemas()).containsKey("OrderApproveRequest");
+        assertThat(single.getComponents().getSchemas()).doesNotContainKey("OrderCancelRequest");
+    }
+
+    @Test
+    @DisplayName("an action's request schema declares each parameter with its type and format, and none as required")
+    void actionRequestSchemaDeclaresTheParameters() throws IOException {
+        OpenAPI parsed = new OpenAPIV3Parser().readContents(generator.generateYaml(richOrder())).getOpenAPI();
+
+        Schema<?> request = parsed.getComponents().getSchemas().get("OrderApproveRequest");
+        assertThat(request.getTypes()).containsExactly("object");
+        assertThat(request.getProperties()).containsOnlyKeys("note", "approvedOn", "priority");
+        assertThat(request.getProperties().get("note").getTypes()).containsExactly("string");
+        assertThat(request.getProperties().get("approvedOn").getTypes()).containsExactly("string");
+        assertThat(request.getProperties().get("approvedOn").getFormat()).isEqualTo("date");
+        assertThat(request.getProperties().get("priority").getTypes()).containsExactly("integer");
+        assertThat(request.getProperties().get("priority").getFormat()).isEqualTo("int32");
+        assertThat(request.getRequired()).isNull();
+    }
+
+    /** One entity reaching every builder path: list parameters of each kind, a versioned write, actions. */
+    private static DomainMetadata richOrder() {
+        return DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders").versioned(true)
+                .dataScope(eu.exeris.sdk.sourcemodel.ast.DataScope.TENANT)
+                .fields(List.of(
+                        FieldMetadata.builder("orderNumber", "java.lang.String").required(true)
+                                .sortable(true).filterable(true).build(),
+                        FieldMetadata.builder("status", "com.example.domain.OrderStatus")
+                                .enumType("com.example.domain.OrderStatus").sortable(true).filterable(true).build(),
+                        FieldMetadata.builder("amount", "java.math.BigDecimal").sortable(true).build(),
+                        FieldMetadata.builder("quantity", "int").filterable(true).build(),
+                        FieldMetadata.builder("urgent", "boolean").filterable(true).build(),
+                        FieldMetadata.builder("dueOn", "java.time.LocalDate").sortable(true).filterable(true).build(),
+                        FieldMetadata.builder("placedAt", "java.time.Instant").sortable(true).build(),
+                        FieldMetadata.builder("tenantId", "java.util.UUID").build()))
+                .actions(List.of(
+                        ActionMetadata.builder("approve")
+                                .addParam(ActionParamMetadata.builder("note", "java.lang.String").build())
+                                .addParam(ActionParamMetadata.builder("approvedOn", "java.time.LocalDate").build())
+                                .addParam(ActionParamMetadata.builder("priority", "int").build())
+                                .build(),
+                        ActionMetadata.builder("cancel").build()))
+                .build();
+    }
+
+    private static DomainMetadata product() {
+        return DomainMetadata.builder("Product", "com.example.domain")
+                .path("/products")
+                .fields(List.of(FieldMetadata.builder("sku", "String").filterable(true).build()))
+                .actions(List.of(ActionMetadata.builder("discontinue")
+                        .addParam(ActionParamMetadata.builder("reason", "String").build()).build()))
+                .build();
+    }
+
+    /** Each schema of the document with where it sits, nested schemas included. */
+    private static Map<String, Schema<?>> allSchemas(OpenAPI document) {
+        Map<String, Schema<?>> found = new LinkedHashMap<>();
+        if (document.getComponents() != null && document.getComponents().getSchemas() != null) {
+            document.getComponents().getSchemas().forEach((name, schema) ->
+                    collect("#/components/schemas/" + name, schema, found));
+        }
+        document.getPaths().forEach((path, item) -> item.readOperationsMap().forEach((method, op) -> {
+            String at = method + " " + path;
+            if (op.getParameters() != null) {
+                for (Parameter parameter : op.getParameters()) {
+                    collect(at + " parameter " + parameter.getName(), parameter.getSchema(), found);
+                }
+            }
+            if (op.getRequestBody() != null && op.getRequestBody().getContent() != null) {
+                op.getRequestBody().getContent().forEach((media, type) ->
+                        collect(at + " requestBody " + media, type.getSchema(), found));
+            }
+            if (op.getResponses() != null) {
+                op.getResponses().forEach((status, response) -> {
+                    if (response.getContent() != null) {
+                        response.getContent().forEach((media, type) ->
+                                collect(at + " " + status + " " + media, type.getSchema(), found));
+                    }
+                });
+            }
+        }));
+        return found;
+    }
+
+    private static void collect(String at, Schema<?> schema, Map<String, Schema<?>> found) {
+        if (schema == null) {
+            found.put(at, null);
+            return;
+        }
+        found.put(at, schema);
+        if (schema.getProperties() != null) {
+            schema.getProperties().forEach((name, property) -> collect(at + "/properties/" + name, property, found));
+        }
+        if (schema.getItems() != null) {
+            collect(at + "/items", schema.getItems(), found);
+        }
+        if (schema.getAdditionalProperties() instanceof Schema<?> additional) {
+            collect(at + "/additionalProperties", additional, found);
+        }
+        for (List<Schema> composed : java.util.Arrays.asList(schema.getAllOf(), schema.getAnyOf(), schema.getOneOf())) {
+            if (composed != null) {
+                for (int i = 0; i < composed.size(); i++) {
+                    collect(at + "/composition[" + i + "]", composed.get(i), found);
+                }
+            }
+        }
+    }
+
+    private static List<String> untypedSchemas(OpenAPI document) {
+        List<String> untyped = new ArrayList<>();
+        allSchemas(document).forEach((at, schema) -> {
+            boolean typed = schema != null && (schema.get$ref() != null
+                    || (schema.getTypes() != null && !schema.getTypes().isEmpty())
+                    || schema.getAllOf() != null || schema.getAnyOf() != null || schema.getOneOf() != null);
+            if (!typed) {
+                untyped.add(at);
+            }
+        });
+        return untyped;
+    }
+
+    private static List<String> danglingReferences(OpenAPI document) {
+        Map<String, Schema> defined = document.getComponents() == null
+                || document.getComponents().getSchemas() == null
+                ? Map.of() : document.getComponents().getSchemas();
+        List<String> dangling = new ArrayList<>();
+        allSchemas(document).forEach((at, schema) -> {
+            String ref = schema == null ? null : schema.get$ref();
+            if (ref != null && !(ref.startsWith("#/components/schemas/")
+                    && defined.containsKey(ref.substring("#/components/schemas/".length())))) {
+                dangling.add(at + " -> " + ref);
+            }
+        });
+        return dangling;
     }
 
     @Test

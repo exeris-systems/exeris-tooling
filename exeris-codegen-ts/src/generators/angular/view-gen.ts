@@ -103,8 +103,9 @@ function wrongAttributesOnStatic(
 
 /**
  * A view the generator cannot emit as a component that compiles: a CUSTOM block whose component
- * `customBlocks` does not name, or whose `props` are not JSON. The message names the view and the block, so
- * the run fails at generation, where the cause is visible, instead of at `ng build`.
+ * `customBlocks` does not name, or whose `props` are not JSON, or a class name `customBlocks`
+ * imports from two modules. The message names the view and what to correct, so the run fails at
+ * generation, where the cause is visible, instead of at `ng build`.
  */
 export class ViewGenerationError extends Error {
   constructor(message: string) {
@@ -232,6 +233,14 @@ export function effectiveViewKind(view: ViewMetadata): string {
  *  default redirect + a sidebar nav link). Non-PAGE kinds still get a route. */
 export function isPageView(view: ViewMetadata): boolean {
   return effectiveViewKind(view) === 'PAGE';
+}
+
+/**
+ * Whether a view's page reads entity data: a node bound to an ENTITY injects that entity's store and
+ * loads it on init, which calls the kernel API.
+ */
+export function viewReadsEntityData(view: ViewMetadata): boolean {
+  return collectBindings(view).entityRefs.length > 0;
 }
 
 interface ViewGenState {

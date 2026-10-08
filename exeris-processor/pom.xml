@@ -22,7 +22,12 @@
     </description>
     <url>https://github.com/exeris-systems/exeris-tooling</url>
 
+    <!-- Lint enforced: a Checkstyle or PMD finding in this module's main sources fails the build;
+         the parent's default is warn-only. -->
     <properties>
+        <checkstyle.failOnViolation>true</checkstyle.failOnViolation>
+        <checkstyle.failsOnError>true</checkstyle.failsOnError>
+        <pmd.failOnViolation>true</pmd.failOnViolation>
         <!-- exeris-tooling-parent: the host-framework and kernel-runtime dependency ban. -->
         <exeris.ban-host-and-kernel-runtime.skip>false</exeris.ban-host-and-kernel-runtime.skip>
     </properties>
