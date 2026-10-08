@@ -17,6 +17,7 @@ import { DslMapper } from '../../models/dsl-mapper.js';
 import { modelTypeName } from '../../models/model-naming.js';
 import type { GeneratorConfig } from '../../config.js';
 import type { BackendType } from '../../core/backend-strategy.js';
+import { declaresPrimaryKey, primaryKeyField } from '../../core/primary-key.js';
 import { outPath } from '../../core/paths.js';
 import { tsSingleQuoted } from './ts-literal.js';
 import { auditFieldNames, updateVersionField, viewSystemFieldNames } from '../api/type-gen.js';
@@ -54,13 +55,7 @@ export class DetailGenerator implements CodeGenerator {
     const kebab = DslMapper.toKebabCase(entityName);
     const displayName = domain.displayName ?? entityName;
     const noun = tsSingleQuoted(displayName.toLowerCase());
-    // The literal 'id', deliberately, not systemFields.primaryKeyField. Nothing in the pipeline
-    // honours that override: KernelFlywayGenerator emits `id UUID PRIMARY KEY` unconditionally,
-    // KernelRepositoryGenerator's WHERE clause is the constant " WHERE id = ?", every by-id
-    // handler binds the {id} path variable, and the processor says so outright ("generators leave
-    // the primary key as the literal id"). Reading it here would make this the only layer that
-    // honours it, and the emitted app would then request the wrong identifier.
-    const idField = 'id';
+    const idField = primaryKeyField(domain);
 
     const renders = resolveFieldRenders(
       domain,
@@ -228,18 +223,18 @@ export class DetailGenerator implements CodeGenerator {
         }
         lines.push(`              </div>`);
         if (rel.fetch) {
-          const { member, labelField, detailRoute } = rel.fetch;
-          const text = labelField ? `{{ row.${labelField} || row.id }}` : `{{ row.id }}`;
+          const { member, labelField, detailRoute, keyField } = rel.fetch;
+          const text = labelField ? `{{ row.${labelField} || row.${keyField} }}` : `{{ row.${keyField} }}`;
           lines.push(`              @if (${member}Resource.error()) {`);
           lines.push(`                <p role="alert" class="mt-2 text-gray-500 dark:text-gray-400">${rel.targetLabel} could not be loaded.</p>`);
           lines.push(`              } @else {`);
           lines.push(`                <ul class="mt-2 space-y-1" data-testid="related-${rel.testId}-rows">`);
-          lines.push(`                  @for (row of ${member}(); track row.id) {`);
+          lines.push(`                  @for (row of ${member}(); track row.${keyField}) {`);
           lines.push(`                    <li>`);
           if (detailRoute) {
-            lines.push(`                      <a [routerLink]="['${detailRoute}', row.id]" [attr.data-testid]="'related-${rel.testId}-' + row.id" class="text-exeris-primary hover:underline">${text}</a>`);
+            lines.push(`                      <a [routerLink]="['${detailRoute}', row.${keyField}]" [attr.data-testid]="'related-${rel.testId}-' + row.${keyField}" class="text-exeris-primary hover:underline">${text}</a>`);
           } else {
-            lines.push(`                      <span [attr.data-testid]="'related-${rel.testId}-' + row.id">${text}</span>`);
+            lines.push(`                      <span [attr.data-testid]="'related-${rel.testId}-' + row.${keyField}">${text}</span>`);
           }
           lines.push(`                    </li>`);
           lines.push(`                  } @empty {`);
@@ -468,6 +463,8 @@ interface RelatedFetch {
   param: string;
   /** The component member holding the rows; its resource is `<member>Resource`. */
   member: string;
+  /** The target's primary-key field: what a row is tracked, linked and identified by. */
+  keyField: string;
   /** The target field a row is labelled with, when the relationship names one the target declares. */
   labelField?: string;
   /** The route prefix of the target's detail page, when one is emitted. */
@@ -498,7 +495,7 @@ function relatedRecords(domain: DomainMetadata, context: GeneratorContext): Rela
     const listRoute = listsGenerated && views.list ? `/${DslMapper.routePlural(target)}` : undefined;
     const backReference = servicesGenerated ? childBackReference(rel, domain, targetDomain) : undefined;
     const param = backReference ? foreignKeyParam(backReference.name) : undefined;
-    const filterable = param !== undefined && targetDomain.fields.some((f) => f.name === 'id')
+    const filterable = param !== undefined && declaresPrimaryKey(targetDomain)
       && filterProperties(targetDomain, (f) => isEnumField(f, context.enums ?? [])).some((p) => p.name === param);
     const labelField = rel.displayField && targetDomain.fields.some((f) => f.name === rel.displayField)
       ? rel.displayField
@@ -507,6 +504,7 @@ function relatedRecords(domain: DomainMetadata, context: GeneratorContext): Rela
       ? {
           target,
           param: param!,
+          keyField: primaryKeyField(targetDomain),
           member: `related${rel.name.charAt(0).toUpperCase()}${rel.name.slice(1)}`,
           ...(labelField ? { labelField } : {}),
           ...(views.detail ? { detailRoute: `/${DslMapper.routePlural(target)}` } : {}),

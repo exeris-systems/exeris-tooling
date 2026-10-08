@@ -62,6 +62,7 @@ import type {
   BlockType,
 } from '../../models/domain-model.js';
 import { DslMapper } from '../../models/dsl-mapper.js';
+import { DEFAULT_PRIMARY_KEY_FIELD } from '../../core/primary-key.js';
 import type { GeneratorConfig } from '../../config.js';
 import type { OutputFile } from '../../orchestrator.js';
 import { fileHeaderLines } from '../file-header.js';
@@ -172,11 +173,11 @@ function itemVarName(ref: string): string {
 /**
  * The `@for` track key.
  *
- * `id` because every generated entity carries one — the processor requires an identity field and the
- * emitted `<Entity>Store` keys its own state on it. Tracking by index instead would defeat the point
+ * The default key name, because a view carries no entity metadata to resolve the bound entity's key
+ * from. The emitted `<Entity>Store` keys its own state on the key. Tracking by index instead would defeat the point
  * of `@for` on a signal collection.
  */
-const TRACK_FIELD = 'id';
+const TRACK_FIELD = DEFAULT_PRIMARY_KEY_FIELD;
 
 /**
  * The effective route PATH for a view (RFC §5 route-assembly): the declared

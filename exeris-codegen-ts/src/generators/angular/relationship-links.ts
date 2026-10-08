@@ -14,6 +14,7 @@
 import type { DomainMetadata, RelationshipMetadata } from '../../models/domain-model.js';
 import { DslMapper } from '../../models/dsl-mapper.js';
 import { entityViews } from './entity-views.js';
+import { declaresPrimaryKey } from '../../core/primary-key.js';
 
 const UUID_TYPES = new Set(['UUID', 'java.util.UUID']);
 
@@ -102,7 +103,7 @@ export function foreignKeyPickers(
   const pickers = new Map<string, ForeignKeyPicker>();
   for (const key of manyToOneForeignKeys(domain)) {
     const targetDomain = allDomains.find((d) => d.entityName === key.target);
-    if (!targetDomain || !targetDomain.fields.some((f) => f.name === 'id')) continue;
+    if (!targetDomain || !declaresPrimaryKey(targetDomain)) continue;
     const displayField = key.relationship.displayField;
     const labelField = displayField && targetDomain.fields.some((f) => f.name === displayField) ? displayField : undefined;
     pickers.set(key.field, {

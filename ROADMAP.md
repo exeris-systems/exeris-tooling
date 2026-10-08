@@ -3879,6 +3879,11 @@ enters only if its upstream half is final first.
       across the migration, the repository, the foreign-key target, the Java and TS models and the
       OpenAPI schema; the route variable stays `{id}`. The key is a `UUID`. The `@PrimaryKey` marker
       is J5b, conditional on exeris-sdk#187 item 1.
+      *Landed:* J5-2, the TypeScript resolver (`exeris-codegen-ts/src/core/primary-key.ts`): every
+      emitter that writes the entity key reads it from `primaryKeyField`, with output unchanged.
+      The view `@for` track key and the form's foreign-key picker helper read the default key
+      name, since neither holds the bound entity's metadata. *Open:* J5-1, the Java resolver; J5-3,
+      the switch-over.
 - [x] **Maven coordinates move to the `eu.exeris` group** (founder decision 2026-10-06). Every
       module is published as `eu.exeris:<artifactId>`, the group of the kernel and SDK artefacts; the
       artifactIds and the Java packages (`eu.exeris.tooling.*`) are unchanged. 0.9.0 and earlier stay
