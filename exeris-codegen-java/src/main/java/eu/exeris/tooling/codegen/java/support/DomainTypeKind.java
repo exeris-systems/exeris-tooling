@@ -197,17 +197,29 @@ public enum DomainTypeKind {
      * @return its kind; {@link #OPAQUE} for anything not otherwise recognised, an enum included
      */
     public static DomainTypeKind of(String type) {
-        if (listElementType(type) != null) return LIST;
+        if (listElementType(type) != null) {
+            return LIST;
+        }
         // Any other parameterised type or an array: its arguments or component may name a
         // recognised type (Map<String, LocalDate>, Instant[]), which the containment checks below
         // would match.
-        if (type.contains("<") || type.endsWith("[]")) return UNSTORABLE;
+        if (type.contains("<") || type.endsWith("[]")) {
+            return UNSTORABLE;
+        }
         DomainTypeKind exact = EXACT.get(type);
-        if (exact != null) return exact;
-        if (type.contains("Instant")) return INSTANT_LIKE;
+        if (exact != null) {
+            return exact;
+        }
+        if (type.contains("Instant")) {
+            return INSTANT_LIKE;
+        }
         // LocalDateTime before LocalDate: "LocalDateTime".contains("LocalDate").
-        if (type.contains("LocalDateTime")) return LOCAL_DATE_TIME;
-        if (type.contains("LocalDate")) return LOCAL_DATE;
+        if (type.contains("LocalDateTime")) {
+            return LOCAL_DATE_TIME;
+        }
+        if (type.contains("LocalDate")) {
+            return LOCAL_DATE;
+        }
         return OPAQUE;
     }
 

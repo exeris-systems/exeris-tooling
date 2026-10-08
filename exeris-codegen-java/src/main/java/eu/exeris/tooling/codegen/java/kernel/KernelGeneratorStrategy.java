@@ -13,21 +13,33 @@ import java.util.List;
  * <p>Active set covers artifacts aligned with Open-Core
  * {@code exeris-kernel-spi} / {@code exeris-kernel-core}:
  * <ul>
- *   <li>{@link KernelHandlerGenerator} — HTTP handlers against {@code spi.http.HttpExchange} / {@code HttpStatus} / {@code spi.memory.LoanedBuffer}</li>
- *   <li>{@link KernelStreamHandlerGenerator} — SSE live-view stream handlers against {@code spi.http.{HttpStreamHandler, HttpStreamExchange, StreamEvent}} (only for {@code @ExerisDomain(realTimeApi)} entities; ADR-043 Slice 1)</li>
- *   <li>{@link KernelActionStreamHandlerGenerator} — per-action SSE stream handlers against the same streaming SPI (one per {@code @Action(streaming=true)}; ADR-044 Slice 2)</li>
- *   <li>{@link KernelServiceGenerator} — POJO domain services (delegates to {@code *Repository}; no direct Kernel API surface)</li>
- *   <li>{@link KernelRepositoryGenerator} — repositories against {@code spi.persistence.{TransactionalExecutor, PersistenceStatement, QueryResult, RowCursor}}</li>
+ *   <li>{@link KernelHandlerGenerator} — HTTP handlers against {@code spi.http.HttpExchange} /
+ *       {@code HttpStatus} / {@code spi.memory.LoanedBuffer}</li>
+ *   <li>{@link KernelStreamHandlerGenerator} — SSE live-view stream handlers against
+ *       {@code spi.http.{HttpStreamHandler, HttpStreamExchange, StreamEvent}} (only for
+ *       {@code @ExerisDomain(realTimeApi)} entities; ADR-043 Slice 1)</li>
+ *   <li>{@link KernelActionStreamHandlerGenerator} — per-action SSE stream handlers against the same
+ *       streaming SPI (one per {@code @Action(streaming=true)}; ADR-044 Slice 2)</li>
+ *   <li>{@link KernelServiceGenerator} — POJO domain services (delegates to {@code *Repository}; no
+ *       direct Kernel API surface)</li>
+ *   <li>{@link KernelRepositoryGenerator} — repositories against
+ *       {@code spi.persistence.{TransactionalExecutor, PersistenceStatement, QueryResult, RowCursor}}</li>
  *   <li>{@link KernelErrorGenerator} — the typed exceptions the repository raises and the handler
  *       maps to a status: {@code <Entity>NotFoundException} for every entity, and the version
  *       conflict, tenant mismatch and shared-scope mismatch exceptions where the entity has a
  *       version, an owner or a shared scope</li>
  *   <li>{@link KernelListQueryGenerator} — the list route's {@code <Entity>ListQuery} and
  *       {@code <Entity>Page} records (plain JDK types; no kernel API surface)</li>
- *   <li>{@link KernelEventGenerator} — domain-event publisher against {@code spi.events.{EventEngine, EventDescriptor, EventPayload, EventTypeSpec}}</li>
- *   <li>{@link KernelEventHandlerGenerator} — domain-event subscriber against {@code spi.events.{EventBus, EventHandler, SubscriptionToken}}</li>
- *   <li>{@link KernelGraphSyncGenerator} — graph-sync projection against {@code spi.graph.{GraphEngine, GraphSession}} + {@code spi.graph.model.{GraphNodeDescriptor, GraphEdgeDescriptor}}</li>
- *   <li>{@link KernelSagaGenerator} — saga skeleton against {@code spi.flow.{FlowEngine, FlowDefinitionBuilder}} + {@code spi.flow.model.{FlowExecutionPlan, FlowContext, FlowOutcome}}</li>
+ *   <li>{@link KernelEventGenerator} — domain-event publisher against
+ *       {@code spi.events.{EventEngine, EventDescriptor, EventPayload, EventTypeSpec}}</li>
+ *   <li>{@link KernelEventHandlerGenerator} — domain-event subscriber against
+ *       {@code spi.events.{EventBus, EventHandler, SubscriptionToken}}</li>
+ *   <li>{@link KernelGraphSyncGenerator} — graph-sync projection against
+ *       {@code spi.graph.{GraphEngine, GraphSession}} +
+ *       {@code spi.graph.model.{GraphNodeDescriptor, GraphEdgeDescriptor}}</li>
+ *   <li>{@link KernelSagaGenerator} — saga skeleton against
+ *       {@code spi.flow.{FlowEngine, FlowDefinitionBuilder}} +
+ *       {@code spi.flow.model.{FlowExecutionPlan, FlowContext, FlowOutcome}}</li>
  *   <li>{@link KernelFlywayGenerator} — SQL migrations</li>
  *   <li>{@link KernelSharedScopeMigrationGenerator} — the additive shared-scope read widening of a
  *       {@code DataScope.UNIVERSE} entity; nothing for any other entity</li>
@@ -104,5 +116,7 @@ public class KernelGeneratorStrategy {
      *
      * @return the registry; shared, not a copy
      */
-    public GeneratorRegistry getRegistry() { return registry; }
+    public GeneratorRegistry getRegistry() {
+        return registry;
+    }
 }

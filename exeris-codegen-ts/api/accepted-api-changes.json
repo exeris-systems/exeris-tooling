@@ -136,5 +136,29 @@
     "since": "0.10",
     "adr": "ADR-092",
     "justification": "A page whose blocks carry their own headline, such as a HERO, got a second <h1> from the generated title heading. viewHeading 'none' omits that <h1> on every @View page and leaves the rest of the page, the route title that sets the document title, and the navigation label as 'title' emits them. The default is 'title', whose output is byte-identical to a run without the key, so no consumer has to act and MIGRATION carries no step."
+  },
+  {
+    "signature": "GeneratorConfig: + scaffold (default true); exeris-gen generate: + --no-scaffold; scaffold false: the tree at the output root, + view.routes.ts (viewRoutes), no project-root or app-shell file",
+    "since": "0.10",
+    "adr": "ADR-092",
+    "justification": "Additive: a new configuration key whose default keeps the old output. With scaffold false the output directory sits inside an Angular app the consumer owns, so no package.json, angular.json, tsconfig, src/main.ts, index.html, styles, environment or app shell (app.config.ts, app.component.ts, app.routes.ts) is emitted; the generated tree, its barrel index.ts and the per-view pages and routes are written at the output root, and view.routes.ts exports every view route as one viewRoutes array for the consumer's routes file. A consumer that keeps the default regenerates byte-identical output."
+  },
+  {
+    "signature": "exeris-gen generate: an existing file the previous .exeris-codegen-manifest owns is rewritten when it differs (was: every existing file skipped without --overwrite); seed files (src/index.html, src/styles.css, environment.development.ts, proxy.conf.json, .postcssrc.json join overwritable false) are kept, and released rather than deleted when no longer produced; unrecorded files and symbolic links are skipped; a missing or empty metadata directory deletes nothing (was: pruned the whole tree); .exeris-codegen-manifest: + # ownership: written",
+    "since": "0.10",
+    "adr": "ADR-092",
+    "justification": "The manifest records what the generator owns, and it already bounds pruning. Writing by the same rule keeps a regenerated file in step with its metadata: an owned file whose content differs is rewritten, an owned seed file (overwritable false: package.json, angular.json, the tsconfig files, .postcssrc.json, proxy.conf.json, src/main.ts, src/index.html, src/styles.css, both environments, app.config.ts, app.component.ts, app.routes.ts, core/auth.service.ts) is kept once written and released, not deleted, when no longer produced, and an existing file the manifest does not record, a symbolic link, or a path under a linked directory is neither replaced nor taken over. A manifest without the ownership line also recorded skipped files, so its entries are owned only when the file already matches, starts with the generator header (provenance line or do-not-edit notice), or is a seed. A run with no metadata deletes nothing. Default-config emitted files for a fresh directory are unchanged; the manifest gains its second header line. docs/MIGRATION-0.x-to-1.0.md 0.10.0 carries the step."
+  },
+  {
+    "signature": "exeris-gen init: + --views-only, + --app-name <name>; the written exeris-codegen.json: + scaffold",
+    "since": "0.10",
+    "adr": "ADR-092",
+    "justification": "Additive: two new flags, and without them init writes the configuration defaults as before, now including the scaffold key at its default, true. --views-only writes every entity generator (generateZod, generateServices, generateForms, generateLists, generateDetails, generateStores, generateSagas, generateEvents, generateTests) off and scaffold false, so generate emits the @View pages, their routes and view.routes.ts. --app-name sets appName in either preset. The keys keep the order of the defaults, so the file depends on the flags only."
+  },
+  {
+    "signature": "GeneratorConfig: + render ('csr' | 'ssg', default 'csr'); exeris-gen generate: + --render <mode>; render ssg: + src/main.server.ts, src/app/app.config.server.ts, src/app/app.routes.server.ts (seeds), angular.json + server, outputMode static, package.json + @angular/ssr, @angular/platform-server, tsconfig.app.json + src/main.server.ts, app.config.ts + provideClientHydration(withEventReplay()); the written exeris-codegen.json: + render",
+    "since": "0.10",
+    "adr": "ADR-092",
+    "justification": "Additive: a new configuration key whose default keeps the old output, and init writes it at that default. With render ssg and the scaffold on, ng build prerenders to HTML each @View page whose path has no parameter or wildcard and that binds no entity, and the '' redirect as a redirect page; every other route, the entity routes included, renders in the browser through a ** Client entry, served from index.csr.html. The three server files are seeds. With scaffold false render emits nothing. A consumer that keeps the default regenerates byte-identical output."
   }
 ]

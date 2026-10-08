@@ -14,6 +14,11 @@ assert log.contains('Capability graph valid (1 module(s), fresh metadata)')
 assert log.contains('Cap-tier Wall clean (1 module(s)')
 assert log.contains('Runtime drivers present for all')
 
+// exeris:generate found every artefact the generated code imports, main and tests, on the
+// classpaths the starter and the fixture's test scope build.
+assert log.contains('Classpath carries all 6 artefact(s) the generated code imports')
+assert !log.contains('EXT-PLUG-2004')
+
 def generated = new File(basedir, 'src/main/generated/java/eu/exeris/fixture/notes')
 def application = new File(generated, 'Application.java').text
 assert application.contains('import eu.exeris.sdk.composition.runtime.CompositionConductor;')

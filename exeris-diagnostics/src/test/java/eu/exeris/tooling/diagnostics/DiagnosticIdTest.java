@@ -77,6 +77,7 @@ class DiagnosticIdTest {
         m.put(DiagnosticId.EMPTY_METADATA_REFUSED, "EXT-PLUG-2001");
         m.put(DiagnosticId.GENERATION_FAILED, "EXT-PLUG-2002");
         m.put(DiagnosticId.TEST_GENERATION_FAILED, "EXT-PLUG-2003");
+        m.put(DiagnosticId.GENERATED_IMPORT_NOT_ON_CLASSPATH, "EXT-PLUG-2004");
         m.put(DiagnosticId.DETACH_FAILED, "EXT-PLUG-2101");
         m.put(DiagnosticId.DETACH_CONFLICTS, "EXT-PLUG-2102");
         m.put(DiagnosticId.CAPABILITY_GRAPH_UNRESOLVED, "EXT-PLUG-2201");

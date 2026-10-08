@@ -28,6 +28,7 @@ import eu.exeris.tooling.codegen.java.kernel.KernelRepositoryGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelRepositoryTestGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelSagaTestGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelServiceTestGenerator;
+import eu.exeris.tooling.codegen.java.kernel.RequiredCompileArtifacts;
 import eu.exeris.tooling.codegen.java.kernel.KernelTestSupportGenerator;
 import eu.exeris.tooling.codegen.java.support.EnumTypes;
 import eu.exeris.tooling.diagnostics.DiagnosticId;
@@ -60,8 +61,6 @@ import java.util.stream.Stream;
  */
 public final class CodegenPipeline {
 
-    private static final Logger LOG = System.getLogger(CodegenPipeline.class.getName());
-
     /**
      * Output-root file name of the capability manifest ({@code cap-manifest.json}) —
      * emitted by {@link #run}, preserved (not re-emitted) on the T18(a) deferred
@@ -77,6 +76,8 @@ public final class CodegenPipeline {
      */
     static final Comparator<DomainMetadata> DOMAIN_ORDER =
             Comparator.comparing(CodegenPipeline::qualifiedName);
+
+    private static final Logger LOG = System.getLogger(CodegenPipeline.class.getName());
 
     /** Orders directory entries by file name, so each file is read in the same order everywhere. */
     private static final Comparator<Path> FILE_NAME_ORDER =
@@ -630,6 +631,35 @@ public final class CodegenPipeline {
         LOG.log(Level.INFO, "Checking " + required.size() + " required runtime driver SPI(s) against "
                 + runtimeClasspath.size() + " classpath element(s)");
         return RuntimeDriverCheck.scan(runtimeClasspath, required);
+    }
+
+    /**
+     * Returns the artefacts the code {@link #run} and {@link #runTests} emit from
+     * {@code metadataDir} imports from outside the JDK, for a caller that holds a classpath to
+     * check them against.
+     *
+     * <p>Reads the metadata through the same loaders {@link #run} does, for the reason
+     * {@link #verifyRuntimeDrivers(Path, List)} gives.
+     *
+     * @param metadataDir    directory holding processor-emitted JSON
+     * @param generatedTests whether the generated tests are emitted too, which adds their imports
+     * @return main-source requirements first, then the generated tests'; empty when there is no
+     *         domain metadata
+     * @throws IOException if the metadata cannot be read
+     * @since 0.10
+     */
+    public List<RequiredCompileArtifacts.Requirement> requiredCompileArtifacts(Path metadataDir,
+                                                                             boolean generatedTests)
+            throws IOException {
+        Objects.requireNonNull(metadataDir, "metadataDir");
+        List<DomainMetadata> domains = loadMetadata(metadataDir);
+        boolean composed = !loadCapabilities(metadataDir).isEmpty();
+        List<RequiredCompileArtifacts.Requirement> required =
+                new ArrayList<>(RequiredCompileArtifacts.forMainSources(domains, composed));
+        if (generatedTests) {
+            required.addAll(RequiredCompileArtifacts.forGeneratedTests(domains));
+        }
+        return List.copyOf(required);
     }
 
     /**
