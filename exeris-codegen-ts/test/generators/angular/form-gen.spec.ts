@@ -1141,9 +1141,24 @@ describe('FormGenerator — @Field(inUpdate = false)', () => {
       + 'this.service.update(String(current.id), this.updateBody(current, data)) : '
       + 'this.service.create(data as ProductCreate);',
     );
-    expect(content).toContain('const { id: _id, sku: _sku, ...stored } = current;');
-    expect(content).toContain('const { sku: _formSku, ...entered } = data;');
+    expect(content).toContain('const { id: _stored0, sku: _stored1, ...stored } = current;');
+    expect(content).toContain('const { sku: _entered0, ...entered } = data;');
     expect(content).toContain('return { ...stored, ...entered } as ProductUpdate;');
+  });
+
+  it('names the dropped values by position, so a field named like another field\'s prefix cannot clash', () => {
+    const clashing = gen.generate(domain({
+      entityName: 'Product',
+      fields: [
+        field({ name: 'id', type: 'java.util.UUID' }),
+        field({ name: 'sku', type: 'String', inUpdate: false }),
+        field({ name: 'formSku', type: 'String', readOnly: true }),
+      ],
+    }), CTX)!.content;
+    expect(clashing).toContain('const { id: _stored0, formSku: _stored1, sku: _stored2, ...stored } = current;');
+    expect(clashing).toContain('const { sku: _entered0, ...entered } = data;');
+    const locals = [...clashing.matchAll(/: (_(?:stored|entered)\d+)/g)].map((m) => m[1]);
+    expect(new Set(locals).size).toBe(locals.length);
   });
 
   it('a form without such a field disables nothing and imports no disabled', () => {
@@ -1227,7 +1242,7 @@ describe('FormGenerator — @Field(readOnly = true)', () => {
   }), CTX)!.content;
 
   it('drops the read-only field from the PUT body, which the server keeps as stored', () => {
-    expect(content).toContain('const { id: _id, status: _status, ...stored } = current;');
+    expect(content).toContain('const { id: _stored0, status: _stored1, ...stored } = current;');
     expect(content).toContain('return { ...stored, ...data } as OrderUpdate;');
   });
 
@@ -1259,7 +1274,7 @@ describe('FormGenerator — versioned entity', () => {
       + 'this.service.update(String(current.id), this.updateBody(current, data)) : '
       + 'this.service.create(data as OrderCreate);',
     );
-    expect(versioned).toContain('const { id: _id, ...stored } = current;');
+    expect(versioned).toContain('const { id: _stored0, ...stored } = current;');
     expect(versioned).toContain('return { ...stored, ...data, version: this.loadedVersion() } as OrderUpdate;');
   });
 

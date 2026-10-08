@@ -426,15 +426,14 @@ export class FormGenerator implements CodeGenerator {
     // taken out of the form's values as well, so the body carries exactly the fields of `…Update`.
     const serverOwned = updateOmittedFields(domain);
     const formOmitted = createFields.filter((r) => serverOwned.includes(r.name)).map((r) => r.name);
-    const upperFirst = (name: string): string => name.charAt(0).toUpperCase() + name.slice(1);
     const enteredValues = formOmitted.length > 0 ? 'entered' : 'data';
     const updateBody = [
       `  private updateBody(current: ${modelName}, data: ${formModelName}): ${modelName}Update {`,
       ...(serverOwned.length > 0
-        ? [`    const { ${serverOwned.map((name) => `${name}: _${name}`).join(', ')}, ...stored } = current;`]
+        ? [`    const { ${serverOwned.map((name, i) => `${name}: _stored${i}`).join(', ')}, ...stored } = current;`]
         : []),
       ...(formOmitted.length > 0
-        ? [`    const { ${formOmitted.map((name) => `${name}: _form${upperFirst(name)}`).join(', ')}, ...entered } = data;`]
+        ? [`    const { ${formOmitted.map((name, i) => `${name}: _entered${i}`).join(', ')}, ...entered } = data;`]
         : []),
       version
         ? `    return { ...${serverOwned.length > 0 ? 'stored' : 'current'}, ...${enteredValues}, ${version.name}: this.loadedVersion() } as ${modelName}Update;`
