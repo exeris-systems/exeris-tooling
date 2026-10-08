@@ -166,6 +166,14 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
     private static final String REQUEST_SCOPES = "REQUEST_SCOPES";
     private static final ClassName LIST = ClassName.get("java.util", "List");
 
+    // Flyway version for the single trailing FK-constraint migration. The
+    // per-entity CREATE TABLE migrations occupy tier 1 (unscoped) and tier 2
+    // (tenant-scoped) — see KernelFlywayGenerator#migrationVersion. This file
+    // is pinned to tier 3 (V3000000) so it sorts strictly AFTER every
+    // CREATE TABLE, guaranteeing every referenced table exists before its
+    // FOREIGN KEY constraint is added (the create-order hazard T8 deferred).
+    private static final String FK_MIGRATION_VERSION = "V3000000__foreign_keys";
+
     /**
      * Every kernel {@code ScopedValue} emitted code reads, and when it is read. Declaration
      * order is emission order, so the lists and their Javadoc are stable whatever order the
@@ -256,14 +264,6 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
         files.add(buildRuntimeLifecycle(domains, basePackage));
         return files;
     }
-
-    // Flyway version for the single trailing FK-constraint migration. The
-    // per-entity CREATE TABLE migrations occupy tier 1 (unscoped) and tier 2
-    // (tenant-scoped) — see KernelFlywayGenerator#migrationVersion. This file
-    // is pinned to tier 3 (V3000000) so it sorts strictly AFTER every
-    // CREATE TABLE, guaranteeing every referenced table exists before its
-    // FOREIGN KEY constraint is added (the create-order hazard T8 deferred).
-    private static final String FK_MIGRATION_VERSION = "V3000000__foreign_keys";
 
     /**
      * Emits the single trailing Flyway migration that adds every cross-table
@@ -953,9 +953,11 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .addJavadoc("    return new TenantBinding(router);\n")
                 .addJavadoc("}\n")
                 .addJavadoc("\n")
-                .addJavadoc("record TenantBinding(HttpRouter router) implements HttpHandler, StreamRouteResolver {\n")
+                .addJavadoc("record TenantBinding(HttpRouter router) implements HttpHandler, "
+                        + "StreamRouteResolver {\n")
                 .addJavadoc("    public void handle(HttpExchange exchange) {\n")
-                .addJavadoc("        ScopedValue.where(KernelProviders.STORAGE_CONTEXT, contextOf(exchange.request()))\n")
+                .addJavadoc("        ScopedValue.where(KernelProviders.STORAGE_CONTEXT, "
+                        + "contextOf(exchange.request()))\n")
                 .addJavadoc("                .run(() -> router.handle(exchange));\n")
                 .addJavadoc("    }\n")
                 .addJavadoc("\n")
@@ -965,7 +967,8 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                 .addJavadoc("            return null;\n")
                 .addJavadoc("        }\n")
                 .addJavadoc("        HttpStreamHandler route = match.handler();\n")
-                .addJavadoc("        return new StreamMatch(exchange -> ScopedValue.where(KernelProviders.STORAGE_CONTEXT,\n")
+                .addJavadoc("        return new StreamMatch(exchange -> "
+                        + "ScopedValue.where(KernelProviders.STORAGE_CONTEXT,\n")
                 .addJavadoc("                contextOf(exchange.request())).run(() -> route.handle(exchange)),\n")
                 .addJavadoc("                match.params());\n")
                 .addJavadoc("    }\n")
@@ -1526,7 +1529,9 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
     }
 
     private String lowerFirst(String s) {
-        if (s == null || s.isEmpty()) return s;
+        if (s == null || s.isEmpty()) {
+            return s;
+        }
         return Character.toLowerCase(s.charAt(0)) + s.substring(1);
     }
 

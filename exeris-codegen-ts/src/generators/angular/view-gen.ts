@@ -17,13 +17,16 @@
  *   HERO       → <section class="exeris-hero …">
  *   CARD       → <article class="exeris-card p-4"> (the kit's component class)
  *   GRID       → <div class="exeris-grid …">
- *   LIST       → <ul class="exeris-list …">
+ *   LIST       → <ul class="exeris-list …">, each child in an <li> (one <li> per row when the
+ *                LIST iterates an entity collection)
  *   CONTAINER  → <div class="exeris-container …">
  *   RICH_TEXT  → <div class="exeris-rich-text …">
  *   NAV        → <nav class="exeris-nav …">
  *   IMAGE      → <figure class="exeris-image …">
  *   SLOT       → <ng-content> (a named host slot)
- *   CUSTOM     → the named customType selector element
+ *   CUSTOM     → the named customType selector element; the component behind it is imported
+ *                through the `customBlocks` config entry for that customType, and its
+ *                `props` JSON is a class field bound as `[props]`
  *   FORM       → a placeholder block (leaf-field form emission is slice 2, RFC §5)
  * CARD is the only block the kit has a component class for. The other `exeris-<block>`
  * names are marker classes the kit does not define: they style nothing, and the
@@ -96,6 +99,48 @@ function wrongAttributesOnStatic(
   if (binding.expression) found.push(['expression', binding.expression]);
   if (binding.language) found.push(['language', binding.language]);
   return found;
+}
+
+/**
+ * A view the generator cannot emit as a component that compiles: a CUSTOM block whose component
+ * `customBlocks` does not name, or whose `props` are not JSON, or a class name `customBlocks`
+ * imports from two modules. The message names the view and what to correct, so the run fails at
+ * generation, where the cause is visible, instead of at `ng build`.
+ */
+export class ViewGenerationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ViewGenerationError';
+  }
+}
+
+/** Code-unit order: independent of the host locale, so emitted import order is too. */
+function byCodeUnit(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/** One emitted `blockProps<N>` field: its name and the TypeScript literal it holds. */
+interface BlockPropsField {
+  readonly name: string;
+  readonly literal: string;
+}
+
+/** A `customBlocks` entry: the module a CUSTOM block's component is imported from, and its class. */
+interface CustomBlockEntry {
+  readonly import: string;
+  readonly symbol: string;
+}
+
+/**
+ * Per-view render state. Fields are numbered and CUSTOM imports recorded in render order (regions,
+ * then each region's tree depth-first), so the same view always yields the same names.
+ */
+interface RenderContext {
+  readonly viewName: string;
+  readonly customBlocks: Readonly<Record<string, CustomBlockEntry>>;
+  /** customType → its config entry, for every CUSTOM block the view renders. */
+  readonly usedBlocks: Map<string, CustomBlockEntry>;
+  readonly blockProps: BlockPropsField[];
 }
 
 /** Indentation helper — two spaces per level, deterministic. */
@@ -190,6 +235,14 @@ export function isPageView(view: ViewMetadata): boolean {
   return effectiveViewKind(view) === 'PAGE';
 }
 
+/**
+ * Whether a view's page reads entity data: a node bound to an ENTITY injects that entity's store and
+ * loads it on init, which calls the kernel API.
+ */
+export function viewReadsEntityData(view: ViewMetadata): boolean {
+  return collectBindings(view).entityRefs.length > 0;
+}
+
 interface ViewGenState {
   /** ENTITY refs to inject as <Ref>Service (deduped, declaration-ordered). */
   readonly entityRefs: string[];
@@ -260,7 +313,13 @@ function blockTag(type: BlockType): { tag: string; cls: string } {
  * Bindings are honoured per the slice-1 contract; OUT bindings emit a
  * TODO(@View G#) HTML comment passthrough rather than faking the data path.
  */
-function renderNode(node: ComponentNodeMetadata, level: number, itemVar?: string): string[] {
+function renderNode(
+  node: ComponentNodeMetadata,
+  level: number,
+  ctx: RenderContext,
+  where: string,
+  itemVar?: string,
+): string[] {
   const lines: string[] = [];
   const type = effectiveType(node);
   const pad = indent(level);
@@ -297,14 +356,16 @@ function renderNode(node: ComponentNodeMetadata, level: number, itemVar?: string
 
   // --- CUSTOM: the named customType selector element (escape hatch) ---
   if (type === 'CUSTOM') {
-    const selector = node.customType ? DslMapper.toKebabCase(simpleRef(node.customType)) : 'app-custom-block';
+    const customType = resolveCustomBlock(node, ctx, where);
+    const selector = DslMapper.toKebabCase(simpleRef(customType));
+    const propsAttr = customBlockPropsBinding(node, ctx, where);
     if (node.children.length === 0) {
-      lines.push(`${pad}<${selector}></${selector}>`);
+      lines.push(`${pad}<${selector}${propsAttr}></${selector}>`);
     } else {
-      lines.push(`${pad}<${selector}>`);
-      for (const child of node.children) {
-        lines.push(...renderNode(child, level + 1));
-      }
+      lines.push(`${pad}<${selector}${propsAttr}>`);
+      node.children.forEach((child, i) => {
+        lines.push(...renderNode(child, level + 1, ctx, `${where}.children[${i}]`));
+      });
       lines.push(`${pad}</${selector}>`);
     }
     return lines;
@@ -323,6 +384,8 @@ function renderNode(node: ComponentNodeMetadata, level: number, itemVar?: string
   }
 
   const { tag, cls } = blockTag(type);
+  // A <ul> holds only <li>: every item a LIST renders is wrapped in one.
+  const isList = type === 'LIST';
   const dataBlock = ` data-block="${type}"`;
 
   // Authored / literal content for STATIC / NONE: render props text if present.
@@ -372,33 +435,123 @@ function renderNode(node: ComponentNodeMetadata, level: number, itemVar?: string
     lines.push(`${pad}  <!-- TODO(@View): FORM block — leaf-field form emission defers to the existing form vocabulary (slice 2, RFC §5) -->`);
   }
   if (propsText) {
-    lines.push(`${pad}  ${escapeText(propsText)}`);
+    lines.push(isList ? `${pad}  <li>${escapeText(propsText)}</li>` : `${pad}  ${escapeText(propsText)}`);
   }
   if (entityRead) {
-    lines.push(`${pad}  ${entityRead}`);
+    lines.push(isList ? `${pad}  <li>${entityRead}</li>` : `${pad}  ${entityRead}`);
   }
+  const childVar = iteration ? iteration.item : itemVar;
+  const renderChild = (child: ComponentNodeMetadata, i: number, childLevel: number): string[] =>
+    renderNode(child, childLevel, ctx, `${where}.children[${i}]`, childVar);
   if (iteration) {
     lines.push(`${pad}  ${iteration.open}`);
-  }
-  for (const child of node.children) {
-    lines.push(...renderNode(child, level + 1, iteration ? iteration.item : itemVar));
-  }
-  if (iteration) {
+    if (isList) {
+      // One <li> per row: the children are the row's content.
+      lines.push(`${pad}    <li>`);
+      node.children.forEach((child, i) => lines.push(...renderChild(child, i, level + 3)));
+      lines.push(`${pad}    </li>`);
+    } else {
+      node.children.forEach((child, i) => lines.push(...renderChild(child, i, level + 1)));
+    }
     lines.push(`${pad}  ${iteration.close}`);
+  } else if (isList) {
+    // One <li> per child: each child is an item of the list.
+    node.children.forEach((child, i) => {
+      lines.push(`${pad}  <li>`);
+      lines.push(...renderChild(child, i, level + 2));
+      lines.push(`${pad}  </li>`);
+    });
+  } else {
+    node.children.forEach((child, i) => lines.push(...renderChild(child, i, level + 1)));
   }
   lines.push(`${pad}</${tag}>`);
   return lines;
 }
 
+/**
+ * The customType of a CUSTOM block, after checking `customBlocks` maps it to the component that
+ * renders it. Records the entry so the view imports it. Throws when the block names no customType,
+ * or names one the config does not map: the emitted element would otherwise be unknown to Angular.
+ */
+function resolveCustomBlock(node: ComponentNodeMetadata, ctx: RenderContext, where: string): string {
+  const customType = node.customType;
+  if (!customType) {
+    throw new ViewGenerationError(
+      `view '${ctx.viewName}': the CUSTOM block at ${where} declares no customType, so no ` +
+        `customBlocks entry can name the component that renders it`,
+    );
+  }
+  const entry = Object.prototype.hasOwnProperty.call(ctx.customBlocks, customType)
+    ? ctx.customBlocks[customType]
+    : undefined;
+  if (!entry) {
+    throw new ViewGenerationError(
+      `view '${ctx.viewName}': the CUSTOM block at ${where} has customType '${customType}', and ` +
+        `customBlocks has no entry for it; add "customBlocks": { "${customType}": ` +
+        `{ "import": "<module specifier>", "symbol": "<exported component class>" } } to the config`,
+    );
+  }
+  ctx.usedBlocks.set(customType, entry);
+  return customType;
+}
+
+/**
+ * The `[props]` binding of a CUSTOM block, and the `blockProps<N>` field it reads, numbered in render
+ * order. A block with no props gets neither. Throws when the props are not JSON.
+ */
+function customBlockPropsBinding(node: ComponentNodeMetadata, ctx: RenderContext, where: string): string {
+  // The processor writes no props for a blank @Block(props), so an empty string is the same absence.
+  if (!node.props) {
+    return '';
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(node.props);
+  } catch (e) {
+    throw new ViewGenerationError(
+      `view '${ctx.viewName}': the CUSTOM block at ${where} (customType '${node.customType}') has ` +
+        `props that are not valid JSON (${String(e)}): ${node.props}`,
+    );
+  }
+  const name = `blockProps${ctx.blockProps.length + 1}`;
+  ctx.blockProps.push({ name, literal: JSON.stringify(parsed) });
+  return ` [props]="${name}"`;
+}
+
+/**
+ * The CUSTOM block components a view imports, one per distinct `{ import, symbol }`, ordered by
+ * symbol then module specifier. Throws when two entries bind the same symbol from different modules:
+ * the emitted file would declare the identifier twice.
+ */
+function customBlockImports(ctx: RenderContext): CustomBlockEntry[] {
+  const distinct: CustomBlockEntry[] = [];
+  for (const entry of ctx.usedBlocks.values()) {
+    if (!distinct.some((d) => d.symbol === entry.symbol && d.import === entry.import)) {
+      distinct.push({ import: entry.import, symbol: entry.symbol });
+    }
+  }
+  distinct.sort((a, b) => byCodeUnit(a.symbol, b.symbol) || byCodeUnit(a.import, b.import));
+  for (let i = 1; i < distinct.length; i++) {
+    if (distinct[i].symbol === distinct[i - 1].symbol) {
+      throw new ViewGenerationError(
+        `view '${ctx.viewName}': customBlocks imports '${distinct[i].symbol}' from both ` +
+          `'${distinct[i - 1].import}' and '${distinct[i].import}'; one class name can be imported ` +
+          `from one module only`,
+      );
+    }
+  }
+  return distinct;
+}
+
 /** Render one region as a <section data-region="slot"> wrapper holding its nodes. */
-function renderRegion(region: RegionMetadata, level: number): string[] {
+function renderRegion(region: RegionMetadata, level: number, ctx: RenderContext, where: string): string[] {
   const pad = indent(level);
   const slot = region.slot ?? 'region';
   const lines: string[] = [];
   lines.push(`${pad}<section data-region="${escapeAttr(slot)}">`);
-  for (const node of region.components) {
-    lines.push(...renderNode(node, level + 1));
-  }
+  region.components.forEach((node, i) => {
+    lines.push(...renderNode(node, level + 1, ctx, `${where}.components[${i}]`));
+  });
   lines.push(`${pad}</section>`);
   return lines;
 }
@@ -429,12 +582,26 @@ function escapeTsStr(value: string): string {
  * Emit one standalone Angular component for a view. Returns a single OutputFile
  * at `pages/<kebab>.component.ts` (re-rooted under src/app by the orchestrator).
  */
-export function generateView(view: ViewMetadata, _config: GeneratorConfig): OutputFile {
+export function generateView(view: ViewMetadata, config: GeneratorConfig): OutputFile {
   const kebab = DslMapper.toKebabCase(view.name);
   const className = viewComponentClassName(view);
   const selector = `app-${kebab}-page`;
   const title = view.title ?? view.name;
   const { entityRefs, actionRefs } = collectBindings(view);
+
+  // The template is rendered before the header: it decides which CUSTOM components are imported
+  // and which blockProps fields the class declares.
+  const ctx: RenderContext = {
+    viewName: view.name,
+    customBlocks: config.customBlocks ?? {},
+    usedBlocks: new Map(),
+    blockProps: [],
+  };
+  const templateLines: string[] = [];
+  view.regions.forEach((region, i) => {
+    templateLines.push(...renderRegion(region, 3, ctx, `regions[${i}]`));
+  });
+  const blockImports = customBlockImports(ctx);
 
   const lines: string[] = [];
   lines.push(
@@ -457,18 +624,21 @@ export function generateView(view: ViewMetadata, _config: GeneratorConfig): Outp
     const simple = simpleRef(ref);
     lines.push(`import { ${simple}Store } from '../stores/${DslMapper.toKebabCase(simple)}.store';`);
   }
+  for (const block of blockImports) {
+    lines.push(`import { ${block.symbol} } from '${escapeTsStr(block.import)}';`);
+  }
   lines.push('');
   lines.push('@Component({');
   lines.push(`  selector: '${selector}',`);
   lines.push('  standalone: true,');
-  lines.push('  imports: [CommonModule],');
+  lines.push(`  imports: [${['CommonModule', ...blockImports.map((b) => b.symbol)].join(', ')}],`);
   lines.push('  changeDetection: ChangeDetectionStrategy.OnPush,');
   lines.push('  template: `');
   lines.push(`    <main class="exeris-page" data-view="${escapeAttr(view.name)}">`);
-  lines.push(`      <h1 class="text-2xl font-bold font-exeris mb-6">${escapeText(title)}</h1>`);
-  for (const region of view.regions) {
-    lines.push(...renderRegion(region, 3));
+  if (config.viewHeading !== 'none') {
+    lines.push(`      <h1 class="text-2xl font-bold font-exeris mb-6">${escapeText(title)}</h1>`);
   }
+  lines.push(...templateLines);
   lines.push('    </main>');
   lines.push('  `,');
   lines.push('})');
@@ -478,6 +648,13 @@ export function generateView(view: ViewMetadata, _config: GeneratorConfig): Outp
   for (const ref of entityRefs) {
     const simple = simpleRef(ref);
     lines.push(`  protected readonly ${storeFieldName(ref)} = inject(${simple}Store);`);
+  }
+  // CUSTOM block props, parsed from the IR's JSON and bound as each block's `props` input.
+  if (entityRefs.length > 0 && ctx.blockProps.length > 0) {
+    lines.push('');
+  }
+  for (const field of ctx.blockProps) {
+    lines.push(`  protected readonly ${field.name} = ${field.literal};`);
   }
   // A store starts empty, so the page has to ask for its data. Without this the template renders a
   // correct, permanently blank screen — the failure mode that is hardest to tell from a backend that

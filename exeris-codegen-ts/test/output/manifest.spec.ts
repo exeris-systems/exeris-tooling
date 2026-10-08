@@ -31,6 +31,7 @@ describe('pruneOrphansAndWriteManifest (T13 — output-tree ownership)', () => {
     const manifest = readFileSync(join(out, MANIFEST_NAME), 'utf-8');
     expect(manifest).toBe(
       '# Exeris Tooling generated-output manifest - DO NOT EDIT MANUALLY\n' +
+        '# ownership: written\n' +
         'a/first.ts\n' +
         'z/last.ts\n',
     );
@@ -92,7 +93,7 @@ describe('pruneOrphansAndWriteManifest (T13 — output-tree ownership)', () => {
     expect(existsSync(join(out, 'components/order-list.component.ts'))).toBe(false);
     // manifest survives, header-only
     expect(readFileSync(join(out, MANIFEST_NAME), 'utf-8')).toBe(
-      '# Exeris Tooling generated-output manifest - DO NOT EDIT MANUALLY\n',
+      '# Exeris Tooling generated-output manifest - DO NOT EDIT MANUALLY\n# ownership: written\n',
     );
   });
 
@@ -135,9 +136,10 @@ describe('pruneOrphansAndWriteManifest (T13 — output-tree ownership)', () => {
   });
 
   const HEADER = '# Exeris Tooling generated-output manifest - DO NOT EDIT MANUALLY\n';
+  const WRITTEN = HEADER + '# ownership: written\n';
 
   function writeManifest(...entries: string[]): void {
-    writeFileSync(join(out, MANIFEST_NAME), HEADER + entries.map((e) => `${e}\n`).join(''));
+    writeFileSync(join(out, MANIFEST_NAME), WRITTEN + entries.map((e) => `${e}\n`).join(''));
   }
 
   it('a previous manifest entry ./package.json and a produced package.json are the same file', () => {
@@ -148,7 +150,7 @@ describe('pruneOrphansAndWriteManifest (T13 — output-tree ownership)', () => {
 
     expect(pruned).toBe(0);
     expect(readFileSync(join(out, 'package.json'), 'utf-8')).toBe('{"name":"app"}');
-    expect(readFileSync(join(out, MANIFEST_NAME), 'utf-8')).toBe(HEADER + 'package.json\n');
+    expect(readFileSync(join(out, MANIFEST_NAME), 'utf-8')).toBe(WRITTEN + 'package.json\n');
   });
 
   it('a produced ./package.json is recorded as package.json', () => {
@@ -156,7 +158,7 @@ describe('pruneOrphansAndWriteManifest (T13 — output-tree ownership)', () => {
 
     pruneOrphansAndWriteManifest(out, ['./package.json', './src/./main.ts']);
 
-    expect(readFileSync(join(out, MANIFEST_NAME), 'utf-8')).toBe(HEADER + 'package.json\nsrc/main.ts\n');
+    expect(readFileSync(join(out, MANIFEST_NAME), 'utf-8')).toBe(WRITTEN + 'package.json\nsrc/main.ts\n');
   });
 
   it('prunes an orphan recorded with a ./ prefix', () => {
@@ -174,7 +176,7 @@ describe('pruneOrphansAndWriteManifest (T13 — output-tree ownership)', () => {
   it('lists ./a and a once', () => {
     pruneOrphansAndWriteManifest(out, ['./a', 'a', 'b\\c', 'b/c']);
 
-    expect(readFileSync(join(out, MANIFEST_NAME), 'utf-8')).toBe(HEADER + 'a\nb/c\n');
+    expect(readFileSync(join(out, MANIFEST_NAME), 'utf-8')).toBe(WRITTEN + 'a\nb/c\n');
   });
 
   it('never deletes outside the output tree through a ./.. or a/../.. entry', () => {
@@ -189,7 +191,7 @@ describe('pruneOrphansAndWriteManifest (T13 — output-tree ownership)', () => {
 
       expect(pruned).toBe(0);
       expect(existsSync(victim)).toBe(true);
-      expect(readFileSync(join(out, MANIFEST_NAME), 'utf-8')).toBe(HEADER);
+      expect(readFileSync(join(out, MANIFEST_NAME), 'utf-8')).toBe(WRITTEN);
     } finally {
       rmSync(victim, { force: true });
     }
@@ -198,7 +200,7 @@ describe('pruneOrphansAndWriteManifest (T13 — output-tree ownership)', () => {
   it('does not record a produced path that escapes the output root', () => {
     pruneOrphansAndWriteManifest(out, ['../x.ts', 'a/../../x.ts', '/abs.ts', 'keep.ts']);
 
-    expect(readFileSync(join(out, MANIFEST_NAME), 'utf-8')).toBe(HEADER + 'keep.ts\n');
+    expect(readFileSync(join(out, MANIFEST_NAME), 'utf-8')).toBe(WRITTEN + 'keep.ts\n');
   });
 
   it.each([

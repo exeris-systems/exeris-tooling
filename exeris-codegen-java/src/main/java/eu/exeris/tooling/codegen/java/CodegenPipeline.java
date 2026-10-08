@@ -61,8 +61,6 @@ import java.util.stream.Stream;
  */
 public final class CodegenPipeline {
 
-    private static final Logger LOG = System.getLogger(CodegenPipeline.class.getName());
-
     /**
      * Output-root file name of the capability manifest ({@code cap-manifest.json}) —
      * emitted by {@link #run}, preserved (not re-emitted) on the T18(a) deferred
@@ -78,6 +76,8 @@ public final class CodegenPipeline {
      */
     static final Comparator<DomainMetadata> DOMAIN_ORDER =
             Comparator.comparing(CodegenPipeline::qualifiedName);
+
+    private static final Logger LOG = System.getLogger(CodegenPipeline.class.getName());
 
     /** Orders directory entries by file name, so each file is read in the same order everywhere. */
     private static final Comparator<Path> FILE_NAME_ORDER =

@@ -91,7 +91,9 @@ public final class TypeMapper {
      * @return the OpenAPI type; {@code string} for {@code null} or an unmapped type
      */
     public static String toOpenApiType(String javaType) {
-        if (javaType == null) return "string";
+        if (javaType == null) {
+            return "string";
+        }
         String simple = simplifyType(javaType);
         return TYPE_MAPPINGS.getOrDefault(simple, "string");
     }
@@ -105,16 +107,22 @@ public final class TypeMapper {
      *         carries none
      */
     public static String toOpenApiFormat(String javaType) {
-        if (javaType == null) return null;
+        if (javaType == null) {
+            return null;
+        }
         String simple = simplifyType(javaType);
         return FORMAT_MAPPINGS.get(simple);
     }
 
     private static String simplifyType(String type) {
         int genericStart = type.indexOf('<');
-        if (genericStart > 0) type = type.substring(0, genericStart);
+        if (genericStart > 0) {
+            type = type.substring(0, genericStart);
+        }
         int lastDot = type.lastIndexOf('.');
-        if (lastDot > 0 && !type.startsWith("java.")) return type.substring(lastDot + 1);
+        if (lastDot > 0 && !type.startsWith("java.")) {
+            return type.substring(lastDot + 1);
+        }
         return type;
     }
 }

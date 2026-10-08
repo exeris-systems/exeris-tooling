@@ -71,3 +71,17 @@ export function fileHeader(header: FileHeader): string {
 export function lineHeaderLines(title: string): string[] {
   return [`// ${title}`, `// ${DO_NOT_EDIT}`];
 }
+
+/** How many leading lines {@link carriesGeneratorMarker} reads. Every header ends within it. */
+export const GENERATOR_MARKER_LINES = 10;
+
+/**
+ * Whether `content` starts with a header this package writes: its first
+ * {@link GENERATOR_MARKER_LINES} lines carry the provenance line or the do-not-edit notice. Every
+ * emitted file except the scaffold's seed files and `favicon.ico` has one, so a file that carries
+ * it is generated output.
+ */
+export function carriesGeneratorMarker(content: string): boolean {
+  const head = content.split('\n', GENERATOR_MARKER_LINES).join('\n');
+  return head.includes(PROVENANCE) || head.includes(DO_NOT_EDIT);
+}

@@ -26,20 +26,37 @@ import { EventHandlerGenerator } from './generators/angular/event-gen.js';
 import { generateSchemaSpec, generateServiceSpec } from './generators/angular/spec-gen.js';
 import { generateSaga } from './generators/angular/saga-gen.js';
 import { generateStore } from './generators/angular/store-gen.js';
-import { generateAppStructure } from './generators/angular/app-structure-gen.js';
+import { generateAppBarrel, generateAppStructure, SCAFFOLD_SEED_PATHS } from './generators/angular/app-structure-gen.js';
+import { AUTH_SERVICE_PATH } from './generators/angular/guard-gen.js';
+import { generateViewRoutesAggregate } from './generators/angular/view-routes-gen.js';
 import { generateView, generateViewRoute } from './generators/angular/view-gen.js';
 import { generateHttpErrorHelper, needsHttpErrorHelper } from './generators/angular/http-error-gen.js';
 import { generatePeerTypes } from './generators/api/peer-type-gen.js';
 import type { PeerContract } from './peers/peer-contract.js';
 import { deriveScaffoldNeeds } from './core/scaffold-needs.js';
 
-/** Minimal output-file shape the writer consumes (path + content). The per-shape
- *  generators return richer objects (artifactType/overwritable); those are structurally
- *  assignable here, and nothing downstream of composition needs the extra fields. */
+/** The output-file shape the writer consumes. The per-shape generators return richer objects
+ *  (artifactType and the rest); those are structurally assignable here, and composition copies
+ *  each file whole, so `overwritable` reaches the writer. */
 export interface OutputFile {
   path: string;
   content: string;
+  /** `false` marks a seed file the consumer is expected to edit: the writer creates it when
+   *  absent and replaces it only under `--overwrite` (output/writer.ts). */
+  overwritable?: boolean;
 }
+
+/**
+ * Every path a generator emits as a seed file (`overwritable: false`), in canonical manifest form:
+ * the scaffold's, and the auth service template at the root of a tree with or without the
+ * scaffold. The writer releases an orphaned seed instead of deleting it, which it can only do by
+ * path, because an orphan is by definition no longer among the run's files.
+ */
+export const SEED_PATHS: ReadonlySet<string> = new Set([
+  ...SCAFFOLD_SEED_PATHS,
+  AUTH_SERVICE_PATH,
+  `src/app/${AUTH_SERVICE_PATH}`,
+]);
 
 // The enum module is emitted by `generators/api/enum-module-gen.ts` — the peer-types
 // slice (T42) needed the same emitter, and a generator importing the orchestrator that
@@ -51,7 +68,9 @@ export { generateEnumTypes, type EnumMetadataForGen } from './generators/api/enu
  * Compose the full set of files to write from parsed metadata. Per-entity output
  * (types + Zod schemas + services and SSE stream clients + form/list components), the enum module, and
  * the per-view page components / routes are re-rooted under `src/app/` (the
- * Angular sourceRoot); the scaffold is appended as-is.
+ * Angular sourceRoot); the scaffold is appended as-is. With `config.scaffold` off there is no
+ * scaffold and no re-rooting: the tree, its barrel and the view-routes aggregate are written at
+ * the output root.
  *
  * `views` is the presentation-IR family (RFC-2026-06-28): each parsed
  * `view_*.json` ViewMetadata emits one standalone, signal-first page component
@@ -192,7 +211,19 @@ export function buildGeneratedFiles(
   // (`peers/<name>/…`) and no app scaffold is emitted. A local enum is part of the app's own type
   // surface (`types/`), which lives under `src/app/` beside the scaffold, so it keeps the app layout.
   const contractsOnly = peers.length > 0 && domains.length === 0 && enums.length === 0 && views.length === 0;
-  const treeRoot = contractsOnly ? '' : 'src/app/';
+
+  // With the scaffold off (`config.scaffold`) the output directory sits inside an app the consumer
+  // owns, so the tree is written at its root and nothing configures a project or an app shell. What
+  // the shell would have provided for the generated code itself is emitted in its place: the
+  // barrel, and the view routes as one array for the consumer's routes file.
+  if (!contractsOnly && !config.scaffold) {
+    const barrel = generateAppBarrel(domains, enums, config);
+    if (barrel) appTree.push(barrel);
+    const viewRoutes = generateViewRoutesAggregate(views);
+    if (viewRoutes) appTree.push(viewRoutes);
+  }
+
+  const treeRoot = contractsOnly || !config.scaffold ? '' : 'src/app/';
 
   for (const file of appTree) {
     generatedFiles.push({ ...file, path: `${treeRoot}${file.path}` });
@@ -203,7 +234,7 @@ export function buildGeneratedFiles(
   // each per-view route export (RFC-2026-06-28 §5 route-assembly). What the scaffold wires
   // (HTTP client, dev proxy, API environment, optional dependencies) is read off the composed
   // tree, so it never carries a backend piece no emitted file uses.
-  if (!contractsOnly) {
+  if (!contractsOnly && config.scaffold) {
     generatedFiles.push(...generateAppStructure(domains, enums, config, views, deriveScaffoldNeeds(domains, appTree)));
   }
 
