@@ -38,7 +38,9 @@ import {
   buildZodType,
   collectEnumTypes,
   createDtoFields,
-  systemFieldNames,
+  createSchemaDeclaration,
+  undeclaredReadInterfaceMembers,
+  undeclaredReadSchemaMembers,
   updateDtoDeclaration,
   updateSchemaDeclaration,
 } from './type-gen.js';
@@ -111,6 +113,7 @@ function peerInterface(peerName: string, metadata: DomainMetadata): string {
     const comment = field.description ? ` // ${field.description}` : '';
     lines.push(`  ${field.name}${optional}: ${DslMapper.mapType(field.type).tsType};${comment}`);
   }
+  lines.push(...undeclaredReadInterfaceMembers(metadata));
   lines.push('}', '');
 
   lines.push(`export interface ${typeName}Create {`);
@@ -140,16 +143,10 @@ function peerZodSchema(peerName: string, metadata: DomainMetadata): string {
   for (const field of metadata.fields) {
     lines.push(`  ${field.name}: ${buildZodType(field)},`);
   }
+  lines.push(...undeclaredReadSchemaMembers(metadata));
   lines.push('});', '');
 
-  // `z.omit()` rejects a key the object does not declare (TS2322), so only system fields
-  // the peer actually declares are omitted — the same rule the local emitter follows.
-  const declared = new Set(metadata.fields.map((f) => f.name));
-  lines.push(`export const ${typeName}CreateSchema = ${typeName}Schema.omit({`);
-  for (const name of systemFieldNames(metadata).filter((f) => declared.has(f))) {
-    lines.push(`  ${name}: true,`);
-  }
-  lines.push('});', '');
+  lines.push(createSchemaDeclaration(typeName, metadata), '');
 
   lines.push(updateSchemaDeclaration(typeName, metadata));
 

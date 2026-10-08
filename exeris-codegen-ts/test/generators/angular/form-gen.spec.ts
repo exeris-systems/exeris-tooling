@@ -1134,15 +1134,16 @@ describe('FormGenerator — @Field(inUpdate = false)', () => {
     expect(content.indexOf('required(path.sku);')).toBeLessThan(content.indexOf('disabled(path.sku'));
   });
 
-  it('sends the stored value back on update, read from the loaded record rather than the model', () => {
-    // The model seeds a stored null as the control's empty value; the loaded record holds the null.
+  it('leaves the field out of the update body, as the update type does', () => {
     expect(content).toContain('      sku: entity.sku ?? \'\',');
     expect(content).toContain(
       'this.editMode() && current ? '
       + 'this.service.update(String(current.id), this.updateBody(current, data)) : '
       + 'this.service.create(data as ProductCreate);',
     );
-    expect(content).toContain('return { ...stored, ...data, sku: current.sku } as ProductUpdate;');
+    expect(content).toContain('const { id: _id, sku: _sku, ...stored } = current;');
+    expect(content).toContain('const { sku: _formSku, ...entered } = data;');
+    expect(content).toContain('return { ...stored, ...entered } as ProductUpdate;');
   });
 
   it('a form without such a field disables nothing and imports no disabled', () => {

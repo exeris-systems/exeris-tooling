@@ -286,9 +286,11 @@ check(
 
 // (7) The generated server's update never writes a server-owned column from the body: the key, the
 // owner, the audit fields, the soft-delete fields and any field a `systemFields` role names, nor a
-// `readOnly` field (the client does not set it through a `PUT`). The
+// `readOnly` or `inUpdate = false` field (the client does not set it through a `PUT`). The
 // Update type and schema agree in both directions, carry the version and leave those out, and a
-// body that sets one of them does not type-check.
+// body that sets one of them does not type-check. The create body leaves out the key, the owner, a
+// read-only field and an `inCreate = false` field, and carries an `inUpdate = false` one; the two
+// agree in both directions as well.
 check(
   'server-owned-update',
   [DomainMetadataSchema.parse({
@@ -303,6 +305,8 @@ check(
       { name: 'id', type: 'java.util.UUID' },
       { name: 'title', type: 'String', required: true },
       { name: 'status', type: 'String', readOnly: true },
+      { name: 'sku', type: 'String', inUpdate: false },
+      { name: 'trackingCode', type: 'String', inCreate: false },
       { name: 'orgId', type: 'java.util.UUID' },
       { name: 'born', type: 'java.time.Instant' },
       { name: 'createdBy', type: 'String' },
@@ -318,13 +322,29 @@ check(
   [],
   [
     "import type { z } from 'zod';",
-    "import type { TicketUpdate } from './types';",
-    "import { TicketUpdateSchema } from './schemas';",
+    "import type { TicketCreate, TicketUpdate } from './types';",
+    "import { TicketCreateSchema, TicketUpdateSchema } from './schemas';",
     '',
     'type Parsed = z.infer<typeof TicketUpdateSchema>;',
     'export const fromSchema = (p: Parsed): TicketUpdate => p;',
     'export const toSchema = (u: TicketUpdate): Parsed => u;',
     "export const body: TicketUpdate = { title: 'x', version: 3 };",
+    "// @ts-expect-error — the update body does not carry an inUpdate = false field",
+    "export const fixed: TicketUpdate = { title: 'x', version: 3, sku: 'S-1' };",
+    "export const edited: TicketUpdate = { title: 'x', version: 3, trackingCode: 'T-1' };",
+    '',
+    'type ParsedCreate = z.infer<typeof TicketCreateSchema>;',
+    'export const createFromSchema = (p: ParsedCreate): TicketCreate => p;',
+    'export const createToSchema = (c: TicketCreate): ParsedCreate => c;',
+    "export const created: TicketCreate = { title: 'x', sku: 'S-1' };",
+    "// @ts-expect-error — the create body does not carry an inCreate = false field",
+    "export const tracked: TicketCreate = { title: 'x', trackingCode: 'T-1' };",
+    "// @ts-expect-error — the create body does not carry a read-only field",
+    "export const statused: TicketCreate = { title: 'x', status: 'OPEN' };",
+    "// @ts-expect-error — the create body does not carry the owner",
+    "export const owned: TicketCreate = { title: 'x', orgId: 'o' };",
+    "// @ts-expect-error — the create body does not carry the key",
+    "export const keyed: TicketCreate = { title: 'x', id: 'k' };",
     '',
     "// @ts-expect-error — the update body does not carry the creation stamp",
     "export const stamped: TicketUpdate = { title: 'x', version: 3, born: '2026-01-01T00:00:00Z' };",
@@ -340,5 +360,43 @@ check(
   ].join('\n'),
 );
 
+// (8) A versioned, audited entity that declares neither the version nor the audit stamps: the entity
+// type and schema carry them all the same (the server's entity schema lists them, read-only), the
+// update sends the version back and leaves the stamps out, and the create carries none of them.
+check(
+  'undeclared-version',
+  [DomainMetadataSchema.parse({
+    packageName: 'com.shop',
+    entityName: 'Note',
+    versioned: true,
+    audited: true,
+    fields: [
+      { name: 'id', type: 'java.util.UUID' },
+      { name: 'body', type: 'String', required: true },
+    ],
+  })],
+  [],
+  [],
+  [
+    "import type { z } from 'zod';",
+    "import type { Note, NoteCreate, NoteUpdate } from './types';",
+    "import { NoteSchema, NoteUpdateSchema } from './schemas';",
+    '',
+    'export const stored = (n: Note): number | undefined => n.version;',
+    'export const stamps = (n: Note): [string | undefined, string | undefined] => [n.createdAt, n.updatedAt];',
+    'export const parsedStored = (p: z.infer<typeof NoteSchema>): number | undefined => p.version;',
+    'export const resend = (n: Note): NoteUpdate => ({ body: n.body, version: n.version ?? 0 });',
+    'export const fromSchema = (p: z.infer<typeof NoteUpdateSchema>): NoteUpdate => p;',
+    "export const created: NoteCreate = { body: 'x' };",
+    "// @ts-expect-error — the create body does not carry the version",
+    "export const versioned: NoteCreate = { body: 'x', version: 1 };",
+    "// @ts-expect-error — the create body does not carry the creation stamp",
+    "export const stamped: NoteCreate = { body: 'x', createdAt: '2026-01-01T00:00:00Z' };",
+    "// @ts-expect-error — the update body does not carry the update stamp",
+    "export const touched: NoteUpdate = { body: 'x', version: 1, updatedAt: '2026-01-01T00:00:00Z' };",
+    '',
+  ].join('\n'),
+);
+
 rmSync(join(pkgRoot, '.verify-tmp'), { recursive: true, force: true });
-console.log('✓ Generated frontend data layer type-checks (with-enums + zero-enums + two-peers-same-entity + versioned-update + full-replacement-update + inherited-key + server-owned-update).');
+console.log('✓ Generated frontend data layer type-checks (with-enums + zero-enums + two-peers-same-entity + versioned-update + full-replacement-update + inherited-key + server-owned-update + undeclared-version).');

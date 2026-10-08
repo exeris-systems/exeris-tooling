@@ -1,0 +1,32 @@
+{
+  "entityName": "LifecycleNamedFields",
+  "packageName": "com.example.parity",
+  "softDelete": true,
+  "audited": true,
+  "fields": [
+    {
+      "name": "id",
+      "type": "java.util.UUID"
+    },
+    {
+      "name": "title",
+      "type": "java.lang.String"
+    },
+    {
+      "name": "active",
+      "type": "java.lang.Boolean"
+    },
+    {
+      "name": "hierarchyLevel",
+      "type": "java.lang.Integer"
+    },
+    {
+      "name": "deleted",
+      "type": "java.lang.Boolean"
+    },
+    {
+      "name": "updatedAt",
+      "type": "java.time.Instant"
+    }
+  ]
+}

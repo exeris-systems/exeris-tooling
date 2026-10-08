@@ -5,7 +5,7 @@
 
 import { outPath } from '../../core/paths.js';
 import { primaryKeyField } from '../../core/primary-key.js';
-import { omittedFromUpdate } from '../../core/server-owned-fields.js';
+import { omittedFromCreate, omittedFromUpdate } from '../../core/server-owned-fields.js';
 import { ownerFieldName, type DomainMetadata, type FieldMetadata } from '../../models/domain-model.js';
 import { DslMapper } from '../../models/dsl-mapper.js';
 import { modelTypeName } from '../../models/model-naming.js';
@@ -92,6 +92,7 @@ export class TypeGenerator implements CodeGenerator {
       const comment = field.description ? ` // ${field.description}` : '';
       lines.push(`  ${field.name}${optional}: ${mapping.tsType};${comment}`);
     }
+    lines.push(...undeclaredReadInterfaceMembers(metadata));
     lines.push(`}`);
     lines.push(``);
 
@@ -166,21 +167,15 @@ export class TypeGenerator implements CodeGenerator {
       const zodType = buildZodType(field);
       lines.push(`  ${field.name}: ${zodType},`);
     }
+    lines.push(...undeclaredReadSchemaMembers(metadata));
     lines.push(`});`);
     lines.push(``);
 
-    // Create schema (without system fields). Only omit system fields that are
-    // actually keys of the schema above — `z.omit()` rejects absent keys at the
-    // type level (TS2322: `true` not assignable to `never`), so omitting a system
-    // field the entity doesn't declare breaks the generated schema's compile (T20).
-    const presentFields = new Set(metadata.fields.map((f) => f.name));
-    const omitKeys = systemFieldNames(metadata).filter((sf) => presentFields.has(sf));
-
-    lines.push(`export const ${interfaceName}CreateSchema = ${interfaceName}Schema.omit({`);
-    for (const sf of omitKeys) {
-      lines.push(`  ${sf}: true,`);
-    }
-    lines.push(`});`);
+    // Create schema: the entity schema without the fields the create body does not carry. Only
+    // declared fields are omitted — `z.omit()` rejects an absent key at the type level (TS2322:
+    // `true` not assignable to `never`), so omitting one the entity doesn't declare breaks the
+    // generated schema's compile (T20).
+    lines.push(createSchemaDeclaration(interfaceName, metadata));
     lines.push(``);
 
     // Update schema
@@ -359,7 +354,7 @@ export interface UpdateVersionField {
   tsType: string;
   /** The Zod expression, mirroring the entity schema's base type for the field (no `.optional()`). */
   zodType: string;
-  /** Whether the entity declares the field, i.e. whether the entity interface carries it. */
+  /** Whether the entity's metadata declares the field; the entity interface carries it either way. */
   declared: boolean;
 }
 
@@ -380,17 +375,57 @@ export function updateVersionField(metadata: DomainMetadata): UpdateVersionField
   return { name, tsType: mapping.tsType, zodType: mapping.zodType, declared: true };
 }
 
+/** A read-only property the entity schema lists although the entity declares no field of that name. */
+interface UndeclaredReadMember {
+  readonly name: string;
+  readonly tsType: string;
+  readonly zodType: string;
+}
+
+/**
+ * The properties the entity read type adds for the server-set fields the entity does not declare
+ * (ADR-090 Amendments 3 and 4): the version of a versioned entity, a read-only `int64` the next
+ * update sends back, and the creation and update stamps of an audited entity, read-only
+ * date-times, under their role names.
+ */
+function undeclaredReadMembers(metadata: DomainMetadata): UndeclaredReadMember[] {
+  const declared = new Set(metadata.fields.map((f) => f.name));
+  const members: UndeclaredReadMember[] = [];
+  const version = updateVersionField(metadata);
+  if (version && !version.declared) members.push({ name: version.name, tsType: version.tsType, zodType: version.zodType });
+  if (metadata.audited) {
+    const stamp = DslMapper.mapType('java.time.Instant');
+    const audit = auditFieldNames(metadata);
+    for (const name of [audit.createdAt, audit.updatedAt]) {
+      if (!declared.has(name) && !members.some((m) => m.name === name)) {
+        members.push({ name, tsType: stamp.tsType, zodType: stamp.zodType });
+      }
+    }
+  }
+  return members;
+}
+
+/** The entity read interface's members for `undeclaredReadMembers`. */
+export function undeclaredReadInterfaceMembers(metadata: DomainMetadata): string[] {
+  return undeclaredReadMembers(metadata).map((m) => `  ${m.name}?: ${m.tsType};`);
+}
+
+/** The `z.object` members that match `undeclaredReadInterfaceMembers`. */
+export function undeclaredReadSchemaMembers(metadata: DomainMetadata): string[] {
+  return undeclaredReadMembers(metadata).map((m) => `  ${m.name}: ${m.zodType}.optional(),`);
+}
+
 /**
  * The declared fields an update body leaves out: every field the server owns on update (the key,
- * the owner, the audit fields but the version, and the soft-delete fields) and every `readOnly`
- * field, which the request update never writes from the body and whose stored value the response
- * reads back. The version stays, and so does a UNIVERSE entity's shared scope, which the update
+ * the owner, the audit fields but the version, and the soft-delete fields) and every `readOnly` or
+ * `inUpdate = false` field, which the request update never writes from the body and whose stored
+ * value the response reads back. The version stays, and so does a UNIVERSE entity's shared scope, which the update
  * writes from the body.
- * Only declared fields are listed, because `z.omit()` rejects a key the object does not declare
- * (TS2322).
+ * Only keys of the entity type are listed (declared fields and the undeclared read members),
+ * because `z.omit()` rejects a key the object does not declare (TS2322).
  */
 export function updateOmittedFields(metadata: DomainMetadata): string[] {
-  const declared = new Set(metadata.fields.map((f) => f.name));
+  const declared = new Set([...metadata.fields.map((f) => f.name), ...undeclaredReadMembers(metadata).map((m) => m.name)]);
   const owner = ownerFieldName(metadata);
   const leading = [primaryKeyField(metadata), ...(owner ? [owner] : [])];
   const omitted = new Set(omittedFromUpdate(metadata));
@@ -523,16 +558,35 @@ export function collectEnumTypes(fields: FieldMetadata[]): string[] {
 }
 
 /**
- * The fields a create DTO carries: everything the server does not own and the entity does
- * not mark `inCreate: false`. The lifecycle list is the set an Exeris entity gets from the
- * platform rather than from its own declaration.
+ * The keys of the entity schema a create body leaves out: `omittedFromCreate` that the schema has,
+ * declared or added as an undeclared read member. Only keys the schema has are listed, because
+ * `z.omit()` rejects a key the object does not declare (TS2322).
+ */
+export function createOmittedFields(metadata: DomainMetadata): string[] {
+  const keys = new Set([...metadata.fields.map((f) => f.name), ...undeclaredReadMembers(metadata).map((m) => m.name)]);
+  return omittedFromCreate(metadata).filter((name) => keys.has(name));
+}
+
+/**
+ * The fields a create DTO carries: every declared field the create body does not leave out, the
+ * set the Java side's `<Entity>CreateDto` lists.
  */
 export function createDtoFields(metadata: DomainMetadata): FieldMetadata[] {
-  const system = systemFieldNames(metadata);
-  const lifecycle = ['active', 'onboardingStatus', 'onboardingStartedAt', 'onboardingCompletedAt', 'hierarchyLevel', 'createdAt', 'updatedAt', 'deleted', 'version', 'parentTenantId'];
-  return metadata.fields.filter(
-    (f) => !system.includes(f.name) && !lifecycle.includes(f.name) && f.inCreate !== false,
-  );
+  const omitted = new Set(omittedFromCreate(metadata));
+  return metadata.fields.filter((f) => !omitted.has(f.name));
+}
+
+/**
+ * The `…CreateSchema` declaration: the entity schema without the fields the create body leaves
+ * out. Shared by the local and the peer emitter so the two cannot drift.
+ */
+export function createSchemaDeclaration(typeName: string, metadata: DomainMetadata): string {
+  const omitted = createOmittedFields(metadata);
+  return [
+    `export const ${typeName}CreateSchema = ${typeName}Schema.omit({`,
+    ...omitted.map((name) => `  ${name}: true,`),
+    `});`,
+  ].join('\n');
 }
 
 export function generateTypes(metadata: DomainMetadata, config: GeneratorConfig): GeneratedFile[] {

@@ -63,12 +63,12 @@ describe('generatePeerTypes', () => {
     expect(types).not.toContain('OrderListResponse');
   });
 
-  it('drops server-owned fields from the Create shape, keeping them on the entity', () => {
+  it('drops the key from the Create shape, keeping it on the entity, and keeps a declared version in it', () => {
     const types = byPath(generatePeerTypes(billing, DEFAULT_CONFIG), 'types/order.types.ts');
     const create = types.slice(types.indexOf('export interface OrderCreate'));
     expect(types).toContain('  id?: string;');
     expect(create).not.toContain('id?:');
-    expect(create).not.toContain('version');
+    expect(create).toContain('version?: number | null;');
     expect(create).toContain('invoiceNo: string;');
   });
 
@@ -96,9 +96,9 @@ describe('generatePeerTypes', () => {
     expect(schema.slice(schema.indexOf('FleetCreateSchema'))).toContain('  tenantId: true,');
   });
 
-  // The peer's server derives its OpenAPI the same way, so a GLOBAL peer entity keeps a field
-  // named tenantId even when its systemFields block names tenantIdField.
-  it('keeps a GLOBAL peer entity\'s tenantId in the Create shape and create schema', () => {
+  // The name a systemFields block gives a role is a role name whatever the data scope, so the
+  // create body of a GLOBAL peer entity leaves it out, and keeps a tenantId no block names.
+  it('leaves out the tenantId a GLOBAL peer entity\'s block names, and keeps one it does not', () => {
     const fleet = DomainMetadataSchema.parse({
       packageName: 'com.billing',
       entityName: 'Fleet',
@@ -112,8 +112,13 @@ describe('generatePeerTypes', () => {
     const files = generatePeerTypes({ ...billing, domains: [fleet] }, { ...DEFAULT_CONFIG, generateZod: true });
     const types = byPath(files, 'types/fleet.types.ts');
     const schema = byPath(files, 'schemas/fleet.schema.ts');
-    expect(types.slice(types.indexOf('export interface FleetCreate'))).toContain('tenantId?: string;');
-    expect(schema.slice(schema.indexOf('FleetCreateSchema'), schema.indexOf('FleetUpdateSchema'))).not.toContain('tenantId: true');
+    expect(types.slice(types.indexOf('export interface FleetCreate'))).not.toContain('tenantId?: string;');
+    expect(schema.slice(schema.indexOf('FleetCreateSchema'), schema.indexOf('FleetUpdateSchema'))).toContain('tenantId: true');
+
+    const unnamed = DomainMetadataSchema.parse({ ...fleet, systemFields: undefined });
+    const kept = generatePeerTypes({ ...billing, domains: [unnamed] }, { ...DEFAULT_CONFIG, generateZod: true });
+    expect(byPath(kept, 'types/fleet.types.ts').slice(byPath(kept, 'types/fleet.types.ts').indexOf('export interface FleetCreate')))
+      .toContain('tenantId?: string;');
   });
 
   it('carries the peer name and the field description into the emitted text', () => {

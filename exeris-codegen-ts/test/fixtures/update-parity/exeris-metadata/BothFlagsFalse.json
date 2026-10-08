@@ -1,0 +1,20 @@
+{
+  "entityName": "BothFlagsFalse",
+  "packageName": "com.example.parity",
+  "fields": [
+    {
+      "name": "id",
+      "type": "java.util.UUID"
+    },
+    {
+      "name": "title",
+      "type": "java.lang.String"
+    },
+    {
+      "name": "sealed",
+      "type": "java.lang.String",
+      "inCreate": false,
+      "inUpdate": false
+    }
+  ]
+}

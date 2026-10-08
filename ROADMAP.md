@@ -1697,14 +1697,20 @@ never-invoked emitter start emitting, and its output did not build.
       **Body shape (0.10.0, #349):** the server's update is a full replacement. The handler decodes
       the whole entity, and the repository writes every domain column, so a partial body over `PUT`
       nulls the omitted ones; the key, the owner and the audit and soft-delete columns keep their
-      stored value (ADR-090 Amendment 1), and a `PUT` keeps the read-only fields an action writes
-      (ADR-090 Amendment 2). The TS `<Entity>Update` is the entity record without those
-      server-owned and read-only fields, plus the version when the entity is versioned, and the
-      update schema follows it; the edit form sends the loaded record less them (#375). The Java
-      OpenAPI `<Entity>UpdateDto` lists what the update writes from the body: the domain fields less
-      the read-only ones, a UNIVERSE entity's shared scope, and the version of a versioned entity,
-      declared or not (ADR-090 Amendment 2). It requires none of them. The two sets are equal for
-      every metadata shape in `exeris-codegen-ts/test/fixtures/update-parity/`.
+      stored value (ADR-090 Amendment 1), and a `PUT` keeps the read-only fields and the
+      `inUpdate = false` fields an action writes (ADR-090 Amendments 2 and 3). The TS
+      `<Entity>Update` is the entity record without those server-owned, read-only and
+      `inUpdate = false` fields, plus the version when the entity is versioned, and the update
+      schema follows it; the edit form sends the loaded record less them (#375). The create body
+      is the fields the server does not set: the TS `<Entity>Create` and `<Entity>CreateSchema`
+      leave out every system-role field (key, owner, shared scope, audit, version and soft-delete
+      fields, under their role names), the read-only fields and the `inCreate = false` fields
+      (ADR-090 Amendment 4). The entity read type lists the version of a versioned entity and the
+      stamps of an audited one when the entity declares none. The Java OpenAPI `<Entity>UpdateDto`
+      lists what the update writes from the body and `<Entity>CreateDto` what the create
+      validates. The entity schema, `<Entity>CreateDto` and `<Entity>UpdateDto` each have a
+      property set equal to the TS entity type, `<Entity>Create` and `<Entity>Update` (local and
+      peer) for every metadata shape in `exeris-codegen-ts/test/fixtures/update-parity/`.
 - [x] **Locale determinism — shipped 0.9.0 (2026-09-26).** Nineteen `toLowerCase()` calls in
       codegen-java used the JVM default locale. Under `tr-TR`: table `ınvoices`, column `item_ıd`,
       `ınvoice-api.yaml`, and an `InvalidPathException` writing `V…__create_lıne_ıtems.sql` on a

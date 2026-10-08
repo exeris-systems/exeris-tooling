@@ -1,0 +1,19 @@
+{
+  "entityName": "InCreateFalse",
+  "packageName": "com.example.parity",
+  "fields": [
+    {
+      "name": "id",
+      "type": "java.util.UUID"
+    },
+    {
+      "name": "title",
+      "type": "java.lang.String"
+    },
+    {
+      "name": "trackingCode",
+      "type": "java.lang.String",
+      "inCreate": false
+    }
+  ]
+}
