@@ -14,14 +14,15 @@ last-verified: 2026-10-08
 
 The generated server's update is a full replacement. Its `PUT {base}/{id}` handler decodes the body
 into the whole entity and checks it with the same rules as a create, and the repository's `UPDATE`
-writes every domain column; the key, the owner and the audit and soft-delete columns keep their
-stored value. A domain property the body leaves out is stored as null. 0.9.0 typed the body as
+writes every domain column but the server-owned and the read-only ones, which keep their stored
+value. A domain property the body leaves out is stored as null. 0.9.0 typed the body as
 `Partial<<Entity>Create>`, so a call such as `update(id, { title })` compiled and nulled every other
 column.
 
 `<Entity>Update` is now the entity record without its key (the path carries it) and without the
-fields the server owns, among them the owner of a TENANT or UNIVERSE entity (the update never writes
-them; the step "`<Entity>Update` omits every field the server owns" lists them). A versioned
+fields the update does not take from the body: the server-owned fields, among them the owner of a
+TENANT or UNIVERSE entity, and the `@Field(readOnly = true)` fields (the step "`<Entity>Update`
+omits every field the server owns" lists them). A versioned
 entity's update also requires the version, as in 0.9.0:
 
 ```ts
@@ -33,7 +34,7 @@ export type TicketUpdate = Omit<Ticket, 'id' | 'tenantId'> & { version: number |
 
 `<Entity>UpdateSchema` follows it: `<Entity>Schema.omit({ id: true, … })`, with `.extend({ version })`
 on a versioned entity, in place of `<Entity>CreateSchema.partial()`. Required fields are required,
-read-only ones included, and so is a UNIVERSE entity's shared scope. Peer DTOs (`peers/<peer>/…`)
+and so is a UNIVERSE entity's shared scope; a read-only field is not part of the body. Peer DTOs (`peers/<peer>/…`)
 follow the same rule.
 
 The emitted edit form already sent the loaded record with the form's values over it, so the values

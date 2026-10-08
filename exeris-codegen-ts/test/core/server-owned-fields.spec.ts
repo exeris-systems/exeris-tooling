@@ -1,10 +1,7 @@
 /**
  * The TS update contract against the Java one. `java-update-dto-properties.json` holds the property
  * set of each fixture's OpenAPI `<Entity>UpdateDto`, produced by the Java `OpenApiComponentsBuilder`
- * over the metadata files beside it; the TS `<Entity>Update` must carry the same properties, less
- * the two differences the update contract names: a UNIVERSE entity's shared scope, which the Java
- * schema leaves out although the update writes it from the body, and the version of a versioned
- * entity that does not declare it, which the TS update still requires.
+ * over the metadata files beside it; the TS `<Entity>Update` carries exactly those properties.
  *
  * To regenerate the Java file, run `OpenApiComponentsBuilder.buildComponents` over each metadata file
  * of `exeris-metadata/` (loaded with `MetadataLoader`) and write the sorted property names of its
@@ -15,7 +12,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { notInUpdateBody, omittedFromUpdate } from '../../src/core/server-owned-fields.js';
+import { notInUpdateBody, omittedFromUpdate, readOnlyFields } from '../../src/core/server-owned-fields.js';
 import { updateOmittedFields, updateVersionField } from '../../src/generators/api/type-gen.js';
 import { DomainMetadataSchema, type DomainMetadata } from '../../src/models/domain-model.js';
 
@@ -36,19 +33,7 @@ function updateProperties(metadata: DomainMetadata): string[] {
   return [...names].sort();
 }
 
-/** What the update writes from the body although the OpenAPI update schema leaves it out. */
-function sharedScope(metadata: DomainMetadata): string[] {
-  const named = metadata.systemFields?.sharedScopeField;
-  return metadata.dataScope === 'UNIVERSE' && named ? [named] : [];
-}
-
-/** The version of a versioned entity that does not declare it: the TS update still sends it. */
-function undeclaredVersion(metadata: DomainMetadata): string[] {
-  const version = updateVersionField(metadata);
-  return version && !version.declared ? [version.name] : [];
-}
-
-describe('the TS update carries the properties of the Java UpdateDto', () => {
+describe('the TS update carries exactly the properties of the Java UpdateDto', () => {
   it('has a Java property set for every fixture', () => {
     expect(fixtures.map((m) => m.entityName).sort()).toEqual(Object.keys(javaUpdateDto).sort());
   });
@@ -56,9 +41,8 @@ describe('the TS update carries the properties of the Java UpdateDto', () => {
   it.each(fixtures.map((m) => [m.entityName, m] as const))('%s', (name, metadata) => {
     const java = javaUpdateDto[name]!;
     const ts = updateProperties(metadata);
-    const extra = [...sharedScope(metadata), ...undeclaredVersion(metadata)];
 
-    expect(ts.filter((p) => !java.includes(p)).sort()).toEqual([...extra].sort());
+    expect(ts.filter((p) => !java.includes(p))).toEqual([]);
     expect(java.filter((p) => !ts.includes(p))).toEqual([]);
   });
 });
@@ -96,6 +80,15 @@ describe('the fields an update takes from the server', () => {
     expect(omitted('UniverseRenamed')).toEqual(['id', 'ownerId']);
     expect(notInUpdateBody(byName('UniverseDefault'))).toContain('scopeId');
     expect(omittedFromUpdate(byName('UniverseDefault'))).not.toContain('scopeId');
+  });
+
+  it('are the read-only fields that play no system role', () => {
+    expect(omitted('ReadOnlyFields')).toEqual(['id', 'lockedUntil', 'status', 'tenantId']);
+    expect(readOnlyFields(byName('ReadOnlyFields'))).toEqual(['lockedUntil', 'status']);
+  });
+
+  it('keep a read-only version and a read-only shared scope in the body, under their roles', () => {
+    expect(updateProperties(byName('ReadOnlyFields'))).toEqual(['scopeId', 'title', 'version']);
   });
 
   it('follow a renamed key', () => {

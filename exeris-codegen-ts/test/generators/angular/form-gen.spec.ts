@@ -1214,6 +1214,27 @@ describe('FormGenerator — @Field(inCreate = false, inUpdate = true)', () => {
   });
 });
 
+describe('FormGenerator — @Field(readOnly = true)', () => {
+  const gen = new FormGenerator();
+  const content = gen.generate(domain({
+    entityName: 'Order',
+    fields: [
+      field({ name: 'id', type: 'java.util.UUID' }),
+      field({ name: 'name', type: 'String' }),
+      field({ name: 'status', type: 'String', readOnly: true }),
+    ],
+  }), CTX)!.content;
+
+  it('drops the read-only field from the PUT body, which the server keeps as stored', () => {
+    expect(content).toContain('const { id: _id, status: _status, ...stored } = current;');
+    expect(content).toContain('return { ...stored, ...data } as OrderUpdate;');
+  });
+
+  it('offers no control for it', () => {
+    expect(content).not.toContain('[formField]="form.status"');
+  });
+});
+
 describe('FormGenerator — versioned entity', () => {
   const gen = new FormGenerator();
   const fields = [

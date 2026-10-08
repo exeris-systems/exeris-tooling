@@ -790,8 +790,9 @@ describe('TypeGenerator — the update DTO is the record the server writes back'
   }
 
   // The generated handler decodes the PUT body into the whole entity and the repository's UPDATE
-  // writes every column but the key and the owner, so a property left out is stored as null.
-  it('keeps read-only and create-only fields, and every required field stays required', () => {
+  // writes every column but the server-owned and read-only ones, so a property left out is stored
+  // as null.
+  it('keeps create-only fields, leaves out read-only ones, and every required field stays required', () => {
     const { types, schema } = emit(domain({
       entityName: 'Ledger',
       audited: true,
@@ -803,10 +804,10 @@ describe('TypeGenerator — the update DTO is the record the server writes back'
         field({ name: 'createdAt', type: 'java.time.Instant' }),
       ],
     }));
-    expect(types).toContain("export type LedgerUpdate = Omit<Ledger, 'id' | 'createdAt'>;");
+    expect(types).toContain("export type LedgerUpdate = Omit<Ledger, 'id' | 'code' | 'createdAt'>;");
     expect(types).not.toMatch(/LedgerUpdate = Partial</);
     expect(types).toContain('title: string;');
-    expect(schema).toContain('export const LedgerUpdateSchema = LedgerSchema.omit({ id: true, createdAt: true });');
+    expect(schema).toContain('export const LedgerUpdateSchema = LedgerSchema.omit({ id: true, code: true, createdAt: true });');
   });
 
   it('leaves out the owner of a tenant-partitioned entity, which the update never writes', () => {
