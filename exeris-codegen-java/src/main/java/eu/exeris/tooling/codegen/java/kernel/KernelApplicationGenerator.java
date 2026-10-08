@@ -109,6 +109,8 @@ import java.util.Map;
 public class KernelApplicationGenerator implements KernelArtifactGenerator {
 
     private static final String TX_EXECUTOR_NAME = "transactionalExecutor";
+    /** The scope-ledger entry of a stream or respond-once handler's tenant guard. */
+    private static final String TENANT_GUARD_READER = "the tenant guard in {@link $T}";
     // T49: the open half of the composition root. RuntimeLifecycle stops calling
     // `new XService(...)` and asks RuntimeComponents for it, so a consumer can
     // subclass RuntimeComponents, override one factory, and install it by
@@ -998,7 +1000,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                     CodeBlock.of("{@link $T}{@code .parseBody}", handlerType));
             if (DataScopeSupport.isTenantPartitioned(domain)) {
                 read(readers, Scope.STORAGE_CONTEXT,
-                        CodeBlock.of("the tenant guard in {@link $T}", handlerType));
+                        CodeBlock.of(TENANT_GUARD_READER, handlerType));
                 read(readers, Scope.STORAGE_CONTEXT,
                         CodeBlock.of("{@link $T}{@code .$L()}", repoType,
                                 KernelRepositoryGenerator.ACTING_TENANT_METHOD));
@@ -1029,6 +1031,23 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                         KernelStreamHandlerGenerator.hasProducer(domain)
                                 ? CodeBlock.of("new $T($T.eventEngine())", streamHandlerType, KERNEL_PROVIDERS)
                                 : CodeBlock.of("new $T()", streamHandlerType));
+                // ADR-044 Amendment 2 decision 7: the spectate handler loads its row, so it takes
+                // the service; it takes the EventEngine, for the producer's reason, when the
+                // entity declares an event to forward.
+                ClassName spectateHandlerType = ClassName.get(pkgs.handler(),
+                        KernelSpectateStreamHandlerGenerator.className(domain));
+                String spectateComponent = lowerFirst(spectateHandlerType.simpleName());
+                CodeBlock.Builder spectateArgs = CodeBlock.builder().add("$L()", serviceName);
+                if (KernelSpectateStreamHandlerGenerator.subscribes(domain)) {
+                    read(readers, Scope.EVENT_ENGINE, factoryReference(spectateComponent));
+                    spectateArgs.add(", $T.eventEngine()", KERNEL_PROVIDERS);
+                }
+                if (DataScopeSupport.isTenantPartitioned(domain)) {
+                    read(readers, Scope.STORAGE_CONTEXT,
+                            CodeBlock.of(TENANT_GUARD_READER, spectateHandlerType));
+                }
+                addComponent(type, spectateHandlerType, spectateComponent,
+                        CodeBlock.of("new $T($L)", spectateHandlerType, spectateArgs.build()));
             }
             // ADR-044 Amendment 2: the per-action handler runs its action, so it takes the
             // service; the allocator when it decodes a body; the publisher and the EventEngine
@@ -1163,7 +1182,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
             args.add(", $L(), $T.eventEngine()", publisherName, KERNEL_PROVIDERS);
         }
         if (DataScopeSupport.isTenantPartitioned(domain)) {
-            read(readers, Scope.STORAGE_CONTEXT, CodeBlock.of("the tenant guard in {@link $T}", handlerType));
+            read(readers, Scope.STORAGE_CONTEXT, CodeBlock.of(TENANT_GUARD_READER, handlerType));
         }
         return CodeBlock.of("new $T($L)", handlerType, args.build());
     }
@@ -1315,7 +1334,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
      * One generated stream route: registered by {@code run()} on the router it composes, with
      * the handler a {@code RuntimeComponents} accessor returns.
      *
-     * @param method   {@code "GET"} (entity live view) or {@code "POST"} (streaming action)
+     * @param method   {@code "GET"} (entity live view, spectate) or {@code "POST"} (streaming action)
      * @param path     the route template
      * @param accessor the {@code RuntimeComponents} accessor returning the stream handler
      */
@@ -1324,7 +1343,7 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
     /**
      * Every stream route the application emits, in emission order: per entity, its
      * {@code @Action(streaming)} routes in declaration order, then its
-     * {@code realTimeApi} live view.
+     * {@code realTimeApi} live view and spectate route.
      */
     private List<StreamRoute> streamRoutes(List<DomainMetadata> domains) {
         List<StreamRoute> routes = new ArrayList<>();
@@ -1344,6 +1363,11 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
             // headers (TS EventSource).
             if (domain.realTimeApi()) {
                 routes.add(new StreamRoute("GET", basePath + "/stream", entityLower + "StreamHandler"));
+                // ADR-044 Amendment 2 decision 7: one row's events, GET {base}/{id}/stream. A
+                // placeholder matches exactly one segment, so this template and the live view's
+                // exact path never take each other's request.
+                routes.add(new StreamRoute("GET", basePath + "/{id}/stream",
+                        lowerFirst(KernelSpectateStreamHandlerGenerator.className(domain))));
             }
         }
         return routes;

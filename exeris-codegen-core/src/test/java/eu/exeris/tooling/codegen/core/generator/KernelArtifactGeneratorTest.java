@@ -94,6 +94,7 @@ class KernelArtifactGeneratorTest {
                 ArtifactType.CONTROLLER,
                 ArtifactType.STREAM_HANDLER,
                 ArtifactType.ACTION_STREAM_HANDLER,
+                ArtifactType.SPECTATE_STREAM_HANDLER,
                 ArtifactType.CLIENT,
                 ArtifactType.EVENT,
                 ArtifactType.EVENT_HANDLER,

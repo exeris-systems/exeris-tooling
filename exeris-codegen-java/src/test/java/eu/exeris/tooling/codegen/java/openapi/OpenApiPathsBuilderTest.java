@@ -218,6 +218,29 @@ class OpenApiPathsBuilderTest {
     }
 
     @Test
+    @DisplayName("ADR-044 Amendment 2: realTimeApi adds GET {base}/{id}/stream, an event stream answering only 200")
+    void spectateRouteIsAnEventStream() {
+        DomainMetadata plain = DomainMetadata.builder("Order", "com.example.domain").path("/orders").build();
+        DomainMetadata live = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders").realTimeApi(true).build();
+
+        assertThat(OpenApiPathsBuilder.buildPaths(plain)).doesNotContainKey("/orders/{id}/stream");
+
+        PathItem item = OpenApiPathsBuilder.buildPaths(live).get("/orders/{id}/stream");
+        assertThat(item.readOperations()).hasSize(1);
+        Operation spectate = item.getGet();
+        assertThat(spectate.getOperationId()).isEqualTo("spectateOrder");
+        assertThat(spectate.getTags()).containsExactly("Order");
+        assertThat(spectate.getParameters()).singleElement()
+                .satisfies(param -> assertThat(param.getSchema().getFormat()).isEqualTo("uuid"));
+        // The engine writes the 200 head before the handler runs; every refusal is a stream-error
+        // frame inside it, so 200 is the only status the route can answer.
+        assertThat(spectate.getResponses()).containsOnlyKeys("200");
+        assertThat(spectate.getResponses().get("200").getContent()).containsOnlyKeys("text/event-stream");
+        assertThat(spectate.getDescription()).contains("stream-error").contains("400, 404 or 500");
+    }
+
+    @Test
     @DisplayName("the list operation declares page and size always, sort only when something is "
             + "sortable, one typed parameter per filter, and the page envelope")
     void listOperationDeclaresTheQuery() {

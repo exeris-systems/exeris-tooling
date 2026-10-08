@@ -142,7 +142,8 @@ public enum DiagnosticId {
 
     /**
      * A {@code @DomainEvent}'s name is a frame name the generated streams reserve
-     * ({@code stream-error}, {@code keep-alive}): a frame carrying the event would be read as the
+     * ({@code stream-error}, {@code keep-alive}, and the {@code EventSource} event types
+     * {@code message}, {@code open}, {@code error}): a frame carrying the event would be read as the
      * reserved one.
      */
     DOMAIN_EVENT_NAME_RESERVED("EXT-PROC-1016",

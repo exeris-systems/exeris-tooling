@@ -101,16 +101,13 @@ public class KernelActionStreamHandlerGenerator implements KernelArtifactGenerat
     private static final ClassName HTTP_STREAM_HANDLER = KernelStreamScaffold.HTTP_STREAM_HANDLER;
     private static final ClassName HTTP_STREAM_EXCHANGE = KernelStreamScaffold.HTTP_STREAM_EXCHANGE;
     private static final ClassName STREAM_EVENT = KernelStreamScaffold.STREAM_EVENT;
-    private static final ClassName KERNEL_PROVIDERS =
-            ClassName.get("eu.exeris.kernel.spi.context", "KernelProviders");
     private static final ClassName MEMORY_ALLOCATOR =
             ClassName.get("eu.exeris.kernel.spi.memory", "MemoryAllocator");
     private static final ClassName UUID = ClassName.get("java.util", "UUID");
-    private static final ClassName OPTIONAL = ClassName.get("java.util", "Optional");
     private static final ClassName OBJECTS = ClassName.get("java.util", "Objects");
     private static final ClassName SET = ClassName.get("java.util", "Set");
     private static final ClassName HASH_SET = ClassName.get("java.util", "HashSet");
-    private static final ClassName TIME_UNIT = ClassName.get("java.util.concurrent", "TimeUnit");
+    private static final ClassName TIME_UNIT = KernelStreamScaffold.TIME_UNIT;
     private static final ClassName ILLEGAL_ARGUMENT_EXCEPTION =
             ClassName.get("java.lang", "IllegalArgumentException");
     private static final ClassName ILLEGAL_STATE_EXCEPTION =
@@ -292,7 +289,7 @@ public class KernelActionStreamHandlerGenerator implements KernelArtifactGenerat
         if (plan.subscribes()) {
             handler.addMethod(awaitEventsMethod(plan));
         }
-        handler.addMethod(refuseMethod());
+        handler.addMethod(KernelStreamScaffold.refuseMethod("the respond-once action route"));
         if (decodesBody(action)) {
             handler.addMethod(KernelHandlerGenerator.parseBodyMethod(HTTP_STREAM_EXCHANGE))
                     .addType(KernelHandlerGenerator.buildActionRequestRecord(action));
@@ -447,20 +444,10 @@ public class KernelActionStreamHandlerGenerator implements KernelArtifactGenerat
                 .addModifiers(Modifier.PRIVATE)
                 .addParameter(HTTP_STREAM_EXCHANGE, EXCHANGE);
         if (plan.tenantPartitioned()) {
-            method.beginControlFlow("if (!$T.STORAGE_CONTEXT.isBound())", KERNEL_PROVIDERS)
-                    .addStatement("LOG.log($T.ERROR, $S)", KernelScaffold.LOGGER_LEVEL,
-                            KernelHandlerGenerator.tenantUnboundMessage(plan.entityLower()))
-                    .addStatement(REFUSE_STATEMENT, SERVER_ERROR, SERVER_ERROR_TITLE)
-                    .addStatement(RETURN)
-                    .endControlFlow();
+            method.addCode(KernelStreamScaffold.tenantGuard(
+                    KernelHandlerGenerator.tenantUnboundMessage(plan.entityLower())));
         }
-        method.addStatement("$T id", UUID)
-                .beginControlFlow("try")
-                .addStatement("id = $T.fromString(exchange.pathParams().getOrDefault($S, $S))", UUID, "id", "")
-                .nextControlFlow(CATCH, ILLEGAL_ARGUMENT_EXCEPTION)
-                .addStatement(REFUSE_STATEMENT, BAD_REQUEST, BAD_REQUEST_TITLE)
-                .addStatement(RETURN)
-                .endControlFlow();
+        method.addCode(KernelStreamScaffold.pathId());
         if (decodesBody(plan.action())) {
             method.addStatement("$T request", plan.requestType())
                     .beginControlFlow("try")
@@ -480,40 +467,19 @@ public class KernelActionStreamHandlerGenerator implements KernelArtifactGenerat
                     .addStatement(RETURN)
                     .endControlFlow();
         }
-        method.addStatement("$T found", ParameterizedTypeName.get(OPTIONAL, plan.entityType()))
-                .beginControlFlow("try")
-                .addStatement("found = service.findById(id)")
-                .nextControlFlow(CATCH, RUNTIME_EXCEPTION)
-                .addStatement(LOG_ERROR_CAUSE, KernelScaffold.LOGGER_LEVEL,
-                        "Failed to load " + plan.entityLower() + " for action " + plan.action().name())
-                .addStatement(REFUSE_STATEMENT, SERVER_ERROR, SERVER_ERROR_TITLE)
-                .addStatement(RETURN)
-                .endControlFlow()
-                .addComment("Absent, or invisible under row-level security: the same answer.")
-                .beginControlFlow("if (found.isEmpty())")
-                .addStatement(REFUSE_STATEMENT, NOT_FOUND, NOT_FOUND_TITLE)
-                .addStatement(RETURN)
-                .endControlFlow();
+        method.addCode(KernelStreamScaffold.rowLoad(plan.entityType(),
+                "Failed to load " + plan.entityLower() + " for action " + plan.action().name()));
         String invokeCall = decodesBody(plan.action())
                 ? INVOKE + "(exchange, id, found.get(), request)"
                 : INVOKE + "(exchange, id, found.get())";
         if (!plan.subscribes()) {
             return method.addStatement(invokeCall).build();
         }
-        TypeName queueType = ParameterizedTypeName.get(KernelStreamScaffold.BLOCKING_QUEUE, STREAM_EVENT);
-        TypeName tokenListType = ParameterizedTypeName.get(KernelStreamScaffold.LIST,
-                KernelStreamScaffold.SUBSCRIPTION_TOKEN);
         method.addComment("Subscribe before the action runs, so no event it publishes can precede the")
                 .addComment("subscription. Only events published under this row's id are forwarded.")
-                .addStatement("$T queue = new $T<>(STREAM_BUFFER_CAPACITY)", queueType,
-                        KernelStreamScaffold.ARRAY_BLOCKING_QUEUE)
-                .addStatement("$T tokens = new $T<>()", tokenListType, KernelStreamScaffold.ARRAY_LIST)
-                .addStatement("long streamHigh = id.getMostSignificantBits()")
-                .addStatement("long streamLow = id.getLeastSignificantBits()")
-                .addStatement("$T bus = eventEngine.bus()", KernelStreamScaffold.EVENT_BUS)
+                .addCode(KernelStreamScaffold.rowHandOff())
                 .beginControlFlow("try");
-        CodeBlock guard = CodeBlock.of(
-                "descriptor.streamIdHigh() == streamHigh && descriptor.streamIdLow() == streamLow");
+        CodeBlock guard = KernelStreamScaffold.rowStreamIdGuard();
         for (StreamEventBinding binding : plan.bindings()) {
             method.addCode(KernelStreamScaffold.subscription(binding, guard, "WARNING",
                     binding.wireName() + " frame dropped on the " + plan.qualifiedAction()
@@ -622,19 +588,6 @@ public class KernelActionStreamHandlerGenerator implements KernelArtifactGenerat
                 .nextControlFlow(CATCH, INTERRUPTED_EXCEPTION)
                 .addStatement("$T.currentThread().interrupt()", KernelStreamScaffold.THREAD)
                 .endControlFlow()
-                .build();
-    }
-
-    private static MethodSpec refuseMethod() {
-        return MethodSpec.methodBuilder(REFUSE)
-                .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
-                .addJavadoc("Emits the reserved {@code stream-error} frame: an RFC 9457 problem object whose\n")
-                .addJavadoc("{@code status} is the one the respond-once action route answers.\n")
-                .addParameter(HTTP_STREAM_EXCHANGE, EXCHANGE)
-                .addParameter(TypeName.INT, "status")
-                .addParameter(String.class, "title")
-                .addStatement("exchange.emit($T.of(STREAM_ERROR, $S + title + $S + status + $S))", STREAM_EVENT,
-                        "{\"type\":\"about:blank\",\"title\":\"", "\",\"status\":", "}")
                 .build();
     }
 

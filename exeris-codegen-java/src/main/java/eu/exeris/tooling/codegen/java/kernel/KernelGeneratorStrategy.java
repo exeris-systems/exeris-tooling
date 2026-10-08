@@ -20,6 +20,9 @@ import java.util.List;
  *       {@code @ExerisDomain(realTimeApi)} entities; ADR-043 Slice 1)</li>
  *   <li>{@link KernelActionStreamHandlerGenerator} — per-action SSE stream handlers against the same
  *       streaming SPI (one per {@code @Action(streaming=true)}; ADR-044 Slice 2)</li>
+ *   <li>{@link KernelSpectateStreamHandlerGenerator} — the per-row SSE spectate handler against the
+ *       same streaming SPI (only for {@code @ExerisDomain(realTimeApi)} entities; ADR-044
+ *       Amendment 2)</li>
  *   <li>{@link KernelServiceGenerator} — POJO domain services (delegates to {@code *Repository}; no
  *       direct Kernel API surface)</li>
  *   <li>{@link KernelRepositoryGenerator} — repositories against
@@ -87,6 +90,7 @@ public class KernelGeneratorStrategy {
         registry.register(new KernelHandlerGenerator());
         registry.register(new KernelStreamHandlerGenerator());
         registry.register(new KernelActionStreamHandlerGenerator());
+        registry.register(new KernelSpectateStreamHandlerGenerator());
         registry.register(new KernelServiceGenerator());
         registry.register(new KernelRepositoryGenerator());
         registry.register(new KernelErrorGenerator());
