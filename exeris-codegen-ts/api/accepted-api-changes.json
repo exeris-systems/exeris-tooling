@@ -196,5 +196,11 @@
     "since": "0.10",
     "adr": "ADR-090, ADR-092",
     "justification": "ADR-090 Amendment 1: the generated update never writes a server-owned column from the body, so the update type and schema leave out the properties the Java OpenAPI <Entity>UpdateDto leaves out, less the UNIVERSE shared scope, which the update still writes from the body (ADR-090 section 3). The version stays required on a versioned entity, because the update matches on the expected version. A hand-written update body that sets one of the omitted properties no longer type-checks. The edit form drops those properties from the loaded record by destructuring before it sends the record, so its request body no longer carries them. docs/MIGRATION-0.x-to-1.0.md 0.10.0 carries the step."
+  },
+  {
+    "signature": "<Entity>Update / <Entity>UpdateSchema: - every @Field(readOnly) domain field that plays no system role; <entity>-form.component.ts: updateBody(current, data) leaves those fields out of the PUT body; local and peer DTOs",
+    "since": "0.10",
+    "adr": "ADR-090",
+    "justification": "ADR-090 Amendment 2: a read-only field is one the client does not set, so the request update does not write it and the response reads its stored value back; an action's update still writes it. The update type and schema leave out the properties the Java OpenAPI <Entity>UpdateDto leaves out, the declared read-only fields. A read-only field in a system role keeps the role's rule: a read-only version stays required and a read-only shared scope stays. A hand-written update body that sets a read-only property no longer type-checks. The edit form drops those properties from the loaded record before it sends it. docs/MIGRATION-0.x-to-1.0.md 0.10.0 carries the step."
   }
 ]

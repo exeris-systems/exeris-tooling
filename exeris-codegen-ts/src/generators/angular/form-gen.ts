@@ -419,9 +419,10 @@ export class FormGenerator implements CodeGenerator {
     lines.push('');
     // A number control holds `number | null`, the DTO's own type, so the model is the payload.
     lines.push('    const data = this.formModel();');
-    // The edit payload is the loaded record less the fields the server owns, with the form's values
-    // over it: the update writes every domain column, so a field the form does not offer (read-only,
-    // hidden, create-only) keeps its stored value, while a server-owned field is never in the body.
+    // The edit payload is the loaded record less the fields the update does not take from the body
+    // (the server-owned fields and the read-only ones), with the form's values over it: the update
+    // writes every other domain column, so a field the form does not offer (hidden, create-only)
+    // keeps its stored value.
     // An `inUpdate = false` field is taken from the loaded record itself, not from the model, whose
     // seed turns a stored null into the control's empty value. The cast is for the form model alone,
     // whose controls hold wider values than the DTO (an enum as a string, an empty number as null).

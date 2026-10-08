@@ -210,9 +210,9 @@ check(
 );
 
 // (5) The generated server's update is a full replacement: the PUT body is decoded into the whole
-// entity and every domain column is written from it. The Update type and schema are the record as
-// read without the fields the server owns, they agree in both directions, and a body that leaves
-// out a required field, a read-only one included, does not type-check.
+// entity and every domain column but the server-owned and read-only ones is written from it. The
+// Update type and schema are the record as read without those fields, they agree in both
+// directions, and a body that leaves out a required field does not type-check.
 check(
   'full-replacement-update',
   [DomainMetadataSchema.parse({
@@ -223,7 +223,7 @@ check(
       { name: 'id', type: 'java.util.UUID' },
       { name: 'title', type: 'String', required: true },
       { name: 'code', type: 'String', readOnly: true, required: true },
-      { name: 'note', type: 'String' },
+      { name: 'note', type: 'String', required: true },
       { name: 'tenantId', type: 'java.util.UUID' },
     ],
   })],
@@ -239,7 +239,7 @@ check(
     'export const toSchema = (u: LedgerUpdate): Parsed => u;',
     'export const fromLoaded = (loaded: Ledger): LedgerUpdate => ({ ...loaded, title: "renamed" });',
     '',
-    "// @ts-expect-error — `code` is missing",
+    "// @ts-expect-error — `note` is missing",
     "export const missing: LedgerUpdate = { title: 'x' };",
     '',
   ].join('\n'),
@@ -285,7 +285,8 @@ check(
 );
 
 // (7) The generated server's update never writes a server-owned column from the body: the key, the
-// owner, the audit fields, the soft-delete fields and any field a `systemFields` role names. The
+// owner, the audit fields, the soft-delete fields and any field a `systemFields` role names, nor a
+// `readOnly` field (the client does not set it through a `PUT`). The
 // Update type and schema agree in both directions, carry the version and leave those out, and a
 // body that sets one of them does not type-check.
 check(
@@ -301,6 +302,7 @@ check(
     fields: [
       { name: 'id', type: 'java.util.UUID' },
       { name: 'title', type: 'String', required: true },
+      { name: 'status', type: 'String', readOnly: true },
       { name: 'orgId', type: 'java.util.UUID' },
       { name: 'born', type: 'java.time.Instant' },
       { name: 'createdBy', type: 'String' },
@@ -330,6 +332,8 @@ check(
     "export const restored: TicketUpdate = { title: 'x', version: 3, deleted: false };",
     "// @ts-expect-error — the update body does not carry the owner",
     "export const moved: TicketUpdate = { title: 'x', version: 3, orgId: 'o' };",
+    "// @ts-expect-error — the update body does not carry a read-only field",
+    "export const forged: TicketUpdate = { title: 'x', version: 3, status: 'CLOSED' };",
     "// @ts-expect-error — the version is required",
     "export const unversioned: TicketUpdate = { title: 'x' };",
     '',
