@@ -18,6 +18,16 @@
  * each as a `MessageEvent` whose `type` is that name. The heartbeat
  * has no listener: it carries nothing to process.
  *
+ * Spectate: the same client opens the Java `KernelSpectateStreamHandlerGenerator` route,
+ * `GET {base}/{id}/stream`, through `spectate(id)`. It is an open-ended stream of one row's
+ * events: the domain-event frames carry the event payload as JSON, which `spectate` parses and
+ * types by the `@DomainEvent` that names the frame. The `keep-alive` frame is dropped. A
+ * `stream-error` frame (a refusal or failure after the response head, whose data is an RFC 9457
+ * problem object) closes the source and errors the Observable, because a source the server
+ * closed would otherwise be reconnected by the browser into the same refusal. `message`, `open`
+ * and `error` are the event types `EventSource` dispatches itself and no `@DomainEvent` may be
+ * named like them or like a reserved frame.
+ *
  * Reconnection: the server closes the stream on its own (the keep-alive fallback
  * closes after a fixed window, and a stream opened before the application is
  * composed is closed at once), and the browser reconnects on its own. An
@@ -42,12 +52,12 @@ import { fileHeaderLines } from '../file-header.js';
 export { GeneratedFile };
 
 /**
- * Whether the entity gets a live-view stream client.
+ * Whether the entity gets a stream client (the live view and the spectate stream).
  *
- * Not for a tenant-partitioned entity: the kernel stream routes carry no tenant guard and the
- * handler's producer subscribes to the event bus unfiltered, so a tenant-partitioned entity's
- * stream would deliver every tenant's events to every subscriber. The client is emitted once the
- * server guards the route.
+ * Not for a tenant-partitioned entity: the kernel event descriptor carries no isolation key, so
+ * the collection-wide live view could not filter its events by tenant and would deliver every
+ * tenant's events to every subscriber; the processor refuses `realTimeApi` on such an entity, and
+ * the client is emitted once the event carries the key.
  */
 export function hasLiveViewClient(domain: DomainMetadata): boolean {
   return domain.realTimeApi && !isTenantPartitioned(domain);
@@ -137,9 +147,94 @@ export class StreamClientGenerator implements CodeGenerator {
     return names;
   }
 
+  /**
+   * The types of the spectate stream: one payload interface per event name, the frame union
+   * over them, and the error a `stream-error` frame raises. A payload names the fields the
+   * `@DomainEvent` lists, typed from the entity's own fields; a name no field carries is
+   * `unknown`, and a sensitive field is marked as redacted before publish.
+   */
+  private renderSpectateTypes(domain: DomainMetadata): string[] {
+    const entityName = domain.entityName;
+    const fieldByName = new Map(domain.fields.map(f => [f.name, f] as const));
+    const lines: string[] = [];
+    const members: string[] = [];
+    const usedTypeNames = new Set<string>();
+    const seen = new Set<string>();
+
+    for (const event of domain.events ?? []) {
+      const name = event.name.trim().length > 0 ? event.name : `${entityName}Event`;
+      if (seen.has(name)) {
+        continue;
+      }
+      seen.add(name);
+      const pascal = name.replace(/[^A-Za-z0-9]+(.)?/g, (_, c: string | undefined) => (c ?? '').toUpperCase())
+        .replace(/^(.)/, (_, c: string) => c.toUpperCase());
+      let typeName = `${entityName}${pascal}SpectatePayload`;
+      for (let n = 2; usedTypeNames.has(typeName); n++) {
+        typeName = `${entityName}${pascal}SpectatePayload${n}`;
+      }
+      usedTypeNames.add(typeName);
+
+      const sensitive = new Set(event.sensitiveFields ?? []);
+      lines.push(`/** The payload of the '${tsSingleQuoted(name)}' frame of a ${entityName} spectate stream. */`);
+      lines.push(`export interface ${typeName} {`);
+      const payloadFields = event.payloadFields ?? [];
+      if (payloadFields.length === 0) {
+        lines.push(`  // No additional payload fields`);
+      }
+      for (const fieldName of payloadFields) {
+        const field = fieldByName.get(fieldName);
+        const tsType = field ? DslMapper.mapType(field.type).tsType : 'unknown';
+        const suffix = sensitive.has(fieldName) ? ' // sensitive: redacted before publish' : '';
+        lines.push(`  ${fieldName}: ${tsType};${suffix}`);
+      }
+      lines.push(`}`);
+      lines.push(``);
+      members.push(`  | { readonly event: '${tsSingleQuoted(name)}'; readonly data: ${typeName} }`);
+    }
+
+    lines.push(`/** A domain-event frame of a ${entityName} spectate stream, discriminated by \`event\`. */`);
+    if (members.length === 0) {
+      lines.push(`export type ${entityName}SpectateFrame = never;`);
+    } else {
+      lines.push(`export type ${entityName}SpectateFrame =`);
+      lines.push(members.join('\n') + ';');
+    }
+    lines.push(``);
+    lines.push(`/**`);
+    lines.push(` * The failure a 'stream-error' frame reports: the RFC 9457 problem object the stream`);
+    lines.push(` * sends after its response head, with the \`status\` the by-id GET answers for the same`);
+    lines.push(` * failure. A frame whose data is not a problem object leaves the members undefined.`);
+    lines.push(` */`);
+    lines.push(`export class ${entityName}SpectateError extends Error {`);
+    lines.push(`  constructor(`);
+    lines.push(`    message: string,`);
+    lines.push(`    readonly status?: number,`);
+    lines.push(`    readonly title?: string,`);
+    lines.push(`    readonly detail?: string,`);
+    lines.push(`  ) {`);
+    lines.push(`    super(message);`);
+    lines.push(`    this.name = '${entityName}SpectateError';`);
+    lines.push(`  }`);
+    lines.push(``);
+    lines.push(`  static fromFrame(data: string): ${entityName}SpectateError {`);
+    lines.push(`    try {`);
+    lines.push(`      const problem = JSON.parse(data) as { status?: number; title?: string; detail?: string };`);
+    lines.push(`      const message = problem.detail ?? problem.title ?? '${entityName} spectate stream failed';`);
+    lines.push(`      return new ${entityName}SpectateError(message, problem.status, problem.title, problem.detail);`);
+    lines.push(`    } catch {`);
+    lines.push(`      return new ${entityName}SpectateError('${entityName} spectate stream failed');`);
+    lines.push(`    }`);
+    lines.push(`  }`);
+    lines.push(`}`);
+    lines.push(``);
+    return lines;
+  }
+
   private renderStreamClient(domain: DomainMetadata, context: GeneratorContext): string {
     const entityName = domain.entityName;
     const streamUrl = this.streamUrl(domain, context);
+    const spectateTemplate = streamUrl.replace(/\/stream$/, '/${encodeURIComponent(id)}/stream');
     const eventNames = this.streamEventNames(domain);
     const lines: string[] = [];
 
@@ -159,6 +254,7 @@ export class StreamClientGenerator implements CodeGenerator {
     lines.push(`import { Injectable } from '@angular/core';`);
     lines.push(`import { Observable } from 'rxjs';`);
     lines.push(``);
+    lines.push(...this.renderSpectateTypes(domain));
     lines.push(`@Injectable({ providedIn: 'root' })`);
     lines.push(`export class ${entityName}StreamClient {`);
     lines.push(`  /**`);
@@ -172,6 +268,10 @@ export class StreamClientGenerator implements CodeGenerator {
     lines.push(`  static readonly STREAM_EVENT_TYPES: readonly string[] = [${eventNames.map(n => `'${tsSingleQuoted(n)}'`).join(', ')}];`);
     lines.push(``);
     lines.push(`  private readonly streamUrl = '${streamUrl}';`);
+    lines.push(``);
+    lines.push(`  private spectateUrl(id: string): string {`);
+    lines.push(`    return \`${spectateTemplate}\`;`);
+    lines.push(`  }`);
     lines.push(``);
     lines.push(`  /**`);
     lines.push(`   * Opens the ${entityName} live-view SSE stream and surfaces each domain event`);
@@ -193,6 +293,45 @@ export class StreamClientGenerator implements CodeGenerator {
     lines.push(`      source.onerror = () => {`);
     lines.push(`        if (source.readyState === EventSource.CLOSED) {`);
     lines.push(`          subscriber.error(new Error(\`${entityName} stream closed: \${this.streamUrl}\`));`);
+    lines.push(`        }`);
+    lines.push(`      };`);
+    lines.push(`      return () => source.close();`);
+    lines.push(`    });`);
+    lines.push(`  }`);
+    lines.push(``);
+    lines.push(`  /**`);
+    lines.push(`   * Opens the SSE stream of one ${entityName} row, \`GET ${spectateTemplate.replace('${encodeURIComponent(id)}', '{id}')}\`,`);
+    lines.push(`   * and surfaces each of its domain events as a frame: \`event\` is the @DomainEvent name`);
+    lines.push(`   * and \`data\` the payload parsed from the frame's JSON. The 'keep-alive' heartbeat is`);
+    lines.push(`   * dropped. A 'stream-error' frame closes the source and errors the Observable with a`);
+    lines.push(`   * ${entityName}SpectateError, so the browser does not reconnect into the same refusal;`);
+    lines.push(`   * so does a source the browser has given up on (readyState CLOSED). The stream has no`);
+    lines.push(`   * end of its own: it runs until the subscription is torn down, which closes the`);
+    lines.push(`   * EventSource.`);
+    lines.push(`   */`);
+    lines.push(`  spectate(id: string): Observable<${entityName}SpectateFrame> {`);
+    lines.push(`    return new Observable<${entityName}SpectateFrame>((subscriber) => {`);
+    lines.push(`      const source = new EventSource(this.spectateUrl(id), { withCredentials: true });`);
+    lines.push(`      for (const type of ${entityName}StreamClient.STREAM_EVENT_TYPES) {`);
+    lines.push(`        source.addEventListener(type, (event) => {`);
+    lines.push(`          let data: unknown;`);
+    lines.push(`          try {`);
+    lines.push(`            data = JSON.parse((event as MessageEvent<string>).data);`);
+    lines.push(`          } catch (err) {`);
+    lines.push(`            source.close();`);
+    lines.push(`            subscriber.error(err);`);
+    lines.push(`            return;`);
+    lines.push(`          }`);
+    lines.push(`          subscriber.next({ event: type, data } as ${entityName}SpectateFrame);`);
+    lines.push(`        });`);
+    lines.push(`      }`);
+    lines.push(`      source.addEventListener('stream-error', (event) => {`);
+    lines.push(`        source.close();`);
+    lines.push(`        subscriber.error(${entityName}SpectateError.fromFrame((event as MessageEvent<string>).data));`);
+    lines.push(`      });`);
+    lines.push(`      source.onerror = () => {`);
+    lines.push(`        if (source.readyState === EventSource.CLOSED) {`);
+    lines.push(`          subscriber.error(new Error(\`${entityName} spectate stream closed: \${this.spectateUrl(id)}\`));`);
     lines.push(`        }`);
     lines.push(`      };`);
     lines.push(`      return () => source.close();`);

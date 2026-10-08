@@ -51,6 +51,7 @@ function template(path: string): string {
   expect(path.startsWith('/orders')).toBe(true);
   return `{base}${path.slice('/orders'.length)}`
     .replace('/${id}/', '/{id}/')
+    .replace('/${encodeURIComponent(id)}/', '/{id}/')
     .replace(/\/actions\/[a-z0-9-]+$/, '/actions/{action}');
 }
 
@@ -62,6 +63,12 @@ function opened(): string[] {
   const live = at('src/app/services/order.stream.ts');
   expect(live).toContain('new EventSource(this.streamUrl');
   for (const m of live.matchAll(/private readonly streamUrl = '([^']+)';/g)) {
+    routes.push(`GET ${template(m[1])}`);
+  }
+
+  // The spectate route is the same client's per-row stream, again an EventSource.
+  expect(live).toContain('new EventSource(this.spectateUrl(id)');
+  for (const m of live.matchAll(/private spectateUrl\(id: string\): string \{\n\s+return `([^`]+)`;/g)) {
     routes.push(`GET ${template(m[1])}`);
   }
 

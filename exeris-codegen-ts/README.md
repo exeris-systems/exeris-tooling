@@ -461,6 +461,39 @@ this.saga.applyStatus(snapshot);   // SagaStatusSnapshot
 `begin` / `failToStart` / `cancelling` / `retrying` / `reset` are the remaining transitions. The
 machine, and the `SagaStatusSnapshot` shape it folds, are exported from the app barrel.
 
+## Stream clients
+
+An entity with `@ExerisDomain(realTimeApi = true)` and the `GLOBAL` data scope gets
+`services/<entity>.stream.ts`, an `<Entity>StreamClient` over a native `EventSource` (cookie
+credentials, no custom headers) with two streams:
+
+- `stream()` opens `GET {base}/stream`, the live view of the collection, and emits each domain-event
+  frame as a `MessageEvent<string>`.
+- `spectate(id)` opens `GET {base}/{id}/stream`, the events of one row, and emits
+  `<Entity>SpectateFrame`: `{ event, data }` where `event` is the `@DomainEvent` name and `data` the
+  payload parsed from the frame's JSON, typed by the event that names it.
+
+```typescript
+this.orders.spectate(id).subscribe({
+  next: (frame) => {
+    if (frame.event === 'OrderPlaced') show(frame.data.total);
+  },
+  error: (e) => {
+    if (e instanceof OrderSpectateError) console.warn(e.status, e.detail);
+  },
+});
+```
+
+The `keep-alive` heartbeat is not emitted. A `stream-error` frame, the server's refusal or failure
+after the response head (a problem object with `status`, `title` and `detail`), closes the source and
+errors the Observable with `<Entity>SpectateError`; `EventSource` would otherwise reconnect into the
+same refusal. A source the browser has given up on errors the Observable too, and unsubscribing
+closes it. The stream has no end of its own.
+
+`message`, `open` and `error` are the event types `EventSource` dispatches itself, so no
+`@DomainEvent` may carry those names or `keep-alive` or `stream-error`. An entity in a tenant-partitioned
+scope gets no client: the kernel cannot yet filter the stream by tenant.
+
 ## Type Mapping
 
 | Java Type | TypeScript Type | Form Control |

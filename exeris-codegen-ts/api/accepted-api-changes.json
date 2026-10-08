@@ -214,5 +214,11 @@
     "since": "0.10",
     "adr": "ADR-044",
     "justification": "ADR-044 Amendment 2 decision 8: no generated server route serves /api/v1/events/stream, and none is generated, since a feed across every entity would cross every tenant. The consumer names the endpoint of the feed it runs; without the key the bus, the entity event handlers that inject it and their barrel exports are not emitted. A consumer that imports EventBusService, DomainEvent or an <Entity>EventHandler sets eventBusEndpoint. docs/MIGRATION-0.x-to-1.0.md 0.10.0 carries the step."
+  },
+  {
+    "signature": "<Entity>StreamClient (services/<entity>.stream.ts) of a realTimeApi entity: + spectate(id): Observable<<Entity>SpectateFrame>, + <Entity>SpectateFrame (union of { event, data } by @DomainEvent name), + <Entity><Event>SpectatePayload per event, + <Entity>SpectateError (status, title, detail)",
+    "since": "0.10",
+    "adr": "ADR-044",
+    "justification": "ADR-044 Amendment 2 decision 7: a realTimeApi entity serves GET {base}/{id}/stream, the open-ended stream of one row's events, and the generated client opens it with a native EventSource. spectate(id) parses each domain-event frame's JSON payload and types it by the event that names the frame, drops the keep-alive frame, and errors the Observable with <Entity>SpectateError on a stream-error frame after closing the source so the browser does not reconnect into the refusal. Additive: the existing stream() and STREAM_EVENT_TYPES are unchanged, an entity without realTimeApi regenerates byte-identically, and a tenant-partitioned entity still gets no stream client. No consumer step."
   }
 ]
