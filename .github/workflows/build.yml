@@ -93,6 +93,12 @@ jobs:
         working-directory: exeris-codegen-ts
         run: npm ci
 
+      # eslint over the hand-written sources (src/, test/, scripts/); any error fails the job.
+      # Generated output is not linted here: the verify:generated and ng build gates compile it.
+      - name: eslint (exeris-codegen-ts)
+        working-directory: exeris-codegen-ts
+        run: npm run -s lint
+
       - name: vitest run --coverage (exeris-codegen-ts)
         working-directory: exeris-codegen-ts
         run: npm run test:coverage

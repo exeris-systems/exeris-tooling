@@ -7,7 +7,7 @@
  * - Authentication checks
  */
 
-import type { DomainMetadata, ActionMetadata, CodeGenerator, GeneratedFile, GeneratorContext } from '../../core/generator-registry.js';
+import type { DomainMetadata, CodeGenerator, GeneratedFile, GeneratorContext } from '../../core/generator-registry.js';
 import { DslMapper } from '../../models/dsl-mapper.js';
 import type { GeneratorConfig } from '../../config.js';
 import type { BackendType } from '../../core/backend-strategy.js';
@@ -36,7 +36,7 @@ export class GuardGenerator implements CodeGenerator {
     };
   }
 
-  generateAggregate(domains: DomainMetadata[], context: GeneratorContext): GeneratedFile[] {
+  generateAggregate(domains: DomainMetadata[], _context: GeneratorContext): GeneratedFile[] {
     return [
       {
         path: AUTH_SERVICE_PATH,
@@ -53,7 +53,7 @@ export class GuardGenerator implements CodeGenerator {
     ];
   }
 
-  private generateGuardContent(domain: DomainMetadata, context: GeneratorContext): string {
+  private generateGuardContent(domain: DomainMetadata, _context: GeneratorContext): string {
     const { entityName } = domain;
     const kebab = DslMapper.toKebabCase(entityName);
     const permission = kebab.replace(/-/g, '_');

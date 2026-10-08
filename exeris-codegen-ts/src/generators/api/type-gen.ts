@@ -67,7 +67,6 @@ export class TypeGenerator implements CodeGenerator {
 
   private generateInterface(metadata: DomainMetadata, context: GeneratorContext): string {
     const interfaceName = modelTypeName(metadata.entityName);
-    const kebabName = DslMapper.toKebabCase(metadata.entityName);
 
     // Collect enum types used in fields
     const enumTypes = collectEnumTypes(metadata.fields);
@@ -140,7 +139,7 @@ export class TypeGenerator implements CodeGenerator {
     return lines.join('\n');
   }
 
-  private generateZodSchema(metadata: DomainMetadata, context: GeneratorContext): GeneratedFile {
+  private generateZodSchema(metadata: DomainMetadata, _context: GeneratorContext): GeneratedFile {
     const interfaceName = modelTypeName(metadata.entityName);
     const kebabName = DslMapper.toKebabCase(metadata.entityName);
 
