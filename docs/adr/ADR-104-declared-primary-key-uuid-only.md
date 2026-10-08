@@ -25,37 +25,38 @@ slug: adr/ADR-104
 
 `@ExerisDomain(primaryKeyField = "...")` names an entity's primary key. The processor extracts it
 into `SystemFieldsMetadata.primaryKeyField`
-(`exeris-processor/.../ExerisDomainProcessor.java:2154`), and the SDK `-io` reader reads it the same
-way (`exeris-sdk-source-model-io/.../SourceModelReader.java:450`). The generators do not use it to
+(`ExerisDomainProcessor.extractSystemFieldsOverrides`), and the SDK `-io` reader reads it the same
+way (`SourceModelReader.systemFields`). The generators do not use it to
 identify a row. Each one writes the literal `id`:
 
 - the migration declares `id UUID PRIMARY KEY DEFAULT gen_random_uuid()`
-  (`KernelFlywayGenerator.java:195`);
-- the repository selects through the constant `" WHERE id = ?"` (`KernelRepositoryGenerator.java:161`),
-  closes every list `ORDER BY` with `id` (`:672`), and assigns `entity.setId(UUID.randomUUID())` on
-  save when the key is null (`:1280`);
+  (`KernelFlywayGenerator.buildColumns`);
+- the repository selects through the constant `" WHERE id = ?"` (`KernelRepositoryGenerator.WHERE_ID_CLAUSE`),
+  closes every list `ORDER BY` with `id` (`buildFindPage`), and assigns `entity.setId(UUID.randomUUID())` on
+  save when the key is null (`buildSave`);
 - the foreign-key migration writes `REFERENCES <target_table>(id)`
-  (`KernelApplicationGenerator.java:353`);
-- the OpenAPI schema declares a property `id` (`OpenApiComponentsBuilder.java:61`);
+  (`KernelApplicationGenerator.generateForeignKeys`);
+- the OpenAPI schema declares a property `id` (`OpenApiComponentsBuilder.buildEntitySchema`);
 - the Angular list, detail, form and store read the literal `'id'`, each with a comment saying why
-  (`list-gen.ts:128`, `detail-gen.ts:57`, `form-gen.ts:63`, `store-gen.ts:58`).
+  (the comment "The literal 'id', deliberately" in `list-gen.ts`, `detail-gen.ts`, `form-gen.ts` and
+  `store-gen.ts`).
 
 The one reader of the attribute is the ADR-096 list query, which keeps the named field out of the
-sort keys and filters (`ListQuerySupport.java:191`). Everywhere else, setting `primaryKeyField`
+sort keys and filters (`ListQuerySupport.systemFieldNames`). Everywhere else, setting `primaryKeyField`
 changes nothing, so the processor reports it as inert under `-Aexeris.strict`
-(`ExerisDomainProcessor.java:449`) and refuses an entity with no field `id` whatever the attribute
-says (`EXT-PROC-1015`, `ExerisDomainProcessor.java:1850`). The field-level `@PrimaryKey` marker is
-read by neither the processor (`UNREAD_NOTES`, `ExerisDomainProcessor.java:715`) nor the SDK reader
-(`SourceModelReader.java:392`).
+(the `ExerisDomain#primaryKeyField` entry of `INERT_ATTRIBUTES`) and refuses an entity with no field `id` whatever the attribute
+says (`EXT-PROC-1015`, `ExerisDomainProcessor.refuseEntityWithoutIdField`). The field-level `@PrimaryKey` marker is
+read by neither the processor (its `UNREAD_NOTES` entry) nor the SDK reader
+(`SYSTEM_FIELD_ROLES` in `SourceModelReader` omits it).
 
 The key's type is fixed as well. The kernel identifies an aggregate's event stream by a UUID split
 into two `long`s (`EventDescriptor.streamIdHigh` / `streamIdLow`,
 `exeris-kernel-spi/.../events/EventDescriptor.java:60` at kernel v0.12.0) and a graph node by a
 `UUID` (`GraphSession.upsertNode(String, UUID, LoanedBuffer)`, `.../graph/GraphSession.java:153`).
 The generated handler passes the saved entity's key to the event publisher as the stream id
-(`KernelHandlerGenerator.java:280`, `KernelEventGenerator.java:292`), the graph sync passes it as
-the node id (`KernelGraphSyncGenerator.java:171`), and every foreign-key column is emitted as `UUID`
-(`KernelFlywayGenerator.java:229`). An entity that declares `Long id` or `String id` passes the
+(`KernelHandlerGenerator.buildHandleCreate`, `KernelEventGenerator.buildPublishMethod`), the graph sync passes it as
+the node id (`KernelGraphSyncGenerator.buildSyncToGraph`), and every foreign-key column is emitted as `UUID`
+(`KernelFlywayGenerator.buildColumns`). An entity that declares `Long id` or `String id` passes the
 processor today and produces Java that does not compile, at `setId(UUID.randomUUID())`.
 
 **The question this ADR answers:** which field is an entity's primary key in the generated code,
