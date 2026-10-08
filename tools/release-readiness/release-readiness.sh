@@ -26,7 +26,10 @@
 # exeris-app-bom has no parent and so states the tooling, kernel and SDK versions as literals
 # (ADR-091). This gate fails when any of them is a -SNAPSHOT, when the tooling version or the BOM's
 # own version is not the reactor version, and when its kernel, SDK or Jackson 3 version differs
-# from exeris-tooling-bom's, the versions this release was built and tested against.
+# from exeris-tooling-bom's, the versions this release was built and tested against. It also fails
+# when that Jackson 3 version is below the one exeris-kernel-bom or exeris-sdk-bom manages at the
+# pinned kernel and SDK versions, read from the local repository (~/.m2/repository, or
+# $MAVEN_REPO_LOCAL).
 #
 # @exeris/codegen-ts (npm) is released by the same tag: this gate also fails when its package.json
 # or package-lock.json version differs from the reactor's, when that version is a -SNAPSHOT, and
@@ -49,7 +52,7 @@ set -euo pipefail
 
 UNSIGNED=0
 case "${1:-}" in
-  -h|--help) sed -n '2,47p' "$0"; exit 0 ;;
+  -h|--help) sed -n '2,50p' "$0"; exit 0 ;;
   --unsigned) UNSIGNED=1 ;;
   "") ;;
   *) echo "unknown argument: $1" >&2; exit 2 ;;
@@ -354,6 +357,67 @@ if 'exeris-app-bom' in poms:
         if app.get(key) != internal.get(key):
             failures.append(f'<{key}> is {app.get(key)} in exeris-app-bom and {internal.get(key)} in '
                             'exeris-tooling-bom; the app BOM must name what this release was tested against')
+
+
+# Management in exeris-tooling-bom and exeris-app-bom beats the version the kernel and SDK resolve
+# transitively, so a jackson3.version below theirs downgrades the Jackson 3 they were released on.
+# Their BOMs are read from the local repository, where the build put them: exeris-kernel-parent
+# and exeris-sdk-parent import them, so resolving any kernel or SDK artifact resolves them too.
+def local_repository():
+    configured = os.environ.get('MAVEN_REPO_LOCAL')
+    return pathlib.Path(configured) if configured else pathlib.Path.home() / '.m2' / 'repository'
+
+
+def repository_pom(group, artifact, version):
+    return local_repository().joinpath(*group.split('.'), artifact, version, f'{artifact}-{version}.pom')
+
+
+def interpolate(value, pom):
+    """`value` with ${...} references resolved from `pom` and its parent chain in the local repository."""
+    seen = set()
+    while value and '${' in value and pom is not None and pom.is_file() and pom not in seen:
+        seen.add(pom)
+        root = ET.parse(pom).getroot()
+        for key, v in properties(pom).items():
+            value = value.replace('${' + key + '}', v)
+        parent = root.find(NS + 'parent')
+        pom = repository_pom(text(parent, 'groupId'), text(parent, 'artifactId'), text(parent, 'version')) \
+            if parent is not None else None
+    return value
+
+
+def managed_version(pom, group, artifact):
+    root = ET.parse(pom).getroot()
+    for dep in root.iterfind(f'{NS}dependencyManagement/{NS}dependencies/{NS}dependency'):
+        if (text(dep, 'groupId'), text(dep, 'artifactId')) == (group, artifact):
+            return interpolate(text(dep, 'version'), pom)
+    return None
+
+
+def version_key(version):
+    return tuple(int(part) for part in version.split('-', 1)[0].split('.') if part.isdigit())
+
+
+JACKSON3 = ('tools.jackson.core', 'jackson-databind')
+if 'exeris-tooling-bom' in poms:
+    internal = properties(poms['exeris-tooling-bom'])
+    jackson3 = internal.get('jackson3.version')
+    for bom, key in (('exeris-kernel-bom', 'exeris.kernel.version'), ('exeris-sdk-bom', 'exeris.sdk.version')):
+        pinned = internal.get(key)
+        if not pinned or not jackson3:
+            failures.append(f'exeris-tooling-bom: no <{key}> or <jackson3.version>')
+            continue
+        pom = repository_pom('eu.exeris', bom, pinned)
+        if not pom.is_file():
+            failures.append(f'{bom}:{pinned} is not in the local repository ({pom}); run the build '
+                            'first, it resolves that BOM')
+            continue
+        upstream = managed_version(pom, *JACKSON3)
+        if not upstream or '${' in upstream:
+            failures.append(f'{bom}:{pinned} manages no resolvable {":".join(JACKSON3)} version ({upstream})')
+        elif version_key(jackson3) < version_key(upstream):
+            failures.append(f'<jackson3.version> is {jackson3} in exeris-tooling-bom, below the {upstream} '
+                            f'{bom}:{pinned} manages; managing it lower downgrades the Jackson 3 {bom} was released on')
 
 if checked == 0:
     print('release-readiness: FAILED — checked 0 files; run `mvn -P release verify` first')
