@@ -3936,8 +3936,11 @@ enters only if its upstream half is final first.
       carrying `id` is open, wave S2).
       *Landed:* #304 items 1-3 (#350): an `inCreate = false, inUpdate = true` field gets an edit
       control, a self-referencing picker skips the record being edited, a failed options request
-      shows an error. *Open:* #304 item 4, the 100-row picker: server search on the list route
-      (outside ADR-096, Java) or a recorded limit, a founder decision; and the TS half of #310.
+      shows an error. *Decided:* #304 item 4, the 100-row picker, is a recorded limit: the picker
+      lists one page of the ADR-096 list route (`MAX_SIZE` 100) and says so beside the select when
+      the response reports rows beyond it (`last` false). Server-side search on the list route (an
+      ADR-096 amendment, Java and TS) and a combobox on it, once `@angular/aria` is stable, are
+      0.11.0 work. *Open:* the TS half of #310.
 - [ ] **Debts with no gate** (Java wave J2, TS wave S2): the `@DomainEvent` strict-mode call site
       (T11), the T30 classpath check in `exeris:generate`, a golden OpenAPI document compared on
       both JDK rows, a reflective check of the inert-registry keys against the SDK, the T58 residue

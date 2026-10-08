@@ -1401,7 +1401,7 @@ describe('FormGenerator — a MANY_TO_ONE foreign key is picked from its target 
   it('renders a kit select keeping the field testid and binding', () => {
     const content = emit(order(false), [order(false), product]);
     expect(content).toContain(
-      '<select id="productId" data-testid="field-productId" [formField]="form.productId" class="exeris-select mt-1" [class.exeris-input-error]="form.productId().invalid() && form.productId().touched()">',
+      '<select id="productId" data-testid="field-productId" [formField]="form.productId" class="exeris-select mt-1" [class.exeris-input-error]="form.productId().invalid() && form.productId().touched()" [attr.aria-describedby]="productIdOptionsTruncated() ? \'options-truncated-productId\' : null">',
     );
     expect(content).not.toContain('data-testid="field-productId" type="text"');
     expect(content).toContain('@for (option of productIdOptions(); track option.value) {');
@@ -1560,6 +1560,24 @@ describe('FormGenerator — a MANY_TO_ONE foreign key is picked from its target 
       relationships: [{ name: 'personId', targetEntity: 'Person', type: 'MANY_TO_ONE' } as DomainMetadata['relationships'][number]],
     });
     expect(emit(visit, [visit, people])).toContain("httpErrorMessage(err, { entity: 'people', action: 'load' })");
+  });
+
+  it('tells the user when the target has rows beyond the first page, and links the hint to the select', () => {
+    const content = emit(order(false), [order(false), product]);
+    expect(content).toContain(
+      '  readonly productIdOptionsTruncated = computed(() => this.productIdOptionsResource.hasValue() && this.productIdOptionsResource.value().last === false);',
+    );
+    expect(content).toContain(
+      '        @if (productIdOptionsTruncated()) {\n'
+      + '          <p id="options-truncated-productId" class="exeris-help-text" data-testid="options-truncated-productId">Showing the first 100 options only.</p>\n'
+      + '        }',
+    );
+  });
+
+  it('a form without a picker has no options hint', () => {
+    const content = emit(order(false), [order(false)]);
+    expect(content).not.toContain('OptionsTruncated');
+    expect(content).not.toContain('options-truncated');
   });
 
   it('a form without a picker has no options error', () => {

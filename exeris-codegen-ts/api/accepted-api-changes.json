@@ -184,5 +184,11 @@
     "since": "0.10",
     "adr": "ADR-104",
     "justification": "The generated code identifies a row by the effective key: systemFields.primaryKeyField when present and non-blank, else id (ADR-104), and the Java and TypeScript halves ship it in the same release. The route variable :id and the findById / update(id) / delete(id) names stay. The processor records an entity's own fields, so an inherited key was missing from the model and the emitted views did not compile; the key is now the model's first property, an optional UUID string, whether or not the metadata lists it. An entity that does not rename its key and lists it regenerates byte-identically (ADR-092). docs/MIGRATION-0.x-to-1.0.md 0.10.0 carries the step."
+  },
+  {
+    "signature": "relationship picker: + <field>OptionsTruncated, options-truncated-<field> hint (id options-truncated-<field>), select [attr.aria-describedby]",
+    "since": "0.10",
+    "adr": "ADR-092",
+    "justification": "The picker lists one page of the target's list route, at most 100 rows (ADR-096). When the list response reports rows beyond that page (last false), the form now says so beside the select with a hint the select references through aria-describedby; the select keeps the held value as an option. A form without a picker, and a picker whose target fits one page, render no hint element. The route has no search, so the limit stays. No consumer step: nothing a consumer wrote changes."
   }
 ]
