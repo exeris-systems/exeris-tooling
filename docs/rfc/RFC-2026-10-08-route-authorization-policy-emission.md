@@ -3,7 +3,7 @@ title: "RFC-2026-10-08: Route authorization policy emission"
 type: rfc
 visibility: public
 owning-repo: exeris-tooling
-status: draft
+status: active
 last-verified: 2026-10-08
 ---
 
@@ -11,11 +11,11 @@ last-verified: 2026-10-08
 
 | Field | Value |
 | :--- | :--- |
-| **Status** | **DRAFT** |
+| **Status** | **ACCEPTED** |
 | **Author(s)** | arkstack-dev |
 | **Date Opened** | 2026-10-08 |
-| **Date Closed** | — |
-| **Target ADR(s)** | TBD |
+| **Date Closed** | 2026-10-08 |
+| **Target ADR(s)** | ADR-105 |
 | **Affected Repos** | `exeris-tooling` (processor, `KernelApplicationGenerator`, a new `GeneratedRoutePolicy` emitter, OpenAPI, `exeris-codegen-ts` guards and HTTP client); `exeris-sdk` (the `-io` reader half, exeris-sdk#161 widened; one Javadoc sentence); `exeris-kernel` (two non-blocking asks) |
 | **Reviewers** | — |
 
@@ -415,10 +415,10 @@ ship in 0.10.0 only if the widened reader is in a final SDK first. Otherwise the
 
 | Field | Value |
 | :--- | :--- |
-| **Outcome** | — |
-| **Date** | — |
-| **Resulting ADR(s)** | — |
-| **Notes** | — |
+| **Outcome** | ACCEPTED: the recommendations of Q1 A, Q2 C, Q3 A, Q4 A, Q5 A and Q6, with the J3a cut fallback |
+| **Date** | 2026-10-08 |
+| **Resulting ADR(s)** | [ADR-105](../adr/ADR-105-generated-route-policy-emission.md) |
+| **Notes** | The ADR renumbers the pull requests: J3-1 is the ADR, J3-2 the seam (J3a), J3-3 extraction, table and conformance test, J3-4 the ADR-079 amendment. |
 
 ## Open questions / follow-ups
 
