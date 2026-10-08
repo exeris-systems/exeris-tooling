@@ -321,7 +321,7 @@
     {
       "id": "generated-route-policy",
       "generator": "KernelApplicationGenerator",
-      "artefact": "The route policy the application binds, declaring the access the domain model describes.",
+      "artefact": "The generated half of the route policy the application binds; its table holds no row, so it abstains on every route (ADR-105).",
       "outputRoot": "main",
       "pathPattern": "^(?:[^/]+/)*GeneratedRoutePolicy\\.java$",
       "pathTemplate": "{app}/GeneratedRoutePolicy.java",

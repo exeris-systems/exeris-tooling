@@ -747,9 +747,8 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
     /**
      * Emits {@code GeneratedRoutePolicy}, the generated half of the route policy.
      *
-     * <p>The table holds no row: a declaration of access is not read from the domain model yet,
-     * so the policy abstains on every route and the application's {@code unmatchedRoutes()}
-     * decides it.
+     * <p>Its table holds no row, so the policy abstains on every route and the application's
+     * {@code unmatchedRoutes()} decides it.
      */
     private GeneratedFile buildRoutePolicy(String basePackage) {
         FieldSpec abstain = FieldSpec.builder(ROUTE_REQUIREMENT, "ABSTAIN",
@@ -778,13 +777,10 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
         TypeSpec type = KernelScaffold.publicClass(ROUTE_POLICY_TYPE_NAME)
                 .addModifiers(Modifier.FINAL)
                 .addSuperinterface(HTTP_ROUTE_POLICY)
-                .addJavadoc("Generated route policy: the requirement the domain model declares for\n")
-                .addJavadoc("each route it describes (ADR-105).\n")
-                .addJavadoc("<p>It declares a requirement only for a route whose entity or action\n")
-                .addJavadoc("carries {@code @RouteAccess} or {@code permissions}, and abstains on every\n")
-                .addJavadoc("other route, so the application decides it. This generator does not read\n")
-                .addJavadoc("those declarations yet: the table has no row, and the policy abstains on\n")
-                .addJavadoc("every route. A requirement it declares for a stream route is a prompt one.\n")
+                .addJavadoc("Generated route policy: the generated half of the policy the application\n")
+                .addJavadoc("binds (ADR-105).\n")
+                .addJavadoc("<p>Its table holds no row, so it abstains on every route and the application\n")
+                .addJavadoc("decides each one. A requirement it declares for a stream route is a prompt one.\n")
                 .addJavadoc("<p>{@code Application} asks it after {@code applicationPolicy()}.\n")
                 .addJavadoc("<p><b>DO NOT EDIT</b> - Regenerate from domain models.\n")
                 .addField(abstain)

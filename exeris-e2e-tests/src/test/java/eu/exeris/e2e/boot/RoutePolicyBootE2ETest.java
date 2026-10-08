@@ -18,8 +18,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * The route policy the emitted {@code Application} binds, on a <b>real</b> kernel boot.
  *
- * <p>Emitted text cannot show that binding a policy leaves the routes as they were: the answer is
- * the kernel's, taken per request. So the emitted application is booted twice, once as generated
+ * <p>Emitted text cannot show what a bound policy answers: the answer is the kernel's, taken per
+ * request. So the emitted application is booted twice, once as generated
  * and once with a subclass that overrides {@code applicationPolicy()}:
  *
  * <pre>
@@ -31,9 +31,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  *        → a real socket
  * </pre>
  *
- * <p>The generated application answers every route as it did before a policy was bound: a handler
- * runs, and sees no principal. The overriding application declares a requirement for one route, and
- * that route is refused, while every other route still answers.
+ * <p>With no override, a handler runs with no principal, an unknown path answers 404, and no route
+ * is refused. The overriding application declares a requirement for one route, and that route is
+ * refused, while every other route still answers.
  */
 @Tag("e2e")
 @Tag("boot")
