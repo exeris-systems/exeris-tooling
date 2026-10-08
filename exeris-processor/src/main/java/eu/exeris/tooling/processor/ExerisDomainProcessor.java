@@ -128,6 +128,10 @@ public class ExerisDomainProcessor extends AbstractProcessor {
 
     /** Attribute name shared by {@code @Saga} and the capability {@code @Provides}/{@code @Requires}. */
     private static final String VERSION_ATTRIBUTE = "version";
+    /** The simple name of the SDK annotation that declares a domain event. */
+    private static final String DOMAIN_EVENT = "DomainEvent";
+    /** The {@code @DomainEvent} attribute naming the field a {@code FIELD_CHANGED} event watches. */
+    private static final String EVENT_FIELD_ATTRIBUTE = "field";
 
     /** {@code @GraphEdge}, and the container javac synthesises when it is repeated on one field. */
     private static final String GRAPH_EDGE_FQN = "eu.exeris.sdk.annotation.GraphEdge";
@@ -636,63 +640,63 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             new InertAttribute("UI", "props", UI_FIELD_ATTRIBUTE_ON_TYPE),
             new InertAttribute("UI", "visibleWhen", UI_FIELD_ATTRIBUTE_ON_TYPE),
             new InertAttribute("UI", "enabledWhen", UI_FIELD_ATTRIBUTE_ON_TYPE),
-            new InertAttribute("DomainEvent", "description",
+            new InertAttribute(DOMAIN_EVENT, "description",
                     "it is extracted into DomainEventMetadata.description and reaches the JSON, but "
                             + "no emitter renders it"),
-            new InertAttribute("DomainEvent", "field",
+            new InertAttribute(DOMAIN_EVENT, EVENT_FIELD_ATTRIBUTE,
                     "it is extracted into DomainEventMetadata.fieldName and reaches the JSON, but no "
                             + "generator reads it: the handler places a publish call only for the CREATE, "
                             + "UPDATE, DELETE and ACTION triggers, so a FIELD_CHANGED event is never "
                             + "published from generated code"),
-            new InertAttribute("DomainEvent", "version", DOMAIN_EVENT_NOT_EXTRACTED),
-            new InertAttribute("DomainEvent", "tags", DOMAIN_EVENT_NOT_EXTRACTED),
-            new InertAttribute("DomainEvent", "stateTransition", DOMAIN_EVENT_NOT_EXTRACTED),
-            new InertAttribute("DomainEvent", "condition", DOMAIN_EVENT_NOT_EXTRACTED),
-            new InertAttribute("DomainEvent", "partitionKey", DOMAIN_EVENT_NOT_EXTRACTED),
-            new InertAttribute("DomainEvent", "exchange", DOMAIN_EVENT_NOT_EXTRACTED),
-            new InertAttribute("DomainEvent", "routingKey", DOMAIN_EVENT_NOT_EXTRACTED),
-            new InertAttribute("DomainEvent", "priority", DOMAIN_EVENT_NOT_EXTRACTED),
-            new InertAttribute("DomainEvent", "ttlMs", DOMAIN_EVENT_NOT_EXTRACTED),
-            new InertAttribute("DomainEvent", "mandatory", DOMAIN_EVENT_NOT_EXTRACTED),
-            new InertAttribute("DomainEvent", "persistent", DOMAIN_EVENT_NOT_EXTRACTED),
-            new InertAttribute("DomainEvent", "includeSnapshot", DOMAIN_EVENT_NOT_EXTRACTED),
-            new InertAttribute("DomainEvent", "includePreviousValues", DOMAIN_EVENT_NOT_EXTRACTED),
-            new InertAttribute("DomainEvent", "includeComputed", DOMAIN_EVENT_NOT_EXTRACTED),
-            new InertAttribute("DomainEvent", "encryptFields", DOMAIN_EVENT_NOT_EXTRACTED),
-            new InertAttribute("DomainEvent", "payloadTransformer", DOMAIN_EVENT_NOT_EXTRACTED),
-            new InertAttribute("DomainEvent", "maxPayloadSize", DOMAIN_EVENT_NOT_EXTRACTED),
-            new InertAttribute("DomainEvent", "schemaFormat", DOMAIN_EVENT_NOT_EXTRACTED),
-            new InertAttribute("DomainEvent", "schemaNamespace", DOMAIN_EVENT_NOT_EXTRACTED),
-            new InertAttribute("DomainEvent", "schemaSubject", DOMAIN_EVENT_NOT_EXTRACTED),
-            new InertAttribute("DomainEvent", "compatibility", DOMAIN_EVENT_NOT_EXTRACTED),
-            new InertAttribute("DomainEvent", "registerSchema", DOMAIN_EVENT_NOT_EXTRACTED),
-            new InertAttribute("DomainEvent", "schemaDoc", DOMAIN_EVENT_NOT_EXTRACTED),
-            new InertAttribute("DomainEvent", "headers", DOMAIN_EVENT_NOT_EXTRACTED),
-            new InertAttribute("DomainEvent", "includeTraceContext", DOMAIN_EVENT_NOT_EXTRACTED),
-            new InertAttribute("DomainEvent", "includeTenantContext", DOMAIN_EVENT_NOT_EXTRACTED),
-            new InertAttribute("DomainEvent", "includeUserContext", DOMAIN_EVENT_NOT_EXTRACTED),
-            new InertAttribute("DomainEvent", "includeCausation", DOMAIN_EVENT_NOT_EXTRACTED),
-            new InertAttribute("DomainEvent", "includeTimestamps", DOMAIN_EVENT_NOT_EXTRACTED),
-            new InertAttribute("DomainEvent", "includeSource", DOMAIN_EVENT_NOT_EXTRACTED),
-            new InertAttribute("DomainEvent", "retentionDays", DOMAIN_EVENT_NOT_EXTRACTED),
-            new InertAttribute("DomainEvent", "archiveAfterDays", DOMAIN_EVENT_NOT_EXTRACTED),
-            new InertAttribute("DomainEvent", "compressAfterDays", DOMAIN_EVENT_NOT_EXTRACTED),
-            new InertAttribute("DomainEvent", "storeInEventStore", DOMAIN_EVENT_NOT_EXTRACTED),
-            new InertAttribute("DomainEvent", "consumers", DOMAIN_EVENT_NOT_EXTRACTED),
-            new InertAttribute("DomainEvent", "expectedProcessingTimeMs", DOMAIN_EVENT_NOT_EXTRACTED),
-            new InertAttribute("DomainEvent", "requiresIdempotency", DOMAIN_EVENT_NOT_EXTRACTED),
-            new InertAttribute("DomainEvent", "orderingRequired", DOMAIN_EVENT_NOT_EXTRACTED),
-            new InertAttribute("DomainEvent", "processingGuarantee", DOMAIN_EVENT_NOT_EXTRACTED),
-            new InertAttribute("DomainEvent", "useOutbox", DOMAIN_EVENT_NOT_EXTRACTED),
-            new InertAttribute("DomainEvent", "outboxTable", DOMAIN_EVENT_NOT_EXTRACTED),
-            new InertAttribute("DomainEvent", "outboxAggregation", DOMAIN_EVENT_NOT_EXTRACTED),
-            new InertAttribute("DomainEvent", "outboxAggregationWindowSeconds", DOMAIN_EVENT_NOT_EXTRACTED),
-            new InertAttribute("DomainEvent", "emitMetrics", DOMAIN_EVENT_NOT_EXTRACTED),
-            new InertAttribute("DomainEvent", "logLevel", DOMAIN_EVENT_NOT_EXTRACTED),
-            new InertAttribute("DomainEvent", "alertOnFailure", DOMAIN_EVENT_NOT_EXTRACTED),
-            new InertAttribute("DomainEvent", "traceSampleRate", DOMAIN_EVENT_NOT_EXTRACTED),
-            new InertAttribute("DomainEvent", "disableInTests", DOMAIN_EVENT_NOT_EXTRACTED),
-            new InertAttribute("DomainEvent", "mockConsumer", DOMAIN_EVENT_NOT_EXTRACTED));
+            new InertAttribute(DOMAIN_EVENT, VERSION_ATTRIBUTE, DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute(DOMAIN_EVENT, "tags", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute(DOMAIN_EVENT, "stateTransition", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute(DOMAIN_EVENT, "condition", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute(DOMAIN_EVENT, "partitionKey", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute(DOMAIN_EVENT, "exchange", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute(DOMAIN_EVENT, "routingKey", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute(DOMAIN_EVENT, "priority", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute(DOMAIN_EVENT, "ttlMs", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute(DOMAIN_EVENT, "mandatory", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute(DOMAIN_EVENT, "persistent", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute(DOMAIN_EVENT, "includeSnapshot", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute(DOMAIN_EVENT, "includePreviousValues", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute(DOMAIN_EVENT, "includeComputed", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute(DOMAIN_EVENT, "encryptFields", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute(DOMAIN_EVENT, "payloadTransformer", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute(DOMAIN_EVENT, "maxPayloadSize", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute(DOMAIN_EVENT, "schemaFormat", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute(DOMAIN_EVENT, "schemaNamespace", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute(DOMAIN_EVENT, "schemaSubject", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute(DOMAIN_EVENT, "compatibility", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute(DOMAIN_EVENT, "registerSchema", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute(DOMAIN_EVENT, "schemaDoc", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute(DOMAIN_EVENT, "headers", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute(DOMAIN_EVENT, "includeTraceContext", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute(DOMAIN_EVENT, "includeTenantContext", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute(DOMAIN_EVENT, "includeUserContext", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute(DOMAIN_EVENT, "includeCausation", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute(DOMAIN_EVENT, "includeTimestamps", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute(DOMAIN_EVENT, "includeSource", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute(DOMAIN_EVENT, "retentionDays", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute(DOMAIN_EVENT, "archiveAfterDays", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute(DOMAIN_EVENT, "compressAfterDays", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute(DOMAIN_EVENT, "storeInEventStore", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute(DOMAIN_EVENT, "consumers", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute(DOMAIN_EVENT, "expectedProcessingTimeMs", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute(DOMAIN_EVENT, "requiresIdempotency", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute(DOMAIN_EVENT, "orderingRequired", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute(DOMAIN_EVENT, "processingGuarantee", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute(DOMAIN_EVENT, "useOutbox", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute(DOMAIN_EVENT, "outboxTable", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute(DOMAIN_EVENT, "outboxAggregation", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute(DOMAIN_EVENT, "outboxAggregationWindowSeconds", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute(DOMAIN_EVENT, "emitMetrics", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute(DOMAIN_EVENT, "logLevel", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute(DOMAIN_EVENT, "alertOnFailure", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute(DOMAIN_EVENT, "traceSampleRate", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute(DOMAIN_EVENT, "disableInTests", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute(DOMAIN_EVENT, "mockConsumer", DOMAIN_EVENT_NOT_EXTRACTED));
 
     /**
      * Hand-maintained registry of whole type-level annotations that are extracted
@@ -785,7 +789,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     private static final Set<String> EXTRACTED_ANNOTATIONS = Set.of(
             "Action", "ActionParam", "AuditCreatedAt", "AuditCreatedBy", "AuditUpdatedAt",
             "AuditUpdatedBy", "Bind", "Block", "CapabilityLifecycle", "CapabilityModule",
-            "DomainEvent", "EventSourced", "ExerisDomain", "Field", "Graph", "GraphEdge",
+            DOMAIN_EVENT, "EventSourced", "ExerisDomain", "Field", "Graph", "GraphEdge",
             "InternalApi", "Provides", "Region", "Relationship", "Requires", "Saga", "SagaStep",
             "SharedScope", "SoftDelete", "SoftDeleteTimestamp", "SoftDeletedBy", "TenantId", "UI",
             "Validation", "Version", "View");
@@ -2758,7 +2762,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
 
             if (eventAnnotation != null) {
                 Map<String, Object> values = extractAnnotationValues(eventAnnotation);
-                warnInertAttributes("DomainEvent", values, nestedClass, eventAnnotation);
+                warnInertAttributes(DOMAIN_EVENT, values, nestedClass, eventAnnotation);
                 String eventName = nestedClass.getSimpleName().toString();
                 String topic = values.containsKey("topic") ? (String) values.get("topic") : null;
                 String description = values.containsKey("description") ? (String) values.get("description") : null;
@@ -2776,7 +2780,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                         .sensitiveFields(sensitiveFields)
                         .trigger(eventTrigger(values))
                         .actionName(nonBlank(values, "action"))
-                        .fieldName(nonBlank(values, "field"))
+                        .fieldName(nonBlank(values, EVENT_FIELD_ATTRIBUTE))
                         .build());
             }
         }
@@ -2787,7 +2791,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     private DomainEventMetadata extractSingleEventMetadata(AnnotationMirror eventAnnotation, TypeElement element) {
         Map<String, Object> values = extractAnnotationValues(eventAnnotation);
 
-        warnInertAttributes("DomainEvent", values, element, eventAnnotation);
+        warnInertAttributes(DOMAIN_EVENT, values, element, eventAnnotation);
 
         String name = values.containsKey("name") ? (String) values.get("name") : null;
         if (name == null || name.isBlank()) {
@@ -2815,7 +2819,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                 .sensitiveFields(sensitiveFields)
                 .trigger(eventTrigger(values))
                 .actionName(nonBlank(values, "action"))
-                .fieldName(nonBlank(values, "field"))
+                .fieldName(nonBlank(values, EVENT_FIELD_ATTRIBUTE))
                 .build();
     }
 
