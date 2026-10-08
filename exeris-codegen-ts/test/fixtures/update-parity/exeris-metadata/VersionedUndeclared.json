@@ -1,0 +1,15 @@
+{
+  "entityName": "VersionedUndeclared",
+  "packageName": "com.example.parity",
+  "versioned": true,
+  "fields": [
+    {
+      "name": "id",
+      "type": "java.util.UUID"
+    },
+    {
+      "name": "title",
+      "type": "java.lang.String"
+    }
+  ]
+}

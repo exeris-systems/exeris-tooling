@@ -20,8 +20,9 @@ stored value. A domain property the body leaves out is stored as null. 0.9.0 typ
 column.
 
 `<Entity>Update` is now the entity record without its key (the path carries it) and without the
-owner of a TENANT or UNIVERSE entity (the update never writes it). A versioned entity's update also
-requires the version, as in 0.9.0:
+fields the server owns, among them the owner of a TENANT or UNIVERSE entity (the update never writes
+them; the step "`<Entity>Update` omits every field the server owns" lists them). A versioned
+entity's update also requires the version, as in 0.9.0:
 
 ```ts
 // a GLOBAL, unversioned entity
@@ -32,12 +33,11 @@ export type TicketUpdate = Omit<Ticket, 'id' | 'tenantId'> & { version: number |
 
 `<Entity>UpdateSchema` follows it: `<Entity>Schema.omit({ id: true, … })`, with `.extend({ version })`
 on a versioned entity, in place of `<Entity>CreateSchema.partial()`. Required fields are required,
-read-only ones included, and so are the audit `createdAt` and a UNIVERSE entity's shared scope.
-The server ignores the audit fields of an update body. Peer DTOs (`peers/<peer>/…`) follow the
-same rule.
+read-only ones included, and so is a UNIVERSE entity's shared scope. Peer DTOs (`peers/<peer>/…`)
+follow the same rule.
 
-The emitted edit form already sent the loaded record with the form's values over it, so its request
-is unchanged.
+The emitted edit form already sent the loaded record with the form's values over it, so the values
+it sends are unchanged.
 
 **What to do:** build an update body from the record you loaded, then change what you mean to
 change: `service.update(id, { ...loaded, title })`. A call that passes only some fields fails to

@@ -674,7 +674,7 @@ describe('TypeGenerator — a tenant-partitioned owner without a systemFields bl
     const createSlice = createSliceOf(new TypeGenerator().generate(metadata, CTX)!.content);
     const schema = new TypeGenerator().generateAggregate([metadata], CTX)
       .find(f => f.path === 'schemas/fleet.schema.ts')!.content;
-    const createSchema = schema.slice(schema.indexOf('FleetCreateSchema'));
+    const createSchema = schema.slice(schema.indexOf('FleetCreateSchema'), schema.indexOf('FleetUpdateSchema'));
 
     expect(createSlice).toContain('name?: string;');
     if (keeps) {
@@ -791,7 +791,7 @@ describe('TypeGenerator — the update DTO is the record the server writes back'
 
   // The generated handler decodes the PUT body into the whole entity and the repository's UPDATE
   // writes every column but the key and the owner, so a property left out is stored as null.
-  it('keeps read-only, audit and create-only fields, and every required field stays required', () => {
+  it('keeps read-only and create-only fields, and every required field stays required', () => {
     const { types, schema } = emit(domain({
       entityName: 'Ledger',
       audited: true,
@@ -803,10 +803,10 @@ describe('TypeGenerator — the update DTO is the record the server writes back'
         field({ name: 'createdAt', type: 'java.time.Instant' }),
       ],
     }));
-    expect(types).toContain("export type LedgerUpdate = Omit<Ledger, 'id'>;");
+    expect(types).toContain("export type LedgerUpdate = Omit<Ledger, 'id' | 'createdAt'>;");
     expect(types).not.toMatch(/LedgerUpdate = Partial</);
     expect(types).toContain('title: string;');
-    expect(schema).toContain('export const LedgerUpdateSchema = LedgerSchema.omit({ id: true });');
+    expect(schema).toContain('export const LedgerUpdateSchema = LedgerSchema.omit({ id: true, createdAt: true });');
   });
 
   it('leaves out the owner of a tenant-partitioned entity, which the update never writes', () => {

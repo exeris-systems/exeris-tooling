@@ -1,0 +1,31 @@
+{
+  "entityName": "AuditedDefault",
+  "packageName": "com.example.parity",
+  "audited": true,
+  "fields": [
+    {
+      "name": "id",
+      "type": "java.util.UUID"
+    },
+    {
+      "name": "title",
+      "type": "java.lang.String"
+    },
+    {
+      "name": "createdAt",
+      "type": "java.time.Instant"
+    },
+    {
+      "name": "createdBy",
+      "type": "java.lang.String"
+    },
+    {
+      "name": "updatedAt",
+      "type": "java.time.Instant"
+    },
+    {
+      "name": "updatedBy",
+      "type": "java.lang.String"
+    }
+  ]
+}
