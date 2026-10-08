@@ -17,7 +17,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { generateView, generateViewRoute, ViewGenerationError } from '../../../src/generators/angular/view-gen.js';
-import { ViewMetadataSchema, type ViewMetadata } from '../../../src/models/domain-model.js';
+import { DomainMetadataSchema, ViewMetadataSchema, type ViewMetadata } from '../../../src/models/domain-model.js';
 import { DEFAULT_CONFIG } from '../../../src/config.js';
 
 /**
@@ -385,6 +385,17 @@ describe('generateView — a collection block BOUND to an entity iterates its st
 
   it('emits @for over the store collection with a stable track key', () => {
     expect(file.content).toContain('@for (commander of commanderStore.entities(); track commander.id) {');
+  });
+
+  it('tracks by the key the bound entity names', () => {
+    const commander = DomainMetadataSchema.parse({
+      packageName: 'com.fleet',
+      entityName: 'Commander',
+      fields: [{ name: 'serviceNo', type: 'java.util.UUID' }, { name: 'name', type: 'String' }],
+      systemFields: { primaryKeyField: 'serviceNo' },
+    });
+    const keyed = generateView(roster, DEFAULT_CONFIG, [commander]);
+    expect(keyed.content).toContain('@for (commander of commanderStore.entities(); track commander.serviceNo) {');
   });
 
   it('the row reads the loop variable, not the selected row', () => {

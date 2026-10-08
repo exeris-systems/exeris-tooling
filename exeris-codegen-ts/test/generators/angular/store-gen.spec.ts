@@ -337,28 +337,26 @@ describe('StoreGenerator systemFields.primaryKeyField alias propagation', () => 
     expect((content.match(/this\._selected\(\)\?\.id === id/g) ?? []).length).toBe(2);
   });
 
-  it('a systemFields.primaryKeyField override moves NONE of the 7 substitution sites', () => {
-    // The override must NOT move the emitted identity. Nothing in the pipeline honours
-    // `primaryKeyField`: Flyway emits `id UUID PRIMARY KEY`, the repository's clause is the
-    // constant " WHERE id = ?", every by-id handler binds `{id}`, and the processor records the
-    // same ("generators leave the primary key as the literal id"). An emitted app that honoured
-    // it here would be the only layer doing so, and would request the wrong REST identifier.
+  it('a systemFields.primaryKeyField override moves ALL 7 substitution sites to the named key', () => {
+    // The row's key is the field primaryKeyField names (ADR-104). The method parameter stays `id`:
+    // it is the route's `:id` segment, which carries the key's value.
     //
     // Every site is enumerated: update()'s optimistic map, server-replace map and selected-match,
     // and delete()'s selected-match, are exactly where a partial change hides.
     const content = gen.generate(domain({
       entityName: 'Order',
-      systemFields: { primaryKeyField: 'uuid' },
+      fields: [{ name: 'orderNo', type: 'java.util.UUID' }, { name: 'name', type: 'String' }],
+      systemFields: { primaryKeyField: 'orderNo' },
     }), CTX)!.content;
 
-    expect(content).toContain('entities.map(e => e.id === id ? entity : e)');                 // 1 — loadById
-    expect(content).toContain('entities.map(e => e.id === id ? { ...e, ...data }');           // 2 — update optimistic
-    expect(content).toContain('entities.map(e => e.id === id ? updated : e)');                // 3 — update server-replace
-    expect(content).toContain('entities.filter(e => e.id !== id)');                           // 4 — delete optimistic
-    expect(content).toContain('this._entities().find(e => e.id === id)');                     // 5 — select find
-    expect((content.match(/this\._selected\(\)\?\.id === id/g) ?? []).length).toBe(2);       // 6 + 7 — selected match in update + delete
-    // Negative: the override reaches no site at all.
-    expect(content).not.toContain('uuid');
+    expect(content).toContain('entities.map(e => e.orderNo === id ? entity : e)');                 // 1 — loadById
+    expect(content).toContain('entities.map(e => e.orderNo === id ? { ...e, ...data }');           // 2 — update optimistic
+    expect(content).toContain('entities.map(e => e.orderNo === id ? updated : e)');                // 3 — update server-replace
+    expect(content).toContain('entities.filter(e => e.orderNo !== id)');                           // 4 — delete optimistic
+    expect(content).toContain('this._entities().find(e => e.orderNo === id)');                     // 5 — select find
+    expect((content.match(/this\._selected\(\)\?\.orderNo === id/g) ?? []).length).toBe(2);       // 6 + 7 — selected match in update + delete
+    expect(content).toContain('async loadById(id: string): Promise<Order>');
+    expect(content).not.toMatch(/\be\.id\b|\?\.id\b/);
   });
 });
 
@@ -400,21 +398,20 @@ describe('StoreGenerator softDelete branch', () => {
     expect(content).not.toContain('this.service.restore(');
   });
 
-  it('softDelete + a primaryKeyField override: archive still identifies on id at both its sites', () => {
+  it('softDelete + a primaryKeyField override: archive identifies on the named key at both its sites', () => {
     // generateSoftDeleteMethods has its own two ${idField} substitution sites, which the
-    // default softDelete test above does not reach. Kept as the combination case: if the
-    // override were ever honoured, the soft-delete branch is where a partial change would
-    // land first.
+    // default softDelete test above does not reach.
     const content = gen.generate(domain({
       entityName: 'Order',
       softDelete: true,
-      systemFields: { primaryKeyField: 'uuid' },
+      fields: [{ name: 'orderNo', type: 'java.util.UUID' }],
+      systemFields: { primaryKeyField: 'orderNo' },
     }), CTX)!.content;
 
     expect(content).toContain('async archive(id: string): Promise<void>');
-    expect(content).toContain('entities.filter(e => e.id !== id)');
-    expect(content).toContain('this._selected()?.id === id');
-    expect(content).not.toContain('uuid');
+    expect(content).toContain('entities.filter(e => e.orderNo !== id)');
+    expect(content).toContain('this._selected()?.orderNo === id');
+    expect(content).not.toMatch(/\be\.id\b|\?\.id\b/);
   });
 });
 

@@ -163,25 +163,19 @@ describe('DetailGenerator system-field filtering', () => {
     expect(content).not.toContain("name: 'updatedAt' as keyof Order");
   });
 
-  it('a primaryKeyField override does not hide the field it names', () => {
-    // The override must NOT move the emitted identity. Nothing in the pipeline honours
-    // `primaryKeyField`: Flyway emits `id UUID PRIMARY KEY`, the repository's clause is the
-    // constant " WHERE id = ?", every by-id handler binds `{id}`, and the processor records the
-    // same ("generators leave the primary key as the literal id"). An emitted app that honoured
-    // it here would be the only layer doing so, and would request the wrong REST identifier.
-    // The field stays visible because the backend treats it as an ordinary column: the row's
-    // identity is the `id` the repository writes, not the name this attribute carries.
+  it('the key primaryKeyField names leaves the field table for the system panel', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
-      systemFields: { primaryKeyField: 'uuid' },
+      systemFields: { primaryKeyField: 'orderNo' },
       fields: [
-        field({ name: 'uuid', type: 'UUID' }),
+        field({ name: 'orderNo', type: 'UUID' }),
         field({ name: 'orderNumber', type: 'String' }),
       ],
     }), CTX)!.content;
 
-    expect(content).toContain("name: 'uuid' as keyof Order");
+    expect(content).not.toContain("name: 'orderNo' as keyof Order");
     expect(content).toContain("name: 'orderNumber' as keyof Order");
+    expect(content).toContain('{{ entity()?.orderNo }}');
   });
 
   it('field.hidden=true is filtered out regardless of system-field membership', () => {
@@ -377,14 +371,15 @@ describe('DetailGenerator getTitle fallback', () => {
     expect(content).toContain('return String(entity.id);');
   });
 
-  it('falls back to entity.id for the title even when primaryKeyField names something else', () => {
+  it('falls back to the key primaryKeyField names for the title', () => {
     const content = gen.generate(domain({
       entityName: 'Thing',
-      systemFields: { primaryKeyField: 'uuid' },
+      fields: [field({ name: 'thingNo', type: 'UUID' })],
+      systemFields: { primaryKeyField: 'thingNo' },
     }), CTX)!.content;
 
-    expect(content).toContain('return String(entity.id);');
-    expect(content).not.toContain('entity.uuid');
+    expect(content).toContain('return String(entity.thingNo);');
+    expect(content).not.toMatch(/\bentity\.id\b/);
   });
 });
 

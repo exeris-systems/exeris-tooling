@@ -2,9 +2,9 @@
  * Foreign keys: the links of the list and detail emitters, and the pickers of the form.
  *
  * A MANY_TO_ONE relationship is the only kind the Java side stores as a column on the owning
- * table, so it is the only kind whose value on this entity is the target's id. When that local
+ * table, so it is the only kind whose value on this entity is the target's key. When that local
  * field is a UUID, its value is exactly the `:id` of the target's detail route, and the list
- * cell and detail row can link to it without fetching the target; and it is exactly the `id` of
+ * cell and detail row can link to it without fetching the target; and it is exactly the key of
  * one of the records the target's service lists, so the form can offer those records to pick from.
  *
  * Entity-typed relationship fields, and ONE_TO_ONE / ONE_TO_MANY / MANY_TO_MANY relationships,
@@ -14,7 +14,7 @@
 import type { DomainMetadata, RelationshipMetadata } from '../../models/domain-model.js';
 import { DslMapper } from '../../models/dsl-mapper.js';
 import { entityViews } from './entity-views.js';
-import { declaresPrimaryKey } from '../../core/primary-key.js';
+import { declaresPrimaryKey, primaryKeyField } from '../../core/primary-key.js';
 
 const UUID_TYPES = new Set(['UUID', 'java.util.UUID']);
 
@@ -80,9 +80,11 @@ export interface ForeignKeyPicker {
   readonly target: string;
   /** The target's service module, relative to `services/` (`<kebab(target)>.service`). */
   readonly serviceModule: string;
+  /** The target's primary key, which an option's value is read from. */
+  readonly keyField: string;
   /**
    * The target field an option is labelled with: `@Relationship.displayField` when the target
-   * declares a field of that name. Absent otherwise, and an option is then labelled with its id.
+   * declares a field of that name. Absent otherwise, and an option is then labelled with its key.
    */
   readonly labelField?: string;
 }
@@ -90,9 +92,9 @@ export interface ForeignKeyPicker {
 /**
  * Maps each pickable local field name to the records its control offers.
  *
- * The target must be a loaded domain whose generated service lists its records, and whose type
- * declares the `id` an option's value is read from. Without generated services (`servicesGenerated`
- * false), or for a target outside the domain set or one declaring no `id`, the field has no picker.
+ * The target must be a loaded domain whose generated service lists its records, and whose fields
+ * list the key an option's value is read from. Without generated services (`servicesGenerated`
+ * false), or for a target outside the domain set or one listing no key, the field has no picker.
  */
 export function foreignKeyPickers(
   domain: DomainMetadata,
@@ -109,6 +111,7 @@ export function foreignKeyPickers(
     pickers.set(key.field, {
       target: key.target,
       serviceModule: `${DslMapper.toKebabCase(key.target)}.service`,
+      keyField: primaryKeyField(targetDomain),
       ...(labelField ? { labelField } : {}),
     });
   }

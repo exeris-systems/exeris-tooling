@@ -245,5 +245,44 @@ check(
   ].join('\n'),
 );
 
+// (6) A key the entity inherits from a superclass: the processor accepts it and records only the
+// entity's own fields, so `fields` lists no key. Workspace keeps the default key `id`, Statement
+// renames it to `statementNo`. The entity type and schema carry the key all the same, the Update
+// type and schema leave it out, and the two agree in both directions.
+check(
+  'inherited-key',
+  [
+    DomainMetadataSchema.parse({
+      packageName: 'com.studio',
+      entityName: 'Workspace',
+      fields: [{ name: 'name', type: 'String', required: true }],
+    }),
+    DomainMetadataSchema.parse({
+      packageName: 'com.studio',
+      entityName: 'Statement',
+      fields: [{ name: 'total', type: 'java.math.BigDecimal' }],
+      systemFields: { primaryKeyField: 'statementNo' },
+    }),
+  ],
+  [],
+  [],
+  [
+    "import type { z } from 'zod';",
+    "import type { Statement, StatementUpdate, Workspace, WorkspaceUpdate } from './types';",
+    "import { StatementSchema, StatementUpdateSchema, WorkspaceSchema, WorkspaceUpdateSchema } from './schemas';",
+    '',
+    'export const workspaceKey = (w: Workspace): string | undefined => w.id;',
+    'export const statementKey = (s: Statement): string | undefined => s.statementNo;',
+    'export const parsedWorkspaceKey = (p: z.infer<typeof WorkspaceSchema>): string | undefined => p.id;',
+    'export const parsedStatementKey = (p: z.infer<typeof StatementSchema>): string | undefined => p.statementNo;',
+    'export const fromWorkspaceSchema = (p: z.infer<typeof WorkspaceUpdateSchema>): WorkspaceUpdate => p;',
+    'export const fromStatementSchema = (p: z.infer<typeof StatementUpdateSchema>): StatementUpdate => p;',
+    '',
+    "// @ts-expect-error — the update body does not carry the key",
+    "export const keyed: StatementUpdate = { total: '1', statementNo: 'x' };",
+    '',
+  ].join('\n'),
+);
+
 rmSync(join(pkgRoot, '.verify-tmp'), { recursive: true, force: true });
-console.log('✓ Generated frontend data layer type-checks (with-enums + zero-enums + two-peers-same-entity + versioned-update + full-replacement-update).');
+console.log('✓ Generated frontend data layer type-checks (with-enums + zero-enums + two-peers-same-entity + versioned-update + full-replacement-update + inherited-key).');

@@ -63,6 +63,43 @@ describe('generateEnumTypes', () => {
   });
 });
 
+describe('buildGeneratedFiles — the key an entity inherits', () => {
+  // The processor records an entity's own fields, so a key inherited from a superclass is not
+  // among them; every row the server returns carries it, and so does every emitted artefact.
+  const at = (files: { path: string; content: string }[], path: string): string =>
+    files.find((f) => f.path === path)!.content;
+
+  it('the entity type and schema carry the default key the fields leave out', () => {
+    const files = buildGeneratedFiles(
+      [domain({ entityName: 'Workspace', fields: [{ name: 'name', type: 'String', required: true }] })],
+      [],
+      DEFAULT_CONFIG,
+    );
+    expect(at(files, 'src/app/types/workspace.types.ts')).toContain('export interface Workspace {\n  id?: string;\n  name: string;\n}');
+    const schema = at(files, 'src/app/schemas/workspace.schema.ts');
+    expect(schema).toContain('export const WorkspaceSchema = z.object({\n  id: z.string().uuid().optional(),');
+    expect(schema).toContain('export const WorkspaceUpdateSchema = WorkspaceSchema.omit({ id: true });');
+    expect(at(files, 'src/app/components/workspace-list.component.ts')).toContain('track item.id;');
+  });
+
+  it('a renamed key the fields leave out is emitted as that key, the same as when they list it', () => {
+    const inherited = domain({
+      entityName: 'Invoice',
+      fields: [{ name: 'amount', type: 'java.math.BigDecimal' }],
+      systemFields: { primaryKeyField: 'invoiceNo' },
+    });
+    const declared = domain({
+      entityName: 'Invoice',
+      fields: [{ name: 'invoiceNo', type: 'java.util.UUID' }, { name: 'amount', type: 'java.math.BigDecimal' }],
+      systemFields: { primaryKeyField: 'invoiceNo' },
+    });
+    const fromInherited = buildGeneratedFiles([inherited], [], DEFAULT_CONFIG);
+    expect(at(fromInherited, 'src/app/types/invoice.types.ts')).toContain('export interface Invoice {\n  invoiceNo?: string;');
+    expect(at(fromInherited, 'src/app/components/invoice-detail.component.ts')).toContain('{{ entity()?.invoiceNo }}');
+    expect(fromInherited).toEqual(buildGeneratedFiles([declared], [], DEFAULT_CONFIG));
+  });
+});
+
 describe('buildGeneratedFiles — T20: one real tree under src/app', () => {
   const files = buildGeneratedFiles(
     [domain({ entityName: 'Order' }), domain({ entityName: 'Battle' })],

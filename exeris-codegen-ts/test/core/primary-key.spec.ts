@@ -11,7 +11,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_PRIMARY_KEY_FIELD, declaresPrimaryKey, primaryKeyField } from '../../src/core/primary-key.js';
+import { DEFAULT_PRIMARY_KEY_FIELD, declaresPrimaryKey, primaryKeyField, withPrimaryKey } from '../../src/core/primary-key.js';
 import { DomainMetadataSchema } from '../../src/models/domain-model.js';
 
 const SRC = join(dirname(fileURLToPath(import.meta.url)), '../../src');
@@ -29,18 +29,42 @@ const code = (path: string): string =>
     .filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line))
     .join('\n');
 
-const domain = (fields: { name: string; type: string }[]) =>
-  DomainMetadataSchema.parse({ entityName: 'Order', packageName: 'com.shop', fields });
+const domain = (fields: { name: string; type: string }[], systemFields?: Record<string, string>) =>
+  DomainMetadataSchema.parse({ entityName: 'Order', packageName: 'com.shop', fields, ...(systemFields ? { systemFields } : {}) });
 
 describe('primaryKeyField', () => {
-  it('resolves to the default key name', () => {
-    expect(primaryKeyField(domain([]))).toBe(DEFAULT_PRIMARY_KEY_FIELD);
+  it('is the field systemFields.primaryKeyField names', () => {
+    expect(primaryKeyField(domain([], { primaryKeyField: 'orderNo' }))).toBe('orderNo');
+  });
+
+  it('is id when the entity has no systemFields block, names no key, names a blank one, or is unknown', () => {
     expect(DEFAULT_PRIMARY_KEY_FIELD).toBe('id');
+    expect(primaryKeyField(domain([]))).toBe(DEFAULT_PRIMARY_KEY_FIELD);
+    expect(primaryKeyField(domain([], { versionField: 'rev' }))).toBe(DEFAULT_PRIMARY_KEY_FIELD);
+    expect(primaryKeyField(domain([], { primaryKeyField: '' }))).toBe(DEFAULT_PRIMARY_KEY_FIELD);
+    expect(primaryKeyField(domain([], { primaryKeyField: '  ' }))).toBe(DEFAULT_PRIMARY_KEY_FIELD);
+    expect(primaryKeyField(undefined)).toBe(DEFAULT_PRIMARY_KEY_FIELD);
   });
 
   it('declaresPrimaryKey is true only for an entity that declares a field of that name', () => {
     expect(declaresPrimaryKey(domain([{ name: 'id', type: 'java.util.UUID' }]))).toBe(true);
     expect(declaresPrimaryKey(domain([{ name: 'name', type: 'java.lang.String' }]))).toBe(false);
+    expect(declaresPrimaryKey(domain([{ name: 'id', type: 'java.util.UUID' }], { primaryKeyField: 'orderNo' }))).toBe(false);
+    expect(declaresPrimaryKey(domain([{ name: 'orderNo', type: 'java.util.UUID' }], { primaryKeyField: 'orderNo' }))).toBe(true);
+  });
+});
+
+describe('withPrimaryKey', () => {
+  it('returns an entity that lists its key as it is', () => {
+    const listed = domain([{ name: 'name', type: 'String' }, { name: 'orderNo', type: 'java.util.UUID' }], { primaryKeyField: 'orderNo' });
+    expect(withPrimaryKey(listed)).toBe(listed);
+  });
+
+  it('puts a key the fields leave out first, as an optional UUID', () => {
+    const keyed = withPrimaryKey(domain([{ name: 'name', type: 'String' }], { primaryKeyField: 'orderNo' }));
+    expect(keyed.fields.map((f) => f.name)).toEqual(['orderNo', 'name']);
+    expect(keyed.fields[0]).toMatchObject({ name: 'orderNo', type: 'java.util.UUID', required: false });
+    expect(withPrimaryKey(domain([])).fields.map((f) => f.name)).toEqual([DEFAULT_PRIMARY_KEY_FIELD]);
   });
 });
 

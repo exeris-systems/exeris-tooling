@@ -213,18 +213,16 @@ describe('FormGenerator emitted content — top-level structure', () => {
     expect(content).not.toContain("this.mode() === 'create'");
   });
 
-  it('dispatches the update on id even when primaryKeyField names something else', () => {
-    // A declared override must NOT move the emitted identity: nothing in the pipeline honours
-    // `primaryKeyField` — Flyway emits `id UUID PRIMARY KEY`, the repository's clause is the
-    // constant " WHERE id = ?", every by-id handler binds `{id}` — so an emitted app that
-    // requested the override would talk to the wrong REST identifier.
+  it('dispatches the update on the key primaryKeyField names', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
-      systemFields: { primaryKeyField: 'uuid' },
+      fields: [field({ name: 'orderNo', type: 'java.util.UUID' }), field({ name: 'name', type: 'String' })],
+      systemFields: { primaryKeyField: 'orderNo' },
     }), CTX)!.content;
 
-    expect(content).toContain('String(current.id)');
-    expect(content).not.toContain('current.uuid');
+    expect(content).toContain('String(current.orderNo)');
+    expect(content).not.toMatch(/\bcurrent\.id\b/);
+    expect(content).not.toContain('orderNo: string;');
   });
 });
 
@@ -1484,6 +1482,57 @@ describe('FormGenerator — a MANY_TO_ONE foreign key is picked from its target 
       + '    pickerOptions(this.parentIdOptionsResource.hasValue() ? this.parentIdOptionsResource.value() : undefined)\n'
       + '      .filter((option) => !this.editMode() || option.value !== String(this.id() ?? this.current()?.id)),\n'
       + '  );',
+    );
+  });
+
+  it('reads the key a renamed-key target names, in the helper and in the self-exclusion', () => {
+    const invoice = domain({
+      entityName: 'Invoice',
+      fields: [field({ name: 'invoiceNo', type: 'java.util.UUID' }), field({ name: 'correctsId', type: 'java.util.UUID' })],
+      relationships: [{ name: 'correctsId', targetEntity: 'Invoice', type: 'MANY_TO_ONE' } as DomainMetadata['relationships'][number]],
+      systemFields: { primaryKeyField: 'invoiceNo' },
+    });
+    const content = emit(invoice, [invoice]);
+    expect(content).toContain('function pickerOptions<T extends { invoiceNo?: unknown }>(');
+    expect(content).toContain('  label: (row: T) => unknown = (row) => row.invoiceNo,');
+    expect(content).toContain(
+      '    pickerOptions(this.correctsIdOptionsResource.hasValue() ? this.correctsIdOptionsResource.value() : undefined)\n'
+      + '      .filter((option) => !this.editMode() || option.value !== String(this.id() ?? this.current()?.invoiceNo)),',
+    );
+    expect(content).not.toMatch(/row\.id\b/);
+  });
+
+  it('passes each target\'s key to the one helper when the targets\' keys differ', () => {
+    const invoice = domain({
+      entityName: 'Invoice',
+      fields: [
+        field({ name: 'invoiceNo', type: 'java.util.UUID' }),
+        field({ name: 'productId', type: 'java.util.UUID' }),
+        field({ name: 'correctsId', type: 'java.util.UUID' }),
+      ],
+      relationships: [
+        { name: 'productId', targetEntity: 'Product', type: 'MANY_TO_ONE', displayField: 'name' } as DomainMetadata['relationships'][number],
+        { name: 'correctsId', targetEntity: 'Invoice', type: 'MANY_TO_ONE' } as DomainMetadata['relationships'][number],
+      ],
+      systemFields: { primaryKeyField: 'invoiceNo' },
+    });
+    const content = emit(invoice, [invoice, product]);
+    expect(content.match(/^function pickerOptions/gm)).toHaveLength(1);
+    expect(content).toContain(
+      'function pickerOptions<K extends string, T extends { [P in K]?: unknown }>(\n'
+      + '  page: { content: T[] } | undefined,\n'
+      + '  key: K,\n'
+      + '  label: (row: T) => unknown = (row) => row[key],\n'
+      + '): { value: string; label: string }[] {\n'
+      + '  const rows = page?.content ?? [];\n'
+      + "  return rows.filter((row) => row[key] != null && row[key] !== '').map((row) => {\n"
+      + '    const value = String(row[key]);',
+    );
+    expect(content).toContain(
+      "pickerOptions(this.productIdOptionsResource.hasValue() ? this.productIdOptionsResource.value() : undefined, 'id', (row) => row.name),",
+    );
+    expect(content).toContain(
+      "pickerOptions(this.correctsIdOptionsResource.hasValue() ? this.correctsIdOptionsResource.value() : undefined, 'invoiceNo')",
     );
   });
 
