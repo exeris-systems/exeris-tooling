@@ -210,8 +210,8 @@ check(
 );
 
 // (5) The generated server's update is a full replacement: the PUT body is decoded into the whole
-// entity and every column but the key and the owner is written from it. The Update type and schema
-// are the record as read without those two, they agree in both directions, and a body that leaves
+// entity and every domain column is written from it. The Update type and schema are the record as
+// read without the fields the server owns, they agree in both directions, and a body that leaves
 // out a required field, a read-only one included, does not type-check.
 check(
   'full-replacement-update',
@@ -284,5 +284,57 @@ check(
   ].join('\n'),
 );
 
+// (7) The generated server's update never writes a server-owned column from the body: the key, the
+// owner, the audit fields, the soft-delete fields and any field a `systemFields` role names. The
+// Update type and schema agree in both directions, carry the version and leave those out, and a
+// body that sets one of them does not type-check.
+check(
+  'server-owned-update',
+  [DomainMetadataSchema.parse({
+    packageName: 'com.shop',
+    entityName: 'Ticket',
+    dataScope: 'TENANT',
+    audited: true,
+    softDelete: true,
+    versioned: true,
+    systemFields: { createdAtField: 'born', tenantIdField: 'orgId' },
+    fields: [
+      { name: 'id', type: 'java.util.UUID' },
+      { name: 'title', type: 'String', required: true },
+      { name: 'orgId', type: 'java.util.UUID' },
+      { name: 'born', type: 'java.time.Instant' },
+      { name: 'createdBy', type: 'String' },
+      { name: 'updatedAt', type: 'java.time.Instant' },
+      { name: 'updatedBy', type: 'String' },
+      { name: 'deleted', type: 'boolean' },
+      { name: 'deletedAt', type: 'java.time.Instant' },
+      { name: 'deletedBy', type: 'String' },
+      { name: 'version', type: 'java.lang.Long' },
+    ],
+  })],
+  [],
+  [],
+  [
+    "import type { z } from 'zod';",
+    "import type { TicketUpdate } from './types';",
+    "import { TicketUpdateSchema } from './schemas';",
+    '',
+    'type Parsed = z.infer<typeof TicketUpdateSchema>;',
+    'export const fromSchema = (p: Parsed): TicketUpdate => p;',
+    'export const toSchema = (u: TicketUpdate): Parsed => u;',
+    "export const body: TicketUpdate = { title: 'x', version: 3 };",
+    '',
+    "// @ts-expect-error — the update body does not carry the creation stamp",
+    "export const stamped: TicketUpdate = { title: 'x', version: 3, born: '2026-01-01T00:00:00Z' };",
+    "// @ts-expect-error — the update body does not carry the soft-delete flag",
+    "export const restored: TicketUpdate = { title: 'x', version: 3, deleted: false };",
+    "// @ts-expect-error — the update body does not carry the owner",
+    "export const moved: TicketUpdate = { title: 'x', version: 3, orgId: 'o' };",
+    "// @ts-expect-error — the version is required",
+    "export const unversioned: TicketUpdate = { title: 'x' };",
+    '',
+  ].join('\n'),
+);
+
 rmSync(join(pkgRoot, '.verify-tmp'), { recursive: true, force: true });
-console.log('✓ Generated frontend data layer type-checks (with-enums + zero-enums + two-peers-same-entity + versioned-update + full-replacement-update + inherited-key).');
+console.log('✓ Generated frontend data layer type-checks (with-enums + zero-enums + two-peers-same-entity + versioned-update + full-replacement-update + inherited-key + server-owned-update).');

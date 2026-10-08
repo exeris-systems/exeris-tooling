@@ -2217,10 +2217,12 @@ form's `editMode()`; a disabled field is not validated, so a required field the 
 never blocks the save. The form imports `disabled` from `@angular/forms/signals` when it has such a field.
 
 **The edit payload is the loaded record with the form's values over it** (`{ ...current, ...data }`).
-The generated server's update writes every column of the row, and the form offers no control for a
-read-only, hidden or create-only field, so an edit sent the model alone and cleared those columns.
-They keep their stored value; an `inUpdate = false` field is sent as loaded. Code that reads the
-update request on the server sees every field of the record, not only the form's controls.
+The generated server's update writes every domain column of the row, and the form offers no control
+for a read-only, hidden or create-only field, so an edit sent the model alone and cleared those
+columns. They keep their stored value; an `inUpdate = false` field is sent as loaded. The record is
+sent without the fields the server owns (the key, the owner, the audit and soft-delete fields), which
+the update never writes. Code that reads the update request on the server sees every domain field of
+the record, not only the form's controls.
 
 **What to do.** Regenerate. Then:
 - End-to-end tests that type into an `Instant` field through a date-time picker: type the ISO-8601

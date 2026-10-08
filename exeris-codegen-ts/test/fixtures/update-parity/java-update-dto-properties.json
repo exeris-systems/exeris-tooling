@@ -1,0 +1,21 @@
+{
+  "AuditedDefault": ["title"],
+  "AuditedNoBlockAliasesUndeclared": ["title"],
+  "AuditedRenamed": ["createdAt", "title"],
+  "Everything": ["title", "version"],
+  "EverythingRenamed": ["rev", "title"],
+  "GlobalDeclaresTenantId": ["tenantId", "title"],
+  "GlobalNamesTenantIdField": ["title"],
+  "Plain": ["title"],
+  "RenamedKey": ["id", "title"],
+  "SoftDeleteDefault": ["title"],
+  "SoftDeleteRenamed": ["deleted", "title"],
+  "TenantDefault": ["title"],
+  "TenantRenamed": ["tenantId", "title"],
+  "UnauditedDeclaresStamps": ["createdAt", "createdBy", "title"],
+  "UniverseDefault": ["title"],
+  "UniverseRenamed": ["title"],
+  "VersionedDefault": ["title", "version"],
+  "VersionedRenamed": ["rev", "title", "version"],
+  "VersionedUndeclared": ["title"]
+}

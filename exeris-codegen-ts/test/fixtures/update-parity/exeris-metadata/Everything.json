@@ -1,0 +1,63 @@
+{
+  "entityName": "Everything",
+  "packageName": "com.example.parity",
+  "audited": true,
+  "softDelete": true,
+  "versioned": true,
+  "dataScope": "UNIVERSE",
+  "systemFields": {
+    "primaryKeyField": "orderNo",
+    "tenantIdField": "ownerId",
+    "sharedScopeField": "scopeId"
+  },
+  "fields": [
+    {
+      "name": "orderNo",
+      "type": "java.util.UUID"
+    },
+    {
+      "name": "title",
+      "type": "java.lang.String"
+    },
+    {
+      "name": "ownerId",
+      "type": "java.util.UUID"
+    },
+    {
+      "name": "scopeId",
+      "type": "java.util.UUID"
+    },
+    {
+      "name": "createdAt",
+      "type": "java.time.Instant"
+    },
+    {
+      "name": "createdBy",
+      "type": "java.lang.String"
+    },
+    {
+      "name": "updatedAt",
+      "type": "java.time.Instant"
+    },
+    {
+      "name": "updatedBy",
+      "type": "java.lang.String"
+    },
+    {
+      "name": "deleted",
+      "type": "boolean"
+    },
+    {
+      "name": "deletedAt",
+      "type": "java.time.Instant"
+    },
+    {
+      "name": "deletedBy",
+      "type": "java.lang.String"
+    },
+    {
+      "name": "version",
+      "type": "java.lang.Long"
+    }
+  ]
+}
