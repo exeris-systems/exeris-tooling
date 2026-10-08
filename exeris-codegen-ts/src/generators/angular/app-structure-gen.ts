@@ -29,6 +29,7 @@ import { hasLiveViewClient } from './stream-client-gen.js';
 import { hasActionStreamClients } from './action-stream-client-gen.js';
 import { BACKEND_SCAFFOLD_NEEDS, type ScaffoldNeeds } from '../../core/scaffold-needs.js';
 import { entityViews, hasFormPage } from './entity-views.js';
+import { serviceApiPath } from './service-gen.js';
 import { fileHeader, lineHeaderLines } from '../file-header.js';
 
 export interface GeneratedFile {
@@ -86,7 +87,7 @@ export const SCAFFOLD_SEED_PATHS: readonly string[] = [
   'tsconfig.app.json',
   'tsconfig.spec.json',
   '.postcssrc.json',
-  'proxy.conf.json',
+  'proxy.conf.js',
   'src/styles.css',
   'src/index.html',
   'src/main.ts',
@@ -99,6 +100,13 @@ export const SCAFFOLD_SEED_PATHS: readonly string[] = [
   'src/app/app.config.server.ts',
   'src/app/app.routes.server.ts',
 ];
+
+/**
+ * Paths the scaffold does not emit that an existing app may hold as an owned seed, edited
+ * or not. The writer releases a seed the run does not produce and deletes any other owned orphan, so a
+ * path stays here for as long as a manifest can own it: dropping one deletes the consumer's file.
+ */
+export const RETIRED_SCAFFOLD_SEED_PATHS: readonly string[] = ['proxy.conf.json'];
 
 export function generateAppStructure(
   domains: DomainMetadata[],
@@ -135,7 +143,7 @@ export function generateAppStructure(
   }
   files.push({ path: '.postcssrc.json', content: generatePostcssConfig(), overwritable: false });
   if (needs.backend) {
-    files.push({ path: 'proxy.conf.json', content: generateProxyConfig(), overwritable: false });
+    files.push({ path: 'proxy.conf.js', content: generateProxyConfig(domains, config), overwritable: false });
   }
 
   // Static files under src/
@@ -706,7 +714,7 @@ function typographyDevDependency(needs: ScaffoldNeeds): string {
 function generatePackageJson(appName: string, config: GeneratorConfig, needs: ScaffoldNeeds): string {
   const pkgName = frontendSlug(appName);
   // The dev-server proxy forwards API calls; without a backend there is no proxy config to pass.
-  const start = needs.backend ? 'ng serve --proxy-config proxy.conf.json' : 'ng serve';
+  const start = needs.backend ? 'ng serve --proxy-config proxy.conf.js' : 'ng serve';
   return `{
   "name": ${jsonValue(pkgName)},
   "version": "0.1.0",
@@ -965,15 +973,53 @@ ${plugins}
 `;
 }
 
-function generateProxyConfig(): string {
-  return `{
-  "/api": {
-    "target": "http://localhost:8443",
-    "secure": false,
-    "changeOrigin": true,
-    "logLevel": "debug"
-  }
+/**
+ * The path prefixes the emitted clients request, one per entity: `apiBasePath` followed by the
+ * entity's served path, the base `service-gen`, `stream-client-gen` and `action-stream-client-gen`
+ * build every URL on. Every entity counts, whether or not its client is emitted, because the kernel
+ * application serves it either way (core/scaffold-needs). Deduplicated and sorted, so the proxy
+ * depends on the set of paths and not on the order the metadata was loaded in.
+ */
+export function proxyPrefixes(domains: readonly DomainMetadata[], config: GeneratorConfig): string[] {
+  const prefixes = new Set(domains.map((d) => `${config.apiBasePath}${serviceApiPath(d)}`));
+  return [...prefixes].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 }
+
+/**
+ * The dev-server proxy, in JavaScript because a JSON config cannot hold a `bypass` function.
+ *
+ * The app is served same-origin with the kernel application, and an entity's API path is also its
+ * page route: `/orders` is the list endpoint and the list page. The path cannot tell the two
+ * requests apart; the `Accept` header can. A browser navigation sends `text/html`, while an
+ * `HttpClient` call and an `EventSource` do not. `bypass` answers the first with `/index.html`, so a
+ * deep link or a refresh loads the app, and the proxy forwards the rest to the kernel application.
+ *
+ * `export default`, because the scaffold's `package.json` declares `"type": "module"`.
+ */
+function generateProxyConfig(domains: readonly DomainMetadata[], config: GeneratorConfig): string {
+  const rules = proxyPrefixes(domains, config).map(
+    (prefix) => `  '${tsSingleQuoted(prefix)}': { target, secure: false, changeOrigin: true, bypass },\n`,
+  );
+  return `${fileHeader({
+    title: 'Angular Dev-Server Proxy (ng serve --proxy-config proxy.conf.js)',
+    notes: [
+      '',
+      "An entity's API path is also its page route, so a request is told apart by its Accept",
+      "header: a page navigation asks for text/html and is answered with the app's index.html;",
+      'every other request under these paths is forwarded to the kernel application.',
+    ],
+    doNotEdit: 'omit',
+  })}
+
+const target = 'http://localhost:8443';
+
+/** A page navigation stays with the dev server; an API request is forwarded. */
+function bypass(req) {
+  return req.headers.accept?.includes('text/html') ? '/index.html' : undefined;
+}
+
+export default {
+${rules.join('')}};
 `;
 }
 

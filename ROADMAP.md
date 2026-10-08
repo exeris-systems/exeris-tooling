@@ -4,7 +4,7 @@ type: roadmap
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-10-07
+last-verified: 2026-10-08
 ---
 
 # Exeris Tooling — Roadmap to 1.0.0 GA
@@ -1682,9 +1682,15 @@ never-invoked emitter start emitting, and its output did not build.
 
       **Java half shipped (0.9.0, on the final kernel 0.12.0 from Central):** `*Client.update` calls
       `KernelWebClient.put` (the kernel ask, exeris-kernel#579, is answered), and
-      `CrudRouteParityE2ETest` asserts `PUT` with no exemption. Still open: the TS `<Entity>Update`
-      is `Partial<Create>` while the server's update is a full replacement — a partial body over `PUT`
-      nulls the omitted columns.
+      `CrudRouteParityE2ETest` asserts `PUT` with no exemption.
+
+      **Body shape (0.10.0, #349):** the server's update is a full replacement. The handler decodes
+      the whole entity, and the repository writes every column but the key and the owner, so a
+      partial body over `PUT` nulls the omitted columns. The TS `<Entity>Update` is
+      `Omit<<Entity>, key | owner>`, plus the version when the entity is versioned, and the update
+      schema follows it; the edit form already sent the loaded record. The Java OpenAPI
+      `<Entity>UpdateDto` still lists only the create-eligible properties and requires none of them
+      (open).
 - [x] **Locale determinism — shipped 0.9.0 (2026-09-26).** Nineteen `toLowerCase()` calls in
       codegen-java used the JVM default locale. Under `tr-TR`: table `ınvoices`, column `item_ıd`,
       `ınvoice-api.yaml`, and an `InvalidPathException` writing `V…__create_lıne_ıtems.sql` on a
@@ -1816,7 +1822,7 @@ never-invoked emitter start emitting, and its output did not build.
       DTOs are **per-consumer copies** rather than a shared package. T42 is unblocked and gated on
       nothing: next action is the types slice itself.
 
-- [ ] **`npm start` proxies a prefix the emitted client no longer requests.** Measured while
+- [x] **`npm start` proxies a prefix the emitted client no longer requests.** Measured while
       fixing the CLI-override defect (which had every generated app calling `/api/<path>` at a
       router serving `/<path>`). With `apiBasePath` correctly empty, the emitted service requests
       `/orders`; the emitted `proxy.conf.json` still declares a single rule for `/api` with **no**
@@ -1847,8 +1853,17 @@ never-invoked emitter start emitting, and its output did not build.
       does not. A JSON proxy config cannot express that, so the remaining shape is `proxy.conf.js`
       with a `bypass`, wired as `ng serve --proxy-config proxy.conf.js` — and it needs verifying
       against a real `ng serve`, since Angular 22 runs the Vite dev server and it is the builder's
-      translation of the config, not Vite's own `bypass` support, that is in question. That
-      verification is the next action; the input and the constraint are both settled.
+      translation of the config, not Vite's own `bypass` support, that is in question.
+
+      **Closed in 0.10.0 (S2).** The scaffold writes `proxy.conf.js`: one rule per
+      `apiBasePath + effectivePath()`, sorted, each with a `bypass` returning `/index.html` when
+      `Accept` includes `text/html`. Measured on `@angular/build` 22.2.2: the builder passes the
+      entry through to Vite unchanged (`load-proxy-config.js` rewrites only glob keys and
+      `pathRewrite`), and against a real `ng serve` of the full sample a `text/html` GET of
+      `/orders` or `/orders/{id}/edit` returns `index.html` while a JSON GET, a POST and an
+      `EventSource` request reach the backend; under `render: 'ssg'` the navigation gets the client
+      shell. `proxy.conf.json` stays a seed path, so an existing copy is released, not deleted.
+      The `event-gen.ts` endpoint below is unchanged: it names a route no server serves (S4).
 
       **Three more `/api` sites survive the same fix** (found in the #191 review, verified against
       real CLI output). None reproduces the 404 today; all three are the same `''`-vs-`/api`
@@ -3871,12 +3886,13 @@ enters only if its upstream half is final first.
       Amendment 1; consumer steps in `docs/MIGRATION-0.x-to-1.0.md`, 0.10.0 train.
 - [ ] **The 0.10.0 release PR switches the README quick start to `eu.exeris` and `0.10.0`.** Until
       then the snippets show the published `eu.exeris.tooling:0.9.0`, which a consumer can resolve.
-- [ ] **Carried from 0.9.0 "Alongside, no gate"** (TS wave S2): the `npm start` proxy prefix
+- [x] **Carried from 0.9.0 "Alongside, no gate"** (TS wave S2): the `npm start` proxy prefix
       (`proxy.conf.js` with a header-based `bypass`, verified against a real `ng serve`), codegen-ts
       lint in CI, and deleting `KernelStrategy.generateClientCode` / `getRealTimeConfig`, which have
       no production caller.
-      *Landed:* the dead `KernelStrategy` methods are deleted (#323). *Open:* the proxy prefix and
-      codegen-ts lint in CI.
+      *Landed:* the dead `KernelStrategy` methods are deleted (#323); codegen-ts has an
+      `eslint.config.mjs` and `build.yml` runs `npm run lint` before vitest (#348); and `npm start`
+      proxies the entity paths through `proxy.conf.js` with the `bypass` (#351).
 - [ ] **Issues placed in 0.10.0:** #304 (form gaps), #271 (one header helper, done in #322), #309
       (`GraphMetadata.queries` written `null` when not extracted, done in #317), #310 (an entity
       with no `id` field — a processor error, done in #316 as `EXT-PROC-1015`; the TS model always
@@ -3887,8 +3903,9 @@ enters only if its upstream half is final first.
       (`Partial<Create>` sent over `PUT`), and the `TODO` that `form-gen.ts` writes into generated
       code. *Landed:* the `form-gen.ts` TODO (#323), and a debt this list did not name: metadata is
       read in a defined order, so the auto-detected base package does not depend on the
-      filesystem (#320, `EXT-GEN-3104`). *Open:* T11, T30, the OpenAPI golden, the registry-key
-      check and the T58 residue.
+      filesystem (#320, `EXT-GEN-3104`). The T58 residue, TS side: `<Entity>Update` is the whole
+      record (#349). *Open:* T11, T30, the OpenAPI golden, the registry-key check and the OpenAPI
+      `UpdateDto` shape.
 - [ ] **ADR-044 Amendment 2** also decides the GET route for a per-action stream (`EventSource` is
       GET-only) and the `EventBusService` default endpoint, which no server route serves.
 - [ ] **Triage two dog-food findings this file does not record yet:** the repository's

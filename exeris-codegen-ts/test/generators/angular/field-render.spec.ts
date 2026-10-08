@@ -328,8 +328,13 @@ describe('resolveFieldRender — placement', () => {
     expect(render({ type: 'String', readOnly: true })).toMatchObject({ displayed: true, form: { placement: 'none', readOnly: true } });
   });
 
-  it('inCreate = false removes the control, the computed input included', () => {
-    expect(render({ type: 'String', inCreate: false }).form.placement).toBe('none');
+  it('inCreate = false keeps the control for the edit form, marked as left out of create', () => {
+    expect(render({ type: 'String', inCreate: false }).form).toMatchObject({ placement: 'control', inCreate: false, inUpdate: true });
+    expect(render({ type: 'String' }).form).toMatchObject({ placement: 'control', inCreate: true });
+  });
+
+  it('inCreate = false removes the control when the edit form does not offer the field either, and the computed input', () => {
+    expect(render({ type: 'String', inCreate: false, inUpdate: false }).form.placement).toBe('none');
     expect(render({ type: 'String', inCreate: false, computed: true }).form.placement).toBe('none');
   });
 

@@ -159,11 +159,6 @@ function simpleRef(ref: string): string {
   return parts[parts.length - 1];
 }
 
-/** The injected field name for an entity service (camelCase + `Service`). */
-function serviceFieldName(ref: string): string {
-  return `${DslMapper.toCamelCase(simpleRef(ref))}Service`;
-}
-
 /** The injected field name for an entity's signal store (camelCase + `Store`). */
 function storeFieldName(ref: string): string {
   return `${DslMapper.toCamelCase(simpleRef(ref))}Store`;

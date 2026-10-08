@@ -2,7 +2,7 @@
  * Coverage for src/generators/angular/app-structure-gen.ts —
  * generateAppStructure emits the full Angular app skeleton:
  *   * static configs (package.json, angular.json, tsconfig{.app}.json,
- *     .postcssrc.json, proxy.conf.json; no tailwind.config.js or .npmrc)
+ *     .postcssrc.json, proxy.conf.js; no tailwind.config.js or .npmrc)
  *   * src/{styles.css, index.html, favicon.ico, main.ts}
  *   * src/environments/{environment.ts, environment.development.ts}
  *   * src/app/{app.config.ts, app.component.ts, app.routes.ts, index.ts}
@@ -81,7 +81,7 @@ describe('generateAppStructure — static skeleton', () => {
     ['tsconfig.json', false],
     ['tsconfig.app.json', false],
     ['.postcssrc.json', false],
-    ['proxy.conf.json', false],
+    ['proxy.conf.js', false],
     ['src/styles.css', false],
     ['src/index.html', false],
     ['src/favicon.ico', true],

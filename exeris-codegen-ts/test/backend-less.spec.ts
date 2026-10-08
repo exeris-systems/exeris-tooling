@@ -77,7 +77,7 @@ describe('backend-less emission — a view-only app', () => {
   });
 
   it('emits no dev-server proxy and starts without one', () => {
-    expect(paths(files)).not.toContain('proxy.conf.json');
+    expect(paths(files)).not.toContain('proxy.conf.js');
     const pkg = JSON.parse(content(files, 'package.json'));
     expect(pkg.scripts.start).toBe('ng serve');
   });
@@ -150,7 +150,7 @@ describe('backend-less emission — an app with neither entity nor view', () => 
   const files = buildGeneratedFiles([], [], DEFAULT_CONFIG);
 
   it('emits the bare shell: no HTTP wiring, no proxy, no barrels', () => {
-    expect(paths(files)).not.toContain('proxy.conf.json');
+    expect(paths(files)).not.toContain('proxy.conf.js');
     expect(paths(files)).not.toContain('src/app/index.ts');
     expect(paths(files).some((p) => p.startsWith('src/app/types/'))).toBe(false);
     expect(content(files, 'src/app/app.config.ts')).not.toContain('provideHttpClient');
@@ -191,6 +191,6 @@ describe('backend-less emission — an app with a visible entity is unchanged', 
     const standalone = generateAppStructure([order], [], config, [...views]);
     expect(composed).toEqual(standalone);
     expect(content(composed, 'src/app/app.config.ts')).toContain('provideHttpClient()');
-    expect(paths(composed)).toContain('proxy.conf.json');
+    expect(paths(composed)).toContain('proxy.conf.js');
   });
 });
