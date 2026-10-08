@@ -20,6 +20,7 @@
  */
 
 import { outPath } from '../../core/paths.js';
+import { primaryKeyField } from '../../core/primary-key.js';
 import type { DomainMetadata, FieldMetadata } from '../../models/domain-model.js';
 import { DslMapper } from '../../models/dsl-mapper.js';
 import { modelTypeName } from '../../models/model-naming.js';
@@ -142,7 +143,7 @@ export function generateSchemaSpec(
 
   lines.push('');
   lines.push(`  it('drops server-owned fields from the create schema', () => {`);
-  lines.push(`    expect(Object.keys(${name}CreateSchema.shape)).not.toContain('id');`);
+  lines.push(`    expect(Object.keys(${name}CreateSchema.shape)).not.toContain('${primaryKeyField(metadata)}');`);
   lines.push(`  });`);
   lines.push(`});`);
   lines.push('');
