@@ -8,8 +8,10 @@ import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 import eu.exeris.sdk.sourcemodel.ast.GraphEdgeMetadata;
 import eu.exeris.sdk.sourcemodel.ast.GraphMetadata;
+import eu.exeris.sdk.sourcemodel.ast.RelationshipMetadata;
 import eu.exeris.sdk.sourcemodel.ast.SagaMetadata;
 import eu.exeris.sdk.sourcemodel.ast.SystemFieldsMetadata;
+import eu.exeris.tooling.codegen.java.kernel.KernelApplicationGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelGeneratorStrategy;
 import org.junit.jupiter.api.*;
 
@@ -241,6 +243,42 @@ class KernelCodegenE2ETest {
             assertThat(files.stream().filter(f -> f.artifactType() == ArtifactType.REPOSITORY)
                     .findFirst().orElseThrow().content())
                     .contains("if (entity.getWorldId() == null) entity.setWorldId(actingSharedScope());");
+        }
+
+        @Test
+        @DisplayName("ADR-104: a renamed key names the key column, the identity clause, the accessors "
+                + "and the target of a MANY_TO_ONE into the entity")
+        void renamedPrimaryKeyReachesTheSchemaAndTheRepository() {
+            DomainMetadata invoice = DomainMetadata.builder("Invoice", "com.example.domain")
+                    .path("/invoices")
+                    .module("billing")
+                    .systemFields(SystemFieldsMetadata.builder().primaryKeyField("invoiceNo").build())
+                    .fields(List.of(
+                            FieldMetadata.simple("invoiceNo", "java.util.UUID"),
+                            FieldMetadata.builder("customer", "String").sortable(true).build()))
+                    .build();
+            DomainMetadata payment = DomainMetadata.builder("Payment", "com.example.domain")
+                    .path("/payments")
+                    .module("billing")
+                    .relationships(List.of(RelationshipMetadata.builder("invoice", "Invoice")
+                            .type(RelationshipMetadata.RelationType.MANY_TO_ONE)
+                            .build()))
+                    .build();
+
+            List<GeneratedFile> files = strategy.generate(invoice);
+            assertThat(files.stream().filter(f -> f.artifactType() == ArtifactType.CONFIGURATION)
+                    .findFirst().orElseThrow().content())
+                    .contains("invoice_no UUID PRIMARY KEY DEFAULT gen_random_uuid()")
+                    .doesNotContain(" id UUID");
+            assertThat(files.stream().filter(f -> f.artifactType() == ArtifactType.REPOSITORY)
+                    .findFirst().orElseThrow().content())
+                    .contains("WHERE invoice_no = ?")
+                    .contains("\" ASC, invoice_no\"")
+                    .contains("entity.getInvoiceNo()")
+                    .contains("entity.setInvoiceNo(")
+                    .contains("findById(UUID id)");
+            assertThat(new KernelApplicationGenerator().generateForeignKeys(List.of(invoice, payment)).content())
+                    .contains("FOREIGN KEY (invoice_id) REFERENCES invoices(invoice_no)");
         }
 
         @Test

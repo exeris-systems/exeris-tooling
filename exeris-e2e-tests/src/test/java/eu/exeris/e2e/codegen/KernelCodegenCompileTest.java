@@ -1,6 +1,8 @@
 package eu.exeris.e2e.codegen;
 
+import eu.exeris.e2e.codegen.compile.EmittedJavac;
 import eu.exeris.e2e.codegen.compile.InMemoryJavaCompiler;
+import eu.exeris.e2e.codegen.compile.ProcessorCompiler;
 import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
 import eu.exeris.sdk.sourcemodel.ast.ActionParamMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DataScope;
@@ -14,14 +16,25 @@ import eu.exeris.sdk.sourcemodel.ast.SagaMetadata;
 import eu.exeris.sdk.sourcemodel.ast.SagaStepMetadata;
 import eu.exeris.sdk.sourcemodel.ast.SystemFieldsMetadata;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
+import eu.exeris.tooling.codegen.java.CodegenPipeline;
 import eu.exeris.tooling.codegen.java.kernel.KernelApplicationGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelGeneratorStrategy;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -366,6 +379,120 @@ class KernelCodegenCompileTest {
         assertThat(result.success())
                 .as("javac output:%n%s", result.renderErrors())
                 .isTrue();
+    }
+
+    /**
+     * ADR-104: an entity whose key {@code primaryKeyField} renames, referenced by another entity's
+     * {@code MANY_TO_ONE}, through the real chain — annotated sources, {@code javac} + the processor,
+     * {@code CodegenPipeline} for the main and the test tree — and compiled with every lint category
+     * on. Both trees call the key's accessors, so a generator that wrote {@code getId()} or
+     * {@code setId(...)} fails here; the foreign key and the key column are asserted on the SQL.
+     */
+    @Test
+    @DisplayName("ADR-104: a renamed-key entity and a MANY_TO_ONE into it compile without a warning, "
+            + "main and test trees")
+    void renamedPrimaryKeyCorpusCompilesClean(@TempDir Path workspace) throws IOException {
+        Path entityClasses = workspace.resolve("target/classes");
+        Path generatedMain = workspace.resolve("src/main/generated/java");
+        Path generatedTests = workspace.resolve("src/test/generated/java");
+        ProcessorCompiler.compile(workspace.resolve("src/main/java"), entityClasses, null, renamedKeyCorpus());
+
+        CodegenPipeline pipeline = CodegenPipeline.createDefault();
+        Path metadataDir = entityClasses.resolve("exeris-metadata");
+        pipeline.run(metadataDir, generatedMain, "com.billing");
+        pipeline.runTests(metadataDir, generatedTests, "com.billing");
+
+        assertThat(migration(generatedMain, "create_invoices"))
+                .contains("invoice_no UUID PRIMARY KEY DEFAULT gen_random_uuid()")
+                .doesNotContain(" id UUID");
+        assertThat(migration(generatedMain, "foreign_keys"))
+                .contains("FOREIGN KEY (invoice_id) REFERENCES invoices(invoice_no)");
+        assertThat(Files.readString(generatedMain.resolve("com/billing/repository/InvoiceRepository.java")))
+                .contains("WHERE invoice_no = ?")
+                .contains("entity.setInvoiceNo(");
+
+        List<String> files = new ArrayList<>();
+        for (Path root : List.of(generatedMain, generatedTests)) {
+            try (Stream<Path> tree = Files.walk(root)) {
+                tree.filter(p -> p.toString().endsWith(".java")).map(Path::toString).sorted().forEach(files::add);
+            }
+        }
+        EmittedJavac.Result result = EmittedJavac.compile(files, workspace.resolve("target/app-classes"),
+                System.getProperty("java.class.path") + File.pathSeparator + entityClasses);
+        assertThat(result.clean())
+                .as("javac output:%n%s", result.render())
+                .isTrue();
+    }
+
+    /** Reads the one emitted migration whose file name contains {@code fragment}. */
+    private static String migration(Path generated, String fragment) throws IOException {
+        try (Stream<Path> files = Files.walk(generated.resolve("db/migration"))) {
+            Path file = files.filter(p -> p.getFileName().toString().contains(fragment))
+                    .findFirst()
+                    .orElseThrow(() -> new AssertionError("no migration matching '" + fragment + "'"));
+            return Files.readString(file);
+        }
+    }
+
+    /** {@code Invoice}, keyed by {@code invoiceNo}, and {@code Payment}, which references it. */
+    private static Map<String, String> renamedKeyCorpus() {
+        Map<String, String> sources = new LinkedHashMap<>();
+        sources.put("com/billing/domain/Invoice.java",
+                """
+                package com.billing.domain;
+
+                import eu.exeris.sdk.annotation.DomainEvent;
+                import eu.exeris.sdk.annotation.ExerisDomain;
+                import eu.exeris.sdk.annotation.Field;
+
+                import java.util.UUID;
+
+                @ExerisDomain(module = "billing", path = "/invoices", primaryKeyField = "invoiceNo")
+                @DomainEvent(name = "InvoiceIssued", trigger = DomainEvent.Trigger.CREATE, topic = "invoices.issued")
+                public class Invoice {
+
+                    private UUID invoiceNo;
+
+                    @Field(label = "Customer", required = true, sortable = true, filterable = true)
+                    private String customer;
+
+                    public UUID getInvoiceNo() { return invoiceNo; }
+                    public void setInvoiceNo(UUID invoiceNo) { this.invoiceNo = invoiceNo; }
+                    public String getCustomer() { return customer; }
+                    public void setCustomer(String customer) { this.customer = customer; }
+                }
+                """);
+        sources.put("com/billing/domain/Payment.java",
+                """
+                package com.billing.domain;
+
+                import eu.exeris.sdk.annotation.ExerisDomain;
+                import eu.exeris.sdk.annotation.Field;
+                import eu.exeris.sdk.annotation.Relationship;
+
+                import java.math.BigDecimal;
+                import java.util.UUID;
+
+                @ExerisDomain(module = "billing", path = "/payments")
+                public class Payment {
+
+                    private UUID id;
+
+                    @Field(label = "Amount")
+                    private BigDecimal amount;
+
+                    @Relationship(targetEntity = Invoice.class, displayField = "customer")
+                    private UUID invoiceId;
+
+                    public UUID getId() { return id; }
+                    public void setId(UUID id) { this.id = id; }
+                    public BigDecimal getAmount() { return amount; }
+                    public void setAmount(BigDecimal amount) { this.amount = amount; }
+                    public UUID getInvoiceId() { return invoiceId; }
+                    public void setInvoiceId(UUID invoiceId) { this.invoiceId = invoiceId; }
+                }
+                """);
+        return sources;
     }
 
     private static String sourceEntity() {
