@@ -3860,6 +3860,10 @@ enters only if its upstream half is final first.
       and `build-preview_generation`. Does not hold the cut.
       *Landed:* ADR-097 and the catalogue, with `docs/generators.md` (#328). *Open:*
       `exeris-codegen-cli`, and the bridge's `ADR-097.link.md` stub.
+- [ ] **`@PrimaryKey` rename (wave J5, ADR-104):** `@ExerisDomain(primaryKeyField)` names the key
+      across the migration, the repository, the foreign-key target, the Java and TS models and the
+      OpenAPI schema; the route variable stays `{id}`. The key is a `UUID`. The `@PrimaryKey` marker
+      is J5b, conditional on exeris-sdk#187 item 1.
 - [x] **Maven coordinates move to the `eu.exeris` group** (founder decision 2026-10-06). Every
       module is published as `eu.exeris:<artifactId>`, the group of the kernel and SDK artefacts; the
       artifactIds and the Java packages (`eu.exeris.tooling.*`) are unchanged. 0.9.0 and earlier stay
@@ -3926,7 +3930,8 @@ Pairs with SDK 0.13, which 0.10.0 does not wait for. Order, gates and the Java/T
 - [ ] **Wave 0, decisions** (may start during 0.10.0): RFC/ADR for the `@Blob` routes and the
       `@Channel` message shape; the graph-property payload encoding (kernel ask); the `@GraphQuery`
       decision between the kernel and the SDK.
-- [ ] **J1 `@PrimaryKey`**: the declared primary key across SQL, repository and route template.
+- [ ] **J1 `@PrimaryKey`**: the field marker, read into `primaryKeyField` (ADR-104 J5b), unless 0.10.0
+      shipped it. The rename is 0.10.0 wave J5.
 - [ ] **J2 + S1 `@GraphProperty`, `@UIGroup`**: graph node properties in the graph-sync upsert;
       grouped sections in the generated forms and detail views.
 - [ ] **J3 + S2 `@Blob`**, **J4 + S3 `@Channel`**: each after its wave 0 ADR.

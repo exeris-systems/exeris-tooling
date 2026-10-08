@@ -72,7 +72,7 @@
         <exeris.sdk.version>0.12.0</exeris.sdk.version>
         <!-- The kernel's Jackson 3 line. Emitted main code imports tools.jackson for an entity
              with a List<X> field. -->
-        <jackson3.version>3.2.2</jackson3.version>
+        <jackson3.version>3.2.3</jackson3.version>
     </properties>
 
     <!-- What generated code and its build need, and nothing else: no JavaPoet, swagger, Jackson 2,
