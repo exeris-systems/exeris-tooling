@@ -56,7 +56,7 @@ class OpenApiComponentsBuilderTest {
     }
 
     @Test
-    @DisplayName("a renamed owner and a UNIVERSE shared-scope key are both server-owned")
+    @DisplayName("a renamed owner and a UNIVERSE shared-scope key are both readOnly and absent from the create body")
     void renamedOwnerAndSharedScopeAreReadOnly() {
         DomainMetadata meta = DomainMetadata.builder("Species", "com.example.domain")
                 .dataScope(eu.exeris.sdk.sourcemodel.ast.DataScope.UNIVERSE)
@@ -75,8 +75,80 @@ class OpenApiComponentsBuilderTest {
             Schema<?> field = (Schema<?>) components.getSchemas().get("Species").getProperties().get(owned);
             assertThat(field.getReadOnly()).as(owned).isTrue();
             assertThat(components.getSchemas().get("SpeciesCreateDto").getProperties()).doesNotContainKey(owned);
-            assertThat(components.getSchemas().get("SpeciesUpdateDto").getProperties()).doesNotContainKey(owned);
         }
+        // The update never writes the owner, and writes the shared scope from the body (ADR-090 §3).
+        assertThat(components.getSchemas().get("SpeciesUpdateDto").getProperties())
+                .containsOnlyKeys("name", "worldId");
+    }
+
+    @Test
+    @DisplayName("a versioned entity's update body carries the version even when no field declares it")
+    void updateDtoCarriesAnUndeclaredVersion() {
+        DomainMetadata meta = DomainMetadata.builder("Order", "com.example.domain")
+                .versioned(true)
+                .fields(List.of(FieldMetadata.builder("orderNumber", "String").build()))
+                .build();
+
+        Components components = OpenApiComponentsBuilder.buildComponents(meta);
+
+        Map<String, Schema> update = components.getSchemas().get("OrderUpdateDto").getProperties();
+        assertThat(update).containsOnlyKeys("orderNumber", "version");
+        assertThat(update.get("version").getType()).isEqualTo("integer");
+        assertThat(update.get("version").getFormat()).isEqualTo("int64");
+        assertThat(components.getSchemas().get("OrderUpdateDto").getRequired()).isNullOrEmpty();
+    }
+
+    @Test
+    @DisplayName("an undeclared version is carried under the name the systemFields block gives it")
+    void updateDtoCarriesARenamedUndeclaredVersion() {
+        DomainMetadata meta = DomainMetadata.builder("Order", "com.example.domain")
+                .versioned(true)
+                .systemFields(eu.exeris.sdk.sourcemodel.ast.SystemFieldsMetadata.builder().versionField("rev").build())
+                .fields(List.of(FieldMetadata.builder("orderNumber", "String").build()))
+                .build();
+
+        assertThat(OpenApiComponentsBuilder.buildComponents(meta).getSchemas().get("OrderUpdateDto").getProperties())
+                .containsOnlyKeys("orderNumber", "rev");
+    }
+
+    @Test
+    @DisplayName("a declared version stays in the update body even when it is marked read-only")
+    void updateDtoKeepsAReadOnlyVersion() {
+        DomainMetadata meta = DomainMetadata.builder("Order", "com.example.domain")
+                .versioned(true)
+                .fields(List.of(FieldMetadata.builder("orderNumber", "String").build(),
+                        FieldMetadata.builder("version", "Long").readOnly(true).build()))
+                .build();
+
+        Map<String, Schema> update = OpenApiComponentsBuilder.buildComponents(meta)
+                .getSchemas().get("OrderUpdateDto").getProperties();
+        assertThat(update).containsOnlyKeys("orderNumber", "version");
+    }
+
+    @Test
+    @DisplayName("an unversioned entity's update body has no version")
+    void updateDtoOfAnUnversionedEntityHasNoVersion() {
+        DomainMetadata meta = DomainMetadata.builder("Order", "com.example.domain")
+                .fields(List.of(FieldMetadata.builder("orderNumber", "String").build()))
+                .build();
+
+        assertThat(OpenApiComponentsBuilder.buildComponents(meta).getSchemas().get("OrderUpdateDto").getProperties())
+                .containsOnlyKeys("orderNumber");
+    }
+
+    @Test
+    @DisplayName("a read-only domain field is in neither body, and stays on the entity schema")
+    void readOnlyFieldIsInNeitherBody() {
+        DomainMetadata meta = DomainMetadata.builder("Order", "com.example.domain")
+                .fields(List.of(FieldMetadata.builder("orderNumber", "String").build(),
+                        FieldMetadata.builder("status", "String").readOnly(true).build()))
+                .build();
+
+        Components components = OpenApiComponentsBuilder.buildComponents(meta);
+
+        assertThat(components.getSchemas().get("Order").getProperties()).containsKey("status");
+        assertThat(components.getSchemas().get("OrderCreateDto").getProperties()).containsOnlyKeys("orderNumber");
+        assertThat(components.getSchemas().get("OrderUpdateDto").getProperties()).containsOnlyKeys("orderNumber");
     }
 
     @Test

@@ -22,6 +22,12 @@ import java.util.Set;
  */
 public final class OpenApiComponentsBuilder {
 
+    private static final String OBJECT = "object";
+    private static final String STRING = "string";
+    private static final String INTEGER = "integer";
+    private static final String INT32 = "int32";
+    private static final String INT64 = "int64";
+
     private OpenApiComponentsBuilder() {}
 
     /**
@@ -53,10 +59,12 @@ public final class OpenApiComponentsBuilder {
     /**
      * The fields the server owns on write: a tenant-partitioned entity's owner and a
      * UNIVERSE entity's {@code @SharedScope} key. The generated repository stamps both from the
-     * bound storage context, refuses a value that contradicts it, and never updates the owner; so
-     * the entity schema marks them {@code readOnly} and the create/update DTOs omit them — the same
-     * split the TypeScript emitter makes (its {@code systemFieldNames}), so the published contract
-     * and the generated client agree on what a request may carry.
+     * bound storage context and refuses a value that contradicts it; so the entity schema marks
+     * them {@code readOnly} and the create DTO omits them — the same split the TypeScript emitter
+     * makes (its {@code systemFieldNames}), so the published contract and the generated client
+     * agree on what a request may carry. The update DTO follows
+     * {@link ServerOwnedFields#notInUpdateBody} instead: the update never writes the owner, and
+     * writes the shared scope from the body.
      */
     private static Set<String> serverOwnedFields(DomainMetadata metadata) {
         Set<String> owned = new LinkedHashSet<>();
@@ -67,12 +75,12 @@ public final class OpenApiComponentsBuilder {
 
     private static Schema<?> buildEntitySchema(DomainMetadata metadata) {
         Schema<Object> schema = new Schema<>();
-        OpenApiSchemas.typed(schema, "object");
+        OpenApiSchemas.typed(schema, OBJECT);
         schema.setDescription(metadata.description() != null
                 ? metadata.description()
                 : metadata.entityName() + " entity");
         Map<String, Schema> properties = new LinkedHashMap<>();
-        properties.put(PrimaryKeys.field(metadata), OpenApiSchemas.typed(new Schema<String>(), "string").format("uuid")
+        properties.put(PrimaryKeys.field(metadata), OpenApiSchemas.typed(new Schema<String>(), STRING).format("uuid")
                 .description("Unique identifier"));
         Set<String> serverOwned = serverOwnedFields(metadata);
         if (metadata.hasFields()) {
@@ -84,10 +92,10 @@ public final class OpenApiComponentsBuilder {
                 properties.put(field.name(), fieldSchema);
             }
         }
-        properties.put("createdAt", OpenApiSchemas.typed(new Schema<String>(), "string")
+        properties.put("createdAt", OpenApiSchemas.typed(new Schema<String>(), STRING)
                 .format("date-time")
                 .description("Creation timestamp"));
-        properties.put("updatedAt", OpenApiSchemas.typed(new Schema<String>(), "string")
+        properties.put("updatedAt", OpenApiSchemas.typed(new Schema<String>(), STRING)
                 .format("date-time")
                 .description("Last update timestamp"));
         schema.setProperties(properties);
@@ -105,7 +113,7 @@ public final class OpenApiComponentsBuilder {
      */
     private static Schema<?> buildPageSchema(DomainMetadata metadata) {
         Schema<Object> schema = new Schema<>();
-        OpenApiSchemas.typed(schema, "object");
+        OpenApiSchemas.typed(schema, OBJECT);
         schema.setDescription("One page of " + metadata.entityName());
         Map<String, Schema> properties = new LinkedHashMap<>();
         Schema<Object> content = new Schema<>();
@@ -113,13 +121,13 @@ public final class OpenApiComponentsBuilder {
         content.setItems(new Schema<>().$ref("#/components/schemas/" + metadata.entityName()));
         content.setDescription("The rows of this page, in the query's order");
         properties.put("content", content);
-        properties.put("totalElements", OpenApiSchemas.typed(new Schema<Long>(), "integer").format("int64")
+        properties.put("totalElements", OpenApiSchemas.typed(new Schema<Long>(), INTEGER).format(INT64)
                 .description("The number of rows the query matched"));
-        properties.put("totalPages", OpenApiSchemas.typed(new Schema<Integer>(), "integer").format("int32")
+        properties.put("totalPages", OpenApiSchemas.typed(new Schema<Integer>(), INTEGER).format(INT32)
                 .description("The number of pages of size those rows fill"));
-        properties.put("size", OpenApiSchemas.typed(new Schema<Integer>(), "integer").format("int32")
+        properties.put("size", OpenApiSchemas.typed(new Schema<Integer>(), INTEGER).format(INT32)
                 .description("The page size"));
-        properties.put("number", OpenApiSchemas.typed(new Schema<Integer>(), "integer").format("int32")
+        properties.put("number", OpenApiSchemas.typed(new Schema<Integer>(), INTEGER).format(INT32)
                 .description("The zero-based page index"));
         properties.put("first", OpenApiSchemas.typed(new Schema<Boolean>(), "boolean")
                 .description("Whether this is the first page"));
@@ -132,7 +140,7 @@ public final class OpenApiComponentsBuilder {
 
     private static Schema<?> buildCreateDtoSchema(DomainMetadata metadata) {
         Schema<Object> schema = new Schema<>();
-        OpenApiSchemas.typed(schema, "object");
+        OpenApiSchemas.typed(schema, OBJECT);
         schema.setDescription("DTO for creating " + metadata.entityName());
         Map<String, Schema> properties = new LinkedHashMap<>();
         java.util.List<String> required = new java.util.ArrayList<>();
@@ -157,23 +165,29 @@ public final class OpenApiComponentsBuilder {
 
     /**
      * The update body: every field the update writes from the request. The fields
-     * {@link ServerOwnedFields#notInUpdateBody} names are left out — the key, the owner, the shared
-     * scope, and the audit and soft-delete fields, whose stored or server-set value the update keeps
-     * whatever the body says. The version stays: it is the expected version an optimistic-lock update
-     * matches on.
+     * {@link ServerOwnedFields#notInUpdateBody} names are left out — the key, the owner, the audit
+     * and soft-delete fields and the read-only domain fields, whose stored or server-set value the
+     * update keeps whatever the body says. A UNIVERSE entity's shared scope stays, since the update
+     * writes it from the body. A versioned entity's version is always present, declared as a field
+     * or not: it is the expected version an optimistic-lock update matches on.
      */
     private static Schema<?> buildUpdateDtoSchema(DomainMetadata metadata) {
         Schema<Object> schema = new Schema<>();
-        OpenApiSchemas.typed(schema, "object");
+        OpenApiSchemas.typed(schema, OBJECT);
         schema.setDescription("DTO for updating " + metadata.entityName());
         Map<String, Schema> properties = new LinkedHashMap<>();
-        Set<String> serverOwned = ServerOwnedFields.notInUpdateBody(metadata);
+        Set<String> notInBody = ServerOwnedFields.notInUpdateBody(metadata);
         if (metadata.hasFields()) {
             for (FieldMetadata field : metadata.fields()) {
-                if (!field.readOnly() && !serverOwned.contains(field.name())) {
+                if (!notInBody.contains(field.name())) {
                     properties.put(field.name(), buildFieldSchema(field));
                 }
             }
+        }
+        if (metadata.versioned()) {
+            properties.putIfAbsent(ServerOwnedFields.versionField(metadata),
+                    OpenApiSchemas.typed(new Schema<Long>(), INTEGER).format(INT64)
+                            .description("The version the update expects the stored row to have"));
         }
         schema.setProperties(properties);
         return schema;
@@ -188,7 +202,7 @@ public final class OpenApiComponentsBuilder {
      */
     private static Schema<?> buildActionRequestSchema(ActionMetadata action) {
         Schema<Object> schema = new Schema<>();
-        OpenApiSchemas.typed(schema, "object");
+        OpenApiSchemas.typed(schema, OBJECT);
         schema.setDescription("Request for the " + action.name() + " action");
         Map<String, Schema> properties = new LinkedHashMap<>();
         for (ActionParamMetadata param : action.params()) {

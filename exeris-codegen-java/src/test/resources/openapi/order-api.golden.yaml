@@ -341,6 +341,10 @@ components:
         website:
           type: string
           format: uri
+        version:
+          type: integer
+          format: int64
+          description: The version the update expects the stored row to have
     OrderPage:
       type: object
       description: One page of Order

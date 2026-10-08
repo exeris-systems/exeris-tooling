@@ -54,7 +54,7 @@ class ServerOwnedFieldsTest {
     }
 
     @Test
-    @DisplayName("a UNIVERSE shared scope is not in the body and is still written (ADR-090 §3)")
+    @DisplayName("a UNIVERSE shared scope is in the body and is written (ADR-090 §3)")
     void sharedScope() {
         DomainMetadata metadata = DomainMetadata.builder("Species", "com.example.domain")
                 .dataScope(DataScope.UNIVERSE)
@@ -62,7 +62,48 @@ class ServerOwnedFieldsTest {
                 .fields(List.of(FieldMetadata.builder("worldId", "java.util.UUID").build()))
                 .build();
 
-        assertThat(ServerOwnedFields.notInUpdateBody(metadata)).contains("worldId", "tenantId");
+        assertThat(ServerOwnedFields.notInUpdateBody(metadata)).contains("tenantId").doesNotContain("worldId");
         assertThat(ServerOwnedFields.keptOnUpdate(metadata)).contains("tenantId").doesNotContain("worldId");
+    }
+
+    @Test
+    @DisplayName("a read-only field is not in the body and is kept by the request update only (ADR-090 Amendment 2)")
+    void readOnlyField() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .fields(List.of(FieldMetadata.builder("title", "String").build(),
+                        FieldMetadata.builder("status", "String").readOnly(true).build()))
+                .build();
+
+        assertThat(ServerOwnedFields.readOnlyFields(metadata)).containsExactly("status");
+        assertThat(ServerOwnedFields.notInUpdateBody(metadata)).containsExactly("id", "status");
+        assertThat(ServerOwnedFields.keptOnRequestUpdate(metadata)).containsExactly("id", "status");
+        assertThat(ServerOwnedFields.keptOnUpdate(metadata)).containsExactly("id");
+    }
+
+    @Test
+    @DisplayName("a read-only field in a system role keeps that role's rule: the version and the shared scope stay")
+    void readOnlySystemRoleKeepsItsRole() {
+        DomainMetadata metadata = DomainMetadata.builder("Species", "com.example.domain")
+                .dataScope(DataScope.UNIVERSE).versioned(true)
+                .systemFields(SystemFieldsMetadata.builder().sharedScopeField("worldId").build())
+                .fields(List.of(FieldMetadata.builder("worldId", "java.util.UUID").readOnly(true).build(),
+                        FieldMetadata.builder("version", "Long").readOnly(true).build()))
+                .build();
+
+        assertThat(ServerOwnedFields.notInUpdateBody(metadata)).contains("id", "tenantId")
+                .doesNotContain("worldId", "version");
+        assertThat(ServerOwnedFields.keptOnUpdate(metadata)).contains("id", "tenantId")
+                .doesNotContain("worldId", "version");
+        assertThat(ServerOwnedFields.readOnlyFields(metadata)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("the version field: the declared name, else version")
+    void versionField() {
+        assertThat(ServerOwnedFields.versionField(DomainMetadata.builder("Order", "com.example.domain").build()))
+                .isEqualTo("version");
+        assertThat(ServerOwnedFields.versionField(DomainMetadata.builder("Order", "com.example.domain")
+                .systemFields(SystemFieldsMetadata.builder().versionField("rev").build()).build()))
+                .isEqualTo("rev");
     }
 }

@@ -214,6 +214,10 @@ public final class KernelRepositoryTestGenerator {
             type.addMethod(updateKeepsStoredColumnsTest(entityType, repositoryType, persistenceType,
                     metadata, stored, tenantScoped));
         }
+        if (KernelRepositoryGenerator.hasRequestUpdate(metadata)) {
+            type.addMethod(updateFromRequestKeepsTheReadOnlyColumnsTest(entityType, repositoryType,
+                    persistenceType, metadata, tenantScoped));
+        }
         type.addMethod(findByIdEmptyTest(repositoryType, persistenceType));
         // ADR-076: update reports a versioned entity's zero-row outcome as a conflict, because
         // it matched on id and version together; deleteById matched on id alone and can only
@@ -363,6 +367,35 @@ public final class KernelRepositoryTestGenerator {
             }
         }
         return test.build();
+    }
+
+    /**
+     * The two updates of an entity with read-only fields differ by exactly those columns: the
+     * request-body update binds the shorter SET list and keeps them, the action update binds them.
+     * Counting the binds of each against the emitter's own column lists catches either method
+     * picking up the other's statement.
+     */
+    private MethodSpec updateFromRequestKeepsTheReadOnlyColumnsTest(ClassName entityType,
+                                                                   ClassName repositoryType,
+                                                                   ClassName persistenceType,
+                                                                   DomainMetadata metadata,
+                                                                   boolean tenantScoped) {
+        int version = metadata.versioned() ? 1 : 0;
+        MethodSpec.Builder test = test("updateFromRequestKeepsTheReadOnlyColumnsAndUpdateWritesThem")
+                .addJavadoc("A request body does not set a read-only field; an action's entity method may.\n")
+                .addStatement("$T persistence = new $T()", persistenceType, persistenceType);
+        stageStoredRow(test, KernelRepositoryGenerator.requestStoredColumns(metadata));
+        test.addStatement("$T repository = new $T(persistence)", repositoryType, repositoryType)
+                .addStatement(write("repository.$L($T.fromString($S), new $T())", tenantScoped),
+                        KernelRepositoryGenerator.UPDATE_FROM_REQUEST_METHOD, UUID, MOVED_ROW_ID, entityType)
+                .addStatement("$T.assertThat(persistence.writeBinds).hasSize($L)", ASSERTIONS,
+                        KernelRepositoryGenerator.requestUpdateColumns(metadata).size() + 1 + version);
+        stageStoredRow(test, KernelRepositoryGenerator.storedColumns(metadata));
+        return test.addStatement(write("repository.update($T.fromString($S), new $T())", tenantScoped),
+                        UUID, MOVED_ROW_ID, entityType)
+                .addStatement("$T.assertThat(persistence.writeBinds).hasSize($L)", ASSERTIONS,
+                        KernelRepositoryGenerator.updateColumns(metadata).size() + 1 + version)
+                .build();
     }
 
     /**

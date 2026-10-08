@@ -180,6 +180,77 @@ class KernelRepositoryServerOwnedUpdateTest {
     }
 
     @Test
+    @DisplayName("a read-only field: updateFromRequest keeps it and reads it back, update writes it (ADR-090 Amendment 2)")
+    void readOnlyFieldHasTwoWritePaths() {
+        DomainMetadata metadata = order()
+                .fields(List.of(ORDER_NUMBER,
+                        FieldMetadata.builder("status", "String").readOnly(true).build(),
+                        FieldMetadata.builder("attempts", "int").readOnly(true).build()))
+                .build();
+
+        assertThat(KernelRepositoryGenerator.hasRequestUpdate(metadata)).isTrue();
+        assertThat(columns(KernelRepositoryGenerator.requestUpdateColumns(metadata))).containsExactly("order_number");
+        assertThat(columns(KernelRepositoryGenerator.requestStoredColumns(metadata)))
+                .containsExactly("status", "attempts");
+        assertThat(columns(KernelRepositoryGenerator.updateColumns(metadata)))
+                .containsExactly("order_number", "status", "attempts");
+        assertThat(KernelRepositoryGenerator.storedColumns(metadata)).isEmpty();
+        String repo = repository(metadata);
+        assertThat(repo)
+                .contains("public Order updateFromRequest(UUID id, Order entity)")
+                .contains("UPDATE orders SET order_number = ? WHERE id = ?")
+                .contains("SELECT status, attempts FROM orders WHERE id = ?")
+                .contains("entity.setStatus(row.getString(0));")
+                .contains("entity.setAttempts(row.getInt(1));")
+                .contains("readStoredRequestColumns(conn, id, entity);")
+                .contains("public Order update(UUID id, Order entity)")
+                .contains("UPDATE orders SET order_number = ?, status = ?, attempts = ? WHERE id = ?")
+                // update keeps no column besides the key, so it reads nothing back.
+                .doesNotContain("readStoredColumns(")
+                // The insert writes it.
+                .contains("INSERT INTO orders (id, order_number, status, attempts) VALUES (?, ?, ?, ?)");
+    }
+
+    @Test
+    @DisplayName("an entity without read-only fields has one update and no updateFromRequest")
+    void noReadOnlyFieldNoRequestUpdate() {
+        DomainMetadata metadata = order().audited(true).fields(List.of(ORDER_NUMBER)).build();
+
+        assertThat(KernelRepositoryGenerator.hasRequestUpdate(metadata)).isFalse();
+        assertThat(repository(metadata)).doesNotContain("updateFromRequest").doesNotContain("readStoredRequestColumns");
+    }
+
+    @Test
+    @DisplayName("read-only and server-owned columns are kept together, the read-only ones in layout order")
+    void readOnlyFieldBesideServerOwnedColumns() {
+        DomainMetadata metadata = order().tenantScoped(true).audited(true).versioned(true)
+                .fields(List.of(ORDER_NUMBER, FieldMetadata.builder("status", "String").readOnly(true).build()))
+                .build();
+
+        assertThat(repository(metadata))
+                .contains("UPDATE orders SET order_number = ?, updated_at = ?, version = ? "
+                        + "WHERE id = ? AND version = ?")
+                .contains("SELECT status, tenant_id, created_at FROM orders WHERE id = ?")
+                .contains("UPDATE orders SET order_number = ?, status = ?, updated_at = ?, version = ? "
+                        + "WHERE id = ? AND version = ?")
+                .contains("SELECT tenant_id, created_at FROM orders WHERE id = ?");
+    }
+
+    @Test
+    @DisplayName("an entity whose only domain field is read-only writes nothing from a request body")
+    void onlyReadOnlyFields() {
+        DomainMetadata metadata = order()
+                .fields(List.of(FieldMetadata.builder("status", "String").readOnly(true).build()))
+                .build();
+
+        assertThat(KernelRepositoryGenerator.requestUpdateColumns(metadata)).isEmpty();
+        assertThat(repository(metadata))
+                .contains("UPDATE orders SET id = id WHERE id = ?")
+                .contains("SELECT status FROM orders WHERE id = ?")
+                .contains("UPDATE orders SET status = ? WHERE id = ?");
+    }
+
+    @Test
     @DisplayName("an entity with no server-owned column but the key emits no read-back")
     void plainEntityReadsNothingBack() {
         String repo = repository(order().fields(List.of(ORDER_NUMBER)).build());

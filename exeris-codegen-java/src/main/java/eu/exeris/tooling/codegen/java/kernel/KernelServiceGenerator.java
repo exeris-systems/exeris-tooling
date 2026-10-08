@@ -76,8 +76,11 @@ public class KernelServiceGenerator implements KernelArtifactGenerator {
         }
 
         builder.addMethod(buildSave(entityType))
-                .addMethod(buildUpdate(entityType))
-                .addMethod(buildDelete())
+                .addMethod(buildUpdate(entityType));
+        if (KernelRepositoryGenerator.hasRequestUpdate(metadata)) {
+            builder.addMethod(buildUpdateFromRequest(entityType));
+        }
+        builder.addMethod(buildDelete())
                 .addMethod(buildCount());
 
         return new GeneratedFile(packageName, className,
@@ -163,6 +166,24 @@ public class KernelServiceGenerator implements KernelArtifactGenerator {
                 .addParameter(UUID, "id")
                 .addParameter(entityType, "entity")
                 .addStatement("$T updated = repository.update(id, entity)", entityType)
+                .addStatement("return updated")
+                .build();
+    }
+
+    /**
+     * The update a request body drives, emitted beside {@code update} when the entity has read-only
+     * fields: it keeps their stored value, where {@code update}, which an action's entity method
+     * drives, writes them.
+     */
+    private MethodSpec buildUpdateFromRequest(ClassName entityType) {
+        String method = KernelRepositoryGenerator.UPDATE_FROM_REQUEST_METHOD;
+        return MethodSpec.methodBuilder(method)
+                .addModifiers(Modifier.PUBLIC)
+                .returns(entityType)
+                .addParameter(UUID, "id")
+                .addParameter(entityType, "entity")
+                .addJavadoc("Updates from a request body: the read-only fields keep their stored value.\n")
+                .addStatement("$T updated = repository.$L(id, entity)", entityType, method)
                 .addStatement("return updated")
                 .build();
     }

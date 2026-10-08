@@ -94,6 +94,23 @@ class KernelActionStreamHandlerGeneratorTest {
     }
 
     @Test
+    @DisplayName("a streaming action writes the read-only fields its entity method changed: it calls update, "
+            + "never updateFromRequest")
+    void streamingActionWritesReadOnlyFields() {
+        DomainMetadata order = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .fields(List.of(eu.exeris.sdk.sourcemodel.ast.FieldMetadata.builder("status", "String")
+                        .readOnly(true).build()))
+                .actions(List.of(streaming("trackShipment")))
+                .build();
+
+        assertThat(KernelRepositoryGenerator.hasRequestUpdate(order)).isTrue();
+        assertThat(gen.generate(order).content())
+                .contains("service.update(id, entity)")
+                .doesNotContain("updateFromRequest");
+    }
+
+    @Test
     @DisplayName("runs in the amended order: guard, id, body, row under RLS, subscribe, action, events")
     void stepsRunInOrder() {
         String content = gen.generate(trackedOrder()).content();

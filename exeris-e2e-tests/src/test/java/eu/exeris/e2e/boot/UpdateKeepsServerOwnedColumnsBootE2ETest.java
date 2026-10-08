@@ -18,26 +18,28 @@ import java.util.regex.Pattern;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * A {@code PUT} replaces the domain fields and leaves every server-owned column as stored, on a
- * <b>real</b> kernel boot.
+ * A {@code PUT} replaces the writable domain fields and leaves every server-owned column and every
+ * read-only field as stored, and an action writes the read-only field its entity method changed, on
+ * a <b>real</b> kernel boot.
  *
  * <p>Generator tests assert the emitted {@code UPDATE} and the generated repository test replays
  * binds against a double; only a statement run against an engine shows that a body naming a
- * creation stamp, an author and a soft-delete flag changes none of them in the row, and that the
- * response is the row as stored. So the whole path runs:
+ * creation stamp, an author, a soft-delete flag and a read-only field changes none of them in the
+ * row, and that the response is the row as stored. So the whole path runs:
  *
  * <pre>
- *   @ExerisDomain(audited, softDelete) + @AuditCreatedBy source
+ *   @ExerisDomain(audited, softDelete) + @AuditCreatedBy + @Field(readOnly) source
  *        → javac + ExerisDomainProcessor      (real metadata)
  *        → CodegenPipeline.run                (repository, handler, router)
  *        → javac over the emitted tree + a consumer-style Application subclass
  *        → KernelBootstrap                    (http + persistence on in-memory H2, PostgreSQL mode)
- *        → a real socket                      (GET, PUT, DELETE /notes/{id})
+ *        → a real socket                      (GET, PUT, DELETE /notes/{id}, POST …/actions/close)
  * </pre>
  *
  * <p>The table is created by the harness, as in {@link ListRouteBootE2ETest}: the kernel applies its
  * own migrations only. The row is written through the emitted repository's {@code save}, so its
- * creation stamp is the one the application stores.
+ * creation stamp is the one the application stores and its read-only field is the one the insert
+ * wrote.
  */
 @Tag("e2e")
 @Tag("boot")
@@ -48,6 +50,8 @@ class UpdateKeepsServerOwnedColumnsBootE2ETest {
     private static final String NOTE_ID = "00000000-0000-4000-8000-000000000001";
     private static final String NOTE = "/notes/" + NOTE_ID;
     private static final String FORGED_CREATED_AT = "1999-01-01T00:00:00Z";
+    private static final String STORED_STATUS = "\"open\"";
+    private static final String CLOSED_STATUS = "\"closed\"";
 
     @TempDir
     static Path workspace;
@@ -73,32 +77,53 @@ class UpdateKeepsServerOwnedColumnsBootE2ETest {
     }
 
     @Test
-    @DisplayName("a forged createdAt, createdBy and deleted leave the stored row unchanged; the title "
-            + "is replaced; the response and a later GET agree; a soft-deleted row answers 404")
+    @DisplayName("a forged createdAt, createdBy, deleted and read-only status leave the stored row "
+            + "unchanged; the title is replaced; an action changes the status and a PUT cannot change it "
+            + "back; the response and a later GET agree; a soft-deleted row answers 404")
     void putKeepsServerOwnedColumns() {
         String before = RawHttp.request(booted.port(), "GET", NOTE);
         assertThat(before).startsWith("HTTP/1.1 200");
         String storedCreatedAt = member(before, "createdAt");
         assertThat(storedCreatedAt).isNotEqualTo("null").doesNotContain("1999");
         assertThat(member(before, "createdBy")).isEqualTo("\"author\"");
+        assertThat(member(before, "status")).isEqualTo(STORED_STATUS);
 
         String put = RawHttp.request(booted.port(), "PUT", NOTE,
                 "{\"title\":\"renamed\",\"createdAt\":\"" + FORGED_CREATED_AT + "\","
-                        + "\"createdBy\":\"forger\",\"deleted\":true}");
+                        + "\"createdBy\":\"forger\",\"deleted\":true,\"status\":\"forged\"}");
 
         assertThat(put).startsWith("HTTP/1.1 200");
         assertThat(member(put, "title")).isEqualTo("\"renamed\"");
         assertThat(member(put, "createdAt")).isEqualTo(storedCreatedAt);
         assertThat(member(put, "createdBy")).isEqualTo("\"author\"");
         assertThat(member(put, "deleted")).isEqualTo("false");
+        assertThat(member(put, "status")).isEqualTo(STORED_STATUS);
 
         String after = RawHttp.request(booted.port(), "GET", NOTE);
         assertThat(after).startsWith("HTTP/1.1 200");
         assertThat(member(after, "title")).isEqualTo("\"renamed\"");
         assertThat(member(after, "createdAt")).isEqualTo(storedCreatedAt);
         assertThat(member(after, "createdBy")).isEqualTo("\"author\"");
+        assertThat(member(after, "status")).isEqualTo(STORED_STATUS);
         // The update stamp is the server's, and it moved.
         assertThat(member(after, "updatedAt")).isNotEqualTo(member(before, "updatedAt"));
+
+        // An action's entity method changes the read-only status, and the action's update writes
+        // it; the server-owned columns stay as stored on that path too.
+        String closed = RawHttp.request(booted.port(), "POST", NOTE + "/actions/close");
+        assertThat(closed).startsWith("HTTP/1.1 200");
+        assertThat(member(closed, "status")).isEqualTo(CLOSED_STATUS);
+        assertThat(member(closed, "createdAt")).isEqualTo(storedCreatedAt);
+        String afterAction = RawHttp.request(booted.port(), "GET", NOTE);
+        assertThat(member(afterAction, "status")).isEqualTo(CLOSED_STATUS);
+        assertThat(member(afterAction, "createdBy")).isEqualTo("\"author\"");
+
+        // A PUT that forges the status back does not reopen the note.
+        String reopen = RawHttp.request(booted.port(), "PUT", NOTE,
+                "{\"title\":\"renamed\",\"status\":\"open\"}");
+        assertThat(reopen).startsWith("HTTP/1.1 200");
+        assertThat(member(reopen, "status")).isEqualTo(CLOSED_STATUS);
+        assertThat(member(RawHttp.request(booted.port(), "GET", NOTE), "status")).isEqualTo(CLOSED_STATUS);
 
         assertThat(RawHttp.request(booted.port(), "DELETE", NOTE)).startsWith("HTTP/1.1 204");
         assertThat(RawHttp.request(booted.port(), "PUT", NOTE,
@@ -120,6 +145,7 @@ class UpdateKeepsServerOwnedColumnsBootE2ETest {
                 """
                 package eu.exeris.e2e.notes.domain;
 
+                import eu.exeris.sdk.annotation.Action;
                 import eu.exeris.sdk.annotation.ExerisDomain;
                 import eu.exeris.sdk.annotation.Field;
                 import eu.exeris.sdk.annotation.system.AuditCreatedBy;
@@ -135,6 +161,9 @@ class UpdateKeepsServerOwnedColumnsBootE2ETest {
                     @Field(label = "Title")
                     private String title;
 
+                    @Field(label = "Status", readOnly = true)
+                    private String status;
+
                     @AuditCreatedBy
                     private String createdBy;
 
@@ -146,6 +175,11 @@ class UpdateKeepsServerOwnedColumnsBootE2ETest {
                     public void setId(UUID id) { this.id = id; }
                     public String getTitle() { return title; }
                     public void setTitle(String title) { this.title = title; }
+                    public String getStatus() { return status; }
+                    public void setStatus(String status) { this.status = status; }
+
+                    @Action(name = "close", label = "Close")
+                    public void close() { this.status = "closed"; }
                     public String getCreatedBy() { return createdBy; }
                     public void setCreatedBy(String createdBy) { this.createdBy = createdBy; }
                     public Instant getCreatedAt() { return createdAt; }
@@ -161,7 +195,8 @@ class UpdateKeepsServerOwnedColumnsBootE2ETest {
 
     /**
      * {@code POST /seed} creates the table and writes one note through the emitted repository's
-     * {@code save}, with an author, so the stored creation stamp and author are the application's.
+     * {@code save}, with an author and a status, so the stored creation stamp, author and read-only
+     * status are the application's.
      */
     private static Map<String, String> harnessSources() {
         Map<String, String> sources = new LinkedHashMap<>();
@@ -205,12 +240,13 @@ class UpdateKeepsServerOwnedColumnsBootE2ETest {
                         routes.route(HttpMethod.GET, "/probe", exchange -> exchange.respond(HttpStatus.OK));
                         routes.route(HttpMethod.POST, "/seed", exchange -> {
                             executor.executeManaged(conn -> conn.executeUpdate(
-                                    "CREATE TABLE notes (id UUID PRIMARY KEY, title VARCHAR(255), "
+                                    "CREATE TABLE notes (id UUID PRIMARY KEY, title VARCHAR(255), status VARCHAR(32), "
                                             + "created_by VARCHAR(255), created_at TIMESTAMP WITH TIME ZONE, "
                                             + "updated_at TIMESTAMP WITH TIME ZONE, deleted BOOLEAN)"));
                             Note note = new Note();
                             note.setId(UUID.fromString("00000000-0000-4000-8000-000000000001"));
                             note.setTitle("first");
+                            note.setStatus("open");
                             note.setCreatedBy("author");
                             noteRepository().save(note);
                             exchange.respond(HttpStatus.NO_CONTENT);

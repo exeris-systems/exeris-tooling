@@ -132,6 +132,10 @@ public final class KernelServiceTestGenerator {
         }
         type.addMethod(saveTest(entityType, serviceType, stubType));
         type.addMethod(updateTest(entityType, serviceType, stubType));
+        boolean requestUpdate = KernelRepositoryGenerator.hasRequestUpdate(metadata);
+        if (requestUpdate) {
+            type.addMethod(updateFromRequestTest(entityType, serviceType, stubType));
+        }
         type.addMethod(deleteTest(serviceType, stubType));
         type.addMethod(countTest(serviceType, stubType));
         type.addType(stubRepository(metadata, entityType, repositoryType, stubType, finders));
@@ -234,6 +238,29 @@ public final class KernelServiceTestGenerator {
                 .build();
     }
 
+    /**
+     * The service's two updates reach the repository's two updates: an entity with read-only fields
+     * has a request-body update that keeps them and an action update that writes them, and
+     * crossing the two would write a read-only field from a request or drop an action's change.
+     */
+    private MethodSpec updateFromRequestTest(ClassName entityType, ClassName serviceType,
+                                             ClassName stubType) {
+        String method = KernelRepositoryGenerator.UPDATE_FROM_REQUEST_METHOD;
+        return test("updateFromRequestReachesTheRepositorysRequestUpdate")
+                .addStatement("$T argument = new $T()", entityType, entityType)
+                .addStatement("$T persisted = new $T()", entityType, entityType)
+                .addStatement("$T repository = new $T()", stubType, stubType)
+                .addStatement("repository.updateResult = persisted")
+                .addStatement("$T service = new $T(repository)", serviceType, serviceType)
+                .addStatement("$T.assertThat(service.$L($T.fromString($S), argument))"
+                        + ".isSameAs(persisted)", ASSERTIONS, method, UUID, FIXED_ID)
+                .addStatement("$T.assertThat(repository.updated).isSameAs(argument)", ASSERTIONS)
+                .addStatement("$T.assertThat(repository.fromRequest).isTrue()", ASSERTIONS)
+                .addStatement("service.update($T.fromString($S), argument)", UUID, FIXED_ID)
+                .addStatement("$T.assertThat(repository.fromRequest).isFalse()", ASSERTIONS)
+                .build();
+    }
+
     private MethodSpec deleteTest(ClassName serviceType, ClassName stubType) {
         return test("deleteDelegatesToDeleteById")
                 .addJavadoc("The one method whose name changes across the boundary.\n")
@@ -328,7 +355,8 @@ public final class KernelServiceTestGenerator {
                     .build());
         }
 
-        return stub.addMethod(MethodSpec.methodBuilder("save")
+        boolean requestUpdate = KernelRepositoryGenerator.hasRequestUpdate(metadata);
+        stub.addMethod(MethodSpec.methodBuilder("save")
                         .addAnnotation(Override.class)
                         .addModifiers(Modifier.PUBLIC)
                         .returns(entityType)
@@ -344,6 +372,7 @@ public final class KernelServiceTestGenerator {
                         .addParameter(entityType, "entity")
                         .addStatement("this.updatedId = id")
                         .addStatement("this.updated = entity")
+                        .addCode(requestUpdate ? CodeBlock.of("this.fromRequest = false;\n") : CodeBlock.of(""))
                         .addStatement("return updateResult")
                         .build())
                 .addMethod(MethodSpec.methodBuilder("deleteById")
@@ -357,8 +386,22 @@ public final class KernelServiceTestGenerator {
                         .addModifiers(Modifier.PUBLIC)
                         .returns(TypeName.LONG)
                         .addStatement("return count")
-                        .build())
-                .build();
+                        .build());
+        if (requestUpdate) {
+            stub.addField(FieldSpec.builder(TypeName.BOOLEAN, "fromRequest").build())
+                    .addMethod(MethodSpec.methodBuilder(KernelRepositoryGenerator.UPDATE_FROM_REQUEST_METHOD)
+                            .addAnnotation(Override.class)
+                            .addModifiers(Modifier.PUBLIC)
+                            .returns(entityType)
+                            .addParameter(UUID, "id")
+                            .addParameter(entityType, "entity")
+                            .addStatement("this.updatedId = id")
+                            .addStatement("this.updated = entity")
+                            .addStatement("this.fromRequest = true")
+                            .addStatement("return updateResult")
+                            .build());
+        }
+        return stub.build();
     }
 
     private static MethodSpec.Builder test(String name) {

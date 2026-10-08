@@ -103,6 +103,10 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     static final String REFUSE_FOREIGN_SHARED_SCOPE_METHOD = "refuseForeignSharedScope";
     /** Name of the emitted stored-column read that ends {@code update} — see {@link #buildReadStoredColumns}. */
     static final String READ_STORED_COLUMNS_METHOD = "readStoredColumns";
+    /** Name of the emitted update a request body drives — see {@link #hasRequestUpdate}. */
+    static final String UPDATE_FROM_REQUEST_METHOD = "updateFromRequest";
+    /** Name of the emitted stored-column read that ends {@code updateFromRequest}. */
+    static final String READ_STORED_REQUEST_COLUMNS_METHOD = "readStoredRequestColumns";
 
     private static final ClassName UUID_TYPE = ClassName.get("java.util", "UUID");
     private static final ClassName OPTIONAL = ClassName.get("java.util", "Optional");
@@ -421,10 +425,15 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         repo.addMethod(buildBindListFilter(ctx));
 
         repo.addMethod(buildSave(ctx))
-                .addMethod(buildUpdate(ctx));
-        List<Column> stored = storedColumns(columns, metadata);
+                .addMethod(buildUpdate(ctx, false));
+        List<Column> stored = storedColumns(columns, metadata, false);
         if (!stored.isEmpty()) {
-            repo.addMethod(buildReadStoredColumns(ctx, stored));
+            repo.addMethod(buildReadStoredColumns(ctx, stored, READ_STORED_COLUMNS_METHOD));
+        }
+        if (hasRequestUpdate(metadata)) {
+            repo.addMethod(buildUpdate(ctx, true));
+            List<Column> requestStored = storedColumns(columns, metadata, true);
+            repo.addMethod(buildReadStoredColumns(ctx, requestStored, READ_STORED_REQUEST_COLUMNS_METHOD));
         }
         repo.addMethod(buildDeleteById(ctx))
                 .addMethod(buildCount(ctx))
@@ -1317,10 +1326,11 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     }
 
     /**
-     * The columns an {@code UPDATE} writes, in bind order: every domain column, and the two the
-     * server sets on each update, the audit update stamp and the version. The key closes the WHERE
-     * clause; every other server-owned column ({@link ServerOwnedFields#keptOnUpdate}) keeps its
-     * stored value.
+     * The columns {@code update} writes, in bind order: every domain column, and the two the server
+     * sets on each update, the audit update stamp and the version. The key closes the WHERE clause;
+     * every other server-owned column ({@link ServerOwnedFields#keptOnUpdate}) keeps its stored
+     * value. This is the update an action's entity method drives, so it writes the read-only fields
+     * the method may have changed.
      *
      * <p>The owner is among the kept columns, so no update can move a row to another tenant — not
      * with a tenant bound (where a foreign one is refused before this statement anyway), and not
@@ -1334,11 +1344,20 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
      * <p>Shared with the repository-test emitter, whose WHERE-id index is one past this list.
      */
     static List<Column> updateColumns(DomainMetadata metadata) {
-        return updateColumns(columnLayout(metadata), metadata);
+        return updateColumns(columnLayout(metadata), metadata, false);
     }
 
-    private static List<Column> updateColumns(List<Column> layout, DomainMetadata metadata) {
-        Set<String> kept = ServerOwnedFields.keptOnUpdate(metadata);
+    /**
+     * The columns {@code updateFromRequest} writes, in bind order: those of {@code update} without
+     * the read-only fields ({@link ServerOwnedFields#keptOnRequestUpdate}), which a client does not
+     * set.
+     */
+    static List<Column> requestUpdateColumns(DomainMetadata metadata) {
+        return updateColumns(columnLayout(metadata), metadata, true);
+    }
+
+    private static List<Column> updateColumns(List<Column> layout, DomainMetadata metadata, boolean request) {
+        Set<String> kept = kept(metadata, request);
         return layout.stream().filter(c -> !keptOnUpdate(c, kept)).toList();
     }
 
@@ -1349,15 +1368,39 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
      * <p>Shared with the repository-test emitter, which stages the stored row by these indices.
      */
     static List<Column> storedColumns(DomainMetadata metadata) {
-        return storedColumns(columnLayout(metadata), metadata);
+        return storedColumns(columnLayout(metadata), metadata, false);
     }
 
-    private static List<Column> storedColumns(List<Column> layout, DomainMetadata metadata) {
-        Set<String> kept = ServerOwnedFields.keptOnUpdate(metadata);
+    /**
+     * The columns {@code updateFromRequest} copies from the stored row: the server-owned and the
+     * read-only ones, in read order.
+     */
+    static List<Column> requestStoredColumns(DomainMetadata metadata) {
+        return storedColumns(columnLayout(metadata), metadata, true);
+    }
+
+    private static List<Column> storedColumns(List<Column> layout, DomainMetadata metadata, boolean request) {
+        Set<String> kept = kept(metadata, request);
         String keyColumn = PrimaryKeys.column(metadata);
         return layout.stream()
                 .filter(c -> keptOnUpdate(c, kept) && !keyColumn.equals(c.sqlName()))
                 .toList();
+    }
+
+    private static Set<String> kept(DomainMetadata metadata, boolean request) {
+        return request
+                ? ServerOwnedFields.keptOnRequestUpdate(metadata)
+                : ServerOwnedFields.keptOnUpdate(metadata);
+    }
+
+    /**
+     * Whether the entity gets a second update, {@code updateFromRequest}, for the request body of
+     * {@code PUT {base}/{id}}: only when a read-only column makes its statement differ from
+     * {@code update}'s. Without one, the update route calls {@code update}.
+     */
+    static boolean hasRequestUpdate(DomainMetadata metadata) {
+        List<Column> layout = columnLayout(metadata);
+        return !storedColumns(layout, metadata, true).equals(storedColumns(layout, metadata, false));
     }
 
     private static boolean keptOnUpdate(Column col, Set<String> kept) {
@@ -1368,9 +1411,11 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         };
     }
 
-    private MethodSpec buildUpdate(Context ctx) {
-        List<Column> updatable = updateColumns(ctx.columns(), ctx.metadata());
-        List<Column> stored = storedColumns(ctx.columns(), ctx.metadata());
+    private MethodSpec buildUpdate(Context ctx, boolean request) {
+        List<Column> updatable = updateColumns(ctx.columns(), ctx.metadata(), request);
+        List<Column> stored = storedColumns(ctx.columns(), ctx.metadata(), request);
+        boolean twoPaths = hasRequestUpdate(ctx.metadata());
+        String readMethod = request ? READ_STORED_REQUEST_COLUMNS_METHOD : READ_STORED_COLUMNS_METHOD;
         // An entity with nothing to write — no domain field, no audit or version column, and the
         // server-owned columns kept — still needs a valid statement whose row count answers
         // "did the row exist": SET id = id writes nothing and binds nothing.
@@ -1386,7 +1431,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                 + versionGuard + liveGuard;
         ClassName rejection = updateRejection(ctx.metadata());
 
-        MethodSpec.Builder update = MethodSpec.methodBuilder("update")
+        MethodSpec.Builder update = MethodSpec.methodBuilder(request ? UPDATE_FROM_REQUEST_METHOD : "update")
                 .addModifiers(Modifier.PUBLIC)
                 .returns(ctx.entityType())
                 .addParameter(UUID_TYPE, "id")
@@ -1410,9 +1455,18 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
             update.addStatement("$T currentVersion = entity.$L()", BOXED_LONG, getterFor(versionColumn));
             update.addStatement("long expectedVersion = currentVersion == null ? 0L : currentVersion");
             update.addStatement("entity.$L(expectedVersion + 1L)", setterFor(versionColumn));
-        } else if (isTenantPartitioned(ctx.metadata()) || !stored.isEmpty() || ctx.metadata().softDelete()) {
+        } else if (isTenantPartitioned(ctx.metadata()) || !stored.isEmpty() || ctx.metadata().softDelete()
+                || twoPaths) {
             // A summary sentence, so the <p> paragraphs below do not open the doc comment.
             update.addJavadoc("Updates the row identified by {@code id}.\n");
+        }
+        if (request) {
+            update.addJavadoc("<p>The update a request body drives: the read-only fields are not\n")
+                    .addJavadoc("written, since a client does not set them.\n");
+        } else if (twoPaths) {
+            update.addJavadoc("<p>Writes the read-only fields, which an action's entity method may\n")
+                    .addJavadoc("change; the update a request body drives is {@code $L}.\n",
+                            UPDATE_FROM_REQUEST_METHOD);
         }
         if (isTenantPartitioned(ctx.metadata())) {
             String tenantField = systemColumn(ctx, ColumnKind.TENANT_ID).javaName();
@@ -1428,7 +1482,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                 .addJavadoc("The SET list writes that column, so when no scope is bound a body\n")
                 .addJavadoc("without it leaves the row owner-private.\n"));
         if (!stored.isEmpty()) {
-            update.addJavadoc("<p>These server-owned columns are not in the SET list and keep their\n")
+            update.addJavadoc("<p>These columns are not in the SET list and keep their\n")
                     .addJavadoc("stored value; the returned entity carries it, read in the update's own\n")
                     .addJavadoc("transaction:\n");
             for (int i = 0; i < stored.size(); i++) {
@@ -1450,7 +1504,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         body.endControlFlow();
         if (!stored.isEmpty()) {
             body.beginControlFlow("if (rowsAffected[0] != 0L)")
-                    .addStatement("$L(conn, id, entity)", READ_STORED_COLUMNS_METHOD)
+                    .addStatement("$L(conn, id, entity)", readMethod)
                     .endControlFlow();
         }
         body.endControlFlow(")");
@@ -1479,21 +1533,21 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     }
 
     /**
-     * Emits the read that gives {@code update} the stored values of the server-owned columns its
-     * statement keeps. It runs on the update's connection, inside its transaction, after a row
-     * matched, so it reads the row the update wrote; a row it cannot read rolls the update back with
-     * the rejection a zero-row update raises.
+     * Emits the read that gives {@code update} the stored values of the server-owned and read-only
+     * columns its statement keeps. It runs on the update's connection, inside its transaction,
+     * after a row matched, so it reads the row the update wrote; a row it cannot read rolls the
+     * update back with the rejection a zero-row update raises.
      */
-    private MethodSpec buildReadStoredColumns(Context ctx, List<Column> stored) {
+    private MethodSpec buildReadStoredColumns(Context ctx, List<Column> stored, String methodName) {
         String sql = "SELECT " + String.join(", ", stored.stream().map(Column::sqlName).toList())
                 + " FROM " + ctx.table() + whereIdClause(ctx.metadata());
-        MethodSpec.Builder read = MethodSpec.methodBuilder(READ_STORED_COLUMNS_METHOD)
+        MethodSpec.Builder read = MethodSpec.methodBuilder(methodName)
                 .addModifiers(Modifier.PRIVATE)
                 .returns(TypeName.VOID)
                 .addParameter(PERSISTENCE_CONNECTION, "conn")
                 .addParameter(UUID_TYPE, "id")
                 .addParameter(ctx.entityType(), ENTITY_SRC)
-                .addJavadoc("Copies the server-owned columns {@code update} keeps from the stored row\n")
+                .addJavadoc("Copies the columns {@code update} keeps from the stored row\n")
                 .addJavadoc("onto {@code entity}, on the update's own connection and transaction.\n")
                 .addStatement(SQL_VAR_STMT, sql)
                 .beginControlFlow(TRY_PREPARE_STMT, PERSISTENCE_STATEMENT)

@@ -147,6 +147,10 @@ class SharedScopeSqlE2ETest {
         String createDto = spec.substring(spec.indexOf("GalaxyPresenceCreateDto:"),
                 spec.indexOf("GalaxyPresenceUpdateDto:"));
         assertThat(createDto).contains("x:").doesNotContain("ownerTenantId").doesNotContain("universeId");
+        // The update body carries what the UPDATE writes: x and the shared scope, never the owner.
+        String updateDto = spec.substring(spec.indexOf("GalaxyPresenceUpdateDto:"),
+                spec.indexOf("GalaxyPresencePage:"));
+        assertThat(updateDto).contains("x:").contains("universeId:").doesNotContain("ownerTenantId");
     }
 
     @Test

@@ -11,7 +11,9 @@ slug: adr/ADR-090
 
 - **Status:** ACCEPTED (2026-09-26) · accepted-on-merge per the per-repo pattern (ADR-047 / ADR-058);
   the decision is implemented on `main` (`exeris-tooling` #223) · amended 2026-10-08 (Amendment 1 —
-  an update keeps every server-owned column, not only the owner)
+  an update keeps every server-owned column, not only the owner) · amended 2026-10-08 (Amendment 2 —
+  a request body does not write read-only fields, and the update schema is the body the update
+  writes from)
 - **Deciders:** the founder (finding **T36**)
 - **Repo:** `exeris-tooling`
 - **Scope:** tooling / codegen pipeline — emitted repository, handler, error types, OpenAPI, TypeScript
@@ -348,3 +350,118 @@ audit and soft-delete fields is not part of this amendment.
   later `GET`, and a `PUT` to the row after `DELETE` answers `404`. With `createdAt` put back in the
   `SET` list, the test fails on the forged stamp.
 - `OpenApiComponentsBuilderTest#updateDtoLeavesOutTheFieldsTheUpdateKeeps`.
+
+## Amendment 2 — a request body does not write read-only fields, and the update schema is the body the update writes from (2026-10-08)
+
+**Status:** Accepted *(adds a second update path beside Amendment 1's; replaces §6's and Amendment
+1's account of the `…UpdateDto`; §1 to §5 are unchanged)*
+
+**Deciders:** the founder.
+
+A field marked `@Field(readOnly = true)` is one the client does not set: the form shows it and never
+edits it, and the `…CreateDto` and `…UpdateDto` have always left it out. The update still wrote it
+from the request: the handler decodes the whole entity and the `UPDATE … SET` list carried every
+domain column, so a `PUT` body naming a read-only field rewrote it, and a body that left it out
+stored it as null. A read-only field is not a server-owned column, though. An action's entity method
+changes one as domain logic — `approve()` sets a status, `lock()` sets a lock expiry — and the
+action persists through the same update (§5).
+
+The `…UpdateDto` disagreed with the statement in two more places. It left out a UNIVERSE entity's
+shared scope, which §3 keeps in the `SET` list and writes from the body. And it listed the version
+only when the entity declares a field of that name, while the optimistic-lock update matches on the
+version the body carries whether or not it is declared.
+
+**Two update paths.** An entity with a read-only field gets two updates in its repository and
+service:
+
+- `update(id, entity)` is the update an action drives: the respond-once action route and the
+  streaming action (ADR-044) call it after the entity method ran. It writes the read-only fields.
+- `updateFromRequest(id, entity)` is the update the `PUT {base}/{id}` handler calls. It leaves the
+  read-only fields out of its `SET` list and reads their stored value back onto the entity it
+  returns, as Amendment 1 does for the server-owned columns. It reads them back through its own
+  `readStoredRequestColumns`.
+
+An entity without a read-only field has `update` alone, and the `PUT` handler calls it: the two
+statements would be the same. On both paths a server-owned column keeps its stored value, and the
+update stamp and the version are set by the server, as Amendment 1 decides. The insert writes the
+read-only fields.
+
+A field that also plays a system role keeps that role's rule: a read-only version is still matched
+and incremented, and a read-only shared scope is still written.
+
+`ServerOwnedFields#keptOnUpdate` stays the set every update keeps (Amendment 1's).
+`ServerOwnedFields#keptOnRequestUpdate` is that set and `#readOnlyFields`, and
+`KernelRepositoryGenerator#requestUpdateColumns` filters the column layout through it.
+`ServerOwnedFields#notInUpdateBody` is the set the request body does not carry: Amendment 1's
+server-owned set without the version and without a UNIVERSE entity's shared scope, plus the
+read-only fields.
+
+| Field | `update` (actions) | `updateFromRequest` (`PUT`) | `…UpdateDto` |
+|---|---|---|---|
+| a domain field | written | written | yes |
+| a domain field marked `readOnly` | written | not written, read back | no |
+| key, owner, created at and by, updated by, soft-delete fields | not written, read back (Amendment 1) | not written, read back | no |
+| updated at (an `audited` entity) | `Instant.now()` | `Instant.now()` | no |
+| version (a `versioned` entity) | expected version plus one | expected version plus one | **yes**, declared as a field or not, `integer`/`int64` under its role name |
+| shared scope (a UNIVERSE entity) | written (§3) | written (§3) | **yes** |
+
+**The update schema is the body the update writes from.** `OpenApiComponentsBuilder` builds the
+`…UpdateDto` from `notInUpdateBody` and adds the version of a versioned entity that declares no
+field of that name. No property is `required`. The entity schema and the `…CreateDto` are
+unchanged: the shared scope stays `readOnly` on the entity schema and out of the `…CreateDto`, and a
+read-only field stays out of the `…CreateDto`.
+
+**The update route validates what it writes.** `handleUpdate` runs the `@Validation` guard (T10) on
+the fields the request body carries only (`KernelValidationRules#onUpdate`). A field the request
+update keeps is not written from the body, so checking the body's value of it would refuse a request
+for a value the update ignores, and a `required` one would refuse every `PUT` that follows the
+published schema. `handleCreate` still checks every field; an action route checks none, as before.
+
+### What the amendment leaves unchanged
+
+- §1's refusal, §3's shared-scope rule, §4's types and §5's handler mapping. The refusal runs in
+  both updates.
+- The insert, and `handleCreate`'s validation: a `required` read-only field is still checked on
+  `POST`, although the `…CreateDto` leaves it out.
+- The TypeScript `…Update` type (ADR-092); aligning it with this schema is an `exeris-codegen-ts`
+  change.
+
+### Consequences of the amendment
+
+- **Breaking for a client that wrote a read-only field through `PUT`.** An action that changes one
+  keeps working. The regeneration note is
+  `docs/migration/0.10.0/java-12-update-keeps-read-only-fields.md`.
+- **Public API of the generated app:** an entity with a read-only field gains
+  `<Entity>Repository#updateFromRequest` and `<Entity>Service#updateFromRequest`. Code of the
+  consumer's own that applies a client's values should call `updateFromRequest`; code that applies a
+  domain change calls `update`.
+- **One more read per `PUT`** for an entity whose only kept columns are its read-only fields.
+- **A client generated from the OpenAPI document** sends the shared scope and the expected version in
+  the update body.
+
+### Verification of the amendment
+
+- `ServerOwnedFieldsTest` — a read-only field is in `notInUpdateBody` and `keptOnRequestUpdate`, not
+  in `keptOnUpdate`; a read-only version or shared scope keeps its role; the shared scope is in no
+  set.
+- `KernelRepositoryServerOwnedUpdateTest` — with a read-only field, `updateFromRequest` leaves it out
+  of the `SET` list and reads it back and `update` writes it, alone and beside the server-owned
+  columns; without one, no `updateFromRequest` is emitted.
+- `KernelServiceGeneratorTest`, `KernelHandlerGeneratorTest`, `KernelActionStreamHandlerGeneratorTest`
+  — the service's two updates reach the repository's two; `handleUpdate` calls `updateFromRequest`,
+  the respond-once and the streaming action call `update`.
+- `OpenApiComponentsBuilderTest` — the shared scope is in the `…UpdateDto`; an undeclared, a renamed
+  and a read-only version are in it; an unversioned entity has none; a read-only field is in neither
+  DTO. `SharedScopeSqlE2ETest` asserts the shared scope end to end from an annotated source;
+  `KernelOpenApiGoldenDocumentTest` pins the undeclared version.
+- `KernelValidationRulesTest#updateChecksOnlyTheBody`, `KernelHandlerTestGeneratorTest` —
+  `handleUpdate` checks no kept field, and its generated test case is driven by a field the body
+  carries.
+- `GeneratedTestsE2ETest` executes the generated tests of an entity with a required read-only field
+  and a primitive one, including `updateFromRequestKeepsTheReadOnlyColumnsAndUpdateWritesThem` and the
+  service's `updateFromRequestReachesTheRepositorysRequestUpdate`.
+- `UpdateKeepsServerOwnedColumnsBootE2ETest` boots the emitted application: a `PUT` with a forged
+  read-only `status` leaves it as stored; an action whose entity method sets it stores the new value,
+  in the response and in a later `GET`; a `PUT` forging it back leaves the action's value. With the
+  `PUT` route calling `update`, the test fails on the forged value; with `update` keeping the
+  read-only fields, it fails on the action's.
