@@ -169,12 +169,6 @@ class SpectateStreamBootE2ETest {
             assertThat(frame).hasSize(2).first().isEqualTo(EVENT_LINE);
             assertThat(frame.get(1)).startsWith("data: {\"label\":\"bravo-");
         }
-        // The live view sends nothing between events, so it notices the closed connection only
-        // when an event arrives; these updates let it end before the kernel shuts down. A spectate
-        // stream notices at its next keep-alive.
-        for (int i = 0; i < 2; i++) {
-            assertThat(put(BRAVO, "bravo-" + REVISION.incrementAndGet())).startsWith("HTTP/1.1 200");
-        }
         assertThat(RawHttp.request(booted.port(), "GET", "/buoys/" + ALPHA))
                 .startsWith("HTTP/1.1 200")
                 .contains("\"label\":\"");

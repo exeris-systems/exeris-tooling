@@ -211,16 +211,18 @@ public final class KernelStreamScaffold {
     /**
      * The {@code LOG} field, the {@code STREAM_BUFFER_CAPACITY} constant and the
      * {@code eventEngine} field the producer body ({@link #eventProducerScaffold(List)})
-     * reads. No keep-alive constants — the producer never sleeps. {@code selfType} is
-     * the generated class's own {@link ClassName}; pair with
+     * reads, and the {@code KEEPALIVE_INTERVAL_MILLIS} constant its drain loop polls with.
+     * {@code selfType} is the generated class's own {@link ClassName}; pair with
      * {@link #producerConstructor()}.
      *
      * @param selfType the generated class's own name
-     * @return the logger field, then {@code STREAM_BUFFER_CAPACITY} and {@code eventEngine}
+     * @return the logger field, then {@code KEEPALIVE_INTERVAL_MILLIS},
+     *         {@code STREAM_BUFFER_CAPACITY} and {@code eventEngine}
      */
     public static List<FieldSpec> producerFields(ClassName selfType) {
         return List.of(
                 loggerField(selfType),
+                keepAliveIntervalField(),
                 FieldSpec.builder(TypeName.INT, "STREAM_BUFFER_CAPACITY",
                                 Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
                         .initializer("$L", STREAM_BUFFER_CAPACITY)
@@ -229,6 +231,45 @@ public final class KernelStreamScaffold {
                         .build(),
                 FieldSpec.builder(EVENT_ENGINE, "eventEngine", Modifier.PRIVATE, Modifier.FINAL)
                         .build());
+    }
+
+    /**
+     * The {@code KEEPALIVE_INTERVAL_MILLIS} constant that {@link #drainLoop()} polls with: how long
+     * a stream may be quiet before it sends a {@code keep-alive} frame.
+     *
+     * @return the private static final {@code long} field
+     */
+    public static FieldSpec keepAliveIntervalField() {
+        return FieldSpec.builder(TypeName.LONG, "KEEPALIVE_INTERVAL_MILLIS",
+                        Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                .initializer("$LL", KEEPALIVE_INTERVAL_MILLIS)
+                .addJavadoc("How long the stream may be quiet before it sends a {@code keep-alive} frame.\n")
+                .build();
+    }
+
+    /**
+     * The drain loop of a stream that is held open by a hand-off {@code queue}: each forwarded
+     * frame is emitted as it arrives, and a {@code keep-alive} frame is emitted after each
+     * {@code KEEPALIVE_INTERVAL_MILLIS} without one. The keep-alive is what makes a disconnect
+     * surface from {@code emit} as a {@code StreamClosedException} while the stream is quiet, so the
+     * handler's {@code finally} releases its subscriptions and thread. The caller supplies the
+     * {@code queue}, the {@link #keepAliveIntervalField()} and the enclosing {@code try} that
+     * handles {@code InterruptedException}.
+     *
+     * @return the {@code while (true)} block
+     */
+    public static CodeBlock drainLoop() {
+        return CodeBlock.builder()
+                .beginControlFlow("while (true)")
+                .addStatement("$T frame = queue.poll(KEEPALIVE_INTERVAL_MILLIS, $T.MILLISECONDS)",
+                        STREAM_EVENT, TIME_UNIT)
+                .beginControlFlow("if (frame == null)")
+                .addStatement("exchange.emit($T.of($S, $S))", STREAM_EVENT, KEEP_ALIVE_FRAME, "")
+                .nextControlFlow("else")
+                .addStatement("exchange.emit(frame)")
+                .endControlFlow()
+                .endControlFlow()
+                .build();
     }
 
     /**
@@ -303,10 +344,13 @@ public final class KernelStreamScaffold {
      *   <li>The bus delivers raw codec-encoded bytes (ADR-046); on the Community
      *       JSON codec those bytes <em>are</em> the SSE {@code data:} field, so they
      *       pass through without a decode round-trip.</li>
-     *   <li>The {@code handle} VT drains: {@code queue.take()} parks the VT until an
-     *       event is queued, then {@code emit(...)} parks under back-pressure and
-     *       throws {@code StreamClosedException} on disconnect — which the loop lets
-     *       propagate (caught only to stop draining, never swallowed mid-stream).</li>
+     *   <li>The {@code handle} VT drains with {@link #drainLoop()}: a timed
+     *       {@code queue.poll} parks the VT until an event is queued or the keep-alive
+     *       interval passes, and a {@code keep-alive} frame is emitted on the timeout.
+     *       {@code emit(...)} parks under back-pressure and throws
+     *       {@code StreamClosedException} on disconnect — including on a keep-alive
+     *       while the entity is quiet — which the loop lets propagate (caught only to
+     *       stop draining, never swallowed mid-stream).</li>
      *   <li>{@code finally} drops every subscription and {@code close()}s
      *       (idempotent — safe even after a disconnect).</li>
      * </ul>
@@ -345,12 +389,10 @@ public final class KernelStreamScaffold {
         }
 
         return body
-                .beginControlFlow("while (true)")
-                .add("// Drain on this stream VT: take() parks the VT until an event is\n")
-                .add("// queued; emit(...) parks under back-pressure and throws\n")
-                .add("// StreamClosedException on disconnect — let it propagate.\n")
-                .addStatement("exchange.emit(queue.take())")
-                .endControlFlow()
+                .add("// Drain on this stream VT: poll(...) parks it until an event is queued or\n")
+                .add("// the keep-alive interval passes; emit(...) parks under back-pressure and\n")
+                .add("// throws StreamClosedException on disconnect — let it propagate.\n")
+                .add(drainLoop())
                 .nextControlFlow("catch ($T closed)", STREAM_CLOSED_EXCEPTION)
                 .add("// Normal termination: the peer disconnected or the stream closed.\n")
                 .add("// The engine runs teardown; we stop draining (NOT swallowed\n")

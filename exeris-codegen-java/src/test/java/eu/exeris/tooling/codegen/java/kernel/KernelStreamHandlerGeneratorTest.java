@@ -89,12 +89,15 @@ class KernelStreamHandlerGeneratorTest {
                 .contains("StreamEvent.of(\"OrderCreated\", data)")
                 .contains("StreamEvent.of(\"OrderShipped\", data)")
                 // drain on the stream VT; disconnect propagates; subscriptions dropped
-                .contains("exchange.emit(queue.take())")
+                .contains("queue.poll(KEEPALIVE_INTERVAL_MILLIS, TimeUnit.MILLISECONDS)")
+                .contains("StreamEvent.of(\"keep-alive\", \"\")")
+                .contains("exchange.emit(frame)")
+                .doesNotContain("queue.take()")
                 .contains("catch (StreamClosedException closed)")
                 .contains("bus.unsubscribe(token)")
                 .contains("exchange.close()")
-                // it's the producer, not the keep-alive fallback
-                .doesNotContain("KEEPALIVE")
+                // it's the producer, not the fixed-iteration keep-alive fallback
+                .doesNotContain("KEEPALIVE_ITERATIONS")
                 .doesNotContain("Thread.sleep")
                 // kernel-target discipline: Core owns the wire
                 .doesNotContain("text/event-stream");
