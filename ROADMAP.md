@@ -3886,12 +3886,13 @@ enters only if its upstream half is final first.
       Amendment 1; consumer steps in `docs/MIGRATION-0.x-to-1.0.md`, 0.10.0 train.
 - [ ] **The 0.10.0 release PR switches the README quick start to `eu.exeris` and `0.10.0`.** Until
       then the snippets show the published `eu.exeris.tooling:0.9.0`, which a consumer can resolve.
-- [ ] **Carried from 0.9.0 "Alongside, no gate"** (TS wave S2): the `npm start` proxy prefix
+- [x] **Carried from 0.9.0 "Alongside, no gate"** (TS wave S2): the `npm start` proxy prefix
       (`proxy.conf.js` with a header-based `bypass`, verified against a real `ng serve`), codegen-ts
       lint in CI, and deleting `KernelStrategy.generateClientCode` / `getRealTimeConfig`, which have
       no production caller.
       *Landed:* the dead `KernelStrategy` methods are deleted (#323); codegen-ts has an
-      `eslint.config.mjs` and `build.yml` runs `npm run lint` before vitest. *Open:* the proxy prefix.
+      `eslint.config.mjs` and `build.yml` runs `npm run lint` before vitest (#348); and `npm start`
+      proxies the entity paths through `proxy.conf.js` with the `bypass` (#351).
 - [ ] **Issues placed in 0.10.0:** #304 (form gaps), #271 (one header helper, done in #322), #309
       (`GraphMetadata.queries` written `null` when not extracted, done in #317), #310 (an entity
       with no `id` field — a processor error, done in #316 as `EXT-PROC-1015`; the TS model always
