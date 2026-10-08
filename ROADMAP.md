@@ -1682,9 +1682,15 @@ never-invoked emitter start emitting, and its output did not build.
 
       **Java half shipped (0.9.0, on the final kernel 0.12.0 from Central):** `*Client.update` calls
       `KernelWebClient.put` (the kernel ask, exeris-kernel#579, is answered), and
-      `CrudRouteParityE2ETest` asserts `PUT` with no exemption. Still open: the TS `<Entity>Update`
-      is `Partial<Create>` while the server's update is a full replacement — a partial body over `PUT`
-      nulls the omitted columns.
+      `CrudRouteParityE2ETest` asserts `PUT` with no exemption.
+
+      **Body shape (0.10.0, #349):** the server's update is a full replacement. The handler decodes
+      the whole entity, and the repository writes every column but the key and the owner, so a
+      partial body over `PUT` nulls the omitted columns. The TS `<Entity>Update` is
+      `Omit<<Entity>, key | owner>`, plus the version when the entity is versioned, and the update
+      schema follows it; the edit form already sent the loaded record. The Java OpenAPI
+      `<Entity>UpdateDto` still lists only the create-eligible properties and requires none of them
+      (open).
 - [x] **Locale determinism — shipped 0.9.0 (2026-09-26).** Nineteen `toLowerCase()` calls in
       codegen-java used the JVM default locale. Under `tr-TR`: table `ınvoices`, column `item_ıd`,
       `ınvoice-api.yaml`, and an `InvalidPathException` writing `V…__create_lıne_ıtems.sql` on a
@@ -3875,8 +3881,9 @@ enters only if its upstream half is final first.
       (`Partial<Create>` sent over `PUT`), and the `TODO` that `form-gen.ts` writes into generated
       code. *Landed:* the `form-gen.ts` TODO (#323), and a debt this list did not name: metadata is
       read in a defined order, so the auto-detected base package does not depend on the
-      filesystem (#320, `EXT-GEN-3104`). *Open:* T11, T30, the OpenAPI golden, the registry-key
-      check and the T58 residue.
+      filesystem (#320, `EXT-GEN-3104`). The T58 residue, TS side: `<Entity>Update` is the whole
+      record (#349). *Open:* T11, T30, the OpenAPI golden, the registry-key check and the OpenAPI
+      `UpdateDto` shape.
 - [ ] **ADR-044 Amendment 2** also decides the GET route for a per-action stream (`EventSource` is
       GET-only) and the `EventBusService` default endpoint, which no server route serves.
 - [ ] **Triage two dog-food findings this file does not record yet:** the repository's
