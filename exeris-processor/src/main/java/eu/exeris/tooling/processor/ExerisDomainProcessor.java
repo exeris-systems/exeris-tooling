@@ -162,6 +162,16 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                     + "honour it. ";
 
     /**
+     * Opening clause of every {@code @DomainEvent} entry in {@link #INERT_ATTRIBUTES} whose
+     * attribute the processor never reads, so {@code DomainEventMetadata} has nothing to carry it
+     * in. The attributes it does read are {@code name}, {@code topic}, {@code trigger},
+     * {@code action}, {@code includeFields}, {@code excludeFields} and {@code sensitiveFields}.
+     */
+    private static final String DOMAIN_EVENT_NOT_EXTRACTED =
+            "the processor does not read it, so it never reaches DomainEventMetadata and no emitter "
+                    + "can honour it";
+
+    /**
      * Opening clause of every {@code @UI} entry in {@link #INERT_ATTRIBUTES} whose attribute a
      * type-level {@code @UI} carries but the processor does not read there: only the six view
      * switches and {@code exportable} reach {@code UIMetadata}.
@@ -625,7 +635,64 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             new InertAttribute("UI", "gridSpan", UI_FIELD_ATTRIBUTE_ON_TYPE),
             new InertAttribute("UI", "props", UI_FIELD_ATTRIBUTE_ON_TYPE),
             new InertAttribute("UI", "visibleWhen", UI_FIELD_ATTRIBUTE_ON_TYPE),
-            new InertAttribute("UI", "enabledWhen", UI_FIELD_ATTRIBUTE_ON_TYPE));
+            new InertAttribute("UI", "enabledWhen", UI_FIELD_ATTRIBUTE_ON_TYPE),
+            new InertAttribute("DomainEvent", "description",
+                    "it is extracted into DomainEventMetadata.description and reaches the JSON, but "
+                            + "no emitter renders it"),
+            new InertAttribute("DomainEvent", "field",
+                    "it is extracted into DomainEventMetadata.fieldName and reaches the JSON, but no "
+                            + "generator reads it: the handler places a publish call only for the CREATE, "
+                            + "UPDATE, DELETE and ACTION triggers, so a FIELD_CHANGED event is never "
+                            + "published from generated code"),
+            new InertAttribute("DomainEvent", "version", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute("DomainEvent", "tags", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute("DomainEvent", "stateTransition", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute("DomainEvent", "condition", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute("DomainEvent", "partitionKey", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute("DomainEvent", "exchange", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute("DomainEvent", "routingKey", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute("DomainEvent", "priority", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute("DomainEvent", "ttlMs", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute("DomainEvent", "mandatory", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute("DomainEvent", "persistent", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute("DomainEvent", "includeSnapshot", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute("DomainEvent", "includePreviousValues", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute("DomainEvent", "includeComputed", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute("DomainEvent", "encryptFields", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute("DomainEvent", "payloadTransformer", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute("DomainEvent", "maxPayloadSize", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute("DomainEvent", "schemaFormat", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute("DomainEvent", "schemaNamespace", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute("DomainEvent", "schemaSubject", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute("DomainEvent", "compatibility", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute("DomainEvent", "registerSchema", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute("DomainEvent", "schemaDoc", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute("DomainEvent", "headers", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute("DomainEvent", "includeTraceContext", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute("DomainEvent", "includeTenantContext", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute("DomainEvent", "includeUserContext", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute("DomainEvent", "includeCausation", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute("DomainEvent", "includeTimestamps", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute("DomainEvent", "includeSource", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute("DomainEvent", "retentionDays", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute("DomainEvent", "archiveAfterDays", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute("DomainEvent", "compressAfterDays", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute("DomainEvent", "storeInEventStore", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute("DomainEvent", "consumers", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute("DomainEvent", "expectedProcessingTimeMs", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute("DomainEvent", "requiresIdempotency", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute("DomainEvent", "orderingRequired", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute("DomainEvent", "processingGuarantee", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute("DomainEvent", "useOutbox", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute("DomainEvent", "outboxTable", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute("DomainEvent", "outboxAggregation", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute("DomainEvent", "outboxAggregationWindowSeconds", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute("DomainEvent", "emitMetrics", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute("DomainEvent", "logLevel", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute("DomainEvent", "alertOnFailure", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute("DomainEvent", "traceSampleRate", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute("DomainEvent", "disableInTests", DOMAIN_EVENT_NOT_EXTRACTED),
+            new InertAttribute("DomainEvent", "mockConsumer", DOMAIN_EVENT_NOT_EXTRACTED));
 
     /**
      * Hand-maintained registry of whole type-level annotations that are extracted
@@ -2691,6 +2758,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
 
             if (eventAnnotation != null) {
                 Map<String, Object> values = extractAnnotationValues(eventAnnotation);
+                warnInertAttributes("DomainEvent", values, nestedClass, eventAnnotation);
                 String eventName = nestedClass.getSimpleName().toString();
                 String topic = values.containsKey("topic") ? (String) values.get("topic") : null;
                 String description = values.containsKey("description") ? (String) values.get("description") : null;
@@ -2719,10 +2787,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     private DomainEventMetadata extractSingleEventMetadata(AnnotationMirror eventAnnotation, TypeElement element) {
         Map<String, Object> values = extractAnnotationValues(eventAnnotation);
 
-        // TODO(T11-strict): add a warnInertAttributes("DomainEvent", ...) call so -Aexeris.strict
-        // can audit unconsumed @DomainEvent attributes like @Field and @ActionParam do.
-        // Awaits settling the consumed-attribute set (name/topic/description/trigger/
-        // action/field/includeFields/excludeFields/sensitiveFields).
+        warnInertAttributes("DomainEvent", values, element, eventAnnotation);
+
         String name = values.containsKey("name") ? (String) values.get("name") : null;
         if (name == null || name.isBlank()) {
             // Derive from trigger type
