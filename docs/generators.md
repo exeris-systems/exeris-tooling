@@ -165,15 +165,17 @@ condition is kept current by the change that makes it.
 
 **Output root.** `outputPath` in the config file (`exeris-codegen.json`), or `--output`, defaulting
 to `src/app/generated`. The CLI (`src/index.ts`) writes every file `buildGeneratedFiles` returns
-under that root and records each path in the root's `.exeris-codegen-manifest`, including files it
-skipped because they already existed and `overwrite` is off.
+under that root and records in the root's `.exeris-codegen-manifest` every path it owns: a file it
+wrote, found unchanged, or kept as a seed. A file it skipped because it was not proven its own is not
+recorded. A seed (`overwritable: false`) is written when absent and then kept unless `--overwrite`.
 
 **How generators are invoked.** `orchestrator.ts` (`buildGeneratedFiles`) composes the run.
 Per-entity and per-view output, the type surface and the peer trees are composed relative to an app
 tree, then prefixed with `src/app/`. `app-structure-gen.ts` writes the project scaffold around it, at
-paths relative to the output root; the project-root files carry a leading `./`. A contracts-only run
-has peers and no entity, enum or view: it drops the `src/app/` prefix, so peer trees land at
-`peers/{peer}/…`, and it writes no scaffold.
+paths relative to the output root. A contracts-only run has peers and no entity, enum or view: it
+drops the `src/app/` prefix, so peer trees land at `peers/{peer}/…`, and it writes no scaffold. With
+`scaffold: false` (`--no-scaffold`) the tree is written at the output root with no `src/app/`
+prefix and no scaffold; the barrel is written as `index.ts` and the view routes as `view.routes.ts`.
 
 The `generate*` keys below are configuration keys, set off by the matching `--no-zod`,
 `--no-services`, `--no-forms`, `--no-lists`, `--no-details`, `--no-stores`, `--no-sagas` and
@@ -199,7 +201,8 @@ declared name.
 | `angular/spec-gen.ts` | `src/app/schemas/{kebab(E)}.schema.spec.ts`; `src/app/services/{kebab(E)}.service.spec.ts` | `generateTests`; the schema spec also needs `generateZod`, the service spec `generateServices`. Every entity. | entity |
 | `angular/http-error-gen.ts` | `src/app/core/http-error.ts` | At least one entity is loaded and at least one of `generateDetails`, `generateLists`, `generateForms`, `generateStores`, `generateSagas` is on (`needsHttpErrorHelper`). | project |
 | `angular/view-gen.ts` | `src/app/pages/{kebab(V)}.component.ts`; `src/app/pages/{kebab(V)}.route.ts` | One pair per `view_*.json` in the metadata directory. | per view |
-| `angular/app-structure-gen.ts` | `./package.json`; `./angular.json`; `./tsconfig.json`; `./tsconfig.app.json`; `./tsconfig.spec.json`; `./.postcssrc.json`; `./proxy.conf.json`; `src/styles.css`; `src/index.html`; `src/favicon.ico`; `src/main.ts`; `src/environments/environment.ts`; `src/environments/environment.development.ts`; `src/app/app.config.ts`; `src/app/app.component.ts`; `src/app/app.routes.ts`; `src/app/index.ts` | Every run that is not contracts-only. `tsconfig.spec.json` only under `generateTests`. `proxy.conf.json` only when the app has a backend: at least one entity, or an emitted file that imports `@angular/common/http`. `src/app/index.ts` only when at least one entity or enum is loaded. | project |
+| `angular/view-routes-gen.ts` | `view.routes.ts` | `scaffold: false` and at least one view is loaded: every view's route, as the `viewRoutes` array, for the consumer's own routes file. With the scaffold on, `app.routes.ts` carries the routes instead. | project |
+| `angular/app-structure-gen.ts` | `package.json`; `angular.json`; `tsconfig.json`; `tsconfig.app.json`; `tsconfig.spec.json`; `.postcssrc.json`; `proxy.conf.json`; `src/styles.css`; `src/index.html`; `src/favicon.ico`; `src/main.ts`; `src/environments/environment.ts`; `src/environments/environment.development.ts`; `src/app/app.config.ts`; `src/app/app.component.ts`; `src/app/app.routes.ts`; `src/app/index.ts` | Every run that is not contracts-only, with `scaffold` on (the default). Every file except `src/favicon.ico` and the barrel `src/app/index.ts` is a seed. `tsconfig.spec.json` only under `generateTests`. `proxy.conf.json` only when the app has a backend: at least one entity, or an emitted file that imports `@angular/common/http`. `src/app/index.ts` only when at least one entity or enum is loaded; with `scaffold: false` the same barrel is written as `index.ts`. | project |
 | `api/enum-gen.ts` | none in a CLI run | Not invoked by `orchestrator.ts`; registered only by `registerAllGenerators`, which no production path calls. `src/app/types/enums.ts` comes from `enum-module-gen.ts`. | none |
 | `api/query-builder-gen.ts` | none in a CLI run | Not invoked by `orchestrator.ts`; registered only by `registerAllGenerators`. | none |
 | `angular/guard-gen.ts` | none in a CLI run | Not invoked by `orchestrator.ts`; registered only by `registerAllGenerators`. | none |
