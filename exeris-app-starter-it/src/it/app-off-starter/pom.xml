@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!--
+        An application that takes the plugin wiring from exeris-app-parent but writes its
+        dependencies by hand instead of depending on exeris-app-starter, and leaves one out: the
+        entity has a List<String> field, so the generated repository imports Jackson 3, which
+        reaches this build only through the runtime-scoped Community driver. exeris:generate names
+        tools.jackson.core:jackson-databind before javac fails on the missing package.
+    -->
+    <parent>
+        <groupId>eu.exeris</groupId>
+        <artifactId>exeris-app-parent</artifactId>
+        <version>@project.version@</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>eu.exeris.fixture</groupId>
+    <artifactId>app-off-starter</artifactId>
+    <version>1.0.0</version>
+    <description>An application built on exeris-app-parent without exeris-app-starter.</description>
+
+    <url/>
+    <licenses>
+        <license/>
+    </licenses>
+    <developers>
+        <developer/>
+    </developers>
+    <scm>
+        <connection/>
+        <developerConnection/>
+        <tag/>
+        <url/>
+    </scm>
+
+    <dependencies>
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-sdk-annotations</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-kernel-spi</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-kernel-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-kernel-community</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+    </dependencies>
+</project>

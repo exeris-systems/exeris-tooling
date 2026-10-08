@@ -101,6 +101,68 @@ describe('exeris-gen generate', () => {
     expect(existsSync(join(work, 'out', 'package.json'))).toBe(true);
   });
 
+  it('says that render ssg emits nothing without the scaffold', () => {
+    view(join(work, 'meta'), 'About');
+
+    const run = generate('-i', 'meta', '-o', 'out', '--no-scaffold', '--render', 'ssg', '--dry-run');
+
+    expect(run.status).toBe(0);
+    expect(run.output).toContain('render "ssg" emits nothing without the scaffold');
+    expect(run.output).not.toContain('main.server.ts');
+  });
+
+  it('emits the server files under --render ssg', () => {
+    view(join(work, 'meta'), 'About');
+
+    const run = generate('-i', 'meta', '-o', 'out', '--render', 'ssg', '--dry-run');
+
+    expect(run.status).toBe(0);
+    expect(run.output).not.toContain('emits nothing without the scaffold');
+    expect(run.output).toContain('Would create: src/main.server.ts');
+    expect(run.output).toContain('Would create: src/app/app.routes.server.ts');
+  });
+
+  it('warns when render ssg keeps the browser-only angular.json of an existing app', () => {
+    view(join(work, 'meta'), 'About');
+    expect(generate('-i', 'meta', '-o', 'out').status).toBe(0);
+
+    const dry = generate('-i', 'meta', '-o', 'out', '--render', 'ssg', '--dry-run');
+    expect(dry.output).toContain('Would keep (yours to edit): angular.json');
+    expect(dry.output).toContain('render "ssg": angular.json, package.json, tsconfig.app.json');
+
+    const run = generate('-i', 'meta', '-o', 'out', '--render', 'ssg');
+    expect(run.status).toBe(0);
+    expect(run.output).toContain('render "ssg": angular.json, package.json, tsconfig.app.json');
+    expect(run.output).toContain('ng build prerenders nothing');
+    expect(readFileSync(join(work, 'out', 'angular.json'), 'utf-8')).not.toContain('outputMode');
+    expect(existsSync(join(work, 'out', 'src/app/app.routes.server.ts'))).toBe(true);
+  });
+
+  it('warns when render ssg skips an angular.json no previous run generated', () => {
+    view(join(work, 'meta'), 'About');
+    mkdirSync(join(work, 'out'), { recursive: true });
+    writeFileSync(join(work, 'out', 'angular.json'), '{}');
+
+    const run = generate('-i', 'meta', '-o', 'out', '--render', 'ssg', '--dry-run');
+
+    expect(run.output).toContain('Would skip (not generated here): angular.json');
+    expect(run.output).toContain('render "ssg": angular.json, package.json, tsconfig.app.json');
+  });
+
+  it('gives no kept-scaffold warning on a fresh ssg run, nor under --overwrite', () => {
+    view(join(work, 'meta'), 'About');
+
+    const fresh = generate('-i', 'meta', '-o', 'out', '--render', 'ssg');
+    expect(fresh.status).toBe(0);
+    expect(fresh.output).not.toContain('ng build prerenders nothing');
+    expect(readFileSync(join(work, 'out', 'angular.json'), 'utf-8')).toContain('"outputMode": "static"');
+
+    generate('-i', 'meta', '-o', 'csr-first');
+    const overwritten = generate('-i', 'meta', '-o', 'csr-first', '--render', 'ssg', '--overwrite');
+    expect(overwritten.output).not.toContain('ng build prerenders nothing');
+    expect(readFileSync(join(work, 'csr-first', 'angular.json'), 'utf-8')).toContain('"outputMode": "static"');
+  });
+
   it('names the files it releases in the summary', () => {
     view(join(work, 'meta'), 'About');
     generate('-i', 'meta', '-o', 'out');

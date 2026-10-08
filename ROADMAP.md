@@ -1722,6 +1722,10 @@ never-invoked emitter start emitting, and its output did not build.
 
       **0.10.0, the fix:** the tenant guard in every stream handler and an isolation key on stream
       events, with the ADR-044 amendment (see **0.10.0**). It removes the refusal.
+      **Decided 2026-10-08 (ADR-044 Amendment 2):** per-action and spectate streams carry the
+      guard, load the row under RLS and forward only events whose stream id is the row's id, with
+      no kernel key. The entity-level refusal (`EXT-PROC-1014`) stays until exeris-kernel#600 gives
+      events an isolation key.
 - [x] **T42 — the mesh has no generated frontend contract.** Types slice shipped 0.8.0 (ADR-048).
       `codegen-ts` was single-service by construction: one metadata directory in, one app out. A mesh
       consumer retyped the other service's vocabulary by hand across a language boundary with no
@@ -2981,6 +2985,10 @@ Proposals, highest return-on-effort first:
       tenant guard and `EventDescriptor` carries no isolation key, so the entity-level producer
       forwards every tenant's events; 0.9.0 refuses `realTimeApi` on a tenant-partitioned entity
       (`EXT-PROC-1014`) until the amendment settles the guard and the key.
+      **Answered in ADR-044 Amendment 2 (founder, 2026-10-08):** all eight questions of
+      `docs/0.10.0-release-plan.md`, with four items left open for the implementation PRs.
+      Implementation order: J4-1 (driver, guard, RLS load, stream-id filter), J4-2 (the
+      `GET {base}/{id}/stream` route), S4 (TS clients).
 
 - [ ] **EV2 — `@EventSourced` aggregate generator — log substrate delivered (kernel 0.10, ADR-049);
       aggregate surface still missing.** No generator emits event-sourced aggregates today; **T11 strict
@@ -3852,6 +3860,10 @@ enters only if its upstream half is final first.
       and `build-preview_generation`. Does not hold the cut.
       *Landed:* ADR-097 and the catalogue, with `docs/generators.md` (#328). *Open:*
       `exeris-codegen-cli`, and the bridge's `ADR-097.link.md` stub.
+- [ ] **`@PrimaryKey` rename (wave J5, ADR-104):** `@ExerisDomain(primaryKeyField)` names the key
+      across the migration, the repository, the foreign-key target, the Java and TS models and the
+      OpenAPI schema; the route variable stays `{id}`. The key is a `UUID`. The `@PrimaryKey` marker
+      is J5b, conditional on exeris-sdk#187 item 1.
 - [x] **Maven coordinates move to the `eu.exeris` group** (founder decision 2026-10-06). Every
       module is published as `eu.exeris:<artifactId>`, the group of the kernel and SDK artefacts; the
       artifactIds and the Java packages (`eu.exeris.tooling.*`) are unchanged. 0.9.0 and earlier stay
@@ -3918,7 +3930,8 @@ Pairs with SDK 0.13, which 0.10.0 does not wait for. Order, gates and the Java/T
 - [ ] **Wave 0, decisions** (may start during 0.10.0): RFC/ADR for the `@Blob` routes and the
       `@Channel` message shape; the graph-property payload encoding (kernel ask); the `@GraphQuery`
       decision between the kernel and the SDK.
-- [ ] **J1 `@PrimaryKey`**: the declared primary key across SQL, repository and route template.
+- [ ] **J1 `@PrimaryKey`**: the field marker, read into `primaryKeyField` (ADR-104 J5b), unless 0.10.0
+      shipped it. The rename is 0.10.0 wave J5.
 - [ ] **J2 + S1 `@GraphProperty`, `@UIGroup`**: graph node properties in the graph-sync upsert;
       grouped sections in the generated forms and detail views.
 - [ ] **J3 + S2 `@Blob`**, **J4 + S3 `@Channel`**: each after its wave 0 ADR.

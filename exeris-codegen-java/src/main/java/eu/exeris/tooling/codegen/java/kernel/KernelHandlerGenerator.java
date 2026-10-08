@@ -170,7 +170,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                 .addMethod(buildHandleGetById(entityLower, optionalOfEntity, tenantPartitioned))
                 .addMethod(buildHandleCreate(entityLower, entityType, metadata, tenantPartitioned))
                 .addMethod(buildHandleUpdate(entityLower, entityType, metadata, tenantPartitioned))
-                .addMethod(buildHandleDelete(entityLower, entityType, optionalOfEntity, metadata, tenantPartitioned));
+                .addMethod(buildHandleDelete(entityLower, optionalOfEntity, metadata, tenantPartitioned));
 
         // T1: serve @Action methods. Each action gets a handler that loads the
         // aggregate, decodes its @ActionParam body (when any), invokes the actual
@@ -269,7 +269,8 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         return appendServerErrorCatch(method, "Failed to get " + entityLower).build();
     }
 
-    private MethodSpec buildHandleCreate(String entityLower, ClassName entityType, DomainMetadata metadata, boolean tenantPartitioned) {
+    private MethodSpec buildHandleCreate(String entityLower, ClassName entityType, DomainMetadata metadata,
+                                     boolean tenantPartitioned) {
         MethodSpec.Builder method = crudHandler("handleCreate");
         appendTenantGuard(method, tenantPartitioned);
         appendBodyParseGuard(method, entityType);
@@ -283,7 +284,8 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         return appendServerErrorCatch(method, "Failed to create " + entityLower).build();
     }
 
-    private MethodSpec buildHandleUpdate(String entityLower, ClassName entityType, DomainMetadata metadata, boolean tenantPartitioned) {
+    private MethodSpec buildHandleUpdate(String entityLower, ClassName entityType, DomainMetadata metadata,
+                                     boolean tenantPartitioned) {
         MethodSpec.Builder method = crudHandler("handleUpdate");
         appendTenantGuard(method, tenantPartitioned);
         appendPathIdGuard(method);
@@ -299,7 +301,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         return appendServerErrorCatch(method, "Failed to update " + entityLower).build();
     }
 
-    private MethodSpec buildHandleDelete(String entityLower, ClassName entityType, TypeName optionalOfEntity,
+    private MethodSpec buildHandleDelete(String entityLower, TypeName optionalOfEntity,
                                          DomainMetadata metadata, boolean tenantPartitioned) {
         MethodSpec.Builder method = crudHandler("handleDelete");
         appendTenantGuard(method, tenantPartitioned);

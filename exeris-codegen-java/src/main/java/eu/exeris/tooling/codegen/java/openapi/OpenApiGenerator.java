@@ -13,7 +13,11 @@ import io.swagger.v3.oas.models.servers.Server;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 
 /**
  * Generates OpenAPI 3.1 specifications from domain metadata.
@@ -153,8 +157,12 @@ public class OpenApiGenerator {
             ? metadata.description()
             : "REST API for " + metadata.entityName() + " management");
         info.setVersion(API_VERSION);
-        if (contact != null) info.setContact(contact);
-        if (license != null) info.setLicense(license);
+        if (contact != null) {
+            info.setContact(contact);
+        }
+        if (license != null) {
+            info.setLicense(license);
+        }
         return info;
     }
 
@@ -163,8 +171,12 @@ public class OpenApiGenerator {
         info.setTitle(apiTitle + " - " + capitalize(moduleName) + " Module");
         info.setDescription("REST API for " + moduleName + " module");
         info.setVersion(API_VERSION);
-        if (contact != null) info.setContact(contact);
-        if (license != null) info.setLicense(license);
+        if (contact != null) {
+            info.setContact(contact);
+        }
+        if (license != null) {
+            info.setLicense(license);
+        }
         return info;
     }
 
@@ -185,7 +197,9 @@ public class OpenApiGenerator {
     }
 
     private String capitalize(String str) {
-        if (str == null || str.isEmpty()) return str;
+        if (str == null || str.isEmpty()) {
+            return str;
+        }
         return Character.toUpperCase(str.charAt(0)) + str.substring(1);
     }
 
@@ -194,40 +208,52 @@ public class OpenApiGenerator {
      *
      * @param outputDirectory the output directory; {@code target/generated-openapi} by default
      */
-    public void setOutputDirectory(Path outputDirectory) { this.outputDirectory = outputDirectory; }
+    public void setOutputDirectory(Path outputDirectory) {
+        this.outputDirectory = outputDirectory;
+    }
 
     /**
      * Returns the directory {@link #generate} and {@link #generateAggregated} write into.
      *
      * @return the output directory
      */
-    public Path getOutputDirectory() { return outputDirectory; }
+    public Path getOutputDirectory() {
+        return outputDirectory;
+    }
 
     /**
      * Sets the URL of the single server entry every specification lists.
      *
      * @param baseUrl the server URL; {@code http://localhost:8080} by default
      */
-    public void setBaseUrl(String baseUrl) { this.baseUrl = baseUrl; }
+    public void setBaseUrl(String baseUrl) {
+        this.baseUrl = baseUrl;
+    }
 
     /**
      * Sets the title prefix of every specification's {@code info.title}.
      *
      * @param apiTitle the title prefix; {@code Exeris API} by default
      */
-    public void setApiTitle(String apiTitle) { this.apiTitle = apiTitle; }
+    public void setApiTitle(String apiTitle) {
+        this.apiTitle = apiTitle;
+    }
 
     /**
      * Sets the contact placed in every specification's {@code info}.
      *
      * @param contact the contact, or {@code null} for none
      */
-    public void setContact(Contact contact) { this.contact = contact; }
+    public void setContact(Contact contact) {
+        this.contact = contact;
+    }
 
     /**
      * Sets the licence placed in every specification's {@code info}.
      *
      * @param license the licence, or {@code null} for none
      */
-    public void setLicense(License license) { this.license = license; }
+    public void setLicense(License license) {
+        this.license = license;
+    }
 }

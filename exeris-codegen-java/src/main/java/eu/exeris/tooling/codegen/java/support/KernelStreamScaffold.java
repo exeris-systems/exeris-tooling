@@ -41,9 +41,6 @@ import java.util.List;
  */
 public final class KernelStreamScaffold {
 
-    private KernelStreamScaffold() {
-    }
-
     /** {@code eu.exeris.kernel.spi.http.HttpStreamHandler} — the interface every emitted stream handler implements. */
     public static final ClassName HTTP_STREAM_HANDLER =
             ClassName.get("eu.exeris.kernel.spi.http", "HttpStreamHandler");
@@ -111,6 +108,9 @@ public final class KernelStreamScaffold {
      * finite so the generated handler terminates cleanly by calling {@code close()}.
      */
     public static final int KEEPALIVE_ITERATIONS = 4;
+
+    private KernelStreamScaffold() {
+    }
 
     /**
      * The window (in seconds) the scaffold holds the stream open before closing —

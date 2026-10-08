@@ -33,9 +33,10 @@ A block's `@Block(props)` is parsed as JSON and becomes a field of the page, `bl
 `blockProps2`, … in template order, bound as `[props]="blockProps<N>"`. The component declares an
 input named `props`. A block without props gets no binding.
 
-Generation now fails, naming the view, the block and `customBlocks`, when a view has a CUSTOM block
-whose `customType` has no entry or that declares no `customType`, when `customBlocks` maps one
-class name (`symbol`) from two different modules, and when a block's props are not valid JSON.
+Generation now fails when a view has a CUSTOM block whose `customType` has no entry, that declares
+no `customType`, or whose props are not valid JSON; the message names the view and the block's place
+in it. It also fails when `customBlocks` maps one class name (`symbol`) from two different modules;
+that message names the view, the class and both modules.
 
 A LIST block's `<ul>` now holds `<li>` items: each child is wrapped in one, and a LIST bound to an
 entity collection emits one `<li>` per row inside its `@for`. Authored text on a LIST is an item too.

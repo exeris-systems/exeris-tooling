@@ -141,10 +141,9 @@ class SharedScopeSqlE2ETest {
         assertThat(Files.exists(generated.resolve("com/world/repository/GalaxyPresenceTenantMismatchException.java")))
                 .isTrue();
         // Both server-owned fields, readOnly in the entity schema; the create DTO carries only x.
-        // (No `type:` key: the 3.1 writer emits none for any property.)
         assertThat(spec)
-                .containsPattern("ownerTenantId:\\s+format: uuid\\s+readOnly: true")
-                .containsPattern("universeId:\\s+format: uuid\\s+readOnly: true");
+                .containsPattern("ownerTenantId:\\s+type: string\\s+format: uuid\\s+readOnly: true")
+                .containsPattern("universeId:\\s+type: string\\s+format: uuid\\s+readOnly: true");
         String createDto = spec.substring(spec.indexOf("GalaxyPresenceCreateDto:"),
                 spec.indexOf("GalaxyPresenceUpdateDto:"));
         assertThat(createDto).contains("x:").doesNotContain("ownerTenantId").doesNotContain("universeId");

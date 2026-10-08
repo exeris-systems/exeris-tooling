@@ -65,15 +65,29 @@ public final class RequestBodyFactory {
         requestBody.setRequired(true);
         Content content = new Content();
         MediaType mediaType = new MediaType();
-        String schemaName = entityName + capitalize(action.name()) + "Request";
-        mediaType.setSchema(new Schema<>().$ref("#/components/schemas/" + schemaName));
+        mediaType.setSchema(new Schema<>().$ref("#/components/schemas/"
+                + actionRequestSchemaName(entityName, action)));
         content.addMediaType(APPLICATION_JSON, mediaType);
         requestBody.setContent(content);
         return requestBody;
     }
 
+    /**
+     * The name of an action's request-body schema, {@code <Entity><Action>Request}. The body
+     * references it and {@link OpenApiComponentsBuilder} defines it under the same name.
+     *
+     * @param entityName the entity's simple name
+     * @param action     the action the body is for
+     * @return the schema name
+     */
+    static String actionRequestSchemaName(String entityName, ActionMetadata action) {
+        return entityName + capitalize(action.name()) + "Request";
+    }
+
     private static String capitalize(String str) {
-        if (str == null || str.isEmpty()) return str;
+        if (str == null || str.isEmpty()) {
+            return str;
+        }
         return Character.toUpperCase(str.charAt(0)) + str.substring(1);
     }
 }
