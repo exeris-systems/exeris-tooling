@@ -192,4 +192,20 @@ class KernelServiceTestGeneratorTest {
                 .hasMessageContaining("com.example.order")
                 .hasMessageContaining(".domain");
     }
+
+    @Test
+    @DisplayName("an entity with a read-only field gets a case proving each service update reaches its "
+            + "repository twin")
+    void readOnlyFieldGetsTheRequestUpdateCase() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain").path("/orders")
+                .fields(List.of(FieldMetadata.builder("status", "String").readOnly(true).build()))
+                .build();
+
+        assertThat(generate(metadata))
+                .contains("void updateFromRequestReachesTheRepositorysRequestUpdate()")
+                .contains("public Order updateFromRequest(UUID id, Order entity)")
+                .contains("this.fromRequest = true;")
+                .contains("this.fromRequest = false;");
+        assertThat(generate(ORDER)).doesNotContain("fromRequest");
+    }
 }

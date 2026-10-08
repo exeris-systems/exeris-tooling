@@ -726,8 +726,9 @@ public final class KernelHandlerTestGenerator {
         // It scans every rule for the first one that yields a reject, rather than reading the
         // first field's first rule: several kinds yield no probe at all (a pattern always, a
         // zero minLength, a bound that does not fit its field's type), so anchoring on position
-        // would make this case's existence depend on field-declaration order.
-        for (KernelValidationRules.FieldRules fr : rules) {
+        // would make this case's existence depend on field-declaration order. Only the fields the
+        // update body carries are scanned: the update route does not check the others.
+        for (KernelValidationRules.FieldRules fr : KernelValidationRules.onUpdate(metadata)) {
             Probe reject = fr.rules().stream()
                     .flatMap(rule -> probesFor(fr, rule).stream())
                     .filter(p -> !p.accept())
@@ -1141,7 +1142,7 @@ public final class KernelHandlerTestGenerator {
                             .addJavadoc("The entity a refused write was handed.\n")
                             .build());
         }
-        return stub
+        stub
                 .addMethod(MethodSpec.constructorBuilder()
                         .addStatement("super(($T) null)", repositoryType)
                         .build())
@@ -1190,19 +1191,31 @@ public final class KernelHandlerTestGenerator {
                         .addStatement("this.saved = entity")
                         .addStatement("return entity")
                         .build())
-                .addMethod(MethodSpec.methodBuilder("update")
-                        .addAnnotation(Override.class)
-                        .addModifiers(Modifier.PUBLIC)
-                        .returns(entityType)
-                        .addParameter(UUID, "id")
-                        .addParameter(entityType, "entity")
-                        .addCode(refusalCheck(refuses))
-                        .beginControlFlow("if (!rowExists)")
-                        .addStatement("throw new $T(id)", conflict != null ? conflict : notFound)
-                        .endControlFlow()
-                        .addStatement("this.updatedId = id")
-                        .addStatement("return entity")
-                        .build())
+                .addMethod(stubUpdate("update", entityType, refuses, conflict != null ? conflict : notFound));
+        // The update route calls updateFromRequest when the entity has one; the double records it
+        // the same way, so the route's cases do not depend on which of the two it calls.
+        if (KernelRepositoryGenerator.hasRequestUpdate(metadata)) {
+            stub.addMethod(stubUpdate(KernelRepositoryGenerator.UPDATE_FROM_REQUEST_METHOD, entityType, refuses,
+                    conflict != null ? conflict : notFound));
+        }
+        return stub.build();
+    }
+
+    /** One of the double's update overrides: refuse, reject a missing row, or record the id. */
+    private static MethodSpec stubUpdate(String name, ClassName entityType, boolean refuses,
+                                         ClassName rejection) {
+        return MethodSpec.methodBuilder(name)
+                .addAnnotation(Override.class)
+                .addModifiers(Modifier.PUBLIC)
+                .returns(entityType)
+                .addParameter(UUID, "id")
+                .addParameter(entityType, "entity")
+                .addCode(refusalCheck(refuses))
+                .beginControlFlow("if (!rowExists)")
+                .addStatement("throw new $T(id)", rejection)
+                .endControlFlow()
+                .addStatement("this.updatedId = id")
+                .addStatement("return entity")
                 .build();
     }
 

@@ -109,4 +109,22 @@ class KernelServiceGeneratorTest {
                 .contains("public OrderPage findPage(OrderListQuery query) { return repository.findPage(query); }")
                 .contains("public List<Order> findAll() { return repository.findAll(); }");
     }
+
+    @Test
+    @DisplayName("an entity with a read-only field gets updateFromRequest beside update, each reaching its "
+            + "repository twin")
+    void readOnlyFieldAddsUpdateFromRequest() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain").path("/orders")
+                .fields(List.of(FieldMetadata.builder("status", "String").readOnly(true).build()))
+                .build();
+        String service = new KernelServiceGenerator().generate(metadata).content().replaceAll("\\s+", " ");
+        String plain = new KernelServiceGenerator().generate(
+                DomainMetadata.builder("Order", "com.example.domain").path("/orders").build()).content();
+
+        assertThat(service)
+                .contains("public Order update(UUID id, Order entity) { Order updated = repository.update(id, entity);")
+                .contains("public Order updateFromRequest(UUID id, Order entity) { "
+                        + "Order updated = repository.updateFromRequest(id, entity);");
+        assertThat(plain).doesNotContain("updateFromRequest");
+    }
 }

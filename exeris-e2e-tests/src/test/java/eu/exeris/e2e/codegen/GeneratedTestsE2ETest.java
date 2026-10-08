@@ -159,7 +159,12 @@ class GeneratedTestsE2ETest {
                             DiscoverySelectors.selectClass(
                                     Class.forName("com.shop.handler.InvoiceHandlerTest", true, appLoader)),
                             DiscoverySelectors.selectClass(
-                                    Class.forName("com.shop.handler.SpeciesHandlerTest", true, appLoader)))
+                                    Class.forName("com.shop.handler.SpeciesHandlerTest", true, appLoader)),
+                            // The entity with read-only fields: the only executed proof that the
+                            // service's request-body update and action update reach their own
+                            // repository methods.
+                            DiscoverySelectors.selectClass(
+                                    Class.forName("com.shop.service.InvoiceServiceTest", true, appLoader)))
                     .build();
 
             Launcher launcher = LauncherFactory.create();
@@ -191,19 +196,24 @@ class GeneratedTestsE2ETest {
             // primary key, which is never a sort key or a filter) + 8 service cases (seven CRUD
             // delegations, findPage included, and the one T8 finder the fixture carries) + 8
             // repository cases for Order (the save/load round-trip, the six paths around it, and
-            // findPage's placeholder/bind alignment) + 14 for Invoice — the entity that carries
+            // findPage's placeholder/bind alignment) + 15 for Invoice — the entity that carries
             // every system column, and the only tenant-partitioned one here, so it alone gets the
             // tenant stamp, the four foreign-tenant cases (bound tenant accepted, foreign tenant
-            // refused, unbound left to the database, update never writes the owner) and the case
-            // proving an update writes no server-owned column and returns the stored ones — + 17
-            // for Species, the UNIVERSE entity: the same 14 plus the shared-scope stamp, the
-            // foreign-shared-scope refusal and the kept-when-unbound tag — + 4 saga cases — + 23
+            // refused, unbound left to the database, update never writes the owner), the case
+            // proving an update writes no server-owned column and returns the stored ones, and,
+            // for its read-only fields, the case proving updateFromRequest keeps them and update
+            // writes them — + 17 for Species, the UNIVERSE entity: Invoice's cases but the
+            // read-only one, plus the shared-scope stamp, the foreign-shared-scope refusal and the
+            // kept-when-unbound tag — + 4 saga cases — + 8 InvoiceServiceTest cases (seven CRUD
+            // delegations and the one proving each service update reaches its repository twin) + 24
             // InvoiceHandlerTest cases (the 9 bodyless/guard cases, 5 further list cases — page and
             // size, four refusals; every other field is a system field or not flagged — the 4
-            // decode-failure cases, 3 @Validation cases for its required reference, and the two
-            // foreign-tenant 400s) + 24 SpeciesHandlerTest cases (the same, plus the
-            // foreign-shared-scope 400).
-            assertThat(summary.getTestsSucceededCount()).isEqualTo(128);
+            // decode-failure cases, 4 @Validation cases: the baseline accept, the not-null reject of
+            // its required reference and of its required read-only status, and the handleUpdate
+            // case, which only the reference can drive — and the two foreign-tenant 400s) + 24
+            // SpeciesHandlerTest cases (the 23 an Invoice without the read-only status would get,
+            // plus the foreign-shared-scope 400).
+            assertThat(summary.getTestsSucceededCount()).isEqualTo(138);
         }
     }
 
@@ -465,6 +475,15 @@ class GeneratedTestsE2ETest {
                     @Field(label = "Reference", required = true)
                     private String reference;
 
+                    // Read-only: written by the insert, kept by the update and read back onto the
+                    // entity it returns. The required one is validated on create only, and the
+                    // primitive one reads back from a stored row the generated test leaves NULL.
+                    @Field(label = "Status", required = true, readOnly = true)
+                    private String status;
+
+                    @Field(label = "Reminders", readOnly = true)
+                    private int reminders;
+
                     // The system columns the flags above switch on. Declared here (rather than
                     // inherited) because the generated repository binds them by accessor, and
                     // annotated so they stay out of the finder surface.
@@ -501,6 +520,22 @@ class GeneratedTestsE2ETest {
 
                     public void setReference(String reference) {
                         this.reference = reference;
+                    }
+
+                    public String getStatus() {
+                        return status;
+                    }
+
+                    public void setStatus(String status) {
+                        this.status = status;
+                    }
+
+                    public int getReminders() {
+                        return reminders;
+                    }
+
+                    public void setReminders(int reminders) {
+                        this.reminders = reminders;
                     }
 
                     public UUID getTenantId() {

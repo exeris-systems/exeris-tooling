@@ -1697,11 +1697,13 @@ never-invoked emitter start emitting, and its output did not build.
       **Body shape (0.10.0, #349):** the server's update is a full replacement. The handler decodes
       the whole entity, and the repository writes every domain column, so a partial body over `PUT`
       nulls the omitted ones; the key, the owner and the audit and soft-delete columns keep their
-      stored value (ADR-090 Amendment 1). The TS `<Entity>Update` is
+      stored value (ADR-090 Amendment 1), and a `PUT` keeps the read-only fields an action writes
+      (ADR-090 Amendment 2). The TS `<Entity>Update` is
       `Omit<<Entity>, key | owner>`, plus the version when the entity is versioned, and the update
       schema follows it; the edit form already sent the loaded record. The Java OpenAPI
-      `<Entity>UpdateDto` still lists only the create-eligible properties and requires none of them
-      (open).
+      `<Entity>UpdateDto` lists what the update writes from the body: the domain fields less the
+      read-only ones, a UNIVERSE entity's shared scope, and the version of a versioned entity,
+      declared or not (ADR-090 Amendment 2). It requires none of them.
 - [x] **Locale determinism — shipped 0.9.0 (2026-09-26).** Nineteen `toLowerCase()` calls in
       codegen-java used the JVM default locale. Under `tr-TR`: table `ınvoices`, column `item_ıd`,
       `ınvoice-api.yaml`, and an `InvalidPathException` writing `V…__create_lıne_ıtems.sql` on a
@@ -3954,9 +3956,10 @@ enters only if its upstream half is final first.
       registry-key check, every strict-audit key resolved against the SDK annotations jar (#339);
       T11, the `@DomainEvent` call site under `-Aexeris.strict` (#352); a composed `Application`
       registers its conductor as an unnamed resource (#355).
-      *Open:* the Java OpenAPI `<Entity>UpdateDto`, which under-describes the full-replacement
-      `PUT` body (the TS side sends the whole record, #349), and the question whether the Java
-      update keeps writing read-only columns and `created_at`, to settle before the schema shape.
+      *Landed after:* the Java update keeps `created_at` and every other server-owned column
+      (ADR-090 Amendment 1); a `PUT` keeps the read-only fields through `updateFromRequest` while
+      an action's `update` writes them, and the `<Entity>UpdateDto` describes the body the update
+      writes from (ADR-090 Amendment 2).
 - [x] **Jackson pins and a release-readiness check** (#346): Jackson 3.2.3 and 2.18.11, with a
       check that the pins are consistent before a release.
 - [ ] **ADR-044 Amendment 2** also decides the GET route for a per-action stream (`EventSource` is

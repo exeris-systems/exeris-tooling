@@ -1,6 +1,9 @@
 package eu.exeris.tooling.codegen.java.kernel;
 
+import eu.exeris.sdk.sourcemodel.ast.DataScope;
+import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
+import eu.exeris.sdk.sourcemodel.ast.SystemFieldsMetadata;
 import eu.exeris.tooling.codegen.java.kernel.KernelValidationRules.Kind;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -80,5 +83,29 @@ class KernelValidationRulesTest {
         assertThat(KernelValidationRules.of(List.of(
                 FieldMetadata.builder("expedited", "boolean").build(),
                 FieldMetadata.builder("note", "String").build()))).isEmpty();
+    }
+
+    @Test
+    @DisplayName("the update checks only the fields its body carries: no read-only, key or kept system field")
+    void updateChecksOnlyTheBody() {
+        DomainMetadata metadata = DomainMetadata.builder("Species", "com.example.domain")
+                .dataScope(DataScope.UNIVERSE).audited(true).versioned(true)
+                .systemFields(SystemFieldsMetadata.builder().sharedScopeField("worldId").build())
+                .fields(List.of(
+                        FieldMetadata.builder("id", "java.util.UUID").required(true).build(),
+                        FieldMetadata.builder("name", "String").required(true).build(),
+                        FieldMetadata.builder("status", "String").required(true).readOnly(true).build(),
+                        FieldMetadata.builder("tenantId", "java.util.UUID").required(true).build(),
+                        FieldMetadata.builder("createdBy", "String").required(true).build(),
+                        FieldMetadata.builder("worldId", "java.util.UUID").required(true).build(),
+                        FieldMetadata.builder("version", "Long").required(true).build()))
+                .build();
+
+        assertThat(KernelValidationRules.of(metadata.fields()))
+                .extracting(fr -> fr.field().name())
+                .containsExactly("id", "name", "status", "tenantId", "createdBy", "worldId", "version");
+        assertThat(KernelValidationRules.onUpdate(metadata))
+                .extracting(fr -> fr.field().name())
+                .containsExactly("name", "worldId", "version");
     }
 }

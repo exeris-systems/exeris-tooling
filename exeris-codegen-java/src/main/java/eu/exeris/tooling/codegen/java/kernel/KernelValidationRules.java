@@ -1,10 +1,13 @@
 package eu.exeris.tooling.codegen.java.kernel;
 
+import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 import eu.exeris.tooling.codegen.java.support.NameCasing;
+import eu.exeris.tooling.codegen.java.support.ServerOwnedFields;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 /**
  * The {@code @Validation} rules a generated handler enforces (T10), as data.
@@ -75,6 +78,19 @@ final class KernelValidationRules {
             all.add(new FieldRules(f, "val" + pascal, "get" + pascal, "set" + pascal, rules));
         }
         return List.copyOf(all);
+    }
+
+    /**
+     * The rules the update route enforces: those of the fields the update body carries. A field
+     * {@link ServerOwnedFields#notInUpdateBody} names keeps its stored or server-set value whatever
+     * the body says, so the update does not validate it, and a body that leaves it out, as the
+     * published update schema does, is not refused for it.
+     */
+    static List<FieldRules> onUpdate(DomainMetadata metadata) {
+        Set<String> notInBody = ServerOwnedFields.notInUpdateBody(metadata);
+        return of(metadata.fields()).stream()
+                .filter(fr -> !notInBody.contains(fr.field().name()))
+                .toList();
     }
 
     private static List<Rule> rulesFor(FieldMetadata f) {

@@ -698,6 +698,62 @@ class KernelHandlerGeneratorTest {
     }
 
     @Test
+    @DisplayName("a required read-only field is checked on create and not on update, which keeps its stored "
+            + "value through updateFromRequest")
+    void readOnlyFieldIsNotCheckedOnUpdate() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .fields(List.of(
+                        FieldMetadata.builder("orderNumber", "String").required(true).build(),
+                        FieldMetadata.builder("status", "String").required(true).readOnly(true).build()))
+                .build();
+
+        String handler = strategy.generate(metadata).stream()
+                .filter(f -> f.artifactType() == ArtifactType.CONTROLLER)
+                .findFirst().orElseThrow().content();
+        String create = handler.substring(handler.indexOf("void handleCreate("), handler.indexOf("service.save(entity)"));
+        String update = handler.substring(handler.indexOf("void handleUpdate("),
+                handler.indexOf("service.updateFromRequest(id, entity)"));
+
+        assertThat(create).contains("var valOrderNumber = entity.getOrderNumber()")
+                .contains("var valStatus = entity.getStatus()");
+        assertThat(update).contains("var valOrderNumber = entity.getOrderNumber()")
+                .doesNotContain("valStatus");
+    }
+
+    @Test
+    @DisplayName("with a read-only field, PUT updates from the request and an action updates with the "
+            + "fields its entity method changed")
+    void putAndActionTakeDifferentUpdates() {
+        DomainMetadata withReadOnly = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .fields(List.of(FieldMetadata.builder("orderNumber", "String").build(),
+                        FieldMetadata.builder("status", "String").readOnly(true).build()))
+                .actions(List.of(ActionMetadata.builder("approve").methodName("approve").build()))
+                .build();
+        DomainMetadata withoutReadOnly = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .fields(List.of(FieldMetadata.builder("orderNumber", "String").build()))
+                .actions(List.of(ActionMetadata.builder("approve").methodName("approve").build()))
+                .build();
+
+        String handler = controller(withReadOnly);
+        String update = handler.substring(handler.indexOf("void handleUpdate("), handler.indexOf("void handleApprove("));
+        String action = handler.substring(handler.indexOf("void handleApprove("));
+        assertThat(update).contains("service.updateFromRequest(id, entity)").doesNotContain("service.update(id");
+        assertThat(action).contains("entity.approve();", "service.update(id, entity)")
+                .doesNotContain("updateFromRequest");
+        assertThat(controller(withoutReadOnly)).doesNotContain("updateFromRequest")
+                .contains("service.update(id, entity)");
+    }
+
+    private String controller(DomainMetadata metadata) {
+        return strategy.generate(metadata).stream()
+                .filter(f -> f.artifactType() == ArtifactType.CONTROLLER)
+                .findFirst().orElseThrow().content();
+    }
+
+    @Test
     @DisplayName("T22: a validated field whose name collides with a handler-scope var (id) gets a "
             + "prefixed local — no `var id` clash with handleUpdate's path-id")
     void shouldPrefixValidationLocalToAvoidPathIdCollision() {

@@ -21,7 +21,6 @@ import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
 import eu.exeris.sdk.sourcemodel.ast.ActionParamMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
-import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 
 import javax.lang.model.element.Modifier;
 import java.util.List;
@@ -275,7 +274,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         MethodSpec.Builder method = crudHandler("handleCreate");
         appendTenantGuard(method, tenantPartitioned);
         appendBodyParseGuard(method, entityType);
-        appendValidationGuard(method, metadata.fields());
+        appendValidationGuard(method, KernelValidationRules.of(metadata.fields()));
         method.beginControlFlow("try")
                 .addStatement("$T saved = service.save(entity)", entityType);
         appendPublishCalls(method, metadata, DomainEventMetadata.Trigger.CREATE, null,
@@ -291,9 +290,12 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         appendTenantGuard(method, tenantPartitioned);
         appendPathIdGuard(method);
         appendBodyParseGuard(method, entityType);
-        appendValidationGuard(method, metadata.fields());
+        appendValidationGuard(method, KernelValidationRules.onUpdate(metadata));
+        // A request body does not set the read-only fields; an action, which calls update, does.
+        String updateMethod = KernelRepositoryGenerator.hasRequestUpdate(metadata)
+                ? KernelRepositoryGenerator.UPDATE_FROM_REQUEST_METHOD : "update";
         method.beginControlFlow("try")
-                .addStatement("$T updated = service.update(id, entity)", entityType);
+                .addStatement("$T updated = service.$L(id, entity)", entityType, updateMethod);
         appendPublishCalls(method, metadata, DomainEventMetadata.Trigger.UPDATE, null,
                 "id", "updated");
         method.addStatement("exchange.respond($T.OK, updated)", HTTP_STATUS);
@@ -810,9 +812,11 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
      *  are type-safe to emit are checked: {@code required} → not-null on reference types;
      *  {@code minLength}/{@code maxLength}/{@code pattern} on String; {@code min}/{@code max}
      *  on numeric (BigDecimal via {@code compareTo}, other numerics via operators).
-     *  Anything else is skipped (no check emitted). */
-    private static void appendValidationGuard(MethodSpec.Builder method, List<FieldMetadata> fields) {
-        for (KernelValidationRules.FieldRules fr : KernelValidationRules.of(fields)) {
+     *  Anything else is skipped (no check emitted). The update route checks only the fields its
+     *  body carries ({@link KernelValidationRules#onUpdate}). */
+    private static void appendValidationGuard(MethodSpec.Builder method,
+                                              List<KernelValidationRules.FieldRules> rules) {
+        for (KernelValidationRules.FieldRules fr : rules) {
             // Read the value once into a local (avoids re-invoking the getter per check).
             // The local is prefixed so it can never collide with a handler-scope variable —
             // see KernelValidationRules.FieldRules#local for why (T22).

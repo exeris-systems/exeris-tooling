@@ -269,6 +269,31 @@ class KernelHandlerTestGeneratorTest {
     }
 
     @Test
+    @DisplayName("the handleUpdate case is driven by a field the update body carries, never a read-only one")
+    void theUpdateCaseSkipsReadOnlyFields() {
+        DomainMetadata leadingReadOnly = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .fields(java.util.List.of(
+                        FieldMetadata.builder("status", "String").required(true).readOnly(true).build(),
+                        FieldMetadata.builder("quantity", "int").min(1L).build()))
+                .build();
+        DomainMetadata onlyReadOnly = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .fields(java.util.List.of(
+                        FieldMetadata.builder("status", "String").required(true).readOnly(true).build()))
+                .build();
+
+        String source = new KernelHandlerTestGenerator().generate(leadingReadOnly, "com.example").content();
+        String update = source.substring(source.indexOf("void handleUpdateRunsTheSameValidationGuard()"));
+        assertThat(update.substring(0, update.indexOf("handler.handleUpdate(exchange)")))
+                .contains("decoded.setQuantity(0)")
+                .contains("decoded.setStatus(\"");
+        assertThat(new KernelHandlerTestGenerator().generate(onlyReadOnly, "com.example").content())
+                .contains("void handleCreateRejectsStatusWhenNull()")
+                .doesNotContain("handleUpdateRunsTheSameValidationGuard");
+    }
+
+    @Test
     @DisplayName("a required field constrained by a pattern suppresses the cases entirely")
     void aRequiredPatternFieldSuppressesTheCases() {
         // A regex has no synthesizable member, so no valid baseline exists — and without one,
