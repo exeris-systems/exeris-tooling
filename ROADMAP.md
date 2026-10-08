@@ -3921,8 +3921,8 @@ enters only if its upstream half is final first.
       the entity-level and the per-action stream handler, an RLS `findById` before a per-action stream
       opens, and an isolation key on the events a live view forwards, so a stream delivers only its
       own tenant's events. The key is a kernel ask: `EventDescriptor` carries none. If the kernel adds
-      the key, removes the 0.9.0 `EXT-PROC-1014` refusal; `exeris-codegen-ts` then emits stream clients for tenant-partitioned
-      entities.
+      the key, removes the 0.9.0 `EXT-PROC-1014` refusal; `exeris-codegen-ts` then also emits the
+      live view and the spectate client for tenant-partitioned entities.
       *Landed:* the per-action half, J4-1 (#360); the spectate route, J4-2 (#372), `GLOBAL`-only
       while `EXT-PROC-1014` stands. *Open:* the entity level and the tenant-partitioned spectate
       route wait on exeris-kernel#600. The TS per-action clients for tenant-partitioned entities
