@@ -15,8 +15,8 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The lint gate must fail on a warning, name its category, and scope an accepted warning to the
- * one file it was accepted for; a gate that cannot fail would pass every emitted tree.
+ * The lint gate must fail on a warning and name its category, accept none, and pass the unnamed
+ * try resource; a gate that cannot fail would pass every emitted tree.
  */
 @Tag("e2e")
 @Tag("codegen")
@@ -38,16 +38,18 @@ class EmittedLintGateTest {
     }
 
     @Test
-    @DisplayName("an accepted warning is accepted only in the file it was accepted for")
-    void acceptedWarningIsFileScoped() throws IOException {
+    @DisplayName("an unreferenced try resource fails the compile in every file, Application.java included")
+    void unreferencedTryResourceFails() throws IOException {
         String body = "class %s implements AutoCloseable { public void close() { }"
                 + " void run() { try (%s c = new %s()) { System.out.println(); } } }";
-        EmittedJavac.Result accepted = compile("Application.java", body.formatted("Application", "Application", "Application"));
-        EmittedJavac.Result other = compile("Other.java", body.formatted("Other", "Other", "Other"));
+        EmittedJavac.Result application = compile("Application.java", body.formatted("Application", "Application", "Application"));
+        EmittedJavac.Result unnamed = compile("Unnamed.java", "class Unnamed implements AutoCloseable { public void close() { }"
+                + " void run() { try (Unnamed _ = new Unnamed()) { System.out.println(); } } }");
 
-        assertThat(accepted.clean()).isTrue();
-        assertThat(other.clean()).isFalse();
-        assertThat(other.render()).contains("compiler.warn.try.resource.not.referenced");
+        assertThat(EmittedJavac.ACCEPTED).isEmpty();
+        assertThat(application.clean()).isFalse();
+        assertThat(application.render()).contains("compiler.warn.try.resource.not.referenced");
+        assertThat(unnamed.clean()).isTrue();
     }
 
     private EmittedJavac.Result compile(String fileName, String source) throws IOException {

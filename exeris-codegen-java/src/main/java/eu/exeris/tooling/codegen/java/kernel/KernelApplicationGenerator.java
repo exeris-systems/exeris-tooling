@@ -626,9 +626,10 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
         if (composed) {
             // try-with-resources over the CONCRETE conductor type, not AutoCloseable: the
             // concrete close() declares no checked exception, which is what lets this sit
-            // inside boot(Runnable) without a catch.
+            // inside boot(Runnable) without a catch. The resource is the unnamed variable: the
+            // body never names it, and a named unreferenced resource trips -Xlint:try.
             block.add("    .boot(() -> {\n")
-                    .add("        try ($T conductor = $T.from($L()).start()) {\n",
+                    .add("        try ($T _ = $T.from($L()).start()) {\n",
                             COMPOSITION_CONDUCTOR, COMPOSITION_CONDUCTOR, CAP_MANIFEST_METHOD)
                     .add("            new $T($L, $L($L())).run();\n",
                             lifecycleType, HANDLER_SLOT, COMPONENTS_METHOD, TX_EXECUTOR_NAME)
