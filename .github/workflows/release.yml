@@ -276,7 +276,8 @@ jobs:
         # Every published coordinate has its pom, jar, sources jar and javadoc jar, each with a good
         # signature; the Maven plugin carries its descriptor; maven.deploy.skip and both
         # <excludeArtifacts> lists agree; exeris-app-bom names the reactor version and the kernel and
-        # SDK versions exeris-tooling-bom was tested against, none of them a SNAPSHOT. On the upload
+        # SDK versions exeris-tooling-bom was tested against, none of them a SNAPSHOT; its Jackson 3
+        # version is not below the one those kernel and SDK BOMs manage. On the upload
         # path it runs after the upload, so it cannot stop one: what it guards is publication. The
         # deployment stays unpublished (autoPublish=false), and a failure here means Drop it in the
         # Central Portal instead of pressing Publish. On the dry run it is the only check.
