@@ -116,6 +116,7 @@ existing key is removed or changes meaning or type.
 | `application` | `KernelApplicationGenerator` | The application's `main` entry point, which boots the kernel. | `{app}/Application.java` | one | at least one `@ExerisDomain` | — |
 | `runtime-components` | `KernelApplicationGenerator` | The composition root that constructs every generated component. | `{app}/RuntimeComponents.java` | one | at least one `@ExerisDomain` | ADR-070 |
 | `runtime-lifecycle` | `KernelApplicationGenerator` | The lifecycle that registers the routes and subscriptions once the kernel is up. | `{app}/RuntimeLifecycle.java` | one | at least one `@ExerisDomain` | ADR-070 |
+| `generated-route-policy` | `KernelApplicationGenerator` | The generated half of the route policy the application binds; its table holds no row, so it abstains on every route (ADR-105). | `{app}/GeneratedRoutePolicy.java` | one | at least one `@ExerisDomain` | ADR-105 |
 | `foreign-key-migration` | `KernelApplicationGenerator` | The Flyway migration adding every foreign key between the build's tables. | `db/migration/V3000000__foreign_keys.sql` | zero-or-one | a `MANY_TO_ONE` relationship whose target is an entity of the same build | — |
 | `cap-manifest` | `CodegenPipeline` | The resolved capability graph and its composition stamp. | `cap-manifest.json` | zero-or-one | at least one `@CapabilityModule` | ADR-024 |
 
