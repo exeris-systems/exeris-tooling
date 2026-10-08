@@ -4,7 +4,7 @@ type: reference
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-10-07
+last-verified: 2026-10-08
 ---
 
 # Contributing to Exeris Tooling
@@ -28,7 +28,12 @@ mvn -pl exeris-e2e-tests -am test -Dtest=KernelCodegenE2ETest -Dsurefire.failIfN
 cd exeris-codegen-ts && npm install && npm test
 ```
 
+Checkstyle runs at `validate` and PMD at `verify`, over main sources, and fail the build in the
+five Java modules (`exeris-diagnostics`, `exeris-codegen-core`, `exeris-codegen-maven-plugin`,
+`exeris-codegen-java`, `exeris-processor`).
+
 **JDK 25 LTS is the baseline** across the reactor (`maven.compiler.release=25`, per kernel ADR-066 / SDK ADR-069).
+Run Maven on a GA JDK 25 or 26; an early-access JDK such as sdkman's 26-ea cannot compile at `--release 25`.
 Maven 3.9+ for Java modules; Node 18+ for `exeris-codegen-ts`.
 
 ### Javadoc gate
@@ -75,6 +80,7 @@ npm install
 npm run build              # tsc into dist/
 npm run dev -- generate --input path/to/metadata   # run the CLI from source (tsx)
 npm test                   # vitest
+npm run lint               # eslint
 npm run test:coverage      # vitest with coverage; fails on a threshold violation
 npm run verify:generated   # generate a sample app and type-check its data layer (no Angular needed)
 npm run check:version      # package.json and package-lock.json versions equal the root pom.xml version
