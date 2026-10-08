@@ -1722,6 +1722,10 @@ never-invoked emitter start emitting, and its output did not build.
 
       **0.10.0, the fix:** the tenant guard in every stream handler and an isolation key on stream
       events, with the ADR-044 amendment (see **0.10.0**). It removes the refusal.
+      **Decided 2026-10-08 (ADR-044 Amendment 2):** per-action and spectate streams carry the
+      guard, load the row under RLS and forward only events whose stream id is the row's id, with
+      no kernel key. The entity-level refusal (`EXT-PROC-1014`) stays until exeris-kernel#600 gives
+      events an isolation key.
 - [x] **T42 — the mesh has no generated frontend contract.** Types slice shipped 0.8.0 (ADR-048).
       `codegen-ts` was single-service by construction: one metadata directory in, one app out. A mesh
       consumer retyped the other service's vocabulary by hand across a language boundary with no
@@ -2981,6 +2985,10 @@ Proposals, highest return-on-effort first:
       tenant guard and `EventDescriptor` carries no isolation key, so the entity-level producer
       forwards every tenant's events; 0.9.0 refuses `realTimeApi` on a tenant-partitioned entity
       (`EXT-PROC-1014`) until the amendment settles the guard and the key.
+      **Answered in ADR-044 Amendment 2 (founder, 2026-10-08):** all eight questions of
+      `docs/0.10.0-release-plan.md`, with four items left open for the implementation PRs.
+      Implementation order: J4-1 (driver, guard, RLS load, stream-id filter), J4-2 (the
+      `GET {base}/{id}/stream` route), S4 (TS clients).
 
 - [ ] **EV2 — `@EventSourced` aggregate generator — log substrate delivered (kernel 0.10, ADR-049);
       aggregate surface still missing.** No generator emits event-sourced aggregates today; **T11 strict
