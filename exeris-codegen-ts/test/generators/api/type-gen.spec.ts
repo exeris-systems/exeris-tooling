@@ -503,23 +503,17 @@ describe('TypeGenerator system-field resolution (exercised via .omit set in the 
     expect(schema).not.toContain('updatedAt: true');
   });
 
-  it('a primaryKeyField override does not make the field it names server-owned', () => {
-    // The override must NOT move the emitted identity. Nothing in the pipeline honours
-    // `primaryKeyField`: Flyway emits `id UUID PRIMARY KEY`, the repository's clause is the
-    // constant " WHERE id = ?", every by-id handler binds `{id}`, and the processor records the
-    // same ("generators leave the primary key as the literal id"). An emitted app that honoured
-    // it here would be the only layer doing so, and would request the wrong REST identifier.
-    // So the named field stays in the create DTO: the backend accepts it as an ordinary
-    // column and generates the row's real `id` itself.
+  it('the key primaryKeyField names is server-owned: out of the create and the update schema', () => {
     const files = gen.generateAggregate([domain({
       entityName: 'Thing',
-      systemFields: { primaryKeyField: 'uuid' },
-      fields: [field({ name: 'id', type: 'UUID' }), field({ name: 'uuid', type: 'UUID' })],
+      systemFields: { primaryKeyField: 'thingNo' },
+      fields: [field({ name: 'thingNo', type: 'UUID' }), field({ name: 'name', type: 'String' })],
     })], ctx);
     const schema = files.find(f => f.path === 'schemas/thing.schema.ts')!.content;
 
-    expect(schema).toContain('id: true');
-    expect(schema).not.toContain('uuid: true');
+    expect(schema).toContain('export const ThingCreateSchema = ThingSchema.omit({\n  thingNo: true,\n});');
+    expect(schema).toContain('export const ThingUpdateSchema = ThingSchema.omit({ thingNo: true });');
+    expect(schema).not.toMatch(/\bid: true/);
   });
 
   it('every optional systemFields.* alias, when declared as a field, flows into the omit set', () => {

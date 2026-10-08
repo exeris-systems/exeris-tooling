@@ -1467,10 +1467,15 @@ class ExerisDomainProcessorTest {
     }
 
     @Nested
-    @DisplayName("an entity without an id field is refused (EXT-PROC-1015)")
-    class EntityWithoutIdFieldTests {
+    @DisplayName("ADR-104: an entity's primary key is present (EXT-PROC-1015), a UUID (EXT-PROC-1018), "
+            + "and not renamed beside an id (EXT-PROC-1019)")
+    class PrimaryKeyTests {
 
-        private static final String REFUSAL = "[Exeris] EXT-PROC-1015: ";
+        private static final String MISSING = "[Exeris] EXT-PROC-1015: ";
+        private static final String NOT_UUID = "[Exeris] EXT-PROC-1018: ";
+        private static final String BESIDE_ID = "[Exeris] EXT-PROC-1019: ";
+        private static final String RENAMED = ", primaryKeyField = \"key\"";
+        private static final String UUID_TYPE = "java.util.UUID";
 
         /** An entity with {@code attributes} appended to {@code @ExerisDomain}; the annotation is on line 6. */
         private JavaFileObject workspace(String attributes, String body) {
@@ -1487,6 +1492,19 @@ class ExerisDomainProcessorTest {
                     """.formatted(attributes, body));
         }
 
+        /** An abstract superclass declaring {@code field} of {@code type}. */
+        private JavaFileObject base(String type, String field) {
+            return JavaFileObjects.forSourceString(
+                    "com.example.Identified",
+                    """
+                    package com.example;
+
+                    public abstract class Identified {
+                        private %s %s;
+                    }
+                    """.formatted(type, field));
+        }
+
         @Test
         @DisplayName("no id field: refused on the @ExerisDomain line, naming the type and the declaration to add")
         void missingIdIsRefused() {
@@ -1500,10 +1518,10 @@ class ExerisDomainProcessorTest {
             assertThat(compilation).failed();
             assertThat(compilation).hadErrorCount(1);
             assertThat(compilation)
-                    .hadErrorContaining(REFUSAL + "@ExerisDomain type 'Workspace' declares no field 'id'. "
-                            + "The generated schema, repository, routes and Angular model all identify a "
-                            + "row by id, and primaryKeyField does not rename it. Declare "
-                            + "'private UUID id;' with its getter and setter.")
+                    .hadErrorContaining(MISSING + "@ExerisDomain type 'Workspace' declares no field 'id', its "
+                            + "primary key. The generated schema, repository and Angular model identify a "
+                            + "row by the primary key, which is 'id' unless primaryKeyField names another "
+                            + "field. Declare 'private UUID id;' with its getter and setter.")
                     .inFile(source)
                     .onLine(6);
         }
@@ -1523,19 +1541,7 @@ class ExerisDomainProcessorTest {
         @Test
         @DisplayName("an id inherited from a superclass passes: the generated Java reaches it through the accessors")
         void inheritedIdPasses() {
-            JavaFileObject base = JavaFileObjects.forSourceString(
-                    "com.example.Identified",
-                    """
-                    package com.example;
-
-                    public abstract class Identified {
-                        private java.util.UUID id;
-                        public java.util.UUID getId() { return id; }
-                        public void setId(java.util.UUID id) { this.id = id; }
-                    }
-                    """);
-
-            Compilation compilation = compileWithProcessor(base, workspace("", """
+            Compilation compilation = compileWithProcessor(base(UUID_TYPE, "id"), workspace("", """
                     extends Identified {
                         @Field(label = "Name", required = true) private String name;
                     }"""));
@@ -1544,16 +1550,47 @@ class ExerisDomainProcessorTest {
         }
 
         @Test
-        @DisplayName("primaryKeyField does not stand in for id: no generator renames the key")
-        void primaryKeyFieldDoesNotReplaceId() {
-            Compilation compilation = compileWithProcessor(workspace(", primaryKeyField = \"key\"", """
+        @DisplayName("a renamed UUID key passes, and its name reaches systemFields.primaryKeyField")
+        void renamedUuidKeyPasses() throws IOException {
+            Compilation compilation = compileWithProcessor(workspace(RENAMED, """
                     {
                         private java.util.UUID key;
                     }"""));
 
+            assertThat(compilation).succeededWithoutWarnings();
+            JsonNode metadata = new ObjectMapper().readTree(readContent(compilation.generatedFile(
+                    StandardLocation.CLASS_OUTPUT, "exeris-metadata/Workspace.json").orElseThrow()));
+            assertThat(metadata.path("systemFields").path("primaryKeyField").asText()).isEqualTo("key");
+        }
+
+        @Test
+        @DisplayName("a renamed key inherited from a superclass passes")
+        void inheritedRenamedKeyPasses() {
+            Compilation compilation = compileWithProcessor(base(UUID_TYPE, "key"),
+                    workspace(RENAMED, "extends Identified { }"));
+
+            assertThat(compilation).succeededWithoutWarnings();
+        }
+
+        @Test
+        @DisplayName("a renamed key the entity does not declare: EXT-PROC-1015 names the key primaryKeyField names")
+        void missingRenamedKeyIsRefused() {
+            JavaFileObject source = workspace(RENAMED, """
+                    {
+                        private String name;
+                    }""");
+
+            Compilation compilation = compileWithProcessor(source);
+
             assertThat(compilation).failed();
             assertThat(compilation).hadErrorCount(1);
-            assertThat(compilation).hadErrorContaining(REFUSAL + "@ExerisDomain type 'Workspace' declares no field 'id'.");
+            assertThat(compilation)
+                    .hadErrorContaining(MISSING + "@ExerisDomain type 'Workspace' declares no field 'key', the "
+                            + "primary key primaryKeyField names. The generated schema, repository and "
+                            + "Angular model identify a row by that field. Declare 'private UUID key;' with "
+                            + "its getter and setter, or name an existing UUID field in primaryKeyField.")
+                    .inFile(source)
+                    .onLine(6);
         }
 
         @Test
@@ -1566,7 +1603,107 @@ class ExerisDomainProcessorTest {
 
             assertThat(compilation).failed();
             assertThat(compilation).hadErrorCount(1);
-            assertThat(compilation).hadErrorContaining(REFUSAL);
+            assertThat(compilation).hadErrorContaining(MISSING);
+        }
+
+        @ParameterizedTest(name = "{0}")
+        @ValueSource(strings = {"Long", "long", "String", "Integer"})
+        @DisplayName("an id that is not a UUID: refused on the field, naming its type")
+        void nonUuidIdIsRefused(String type) {
+            JavaFileObject source = workspace("", """
+                    {
+                        private %s id;
+                    }""".formatted(type));
+
+            Compilation compilation = compileWithProcessor(source);
+
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorCount(1);
+            assertThat(compilation)
+                    .hadErrorContaining(NOT_UUID + "The primary key 'id' of @ExerisDomain type 'Workspace' is ")
+                    .inFile(source)
+                    .onLine(8);
+            assertThat(compilation).hadErrorContaining("; it must be java.util.UUID.");
+        }
+
+        @Test
+        @DisplayName("a renamed key that is not a UUID is refused with the key's name")
+        void nonUuidRenamedKeyIsRefused() {
+            Compilation compilation = compileWithProcessor(workspace(RENAMED, """
+                    {
+                        private String key;
+                    }"""));
+
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorCount(1);
+            assertThat(compilation).hadErrorContaining(NOT_UUID + "The primary key 'key' of @ExerisDomain type "
+                    + "'Workspace' is java.lang.String; it must be java.util.UUID. The kernel identifies an "
+                    + "entity's event stream and graph node by a UUID, and the generated repository fills a "
+                    + "new row's key with UUID.randomUUID(). Declare 'private UUID key;', and keep any other "
+                    + "identifier as an ordinary unique field.");
+        }
+
+        @Test
+        @DisplayName("an inherited key that is not a UUID is refused on the @ExerisDomain line")
+        void inheritedNonUuidKeyIsRefused() {
+            JavaFileObject source = workspace("", "extends Identified { }");
+
+            Compilation compilation = compileWithProcessor(base("Long", "id"), source);
+
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorCount(1);
+            assertThat(compilation)
+                    .hadErrorContaining(NOT_UUID + "The primary key 'id' of @ExerisDomain type 'Workspace' is "
+                            + "java.lang.Long")
+                    .inFile(source)
+                    .onLine(6);
+        }
+
+        @Test
+        @DisplayName("a renamed key beside a field id is refused: the rename would move an existing key column")
+        void renamedKeyBesideIdIsRefused() {
+            JavaFileObject source = workspace(RENAMED, """
+                    {
+                        private java.util.UUID id;
+                        private java.util.UUID key;
+                    }""");
+
+            Compilation compilation = compileWithProcessor(source);
+
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorCount(1);
+            assertThat(compilation)
+                    .hadErrorContaining(BESIDE_ID + "@ExerisDomain type 'Workspace' names 'key' as its primary "
+                            + "key and also declares a field 'id'. Moving the key off an 'id' column changes "
+                            + "the entity's CREATE TABLE migration, which then fails Flyway's checksum on every "
+                            + "database that applied it. Drop primaryKeyField to keep 'id' as the key; if no "
+                            + "database has applied the migration, rename or remove the field 'id' instead.")
+                    .inFile(source)
+                    .onLine(6);
+        }
+
+        @Test
+        @DisplayName("an inherited id beside a renamed key is refused as well")
+        void renamedKeyBesideInheritedIdIsRefused() {
+            Compilation compilation = compileWithProcessor(base(UUID_TYPE, "id"), workspace(RENAMED, """
+                    extends Identified {
+                        private java.util.UUID key;
+                    }"""));
+
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorCount(1);
+            assertThat(compilation).hadErrorContaining(BESIDE_ID);
+        }
+
+        @Test
+        @DisplayName("primaryKeyField = \"id\" is the default key, not a rename, and passes beside its id")
+        void explicitDefaultKeyPasses() {
+            Compilation compilation = compileWithProcessor(workspace(", primaryKeyField = \"id\"", """
+                    {
+                        private java.util.UUID id;
+                    }"""));
+
+            assertThat(compilation).succeededWithoutWarnings();
         }
     }
 
@@ -3076,15 +3213,8 @@ class ExerisDomainProcessorTest {
         }
 
         @Test
-        @DisplayName("-Aexeris.strict warns on @ExerisDomain.primaryKeyField, the one system field nobody honours")
-        void strictWarnsOnInertPrimaryKeyField() {
-            // SystemFieldsMetadata's other ten components are all read (sharedScopeField by a
-            // UNIVERSE entity's shared-scope migration and stamp) — Flyway's sysCol maps
-            // tenantId, the audit stamps, the soft-delete trio and version; the repository
-            // resolves five of them. The primary key is read by none: the schema emits
-            // `id UUID PRIMARY KEY` unconditionally, the repository's clause is the constant
-            // " WHERE id = ?", and every by-id handler binds {id}. Setting it therefore changes
-            // no emitted artefact, which is exactly what this audit exists to say out loud.
+        @DisplayName("-Aexeris.strict does not warn on @ExerisDomain.primaryKeyField: the generators key the row by it")
+        void strictDoesNotWarnOnPrimaryKeyField() {
             Compilation compilation = javac()
                     .withOptions("-Aexeris.strict=true")
                     .withProcessors(new ExerisDomainProcessor())
@@ -3096,15 +3226,14 @@ class ExerisDomainProcessorTest {
 
                             @ExerisDomain(module = "billing", path = "/invoices",
                                           primaryKeyField = "invoiceNo")
-                            public class Invoice { private java.util.UUID id;
-                                private String invoiceNo;
+                            public class Invoice { private java.util.UUID invoiceNo;
                             }
                             """));
 
             assertThat(compilation).succeeded();
             assertThat(hasInertWarningFor(compilation, "@ExerisDomain.primaryKeyField"))
-                    .as("strict names the attribute that has no effect")
-                    .isTrue();
+                    .as("no inert warning naming @ExerisDomain.primaryKeyField")
+                    .isFalse();
         }
 
         @Test
@@ -4557,14 +4686,14 @@ class ExerisDomainProcessorTest {
 
                             @ExerisDomain(module = "sales", path = "/orders")
                             public class Order {
-                                @PrimaryKey private String id;
+                                @PrimaryKey private java.util.UUID id;
                                 @TenantId private String orgId;
                             }
                             """));
 
             assertThat(compilation).succeeded();
-            // @PrimaryKey is held back on purpose: its component is honoured by no generator, so
-            // extracting it would end this warning without changing emitted output.
+            // @PrimaryKey stays unread until the SDK source-model reader reads it the same way
+            // (ADR-042); the key is named through @ExerisDomain(primaryKeyField) meanwhile.
             boolean primaryKeyReported = compilation.warnings().stream()
                     .anyMatch(d -> d.getMessage(null) != null
                             && d.getMessage(null).contains("PrimaryKey"));

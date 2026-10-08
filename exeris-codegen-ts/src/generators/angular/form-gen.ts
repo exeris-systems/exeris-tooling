@@ -9,7 +9,7 @@ import { DslMapper } from '../../models/dsl-mapper.js';
 import type { GeneratorConfig } from '../../config.js';
 import type { CodeGenerator, EnumMetadata, GeneratedFile, GeneratorContext } from '../../core/generator-registry.js';
 import type { BackendType } from '../../core/backend-strategy.js';
-import { DEFAULT_PRIMARY_KEY_FIELD, primaryKeyField } from '../../core/primary-key.js';
+import { primaryKeyField } from '../../core/primary-key.js';
 import { outPath } from '../../core/paths.js';
 import { updateVersionField } from '../api/type-gen.js';
 import { fieldRenderContext, resolveFieldRenders, toTitleCase, type FieldRenderModel } from './field-render.js';
@@ -77,6 +77,10 @@ export class FormGenerator implements CodeGenerator {
     // One injected service per picked target, in field order; the entity's own service serves a
     // relationship to itself.
     const pickerTargets = [...new Set(pickerFields.map((r) => r.form.picker!.target))];
+    // The `pickerOptions` helper reads the key its targets share; when their keys differ, each call
+    // passes its target's key.
+    const pickerKeys = [...new Set(pickerFields.map((r) => r.form.picker!.keyField))];
+    const sharedPickerKey = pickerKeys.length === 1 ? pickerKeys[0] : undefined;
     const pickerServiceMember = (target: string): string =>
       target === entityName ? 'service' : `${target.charAt(0).toLowerCase()}${target.slice(1)}Service`;
     // Computed fields render read-only, for information, and are kept out of the submitted DTO.
@@ -125,25 +129,7 @@ export class FormGenerator implements CodeGenerator {
 
     lines.push('');
     if (pickerFields.length > 0) {
-      // One helper serves the pickers of every target, so it reads the default key name; a target
-      // that names another key needs the key passed in.
-      const pickerKey = DEFAULT_PRIMARY_KEY_FIELD;
-      lines.push('/**');
-      lines.push(' * The options of a foreign-key select: one per record of the page the list route answered that');
-      lines.push(' * has an id, valued by the id and labelled by `label` (the relationship\'s display field), or by');
-      lines.push(' * the id when that is empty.');
-      lines.push(' */');
-      lines.push(`function pickerOptions<T extends { ${pickerKey}?: unknown }>(`);
-      lines.push('  page: { content: T[] } | undefined,');
-      lines.push(`  label: (row: T) => unknown = (row) => row.${pickerKey},`);
-      lines.push('): { value: string; label: string }[] {');
-      lines.push('  const rows = page?.content ?? [];');
-      lines.push(`  return rows.filter((row) => row.${pickerKey} != null && row.${pickerKey} !== '').map((row) => {`);
-      lines.push(`    const value = String(row.${pickerKey});`);
-      lines.push('    const text = label(row);');
-      lines.push("    return { value, label: text == null || String(text) === '' ? value : String(text) };");
-      lines.push('  });');
-      lines.push('}');
+      lines.push(...pickerOptionsHelper(sharedPickerKey));
       lines.push('');
     }
     // The value the form edits: one property per control, typed as the control holds it.
@@ -353,7 +339,8 @@ export class FormGenerator implements CodeGenerator {
     for (const f of pickerFields) {
       const picker = f.form.picker!;
       const resource = `${pickerOptionsName(f.name)}Resource`;
-      const labelArg = picker.labelField ? `, (row) => row.${picker.labelField}` : '';
+      const keyArg = sharedPickerKey === undefined ? `, '${tsSingleQuoted(picker.keyField)}'` : '';
+      const labelArg = `${keyArg}${picker.labelField ? `, (row) => row.${picker.labelField}` : ''}`;
       lines.push('');
       lines.push(`  private readonly ${resource} = rxResource({ stream: () => this.${pickerServiceMember(picker.target)}.findAll({ size: ${MAX_PAGE_SIZE} }) });`);
       lines.push(`  readonly ${pickerOptionsName(f.name)} = computed(() =>`);
@@ -603,6 +590,50 @@ function signalFormsImports(validation: FormValidation): string[] {
 /** `fullName` to `FullName`, the suffix of a computed field's member names. */
 function memberSuffix(name: string): string {
   return toTitleCase(name).replace(/ /g, '');
+}
+
+/**
+ * The `pickerOptions` helper of a form with foreign-key selects. Given the key every target shares,
+ * it reads that property; without one, each call passes its target's key.
+ */
+function pickerOptionsHelper(sharedKey: string | undefined): string[] {
+  const read = (row: string): string => (sharedKey === undefined ? `${row}[key]` : `${row}.${sharedKey}`);
+  const signature = sharedKey === undefined
+    ? [
+        'function pickerOptions<K extends string, T extends { [P in K]?: unknown }>(',
+        '  page: { content: T[] } | undefined,',
+        '  key: K,',
+      ]
+    : [
+        `function pickerOptions<T extends { ${sharedKey}?: unknown }>(`,
+        '  page: { content: T[] } | undefined,',
+      ];
+  const doc = sharedKey === undefined
+    ? [
+        ' * The options of a foreign-key select: one per record of the page the list route answered that',
+        ' * has a `key`, valued by it and labelled by `label` (the relationship\'s display field), or by',
+        ' * the key when that is empty.',
+      ]
+    : [
+        ' * The options of a foreign-key select: one per record of the page the list route answered that',
+        ' * has an id, valued by the id and labelled by `label` (the relationship\'s display field), or by',
+        ' * the id when that is empty.',
+      ];
+  return [
+    '/**',
+    ...doc,
+    ' */',
+    ...signature,
+    `  label: (row: T) => unknown = (row) => ${read('row')},`,
+    '): { value: string; label: string }[] {',
+    '  const rows = page?.content ?? [];',
+    `  return rows.filter((row) => ${read('row')} != null && ${read('row')} !== '').map((row) => {`,
+    `    const value = String(${read('row')});`,
+    '    const text = label(row);',
+    "    return { value, label: text == null || String(text) === '' ? value : String(text) };",
+    '  });',
+    '}',
+  ];
 }
 
 /** The options signal of a foreign-key select. */

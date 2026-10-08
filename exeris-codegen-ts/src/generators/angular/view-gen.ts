@@ -55,6 +55,7 @@
  */
 
 import type {
+  DomainMetadata,
   ViewMetadata,
   RegionMetadata,
   ComponentNodeMetadata,
@@ -62,7 +63,7 @@ import type {
   BlockType,
 } from '../../models/domain-model.js';
 import { DslMapper } from '../../models/dsl-mapper.js';
-import { DEFAULT_PRIMARY_KEY_FIELD } from '../../core/primary-key.js';
+import { primaryKeyField } from '../../core/primary-key.js';
 import type { GeneratorConfig } from '../../config.js';
 import type { OutputFile } from '../../orchestrator.js';
 import { fileHeaderLines } from '../file-header.js';
@@ -138,6 +139,8 @@ interface CustomBlockEntry {
  */
 interface RenderContext {
   readonly viewName: string;
+  /** The loaded entities, which a binding's ref names. */
+  readonly domains: readonly DomainMetadata[];
   readonly customBlocks: Readonly<Record<string, CustomBlockEntry>>;
   /** customType → its config entry, for every CUSTOM block the view renders. */
   readonly usedBlocks: Map<string, CustomBlockEntry>;
@@ -171,13 +174,14 @@ function itemVarName(ref: string): string {
 }
 
 /**
- * The `@for` track key.
- *
- * The default key name, because a view carries no entity metadata to resolve the bound entity's key
- * from. The emitted `<Entity>Store` keys its own state on the key. Tracking by index instead would defeat the point
- * of `@for` on a signal collection.
+ * The `@for` track key: the primary key of the bound entity, on which the emitted `<Entity>Store`
+ * keys its own state. Tracking by index instead would defeat the point of `@for` on a signal
+ * collection.
  */
-const TRACK_FIELD = DEFAULT_PRIMARY_KEY_FIELD;
+function trackField(ref: string, ctx: RenderContext): string {
+  const simple = simpleRef(ref);
+  return primaryKeyField(ctx.domains.find((d) => d.entityName === simple));
+}
 
 /**
  * The effective route PATH for a view (RFC §5 route-assembly): the declared
@@ -400,7 +404,7 @@ function renderNode(
     if (isCollection) {
       const item = itemVarName(binding.ref);
       iteration = {
-        open: `@for (${item} of ${field}.entities(); track ${item}.${TRACK_FIELD}) {`,
+        open: `@for (${item} of ${field}.entities(); track ${item}.${trackField(binding.ref, ctx)}) {`,
         close: '}',
         item,
       };
@@ -577,8 +581,13 @@ function escapeTsStr(value: string): string {
 /**
  * Emit one standalone Angular component for a view. Returns a single OutputFile
  * at `pages/<kebab>.component.ts` (re-rooted under src/app by the orchestrator).
+ * `domains` are the loaded entities: a collection bound to one of them is tracked by its key.
  */
-export function generateView(view: ViewMetadata, config: GeneratorConfig): OutputFile {
+export function generateView(
+  view: ViewMetadata,
+  config: GeneratorConfig,
+  domains: readonly DomainMetadata[] = [],
+): OutputFile {
   const kebab = DslMapper.toKebabCase(view.name);
   const className = viewComponentClassName(view);
   const selector = `app-${kebab}-page`;
@@ -589,6 +598,7 @@ export function generateView(view: ViewMetadata, config: GeneratorConfig): Outpu
   // and which blockProps fields the class declares.
   const ctx: RenderContext = {
     viewName: view.name,
+    domains,
     customBlocks: config.customBlocks ?? {},
     usedBlocks: new Map(),
     blockProps: [],

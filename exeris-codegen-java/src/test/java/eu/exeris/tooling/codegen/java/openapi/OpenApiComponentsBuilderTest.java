@@ -8,6 +8,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -219,5 +220,27 @@ class OpenApiComponentsBuilderTest {
         Schema<?> quantity = (Schema<?>) entitySchema.getProperties().get("quantity");
         assertThat(quantity.getMinimum()).isEqualTo(java.math.BigDecimal.valueOf(1L));
         assertThat(quantity.getMaximum()).isEqualTo(java.math.BigDecimal.valueOf(1000L));
+    }
+
+    @Test
+    @DisplayName("ADR-104: a renamed key is the entity's identifier property and is absent from both DTOs")
+    void renamedKeyIsTheIdentifierProperty() {
+        DomainMetadata meta = DomainMetadata.builder("Invoice", "com.example.domain")
+                .systemFields(eu.exeris.sdk.sourcemodel.ast.SystemFieldsMetadata.builder()
+                        .primaryKeyField("invoiceNo").build())
+                .fields(List.of(
+                        FieldMetadata.simple("invoiceNo", "java.util.UUID"),
+                        FieldMetadata.builder("customer", "String").required(true).build()))
+                .build();
+
+        Components components = OpenApiComponentsBuilder.buildComponents(meta);
+
+        Map<String, Schema> entity = components.getSchemas().get("Invoice").getProperties();
+        assertThat(entity.keySet()).startsWith("invoiceNo").doesNotContain("id");
+        assertThat(entity.get("invoiceNo").getFormat()).isEqualTo("uuid");
+        assertThat(components.getSchemas().get("InvoiceCreateDto").getProperties())
+                .containsKey("customer").doesNotContainKey("invoiceNo");
+        assertThat(components.getSchemas().get("InvoiceUpdateDto").getProperties())
+                .containsKey("customer").doesNotContainKey("invoiceNo");
     }
 }

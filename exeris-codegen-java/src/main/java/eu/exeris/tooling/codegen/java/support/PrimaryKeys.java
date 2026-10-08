@@ -1,6 +1,7 @@
 package eu.exeris.tooling.codegen.java.support;
 
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
+import eu.exeris.sdk.sourcemodel.ast.SystemFieldsMetadata;
 
 import java.util.Locale;
 
@@ -8,10 +9,12 @@ import java.util.Locale;
  * The primary key of an entity as the generated code names it: the field, its column, and the
  * accessors the generated Java calls.
  *
- * <p>The migration, the repository's SQL, the foreign-key targets, the entity accessors, the
- * OpenAPI schema and the generated tests all identify a row by the same field, so each takes its
- * name here and nowhere else. The route path variable and the {@code findById} / {@code deleteById}
- * / {@code UUID id} names are not the key: they name a URL segment and a role, and stay literal.
+ * <p>The key is the field {@code SystemFieldsMetadata.primaryKeyField} names, or {@code id} when
+ * the entity names none (ADR-104). The migration, the repository's SQL, the foreign-key targets,
+ * the entity accessors, the OpenAPI schema and the generated tests all identify a row by the same
+ * field, so each takes its name here and nowhere else. The route path variable and the
+ * {@code findById} / {@code deleteById} / {@code UUID id} names are not the key: they name a URL
+ * segment and a role, and stay literal.
  *
  * @since 0.10
  */
@@ -23,13 +26,16 @@ public final class PrimaryKeys {
 
     /**
      * The Java name of the field that holds the row's key; it is also the name of the key's JSON
-     * and OpenAPI schema property.
+     * and OpenAPI schema property. It is {@code systemFields().primaryKeyField()} when that is
+     * present and non-blank, else {@code id}.
      *
      * @param metadata the entity metadata
      * @return the key field's name
      */
     public static String field(DomainMetadata metadata) {
-        return DEFAULT_FIELD;
+        SystemFieldsMetadata declared = metadata.systemFields();
+        String named = declared == null ? null : declared.primaryKeyField();
+        return named == null || named.isBlank() ? DEFAULT_FIELD : named;
     }
 
     /**

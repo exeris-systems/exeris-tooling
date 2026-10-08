@@ -174,6 +174,7 @@ describe('foreignKeyPickers', () => {
     expect(foreignKeyPickers(p, [p, named], true).get('categoryId')).toEqual({
       target: 'Category',
       serviceModule: 'category.service',
+      keyField: 'id',
       labelField: 'title',
     });
   });
@@ -183,7 +184,18 @@ describe('foreignKeyPickers', () => {
     expect(foreignKeyPickers(p, [p, named], true).get('categoryId')).toEqual({
       target: 'Category',
       serviceModule: 'category.service',
+      keyField: 'id',
     });
+  });
+
+  it('reads an option\'s value from the key the target names', () => {
+    const renamed = domain({
+      entityName: 'Category',
+      fields: [{ name: 'categoryNo', type: 'java.util.UUID' }, { name: 'title', type: 'String' }],
+      systemFields: { primaryKeyField: 'categoryNo' },
+    });
+    const p = product([{ ...FK, displayField: 'title' }]);
+    expect(foreignKeyPickers(p, [p, renamed], true).get('categoryId')?.keyField).toBe('categoryNo');
   });
 
   it('resolves a qualified target by its simple name', () => {

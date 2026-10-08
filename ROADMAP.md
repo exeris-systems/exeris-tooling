@@ -911,6 +911,13 @@ each fix.
       than the record, and neither FE gate declared a `systemFields` block at all. The sample app
       now carries `Invoice`, which declares `id` *and* `primaryKeyField = "invoiceNo"` — pinning
       both halves of the real contract, the honoured overrides and the ignored one.
+
+      **Superseded in 0.10.0 by ADR-104 (wave J5).** `primaryKeyField` now names the key across the
+      migration, the repository, the foreign-key target, the Java and TypeScript models and the
+      OpenAPI schema; the route variable stays `{id}`. Its `INERT_ATTRIBUTES` entry is deleted, the
+      processor refuses a non-UUID key (`EXT-PROC-1018`) and a renamed key beside a field `id`
+      (`EXT-PROC-1019`), and the sample app's `Invoice` is keyed by the UUID `invoiceNo` with no
+      `id`. The `@PrimaryKey` marker itself stays unextracted until J5b.
 - [ ] **C2 — `annotation.security.*` (27 attributes). Not a design call — both halves are asks on
       other repos.**
 

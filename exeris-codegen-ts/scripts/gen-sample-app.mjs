@@ -179,27 +179,29 @@ const domains = [
     ],
     relationships: [{ name: 'componentId', targetEntity: 'Component', type: 'MANY_TO_ONE', displayField: 'name' }],
   }),
-  // Named for the overrides, not for the shop: the only fixture entity declaring a systemFields
-  // block at all, which is why four of that block's ten keys could be spelled wrong on the TS
-  // side for two trains without any gate noticing.
+  // Named for the overrides, not for the shop: the fixture entity whose systemFields block renames
+  // the soft-delete trio and the primary key.
   //
-  // It declares `id` AND `primaryKeyField: 'invoiceNo'` on purpose. That pins the real contract
-  // in both directions: the soft-delete trio IS honoured — KernelFlywayGenerator.sysCol maps
-  // deleted/deletedAt/deletedBy, so those columns are server-owned and must leave the create
-  // DTO — while `primaryKeyField` is honoured by NOTHING (the PK column, the repository's
-  // " WHERE id = ?" and every by-id handler are all the literal `id`). An emitted artefact that
-  // starts requesting `invoiceNo` fails here, which is the regression this entity exists to
-  // catch.
+  // Its key is the UUID `invoiceNo` and it has no field `id` (ADR-104), so every site that reads a
+  // row's key compiles against `invoiceNo`: the list's track and links, the detail's system panel,
+  // the form's load and self-exclusion, the store's lookups and the schema's omissions. The route
+  // variable stays `:id`. Its two foreign keys are picked from targets with different keys, itself
+  // and the `id`-keyed Account, so the form's picker helper takes each target's key per call.
   d({
     entityName: 'Invoice',
     softDelete: true,
     fields: [
-      { name: 'id', type: 'java.util.UUID' },
-      { name: 'invoiceNo', type: 'String' },
+      { name: 'invoiceNo', type: 'java.util.UUID' },
       { name: 'amount', type: 'java.math.BigDecimal', dataType: 'currency' },
       { name: 'archived', type: 'boolean' },
       { name: 'archivedAt', type: 'java.time.Instant' },
       { name: 'archivedBy', type: 'String' },
+      { name: 'accountId', type: 'java.util.UUID' },
+      { name: 'correctsId', type: 'java.util.UUID' },
+    ],
+    relationships: [
+      { name: 'accountId', targetEntity: 'Account', type: 'MANY_TO_ONE', displayField: 'name' },
+      { name: 'correctsId', targetEntity: 'Invoice', type: 'MANY_TO_ONE', displayField: 'amount' },
     ],
     systemFields: {
       primaryKeyField: 'invoiceNo',

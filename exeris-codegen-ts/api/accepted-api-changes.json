@@ -178,5 +178,11 @@
     "since": "0.10",
     "adr": "ADR-092",
     "justification": "The emitted services request apiBasePath + the entity path, '' + /orders by default, and the proxy's lone /api rule matched none of it, so npm start reached no backend. The same path is the entity's page route, so a rule for /orders alone would forward a browser navigation to the kernel application; a request is told apart by its Accept header, which a JSON config cannot test. proxy.conf.js forwards every entity path to http://localhost:8443 and answers a request accepting text/html with index.html. It is a seed, emitted under the same condition proxy.conf.json was. proxy.conf.json stays a seed path, so an existing copy is kept and released from the manifest, and an existing package.json is kept with the start script it has. docs/MIGRATION-0.x-to-1.0.md 0.10.0 carries the step."
+  },
+  {
+    "signature": "entity with systemFields.primaryKeyField = <key>: <Entity> + <key>?: string; <Entity>CreateSchema / <Entity>UpdateSchema / <Entity>Update omit <key> (was id); list / detail / form / store / @View track and identify rows by <key> (was id); foreign-key picker valued by the target's key, pickerOptions(page, key, label) when a form's targets have different keys; every entity: <Entity> and <Entity>Schema carry the key when the metadata's fields omit it",
+    "since": "0.10",
+    "adr": "ADR-104",
+    "justification": "The generated code identifies a row by the effective key: systemFields.primaryKeyField when present and non-blank, else id (ADR-104), and the Java and TypeScript halves ship it in the same release. The route variable :id and the findById / update(id) / delete(id) names stay. The processor records an entity's own fields, so an inherited key was missing from the model and the emitted views did not compile; the key is now the model's first property, an optional UUID string, whether or not the metadata lists it. An entity that does not rename its key and lists it regenerates byte-identically (ADR-092). docs/MIGRATION-0.x-to-1.0.md 0.10.0 carries the step."
   }
 ]

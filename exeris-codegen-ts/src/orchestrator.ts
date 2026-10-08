@@ -34,6 +34,7 @@ import { generateHttpErrorHelper, needsHttpErrorHelper } from './generators/angu
 import { generatePeerTypes } from './generators/api/peer-type-gen.js';
 import type { PeerContract } from './peers/peer-contract.js';
 import { deriveScaffoldNeeds } from './core/scaffold-needs.js';
+import { withPrimaryKey } from './core/primary-key.js';
 
 /** The output-file shape the writer consumes. The per-shape generators return richer objects
  *  (artifactType and the rest); those are structurally assignable here, and composition copies
@@ -85,13 +86,18 @@ export { generateEnumTypes, type EnumMetadataForGen } from './generators/api/enu
  * one namespace, which is the T40 break at mesh scale.
  */
 export function buildGeneratedFiles(
-  domains: DomainMetadata[],
+  declaredDomains: DomainMetadata[],
   enums: EnumMetadataForGen[],
   config: GeneratorConfig,
   views: ViewMetadata[] = [],
-  peers: PeerContract[] = []
+  declaredPeers: PeerContract[] = []
 ): OutputFile[] {
   const generatedFiles: OutputFile[] = [];
+
+  // Every row the server returns carries the entity's key, so every generator sees it among the
+  // entity's fields, also where the metadata leaves out a key the entity inherits.
+  const domains = declaredDomains.map(withPrimaryKey);
+  const peers = declaredPeers.map((peer) => ({ ...peer, domains: peer.domains.map(withPrimaryKey) }));
 
   // Hoisted above the per-entity loop: the event generator needs a context for BOTH its
   // per-entity handler and its app-wide bus, and building one per entity would be wasteful
@@ -197,7 +203,7 @@ export function buildGeneratedFiles(
   // declaration order (deterministic — the views arrive in directory-scan order
   // from index.ts; the per-view output itself is order-stable).
   for (const view of views) {
-    appTree.push(generateView(view, config));
+    appTree.push(generateView(view, config, domains));
     appTree.push(generateViewRoute(view, config));
   }
 

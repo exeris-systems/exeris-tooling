@@ -284,10 +284,11 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
      * entity is in {@code domains} yields:
      * <pre>
      * ALTER TABLE &lt;table&gt; ADD CONSTRAINT fk_&lt;table&gt;_&lt;col&gt;
-     *     FOREIGN KEY (&lt;col&gt;) REFERENCES &lt;target_table&gt;(id) ON DELETE &lt;policy&gt;;
+     *     FOREIGN KEY (&lt;col&gt;) REFERENCES &lt;target_table&gt;(&lt;target_key&gt;) ON DELETE &lt;policy&gt;;
      * </pre>
      * {@code <col>} uses the same convention as the T8 FK column
-     * ({@link KernelTableNaming#foreignKeyColumn(String)}); {@code <policy>} is
+     * ({@link KernelTableNaming#foreignKeyColumn(String)}); {@code <target_key>} is the target
+     * entity's key column ({@link PrimaryKeys#column}); {@code <policy>} is
      * {@code CASCADE} when the relationship cascade is {@code ALL}/{@code REMOVE},
      * otherwise {@code RESTRICT} (mirroring the kernel's delete semantics — a
      * non-cascading parent delete is refused while children exist).
