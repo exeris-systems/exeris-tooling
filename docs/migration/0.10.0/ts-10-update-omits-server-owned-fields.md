@@ -9,7 +9,7 @@ last-verified: 2026-10-08
 
 ### `exeris-codegen-ts`: `<Entity>Update` omits every field the server owns
 
-`Compatibility impact: breaking (ADR-090, ADR-092)`, for code that calls a generated service's or
+`Compatibility impact: breaking (ADR-090)`, for code that calls a generated service's or
 store's `update` with an object it builds itself and sets one of the omitted properties.
 
 The generated server's `PUT {base}/{id}` never writes these columns from the body, and its response
