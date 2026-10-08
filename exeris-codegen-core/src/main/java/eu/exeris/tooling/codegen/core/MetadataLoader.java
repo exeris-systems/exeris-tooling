@@ -1,8 +1,10 @@
 package eu.exeris.tooling.codegen.core;
 
 import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
 import java.io.IOException;
@@ -76,7 +78,7 @@ public final class MetadataLoader {
                     .toList();
 
             for (Path jsonFile : jsonFiles) {
-                T metadata = objectMapper.readValue(jsonFile.toFile(), metadataClass);
+                T metadata = read(jsonFile, metadataClass);
                 result.add(metadata);
             }
         }
@@ -102,7 +104,29 @@ public final class MetadataLoader {
             throw new IOException("Metadata file not found: " + metadataFile);
         }
 
-        return objectMapper.readValue(metadataFile.toFile(), metadataClass);
+        return read(metadataFile, metadataClass);
+    }
+
+    /**
+     * Reads one metadata file. A field that carries no {@code inCreate} or {@code inUpdate} key is
+     * offered by that form and body, as {@code @Field} defaults both to {@code true}: the record
+     * components are primitive, so an absent key would otherwise read as {@code false}.
+     */
+    private <T> T read(Path file, Class<T> metadataClass) throws IOException {
+        JsonNode root = objectMapper.readTree(file.toFile());
+        JsonNode fields = root == null ? null : root.get("fields");
+        if (fields != null && fields.isArray()) {
+            for (JsonNode field : fields) {
+                if (field instanceof ObjectNode object) {
+                    for (String flag : List.of("inCreate", "inUpdate")) {
+                        if (!object.has(flag)) {
+                            object.put(flag, true);
+                        }
+                    }
+                }
+            }
+        }
+        return objectMapper.treeToValue(root, metadataClass);
     }
 
     /**

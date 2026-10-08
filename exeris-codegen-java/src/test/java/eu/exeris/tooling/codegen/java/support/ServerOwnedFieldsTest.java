@@ -130,6 +130,22 @@ class ServerOwnedFieldsTest {
     }
 
     @Test
+    @DisplayName("the server sets a required read-only reference field before the insert; a primitive, an "
+            + "optional field and a system role are not listed")
+    void setByServerOnCreate() {
+        DomainMetadata metadata = DomainMetadata.builder("Tx", "com.example.domain").audited(true)
+                .fields(List.of(FieldMetadata.builder("providerTxId", "String").required(true).readOnly(true).build(),
+                        FieldMetadata.builder("attempts", "int").required(true).readOnly(true).build(),
+                        FieldMetadata.builder("note", "String").readOnly(true).build(),
+                        FieldMetadata.builder("createdBy", "String").required(true).readOnly(true).build(),
+                        FieldMetadata.builder("title", "String").required(true).build()))
+                .build();
+
+        assertThat(ServerOwnedFields.setByServerOnCreate(metadata)).extracting(FieldMetadata::name)
+                .containsExactly("providerTxId");
+    }
+
+    @Test
     @DisplayName("the version field: the declared name, else version")
     void versionField() {
         assertThat(ServerOwnedFields.versionField(DomainMetadata.builder("Order", "com.example.domain").build()))

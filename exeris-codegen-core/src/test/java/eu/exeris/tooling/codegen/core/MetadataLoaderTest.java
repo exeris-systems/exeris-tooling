@@ -1,5 +1,6 @@
 package eu.exeris.tooling.codegen.core;
 
+import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -126,5 +127,22 @@ class MetadataLoaderTest {
         Files.writeString(metaDir.resolve("notes.txt"), "ignored");
 
         assertThat(loader.listEntities()).containsExactly("Bar", "Foo");
+    }
+
+    @Test
+    @DisplayName("a field without inCreate / inUpdate keys is offered by both bodies; an explicit false is kept")
+    void absentLifecycleFlagsReadAsTrue() throws IOException {
+        Path metaDir = Files.createDirectories(tempDir.resolve(MetadataLoader.METADATA_DIR));
+        Files.writeString(metaDir.resolve("Ticket.json"), """
+                {"entityName":"Ticket","packageName":"com.example.domain","fields":[
+                  {"name":"title","type":"String"},
+                  {"name":"code","type":"String","inUpdate":false},
+                  {"name":"slug","type":"String","inCreate":false}]}
+                """);
+
+        DomainMetadata ticket = loader.load("Ticket", DomainMetadata.class);
+
+        assertThat(ticket.fields()).extracting(f -> f.name() + ":" + f.inCreate() + ":" + f.inUpdate())
+                .containsExactly("title:true:true", "code:true:false", "slug:false:true");
     }
 }

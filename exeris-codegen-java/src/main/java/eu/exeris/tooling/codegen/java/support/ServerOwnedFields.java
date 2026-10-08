@@ -4,7 +4,9 @@ import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 import eu.exeris.sdk.sourcemodel.ast.SystemFieldsMetadata;
 
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
 
@@ -48,6 +50,9 @@ public final class ServerOwnedFields {
 
     private static final String UPDATED_AT_DEFAULT = "updatedAt";
     private static final String VERSION_DEFAULT = "version";
+
+    private static final Set<String> PRIMITIVE_TYPES =
+            Set.of("boolean", "byte", "short", "int", "long", "float", "double", "char");
 
     private ServerOwnedFields() {}
 
@@ -112,6 +117,30 @@ public final class ServerOwnedFields {
         Set<String> names = new TreeSet<>(keptOnUpdate(metadata));
         names.addAll(fixedOnRequestUpdate(metadata));
         return Collections.unmodifiableSet(names);
+    }
+
+    /**
+     * The domain fields the server must set before a row is written: those marked
+     * {@code @Field(required = true, readOnly = true)} that play no system role and hold a
+     * reference type. A read-only field is out of the create body, so the code that creates the row
+     * (a service of the consumer's own) sets it; a null one would reach the database as a
+     * {@code NOT NULL} violation. A primitive always holds a value and is not listed.
+     *
+     * @param metadata the entity
+     * @return the fields, in declaration order
+     */
+    public static List<FieldMetadata> setByServerOnCreate(DomainMetadata metadata) {
+        Set<String> systemRoles = ListQuerySupport.systemFieldNames(metadata);
+        List<FieldMetadata> fields = new ArrayList<>();
+        if (metadata.hasFields()) {
+            for (FieldMetadata field : metadata.fields()) {
+                if (field.required() && field.readOnly() && !systemRoles.contains(field.name())
+                        && !PRIMITIVE_TYPES.contains(field.type())) {
+                    fields.add(field);
+                }
+            }
+        }
+        return List.copyOf(fields);
     }
 
     /**

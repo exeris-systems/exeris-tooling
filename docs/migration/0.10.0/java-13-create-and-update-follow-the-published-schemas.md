@@ -10,8 +10,9 @@ last-verified: 2026-10-08
 ### A POST validates the fields its schema lists, a PUT leaves inUpdate = false fields as stored, and the entity schema lists the version
 
 `Compatibility impact: breaking (ADR-090)`, for a client that sets a field marked
-`@Field(inUpdate = false)` through `PUT {base}/{id}`, and additive for a `POST` that omits a
-`required` field its schema does not list.
+`@Field(inUpdate = false)` through `PUT {base}/{id}`, and for code that creates a row with a
+`required` read-only field left null, which now fails in the repository; additive for a `POST` that omits a `required` field its
+schema does not list.
 
 The create and update routes each validate the fields their published body lists
 ([ADR-090, Amendment 3](../../adr/ADR-090-reject-mismatched-tenant.md)):
@@ -29,7 +30,17 @@ The create and update routes each validate the fields their published body lists
 - The entity schema of a versioned entity that declares no version field lists the version,
   `integer`/`int64` and `readOnly`, under the name the `systemFields` block gives it.
 
-**What to do:** a client that set an `inUpdate = false` field through `PUT` must write it through an
-action or a route of your own. Code of your own that applies a client's values to such an entity
+- A plain domain field of a reference type that is both `required` and `readOnly` is one the server
+  sets before the row is written. The repository's `save` throws an `IllegalStateException`
+  (`Cannot create <Entity>: field '<field>' is required and read-only, ...`) when it is still null,
+  which the handler logs and answers with `500`, instead of the database's `NOT NULL` violation. A
+  system-role field and a primitive are not checked. The generated repository test gains a
+  `save<Field>LeftNull` case per such field.
+- The metadata loader reads a field without `inCreate` / `inUpdate` keys as `true`, the `@Field`
+  default; hand-written metadata JSON no longer drops those fields from the create and update bodies.
+
+**What to do:** set a `required` read-only field in your own service (`MyTicketService extends
+TicketService`, overriding `save`) before it reaches the repository. A client that set an `inUpdate = false` field through `PUT` must write it
+through an action or a route of your own. Code of your own that applies a client's values to such an entity
 should call `updateFromRequest`; code that applies a domain change calls `update`. A client generated
 from the OpenAPI document gains the `version` property on the entity type.

@@ -3,6 +3,7 @@ package eu.exeris.e2e.boot;
 import eu.exeris.e2e.codegen.compile.GeneratedTree;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -11,7 +12,11 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.logging.Handler;
+import java.util.logging.LogRecord;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -21,10 +26,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * A create validates the fields its body carries, and an update leaves a field marked
  * {@code inUpdate = false} as stored, on a <b>real</b> kernel boot.
  *
- * <p>The entity declares a {@code required} read-only field and a {@code required} field with
- * {@code inCreate = false}, neither of which the published create schema lists, and a
- * {@code required} field with {@code inUpdate = false}, which the published update schema does not
- * list. A create and an update that follow the schemas must be accepted, a forged value of the
+ * <p>The entity declares a {@code required} field with {@code inCreate = false}, which the published
+ * create schema does not list, a {@code required} field with {@code inUpdate = false}, which the
+ * published update schema does not list, and a {@code required} read-only field, which the server
+ * must set before the row is written: the harness's service fills it, or leaves it null. A create and an update that follow the schemas must be accepted, a forged value of the
  * update-fixed field must not reach the row, and an action that changes it must.
  *
  * <pre>
@@ -47,7 +52,8 @@ class LifecycleFlagsBootE2ETest {
     private static final String TICKETS = "/tickets";
     private static final String HTTP_OK = "HTTP/1.1 200";
     private static final String HTTP_CREATED = "HTTP/1.1 201";
-    private static final String NULL = "null";
+    private static final String FILLED = "\"filled\"";
+    private static final String NO_CONTENT = "HTTP/1.1 204";
     private static final String CODE = "code";
     private static final String STORED_CODE = "\"c1\"";
     private static final String RECODED = "\"recoded\"";
@@ -65,6 +71,11 @@ class LifecycleFlagsBootE2ETest {
         assertThat(RawHttp.request(booted.port(), "POST", "/seed")).startsWith("HTTP/1.1 204");
     }
 
+    @BeforeEach
+    void serviceFillsTheStatus() {
+        assertThat(RawHttp.request(booted.port(), "POST", "/fill")).startsWith(NO_CONTENT);
+    }
+
     @AfterAll
     static void stop() throws Exception {
         if (booted != null) {
@@ -76,7 +87,7 @@ class LifecycleFlagsBootE2ETest {
     }
 
     @Test
-    @DisplayName("a create without the required read-only and inCreate = false fields is accepted, and one "
+    @DisplayName("a create without the required inCreate = false field is accepted, and one "
             + "without the required code is refused")
     void createChecksOnlyTheFieldsItsBodyCarries() {
         String created = RawHttp.request(booted.port(), "POST", TICKETS,
@@ -84,7 +95,7 @@ class LifecycleFlagsBootE2ETest {
 
         assertThat(created).startsWith(HTTP_CREATED);
         assertThat(member(created, CODE)).isEqualTo(STORED_CODE);
-        assertThat(member(created, "status")).isEqualTo(NULL);
+        assertThat(member(created, "status")).isEqualTo(FILLED);
         assertThat(RawHttp.request(booted.port(), "POST", TICKETS, "{\"title\":\"no code\"}"))
                 .startsWith("HTTP/1.1 400");
     }
@@ -119,6 +130,46 @@ class LifecycleFlagsBootE2ETest {
         String reforged = RawHttp.request(booted.port(), "PUT", ticket,
                 "{\"title\":\"last\",\"slug\":\"s4\",\"code\":\"c1\"}");
         assertThat(member(reforged, CODE)).isEqualTo(RECODED);
+    }
+
+    @Test
+    @DisplayName("a create whose service leaves the required read-only status null answers 500 and logs the "
+            + "entity and the field; one that fills it succeeds")
+    void unsetServerFieldAnswers500() {
+        assertThat(RawHttp.request(booted.port(), "POST", "/leave")).startsWith(NO_CONTENT);
+        List<String> thrown = new CopyOnWriteArrayList<>();
+        Handler capture = new Handler() {
+            @Override
+            public void publish(LogRecord record) {
+                if (record.getThrown() != null) {
+                    thrown.add(String.valueOf(record.getThrown().getMessage()));
+                }
+            }
+
+            @Override
+            public void flush() {
+                // nothing buffered
+            }
+
+            @Override
+            public void close() {
+                // nothing held
+            }
+        };
+        java.util.logging.Logger root = java.util.logging.Logger.getLogger("");
+        root.addHandler(capture);
+        try {
+            String refused = RawHttp.request(booted.port(), "POST", TICKETS,
+                    "{\"title\":\"unset\",\"code\":\"c1\"}");
+
+            assertThat(refused).startsWith("HTTP/1.1 500");
+            assertThat(thrown).anyMatch(m -> m.contains("Cannot create Ticket: field 'status'"));
+        } finally {
+            root.removeHandler(capture);
+        }
+        assertThat(RawHttp.request(booted.port(), "POST", "/fill")).startsWith(NO_CONTENT);
+        assertThat(RawHttp.request(booted.port(), "POST", TICKETS, "{\"title\":\"set\",\"code\":\"c1\"}"))
+                .startsWith(HTTP_CREATED);
     }
 
     /** The raw JSON value of a top-level member of the response body: a quoted string, or a literal. */
@@ -197,12 +248,17 @@ class LifecycleFlagsBootE2ETest {
                 """
                 package eu.exeris.e2e.tickets;
 
+                import eu.exeris.e2e.tickets.domain.Ticket;
+                import eu.exeris.e2e.tickets.repository.TicketRepository;
+                import eu.exeris.e2e.tickets.service.TicketService;
                 import eu.exeris.kernel.core.http.routing.HttpRouter;
                 import eu.exeris.kernel.spi.http.HttpMethod;
                 import eu.exeris.kernel.spi.http.HttpStatus;
                 import eu.exeris.kernel.spi.persistence.TransactionalExecutor;
 
                 public class TicketsComponents extends RuntimeComponents {
+
+                    static volatile boolean fill = true;
 
                     private final TransactionalExecutor executor;
 
@@ -212,8 +268,37 @@ class LifecycleFlagsBootE2ETest {
                     }
 
                     @Override
+                    protected TicketService createTicketService() {
+                        return new StatusFillingService(ticketRepository());
+                    }
+
+                    /** A service of the consumer's own: it sets the status the create body cannot carry. */
+                    static final class StatusFillingService extends TicketService {
+
+                        StatusFillingService(TicketRepository repository) {
+                            super(repository);
+                        }
+
+                        @Override
+                        public Ticket save(Ticket ticket) {
+                            if (fill) {
+                                ticket.setStatus("filled");
+                            }
+                            return super.save(ticket);
+                        }
+                    }
+
+                    @Override
                     public void configureRoutes(HttpRouter.Builder routes) {
                         routes.route(HttpMethod.GET, "/probe", exchange -> exchange.respond(HttpStatus.OK));
+                        routes.route(HttpMethod.POST, "/fill", exchange -> {
+                            fill = true;
+                            exchange.respond(HttpStatus.NO_CONTENT);
+                        });
+                        routes.route(HttpMethod.POST, "/leave", exchange -> {
+                            fill = false;
+                            exchange.respond(HttpStatus.NO_CONTENT);
+                        });
                         routes.route(HttpMethod.POST, "/seed", exchange -> {
                             executor.executeManaged(conn -> conn.executeUpdate(
                                     "CREATE TABLE tickets (id UUID PRIMARY KEY, title VARCHAR(255), "
