@@ -3021,7 +3021,12 @@ Proposals, highest return-on-effort first:
       `ACTION`-triggered events, filtered on the row id, closing on completion or at
       `STREAM_DEADLINE_MILLIS`; refusals are `stream-error` frames; `EXT-PROC-1107` is retired and
       reserved frame names are refused (`EXT-PROC-1016`, `EXT-PROC-1017`). No result frame until
-      exeris-sdk#191 fills `ActionMetadata.resultType`. Open: J4-2, S4.
+      exeris-sdk#191 fills `ActionMetadata.resultType`.
+      **J4-2 implemented:** `realTimeApi` also emits `GET {base}/{id}/stream`
+      (`KernelSpectateStreamHandlerGenerator`): one row's events, filtered on the row id, with a
+      keep-alive and no deadline; described in the emitted OpenAPI. `message`, `open` and `error`
+      join the reserved frame names. Open: S4 (the spectate client among it), the tenant-partitioned
+      spectate route (T53, exeris-kernel#600).
 
 - [ ] **EV2 — `@EventSourced` aggregate generator — log substrate delivered (kernel 0.10, ADR-049);
       aggregate surface still missing.** No generator emits event-sourced aggregates today; **T11 strict

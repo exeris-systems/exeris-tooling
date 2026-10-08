@@ -248,6 +248,15 @@ class KernelCodegenCompileTest {
                 .build();
 
         List<GeneratedFile> generated = new KernelGeneratorStrategy().generate(metadata);
+        // ADR-044 Amendment 2 decision 7: realTimeApi also emits the spectate handler. On this
+        // tenant-partitioned entity it carries the tenant guard and subscribes to every event,
+        // so javac sees its guard, its row read and its filtered subscriptions.
+        assertThat(generated.stream().filter(f -> f.className().equals("OrderSpectateStreamHandler"))
+                .findFirst().orElseThrow().content())
+                .as("the spectate handler is among the compiled sources, in its full shape")
+                .contains("KernelProviders.STORAGE_CONTEXT.isBound()")
+                .contains("found = service.findById(id)")
+                .contains("tokens.add(bus.subscribe(\"OrderPlacedEvent\"");
 
         // Application + RuntimeComponents + RuntimeLifecycle are project-wide; not in the
         // strategy. Run the Application generator separately so the

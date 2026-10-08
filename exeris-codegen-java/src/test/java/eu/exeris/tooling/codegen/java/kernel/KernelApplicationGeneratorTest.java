@@ -599,6 +599,46 @@ class KernelApplicationGeneratorTest {
     }
 
     @Test
+    @DisplayName("ADR-044 Amendment 2: the spectate handler takes the service, and the EventEngine when "
+            + "the entity declares an event, captured at composition and recorded in the scope ledger")
+    void spectateStreamHandlerTakesWhatItForwards() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        DomainMetadata quiet = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders").realTimeApi(true).build();
+        DomainMetadata live = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders").realTimeApi(true)
+                .events(List.of(eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata.simple("OrderCreated")))
+                .build();
+
+        assertThat(components(gen.generateAll(List.of(quiet), "com.example.foundation")))
+                .contains("protected OrderSpectateStreamHandler createOrderSpectateStreamHandler()")
+                .contains("return new OrderSpectateStreamHandler(orderService());");
+        assertThat(components(gen.generateAll(List.of(live), "com.example.foundation")))
+                .contains("return new OrderSpectateStreamHandler(orderService(), KernelProviders.eventEngine());")
+                .contains("{@link #createOrderSpectateStreamHandler()}");
+    }
+
+    @Test
+    @DisplayName("ADR-044 Amendment 2: per entity, the live view's exact GET {base}/stream is registered "
+            + "before the spectate template GET {base}/{id}/stream, and both after the action streams")
+    void spectateRouteFollowsTheLiveView() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        DomainMetadata live = DomainMetadata.builder("GalacticEra", "com.example.domain")
+                .path("/era").realTimeApi(true)
+                .actions(List.of(ActionMetadata.builder("trackRift").streaming(true).build()))
+                .build();
+        String run = method(lifecycle(gen.generateAll(List.of(live), "com.example.foundation")),
+                "public void run()");
+
+        int action = run.indexOf("routerBuilder.streamRoute(HttpMethod.POST, \"/era/{id}/actions/track-rift\"");
+        int liveView = run.indexOf("routerBuilder.streamRoute(HttpMethod.GET, \"/era/stream\"");
+        int spectate = run.indexOf("routerBuilder.streamRoute(HttpMethod.GET, \"/era/{id}/stream\"");
+        assertThat(action).isGreaterThan(-1);
+        assertThat(liveView).isGreaterThan(action);
+        assertThat(spectate).isGreaterThan(liveView);
+    }
+
+    @Test
     @DisplayName("K9: stream routes are registered in run() on the composed router, every "
             + "generated path byte for byte")
     void streamRoutesAreRegisteredOnTheComposedRouter() {
@@ -613,7 +653,12 @@ class KernelApplicationGeneratorTest {
                 .contains("HttpStreamHandler galacticEraStreamHandler = components.galacticEraStreamHandler();")
                 .contains("routerBuilder.streamRoute(HttpMethod.GET, \"/era/stream\", galacticEraStreamHandler);")
                 .contains("routerBuilder.streamRoute(HttpMethod.POST, \"/era/{id}/actions/track-rift\", "
-                        + "galacticEraTrackRiftStreamHandler);");
+                        + "galacticEraTrackRiftStreamHandler);")
+                .contains("HttpStreamHandler galacticEraSpectateStreamHandler = "
+                        + "components.galacticEraSpectateStreamHandler();")
+                .contains("routerBuilder.streamRoute(HttpMethod.GET, \"/era/{id}/stream\", "
+                        + "galacticEraSpectateStreamHandler);")
+                .contains("requireDecoratedStreamRoute(decorated, HttpMethod.GET, \"/era/{id}/stream\");");
         assertThat(lifecycle)
                 .doesNotContain("edgeRouter")
                 .doesNotContain("lazyStream")

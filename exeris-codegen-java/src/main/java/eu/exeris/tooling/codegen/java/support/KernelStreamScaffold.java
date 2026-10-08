@@ -12,9 +12,10 @@ import javax.lang.model.element.Modifier;
 import java.util.List;
 
 /**
- * Shared scaffold for the two kernel SSE stream-handler generators —
- * {@code KernelStreamHandlerGenerator} (entity-level live-view, ADR-043 Slice 1)
- * and {@code KernelActionStreamHandlerGenerator} (per-action, ADR-044 Slice 2).
+ * Shared scaffold for the three kernel SSE stream-handler generators —
+ * {@code KernelStreamHandlerGenerator} (entity-level live-view, ADR-043 Slice 1),
+ * {@code KernelActionStreamHandlerGenerator} (per-action, ADR-044 Slice 2) and
+ * {@code KernelSpectateStreamHandlerGenerator} (one row's events, ADR-044 Amendment 2).
  *
  * <p>This helper is the single home for the kernel streaming SPI {@link ClassName}s,
  * the reserved frame names, and the body shapes the generators draw from, so they
@@ -26,7 +27,12 @@ import java.util.List;
  *       that declares domain events (Slice 1).</li>
  *   <li>{@link #subscription(StreamEventBinding, CodeBlock, String, String)} — one
  *       bus subscription that forwards an event onto the bounded hand-off queue,
- *       shared by the entity-level producer and the per-action driver.</li>
+ *       shared by the entity-level producer, the per-action driver and the spectate
+ *       handler.</li>
+ *   <li>{@link #tenantGuard(String)}, {@link #pathId()}, {@link #rowLoad(ClassName, String)},
+ *       {@link #rowHandOff()}, {@link #rowStreamIdGuard()} and {@link #refuseMethod(String)}
+ *       — the steps of a stream that serves one row, and its {@code stream-error}
+ *       refusal, shared by the per-action driver and the spectate handler.</li>
  *   <li>{@link #keepAliveScaffold(List, List)} — the deterministic, finite keep-alive
  *       loop of an entity with {@code realTimeApi} but no {@code @DomainEvent} (the
  *       Slice 1 fallback).</li>
@@ -88,6 +94,11 @@ public final class KernelStreamScaffold {
     public static final ClassName LIST = ClassName.get("java.util", "List");
     /** {@code java.util.ArrayList}. */
     public static final ClassName ARRAY_LIST = ClassName.get("java.util", "ArrayList");
+    /** {@code java.util.concurrent.TimeUnit}, for the timed {@code poll} of the hand-off queue. */
+    public static final ClassName TIME_UNIT = ClassName.get(java.util.concurrent.TimeUnit.class);
+    /** {@code eu.exeris.kernel.spi.context.KernelProviders}, whose {@code STORAGE_CONTEXT} the tenant guard reads. */
+    public static final ClassName KERNEL_PROVIDERS =
+            ClassName.get("eu.exeris.kernel.spi.context", "KernelProviders");
 
     /**
      * Bounded hand-off capacity between the bus dispatch thread(s) and a stream's
@@ -130,6 +141,25 @@ public final class KernelStreamScaffold {
      * finite so the generated handler terminates cleanly by calling {@code close()}.
      */
     public static final int KEEPALIVE_ITERATIONS = 4;
+
+    private static final ClassName UUID = ClassName.get(java.util.UUID.class);
+    private static final ClassName OPTIONAL = ClassName.get(java.util.Optional.class);
+    private static final ClassName ILLEGAL_ARGUMENT_EXCEPTION = ClassName.get(IllegalArgumentException.class);
+    private static final ClassName RUNTIME_EXCEPTION = ClassName.get(RuntimeException.class);
+
+    /** Parameter name of the stream exchange on every emitted method. */
+    private static final String EXCHANGE = "exchange";
+    /** The emitted {@code try} opener. */
+    private static final String TRY = "try";
+    /** The emitted statement that refuses with a status and its reason phrase. */
+    private static final String REFUSE_STATEMENT = "refuse(exchange, $L, $S)";
+    /** The emitted {@code catch} clause opener. */
+    private static final String CATCH = "catch ($T e)";
+    private static final String RETURN = "return";
+    private static final int BAD_REQUEST = 400;
+    private static final int NOT_FOUND = 404;
+    private static final int SERVER_ERROR = 500;
+    private static final String SERVER_ERROR_TITLE = "Internal Server Error";
 
     private KernelStreamScaffold() {
     }
@@ -307,7 +337,7 @@ public final class KernelStreamScaffold {
                 .add("// parks under back-pressure). The callback offers; this VT drains.\n")
                 .addStatement("$T queue = new $T<>(STREAM_BUFFER_CAPACITY)", queueType, ARRAY_BLOCKING_QUEUE)
                 .addStatement("$T tokens = new $T<>()", tokenListType, ARRAY_LIST)
-                .beginControlFlow("try")
+                .beginControlFlow(TRY)
                 .addStatement("bus = eventEngine.bus()");
 
         for (StreamEventBinding b : bindings) {
@@ -385,6 +415,125 @@ public final class KernelStreamScaffold {
     }
 
     /**
+     * The tenant guard of a stream on a tenant-partitioned entity: with no bound
+     * {@code STORAGE_CONTEXT}, it logs {@code message} and refuses with {@code 500} before the
+     * stream reads anything (ADR-044 Amendment 2, decision 6). Emitted into a method that has the
+     * {@code exchange} parameter, a {@code LOG} field and a {@code refuse} helper
+     * ({@link #refuseMethod(String)}), and returns {@code void}.
+     *
+     * @param message the log line that tells the operator what binds the context
+     * @return the {@code if} block, through its {@code return}
+     */
+    public static CodeBlock tenantGuard(String message) {
+        return CodeBlock.builder()
+                .beginControlFlow("if (!$T.STORAGE_CONTEXT.isBound())", KERNEL_PROVIDERS)
+                .addStatement("LOG.log($T.ERROR, $S)", KernelScaffold.LOGGER_LEVEL, message)
+                .addStatement(REFUSE_STATEMENT, SERVER_ERROR, SERVER_ERROR_TITLE)
+                .addStatement(RETURN)
+                .endControlFlow()
+                .build();
+    }
+
+    /**
+     * Declares {@code UUID id} from the {@code id} path parameter, refusing a malformed one with
+     * {@code 400}, the status the respond-once routes answer for it. Emitted into the same kind of
+     * method as {@link #tenantGuard(String)}.
+     *
+     * @return the declaration and its {@code try}, through the refusal's {@code return}
+     */
+    public static CodeBlock pathId() {
+        return CodeBlock.builder()
+                .addStatement("$T id", UUID)
+                .beginControlFlow(TRY)
+                .addStatement("id = $T.fromString($L.pathParams().getOrDefault($S, $S))", UUID, EXCHANGE, "id", "")
+                .nextControlFlow(CATCH, ILLEGAL_ARGUMENT_EXCEPTION)
+                .addStatement(REFUSE_STATEMENT, BAD_REQUEST, "Bad Request")
+                .addStatement(RETURN)
+                .endControlFlow()
+                .build();
+    }
+
+    /**
+     * Declares {@code found}, the row {@code service.findById(id)} returns under row-level security,
+     * and refuses an absent or invisible row with {@code 404} and a failed read with {@code 500}.
+     * Follows {@link #pathId()}; the method's class has a {@code service} field.
+     *
+     * @param entityType         the entity class the service returns
+     * @param loadFailureMessage the log line of a read that failed
+     * @return the read, its failure branch and the {@code 404} branch
+     */
+    public static CodeBlock rowLoad(ClassName entityType, String loadFailureMessage) {
+        return CodeBlock.builder()
+                .addStatement("$T found", ParameterizedTypeName.get(OPTIONAL, entityType))
+                .beginControlFlow(TRY)
+                .addStatement("found = service.findById(id)")
+                .nextControlFlow(CATCH, RUNTIME_EXCEPTION)
+                .addStatement("LOG.log($T.ERROR, $S, e)", KernelScaffold.LOGGER_LEVEL, loadFailureMessage)
+                .addStatement(REFUSE_STATEMENT, SERVER_ERROR, SERVER_ERROR_TITLE)
+                .addStatement(RETURN)
+                .endControlFlow()
+                .add("// Absent, or invisible under row-level security: the same answer.\n")
+                .beginControlFlow("if (found.isEmpty())")
+                .addStatement(REFUSE_STATEMENT, NOT_FOUND, "Not Found")
+                .addStatement(RETURN)
+                .endControlFlow()
+                .build();
+    }
+
+    /**
+     * Declares the bounded hand-off {@code queue}, the subscription {@code tokens}, the two halves
+     * of the row id the subscriptions filter on ({@code streamHigh}, {@code streamLow}), and the
+     * {@code bus} of the constructor-captured {@code eventEngine}. Follows {@link #pathId()}; the
+     * class has a {@code STREAM_BUFFER_CAPACITY} constant.
+     *
+     * @return the five declarations
+     */
+    public static CodeBlock rowHandOff() {
+        return CodeBlock.builder()
+                .addStatement("$T queue = new $T<>(STREAM_BUFFER_CAPACITY)",
+                        ParameterizedTypeName.get(BLOCKING_QUEUE, STREAM_EVENT), ARRAY_BLOCKING_QUEUE)
+                .addStatement("$T tokens = new $T<>()", ParameterizedTypeName.get(LIST, SUBSCRIPTION_TOKEN),
+                        ARRAY_LIST)
+                .addStatement("long streamHigh = id.getMostSignificantBits()")
+                .addStatement("long streamLow = id.getLeastSignificantBits()")
+                .addStatement("$T bus = eventEngine.bus()", EVENT_BUS)
+                .build();
+    }
+
+    /**
+     * The {@link #subscription} guard of a stream that serves one row: an event is forwarded only
+     * when its descriptor's stream id is the row id, which every emitted publish call passes as the
+     * stream id. Reads {@link #rowHandOff()}'s {@code streamHigh} and {@code streamLow}.
+     *
+     * @return the boolean expression over the callback's {@code descriptor}
+     */
+    public static CodeBlock rowStreamIdGuard() {
+        return CodeBlock.of(
+                "descriptor.streamIdHigh() == streamHigh && descriptor.streamIdLow() == streamLow");
+    }
+
+    /**
+     * The {@code refuse(exchange, status, title)} helper: emits the reserved {@code stream-error}
+     * frame, whose data is an RFC 9457 problem object (ADR-044 Amendment 2, decision 2). The class
+     * has a {@code STREAM_ERROR} constant naming the frame.
+     *
+     * @param answeredBy the route whose status the frame carries, as the Javadoc names it
+     * @return the private static helper
+     */
+    public static MethodSpec refuseMethod(String answeredBy) {
+        return MethodSpec.methodBuilder("refuse")
+                .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+                .addJavadoc("Emits the reserved {@code stream-error} frame: an RFC 9457 problem object whose\n")
+                .addJavadoc("{@code status} is the one $L answers.\n", answeredBy)
+                .addParameter(HTTP_STREAM_EXCHANGE, EXCHANGE)
+                .addParameter(TypeName.INT, "status")
+                .addParameter(String.class, "title")
+                .addStatement("exchange.emit($T.of(STREAM_ERROR, $S + title + $S + status + $S))", STREAM_EVENT,
+                        "{\"type\":\"about:blank\",\"title\":\"", "\",\"status\":", "}")
+                .build();
+    }
+
+    /**
      * The shared body of the stream handler's {@code handle(HttpStreamExchange)}
      * method, from the keep-alive comment through the loop to {@code close()}. The
      * caller emits its own {@code LOG.debug(...)} opener and Javadoc before adding
@@ -412,7 +561,7 @@ public final class KernelStreamScaffold {
         }
         return body
                 .addStatement("exchange.emit($T.of($S, $S))", STREAM_EVENT, KEEP_ALIVE_FRAME, "")
-                .beginControlFlow("try")
+                .beginControlFlow(TRY)
                 .addStatement("$T.sleep(KEEPALIVE_INTERVAL_MILLIS)", THREAD)
                 .nextControlFlow("catch ($T e)", InterruptedException.class)
                 .addStatement("$T.currentThread().interrupt()", THREAD)

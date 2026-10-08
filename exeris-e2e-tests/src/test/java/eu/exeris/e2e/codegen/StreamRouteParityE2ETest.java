@@ -24,10 +24,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * One entity's SSE stream routes, read out of the generated application and held against the
  * route contract in {@code contract/stream-routes.json}.
  *
- * <p>The generated TypeScript stream clients open these routes; {@code stream-route-parity.spec.ts}
- * in {@code exeris-codegen-ts} holds them against the same file, which is the only place the two
- * builds meet. A streaming action is served as a stream only, so this test also proves its path
- * has no respond-once registration — the generated TypeScript service calls none.
+ * <p>The generated TypeScript stream clients open the contract's {@code routes};
+ * {@code stream-route-parity.spec.ts} in {@code exeris-codegen-ts} holds them against the same
+ * file, which is the only place the two builds meet. The application serves {@code routes} and
+ * {@code withoutClient} together: a route under {@code withoutClient} has no generated client yet.
+ * A streaming action is served as a stream only, so this test also proves its path has no
+ * respond-once registration — the generated TypeScript service calls none.
  */
 @Tag("e2e")
 @Tag("codegen")
@@ -46,7 +48,7 @@ class StreamRouteParityE2ETest {
 
     record Route(String operation, String method, String path) {}
 
-    record Contract(String description, List<Route> routes) {}
+    record Contract(String description, List<Route> routes, List<Route> withoutClient) {}
 
     private static Contract contract;
     private static String application;
@@ -81,10 +83,21 @@ class StreamRouteParityE2ETest {
         while (m.find()) {
             served.add(m.group(1) + " " + template(m.group(2)));
         }
-        List<String> expected = contract.routes().stream().map(r -> r.method() + " " + r.path()).toList();
+        List<String> expected = new ArrayList<>();
+        contract.routes().forEach(r -> expected.add(r.method() + " " + r.path()));
+        contract.withoutClient().forEach(r -> expected.add(r.method() + " " + r.path()));
 
         assertThat(served).as("streamRoute(...) registrations found in the emitted application")
                 .containsExactlyInAnyOrderElementsOf(expected);
+    }
+
+    @Test
+    @DisplayName("the spectate route is served, and no generated client opens it yet (wave S4)")
+    void spectateRouteHasNoClientYet() {
+        assertThat(contract.withoutClient()).extracting(Route::operation).containsExactly("spectate");
+        assertThat(contract.routes()).extracting(Route::operation).doesNotContain("spectate");
+        assertThat(application).contains("routerBuilder.streamRoute(HttpMethod.GET, \"/orders/{id}/stream\", "
+                + "orderSpectateStreamHandler);");
     }
 
     @Test

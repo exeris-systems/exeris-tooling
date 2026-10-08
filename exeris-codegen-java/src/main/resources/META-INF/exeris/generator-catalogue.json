@@ -2,6 +2,24 @@
   "catalogueFormat": 1,
   "rows": [
     {
+      "id": "spectate-stream-handler",
+      "generator": "KernelSpectateStreamHandlerGenerator",
+      "artefact": "The SSE stream handler of one row's events, at `GET {base}/{id}/stream`.",
+      "outputRoot": "main",
+      "pathPattern": "^(?:[^/]+/)*handler/[^/]+SpectateStreamHandler\\.java$",
+      "pathTemplate": "{base}/handler/{E}SpectateStreamHandler.java",
+      "scope": "entity",
+      "cardinality": "zero-or-one",
+      "condition": "`@ExerisDomain(realTimeApi = true)`; refused on a `TENANT` or `UNIVERSE` entity (`EXT-PROC-1014`)",
+      "ambiguousWith": [
+        "stream-handler",
+        "action-stream-handler",
+        "handler"
+      ],
+      "adr": "ADR-044",
+      "since": "0.10.0"
+    },
+    {
       "id": "stream-handler",
       "generator": "KernelStreamHandlerGenerator",
       "artefact": "The live-view SSE stream handler of the entity.",
@@ -12,6 +30,7 @@
       "cardinality": "zero-or-one",
       "condition": "`@ExerisDomain(realTimeApi = true)`; refused on a `TENANT` or `UNIVERSE` entity (`EXT-PROC-1014`)",
       "ambiguousWith": [
+        "spectate-stream-handler",
         "action-stream-handler",
         "handler"
       ],
@@ -29,6 +48,7 @@
       "cardinality": "one-per-streaming-action",
       "condition": "each `@Action(streaming = true)`",
       "ambiguousWith": [
+        "spectate-stream-handler",
         "stream-handler",
         "handler"
       ],
@@ -46,6 +66,7 @@
       "cardinality": "one",
       "condition": "every entity",
       "ambiguousWith": [
+        "spectate-stream-handler",
         "stream-handler",
         "action-stream-handler"
       ],
