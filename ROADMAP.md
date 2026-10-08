@@ -1620,7 +1620,7 @@ never-invoked emitter start emitting, and its output did not build.
       jar. This is **T30 one phase later** and it fails worse. Tooling emits no `pom.xml`, so the
       honest options are a documented requirement or — smaller and better-timed — failing the *build*
       when a selected subsystem has no provider on the runtime classpath.
-- [ ] **T30 — an emitted import is a requirement on the consumer's compile classpath that nothing
+- [x] **T30 — an emitted import is a requirement on the consumer's compile classpath that nothing
       declares.** Transcribed 2026-09-26; ADR-078 cross-referenced a T30 entry this file did not
       have. Tooling emits no `pom.xml`, so every import the consumer's build does not already carry
       must still resolve at their `javac` — and when it does not, `javac` names a package rather
@@ -1669,6 +1669,9 @@ never-invoked emitter start emitting, and its output did not build.
       them imports anything outside the JDK and kernel SPI/Core today. `exeris:generate` runs at
       `generate-sources`, before `compile`, and knows what it emitted. It is the one existing goal
       that could check the compile classpath and name the missing artefact.
+
+      **2026-10-08: closed.** `exeris:generate` warns `EXT-PLUG-2004`, naming a compile
+      dependency the generated code imports and the build lacks (#341).
 - [x] **T58 — PATCH/PUT parity: a generated client's update never reached a generated server.**
       Numbered 2026-09-26, the next free T after the renumbering. Measured the same day. The
       generated router serves update on `PUT` and the OpenAPI document publishes `PUT`
@@ -1723,9 +1726,9 @@ never-invoked emitter start emitting, and its output did not build.
       under tenant A, of a tenant-A row: both streams received the frame with tenant A's payload,
       the tenant-B stream while its own context was bound.
 
-      **Per-action streams (`@Action(streaming = true)`) are not exposed today:** the handler sends
-      keep-alives only and loads, reads and subscribes to nothing (EXT-PROC-1107). The exposure
-      arrives with the per-action driver, which therefore owes the guard and an RLS `findById`.
+      **Per-action streams (`@Action(streaming = true)`):** the handler runs the action under the
+      tenant guard, loads the row under RLS and forwards only events whose stream id is the row's
+      id (J4-1, #360).
 
       **0.9.0, the stopgap (founder decision 2026-10-04):** the processor refuses `realTimeApi = true`
       on a tenant-partitioned entity (`TENANT`, `UNIVERSE`, or the deprecated `tenantScoped = true`)
@@ -2054,8 +2057,7 @@ never-invoked emitter start emitting, and its output did not build.
       `ExerisDomain`, `Field`, `Action`, `ActionParam` — and never for `Saga` or `SagaStep`;
       `@SagaStep` is in `EXTRACTED_ANNOTATIONS`, so C0's pass 2 is silent about it too. So **no
       strict-mode diagnostic exists for `@SagaStep.parallel` today**, and adding a registry entry
-      would produce nothing: the unreachable-entry trap the registry Javadoc already documents, the
-      same shape as the standing `T11-strict` marker on `DomainEvent`.
+      would produce nothing: the unreachable-entry trap the registry Javadoc already documents.
       Two `warnInertAttributes` call sites are therefore missing — `Saga` and `SagaStep` — which is
       a real gap, independent of whether any of these ten attributes ever earns an entry.
 
@@ -2214,6 +2216,8 @@ never-invoked emitter start emitting, and its output did not build.
   JVM, which by construction cannot see a cross-toolchain difference. What would close it: a
   committed golden document compared on both CI rows (JDK 25 and 26, UP2) — the existing matrix then
   *is* the cross-toolchain check — and, if the rows disagree, an explicit order in the writer.
+  **Closed 2026-10-08:** `KernelOpenApiGoldenDocumentTest` compares a committed golden document
+  byte for byte on both rows (#342).
 
 **Re-verified 2026-09-26.** These four were carried from the log unchecked in the 2026-08-18 pass.
 Each now has the status the code settles, and every other mention in this file agrees with it:
@@ -2238,8 +2242,9 @@ Each now has the status the code settles, and every other mention in this file a
   the ui-kit v3 preset for v3 toolchains (`:716-736`) — though the emitted file does not itself say a
   v4 build ignores it. (c) A token/theme binding for `@View` is **G6**, emitted today as a
   `TODO(@View G6)` marker (`view-gen.ts:40,247`) and corpus-gated with the rest of the full emitter.
-- **T30 — open, with its own entry now** (above): mitigated by ADR-060, the emitted Javadoc and the
-  0.9.0 starter (ADR-091), not closed. A build not on the starter still gets `javac`'s package error.
+- **T30 — closed, with its own entry** (above): ADR-060, the emitted Javadoc and the 0.9.0 starter
+  (ADR-091) mitigated it, and `exeris:generate` now warns `EXT-PLUG-2004` naming the missing
+  artefact (#341).
 
 - [x] **T20d — a boolean form control held a string.** Shipped 0.9.0, and re-measuring it widened
       the finding. The log reports two `TS2352`s from a missing boolean branch in the submit-time
@@ -2729,6 +2734,7 @@ Each now has the status the code settles, and every other mention in this file a
 
       Default builds stay quiet (flag opt-in). When the event-sourcing generator lands, delete the
       `@EventSourced` registry entry in the same change.
+      *Done:* the `@DomainEvent` call site under `-Aexeris.strict` (#352).
       *Deferred:* broadening the registry to the `@UI` surface (a prime offender) rides with **U4** (UI
       fidelity end-to-end) in the **UI fidelity & theming** cluster — it needs the processor to emit the
       full `uiMetadata` first, otherwise the warning would fire on attributes that are dropped upstream
@@ -2977,9 +2983,8 @@ Proposals, highest return-on-effort first:
       payload), with a bounded drop-on-full hand-off queue; it falls back to the keep-alive scaffold only
       when the entity declares no `@DomainEvent`. The TS clients already parse NAMED SSE frames, so named
       domain events flow with **no client reshape** (strong-default #4 parity holds for free).
-      *Remaining gap:* the **per-action** driver (`KernelActionStreamHandlerGenerator`) still emits
-      `KernelStreamScaffold.keepAliveScaffold(...)` — porting it to the same producer seam is the open
-      slice (pairs with the planned per-action GET **spectate** route — `EventSource` is GET-only).
+      Per-action driver: done in J4-1 (#360); the GET **spectate** route is J4-2 (`EventSource` is
+      GET-only).
       **Re-gated on the kernel (2026-07-02):** the kernel stream-route table is exact-path only
       (`HttpRouter.Builder.streamRoute` documents "exact request path"; W7 #224 added `{id}` template
       matching to `route(...)` only), so the emitted per-action
@@ -3331,6 +3336,10 @@ Proposals, highest return-on-effort first:
       declared rather than invented. Restoring ADR-079's security block is the last step, not the
       first.
 
+      **Decided 2026-10-08:** RFC-2026-10-08 accepted as
+      [ADR-105](docs/adr/ADR-105-generated-route-policy-emission.md);
+      implementation J3-1 to J3-4.
+
 - [ ] **D10 — the TS side has a bearer-token code path that reaches no emitted output.**
       *Scheduled: 0.10.0, with T53.* Surfaced by
       the review of the D8 PR and verified: `KernelStrategy.getDefaultHeaders`
@@ -3345,6 +3354,9 @@ Proposals, highest return-on-effort first:
       argument: nothing reads it, so it has no effect), or wire it, which is a T53 question because
       a header is worth sending only once a route requires one. Related to the standing
       "emitters wired by nobody" pattern; do not fix it in isolation from T53.
+      **Decided 2026-10-08:** RFC-2026-10-08 accepted as
+      [ADR-105](docs/adr/ADR-105-generated-route-policy-emission.md);
+      implementation J3-1 to J3-4.
 
 - [x] **D11 — three Handlebars templates and the `templatesDir` config option are wired to nothing.**
       Shipped 0.8.0, deleted rather than wired. The measurement made the choice easy: nothing calls
@@ -3857,10 +3869,12 @@ enters only if its upstream half is final first.
       Java (warn-only first, then enforcing per module), ArchUnit policy tests, the javadoc gate in diff
       mode, and lint of emitted Java in the e2e compile gate.
       *Landed:* the warn-only lint and its baseline (#321), the ArchUnit policy tests and the enforcer
-      dependency ban (#325), the javadoc gate over modules brought to it (#326), and enforcement in
-      `exeris-diagnostics`, `exeris-codegen-core` and `exeris-codegen-maven-plugin` (#327).
-      *Open:* enforcement in `exeris-codegen-java` and `exeris-processor`, lint of emitted Java, and
-      SonarCloud analysis from CI with coverage in place of automatic analysis.
+      dependency ban (#325), the javadoc gate over modules brought to it (#326), enforcement in
+      `exeris-diagnostics`, `exeris-codegen-core` and `exeris-codegen-maven-plugin` (#327) and then
+      in `exeris-codegen-java` and `exeris-processor` (#340), so all five modules enforce, and the
+      lint gate over emitted Java (#353). `.sonarcloud.properties` excludes `src/it` from
+      copy-paste detection (#341).
+      *Open:* SonarCloud analysis from CI with coverage in place of automatic analysis.
 - [ ] **T53 in full** (RFC accepted as ADR-105; gate: ADR-105): `@RouteAccess` + `permissions` compiled into `RouteRequirement`. D10 resolves
       with it.
 - [ ] **TS wave S6 — `@View` pages for exeris-web:** CUSTOM blocks compile with their props, LIST
@@ -3873,29 +3887,34 @@ enters only if its upstream half is final first.
 - [ ] Track C (SDK record changes), `@SagaTransition`, T12 + T17.
 - [ ] **EV1-stream per-action driver** (ADR-044 amendment first): the streaming action runs, and its
       triggered events stream back. Moved from 0.9.0 on 2026-10-02; the open questions are under
-      **EV1-stream**. Removes the 0.9.0 streaming-action warning.
+      **EV1-stream**. The 0.9.0 streaming-action warning is removed (J4-1).
+      *Landed:* J4-1 (#360): the handler runs the action and streams its triggered events.
+      *Open:* J4-2, the GET spectate route; S4, the TS clients; the result frame, which waits on
+      exeris-sdk#191.
 - [ ] **T59 — tenant isolation on stream routes** (the same ADR-044 amendment): the tenant guard in
       the entity-level and the per-action stream handler, an RLS `findById` before a per-action stream
       opens, and an isolation key on the events a live view forwards, so a stream delivers only its
       own tenant's events. The key is a kernel ask: `EventDescriptor` carries none. If the kernel adds
       the key, removes the 0.9.0 `EXT-PROC-1014` refusal; `exeris-codegen-ts` then emits stream clients for tenant-partitioned
       entities.
-- [ ] **Bridge contracts (wave J2b, ADR-097):** a committed generator catalogue that maps every path
+      *Landed:* the per-action half, J4-1 (#360). *Open:* the entity level waits on
+      exeris-kernel#600; the TS clients for tenant-partitioned entities are wave S4.
+- [x] **Bridge contracts (wave J2b, ADR-097):** a committed generator catalogue that maps every path
       the Java pipeline writes to its generator, held to the code by a completeness test and an
       end-to-end conformance test; and `exeris-codegen-cli`, a launchable shaded jar of the Java
       generator, in `exeris-tooling-bom` only. For `exeris-ai-bridge`'s `build-explain_artefacts`
       and `build-preview_generation`. Does not hold the cut.
-      *Landed:* ADR-097 and the catalogue, with `docs/generators.md` (#328). *Open:*
-      `exeris-codegen-cli`, and the bridge's `ADR-097.link.md` stub.
+      *Landed:* ADR-097 and the catalogue, with `docs/generators.md` (#328); `exeris-codegen-cli`
+      (#333); the bridge's `ADR-097.link.md` stub (exeris-ai-bridge#54).
 - [ ] **`@PrimaryKey` rename (wave J5, ADR-104):** `@ExerisDomain(primaryKeyField)` names the key
       across the migration, the repository, the foreign-key target, the Java and TS models and the
       OpenAPI schema; the route variable stays `{id}`. The key is a `UUID`. The `@PrimaryKey` marker
       is J5b, conditional on exeris-sdk#187 item 1.
-      *Landed:* J5-2, the TypeScript resolver (`exeris-codegen-ts/src/core/primary-key.ts`): every
+      *Landed:* J5-1 and J5-2. J5-2, the TypeScript resolver (`exeris-codegen-ts/src/core/primary-key.ts`): every
       emitter that writes the entity key reads it from `primaryKeyField`, with output unchanged.
       The view `@for` track key and the form's foreign-key picker helper read the default key
-      name, since neither holds the bound entity's metadata. *Open:* J5-1, the Java resolver; J5-3,
-      the switch-over.
+      name, since neither holds the bound entity's metadata. J5-1, the Java resolver (#354): every
+      Java site reads the key through `PrimaryKeys`. *Open:* J5-3, the switch-over.
 - [x] **Maven coordinates move to the `eu.exeris` group** (founder decision 2026-10-06). Every
       module is published as `eu.exeris:<artifactId>`, the group of the kernel and SDK artefacts; the
       artifactIds and the Java packages (`eu.exeris.tooling.*`) are unchanged. 0.9.0 and earlier stay
@@ -3928,11 +3947,14 @@ enters only if its upstream half is final first.
       record (#349); T30: `exeris:generate` warns `EXT-PLUG-2004` naming a compile dependency the
       generated code imports and the build lacks (#341); the OpenAPI golden, compared byte for
       byte, with every schema typed and each action's request schema defined (#342); the
-      registry-key check, every strict-audit key resolved against the SDK annotations jar (#339).
-      *In review:* T11, the `@DomainEvent` call site under `-Aexeris.strict` (#352, open).
+      registry-key check, every strict-audit key resolved against the SDK annotations jar (#339);
+      T11, the `@DomainEvent` call site under `-Aexeris.strict` (#352); a composed `Application`
+      registers its conductor as an unnamed resource (#355).
       *Open:* the Java OpenAPI `<Entity>UpdateDto`, which under-describes the full-replacement
       `PUT` body (the TS side sends the whole record, #349), and the question whether the Java
       update keeps writing read-only columns and `created_at`, to settle before the schema shape.
+- [x] **Jackson pins and a release-readiness check** (#346): Jackson 3.2.3 and 2.18.11, with a
+      check that the pins are consistent before a release.
 - [ ] **ADR-044 Amendment 2** also decides the GET route for a per-action stream (`EventSource` is
       GET-only) and the `EventBusService` default endpoint, which no server route serves.
 - [ ] **Triage two dog-food findings this file does not record yet:** the repository's

@@ -4,7 +4,7 @@ type: design-note
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-10-06
+last-verified: 2026-10-08
 ---
 
 # codegen-ts track — the emitted front consumes what the backend serves
@@ -276,12 +276,11 @@ The 0.10.0 share of this stage — the tenant and GET spectate stream clients, l
 the issues placed in that release — is ordered in the TypeScript track of
 [`0.10.0-release-plan.md`](0.10.0-release-plan.md).
 
-- The per-action stream producer (EV1-stream): the action stream handler still sends only the
-  keep-alive scaffold and never runs the action. No SDK widening is needed — an `ACTION`-triggered
-  `@DomainEvent` already names its action — but the invoke-then-stream semantics wait on an
-  ADR-044 amendment (ROADMAP, 0.10.0); the TS client already parses its named frames.
+- The per-action stream producer (EV1-stream): the Java handler runs the action (J4-1, ADR-044
+  Amendment 2). The TS clients for tenant-partitioned entities and the spectate client are wave S4;
+  the TS client already parses the named frames.
 - Test-emitter coverage: `spec-gen` covers 2 of 18 TS emitters.
-- `npm run lint` cannot run (no `eslint.config.*`) and is not in CI.
+- `npm run lint` runs `eslint .` in `build.yml` (#348).
 - **A stability decision for the TS output.** ADR-015's output-stability contract covers
   codegen-core and codegen-java only (MIGRATION lists codegen-ts as out of its scope), so no decision
   says what a change to the emitted Angular app owes its consumers. The organisation's PR
