@@ -134,9 +134,13 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     /**
      * The frame names the generated SSE streams reserve: {@code stream-error} for a failure after
      * the response head, {@code keep-alive} for the heartbeat (ADR-044 obligation 2, Amendment 2
-     * decision 2). An event or a result frame of one of these names is refused.
+     * decision 2), and the event types a browser {@code EventSource} dispatches itself —
+     * {@code message} for an unnamed frame, {@code open} and {@code error} for the connection —
+     * which a client built on it could not tell from a frame of the same name. An event or a
+     * result frame of one of these names is refused.
      */
-    private static final List<String> RESERVED_FRAME_NAMES = List.of("stream-error", "keep-alive");
+    private static final List<String> RESERVED_FRAME_NAMES =
+            List.of("stream-error", "keep-alive", "message", "open", "error");
     /** The {@code @DomainEvent} attribute naming the field a {@code FIELD_CHANGED} event watches. */
     private static final String EVENT_FIELD_ATTRIBUTE = "field";
 
