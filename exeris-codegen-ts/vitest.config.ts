@@ -7,7 +7,7 @@ export default defineConfig({
     include: ['test/**/*.spec.ts'],
     coverage: {
       provider: 'v8',
-      reporter: ['text', 'json', 'html', 'json-summary'],
+      reporter: ['text', 'json', 'html', 'json-summary', 'lcov'],
       include: ['src/**/*.ts'],
       // src/index.ts is the CLI shell (covered by integration runs,
       // not unit tests); .d.ts files are pure type declarations with

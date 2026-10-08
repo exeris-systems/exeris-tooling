@@ -27,11 +27,20 @@ jobs:
         # forward-compatibility is information, not a gate on the release-bearing line.
         java: ['25', '26']
 
+    env:
+      # Job-level so the analysis steps can read it: `secrets` is not available in a step-level
+      # `if`. Empty on forked pull requests and on Dependabot runs, which is exactly when the
+      # analysis must be skipped rather than fail.
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
     steps:
       - name: Checkout exeris-tooling
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: exeris-tooling
+          # Sonar attributes new code and blame from history; a shallow clone silently turns the
+          # new-code period into "everything".
+          fetch-depth: 0
 
       - name: Set up JDK ${{ matrix.java }}
         uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
@@ -57,6 +66,72 @@ jobs:
         # No settings file: every remote dependency comes from Central, the only
         # repository a consumer of the published POMs has.
         run: mvn -B -ntp verify
+
+      # The TypeScript emitter's coverage, for the analysis below. exeris-codegen-ts is not a Maven
+      # module, so its lcov report is produced here rather than picked up from the reactor. The
+      # report's source paths are made absolute: the module that carries the TypeScript sources
+      # (exeris-coverage-aggregate) has a different base directory than the package, and a relative
+      # `src/...` path would resolve to nothing there.
+      - name: Set up Node.js (Sonar coverage input)
+        if: ${{ matrix.java == '25' && env.SONAR_TOKEN != '' }}
+        continue-on-error: true
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: exeris-tooling/exeris-codegen-ts/package-lock.json
+
+      - name: vitest lcov report (exeris-codegen-ts)
+        if: ${{ matrix.java == '25' && env.SONAR_TOKEN != '' }}
+        continue-on-error: true
+        working-directory: exeris-tooling/exeris-codegen-ts
+        run: |
+          set -euo pipefail
+          npm ci --no-audit --no-fund
+          npm run test:coverage
+          sed -i "s#^SF:#SF:$PWD/#" coverage/lcov.info
+
+      - name: SonarQube Cloud analysis
+        id: sonar
+        # Runs on the release-bearing row only, after the build, and consumes the JaCoCo XML that
+        # `verify` just wrote under each module's target/site/jacoco. SonarCloud automatic analysis
+        # never builds the project, so it cannot import those reports and reports no coverage; this
+        # step is what gives new code a coverage figure.
+        #
+        # Skipped when the token is absent (forked pull requests): a missing secret must not fail
+        # the build.
+        #
+        # continue-on-error, deliberately: this job carries the required `mvn verify (JDK 25)`
+        # check, and static analysis is not a correctness gate that may take it down. The next step
+        # makes a failed analysis legible, since continue-on-error reports the step as a success.
+        #
+        # The Maven scanner, not the CLI one, so `sonar.java.libraries` is derived per module from
+        # the reactor. `verify` runs in the same command as `sonar:sonar` so every reactor sibling
+        # resolves to a packaged jar: invoked alone, the goal falls back to the local repository,
+        # which `verify` (not `install`) never populated, and the analysis then reports unresolved
+        # imports. Tests and the invoker fixtures are skipped because the build step above ran them
+        # on this same tree; target/ is not cleaned, so its JaCoCo XML is still on disk.
+        #
+        # The plugin version is pinned in the root POM's pluginManagement and the goal is named by
+        # full coordinates, so the pin is what resolves.
+        if: ${{ matrix.java == '25' && env.SONAR_TOKEN != '' }}
+        continue-on-error: true
+        working-directory: exeris-tooling
+        run: |
+          mvn -B -ntp -e -DskipTests -Dinvoker.skip=true \
+            verify \
+            org.sonarsource.scanner.maven:sonar-maven-plugin:sonar
+
+      - name: Say so when the Sonar analysis failed
+        if: ${{ always() && steps.sonar.outcome == 'failure' }}
+        run: |
+          {
+            echo "### SonarQube Cloud analysis FAILED"
+            echo
+            echo "The scanner did not complete, so no analysis was submitted. The build itself is"
+            echo "unaffected: this step does not gate the pipeline. The scanner's own error is in"
+            echo "the \`SonarQube Cloud analysis\` step of [this run](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})."
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # exeris-codegen-ts is the TypeScript / Angular emitter sibling of
   # exeris-codegen-java. It is NOT a Maven module — vitest drives its
