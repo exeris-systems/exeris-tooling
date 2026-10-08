@@ -2,14 +2,21 @@ package eu.exeris.tooling.codegen.maven;
 
 import eu.exeris.tooling.codegen.core.capability.CapabilityGraphException;
 import eu.exeris.tooling.codegen.java.EmptyMetadataException;
+import eu.exeris.tooling.codegen.java.kernel.RequiredCompileArtifacts.Classpath;
+import eu.exeris.tooling.codegen.java.kernel.RequiredCompileArtifacts.Requirement;
 import eu.exeris.tooling.codegen.java.kernel.UnpersistableFieldTypeException;
+import org.apache.maven.artifact.Artifact;
+import org.apache.maven.artifact.DefaultArtifact;
+import org.apache.maven.artifact.handler.DefaultArtifactHandler;
 import org.apache.maven.model.Build;
 import org.apache.maven.model.Plugin;
 import org.apache.maven.model.PluginExecution;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.plugin.descriptor.PluginDescriptor;
+import org.apache.maven.plugin.logging.SystemStreamLog;
 import org.apache.maven.project.MavenProject;
+import org.assertj.core.api.InstanceOfAssertFactories;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -17,7 +24,9 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -408,6 +417,205 @@ class GenerateMojoTest {
                     .hasMessageContaining("Test generation failed")
                     .hasMessageContaining("disk full")
                     .hasRootCauseMessage("disk full");
+        }
+    }
+
+    @org.junit.jupiter.api.Nested
+    @DisplayName("compile classpath check (T30, EXT-PLUG-2004)")
+    class CompileClasspathCheck {
+
+        private static final Requirement SPI = main("eu.exeris", "exeris-kernel-spi");
+        private static final Requirement CORE = main("eu.exeris", "exeris-kernel-core");
+        private static final Requirement CONDUCTOR = main("eu.exeris", "exeris-sdk-composition-runtime");
+        private static final Requirement JACKSON = main("tools.jackson.core", "jackson-databind");
+        private static final Requirement JUNIT = test("org.junit.jupiter", "junit-jupiter-api");
+        private static final Requirement ASSERTJ = test("org.assertj", "assertj-core");
+
+        private static Requirement main(String groupId, String artifactId) {
+            return new Requirement(groupId, artifactId, Classpath.MAIN, "the generated code");
+        }
+
+        private static Requirement test(String groupId, String artifactId) {
+            return new Requirement(groupId, artifactId, Classpath.TEST, "every generated test");
+        }
+
+        private static Artifact artifact(String groupId, String artifactId, String scope) {
+            return new DefaultArtifact(groupId, artifactId, "1.0", scope, "jar", null,
+                    new DefaultArtifactHandler("jar"));
+        }
+
+        /** The set exeris-app-starter carries, as Maven collects it. */
+        private static Set<Artifact> starterArtifacts() {
+            Set<Artifact> artifacts = new LinkedHashSet<>();
+            artifacts.add(artifact("eu.exeris", "exeris-kernel-spi", Artifact.SCOPE_COMPILE));
+            artifacts.add(artifact("eu.exeris", "exeris-kernel-core", Artifact.SCOPE_COMPILE));
+            artifacts.add(artifact("eu.exeris", "exeris-sdk-composition-runtime", Artifact.SCOPE_COMPILE));
+            artifacts.add(artifact("tools.jackson.core", "jackson-databind", Artifact.SCOPE_COMPILE));
+            artifacts.add(artifact("eu.exeris", "exeris-kernel-community", Artifact.SCOPE_RUNTIME));
+            return artifacts;
+        }
+
+        private record Recorded(List<String> warnings, List<String> infos) { }
+
+        private Recorded record(GenerateMojo mojo) {
+            Recorded recorded = new Recorded(new ArrayList<>(), new ArrayList<>());
+            mojo.setLog(new SystemStreamLog() {
+                @Override
+                public void warn(CharSequence content) {
+                    recorded.warnings().add(content.toString());
+                }
+
+                @Override
+                public void info(CharSequence content) {
+                    recorded.infos().add(content.toString());
+                }
+            });
+            return recorded;
+        }
+
+        @Test
+        @DisplayName("a build on the starter carries every main-source import and is not warned")
+        void starterBuildIsSilent(@TempDir Path tmp) throws Exception {
+            GenerateMojo mojo = mojo(tmp, new ArrayList<>());
+            mojo.project.setArtifacts(starterArtifacts());
+            mojo.importRequirements = (m, tests) -> List.of(SPI, CORE, CONDUCTOR, JACKSON);
+            Recorded log = record(mojo);
+
+            mojo.execute();
+
+            assertThat(log.warnings()).isEmpty();
+            assertThat(log.infos()).contains("Classpath carries all 4 artefact(s) the generated code imports");
+        }
+
+        @Test
+        @DisplayName("Jackson 3 reached only through a runtime-scoped driver is named, by coordinate")
+        void runtimeScopeDoesNotSatisfyACompileImport(@TempDir Path tmp) throws Exception {
+            GenerateMojo mojo = mojo(tmp, new ArrayList<>());
+            Set<Artifact> artifacts = new LinkedHashSet<>();
+            artifacts.add(artifact("eu.exeris", "exeris-kernel-spi", Artifact.SCOPE_COMPILE));
+            artifacts.add(artifact("eu.exeris", "exeris-kernel-core", Artifact.SCOPE_COMPILE));
+            artifacts.add(artifact("eu.exeris", "exeris-kernel-community", Artifact.SCOPE_RUNTIME));
+            artifacts.add(artifact("tools.jackson.core", "jackson-databind", Artifact.SCOPE_RUNTIME));
+            mojo.project.setArtifacts(artifacts);
+            mojo.importRequirements = (m, tests) -> List.of(SPI, CORE, JACKSON);
+            Recorded log = record(mojo);
+
+            mojo.execute();
+
+            assertThat(log.warnings()).singleElement(InstanceOfAssertFactories.STRING)
+                    .startsWith("[Exeris] EXT-PLUG-2004: ")
+                    .contains("main sources", "compile classpath")
+                    .contains("  - tools.jackson.core:jackson-databind, imported by the generated code")
+                    .contains(GenerateMojo.STARTER)
+                    .doesNotContain("exeris-kernel-spi", "exeris-kernel-core");
+        }
+
+        @Test
+        @DisplayName("provided and system scope count for main sources; the missing ones are listed in order")
+        void providedCountsAndMissingIsListed(@TempDir Path tmp) throws Exception {
+            GenerateMojo mojo = mojo(tmp, new ArrayList<>());
+            Set<Artifact> artifacts = new LinkedHashSet<>();
+            artifacts.add(artifact("eu.exeris", "exeris-kernel-spi", Artifact.SCOPE_PROVIDED));
+            artifacts.add(artifact("eu.exeris", "exeris-kernel-core", Artifact.SCOPE_SYSTEM));
+            mojo.project.setArtifacts(artifacts);
+            mojo.importRequirements = (m, tests) -> List.of(SPI, CORE, CONDUCTOR, JACKSON);
+            Recorded log = record(mojo);
+
+            mojo.execute();
+
+            assertThat(log.warnings()).singleElement(InstanceOfAssertFactories.STRING)
+                    .contains("import 2 artefact(s)")
+                    .containsSubsequence("eu.exeris:exeris-sdk-composition-runtime",
+                            "tools.jackson.core:jackson-databind");
+        }
+
+        @Test
+        @DisplayName("the generated tests' libraries are checked on the test classpath, in their own warning")
+        void testLibrariesAreCheckedSeparately(@TempDir Path tmp) throws Exception {
+            List<Boolean> askedForTests = new ArrayList<>();
+            GenerateMojo mojo = mojo(tmp, new ArrayList<>());
+            mojo.generateTests = true;
+            Set<Artifact> artifacts = starterArtifacts();
+            artifacts.add(artifact("org.junit.jupiter", "junit-jupiter-api", Artifact.SCOPE_TEST));
+            mojo.project.setArtifacts(artifacts);
+            mojo.importRequirements = (m, tests) -> {
+                askedForTests.add(tests);
+                return List.of(SPI, CORE, JUNIT, ASSERTJ);
+            };
+            Recorded log = record(mojo);
+
+            mojo.execute();
+
+            assertThat(askedForTests).containsExactly(true);
+            assertThat(log.warnings()).singleElement(InstanceOfAssertFactories.STRING)
+                    .startsWith("[Exeris] EXT-PLUG-2004: ")
+                    .contains("generated tests", "test classpath", "org.assertj:assertj-core")
+                    .doesNotContain("junit-jupiter-api");
+        }
+
+        @Test
+        @DisplayName("a runtime-scoped or scopeless artefact is on the test classpath")
+        void runtimeScopeSatisfiesATestImport(@TempDir Path tmp) throws Exception {
+            GenerateMojo mojo = mojo(tmp, new ArrayList<>());
+            mojo.generateTests = true;
+            Set<Artifact> artifacts = new LinkedHashSet<>();
+            artifacts.add(artifact("org.junit.jupiter", "junit-jupiter-api", Artifact.SCOPE_RUNTIME));
+            artifacts.add(artifact("org.assertj", "assertj-core", null));
+            mojo.project.setArtifacts(artifacts);
+            mojo.importRequirements = (m, tests) -> List.of(JUNIT, ASSERTJ);
+            Recorded log = record(mojo);
+
+            mojo.execute();
+
+            assertThat(log.warnings()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("no requirement (no metadata yet) checks nothing and says nothing")
+        void nothingRequiredIsSilent(@TempDir Path tmp) throws Exception {
+            GenerateMojo mojo = mojo(tmp, new ArrayList<>());
+            mojo.importRequirements = (m, tests) -> List.of();
+            Recorded log = record(mojo);
+
+            mojo.execute();
+
+            assertThat(log.warnings()).isEmpty();
+            assertThat(log.infos()).noneMatch(line -> line.startsWith("Classpath carries"));
+        }
+
+        @Test
+        @DisplayName("not compiled here (addCompileSourceRoot=false) or skipped: the check does not run")
+        void notRunWhereThisModuleDoesNotCompileTheTree(@TempDir Path tmp) throws Exception {
+            GenerateMojo elsewhere = mojo(tmp, new ArrayList<>());
+            elsewhere.addCompileSourceRoot = false;
+            elsewhere.importRequirements = (m, tests) -> {
+                throw new AssertionError("another module compiles the tree");
+            };
+            elsewhere.execute();
+
+            GenerateMojo skipped = mojo(tmp, new ArrayList<>());
+            skipped.skip = true;
+            skipped.importRequirements = (m, tests) -> {
+                throw new AssertionError("nothing runs when the pipeline is skipped");
+            };
+            skipped.execute();
+
+            assertThat(elsewhere.project.getCompileSourceRoots()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("metadata that cannot be read for the check is an execution error carrying EXT-PLUG-2002")
+        void unreadableMetadataIsAnExecutionError(@TempDir Path tmp) {
+            GenerateMojo mojo = mojo(tmp, new ArrayList<>());
+            mojo.importRequirements = (m, tests) -> {
+                throw new IOException("gone");
+            };
+
+            assertThatThrownBy(mojo::execute)
+                    .isInstanceOf(MojoExecutionException.class)
+                    .hasMessageStartingWith("[Exeris] EXT-PLUG-2002: ")
+                    .hasMessageContaining("compile classpath")
+                    .hasRootCauseMessage("gone");
         }
     }
 }

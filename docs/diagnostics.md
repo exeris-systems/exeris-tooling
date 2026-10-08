@@ -107,6 +107,7 @@ so it is visible without `mvn -e`.
 | `EXT-PLUG-2001` | No `@ExerisDomain` metadata was found, and generation refused to delete the committed generated tree. | Make the project compile (`mvn compile -Dexeris.codegen.skip=true`), then rerun `exeris:generate`. If you removed every entity on purpose, pass `-Dexeris.codegen.allowEmpty=true` (`--allow-empty` on the `CodegenMain` command line, which also prints this identifier). |
 | `EXT-PLUG-2002` | Source generation failed reading metadata or writing the generated tree. | Check the cause for the path; check permissions and disk space on the metadata and output directories. |
 | `EXT-PLUG-2003` | Test generation failed reading metadata or writing the generated test tree. | As 2002, for the generated-test output directory. |
+| `EXT-PLUG-2004` | The generated code imports an artefact that is not on the classpath it is compiled against. A warning: `javac` fails next, on a missing package; this line names the jar. Printed once for the main sources (compile, provided or system scope) and once for the generated tests (any scope). | Add each `groupId:artifactId` the message lists: the main-source ones at compile scope, or depend on `eu.exeris:exeris-app-starter` (type `pom`), which declares all of them; JUnit 5 and AssertJ at test scope. A dependency at runtime scope does not reach the compile classpath, even through a driver that depends on it. |
 
 ### 21xx — `exeris:detach`
 
