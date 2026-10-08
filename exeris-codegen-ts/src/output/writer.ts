@@ -19,6 +19,11 @@
  *   never written through; it is treated as not owned, and `overwrite` replaces a link at the path
  *   itself, never its target.
  *
+ * Line endings are not content: a file on disk is compared with CRLF folded to LF, so one the
+ * consumer keeps as CRLF is `unchanged` when only its endings differ. A file that is replaced and
+ * is CRLF on disk ({@link isCrlf}) is written as CRLF; every other file, and every new file, is
+ * written as produced (LF).
+ *
  * `overwrite` replaces every differing file, seed or unowned, and takes ownership of what it writes.
  *
  * An owned file this run no longer produces is deleted, except a seed file or a link, which is
@@ -82,6 +87,25 @@ export interface WriteResult {
   released: string[];
 }
 
+/**
+ * Whether `bytes` is a CRLF text file: it holds at least one line ending and every `\n` in it is
+ * preceded by `\r`. A file with any bare `\n` (LF or mixed endings) is not, and is written as LF.
+ */
+function isCrlf(bytes: Buffer): boolean {
+  const text = bytes.toString('latin1');
+  return text.includes('\r\n') && !/(^|[^\r])\n/.test(text);
+}
+
+/** The bytes of `content` with every CRLF folded to LF, one byte per character of the input. */
+function foldLineEndings(bytes: Buffer): string {
+  return bytes.toString('latin1').replace(/\r\n/g, '\n');
+}
+
+/** `content` as it is written over `existing`: CRLF when `existing` is a CRLF file, else as is. */
+function contentFor(content: string, existing: Buffer | null): string {
+  return existing !== null && isCrlf(existing) ? content.replace(/\r\n/g, '\n').replace(/\n/g, '\r\n') : content;
+}
+
 /** Decides what happens to each file, reading the disk and the previous manifest only. */
 export function planWrites(
   outputPath: string,
@@ -102,7 +126,7 @@ export function planWrites(
     if (!stat.isFile()) return result('skip-unowned', false);
 
     const onDisk = readFileSync(join(outputPath, file.path));
-    const same = onDisk.equals(Buffer.from(file.content));
+    const same = foldLineEndings(onDisk) === foldLineEndings(Buffer.from(file.content));
     const seed = file.overwritable === false;
     const canonical = canonicalManifestPath(file.path);
     const listed = canonical !== null && manifest.entries.has(canonical);
@@ -151,9 +175,11 @@ export function writeGeneratedFiles(
       const full = join(outputPath, entry.path);
       // A link at the path is replaced, never written through (planWrites rewrites one only under
       // --overwrite).
-      if (lstatOrNull(full)?.isSymbolicLink()) unlinkSync(full);
+      const stat = lstatOrNull(full);
+      if (stat?.isSymbolicLink()) unlinkSync(full);
+      const existing = stat?.isFile() ? readFileSync(full) : null;
       mkdirSync(dirname(full), { recursive: true });
-      writeFileSync(full, files[i].content);
+      writeFileSync(full, contentFor(files[i].content, existing));
       written.push(entry.path);
     });
   } catch (error) {
