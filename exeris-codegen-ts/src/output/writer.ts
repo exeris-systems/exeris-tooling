@@ -96,7 +96,7 @@ function isCrlf(bytes: Buffer): boolean {
   return text.includes('\r\n') && !/(^|[^\r])\n/.test(text);
 }
 
-/** The bytes of `content` with every CRLF folded to LF, one byte per character of the input. */
+/** The latin1 view of `bytes` with every CRLF folded to LF, one character per byte. */
 function foldLineEndings(bytes: Buffer): string {
   return bytes.toString('latin1').replace(/\r\n/g, '\n');
 }
