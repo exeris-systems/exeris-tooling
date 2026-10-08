@@ -66,6 +66,8 @@ Printed by `javac` while it compiles your sources. `-Aexeris.strict=true` enable
 | `EXT-PROC-1013` | `@GraphEdge` is declared more than once on one field. | Declare each edge on its own field. |
 | `EXT-PROC-1014` | `@ExerisDomain(realTimeApi = true)` is on a `TENANT` or `UNIVERSE` entity. Kernel events carry no tenant, so the generated live view would send every tenant's events to every subscriber. | Declare `dataScope = DataScope.GLOBAL` if the rows are not tenant-owned; otherwise drop `realTimeApi` until stream events carry an isolation key. |
 | `EXT-PROC-1015` | An `@ExerisDomain` type declares no field `id`, inherited or its own. The generated schema, repository, routes and Angular model all identify a row by `id`; `primaryKeyField` does not rename it. | Declare `private UUID id;` with its getter and setter. |
+| `EXT-PROC-1016` | A `@DomainEvent`'s name is a frame name the generated streams reserve: `stream-error` (a failure after the response head) or `keep-alive` (the heartbeat). A stream frame carrying the event would be read as the reserved one. | Rename the event. |
+| `EXT-PROC-1017` | A streaming action's result-frame name — `@Action.streamEventType`, or the action name when it is blank — is a reserved frame name (`stream-error`, `keep-alive`) or the name of a `@DomainEvent` the action triggers, so the client could not tell the result frame from the other. | Set `streamEventType` to a name no reserved frame and no event of the action uses. |
 
 ### 11xx — warnings on an ordinary build
 
@@ -76,7 +78,6 @@ Printed by `javac` while it compiles your sources. `-Aexeris.strict=true` enable
 | `EXT-PROC-1103` | `@Validation.validateOn` holds a value other than `CREATE` or `UPDATE`, which is dropped. | Use `@Field.inCreate` / `@Field.inUpdate` instead. |
 | `EXT-PROC-1105` | `@SharedScope` is on an entity that is not `DataScope.UNIVERSE`, so it has no effect. | Declare `dataScope = DataScope.UNIVERSE`, or remove the marker. |
 | `EXT-PROC-1106` | `@Bind` with `source = STATIC` or `NONE` carries attributes that are ignored. | Put authored content in `@Block(props)`, or bind with `source = ENTITY`, `PROJECTION` or `ACTION`. |
-| `EXT-PROC-1107` | `@Action(streaming = true)`: the generated stream route does not run the action. | Expect keep-alives only on that route; the per-action stream driver is tracked in the ROADMAP (EV1-stream). |
 
 ### 12xx — the `-Aexeris.strict` audit (warning)
 
@@ -177,3 +178,4 @@ moves its row here; `DiagnosticIdTest` fails if a registered identifier is liste
 | ID | Meaning | Retired in |
 |---|---|---|
 | `EXT-PROC-1104` | An entity's derived default table name differs from the plain plural of its class name. | 0.10.0. The default table has followed the SDK plural since 0.9.0; set `tableName` to name any other table. |
+| `EXT-PROC-1107` | `@Action(streaming = true)`: the generated stream route does not run the action. | 0.10.0. The per-action stream handler runs the action and streams the events it triggers (ADR-044 Amendment 2). |
