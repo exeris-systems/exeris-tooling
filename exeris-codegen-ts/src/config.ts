@@ -103,6 +103,29 @@ export const GeneratorConfigSchema = z.object({
    *  degenerate same-build case, not a second input model. */
   peers: z.array(z.object({ name: z.string(), path: z.string() })).default([]),
 
+  /** The components that render `@View` CUSTOM blocks, keyed by `customType` as the IR writes it.
+   *
+   *  A CUSTOM block emits the element its customType names; Angular compiles it only when the
+   *  page component imports the class behind it. Each entry names that class (`symbol`) and the
+   *  module it is exported from (`import`), written verbatim into the page's import, so a relative
+   *  specifier resolves from `src/app/pages/`. A view with a CUSTOM block that has no entry fails
+   *  generation. The component receives the block's `props` JSON through an input named `props`. */
+  customBlocks: z
+    .record(
+      z.string(),
+      z.object({
+        import: z.string().min(1),
+        symbol: z.string().regex(/^[A-Za-z_$][A-Za-z0-9_$]*$/, 'symbol must be a TypeScript identifier'),
+      }),
+    )
+    .default({}),
+
+  /** What heads every `@View` page component. `'title'` emits the view's title (else its name) as
+   *  the page's `<h1>`; `'none'` emits no heading, for pages whose own blocks carry the headline.
+   *  The route `title`, which sets the document title, and the navigation label read the view's
+   *  title either way. */
+  viewHeading: z.enum(['title', 'none']).default('title'),
+
 });
 
 export type GeneratorConfig = z.infer<typeof GeneratorConfigSchema>;
@@ -135,6 +158,8 @@ export const DEFAULT_CONFIG: GeneratorConfig = {
   verbose: false,
   peers: [],
   generateTests: false,
+  customBlocks: {},
+  viewHeading: 'title',
 };
 
 /**
