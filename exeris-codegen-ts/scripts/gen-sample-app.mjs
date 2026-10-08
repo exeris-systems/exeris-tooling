@@ -92,6 +92,9 @@ const domains = [
       // inUpdate = false: the edit form disables the control through a Signal Forms rule bound to
       // edit mode, and the field is required, so the rule sits beside a validator.
       { name: 'orderNumber', type: 'String', required: true, maxLength: 20, inUpdate: false, sortable: true, filterable: true },
+      // inCreate = false: the control renders in edit mode only, a Signal Forms rule disables it
+      // while the form creates, and the create payload leaves it out.
+      { name: 'trackingCode', type: 'String', required: true, inCreate: false },
       // A computed field: the form shows the loaded entity's value in a read-only input, outside
       // the form model.
       { name: 'lineTotal', type: 'java.math.BigDecimal', computed: true, computedFrom: ['quantity', 'total'] },

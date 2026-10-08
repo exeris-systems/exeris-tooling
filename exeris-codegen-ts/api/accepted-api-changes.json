@@ -166,5 +166,11 @@
     "since": "0.10",
     "adr": "ADR-092",
     "justification": "The generated server's update is a full replacement: the handler decodes the PUT body into the whole entity, validates it with the create rules, and the repository's UPDATE writes every column but the key and a tenant-partitioned entity's owner, so a property left out is stored as null. The update type and schema are therefore the entity record without the key, which the path carries, and without the owner, which the update never writes; read-only fields, the audit createdAt and a UNIVERSE entity's shared scope stay, since the update writes them from the body. Required fields are required. The edit form already sent the loaded record with its values over it, so its request body is unchanged. docs/MIGRATION-0.x-to-1.0.md 0.10.0 carries the step."
+  },
+  {
+    "signature": "<entity>-form.component.ts: @Field(inCreate = false, inUpdate = true) + control in edit mode only (@if (editMode()), disabled while creating), create payload without it; relationship picker: + <field>OptionsError, options-error-<field> alert; self-referencing picker - the edited record's option",
+    "since": "0.10",
+    "adr": "ADR-092",
+    "justification": "A field the user may change only after creation had no control in either form, so an edit could never change it. It now renders inside @if (editMode()), its model member is seeded from the loaded record, a disabled rule bound to create mode keeps a required one from blocking a create, the create payload lists the create-offered members and leaves it out, and the update sends it. A field with inCreate and inUpdate both false still has no control. A picker for a MANY_TO_ONE to the entity itself leaves out the edited record's id while the form edits, and every picker shows a failed options request through httpErrorMessage with the target's plural noun. A form without such a field or a picker is byte-identical. docs/MIGRATION-0.x-to-1.0.md 0.10.0 carries the step."
   }
 ]
