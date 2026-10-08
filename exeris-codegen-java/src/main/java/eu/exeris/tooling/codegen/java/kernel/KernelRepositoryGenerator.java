@@ -15,6 +15,7 @@ import eu.exeris.tooling.codegen.java.support.ColumnNaming;
 import eu.exeris.tooling.codegen.java.support.DataScopeSupport;
 import eu.exeris.tooling.codegen.java.support.DomainTypeKind;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
+import eu.exeris.tooling.codegen.java.support.PrimaryKeys;
 import eu.exeris.tooling.codegen.java.support.ListQuerySupport;
 import eu.exeris.tooling.codegen.java.support.SqlColumnTypes;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
@@ -162,7 +163,6 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     // Format-string / code-fragment literals — consolidated so SonarQube
     // S1192 stays quiet and so the SQL shape can evolve in one place.
     private static final String ENTITY_SRC = "entity";
-    private static final String WHERE_ID_CLAUSE = " WHERE id = ?";
     private static final String SQL_VAR_STMT = "String sql = $S";
     private static final String EXECUTE_MANAGED_LAMBDA = "executor.executeManaged(conn -> ";
     private static final String TRY_PREPARE_STMT = "try ($T stmt = conn.prepare(sql))";
@@ -466,17 +466,14 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
      * name an accessor the bind path does not use.
      */
     static String getterFor(Column col) {
-        if ("id".equals(col.javaName())) {
-            return "getId";
-        }
         String prefix = col.kind() == ColumnKind.DELETED || "boolean".equals(col.javaType())
                 ? "is" : "get";
         return prefix + capitalize(col.javaName());
     }
 
-    /** The matching mutator; {@code id} is {@code setId} regardless of the {@code is}/{@code get} split. */
+    /** The matching mutator. */
     static String setterFor(Column col) {
-        return "id".equals(col.javaName()) ? "setId" : "set" + capitalize(col.javaName());
+        return "set" + capitalize(col.javaName());
     }
 
     /**
@@ -544,8 +541,9 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
             systemCols.add(toSnakeCase(sys.version()));
         }
 
-        cols.add(new Column("id", "id", "UUID", ColumnKind.DOMAIN));
-        seen.add("id");
+        cols.add(new Column(PrimaryKeys.column(metadata), PrimaryKeys.field(metadata), "UUID",
+                ColumnKind.DOMAIN));
+        seen.add(PrimaryKeys.column(metadata));
         for (FieldMetadata field : fields) {
             String sqlName = toSnakeCase(field.name());
             // skip a duplicate of the PK / an earlier field, or a shadow of a system column
@@ -576,7 +574,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         String selectCols = String.join(", ", ctx.columns().stream().map(Column::sqlName).toList());
         String softDeleteFilter = ctx.metadata().softDelete()
                 ? " AND " + toSnakeCase(ctx.sys().deleted()) + " = false" : "";
-        String sql = "SELECT " + selectCols + " FROM " + ctx.table() + WHERE_ID_CLAUSE + softDeleteFilter;
+        String sql = "SELECT " + selectCols + " FROM " + ctx.table() + whereIdClause(ctx.metadata()) + softDeleteFilter;
 
         return MethodSpec.methodBuilder("findById")
                 .addModifiers(Modifier.PUBLIC)
@@ -676,11 +674,12 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         method.addStatement("String where = predicates.isEmpty() ? $S : $S + String.join($S, predicates)",
                 "", " WHERE ", " AND ");
         if (ListQuerySupport.sortable(metadata).isEmpty()) {
-            method.addStatement("String order = $S", " ORDER BY id");
+            method.addStatement("String order = $S", " ORDER BY " + PrimaryKeys.column(metadata));
         } else {
             method.addStatement("String order = query.sort() == null ? $S : $S + sortColumn(query.sort())"
                             + " + (query.descending() ? $S : $S)",
-                    " ORDER BY id", " ORDER BY ", " DESC, id", " ASC, id");
+                    " ORDER BY " + PrimaryKeys.column(metadata), " ORDER BY ",
+                    " DESC, " + PrimaryKeys.column(metadata), " ASC, " + PrimaryKeys.column(metadata));
         }
         method.addStatement("String countSql = $S + where", "SELECT COUNT(*) FROM " + ctx.table())
                 .addStatement("String pageSql = $S + where + order + $S",
@@ -838,6 +837,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         metadata.fields().stream()
                 .filter(FieldMetadata::filterable)
                 .filter(f -> !shadowsPrimaryKeyLookup(f))
+                .filter(f -> !PrimaryKeys.field(metadata).equals(f.name()))
                 .filter(f -> DomainTypeKind.of(f) != DomainTypeKind.LIST)
                 .sorted(Comparator.comparing(FieldMetadata::name))
                 .forEach(f -> specs.add(new FinderSpec(
@@ -897,7 +897,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                 ? " AND " + toSnakeCase(ctx.sys().deleted()) + " = false" : "";
         String sql = "SELECT " + selectCols + " FROM " + ctx.table()
                 + " WHERE " + spec.column() + " = " + SqlColumnTypes.placeholder(spec.kind(), spec.paramTypeName())
-                + softDeleteFilter + " ORDER BY id";
+                + softDeleteFilter + " ORDER BY " + PrimaryKeys.column(ctx.metadata());
 
         return MethodSpec.methodBuilder(spec.methodName())
                 .addModifiers(Modifier.PUBLIC)
@@ -1254,7 +1254,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                 .returns(ctx.entityType())
                 .addParameter(ctx.entityType(), "entity")
                 .addJavadoc("Inserts {@code entity}. <b>Mutates the input:</b> a missing\n")
-                .addJavadoc("{@code id} is filled with a random UUID");
+                .addJavadoc("{@code $L} is filled with a random UUID", PrimaryKeys.field(ctx.metadata()));
         boolean tenantPartitioned = isTenantPartitioned(ctx.metadata());
         Optional<Column> sharedScope = sharedScopeColumn(ctx);
         if (ctx.metadata().audited()) {
@@ -1281,7 +1281,8 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                             KernelErrorGenerator.sharedScopeMismatchType(ctx.metadata())));
             save.addJavadoc(".\n");
         }
-        save.addStatement("if (entity.getId() == null) entity.setId($T.randomUUID())", UUID_TYPE);
+        save.addStatement("if (entity.$L() == null) entity.$L($T.randomUUID())",
+                PrimaryKeys.getter(ctx.metadata()), PrimaryKeys.setter(ctx.metadata()), UUID_TYPE);
         if (ctx.metadata().audited()) {
             save.addStatement("$T now = $T.now()", INSTANT, INSTANT);
             save.addStatement("entity.$L(now)", setterFor(systemColumn(ctx, ColumnKind.CREATED_AT)));
@@ -1300,8 +1301,8 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         body.endControlFlow(")");
 
         save.addCode(body.build());
-        save.addStatement("LOG.log($T.INFO, $S, entity.getId())", KernelScaffold.LOGGER_LEVEL,
-                "Created " + ctx.entity() + ": {0}");
+        save.addStatement("LOG.log($T.INFO, $S, entity.$L())", KernelScaffold.LOGGER_LEVEL,
+                "Created " + ctx.entity() + ": {0}", PrimaryKeys.getter(ctx.metadata()));
         save.addStatement(RETURN_ENTITY_STMT);
         return save.build();
     }
@@ -1322,29 +1323,30 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
      * <p>Shared with the repository-test emitter, whose WHERE-id index is one past this list.
      */
     static List<Column> updateColumns(DomainMetadata metadata) {
-        return updateColumns(columnLayout(metadata));
+        return updateColumns(columnLayout(metadata), PrimaryKeys.column(metadata));
     }
 
-    private static List<Column> updateColumns(List<Column> layout) {
+    private static List<Column> updateColumns(List<Column> layout, String keyColumn) {
         return layout.stream()
-                .filter(c -> !"id".equals(c.sqlName()))
+                .filter(c -> !keyColumn.equals(c.sqlName()))
                 .filter(c -> c.kind() != ColumnKind.TENANT_ID)
                 .toList();
     }
 
     private MethodSpec buildUpdate(Context ctx) {
         // SET clause: every column except id (id is in WHERE) and the owner
-        List<Column> updatable = updateColumns(ctx.columns());
+        List<Column> updatable = updateColumns(ctx.columns(), PrimaryKeys.column(ctx.metadata()));
         // An entity with nothing to write — no domain field, no audit or version column, and the
         // owner never written — still needs a valid statement whose row count answers
         // "did the row exist": SET id = id writes nothing and binds nothing.
         String setClause = updatable.isEmpty()
-                ? "id = id"
+                ? PrimaryKeys.column(ctx.metadata()) + " = " + PrimaryKeys.column(ctx.metadata())
                 : String.join(", ", updatable.stream()
                         .map(c -> c.sqlName() + " = " + placeholder(c, ctx.metadata())).toList());
         boolean versioned = ctx.metadata().versioned();
         String whereClause = versioned
-                ? WHERE_ID_CLAUSE + " AND " + toSnakeCase(ctx.sys().version()) + " = ?" : WHERE_ID_CLAUSE;
+                ? whereIdClause(ctx.metadata()) + " AND " + toSnakeCase(ctx.sys().version()) + " = ?"
+                : whereIdClause(ctx.metadata());
         String sql = "UPDATE " + ctx.table() + " SET " + setClause + whereClause;
         // ADR-076: the rejection carries a type, and the message moved into it. A versioned
         // update matches on id AND on the expected version in one statement, so a zero row
@@ -1416,7 +1418,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         update.beginControlFlow("if (rowsAffected[0] == 0L)")
                 .addStatement("throw new $T(id)", rejection)
                 .endControlFlow();
-        update.addStatement("entity.setId(id)");
+        update.addStatement("entity.$L(id)", PrimaryKeys.setter(ctx.metadata()));
         update.addStatement("LOG.log($T.INFO, $S, id)", KernelScaffold.LOGGER_LEVEL,
                 "Updated " + ctx.entity() + ": {0}");
         update.addStatement(RETURN_ENTITY_STMT);
@@ -1429,9 +1431,9 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         // and with the hard-delete branch's behaviour.
         String deletedCol = toSnakeCase(ctx.sys().deleted());
         String sql = ctx.metadata().softDelete()
-                ? "UPDATE " + ctx.table() + " SET " + deletedCol + " = true" + WHERE_ID_CLAUSE
+                ? "UPDATE " + ctx.table() + " SET " + deletedCol + " = true" + whereIdClause(ctx.metadata())
                         + " AND " + deletedCol + " = false"
-                : "DELETE FROM " + ctx.table() + WHERE_ID_CLAUSE;
+                : "DELETE FROM " + ctx.table() + whereIdClause(ctx.metadata());
 
         CodeBlock.Builder body = CodeBlock.builder()
                 .addStatement(SQL_VAR_STMT, sql)
@@ -1687,6 +1689,11 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                         RuntimeException.class, "Failed to serialize to JSON")
                 .endControlFlow()
                 .build();
+    }
+
+    /** The identity predicate every single-row statement ends with; its one bind is the key. */
+    private static String whereIdClause(DomainMetadata metadata) {
+        return " WHERE " + PrimaryKeys.column(metadata) + " = ?";
     }
 
     private static String toSnakeCase(String camelCase) {

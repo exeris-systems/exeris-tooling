@@ -9,6 +9,7 @@ import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
+import eu.exeris.tooling.codegen.java.support.PrimaryKeys;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.GraphEdgeMetadata;
 import eu.exeris.sdk.sourcemodel.ast.GraphMetadata;
@@ -139,7 +140,7 @@ public class KernelGraphSyncGenerator implements KernelArtifactGenerator {
                 .addStatement("this.graphEngine = graphEngine")
                 .build());
 
-        builder.addMethod(buildSyncToGraph(entityType, graph, hasEdges));
+        builder.addMethod(buildSyncToGraph(entityType, metadata, graph, hasEdges));
         builder.addMethod(buildDeleteFromGraph());
 
         return new GeneratedFile(packageName, className,
@@ -157,7 +158,9 @@ public class KernelGraphSyncGenerator implements KernelArtifactGenerator {
                 .build();
     }
 
-    private MethodSpec buildSyncToGraph(ClassName entityType, GraphMetadata graph, boolean hasEdges) {
+    private MethodSpec buildSyncToGraph(ClassName entityType, DomainMetadata metadata, GraphMetadata graph,
+                                       boolean hasEdges) {
+        String keyGetter = PrimaryKeys.getter(metadata);
         MethodSpec.Builder method = MethodSpec.methodBuilder("syncToGraph")
                 .addModifiers(Modifier.PUBLIC)
                 .returns(TypeName.VOID)
@@ -168,7 +171,7 @@ public class KernelGraphSyncGenerator implements KernelArtifactGenerator {
                 .addJavadoc("properties. Subclasses override this method to ship payload bytes\n")
                 .addJavadoc("via an allocator-owned {@link eu.exeris.kernel.spi.memory.LoanedBuffer}.\n")
                 .beginControlFlow("try ($T session = graphEngine.openSession())", GRAPH_SESSION)
-                .addStatement("session.upsertNode(NODE_LABEL, entity.getId(), null)");
+                .addStatement("session.upsertNode(NODE_LABEL, entity.$L(), null)", keyGetter);
 
         if (hasEdges) {
             for (GraphEdgeMetadata edge : graph.edges()) {
@@ -176,21 +179,21 @@ public class KernelGraphSyncGenerator implements KernelArtifactGenerator {
                 String getter = "get" + capitalize(edgeName);
                 String constantName = toConstantCase(edgeName) + "_EDGE";
                 method.beginControlFlow("if (entity.$L() != null)", getter)
-                        .addStatement("session.upsertEdge($L, entity.getId(), entity.$L(), 1.0, null)",
-                                constantName, getter)
+                        .addStatement("session.upsertEdge($L, entity.$L(), entity.$L(), 1.0, null)",
+                                constantName, keyGetter, getter)
                         .endControlFlow();
             }
         }
 
         return method
-                .addStatement("LOG.log($T.DEBUG, $S, entity.getId())", KernelScaffold.LOGGER_LEVEL,
-                        "Synced " + entityType.simpleName() + " to graph: id={0}")
+                .addStatement("LOG.log($T.DEBUG, $S, entity.$L())", KernelScaffold.LOGGER_LEVEL,
+                        "Synced " + entityType.simpleName() + " to graph: id={0}", keyGetter)
                 .nextControlFlow("catch ($T e)", RUNTIME_EXCEPTION)
                 // System.Logger has no "trailing Throwable" convention: log(Level, String, Object...)
                 // would format the exception as a parameter and drop the stack trace. Concatenating
                 // the id and using log(Level, String, Throwable) keeps both.
-                .addStatement("LOG.log($T.ERROR, $S + entity.getId(), e)", KernelScaffold.LOGGER_LEVEL,
-                        "Failed to sync " + entityType.simpleName() + " to graph: id=")
+                .addStatement("LOG.log($T.ERROR, $S + entity.$L(), e)", KernelScaffold.LOGGER_LEVEL,
+                        "Failed to sync " + entityType.simpleName() + " to graph: id=", keyGetter)
                 .addStatement("throw e")
                 .endControlFlow()
                 .build();

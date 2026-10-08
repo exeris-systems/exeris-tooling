@@ -6,6 +6,7 @@ import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 import eu.exeris.tooling.codegen.java.support.DataScopeSupport;
 import eu.exeris.tooling.codegen.java.support.ListQuerySupport;
+import eu.exeris.tooling.codegen.java.support.PrimaryKeys;
 import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.media.Schema;
 
@@ -70,7 +71,7 @@ public final class OpenApiComponentsBuilder {
                 ? metadata.description()
                 : metadata.entityName() + " entity");
         Map<String, Schema> properties = new LinkedHashMap<>();
-        properties.put("id", OpenApiSchemas.typed(new Schema<String>(), "string").format("uuid")
+        properties.put(PrimaryKeys.field(metadata), OpenApiSchemas.typed(new Schema<String>(), "string").format("uuid")
                 .description("Unique identifier"));
         Set<String> serverOwned = serverOwnedFields(metadata);
         if (metadata.hasFields()) {
@@ -137,7 +138,8 @@ public final class OpenApiComponentsBuilder {
         Set<String> serverOwned = serverOwnedFields(metadata);
         if (metadata.hasFields()) {
             for (FieldMetadata field : metadata.fields()) {
-                if (!field.readOnly() && !"id".equals(field.name()) && !serverOwned.contains(field.name())) {
+                if (!field.readOnly() && !PrimaryKeys.field(metadata).equals(field.name())
+                        && !serverOwned.contains(field.name())) {
                     properties.put(field.name(), buildFieldSchema(field));
                     if (field.required()) {
                         required.add(field.name());
@@ -160,7 +162,8 @@ public final class OpenApiComponentsBuilder {
         Set<String> serverOwned = serverOwnedFields(metadata);
         if (metadata.hasFields()) {
             for (FieldMetadata field : metadata.fields()) {
-                if (!field.readOnly() && !"id".equals(field.name()) && !serverOwned.contains(field.name())) {
+                if (!field.readOnly() && !PrimaryKeys.field(metadata).equals(field.name())
+                        && !serverOwned.contains(field.name())) {
                     properties.put(field.name(), buildFieldSchema(field));
                 }
             }

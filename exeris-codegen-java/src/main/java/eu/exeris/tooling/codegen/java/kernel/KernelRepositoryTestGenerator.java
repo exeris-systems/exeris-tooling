@@ -12,6 +12,7 @@ import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.Artifact
 import eu.exeris.tooling.codegen.java.kernel.KernelRepositoryGenerator.Column;
 import eu.exeris.tooling.codegen.java.kernel.KernelRepositoryGenerator.ColumnKind;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
+import eu.exeris.tooling.codegen.java.support.PrimaryKeys;
 import eu.exeris.tooling.codegen.java.support.ListQuerySupport;
 
 import static eu.exeris.tooling.codegen.java.support.DataScopeSupport.isTenantPartitioned;
@@ -168,9 +169,10 @@ public final class KernelRepositoryTestGenerator {
                     .build());
         }
 
-        type.addMethod(roundTripTest(entityType, repositoryType, persistenceType, columns,
+        type.addMethod(roundTripTest(entityType, repositoryType, persistenceType, metadata, columns,
                 tenantScoped, sharedScope));
-        type.addMethod(saveFillsIdTest(entityType, repositoryType, persistenceType, tenantScoped));
+        type.addMethod(saveFillsIdTest(entityType, repositoryType, persistenceType, metadata,
+                tenantScoped));
         if (tenantScoped) {
             ClassName tenantMismatch = KernelErrorGenerator.tenantMismatchType(metadata);
             Column tenant = tenantColumn(columns);
@@ -216,7 +218,8 @@ public final class KernelRepositoryTestGenerator {
 
     /** The central test — see the class Javadoc for why it is a round-trip and not a SQL check. */
     private MethodSpec roundTripTest(ClassName entityType, ClassName repositoryType,
-                                     ClassName persistenceType, List<Column> columns,
+                                     ClassName persistenceType, DomainMetadata metadata,
+                                     List<Column> columns,
                                      boolean tenantScoped, Column sharedScope) {
         MethodSpec.Builder test = test("savedRowReadsBackColumnForColumn")
                 .addJavadoc("The INSERT's binds, replayed as the SELECT's row. Every column has to\n")
@@ -238,7 +241,8 @@ public final class KernelRepositoryTestGenerator {
                 .addCode("\n")
                 .addComment("Snapshot before the read: prepare(...) clears the recorded binds.")
                 .addStatement("persistence.row = persistence.recordedRow()")
-                .addStatement("$T loaded = repository.findById(original.getId()).orElseThrow()", entityType)
+                .addStatement("$T loaded = repository.findById(original.$L()).orElseThrow()", entityType,
+                        PrimaryKeys.getter(metadata))
                 .addCode("\n");
 
         for (Column column : columns) {
@@ -250,19 +254,22 @@ public final class KernelRepositoryTestGenerator {
     }
 
     private MethodSpec saveFillsIdTest(ClassName entityType, ClassName repositoryType,
-                                       ClassName persistenceType, boolean tenantScoped) {
+                                       ClassName persistenceType, DomainMetadata metadata,
+                                       boolean tenantScoped) {
+        String getter = PrimaryKeys.getter(metadata);
         return test("saveGeneratesAMissingIdAndBindsItFirst")
-                .addJavadoc("{@code id} is column 0 of the layout, so it is also parameter 0 of the\n")
+                .addJavadoc("{@code $L} is column 0 of the layout, so it is also parameter 0 of the\n",
+                        PrimaryKeys.field(metadata))
                 .addJavadoc("INSERT — and the value bound there is the one the caller can read back\n")
                 .addJavadoc("off the entity afterwards.\n")
                 .addStatement("$T persistence = new $T()", persistenceType, persistenceType)
                 .addStatement("$T repository = new $T(persistence)", repositoryType, repositoryType)
                 .addStatement("$T entity = new $T()", entityType, entityType)
-                .addStatement("$T.assertThat(entity.getId()).isNull()", ASSERTIONS)
+                .addStatement("$T.assertThat(entity.$L()).isNull()", ASSERTIONS, getter)
                 .addStatement(write("repository.save(entity)", tenantScoped))
-                .addStatement("$T.assertThat(entity.getId()).isNotNull()", ASSERTIONS)
-                .addStatement("$T.assertThat(persistence.binds.get(0)).isEqualTo(entity.getId())",
-                        ASSERTIONS)
+                .addStatement("$T.assertThat(entity.$L()).isNotNull()", ASSERTIONS, getter)
+                .addStatement("$T.assertThat(persistence.binds.get(0)).isEqualTo(entity.$L())",
+                        ASSERTIONS, getter)
                 .build();
     }
 
@@ -521,7 +528,8 @@ public final class KernelRepositoryTestGenerator {
         int expectedBinds = KernelRepositoryGenerator.updateColumns(metadata).size() + 1
                 + (metadata.versioned() ? 1 : 0);
         return test("updateNeverWritesTheTenantSoARowCannotMove")
-                .addJavadoc("The SET list carries every column except {@code id} and the owner, so\n")
+                .addJavadoc("The SET list carries every column except {@code $L} and the owner, so\n",
+                        PrimaryKeys.field(metadata))
                 .addJavadoc("the tenant a body names never reaches the UPDATE — with or without a\n")
                 .addJavadoc("tenant bound, on any engine.\n")
                 .addStatement("$T persistence = new $T()", persistenceType, persistenceType)
