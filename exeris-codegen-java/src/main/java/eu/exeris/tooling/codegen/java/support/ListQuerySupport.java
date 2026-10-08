@@ -202,7 +202,7 @@ public final class ListQuerySupport {
         return Collections.unmodifiableSet(names);
     }
 
-    private static String role(String declared, String fallback) {
+    static String role(String declared, String fallback) {
         return declared == null || declared.isBlank() ? fallback : declared;
     }
 

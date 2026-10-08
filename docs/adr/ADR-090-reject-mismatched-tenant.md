@@ -14,7 +14,8 @@ slug: adr/ADR-090
   an update keeps every server-owned column, not only the owner) · amended 2026-10-08 (Amendment 2 —
   a request body does not write read-only fields, and the update schema is the body the update
   writes from) · amended 2026-10-08 (Amendment 3 — the create validates the body it carries, and
-  `inCreate` / `inUpdate` shape the bodies like `readOnly`)
+  `inCreate` / `inUpdate` shape the bodies like `readOnly`) · amended 2026-10-08 (Amendment 4 — the
+  create body leaves out every server-owned field)
 - **Deciders:** the founder (finding **T36**)
 - **Repo:** `exeris-tooling`
 - **Scope:** tooling / codegen pipeline — emitted repository, handler, error types, OpenAPI, TypeScript
@@ -553,3 +554,53 @@ the next `PUT` sends back.
   schemas are accepted when the consumer's service fills the required read-only field, a `POST`
   whose service leaves it null answers `500` and the log carries the entity and the field, a forged
   `inUpdate = false` value is ignored and an action's change is stored.
+
+## Amendment 4 — the create body leaves out every server-owned field, and the entity schema lists the audit stamps only when the entity has them (2026-10-08)
+
+**Status:** Accepted *(narrows Amendment 3's "The insert is unchanged" for the fields below; §1 to §5
+and Amendments 1 to 3 are otherwise unchanged)*
+
+**Deciders:** the founder.
+
+A create is server-owned the way a `PUT` is (Amendments 1 and 2): the body does not choose a value
+the server stamps, starts or holds.
+
+**`ServerOwnedFields#notInCreateBody` holds every system-role field.** The key, the owner and a
+UNIVERSE entity's shared scope were already in it; it now also holds the audit fields (created and
+updated at and by), the version and the soft-delete fields (flag, time and actor), each under the
+name the `systemFields` block gives it, else its default, for the roles the entity's flags switch on
+(`ListQuerySupport#systemFieldNames`), together with the read-only and `inCreate = false` fields. They
+leave `<Entity>CreateDto` and the create route's validation.
+
+**The create handler drops what the body carried.** The handler decodes the body into the entity, so
+before the validation and the service it sets the audit times and, when the entity declares them as
+fields, the actors to `null`, the version to its initial value (`0`), the soft-delete flag to `false`
+and, when declared, the deletion time and actor to `null` (`ServerOwnedFields#resetOnCreate`). The
+repository's `save` then stamps the creation and update times with `Instant.now()` and the insert
+binds a version that is still `null` as `0`. The generated code has no principal, so an author is
+never taken from the body; a value the consumer's own service sets on the entity before it calls
+`save` is kept, since the reset runs ahead of the service. The check that a `required` and `readOnly`
+field is set before the insert (Amendment 3) is unchanged.
+
+**The entity schema lists the audit stamps only for an entity that has them.**
+`OpenApiComponentsBuilder` listed `createdAt` and `updatedAt` on every entity schema. It lists them
+for an audited entity, under the role's name, `readOnly` as ADR-090 §6 has it for a server-owned
+field; an entity that is not audited and declares no such field has no such property, and a field it
+declares keeps its own schema.
+
+### Consequences of the amendment
+
+- **Breaking for a client that set an audit, version or soft-delete field through `POST`.** The value
+  is ignored. The regeneration note is
+  `docs/migration/0.10.0/java-14-create-body-leaves-out-server-owned-fields.md`.
+- The TypeScript `…Update` type still lists an `inUpdate = false` field, which the form sends as
+  loaded; `exeris-tooling#381` aligns the TypeScript side with the Java bodies.
+
+### Verification of the amendment
+
+- `ServerOwnedFieldsTest` — the create set per role and per renamed role, and the resets.
+- `OpenApiComponentsBuilderTest` — the entity schema with and without the audit stamps.
+- `KernelValidationRulesTest`, `KernelHandlerGeneratorTest` — the create guard and the resets.
+- `CreateIgnoresServerOwnedFieldsBootE2ETest` boots the emitted application: a `POST` that forges
+  `createdAt`, `updatedAt`, `version`, `deleted` and `createdBy` stores the server's values, and the
+  author a service sets is kept.

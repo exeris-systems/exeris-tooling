@@ -109,7 +109,7 @@ class KernelValidationRulesTest {
                 .containsExactly("name", "worldId", "version");
         assertThat(KernelValidationRules.onCreate(metadata))
                 .extracting(fr -> fr.field().name())
-                .containsExactly("name", "createdBy", "version");
+                .containsExactly("name");
     }
 
     @Test

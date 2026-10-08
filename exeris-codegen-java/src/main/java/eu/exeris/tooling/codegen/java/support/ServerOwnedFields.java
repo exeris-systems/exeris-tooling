@@ -44,13 +44,14 @@ import java.util.TreeSet;
  *
  * <p>The version and a UNIVERSE entity's shared scope are in no update set: every update writes
  * both, the version as the value the caller passes plus one. The shared scope is in
- * {@link #notInCreateBody}, since the create stamps it from the bound scope.
+ * {@link #notInCreateBody}, since the create stamps it from the bound scope, as the version is,
+ * since the create starts it.
  *
  * @since 0.10
  */
 public final class ServerOwnedFields {
 
-    private static final String UPDATED_AT_DEFAULT = "updatedAt";
+    private static final String NULL = "null";
     private static final String VERSION_DEFAULT = "version";
 
     private static final Set<String> PRIMITIVE_TYPES =
@@ -71,18 +72,18 @@ public final class ServerOwnedFields {
     }
 
     /**
-     * The fields the create request body does not carry: the key, which the repository fills, the
-     * owner and a UNIVERSE entity's shared scope, which it stamps from the bound storage context,
-     * the read-only fields and the fields marked {@code @Field(inCreate = false)}.
+     * The fields the create request body does not carry: every field that plays a system role (the
+     * key, the owner, a UNIVERSE entity's shared scope, the audit, version and soft-delete fields
+     * the entity enables, and every name a {@code systemFields} block declares), the read-only
+     * fields and the fields marked {@code @Field(inCreate = false)}. The server sets them all: the
+     * repository fills the key, the owner and the shared scope, stamps the audit times, starts the
+     * version and the soft-delete flag ({@link #resetOnCreate}).
      *
      * @param metadata the entity
      * @return the field names, sorted
      */
     public static Set<String> notInCreateBody(DomainMetadata metadata) {
-        Set<String> names = new TreeSet<>();
-        names.add(PrimaryKeys.field(metadata));
-        DataScopeSupport.ownerFieldName(metadata).ifPresent(names::add);
-        DataScopeSupport.sharedScopeField(metadata).ifPresent(field -> names.add(field.name()));
+        Set<String> names = new TreeSet<>(ListQuerySupport.systemFieldNames(metadata));
         if (metadata.hasFields()) {
             for (FieldMetadata field : metadata.fields()) {
                 if (field.readOnly() || !field.inCreate()) {
@@ -91,6 +92,73 @@ public final class ServerOwnedFields {
             }
         }
         return Collections.unmodifiableSet(names);
+    }
+
+    /**
+     * One property the create handler sets on the entity it decoded from the body, so a value the
+     * body carried never reaches the service.
+     *
+     * @param field   the entity property
+     * @param literal the Java literal the property is set to
+     */
+    public record Reset(String field, String literal) {}
+
+    /**
+     * The properties the create handler resets on the decoded entity, before the service sees it:
+     * the audit times and actors, the version and the soft-delete flag, time and actor. The
+     * repository's {@code save} stamps the audit times with the current instant whatever the
+     * service sets; a version, a soft-delete flag or an actor the service sets afterwards is kept,
+     * and the actors and the deletion time and actor are no column of the insert. The actors and
+     * the deletion time and actor are reset only when the entity declares them as fields.
+     *
+     * @param metadata the entity
+     * @return the resets, in a fixed order
+     */
+    public static List<Reset> resetOnCreate(DomainMetadata metadata) {
+        SystemFieldsMetadata declared = metadata.systemFields();
+        List<Reset> resets = new ArrayList<>();
+        if (metadata.audited()) {
+            resets.add(new Reset(ListQuerySupport.role(declared == null ? null : declared.createdAtField(),
+                    "createdAt"), NULL));
+            resets.add(new Reset(ListQuerySupport.role(declared == null ? null : declared.updatedAtField(),
+                    "updatedAt"), NULL));
+            addIfDeclared(resets, metadata,
+                    ListQuerySupport.role(declared == null ? null : declared.createdByField(), "createdBy"));
+            addIfDeclared(resets, metadata,
+                    ListQuerySupport.role(declared == null ? null : declared.updatedByField(), "updatedBy"));
+        }
+        if (metadata.softDelete()) {
+            resets.add(new Reset(ListQuerySupport.role(declared == null ? null : declared.softDeleteField(),
+                    "deleted"), "false"));
+            addIfDeclared(resets, metadata, ListQuerySupport.role(
+                    declared == null ? null : declared.softDeleteTimestampField(), "deletedAt"));
+            addIfDeclared(resets, metadata, ListQuerySupport.role(
+                    declared == null ? null : declared.softDeletedByField(), "deletedBy"));
+        }
+        if (metadata.versioned()) {
+            String version = versionField(metadata);
+            resets.add(new Reset(version, versionStart(metadata, version)));
+        }
+        return List.copyOf(resets);
+    }
+
+    private static void addIfDeclared(List<Reset> resets, DomainMetadata metadata, String name) {
+        if (metadata.hasFields() && metadata.fields().stream().anyMatch(f -> f.name().equals(name))) {
+            resets.add(new Reset(name, NULL));
+        }
+    }
+
+    /** The version's initial value, as a literal of the declared field's integer width. */
+    private static String versionStart(DomainMetadata metadata, String version) {
+        if (metadata.hasFields()) {
+            for (FieldMetadata field : metadata.fields()) {
+                if (field.name().equals(version) && ("int".equals(field.type())
+                        || "Integer".equals(field.type()) || "java.lang.Integer".equals(field.type()))) {
+                    return "0";
+                }
+            }
+        }
+        return "0L";
     }
 
     /**
@@ -186,9 +254,27 @@ public final class ServerOwnedFields {
         return names;
     }
 
-    private static String updatedAtField(DomainMetadata metadata) {
+    /**
+     * The name of the field holding the time of the last write: the one the {@code systemFields}
+     * block declares, else {@code updatedAt}. Meaningful for an audited entity only.
+     *
+     * @param metadata the entity
+     * @return the field's name
+     */
+    public static String updatedAtField(DomainMetadata metadata) {
         SystemFieldsMetadata declared = metadata.systemFields();
-        String named = declared == null ? null : declared.updatedAtField();
-        return named == null || named.isBlank() ? UPDATED_AT_DEFAULT : named;
+        return ListQuerySupport.role(declared == null ? null : declared.updatedAtField(), "updatedAt");
+    }
+
+    /**
+     * The name of the field holding the creation time: the one the {@code systemFields} block
+     * declares, else {@code createdAt}. Meaningful for an audited entity only.
+     *
+     * @param metadata the entity
+     * @return the field's name
+     */
+    public static String createdAtField(DomainMetadata metadata) {
+        SystemFieldsMetadata declared = metadata.systemFields();
+        return ListQuerySupport.role(declared == null ? null : declared.createdAtField(), "createdAt");
     }
 }
