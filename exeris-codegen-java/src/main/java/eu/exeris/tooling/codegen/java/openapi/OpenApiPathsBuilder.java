@@ -74,10 +74,10 @@ public final class OpenApiPathsBuilder {
         op.setTags(List.of(entity));
 
         op.addParametersItem(queryParam(ListQuerySupport.PAGE, "Zero-based page index",
-                new Schema<Integer>().type("integer").format("int32")
+                OpenApiSchemas.typed(new Schema<Integer>(), "integer").format("int32")
                         .minimum(BigDecimal.ZERO)._default(0)));
         op.addParametersItem(queryParam(ListQuerySupport.SIZE, "Page size",
-                new Schema<Integer>().type("integer").format("int32")
+                OpenApiSchemas.typed(new Schema<Integer>(), "integer").format("int32")
                         .minimum(BigDecimal.ONE).maximum(BigDecimal.valueOf(ListQuerySupport.MAX_SIZE))
                         ._default(ListQuerySupport.DEFAULT_SIZE)));
         List<ListQuerySupport.Property> sortable = ListQuerySupport.sortable(metadata);
@@ -87,14 +87,14 @@ public final class OpenApiPathsBuilder {
                 values.add(property.name() + ",asc");
                 values.add(property.name() + ",desc");
             }
-            Schema<String> sortSchema = new Schema<String>().type("string");
+            Schema<String> sortSchema = OpenApiSchemas.typed(new Schema<String>(), "string");
             sortSchema.setEnum(values);
             op.addParametersItem(queryParam(ListQuerySupport.SORT,
                     "<property>,<asc|desc>; unsorted, rows come in id order", sortSchema));
         }
         for (ListQuerySupport.Property filter : ListQuerySupport.filters(metadata)) {
             Schema<Object> schema = new Schema<>();
-            schema.setType(TypeMapper.toOpenApiType(filter.javaType()));
+            OpenApiSchemas.typed(schema, TypeMapper.toOpenApiType(filter.javaType()));
             String format = TypeMapper.toOpenApiFormat(filter.javaType());
             if (format != null) {
                 schema.setFormat(format);
@@ -185,7 +185,7 @@ public final class OpenApiPathsBuilder {
         param.setIn("path");
         param.setRequired(true);
         param.setDescription("Entity ID (UUID)");
-        param.setSchema(new io.swagger.v3.oas.models.media.Schema<String>().type("string").format("uuid"));
+        param.setSchema(OpenApiSchemas.typed(new Schema<String>(), "string").format("uuid"));
         return param;
     }
 
