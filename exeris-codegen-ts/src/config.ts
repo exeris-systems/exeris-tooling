@@ -74,7 +74,12 @@ export const GeneratorConfigSchema = z.object({
   /** Backend strategy — kernel-target-only (single supported target) */
   backend: z.enum(['KERNEL']).default('KERNEL'),
 
-  /** Whether to overwrite existing files */
+  /** Replace existing files the generator would otherwise keep.
+   *
+   *  Without it, a file the previous run's manifest records is rewritten when its content differs,
+   *  except a seed file written once for the consumer to edit (`package.json`, `app.routes.ts`,
+   *  `environment.ts`, …), which is kept; and an existing file the manifest does not record is never
+   *  replaced. With it, every differing file is written and owned from then on (output/writer.ts). */
   overwrite: z.boolean().default(false),
 
   /** Dry run - show what would be generated without writing files */
@@ -126,6 +131,33 @@ export const GeneratorConfigSchema = z.object({
    *  title either way. */
   viewHeading: z.enum(['title', 'none']).default('title'),
 
+  /** Emit the Angular project and app shell around the generated tree.
+   *
+   *  On (the default), the output is a complete Angular application: `package.json`,
+   *  `angular.json`, the `tsconfig` files, `src/main.ts`, `src/index.html`, the styles, the
+   *  environment files and the `src/app` shell (`app.config.ts`, `app.component.ts`,
+   *  `app.routes.ts`), with the generated tree under `src/app/`.
+   *
+   *  Off, the output directory is a folder inside an Angular app the consumer already owns: the
+   *  generated tree is written at its root, no project or app-shell file is emitted, and the
+   *  view routes are exported as one array from `view.routes.ts` for the consumer's own routes
+   *  file to spread. The app barrel (`index.ts`) is kept, since it re-exports generated code
+   *  rather than configuring an app. */
+  scaffold: z.boolean().default(true),
+
+  /** How the scaffolded app is rendered: `csr` (the default) or `ssg`.
+   *
+   *  `csr` is a browser-only application. `ssg` adds Angular's static prerender setup to the
+   *  scaffold: `src/main.server.ts`, `src/app/app.config.server.ts` and
+   *  `src/app/app.routes.server.ts`, client hydration in `app.config.ts`, `outputMode: "static"`
+   *  and the `server` entry in `angular.json`, and `@angular/ssr` + `@angular/platform-server` in
+   *  `package.json`. `ng build` then writes one HTML file per param-less `@View` page that reads no
+   *  entity data; every other route renders in the browser.
+   *
+   *  Only the scaffold carries a render setup. With `scaffold` off the consumer owns
+   *  `angular.json` and its server configuration, so `ssg` emits nothing there. */
+  render: z.enum(['csr', 'ssg']).default('csr'),
+
 });
 
 export type GeneratorConfig = z.infer<typeof GeneratorConfigSchema>;
@@ -160,7 +192,40 @@ export const DEFAULT_CONFIG: GeneratorConfig = {
   generateTests: false,
   customBlocks: {},
   viewHeading: 'title',
+  scaffold: true,
+  render: 'csr',
 };
+
+/** The generators that emit per-entity output; the views-only preset turns each of them off. */
+const ENTITY_GENERATOR_KEYS = [
+  'generateZod',
+  'generateServices',
+  'generateForms',
+  'generateLists',
+  'generateDetails',
+  'generateStores',
+  'generateSagas',
+  'generateEvents',
+  'generateTests',
+] as const;
+
+/**
+ * The configuration `exeris-gen init` writes.
+ *
+ * The default preset is DEFAULT_CONFIG. `viewsOnly` is the preset for `@View` pages generated into
+ * an app the consumer owns: every entity generator off and the scaffold off, so a run emits the
+ * pages, their routes and the view-routes aggregate. `appName` replaces the default name in
+ * either preset. Keys keep DEFAULT_CONFIG's order, so the written file depends on the options only.
+ */
+export function initConfig(options: { viewsOnly?: boolean; appName?: string } = {}): GeneratorConfig {
+  const config: GeneratorConfig = { ...DEFAULT_CONFIG };
+  if (options.viewsOnly) {
+    for (const key of ENTITY_GENERATOR_KEYS) config[key] = false;
+    config.scaffold = false;
+  }
+  if (options.appName !== undefined) config.appName = options.appName;
+  return config;
+}
 
 /**
  * Turns parsed CLI options into config overrides, keeping only the flags the user actually
@@ -217,6 +282,8 @@ export function cliOverrides(
   take('lists', 'generateLists', () => options.lists !== false);
   take('details', 'generateDetails', () => options.details !== false);
   take('tests', 'generateTests', () => options.tests === true);
+  take('scaffold', 'scaffold', () => options.scaffold !== false);
+  take('render', 'render', () => options.render as GeneratorConfig['render']);
   take('stores', 'generateStores', () => options.stores !== false);
   take('sagas', 'generateSagas', () => options.sagas !== false);
   take('events', 'generateEvents', () => options.events !== false);

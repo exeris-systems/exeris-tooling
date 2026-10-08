@@ -6,26 +6,73 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.google.auto.service.AutoService;
 import com.sun.source.util.Trees;
-import eu.exeris.sdk.sourcemodel.ast.*;
+import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
+import eu.exeris.sdk.sourcemodel.ast.ActionParamMetadata;
+import eu.exeris.sdk.sourcemodel.ast.BindSource;
+import eu.exeris.sdk.sourcemodel.ast.BindingMetadata;
+import eu.exeris.sdk.sourcemodel.ast.BlockType;
+import eu.exeris.sdk.sourcemodel.ast.CapabilityModuleMetadata;
+import eu.exeris.sdk.sourcemodel.ast.ComponentNodeMetadata;
+import eu.exeris.sdk.sourcemodel.ast.DataScope;
+import eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata;
+import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
+import eu.exeris.sdk.sourcemodel.ast.EnumMetadata;
+import eu.exeris.sdk.sourcemodel.ast.EventSourcedMetadata;
+import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
+import eu.exeris.sdk.sourcemodel.ast.GraphEdgeMetadata;
+import eu.exeris.sdk.sourcemodel.ast.GraphMetadata;
+import eu.exeris.sdk.sourcemodel.ast.InternalApiMetadata;
+import eu.exeris.sdk.sourcemodel.ast.ProvidesMetadata;
+import eu.exeris.sdk.sourcemodel.ast.RegionMetadata;
+import eu.exeris.sdk.sourcemodel.ast.RelationshipMetadata;
+import eu.exeris.sdk.sourcemodel.ast.RequiresMetadata;
+import eu.exeris.sdk.sourcemodel.ast.SagaMetadata;
+import eu.exeris.sdk.sourcemodel.ast.SagaStepMetadata;
+import eu.exeris.sdk.sourcemodel.ast.SystemFieldsMetadata;
+import eu.exeris.sdk.sourcemodel.ast.UIMetadata;
+import eu.exeris.sdk.sourcemodel.ast.ViewKind;
+import eu.exeris.sdk.sourcemodel.ast.ViewMetadata;
 import eu.exeris.sdk.sourcemodel.mutation.BaselineTrust;
 import eu.exeris.sdk.sourcemodel.mutation.SourceDigest;
 import eu.exeris.tooling.diagnostics.DiagnosticId;
 
-import javax.annotation.processing.*;
+import javax.annotation.processing.AbstractProcessor;
+import javax.annotation.processing.Filer;
+import javax.annotation.processing.Messager;
+import javax.annotation.processing.ProcessingEnvironment;
+import javax.annotation.processing.Processor;
+import javax.annotation.processing.RoundEnvironment;
+import javax.annotation.processing.SupportedAnnotationTypes;
+import javax.annotation.processing.SupportedOptions;
 import javax.lang.model.SourceVersion;
-import javax.lang.model.element.*;
+import javax.lang.model.element.AnnotationMirror;
+import javax.lang.model.element.AnnotationValue;
+import javax.lang.model.element.Element;
+import javax.lang.model.element.ElementKind;
+import javax.lang.model.element.ExecutableElement;
+import javax.lang.model.element.Modifier;
+import javax.lang.model.element.TypeElement;
+import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.ArrayType;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.ElementFilter;
-import java.util.stream.Collectors;
 import javax.tools.Diagnostic;
 import javax.tools.FileObject;
 import javax.tools.StandardLocation;
+
 import java.io.IOException;
 import java.io.Writer;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Compile-time annotation processor for Exeris SDK annotations.
@@ -53,17 +100,6 @@ import java.util.*;
         "PMD.CouplingBetweenObjects"
 })
 public class ExerisDomainProcessor extends AbstractProcessor {
-
-    /**
-     * Tracks the running compiler instead of a pinned constant — a literal in
-     * {@code @SupportedSourceVersion} warns on any consumer compiling at a higher release
-     * (the kernel's {@code preview} line compiles at 28). Safe because nothing read here is
-     * release-sensitive: annotations and {@code TypeMirror}s only, all {@code SOURCE}-retained.
-     */
-    @Override
-    public SourceVersion getSupportedSourceVersion() {
-        return SourceVersion.latestSupported();
-    }
 
     /**
      * Metadata output directory name.
@@ -785,6 +821,48 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "the field renders from @Field alone. A field's presentation facet "
                             + "arrives with @View's field facet"));
 
+    /** The {@code @View} annotation family, read by {@link #processViewAnnotations}. */
+    private static final String VIEW_FQN = "eu.exeris.sdk.annotation.View";
+    private static final String REGION_FQN = "eu.exeris.sdk.annotation.Region";
+    private static final String BLOCK_FQN = "eu.exeris.sdk.annotation.Block";
+    private static final String BIND_FQN = "eu.exeris.sdk.annotation.Bind";
+
+    /** The {@code @SharedScope} marker, and the {@code SystemFieldsMetadata} component it fills. */
+    private static final String SHARED_SCOPE_FQN = "eu.exeris.sdk.annotation.system.SharedScope";
+    private static final String SHARED_SCOPE_ATTRIBUTE = "sharedScopeField";
+
+    /** The primary-key field every generator reads by this literal name. */
+    private static final String ID_FIELD = "id";
+
+    /**
+     * The ten roles read from {@code annotation.system.*}. Ordered, and iterated in this order, so a
+     * diagnostic sequence is stable across runs.
+     *
+     * <p>{@code @SharedScope} has no {@code @ExerisDomain} override attribute, so its
+     * {@code sharedScopeField} lookup is always empty and the override-conflict refusal never
+     * fires for it; the repeated-carrier refusal applies exactly as it does to the other nine.
+     *
+     * <p><b>{@code @PrimaryKey} is deliberately absent.</b> Its component,
+     * {@code SystemFieldsMetadata.primaryKeyField}, is the one no generator honours — the schema
+     * emits {@code id UUID PRIMARY KEY} unconditionally, the repository identifies rows through
+     * {@code " WHERE id = ?"}, and every by-id handler binds {@code {id}}. Extracting it would move
+     * the annotation out of the never-read audit while leaving its effect at zero, so the audit
+     * would stop reporting an annotation that changes nothing. It stays unextracted, and C0 keeps
+     * reporting it, until the slice that renames the key across the SQL, the repository and the
+     * route template lands.
+     */
+    private static final List<SystemFieldRole> SYSTEM_FIELD_ROLES = List.of(
+            new SystemFieldRole("TenantId", "tenantIdField"),
+            new SystemFieldRole("Version", "versionField"),
+            new SystemFieldRole("SoftDelete", "softDeleteField"),
+            new SystemFieldRole("SoftDeleteTimestamp", "softDeleteTimestampField"),
+            new SystemFieldRole("SoftDeletedBy", "softDeletedByField"),
+            new SystemFieldRole("AuditCreatedAt", "createdAtField"),
+            new SystemFieldRole("AuditCreatedBy", "createdByField"),
+            new SystemFieldRole("AuditUpdatedAt", "updatedAtField"),
+            new SystemFieldRole("AuditUpdatedBy", "updatedByField"),
+            new SystemFieldRole("SharedScope", SHARED_SCOPE_ATTRIBUTE));
+
     private ObjectMapper objectMapper;
     private Messager messager;
     private Filer filer;
@@ -801,6 +879,17 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      */
     public ExerisDomainProcessor() {
         // Initialized in init()
+    }
+
+    /**
+     * Tracks the running compiler instead of a pinned constant — a literal in
+     * {@code @SupportedSourceVersion} warns on any consumer compiling at a higher release
+     * (the kernel's {@code preview} line compiles at 28). Safe because nothing read here is
+     * release-sensitive: annotations and {@code TypeMirror}s only, all {@code SOURCE}-retained.
+     */
+    @Override
+    public SourceVersion getSupportedSourceVersion() {
+        return SourceVersion.latestSupported();
     }
 
     @Override
@@ -893,8 +982,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                         valueName,
                         displayName,
                         valueDescription,
-                        ordinal++
+                        ordinal
                 ));
+                ordinal++;
             }
         }
 
@@ -1111,11 +1201,6 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     // field:UIFieldMetadata facet is left null in this slice (modelled by the
     // record, minimal emission per RFC §1).
     // ---------------------------------------------------------------------
-
-    private static final String VIEW_FQN = "eu.exeris.sdk.annotation.View";
-    private static final String REGION_FQN = "eu.exeris.sdk.annotation.Region";
-    private static final String BLOCK_FQN = "eu.exeris.sdk.annotation.Block";
-    private static final String BIND_FQN = "eu.exeris.sdk.annotation.Bind";
 
     private void processViewAnnotations(RoundEnvironment roundEnv) {
         TypeElement viewAnnotation = processingEnv.getElementUtils().getTypeElement(VIEW_FQN);
@@ -1364,7 +1449,10 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         return null;
     }
 
-    /** Maps a {@code @View.Kind} enum constant (a {@link VariableElement}) to the AST {@link ViewKind}; null when unset. */
+    /**
+     * Maps a {@code @View.Kind} enum constant (a {@link VariableElement}) to the AST {@link ViewKind};
+     * null when unset.
+     */
     private ViewKind viewKind(Object value) {
         String constant = enumConstantName(value);
         return constant != null ? ViewKind.valueOf(constant) : null;
@@ -1517,10 +1605,6 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     private static boolean declaresPermissions(Map<String, Object> values) {
         return values.get("permissions") instanceof List<?> permissions && !permissions.isEmpty();
     }
-
-    /** The {@code @SharedScope} marker, and the {@code SystemFieldsMetadata} component it fills. */
-    private static final String SHARED_SCOPE_FQN = "eu.exeris.sdk.annotation.system.SharedScope";
-    private static final String SHARED_SCOPE_ATTRIBUTE = "sharedScopeField";
 
     /**
      * Refuses a {@code UNIVERSE} declaration that cannot be transcribed, at the declaration site.
@@ -1833,9 +1917,6 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                 element, domainAnnotation);
     }
 
-    /** The primary-key field every generator reads by this literal name. */
-    private static final String ID_FIELD = "id";
-
     /**
      * Refuses an {@code @ExerisDomain} type that declares no field {@code id}, its own or inherited.
      *
@@ -2005,35 +2086,6 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     }
 
     /**
-     * The ten roles read from {@code annotation.system.*}. Ordered, and iterated in this order, so a
-     * diagnostic sequence is stable across runs.
-     *
-     * <p>{@code @SharedScope} has no {@code @ExerisDomain} override attribute, so its
-     * {@code sharedScopeField} lookup is always empty and the override-conflict refusal never
-     * fires for it; the repeated-carrier refusal applies exactly as it does to the other nine.
-     *
-     * <p><b>{@code @PrimaryKey} is deliberately absent.</b> Its component,
-     * {@code SystemFieldsMetadata.primaryKeyField}, is the one no generator honours — the schema
-     * emits {@code id UUID PRIMARY KEY} unconditionally, the repository identifies rows through
-     * {@code " WHERE id = ?"}, and every by-id handler binds {@code {id}}. Extracting it would move
-     * the annotation out of the never-read audit while leaving its effect at zero, which is the
-     * failure mode this repository spent 0.8.0 removing. It stays unextracted, and C0 keeps
-     * reporting it, until the slice that renames the key across the SQL, the repository and the
-     * route template lands.
-     */
-    private static final List<SystemFieldRole> SYSTEM_FIELD_ROLES = List.of(
-            new SystemFieldRole("TenantId", "tenantIdField"),
-            new SystemFieldRole("Version", "versionField"),
-            new SystemFieldRole("SoftDelete", "softDeleteField"),
-            new SystemFieldRole("SoftDeleteTimestamp", "softDeleteTimestampField"),
-            new SystemFieldRole("SoftDeletedBy", "softDeletedByField"),
-            new SystemFieldRole("AuditCreatedAt", "createdAtField"),
-            new SystemFieldRole("AuditCreatedBy", "createdByField"),
-            new SystemFieldRole("AuditUpdatedAt", "updatedAtField"),
-            new SystemFieldRole("AuditUpdatedBy", "updatedByField"),
-            new SystemFieldRole("SharedScope", SHARED_SCOPE_ATTRIBUTE));
-
-    /**
      * Which field plays each system role, from two sources: a
      * {@code annotation.system} annotation on the field itself, and the matching
      * {@code @ExerisDomain} override attribute.
@@ -2057,14 +2109,20 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         for (SystemFieldRole role : SYSTEM_FIELD_ROLES) {
             List<VariableElement> carriers = new ArrayList<>();
             for (Element enclosed : element.getEnclosedElements()) {
-                if (enclosed.getKind() != ElementKind.FIELD) continue;
+                if (enclosed.getKind() != ElementKind.FIELD) {
+                    continue;
+                }
                 AnnotationMirror mirror = findAnnotation(enclosed, role.fqn());
-                if (mirror == null) continue;
+                if (mirror == null) {
+                    continue;
+                }
 
                 warnInertAttributes(role.annotation(), extractAnnotationValues(mirror), enclosed, mirror);
                 carriers.add((VariableElement) enclosed);
             }
-            if (carriers.isEmpty()) continue;
+            if (carriers.isEmpty()) {
+                continue;
+            }
 
             if (carriers.size() > 1) {
                 // One diagnostic naming the whole set, not one per field past the first. The
@@ -2154,7 +2212,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         String primaryKeyField = nonBlankOr(getString(values, "primaryKeyField", null), d.primaryKeyField());
         String tenantIdField = resolved(declared, values, "tenantIdField", d.tenantIdField());
         String softDeleteField = resolved(declared, values, "softDeleteField", d.softDeleteField());
-        String softDeleteTimestampField = resolved(declared, values, "softDeleteTimestampField", d.softDeleteTimestampField());
+        String softDeleteTimestampField =
+                resolved(declared, values, "softDeleteTimestampField", d.softDeleteTimestampField());
         String softDeletedByField = resolved(declared, values, "softDeletedByField", d.softDeletedByField());
         String versionField = resolved(declared, values, "versionField", d.versionField());
         String createdAtField = resolved(declared, values, "createdAtField", d.createdAtField());
@@ -2228,7 +2287,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         List<FieldMetadata> fields = new ArrayList<>();
 
         for (Element enclosed : element.getEnclosedElements()) {
-            if (enclosed.getKind() != ElementKind.FIELD) continue;
+            if (enclosed.getKind() != ElementKind.FIELD) {
+                continue;
+            }
 
             VariableElement field = (VariableElement) enclosed;
 
@@ -2291,24 +2352,50 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         // not restored. The min/max/pattern reads in
         // applyDeprecatedValidationFallbacks come from @Validation,
         // not @Field.
-        if (values.containsKey("label")) builder.displayName((String) values.get("label"));
-        if (values.containsKey("description")) builder.description((String) values.get("description"));
-        if (values.containsKey("required")) builder.required((Boolean) values.get("required"));
-        if (values.containsKey("unique")) builder.unique((Boolean) values.get("unique"));
-        if (values.containsKey("indexed")) builder.indexed((Boolean) values.get("indexed"));
-        if (values.containsKey("searchable")) builder.searchable((Boolean) values.get("searchable"));
-        if (values.containsKey("sortable")) builder.sortable((Boolean) values.get("sortable"));
-        if (values.containsKey("filterable")) builder.filterable((Boolean) values.get("filterable"));
-        if (values.containsKey("readOnly")) builder.readOnly((Boolean) values.get("readOnly"));
-        if (values.containsKey("inCreate")) builder.inCreate((Boolean) values.get("inCreate"));
-        if (values.containsKey("inUpdate")) builder.inUpdate((Boolean) values.get("inUpdate"));
+        if (values.containsKey("label")) {
+            builder.displayName((String) values.get("label"));
+        }
+        if (values.containsKey("description")) {
+            builder.description((String) values.get("description"));
+        }
+        if (values.containsKey("required")) {
+            builder.required((Boolean) values.get("required"));
+        }
+        if (values.containsKey("unique")) {
+            builder.unique((Boolean) values.get("unique"));
+        }
+        if (values.containsKey("indexed")) {
+            builder.indexed((Boolean) values.get("indexed"));
+        }
+        if (values.containsKey("searchable")) {
+            builder.searchable((Boolean) values.get("searchable"));
+        }
+        if (values.containsKey("sortable")) {
+            builder.sortable((Boolean) values.get("sortable"));
+        }
+        if (values.containsKey("filterable")) {
+            builder.filterable((Boolean) values.get("filterable"));
+        }
+        if (values.containsKey("readOnly")) {
+            builder.readOnly((Boolean) values.get("readOnly"));
+        }
+        if (values.containsKey("inCreate")) {
+            builder.inCreate((Boolean) values.get("inCreate"));
+        }
+        if (values.containsKey("inUpdate")) {
+            builder.inUpdate((Boolean) values.get("inUpdate"));
+        }
         // @Field.dataType — the front-presentation type hint (currency/percent/url/…).
         // The builder normalizes blank -> null, so an explicit "" default does not
         // survive on the wire under @JsonInclude(NON_DEFAULT) (determinism-safe).
-        if (values.containsKey("dataType")) builder.dataType((String) values.get("dataType"));
+        if (values.containsKey("dataType")) {
+            builder.dataType((String) values.get("dataType"));
+        }
 
         // Computed fields (only computed + computedFrom on @Field).
-        if (values.containsKey("computed")) builder.computed((Boolean) values.get("computed"));
+        if (values.containsKey("computed")) {
+            builder.computed((Boolean) values.get("computed"));
+        }
         if (values.containsKey("computedFrom")) {
             // extractAnnotationValues unwraps array attributes from
             // List<AnnotationValue> to List<Object>; for String[] each
@@ -2330,14 +2417,24 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         AnnotationMirror validationAnnotation = findAnnotation(field, "eu.exeris.sdk.annotation.Validation");
         if (validationAnnotation != null) {
             Map<String, Object> validationValues = extractAnnotationValues(validationAnnotation);
-            if (validationValues.containsKey("min")) builder.min(((Number) validationValues.get("min")).longValue());
-            if (validationValues.containsKey("max")) builder.max(((Number) validationValues.get("max")).longValue());
+            if (validationValues.containsKey("min")) {
+                builder.min(((Number) validationValues.get("min")).longValue());
+            }
+            if (validationValues.containsKey("max")) {
+                builder.max(((Number) validationValues.get("max")).longValue());
+            }
             // Only explicitly-set attributes appear in the values map (annotation
             // defaults are excluded), so reading minLength/maxLength here does NOT
             // flood every @Validation field with the 0 / Integer.MAX_VALUE defaults.
-            if (validationValues.containsKey("minLength")) builder.minLength(((Number) validationValues.get("minLength")).intValue());
-            if (validationValues.containsKey("maxLength")) builder.maxLength(((Number) validationValues.get("maxLength")).intValue());
-            if (validationValues.containsKey("pattern")) builder.pattern((String) validationValues.get("pattern"));
+            if (validationValues.containsKey("minLength")) {
+                builder.minLength(((Number) validationValues.get("minLength")).intValue());
+            }
+            if (validationValues.containsKey("maxLength")) {
+                builder.maxLength(((Number) validationValues.get("maxLength")).intValue());
+            }
+            if (validationValues.containsKey("pattern")) {
+                builder.pattern((String) validationValues.get("pattern"));
+            }
 
             applyDeprecatedValidationFallbacks(field, values, validationValues, builder);
         }
@@ -2424,7 +2521,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         List<ActionMetadata> actions = new ArrayList<>();
 
         for (Element enclosed : element.getEnclosedElements()) {
-            if (enclosed.getKind() != ElementKind.METHOD) continue;
+            if (enclosed.getKind() != ElementKind.METHOD) {
+                continue;
+            }
 
             ExecutableElement method = (ExecutableElement) enclosed;
 
@@ -2469,9 +2568,15 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         // (displayName, idempotent, dangerous, requiresConfirmation)
         // remain absent — their containsKey checks were genuinely
         // unreachable and are not restored.
-        if (values.containsKey("description")) builder.description((String) values.get("description"));
-        if (values.containsKey("httpMethod")) builder.httpMethod((String) values.get("httpMethod"));
-        if (values.containsKey("async")) builder.async((Boolean) values.get("async"));
+        if (values.containsKey("description")) {
+            builder.description((String) values.get("description"));
+        }
+        if (values.containsKey("httpMethod")) {
+            builder.httpMethod((String) values.get("httpMethod"));
+        }
+        if (values.containsKey("async")) {
+            builder.async((Boolean) values.get("async"));
+        }
 
         // ADR-044: the per-action streaming driver. @Action(streaming=true)
         // (boolean, default false) + @Action(streamEventType=…) (String, default "")
@@ -2480,8 +2585,12 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         // HttpStreamHandler per streaming action) + the Application generator's
         // streamRoute(POST, {base}/{id}/actions/{kebab}, …) registration, and the
         // TS RxJS streaming-action client.
-        if (values.containsKey("streaming")) builder.streaming((Boolean) values.get("streaming"));
-        if (values.containsKey("streamEventType")) builder.streamEventType((String) values.get("streamEventType"));
+        if (values.containsKey("streaming")) {
+            builder.streaming((Boolean) values.get("streaming"));
+        }
+        if (values.containsKey("streamEventType")) {
+            builder.streamEventType((String) values.get("streamEventType"));
+        }
         if (Boolean.TRUE.equals(values.get("streaming"))) {
             warnStreamingActionNotInvoked(name, method, annotation);
         }
@@ -2547,29 +2656,35 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             String annotationType = am.getAnnotationType().toString();
 
             // Check for @DomainEvents container (from @Repeatable)
-            if (annotationType.equals("eu.exeris.sdk.annotation.DomainEvent.DomainEvents")) {
+            if ("eu.exeris.sdk.annotation.DomainEvent.DomainEvents".equals(annotationType)) {
                 Map<String, Object> containerValues = extractAnnotationValues(am);
                 Object valueObj = containerValues.get(VALUE_ELEMENT);
                 if (valueObj instanceof List<?> eventAnnotations) {
                     for (Object eventAnnotation : eventAnnotations) {
                         if (eventAnnotation instanceof AnnotationMirror eventAm) {
                             DomainEventMetadata event = extractSingleEventMetadata(eventAm, element);
-                            if (event != null) events.add(event);
+                            if (event != null) {
+                                events.add(event);
+                            }
                         }
                     }
                 }
             }
 
             // Check for single @DomainEvent
-            if (annotationType.equals("eu.exeris.sdk.annotation.DomainEvent")) {
+            if ("eu.exeris.sdk.annotation.DomainEvent".equals(annotationType)) {
                 DomainEventMetadata event = extractSingleEventMetadata(am, element);
-                if (event != null) events.add(event);
+                if (event != null) {
+                    events.add(event);
+                }
             }
         }
 
         // Also check nested classes for event definitions (legacy support)
         for (Element enclosed : element.getEnclosedElements()) {
-            if (enclosed.getKind() != ElementKind.CLASS) continue;
+            if (enclosed.getKind() != ElementKind.CLASS) {
+                continue;
+            }
 
             TypeElement nestedClass = (TypeElement) enclosed;
             AnnotationMirror eventAnnotation = findAnnotation(nestedClass, "eu.exeris.sdk.annotation.DomainEvent");
@@ -2745,7 +2860,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      * the generic {@code "Event"} suffix.
      */
     private String triggerToEventSuffix(String trigger) {
-        if (trigger == null) return "Event";
+        if (trigger == null) {
+            return "Event";
+        }
         return switch (trigger) {
             case "CREATE" -> "CreatedEvent";
             case "UPDATE" -> "UpdatedEvent";
@@ -2760,7 +2877,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         List<RelationshipMetadata> relationships = new ArrayList<>();
 
         for (Element enclosed : element.getEnclosedElements()) {
-            if (enclosed.getKind() != ElementKind.FIELD) continue;
+            if (enclosed.getKind() != ElementKind.FIELD) {
+                continue;
+            }
 
             VariableElement field = (VariableElement) enclosed;
             AnnotationMirror relAnnotation = findAnnotation(field, "eu.exeris.sdk.annotation.Relationship");
@@ -2798,8 +2917,12 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                                     ? RelationshipMetadata.CascadeType.REMOVE
                                     : RelationshipMetadata.CascadeType.MERGE);
                 }
-                if (values.containsKey("mappedBy")) builder.mappedBy((String) values.get("mappedBy"));
-                if (values.containsKey("displayField")) builder.displayField((String) values.get("displayField"));
+                if (values.containsKey("mappedBy")) {
+                    builder.mappedBy((String) values.get("mappedBy"));
+                }
+                if (values.containsKey("displayField")) {
+                    builder.displayField((String) values.get("displayField"));
+                }
 
                 relationships.add(builder.build());
             }
@@ -2846,7 +2969,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
 
     private UIMetadata extractUIMetadata(TypeElement element) {
         AnnotationMirror uiAnnotation = findAnnotation(element, UI_FQN);
-        if (uiAnnotation == null) return null;
+        if (uiAnnotation == null) {
+            return null;
+        }
 
         Map<String, Object> values = extractAnnotationValues(uiAnnotation);
         warnInertAttributes("UI", values, element, uiAnnotation);
@@ -2864,7 +2989,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
 
     private GraphMetadata extractGraphMetadata(TypeElement element) {
         AnnotationMirror graphAnnotation = findAnnotation(element, "eu.exeris.sdk.annotation.Graph");
-        if (graphAnnotation == null) return null;
+        if (graphAnnotation == null) {
+            return null;
+        }
 
         Map<String, Object> values = extractAnnotationValues(graphAnnotation);
 
@@ -2903,7 +3030,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         List<GraphEdgeMetadata> edges = new ArrayList<>();
 
         for (Element enclosed : element.getEnclosedElements()) {
-            if (enclosed.getKind() != ElementKind.FIELD) continue;
+            if (enclosed.getKind() != ElementKind.FIELD) {
+                continue;
+            }
 
             // Repeated on one field: javac replaced the singles with the container. A hand-written
             // container may also stand beside one direct @GraphEdge (JLS 9.7.5 forbids it only
@@ -3016,7 +3145,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
 
     private EventSourcedMetadata extractEventSourcedMetadata(TypeElement element) {
         AnnotationMirror esAnnotation = findAnnotation(element, "eu.exeris.sdk.annotation.EventSourced");
-        if (esAnnotation == null) return null;
+        if (esAnnotation == null) {
+            return null;
+        }
 
         Map<String, Object> values = extractAnnotationValues(esAnnotation);
 
@@ -3045,7 +3176,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
 
     private SagaMetadata extractSagaMetadata(TypeElement element) {
         AnnotationMirror sagaAnnotation = findAnnotation(element, "eu.exeris.sdk.annotation.Saga");
-        if (sagaAnnotation == null) return null;
+        if (sagaAnnotation == null) {
+            return null;
+        }
 
         Map<String, Object> values = extractAnnotationValues(sagaAnnotation);
         // Shared by a standalone @Saga class and an @ExerisDomain entity carrying @Saga, so one
@@ -3057,15 +3190,23 @@ public class ExerisDomainProcessor extends AbstractProcessor {
 
         SagaMetadata.Builder builder = SagaMetadata.builder(name);
 
-        if (values.containsKey("description")) builder.description((String) values.get("description"));
-        if (values.containsKey("timeout")) builder.timeout((String) values.get("timeout"));
-        if (values.containsKey("maxRetries")) builder.maxRetries(getInt(values, "maxRetries", 0));
+        if (values.containsKey("description")) {
+            builder.description((String) values.get("description"));
+        }
+        if (values.containsKey("timeout")) {
+            builder.timeout((String) values.get("timeout"));
+        }
+        if (values.containsKey("maxRetries")) {
+            builder.maxRetries(getInt(values, "maxRetries", 0));
+        }
         // `version` is read so that `@Saga(version = 3)` yields a metadata document that agrees
         // with its source; the record declares the field and the TypeScript schema mirrors it.
         // KernelSagaGenerator emits builder.version(n) for any n other than 1, and refuses
         // n < 1. Passed through unchecked here on purpose — the generator is the one place both
         // this path and metadata JSON from outside the processor reach.
-        if (values.containsKey(VERSION_ATTRIBUTE)) builder.version(getInt(values, VERSION_ATTRIBUTE, 1));
+        if (values.containsKey(VERSION_ATTRIBUTE)) {
+            builder.version(getInt(values, VERSION_ATTRIBUTE, 1));
+        }
 
         // Extract saga steps from methods
         List<SagaStepMetadata> steps = extractSagaSteps(element);
@@ -3089,7 +3230,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         List<SagaStepMetadata> steps = new ArrayList<>();
 
         for (Element enclosed : element.getEnclosedElements()) {
-            if (enclosed.getKind() != ElementKind.METHOD) continue;
+            if (enclosed.getKind() != ElementKind.METHOD) {
+                continue;
+            }
 
             ExecutableElement method = (ExecutableElement) enclosed;
 
@@ -3125,12 +3268,24 @@ public class ExerisDomainProcessor extends AbstractProcessor {
 
         SagaStepMetadata.Builder builder = SagaStepMetadata.builder(name, order);
 
-        if (values.containsKey("description")) builder.description((String) values.get("description"));
-        if (values.containsKey("service")) builder.service((String) values.get("service"));
-        if (values.containsKey("command")) builder.command((String) values.get("command"));
-        if (values.containsKey("compensation")) builder.compensation((String) values.get("compensation"));
-        if (values.containsKey("timeout")) builder.timeout((String) values.get("timeout"));
-        if (values.containsKey("parallel")) builder.parallel((Boolean) values.get("parallel"));
+        if (values.containsKey("description")) {
+            builder.description((String) values.get("description"));
+        }
+        if (values.containsKey("service")) {
+            builder.service((String) values.get("service"));
+        }
+        if (values.containsKey("command")) {
+            builder.command((String) values.get("command"));
+        }
+        if (values.containsKey("compensation")) {
+            builder.compensation((String) values.get("compensation"));
+        }
+        if (values.containsKey("timeout")) {
+            builder.timeout((String) values.get("timeout"));
+        }
+        if (values.containsKey("parallel")) {
+            builder.parallel((Boolean) values.get("parallel"));
+        }
 
         return builder.build();
     }
@@ -3149,7 +3304,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      */
     private InternalApiMetadata extractInternalApiMetadata(TypeElement element) {
         AnnotationMirror internalAnnotation = findAnnotation(element, "eu.exeris.sdk.annotation.InternalApi");
-        if (internalAnnotation == null) return null;
+        if (internalAnnotation == null) {
+            return null;
+        }
 
         return InternalApiMetadata.builder()
                 .internal(true)

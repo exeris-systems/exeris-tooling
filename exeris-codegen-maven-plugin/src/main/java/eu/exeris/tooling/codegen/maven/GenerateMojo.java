@@ -3,8 +3,12 @@ package eu.exeris.tooling.codegen.maven;
 import eu.exeris.tooling.codegen.core.capability.CapabilityGraphException;
 import eu.exeris.tooling.codegen.java.CodegenPipeline;
 import eu.exeris.tooling.codegen.java.EmptyMetadataException;
+import eu.exeris.tooling.codegen.java.kernel.RequiredCompileArtifacts;
+import eu.exeris.tooling.codegen.java.kernel.RequiredCompileArtifacts.Classpath;
+import eu.exeris.tooling.codegen.java.kernel.RequiredCompileArtifacts.Requirement;
 import eu.exeris.tooling.codegen.java.kernel.UnpersistableFieldTypeException;
 import eu.exeris.tooling.diagnostics.DiagnosticId;
+import org.apache.maven.artifact.Artifact;
 import org.apache.maven.model.Plugin;
 import org.apache.maven.model.PluginExecution;
 import org.apache.maven.plugin.AbstractMojo;
@@ -14,11 +18,16 @@ import org.apache.maven.plugin.descriptor.PluginDescriptor;
 import org.apache.maven.plugins.annotations.LifecyclePhase;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
+import org.apache.maven.plugins.annotations.ResolutionScope;
 import org.apache.maven.project.MavenProject;
 
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 /**
  * {@code exeris:generate} — runs the kernel-target codegen pipeline against the
@@ -59,6 +68,16 @@ import java.nio.file.Path;
  * seed the metadata first with {@code mvn compile -Dexeris.codegen.skip=true},
  * then build normally (the masked-compile guard refuses the wipe otherwise).
  *
+ * <p><b>Compile classpath check.</b> Every import in the generated tree is a requirement on
+ * this module's build that no emitted file declares. After writing, this goal holds the artefacts
+ * the emitted code imports ({@link RequiredCompileArtifacts}) against the dependencies Maven
+ * collected for this module, and warns with {@code EXT-PLUG-2004} naming each absent
+ * {@code groupId:artifactId}. The verdict is a warning: a real absence fails the build at
+ * {@code compile} regardless, and a coordinate can be absent while its packages are present under
+ * another one, in a relocated or repackaged artefact. The check reads coordinates from dependency
+ * collection, which downloads nothing. It covers the classpaths that compile the generated main
+ * sources and tests; the runtime classpath is {@code exeris:verify-runtime}'s.
+ *
  * <p>This mojo is a thin Maven shell: all emission lives in
  * {@link CodegenPipeline} (in {@code exeris-codegen-java}). The
  * processor↔generator contract is unchanged — the plugin only chooses where to
@@ -66,8 +85,12 @@ import java.nio.file.Path;
  *
  * @since 0.3
  */
-@Mojo(name = "generate", defaultPhase = LifecyclePhase.GENERATE_SOURCES, threadSafe = true)
+@Mojo(name = "generate", defaultPhase = LifecyclePhase.GENERATE_SOURCES,
+        requiresDependencyCollection = ResolutionScope.TEST, threadSafe = true)
 public class GenerateMojo extends AbstractMojo {
+
+    /** The artefact that declares every main-source requirement, named in the warning. */
+    static final String STARTER = "eu.exeris:exeris-app-starter";
 
     /**
      * Default-lifecycle phases from {@code process-classes} onwards — the phases
@@ -76,7 +99,7 @@ public class GenerateMojo extends AbstractMojo {
      * explicitly rebound to an earlier phase (or to an unknown/custom phase)
      * would itself validate stale input, so it does NOT count as the gate.
      */
-    private static final java.util.Set<String> PHASES_AFTER_COMPILE = java.util.Set.of(
+    private static final Set<String> PHASES_AFTER_COMPILE = Set.of(
             "process-classes",
             "generate-test-sources", "process-test-sources",
             "generate-test-resources", "process-test-resources",
@@ -84,6 +107,15 @@ public class GenerateMojo extends AbstractMojo {
             "prepare-package", "package",
             "pre-integration-test", "integration-test", "post-integration-test",
             "verify", "install", "deploy");
+
+    /** Scopes that put an artefact on the classpath main sources compile against. */
+    private static final Set<String> MAIN_SCOPES = Set.of(
+            Artifact.SCOPE_COMPILE, Artifact.SCOPE_PROVIDED, Artifact.SCOPE_SYSTEM);
+
+    /** Scopes that put an artefact on the classpath tests compile against: every scope. */
+    private static final Set<String> TEST_SCOPES = Set.of(
+            Artifact.SCOPE_COMPILE, Artifact.SCOPE_PROVIDED, Artifact.SCOPE_SYSTEM,
+            Artifact.SCOPE_RUNTIME, Artifact.SCOPE_TEST);
 
     /** Directory holding processor-emitted {@code *.json} {@code DomainMetadata}. */
     @Parameter(property = "exeris.metadataDir",
@@ -164,12 +196,23 @@ public class GenerateMojo extends AbstractMojo {
         void runTests(Path metadataDir, Path testOutputDir, String basePackage) throws IOException;
     }
 
-    /** One pipeline behind both seams — neither entry point carries state across calls. */
+    /**
+     * Import-requirement seam, mirroring {@link PipelineRunner}: the classpath check's control
+     * flow stays unit-testable without processor output on disk.
+     */
+    @FunctionalInterface
+    interface ImportRequirements {
+        List<Requirement> required(Path metadataDir, boolean generatedTests) throws IOException;
+    }
+
+    /** One pipeline behind every seam — no entry point carries state across calls. */
     private final CodegenPipeline defaultPipeline = CodegenPipeline.createDefault();
 
     PipelineRunner pipeline = defaultPipeline::run;
 
     TestRunner testPipeline = defaultPipeline::runTests;
+
+    ImportRequirements importRequirements = defaultPipeline::requiredCompileArtifacts;
 
     /**
      * Creates the mojo. Maven constructs it reflectively and injects the {@code @Parameter}
@@ -233,6 +276,8 @@ public class GenerateMojo extends AbstractMojo {
         registerSourceRoots();
 
         generateTests();
+
+        checkCompileClasspath();
     }
 
     /**
@@ -283,6 +328,86 @@ public class GenerateMojo extends AbstractMojo {
                     "Test generation failed (testOutputDir=" + testOutputDir + "): " + e), e);
         }
         registerTestSourceRoot();
+    }
+
+    /**
+     * Warns, with {@code EXT-PLUG-2004}, for each artefact the emitted code imports that this
+     * module's collected dependencies do not put on the classpath that compiles it.
+     *
+     * <p>Runs only where this module compiles the generated tree, which is what registering it as
+     * a source root means: with {@code exeris.addCompileSourceRoot=false} another module compiles
+     * it, against a classpath this goal cannot see.
+     */
+    private void checkCompileClasspath() throws MojoExecutionException {
+        if (!addCompileSourceRoot || project == null) {
+            return;
+        }
+        List<Requirement> required;
+        try {
+            required = importRequirements.required(metadataDir.toPath(), generateTests);
+        } catch (IOException e) {
+            throw new MojoExecutionException(DiagnosticId.GENERATION_FAILED.format(
+                    "Could not read metadata to check the compile classpath (metadataDir="
+                            + metadataDir + "): " + e), e);
+        }
+        if (required.isEmpty()) {
+            return;
+        }
+        Set<String> onMain = new HashSet<>();
+        Set<String> onTest = new HashSet<>();
+        for (Artifact artifact : project.getArtifacts()) {
+            String scope = artifact.getScope() == null ? Artifact.SCOPE_COMPILE : artifact.getScope();
+            String coordinate = artifact.getGroupId() + ":" + artifact.getArtifactId();
+            if (MAIN_SCOPES.contains(scope)) {
+                onMain.add(coordinate);
+            }
+            if (TEST_SCOPES.contains(scope)) {
+                onTest.add(coordinate);
+            }
+        }
+        List<Requirement> missingMain = new ArrayList<>();
+        List<Requirement> missingTest = new ArrayList<>();
+        for (Requirement requirement : required) {
+            if (requirement.classpath() == Classpath.MAIN && !onMain.contains(requirement.coordinate())) {
+                missingMain.add(requirement);
+            } else if (requirement.classpath() == Classpath.TEST
+                    && !onTest.contains(requirement.coordinate())) {
+                missingTest.add(requirement);
+            }
+        }
+        if (!missingMain.isEmpty()) {
+            getLog().warn(DiagnosticId.GENERATED_IMPORT_NOT_ON_CLASSPATH.format(describe(missingMain,
+                    "main sources", "compile",
+                    "Declare each at compile scope, or depend on " + STARTER + " (type pom), which "
+                            + "declares every artefact the generated main sources import. A "
+                            + "dependency at runtime or test scope does not reach the compile "
+                            + "classpath, even through a driver that depends on it.")));
+        }
+        if (!missingTest.isEmpty()) {
+            getLog().warn(DiagnosticId.GENERATED_IMPORT_NOT_ON_CLASSPATH.format(describe(missingTest,
+                    "tests", "test",
+                    "Declare each at test scope; " + STARTER + " declares no test library "
+                            + "(ADR-058).")));
+        }
+        if (missingMain.isEmpty() && missingTest.isEmpty()) {
+            getLog().info("Classpath carries all " + required.size()
+                    + " artefact(s) the generated code imports");
+        }
+    }
+
+    /** Names the jar, not the package: the package is what {@code javac} will say next. */
+    private static String describe(List<Requirement> missing, String tree, String classpath,
+                                   String remedy) {
+        StringBuilder message = new StringBuilder()
+                .append("The generated ").append(tree).append(" import ").append(missing.size())
+                .append(" artefact(s) that are not on this module's ").append(classpath)
+                .append(" classpath, so javac will fail on a missing package:")
+                .append(System.lineSeparator());
+        for (Requirement requirement : missing) {
+            message.append("  - ").append(requirement.coordinate()).append(", imported by ")
+                    .append(requirement.importedBy()).append(System.lineSeparator());
+        }
+        return message.append(remedy).toString();
     }
 
     /**

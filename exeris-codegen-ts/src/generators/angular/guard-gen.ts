@@ -14,6 +14,10 @@ import type { BackendType } from '../../core/backend-strategy.js';
 import { outPath } from '../../core/paths.js';
 import { fileHeader, fileHeaderLines } from '../file-header.js';
 
+/** The auth service template, relative to the generated tree's root: a seed file
+ *  (`overwritable: false`) the consumer completes with its own authentication. */
+export const AUTH_SERVICE_PATH = 'core/auth.service.ts';
+
 export class GuardGenerator implements CodeGenerator {
   readonly name = 'GuardGenerator';
   readonly artifactType = 'GUARD' as const;
@@ -35,7 +39,7 @@ export class GuardGenerator implements CodeGenerator {
   generateAggregate(domains: DomainMetadata[], context: GeneratorContext): GeneratedFile[] {
     return [
       {
-        path: 'core/auth.service.ts',
+        path: AUTH_SERVICE_PATH,
         content: this.generateAuthService(),
         artifactType: 'GUARD',
         overwritable: false,

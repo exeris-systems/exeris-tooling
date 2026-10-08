@@ -18,6 +18,7 @@ import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.java.kernel.KernelApplicationGenerator;
 import eu.exeris.tooling.codegen.java.kernel.KernelGeneratorStrategy;
+import eu.exeris.tooling.codegen.java.kernel.RequiredCompileArtifacts;
 import eu.exeris.tooling.diagnostics.DiagnosticId;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -513,6 +514,116 @@ class CodegenPipelineTest {
                     pipeline.verifyRuntimeDrivers(metadataDir, List.of());
 
             assertThat(result.vacuous()).isTrue();
+        }
+    }
+
+    @Nested
+    @DisplayName("requiredCompileArtifacts (T30) — the artefacts the emitted code imports")
+    class RequiredCompileArtifactsFromMetadata {
+
+        @TempDir
+        Path testOutputDir;
+
+        /** Where each non-JDK package the emitters import comes from. */
+        private static final List<String[]> PACKAGE_TO_ARTEFACT = List.of(
+                new String[] {"eu.exeris.kernel.spi.", "eu.exeris:exeris-kernel-spi"},
+                new String[] {"eu.exeris.kernel.core.", "eu.exeris:exeris-kernel-core"},
+                new String[] {"eu.exeris.sdk.composition.runtime.", "eu.exeris:exeris-sdk-composition-runtime"},
+                new String[] {"tools.jackson.", "tools.jackson.core:jackson-databind"},
+                new String[] {"org.junit.jupiter.", "org.junit.jupiter:junit-jupiter-api"},
+                new String[] {"org.assertj.", "org.assertj:assertj-core"});
+
+        private DomainMetadata productWithListField() {
+            return DomainMetadata.builder("Product", "com.shop.domain")
+                    .module("catalog")
+                    .path("/products")
+                    .fields(List.of(FieldMetadata.builder("tags", "java.util.List<java.lang.String>").build()))
+                    .build();
+        }
+
+        private List<String> coordinates(List<RequiredCompileArtifacts.Requirement> required) {
+            return required.stream().map(RequiredCompileArtifacts.Requirement::coordinate).toList();
+        }
+
+        /** Every coordinate an emitted file under {@code root} imports, by its package. */
+        private java.util.Set<String> importedArtefacts(Path root) throws IOException {
+            java.util.Set<String> artefacts = new java.util.TreeSet<>();
+            List<Path> sources;
+            try (java.util.stream.Stream<Path> walk = Files.walk(root)) {
+                sources = walk.filter(f -> f.toString().endsWith(".java")).toList();
+            }
+            for (Path source : sources) {
+                for (String line : Files.readAllLines(source)) {
+                    if (!line.startsWith("import ")) {
+                        continue;
+                    }
+                    String imported = line.substring("import ".length()).replace("static ", "");
+                    if (imported.startsWith("java.") || imported.startsWith("javax.")
+                            || imported.startsWith("com.shop.")) {
+                        continue;
+                    }
+                    String artefact = PACKAGE_TO_ARTEFACT.stream()
+                            .filter(entry -> imported.startsWith(entry[0]))
+                            .map(entry -> entry[1])
+                            .findFirst()
+                            .orElse("unmapped: " + imported);
+                    artefacts.add(artefact);
+                }
+            }
+            return artefacts;
+        }
+
+        @Test
+        @DisplayName("names exactly the artefacts the emitted main sources and tests import")
+        void matchesTheImportsOfTheEmittedTree() throws IOException {
+            writeDomainJson("Product.json", productWithListField());
+            writeCapabilityJson("Billing",
+                    desc("com.app.Billing", List.of(ProvidesMetadata.of("com.api.PaymentApi", "1.0")), List.of()));
+
+            pipeline.run(metadataDir, outputDir, "com.shop");
+            pipeline.runTests(metadataDir, testOutputDir, "com.shop");
+            java.util.Set<String> emitted = importedArtefacts(outputDir);
+            emitted.addAll(importedArtefacts(testOutputDir));
+
+            List<RequiredCompileArtifacts.Requirement> required =
+                    pipeline.requiredCompileArtifacts(metadataDir, true);
+
+            assertThat(coordinates(required)).containsExactlyInAnyOrderElementsOf(emitted);
+        }
+
+        @Test
+        @DisplayName("an uncomposed tree with no List<X> field needs kernel SPI and Core only")
+        void plainTreeNeedsTheKernelOnly() throws IOException {
+            writeDomainJson("Product.json", productDomain());
+
+            List<RequiredCompileArtifacts.Requirement> required =
+                    pipeline.requiredCompileArtifacts(metadataDir, false);
+
+            assertThat(coordinates(required))
+                    .containsExactly("eu.exeris:exeris-kernel-spi", "eu.exeris:exeris-kernel-core");
+            assertThat(required).allMatch(r -> r.classpath() == RequiredCompileArtifacts.Classpath.MAIN);
+        }
+
+        @Test
+        @DisplayName("the generated tests add JUnit 5 and AssertJ on the test classpath")
+        void generatedTestsAddTheirTwoLibraries() throws IOException {
+            writeDomainJson("Product.json", productDomain());
+
+            List<RequiredCompileArtifacts.Requirement> required =
+                    pipeline.requiredCompileArtifacts(metadataDir, true);
+
+            assertThat(required).filteredOn(r -> r.classpath() == RequiredCompileArtifacts.Classpath.TEST)
+                    .extracting(RequiredCompileArtifacts.Requirement::coordinate)
+                    .containsExactly("org.junit.jupiter:junit-jupiter-api", "org.assertj:assertj-core");
+        }
+
+        @Test
+        @DisplayName("no domain metadata requires nothing, even with capability metadata")
+        void noDomainRequiresNothing() throws IOException {
+            writeCapabilityJson("Billing",
+                    desc("com.app.Billing", List.of(ProvidesMetadata.of("com.api.PaymentApi", "1.0")), List.of()));
+
+            assertThat(pipeline.requiredCompileArtifacts(metadataDir, true)).isEmpty();
         }
     }
 
