@@ -78,13 +78,17 @@ Options:
   --no-stores            Skip Signal store generation
   --no-sagas             Skip saga state-machine generation
   --no-events            Skip domain-event handler generation
+  --no-scaffold          Emit no Angular project or app-shell file; write the generated
+                         tree at the output root, for an app you already own (see below)
   --tests                Emit specs for the generated surface plus the Vitest runner that
                          executes them (adds a test target, tsconfig.spec.json and the
                          vitest + jsdom devDependencies). Opt-in; off by default.
   --peer <name=path>     Import a peer's DTOs. <name> is the name YOU give the peer — it
                          becomes the directory and import path its types are reached by.
                          <path> is the peer's contract artifact. Repeatable.
-  --overwrite            Overwrite existing files
+  --overwrite            Also replace the files the generator would keep: an existing file
+                         no previous run generated, and a file written once for you to edit
+                         (see "Regenerating" below)
   --dry-run              Show what would be generated without writing files
   -v, --verbose          Verbose output
 ```
@@ -97,7 +101,22 @@ Create a configuration file.
 exeris-gen init [options]
 
 Options:
-  -f, --force    Overwrite existing config file
+  -f, --force          Overwrite existing config file
+  --views-only         Preset for @View pages generated into an app you own: every entity
+                       generator off and "scaffold": false
+  --app-name <name>    Application name to write into the config (either preset;
+                       default: "Exeris Foundation")
+```
+
+Without `--views-only` the file holds every configuration key at its default. With it, the entity
+generators (services, forms, lists, details, stores, sagas, events, Zod schemas and tests) are off,
+so for metadata that declares no entity or enum a run emits the `@View` pages, their routes and
+`view.routes.ts`, and nothing else. An entity or enum still gets its types, the enum module and the
+barrel `index.ts`:
+
+```bash
+exeris-gen init --views-only --app-name "Exeris Web"
+exeris-gen generate
 ```
 
 ## Configuration File
@@ -156,6 +175,94 @@ or its name when it declares none. `"none"` emits no `<h1>`, for pages whose own
 headline, such as a HERO with one; the rest of the page is unchanged. Either way the page's route
 keeps the view's `title`, which sets the document title, and the navigation label stays the same.
 The option applies to every `@View` page of the run. It is file-only; it has no CLI flag.
+
+## Regenerating
+
+The generator records every file it owns in `.exeris-codegen-manifest` at the output root. On the
+next run, the previous manifest decides what it may replace and delete.
+
+**Seed files** are written once for you to edit: `package.json`, `angular.json`, `tsconfig.json`,
+`tsconfig.app.json`, `tsconfig.spec.json`, `.postcssrc.json`, `proxy.conf.json`, `src/main.ts`,
+`src/index.html`, `src/styles.css`, `src/environments/environment.ts`,
+`src/environments/environment.development.ts`, `src/app/app.config.ts`, `src/app/app.component.ts`,
+`src/app/app.routes.ts`, and the auth service template `core/auth.service.ts`.
+
+| On disk | Without `--overwrite` | With `--overwrite` |
+|---|---|---|
+| absent | written, then owned | written, then owned |
+| owned, content differs | rewritten | rewritten |
+| owned seed file | kept | rewritten |
+| present, not in the manifest (hand-written, or a first run into a populated directory) | kept, and not owned | rewritten, then owned |
+| a symbolic link, or reached through one below the output root | kept, and not owned | a link at the path is replaced, never written through; nothing is written through a linked directory |
+| owned, no longer generated | deleted | deleted |
+| owned seed file or link, no longer generated | kept, and no longer owned | kept, and no longer owned |
+
+A regenerated page whose metadata changed is therefore rewritten without any flag, and a removed
+`@View` or entity takes its files with it. A file you write beside the generated ones is never
+touched, because it is not in the manifest. To take a generated file over, move it out of the output
+directory and stop generating it (remove the view or turn its generator off); a file the generator
+still produces is created again at its old path.
+
+**A manifest written by 0.9.x or earlier** carries no `# ownership: written` line. Those releases
+recorded every file they produced, including files they skipped because they already existed, so
+on the first run with such a manifest an entry is owned only when the file already holds what this
+run generates, starts with the header the generator writes (its provenance line or its do-not-edit
+notice, within the first 10 lines), or is a seed file. A generated file whose content changed is
+therefore rewritten as usual, and deleted when no longer generated; a hand-written file at a
+generated path, which has no such header, is kept and dropped from the manifest, generated or not.
+A file copied from generated output keeps the header and is treated as generated. The run writes
+the manifest in the current format.
+
+**A missing or empty metadata directory** generates and deletes nothing: a wrong `--input`, or a
+`mvn clean` without a compile after it, must not empty the output tree. A missing directory fails
+the run. This differs from the Java `OutputWriter`, for which a run with no entities is a valid
+state that prunes the tree. To remove everything after deleting the last entity and view, delete
+the generated files yourself.
+
+`--dry-run` lists what each file would get (create, rewrite, unchanged, keep, skip) and every file
+the run would prune or release, and changes nothing.
+
+Commit the output directory, manifest included: the manifest is what tells the next run, on any
+machine, which files are the generator's.
+
+## Generating into an existing Angular app (`scaffold: false`)
+
+By default the output is a complete Angular application: `package.json`, `angular.json`, the
+`tsconfig` files, `src/main.ts`, `src/index.html`, the styles and environments, and the app shell
+(`app.config.ts`, `app.component.ts`, `app.routes.ts`), with the generated tree under `src/app/`.
+
+With `"scaffold": false` (or `--no-scaffold`) the output directory is a folder inside an app you
+already own, such as `src/app/generated`. No project or app-shell file is emitted, and the
+generated tree is written at the output root:
+
+```
+src/app/generated/
+├── pages/
+│   ├── about.component.ts
+│   └── about.route.ts
+├── view.routes.ts            # every @View route, as one array
+└── index.ts                  # the barrel, when the metadata declares an entity or an enum
+```
+
+Spread the view routes into your own routes file; which page `''` redirects to is yours to decide:
+
+```typescript
+import { Routes } from '@angular/router';
+import { viewRoutes } from './generated/view.routes';
+
+export const routes: Routes = [...viewRoutes];
+```
+
+What the scaffold would otherwise provide is then your app's to provide: `provideHttpClient()` when
+an emitted service or store calls the API, the `@exeris/ui-kit` styles and Tailwind, and the npm
+dependencies the emitted files import (`zod`, `@angular/cdk`, `@angular/forms`, as the enabled
+generators require). A page bound to an entity (`binding.source = ENTITY`) injects that entity's
+store, which needs the store, service and type generators on.
+
+Switching an existing output directory from the scaffold to no scaffold deletes the generated files
+under `src/app/` that the previous run wrote, because the tree moves to the output root. The seed
+files (`package.json`, `angular.json`, `app.routes.ts`, …) are kept and are no longer the
+generator's; delete them yourself if the directory is no longer an app.
 
 ## Peer contracts (mesh)
 

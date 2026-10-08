@@ -64,6 +64,34 @@ interface EnumMetadata {
   qualifiedName: string;
 }
 
+/**
+ * The scaffold's seed files: written when absent and kept once they exist, because the consumer
+ * edits them (dependencies, builder options, providers, routes, styles, the page shell, the dev
+ * proxy, environments). Each is emitted with `overwritable: false`, and an orphaned one is dropped
+ * from the manifest rather than deleted (output/writer.ts).
+ *
+ * `.postcssrc.json` is a seed too: its content never depends on the metadata, so rewriting it could
+ * only undo a PostCSS plugin the consumer added. `favicon.ico` is not: nothing in it is the
+ * consumer's to edit. Paths are in the scaffold's layout, as the manifest records them.
+ */
+export const SCAFFOLD_SEED_PATHS: readonly string[] = [
+  'package.json',
+  'angular.json',
+  'tsconfig.json',
+  'tsconfig.app.json',
+  'tsconfig.spec.json',
+  '.postcssrc.json',
+  'proxy.conf.json',
+  'src/styles.css',
+  'src/index.html',
+  'src/main.ts',
+  'src/environments/environment.ts',
+  'src/environments/environment.development.ts',
+  'src/app/app.config.ts',
+  'src/app/app.component.ts',
+  'src/app/app.routes.ts',
+];
+
 export function generateAppStructure(
   domains: DomainMetadata[],
   enums: EnumMetadata[],
@@ -96,21 +124,21 @@ export function generateAppStructure(
   if (config.generateTests) {
     files.push({ path: 'tsconfig.spec.json', content: generateTsConfigSpec(), overwritable: false });
   }
-  files.push({ path: '.postcssrc.json', content: generatePostcssConfig(), overwritable: true });
+  files.push({ path: '.postcssrc.json', content: generatePostcssConfig(), overwritable: false });
   if (needs.backend) {
-    files.push({ path: 'proxy.conf.json', content: generateProxyConfig(), overwritable: true });
+    files.push({ path: 'proxy.conf.json', content: generateProxyConfig(), overwritable: false });
   }
 
   // Static files under src/
-  files.push({ path: `${srcRoot}/styles.css`, content: generateStylesCss(needs.typography), overwritable: true });
-  files.push({ path: `${srcRoot}/index.html`, content: generateIndexHtml(appName), overwritable: true });
+  files.push({ path: `${srcRoot}/styles.css`, content: generateStylesCss(needs.typography), overwritable: false });
+  files.push({ path: `${srcRoot}/index.html`, content: generateIndexHtml(appName), overwritable: false });
   files.push({ path: `${srcRoot}/favicon.ico`, content: generateFavicon(), overwritable: true });
   // main.ts under src/
   files.push({ path: `${srcRoot}/main.ts`, content: generateMainTs(), overwritable: false });
 
   // Environment files under src/environments
   files.push({ path: `${envRoot}/environment.ts`, content: generateEnvironmentFile({ production: true, api }), overwritable: false });
-  files.push({ path: `${envRoot}/environment.development.ts`, content: generateEnvironmentFile({ production: false, api }), overwritable: true });
+  files.push({ path: `${envRoot}/environment.development.ts`, content: generateEnvironmentFile({ production: false, api }), overwritable: false });
 
   // Views are sorted deterministically (by effective route path, then name) so the
   // emitted route imports/spreads + nav links are order-stable regardless of the
@@ -122,10 +150,9 @@ export function generateAppStructure(
   files.push({ path: `${appRoot}/app.config.ts`, content: generateAppConfig(needs.backend), overwritable: false });
   files.push({ path: `${appRoot}/app.component.ts`, content: generateAppComponent(domains, appName, sortedViews), overwritable: false });
   files.push({ path: `${appRoot}/app.routes.ts`, content: generateAppRoutes(domains, appName, sortedViews), overwritable: false });
-  // The app barrel re-exports the generated types, services, stores and components. With no
-  // entity and no enum there is nothing to re-export, and no barrel.
-  if (domains.length > 0 || enums.length > 0) {
-    files.push({ path: `${appRoot}/index.ts`, content: generateBarrelExport(domains, enums, config), overwritable: true });
+  const barrel = generateAppBarrel(domains, enums, config);
+  if (barrel) {
+    files.push({ ...barrel, path: `${appRoot}/${barrel.path}` });
   }
 
   // T20: per-entity components/services/types/schemas and enums are emitted by the
@@ -198,7 +225,7 @@ function routePlural(entityName: string): string {
  * comparison, never the OS locale — hard-constraint #3). Returns a new array;
  * the input is not mutated.
  */
-function sortViews(views: ViewMetadata[]): ViewMetadata[] {
+export function sortViews(views: ViewMetadata[]): ViewMetadata[] {
   return [...views].sort((a, b) => {
     const pa = viewRoutePath(a);
     const pb = viewRoutePath(b);
@@ -359,6 +386,20 @@ import { Routes } from '@angular/router';${importBlock}
 export const routes: Routes = [${redirect}${routes.join('')}${viewSpreads}
 ];
 `;
+}
+
+/**
+ * The app barrel, at `index.ts` relative to the generated tree's root. It re-exports the
+ * generated types, services, stores and components, so it is emitted with or without the
+ * scaffold; with no entity and no enum there is nothing to re-export, and no barrel.
+ */
+export function generateAppBarrel(
+  domains: DomainMetadata[],
+  enums: EnumMetadata[],
+  config: GeneratorConfig,
+): GeneratedFile | null {
+  if (domains.length === 0 && enums.length === 0) return null;
+  return { path: 'index.ts', content: generateBarrelExport(domains, enums, config), overwritable: true };
 }
 
 /**
