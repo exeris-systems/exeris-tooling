@@ -9,7 +9,7 @@ last-verified: 2026-10-08
 
 ### `exeris-codegen-ts`: the emitted model, views and store identify a row by the key `primaryKeyField` names, and always carry it
 
-`Compatibility impact: breaking (ADR-092)`, for an application whose metadata sets
+`Compatibility impact: breaking (ADR-104)`, for an application whose metadata sets
 `systemFields.primaryKeyField` to a name other than `id`, and for code that reads the key of such an
 entity's rows.
 
