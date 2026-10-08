@@ -10,7 +10,8 @@ slug: adr/ADR-090
 # ADR-090 — A write that names another tenant is refused with 400, not left to row-level security
 
 - **Status:** ACCEPTED (2026-09-26) · accepted-on-merge per the per-repo pattern (ADR-047 / ADR-058);
-  the decision is implemented on `main` (`exeris-tooling` #223)
+  the decision is implemented on `main` (`exeris-tooling` #223) · amended 2026-10-08 (Amendment 1 —
+  an update keeps every server-owned column, not only the owner)
 - **Deciders:** the founder (finding **T36**)
 - **Repo:** `exeris-tooling`
 - **Scope:** tooling / codegen pipeline — emitted repository, handler, error types, OpenAPI, TypeScript
@@ -255,3 +256,95 @@ generated code — and is recorded as a kernel ask in `ROADMAP.md`, not built he
   (`OpenApiComponentsBuilderTest`), on the emitted YAML parsed back (`OpenApiGeneratorTest`), and end
   to end from an annotated source (`SharedScopeSqlE2ETest`).
 - `KernelCodegenCompileTest` compiles the new types and the multi-catch against kernel 0.12.0.
+
+## Amendment 1 — an update keeps every server-owned column, not only the owner (2026-10-08)
+
+**Status:** Accepted *(widens Decision §2 from the owner to every server-owned column, and §6's
+`…UpdateDto` omission with it; §1, §3, §4 and §5 are unchanged)*
+
+**Deciders:** the founder.
+
+§2 takes the owner out of the `UPDATE … SET` list so that no update can move a row. A server-owned
+column left in that list is written with whatever the `PUT` body carries: an audited entity's
+creation stamp and author, a soft-deleted entity's flag. A body with `"deleted": false` restores a
+soft-deleted row, and a body that leaves the creation stamp out stores it as null. The rule §2
+states for the owner — a column the server owns is not the body's to write — holds for each of
+them.
+
+**The update replaces every domain field and keeps every server-owned column.** The server-owned
+fields are the ones `ListQuerySupport#systemFieldNames` names, the set ADR-096 already excludes
+from sorting and filtering: the key, the owner, the audit fields (created and updated at and by),
+the soft-delete fields (the flag, `@SoftDeleteTimestamp`, `@SoftDeletedBy`), the version, the
+shared scope, and every field a `systemFields` role names. Of these, an update:
+
+| Field | `SET` list | Value written |
+|---|---|---|
+| key | no — it closes the `WHERE` clause | — |
+| owner, created at, created by, updated by, soft-delete flag, soft-delete timestamp, soft-deleted by | no | the stored value stays |
+| updated at (an `audited` entity) | yes | `Instant.now()` |
+| version (a `versioned` entity) | yes | the body's expected version plus one |
+| shared scope (a UNIVERSE entity) | yes, as §3 decides | the body's value, refused when it contradicts a bound scope |
+
+`ServerOwnedFields#keptOnUpdate` is the second row's set and `KernelRepositoryGenerator#updateColumns`
+filters the column layout through it. The update stamp is written because the server sets it; no
+generated code knows the acting principal, so the updated-by field has no server value and keeps the
+stored one.
+
+**The returned entity is the row as stored.** After a row matched, `update` reads the kept columns
+back on the same connection, inside the same managed transaction, and sets them on the entity it
+returns (`KernelRepositoryGenerator#buildReadStoredColumns`, emitted as `readStoredColumns`). An
+entity whose only kept column is the key reads nothing back. The read is a single-row `SELECT` by
+key and costs one round trip per update. The alternatives do not hold:
+
+- `UPDATE … RETURNING` is not portable to every engine the kernel persistence driver runs on; the
+  in-memory H2 the boot tests use has no `RETURNING`.
+- carrying the body's values through leaves the response saying something the row does not;
+- reading before the write sees a row another transaction may change before the `UPDATE` runs.
+
+If the read finds no row, it throws the rejection a zero-row update throws (ADR-076) and the
+transaction rolls back, so the write never commits behind a rejection.
+
+**A soft-deleted row is not updated.** The `UPDATE` of a `softDelete` entity also matches
+`AND <flag> = false`, the predicate `findById`, `findAll`, `count` and `deleteById` already apply.
+Without it, a `PUT` to a soft-deleted row would write the row every read treats as absent. With it,
+the row is absent to the update as well, and the update answers what ADR-076 assigns to a row that
+is not there: `404`, or `409` on a versioned entity, whose zero-row result cannot tell gone from
+stale.
+
+**The published contract follows.** `…UpdateDto` leaves out every field
+`ServerOwnedFields#notInUpdateBody` names: the server-owned set above without the version, which the
+body must carry. The `…CreateDto` and the entity schema are unchanged; an insert's treatment of the
+audit and soft-delete fields is not part of this amendment.
+
+### What the amendment leaves unchanged
+
+- §1's refusal, §3's shared-scope rule, §4's types and §5's handler mapping.
+- The insert: `save` still writes every layout column and stamps the audit columns.
+- The TypeScript `…Update` type (ADR-092): it still carries the audit and soft-delete fields, which
+  the server ignores. Aligning it is a separate `exeris-codegen-ts` change.
+
+### Consequences of the amendment
+
+- **Breaking for a client that wrote server-owned columns through `PUT`.** Correcting a creation
+  stamp or an author, or restoring a soft-deleted row with `"deleted": false`, needs a route of the
+  consumer's own. The regeneration note is `docs/migration/0.10.0/java-11-update-keeps-server-owned-columns.md`.
+- **One more statement per update** for an entity that keeps any column besides the key — every
+  audited, soft-deleted or tenant-partitioned entity.
+- The generated `RecordingPersistence` gains `writeBinds`, the binds of the last write, because the
+  read-back's `prepare` clears `binds` (ADR-058's double; still JUnit 5 and AssertJ only).
+
+### Verification of the amendment
+
+- `KernelRepositoryServerOwnedUpdateTest` — the `SET` list and the read-back per column kind:
+  audited, versioned, soft-deleted, tenant-partitioned, every flag at once, the audit and
+  soft-delete role fields, declared role names, a renamed key, a UNIVERSE shared scope, and an
+  entity with nothing to read back; `ServerOwnedFieldsTest` for the two sets.
+- The generated `<Entity>RepositoryTest` gains `updateWritesNoServerOwnedColumnAndReturnsTheStoredOnes`
+  for an entity with a kept system column, and `updateNeverWritesTheTenantSoARowCannotMove` asserts
+  the returned owner is the stored one; `GeneratedTestsE2ETest` runs both for a TENANT and a
+  UNIVERSE entity.
+- `UpdateKeepsServerOwnedColumnsBootE2ETest` boots the emitted application on H2: a `PUT` with a
+  forged `createdAt`, `createdBy` and `deleted` leaves all three as stored, in the response and in a
+  later `GET`, and a `PUT` to the row after `DELETE` answers `404`. With `createdAt` put back in the
+  `SET` list, the test fails on the forged stamp.
+- `OpenApiComponentsBuilderTest#updateDtoLeavesOutTheFieldsTheUpdateKeeps`.

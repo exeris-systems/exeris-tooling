@@ -314,6 +314,9 @@ public final class KernelTestSupportGenerator {
      * {@code 0} to exercise the not-found paths), and {@code binds} / {@code sql} record what the
      * repository did. {@link #RECORDING_PERSISTENCE}{@code .recordedRow()} snapshots the binds,
      * which matters because {@code prepare(...)} clears them — a test must copy before it queries.
+     * {@code writeBinds} is the same snapshot taken by {@code executeUpdate()}, so a write followed
+     * by a read in one unit of work (an update reading back the columns it keeps) leaves the write's
+     * binds inspectable.
      *
      * <p>{@code close()} is a no-op on purpose. The repository closes statements and results inside
      * try-with-resources, and a close that reset state would erase the recording mid-method.
@@ -344,7 +347,8 @@ public final class KernelTestSupportGenerator {
                 .addJavadoc("compared in one place.\n")
                 .addJavadoc("<p>Stage {@code row} with the row a query should return ({@code null}\n")
                 .addJavadoc("means no rows) and {@code rowsAffected} with what a write reports.\n")
-                .addJavadoc("Inspect {@code sql} and {@code binds} for what the repository did.\n")
+                .addJavadoc("Inspect {@code sql} and {@code binds} for what the repository did, and\n")
+                .addJavadoc("{@code writeBinds} for what its last write bound.\n")
                 .addJavadoc("<p>No database, no driver, no transaction — every method is either a\n")
                 .addJavadoc("recording or a staged answer.\n")
                 .addJavadoc("<p><b>DO NOT EDIT</b> - Regenerate from domain models.\n")
@@ -353,6 +357,11 @@ public final class KernelTestSupportGenerator {
                 .addField(FieldSpec.builder(intObjectMap, "binds", Modifier.PUBLIC, Modifier.FINAL)
                         .initializer("new $T<>()", LINKED_HASH_MAP)
                         .addJavadoc("Parameter index to bound value, for the current statement.\n")
+                        .build())
+                .addField(FieldSpec.builder(intObjectMap, "writeBinds", Modifier.PUBLIC, Modifier.FINAL)
+                        .initializer("new $T<>()", LINKED_HASH_MAP)
+                        .addJavadoc("The binds of the most recent write, kept past the prepare(...) of a\n")
+                        .addJavadoc("read that follows it in the same unit of work.\n")
                         .build())
                 .addField(FieldSpec.builder(intObjectMap, "row", Modifier.PUBLIC)
                         .addJavadoc("The row the next query returns, by column index; null = no rows.\n")
@@ -445,7 +454,12 @@ public final class KernelTestSupportGenerator {
                 .addStatement("this.rowServed = false")
                 .addStatement("return this")
                 .build());
-        type.addMethod(returning("executeUpdate", TypeName.LONG, "rowsAffected"));
+        type.addMethod(override("executeUpdate")
+                .returns(TypeName.LONG)
+                .addStatement("writeBinds.clear()")
+                .addStatement("writeBinds.putAll(binds)")
+                .addStatement("return rowsAffected")
+                .build());
 
         // --- QueryResult
         type.addMethod(override("next")

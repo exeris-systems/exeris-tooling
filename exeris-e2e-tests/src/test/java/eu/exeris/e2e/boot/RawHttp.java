@@ -30,15 +30,28 @@ final class RawHttp {
      * @throws UncheckedIOException when the port refuses the connection or the read fails
      */
     static String request(int port, String method, String path) {
+        return request(port, method, path, null);
+    }
+
+    /**
+     * Sends a request with a JSON body, or none when {@code jsonBody} is {@code null}, and returns
+     * the whole response as text.
+     *
+     * @throws UncheckedIOException when the port refuses the connection or the read fails
+     */
+    static String request(int port, String method, String path, String jsonBody) {
+        byte[] body = jsonBody == null ? new byte[0] : jsonBody.getBytes(StandardCharsets.UTF_8);
         try (Socket socket = new Socket()) {
             socket.connect(new InetSocketAddress(LOOPBACK, port), CONNECT_TIMEOUT_MILLIS);
             socket.setSoTimeout(READ_TIMEOUT_MILLIS);
             OutputStream out = socket.getOutputStream();
             String head = method + " " + path + " HTTP/1.1\r\n"
                     + "Host: " + LOOPBACK + "\r\n"
-                    + "Content-Length: 0\r\n"
+                    + (jsonBody == null ? "" : "Content-Type: application/json\r\n")
+                    + "Content-Length: " + body.length + "\r\n"
                     + "Connection: close\r\n\r\n";
             out.write(head.getBytes(StandardCharsets.US_ASCII));
+            out.write(body);
             out.flush();
             InputStream in = socket.getInputStream();
             return new String(in.readAllBytes(), StandardCharsets.UTF_8);

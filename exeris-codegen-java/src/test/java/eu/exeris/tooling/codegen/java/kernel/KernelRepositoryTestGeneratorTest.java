@@ -156,7 +156,34 @@ class KernelRepositoryTestGeneratorTest {
     @DisplayName("the WHERE-clause id binds one slot past the SET list")
     void bindsTheWhereIdAfterTheSetList() {
         // 5 columns (id + four fields) → SET list is 4 wide → WHERE id is parameter 4.
-        assertThat(generate(ORDER)).contains("assertThat(persistence.binds.get(4)).isEqualTo(id)");
+        assertThat(generate(ORDER)).contains("assertThat(persistence.writeBinds.get(4)).isEqualTo(id)");
+    }
+
+    @Test
+    @DisplayName("an entity whose update keeps server-owned columns gets the forged-body case and a "
+            + "staged stored row")
+    void emitsTheKeptColumnsCase() {
+        DomainMetadata kept = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .tenantScoped(true).audited(true).softDelete(true)
+                .fields(List.of(FieldMetadata.builder("orderNumber", "String").build()))
+                .build();
+
+        assertThat(generate(kept))
+                .contains("void updateWritesNoServerOwnedColumnAndReturnsTheStoredOnes()")
+                // Read order: tenant_id, created_at, deleted.
+                .contains("persistence.row.put(0, UUID.fromString(TENANT_KEY));")
+                .contains("persistence.row.put(1, Instant.ofEpochSecond(946684800L));")
+                .contains("persistence.row.put(2, false);")
+                .contains("entity.setCreatedAt(Instant.EPOCH);")
+                .contains("entity.setDeleted(true);")
+                .contains("Assertions.assertThat(persistence.writeBinds.values()).doesNotContain(Instant.EPOCH);")
+                .contains("Assertions.assertThat(entity.getCreatedAt()).isEqualTo(Instant.ofEpochSecond(946684800L));")
+                .contains("Assertions.assertThat(entity.isDeleted()).isFalse();")
+                .contains("Assertions.assertThat(entity.getTenantId()).isEqualTo(UUID.fromString(TENANT_KEY));");
+        assertThat(generate(ORDER))
+                .doesNotContain("updateWritesNoServerOwnedColumnAndReturnsTheStoredOnes")
+                .doesNotContain("persistence.row.put(");
     }
 
     @Test
@@ -245,10 +272,10 @@ class KernelRepositoryTestGeneratorTest {
                         + ".isInstanceOf(OrderTenantMismatchException.class))")
                 .contains("void saveLeavesACallerTenantToTheDatabaseWhenNoneIsBound()")
                 .contains("void updateNeverWritesTheTenantSoARowCannotMove()")
-                .contains("Assertions.assertThat(persistence.binds.values()).doesNotContain(otherTenant)")
+                .contains("Assertions.assertThat(persistence.writeBinds.values()).doesNotContain(otherTenant)")
                 // The WHERE id follows the SET list, which does not carry the owner: orderNumber
                 // and quantity are the SET list, so the id binds at index 2.
-                .contains("Assertions.assertThat(persistence.binds.get(2)).isEqualTo(id)")
+                .contains("Assertions.assertThat(persistence.writeBinds.get(2)).isEqualTo(id)")
                 // A "keeps whatever tenant the caller set" case would contradict the refusal.
                 .doesNotContain("saveKeepsATenantTheCallerSet");
     }

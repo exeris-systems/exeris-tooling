@@ -138,7 +138,7 @@ emit is a text input; and a `date` / `datetime-local` input is given only to a z
 is a `type="number"` input; `BigDecimal` / `BigInteger` stay string text inputs with a `decimal` /
 `numeric` keyboard. `@Field(inUpdate = false)` disables the control in edit mode through a Signal
 Forms `disabled` rule; the update sends the loaded value back, because the generated update writes
-every column.
+every domain column.
 
 **P21: the front reads the list route's page.** The generated list route pages, sorts and filters
 on the server and answers `{content, totalElements, totalPages, size, number, first, last}`
