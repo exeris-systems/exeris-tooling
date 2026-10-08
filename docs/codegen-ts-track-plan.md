@@ -277,8 +277,8 @@ the issues placed in that release — is ordered in the TypeScript track of
 [`0.10.0-release-plan.md`](0.10.0-release-plan.md).
 
 - The per-action stream producer (EV1-stream): the Java handler runs the action (J4-1, ADR-044
-  Amendment 2). The per-action TS clients for tenant-partitioned entities are emitted; the spectate client is wave S4;
-  the TS client already parses the named frames.
+  Amendment 2). The TS spectate client of a `GLOBAL` entity and the per-action TS clients of
+  tenant-partitioned entities are emitted (wave S4); the TS client already parses the named frames.
 - Test-emitter coverage: `spec-gen` covers 2 of 18 TS emitters.
 - `npm run lint` runs `eslint .` in `build.yml` (#348).
 - **A stability decision for the TS output.** ADR-015's output-stability contract covers
