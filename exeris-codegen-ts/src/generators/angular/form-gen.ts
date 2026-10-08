@@ -180,7 +180,7 @@ export class FormGenerator implements CodeGenerator {
         lines.push('        </select>');
       } else if (control === 'picker') {
         lines.push(`        <label for="${f.name}" class="exeris-label">${label} ${requiredMark}</label>`);
-        lines.push(`        <select id="${f.name}" data-testid="field-${f.name}" ${binding} class="exeris-select mt-1" ${errorClass}>`);
+        lines.push(`        <select id="${f.name}" data-testid="field-${f.name}" ${binding} class="exeris-select mt-1" ${errorClass} [attr.aria-describedby]="${pickerTruncatedName(f.name)}() ? 'options-truncated-${f.name}' : null">`);
         // A required key cannot be set back to none; an optional one can.
         lines.push(f.form.required
           ? '          <option value="" disabled>Select...</option>'
@@ -197,6 +197,10 @@ export class FormGenerator implements CodeGenerator {
         // A failed options request is reported beside the control; the held value stays an option.
         lines.push(`        @if (${pickerErrorName(f.name)}()) {`);
         lines.push(`          <p role="alert" class="exeris-error-text" data-testid="options-error-${f.name}">{{ ${pickerErrorName(f.name)}() }}</p>`);
+        lines.push('        }');
+        // A target with more rows than the page holds says so; the hint describes the select.
+        lines.push(`        @if (${pickerTruncatedName(f.name)}()) {`);
+        lines.push(`          <p id="options-truncated-${f.name}" class="exeris-help-text" data-testid="options-truncated-${f.name}">Showing the first ${MAX_PAGE_SIZE} options only.</p>`);
         lines.push('        }');
       } else if (control === 'checkbox') {
         lines.push('        <div class="flex items-center gap-2">');
@@ -358,6 +362,8 @@ export class FormGenerator implements CodeGenerator {
       lines.push(`    const err = this.${resource}.error();`);
       lines.push(`    return err ? httpErrorMessage(err, { entity: '${targetNoun}', action: 'load' }) : null;`);
       lines.push('  });');
+      // The list response's `last` is false while rows remain beyond the page it holds.
+      lines.push(`  readonly ${pickerTruncatedName(f.name)} = computed(() => this.${resource}.hasValue() && this.${resource}.value().last === false);`);
       lines.push(`  readonly ${pickerUnlistedName(f.name)} = computed(() => {`);
       lines.push(`    const value = this.formModel().${f.name};`);
       lines.push(`    return value !== '' && !this.${pickerOptionsName(f.name)}().some((option) => option.value === value);`);
@@ -644,6 +650,11 @@ function pickerOptionsName(name: string): string {
 /** The message of a foreign-key select's failed options request, or `null`. */
 function pickerErrorName(name: string): string {
   return `${name}OptionsError`;
+}
+
+/** Whether a foreign-key select's target has rows beyond the page the select lists. */
+function pickerTruncatedName(name: string): string {
+  return `${name}OptionsTruncated`;
 }
 
 /** Whether a foreign-key select's value is missing from its options, which then still show it. */

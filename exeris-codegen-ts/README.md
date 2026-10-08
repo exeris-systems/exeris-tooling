@@ -465,6 +465,17 @@ machine, and the `SagaStatusSnapshot` shape it folds, are exported from the app 
 
 A field with `@Field(inUpdate = false)` is disabled while the form edits, and is sent back as loaded.
 
+### The relationship picker lists one page
+
+The picker requests one page of the target's list route, `findAll({ size: 100 })`, and 100 is the
+largest size that route serves (ADR-096). A target with more rows offers its first 100. The
+list route has no search parameter, so the picker cannot be narrowed or paged. When the list
+response reports rows beyond the page it holds (`last` is `false`), the form shows "Showing the
+first 100 options only." beside the select (`data-testid="options-truncated-<field>"`, referenced
+by the select's `aria-describedby`). The value a record already holds stays an option whether or
+not it is among those 100. Server-side search on the list route, and a combobox on it, are
+0.11.0 work.
+
 ## License
 
 Apache-2.0
