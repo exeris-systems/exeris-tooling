@@ -24,6 +24,13 @@ import java.util.List;
  */
 public final class OpenApiPathsBuilder {
 
+    /** The media type of the spectate route's response. */
+    private static final String EVENT_STREAM = "text/event-stream";
+    /** The status of a request the route served. */
+    private static final String OK = "200";
+    /** The OpenAPI type of a string schema. */
+    private static final String STRING_TYPE = "string";
+
     private OpenApiPathsBuilder() {}
 
     /**
@@ -47,6 +54,12 @@ public final class OpenApiPathsBuilder {
         itemPath.setPut(buildUpdateOperation(entityName, metadata.versioned()));
         itemPath.setDelete(buildDeleteOperation(entityName));
         paths.addPathItem(basePath + "/{id}", itemPath);
+
+        if (metadata.realTimeApi()) {
+            PathItem spectatePath = new PathItem();
+            spectatePath.setGet(buildSpectateOperation(entityName));
+            paths.addPathItem(basePath + "/{id}/stream", spectatePath);
+        }
 
         if (metadata.hasActions()) {
             for (ActionMetadata action : metadata.actions()) {
@@ -87,7 +100,7 @@ public final class OpenApiPathsBuilder {
                 values.add(property.name() + ",asc");
                 values.add(property.name() + ",desc");
             }
-            Schema<String> sortSchema = OpenApiSchemas.typed(new Schema<String>(), "string");
+            Schema<String> sortSchema = OpenApiSchemas.typed(new Schema<String>(), STRING_TYPE);
             sortSchema.setEnum(values);
             op.addParametersItem(queryParam(ListQuerySupport.SORT,
                     "<property>,<asc|desc>; unsorted, rows come in id order", sortSchema));
@@ -103,8 +116,8 @@ public final class OpenApiPathsBuilder {
                     + " equals this value", schema));
         }
 
-        ApiResponses responses = Responses.of("200", "One page of " + entity).badRequest().serverError();
-        responses.get("200").setContent(new Content().addMediaType("application/json",
+        ApiResponses responses = Responses.of(OK, "One page of " + entity).badRequest().serverError();
+        responses.get(OK).setContent(new Content().addMediaType("application/json",
                 new MediaType().schema(new Schema<>().$ref(
                         "#/components/schemas/" + OpenApiComponentsBuilder.pageSchemaName(entity)))));
         op.setResponses(responses);
@@ -127,7 +140,7 @@ public final class OpenApiPathsBuilder {
         op.setSummary("Get " + entity + " by ID");
         op.setTags(List.of(entity));
         op.addParametersItem(buildIdParam());
-        op.setResponses(Responses.of("200", entity + " details").badRequest().notFound().serverError());
+        op.setResponses(Responses.of(OK, entity + " details").badRequest().notFound().serverError());
         return op;
     }
 
@@ -148,7 +161,7 @@ public final class OpenApiPathsBuilder {
         op.setTags(List.of(entity));
         op.addParametersItem(buildIdParam());
         op.setRequestBody(RequestBodyFactory.buildUpdateRequestBody(entity));
-        Responses responses = Responses.of("200", "Updated " + entity).badRequest();
+        Responses responses = Responses.of(OK, "Updated " + entity).badRequest();
         op.setResponses(versioned
                 ? responses.conflict().serverError()
                 : responses.notFound().serverError());
@@ -174,8 +187,36 @@ public final class OpenApiPathsBuilder {
         if (action.hasParams()) {
             op.setRequestBody(RequestBodyFactory.buildActionRequestBody(entity, action));
         }
-        Responses responses = Responses.of("200", "Action result").badRequest().notFound();
+        Responses responses = Responses.of(OK, "Action result").badRequest().notFound();
         op.setResponses(versioned ? responses.conflict().serverError() : responses.serverError());
+        return op;
+    }
+
+    /**
+     * The spectate route, {@code GET {base}/{id}/stream} (ADR-044 Amendment 2, decision 7): an SSE
+     * stream of one row's events. The engine writes the {@code 200} head before the handler runs,
+     * so {@code 200} is the only status the route answers; a malformed id, an absent row and a
+     * failure arrive in the stream as one {@code stream-error} frame carrying the status the by-id
+     * {@code GET} answers (ADR-079: declare what the handler can answer).
+     */
+    private static Operation buildSpectateOperation(String entity) {
+        Operation op = new Operation();
+        op.setOperationId("spectate" + entity);
+        op.setSummary("Stream the events of one " + entity);
+        op.setDescription("A server-sent event stream that stays open until the client disconnects. "
+                + "Each event published for this " + entity + " is one frame named by its @DomainEvent "
+                + "name, whose data is the event payload; a keep-alive frame is sent while the row is "
+                + "quiet. A malformed id, an absent or invisible row, or a server failure is one "
+                + "stream-error frame, whose data is a problem object (RFC 9457) with status 400, 404 or "
+                + "500, after which the stream closes.");
+        op.setTags(List.of(entity));
+        op.addParametersItem(buildIdParam());
+        ApiResponses responses = new ApiResponses();
+        responses.addApiResponse(OK, new ApiResponse()
+                .description("The event stream of the " + entity)
+                .content(new Content().addMediaType(EVENT_STREAM,
+                        new MediaType().schema(OpenApiSchemas.typed(new Schema<String>(), STRING_TYPE)))));
+        op.setResponses(responses);
         return op;
     }
 
@@ -185,7 +226,7 @@ public final class OpenApiPathsBuilder {
         param.setIn("path");
         param.setRequired(true);
         param.setDescription("Entity ID (UUID)");
-        param.setSchema(OpenApiSchemas.typed(new Schema<String>(), "string").format("uuid"));
+        param.setSchema(OpenApiSchemas.typed(new Schema<String>(), STRING_TYPE).format("uuid"));
         return param;
     }
 

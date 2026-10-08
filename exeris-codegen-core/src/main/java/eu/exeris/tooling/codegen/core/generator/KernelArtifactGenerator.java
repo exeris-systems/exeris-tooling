@@ -110,6 +110,13 @@ public interface KernelArtifactGenerator {
          * so the per-type registry lookup is unambiguous.
          */
         ACTION_STREAM_HANDLER,
+        /**
+         * Per-row SSE spectate handler ({@code eu.exeris.kernel.spi.http.HttpStreamHandler}) at
+         * {@code GET {base}/{id}/stream}, emitted for {@code @ExerisDomain(realTimeApi)} (ADR-044
+         * Amendment 2); distinct from {@link #STREAM_HANDLER} so the per-type registry lookup is
+         * unambiguous.
+         */
+        SPECTATE_STREAM_HANDLER,
         /** Service-to-service client for HTTP-layer communication. */
         CLIENT,
         /** Domain-event publisher ({@code eu.exeris.kernel.spi.events.*}). */

@@ -35,12 +35,12 @@ class KernelApplicationGeneratorTest {
     }
 
     @Test
-    @DisplayName("generateAll with an empty domain list still emits all three files "
+    @DisplayName("generateAll with an empty domain list still emits all four files "
             + "(no entity wiring, no routes)")
     void shouldEmitBothFilesForEmptyDomainList() {
         KernelApplicationGenerator gen = new KernelApplicationGenerator();
         List<GeneratedFile> files = gen.generateAll(List.of(), "com.example.foundation");
-        assertThat(files).hasSize(3);
+        assertThat(files).hasSize(4);
 
         String lifecycle = files.stream()
                 .filter(f -> "RuntimeLifecycle".equals(f.className()))
@@ -88,7 +88,7 @@ class KernelApplicationGeneratorTest {
 
     @Test
     @DisplayName("generateAll emits Application + RuntimeComponents + RuntimeLifecycle "
-            + "against Open-Core SPI")
+            + "+ GeneratedRoutePolicy against Open-Core SPI")
     void shouldGenerateApplicationAndLifecycle() {
         KernelApplicationGenerator gen = new KernelApplicationGenerator();
         DomainMetadata order = DomainMetadata.builder("Order", "com.example.domain")
@@ -99,7 +99,7 @@ class KernelApplicationGeneratorTest {
         List<GeneratedFile> files = gen.generateAll(List.of(order, product),
                 "com.example.foundation");
 
-        assertThat(files).hasSize(3);
+        assertThat(files).hasSize(4);
         GeneratedFile application = files.stream()
                 .filter(f -> "Application".equals(f.className()))
                 .findFirst().orElseThrow();
@@ -599,6 +599,46 @@ class KernelApplicationGeneratorTest {
     }
 
     @Test
+    @DisplayName("ADR-044 Amendment 2: the spectate handler takes the service, and the EventEngine when "
+            + "the entity declares an event, captured at composition and recorded in the scope ledger")
+    void spectateStreamHandlerTakesWhatItForwards() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        DomainMetadata quiet = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders").realTimeApi(true).build();
+        DomainMetadata live = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders").realTimeApi(true)
+                .events(List.of(eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata.simple("OrderCreated")))
+                .build();
+
+        assertThat(components(gen.generateAll(List.of(quiet), "com.example.foundation")))
+                .contains("protected OrderSpectateStreamHandler createOrderSpectateStreamHandler()")
+                .contains("return new OrderSpectateStreamHandler(orderService());");
+        assertThat(components(gen.generateAll(List.of(live), "com.example.foundation")))
+                .contains("return new OrderSpectateStreamHandler(orderService(), KernelProviders.eventEngine());")
+                .contains("{@link #createOrderSpectateStreamHandler()}");
+    }
+
+    @Test
+    @DisplayName("ADR-044 Amendment 2: per entity, the live view's exact GET {base}/stream is registered "
+            + "before the spectate template GET {base}/{id}/stream, and both after the action streams")
+    void spectateRouteFollowsTheLiveView() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        DomainMetadata live = DomainMetadata.builder("GalacticEra", "com.example.domain")
+                .path("/era").realTimeApi(true)
+                .actions(List.of(ActionMetadata.builder("trackRift").streaming(true).build()))
+                .build();
+        String run = method(lifecycle(gen.generateAll(List.of(live), "com.example.foundation")),
+                "public void run()");
+
+        int action = run.indexOf("routerBuilder.streamRoute(HttpMethod.POST, \"/era/{id}/actions/track-rift\"");
+        int liveView = run.indexOf("routerBuilder.streamRoute(HttpMethod.GET, \"/era/stream\"");
+        int spectate = run.indexOf("routerBuilder.streamRoute(HttpMethod.GET, \"/era/{id}/stream\"");
+        assertThat(action).isGreaterThan(-1);
+        assertThat(liveView).isGreaterThan(action);
+        assertThat(spectate).isGreaterThan(liveView);
+    }
+
+    @Test
     @DisplayName("K9: stream routes are registered in run() on the composed router, every "
             + "generated path byte for byte")
     void streamRoutesAreRegisteredOnTheComposedRouter() {
@@ -613,7 +653,12 @@ class KernelApplicationGeneratorTest {
                 .contains("HttpStreamHandler galacticEraStreamHandler = components.galacticEraStreamHandler();")
                 .contains("routerBuilder.streamRoute(HttpMethod.GET, \"/era/stream\", galacticEraStreamHandler);")
                 .contains("routerBuilder.streamRoute(HttpMethod.POST, \"/era/{id}/actions/track-rift\", "
-                        + "galacticEraTrackRiftStreamHandler);");
+                        + "galacticEraTrackRiftStreamHandler);")
+                .contains("HttpStreamHandler galacticEraSpectateStreamHandler = "
+                        + "components.galacticEraSpectateStreamHandler();")
+                .contains("routerBuilder.streamRoute(HttpMethod.GET, \"/era/{id}/stream\", "
+                        + "galacticEraSpectateStreamHandler);")
+                .contains("requireDecoratedStreamRoute(decorated, HttpMethod.GET, \"/era/{id}/stream\");");
         assertThat(lifecycle)
                 .doesNotContain("edgeRouter")
                 .doesNotContain("lazyStream")
@@ -953,6 +998,113 @@ class KernelApplicationGeneratorTest {
     private static String application(List<GeneratedFile> files) {
         return files.stream().filter(f -> "Application".equals(f.className()))
                 .findFirst().orElseThrow().content();
+    }
+
+    private static String routePolicy(List<GeneratedFile> files) {
+        return files.stream().filter(f -> "GeneratedRoutePolicy".equals(f.className()))
+                .findFirst().orElseThrow().content();
+    }
+
+    @Test
+    @DisplayName("ADR-105: the boot chain binds HTTP_ROUTE_POLICY to routePolicy() beside the "
+            + "server handler, before the kernel boots")
+    void bootChainBindsTheRoutePolicy() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        List<DomainMetadata> domains = List.of(DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders").build());
+
+        for (boolean composed : new boolean[] {false, true}) {
+            String application = application(gen.generateAll(domains, "com.example.foundation", composed));
+
+            assertThat(application)
+                    .contains("ScopedValue.where(HttpKernelProviders.HTTP_SERVER_HANDLER, edgeHandler)\n"
+                            + "                .where(HttpKernelProviders.HTTP_ROUTE_POLICY, routePolicy())\n"
+                            + "                .call(() -> {\n");
+            assertThat(application.indexOf("HTTP_ROUTE_POLICY"))
+                    .as("the policy is bound ahead of KernelBootstrap")
+                    .isLessThan(application.indexOf("KernelBootstrap.builder()"));
+        }
+    }
+
+    @Test
+    @DisplayName("ADR-105: Application emits routePolicy(), applicationPolicy() and unmatchedRoutes() "
+            + "as protected hooks, composed first-declared with the application ahead of the generated policy")
+    void applicationEmitsTheThreeRoutePolicyHooks() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        String application = application(gen.generateAll(
+                List.of(DomainMetadata.builder("Order", "com.example.domain").path("/orders").build()),
+                "com.example.foundation"));
+
+        assertThat(application)
+                .contains("import eu.exeris.kernel.spi.http.HttpRoutePolicy")
+                .contains("import eu.exeris.kernel.spi.http.RouteRequirement")
+                .contains("import java.util.List");
+        assertThat(method(application, "protected HttpRoutePolicy routePolicy()"))
+                .contains("return HttpRoutePolicy.firstDeclared(List.of(applicationPolicy(), "
+                        + "GeneratedRoutePolicy.INSTANCE), unmatchedRoutes());");
+        assertThat(method(application, "protected HttpRoutePolicy applicationPolicy()"))
+                .contains("return (method, path) -> RouteRequirement.abstain();");
+        assertThat(method(application, "protected RouteRequirement unmatchedRoutes()"))
+                .contains("return RouteRequirement.permitAll();");
+        assertThat(application)
+                .contains("a route is public, and its handler runs without a principal")
+                .contains("a route no policy describes is public")
+                .doesNotContain("SecurityProvider");
+    }
+
+    @Test
+    @DisplayName("ADR-105: GeneratedRoutePolicy sits in the base package and abstains on every route")
+    void generatedRoutePolicyAbstainsEverywhere() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        List<GeneratedFile> files = gen.generateAll(
+                List.of(DomainMetadata.builder("Order", "com.example.domain").path("/orders").build()),
+                "com.example.foundation");
+        GeneratedFile policy = files.stream()
+                .filter(f -> "GeneratedRoutePolicy".equals(f.className())).findFirst().orElseThrow();
+
+        assertThat(policy.packageName()).isEqualTo("com.example.foundation");
+        assertThat(policy.artifactType()).isEqualTo(ArtifactType.APPLICATION);
+        assertThat(policy.content())
+                .contains("public final class GeneratedRoutePolicy implements HttpRoutePolicy")
+                .contains("public static final GeneratedRoutePolicy INSTANCE = new GeneratedRoutePolicy();")
+                .contains("private static final RouteRequirement ABSTAIN = RouteRequirement.abstain();")
+                .contains("private GeneratedRoutePolicy()")
+                .contains("public RouteRequirement requirementFor(HttpMethod method, String path)")
+                .contains("return ABSTAIN;")
+                .doesNotContain("permitAll")
+                .doesNotContain("authenticated")
+                .doesNotContain("SecurityProvider");
+    }
+
+    @Test
+    @DisplayName("ADR-105: the emitted route policy does not depend on the domains, so every build emits the same bytes")
+    void routePolicyIsTheSameForEveryDomainSet() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        DomainMetadata order = DomainMetadata.builder("Order", "com.example.domain").path("/orders").build();
+        DomainMetadata product = DomainMetadata.builder("Product", "com.example.domain").path("/products").build();
+
+        String once = routePolicy(gen.generateAll(List.of(order, product), "com.example.foundation"));
+
+        assertThat(routePolicy(gen.generateAll(List.of(product, order), "com.example.foundation")))
+                .isEqualTo(once);
+        assertThat(routePolicy(new KernelApplicationGenerator()
+                .generateAll(List.of(order, product), "com.example.foundation")))
+                .isEqualTo(once);
+        assertThat(routePolicy(gen.generateAll(List.of(), "com.example.foundation"))).isEqualTo(once);
+    }
+
+    @Test
+    @DisplayName("ADR-105: a composed build binds the same route policy and emits the same GeneratedRoutePolicy")
+    void compositionLeavesTheRoutePolicyUntouched() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        List<DomainMetadata> domains = List.of(DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders").build());
+
+        assertThat(routePolicy(gen.generateAll(domains, "com.example.foundation", true)))
+                .isEqualTo(routePolicy(gen.generateAll(domains, "com.example.foundation", false)));
+        assertThat(application(gen.generateAll(domains, "com.example.foundation", true)))
+                .contains("protected HttpRoutePolicy routePolicy()")
+                .contains("{@link #routePolicy()}, {@link #applicationPolicy()} or {@link #unmatchedRoutes()}");
     }
 
     private static String lifecycle(List<GeneratedFile> files) {

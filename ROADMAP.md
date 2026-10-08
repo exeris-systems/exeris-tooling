@@ -3024,7 +3024,12 @@ Proposals, highest return-on-effort first:
       `ACTION`-triggered events, filtered on the row id, closing on completion or at
       `STREAM_DEADLINE_MILLIS`; refusals are `stream-error` frames; `EXT-PROC-1107` is retired and
       reserved frame names are refused (`EXT-PROC-1016`, `EXT-PROC-1017`). No result frame until
-      exeris-sdk#191 fills `ActionMetadata.resultType`. Open: J4-2, S4.
+      exeris-sdk#191 fills `ActionMetadata.resultType`.
+      **J4-2 implemented:** `realTimeApi` also emits `GET {base}/{id}/stream`
+      (`KernelSpectateStreamHandlerGenerator`): one row's events, filtered on the row id, with a
+      keep-alive and no deadline; described in the emitted OpenAPI. `message`, `open` and `error`
+      join the reserved frame names. Open: S4 (the spectate client among it), the tenant-partitioned
+      spectate route (T53, exeris-kernel#600).
 
 - [ ] **EV2 — `@EventSourced` aggregate generator — log substrate delivered (kernel 0.10, ADR-049);
       aggregate surface still missing.** No generator emits event-sourced aggregates today; **T11 strict
@@ -3343,6 +3348,11 @@ Proposals, highest return-on-effort first:
       **Decided 2026-10-08:** RFC-2026-10-08 accepted as
       [ADR-105](docs/adr/ADR-105-generated-route-policy-emission.md);
       implementation J3-1 to J3-4.
+
+      *Landed:* J3-2, the seam: the generated `Application` binds `HTTP_ROUTE_POLICY` through
+      `routePolicy()`, `applicationPolicy()` and `unmatchedRoutes()`, and a generated
+      `GeneratedRoutePolicy` abstains on every route. Behaviour is unchanged. Extraction, the table,
+      the conformance test, the TypeScript guards and the OpenAPI security block remain.
 
 - [ ] **D10 — the TS side has a bearer-token code path that reaches no emitted output.**
       *Scheduled: 0.10.0, with T53.* Surfaced by
@@ -3910,15 +3920,16 @@ enters only if its upstream half is final first.
       and `build-preview_generation`. Does not hold the cut.
       *Landed:* ADR-097 and the catalogue, with `docs/generators.md` (#328); `exeris-codegen-cli`
       (#333); the bridge's `ADR-097.link.md` stub (exeris-ai-bridge#54).
-- [ ] **`@PrimaryKey` rename (wave J5, ADR-104):** `@ExerisDomain(primaryKeyField)` names the key
+- [x] **`@PrimaryKey` rename (wave J5, ADR-104):** `@ExerisDomain(primaryKeyField)` names the key
       across the migration, the repository, the foreign-key target, the Java and TS models and the
-      OpenAPI schema; the route variable stays `{id}`. The key is a `UUID`. The `@PrimaryKey` marker
-      is J5b, conditional on exeris-sdk#187 item 1.
-      *Landed:* J5-1 and J5-2. J5-2, the TypeScript resolver (`exeris-codegen-ts/src/core/primary-key.ts`): every
-      emitter that writes the entity key reads it from `primaryKeyField`, with output unchanged.
-      The view `@for` track key and the form's foreign-key picker helper read the default key
-      name, since neither holds the bound entity's metadata. J5-1, the Java resolver (#354): every
-      Java site reads the key through `PrimaryKeys`. *Open:* J5-3, the switch-over.
+      OpenAPI schema; the route variable stays `{id}`. The key is a `UUID`.
+      *Landed:* J5-1 (#354), J5-2 (#357) and J5-3 (#363, the switch-over). J5-2, the TypeScript
+      resolver (`exeris-codegen-ts/src/core/primary-key.ts`): every emitter that writes the entity
+      key reads it from `primaryKeyField`. The view `@for` track key and the form's foreign-key
+      picker helper read the default key name, since neither holds the bound entity's metadata.
+      J5-1, the Java resolver: every Java site reads the key through `PrimaryKeys`.
+- [ ] **J5b, the `@PrimaryKey` marker (ADR-104):** the processor reads the field marker into
+      `primaryKeyField`. Conditional on exeris-sdk#187 item 1, the `-io` reader half (ADR-042).
 - [x] **Maven coordinates move to the `eu.exeris` group** (founder decision 2026-10-06). Every
       module is published as `eu.exeris:<artifactId>`, the group of the kernel and SDK artefacts; the
       artifactIds and the Java packages (`eu.exeris.tooling.*`) are unchanged. 0.9.0 and earlier stay

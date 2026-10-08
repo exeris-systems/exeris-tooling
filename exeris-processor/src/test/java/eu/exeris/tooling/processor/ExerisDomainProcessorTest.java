@@ -3053,8 +3053,8 @@ class ExerisDomainProcessorTest {
         }
 
         @ParameterizedTest(name = "{0}")
-        @ValueSource(strings = {"stream-error", "keep-alive"})
-        @DisplayName("a @DomainEvent named like a reserved frame is refused at the annotation")
+        @ValueSource(strings = {"stream-error", "keep-alive", "message", "open", "error"})
+        @DisplayName("a @DomainEvent named like a reserved frame or an EventSource event type is refused")
         void reservedEventNameIsRefused(String reserved) {
             Compilation compilation = compileWithProcessor(order(
                     "@DomainEvent(name = \"" + reserved + "\", trigger = Trigger.UPDATE, topic = \"orders.x\")", ""));
@@ -3062,11 +3062,12 @@ class ExerisDomainProcessorTest {
             assertThat(compilation).failed();
             assertThat(compilation).hadErrorCount(1);
             assertThat(compilation).hadErrorContaining(RESERVED_EVENT + "@DomainEvent \"" + reserved
-                    + "\": the name is a frame name the generated streams reserve [stream-error, keep-alive]");
+                    + "\": the name is a frame name the generated streams reserve "
+                    + "[stream-error, keep-alive, message, open, error]");
         }
 
         @ParameterizedTest(name = "{0}")
-        @ValueSource(strings = {"stream-error", "keep-alive"})
+        @ValueSource(strings = {"stream-error", "keep-alive", "message", "open", "error"})
         @DisplayName("a streamEventType equal to a reserved frame name is refused at the @Action")
         void reservedStreamEventTypeIsRefused(String reserved) {
             Compilation compilation = compileWithProcessor(order("", """
@@ -3158,6 +3159,39 @@ class ExerisDomainProcessorTest {
             assertThat(compilation.warnings().stream()
                     .map(d -> d.getMessage(java.util.Locale.ROOT))
                     .noneMatch(m -> m.contains("streamEventType"))).isTrue();
+        }
+
+        @Test
+        @DisplayName("with streamEventType blank, an action named like an EventSource event type is refused")
+        void actionNamedLikeAnEventSourceTypeIsRefused() {
+            Compilation compilation = compileWithProcessor(order("", """
+                        @Action(name = "open", label = "Open", streaming = true)
+                        public void open() {
+                        }
+                    """));
+
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorCount(1);
+            assertThat(compilation).hadErrorContaining(RESULT_FRAME + "Streaming action \"open\": its "
+                    + "result frame is named by the action name \"open\" (streamEventType is blank), which "
+                    + "is a frame name the generated streams reserve");
+        }
+
+        @Test
+        @DisplayName("EventSource event types match case-sensitively: Error, Open and Message are not reserved")
+        void eventSourceTypesAreCaseSensitive() {
+            Compilation compilation = compileWithProcessor(order(
+                    """
+                    @DomainEvent(name = "Error", trigger = Trigger.UPDATE, topic = "orders.x")
+                    @DomainEvent(name = "Open", trigger = Trigger.CREATE, topic = "orders.x")""",
+                    """
+                        @Action(name = "trackShipment", label = "Track", streaming = true,
+                                streamEventType = "Message")
+                        public void trackShipment() {
+                        }
+                    """));
+
+            assertThat(compilation).succeededWithoutWarnings();
         }
     }
 
@@ -3919,6 +3953,59 @@ class ExerisDomainProcessorTest {
 
             assertThat(compilation).succeeded();
             assertThat(hasInertWarningFor(compilation, "@DomainEvent.useOutbox")).isTrue();
+        }
+
+        @Test
+        @DisplayName("-Aexeris.strict warns that a nested @DomainEvent class ignores name, and the class name wins")
+        void strictWarnsThatNestedDomainEventIgnoresName() {
+            Compilation compilation = javac()
+                    .withOptions("-Aexeris.strict=true")
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(nestedEventNamed(", name = \"OrderShipped\""));
+
+            assertThat(compilation).succeeded();
+            assertThat(hasInertWarningFor(compilation, "@DomainEvent.name")).isTrue();
+        }
+
+        @Test
+        @DisplayName("A nested @DomainEvent class without name draws no name warning under -Aexeris.strict")
+        void strictStaysQuietOnNestedDomainEventWithoutName() {
+            Compilation compilation = javac()
+                    .withOptions("-Aexeris.strict=true")
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(nestedEventNamed(""));
+
+            assertThat(compilation).succeeded();
+            assertThat(hasInertWarningFor(compilation, "@DomainEvent.name")).isFalse();
+        }
+
+        @Test
+        @DisplayName("A default build stays quiet when a nested @DomainEvent class sets name")
+        void defaultBuildStaysQuietOnNestedDomainEventName() {
+            Compilation compilation = javac()
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(nestedEventNamed(", name = \"OrderShipped\""));
+
+            assertThat(compilation).succeeded();
+            assertThat(hasInertWarningFor(compilation, "@DomainEvent.name")).isFalse();
+        }
+
+        private JavaFileObject nestedEventNamed(String extraAttributes) {
+            return JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.DomainEvent;
+
+                    @ExerisDomain(module = "core", path = "/orders")
+                    public class Order { private java.util.UUID id;
+                        @DomainEvent(trigger = DomainEvent.Trigger.CREATE, topic = "orders.shipped"%s)
+                        public static class Shipped {
+                        }
+                    }
+                    """.formatted(extraAttributes));
         }
 
         @Test

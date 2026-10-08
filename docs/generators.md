@@ -89,6 +89,7 @@ existing key is removed or changes meaning or type.
 
 | Row | Generator | Artefact | Path template | Cardinality | Condition | ADR |
 |---|---|---|---|---|---|---|
+| `spectate-stream-handler` | `KernelSpectateStreamHandlerGenerator` | The SSE stream handler of one row's events, at `GET {base}/{id}/stream`. | `{base}/handler/{E}SpectateStreamHandler.java` | zero-or-one | `@ExerisDomain(realTimeApi = true)`; refused on a `TENANT` or `UNIVERSE` entity (`EXT-PROC-1014`) | ADR-044 |
 | `stream-handler` | `KernelStreamHandlerGenerator` | The live-view SSE stream handler of the entity. | `{base}/handler/{E}StreamHandler.java` | zero-or-one | `@ExerisDomain(realTimeApi = true)`; refused on a `TENANT` or `UNIVERSE` entity (`EXT-PROC-1014`) | ADR-044 |
 | `action-stream-handler` | `KernelActionStreamHandlerGenerator` | The SSE stream handler of one streaming action. | `{base}/handler/{E}{Action}StreamHandler.java` | one-per-streaming-action | each `@Action(streaming = true)` | ADR-044 |
 | `handler` | `KernelHandlerGenerator` | The HTTP handler serving the entity's routes. | `{base}/handler/{E}Handler.java` | one | every entity | — |
@@ -116,6 +117,7 @@ existing key is removed or changes meaning or type.
 | `application` | `KernelApplicationGenerator` | The application's `main` entry point, which boots the kernel. | `{app}/Application.java` | one | at least one `@ExerisDomain` | — |
 | `runtime-components` | `KernelApplicationGenerator` | The composition root that constructs every generated component. | `{app}/RuntimeComponents.java` | one | at least one `@ExerisDomain` | ADR-070 |
 | `runtime-lifecycle` | `KernelApplicationGenerator` | The lifecycle that registers the routes and subscriptions once the kernel is up. | `{app}/RuntimeLifecycle.java` | one | at least one `@ExerisDomain` | ADR-070 |
+| `generated-route-policy` | `KernelApplicationGenerator` | The generated half of the route policy the application binds; its table holds no row, so it abstains on every route (ADR-105). | `{app}/GeneratedRoutePolicy.java` | one | at least one `@ExerisDomain` | ADR-105 |
 | `foreign-key-migration` | `KernelApplicationGenerator` | The Flyway migration adding every foreign key between the build's tables. | `db/migration/V3000000__foreign_keys.sql` | zero-or-one | a `MANY_TO_ONE` relationship whose target is an entity of the same build | — |
 | `cap-manifest` | `CodegenPipeline` | The resolved capability graph and its composition stamp. | `cap-manifest.json` | zero-or-one | at least one `@CapabilityModule` | ADR-024 |
 
@@ -136,17 +138,22 @@ existing key is removed or changes meaning or type.
 
 ## Ambiguous rows
 
-The three rows of the `handler/` package overlap. `BeaconStreamHandler.java` is the stream handler
+The four rows of the `handler/` package overlap. `BeaconStreamHandler.java` is the stream handler
 of `Beacon`, the per-action stream handler of an entity `Bea` with an action `con`, or the handler of
 an entity named `BeaconStream`; `stream-handler` and `action-stream-handler` have the same pattern.
-The two stream rows come before `handler`, so the first match of a stream handler is
-`stream-handler`, and a tool that holds the entity and action names tells the two apart.
+`BeaconSpectateStreamHandler.java` is the spectate handler of `Beacon`, and also matches the three
+wider rows: the stream handler of an entity `BeaconSpectate`, the per-action stream handler of
+`Beacon`'s action `spectate`, or the handler of an entity `BeaconSpectateStream`. The narrowest row
+comes first, then the two stream rows, then `handler`, so the first match of a spectate handler is
+`spectate-stream-handler`, that of any other stream handler is `stream-handler`, and a tool that
+holds the entity and action names tells them apart.
 
 | Row | Ambiguous with |
 |---|---|
-| `stream-handler` | `action-stream-handler`, `handler` |
-| `action-stream-handler` | `stream-handler`, `handler` |
-| `handler` | `stream-handler`, `action-stream-handler` |
+| `spectate-stream-handler` | `stream-handler`, `action-stream-handler`, `handler` |
+| `stream-handler` | `spectate-stream-handler`, `action-stream-handler`, `handler` |
+| `action-stream-handler` | `spectate-stream-handler`, `stream-handler`, `handler` |
+| `handler` | `spectate-stream-handler`, `stream-handler`, `action-stream-handler` |
 
 ## Retired rows
 
