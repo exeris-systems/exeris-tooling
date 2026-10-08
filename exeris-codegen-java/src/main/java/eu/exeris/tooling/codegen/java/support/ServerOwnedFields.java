@@ -105,11 +105,11 @@ public final class ServerOwnedFields {
 
     /**
      * The properties the create handler resets on the decoded entity, before the service sees it:
-     * the audit times and actors, the version and the soft-delete flag, time and actor. A value a
-     * service sets afterwards is kept: the repository writes the audit times, version and flag it
-     * is handed, and the actors and the deletion time and actor are no column of the insert. The
-     * actors and the deletion time and actor are reset only when the entity declares them as
-     * fields.
+     * the audit times and actors, the version and the soft-delete flag, time and actor. The
+     * repository's {@code save} stamps the audit times with the current instant whatever the
+     * service sets; a version, a soft-delete flag or an actor the service sets afterwards is kept,
+     * and the actors and the deletion time and actor are no column of the insert. The actors and
+     * the deletion time and actor are reset only when the entity declares them as fields.
      *
      * @param metadata the entity
      * @return the resets, in a fixed order

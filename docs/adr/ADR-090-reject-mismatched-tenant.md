@@ -14,7 +14,8 @@ slug: adr/ADR-090
   an update keeps every server-owned column, not only the owner) · amended 2026-10-08 (Amendment 2 —
   a request body does not write read-only fields, and the update schema is the body the update
   writes from) · amended 2026-10-08 (Amendment 3 — the create validates the body it carries, and
-  `inCreate` / `inUpdate` shape the bodies like `readOnly`)
+  `inCreate` / `inUpdate` shape the bodies like `readOnly`) · amended 2026-10-08 (Amendment 4 — the
+  create body leaves out every server-owned field)
 - **Deciders:** the founder (finding **T36**)
 - **Repo:** `exeris-tooling`
 - **Scope:** tooling / codegen pipeline — emitted repository, handler, error types, OpenAPI, TypeScript
