@@ -3849,7 +3849,7 @@ enters only if its upstream half is final first.
       `exeris-diagnostics`, `exeris-codegen-core` and `exeris-codegen-maven-plugin` (#327).
       *Open:* enforcement in `exeris-codegen-java` and `exeris-processor`, lint of emitted Java, and
       SonarCloud analysis from CI with coverage in place of automatic analysis.
-- [ ] **T53 in full** (RFC, then ADR): `@RouteAccess` + `permissions` compiled into `RouteRequirement`. D10 resolves
+- [ ] **T53 in full** (RFC accepted as ADR-105; gate: ADR-105): `@RouteAccess` + `permissions` compiled into `RouteRequirement`. D10 resolves
       with it.
 - [ ] **TS wave S6 — `@View` pages for exeris-web:** CUSTOM blocks compile with their props, LIST
       items are `<li>`, the generated `<h1>` can be omitted, pages-only output into an existing app with
