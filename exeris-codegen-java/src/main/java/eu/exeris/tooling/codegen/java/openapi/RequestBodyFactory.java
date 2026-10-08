@@ -85,7 +85,9 @@ public final class RequestBodyFactory {
     }
 
     private static String capitalize(String str) {
-        if (str == null || str.isEmpty()) return str;
+        if (str == null || str.isEmpty()) {
+            return str;
+        }
         return Character.toUpperCase(str.charAt(0)) + str.substring(1);
     }
 }

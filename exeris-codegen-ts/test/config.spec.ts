@@ -32,6 +32,7 @@ import {
   loadConfigFile,
   loadConfig,
   cliOverrides,
+  initConfig,
   resolveInputPath,
   resolveOutputPath,
   type GeneratorConfig,
@@ -84,6 +85,29 @@ describe('GeneratorConfigSchema', () => {
     });
     expect(parsed.backend).toBe('KERNEL');
     expect(parsed.apiBasePath).toBe('/v2/api');
+  });
+
+  it('customBlocks defaults to no entry and keeps a valid one', () => {
+    expect(GeneratorConfigSchema.parse({}).customBlocks).toEqual({});
+    const entry = { import: '../blocks/star-rating.component', symbol: 'StarRatingComponent' };
+    expect(GeneratorConfigSchema.parse({ customBlocks: { StarRating: entry } }).customBlocks).toEqual({ StarRating: entry });
+  });
+
+  it('customBlocks rejects a symbol that is no identifier and an empty module specifier', () => {
+    expect(() => GeneratorConfigSchema.parse({ customBlocks: { A: { import: './a', symbol: 'star-rating' } } })).toThrow();
+    expect(() => GeneratorConfigSchema.parse({ customBlocks: { A: { import: '', symbol: 'A' } } })).toThrow();
+  });
+
+  it("viewHeading defaults to 'title' and accepts 'title' and 'none'", () => {
+    expect(GeneratorConfigSchema.parse({}).viewHeading).toBe('title');
+    expect(DEFAULT_CONFIG.viewHeading).toBe('title');
+    expect(GeneratorConfigSchema.parse({ viewHeading: 'title' }).viewHeading).toBe('title');
+    expect(GeneratorConfigSchema.parse({ viewHeading: 'none' }).viewHeading).toBe('none');
+  });
+
+  it('viewHeading rejects any other value', () => {
+    expect(() => GeneratorConfigSchema.parse({ viewHeading: 'hidden' })).toThrow();
+    expect(() => GeneratorConfigSchema.parse({ viewHeading: false })).toThrow();
   });
 });
 
@@ -260,14 +284,14 @@ describe('cliOverrides', () => {
     const all = {
       input: 'i', output: 'o', apiBase: '/a', appName: 'n', framework: 'angular', styling: 'none',
       backend: 'KERNEL', zod: false, services: false, forms: false, lists: false, details: false,
-      stores: false, sagas: false, events: false, tests: true, overwrite: true, dryRun: true,
+      stores: false, sagas: false, events: false, tests: true, scaffold: false, render: 'ssg', overwrite: true, dryRun: true,
       verbose: true, peer: ['p=./p'],
     };
     expect(cliOverrides(all, () => true)).toEqual({
       inputPath: 'i', outputPath: 'o', apiBasePath: '/a', appName: 'n', framework: 'angular',
       styling: 'none', backend: 'KERNEL', generateZod: false, generateServices: false,
       generateForms: false, generateLists: false, generateDetails: false, generateStores: false,
-      generateSagas: false, generateEvents: false, generateTests: true, overwrite: true,
+      generateSagas: false, generateEvents: false, generateTests: true, scaffold: false, render: 'ssg', overwrite: true,
       dryRun: true, verbose: true,
       peers: [{ name: 'p', path: './p' }],
     });
@@ -327,5 +351,54 @@ describe('loadConfig — a config file survives untyped flags', () => {
   it('falls back to the schema default of an empty apiBasePath, never /api', () => {
     process.chdir(tempRoot);
     expect(loadConfig(cliOverrides({ apiBase: '/api' }, nothingPassed)).apiBasePath).toBe('');
+  });
+});
+
+describe('initConfig (exeris-gen init)', () => {
+  const entityGenerators = [
+    'generateZod', 'generateServices', 'generateForms', 'generateLists', 'generateDetails',
+    'generateStores', 'generateSagas', 'generateEvents', 'generateTests',
+  ] as const;
+
+  it('is DEFAULT_CONFIG with no option', () => {
+    expect(initConfig()).toEqual(DEFAULT_CONFIG);
+  });
+
+  it('turns every entity generator and the scaffold off for --views-only', () => {
+    const config = initConfig({ viewsOnly: true });
+    for (const key of entityGenerators) expect(config[key], key).toBe(false);
+    expect(config.scaffold).toBe(false);
+    expect(config.appName).toBe('Exeris Foundation');
+  });
+
+  it('leaves every other key at its default for --views-only', () => {
+    const { scaffold: _scaffold, ...rest } = initConfig({ viewsOnly: true });
+    const { scaffold: _defaultScaffold, ...defaults } = DEFAULT_CONFIG;
+    for (const key of entityGenerators) {
+      delete (rest as Partial<GeneratorConfig>)[key];
+      delete (defaults as Partial<GeneratorConfig>)[key];
+    }
+    expect(rest).toEqual(defaults);
+  });
+
+  it('writes --app-name in either preset', () => {
+    expect(initConfig({ appName: 'Exeris Web' }).appName).toBe('Exeris Web');
+    expect(initConfig({ viewsOnly: true, appName: 'Exeris Web' }).appName).toBe('Exeris Web');
+  });
+
+  it('keeps the key order of DEFAULT_CONFIG, so the written file depends on the options only', () => {
+    expect(Object.keys(initConfig({ viewsOnly: true, appName: 'x' }))).toEqual(Object.keys(DEFAULT_CONFIG));
+  });
+
+  it('writes a file the schema reads back unchanged', () => {
+    const config = initConfig({ viewsOnly: true, appName: 'Exeris Web' });
+    expect(GeneratorConfigSchema.parse(JSON.parse(JSON.stringify(config)))).toEqual(config);
+  });
+
+  it('does not mutate DEFAULT_CONFIG', () => {
+    initConfig({ viewsOnly: true, appName: 'x' });
+    expect(DEFAULT_CONFIG.scaffold).toBe(true);
+    expect(DEFAULT_CONFIG.generateServices).toBe(true);
+    expect(DEFAULT_CONFIG.appName).toBe('Exeris Foundation');
   });
 });

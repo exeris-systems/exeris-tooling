@@ -5,11 +5,16 @@
  * `npm install` + `ng build` it — catching component/service/template breakage
  * (the layer that needs `@angular/*`).
  *
- * Usage: node scripts/gen-sample-app.mjs <output-dir> [--view-only]
+ * Usage: node scripts/gen-sample-app.mjs <output-dir> [--view-only] [--ssg]
  *
  * `--view-only` generates the backend-less shape instead: no entity, only `@View` pages with
  * authored (STATIC / NONE) content, which is the scaffold without HTTP wiring. It is built
  * separately because nothing in the full sample can show that the scaffold compiles without it.
+ * It also carries a CUSTOM block mapped through `customBlocks` to a hand-written component the
+ * sample writes beside the generated files.
+ *
+ * `--ssg` generates the view-only shape with `render: 'ssg'`, plus a parameterised page, so the
+ * build prerenders the param-less pages to HTML and leaves the parameterised one to the browser.
  *
  * Preserves an existing node_modules (only rewrites src/ + config files) so local
  * re-runs don't force a reinstall.
@@ -23,7 +28,8 @@ const here = dirname(fileURLToPath(import.meta.url));
 const dist = join(here, '..', 'dist');
 
 const args = process.argv.slice(2);
-const viewOnly = args.includes('--view-only');
+const ssg = args.includes('--ssg');
+const viewOnly = ssg || args.includes('--view-only');
 const out = resolve(args.find((a) => !a.startsWith('--')) ?? '.fe-sample');
 
 // pathToFileURL: a bare Windows path (D:\…) is an unsupported ESM import scheme.
@@ -342,6 +348,19 @@ const views = [
               { type: 'CARD', props: 'Rendered at build time' },
             ],
           },
+          // A CUSTOM block the generator cannot render itself: the page imports StatTileComponent
+          // through customBlocks and binds the props JSON as its `props` input. One with props
+          // and one without, so both the bound and the unbound element compile.
+          { type: 'CUSTOM', customType: 'StatTile', props: '{"label":"Pages","value":3,"tags":["static"]}' },
+          { type: 'CUSTOM', customType: 'StatTile' },
+          // A LIST whose items are <li>.
+          {
+            type: 'LIST',
+            children: [
+              { type: 'CARD', props: 'First item' },
+              { type: 'CARD', props: 'Second item' },
+            ],
+          },
         ],
       },
     ],
@@ -358,9 +377,46 @@ const views = [
   }),
 ];
 
+// The hand-written component behind the StatTile CUSTOM block, which the consumer owns. The
+// specifier is relative to the emitted page, src/app/pages/.
+const statTile = {
+  path: 'src/app/blocks/stat-tile.component.ts',
+  content: `import { ChangeDetectionStrategy, Component, input } from '@angular/core';
+
+export interface StatTileProps {
+  label?: string;
+  value?: number;
+  tags?: string[];
+}
+
+@Component({
+  selector: 'stat-tile',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: \`<p class="exeris-stat-tile">{{ props().label }}: {{ props().value }}</p>\`,
+})
+export class StatTileComponent {
+  readonly props = input<StatTileProps>({});
+}
+`,
+};
+const viewOnlyConfig = {
+  ...DEFAULT_CONFIG,
+  customBlocks: { StatTile: { import: '../blocks/stat-tile.component', symbol: 'StatTileComponent' } },
+};
+
+// A page per post: its path has a parameter, so the static build has no value to render it with
+// and the server routes leave it to the browser.
+if (ssg) {
+  views.push(ViewMetadataSchema.parse({
+    name: 'Post',
+    route: 'posts/:slug',
+    regions: [{ components: [{ type: 'RICH_TEXT', binding: { source: 'STATIC' }, props: 'A post' }] }],
+  }));
+}
+
 // It has no entity, so no spec to run: generated with the default (tests off) shape.
 const files = viewOnly
-  ? buildGeneratedFiles([], [], DEFAULT_CONFIG, views, [])
+  ? [...buildGeneratedFiles([], [], ssg ? { ...viewOnlyConfig, render: 'ssg' } : viewOnlyConfig, views, []), statTile]
   : buildGeneratedFiles(domains, enums, config, [], peers);
 
 // Rewrite src/ (preserve node_modules); overwrite root config files in place.

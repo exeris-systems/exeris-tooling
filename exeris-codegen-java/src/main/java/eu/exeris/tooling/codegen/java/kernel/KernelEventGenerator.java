@@ -468,11 +468,14 @@ public class KernelEventGenerator implements KernelArtifactGenerator {
                 .addAnnotation(AnnotationSpec.builder(ClassName.get("jdk.jfr", "StackTrace"))
                         .addMember("value", "$L", false).build())
                 .addField(FieldSpec.builder(String.class, "payloadType")
-                        .addAnnotation(AnnotationSpec.builder(label).addMember("value", "$S", "Payload Type").build()).build())
+                        .addAnnotation(AnnotationSpec.builder(label)
+                                .addMember("value", "$S", "Payload Type").build()).build())
                 .addField(FieldSpec.builder(String.class, "contentType")
-                        .addAnnotation(AnnotationSpec.builder(label).addMember("value", "$S", "Content Type").build()).build())
+                        .addAnnotation(AnnotationSpec.builder(label)
+                                .addMember("value", "$S", "Content Type").build()).build())
                 .addField(FieldSpec.builder(String.class, "eventType")
-                        .addAnnotation(AnnotationSpec.builder(label).addMember("value", "$S", "Event Type").build()).build())
+                        .addAnnotation(AnnotationSpec.builder(label)
+                                .addMember("value", "$S", "Event Type").build()).build())
                 .build();
     }
 
