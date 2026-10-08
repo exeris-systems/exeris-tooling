@@ -483,3 +483,70 @@ describe('a write that fails', () => {
     expect(read(MANIFEST_NAME)).toBe(before);
   });
 });
+
+describe('line endings', () => {
+  const lf = 'line one\nline two\n';
+  const crlf = 'line one\r\nline two\r\n';
+  const file = (content: string): FileToWrite => ({ path: 'a.ts', content });
+  const generate = (content: string, options = keep): ReturnType<typeof writeGeneratedFiles> =>
+    writeGeneratedFiles(out, [file(content)], options);
+
+  it('keeps an unchanged CRLF file unchanged and leaves its bytes alone', () => {
+    generate(lf);
+    onDisk('a.ts', crlf);
+    expect(planWrites(out, [file(lf)], keep)[0].action).toBe('unchanged');
+    generate(lf);
+    expect(read('a.ts')).toBe(crlf);
+  });
+
+  it('writes a changed CRLF file as CRLF', () => {
+    generate(lf);
+    onDisk('a.ts', crlf);
+    const next = 'line one\nline three\n';
+    expect(planWrites(out, [file(next)], keep)[0].action).toBe('rewrite');
+    generate(next);
+    expect(read('a.ts')).toBe('line one\r\nline three\r\n');
+  });
+
+  it('writes a changed LF file as LF and a new file as LF', () => {
+    generate(lf);
+    generate('line one\nline three\n');
+    expect(read('a.ts')).toBe('line one\nline three\n');
+  });
+
+  it('treats a file with any bare LF as LF: endings-only differences are unchanged, a change is written as LF', () => {
+    generate(lf);
+    onDisk('a.ts', 'line one\r\nline two\n');
+    expect(planWrites(out, [file(lf)], keep)[0].action).toBe('unchanged');
+    generate('line one\nline three\n');
+    expect(read('a.ts')).toBe('line one\nline three\n');
+  });
+
+  it('does not treat a lone CR as a line ending', () => {
+    generate(lf);
+    onDisk('a.ts', 'line one\rline two\r');
+    expect(planWrites(out, [file(lf)], keep)[0].action).toBe('rewrite');
+    generate(lf);
+    expect(read('a.ts')).toBe(lf);
+  });
+
+  it('writes CRLF over a CRLF file under --overwrite', () => {
+    onDisk('a.ts', crlf);
+    generate('other\n', { overwrite: true });
+    expect(read('a.ts')).toBe('other\r\n');
+  });
+
+  it('keeps an owned seed whose only difference is its endings', () => {
+    const seed: FileToWrite = { path: 'seed.json', content: '{\n}\n', overwritable: false };
+    writeGeneratedFiles(out, [seed], { overwrite: false });
+    onDisk('seed.json', '{\r\n}\r\n');
+    expect(planWrites(out, [seed], keep)[0].action).toBe('unchanged');
+  });
+
+  it('keeps the plan of a dry run equal to the plan of the run', () => {
+    generate(lf);
+    onDisk('a.ts', crlf);
+    const planned = planWrites(out, [file('x\n')], keep);
+    expect(generate('x\n').plan).toEqual(planned);
+  });
+});
