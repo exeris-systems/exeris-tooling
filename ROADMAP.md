@@ -1731,7 +1731,7 @@ never-invoked emitter start emitting, and its output did not build.
       **Decided 2026-10-08 (ADR-044 Amendment 2):** per-action and spectate streams carry the
       guard, load the row under RLS and forward only events whose stream id is the row's id, with
       no kernel key. The entity-level refusal (`EXT-PROC-1014`) stays until exeris-kernel#600 gives
-      events an isolation key.
+      events an isolation key. The per-action half is implemented (J4-1).
 - [x] **T42 — the mesh has no generated frontend contract.** Types slice shipped 0.8.0 (ADR-048).
       `codegen-ts` was single-service by construction: one metadata directory in, one app out. A mesh
       consumer retyped the other service's vocabulary by hand across a language boundary with no
@@ -3004,6 +3004,11 @@ Proposals, highest return-on-effort first:
       `docs/0.10.0-release-plan.md`, with four items left open for the implementation PRs.
       Implementation order: J4-1 (driver, guard, RLS load, stream-id filter), J4-2 (the
       `GET {base}/{id}/stream` route), S4 (TS clients).
+      **J4-1 implemented:** `KernelActionStreamHandlerGenerator` runs the action and streams its
+      `ACTION`-triggered events, filtered on the row id, closing on completion or at
+      `STREAM_DEADLINE_MILLIS`; refusals are `stream-error` frames; `EXT-PROC-1107` is retired and
+      reserved frame names are refused (`EXT-PROC-1016`, `EXT-PROC-1017`). No result frame until
+      exeris-sdk#191 fills `ActionMetadata.resultType`. Open: J4-2, S4.
 
 - [ ] **EV2 — `@EventSourced` aggregate generator — log substrate delivered (kernel 0.10, ADR-049);
       aggregate surface still missing.** No generator emits event-sourced aggregates today; **T11 strict
@@ -3944,8 +3949,9 @@ enters only if its upstream half is final first.
       git or the editor what the tree's line endings are. The fix is small and local: compare with
       CRLF folded to LF, so an unchanged file stays `unchanged`, and when a differing file on disk
       is CRLF write the content as CRLF, keeping the consumer's convention. Row "Line endings" in
-      [`docs/0.10.0-release-plan.md`](docs/0.10.0-release-plan.md), wave S2. Not implemented by this
-      entry.
+      [`docs/0.10.0-release-plan.md`](docs/0.10.0-release-plan.md), wave S2. Landed in #361: a file is
+      compared with CRLF folded to LF, and a replaced file that is CRLF on disk (a line ending, every LF
+      preceded by CR) is written as CRLF; a mixed file is written as LF.
 - [x] The removals below.
 
 **Not placed in a milestone**, because the next step belongs to another repository: C2

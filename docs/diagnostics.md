@@ -66,6 +66,8 @@ Printed by `javac` while it compiles your sources. `-Aexeris.strict=true` enable
 | `EXT-PROC-1013` | `@GraphEdge` is declared more than once on one field. | Declare each edge on its own field. |
 | `EXT-PROC-1014` | `@ExerisDomain(realTimeApi = true)` is on a `TENANT` or `UNIVERSE` entity. Kernel events carry no tenant, so the generated live view would send every tenant's events to every subscriber. | Declare `dataScope = DataScope.GLOBAL` if the rows are not tenant-owned; otherwise drop `realTimeApi` until stream events carry an isolation key. |
 | `EXT-PROC-1015` | An `@ExerisDomain` type declares no field named by its primary key, inherited or its own. The key is the field `primaryKeyField` names, else `id`, and the generated schema, repository and Angular model identify a row by it. | Declare the key, `private UUID id;` or the field `primaryKeyField` names, with its getter and setter. |
+| `EXT-PROC-1016` | A `@DomainEvent`'s name is a frame name the generated streams reserve: `stream-error` (a failure after the response head) or `keep-alive` (the heartbeat). A stream frame carrying the event would be read as the reserved one. | Rename the event. |
+| `EXT-PROC-1017` | A streaming action's result-frame name — `@Action.streamEventType`, or the action name when it is blank — is a reserved frame name (`stream-error`, `keep-alive`) or the name of a `@DomainEvent` the action triggers, so the client could not tell the result frame from the other. | Set `streamEventType` to a name no reserved frame and no event of the action uses. |
 | `EXT-PROC-1018` | The primary key field of an `@ExerisDomain` type is not a `java.util.UUID`. The kernel identifies an entity's event stream and graph node by a UUID, and the generated repository fills a new row's key with `UUID.randomUUID()` ([ADR-104](adr/ADR-104-declared-primary-key-uuid-only.md)). | Declare the key as `UUID`; keep any other identifier, such as an order number, as an ordinary unique field. |
 | `EXT-PROC-1019` | An `@ExerisDomain` type names its primary key with `primaryKeyField` and also declares a field `id`, inherited or its own. The rename would move the key off the `id` column and change the entity's `CREATE TABLE` migration, which fails Flyway's checksum on every database that applied it. | Drop `primaryKeyField` to keep `id` as the key. If no database has applied the entity's migration, rename or remove the field `id` instead. |
 
@@ -78,7 +80,6 @@ Printed by `javac` while it compiles your sources. `-Aexeris.strict=true` enable
 | `EXT-PROC-1103` | `@Validation.validateOn` holds a value other than `CREATE` or `UPDATE`, which is dropped. | Use `@Field.inCreate` / `@Field.inUpdate` instead. |
 | `EXT-PROC-1105` | `@SharedScope` is on an entity that is not `DataScope.UNIVERSE`, so it has no effect. | Declare `dataScope = DataScope.UNIVERSE`, or remove the marker. |
 | `EXT-PROC-1106` | `@Bind` with `source = STATIC` or `NONE` carries attributes that are ignored. | Put authored content in `@Block(props)`, or bind with `source = ENTITY`, `PROJECTION` or `ACTION`. |
-| `EXT-PROC-1107` | `@Action(streaming = true)`: the generated stream route does not run the action. | Expect keep-alives only on that route; the per-action stream driver is tracked in the ROADMAP (EV1-stream). |
 
 ### 12xx — the `-Aexeris.strict` audit (warning)
 
@@ -179,3 +180,4 @@ moves its row here; `DiagnosticIdTest` fails if a registered identifier is liste
 | ID | Meaning | Retired in |
 |---|---|---|
 | `EXT-PROC-1104` | An entity's derived default table name differs from the plain plural of its class name. | 0.10.0. The default table has followed the SDK plural since 0.9.0; set `tableName` to name any other table. |
+| `EXT-PROC-1107` | `@Action(streaming = true)`: the generated stream route does not run the action. | 0.10.0. The per-action stream handler runs the action and streams the events it triggers (ADR-044 Amendment 2). |

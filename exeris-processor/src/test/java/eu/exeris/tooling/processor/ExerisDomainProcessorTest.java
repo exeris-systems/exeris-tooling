@@ -1875,7 +1875,8 @@ class ExerisDomainProcessorTest {
         }
 
         @Test
-        @DisplayName("a streaming action on a TENANT entity is not refused: its stream carries keep-alives only")
+        @DisplayName("a streaming action on a TENANT entity is not refused: its stream loads the row under "
+                + "row-level security and forwards only that row's events")
         void streamingActionOnTenantEntityIsNotRefused() {
             Compilation compilation = compileWithProcessor(item(
                     "dataScope = ExerisDomain.DataScope.TENANT",
@@ -1887,9 +1888,8 @@ class ExerisDomainProcessorTest {
                         }
                     """));
 
-            assertThat(compilation).succeeded();
+            assertThat(compilation).succeededWithoutWarnings();
             assertThat(refusals(compilation)).isZero();
-            assertThat(compilation).hadWarningContaining("[Exeris] EXT-PROC-1107: ");
         }
     }
 
@@ -3004,43 +3004,38 @@ class ExerisDomainProcessorTest {
     }
 
     @Nested
-    @DisplayName("@Action(streaming = true) — always warns that the stream route does not run the action")
-    class StreamingActionWarningTests {
+    @DisplayName("Stream frame names — reserved names and the result frame (EXT-PROC-1016, EXT-PROC-1017)")
+    class StreamFrameNameTests {
 
-        private static final String NOT_RUN = "keeps the connection open with keep-alives but does not "
-                + "run the action, so calling it changes nothing";
+        private static final String RESERVED_EVENT = "[Exeris] EXT-PROC-1016: ";
+        private static final String RESULT_FRAME = "[Exeris] EXT-PROC-1017: ";
 
-        private JavaFileObject order(String methods) {
+        private JavaFileObject order(String typeAnnotations, String methods) {
             return JavaFileObjects.forSourceString(
                     "com.example.Order",
                     """
                     package com.example;
 
                     import eu.exeris.sdk.annotation.Action;
+                    import eu.exeris.sdk.annotation.DomainEvent;
+                    import eu.exeris.sdk.annotation.DomainEvent.Trigger;
                     import eu.exeris.sdk.annotation.ExerisDomain;
 
                     @ExerisDomain(module = "sales", path = "/orders")
+                    %s
                     public class Order { private java.util.UUID id;
                     %s
                     }
-                    """.formatted(methods));
-        }
-
-        private List<javax.tools.Diagnostic<? extends JavaFileObject>> streamingWarnings(
-                Compilation compilation) {
-            return compilation.warnings().stream()
-                    .filter(d -> d.getMessage(null).contains(NOT_RUN))
-                    .collect(java.util.stream.Collectors.toList());
+                    """.formatted(typeAnnotations, methods));
         }
 
         @Test
-        @DisplayName("one warning per streaming action, anchored on its @Action, none for a respond-once action")
-        void warnsOncePerStreamingAction() throws IOException {
-            Compilation compilation = compileWithProcessor(order("""
-                        @Action(name = "cancel", label = "Cancel")
-                        public void cancel() {
-                        }
-
+        @DisplayName("a streaming action compiles without a warning, and is extracted as streaming")
+        void streamingActionRaisesNoWarning() throws IOException {
+            Compilation compilation = compileWithProcessor(order(
+                    "@DomainEvent(name = \"OrderTracked\", trigger = Trigger.ACTION, action = \"trackShipment\", "
+                            + "topic = \"orders.x\")",
+                    """
                         @Action(name = "trackShipment", label = "Track", streaming = true)
                         public void trackShipment() {
                         }
@@ -3051,46 +3046,118 @@ class ExerisDomainProcessorTest {
                         }
                     """));
 
-            assertThat(compilation).succeeded();
-            var warnings = streamingWarnings(compilation);
-            assertThat(warnings).hasSize(2);
-            assertThat(warnings).extracting(d -> d.getMessage(null)).containsExactly(
-                    "[Exeris] EXT-PROC-1107: @Action(streaming = true) on \"trackShipment\": the generated stream "
-                            + "route keeps the connection open with keep-alives but does not run the "
-                            + "action, so calling it changes nothing. The per-action stream driver is "
-                            + "tracked in ROADMAP.md (EV1-stream).",
-                    "[Exeris] EXT-PROC-1107: @Action(streaming = true) on \"watchPrice\": the generated stream "
-                            + "route keeps the connection open with keep-alives but does not run the "
-                            + "action, so calling it changes nothing. The per-action stream driver is "
-                            + "tracked in ROADMAP.md (EV1-stream).");
-            // Anchored on the annotation: the reported line is the @Action line, not the method's.
-            assertThat(warnings).extracting(javax.tools.Diagnostic::getLineNumber)
-                    .containsExactly(12L, 16L);
-            assertThat(compilation.warnings().stream()
-                    .map(d -> d.getMessage(null))
-                    .noneMatch(m -> m.contains("\"cancel\"")))
-                    .isTrue();
-
-            // The warning reports; it does not change extraction.
+            assertThat(compilation).succeededWithoutWarnings();
             String json = readContent(compilation.generatedFile(
                     StandardLocation.CLASS_OUTPUT, "exeris-metadata/Order.json").orElseThrow());
             assertThat(json).contains("\"streaming\" : true");
         }
 
+        @ParameterizedTest(name = "{0}")
+        @ValueSource(strings = {"stream-error", "keep-alive"})
+        @DisplayName("a @DomainEvent named like a reserved frame is refused at the annotation")
+        void reservedEventNameIsRefused(String reserved) {
+            Compilation compilation = compileWithProcessor(order(
+                    "@DomainEvent(name = \"" + reserved + "\", trigger = Trigger.UPDATE, topic = \"orders.x\")", ""));
+
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorCount(1);
+            assertThat(compilation).hadErrorContaining(RESERVED_EVENT + "@DomainEvent \"" + reserved
+                    + "\": the name is a frame name the generated streams reserve [stream-error, keep-alive]");
+        }
+
+        @ParameterizedTest(name = "{0}")
+        @ValueSource(strings = {"stream-error", "keep-alive"})
+        @DisplayName("a streamEventType equal to a reserved frame name is refused at the @Action")
+        void reservedStreamEventTypeIsRefused(String reserved) {
+            Compilation compilation = compileWithProcessor(order("", """
+                        @Action(name = "trackShipment", label = "Track", streaming = true,
+                                streamEventType = "%s")
+                        public void trackShipment() {
+                        }
+                    """.formatted(reserved)));
+
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorCount(1);
+            assertThat(compilation).hadErrorContaining(RESULT_FRAME + "Streaming action \"trackShipment\": "
+                    + "its result frame is named by @Action(streamEventType = \"" + reserved + "\"), which "
+                    + "is a frame name the generated streams reserve");
+            assertThat(compilation.errors().get(0).getLineNumber()).isEqualTo(11L);
+        }
+
         @Test
-        @DisplayName("streaming = false and an unset attribute raise no warning")
-        void noWarningWhenNotStreaming() {
-            Compilation compilation = compileWithProcessor(order("""
-                        @Action(name = "cancel", label = "Cancel", streaming = false)
-                        public void cancel() {
+        @DisplayName("a streamEventType equal to an event the action triggers is refused")
+        void streamEventTypeNamingATriggeredEventIsRefused() {
+            Compilation compilation = compileWithProcessor(order(
+                    "@DomainEvent(name = \"ShipmentMoved\", trigger = Trigger.ACTION, action = \"trackShipment\", "
+                            + "topic = \"orders.x\")",
+                    """
+                        @Action(name = "trackShipment", label = "Track", streaming = true,
+                                streamEventType = "ShipmentMoved")
+                        public void trackShipment() {
+                        }
+                    """));
+
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorCount(1);
+            assertThat(compilation).hadErrorContaining(RESULT_FRAME + "Streaming action \"trackShipment\": "
+                    + "its result frame is named by @Action(streamEventType = \"ShipmentMoved\"), which is "
+                    + "also the name of the @DomainEvent the action triggers");
+        }
+
+        @Test
+        @DisplayName("with streamEventType blank, an action named like an event it triggers is refused")
+        void actionNameNamingATriggeredEventIsRefused() {
+            Compilation compilation = compileWithProcessor(order(
+                    "@DomainEvent(name = \"track\", trigger = Trigger.ACTION, action = \"track\", topic = \"orders.x\")",
+                    """
+                        @Action(name = "track", label = "Track", streaming = true)
+                        public void track() {
+                        }
+                    """));
+
+            assertThat(compilation).failed();
+            assertThat(compilation).hadErrorContaining(RESULT_FRAME + "Streaming action \"track\": its "
+                    + "result frame is named by the action name \"track\" (streamEventType is blank)");
+        }
+
+        @Test
+        @DisplayName("no refusal for an event of another action, or for a respond-once action")
+        void unrelatedNamesAreNotRefused() {
+            Compilation compilation = compileWithProcessor(order(
+                    """
+                    @DomainEvent(name = "ShipmentMoved", trigger = Trigger.ACTION, action = "cancel", topic = "orders.x")
+                    @DomainEvent(name = "Cancelled", trigger = Trigger.ACTION, action = "cancel", topic = "orders.x")""",
+                    """
+                        @Action(name = "trackShipment", label = "Track", streaming = true,
+                                streamEventType = "ShipmentMoved")
+                        public void trackShipment() {
                         }
 
-                        @Action(name = "ship", label = "Ship")
-                        public void ship() {
+                        @Action(name = "cancel", label = "Cancel", streamEventType = "Cancelled")
+                        public void cancel() {
                         }
                     """));
 
             assertThat(compilation).succeededWithoutWarnings();
+        }
+
+        @Test
+        @DisplayName("-Aexeris.strict does not report streamEventType: the TypeScript client reads it")
+        void strictDoesNotReportStreamEventType() {
+            Compilation compilation = javac()
+                    .withProcessors(new ExerisDomainProcessor())
+                    .withOptions("-Aexeris.strict=true")
+                    .compile(order("", """
+                        @Action(name = "trackShipment", label = "Track", streaming = true,
+                                streamEventType = "ShipmentMoved")
+                        public void trackShipment() {
+                        }
+                    """));
+
+            assertThat(compilation).succeeded();
+            assertThat(compilation.warnings().stream()
+                    .map(d -> d.getMessage(java.util.Locale.ROOT))
+                    .noneMatch(m -> m.contains("streamEventType"))).isTrue();
         }
     }
 

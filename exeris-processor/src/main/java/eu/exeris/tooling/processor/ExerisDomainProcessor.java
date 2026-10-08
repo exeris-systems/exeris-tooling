@@ -130,6 +130,13 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     private static final String VERSION_ATTRIBUTE = "version";
     /** The simple name of the SDK annotation that declares a domain event. */
     private static final String DOMAIN_EVENT = "DomainEvent";
+
+    /**
+     * The frame names the generated SSE streams reserve: {@code stream-error} for a failure after
+     * the response head, {@code keep-alive} for the heartbeat (ADR-044 obligation 2, Amendment 2
+     * decision 2). An event or a result frame of one of these names is refused.
+     */
+    private static final List<String> RESERVED_FRAME_NAMES = List.of("stream-error", "keep-alive");
     /** The {@code @DomainEvent} attribute naming the field a {@code FIELD_CHANGED} event watches. */
     private static final String EVENT_FIELD_ATTRIBUTE = "field";
 
@@ -203,6 +210,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      * @param note       why it is inert today — surfaced verbatim in the warning
      */
     private record InertAttribute(String annotation, String attribute, String note) {}
+
+    /** One {@code @Action} method, with the metadata extracted from it, for a check that needs the events too. */
+    private record ActionSite(ActionMetadata action, ExecutableElement method, AnnotationMirror annotation) {}
 
     /**
      * An SDK annotation that <em>no</em> generator consumes — so applying it has no
@@ -1877,12 +1887,14 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         builder.fields(fields);
 
         // Extract actions with @Action annotations
-        List<ActionMetadata> actions = extractActionsMetadata(element);
+        List<ActionSite> actionSites = new ArrayList<>();
+        List<ActionMetadata> actions = extractActionsMetadata(element, actionSites);
         builder.actions(actions);
 
         // Extract events with @DomainEvent annotations
         List<DomainEventMetadata> events = extractEventsMetadata(element);
         builder.events(events);
+        refuseCollidingResultFrames(actionSites, events);
 
         // Extract relationships with @Relationship annotations
         List<RelationshipMetadata> relationships = extractRelationshipsMetadata(element);
@@ -2632,7 +2644,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                 field);
     }
 
-    private List<ActionMetadata> extractActionsMetadata(TypeElement element) {
+    private List<ActionMetadata> extractActionsMetadata(TypeElement element, List<ActionSite> sites) {
         List<ActionMetadata> actions = new ArrayList<>();
 
         for (Element enclosed : element.getEnclosedElements()) {
@@ -2650,7 +2662,9 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             AnnotationMirror actionAnnotation = findAnnotation(method, "eu.exeris.sdk.annotation.Action");
 
             if (actionAnnotation != null) {
-                actions.add(extractActionMetadata(method, actionAnnotation));
+                ActionMetadata action = extractActionMetadata(method, actionAnnotation);
+                actions.add(action);
+                sites.add(new ActionSite(action, method, actionAnnotation));
             }
         }
 
@@ -2706,9 +2720,6 @@ public class ExerisDomainProcessor extends AbstractProcessor {
         if (values.containsKey("streamEventType")) {
             builder.streamEventType((String) values.get("streamEventType"));
         }
-        if (Boolean.TRUE.equals(values.get("streaming"))) {
-            warnStreamingActionNotInvoked(name, method, annotation);
-        }
         // NOTE: @Action(realTimeUpdates) is deliberately NOT extracted here. It is a
         // separate "subscribe-to-progress" affordance (response shape vs. progress
         // channel) with no generator consumer. Extracting it would only create an inert
@@ -2733,19 +2744,64 @@ public class ExerisDomainProcessor extends AbstractProcessor {
     }
 
     /**
-     * Always reported, not gated on {@code -Aexeris.strict}: the action route is served as a
-     * stream only, and the stream handler emits keep-alives and closes without invoking the
-     * entity method, so the declared action is unreachable over HTTP. That is a behavioural
-     * surprise on an ordinary build, not a completeness finding.
+     * Refuses a streaming action whose result-frame name is a reserved frame name, or the name of a
+     * {@code @DomainEvent} the action triggers.
+     *
+     * <p>A per-action stream carries the frames of the events its action triggers, each named by
+     * the event, and names one result frame by {@code @Action.streamEventType} — the action name
+     * when that is blank (ADR-044 Amendment 2, decision 3). A result frame named like one of those
+     * events, or like a reserved frame, could not be told apart from it on the wire. The refusal
+     * holds whether or not the generated handler emits the result frame, so whether a declaration
+     * compiles does not depend on it.
      */
-    private void warnStreamingActionNotInvoked(String actionName, ExecutableElement method,
-                                               AnnotationMirror annotation) {
-        warning(DiagnosticId.STREAMING_ACTION_NOT_INVOKED,
-                "@Action(streaming = true) on \"" + actionName + "\": the generated "
-                        + "stream route keeps the connection open with keep-alives but does not run "
-                        + "the action, so calling it changes nothing. The per-action stream driver "
-                        + "is tracked in ROADMAP.md (EV1-stream).",
-                method, annotation);
+    private void refuseCollidingResultFrames(List<ActionSite> sites, List<DomainEventMetadata> events) {
+        for (ActionSite site : sites) {
+            ActionMetadata action = site.action();
+            if (!action.streaming()) {
+                continue;
+            }
+            boolean declared = action.hasStreamEventType();
+            String frame = declared ? action.streamEventType() : action.name();
+            String source = declared
+                    ? "@Action(streamEventType = \"" + frame + "\")"
+                    : "the action name \"" + frame + "\" (streamEventType is blank)";
+            if (RESERVED_FRAME_NAMES.contains(frame)) {
+                error(DiagnosticId.STREAM_EVENT_TYPE_COLLIDES,
+                        "Streaming action \"" + action.name() + "\": its result frame is named by " + source
+                                + ", which is a frame name the generated streams reserve "
+                                + RESERVED_FRAME_NAMES + ". Set streamEventType to another name.",
+                        site.method(), site.annotation());
+                continue;
+            }
+            for (DomainEventMetadata event : events) {
+                if (event.trigger() == DomainEventMetadata.Trigger.ACTION
+                        && action.name().equals(event.actionName())
+                        && frame.equals(event.name())) {
+                    error(DiagnosticId.STREAM_EVENT_TYPE_COLLIDES,
+                            "Streaming action \"" + action.name() + "\": its result frame is named by "
+                                    + source + ", which is also the name of the @DomainEvent the "
+                                    + "action triggers, so the stream would carry two kinds of frame "
+                                    + "under one name. Set streamEventType to another name.",
+                            site.method(), site.annotation());
+                    break;
+                }
+            }
+        }
+    }
+
+    /**
+     * Refuses a {@code @DomainEvent} whose name is a frame name the generated streams reserve:
+     * every stream forwards an event as a frame named by the event, so the client would read it as
+     * the reserved frame (ADR-044 Amendment 2, decision 2).
+     */
+    private void refuseReservedEventName(String eventName, Element element, AnnotationMirror annotation) {
+        if (RESERVED_FRAME_NAMES.contains(eventName)) {
+            error(DiagnosticId.DOMAIN_EVENT_NAME_RESERVED,
+                    "@DomainEvent \"" + eventName + "\": the name is a frame name the generated streams "
+                            + "reserve " + RESERVED_FRAME_NAMES + ", and a stream frame carrying this event "
+                            + "would be read as the reserved one. Rename the event.",
+                    element, annotation);
+        }
     }
 
     private ActionParamMetadata extractActionParamMetadata(VariableElement param, AnnotationMirror annotation) {
@@ -2808,6 +2864,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                 Map<String, Object> values = extractAnnotationValues(eventAnnotation);
                 warnInertAttributes(DOMAIN_EVENT, values, nestedClass, eventAnnotation);
                 String eventName = nestedClass.getSimpleName().toString();
+                refuseReservedEventName(eventName, nestedClass, eventAnnotation);
                 String topic = values.containsKey("topic") ? (String) values.get("topic") : null;
                 String description = values.containsKey("description") ? (String) values.get("description") : null;
                 // The inner-class event form resolves payload/sensitive fields
@@ -2843,6 +2900,7 @@ public class ExerisDomainProcessor extends AbstractProcessor {
             String trigger = values.containsKey("trigger") ? values.get("trigger").toString() : "CREATE";
             name = element.getSimpleName().toString() + triggerToEventSuffix(trigger);
         }
+        refuseReservedEventName(name, element, eventAnnotation);
 
         String topic = values.containsKey("topic") ? (String) values.get("topic") : null;
         String description = values.containsKey("description") ? (String) values.get("description") : null;

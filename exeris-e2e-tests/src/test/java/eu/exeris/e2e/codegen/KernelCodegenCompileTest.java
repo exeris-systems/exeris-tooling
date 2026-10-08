@@ -181,16 +181,17 @@ class KernelCodegenCompileTest {
                                         ActionParamMetadata.required("reason", "java.lang.String")))
                                 .build(),
                         ActionMetadata.builder("markUrgent").methodName("flagUrgent").build(),
-                        // ADR-044 Slice 2: a @Action(streaming=true, streamEventType=…)
-                        // action drives KernelActionStreamHandlerGenerator
-                        // (OrderTrackShipmentStreamHandler) + the Application
-                        // generator's streamRoute(POST, "/orders/{id}/actions/
-                        // track-shipment", ...) registration, so the gate javac-
-                        // compiles the per-action SSE handler against the real
-                        // kernel 0.10 streaming SPI.
+                        // ADR-044 Amendment 2: a streaming action on a tenant-partitioned
+                        // entity, with a body and an ACTION-triggered event, drives every
+                        // part of the per-action driver javac has to accept against the
+                        // kernel SPI: the tenant guard, parseBody over HttpStreamExchange,
+                        // the stream-id-filtered subscription, the publish calls and the
+                        // RuntimeComponents factory that hands the handler its publisher
+                        // and EventEngine.
                         ActionMetadata.builder("trackShipment").methodName("trackShipment")
                                 .streaming(true)
                                 .streamEventType("ShipmentMoved")
+                                .params(List.of(ActionParamMetadata.required("carrier", "java.lang.String")))
                                 .build()))
                 // T48 (ADR-075): every trigger the handler serves is represented here, because
                 // the emitted publish call and the emitted publish method are produced by two
@@ -212,6 +213,11 @@ class KernelCodegenCompileTest {
                                 .payloadFields(List.of("amount", "orderNumber"))
                                 .build(),
                         DomainEventMetadata.withTopic("OrderShipped", "orders.shipped"),
+                        DomainEventMetadata.builder("OrderTracked")
+                                .trigger(DomainEventMetadata.Trigger.ACTION)
+                                .actionName("trackShipment")
+                                .payloadFields(List.of("orderNumber"))
+                                .build(),
                         // EV1 (ADR-046): an event WITH payloadFields drives the
                         // codec-resolved publish path — the generated publisher emits a
                         // redacted <Event>Payload record (customerName is sensitive →
@@ -304,6 +310,16 @@ class KernelCodegenCompileTest {
                         FieldMetadata.builder("name", "String").required(true).build(),
                         FieldMetadata.builder("organizationId", "java.util.UUID").build(),
                         FieldMetadata.builder("worldId", scopeType).filterable(true).build()))
+                // A streaming action on a versioned UNIVERSE entity: its handler catches the
+                // version conflict (409) and both caller-fault types in one multi-catch (400).
+                .actions(List.of(ActionMetadata.builder("rename").methodName("rename")
+                        .streaming(true)
+                        .params(List.of(ActionParamMetadata.required("name", "java.lang.String")))
+                        .build()))
+                .events(List.of(DomainEventMetadata.builder("SpeciesRenamed")
+                        .trigger(DomainEventMetadata.Trigger.ACTION)
+                        .actionName("rename")
+                        .build()))
                 .build();
 
         List<GeneratedFile> generated = new KernelGeneratorStrategy().generate(metadata);
@@ -326,6 +342,11 @@ class KernelCodegenCompileTest {
         assertThat(generated.stream().filter(f -> f.className().equals("SpeciesHandler"))
                 .findFirst().orElseThrow().content())
                 .as("the multi-catch javac has to accept (disjoint types)")
+                .contains("catch (SpeciesTenantMismatchException | SpeciesSharedScopeMismatchException e)");
+        assertThat(generated.stream().filter(f -> f.className().equals("SpeciesRenameStreamHandler"))
+                .findFirst().orElseThrow().content())
+                .as("the per-action stream handler answers the same caller faults")
+                .contains("catch (SpeciesVersionConflictException e)")
                 .contains("catch (SpeciesTenantMismatchException | SpeciesSharedScopeMismatchException e)");
 
         List<GeneratedFile> applicationFiles = new KernelApplicationGenerator()
@@ -362,6 +383,7 @@ class KernelCodegenCompileTest {
                             public void setUpdatedAt(Instant updatedAt) { this.updatedAt = updatedAt; }
                             public long getVersion() { return version; }
                             public void setVersion(long version) { this.version = version; }
+                            public void rename(String name) { this.name = name; }
                         }
                         """.formatted(UNIVERSE_PACKAGE, javaScopeType, javaScopeType, javaScopeType));
         for (GeneratedFile file : generated) {
@@ -564,8 +586,8 @@ class KernelCodegenCompileTest {
                     public void flagUrgent() { /* @Action(name="markUrgent") */ }
                     // @Action(streaming=true) — served by the per-action stream
                     // handler via streamRoute; the handler generator emits NO
-                    // respond-once handle method for it (ADR-044 Slice 2).
-                    public void trackShipment() { /* ADR-044 Slice 2 streaming action */ }
+                    // respond-once handle method for it (ADR-044).
+                    public void trackShipment(String carrier) { this.status = OrderStatus.SHIPPED; }
                 }
                 """.formatted(DOMAIN_PACKAGE, ENTITY_NAME);
     }

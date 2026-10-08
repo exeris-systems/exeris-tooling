@@ -224,6 +224,12 @@ touched, because it is not in the manifest. To take a generated file over, move 
 directory and stop generating it (remove the view or turn its generator off); a file the generator
 still produces is created again at its old path.
 
+**Line endings** are not a change. A file is compared with CRLF folded to LF, so a tree you keep as
+CRLF (for example under `core.autocrlf=true`) is reported unchanged and left untouched. When a
+differing file is replaced and is CRLF on disk (it holds a line ending and every `\n` is preceded by
+`\r`), the new content is written as CRLF; a file with any bare `\n`, and every new file, is written
+as LF.
+
 **A manifest written by 0.9.x or earlier** carries no `# ownership: written` line. Those releases
 recorded every file they produced, including files they skipped because they already existed, so
 on the first run with such a manifest an entry is owned only when the file already holds what this

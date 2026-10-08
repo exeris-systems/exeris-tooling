@@ -140,6 +140,22 @@ public enum DiagnosticId {
     PRIMARY_KEY_RENAMED_BESIDE_ID("EXT-PROC-1019",
             "An @ExerisDomain type renames its primary key and also declares a field 'id'."),
 
+    /**
+     * A {@code @DomainEvent}'s name is a frame name the generated streams reserve
+     * ({@code stream-error}, {@code keep-alive}): a frame carrying the event would be read as the
+     * reserved one.
+     */
+    DOMAIN_EVENT_NAME_RESERVED("EXT-PROC-1016",
+            "A @DomainEvent's name is a frame name the generated streams reserve."),
+
+    /**
+     * A streaming action's result-frame name — {@code @Action.streamEventType}, or the action name
+     * when it is blank — is a reserved frame name or the name of an event the action triggers, so
+     * the client could not tell the result frame from the other.
+     */
+    STREAM_EVENT_TYPE_COLLIDES("EXT-PROC-1017",
+            "A streaming action's result-frame name is reserved or names an event the action triggers."),
+
     // -----------------------------------------------------------------------
     // EXT-PROC-11xx — warnings on an ordinary build (javac WARNING)
     // -----------------------------------------------------------------------
@@ -166,9 +182,7 @@ public enum DiagnosticId {
     BIND_WITHOUT_SOURCE_IGNORED("EXT-PROC-1106",
             "@Bind with source STATIC or NONE carries attributes that are ignored."),
 
-    /** {@code @Action(streaming = true)}: the generated stream route does not run the action. */
-    STREAMING_ACTION_NOT_INVOKED("EXT-PROC-1107",
-            "@Action(streaming = true): the generated stream route does not run the action."),
+    // EXT-PROC-1107 is retired (docs/diagnostics.md, "Retired identifiers") and is never allocated again.
 
     // -----------------------------------------------------------------------
     // EXT-PROC-12xx — the -Aexeris.strict audit (javac WARNING, opt-in)

@@ -536,7 +536,8 @@ class KernelApplicationGeneratorTest {
                 .contains("return new OrderStreamHandler()")
                 .contains("protected OrderTrackShipmentStreamHandler "
                         + "createOrderTrackShipmentStreamHandler()")
-                .contains("return new OrderTrackShipmentStreamHandler()");
+                // An action with no body and no triggered event: the service is all it takes.
+                .contains("return new OrderTrackShipmentStreamHandler(orderService())");
 
         // run() takes each stream handler from its accessor, on the boot thread.
         assertThat(lifecycle(files))
@@ -545,6 +546,39 @@ class KernelApplicationGeneratorTest {
                         + "components.orderTrackShipmentStreamHandler();")
                 // The lifecycle calls `new` on nothing the pipeline generated.
                 .doesNotContain("= new Order");
+    }
+
+    @Test
+    @DisplayName("ADR-044 Amendment 2: a per-action stream handler takes the allocator when its action "
+            + "decodes a body, and the publisher and the EventEngine when it triggers events, each "
+            + "captured at composition and recorded in the scope ledger")
+    void actionStreamHandlerTakesWhatItsActionNeeds() {
+        KernelApplicationGenerator gen = new KernelApplicationGenerator();
+        DomainMetadata order = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .dataScope(eu.exeris.sdk.sourcemodel.ast.DataScope.TENANT)
+                .actions(List.of(ActionMetadata.builder("trackShipment").methodName("trackShipment")
+                        .streaming(true)
+                        .params(List.of(eu.exeris.sdk.sourcemodel.ast.ActionParamMetadata
+                                .required("note", "java.lang.String")))
+                        .build()))
+                .events(List.of(eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata.builder("OrderTracked")
+                        .trigger(eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata.Trigger.ACTION)
+                        .actionName("trackShipment")
+                        .build()))
+                .build();
+
+        String components = components(gen.generateAll(List.of(order), "com.example.foundation"));
+
+        assertThat(components)
+                .contains("return new OrderTrackShipmentStreamHandler(orderService(), "
+                        + "KernelProviders.MEMORY_ALLOCATOR.get(), orderEventPublisher(), "
+                        + "KernelProviders.eventEngine());")
+                .contains("{@link KernelProviders#MEMORY_ALLOCATOR} — read by {@link #createOrderHandler()}, "
+                        + "{@link #createOrderTrackShipmentStreamHandler()}")
+                .contains("{@link #createOrderTrackShipmentStreamHandler()}</li>")
+                .contains("{@link OrderTrackShipmentStreamHandler}{@code .parseBody}")
+                .contains("the tenant guard in {@link OrderTrackShipmentStreamHandler}");
     }
 
     @Test
