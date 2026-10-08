@@ -989,7 +989,9 @@ the log and earlier revisions of this file resolve through this table.
 
 **Unchanged:**
 - `S1–S6` wherever this file cites the log: the reconciliation paragraph above, and the Codegen
-  completeness backlog's pairings (T4↔S2, T5↔S1, T3↔S3).
+  completeness backlog's pairings (T4↔S2, T5↔S1, T3↔S3). The TypeScript waves of
+  [`docs/0.10.0-release-plan.md`](docs/0.10.0-release-plan.md) are a separate series, cited here as
+  "TS wave S1" to "TS wave S6".
 - `G1–G6` in every `@View` context, including the `TODO(@View G1)` markers view-gen emits.
 - `U1–U8`; the `C0`, `C1` and `C2` items; `B0`; `K*`, `V*`, `EV*`, `L*`; and `T20a–d`.
 - This file's `D4–D11` collide with nothing, because the log owns only `D1–D3`. The log's next DX
@@ -3826,6 +3828,13 @@ enters only if its upstream half is final first.
       SonarCloud analysis from CI with coverage in place of automatic analysis.
 - [ ] **T53 in full** (RFC, then ADR): `@RouteAccess` + `permissions` compiled into `RouteRequirement`. D10 resolves
       with it.
+- [ ] **TS wave S6 — `@View` pages for exeris-web:** CUSTOM blocks compile with their props, LIST
+      items are `<li>`, the generated `<h1>` can be omitted, pages-only output into an existing app with
+      manifest-owned rewrites, a views-only `init`, and opt-in SSG. HERO's look waits on `.exeris-hero`
+      in `@exeris/ui-kit` 0.5; SEO fields, a per-view heading switch and typed block props wait on the
+      SDK presentation IR.
+      *Open:* #334 (CUSTOM blocks, props, LIST, heading), #335 (pages-only, owned writes, init), #337
+      (SSG).
 - [ ] Track C (SDK record changes), `@SagaTransition`, T12 + T17.
 - [ ] **EV1-stream per-action driver** (ADR-044 amendment first): the streaming action runs, and its
       triggered events stream back. Moved from 0.9.0 on 2026-10-02; the open questions are under
