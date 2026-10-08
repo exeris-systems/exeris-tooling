@@ -3881,8 +3881,8 @@ enters only if its upstream half is final first.
       (`proxy.conf.js` with a header-based `bypass`, verified against a real `ng serve`), codegen-ts
       lint in CI, and deleting `KernelStrategy.generateClientCode` / `getRealTimeConfig`, which have
       no production caller.
-      *Landed:* the dead `KernelStrategy` methods are deleted (#323). *Open:* the proxy prefix and
-      codegen-ts lint in CI.
+      *Landed:* the dead `KernelStrategy` methods are deleted (#323); codegen-ts has an
+      `eslint.config.mjs` and `build.yml` runs `npm run lint` before vitest. *Open:* the proxy prefix.
 - [ ] **Issues placed in 0.10.0:** #304 (form gaps), #271 (one header helper, done in #322), #309
       (`GraphMetadata.queries` written `null` when not extracted, done in #317), #310 (an entity
       with no `id` field — a processor error, done in #316 as `EXT-PROC-1015`; the TS model always

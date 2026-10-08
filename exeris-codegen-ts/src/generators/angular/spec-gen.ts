@@ -160,7 +160,6 @@ export function generateSchemaSpec(
  */
 export function generateServiceSpec(metadata: DomainMetadata, config: GeneratorConfig): SpecOutputFile {
   const entity = metadata.entityName;
-  const name = modelTypeName(entity);
   const kebab = DslMapper.toKebabCase(entity);
   // Same authority the service itself uses — a re-derived path would agree only until
   // one of the two changed, which is the drift ADR-058 forbids for emitted doubles.
