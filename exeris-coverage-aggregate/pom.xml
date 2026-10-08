@@ -41,6 +41,19 @@
              maven-deploy-plugin and does not read this property. -->
         <maven.install.skip>true</maven.install.skip>
         <maven.deploy.skip>true</maven.deploy.skip>
+
+        <!-- exeris-codegen-ts is not a Maven module, so the Maven scanner would never see its
+             sources. This module has no sources of its own, which makes it the one place the
+             TypeScript emitter can be handed to the analysis without every other module
+             inheriting the paths. Its coverage is the lcov report vitest writes
+             (npm run test:coverage); the JVM modules report through their own JaCoCo XML, and
+             this module has none. -->
+        <sonar.sources>${project.basedir}/../exeris-codegen-ts/src</sonar.sources>
+        <sonar.tests>${project.basedir}/../exeris-codegen-ts/test</sonar.tests>
+        <sonar.test.inclusions>**/*.spec.ts</sonar.test.inclusions>
+        <sonar.exclusions>**/node_modules/**,**/*.d.ts</sonar.exclusions>
+        <sonar.javascript.lcov.reportPaths>${project.basedir}/../exeris-codegen-ts/coverage/lcov.info</sonar.javascript.lcov.reportPaths>
+        <sonar.coverage.jacoco.xmlReportPaths>${project.build.directory}/site/jacoco-aggregate/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
     </properties>
 
     <!-- Build last so every measured module's jacoco.exec has been

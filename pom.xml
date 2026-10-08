@@ -141,6 +141,22 @@
         <!-- ASM override for the plugin descriptor scanner — plugin-tools 3.13.1
              bundles a pre-Java-26 ASM that cannot read class major version 70. -->
         <asm.version>9.9.1</asm.version>
+
+        <!-- SonarQube Cloud analysis, run from CI (.github/workflows/build.yml) through
+             sonar-maven-plugin. These are inherited by every module, so nothing here may name a
+             single module's paths or a project name. -->
+        <sonar.organization>exeris-systems</sonar.organization>
+        <sonar.projectKey>exeris-systems_exeris-tooling</sonar.projectKey>
+        <sonar.host.url>https://sonarcloud.io</sonar.host.url>
+        <sonar.newCode.referenceBranch>main</sonar.newCode.referenceBranch>
+        <!-- The Maven Invoker fixtures under src/it/ are sample consumer applications, built by
+             the integration tests to exercise the plugin and the starter. Each is a minimal
+             application of the same shape, so they resemble each other by design; copy-paste
+             detection over them measures the fixtures, not the product. -->
+        <sonar.cpd.exclusions>**/src/it/**</sonar.cpd.exclusions>
+        <!-- Per module: the glob resolves against each module's base directory, so a report path
+             that is not module-relative would be imported by every module at once. -->
+        <sonar.coverage.jacoco.xmlReportPaths>${project.build.directory}/site/jacoco/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
     </properties>
 
     <build>
@@ -173,6 +189,11 @@
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-javadoc-plugin</artifactId>
                     <version>3.12.0</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.sonarsource.scanner.maven</groupId>
+                    <artifactId>sonar-maven-plugin</artifactId>
+                    <version>5.8.0.7211</version>
                 </plugin>
             </plugins>
         </pluginManagement>
