@@ -1,5 +1,6 @@
 package eu.exeris.e2e.codegen;
 
+import eu.exeris.e2e.codegen.compile.EmittedJavac;
 import eu.exeris.e2e.codegen.compile.ProcessorCompiler;
 import eu.exeris.tooling.codegen.java.CodegenPipeline;
 import org.junit.jupiter.api.BeforeAll;
@@ -15,9 +16,6 @@ import org.junit.platform.launcher.core.LauncherFactory;
 import org.junit.platform.launcher.listeners.SummaryGeneratingListener;
 import org.junit.platform.launcher.listeners.TestExecutionSummary;
 
-import javax.tools.JavaCompiler;
-import javax.tools.ToolProvider;
-import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintWriter;
@@ -225,22 +223,9 @@ class GeneratedTestsE2ETest {
      * contract the thing under test.
      */
     private static void compile(List<String> files, Path outputDir) throws IOException {
-        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
-        assertThat(compiler).as("a JDK (not a JRE) is required").isNotNull();
-        Files.createDirectories(outputDir);
-
-        List<String> args = new ArrayList<>(List.of(
-                "-d", outputDir.toString(),
-                "-classpath", contractClasspath(),
-                // Same release as the reactor and as InMemoryJavaCompiler — the emitted
-                // tests must compile at the level a consumer builds at.
-                "--release", "25",
-                "-nowarn"));
-        args.addAll(files);
-
-        ByteArrayOutputStream diagnostics = new ByteArrayOutputStream();
-        int rc = compiler.run(null, null, diagnostics, args.toArray(String[]::new));
-        assertThat(rc).as("generated sources must compile:%n%s", diagnostics).isZero();
+        EmittedJavac.Result result = EmittedJavac.compile(files, outputDir, contractClasspath());
+        assertThat(result.clean()).as("generated sources must compile without errors or warnings:%n%s",
+                result.render()).isTrue();
     }
 
     /**
@@ -264,6 +249,10 @@ class GeneratedTestsE2ETest {
                 // What the generated tests may import — ADR-058 §2.
                 codeSourceOf("org.junit.jupiter.api.Test"),
                 codeSourceOf("org.assertj.core.api.Assertions"),
+                // junit-jupiter-api's own annotations are meta-annotated @API; a classpath without
+                // its transitive apiguardian-api makes javac warn about the unreadable annotation
+                // on every @Test, a warning no consumer sees because Maven resolves it.
+                codeSourceOf("org.apiguardian.api.API"),
                 // The @ExerisDomain entity the processor compiled; generated code binds it.
                 entityClasses.toString()));
         return String.join(File.pathSeparator, entries);
