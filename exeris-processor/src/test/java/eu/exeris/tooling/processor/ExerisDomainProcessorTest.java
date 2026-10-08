@@ -3005,8 +3005,8 @@ class ExerisDomainProcessorTest {
         }
 
         @Test
-        @DisplayName("-Aexeris.strict reports streamEventType as inert, naming exeris-sdk#191")
-        void strictReportsStreamEventTypeAsInert() {
+        @DisplayName("-Aexeris.strict does not report streamEventType: the TypeScript client reads it")
+        void strictDoesNotReportStreamEventType() {
             Compilation compilation = javac()
                     .withProcessors(new ExerisDomainProcessor())
                     .withOptions("-Aexeris.strict=true")
@@ -3018,9 +3018,9 @@ class ExerisDomainProcessorTest {
                     """));
 
             assertThat(compilation).succeeded();
-            assertThat(compilation).hadWarningContaining("[Exeris] EXT-PROC-1201: ");
-            assertThat(compilation).hadWarningContaining("streamEventType");
-            assertThat(compilation).hadWarningContaining("(exeris-sdk#191)");
+            assertThat(compilation.warnings().stream()
+                    .map(d -> d.getMessage(java.util.Locale.ROOT))
+                    .noneMatch(m -> m.contains("streamEventType"))).isTrue();
         }
     }
 

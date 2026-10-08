@@ -359,14 +359,6 @@ public class ExerisDomainProcessor extends AbstractProcessor {
                             + "model at the edge. Roles resolve at the method level through the "
                             + "kernel's own @RequiresRole (kernel ADR-014). What this attribute "
                             + "should compile into here, if anything, is undecided (T53)"),
-            new InertAttribute("Action", "streamEventType",
-                    "it is extracted into ActionMetadata.streamEventType and names the result frame of "
-                            + "the per-action stream (ADR-044 Amendment 2), which no generated handler "
-                            + "emits: the result frame carries the action's return value, and neither "
-                            + "the processor nor the SDK reader fills ActionMetadata.resultType "
-                            + "(exeris-sdk#191). The processor checks the name against the reserved "
-                            + "frame names and the action's events, and the TypeScript client carries "
-                            + "it as a constant naming a frame the server does not send"),
             new InertAttribute("ActionParam", "description",
                     "the value reaches ActionParamMetadata in the JSON, but no emitter renders "
                             + "it — action-parameter generation reads only the parameter name and type"),
