@@ -76,7 +76,7 @@ export class StreamClientGenerator implements CodeGenerator {
     };
   }
 
-  generateAggregate(domains: DomainMetadata[], context: GeneratorContext): GeneratedFile[] {
+  generateAggregate(domains: DomainMetadata[], _context: GeneratorContext): GeneratedFile[] {
     const streamingDomains = domains.filter(hasLiveViewClient);
     if (streamingDomains.length === 0) {
       return [];

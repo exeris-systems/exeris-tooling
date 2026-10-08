@@ -38,7 +38,7 @@ export class QueryBuilderGenerator implements CodeGenerator {
     };
   }
 
-  generateAggregate(domains: DomainMetadata[], context: GeneratorContext): GeneratedFile[] {
+  generateAggregate(domains: DomainMetadata[], _context: GeneratorContext): GeneratedFile[] {
     return [
       {
         path: 'queries/index.ts',

@@ -79,14 +79,15 @@ public final class InMemoryJavaCompiler {
         // code against the real kernel SPI, so it has to be the release a consumer
         // actually gets. No --enable-preview — the pinned kernel ships no preview-stamped
         // classes, and the flag would pin this to one exact JDK.
-        List<String> options = List.of("--release", "25");
+        List<String> options = List.of("--release", EmittedJavac.RELEASE, "-Xlint:all");
 
         boolean success = compiler
                 .getTask(null, fileManager, diagnostics, options, null, compilationUnits)
                 .call();
 
+        // Errors, and warnings outside EmittedJavac.ACCEPTED: both are emitter defects.
         List<Diagnostic<? extends JavaFileObject>> errors = diagnostics.getDiagnostics().stream()
-                .filter(d -> d.getKind() == Diagnostic.Kind.ERROR)
+                .filter(EmittedJavac::isDefect)
                 .toList();
 
         return new Result(success && errors.isEmpty(), diagnostics.getDiagnostics(), errors);
@@ -100,7 +101,7 @@ public final class InMemoryJavaCompiler {
         public String renderErrors() {
             StringBuilder sb = new StringBuilder();
             for (Diagnostic<? extends JavaFileObject> d : errors) {
-                sb.append(d.getKind()).append(' ');
+                sb.append(d.getKind()).append(' ').append('[').append(d.getCode()).append("] ");
                 if (d.getSource() != null) {
                     sb.append(d.getSource().getName()).append(':').append(d.getLineNumber()).append(": ");
                 }

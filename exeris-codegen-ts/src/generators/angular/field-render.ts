@@ -162,6 +162,11 @@ export interface FieldRenderModel {
     readonly required: boolean;
     readonly readOnly: boolean;
     /**
+     * `@Field.inCreate`: whether the create form offers the field. When `false` the control is
+     * rendered in edit mode only, and the create payload leaves the field out.
+     */
+    readonly inCreate: boolean;
+    /**
      * `@Field.inUpdate`: whether the edit form lets the field change. When `false` the control is
      * disabled in edit mode and the update sends the loaded value back unchanged; the create form
      * is unaffected.
@@ -504,8 +509,14 @@ function isCollectionType(type: string): boolean {
   return ts.endsWith('[]') || ts.startsWith('Record<');
 }
 
+/**
+ * A field neither form offers (`inCreate` and `inUpdate` both `false`) has no control, and a field
+ * only the edit form offers (`inCreate = false`) is a control. A computed field's read-only input
+ * renders in both modes, so a computed field the create form leaves out has none.
+ */
 function formPlacement(field: FieldMetadata, system: boolean): FormPlacement {
-  if (field.inCreate === false || LIFECYCLE_FIELDS.has(field.name) || system) return 'none';
+  if (LIFECYCLE_FIELDS.has(field.name) || system) return 'none';
+  if (field.inCreate === false && (field.inUpdate === false || field.computed)) return 'none';
   if (isCollectionType(field.type)) return 'none';
   if (field.computed) return 'computed';
   if (field.hidden === true || field.readOnly === true) return 'none';
@@ -535,6 +546,7 @@ function formRender(
     ...(picker ? { picker } : {}),
     required: Boolean(field.required),
     readOnly: Boolean(field.readOnly),
+    inCreate: field.inCreate !== false,
     inUpdate: field.inUpdate !== false,
     value,
     initialValue: formInitialValue(field, value),

@@ -4,7 +4,7 @@ type: migration-guide
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-10-07
+last-verified: 2026-10-08
 ---
 
 ### `exeris-codegen-ts`: a file the manifest owns is rewritten on regeneration
@@ -16,11 +16,11 @@ the previous run's `.exeris-codegen-manifest` decides:
 - a file the manifest records is rewritten when its content differs, without `--overwrite`;
 - a seed file, written once for you to edit, is written when absent and kept otherwise. The seed
   files are `package.json`, `angular.json`, `tsconfig.json`, `tsconfig.app.json`,
-  `tsconfig.spec.json`, `.postcssrc.json`, `proxy.conf.json`, `src/main.ts`, `src/index.html`,
+  `tsconfig.spec.json`, `.postcssrc.json`, `proxy.conf.js`, `src/main.ts`, `src/index.html`,
   `src/styles.css`, `src/environments/environment.ts`, `src/environments/environment.development.ts`,
   `src/app/app.config.ts`, `src/app/app.component.ts`, `src/app/app.routes.ts` and the auth service
-  template `core/auth.service.ts`. A seed file the run no longer generates is kept and dropped from
-  the manifest, never deleted;
+  template `core/auth.service.ts`. A seed file the run no longer generates, such as an existing
+  `proxy.conf.json`, is kept and dropped from the manifest, never deleted;
 - an existing file the manifest does not record, a symbolic link, or a path reached through a link
   below the output root is never replaced or deleted without `--overwrite`, and is not recorded.
   `--overwrite` replaces a link at the path itself, never its target, and never writes through a
