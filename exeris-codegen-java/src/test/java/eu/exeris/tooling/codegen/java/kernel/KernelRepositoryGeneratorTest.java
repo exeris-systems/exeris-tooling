@@ -291,13 +291,13 @@ class KernelRepositoryGeneratorTest {
         // straight after updated_at.
         assertThat(repo)
                 .contains("INSERT INTO orders (id, order_number, tenant_id, created_at, updated_at, version)")
-                .contains("UPDATE orders SET order_number = ?, created_at = ?, updated_at = ?, version = ? "
+                .contains("UPDATE orders SET order_number = ?, updated_at = ?, version = ? "
                         + "WHERE id = ? AND version = ?")
                 .doesNotContain("tenant_id = ?")
-                .containsSubsequence("stmt.bindUuid(4, id);", "stmt.bindLong(5, expectedVersion);");
+                .containsSubsequence("stmt.bindUuid(3, id);", "stmt.bindLong(4, expectedVersion);");
         assertThat(KernelRepositoryGenerator.updateColumns(metadata))
                 .extracting(KernelRepositoryGenerator.Column::sqlName)
-                .containsExactly("order_number", "created_at", "updated_at", "version");
+                .containsExactly("order_number", "updated_at", "version");
     }
 
     @Test

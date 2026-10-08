@@ -1695,8 +1695,9 @@ never-invoked emitter start emitting, and its output did not build.
       `CrudRouteParityE2ETest` asserts `PUT` with no exemption.
 
       **Body shape (0.10.0, #349):** the server's update is a full replacement. The handler decodes
-      the whole entity, and the repository writes every column but the key and the owner, so a
-      partial body over `PUT` nulls the omitted columns. The TS `<Entity>Update` is
+      the whole entity, and the repository writes every domain column, so a partial body over `PUT`
+      nulls the omitted ones; the key, the owner and the audit and soft-delete columns keep their
+      stored value (ADR-090 Amendment 1). The TS `<Entity>Update` is
       `Omit<<Entity>, key | owner>`, plus the version when the entity is versioned, and the update
       schema follows it; the edit form already sent the loaded record. The Java OpenAPI
       `<Entity>UpdateDto` still lists only the create-eligible properties and requires none of them

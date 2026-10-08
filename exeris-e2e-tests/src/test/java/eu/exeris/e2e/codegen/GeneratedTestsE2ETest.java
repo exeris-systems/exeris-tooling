@@ -191,18 +191,19 @@ class GeneratedTestsE2ETest {
             // primary key, which is never a sort key or a filter) + 8 service cases (seven CRUD
             // delegations, findPage included, and the one T8 finder the fixture carries) + 8
             // repository cases for Order (the save/load round-trip, the six paths around it, and
-            // findPage's placeholder/bind alignment) + 13 for Invoice — the entity that carries
+            // findPage's placeholder/bind alignment) + 14 for Invoice — the entity that carries
             // every system column, and the only tenant-partitioned one here, so it alone gets the
-            // tenant stamp and the four foreign-tenant cases (bound tenant accepted, foreign tenant
-            // refused, unbound left to the database, update never writes the owner) — + 16 for
-            // Species, the UNIVERSE entity: the same 13 plus the shared-scope stamp, the
+            // tenant stamp, the four foreign-tenant cases (bound tenant accepted, foreign tenant
+            // refused, unbound left to the database, update never writes the owner) and the case
+            // proving an update writes no server-owned column and returns the stored ones — + 17
+            // for Species, the UNIVERSE entity: the same 14 plus the shared-scope stamp, the
             // foreign-shared-scope refusal and the kept-when-unbound tag — + 4 saga cases — + 23
             // InvoiceHandlerTest cases (the 9 bodyless/guard cases, 5 further list cases — page and
             // size, four refusals; every other field is a system field or not flagged — the 4
             // decode-failure cases, 3 @Validation cases for its required reference, and the two
             // foreign-tenant 400s) + 24 SpeciesHandlerTest cases (the same, plus the
             // foreign-shared-scope 400).
-            assertThat(summary.getTestsSucceededCount()).isEqualTo(126);
+            assertThat(summary.getTestsSucceededCount()).isEqualTo(128);
         }
     }
 

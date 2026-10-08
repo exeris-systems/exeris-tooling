@@ -80,6 +80,29 @@ class OpenApiComponentsBuilderTest {
     }
 
     @Test
+    @DisplayName("the update body leaves out the audit and soft-delete fields and keeps the version")
+    void updateDtoLeavesOutTheFieldsTheUpdateKeeps() {
+        DomainMetadata meta = DomainMetadata.builder("Order", "com.example.domain")
+                .audited(true).softDelete(true).versioned(true)
+                .fields(List.of(
+                        FieldMetadata.builder("orderNumber", "String").required(true).build(),
+                        FieldMetadata.builder("createdAt", "java.time.Instant").build(),
+                        FieldMetadata.builder("createdBy", "String").build(),
+                        FieldMetadata.builder("updatedAt", "java.time.Instant").build(),
+                        FieldMetadata.builder("updatedBy", "String").build(),
+                        FieldMetadata.builder("deleted", "boolean").build(),
+                        FieldMetadata.builder("deletedAt", "java.time.Instant").build(),
+                        FieldMetadata.builder("deletedBy", "String").build(),
+                        FieldMetadata.builder("version", "Long").build()))
+                .build();
+
+        Components components = OpenApiComponentsBuilder.buildComponents(meta);
+
+        assertThat(components.getSchemas().get("OrderUpdateDto").getProperties())
+                .containsOnlyKeys("orderNumber", "version");
+    }
+
+    @Test
     @DisplayName("a global entity's tenantId-named field is an ordinary, writable field")
     void globalTenantIdFieldIsUntouched() {
         DomainMetadata meta = DomainMetadata.builder("Order", "com.example.domain")

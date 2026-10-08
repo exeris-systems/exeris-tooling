@@ -65,6 +65,15 @@ public final class KernelRepositoryTestGenerator {
     private static final ClassName MAP = ClassName.get("java.util", "Map");
     private static final ClassName INTEGER = ClassName.get(Integer.class);
     private static final ClassName OBJECT = ClassName.get(Object.class);
+    private static final ClassName LINKED_HASH_MAP = ClassName.get("java.util", "LinkedHashMap");
+    private static final ClassName INSTANT = ClassName.get("java.time", "Instant");
+
+    /**
+     * The creation stamp the stored row carries in the update tests, in epoch seconds
+     * (2000-01-01T00:00:00Z). Not {@code Instant.EPOCH}, which the tests forge on the entity, so a
+     * returned value can be told apart from a forged one.
+     */
+    private static final long STORED_CREATED_AT_SECONDS = 946_684_800L;
 
     private static final ClassName KERNEL_PROVIDERS =
             ClassName.get("eu.exeris.kernel.spi.context", "KernelProviders");
@@ -95,6 +104,9 @@ public final class KernelRepositoryTestGenerator {
      */
     private static final String MOVED_ROW_ID = "00000000-0000-4000-8000-000000000004";
     private static final String AS_TENANT = "asTenant";
+    /** The assertion that an entity's owner, read through {@code $L}, is the bound tenant. */
+    private static final String ASSERT_BOUND_TENANT =
+            "$T.assertThat(entity.$L()).isEqualTo($T.fromString(TENANT_KEY))";
 
     /**
      * Creates the generator. It keeps no per-domain state, so one instance serves every domain
@@ -197,6 +209,11 @@ public final class KernelRepositoryTestGenerator {
         }
         type.addMethod(updateBindsIdTest(entityType, repositoryType, persistenceType, metadata,
                 tenantScoped));
+        List<Column> stored = KernelRepositoryGenerator.storedColumns(metadata);
+        if (stored.stream().anyMatch(c -> c.kind() != ColumnKind.DOMAIN)) {
+            type.addMethod(updateKeepsStoredColumnsTest(entityType, repositoryType, persistenceType,
+                    metadata, stored, tenantScoped));
+        }
         type.addMethod(findByIdEmptyTest(repositoryType, persistenceType));
         // ADR-076: update reports a versioned entity's zero-row outcome as a conflict, because
         // it matched on id and version together; deleteById matched on id alone and can only
@@ -274,26 +291,104 @@ public final class KernelRepositoryTestGenerator {
     }
 
     /**
-     * The UPDATE lays its parameters out differently from the INSERT: the SET list is every column
-     * except {@code id}, and {@code id} binds after it to close the WHERE clause. That index is the
+     * The UPDATE lays its parameters out differently from the INSERT: the SET list is the columns
+     * the update writes, and {@code id} binds after it to close the WHERE clause. That index is the
      * one thing a reordering of {@code emitUpdateBinds} would silently break.
      */
     private MethodSpec updateBindsIdTest(ClassName entityType, ClassName repositoryType,
                                          ClassName persistenceType, DomainMetadata metadata,
                                          boolean tenantScoped) {
-        // The WHERE id lands one slot past the SET list — every column except id and, on a
-        // tenant-partitioned entity, the owner. Read from the repository emitter's own
+        // The WHERE id lands one slot past the SET list. Read from the repository emitter's own
         // derivation, so the two cannot disagree about where the list ends.
         int whereIdIndex = KernelRepositoryGenerator.updateColumns(metadata).size();
         MethodSpec.Builder test = test("updateBindsTheIdAfterTheSetList")
-                .addStatement("$T persistence = new $T()", persistenceType, persistenceType)
-                .addStatement("$T repository = new $T(persistence)", repositoryType, repositoryType)
-                .addStatement("$T entity = new $T()", entityType, entityType);
-        test.addStatement("$T id = $T.fromString($S)", UUID, UUID, KernelTestSamples.FIXED_ID)
+                .addStatement("$T persistence = new $T()", persistenceType, persistenceType);
+        stageStoredRow(test, KernelRepositoryGenerator.storedColumns(metadata));
+        test.addStatement("$T repository = new $T(persistence)", repositoryType, repositoryType)
+                .addStatement("$T entity = new $T()", entityType, entityType)
+                .addStatement("$T id = $T.fromString($S)", UUID, UUID, KernelTestSamples.FIXED_ID)
                 .addStatement(write("repository.update(id, entity)", tenantScoped))
-                .addStatement("$T.assertThat(persistence.binds.get($L)).isEqualTo(id)",
+                .addStatement("$T.assertThat(persistence.writeBinds.get($L)).isEqualTo(id)",
                         ASSERTIONS, whereIdIndex);
         return test.build();
+    }
+
+    /**
+     * An update writes no server-owned column from the entity it is given, and returns the stored
+     * values of the columns it keeps. The entity is forged with values the stored row does not hold
+     * — a creation stamp of {@code Instant.EPOCH}, a soft-delete flag of {@code true} — so a forged
+     * value that reached the statement, or survived onto the returned entity, fails an assertion.
+     *
+     * <p>The owner is not forged here: with a tenant bound, a foreign one is refused before the
+     * statement, which {@code saveRefusesATenantThatIsNotTheBoundOne} already covers.
+     */
+    private MethodSpec updateKeepsStoredColumnsTest(ClassName entityType, ClassName repositoryType,
+                                                    ClassName persistenceType, DomainMetadata metadata,
+                                                    List<Column> stored, boolean tenantScoped) {
+        MethodSpec.Builder test = test("updateWritesNoServerOwnedColumnAndReturnsTheStoredOnes")
+                .addJavadoc("The body cannot rewrite what the server owns, and the entity the update\n")
+                .addJavadoc("returns is the row as stored, not as the body described it.\n")
+                .addStatement("$T persistence = new $T()", persistenceType, persistenceType);
+        stageStoredRow(test, stored);
+        test.addStatement("$T repository = new $T(persistence)", repositoryType, repositoryType)
+                .addStatement("$T entity = new $T()", entityType, entityType);
+        for (Column column : stored) {
+            if (column.kind() == ColumnKind.CREATED_AT) {
+                test.addStatement("entity.$L($T.EPOCH)", KernelRepositoryGenerator.setterFor(column), INSTANT);
+            } else if (column.kind() == ColumnKind.DELETED) {
+                test.addStatement("entity.$L(true)", KernelRepositoryGenerator.setterFor(column));
+            }
+        }
+        test.addStatement(write("repository.update($T.fromString($S), entity)", tenantScoped),
+                UUID, MOVED_ROW_ID);
+        test.addStatement("$T.assertThat(persistence.writeBinds).hasSize($L)", ASSERTIONS,
+                KernelRepositoryGenerator.updateColumns(metadata).size() + 1
+                        + (metadata.versioned() ? 1 : 0));
+        for (Column column : stored) {
+            String getter = KernelRepositoryGenerator.getterFor(column);
+            switch (column.kind()) {
+                case CREATED_AT -> test
+                        .addStatement("$T.assertThat(persistence.writeBinds.values()).doesNotContain($T.EPOCH)",
+                                ASSERTIONS, INSTANT)
+                        .addStatement("$T.assertThat(entity.$L()).isEqualTo($T.ofEpochSecond($LL))",
+                                ASSERTIONS, getter, INSTANT, STORED_CREATED_AT_SECONDS);
+                case DELETED -> test.addStatement("$T.assertThat(entity.$L()).isFalse()", ASSERTIONS, getter);
+                case TENANT_ID -> test.addStatement(
+                        ASSERT_BOUND_TENANT,
+                        ASSERTIONS, getter, UUID);
+                default -> {
+                    // A domain column in a server-owned role is staged as SQL NULL; how a NULL
+                    // reads back depends on the field's type, so there is no single value to assert.
+                }
+            }
+        }
+        return test.build();
+    }
+
+    /**
+     * Stages the row the update reads back after it writes: the stored values of the server-owned
+     * columns it keeps, by their read index. A domain column in a server-owned role is left as SQL
+     * NULL. Nothing is staged for an entity whose update keeps no column, since it reads nothing.
+     */
+    private static void stageStoredRow(MethodSpec.Builder test, List<Column> stored) {
+        if (stored.isEmpty()) {
+            return;
+        }
+        test.addStatement("persistence.row = new $T<>()", LINKED_HASH_MAP);
+        for (int i = 0; i < stored.size(); i++) {
+            Column column = stored.get(i);
+            switch (column.kind()) {
+                case CREATED_AT -> test.addStatement("persistence.row.put($L, $T.ofEpochSecond($LL))",
+                        i, INSTANT, STORED_CREATED_AT_SECONDS);
+                case DELETED -> test.addStatement("persistence.row.put($L, false)", i);
+                // Only a tenant-partitioned entity has the column, and its test declares TENANT_KEY.
+                case TENANT_ID -> test.addStatement("persistence.row.put($L, $T.fromString(TENANT_KEY))",
+                        i, UUID);
+                default -> {
+                    // SQL NULL: absent from the staged row.
+                }
+            }
+        }
     }
 
     private MethodSpec findByIdEmptyTest(ClassName repositoryType, ClassName persistenceType) {
@@ -439,7 +534,7 @@ public final class KernelRepositoryTestGenerator {
                 .addStatement("$T entity = new $T()", entityType, entityType)
                 .addStatement("$T.assertThat(entity.$L()).isNull()", ASSERTIONS, getter)
                 .addStatement("$L(() -> repository.save(entity))", AS_TENANT)
-                .addStatement("$T.assertThat(entity.$L()).isEqualTo($T.fromString(TENANT_KEY))",
+                .addStatement(ASSERT_BOUND_TENANT,
                         ASSERTIONS, getter, UUID)
                 .addStatement("$T.assertThat(persistence.binds.get($L)).isEqualTo(entity.$L())",
                         ASSERTIONS, columns.indexOf(tenant), getter)
@@ -463,7 +558,7 @@ public final class KernelRepositoryTestGenerator {
                 .addStatement("$L(() -> repository.save(entity))", AS_TENANT)
                 .addStatement("$T.assertThat(persistence.binds.get($L)).isEqualTo($T.fromString(TENANT_KEY))",
                         ASSERTIONS, columns.indexOf(tenant), UUID)
-                .addStatement("$T.assertThat(entity.$L()).isEqualTo($T.fromString(TENANT_KEY))",
+                .addStatement(ASSERT_BOUND_TENANT,
                         ASSERTIONS, getter, UUID)
                 .build();
     }
@@ -527,20 +622,23 @@ public final class KernelRepositoryTestGenerator {
                                                       Column tenant) {
         int expectedBinds = KernelRepositoryGenerator.updateColumns(metadata).size() + 1
                 + (metadata.versioned() ? 1 : 0);
-        return test("updateNeverWritesTheTenantSoARowCannotMove")
-                .addJavadoc("The SET list carries every column except {@code $L} and the owner, so\n",
+        MethodSpec.Builder test = test("updateNeverWritesTheTenantSoARowCannotMove")
+                .addJavadoc("The SET list carries neither {@code $L} nor the owner, so the tenant a\n",
                         PrimaryKeys.field(metadata))
-                .addJavadoc("the tenant a body names never reaches the UPDATE — with or without a\n")
-                .addJavadoc("tenant bound, on any engine.\n")
-                .addStatement("$T persistence = new $T()", persistenceType, persistenceType)
-                .addStatement("$T repository = new $T(persistence)", repositoryType, repositoryType)
+                .addJavadoc("body names never reaches the UPDATE — with or without a tenant bound,\n")
+                .addJavadoc("on any engine — and the returned entity names the stored owner.\n")
+                .addStatement("$T persistence = new $T()", persistenceType, persistenceType);
+        stageStoredRow(test, KernelRepositoryGenerator.storedColumns(metadata));
+        return test.addStatement("$T repository = new $T(persistence)", repositoryType, repositoryType)
                 .addStatement("$T entity = new $T()", entityType, entityType)
                 .addStatement("$T otherTenant = $T.fromString($S)", UUID, UUID, KernelTestSamples.FIXED_ID)
                 .addStatement("entity.$L(otherTenant)", KernelRepositoryGenerator.setterFor(tenant))
                 .addStatement("repository.update($T.fromString($S), entity)", UUID, MOVED_ROW_ID)
-                .addStatement("$T.assertThat(persistence.binds).hasSize($L)", ASSERTIONS, expectedBinds)
-                .addStatement("$T.assertThat(persistence.binds.values()).doesNotContain(otherTenant)",
+                .addStatement("$T.assertThat(persistence.writeBinds).hasSize($L)", ASSERTIONS, expectedBinds)
+                .addStatement("$T.assertThat(persistence.writeBinds.values()).doesNotContain(otherTenant)",
                         ASSERTIONS)
+                .addStatement(ASSERT_BOUND_TENANT,
+                        ASSERTIONS, KernelRepositoryGenerator.getterFor(tenant), UUID)
                 .build();
     }
 

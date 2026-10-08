@@ -7,6 +7,7 @@ import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 import eu.exeris.tooling.codegen.java.support.DataScopeSupport;
 import eu.exeris.tooling.codegen.java.support.ListQuerySupport;
 import eu.exeris.tooling.codegen.java.support.PrimaryKeys;
+import eu.exeris.tooling.codegen.java.support.ServerOwnedFields;
 import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.media.Schema;
 
@@ -154,16 +155,22 @@ public final class OpenApiComponentsBuilder {
         return schema;
     }
 
+    /**
+     * The update body: every field the update writes from the request. The fields
+     * {@link ServerOwnedFields#notInUpdateBody} names are left out — the key, the owner, the shared
+     * scope, and the audit and soft-delete fields, whose stored or server-set value the update keeps
+     * whatever the body says. The version stays: it is the expected version an optimistic-lock update
+     * matches on.
+     */
     private static Schema<?> buildUpdateDtoSchema(DomainMetadata metadata) {
         Schema<Object> schema = new Schema<>();
         OpenApiSchemas.typed(schema, "object");
         schema.setDescription("DTO for updating " + metadata.entityName());
         Map<String, Schema> properties = new LinkedHashMap<>();
-        Set<String> serverOwned = serverOwnedFields(metadata);
+        Set<String> serverOwned = ServerOwnedFields.notInUpdateBody(metadata);
         if (metadata.hasFields()) {
             for (FieldMetadata field : metadata.fields()) {
-                if (!field.readOnly() && !PrimaryKeys.field(metadata).equals(field.name())
-                        && !serverOwned.contains(field.name())) {
+                if (!field.readOnly() && !serverOwned.contains(field.name())) {
                     properties.put(field.name(), buildFieldSchema(field));
                 }
             }

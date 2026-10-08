@@ -17,6 +17,7 @@ import eu.exeris.tooling.codegen.java.support.DomainTypeKind;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
 import eu.exeris.tooling.codegen.java.support.PrimaryKeys;
 import eu.exeris.tooling.codegen.java.support.ListQuerySupport;
+import eu.exeris.tooling.codegen.java.support.ServerOwnedFields;
 import eu.exeris.tooling.codegen.java.support.SqlColumnTypes;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 import static eu.exeris.tooling.codegen.java.support.DataScopeSupport.isTenantPartitioned;
@@ -100,6 +101,8 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     static final String REFUSE_FOREIGN_TENANT_METHOD = "refuseForeignTenant";
     /** Name of the emitted foreign-shared-scope refusal — see {@link #buildRefuseForeignSharedScope}. */
     static final String REFUSE_FOREIGN_SHARED_SCOPE_METHOD = "refuseForeignSharedScope";
+    /** Name of the emitted stored-column read that ends {@code update} — see {@link #buildReadStoredColumns}. */
+    static final String READ_STORED_COLUMNS_METHOD = "readStoredColumns";
 
     private static final ClassName UUID_TYPE = ClassName.get("java.util", "UUID");
     private static final ClassName OPTIONAL = ClassName.get("java.util", "Optional");
@@ -133,6 +136,8 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
             ClassName.get(SPI_PERSISTENCE_PKG, "QueryResult");
     private static final ClassName ROW_CURSOR =
             ClassName.get(SPI_PERSISTENCE_PKG, "RowCursor");
+    private static final ClassName PERSISTENCE_CONNECTION =
+            ClassName.get(SPI_PERSISTENCE_PKG, "PersistenceConnection");
 
     /**
      * {@code KernelProviders} — the SPI's ambient-context accessor. The repository reads the bound
@@ -416,8 +421,12 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         repo.addMethod(buildBindListFilter(ctx));
 
         repo.addMethod(buildSave(ctx))
-                .addMethod(buildUpdate(ctx))
-                .addMethod(buildDeleteById(ctx))
+                .addMethod(buildUpdate(ctx));
+        List<Column> stored = storedColumns(columns, metadata);
+        if (!stored.isEmpty()) {
+            repo.addMethod(buildReadStoredColumns(ctx, stored));
+        }
+        repo.addMethod(buildDeleteById(ctx))
                 .addMethod(buildCount(ctx))
                 .addMethod(buildMapRow(ctx));
 
@@ -1308,10 +1317,12 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
     }
 
     /**
-     * The columns an {@code UPDATE} writes, in bind order: every layout column except {@code id},
-     * which closes the WHERE clause, and except the owning tenant.
+     * The columns an {@code UPDATE} writes, in bind order: every domain column, and the two the
+     * server sets on each update, the audit update stamp and the version. The key closes the WHERE
+     * clause; every other server-owned column ({@link ServerOwnedFields#keptOnUpdate}) keeps its
+     * stored value.
      *
-     * <p>The owner is not written on update, so no update can move a row to another tenant — not
+     * <p>The owner is among the kept columns, so no update can move a row to another tenant — not
      * with a tenant bound (where a foreign one is refused before this statement anyway), and not
      * without one, where nothing else would stop it on an engine or role that row-level security
      * does not bind. Dropping the column rather than refusing a change is deliberate: detecting a
@@ -1323,39 +1334,57 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
      * <p>Shared with the repository-test emitter, whose WHERE-id index is one past this list.
      */
     static List<Column> updateColumns(DomainMetadata metadata) {
-        return updateColumns(columnLayout(metadata), PrimaryKeys.column(metadata));
+        return updateColumns(columnLayout(metadata), metadata);
     }
 
-    private static List<Column> updateColumns(List<Column> layout, String keyColumn) {
+    private static List<Column> updateColumns(List<Column> layout, DomainMetadata metadata) {
+        Set<String> kept = ServerOwnedFields.keptOnUpdate(metadata);
+        return layout.stream().filter(c -> !keptOnUpdate(c, kept)).toList();
+    }
+
+    /**
+     * The columns {@code update} copies from the stored row onto the entity it returns, in read
+     * order: the server-owned columns the statement keeps, without the key, which the caller passed.
+     *
+     * <p>Shared with the repository-test emitter, which stages the stored row by these indices.
+     */
+    static List<Column> storedColumns(DomainMetadata metadata) {
+        return storedColumns(columnLayout(metadata), metadata);
+    }
+
+    private static List<Column> storedColumns(List<Column> layout, DomainMetadata metadata) {
+        Set<String> kept = ServerOwnedFields.keptOnUpdate(metadata);
+        String keyColumn = PrimaryKeys.column(metadata);
         return layout.stream()
-                .filter(c -> !keyColumn.equals(c.sqlName()))
-                .filter(c -> c.kind() != ColumnKind.TENANT_ID)
+                .filter(c -> keptOnUpdate(c, kept) && !keyColumn.equals(c.sqlName()))
                 .toList();
     }
 
+    private static boolean keptOnUpdate(Column col, Set<String> kept) {
+        return switch (col.kind()) {
+            case TENANT_ID, CREATED_AT, DELETED -> true;
+            case UPDATED_AT, VERSION -> false;
+            case DOMAIN -> kept.contains(col.javaName());
+        };
+    }
+
     private MethodSpec buildUpdate(Context ctx) {
-        // SET clause: every column except id (id is in WHERE) and the owner
-        List<Column> updatable = updateColumns(ctx.columns(), PrimaryKeys.column(ctx.metadata()));
+        List<Column> updatable = updateColumns(ctx.columns(), ctx.metadata());
+        List<Column> stored = storedColumns(ctx.columns(), ctx.metadata());
         // An entity with nothing to write — no domain field, no audit or version column, and the
-        // owner never written — still needs a valid statement whose row count answers
+        // server-owned columns kept — still needs a valid statement whose row count answers
         // "did the row exist": SET id = id writes nothing and binds nothing.
         String setClause = updatable.isEmpty()
                 ? PrimaryKeys.column(ctx.metadata()) + " = " + PrimaryKeys.column(ctx.metadata())
                 : String.join(", ", updatable.stream()
                         .map(c -> c.sqlName() + " = " + placeholder(c, ctx.metadata())).toList());
         boolean versioned = ctx.metadata().versioned();
-        String whereClause = versioned
-                ? whereIdClause(ctx.metadata()) + " AND " + toSnakeCase(ctx.sys().version()) + " = ?"
-                : whereIdClause(ctx.metadata());
-        String sql = "UPDATE " + ctx.table() + " SET " + setClause + whereClause;
-        // ADR-076: the rejection carries a type, and the message moved into it. A versioned
-        // update matches on id AND on the expected version in one statement, so a zero row
-        // count means "gone or stale" and cannot be split without a second query — hence a
-        // distinct type the handler maps to 409, rather than a 404 that would be a lie about
-        // one of the two.
-        ClassName rejection = versioned
-                ? KernelErrorGenerator.versionConflictType(ctx.metadata())
-                : KernelErrorGenerator.notFoundType(ctx.metadata());
+        String versionGuard = versioned ? " AND " + toSnakeCase(ctx.sys().version()) + " = ?" : "";
+        String liveGuard = ctx.metadata().softDelete()
+                ? " AND " + toSnakeCase(ctx.sys().deleted()) + " = false" : "";
+        String sql = "UPDATE " + ctx.table() + " SET " + setClause + whereIdClause(ctx.metadata())
+                + versionGuard + liveGuard;
+        ClassName rejection = updateRejection(ctx.metadata());
 
         MethodSpec.Builder update = MethodSpec.methodBuilder("update")
                 .addModifiers(Modifier.PUBLIC)
@@ -1381,28 +1410,35 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
             update.addStatement("$T currentVersion = entity.$L()", BOXED_LONG, getterFor(versionColumn));
             update.addStatement("long expectedVersion = currentVersion == null ? 0L : currentVersion");
             update.addStatement("entity.$L(expectedVersion + 1L)", setterFor(versionColumn));
+        } else if (isTenantPartitioned(ctx.metadata()) || !stored.isEmpty() || ctx.metadata().softDelete()) {
+            // A summary sentence, so the <p> paragraphs below do not open the doc comment.
+            update.addJavadoc("Updates the row identified by {@code id}.\n");
         }
         if (isTenantPartitioned(ctx.metadata())) {
-            if (!versioned) {
-                // The versioned branch above already opened the doc comment with a summary
-                // sentence; without it, this paragraph would be a <p> with nothing before it.
-                update.addJavadoc("Updates the row identified by {@code id}.\n");
-            }
             String tenantField = systemColumn(ctx, ColumnKind.TENANT_ID).javaName();
             update.addJavadoc("<p>The owner is never written: {@code $L} is not in the SET list, so\n",
                             tenantField)
-                    .addJavadoc("an update cannot move a row to another tenant. A missing\n")
-                    .addJavadoc("{@code $L} is filled with the acting tenant, so the returned entity\n",
-                            tenantField)
-                    .addJavadoc("names its owner, and while a tenant is bound a different one is\n")
-                    .addJavadoc("refused with {@link $T}.\n",
+                    .addJavadoc("an update cannot move a row to another tenant. While a tenant is\n")
+                    .addJavadoc("bound, a body naming a different one is refused with {@link $T}.\n",
                             KernelErrorGenerator.tenantMismatchType(ctx.metadata()));
         }
         sharedScopeColumn(ctx).ifPresent(column -> update
-                .addJavadoc("<p>A missing {@code $L} is filled with the acting shared scope in the same\n",
+                .addJavadoc("<p>A missing {@code $L} is filled with the acting shared scope.\n",
                         column.javaName())
-                .addJavadoc("way. The SET list writes that column too, so when no scope is bound a body\n")
+                .addJavadoc("The SET list writes that column, so when no scope is bound a body\n")
                 .addJavadoc("without it leaves the row owner-private.\n"));
+        if (!stored.isEmpty()) {
+            update.addJavadoc("<p>These server-owned columns are not in the SET list and keep their\n")
+                    .addJavadoc("stored value; the returned entity carries it, read in the update's own\n")
+                    .addJavadoc("transaction:\n");
+            for (int i = 0; i < stored.size(); i++) {
+                update.addJavadoc("{@code $L}$L\n", stored.get(i).javaName(),
+                        i == stored.size() - 1 ? "." : ",");
+            }
+        }
+        if (ctx.metadata().softDelete()) {
+            update.addJavadoc("<p>A soft-deleted row is not updated; it is rejected as a missing one is.\n");
+        }
         update.addStatement(SQL_VAR_STMT, sql);
         update.addStatement("long[] rowsAffected = {0L}");
 
@@ -1412,6 +1448,11 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         emitUpdateBinds(body, updatable, versioned, ctx.metadata());
         body.addStatement("rowsAffected[0] = stmt.executeUpdate()");
         body.endControlFlow();
+        if (!stored.isEmpty()) {
+            body.beginControlFlow("if (rowsAffected[0] != 0L)")
+                    .addStatement("$L(conn, id, entity)", READ_STORED_COLUMNS_METHOD)
+                    .endControlFlow();
+        }
         body.endControlFlow(")");
 
         update.addCode(body.build());
@@ -1423,6 +1464,53 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                 "Updated " + ctx.entity() + ": {0}");
         update.addStatement(RETURN_ENTITY_STMT);
         return update.build();
+    }
+
+    /**
+     * The type {@code update} rejects a write that matched no row with (ADR-076). A versioned update
+     * matches on the key and the expected version in one statement, so zero rows means "gone or
+     * stale" and cannot be split without a second query: a conflict the handler answers 409, not a
+     * 404 that would be untrue of one of the two.
+     */
+    private static ClassName updateRejection(DomainMetadata metadata) {
+        return metadata.versioned()
+                ? KernelErrorGenerator.versionConflictType(metadata)
+                : KernelErrorGenerator.notFoundType(metadata);
+    }
+
+    /**
+     * Emits the read that gives {@code update} the stored values of the server-owned columns its
+     * statement keeps. It runs on the update's connection, inside its transaction, after a row
+     * matched, so it reads the row the update wrote; a row it cannot read rolls the update back with
+     * the rejection a zero-row update raises.
+     */
+    private MethodSpec buildReadStoredColumns(Context ctx, List<Column> stored) {
+        String sql = "SELECT " + String.join(", ", stored.stream().map(Column::sqlName).toList())
+                + " FROM " + ctx.table() + whereIdClause(ctx.metadata());
+        MethodSpec.Builder read = MethodSpec.methodBuilder(READ_STORED_COLUMNS_METHOD)
+                .addModifiers(Modifier.PRIVATE)
+                .returns(TypeName.VOID)
+                .addParameter(PERSISTENCE_CONNECTION, "conn")
+                .addParameter(UUID_TYPE, "id")
+                .addParameter(ctx.entityType(), ENTITY_SRC)
+                .addJavadoc("Copies the server-owned columns {@code update} keeps from the stored row\n")
+                .addJavadoc("onto {@code entity}, on the update's own connection and transaction.\n")
+                .addStatement(SQL_VAR_STMT, sql)
+                .beginControlFlow(TRY_PREPARE_STMT, PERSISTENCE_STATEMENT)
+                .addStatement("stmt.bindUuid(0, id)")
+                .beginControlFlow("try ($T qr = stmt.executeQuery())", QUERY_RESULT)
+                .beginControlFlow("if (!qr.next())")
+                .addStatement("throw new $T(id)", updateRejection(ctx.metadata()))
+                .endControlFlow()
+                .addStatement("$T row = qr.row()", ROW_CURSOR);
+        int idx = 0;
+        for (Column col : stored) {
+            emitReadCol(read, col, idx, ctx);
+            idx++;
+        }
+        return read.endControlFlow()
+                .endControlFlow()
+                .build();
     }
 
     private MethodSpec buildDeleteById(Context ctx) {
@@ -1629,9 +1717,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
             case TENANT_ID -> body.addStatement("stmt.bindUuid($L, $L.$L())", idx, src, accessor);
             // T19: bind the timestamp natively (kernel 0.10 SPI bindInstant), so the
             // TIMESTAMPTZ column round-trips via the driver instead of an ISO-8601
-            // String. Null-guarded via bindNull because update() is also bound to
-            // caller-supplied entities where createdAt may legitimately be null
-            // (e.g. a partial update DTO).
+            // String. Null-guarded via bindNull, since bindInstant takes no null.
             case CREATED_AT, UPDATED_AT -> body.add(
                     "if ($L.$L() == null) stmt.bindNull($L); else stmt.bindInstant($L, $L.$L());\n",
                     src, accessor, idx, idx, src, accessor);
