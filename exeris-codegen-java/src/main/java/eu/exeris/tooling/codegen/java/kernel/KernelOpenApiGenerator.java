@@ -6,6 +6,7 @@ import eu.exeris.tooling.codegen.java.openapi.OpenApiGenerator;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.util.Locale;
 
 /**
@@ -50,7 +51,7 @@ public class KernelOpenApiGenerator implements KernelArtifactGenerator {
                 "yaml"
             );
         } catch (IOException e) {
-            throw new RuntimeException("Failed to generate OpenAPI spec for " + metadata.entityName(), e);
+            throw new UncheckedIOException("Failed to generate OpenAPI spec for " + metadata.entityName(), e);
         }
     }
 

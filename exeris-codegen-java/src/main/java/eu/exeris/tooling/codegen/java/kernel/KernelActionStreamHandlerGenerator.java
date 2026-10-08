@@ -190,7 +190,8 @@ public class KernelActionStreamHandlerGenerator implements KernelArtifactGenerat
                 .addJavadoc("lets it propagate so the engine can run stream teardown — it is NOT\n")
                 .addJavadoc("caught and swallowed. Back-pressure parks the virtual thread inside\n")
                 .addJavadoc("{@code emit}; this handler never buffers to a heap queue.\n")
-                .addStatement("LOG.log($T.DEBUG, $S)", KernelScaffold.LOGGER_LEVEL, "Opening " + entity + "." + action.name() + " action stream")
+                .addStatement("LOG.log($T.DEBUG, $S)", KernelScaffold.LOGGER_LEVEL,
+                        "Opening " + entity + "." + action.name() + " action stream")
                 // Shared deterministic keep-alive scaffold (loop + close). The
                 // per-action reason states that the action is not invoked.
                 .addCode(KernelStreamScaffold.keepAliveScaffold(List.of(

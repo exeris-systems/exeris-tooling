@@ -52,8 +52,8 @@ public final class UnpersistableFieldTypeException extends RuntimeException {
                 + String.join("\n  ", fields)
                 + "\nDeclare each as a List<…> of a plain element type (stored as a JSON column) "
                 + "or as a supported scalar (String, UUID, Long, Integer, Short, Byte, Boolean, Float, "
-                + "Double, BigDecimal, Instant, LocalDateTime, OffsetDateTime, ZonedDateTime, LocalDate, or an enum); use BigDecimal in "
-                + "place of BigInteger, and a String or one of these for a time of day, a duration or "
-                + "any other value type.";
+                + "Double, BigDecimal, Instant, LocalDateTime, OffsetDateTime, ZonedDateTime, LocalDate, "
+                + "or an enum); use BigDecimal in place of BigInteger, and a String or one of these for a "
+                + "time of day, a duration or any other value type.";
     }
 }
