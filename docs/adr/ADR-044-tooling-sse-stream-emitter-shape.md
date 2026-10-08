@@ -11,7 +11,7 @@ slug: adr/ADR-044
 
 | Attribute       | Value                                                                                                  |
 |:----------------|:-------------------------------------------------------------------------------------------------------|
-| **Status**      | **ACCEPTED** · amended 2026-10-04 (Amendment 1 — no stream handler for a tenant-partitioned entity)       |
+| **Status**      | **ACCEPTED** · amended 2026-10-04 (Amendment 1 — no stream handler for a tenant-partitioned entity) · amended 2026-10-08 (Amendment 2 — the per-action driver runs its action; stream routes isolated by the row they serve) |
 | **Deciders**    | Arkadiusz Przychocki                                                                                    |
 | **Date**        | 2026-06-24                                                                                              |
 | **Scope**       | per-repo (`exeris-tooling`); `tooling/codegen`                                                          |
@@ -114,3 +114,179 @@ the kernel edge; the edge authenticates the caller, but it does not partition th
 **Reversed by:** the kernel carrying an isolation key on stream events (or a per-subscriber filter),
 and the emitted handler filtering on it. That change re-admits tenant-partitioned entities and is
 planned with the 0.10.0 amendment that also fixes the per-action driver.
+
+## Amendment 2 — The per-action driver runs its action; stream routes are isolated by the row they serve (2026-10-08)
+
+- **Amends:** obligation 1 (the per-action driver runs the action; a `GET` spectate route joins
+  the two drivers), obligation 2 (the frame vocabulary of a per-action stream, and the reserved
+  frame names), obligation 4 (the hand-off queue) and Amendment 1 item 2 (the guard and the
+  row-level-security load are decided here). Amendment 1 item 1, the `EXT-PROC-1014` refusal, is
+  unchanged. Obligations 3, 5 and 6 are unchanged.
+- **Decided by:** the founder, 2026-10-08. Target exeris-tooling 0.10.0: ROADMAP items EV1-stream
+  and T59, waves J4 and S4 of `docs/0.10.0-release-plan.md`, which lists the eight questions this
+  amendment answers.
+
+### Facts the decisions rest on
+
+Read from the sources this amendment changes, and from kernel `main`:
+
+- `KernelHandlerGenerator` serves no `@Action(streaming = true)` action, and
+  `KernelActionStreamHandlerGenerator` emits `KernelStreamScaffold.keepAliveScaffold(...)`, so a
+  call to a streaming action changes nothing in the domain. The processor says so on every such
+  action (`EXT-PROC-1107`).
+- The events an action triggers are known at generation time:
+  `KernelHandlerGenerator.triggered(metadata, ACTION, actionName)` selects the `@DomainEvent`s whose
+  trigger is `ACTION` and whose `actionName` names the action. The completion rule needs no SDK
+  widening.
+- Every emitted publish call passes the aggregate's id as the event's stream id: `saved.getId()`
+  on create, the path `id` on update, delete and action. The generated publisher encodes it into
+  `EventDescriptor.streamIdHigh` / `streamIdLow`.
+- The kernel's `EventDescriptor` carries the event id, the stream id, the type ordinal, the flags and a
+  timestamp. It carries no tenant or isolation key and no correlation id (exeris-kernel#600, open).
+- `HttpStreamExchange` documents that the engine has written the SSE response head (`200`) before
+  `HttpStreamHandler.handle` runs. A stream handler therefore cannot answer with a status: every
+  failure it meets is after the head.
+- The Community stream dispatch binds the allocator and the request-body decoder registry for the
+  stream's life, and no request-scoped persistence session (ADR-077). The emitted repository runs
+  each call through `TransactionalExecutor` (`query` for a read, `executeManaged` for a write), so
+  a stream handler's read or write takes a connection for that call and returns it.
+- `PRINCIPAL_CONTEXT` and `STORAGE_CONTEXT` are bound by the kernel's `SecurityInterceptor`, which
+  the dispatcher runs only for a route whose `HttpRoutePolicy` requirement is not `permitAll()`.
+  On a stream route the binding holds for the stream's whole life.
+
+### Decisions
+
+1. **The per-action stream runs its action, then closes when the action's events have arrived.**
+   `POST {base}/{id}/actions/{kebab}` (obligation 1's per-action route, unchanged) does, in order:
+   the tenant guard (decision 6); the path `id`; the `@ActionParam` body, when the action has one;
+   `service.findById(id)` under row-level security; a subscription to each `@DomainEvent` in the
+   action's `ACTION`-triggered set, filtered on stream id (decision 6); the action itself, as the
+   respond-once action route runs it: invoke the entity method, persist through `service.update`,
+   publish after the commit (ADR-075); the result frame (decision 3). The subscription is in place
+   before the action runs, so no event the action publishes can precede it. The stream closes once
+   every event of the `ACTION`-triggered set has been received for this stream id, or when a
+   deadline expires. The deadline is a compile-time constant measured on the monotonic clock; as
+   with obligation 4's keep-alive constants, its value is an implementation detail, not a contract
+   constant. An action whose set is empty subscribes to nothing and closes after the result frame.
+   The per-action stream does not stay open to watch the row: open-ended watching is decision 7's
+   route.
+
+2. **A failure after the head is a reserved error frame, then `close()`.** The frame is named
+   `stream-error`. Its data is a JSON problem object (RFC 9457 member names) whose `status` is the
+   status the respond-once action route answers for the same failure, the statuses ADR-076 fixes
+   and ADR-079's emitted OpenAPI declares: `500` for the tenant guard, `400` for a malformed `id`,
+   the ADR-036 status for a body that does not decode, `404` for a row that is absent or invisible
+   under row-level security, `409` for a version conflict on a versioned entity, `500` for anything
+   else. Because the head precedes `handle` (see the facts), this frame carries every refusal of a
+   stream route, including the ones a respond-once route answers before it writes anything.
+   `stream-error` and `keep-alive` are reserved frame names: the processor refuses a `@DomainEvent`
+   whose name is a reserved frame name, with an `EXT-PROC` identifier allocated in the
+   implementation pull request (ADR-095).
+
+3. **Event frames carry the `@DomainEvent` name; `streamEventType` names one result frame.** Each
+   event the per-action stream forwards is a frame named by its `@DomainEvent` name, the wire name
+   the entity-level producer uses (obligation 2). `@Action.streamEventType`, or the action's name
+   when it is blank as in the shipped handler, names exactly one frame per stream: the result
+   frame, whose data is the action's return value. The contract fixes no order between the result
+   frame and the event frames; the end of the stream is the completion signal.
+
+4. **The stream id bounds interleaving to one aggregate, where it is documented.** The stream-id
+   filter removes the events of every other aggregate. Two concurrent invocations on the same
+   aggregate publish under the same stream id, and `EventDescriptor` carries no correlation id, so
+   each stream can receive the other's event frames, and an event of the other invocation can
+   satisfy decision 1's completion count. The generated Javadoc and the TS client's documentation
+   state this. It holds until the kernel carries a correlation id on the descriptor.
+
+5. **Obligation 4's queue rule is replaced.** "No heap-queue buffering" becomes: a hand-off queue
+   between the bus dispatch thread and the stream's thread is permitted if it is bounded, drops on
+   full, has a compile-time capacity, and reports each drop. This is the shape the entity-level
+   producer ships (`KernelStreamScaffold.STREAM_BUFFER_CAPACITY`, `offer` with a logged drop). The
+   intent stands: a slow consumer costs no memory that grows with the backlog, and back pressure on
+   `emit` still parks the stream's virtual thread. A dropped frame of the `ACTION`-triggered set
+   leaves decision 1's count incomplete, so that stream closes at the deadline.
+
+6. **Tenant isolation is decided per driver.**
+   - **Per-action, and decision 7's route: decided, no kernel key needed.** The handler carries the
+     T41/T45 tenant guard: on a tenant-partitioned entity, an unbound `STORAGE_CONTEXT` is refused
+     (decision 2's frame, `500`). It loads the row with `findById` under row-level security before
+     it subscribes or emits a frame; a row the caller cannot read is a `404` frame. It then forwards
+     only bus events whose descriptor stream id equals the row's id. The emitted publishers write
+     the aggregate id as the stream id (see the facts), so every forwarded event is about a row the
+     caller was allowed to read. The per-action stream clients of tenant-partitioned entities can
+     then ship (wave S4).
+   - **Entity-level: waits for exeris-kernel#600.** A live view of the collection has no row to
+     load and no stream id to filter on; it needs an isolation key on the event. `EXT-PROC-1014`
+     stays.
+   - **Rejected: a row-level-security lookup per event** for the entity-level feed. It costs a
+     database read per forwarded event; it cannot verify a `DELETE` event, whose row is gone; and on
+     a stream route, which ADR-077 runs with no request session, each lookup takes a pooled
+     connection of its own, once per event for as long as the feed runs.
+
+7. **`GET {base}/{id}/stream` is the spectate route.** An open-ended stream of one row's events:
+   it subscribes to the entity's `@DomainEvent`s, forwards those whose stream id equals `{id}`, and
+   runs until the client disconnects. It is guarded as decision 6 describes (tenant guard,
+   `findById` under row-level security, stream-id filter) and refuses through decision 2's frame.
+   It is registered with `streamRoute(GET, …)`, described in the emitted OpenAPI, and any file it
+   adds carries a row in the generator catalogue (ADR-097). Its TS client's transport follows the
+   ADR that T53 produces: native `EventSource` cannot send a bearer header, so the transport
+   depends on how a generated client presents its credential.
+
+8. **No default `/api/v1/events/stream`.** The emitted `EventBusService` (`event-gen.ts`) defaults
+   to an endpoint that no generated server route serves. The consumer supplies the endpoint, or
+   `EventBusService` is not emitted. No server-side fan-in route is generated: it would be a feed
+   across every entity and every tenant.
+
+### Left open
+
+Each is decided in, or before, the implementation pull request named beside it:
+
+- The result frame of a `void` action, and how the generators learn the return type: the SDK's
+  `ActionMetadata.resultType` carrier exists, but neither the processor nor the SDK's
+  `SourceModelReader` fills it, and ADR-042 requires both halves (J4-1).
+- Whether a `streamEventType` equal to a reserved frame name, or to the name of an event the
+  action triggers, is refused as a colliding `@DomainEvent` name is (J4-1).
+- Whether the event types `EventSource` itself dispatches (`message`, `open`, `error`) join the
+  reserved set for the clients built on it (J4-2).
+- Which declaration emits the spectate route: `realTimeApi = true`, which `EXT-PROC-1014` refuses
+  on a tenant-partitioned entity, or a streaming action on the entity (J4-2).
+
+### Consequences
+
+- `EXT-PROC-1107` is retired when J4-1 lands; under ADR-095 a retired identifier is never allocated
+  again.
+- `STORAGE_CONTEXT` is bound only on a route whose requirement is not `permitAll()`, and the
+  emitted application binds no route policy until T53 lands. Until then the tenant guard refuses
+  every per-action and spectate stream of a tenant-partitioned entity: the guard is correct before
+  T53, and the routes become usable with it.
+- Row visibility is checked once, when the stream opens. A row whose visibility changes while a
+  spectate stream is open, through a revoked shared scope or a delete, keeps streaming its events
+  until the client disconnects.
+- Between J4-1 and S4 the Java pipeline emits guarded per-action handlers for tenant-partitioned
+  entities while `exeris-codegen-ts` withholds their clients (`hasActionStreamClients`). The gap is
+  sequenced, not a parity exception; S4 closes it.
+- Amendment 1's "Reversed by" clause named this amendment as the place the reversal would be
+  planned. This amendment does not reverse it. If exeris-kernel#600 lands, an Amendment 3 reverses
+  Amendment 1 for the entity-level driver: the handler filters on the isolation key and
+  `EXT-PROC-1014` is retired.
+
+### Implementation order
+
+1. **J4-1:** the per-action driver (decision 1), the tenant guard, the row-level-security load and
+   the stream-id filter (decision 6), the error and result frames (decisions 2 and 3), the
+   reserved-name refusal, and the bounded queue (decision 5). Retires `EXT-PROC-1107`.
+2. **J4-2:** the `GET {base}/{id}/stream` route (decision 7), its OpenAPI description, its
+   generator-catalogue row (ADR-097), and its row in `contract/stream-routes.json`
+   (`exeris-e2e-tests`).
+3. **S4:** the TS per-action stream clients for tenant-partitioned entities, the spectate client,
+   `contract/stream-routes.json` as the shape both builds read, and decision 8.
+
+### Engineering Protocol additions
+
+- The compile gate (`KernelCodegenCompileTest`) compiles a tenant-partitioned entity with a
+  streaming action that triggers at least one `@DomainEvent`, and the spectate route.
+- A test driven against the kernel testkit's event engine opens streams on two rows of one
+  tenant-partitioned entity and asserts that each receives only its own row's events: Amendment 1's
+  measurement, inverted.
+- `StreamRouteParityE2ETest` and `stream-route-parity.spec.ts` gain the spectate row.
+- The determinism check covers the new handler bodies; the deadline and the queue capacity are
+  emitted as constants.
