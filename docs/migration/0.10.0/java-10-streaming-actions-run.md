@@ -33,8 +33,8 @@ conflict, `500` for the tenant guard and any other failure. The `EXT-PROC-1107` 
 listed under *Retired identifiers* in [`diagnostics.md`](../../diagnostics.md).
 
 The handler emits no frame named by `@Action.streamEventType`: that frame carries the action's
-return value, and the generators do not know its type yet. Under `-Aexeris.strict` the attribute
-is reported as inert (`EXT-PROC-1201`).
+return value, and the generators do not know its type until exeris-sdk#191 lands. The TypeScript
+client reads the attribute, so `-Aexeris.strict` does not report it as inert.
 
 Two invocations on the same row at the same time publish under the same stream id, and kernel
 events carry no correlation id, so each stream can receive the other's event frames.

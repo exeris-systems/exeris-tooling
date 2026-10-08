@@ -10,7 +10,7 @@ migrations, sagas, and corresponding Angular/TypeScript frontend artifacts.
 
 ## Requirements
 
-- **Maven on JDK 25 LTS or newer.** The reactor compiles at `--release 25` and builds
+- **Maven on JDK 25 LTS or newer (a GA release).** The reactor compiles at `--release 25` and builds
   class v69 artifacts, including `exeris-codegen-maven-plugin`, whose classes load into
   Maven's own JVM — so an older JDK dies at plugin load with an opaque classworlds
   `UnsupportedClassVersionError` realm dump. A `maven-enforcer` rule fails with one
