@@ -63,12 +63,13 @@ class DiagnosticIdTest {
         m.put(DiagnosticId.GRAPH_EDGE_REPEATED_ON_FIELD, "EXT-PROC-1013");
         m.put(DiagnosticId.REAL_TIME_API_ON_TENANT_PARTITIONED, "EXT-PROC-1014");
         m.put(DiagnosticId.ENTITY_WITHOUT_ID_FIELD, "EXT-PROC-1015");
+        m.put(DiagnosticId.DOMAIN_EVENT_NAME_RESERVED, "EXT-PROC-1016");
+        m.put(DiagnosticId.STREAM_EVENT_TYPE_COLLIDES, "EXT-PROC-1017");
         m.put(DiagnosticId.TENANT_SCOPED_DEPRECATED, "EXT-PROC-1101");
         m.put(DiagnosticId.VALIDATION_ATTRIBUTE_DEPRECATED, "EXT-PROC-1102");
         m.put(DiagnosticId.VALIDATE_ON_UNRECOGNISED, "EXT-PROC-1103");
         m.put(DiagnosticId.SHARED_SCOPE_OUTSIDE_UNIVERSE, "EXT-PROC-1105");
         m.put(DiagnosticId.BIND_WITHOUT_SOURCE_IGNORED, "EXT-PROC-1106");
-        m.put(DiagnosticId.STREAMING_ACTION_NOT_INVOKED, "EXT-PROC-1107");
         m.put(DiagnosticId.STRICT_INERT_ATTRIBUTE, "EXT-PROC-1201");
         m.put(DiagnosticId.STRICT_INERT_ANNOTATION, "EXT-PROC-1202");
         m.put(DiagnosticId.STRICT_UNREAD_ANNOTATION, "EXT-PROC-1203");

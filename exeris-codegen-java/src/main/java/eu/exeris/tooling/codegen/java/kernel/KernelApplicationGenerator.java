@@ -181,9 +181,9 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
      * domains arrive in.
      */
     private enum Scope {
-        /** Read by every handler factory, which passes it to the handler's constructor. */
+        /** Read by every handler factory, and by a body-decoding per-action stream handler's. */
         MEMORY_ALLOCATOR(KERNEL_PROVIDERS, Phase.COMPOSITION),
-        /** Read by the publisher, subscriber and EV1 stream-handler factories. */
+        /** Read by the publisher, subscriber, EV1 and event-triggering per-action stream-handler factories. */
         EVENT_ENGINE(KERNEL_PROVIDERS, Phase.COMPOSITION),
         /** Read by the saga-flow factories. */
         FLOW_ENGINE(KERNEL_PROVIDERS, Phase.COMPOSITION),
@@ -883,14 +883,18 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
                                 ? CodeBlock.of("new $T($T.eventEngine())", streamHandlerType, KERNEL_PROVIDERS)
                                 : CodeBlock.of("new $T()", streamHandlerType));
             }
+            // ADR-044 Amendment 2: the per-action handler runs its action, so it takes the
+            // service; the allocator when it decodes a body; the publisher and the EventEngine
+            // when the action triggers events. Each is captured here for the reason the EV1
+            // producer's engine is.
             for (ActionMetadata action : domain.actions()) {
                 if (action.streaming()) {
-                    String actionPascal = NameCasing.pascal(action.name());
-                    ClassName actionStreamHandlerType =
-                            ClassName.get(pkgs.handler(), entity + actionPascal + "StreamHandler");
-                    addComponent(type, actionStreamHandlerType,
-                            entityLower + actionPascal + "StreamHandler",
-                            CodeBlock.of("new $T()", actionStreamHandlerType));
+                    ClassName actionStreamHandlerType = ClassName.get(pkgs.handler(),
+                            entity + NameCasing.pascal(action.name()) + "StreamHandler");
+                    String component = lowerFirst(actionStreamHandlerType.simpleName());
+                    addComponent(type, actionStreamHandlerType, component, actionStreamHandlerFactory(
+                            domain, action, actionStreamHandlerType, serviceName, publisherName,
+                            component, readers));
                 }
             }
         }
@@ -988,6 +992,33 @@ public class KernelApplicationGenerator implements KernelArtifactGenerator {
 
         return new GeneratedFile(basePackage, COMPONENTS_TYPE_NAME,
                 KernelScaffold.render(basePackage, type.build()), ArtifactType.APPLICATION);
+    }
+
+    /**
+     * The construction of one per-action stream handler, with each scope its constructor arguments
+     * read recorded against its factory. The argument list follows
+     * {@link KernelActionStreamHandlerGenerator}'s constructor: the service, the allocator when the
+     * action decodes a body, then the publisher and the engine when it triggers events.
+     */
+    private static CodeBlock actionStreamHandlerFactory(DomainMetadata domain, ActionMetadata action,
+                                                        ClassName handlerType, String serviceName,
+                                                        String publisherName, String component,
+                                                        Map<Scope, List<CodeBlock>> readers) {
+        CodeBlock.Builder args = CodeBlock.builder().add("$L()", serviceName);
+        if (KernelActionStreamHandlerGenerator.decodesBody(action)) {
+            read(readers, Scope.MEMORY_ALLOCATOR, factoryReference(component));
+            read(readers, Scope.HTTP_REQUEST_BODY_DECODER_REGISTRY,
+                    CodeBlock.of("{@link $T}{@code .parseBody}", handlerType));
+            args.add(", $T.MEMORY_ALLOCATOR.get()", KERNEL_PROVIDERS);
+        }
+        if (!KernelActionStreamHandlerGenerator.triggeredEvents(domain, action).isEmpty()) {
+            read(readers, Scope.EVENT_ENGINE, factoryReference(component));
+            args.add(", $L(), $T.eventEngine()", publisherName, KERNEL_PROVIDERS);
+        }
+        if (DataScopeSupport.isTenantPartitioned(domain)) {
+            read(readers, Scope.STORAGE_CONTEXT, CodeBlock.of("the tenant guard in {@link $T}", handlerType));
+        }
+        return CodeBlock.of("new $T($L)", handlerType, args.build());
     }
 
     /** Records that {@code reader} — a Javadoc fragment naming it — reads {@code scope}. */
