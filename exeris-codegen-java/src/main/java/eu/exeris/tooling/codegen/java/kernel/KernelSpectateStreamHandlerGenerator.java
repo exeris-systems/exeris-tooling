@@ -232,11 +232,7 @@ public class KernelSpectateStreamHandlerGenerator implements KernelArtifactGener
                 .initializer("$S", KernelStreamScaffold.STREAM_ERROR_FRAME)
                 .addJavadoc("The reserved frame name of a refusal after the response head.\n")
                 .build());
-        fields.add(FieldSpec.builder(TypeName.LONG, "KEEPALIVE_INTERVAL_MILLIS",
-                        Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
-                .initializer("$LL", KernelStreamScaffold.KEEPALIVE_INTERVAL_MILLIS)
-                .addJavadoc("How long the stream may be quiet before it sends a {@code keep-alive} frame.\n")
-                .build());
+        fields.add(KernelStreamScaffold.keepAliveIntervalField());
         if (subscribes) {
             fields.add(FieldSpec.builder(TypeName.INT, "STREAM_BUFFER_CAPACITY",
                             Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
@@ -360,15 +356,7 @@ public class KernelSpectateStreamHandlerGenerator implements KernelArtifactGener
                     .addParameter(ParameterizedTypeName.get(KernelStreamScaffold.BLOCKING_QUEUE, STREAM_EVENT),
                             "queue")
                     .beginControlFlow(TRY)
-                    .beginControlFlow("while (true)")
-                    .addStatement("$T frame = queue.poll(KEEPALIVE_INTERVAL_MILLIS, $T.MILLISECONDS)",
-                            STREAM_EVENT, KernelStreamScaffold.TIME_UNIT)
-                    .beginControlFlow("if (frame == null)")
-                    .addStatement(EMIT_KEEP_ALIVE, STREAM_EVENT, KernelStreamScaffold.KEEP_ALIVE_FRAME, "")
-                    .nextControlFlow("else")
-                    .addStatement("exchange.emit(frame)")
-                    .endControlFlow()
-                    .endControlFlow();
+                    .addCode(KernelStreamScaffold.drainLoop());
         } else {
             method.addJavadoc("Emits a {@code keep-alive} frame every {@code KEEPALIVE_INTERVAL_MILLIS} until\n")
                     .addJavadoc("{@code emit} throws on a disconnect.\n")
