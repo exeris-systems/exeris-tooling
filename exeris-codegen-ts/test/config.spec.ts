@@ -85,6 +85,29 @@ describe('GeneratorConfigSchema', () => {
     expect(parsed.backend).toBe('KERNEL');
     expect(parsed.apiBasePath).toBe('/v2/api');
   });
+
+  it('customBlocks defaults to no entry and keeps a valid one', () => {
+    expect(GeneratorConfigSchema.parse({}).customBlocks).toEqual({});
+    const entry = { import: '../blocks/star-rating.component', symbol: 'StarRatingComponent' };
+    expect(GeneratorConfigSchema.parse({ customBlocks: { StarRating: entry } }).customBlocks).toEqual({ StarRating: entry });
+  });
+
+  it('customBlocks rejects a symbol that is no identifier and an empty module specifier', () => {
+    expect(() => GeneratorConfigSchema.parse({ customBlocks: { A: { import: './a', symbol: 'star-rating' } } })).toThrow();
+    expect(() => GeneratorConfigSchema.parse({ customBlocks: { A: { import: '', symbol: 'A' } } })).toThrow();
+  });
+
+  it("viewHeading defaults to 'title' and accepts 'title' and 'none'", () => {
+    expect(GeneratorConfigSchema.parse({}).viewHeading).toBe('title');
+    expect(DEFAULT_CONFIG.viewHeading).toBe('title');
+    expect(GeneratorConfigSchema.parse({ viewHeading: 'title' }).viewHeading).toBe('title');
+    expect(GeneratorConfigSchema.parse({ viewHeading: 'none' }).viewHeading).toBe('none');
+  });
+
+  it('viewHeading rejects any other value', () => {
+    expect(() => GeneratorConfigSchema.parse({ viewHeading: 'hidden' })).toThrow();
+    expect(() => GeneratorConfigSchema.parse({ viewHeading: false })).toThrow();
+  });
 });
 
 // ---------- DEFAULT_CONFIG ----------
