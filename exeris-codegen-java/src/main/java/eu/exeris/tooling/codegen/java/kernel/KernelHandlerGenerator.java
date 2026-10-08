@@ -206,7 +206,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         handlerBuilder.addMethod(buildExtractPathId());
         handlerBuilder.addMethod(buildRespondDecoderUnavailable(entityLower));
         handlerBuilder.addMethod(buildRespondDecodeFailed(entityLower));
-        handlerBuilder.addMethod(buildParseBody());
+        handlerBuilder.addMethod(parseBodyMethod(HTTP_EXCHANGE));
 
         TypeSpec handler = handlerBuilder.build();
 
@@ -438,7 +438,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
      * entity's whole CRUD surface, and the {@code -Aexeris.strict} audit is the place that kind of
      * "you wrote it and it does nothing" belongs.
      */
-    private List<DomainEventMetadata> triggered(DomainMetadata metadata,
+    static List<DomainEventMetadata> triggered(DomainMetadata metadata,
                                                 DomainEventMetadata.Trigger trigger,
                                                 String actionName) {
         return metadata.events().stream()
@@ -462,7 +462,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
      * @param aggregateExpr expression yielding the aggregate for payload-bearing events, or
      *                      {@code null} when the caller has none to offer
      */
-    private void appendPublishCalls(MethodSpec.Builder method, DomainMetadata metadata,
+    static void appendPublishCalls(MethodSpec.Builder method, DomainMetadata metadata,
                                     DomainEventMetadata.Trigger trigger, String actionName,
                                     String idExpr, String aggregateExpr) {
         for (DomainEventMetadata event : triggered(metadata, trigger, actionName)) {
@@ -479,7 +479,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
 
     /** The payload-bearing half of {@link #appendPublishCalls}, separable because the delete
      *  path can only offer an aggregate inside a presence check. */
-    private void appendPayloadPublishCalls(MethodSpec.Builder method, DomainMetadata metadata,
+    private static void appendPayloadPublishCalls(MethodSpec.Builder method, DomainMetadata metadata,
                                            DomainEventMetadata.Trigger trigger, String actionName,
                                            String idExpr, String aggregateExpr) {
         for (DomainEventMetadata event : triggered(metadata, trigger, actionName)) {
@@ -572,7 +572,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
     /** Emits the per-action request record (canonical constructor = {@code @ActionParam}
      *  components, in declaration order). Decoded by {@code parseBody} via the ADR-036
      *  codec SPI, exactly like the CRUD body. */
-    private TypeSpec buildActionRequestRecord(ActionMetadata action) {
+    static TypeSpec buildActionRequestRecord(ActionMetadata action) {
         MethodSpec.Builder canonical = MethodSpec.constructorBuilder().addModifiers(Modifier.PUBLIC);
         for (ActionParamMetadata p : action.params()) {
             canonical.addParameter(ParameterSpec.builder(typeNameOf(p.type()), p.name()).build());
@@ -584,7 +584,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                 .build();
     }
 
-    private static String actionRequestName(ActionMetadata action) {
+    static String actionRequestName(ActionMetadata action) {
         return NameCasing.pascal(action.name()) + "Request";
     }
 
@@ -654,16 +654,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                 .addModifiers(Modifier.PRIVATE)
                 .addParameter(HTTP_EXCHANGE, EXCHANGE_PARAM)
                 .addStatement("LOG.log($T.ERROR, $S)", KernelScaffold.LOGGER_LEVEL,
-                        "Refusing " + entityLower + " request: no tenant is bound. This entity is "
-                                + "tenant-scoped, so row-level security would return no rows and the "
-                                + "response would be indistinguishable from an empty database. The "
-                                + "kernel binds PRINCIPAL_CONTEXT and STORAGE_CONTEXT from an "
-                                + "authenticated token in its SecurityInterceptor, which the HTTP "
-                                + "dispatcher runs only for a route whose HttpRoutePolicy requirement "
-                                + "is not permitAll() - and this application binds no policy, so no "
-                                + "route demands identity. Bind HttpKernelProviders.HTTP_ROUTE_POLICY "
-                                + "around boot, or bind KernelProviders.STORAGE_CONTEXT around the "
-                                + "dispatch.")
+                        tenantUnboundMessage(entityLower))
                 .addStatement(RESPOND_SERVER_ERROR, HTTP_STATUS)
                 .build();
     }
@@ -685,14 +676,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                 .addParameter(HTTP_EXCHANGE, EXCHANGE_PARAM)
                 .addParameter(ILLEGAL_STATE_EXCEPTION, "cause")
                 .addStatement("LOG.log($T.ERROR, $S, cause)", KernelScaffold.LOGGER_LEVEL,
-                        "Refusing " + entityLower + " request: no request body decoder was "
-                                + "available. The kernel resolves one from HttpKernelProviders."
-                                + "HTTP_REQUEST_BODY_DECODER_REGISTRY, which the HTTP subsystem "
-                                + "binds around the dispatch. An absent registry, or no decoder "
-                                + "registered for the request content-type, is a deployment fault "
-                                + "rather than a malformed body - so it is answered 500 and never "
-                                + "downgraded to 400 (ADR-036). Bind the registry around boot, or "
-                                + "register a decoder for the content-type this route receives.")
+                        decoderUnavailableMessage(entityLower))
                 .addStatement(RESPOND_SERVER_ERROR, HTTP_STATUS)
                 .build();
     }
@@ -715,14 +699,61 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                 .addParameter(HTTP_EXCHANGE, EXCHANGE_PARAM)
                 .addParameter(RUNTIME_EXCEPTION, "cause")
                 .addStatement("LOG.log($T.ERROR, $S, cause)", KernelScaffold.LOGGER_LEVEL,
-                        "Refusing " + entityLower + " request: the request body decoder failed with "
-                                + "a fault the kernel does not classify as the caller's "
-                                + "(FaultOrigin.SYSTEM) - a decoder or driver defect, or a runtime "
-                                + "resource failure, rather than a malformed body. It is answered 500 "
-                                + "and never downgraded to 400 (ADR-036, kernel ADR-083). The logged "
-                                + "cause names the failure.")
+                        decodeFailedMessage(entityLower))
                 .addStatement(RESPOND_SERVER_ERROR, HTTP_STATUS)
                 .build();
+    }
+
+    /**
+     * The log line of the tenant guard's refusal, shared by every route that carries the guard.
+     *
+     * @param entityLower the entity name, first letter lower-case
+     * @return the message, naming the bindings that would let the request through
+     */
+    static String tenantUnboundMessage(String entityLower) {
+        return "Refusing " + entityLower + " request: no tenant is bound. This entity is "
+                + "tenant-scoped, so row-level security would return no rows and the "
+                + "response would be indistinguishable from an empty database. The "
+                + "kernel binds PRINCIPAL_CONTEXT and STORAGE_CONTEXT from an "
+                + "authenticated token in its SecurityInterceptor, which the HTTP "
+                + "dispatcher runs only for a route whose HttpRoutePolicy requirement "
+                + "is not permitAll() - and this application binds no policy, so no "
+                + "route demands identity. Bind HttpKernelProviders.HTTP_ROUTE_POLICY "
+                + "around boot, or bind KernelProviders.STORAGE_CONTEXT around the "
+                + "dispatch.";
+    }
+
+    /**
+     * The log line of the "no decoder" refusal, shared by every route that decodes a body.
+     *
+     * @param entityLower the entity name, first letter lower-case
+     * @return the message, naming the registry the decoder is resolved from
+     */
+    static String decoderUnavailableMessage(String entityLower) {
+        return "Refusing " + entityLower + " request: no request body decoder was "
+                + "available. The kernel resolves one from HttpKernelProviders."
+                + "HTTP_REQUEST_BODY_DECODER_REGISTRY, which the HTTP subsystem "
+                + "binds around the dispatch. An absent registry, or no decoder "
+                + "registered for the request content-type, is a deployment fault "
+                + "rather than a malformed body - so it is answered 500 and never "
+                + "downgraded to 400 (ADR-036). Bind the registry around boot, or "
+                + "register a decoder for the content-type this route receives.";
+    }
+
+    /**
+     * The log line of the "decoder failed server-side" refusal, shared by every route that decodes
+     * a body.
+     *
+     * @param entityLower the entity name, first letter lower-case
+     * @return the message, which carries no request data
+     */
+    static String decodeFailedMessage(String entityLower) {
+        return "Refusing " + entityLower + " request: the request body decoder failed with "
+                + "a fault the kernel does not classify as the caller's "
+                + "(FaultOrigin.SYSTEM) - a decoder or driver defect, or a runtime "
+                + "resource failure, rather than a malformed body. It is answered 500 "
+                + "and never downgraded to 400 (ADR-036, kernel ADR-083). The logged "
+                + "cause names the failure.";
     }
 
     /** Emits the shared "parse {@code id} from the path or 400" guard: declares a
@@ -857,7 +888,17 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                 .build();
     }
 
-    private MethodSpec buildParseBody() {
+    /**
+     * The {@code parseBody} method of a handler whose exchange is {@code exchangeType}.
+     *
+     * <p>Shared by the respond-once handler ({@code HttpExchange}) and the per-action stream
+     * handler ({@code HttpStreamExchange}): both reach the request through {@code request()}, so
+     * one body serves both, and the two cannot decode a body differently.
+     *
+     * @param exchangeType the type of the {@code exchange} parameter
+     * @return the generic {@code parseBody(exchange, type)} method
+     */
+    static MethodSpec parseBodyMethod(ClassName exchangeType) {
         TypeVariableName tVar = TypeVariableName.get("T");
         return MethodSpec.methodBuilder("parseBody")
                 .addModifiers(Modifier.PRIVATE)
@@ -866,7 +907,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
                 .addAnnotation(AnnotationSpec.builder(SuppressWarnings.class)
                         .addMember("value", "$S", "unchecked")
                         .build())
-                .addParameter(HTTP_EXCHANGE, EXCHANGE_PARAM)
+                .addParameter(exchangeType, EXCHANGE_PARAM)
                 .addParameter(ParameterizedTypeName.get(ClassName.get(Class.class), tVar), "type")
                 .addJavadoc("Decodes the request body into {@code type} via the server-side\n")
                 .addJavadoc("request-body codec SPI (ADR-036).\n")
