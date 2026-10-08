@@ -115,16 +115,14 @@ describe('TypeGenerator.generate — per-domain interface emission', () => {
     expect(content).toContain('orderNumber?: string; // Business order ID');
   });
 
-  it('Create DTO excludes system fields ("id" by default), lifecycle fields, and inCreate=false fields', () => {
+  it('Create DTO excludes the key, the readOnly fields and the inCreate=false fields, and a name that plays no role stays', () => {
     const content = gen.generate(domain({
       entityName: 'Order',
       fields: [
-        field({ name: 'id', type: 'UUID' }),                          // system (default 'id')
-        field({ name: 'createdAt', type: 'Instant' }),                // lifecycle constant
-        field({ name: 'updatedAt', type: 'Instant' }),                // lifecycle constant
-        field({ name: 'version', type: 'Long' }),                     // lifecycle constant
-        field({ name: 'active', type: 'boolean' }),                   // lifecycle constant
-        field({ name: 'parentTenantId', type: 'UUID' }),              // lifecycle constant
+        field({ name: 'id', type: 'UUID' }),                          // the key
+        field({ name: 'createdAt', type: 'Instant' }),                // not audited: no role, so carried
+        field({ name: 'active', type: 'boolean' }),                   // no role, so carried
+        field({ name: 'status', type: 'String', readOnly: true }),    // readOnly excluded
         field({ name: 'auditTrail', type: 'String', inCreate: false }), // inCreate excluded
         field({ name: 'name', type: 'String' }),                      // SHOULD be in Create
       ],
@@ -136,12 +134,10 @@ describe('TypeGenerator.generate — per-domain interface emission', () => {
     const createSlice = content.slice(createBlockStart, createBlockEnd);
 
     expect(createSlice).toContain('name?: string;');
+    expect(createSlice).toContain('createdAt?:');
+    expect(createSlice).toContain('active?:');
     expect(createSlice).not.toContain('id?:');
-    expect(createSlice).not.toContain('createdAt?:');
-    expect(createSlice).not.toContain('updatedAt?:');
-    expect(createSlice).not.toContain('version?:');
-    expect(createSlice).not.toContain('active?:');
-    expect(createSlice).not.toContain('parentTenantId?:');
+    expect(createSlice).not.toContain('status?:');
     expect(createSlice).not.toContain('auditTrail?:');
   });
 
@@ -387,9 +383,9 @@ describe('TypeGenerator buildZodType — validation chain (exercised via emitted
   const gen = new TypeGenerator();
   const ctx = createGeneratorContext({ generateZod: true });
 
-  function schemaFor(fields: FieldMetadata[]): string {
+  function schemaFor(fields: FieldMetadata[], flags: Partial<DomainMetadata> = {}): string {
     const files = gen.generateAggregate(
-      [domain({ entityName: 'Thing', fields })],
+      [domain({ entityName: 'Thing', fields, ...flags })],
       ctx,
     );
     return files.find(f => f.path === 'schemas/thing.schema.ts')!.content;
@@ -446,7 +442,7 @@ describe('TypeGenerator buildZodType — validation chain (exercised via emitted
       field({ name: 'id', type: 'UUID' }),
       field({ name: 'version', type: 'Long' }),
       field({ name: 'name', type: 'String' }),
-    ]);
+    ], { versioned: true });
     expect(content).toContain('ThingCreateSchema = ThingSchema.omit({');
     expect(content).toContain('id: true');
     expect(content).toContain('version: true');
@@ -472,7 +468,7 @@ describe('TypeGenerator system-field resolution (exercised via .omit set in the 
   const gen = new TypeGenerator();
   const ctx = createGeneratorContext({ generateZod: true });
 
-  it('default system fields present on the entity → all omitted from CreateSchema', () => {
+  it('the key, the version and the audit stamps the entity enables are omitted from CreateSchema', () => {
     const files = gen.generateAggregate([domain({
       entityName: 'Thing',
       fields: [
@@ -481,11 +477,14 @@ describe('TypeGenerator system-field resolution (exercised via .omit set in the 
         field({ name: 'createdAt', type: 'Instant' }),
         field({ name: 'updatedAt', type: 'Instant' }),
       ],
+      versioned: true,
+      audited: true,
     })], ctx);
     const schema = files.find(f => f.path === 'schemas/thing.schema.ts')!.content;
 
-    for (const sf of ['id: true', 'version: true', 'createdAt: true', 'updatedAt: true']) {
-      expect(schema).toContain(sf);
+    const create = schema.slice(schema.indexOf('ThingCreateSchema'), schema.indexOf('ThingUpdateSchema'));
+    for (const omitted of ['id: true', 'version: true', 'createdAt: true', 'updatedAt: true']) {
+      expect(create).toContain(omitted);
     }
   });
 
@@ -516,7 +515,7 @@ describe('TypeGenerator system-field resolution (exercised via .omit set in the 
     expect(schema).not.toMatch(/\bid: true/);
   });
 
-  it('every optional systemFields.* alias, when declared as a field, flows into the omit set', () => {
+  it('every systemFields.* alias, when declared as a field, flows into the create omit set', () => {
     const files = gen.generateAggregate([domain({
       entityName: 'Thing',
       // tenantIdField names the owner only on a tenant-partitioned entity.
@@ -553,8 +552,15 @@ describe('TypeGenerator system-field resolution (exercised via .omit set in the 
     // All nine non-primary-key components of SystemFieldsMetadata. The three soft-delete
     // ones had no declaration in the TS schema at all until 0.9.0, so this loop could not
     // have covered them however it was written.
-    for (const f of ['rev', 'ct', 'ut', 'cb', 'ub', 'tid', 'gone', 'dt', 'db']) {
-      expect(schema).toContain(`${f}: true`);
+    const create = schema.slice(schema.indexOf('ThingCreateSchema'), schema.indexOf('ThingUpdateSchema'));
+    expect(create).toContain('id: true');
+    expect(create).toContain('tid: true');
+    for (const f of ['rev', 'ct', 'ut', 'cb', 'ub', 'gone', 'dt', 'db']) {
+      expect(create).toContain(`${f}: true`);
+    }
+    // The update omits them, bar the version.
+    for (const f of ['ct', 'ut', 'cb', 'ub', 'tid', 'gone', 'dt', 'db']) {
+      expect(schema.slice(schema.indexOf('ThingUpdateSchema'))).toContain(`${f}: true`);
     }
   });
 });
@@ -654,7 +660,6 @@ describe('TypeGenerator — a tenant-partitioned owner without a systemFields bl
   // The owner is DataScopeSupport.ownerFieldName on the Java side, which the emitted OpenAPI
   // reads: tenant-partitioned only, the declared tenantIdField when non-blank, else tenantId.
   const ownerRows: Array<[string, Partial<DomainMetadata>, boolean]> = [
-    ['GLOBAL with a block naming tenantIdField keeps it', { dataScope: 'GLOBAL', systemFields: { primaryKeyField: 'id', tenantIdField: 'tenantId', versionField: 'version' } }, true],
     ['TENANT with a block and no tenantIdField omits it', { dataScope: 'TENANT', systemFields: { primaryKeyField: 'id', versionField: 'version' } }, false],
     ['TENANT with a block and a blank tenantIdField omits it', { dataScope: 'TENANT', systemFields: { primaryKeyField: 'id', tenantIdField: '  ' } }, false],
     ['UNIVERSE with no block omits it', { dataScope: 'UNIVERSE' }, false],
@@ -736,12 +741,22 @@ describe('TypeGenerator — versioned update DTO and schema', () => {
     expect(schema).toContain('export const ThingUpdateSchema = ThingSchema.omit({ id: true }).extend({ version: z.number().nullable() });');
   });
 
-  it('the create DTO and schema still leave the version out (the server owns the initial one)', () => {
-    const { types, schema } = emit({ versioned: true });
-    const start = types.indexOf('export interface ThingCreate {');
-    const create = types.slice(start, types.indexOf('}', start));
-    expect(create).not.toContain('version');
-    expect(schema).toContain('ThingCreateSchema = ThingSchema.omit({\n  id: true,\n  version: true,\n});');
+  it('the create DTO and schema leave out the version, whether the entity marks it read-only or not (the server starts it)', () => {
+    const open = emit({ versioned: true });
+    const openStart = open.types.indexOf('export interface ThingCreate {');
+    expect(open.types.slice(openStart, open.types.indexOf('}', openStart))).not.toContain('version');
+    expect(open.schema).toContain('ThingCreateSchema = ThingSchema.omit({\n  id: true,\n  version: true,\n});');
+
+    const locked = emit({
+      versioned: true,
+      fields: [
+        field({ name: 'id', type: 'UUID' }),
+        field({ name: 'version', type: 'java.lang.Long', readOnly: true }),
+      ],
+    });
+    const lockedStart = locked.types.indexOf('export interface ThingCreate {');
+    expect(locked.types.slice(lockedStart, locked.types.indexOf('}', lockedStart))).not.toContain('version');
+    expect(locked.schema).toContain('ThingCreateSchema = ThingSchema.omit({\n  id: true,\n  version: true,\n});');
   });
 
   it('honours systemFields.versionField as the key', () => {
@@ -752,8 +767,7 @@ describe('TypeGenerator — versioned update DTO and schema', () => {
     });
     expect(types).toContain("export type ThingUpdate = Omit<Thing, 'id'> & { rev: number };");
     expect(schema).toContain('ThingSchema.omit({ id: true }).extend({ rev: z.number() });');
-    // T20: `rev` is a key of ThingSchema, so it is omitted from create; `version` is not, so it is not.
-    expect(schema).toContain('  rev: true,');
+    // T20: an omitted key must be a key of ThingSchema.
     expect(schema).not.toContain('  version: true,');
   });
 
@@ -764,7 +778,18 @@ describe('TypeGenerator — versioned update DTO and schema', () => {
     });
     expect(types).toContain("export type ThingUpdate = Omit<Thing, 'id'> & { version: number };");
     expect(schema).toContain('ThingSchema.omit({ id: true }).extend({ version: z.number() });');
-    expect(schema).not.toContain('  version: true,');
+    // The entity schema lists the read-only version; the create is cut from it without the version.
+    expect(schema).toContain('  version: z.number().optional(),');
+    expect(schema).toContain('ThingCreateSchema = ThingSchema.omit({\n  id: true,\n  version: true,\n});');
+  });
+
+  it('the entity read type lists a version the entity does not declare, and an unversioned one lists none', () => {
+    const versioned = emit({
+      versioned: true,
+      fields: [field({ name: 'id', type: 'UUID' }), field({ name: 'name', type: 'String' })],
+    });
+    expect(versioned.types).toContain('export interface Thing {\n  id?: string;\n  name?: string;\n  version?: number;\n}');
+    expect(emit({ versioned: false, fields: [field({ name: 'id', type: 'UUID' })] }).types).not.toContain('version');
   });
 
   it('an unversioned entity\'s update is the record without its key', () => {
@@ -804,10 +829,10 @@ describe('TypeGenerator — the update DTO is the record the server writes back'
         field({ name: 'createdAt', type: 'java.time.Instant' }),
       ],
     }));
-    expect(types).toContain("export type LedgerUpdate = Omit<Ledger, 'id' | 'code' | 'createdAt'>;");
+    expect(types).toContain("export type LedgerUpdate = Omit<Ledger, 'id' | 'code' | 'createdAt' | 'updatedAt'>;");
     expect(types).not.toMatch(/LedgerUpdate = Partial</);
     expect(types).toContain('title: string;');
-    expect(schema).toContain('export const LedgerUpdateSchema = LedgerSchema.omit({ id: true, code: true, createdAt: true });');
+    expect(schema).toContain('export const LedgerUpdateSchema = LedgerSchema.omit({ id: true, code: true, createdAt: true, updatedAt: true });');
   });
 
   it('leaves out the owner of a tenant-partitioned entity, which the update never writes', () => {

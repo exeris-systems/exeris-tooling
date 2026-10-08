@@ -1,0 +1,33 @@
+{
+  "entityName": "UniverseWithFlags",
+  "packageName": "com.example.parity",
+  "dataScope": "UNIVERSE",
+  "systemFields": {
+    "sharedScopeField": "scopeId"
+  },
+  "fields": [
+    {
+      "name": "id",
+      "type": "java.util.UUID"
+    },
+    {
+      "name": "title",
+      "type": "java.lang.String"
+    },
+    {
+      "name": "tenantId",
+      "type": "java.util.UUID"
+    },
+    {
+      "name": "scopeId",
+      "type": "java.util.UUID",
+      "inCreate": false,
+      "inUpdate": false
+    },
+    {
+      "name": "sku",
+      "type": "java.lang.String",
+      "inUpdate": false
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "entityName": "VersionedOpenCreate",
+  "packageName": "com.example.parity",
+  "versioned": true,
+  "fields": [
+    {
+      "name": "id",
+      "type": "java.util.UUID"
+    },
+    {
+      "name": "title",
+      "type": "java.lang.String"
+    },
+    {
+      "name": "version",
+      "type": "java.lang.Long",
+      "required": true
+    }
+  ]
+}
