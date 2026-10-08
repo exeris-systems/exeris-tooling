@@ -11,7 +11,8 @@ import java.util.Set;
 import java.util.TreeSet;
 
 /**
- * The fields an update does not write from the entity it is handed.
+ * The fields the create and update bodies leave out, the fields an update does not write from the
+ * entity it is handed, and the fields the server must set before a row is written.
  *
  * <p>An update replaces every domain field with the entity's value, except two kinds of field:
  * <ul>
@@ -41,8 +42,9 @@ import java.util.TreeSet;
  *       handler does not validate.</li>
  * </ul>
  *
- * <p>The version and the shared scope are in none of them: every update writes both, the version as
- * the value the caller passes plus one.
+ * <p>The version and a UNIVERSE entity's shared scope are in no update set: every update writes
+ * both, the version as the value the caller passes plus one. The shared scope is in
+ * {@link #notInCreateBody}, since the create stamps it from the bound scope.
  *
  * @since 0.10
  */

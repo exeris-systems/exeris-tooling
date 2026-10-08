@@ -497,6 +497,10 @@ system role. They are out of `updateFromRequest`'s `SET` list and read back, out
 `…UpdateDto` and unvalidated on `PUT`; `update`, which an action drives, writes them, as Amendment 2
 decides for a read-only field. A field in a system role keeps that role's rule.
 
+*Rename:* the method Amendment 2 names `ServerOwnedFields#readOnlyFields` is
+`ServerOwnedFields#fixedOnRequestUpdate` from this amendment on; Amendment 2's text keeps the old
+name as it was accepted.
+
 **The insert is unchanged.** It writes the entity it is handed, so a `POST` body that names a
 read-only or `inCreate = false` field still stores that value; the schema does not list it and the
 generated client never sends it.
