@@ -3341,6 +3341,11 @@ Proposals, highest return-on-effort first:
       [ADR-105](docs/adr/ADR-105-generated-route-policy-emission.md);
       implementation J3-1 to J3-4.
 
+      *Landed:* J3-2, the seam: the generated `Application` binds `HTTP_ROUTE_POLICY` through
+      `routePolicy()`, `applicationPolicy()` and `unmatchedRoutes()`, and a generated
+      `GeneratedRoutePolicy` abstains on every route. Behaviour is unchanged. Extraction, the table,
+      the conformance test, the TypeScript guards and the OpenAPI security block remain.
+
 - [ ] **D10 — the TS side has a bearer-token code path that reaches no emitted output.**
       *Scheduled: 0.10.0, with T53.* Surfaced by
       the review of the D8 PR and verified: `KernelStrategy.getDefaultHeaders`
