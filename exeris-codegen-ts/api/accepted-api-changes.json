@@ -208,5 +208,11 @@
     "since": "0.10",
     "adr": "ADR-090",
     "justification": "ADR-090 Amendments 3 and 4: the update treats an inUpdate = false field as read-only, and the create body is the fields the server does not set, so the TS types and schemas carry the properties the Java OpenAPI <Entity>UpdateDto, <Entity>CreateDto and entity schema carry. A hand-written update body that sets an inUpdate = false property no longer type-checks. The create type and schema no longer list a read-only field in the schema, and drop the audit, version and soft-delete fields under their role names and a systemFields name on any data scope; they no longer drop a field because of a name in a fixed list (active, hierarchyLevel, onboarding fields, parentTenantId). A versioned entity that declares no version field, and an audited one that declares no stamps, get optional properties for them on its read type and schema. docs/MIGRATION-0.x-to-1.0.md 0.10.0 carries the step."
+  },
+  {
+    "signature": "events/event-bus.service.ts (EventBusService), events/<entity>.events.ts and their app-barrel exports: emitted with the endpoint '/api/v1/events/stream' -> emitted only when the config key eventBusEndpoint is set, with that endpoint",
+    "since": "0.10",
+    "adr": "ADR-044",
+    "justification": "ADR-044 Amendment 2 decision 8: no generated server route serves /api/v1/events/stream, and none is generated, since a feed across every entity would cross every tenant. The consumer names the endpoint of the feed it runs; without the key the bus, the entity event handlers that inject it and their barrel exports are not emitted. A consumer that imports EventBusService, DomainEvent or an <Entity>EventHandler sets eventBusEndpoint. docs/MIGRATION-0.x-to-1.0.md 0.10.0 carries the step."
   }
 ]

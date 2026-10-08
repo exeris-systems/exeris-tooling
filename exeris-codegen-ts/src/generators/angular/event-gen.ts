@@ -53,14 +53,15 @@ export class EventHandlerGenerator implements CodeGenerator {
     // Generate central event bus service
     const domainsWithEvents = domains.filter(d => d.events && d.events.length > 0);
 
-    if (domainsWithEvents.length === 0) {
+    const endpoint = context.config.eventBusEndpoint;
+    if (domainsWithEvents.length === 0 || endpoint === undefined) {
       return [];
     }
 
     return [
       {
         path: 'events/event-bus.service.ts',
-        content: this.generateEventBusService(domainsWithEvents, context),
+        content: this.generateEventBusService(endpoint),
         artifactType: 'EVENT',
         overwritable: true,
       },
@@ -329,7 +330,7 @@ export interface ${entityName}${pascalName}Event {
   }`;
   }
 
-  private generateEventBusService(_domains: DomainMetadata[], _context: GeneratorContext): string {
+  private generateEventBusService(endpoint: string): string {
     return `${fileHeader({
       title: 'Central Event Bus Service',
       lead: ['', 'Manages real-time event subscriptions via SSE/WebSocket/WebTransport.', 'Provides a unified event stream for all domain events.', ''],
@@ -390,7 +391,7 @@ export interface EventBusConfig {
 // ============================================================================
 
 const DEFAULT_CONFIG: EventBusConfig = {
-  endpoint: '/api/v1/events/stream',
+  endpoint: '${tsSingleQuoted(endpoint)}',
   reconnectAttempts: 5,
   reconnectDelay: 1000,
   heartbeatInterval: 30000,

@@ -77,7 +77,7 @@ Options:
   --no-details           Skip detail component generation
   --no-stores            Skip Signal store generation
   --no-sagas             Skip saga state-machine generation
-  --no-events            Skip domain-event handler generation
+  --no-events            Skip domain-event handler and event bus generation
   --no-scaffold          Emit no Angular project or app-shell file; write the generated
                          tree at the output root, for an app you already own (see below)
   --render <mode>        How the scaffolded app renders: csr (default, browser only) or
@@ -148,7 +148,8 @@ put settings you want to keep.
   "customBlocks": {
     "StarRating": { "import": "../blocks/star-rating.component", "symbol": "StarRatingComponent" }
   },
-  "viewHeading": "title"
+  "viewHeading": "title",
+  "eventBusEndpoint": "/orders/events"
 }
 ```
 
@@ -178,6 +179,18 @@ or its name when it declares none. `"none"` emits no `<h1>`, for pages whose own
 headline, such as a HERO with one; the rest of the page is unchanged. Either way the page's route
 keeps the view's `title`, which sets the document title, and the navigation label stays the same.
 The option applies to every `@View` page of the run. It is file-only; it has no CLI flag.
+
+### `eventBusEndpoint`: the feed behind `EventBusService`
+
+`EventBusService` opens one `EventSource` on the URL `eventBusEndpoint` names and hands every
+frame to the entity event handlers (`events/<entity>.events.ts`). No generated server route serves
+a feed across every entity, since it would cross every entity and every tenant, so there is no
+default: the consumer names the endpoint of the feed it runs.
+
+With no `eventBusEndpoint`, the event surface is not emitted: no `events/event-bus.service.ts`, no
+`events/<entity>.events.ts` (each handler injects the bus), and none of their exports in the app
+barrel. `--no-events` still turns the surface off when the key is set. The value is written into
+the service as its endpoint. This option is file-only; it has no CLI flag.
 
 ## The dev server (`npm start`)
 
@@ -388,7 +401,7 @@ src/app/generated/
 │   ├── product-list.component.ts
 │   ├── customer-form.component.ts
 │   └── customer-list.component.ts
-├── events/                   # domain-event handlers + the shared bus
+├── events/                   # domain-event handlers + the shared bus (only with eventBusEndpoint)
 │   ├── event-bus.service.ts
 │   └── order.events.ts
 ├── sagas/                    # one state machine per entity declaring @Saga

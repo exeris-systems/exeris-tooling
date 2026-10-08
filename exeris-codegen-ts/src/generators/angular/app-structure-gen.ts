@@ -13,7 +13,7 @@
  */
 
 import type { DomainMetadata, ViewMetadata } from '../../models/domain-model.js';
-import type { GeneratorConfig } from '../../config.js';
+import { emitsEventSurface, type GeneratorConfig } from '../../config.js';
 import { DslMapper } from '../../models/dsl-mapper.js';
 import { modelTypeName } from '../../models/model-naming.js';
 import {
@@ -628,7 +628,7 @@ function generateBarrelExport(
   // but nothing in the emitted app injects them: they exist for the CONSUMER's code, exactly
   // like the generated services. The barrel is how that code reaches them without knowing
   // internal paths, so an event surface missing from it is emitted-but-unreachable.
-  const eventDomains = config.generateEvents
+  const eventDomains = emitsEventSurface(config)
     ? domains.filter((d) => d.events && d.events.length > 0)
     : [];
   if (eventDomains.length > 0) {

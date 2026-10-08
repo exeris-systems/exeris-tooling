@@ -435,6 +435,7 @@ const ALL_ON: GeneratorConfig = {
   generateStores: true,
   generateSagas: true,
   generateEvents: true,
+  eventBusEndpoint: '/orders/events',
   generateTests: true,
 };
 

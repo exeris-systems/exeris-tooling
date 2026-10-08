@@ -42,6 +42,9 @@ function danglingSpecifiers(config: GeneratorConfig): string[] {
     .filter((spec) => !emitted.has(`src/app/${spec}.ts`));
 }
 
+// The event surface needs a bus endpoint, so every case below runs with one.
+const BASE_CONFIG: GeneratorConfig = { ...DEFAULT_CONFIG, eventBusEndpoint: '/orders/events' };
+
 const FLAGS = [
   'generateZod',
   'generateServices',
@@ -55,17 +58,17 @@ const FLAGS = [
 
 describe('app barrel resolves', () => {
   it('names only emitted files with every generator on', () => {
-    expect(danglingSpecifiers(DEFAULT_CONFIG)).toEqual([]);
+    expect(danglingSpecifiers(BASE_CONFIG)).toEqual([]);
   });
 
   it.each(FLAGS)('names only emitted files with %s off', (flag) => {
-    expect(danglingSpecifiers({ ...DEFAULT_CONFIG, [flag]: false })).toEqual([]);
+    expect(danglingSpecifiers({ ...BASE_CONFIG, [flag]: false })).toEqual([]);
   });
 
   it('names only emitted files with every optional generator off', () => {
     const allOff = FLAGS.reduce<GeneratorConfig>(
       (config, flag) => ({ ...config, [flag]: false }),
-      DEFAULT_CONFIG,
+      BASE_CONFIG,
     );
     expect(danglingSpecifiers(allOff)).toEqual([]);
   });
@@ -73,9 +76,9 @@ describe('app barrel resolves', () => {
   // The barrel is the consumer's entry point, so a flag being ON must actually put the surface
   // there — the opposite failure from a dangling export, and the one the events slice fixed.
   it('exports the event surface when the flag is on, and drops it when off', () => {
-    const on = buildGeneratedFiles([order], [], DEFAULT_CONFIG)
+    const on = buildGeneratedFiles([order], [], BASE_CONFIG)
       .find((f) => f.path === 'src/app/index.ts')?.content ?? '';
-    const off = buildGeneratedFiles([order], [], { ...DEFAULT_CONFIG, generateEvents: false })
+    const off = buildGeneratedFiles([order], [], { ...BASE_CONFIG, generateEvents: false })
       .find((f) => f.path === 'src/app/index.ts')?.content ?? '';
 
     expect(on).toContain("export { EventBusService } from './events/event-bus.service';");
@@ -83,9 +86,9 @@ describe('app barrel resolves', () => {
   });
 
   it('exports the saga surface when the flag is on, and drops it when off', () => {
-    const on = buildGeneratedFiles([order], [], DEFAULT_CONFIG)
+    const on = buildGeneratedFiles([order], [], BASE_CONFIG)
       .find((f) => f.path === 'src/app/index.ts')?.content ?? '';
-    const off = buildGeneratedFiles([order], [], { ...DEFAULT_CONFIG, generateSagas: false })
+    const off = buildGeneratedFiles([order], [], { ...BASE_CONFIG, generateSagas: false })
       .find((f) => f.path === 'src/app/index.ts')?.content ?? '';
 
     expect(on).toContain("export { OrderFulfilmentStateMachine } from './sagas/order.saga';");
@@ -103,7 +106,7 @@ describe('app barrel resolves', () => {
       sagaMetadata: { name: 'ProductRestock', steps: [{ name: 'requestQuote' }] },
     });
 
-    const barrel = buildGeneratedFiles([order, second], [], DEFAULT_CONFIG)
+    const barrel = buildGeneratedFiles([order, second], [], BASE_CONFIG)
       .find((f) => f.path === 'src/app/index.ts')?.content ?? '';
 
     expect(barrel).not.toContain("export * from './sagas/");
@@ -153,7 +156,7 @@ describe('scaffold-off tree resolves', () => {
     return dangling;
   }
 
-  const scaffoldOff: GeneratorConfig = { ...DEFAULT_CONFIG, scaffold: false };
+  const scaffoldOff: GeneratorConfig = { ...BASE_CONFIG, scaffold: false };
 
   it('names only emitted files with every generator on', () => {
     expect(danglingRelativeImports(buildGeneratedFiles([order], [], scaffoldOff, [unbound, bound]))).toEqual([]);

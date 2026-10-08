@@ -59,6 +59,13 @@ export const GeneratorConfigSchema = z.object({
   /** Generate Event handlers */
   generateEvents: z.boolean().default(true),
 
+  /** The URL the emitted `EventBusService` opens its `EventSource` on, for example
+   *  `/orders/events`. No generated server route serves a feed across every entity, so the
+   *  consumer names the endpoint of the feed it runs. Absent, the whole event surface (the bus,
+   *  every entity's event handler and their barrel exports) is not emitted, whatever
+   *  `generateEvents` says. File-only; it has no CLI flag. */
+  eventBusEndpoint: z.string().min(1).optional(),
+
   /** Prefix in front of every generated service URL.
    *
    *  Defaults to '' so the emitted client requests exactly what the emitted server serves:
@@ -165,6 +172,11 @@ export type GeneratorConfig = z.infer<typeof GeneratorConfigSchema>;
 // ============================================================================
 // Default Configuration
 // ============================================================================
+
+/** Whether the domain-event surface (bus, handlers, barrel exports) is emitted. */
+export function emitsEventSurface(config: Pick<GeneratorConfig, 'generateEvents' | 'eventBusEndpoint'>): boolean {
+  return config.generateEvents && config.eventBusEndpoint !== undefined;
+}
 
 export const DEFAULT_CONFIG: GeneratorConfig = {
   inputPath: 'target/classes/exeris-metadata',
