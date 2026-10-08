@@ -28,7 +28,8 @@ import {
   type DomainMetadata,
 } from '../../../src/models/domain-model.js';
 
-const CTX: GeneratorContext = createGeneratorContext({});
+const ENDPOINT = '/orders/events';
+const CTX: GeneratorContext = createGeneratorContext({ eventBusEndpoint: ENDPOINT });
 
 function domain(overrides: Partial<DomainMetadata> & { entityName: string }): DomainMetadata {
   return DomainMetadataSchema.parse({ packageName: 'com.shop', ...overrides });
@@ -377,6 +378,17 @@ describe('EventHandlerGenerator.generateAggregate — central event-bus service'
     expect(files[0].overwritable).toBe(true);
   });
 
+  it('emits no bus when the consumer names no endpoint', () => {
+    const order = domain({ entityName: 'Order', events: [{ name: 'Created', fields: [] }] });
+    expect(gen.generateAggregate([order], createGeneratorContext({}, [order]))).toEqual([]);
+  });
+
+  it('writes the endpoint through a string literal, so a quote in it stays inside the string', () => {
+    const order = domain({ entityName: 'Order', events: [{ name: 'Created', fields: [] }] });
+    const ctx = createGeneratorContext({ eventBusEndpoint: "/it's/events" }, [order]);
+    expect(gen.generateAggregate([order], ctx)[0].content).toContain("endpoint: '/it\\'s/events'");
+  });
+
   it('returns EMPTY array when no domain has events (no bus emitted at all)', () => {
     const files = gen.generateAggregate([
       domain({ entityName: 'NoEvents1' }),
@@ -400,7 +412,8 @@ describe('EventHandlerGenerator.generateAggregate — central event-bus service'
     expect(content).toContain('export interface EventBusConfig {');
 
     // Default config
-    expect(content).toContain("endpoint: '/api/v1/events/stream'");
+    expect(content).toContain(`endpoint: '${ENDPOINT}'`);
+    expect(content).not.toContain('/api/v1/events/stream');
     expect(content).toContain('reconnectAttempts: 5');
     expect(content).toContain('reconnectDelay: 1000');
     expect(content).toContain('heartbeatInterval: 30000');
@@ -548,7 +561,7 @@ describe('EventHandlerGenerator — wired', () => {
   // and the rule ADR-060 applied to slf4j on the Java side.
   it('emits no $localize in either half — it would be an undeclared consumer-build requirement', () => {
     const gen = new EventHandlerGenerator();
-    const ctx = createGeneratorContext({}, [ordered]);
+    const ctx = createGeneratorContext({ eventBusEndpoint: ENDPOINT }, [ordered]);
     expect(gen.generate(ordered, ctx)?.content).not.toContain('$localize');
     for (const file of gen.generateAggregate([ordered], ctx)) {
       expect(file.content).not.toContain('$localize');
@@ -560,7 +573,7 @@ describe('EventHandlerGenerator — wired', () => {
     const plain = DomainMetadataSchema.parse({
       packageName: 'com.shop', entityName: 'Plain', fields: [{ name: 'id', type: 'java.util.UUID' }],
     });
-    const ctx = createGeneratorContext({}, [plain]);
+    const ctx = createGeneratorContext({ eventBusEndpoint: ENDPOINT }, [plain]);
     expect(gen.generate(plain, ctx)).toBeNull();
     expect(gen.generateAggregate([plain], ctx)).toEqual([]);
   });

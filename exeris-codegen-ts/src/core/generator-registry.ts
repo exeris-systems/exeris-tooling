@@ -99,6 +99,7 @@ export interface GeneratorConfig {
   generateStores: boolean;
   generateSagas: boolean;
   generateEvents: boolean;
+  eventBusEndpoint?: string;
   apiBasePath: string;
   overwrite: boolean;
   dryRun: boolean;
@@ -302,6 +303,7 @@ export function createGeneratorContext(
     generateStores: config.generateStores ?? true,
     generateSagas: config.generateSagas ?? true,
     generateEvents: config.generateEvents ?? true,
+    ...(config.eventBusEndpoint !== undefined ? { eventBusEndpoint: config.eventBusEndpoint } : {}),
     // '' — the same default config.ts declares: the emitted router serves the entity path
     // with no prefix, so the client must request the same path.
     apiBasePath: config.apiBasePath ?? '',

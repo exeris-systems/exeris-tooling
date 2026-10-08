@@ -404,12 +404,13 @@ describe('buildGeneratedFiles — domain events', () => {
     fields: [{ name: 'id', type: 'java.util.UUID' }, { name: 'total', type: 'java.math.BigDecimal' }],
     events: [{ name: 'OrderPlaced', payloadFields: ['id', 'total'] }],
   });
+  const WITH_BUS = { ...DEFAULT_CONFIG, eventBusEndpoint: '/orders/events' };
   const noEvents = domain({ entityName: 'Product', fields: [{ name: 'id', type: 'java.util.UUID' }] });
   const at = (files: { path: string; content: string }[], p: string) =>
     files.find((f) => f.path === p)?.content ?? '';
 
   it('emits both the per-entity handler and the shared bus', () => {
-    const files = buildGeneratedFiles([withEvents], [], DEFAULT_CONFIG);
+    const files = buildGeneratedFiles([withEvents], [], WITH_BUS);
     expect(files.some((f) => f.path === 'src/app/events/order.events.ts')).toBe(true);
     expect(files.some((f) => f.path === 'src/app/events/event-bus.service.ts')).toBe(true);
   });
@@ -417,7 +418,7 @@ describe('buildGeneratedFiles — domain events', () => {
   // The handler imports './event-bus.service'. Emitting one without the other is a dangling
   // import — TS2307 — which is why both call sites had to be wired in the same change.
   it('emits the bus the handler imports', () => {
-    const files = buildGeneratedFiles([withEvents], [], DEFAULT_CONFIG);
+    const files = buildGeneratedFiles([withEvents], [], WITH_BUS);
     expect(at(files, 'src/app/events/order.events.ts')).toContain("from './event-bus.service'");
     expect(files.some((f) => f.path === 'src/app/events/event-bus.service.ts')).toBe(true);
   });
@@ -428,18 +429,18 @@ describe('buildGeneratedFiles — domain events', () => {
       fields: [{ name: 'id', type: 'java.util.UUID' }],
       events: [{ name: 'InvoiceIssued', payloadFields: ['id'] }],
     });
-    const buses = buildGeneratedFiles([withEvents, second], [], DEFAULT_CONFIG)
+    const buses = buildGeneratedFiles([withEvents, second], [], WITH_BUS)
       .filter((f) => f.path.endsWith('event-bus.service.ts'));
     expect(buses).toHaveLength(1);
   });
 
   it('emits nothing under events/ when no entity declares one', () => {
-    const files = buildGeneratedFiles([noEvents], [], DEFAULT_CONFIG);
+    const files = buildGeneratedFiles([noEvents], [], WITH_BUS);
     expect(files.some((f) => f.path.includes('/events/'))).toBe(false);
   });
 
   it('emits no event code when generateEvents is false', () => {
-    const files = buildGeneratedFiles([withEvents], [], { ...DEFAULT_CONFIG, generateEvents: false });
+    const files = buildGeneratedFiles([withEvents], [], { ...WITH_BUS, generateEvents: false });
     expect(files.some((f) => f.path.includes('/events/'))).toBe(false);
   });
 
@@ -447,14 +448,27 @@ describe('buildGeneratedFiles — domain events', () => {
   // they exist for the consumer's own code, like the generated services. The barrel is how that
   // code reaches them, so an event surface missing from it is emitted-but-unreachable.
   it('exports the event surface from the app barrel', () => {
-    const barrel = at(buildGeneratedFiles([withEvents], [], DEFAULT_CONFIG), 'src/app/index.ts');
+    const barrel = at(buildGeneratedFiles([withEvents], [], WITH_BUS), 'src/app/index.ts');
     expect(barrel).toContain("export { EventBusService } from './events/event-bus.service';");
     expect(barrel).toContain("export * from './events/order.events';");
   });
 
   it('adds no event exports to the barrel for an app with no events', () => {
-    const barrel = at(buildGeneratedFiles([noEvents], [], DEFAULT_CONFIG), 'src/app/index.ts');
+    const barrel = at(buildGeneratedFiles([noEvents], [], WITH_BUS), 'src/app/index.ts');
     expect(barrel).not.toContain('events/');
+  });
+
+  it('emits no event surface without eventBusEndpoint, and no file imports the bus', () => {
+    const files = buildGeneratedFiles([withEvents], [], DEFAULT_CONFIG);
+    expect(files.some((f) => f.path.includes('/events/'))).toBe(false);
+    expect(files.filter((f) => f.content.includes('event-bus.service'))).toEqual([]);
+    expect(at(files, 'src/app/index.ts')).not.toContain('events/');
+  });
+
+  it('writes no /api/v1/events/stream literal anywhere', () => {
+    const files = buildGeneratedFiles([withEvents], [], WITH_BUS);
+    expect(files.filter((f) => f.content.includes('/api/v1/events/stream'))).toEqual([]);
+    expect(at(files, 'src/app/events/event-bus.service.ts')).toContain("endpoint: '/orders/events'");
   });
 });
 

@@ -204,7 +204,7 @@ declared name.
 | `angular/detail-gen.ts` | `src/app/components/{kebab(E)}-detail.component.ts` | `generateDetails`, and `uiMetadata.detailView` is not `false`. | entity |
 | `angular/store-gen.ts` | `src/app/stores/{kebab(E)}.store.ts` | `generateStores`; every entity. | entity |
 | `angular/saga-gen.ts` | `src/app/sagas/{kebab(E)}.saga.ts` | `generateSagas`, and `sagaMetadata` is present. | entity |
-| `angular/event-gen.ts` | `src/app/events/{kebab(E)}.events.ts`; `src/app/events/event-bus.service.ts` | `generateEvents`, and `events` is non-empty. The bus is written once when any entity qualifies. | entity (handler); project (bus) |
+| `angular/event-gen.ts` | `src/app/events/{kebab(E)}.events.ts`; `src/app/events/event-bus.service.ts` | `generateEvents`, the config key `eventBusEndpoint` is set, and `events` is non-empty. The bus is written once when any entity qualifies, with `eventBusEndpoint` as its endpoint; without the key neither file is written. | entity (handler); project (bus) |
 | `angular/spec-gen.ts` | `src/app/schemas/{kebab(E)}.schema.spec.ts`; `src/app/services/{kebab(E)}.service.spec.ts` | `generateTests`; the schema spec also needs `generateZod`, the service spec `generateServices`. Every entity. | entity |
 | `angular/http-error-gen.ts` | `src/app/core/http-error.ts` | At least one entity is loaded and at least one of `generateDetails`, `generateLists`, `generateForms`, `generateStores`, `generateSagas` is on (`needsHttpErrorHelper`). | project |
 | `angular/view-gen.ts` | `src/app/pages/{kebab(V)}.component.ts`; `src/app/pages/{kebab(V)}.route.ts` | One pair per `view_*.json` in the metadata directory. | per view |

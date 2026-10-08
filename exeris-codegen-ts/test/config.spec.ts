@@ -105,6 +105,14 @@ describe('GeneratorConfigSchema', () => {
     expect(GeneratorConfigSchema.parse({ viewHeading: 'none' }).viewHeading).toBe('none');
   });
 
+  it('eventBusEndpoint is absent by default and accepts a non-empty string', () => {
+    expect(GeneratorConfigSchema.parse({}).eventBusEndpoint).toBeUndefined();
+    expect(DEFAULT_CONFIG.eventBusEndpoint).toBeUndefined();
+    expect(GeneratorConfigSchema.parse({ eventBusEndpoint: '/orders/events' }).eventBusEndpoint).toBe('/orders/events');
+    expect(() => GeneratorConfigSchema.parse({ eventBusEndpoint: '' })).toThrow();
+    expect(() => GeneratorConfigSchema.parse({ eventBusEndpoint: 5 })).toThrow();
+  });
+
   it('viewHeading rejects any other value', () => {
     expect(() => GeneratorConfigSchema.parse({ viewHeading: 'hidden' })).toThrow();
     expect(() => GeneratorConfigSchema.parse({ viewHeading: false })).toThrow();

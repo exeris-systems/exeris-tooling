@@ -332,7 +332,12 @@ const peers = [
 // T2 (ADR-058): the gate must RUN the emitted specs, not merely type-check them, so the sample is
 // generated with tests on. EXERIS_SAMPLE_NO_TESTS generates the default (opt-out) shape instead,
 // which is what proves the flag leaves output untouched when nobody asks for tests.
-const config = { ...DEFAULT_CONFIG, generateTests: !process.env.EXERIS_SAMPLE_NO_TESTS };
+// `eventBusEndpoint` is what puts the event bus and the entity event handlers into the sample.
+const config = {
+  ...DEFAULT_CONFIG,
+  generateTests: !process.env.EXERIS_SAMPLE_NO_TESTS,
+  eventBusEndpoint: '/shipments/events',
+};
 
 // The backend-less app: two pages and a section, all authored content. The landing page nests
 // blocks and leaves one binding at the SDK's NONE default; the section is routed but gets no nav

@@ -12,7 +12,7 @@
  */
 
 import type { DomainMetadata, ViewMetadata } from './models/domain-model.js';
-import type { GeneratorConfig } from './config.js';
+import { emitsEventSurface, type GeneratorConfig } from './config.js';
 import { createGeneratorContext } from './core/generator-registry.js';
 import { generateTypes, TypeGenerator } from './generators/api/type-gen.js';
 import { generateEnumTypes, type EnumMetadataForGen } from './generators/api/enum-module-gen.js';
@@ -159,7 +159,7 @@ export function buildGeneratedFiles(
 
     // Domain-event handler: listen to and react to domain events published by this entity.
     // (The shared event bus is emitted separately below for entities that declare events.)
-    if (config.generateEvents) {
+    if (emitsEventSurface(config)) {
       const handler = eventGenerator.generate(domain, ctx);
       if (handler) appTree.push(handler);
     }
@@ -194,8 +194,8 @@ export function buildGeneratedFiles(
   }
 
   // The event bus is app-wide: one service every entity's handler imports, emitted only when
-  // some entity actually declares an event.
-  if (config.generateEvents) {
+  // some entity declares an event and the consumer names the endpoint it connects to.
+  if (emitsEventSurface(config)) {
     appTree.push(...eventGenerator.generateAggregate(domains, ctx));
   }
 
