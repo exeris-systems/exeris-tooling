@@ -176,6 +176,7 @@ export class FormGenerator implements CodeGenerator {
     lines.push('    <form (submit)="onSubmit($event)" novalidate class="space-y-6">');
 
     for (const f of createFields) {
+      const blockStart = lines.length;
       const { label, control, inputType, inputMode, enumType: enumTypeName } = f.form;
       const requiredMark = f.form.required ? '<span class="text-red-500" aria-hidden="true">*</span>' : '';
       const binding = `[formField]="form.${f.name}"`;
@@ -231,6 +232,11 @@ export class FormGenerator implements CodeGenerator {
       lines.push('          </p>');
       lines.push('        }');
       lines.push('      </div>');
+      // A control the create form does not offer renders in edit mode only.
+      if (!f.form.inCreate) {
+        const block = lines.splice(blockStart).map((line) => `  ${line}`);
+        lines.push('      @if (editMode()) {', ...block, '      }');
+      }
     }
 
     // Computed fields are shown for information: read-only, and not part of the form model.
@@ -417,7 +423,12 @@ export class FormGenerator implements CodeGenerator {
     const updatePayload = version
       ? `{ ...current, ...data${fixedInEdit}, ${version.name}: this.loadedVersion() } as ${modelName}Update`
       : `{ ...current, ...data${fixedInEdit} } as ${modelName}Update`;
-    lines.push(`    const request$ = this.editMode() && current ? this.service.update(String(current.${idField}), ${updatePayload}) : this.service.create(data as ${modelName}Create);`);
+    // The create payload leaves out a field only the edit form offers (`inCreate = false`).
+    const createMembers = createFields.filter((r) => r.form.inCreate).map((r) => `${r.name}: data.${r.name}`);
+    const createPayload = createMembers.length === createFields.length
+      ? `data as ${modelName}Create`
+      : `${createMembers.length > 0 ? `{ ${createMembers.join(', ')} }` : '{}'} as ${modelName}Create`;
+    lines.push(`    const request$ = this.editMode() && current ? this.service.update(String(current.${idField}), ${updatePayload}) : this.service.create(${createPayload});`);
     lines.push('');
     lines.push('    return new Promise((resolve) => {');
     lines.push('      request$.subscribe({');
@@ -525,8 +536,9 @@ interface FormValidation {
  *   length or pattern constraint is declared on character sequences.
  * - min and max bound a number control directly. A text control holding a decimal string is bounded
  *   by its parsed value; a blank or unparseable value passes.
- * - `disabled` applies to a field with `inUpdate = false` while the form edits. A disabled field
- *   takes no input and is not validated, so a required field the edit cannot change never blocks it.
+ * - `disabled` applies to a field with `inUpdate = false` while the form edits, and to a field with
+ *   `inCreate = false` while it creates. A disabled field takes no input and is not validated, so a
+ *   required field the current mode does not offer never blocks it.
  */
 function formValidation(fields: readonly FieldRenderModel[]): FormValidation {
   const rules: string[] = [];
@@ -553,6 +565,7 @@ function formValidation(fields: readonly FieldRenderModel[]): FormValidation {
       if (f.max !== undefined) add(`max(${path}, ${f.max});`, 'max');
     }
     if (!form.inUpdate) add(`disabled(${path}, { when: () => this.editMode() });`, 'disabled');
+    if (!form.inCreate) add(`disabled(${path}, { when: () => !this.editMode() });`, 'disabled');
   }
   return { rules, used };
 }

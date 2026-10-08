@@ -475,11 +475,11 @@ describe('FormGenerator field filtering for createFields', () => {
     expect(content).toContain('data-testid="field-name"');
   });
 
-  it('excludes inCreate=false fields', () => {
+  it('excludes fields with inCreate = false and inUpdate = false', () => {
     const content = gen.generate(domain({
       entityName: 'Thing',
       fields: [
-        field({ name: 'derived', type: 'String', inCreate: false }),
+        field({ name: 'derived', type: 'String', inCreate: false, inUpdate: false }),
         field({ name: 'name', type: 'String' }),
       ],
     }), CTX)!.content;
@@ -1153,6 +1153,65 @@ describe('FormGenerator — @Field(inUpdate = false)', () => {
     }), CTX)!.content;
     expect(plain).not.toContain('disabled(');
     expect(plain).not.toMatch(/import \{ [^}]*\bdisabled\b/);
+  });
+});
+
+describe('FormGenerator — @Field(inCreate = false, inUpdate = true)', () => {
+  const gen = new FormGenerator();
+  const fields = [
+    field({ name: 'id', type: 'java.util.UUID' }),
+    field({ name: 'name', type: 'String' }),
+    field({ name: 'trackingCode', type: 'String', required: true, inCreate: false }),
+    field({ name: 'price', type: 'java.lang.Long' }),
+  ];
+  const content = gen.generate(domain({ entityName: 'Shipment', fields }), CTX)!.content;
+
+  it('renders the control in edit mode only', () => {
+    const start = content.indexOf('      @if (editMode()) {\n        <div class="form-group">\n          <label for="trackingCode"');
+    expect(start, 'the edit-only block').toBeGreaterThan(-1);
+    const block = content.slice(start, content.indexOf('\n      }\n', start));
+    expect(block).toContain('<input id="trackingCode" data-testid="field-trackingCode" type="text" [formField]="form.trackingCode"');
+    expect(block).toContain('data-testid="error-trackingCode"');
+    // The neighbouring controls render in both modes.
+    expect(content).toContain('    <form (submit)="onSubmit($event)" novalidate class="space-y-6">\n      <div class="form-group">\n        <label for="name"');
+    expect(content).toContain('      }\n      <div class="form-group">\n        <label for="price"');
+  });
+
+  it('holds the field in the form model, seeded from the loaded record', () => {
+    expect(modelInterface(content)).toContain('trackingCode: string;');
+    expect(content).toContain("      trackingCode: entity.trackingCode ?? '',");
+  });
+
+  it('disables the field while the form creates, so a required one never blocks a create', () => {
+    expect(content).toContain('required(path.trackingCode);');
+    expect(content).toContain('disabled(path.trackingCode, { when: () => !this.editMode() });');
+    expect(content).not.toContain('disabled(path.trackingCode, { when: () => this.editMode() });');
+    expect(content).not.toContain('disabled(path.name');
+  });
+
+  it('leaves the field out of the create payload and sends it with an edit', () => {
+    expect(content).toContain(
+      'this.editMode() && current ? '
+      + 'this.service.update(String(current.id), { ...current, ...data } as ShipmentUpdate) : '
+      + 'this.service.create({ name: data.name, price: data.price } as ShipmentCreate);',
+    );
+  });
+
+  it('a form whose every control is edit-only creates with an empty payload', () => {
+    const editOnly = gen.generate(domain({
+      entityName: 'Shipment',
+      fields: [field({ name: 'trackingCode', type: 'String', inCreate: false })],
+    }), CTX)!.content;
+    expect(editOnly).toContain('this.service.create({} as ShipmentCreate);');
+  });
+
+  it('a form without such a field keeps every control in both modes and creates with the model', () => {
+    const plain = gen.generate(domain({
+      entityName: 'Shipment',
+      fields: [field({ name: 'name', type: 'String' })],
+    }), CTX)!.content;
+    expect(plain).not.toContain('@if (editMode())');
+    expect(plain).toContain('this.service.create(data as ShipmentCreate);');
   });
 });
 
