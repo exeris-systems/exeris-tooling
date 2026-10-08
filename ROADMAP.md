@@ -1703,8 +1703,8 @@ never-invoked emitter start emitting, and its output did not build.
       follows it; the edit form sends the loaded record less them. The Java OpenAPI
       `<Entity>UpdateDto` lists what the update writes from the body: the domain fields less the
       read-only ones, a UNIVERSE entity's shared scope, and the version of a versioned entity,
-      declared or not (ADR-090 Amendment 2). It requires none of them. The TS update type still
-      carries the read-only fields (open, TS side).
+      declared or not (ADR-090 Amendment 2). It requires none of them. The TS update type, schema
+      and edit body leave the read-only fields out too, so the two property sets are equal (#375).
 - [x] **Locale determinism — shipped 0.9.0 (2026-09-26).** Nineteen `toLowerCase()` calls in
       codegen-java used the JVM default locale. Under `tr-TR`: table `ınvoices`, column `item_ıd`,
       `ınvoice-api.yaml`, and an `InvalidPathException` writing `V…__create_lıne_ıtems.sql` on a
@@ -3349,7 +3349,7 @@ Proposals, highest return-on-effort first:
       [ADR-105](docs/adr/ADR-105-generated-route-policy-emission.md);
       implementation J3-1 to J3-4.
 
-      *Landed:* J3-2, the seam: the generated `Application` binds `HTTP_ROUTE_POLICY` through
+      *Landed:* J3-2 (#369), the seam: the generated `Application` binds `HTTP_ROUTE_POLICY` through
       `routePolicy()`, `applicationPolicy()` and `unmatchedRoutes()`, and a generated
       `GeneratedRoutePolicy` abstains on every route. Behaviour is unchanged. Extraction, the table,
       the conformance test, the TypeScript guards and the OpenAPI security block remain.
@@ -3891,6 +3891,8 @@ enters only if its upstream half is final first.
       *Open:* SonarCloud analysis from CI with coverage in place of automatic analysis.
 - [ ] **T53 in full** (RFC accepted as ADR-105; gate: ADR-105): `@RouteAccess` + `permissions` compiled into `RouteRequirement`. D10 resolves
       with it.
+      *Landed:* J3-2 (#369), the seam: `Application` binds `HTTP_ROUTE_POLICY` and a generated
+      policy abstains everywhere. *Open:* J3-1, J3-3 and J3-4, and the S3 front half.
 - [ ] **TS wave S6 — `@View` pages for exeris-web:** CUSTOM blocks compile with their props, LIST
       items are `<li>`, the generated `<h1>` can be omitted, pages-only output into an existing app with
       manifest-owned rewrites, a views-only `init`, and opt-in SSG. HERO's look waits on `.exeris-hero`
@@ -3902,8 +3904,10 @@ enters only if its upstream half is final first.
 - [ ] **EV1-stream per-action driver** (ADR-044 amendment first): the streaming action runs, and its
       triggered events stream back. Moved from 0.9.0 on 2026-10-02; the open questions are under
       **EV1-stream**. The 0.9.0 streaming-action warning is removed (J4-1).
-      *Landed:* J4-1 (#360): the handler runs the action and streams its triggered events.
-      *Open:* J4-2, the GET spectate route; S4, the TS clients; the result frame, which waits on
+      *Landed:* J4-1 (#360): the handler runs the action and streams its triggered events; J4-2
+      (#372): `realTimeApi` emits `GET {base}/{id}/stream`, and `message`, `open` and `error` join the
+      reserved frame names.
+      *Open:* S4, the TS clients (the spectate client among them); the result frame, which waits on
       exeris-sdk#191.
 - [ ] **T59 — tenant isolation on stream routes** (the same ADR-044 amendment): the tenant guard in
       the entity-level and the per-action stream handler, an RLS `findById` before a per-action stream
@@ -3911,8 +3915,9 @@ enters only if its upstream half is final first.
       own tenant's events. The key is a kernel ask: `EventDescriptor` carries none. If the kernel adds
       the key, removes the 0.9.0 `EXT-PROC-1014` refusal; `exeris-codegen-ts` then emits stream clients for tenant-partitioned
       entities.
-      *Landed:* the per-action half, J4-1 (#360). *Open:* the entity level waits on
-      exeris-kernel#600; the TS clients for tenant-partitioned entities are wave S4.
+      *Landed:* the per-action half, J4-1 (#360); the spectate route, J4-2 (#372), `GLOBAL`-only
+      while `EXT-PROC-1014` stands. *Open:* the entity level and the tenant-partitioned spectate
+      route wait on exeris-kernel#600; the TS clients for tenant-partitioned entities are wave S4.
 - [x] **Bridge contracts (wave J2b, ADR-097):** a committed generator catalogue that maps every path
       the Java pipeline writes to its generator, held to the code by a completeness test and an
       end-to-end conformance test; and `exeris-codegen-cli`, a launchable shaded jar of the Java
@@ -3971,14 +3976,22 @@ enters only if its upstream half is final first.
       *Landed after:* the Java update keeps `created_at` and every other server-owned column
       (ADR-090 Amendment 1); a `PUT` keeps the read-only fields through `updateFromRequest` while
       an action's `update` writes them, and the `<Entity>UpdateDto` describes the body the update
-      writes from (ADR-090 Amendment 2).
+      writes from (ADR-090 Amendment 2, #374); the same two decisions for the Java update (#367) and
+      the TS update type, schema and edit body (#368, #375); `-Aexeris.strict` reports a name
+      written on a nested-class `@DomainEvent` (#370, closes #358).
 - [x] **Jackson pins and a release-readiness check** (#346): Jackson 3.2.3 and 2.18.11, with a
       check that the pins are consistent before a release.
 - [ ] **ADR-044 Amendment 2** also decides the GET route for a per-action stream (`EventSource` is
       GET-only) and the `EventBusService` default endpoint, which no server route serves.
-- [ ] **Triage two dog-food findings this file does not record yet:** the repository's
-      `save`/`update` split with no upsert (open, Java), and codegen-ts writing LF into a CRLF tree
-      (triaged below).
+      *Landed:* the GET route, J4-2 (#372). *Open:* the endpoint is decided (the consumer supplies
+      it, or `EventBusService` is not emitted; no fan-in route), and its emission is wave S4.
+- [x] **Triage two dog-food findings this file does not record yet:** the repository's
+      `save`/`update` split with no upsert, and codegen-ts writing LF into a CRLF tree (triaged
+      below).
+      *Upsert disposition (#313), founder decision 2026-10-08: none in 0.10.0.* The REST contract is
+      `POST` = create and `PUT` = update of an existing row, `404` when it is absent (ADR-076); an
+      upsert would change what `PUT` means. A consumer that needs one adds it by hand in its
+      repository. A repository-only upsert method may be reconsidered for 0.11.0.
       *CRLF disposition: a tooling defect, placed in TS wave S2.* Read from the source: every
       emitted string is `\n` (the only `\r` in `exeris-codegen-ts/src` is a regex that strips one),
       and `writeGeneratedFiles` writes with `writeFileSync(full, content)`, no conversion. The
