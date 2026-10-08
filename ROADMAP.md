@@ -1699,12 +1699,12 @@ never-invoked emitter start emitting, and its output did not build.
       nulls the omitted ones; the key, the owner and the audit and soft-delete columns keep their
       stored value (ADR-090 Amendment 1), and a `PUT` keeps the read-only fields an action writes
       (ADR-090 Amendment 2). The TS `<Entity>Update` is the entity record without those
-      server-owned fields, plus the version when the entity is versioned, and the update schema
-      follows it; the edit form sends the loaded record less them. The Java OpenAPI
-      `<Entity>UpdateDto` lists what the update writes from the body: the domain fields less the
-      read-only ones, a UNIVERSE entity's shared scope, and the version of a versioned entity,
-      declared or not (ADR-090 Amendment 2). It requires none of them. The TS update type still
-      carries the read-only fields (open, TS side).
+      server-owned and read-only fields, plus the version when the entity is versioned, and the
+      update schema follows it; the edit form sends the loaded record less them (#375). The Java
+      OpenAPI `<Entity>UpdateDto` lists what the update writes from the body: the domain fields less
+      the read-only ones, a UNIVERSE entity's shared scope, and the version of a versioned entity,
+      declared or not (ADR-090 Amendment 2). It requires none of them. The two sets are equal for
+      every metadata shape in `exeris-codegen-ts/test/fixtures/update-parity/`.
 - [x] **Locale determinism — shipped 0.9.0 (2026-09-26).** Nineteen `toLowerCase()` calls in
       codegen-java used the JVM default locale. Under `tr-TR`: table `ınvoices`, column `item_ıd`,
       `ınvoice-api.yaml`, and an `InvalidPathException` writing `V…__create_lıne_ıtems.sql` on a

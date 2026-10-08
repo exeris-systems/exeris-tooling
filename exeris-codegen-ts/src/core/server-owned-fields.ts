@@ -74,10 +74,22 @@ export function notInUpdateBody(metadata: DomainMetadata): string[] {
 }
 
 /**
- * `notInUpdateBody` less the UNIVERSE shared scope: the update writes that field from the body
- * (ADR-090 section 3), so the client sends it. Sorted.
+ * The declared `readOnly` fields that play no system role: the client does not set them, so the
+ * request update does not write them and reads their stored value back (ADR-090 Amendment 2). A
+ * read-only field in a system role keeps that role's rule: a read-only version is still sent, and
+ * a read-only shared scope is still written. Sorted.
+ */
+export function readOnlyFields(metadata: DomainMetadata): string[] {
+  const roles = new Set(systemRoleFieldNames(metadata));
+  return metadata.fields.filter((f) => f.readOnly && !roles.has(f.name)).map((f) => f.name).sort();
+}
+
+/**
+ * The fields the update body does not carry: `notInUpdateBody` less the UNIVERSE shared scope,
+ * which the update writes from the body (ADR-090 section 3), plus the read-only fields. Sorted.
  */
 export function omittedFromUpdate(metadata: DomainMetadata): string[] {
   const shared = sharedScopeFieldName(metadata);
-  return notInUpdateBody(metadata).filter((name) => name !== shared);
+  const names = new Set([...notInUpdateBody(metadata).filter((name) => name !== shared), ...readOnlyFields(metadata)]);
+  return [...names].sort();
 }

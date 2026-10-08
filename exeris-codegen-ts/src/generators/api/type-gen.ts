@@ -382,9 +382,10 @@ export function updateVersionField(metadata: DomainMetadata): UpdateVersionField
 
 /**
  * The declared fields an update body leaves out: every field the server owns on update (the key,
- * the owner, the audit fields but the version, and the soft-delete fields), which the server's
- * update never writes from the body and whose stored value the response reads back. The version
- * stays, and so does a UNIVERSE entity's shared scope, which the update writes from the body.
+ * the owner, the audit fields but the version, and the soft-delete fields) and every `readOnly`
+ * field, which the request update never writes from the body and whose stored value the response
+ * reads back. The version stays, and so does a UNIVERSE entity's shared scope, which the update
+ * writes from the body.
  * Only declared fields are listed, because `z.omit()` rejects a key the object does not declare
  * (TS2322).
  */
@@ -397,15 +398,15 @@ export function updateOmittedFields(metadata: DomainMetadata): string[] {
 }
 
 /**
- * The `…Update` type declaration: the entity record without the fields the server owns, plus the
- * required version on a versioned entity. Shared by the local and the peer emitter so the two
- * cannot drift.
+ * The `…Update` type declaration: the entity record without the fields the update does not take
+ * from the body, plus the required version on a versioned entity. Shared by the local and the peer
+ * emitter so the two cannot drift.
  *
  * The generated server's update is a full replacement: the handler decodes the body into the whole
- * entity and the repository's `UPDATE` writes every domain column, read-only fields and a UNIVERSE
- * entity's shared scope included, and keeps the stored value of every server-owned column. A
- * domain property the body leaves out is written as null, so the update type is the record as read
- * less the server-owned fields, not a subset of the create DTO.
+ * entity and the request update writes every domain column but the server-owned and the read-only
+ * ones, a UNIVERSE entity's shared scope included. A domain property the body leaves out is written
+ * as null, so the update type is the record as read less those fields, not a subset of the create
+ * DTO.
  */
 export function updateDtoDeclaration(typeName: string, metadata: DomainMetadata): string[] {
   const omitted = updateOmittedFields(metadata);
