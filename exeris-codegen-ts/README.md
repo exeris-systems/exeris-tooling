@@ -165,10 +165,11 @@ A block's `@Block(props)` is JSON. It becomes a field of the page (`blockProps1`
 in template order) bound as `[props]="blockProps<N>"`, so the component declares an input named
 `props`. A block without props gets no binding.
 
-Generation fails, naming the view, the block and `customBlocks`, when a view uses a CUSTOM block
-that declares no `customType`, whose `customType` has no entry, or whose props are not valid JSON,
-and when `customBlocks` maps one class name (`symbol`) from two different modules. This option is file-only; it
-has no CLI flag.
+Generation fails when a view uses a CUSTOM block that declares no `customType`, whose `customType`
+has no entry, or whose props are not valid JSON; the message names the view and the block's place
+in it. It also fails when `customBlocks` maps one class name (`symbol`) from two different modules;
+that message names the view, the class and both modules. This option is file-only; it has no CLI
+flag.
 
 ### `viewHeading`: the heading of a `@View` page
 
