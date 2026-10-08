@@ -1487,6 +1487,36 @@ describe('FormGenerator — a MANY_TO_ONE foreign key is picked from its target 
     );
   });
 
+  it('shows a failed options request through httpErrorMessage, beside the select', () => {
+    const content = emit(order(false), [order(false), product]);
+    expect(content).toContain(
+      '  readonly productIdOptionsError = computed(() => {\n'
+      + '    const err = this.productIdOptionsResource.error();\n'
+      + "    return err ? httpErrorMessage(err, { entity: 'products', action: 'load' }) : null;\n"
+      + '  });',
+    );
+    expect(content).toContain(
+      '        </select>\n'
+      + '        @if (productIdOptionsError()) {\n'
+      + '          <p role="alert" class="exeris-error-text" data-testid="options-error-productId">{{ productIdOptionsError() }}</p>\n'
+      + '        }',
+    );
+  });
+
+  it('names the target in the options error by its pluralName', () => {
+    const people = domain({ ...product, entityName: 'Person', pluralName: 'People' });
+    const visit = domain({
+      entityName: 'Visit',
+      fields: [field({ name: 'id', type: 'java.util.UUID' }), field({ name: 'personId', type: 'java.util.UUID' })],
+      relationships: [{ name: 'personId', targetEntity: 'Person', type: 'MANY_TO_ONE' } as DomainMetadata['relationships'][number]],
+    });
+    expect(emit(visit, [visit, people])).toContain("httpErrorMessage(err, { entity: 'people', action: 'load' })");
+  });
+
+  it('a form without a picker has no options error', () => {
+    expect(emit(order(false), [order(false)])).not.toContain('OptionsError');
+  });
+
   it('offers every record of another target', () => {
     expect(emit(order(false), [order(false), product])).not.toContain('.filter((option) =>');
   });

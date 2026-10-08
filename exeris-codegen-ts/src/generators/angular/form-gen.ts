@@ -210,6 +210,10 @@ export class FormGenerator implements CodeGenerator {
         lines.push('            <option [value]="option.value">{{ option.label }}</option>');
         lines.push('          }');
         lines.push('        </select>');
+        // A failed options request is reported beside the control; the held value stays an option.
+        lines.push(`        @if (${pickerErrorName(f.name)}()) {`);
+        lines.push(`          <p role="alert" class="exeris-error-text" data-testid="options-error-${f.name}">{{ ${pickerErrorName(f.name)}() }}</p>`);
+        lines.push('        }');
       } else if (control === 'checkbox') {
         lines.push('        <div class="flex items-center gap-2">');
         lines.push(`          <input id="${f.name}" data-testid="field-${f.name}" type="checkbox" ${binding} class="exeris-checkbox">`);
@@ -363,6 +367,12 @@ export class FormGenerator implements CodeGenerator {
         lines.push(`    pickerOptions(this.${resource}.hasValue() ? this.${resource}.value() : undefined${labelArg}),`);
       }
       lines.push('  );');
+      const targetDomain = context.allDomains.find((d) => d.entityName === picker.target);
+      const targetNoun = tsSingleQuoted((targetDomain?.pluralName ?? DslMapper.pluralName(picker.target)).toLowerCase());
+      lines.push(`  readonly ${pickerErrorName(f.name)} = computed(() => {`);
+      lines.push(`    const err = this.${resource}.error();`);
+      lines.push(`    return err ? httpErrorMessage(err, { entity: '${targetNoun}', action: 'load' }) : null;`);
+      lines.push('  });');
       lines.push(`  readonly ${pickerUnlistedName(f.name)} = computed(() => {`);
       lines.push(`    const value = this.formModel().${f.name};`);
       lines.push(`    return value !== '' && !this.${pickerOptionsName(f.name)}().some((option) => option.value === value);`);
@@ -600,6 +610,11 @@ function memberSuffix(name: string): string {
 /** The options signal of a foreign-key select. */
 function pickerOptionsName(name: string): string {
   return `${name}Options`;
+}
+
+/** The message of a foreign-key select's failed options request, or `null`. */
+function pickerErrorName(name: string): string {
+  return `${name}OptionsError`;
 }
 
 /** Whether a foreign-key select's value is missing from its options, which then still show it. */
