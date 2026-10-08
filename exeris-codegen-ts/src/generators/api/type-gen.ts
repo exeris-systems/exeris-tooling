@@ -5,6 +5,7 @@
 
 import { outPath } from '../../core/paths.js';
 import { primaryKeyField } from '../../core/primary-key.js';
+import { omittedFromUpdate } from '../../core/server-owned-fields.js';
 import { ownerFieldName, type DomainMetadata, type FieldMetadata } from '../../models/domain-model.js';
 import { DslMapper } from '../../models/dsl-mapper.js';
 import { modelTypeName } from '../../models/model-naming.js';
@@ -105,7 +106,7 @@ export class TypeGenerator implements CodeGenerator {
     lines.push(`}`);
     lines.push(``);
 
-    // Update DTO: the whole record, which the server's update writes back in full
+    // Update DTO: the record less the fields the server owns
     lines.push(...updateDtoDeclaration(interfaceName, metadata));
     lines.push(``);
 
@@ -380,28 +381,31 @@ export function updateVersionField(metadata: DomainMetadata): UpdateVersionField
 }
 
 /**
- * The declared fields an update body leaves out: the key, which the route's path carries and which
- * the generated handler sets over whatever the body says, and the owner of a tenant-partitioned
- * entity, which the generated repository never writes on update. Only declared fields are listed,
- * because `z.omit()` rejects a key the object does not declare (TS2322).
+ * The declared fields an update body leaves out: every field the server owns on update (the key,
+ * the owner, the audit fields but the version, and the soft-delete fields), which the server's
+ * update never writes from the body and whose stored value the response reads back. The version
+ * stays, and so does a UNIVERSE entity's shared scope, which the update writes from the body.
+ * Only declared fields are listed, because `z.omit()` rejects a key the object does not declare
+ * (TS2322).
  */
 export function updateOmittedFields(metadata: DomainMetadata): string[] {
   const declared = new Set(metadata.fields.map((f) => f.name));
   const owner = ownerFieldName(metadata);
-  const key = primaryKeyField(metadata);
-  return [...new Set(owner ? [key, owner] : [key])].filter((name) => declared.has(name));
+  const leading = [primaryKeyField(metadata), ...(owner ? [owner] : [])];
+  const omitted = new Set(omittedFromUpdate(metadata));
+  return [...new Set([...leading.filter((name) => omitted.has(name)), ...omitted])].filter((name) => declared.has(name));
 }
 
 /**
- * The `…Update` type declaration: the entity record without the key and the owner, plus the
+ * The `…Update` type declaration: the entity record without the fields the server owns, plus the
  * required version on a versioned entity. Shared by the local and the peer emitter so the two
  * cannot drift.
  *
  * The generated server's update is a full replacement: the handler decodes the body into the whole
- * entity and the repository's `UPDATE` writes every column but the key and the owner, read-only
- * fields, the audit `createdAt` and a UNIVERSE entity's shared scope included. A property the body
- * leaves out is written as null, so the update type is the record as read, not a subset of the
- * create DTO.
+ * entity and the repository's `UPDATE` writes every domain column, read-only fields and a UNIVERSE
+ * entity's shared scope included, and keeps the stored value of every server-owned column. A
+ * domain property the body leaves out is written as null, so the update type is the record as read
+ * less the server-owned fields, not a subset of the create DTO.
  */
 export function updateDtoDeclaration(typeName: string, metadata: DomainMetadata): string[] {
   const omitted = updateOmittedFields(metadata);
@@ -423,7 +427,7 @@ export function updateDtoDeclaration(typeName: string, metadata: DomainMetadata)
 
 /**
  * The `…UpdateSchema` declaration, kept in step with `updateDtoDeclaration`: the entity schema
- * without the key and the owner, extended with the required version on a versioned entity.
+ * without the fields the server owns, extended with the required version on a versioned entity.
  */
 export function updateSchemaDeclaration(typeName: string, metadata: DomainMetadata): string {
   const omitted = updateOmittedFields(metadata);

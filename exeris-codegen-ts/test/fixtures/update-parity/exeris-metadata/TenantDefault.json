@@ -1,0 +1,19 @@
+{
+  "entityName": "TenantDefault",
+  "packageName": "com.example.parity",
+  "dataScope": "TENANT",
+  "fields": [
+    {
+      "name": "id",
+      "type": "java.util.UUID"
+    },
+    {
+      "name": "title",
+      "type": "java.lang.String"
+    },
+    {
+      "name": "tenantId",
+      "type": "java.util.UUID"
+    }
+  ]
+}

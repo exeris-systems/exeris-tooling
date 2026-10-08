@@ -1,0 +1,27 @@
+{
+  "entityName": "SoftDeleteDefault",
+  "packageName": "com.example.parity",
+  "softDelete": true,
+  "fields": [
+    {
+      "name": "id",
+      "type": "java.util.UUID"
+    },
+    {
+      "name": "title",
+      "type": "java.lang.String"
+    },
+    {
+      "name": "deleted",
+      "type": "boolean"
+    },
+    {
+      "name": "deletedAt",
+      "type": "java.time.Instant"
+    },
+    {
+      "name": "deletedBy",
+      "type": "java.lang.String"
+    }
+  ]
+}

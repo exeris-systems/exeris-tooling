@@ -1697,9 +1697,9 @@ never-invoked emitter start emitting, and its output did not build.
       **Body shape (0.10.0, #349):** the server's update is a full replacement. The handler decodes
       the whole entity, and the repository writes every domain column, so a partial body over `PUT`
       nulls the omitted ones; the key, the owner and the audit and soft-delete columns keep their
-      stored value (ADR-090 Amendment 1). The TS `<Entity>Update` is
-      `Omit<<Entity>, key | owner>`, plus the version when the entity is versioned, and the update
-      schema follows it; the edit form already sent the loaded record. The Java OpenAPI
+      stored value (ADR-090 Amendment 1). The TS `<Entity>Update` is the entity record without those
+      server-owned fields, plus the version when the entity is versioned, and the update schema
+      follows it; the edit form sends the loaded record less them. The Java OpenAPI
       `<Entity>UpdateDto` still lists only the create-eligible properties and requires none of them
       (open).
 - [x] **Locale determinism — shipped 0.9.0 (2026-09-26).** Nineteen `toLowerCase()` calls in
