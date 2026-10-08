@@ -15,6 +15,7 @@ import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.Artifact
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.java.support.KernelEventSupport;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
+import eu.exeris.tooling.codegen.java.support.PrimaryKeys;
 import eu.exeris.tooling.codegen.java.support.NameCasing;
 import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
 import eu.exeris.sdk.sourcemodel.ast.ActionParamMetadata;
@@ -278,7 +279,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         method.beginControlFlow("try")
                 .addStatement("$T saved = service.save(entity)", entityType);
         appendPublishCalls(method, metadata, DomainEventMetadata.Trigger.CREATE, null,
-                "saved.getId()", "saved");
+                "saved." + PrimaryKeys.getter(metadata) + "()", "saved");
         method.addStatement("exchange.respond($T.CREATED, saved)", HTTP_STATUS);
         appendCallerFaultCatch(method, metadata);
         return appendServerErrorCatch(method, "Failed to create " + entityLower).build();

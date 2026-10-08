@@ -3645,6 +3645,96 @@ class ExerisDomainProcessorTest {
                     """
             );
         }
+
+        private JavaFileObject domainEvent(String eventAttributes) {
+            return JavaFileObjects.forSourceString(
+                    "com.example.Order",
+                    """
+                    package com.example;
+
+                    import eu.exeris.sdk.annotation.ExerisDomain;
+                    import eu.exeris.sdk.annotation.DomainEvent;
+                    import eu.exeris.sdk.annotation.Field;
+
+                    @ExerisDomain(module = "core", path = "/orders")
+                    @DomainEvent(trigger = DomainEvent.Trigger.CREATE, topic = "orders.created"%s)
+                    public class Order { private java.util.UUID id;
+                        @Field(label = "Total") private String total;
+                    }
+                    """.formatted(eventAttributes)
+            );
+        }
+
+        @Test
+        @DisplayName("-Aexeris.strict warns on unconsumed @DomainEvent attributes, with the inert-attribute id")
+        void strictWarnsOnInertDomainEventAttributes() {
+            Compilation compilation = javac()
+                    .withOptions("-Aexeris.strict=true")
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(domainEvent(", description = \"Order created\", retentionDays = 90"));
+
+            assertThat(compilation).succeeded();
+            assertThat(hasInertWarningFor(compilation, "@DomainEvent.description")).isTrue();
+            assertThat(hasInertWarningFor(compilation, "@DomainEvent.retentionDays")).isTrue();
+            assertThat(inertWarnings(compilation)).as("one warning per inert attribute").isEqualTo(2);
+            assertThat(compilation.warnings().stream()
+                    .filter(d -> d.getMessage(null).contains("@DomainEvent.retentionDays"))
+                    .allMatch(d -> d.getMessage(null).contains("EXT-PROC-1201")))
+                    .as("the warning carries the strict-inert-attribute diagnostic id")
+                    .isTrue();
+        }
+
+        @Test
+        @DisplayName("-Aexeris.strict stays quiet on the @DomainEvent attributes a generator reads")
+        void strictDoesNotWarnOnConsumedDomainEventAttributes() {
+            Compilation compilation = javac()
+                    .withOptions("-Aexeris.strict=true")
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(domainEvent(", name = \"OrderPlaced\", includeFields = {\"total\"}, "
+                            + "excludeFields = {}, sensitiveFields = {\"total\"}"));
+
+            assertThat(compilation).succeeded();
+            assertThat(inertWarnings(compilation)).as("trigger, topic, name, includeFields, "
+                    + "excludeFields and sensitiveFields are all read").isZero();
+        }
+
+        @Test
+        @DisplayName("-Aexeris.strict warns on an unconsumed attribute of a nested @DomainEvent class")
+        void strictWarnsOnInertAttributeOfNestedDomainEvent() {
+            Compilation compilation = javac()
+                    .withOptions("-Aexeris.strict=true")
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(JavaFileObjects.forSourceString(
+                            "com.example.Order",
+                            """
+                            package com.example;
+
+                            import eu.exeris.sdk.annotation.ExerisDomain;
+                            import eu.exeris.sdk.annotation.DomainEvent;
+
+                            @ExerisDomain(module = "core", path = "/orders")
+                            public class Order { private java.util.UUID id;
+                                @DomainEvent(trigger = DomainEvent.Trigger.CREATE, topic = "orders.created",
+                                        useOutbox = false)
+                                public static class OrderCreated {
+                                }
+                            }
+                            """));
+
+            assertThat(compilation).succeeded();
+            assertThat(hasInertWarningFor(compilation, "@DomainEvent.useOutbox")).isTrue();
+        }
+
+        @Test
+        @DisplayName("Default build stays quiet when an inert @DomainEvent attribute is set")
+        void defaultBuildDoesNotWarnOnInertDomainEventAttribute() {
+            Compilation compilation = javac()
+                    .withProcessors(new ExerisDomainProcessor())
+                    .compile(domainEvent(", description = \"Order created\", retentionDays = 90"));
+
+            assertThat(compilation).succeeded();
+            assertThat(inertWarnings(compilation)).isZero();
+        }
     }
 
     @Nested

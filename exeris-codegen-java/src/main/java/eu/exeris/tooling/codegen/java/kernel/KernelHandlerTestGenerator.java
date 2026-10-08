@@ -12,6 +12,7 @@ import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.java.support.DataScopeSupport;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
+import eu.exeris.tooling.codegen.java.support.PrimaryKeys;
 import eu.exeris.tooling.codegen.java.support.ListQuerySupport;
 import eu.exeris.tooling.codegen.java.support.NameCasing;
 
@@ -1182,8 +1183,9 @@ public final class KernelHandlerTestGenerator {
                         .returns(entityType)
                         .addParameter(entityType, "entity")
                         .addCode(refusalCheck(refuses))
-                        .beginControlFlow("if (entity.getId() == null)")
-                        .addStatement("entity.setId($T.fromString($S))", UUID, FIXED_ID)
+                        .beginControlFlow("if (entity.$L() == null)", PrimaryKeys.getter(metadata))
+                        .addStatement("entity.$L($T.fromString($S))", PrimaryKeys.setter(metadata), UUID,
+                                FIXED_ID)
                         .endControlFlow()
                         .addStatement("this.saved = entity")
                         .addStatement("return entity")

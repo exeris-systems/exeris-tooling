@@ -170,7 +170,7 @@ public final class ListQuerySupport {
     public static Set<String> systemFieldNames(DomainMetadata metadata) {
         SystemFieldsMetadata declared = metadata.systemFields();
         Set<String> names = new TreeSet<>();
-        names.add("id");
+        names.add(PrimaryKeys.field(metadata));
         DataScopeSupport.ownerFieldName(metadata).ifPresent(names::add);
         DataScopeSupport.sharedScopeField(metadata).ifPresent(field -> names.add(field.name()));
         if (metadata.audited()) {

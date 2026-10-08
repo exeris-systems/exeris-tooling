@@ -2,14 +2,10 @@ package eu.exeris.e2e.codegen.compile;
 
 import eu.exeris.tooling.codegen.java.CodegenPipeline;
 
-import javax.tools.JavaCompiler;
-import javax.tools.ToolProvider;
-import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.net.URL;
 import java.net.URLClassLoader;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -102,22 +98,10 @@ public final class GeneratedTree implements AutoCloseable {
      * runtime providers on the classpath anyway.
      */
     private static void compile(List<String> files, Path outputDir, Path entityClasses) throws IOException {
-        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
-        if (compiler == null) {
-            throw new IllegalStateException("A JDK (not a JRE) is required to compile the emitted tree");
-        }
-        Files.createDirectories(outputDir);
-        List<String> args = new ArrayList<>(List.of(
-                "-d", outputDir.toString(),
-                "-classpath", System.getProperty("java.class.path") + File.pathSeparator + entityClasses,
-                "--release", "25",
-                "-nowarn"));
-        args.addAll(files);
-        ByteArrayOutputStream diagnostics = new ByteArrayOutputStream();
-        int rc = compiler.run(null, null, diagnostics, args.toArray(String[]::new));
-        if (rc != 0) {
-            throw new IllegalStateException("the emitted tree did not compile:\n"
-                    + diagnostics.toString(StandardCharsets.UTF_8));
+        EmittedJavac.Result result = EmittedJavac.compile(files, outputDir,
+                System.getProperty("java.class.path") + File.pathSeparator + entityClasses);
+        if (!result.clean()) {
+            throw new IllegalStateException("the emitted tree did not compile cleanly:\n" + result.render());
         }
     }
 

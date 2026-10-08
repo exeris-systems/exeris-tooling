@@ -4,6 +4,7 @@ import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
+import eu.exeris.tooling.codegen.java.support.PrimaryKeys;
 import eu.exeris.tooling.codegen.java.support.SqlColumnTypes;
 import static eu.exeris.tooling.codegen.java.support.DataScopeSupport.isTenantPartitioned;
 import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
@@ -69,7 +70,7 @@ import java.util.Set;
 public class KernelFlywayGenerator implements KernelArtifactGenerator {
 
     private static final Set<String> SYSTEM_FIELDS = Set.of(
-            "id", "tenantId", "tenant_id",
+            "tenantId", "tenant_id",
             "createdAt", "created_at", "createdBy", "created_by",
             "updatedAt", "updated_at", "updatedBy", "updated_by",
             "deleted", "deletedAt", "deleted_at", "deletedBy", "deleted_by",
@@ -197,10 +198,10 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
 
     private List<String> buildColumns(DomainMetadata metadata) {
         List<String> columns = new ArrayList<>();
-        columns.add("    id UUID PRIMARY KEY DEFAULT gen_random_uuid()");
+        columns.add("    " + PrimaryKeys.column(metadata) + " UUID PRIMARY KEY DEFAULT gen_random_uuid()");
 
         Set<String> emittedColumns = new HashSet<>();
-        emittedColumns.add("id");
+        emittedColumns.add(PrimaryKeys.column(metadata));
 
         if (isTenantPartitioned(metadata)) {
             // No REFERENCES tenants(id): the emitted schema must apply to an empty database,
@@ -419,7 +420,8 @@ public class KernelFlywayGenerator implements KernelArtifactGenerator {
     }
 
     private boolean isSystemField(DomainMetadata metadata, String fieldName) {
-        if (SYSTEM_FIELDS.contains(fieldName) || SYSTEM_FIELDS.contains(toSnakeCase(fieldName))) {
+        if (PrimaryKeys.isKey(metadata, fieldName)
+                || SYSTEM_FIELDS.contains(fieldName) || SYSTEM_FIELDS.contains(toSnakeCase(fieldName))) {
             return true;
         }
         // Override-aware (T5): a renamed system field (e.g. tenantIdField="orgId")
