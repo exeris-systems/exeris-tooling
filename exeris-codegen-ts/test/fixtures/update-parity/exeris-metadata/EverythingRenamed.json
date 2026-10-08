@@ -1,0 +1,66 @@
+{
+  "entityName": "EverythingRenamed",
+  "packageName": "com.example.parity",
+  "audited": true,
+  "softDelete": true,
+  "versioned": true,
+  "dataScope": "TENANT",
+  "systemFields": {
+    "primaryKeyField": "pk",
+    "tenantIdField": "org",
+    "createdAtField": "c1",
+    "createdByField": "c2",
+    "updatedAtField": "u1",
+    "updatedByField": "u2",
+    "versionField": "rev",
+    "softDeleteField": "d0",
+    "softDeleteTimestampField": "d1",
+    "softDeletedByField": "d2"
+  },
+  "fields": [
+    {
+      "name": "pk",
+      "type": "java.util.UUID"
+    },
+    {
+      "name": "title",
+      "type": "java.lang.String"
+    },
+    {
+      "name": "org",
+      "type": "java.util.UUID"
+    },
+    {
+      "name": "c1",
+      "type": "java.time.Instant"
+    },
+    {
+      "name": "c2",
+      "type": "java.lang.String"
+    },
+    {
+      "name": "u1",
+      "type": "java.time.Instant"
+    },
+    {
+      "name": "u2",
+      "type": "java.lang.String"
+    },
+    {
+      "name": "rev",
+      "type": "java.lang.Long"
+    },
+    {
+      "name": "d0",
+      "type": "boolean"
+    },
+    {
+      "name": "d1",
+      "type": "java.time.Instant"
+    },
+    {
+      "name": "d2",
+      "type": "java.lang.String"
+    }
+  ]
+}
