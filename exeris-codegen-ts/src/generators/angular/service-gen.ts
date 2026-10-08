@@ -4,6 +4,7 @@
  */
 
 import { outPath } from '../../core/paths.js';
+import { primaryKeyField } from '../../core/primary-key.js';
 import type { DomainMetadata } from '../../models/index.js';
 import { DslMapper, modelTypeName } from '../../models/index.js';
 import type { GeneratorConfig } from '../../config.js';
@@ -334,7 +335,7 @@ export class ServiceGenerator implements CodeGenerator {
   }
 
   private getSystemFields(metadata: DomainMetadata): string[] {
-    const fields = ['id'];
+    const fields = [primaryKeyField(metadata)];
     const sf = metadata.systemFields;
 
     if (sf) {
