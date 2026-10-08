@@ -196,23 +196,24 @@ class GeneratedTestsE2ETest {
             // primary key, which is never a sort key or a filter) + 8 service cases (seven CRUD
             // delegations, findPage included, and the one T8 finder the fixture carries) + 8
             // repository cases for Order (the save/load round-trip, the six paths around it, and
-            // findPage's placeholder/bind alignment) + 15 for Invoice — the entity that carries
+            // findPage's placeholder/bind alignment) + 16 for Invoice — the entity that carries
             // every system column, and the only tenant-partitioned one here, so it alone gets the
             // tenant stamp, the four foreign-tenant cases (bound tenant accepted, foreign tenant
             // refused, unbound left to the database, update never writes the owner), the case
             // proving an update writes no server-owned column and returns the stored ones, and,
             // for its read-only fields, the case proving updateFromRequest keeps them and update
-            // writes them — + 17 for Species, the UNIVERSE entity: Invoice's cases but the
+            // writes them, and the one refusing a required read-only status left null —
+            // + 17 for Species, the UNIVERSE entity: Invoice's cases but the
             // read-only one, plus the shared-scope stamp, the foreign-shared-scope refusal and the
             // kept-when-unbound tag — + 4 saga cases — + 8 InvoiceServiceTest cases (seven CRUD
-            // delegations and the one proving each service update reaches its repository twin) + 24
+            // delegations and the one proving each service update reaches its repository twin) + 23
             // InvoiceHandlerTest cases (the 9 bodyless/guard cases, 5 further list cases — page and
             // size, four refusals; every other field is a system field or not flagged — the 4
-            // decode-failure cases, 4 @Validation cases: the baseline accept, the not-null reject of
-            // its required reference and of its required read-only status, and the handleUpdate
-            // case, which only the reference can drive — and the two foreign-tenant 400s) + 24
-            // SpeciesHandlerTest cases (the 23 an Invoice without the read-only status would get,
-            // plus the foreign-shared-scope 400).
+            // decode-failure cases, 3 @Validation cases: the baseline accept, the not-null reject of
+            // its required reference and the handleUpdate case, which only the reference can drive;
+            // the required read-only status is validated on neither route — and the two
+            // foreign-tenant 400s) + 24 SpeciesHandlerTest cases (the 23 an Invoice gets, plus the
+            // foreign-shared-scope 400).
             assertThat(summary.getTestsSucceededCount()).isEqualTo(138);
         }
     }
@@ -476,7 +477,7 @@ class GeneratedTestsE2ETest {
                     private String reference;
 
                     // Read-only: written by the insert, kept by the update and read back onto the
-                    // entity it returns. The required one is validated on create only, and the
+                    // entity it returns. The required one is checked by the repository's save, and the
                     // primitive one reads back from a stored row the generated test leaves NULL.
                     @Field(label = "Status", required = true, readOnly = true)
                     private String status;

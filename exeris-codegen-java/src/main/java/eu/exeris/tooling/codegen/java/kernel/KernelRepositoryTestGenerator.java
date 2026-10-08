@@ -7,13 +7,16 @@ import com.palantir.javapoet.MethodSpec;
 import com.palantir.javapoet.TypeName;
 import com.palantir.javapoet.TypeSpec;
 import eu.exeris.sdk.sourcemodel.ast.DomainMetadata;
+import eu.exeris.sdk.sourcemodel.ast.FieldMetadata;
 import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.core.generator.KernelArtifactGenerator.ArtifactType;
 import eu.exeris.tooling.codegen.java.kernel.KernelRepositoryGenerator.Column;
 import eu.exeris.tooling.codegen.java.kernel.KernelRepositoryGenerator.ColumnKind;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
+import eu.exeris.tooling.codegen.java.support.NameCasing;
 import eu.exeris.tooling.codegen.java.support.PrimaryKeys;
 import eu.exeris.tooling.codegen.java.support.ListQuerySupport;
+import eu.exeris.tooling.codegen.java.support.ServerOwnedFields;
 
 import static eu.exeris.tooling.codegen.java.support.DataScopeSupport.isTenantPartitioned;
 
@@ -108,9 +111,11 @@ public final class KernelRepositoryTestGenerator {
     private static final String ASSERT_BOUND_TENANT =
             "$T.assertThat(entity.$L()).isEqualTo($T.fromString(TENANT_KEY))";
 
+    /** The fields the repository's {@code save} requires set, for the entity {@link #generate} emits. */
+    private List<FieldMetadata> serverSet = List.of();
+
     /**
-     * Creates the generator. It keeps no per-domain state, so one instance serves every domain
-     * in a build.
+     * Creates the generator. One instance serves every domain of a build, one call at a time.
      */
     public KernelRepositoryTestGenerator() {
         // no state to initialise
@@ -126,6 +131,7 @@ public final class KernelRepositoryTestGenerator {
      * @throws IllegalArgumentException if the entity's package does not end in {@code .domain}
      */
     public GeneratedFile generate(DomainMetadata metadata, String basePackage) {
+        serverSet = ServerOwnedFields.setByServerOnCreate(metadata);
         String entity = metadata.entityName();
         String domainPackage = metadata.packageName();
         if (!domainPackage.endsWith(".domain")) {
@@ -207,6 +213,10 @@ public final class KernelRepositoryTestGenerator {
             type.addMethod(saveKeepsACallerSharedScopeWhenNoneIsBoundTest(entityType, repositoryType,
                     persistenceType, columns, tenantColumn(columns), sharedScope));
         }
+        for (FieldMetadata field : serverSet) {
+            type.addMethod(saveRefusesAnUnsetServerFieldTest(entityType, repositoryType, persistenceType,
+                    field, tenantScoped));
+        }
         type.addMethod(updateBindsIdTest(entityType, repositoryType, persistenceType, metadata,
                 tenantScoped));
         List<Column> stored = KernelRepositoryGenerator.storedColumns(metadata);
@@ -285,7 +295,7 @@ public final class KernelRepositoryTestGenerator {
                 .addJavadoc("off the entity afterwards.\n")
                 .addStatement("$T persistence = new $T()", persistenceType, persistenceType)
                 .addStatement("$T repository = new $T(persistence)", repositoryType, repositoryType)
-                .addStatement("$T entity = new $T()", entityType, entityType)
+                .addCode(newEntity(entityType))
                 .addStatement("$T.assertThat(entity.$L()).isNull()", ASSERTIONS, getter)
                 .addStatement(write("repository.save(entity)", tenantScoped))
                 .addStatement("$T.assertThat(entity.$L()).isNotNull()", ASSERTIONS, getter)
@@ -309,7 +319,7 @@ public final class KernelRepositoryTestGenerator {
                 .addStatement("$T persistence = new $T()", persistenceType, persistenceType);
         stageStoredRow(test, KernelRepositoryGenerator.storedColumns(metadata));
         test.addStatement("$T repository = new $T(persistence)", repositoryType, repositoryType)
-                .addStatement("$T entity = new $T()", entityType, entityType)
+                .addCode(newEntity(entityType))
                 .addStatement("$T id = $T.fromString($S)", UUID, UUID, KernelTestSamples.FIXED_ID)
                 .addStatement(write("repository.update(id, entity)", tenantScoped))
                 .addStatement("$T.assertThat(persistence.writeBinds.get($L)).isEqualTo(id)",
@@ -335,7 +345,7 @@ public final class KernelRepositoryTestGenerator {
                 .addStatement("$T persistence = new $T()", persistenceType, persistenceType);
         stageStoredRow(test, stored);
         test.addStatement("$T repository = new $T(persistence)", repositoryType, repositoryType)
-                .addStatement("$T entity = new $T()", entityType, entityType);
+                .addCode(newEntity(entityType));
         for (Column column : stored) {
             if (column.kind() == ColumnKind.CREATED_AT) {
                 test.addStatement("entity.$L($T.EPOCH)", KernelRepositoryGenerator.setterFor(column), INSTANT);
@@ -442,7 +452,7 @@ public final class KernelRepositoryTestGenerator {
                 .addStatement("$T persistence = new $T()", persistenceType, persistenceType)
                 .addStatement("persistence.rowsAffected = 0L")
                 .addStatement("$T repository = new $T(persistence)", repositoryType, repositoryType)
-                .addStatement("$T entity = new $T()", entityType, entityType);
+                .addCode(newEntity(entityType));
         // The type, not a message substring (ADR-076). isInstanceOf(RuntimeException) alone
         // would also pass on an NPE from an unstaged field; checking the dedicated type excludes
         // "some other RuntimeException". This is the same type the handler catches to answer
@@ -564,7 +574,7 @@ public final class KernelRepositoryTestGenerator {
                 .addJavadoc("the least informative way to report a missing default.\n")
                 .addStatement("$T persistence = new $T()", persistenceType, persistenceType)
                 .addStatement("$T repository = new $T(persistence)", repositoryType, repositoryType)
-                .addStatement("$T entity = new $T()", entityType, entityType)
+                .addCode(newEntity(entityType))
                 .addStatement("$T.assertThat(entity.$L()).isNull()", ASSERTIONS, getter)
                 .addStatement("$L(() -> repository.save(entity))", AS_TENANT)
                 .addStatement(ASSERT_BOUND_TENANT,
@@ -585,7 +595,7 @@ public final class KernelRepositoryTestGenerator {
         return test("saveAcceptsATenantThatIsTheBoundOne")
                 .addStatement("$T persistence = new $T()", persistenceType, persistenceType)
                 .addStatement("$T repository = new $T(persistence)", repositoryType, repositoryType)
-                .addStatement("$T entity = new $T()", entityType, entityType)
+                .addCode(newEntity(entityType))
                 .addStatement("entity.$L($T.fromString(TENANT_KEY))",
                         KernelRepositoryGenerator.setterFor(tenant), UUID)
                 .addStatement("$L(() -> repository.save(entity))", AS_TENANT)
@@ -611,7 +621,7 @@ public final class KernelRepositoryTestGenerator {
                 .addJavadoc("server fault. Nothing is prepared, so nothing is bound.\n")
                 .addStatement("$T persistence = new $T()", persistenceType, persistenceType)
                 .addStatement("$T repository = new $T(persistence)", repositoryType, repositoryType)
-                .addStatement("$T entity = new $T()", entityType, entityType)
+                .addCode(newEntity(entityType))
                 .addStatement("entity.$L($T.fromString($S))",
                         KernelRepositoryGenerator.setterFor(tenant), UUID, KernelTestSamples.FIXED_ID)
                 .addStatement("$L(() -> $T.assertThatThrownBy(() -> repository.save(entity))"
@@ -632,7 +642,7 @@ public final class KernelRepositoryTestGenerator {
         MethodSpec.Builder test = test("saveLeavesACallerTenantToTheDatabaseWhenNoneIsBound")
                 .addStatement("$T persistence = new $T()", persistenceType, persistenceType)
                 .addStatement("$T repository = new $T(persistence)", repositoryType, repositoryType)
-                .addStatement("$T entity = new $T()", entityType, entityType)
+                .addCode(newEntity(entityType))
                 .addStatement("$T callerTenant = $T.fromString($S)", UUID, UUID,
                         KernelTestSamples.FIXED_ID)
                 .addStatement("entity.$L(callerTenant)", KernelRepositoryGenerator.setterFor(tenant));
@@ -663,7 +673,7 @@ public final class KernelRepositoryTestGenerator {
                 .addStatement("$T persistence = new $T()", persistenceType, persistenceType);
         stageStoredRow(test, KernelRepositoryGenerator.storedColumns(metadata));
         return test.addStatement("$T repository = new $T(persistence)", repositoryType, repositoryType)
-                .addStatement("$T entity = new $T()", entityType, entityType)
+                .addCode(newEntity(entityType))
                 .addStatement("$T otherTenant = $T.fromString($S)", UUID, UUID, KernelTestSamples.FIXED_ID)
                 .addStatement("entity.$L(otherTenant)", KernelRepositoryGenerator.setterFor(tenant))
                 .addStatement("repository.update($T.fromString($S), entity)", UUID, MOVED_ROW_ID)
@@ -690,7 +700,7 @@ public final class KernelRepositoryTestGenerator {
                 .addJavadoc("column. The caller leaving it unset is the ordinary path.\n")
                 .addStatement("$T persistence = new $T()", persistenceType, persistenceType)
                 .addStatement("$T repository = new $T(persistence)", repositoryType, repositoryType)
-                .addStatement("$T entity = new $T()", entityType, entityType)
+                .addCode(newEntity(entityType))
                 .addStatement("$T.assertThat(entity.$L()).isNull()", ASSERTIONS, getter)
                 .addStatement("$L(() -> repository.save(entity))", AS_TENANT)
                 .addStatement("$T.assertThat(entity.$L()).isEqualTo($L)", ASSERTIONS, getter,
@@ -710,7 +720,7 @@ public final class KernelRepositoryTestGenerator {
         return test("saveRefusesASharedScopeThatIsNotTheBoundOne")
                 .addStatement("$T persistence = new $T()", persistenceType, persistenceType)
                 .addStatement("$T repository = new $T(persistence)", repositoryType, repositoryType)
-                .addStatement("$T entity = new $T()", entityType, entityType)
+                .addCode(newEntity(entityType))
                 .addStatement("entity.$L($L)", KernelRepositoryGenerator.setterFor(sharedScope),
                         KernelTestSamples.of(sharedScope.javaType()))
                 .addStatement("$L(() -> $T.assertThatThrownBy(() -> repository.save(entity))"
@@ -732,7 +742,7 @@ public final class KernelRepositoryTestGenerator {
                 .addJavadoc("bound tenant to fill an absent one.\n")
                 .addStatement("$T persistence = new $T()", persistenceType, persistenceType)
                 .addStatement("$T repository = new $T(persistence)", repositoryType, repositoryType)
-                .addStatement("$T entity = new $T()", entityType, entityType)
+                .addCode(newEntity(entityType))
                 .addStatement("entity.$L($T.fromString(TENANT_KEY))",
                         KernelRepositoryGenerator.setterFor(tenant), UUID)
                 .addStatement("entity.$L($L)", KernelRepositoryGenerator.setterFor(sharedScope),
@@ -818,6 +828,42 @@ public final class KernelRepositoryTestGenerator {
         }
         CodeBlock sample = KernelTestSamples.of(column.javaType());
         return KernelTestSamples.isNull(sample) ? null : sample;
+    }
+
+    /**
+     * A field marked {@code required} and {@code readOnly} is set by the code that creates the row;
+     * left null, the save is refused with a message naming the field, before any statement is prepared.
+     */
+    private MethodSpec saveRefusesAnUnsetServerFieldTest(ClassName entityType, ClassName repositoryType,
+                                                         ClassName persistenceType, FieldMetadata field,
+                                                         boolean tenantScoped) {
+        return test("saveRefuses" + NameCasing.pascal(field.name()) + "LeftNull")
+                .addJavadoc("{@code $L} is required and read-only, so the server sets it before the\n", field.name())
+                .addJavadoc("row is written; a null one is a server-side defect, not a database error.\n")
+                .addStatement("$T persistence = new $T()", persistenceType, persistenceType)
+                .addStatement("$T repository = new $T(persistence)", repositoryType, repositoryType)
+                .addStatement("$T entity = new $T()", entityType, entityType)
+                .addStatement(write("$T.assertThatThrownBy(() -> repository.save(entity))"
+                                + ".isInstanceOf(IllegalStateException.class)"
+                                + ".hasMessageContaining($S)", tenantScoped),
+                        ASSERTIONS, "'" + field.name() + "'")
+                .addStatement("$T.assertThat(persistence.binds).isEmpty()", ASSERTIONS)
+                .build();
+    }
+
+    /**
+     * {@code Entity entity = new Entity()}, followed by a sample for each field the server must set
+     * before a row is written, so a test that saves the entity passes the repository's check.
+     */
+    private CodeBlock newEntity(ClassName entityType) {
+        CodeBlock.Builder block = CodeBlock.builder().addStatement("$T entity = new $T()", entityType, entityType);
+        for (FieldMetadata field : serverSet) {
+            CodeBlock sample = KernelTestSamples.of(field.type());
+            if (!KernelTestSamples.isNull(sample)) {
+                block.addStatement("entity.set$L($L)", NameCasing.pascal(field.name()), sample);
+            }
+        }
+        return block.build();
     }
 
     private static MethodSpec.Builder test(String name) {

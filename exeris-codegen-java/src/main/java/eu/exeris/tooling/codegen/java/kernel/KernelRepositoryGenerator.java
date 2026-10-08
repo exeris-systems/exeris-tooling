@@ -15,6 +15,7 @@ import eu.exeris.tooling.codegen.java.support.ColumnNaming;
 import eu.exeris.tooling.codegen.java.support.DataScopeSupport;
 import eu.exeris.tooling.codegen.java.support.DomainTypeKind;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
+import eu.exeris.tooling.codegen.java.support.NameCasing;
 import eu.exeris.tooling.codegen.java.support.PrimaryKeys;
 import eu.exeris.tooling.codegen.java.support.ListQuerySupport;
 import eu.exeris.tooling.codegen.java.support.ServerOwnedFields;
@@ -1308,6 +1309,7 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
         }
         appendTenantStamp(save, ctx);
         appendSharedScopeStamp(save, ctx);
+        appendServerSetCheck(save, ctx);
         save.addStatement(SQL_VAR_STMT, sql);
 
         CodeBlock.Builder body = CodeBlock.builder()
@@ -1323,6 +1325,28 @@ public class KernelRepositoryGenerator implements KernelArtifactGenerator {
                 "Created " + ctx.entity() + ": {0}", PrimaryKeys.getter(ctx.metadata()));
         save.addStatement(RETURN_ENTITY_STMT);
         return save.build();
+    }
+
+    /**
+     * Refuses an insert whose server-set field is still null: a field marked
+     * {@code required} and {@code readOnly} is not in the create body, so the code that creates the
+     * row sets it. The refusal is an {@code IllegalStateException} naming the entity and the field,
+     * which the handler logs and answers with 500: the defect is the server's, not the caller's,
+     * and it surfaces before the database reports a {@code NOT NULL} violation.
+     */
+    private static void appendServerSetCheck(MethodSpec.Builder save, Context ctx) {
+        for (FieldMetadata field : ServerOwnedFields.setByServerOnCreate(ctx.metadata())) {
+            save.beginControlFlow("if (entity.get$L() == null)", NameCasing.pascal(field.name()))
+                    .addStatement("throw new $T($S)", ILLEGAL_STATE_EXCEPTION,
+                            "Cannot create " + ctx.entity() + ": field '" + field.name()
+                                    + "' is required and read-only, so the server must set it before the "
+                                    + "row is written")
+                    .endControlFlow();
+        }
+        if (!ServerOwnedFields.setByServerOnCreate(ctx.metadata()).isEmpty()) {
+            save.addJavadoc("<p>A field marked {@code required} and {@code readOnly} must be set before this\n")
+                    .addJavadoc("call; a null one throws {@link IllegalStateException}.\n");
+        }
     }
 
     /**

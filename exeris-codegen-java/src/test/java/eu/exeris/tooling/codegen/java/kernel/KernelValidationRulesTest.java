@@ -107,5 +107,30 @@ class KernelValidationRulesTest {
         assertThat(KernelValidationRules.onUpdate(metadata))
                 .extracting(fr -> fr.field().name())
                 .containsExactly("name", "worldId", "version");
+        assertThat(KernelValidationRules.onCreate(metadata))
+                .extracting(fr -> fr.field().name())
+                .containsExactly("name", "createdBy", "version");
+    }
+
+    @Test
+    @DisplayName("the create checks only the fields its body carries: no key, owner, shared scope, read-only or inCreate = false field")
+    void createChecksOnlyTheBody() {
+        DomainMetadata metadata = DomainMetadata.builder("Species", "com.example.domain")
+                .fields(List.of(
+                        FieldMetadata.builder("name", "String").required(true).build(),
+                        FieldMetadata.builder("status", "String").required(true).readOnly(true).build(),
+                        FieldMetadata.builder("slug", "String").required(true).inCreate(false).build(),
+                        FieldMetadata.builder("code", "String").required(true).inUpdate(false).build()))
+                .build();
+
+        assertThat(KernelValidationRules.onCreate(metadata))
+                .extracting(fr -> fr.field().name())
+                .containsExactly("name", "code");
+        assertThat(KernelValidationRules.onUpdate(metadata))
+                .extracting(fr -> fr.field().name())
+                .containsExactly("name", "slug");
+        assertThat(KernelValidationRules.onEitherBody(metadata))
+                .extracting(fr -> fr.field().name())
+                .containsExactly("name", "slug", "code");
     }
 }

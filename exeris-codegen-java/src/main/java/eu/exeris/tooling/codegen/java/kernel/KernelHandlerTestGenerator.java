@@ -680,8 +680,7 @@ public final class KernelHandlerTestGenerator {
                                     ClassName entityType, ClassName handlerType,
                                     ClassName exchangeType, ClassName bodyType, ClassName stubType,
                                     String basePath, boolean tenantScoped) {
-        List<KernelValidationRules.FieldRules> rules =
-                KernelValidationRules.of(metadata.fields());
+        List<KernelValidationRules.FieldRules> rules = KernelValidationRules.onEitherBody(metadata);
         if (rules.isEmpty()) {
             return;
         }
@@ -709,7 +708,7 @@ public final class KernelHandlerTestGenerator {
                         ASSERTIONS, entityType)
                 .build());
 
-        for (KernelValidationRules.FieldRules fr : rules) {
+        for (KernelValidationRules.FieldRules fr : KernelValidationRules.onCreate(metadata)) {
             for (KernelValidationRules.Rule rule : fr.rules()) {
                 for (Probe probe : probesFor(fr, rule)) {
                     type.addMethod(probe.accept()
@@ -928,7 +927,7 @@ public final class KernelHandlerTestGenerator {
         if (tenantMismatch == null) {
             return;
         }
-        List<KernelValidationRules.FieldRules> rules = KernelValidationRules.of(metadata.fields());
+        List<KernelValidationRules.FieldRules> rules = KernelValidationRules.onEitherBody(metadata);
         Optional<Map<String, CodeBlock>> baselineOrEmpty = baselineFor(rules);
         if (baselineOrEmpty.isEmpty()) {
             return;

@@ -212,6 +212,60 @@ class KernelRepositoryServerOwnedUpdateTest {
     }
 
     @Test
+    @DisplayName("an inUpdate = false field is kept like a read-only one; an inCreate = false field is written by both (ADR-090 Amendment 3)")
+    void inUpdateFalseFieldHasTwoWritePaths() {
+        DomainMetadata metadata = order()
+                .fields(List.of(ORDER_NUMBER,
+                        FieldMetadata.builder("code", "String").inUpdate(false).build(),
+                        FieldMetadata.builder("slug", "String").inCreate(false).build()))
+                .build();
+
+        assertThat(KernelRepositoryGenerator.hasRequestUpdate(metadata)).isTrue();
+        assertThat(columns(KernelRepositoryGenerator.requestUpdateColumns(metadata)))
+                .containsExactly("order_number", "slug");
+        assertThat(columns(KernelRepositoryGenerator.requestStoredColumns(metadata))).containsExactly("code");
+        assertThat(columns(KernelRepositoryGenerator.updateColumns(metadata)))
+                .containsExactly("order_number", "code", "slug");
+        assertThat(repository(metadata))
+                .contains("UPDATE orders SET order_number = ?, slug = ? WHERE id = ?")
+                .contains("SELECT code FROM orders WHERE id = ?")
+                .contains("UPDATE orders SET order_number = ?, code = ?, slug = ? WHERE id = ?")
+                .contains("INSERT INTO orders (id, order_number, code, slug) VALUES (?, ?, ?, ?)");
+    }
+
+    @Test
+    @DisplayName("save refuses a required read-only reference field left null, naming the entity and the field "
+            + "(ADR-090 Amendment 3)")
+    void saveRefusesAnUnsetServerField() {
+        DomainMetadata metadata = order()
+                .fields(List.of(ORDER_NUMBER,
+                        FieldMetadata.builder("providerTxId", "String").required(true).readOnly(true).build(),
+                        FieldMetadata.builder("attempts", "int").required(true).readOnly(true).build(),
+                        FieldMetadata.builder("note", "String").readOnly(true).build()))
+                .build();
+
+        String save = repository(metadata);
+        int check = save.indexOf("if (entity.getProviderTxId() == null)");
+        assertThat(check).isPositive();
+        assertThat(save.indexOf("throw new IllegalStateException(\"Cannot create Order: field 'providerTxId' "
+                + "is required and read-only, so the server must set it before the row is written\")"))
+                .isGreaterThan(check);
+        assertThat(save.indexOf("INSERT INTO orders")).isGreaterThan(check);
+        assertThat(save).doesNotContain("entity.getAttempts() == null").doesNotContain("entity.getNote() == null");
+    }
+
+    @Test
+    @DisplayName("a required read-only system-role field is not checked: the server sets it")
+    void saveDoesNotCheckASystemRoleField() {
+        DomainMetadata metadata = order().tenantScoped(true)
+                .fields(List.of(ORDER_NUMBER,
+                        FieldMetadata.builder("tenantId", "java.util.UUID").required(true).readOnly(true).build()))
+                .build();
+
+        assertThat(repository(metadata)).doesNotContain("field 'tenantId' is required and read-only");
+    }
+
+    @Test
     @DisplayName("an entity without read-only fields has one update and no updateFromRequest")
     void noReadOnlyFieldNoRequestUpdate() {
         DomainMetadata metadata = order().audited(true).fields(List.of(ORDER_NUMBER)).build();

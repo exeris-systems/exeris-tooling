@@ -27,6 +27,7 @@ public final class OpenApiComponentsBuilder {
     private static final String INTEGER = "integer";
     private static final String INT32 = "int32";
     private static final String INT64 = "int64";
+    private static final String VERSION_DESCRIPTION = "The version of the stored row";
 
     private OpenApiComponentsBuilder() {}
 
@@ -92,6 +93,11 @@ public final class OpenApiComponentsBuilder {
                 properties.put(field.name(), fieldSchema);
             }
         }
+        if (metadata.versioned()) {
+            properties.computeIfAbsent(ServerOwnedFields.versionField(metadata), name ->
+                    OpenApiSchemas.typed(new Schema<Long>(), INTEGER).format(INT64)
+                            .description(VERSION_DESCRIPTION).readOnly(true));
+        }
         properties.put("createdAt", OpenApiSchemas.typed(new Schema<String>(), STRING)
                 .format("date-time")
                 .description("Creation timestamp"));
@@ -144,11 +150,10 @@ public final class OpenApiComponentsBuilder {
         schema.setDescription("DTO for creating " + metadata.entityName());
         Map<String, Schema> properties = new LinkedHashMap<>();
         java.util.List<String> required = new java.util.ArrayList<>();
-        Set<String> serverOwned = serverOwnedFields(metadata);
+        Set<String> notInBody = ServerOwnedFields.notInCreateBody(metadata);
         if (metadata.hasFields()) {
             for (FieldMetadata field : metadata.fields()) {
-                if (!field.readOnly() && !PrimaryKeys.field(metadata).equals(field.name())
-                        && !serverOwned.contains(field.name())) {
+                if (!notInBody.contains(field.name())) {
                     properties.put(field.name(), buildFieldSchema(field));
                     if (field.required()) {
                         required.add(field.name());

@@ -126,6 +126,60 @@ class OpenApiComponentsBuilderTest {
     }
 
     @Test
+    @DisplayName("the entity schema lists a versioned entity's undeclared version, readOnly, under its role name")
+    void entitySchemaListsAnUndeclaredVersion() {
+        DomainMetadata meta = DomainMetadata.builder("Order", "com.example.domain")
+                .versioned(true)
+                .systemFields(eu.exeris.sdk.sourcemodel.ast.SystemFieldsMetadata.builder().versionField("rev").build())
+                .fields(List.of(FieldMetadata.builder("orderNumber", "String").build()))
+                .build();
+
+        Map<String, Schema> entity = OpenApiComponentsBuilder.buildComponents(meta)
+                .getSchemas().get("Order").getProperties();
+
+        assertThat(entity).containsKey("rev").doesNotContainKey("version");
+        assertThat(entity.get("rev").getType()).isEqualTo("integer");
+        assertThat(entity.get("rev").getFormat()).isEqualTo("int64");
+        assertThat(entity.get("rev").getReadOnly()).isTrue();
+    }
+
+    @Test
+    @DisplayName("a declared version keeps its own schema on the entity, and an unversioned entity has none")
+    void entitySchemaKeepsADeclaredVersionAndAddsNoOther() {
+        DomainMetadata declared = DomainMetadata.builder("Order", "com.example.domain")
+                .versioned(true)
+                .fields(List.of(FieldMetadata.builder("version", "Long").description("Row version").build()))
+                .build();
+        DomainMetadata unversioned = DomainMetadata.builder("Order", "com.example.domain")
+                .fields(List.of(FieldMetadata.builder("orderNumber", "String").build()))
+                .build();
+
+        Schema<?> version = (Schema<?>) OpenApiComponentsBuilder.buildComponents(declared)
+                .getSchemas().get("Order").getProperties().get("version");
+        assertThat(version.getDescription()).isEqualTo("Row version");
+        assertThat(OpenApiComponentsBuilder.buildComponents(unversioned).getSchemas().get("Order").getProperties())
+                .doesNotContainKey("version");
+    }
+
+    @Test
+    @DisplayName("an inCreate = false field is out of the create body and an inUpdate = false field out of the update body")
+    void lifecycleFlagsShapeTheBodies() {
+        DomainMetadata meta = DomainMetadata.builder("Order", "com.example.domain")
+                .fields(List.of(FieldMetadata.builder("orderNumber", "String").build(),
+                        FieldMetadata.builder("slug", "String").inCreate(false).build(),
+                        FieldMetadata.builder("code", "String").inUpdate(false).build()))
+                .build();
+
+        Components components = OpenApiComponentsBuilder.buildComponents(meta);
+
+        assertThat(components.getSchemas().get("Order").getProperties()).containsKeys("slug", "code");
+        assertThat(components.getSchemas().get("OrderCreateDto").getProperties())
+                .containsOnlyKeys("orderNumber", "code");
+        assertThat(components.getSchemas().get("OrderUpdateDto").getProperties())
+                .containsOnlyKeys("orderNumber", "slug");
+    }
+
+    @Test
     @DisplayName("an unversioned entity's update body has no version")
     void updateDtoOfAnUnversionedEntityHasNoVersion() {
         DomainMetadata meta = DomainMetadata.builder("Order", "com.example.domain")
