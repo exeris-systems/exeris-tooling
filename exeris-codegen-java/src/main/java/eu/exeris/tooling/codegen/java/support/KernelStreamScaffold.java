@@ -6,6 +6,7 @@ import com.palantir.javapoet.FieldSpec;
 import com.palantir.javapoet.MethodSpec;
 import com.palantir.javapoet.ParameterizedTypeName;
 import com.palantir.javapoet.TypeName;
+import eu.exeris.sdk.sourcemodel.ast.DomainEventMetadata;
 
 import javax.lang.model.element.Modifier;
 import java.util.List;
@@ -15,25 +16,25 @@ import java.util.List;
  * {@code KernelStreamHandlerGenerator} (entity-level live-view, ADR-043 Slice 1)
  * and {@code KernelActionStreamHandlerGenerator} (per-action, ADR-044 Slice 2).
  *
- * <p>This helper is the single home for the kernel streaming SPI {@link ClassName}s
- * and the two body shapes both generators draw from, so they don't copy-paste them
- * (CLAUDE.md strong-default #2 — "extract shared scaffold"; the 0.4.0 duplication
- * target):
+ * <p>This helper is the single home for the kernel streaming SPI {@link ClassName}s,
+ * the reserved frame names, and the body shapes the generators draw from, so they
+ * don't copy-paste them (CLAUDE.md strong-default #2 — "extract shared scaffold"):
  * <ul>
  *   <li>{@link #eventProducerScaffold(List)} — the <b>EV1 producer</b>: subscribe
  *       to the entity's {@code @DomainEvent} bus and project each event into a
  *       named SSE {@code StreamEvent}. This is the live-view body for an entity
  *       that declares domain events (Slice 1).</li>
+ *   <li>{@link #subscription(StreamEventBinding, CodeBlock, String, String)} — one
+ *       bus subscription that forwards an event onto the bounded hand-off queue,
+ *       shared by the entity-level producer and the per-action driver.</li>
  *   <li>{@link #keepAliveScaffold(List, List)} — the deterministic, finite keep-alive
- *       loop that stands in where there is no producer: an entity with
- *       {@code realTimeApi} but no {@code @DomainEvent} (the Slice 1 fallback),
- *       and the per-action handler (Slice 2). The per-action handler does not
- *       invoke its action.</li>
+ *       loop of an entity with {@code realTimeApi} but no {@code @DomainEvent} (the
+ *       Slice 1 fallback).</li>
  * </ul>
  *
  * <p>Determinism (hard constraint #3): every value here is a compile-time
  * CONSTANT — no wall-clock, no random — so the same metadata yields byte-identical
- * output. Kernel-target discipline (hard constraint #1): both bodies stay on the
+ * output. Kernel-target discipline (hard constraint #1): the bodies stay on the
  * SPI ({@code emit}/{@code close}), emit no {@code text/event-stream} literal, and
  * let {@code StreamClosedException} from {@code emit} propagate.
  *
@@ -95,6 +96,27 @@ public final class KernelStreamScaffold {
      * the heap (ADR-043 obligation 4: never an unbounded egress queue).
      */
     public static final int STREAM_BUFFER_CAPACITY = 256;
+
+    /**
+     * How long a per-action stream waits, after its action has run, for the events the action
+     * triggers. Measured on the monotonic clock by the emitted handler; the value is a
+     * compile-time CONSTANT (determinism, #3), and an implementation detail rather than a
+     * contract constant (ADR-044 Amendment 2, decision 1).
+     */
+    public static final long STREAM_DEADLINE_MILLIS = 30_000L;
+
+    /**
+     * The reserved frame name of a failure after the response head (ADR-044 Amendment 2,
+     * decision 2). The processor refuses a {@code @DomainEvent} or a {@code streamEventType} of
+     * this name.
+     */
+    public static final String STREAM_ERROR_FRAME = "stream-error";
+
+    /**
+     * The reserved frame name of the keep-alive heartbeat (ADR-044 obligation 2). The processor
+     * refuses a {@code @DomainEvent} or a {@code streamEventType} of this name.
+     */
+    public static final String KEEP_ALIVE_FRAME = "keep-alive";
 
     /**
      * Deterministic keep-alive cadence. A compile-time CONSTANT — never a
@@ -219,6 +241,21 @@ public final class KernelStreamScaffold {
     }
 
     /**
+     * The binding of one {@code @DomainEvent}: the publisher's normalised {@code <Name>Event} key,
+     * and the raw event name as the frame name — the normalised name when the raw one is blank,
+     * so no frame is unnamed.
+     *
+     * @param event  the event
+     * @param entity the entity's simple name
+     * @return the event's subscription key and frame name
+     */
+    public static StreamEventBinding bindingOf(DomainEventMetadata event, String entity) {
+        String subscribeName = KernelEventSupport.eventName(event, entity);
+        String raw = event.name();
+        return new StreamEventBinding(subscribeName, raw == null || raw.isBlank() ? subscribeName : raw);
+    }
+
+    /**
      * The EV1 producer body of {@code handle(HttpStreamExchange)}: subscribe to
      * each given domain event on the kernel bus and project it into a named SSE
      * {@code StreamEvent}, draining onto this stream's virtual thread until the
@@ -274,21 +311,7 @@ public final class KernelStreamScaffold {
                 .addStatement("bus = eventEngine.bus()");
 
         for (StreamEventBinding b : bindings) {
-            body.add("tokens.add(bus.subscribe($S, (descriptor, payload) -> {\n", b.subscribeName());
-            body.indent();
-            // Copy bytes to a String INSIDE try (payload): the off-heap segment is
-            // invalid after close() on the Enterprise tier (RAII, ADR-046).
-            body.beginControlFlow("try (payload)");
-            body.addStatement("$T data = new $T(payload.segment().toArray($T.JAVA_BYTE), $T.UTF_8)",
-                    ClassName.get(String.class), ClassName.get(String.class),
-                    VALUE_LAYOUT, STANDARD_CHARSETS);
-            body.beginControlFlow("if (!queue.offer($T.of($S, data)))", STREAM_EVENT, b.wireName());
-            body.addStatement("LOG.log($T.DEBUG, $S)", KernelScaffold.LOGGER_LEVEL,
-                    b.wireName() + " live-view frame dropped (slow consumer)");
-            body.endControlFlow();
-            body.endControlFlow();
-            body.unindent();
-            body.add("}));\n");
+            body.add(subscription(b, null, "DEBUG", b.wireName() + " live-view frame dropped (slow consumer)"));
         }
 
         return body
@@ -320,15 +343,55 @@ public final class KernelStreamScaffold {
     }
 
     /**
+     * One {@code tokens.add(bus.subscribe(...))} statement: the callback copies the payload to a
+     * {@code String} inside {@code try (payload)} and offers a named {@code StreamEvent} onto the
+     * bounded {@code queue}, logging each frame it drops when the queue is full.
+     *
+     * <p>Shared by the entity-level producer and the per-action driver, so the two cannot copy a
+     * payload, or drop a frame, differently. The payload bytes are copied inside
+     * {@code try (payload)} because the off-heap segment is invalid after {@code close()} on the
+     * Enterprise tier (ADR-046).
+     *
+     * @param binding     the event to subscribe to, and the frame name to forward it under
+     * @param guard       {@code null} to forward every event of the type; otherwise a boolean
+     *                    expression over the callback's {@code descriptor} that an event must
+     *                    satisfy to be copied and forwarded
+     * @param dropLevel   the {@code System.Logger.Level} constant name a dropped frame is logged at
+     * @param dropMessage the log line of a dropped frame
+     * @return the statement, through its closing {@code }));}
+     */
+    public static CodeBlock subscription(StreamEventBinding binding, CodeBlock guard,
+                                         String dropLevel, String dropMessage) {
+        CodeBlock.Builder body = CodeBlock.builder()
+                .add("tokens.add(bus.subscribe($S, (descriptor, payload) -> {\n", binding.subscribeName())
+                .indent()
+                .beginControlFlow("try (payload)");
+        if (guard != null) {
+            body.beginControlFlow("if ($L)", guard);
+        }
+        body.addStatement("$T data = new $T(payload.segment().toArray($T.JAVA_BYTE), $T.UTF_8)",
+                        ClassName.get(String.class), ClassName.get(String.class),
+                        VALUE_LAYOUT, STANDARD_CHARSETS)
+                .beginControlFlow("if (!queue.offer($T.of($S, data)))", STREAM_EVENT, binding.wireName())
+                .addStatement("LOG.log($T.$L, $S)", KernelScaffold.LOGGER_LEVEL, dropLevel, dropMessage)
+                .endControlFlow();
+        if (guard != null) {
+            body.endControlFlow();
+        }
+        return body.endControlFlow()
+                .unindent()
+                .add("}));\n")
+                .build();
+    }
+
+    /**
      * The shared body of the stream handler's {@code handle(HttpStreamExchange)}
      * method, from the keep-alive comment through the loop to {@code close()}. The
      * caller emits its own {@code LOG.debug(...)} opener and Javadoc before adding
      * this block.
      *
-     * <p>{@code reason} and {@code heartbeatNote} are the driver-specific prose:
-     * why this handler has no producer (each driver states its own fact, so neither
-     * emits a claim about the other), and how the respective TS client treats the
-     * named frame. The structural code is identical for both.
+     * <p>{@code reason} and {@code heartbeatNote} are the caller's prose: why this
+     * handler has no producer, and how the TS client treats the named frame.
      *
      * @param reason        comment lines emitted above the loop, after the shared
      *                      opening line; never {@code null}
@@ -348,7 +411,7 @@ public final class KernelStreamScaffold {
             body.add("// $L\n", line);
         }
         return body
-                .addStatement("exchange.emit($T.of($S, $S))", STREAM_EVENT, "keep-alive", "")
+                .addStatement("exchange.emit($T.of($S, $S))", STREAM_EVENT, KEEP_ALIVE_FRAME, "")
                 .beginControlFlow("try")
                 .addStatement("$T.sleep(KEEPALIVE_INTERVAL_MILLIS)", THREAD)
                 .nextControlFlow("catch ($T e)", InterruptedException.class)

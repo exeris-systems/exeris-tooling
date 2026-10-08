@@ -35,8 +35,7 @@ import java.util.List;
  * <h2>Slice 1 shape (RFC-2026-06-22): entity-level live view</h2>
  * <p>Driver is the entity-level {@code @ExerisDomain(realTimeApi)} flag
  * (already plumbed into {@link DomainMetadata#realTimeApi()}); the per-action
- * {@code @Action(streaming)} driver is not emitted here: its stream handler is
- * keep-alive only (ROADMAP EV1-stream).
+ * {@code @Action(streaming)} driver is {@link KernelActionStreamHandlerGenerator}.
  *
  * <p>The emitted body depends on whether the entity declares any
  * {@code @DomainEvent}:
@@ -202,13 +201,7 @@ public class KernelStreamHandlerGenerator implements KernelArtifactGenerator {
         KernelEventSupport.assertDistinctEventNames(metadata);
         List<KernelStreamScaffold.StreamEventBinding> bindings = new ArrayList<>();
         for (DomainEventMetadata event : metadata.events()) {
-            String subscribeName = KernelEventSupport.eventName(event, entity);
-            String raw = event.name();
-            // Mirror the TS discriminator (raw @DomainEvent name); fall back to the
-            // normalised name only when the author left the name blank, so the
-            // wire frame is never an unnamed (empty event:) one.
-            String wireName = (raw == null || raw.isBlank()) ? subscribeName : raw;
-            bindings.add(new KernelStreamScaffold.StreamEventBinding(subscribeName, wireName));
+            bindings.add(KernelStreamScaffold.bindingOf(event, entity));
         }
         return bindings;
     }

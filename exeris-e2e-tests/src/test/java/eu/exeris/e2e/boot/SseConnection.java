@@ -49,14 +49,28 @@ final class SseConnection implements AutoCloseable {
 
     /** Opens {@code GET path} as an event stream and reads the response head. */
     static SseConnection open(int port, String path) {
+        return open(port, "GET", path, null);
+    }
+
+    /**
+     * Opens {@code method path} as an event stream, sending {@code jsonBody} when it is not
+     * {@code null}, and reads the response head.
+     */
+    static SseConnection open(int port, String method, String path, String jsonBody) {
         Socket socket = new Socket();
         try {
             socket.connect(new InetSocketAddress(RawHttp.LOOPBACK, port), 2_000);
             socket.setSoTimeout(0);
             OutputStream out = socket.getOutputStream();
-            out.write(("GET " + path + " HTTP/1.1\r\n"
+            byte[] body = jsonBody == null ? new byte[0] : jsonBody.getBytes(StandardCharsets.UTF_8);
+            String request = method + " " + path + " HTTP/1.1\r\n"
                     + "Host: " + RawHttp.LOOPBACK + "\r\n"
-                    + "Accept: text/event-stream\r\n\r\n").getBytes(StandardCharsets.US_ASCII));
+                    + "Accept: text/event-stream\r\n"
+                    + (jsonBody == null ? "" : "Content-Type: application/json\r\n"
+                            + "Content-Length: " + body.length + "\r\n")
+                    + "\r\n";
+            out.write(request.getBytes(StandardCharsets.US_ASCII));
+            out.write(body);
             out.flush();
             BufferedReader reader = new BufferedReader(
                     new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
