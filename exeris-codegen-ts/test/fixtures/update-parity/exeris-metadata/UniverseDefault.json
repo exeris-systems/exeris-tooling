@@ -1,0 +1,26 @@
+{
+  "entityName": "UniverseDefault",
+  "packageName": "com.example.parity",
+  "dataScope": "UNIVERSE",
+  "systemFields": {
+    "sharedScopeField": "scopeId"
+  },
+  "fields": [
+    {
+      "name": "id",
+      "type": "java.util.UUID"
+    },
+    {
+      "name": "title",
+      "type": "java.lang.String"
+    },
+    {
+      "name": "tenantId",
+      "type": "java.util.UUID"
+    },
+    {
+      "name": "scopeId",
+      "type": "java.util.UUID"
+    }
+  ]
+}

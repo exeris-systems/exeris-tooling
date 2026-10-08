@@ -190,5 +190,11 @@
     "since": "0.10",
     "adr": "ADR-092",
     "justification": "The picker lists one page of the target's list route, at most 100 rows (ADR-096). When the list response reports rows beyond that page (last false), the form now says so beside the select with a hint the select references through aria-describedby; the select keeps the held value as an option. A form without a picker, and a picker whose target fits one page, render no hint element. The route has no search, so the limit stays. No consumer step: nothing a consumer wrote changes."
+  },
+  {
+    "signature": "<Entity>Update / <Entity>UpdateSchema: - every server-owned field (key, owner, createdAt, createdBy, updatedAt, updatedBy, soft-delete flag, deletedAt, deletedBy, and any field a systemFields role names); the version and a UNIVERSE shared scope stay; <entity>-form.component.ts: update payload built by updateBody(current, data) from the loaded record less the server-owned fields; local and peer DTOs",
+    "since": "0.10",
+    "adr": "ADR-090, ADR-092",
+    "justification": "ADR-090 Amendment 1: the generated update never writes a server-owned column from the body, so the update type and schema leave out the properties the Java OpenAPI <Entity>UpdateDto leaves out, less the UNIVERSE shared scope, which the update still writes from the body (ADR-090 section 3). The version stays required on a versioned entity, because the update matches on the expected version. A hand-written update body that sets one of the omitted properties no longer type-checks. The edit form drops those properties from the loaded record by destructuring before it sends the record, so its request body no longer carries them. docs/MIGRATION-0.x-to-1.0.md 0.10.0 carries the step."
   }
 ]

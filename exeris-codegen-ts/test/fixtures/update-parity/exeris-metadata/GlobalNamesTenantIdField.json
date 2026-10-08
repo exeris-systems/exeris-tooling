@@ -1,0 +1,22 @@
+{
+  "entityName": "GlobalNamesTenantIdField",
+  "packageName": "com.example.parity",
+  "dataScope": "GLOBAL",
+  "systemFields": {
+    "tenantIdField": "tenantId"
+  },
+  "fields": [
+    {
+      "name": "id",
+      "type": "java.util.UUID"
+    },
+    {
+      "name": "title",
+      "type": "java.lang.String"
+    },
+    {
+      "name": "tenantId",
+      "type": "java.util.UUID"
+    }
+  ]
+}

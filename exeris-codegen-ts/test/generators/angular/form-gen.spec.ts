@@ -199,7 +199,7 @@ describe('FormGenerator emitted content — top-level structure', () => {
       ],
     }), CTX)!.content;
     expect(content).not.toContain('internalCode:');
-    expect(content).toContain('this.service.update(String(current.id), { ...current, ...data } as OrderUpdate)');
+    expect(content).toContain('this.service.update(String(current.id), this.updateBody(current, data))');
     expect(content).toContain('this.service.create(data as OrderCreate)');
   });
 
@@ -209,7 +209,7 @@ describe('FormGenerator emitted content — top-level structure', () => {
       fields: [field({ name: 'orderNumber', type: 'String' })],
     }), CTX)!.content;
 
-    expect(content).toContain('const request$ = this.editMode() && current ? this.service.update(String(current.id), { ...current, ...data } as OrderUpdate) : this.service.create(data as OrderCreate);');
+    expect(content).toContain('const request$ = this.editMode() && current ? this.service.update(String(current.id), this.updateBody(current, data)) : this.service.create(data as OrderCreate);');
     expect(content).not.toContain("this.mode() === 'create'");
   });
 
@@ -1101,7 +1101,7 @@ describe('FormGenerator — collection fields', () => {
   });
 
   it('an edit sends the loaded record, so the stored collection is kept', () => {
-    expect(content).toContain('this.service.update(String(current.id), { ...current, ...data } as OrderUpdate)');
+    expect(content).toContain('this.service.update(String(current.id), this.updateBody(current, data))');
   });
 });
 
@@ -1139,9 +1139,10 @@ describe('FormGenerator — @Field(inUpdate = false)', () => {
     expect(content).toContain('      sku: entity.sku ?? \'\',');
     expect(content).toContain(
       'this.editMode() && current ? '
-      + 'this.service.update(String(current.id), { ...current, ...data, sku: current.sku } as ProductUpdate) : '
+      + 'this.service.update(String(current.id), this.updateBody(current, data)) : '
       + 'this.service.create(data as ProductCreate);',
     );
+    expect(content).toContain('return { ...stored, ...data, sku: current.sku } as ProductUpdate;');
   });
 
   it('a form without such a field disables nothing and imports no disabled', () => {
@@ -1190,7 +1191,7 @@ describe('FormGenerator — @Field(inCreate = false, inUpdate = true)', () => {
   it('leaves the field out of the create payload and sends it with an edit', () => {
     expect(content).toContain(
       'this.editMode() && current ? '
-      + 'this.service.update(String(current.id), { ...current, ...data } as ShipmentUpdate) : '
+      + 'this.service.update(String(current.id), this.updateBody(current, data)) : '
       + 'this.service.create({ name: data.name, price: data.price } as ShipmentCreate);',
     );
   });
@@ -1233,9 +1234,11 @@ describe('FormGenerator — versioned entity', () => {
   it('sends the loaded version on update, and leaves the create payload alone', () => {
     expect(versioned).toContain(
       'this.editMode() && current ? '
-      + 'this.service.update(String(current.id), { ...current, ...data, version: this.loadedVersion() } as OrderUpdate) : '
+      + 'this.service.update(String(current.id), this.updateBody(current, data)) : '
       + 'this.service.create(data as OrderCreate);',
     );
+    expect(versioned).toContain('const { id: _id, ...stored } = current;');
+    expect(versioned).toContain('return { ...stored, ...data, version: this.loadedVersion() } as OrderUpdate;');
   });
 
   it('turns a 409 on update into a conflict with a reload of the current row', () => {
@@ -1271,7 +1274,7 @@ describe('FormGenerator — versioned entity', () => {
     }), CTX)!.content;
     expect(content).not.toContain('[formField]="form.rev"');
     expect(content).toContain('private readonly loadedVersion = signal<number | null>(null);');
-    expect(content).toContain('{ ...current, ...data, rev: this.loadedVersion() } as OrderUpdate');
+    expect(content).toContain('return { ...stored, ...data, rev: this.loadedVersion() } as OrderUpdate;');
   });
 
   it('reads an undeclared version field through a narrowing cast', () => {
@@ -1284,7 +1287,7 @@ describe('FormGenerator — versioned entity', () => {
   });
 
   it('an unversioned entity emits no version payload or conflict state', () => {
-    expect(unversioned).toContain('this.service.update(String(current.id), { ...current, ...data } as OrderUpdate)');
+    expect(unversioned).toContain('this.service.update(String(current.id), this.updateBody(current, data))');
     expect(unversioned).not.toContain('loadedVersion');
     expect(unversioned).not.toContain('conflict');
     expect(unversioned).not.toContain('409');
