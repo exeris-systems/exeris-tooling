@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 @DisplayName("ServerOwnedFields")
 class ServerOwnedFieldsTest {
@@ -113,7 +114,7 @@ class ServerOwnedFieldsTest {
     }
 
     @Test
-    @DisplayName("the create body leaves out the key, the owner, the shared scope, read-only and inCreate = false fields")
+    @DisplayName("the create body leaves out the key, the owner, the shared scope, the stamps, read-only and inCreate = false fields")
     void notInCreateBody() {
         DomainMetadata metadata = DomainMetadata.builder("Species", "com.example.domain")
                 .dataScope(DataScope.UNIVERSE)
@@ -125,8 +126,54 @@ class ServerOwnedFieldsTest {
                 .build();
 
         assertThat(ServerOwnedFields.notInCreateBody(metadata))
-                .containsExactly("id", "note", "status", "tenantId", "worldId");
+                .containsExactly("createdAt", "createdBy", "id", "note", "status", "tenantId", "updatedAt",
+                        "updatedBy", "version", "worldId");
         assertThat(ServerOwnedFields.notInUpdateBody(metadata)).doesNotContain("note", "worldId");
+    }
+
+    @Test
+    @DisplayName("the create body leaves out the audit, version and soft-delete fields, by default name or declared")
+    void notInCreateBodySystemRoles() {
+        DomainMetadata byDefault = DomainMetadata.builder("Tx", "com.example.domain")
+                .audited(true).versioned(true).softDelete(true)
+                .fields(List.of(FieldMetadata.builder("title", "String").build(),
+                        FieldMetadata.builder("createdBy", "String").build(),
+                        FieldMetadata.builder("deletedAt", "java.time.Instant").build()))
+                .build();
+        assertThat(ServerOwnedFields.notInCreateBody(byDefault)).containsExactly("createdAt", "createdBy",
+                "deleted", "deletedAt", "deletedBy", "id", "updatedAt", "updatedBy", "version");
+
+        DomainMetadata renamed = DomainMetadata.builder("Tx", "com.example.domain")
+                .audited(true).versioned(true)
+                .systemFields(SystemFieldsMetadata.builder().createdAtField("born").versionField("rev").build())
+                .fields(List.of(FieldMetadata.builder("title", "String").build()))
+                .build();
+        assertThat(ServerOwnedFields.notInCreateBody(renamed)).contains("born", "rev", "updatedAt")
+                .doesNotContain("createdAt", "version", "title");
+
+        DomainMetadata plain = DomainMetadata.builder("Tx", "com.example.domain")
+                .fields(List.of(FieldMetadata.builder("createdAt", "String").build())).build();
+        assertThat(ServerOwnedFields.notInCreateBody(plain)).containsExactly("id");
+    }
+
+    @Test
+    @DisplayName("the create handler resets the audit stamps, the version and the soft-delete fields it decoded")
+    void resetOnCreate() {
+        DomainMetadata metadata = DomainMetadata.builder("Tx", "com.example.domain")
+                .audited(true).versioned(true).softDelete(true)
+                .fields(List.of(FieldMetadata.builder("createdBy", "String").build(),
+                        FieldMetadata.builder("deletedBy", "String").build()))
+                .build();
+
+        assertThat(ServerOwnedFields.resetOnCreate(metadata)).extracting(
+                ServerOwnedFields.Reset::field, ServerOwnedFields.Reset::literal).containsExactly(
+                tuple("createdAt", "null"), tuple("updatedAt", "null"), tuple("createdBy", "null"),
+                tuple("deleted", "false"), tuple("deletedBy", "null"), tuple("version", "0L"));
+        assertThat(ServerOwnedFields.resetOnCreate(DomainMetadata.builder("Tx", "com.example.domain").build()))
+                .isEmpty();
+        assertThat(ServerOwnedFields.resetOnCreate(DomainMetadata.builder("Tx", "com.example.domain")
+                .versioned(true).fields(List.of(FieldMetadata.builder("version", "int").build())).build()))
+                .extracting(ServerOwnedFields.Reset::literal).containsExactly("0");
     }
 
     @Test

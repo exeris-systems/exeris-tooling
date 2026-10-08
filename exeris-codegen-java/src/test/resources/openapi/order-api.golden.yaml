@@ -282,14 +282,6 @@ components:
           format: int64
           description: The version of the stored row
           readOnly: true
-        createdAt:
-          type: string
-          format: date-time
-          description: Creation timestamp
-        updatedAt:
-          type: string
-          format: date-time
-          description: Last update timestamp
     OrderCreateDto:
       type: object
       description: DTO for creating Order

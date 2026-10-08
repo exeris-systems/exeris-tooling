@@ -16,6 +16,7 @@ import eu.exeris.tooling.codegen.core.generator.GeneratedFile;
 import eu.exeris.tooling.codegen.java.support.KernelEventSupport;
 import eu.exeris.tooling.codegen.java.support.KernelScaffold;
 import eu.exeris.tooling.codegen.java.support.PrimaryKeys;
+import eu.exeris.tooling.codegen.java.support.ServerOwnedFields;
 import eu.exeris.tooling.codegen.java.support.NameCasing;
 import eu.exeris.sdk.sourcemodel.ast.ActionMetadata;
 import eu.exeris.sdk.sourcemodel.ast.ActionParamMetadata;
@@ -274,6 +275,11 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         MethodSpec.Builder method = crudHandler("handleCreate");
         appendTenantGuard(method, tenantPartitioned);
         appendBodyParseGuard(method, entityType);
+        // The create body does not carry the server-owned fields; a value it names is dropped
+        // before the service, which may set them itself.
+        for (ServerOwnedFields.Reset reset : ServerOwnedFields.resetOnCreate(metadata)) {
+            method.addStatement("entity.set$L($L)", NameCasing.pascal(reset.field()), reset.literal());
+        }
         appendValidationGuard(method, KernelValidationRules.onCreate(metadata));
         method.beginControlFlow("try")
                 .addStatement("$T saved = service.save(entity)", entityType);

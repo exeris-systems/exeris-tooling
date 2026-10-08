@@ -722,6 +722,36 @@ class KernelHandlerGeneratorTest {
     }
 
     @Test
+    @DisplayName("handleCreate drops the audit, version and soft-delete values the body carried, before the "
+            + "validation and the service; an entity with none of them resets nothing")
+    void createResetsTheServerOwnedFields() {
+        DomainMetadata owned = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders").audited(true).versioned(true).softDelete(true)
+                .fields(List.of(FieldMetadata.builder("title", "String").required(true).build(),
+                        FieldMetadata.builder("createdBy", "String").build()))
+                .build();
+        DomainMetadata plain = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .fields(List.of(FieldMetadata.builder("title", "String").build()))
+                .build();
+
+        String create = createOf(owned);
+
+        assertThat(create).contains("entity.setCreatedAt(null)", "entity.setUpdatedAt(null)",
+                "entity.setCreatedBy(null)", "entity.setDeleted(false)", "entity.setVersion(0L)")
+                .doesNotContain("setDeletedAt", "setDeletedBy", "setUpdatedBy");
+        assertThat(create.indexOf("entity.setVersion(0L)")).isLessThan(create.indexOf("var valTitle"));
+        assertThat(createOf(plain)).doesNotContain("entity.set");
+    }
+
+    private String createOf(DomainMetadata metadata) {
+        String handler = strategy.generate(metadata).stream()
+                .filter(f -> f.artifactType() == ArtifactType.CONTROLLER)
+                .findFirst().orElseThrow().content();
+        return handler.substring(handler.indexOf("void handleCreate("), handler.indexOf("service.save(entity)"));
+    }
+
+    @Test
     @DisplayName("a required inCreate = false field is checked on update only, a required inUpdate = false "
             + "field on create only")
     void lifecycleFlagsSelectTheCheckedRoute() {

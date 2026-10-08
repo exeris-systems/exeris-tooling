@@ -259,9 +259,9 @@ class OpenApiComponentsBuilderTest {
     }
 
     @Test
-    @DisplayName("Entity schema always carries id (uuid) and createdAt / updatedAt (date-time) properties")
+    @DisplayName("An audited entity's schema lists its read-only createdAt / updatedAt stamps under their role names")
     void entitySchemaContainsAuditFields() {
-        DomainMetadata meta = DomainMetadata.builder("Order", "com.example.domain").build();
+        DomainMetadata meta = DomainMetadata.builder("Order", "com.example.domain").audited(true).build();
 
         Schema<?> entitySchema = OpenApiComponentsBuilder.buildComponents(meta)
                 .getSchemas().get("Order");
@@ -272,6 +272,28 @@ class OpenApiComponentsBuilderTest {
         assertThat(id.getFormat()).isEqualTo("uuid");
         Schema<?> createdAt = (Schema<?>) entitySchema.getProperties().get("createdAt");
         assertThat(createdAt.getFormat()).isEqualTo("date-time");
+        assertThat(createdAt.getReadOnly()).isTrue();
+        assertThat(((Schema<?>) entitySchema.getProperties().get("updatedAt")).getReadOnly()).isTrue();
+
+        DomainMetadata renamed = DomainMetadata.builder("Order", "com.example.domain").audited(true)
+                .systemFields(eu.exeris.sdk.sourcemodel.ast.SystemFieldsMetadata.builder()
+                        .createdAtField("born").build())
+                .build();
+        assertThat(OpenApiComponentsBuilder.buildComponents(renamed).getSchemas().get("Order").getProperties())
+                .containsKeys("born", "updatedAt").doesNotContainKey("createdAt");
+    }
+
+    @Test
+    @DisplayName("An entity that is not audited lists no createdAt / updatedAt unless it declares them")
+    void entitySchemaWithoutAuditStamps() {
+        DomainMetadata plain = DomainMetadata.builder("Order", "com.example.domain").build();
+        assertThat(OpenApiComponentsBuilder.buildComponents(plain).getSchemas().get("Order").getProperties())
+                .containsOnlyKeys("id");
+
+        DomainMetadata declared = DomainMetadata.builder("Order", "com.example.domain")
+                .fields(List.of(FieldMetadata.builder("createdAt", "java.time.Instant").build())).build();
+        assertThat(OpenApiComponentsBuilder.buildComponents(declared).getSchemas().get("Order").getProperties())
+                .containsOnlyKeys("id", "createdAt");
     }
 
     @Test

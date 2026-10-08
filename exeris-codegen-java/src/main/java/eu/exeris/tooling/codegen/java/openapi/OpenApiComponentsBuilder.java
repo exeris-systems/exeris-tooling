@@ -98,14 +98,22 @@ public final class OpenApiComponentsBuilder {
                     OpenApiSchemas.typed(new Schema<Long>(), INTEGER).format(INT64)
                             .description(VERSION_DESCRIPTION).readOnly(true));
         }
-        properties.put("createdAt", OpenApiSchemas.typed(new Schema<String>(), STRING)
-                .format("date-time")
-                .description("Creation timestamp"));
-        properties.put("updatedAt", OpenApiSchemas.typed(new Schema<String>(), STRING)
-                .format("date-time")
-                .description("Last update timestamp"));
+        if (metadata.audited()) {
+            putAuditStamp(properties, ServerOwnedFields.createdAtField(metadata), "Creation timestamp");
+            putAuditStamp(properties, ServerOwnedFields.updatedAtField(metadata), "Last update timestamp");
+        }
         schema.setProperties(properties);
         return schema;
+    }
+
+    /**
+     * An audited entity's stamp: a {@code date-time} the server sets, so {@code readOnly}. A field
+     * the entity declares under the role's name keeps its own type and description.
+     */
+    private static void putAuditStamp(Map<String, Schema> properties, String name, String description) {
+        Schema<?> stamp = properties.computeIfAbsent(name, key ->
+                OpenApiSchemas.typed(new Schema<String>(), STRING).format("date-time").description(description));
+        stamp.setReadOnly(true);
     }
 
     /** The name of the list route's envelope schema — {@code <Entity>Page}, as the Java record is named. */

@@ -19,7 +19,8 @@ The create and update routes each validate the fields their published body lists
 
 - `handleCreate` no longer answers `400` for a `required` field that `<Entity>CreateDto` leaves out:
   a read-only field, a field marked `@Field(inCreate = false)`, the key, the owner and a UNIVERSE
-  entity's shared scope. The insert is unchanged and still writes the entity it is handed.
+  entity's shared scope. The insert still writes the entity it is handed; which values of it a
+  `POST` body can set is [java-14](java-14-create-body-leaves-out-server-owned-fields.md).
 - A field marked `@Field(inUpdate = false)` is treated as a read-only field on `PUT`: it is out of
   `<Entity>UpdateDto`, out of `updateFromRequest`'s `UPDATE ... SET` list, read back so the response
   carries the stored value, and not validated. An action whose entity method changes it still stores
