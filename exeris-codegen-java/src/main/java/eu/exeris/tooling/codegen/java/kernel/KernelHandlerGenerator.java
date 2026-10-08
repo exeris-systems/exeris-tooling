@@ -274,7 +274,7 @@ public class KernelHandlerGenerator implements KernelArtifactGenerator {
         MethodSpec.Builder method = crudHandler("handleCreate");
         appendTenantGuard(method, tenantPartitioned);
         appendBodyParseGuard(method, entityType);
-        appendValidationGuard(method, KernelValidationRules.of(metadata.fields()));
+        appendValidationGuard(method, KernelValidationRules.onCreate(metadata));
         method.beginControlFlow("try")
                 .addStatement("$T saved = service.save(entity)", entityType);
         appendPublishCalls(method, metadata, DomainEventMetadata.Trigger.CREATE, null,

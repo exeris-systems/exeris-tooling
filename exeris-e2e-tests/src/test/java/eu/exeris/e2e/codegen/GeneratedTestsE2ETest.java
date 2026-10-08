@@ -205,15 +205,15 @@ class GeneratedTestsE2ETest {
             // writes them — + 17 for Species, the UNIVERSE entity: Invoice's cases but the
             // read-only one, plus the shared-scope stamp, the foreign-shared-scope refusal and the
             // kept-when-unbound tag — + 4 saga cases — + 8 InvoiceServiceTest cases (seven CRUD
-            // delegations and the one proving each service update reaches its repository twin) + 24
+            // delegations and the one proving each service update reaches its repository twin) + 23
             // InvoiceHandlerTest cases (the 9 bodyless/guard cases, 5 further list cases — page and
             // size, four refusals; every other field is a system field or not flagged — the 4
-            // decode-failure cases, 4 @Validation cases: the baseline accept, the not-null reject of
-            // its required reference and of its required read-only status, and the handleUpdate
-            // case, which only the reference can drive — and the two foreign-tenant 400s) + 24
-            // SpeciesHandlerTest cases (the 23 an Invoice without the read-only status would get,
-            // plus the foreign-shared-scope 400).
-            assertThat(summary.getTestsSucceededCount()).isEqualTo(138);
+            // decode-failure cases, 3 @Validation cases: the baseline accept, the not-null reject of
+            // its required reference and the handleUpdate case, which only the reference can drive;
+            // its required read-only status is checked on neither route — and the two foreign-tenant
+            // 400s) + 24 SpeciesHandlerTest cases (the 23 an Invoice would get, plus the
+            // foreign-shared-scope 400).
+            assertThat(summary.getTestsSucceededCount()).isEqualTo(137);
         }
     }
 

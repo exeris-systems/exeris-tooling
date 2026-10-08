@@ -269,7 +269,7 @@ class KernelHandlerTestGeneratorTest {
     }
 
     @Test
-    @DisplayName("the handleUpdate case is driven by a field the update body carries, never a read-only one")
+    @DisplayName("both routes are driven by fields their bodies carry, never a read-only one")
     void theUpdateCaseSkipsReadOnlyFields() {
         DomainMetadata leadingReadOnly = DomainMetadata.builder("Order", "com.example.domain")
                 .path("/orders")
@@ -287,9 +287,9 @@ class KernelHandlerTestGeneratorTest {
         String update = source.substring(source.indexOf("void handleUpdateRunsTheSameValidationGuard()"));
         assertThat(update.substring(0, update.indexOf("handler.handleUpdate(exchange)")))
                 .contains("decoded.setQuantity(0)")
-                .contains("decoded.setStatus(\"");
+                .doesNotContain("setStatus");
         assertThat(new KernelHandlerTestGenerator().generate(onlyReadOnly, "com.example").content())
-                .contains("void handleCreateRejectsStatusWhenNull()")
+                .doesNotContain("handleCreateRejectsStatusWhenNull")
                 .doesNotContain("handleUpdateRunsTheSameValidationGuard");
     }
 

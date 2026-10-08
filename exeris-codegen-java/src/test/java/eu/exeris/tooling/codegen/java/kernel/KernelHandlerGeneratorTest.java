@@ -698,9 +698,9 @@ class KernelHandlerGeneratorTest {
     }
 
     @Test
-    @DisplayName("a required read-only field is checked on create and not on update, which keeps its stored "
-            + "value through updateFromRequest")
-    void readOnlyFieldIsNotCheckedOnUpdate() {
+    @DisplayName("a required read-only field is checked on neither route: the create schema and the update "
+            + "body leave it out, and updateFromRequest keeps its stored value")
+    void readOnlyFieldIsCheckedOnNeitherRoute() {
         DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
                 .path("/orders")
                 .fields(List.of(
@@ -716,9 +716,31 @@ class KernelHandlerGeneratorTest {
                 handler.indexOf("service.updateFromRequest(id, entity)"));
 
         assertThat(create).contains("var valOrderNumber = entity.getOrderNumber()")
-                .contains("var valStatus = entity.getStatus()");
+                .doesNotContain("valStatus");
         assertThat(update).contains("var valOrderNumber = entity.getOrderNumber()")
                 .doesNotContain("valStatus");
+    }
+
+    @Test
+    @DisplayName("a required inCreate = false field is checked on update only, a required inUpdate = false "
+            + "field on create only")
+    void lifecycleFlagsSelectTheCheckedRoute() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .path("/orders")
+                .fields(List.of(
+                        FieldMetadata.builder("slug", "String").required(true).inCreate(false).build(),
+                        FieldMetadata.builder("code", "String").required(true).inUpdate(false).build()))
+                .build();
+
+        String handler = strategy.generate(metadata).stream()
+                .filter(f -> f.artifactType() == ArtifactType.CONTROLLER)
+                .findFirst().orElseThrow().content();
+        String create = handler.substring(handler.indexOf("void handleCreate("), handler.indexOf("service.save(entity)"));
+        String update = handler.substring(handler.indexOf("void handleUpdate("),
+                handler.indexOf("service.updateFromRequest(id, entity)"));
+
+        assertThat(create).contains("var valCode = entity.getCode()").doesNotContain("valSlug");
+        assertThat(update).contains("var valSlug = entity.getSlug()").doesNotContain("valCode");
     }
 
     @Test
@@ -759,7 +781,10 @@ class KernelHandlerGeneratorTest {
     void shouldPrefixValidationLocalToAvoidPathIdCollision() {
         DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
                 .path("/orders")
-                // a validated field literally named `id` — the exact T22 collision
+                // a validated field literally named `id`, the key being another field — the exact
+                // T22 collision
+                .systemFields(eu.exeris.sdk.sourcemodel.ast.SystemFieldsMetadata.builder()
+                        .primaryKeyField("orderNo").build())
                 .fields(List.of(FieldMetadata.builder("id", "java.util.UUID").required(true).build()))
                 .build();
 

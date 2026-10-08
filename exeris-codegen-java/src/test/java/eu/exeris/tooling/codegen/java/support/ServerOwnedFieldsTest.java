@@ -74,7 +74,7 @@ class ServerOwnedFieldsTest {
                         FieldMetadata.builder("status", "String").readOnly(true).build()))
                 .build();
 
-        assertThat(ServerOwnedFields.readOnlyFields(metadata)).containsExactly("status");
+        assertThat(ServerOwnedFields.fixedOnRequestUpdate(metadata)).containsExactly("status");
         assertThat(ServerOwnedFields.notInUpdateBody(metadata)).containsExactly("id", "status");
         assertThat(ServerOwnedFields.keptOnRequestUpdate(metadata)).containsExactly("id", "status");
         assertThat(ServerOwnedFields.keptOnUpdate(metadata)).containsExactly("id");
@@ -94,7 +94,39 @@ class ServerOwnedFieldsTest {
                 .doesNotContain("worldId", "version");
         assertThat(ServerOwnedFields.keptOnUpdate(metadata)).contains("id", "tenantId")
                 .doesNotContain("worldId", "version");
-        assertThat(ServerOwnedFields.readOnlyFields(metadata)).isEmpty();
+        assertThat(ServerOwnedFields.fixedOnRequestUpdate(metadata)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("an inUpdate = false field is not in the body and is kept by the request update only (ADR-090 Amendment 3)")
+    void notInUpdateField() {
+        DomainMetadata metadata = DomainMetadata.builder("Order", "com.example.domain")
+                .fields(List.of(FieldMetadata.builder("title", "String").build(),
+                        FieldMetadata.builder("code", "String").inUpdate(false).build()))
+                .build();
+
+        assertThat(ServerOwnedFields.fixedOnRequestUpdate(metadata)).containsExactly("code");
+        assertThat(ServerOwnedFields.notInUpdateBody(metadata)).containsExactly("code", "id");
+        assertThat(ServerOwnedFields.keptOnRequestUpdate(metadata)).containsExactly("code", "id");
+        assertThat(ServerOwnedFields.keptOnUpdate(metadata)).containsExactly("id");
+        assertThat(ServerOwnedFields.notInCreateBody(metadata)).containsExactly("id");
+    }
+
+    @Test
+    @DisplayName("the create body leaves out the key, the owner, the shared scope, read-only and inCreate = false fields")
+    void notInCreateBody() {
+        DomainMetadata metadata = DomainMetadata.builder("Species", "com.example.domain")
+                .dataScope(DataScope.UNIVERSE)
+                .systemFields(SystemFieldsMetadata.builder().sharedScopeField("worldId").build())
+                .fields(List.of(FieldMetadata.builder("title", "String").build(),
+                        FieldMetadata.builder("worldId", "java.util.UUID").build(),
+                        FieldMetadata.builder("status", "String").readOnly(true).build(),
+                        FieldMetadata.builder("note", "String").inCreate(false).build()))
+                .build();
+
+        assertThat(ServerOwnedFields.notInCreateBody(metadata))
+                .containsExactly("id", "note", "status", "tenantId", "worldId");
+        assertThat(ServerOwnedFields.notInUpdateBody(metadata)).doesNotContain("note", "worldId");
     }
 
     @Test

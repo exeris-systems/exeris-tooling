@@ -212,6 +212,28 @@ class KernelRepositoryServerOwnedUpdateTest {
     }
 
     @Test
+    @DisplayName("an inUpdate = false field is kept like a read-only one; an inCreate = false field is written by both (ADR-090 Amendment 3)")
+    void inUpdateFalseFieldHasTwoWritePaths() {
+        DomainMetadata metadata = order()
+                .fields(List.of(ORDER_NUMBER,
+                        FieldMetadata.builder("code", "String").inUpdate(false).build(),
+                        FieldMetadata.builder("slug", "String").inCreate(false).build()))
+                .build();
+
+        assertThat(KernelRepositoryGenerator.hasRequestUpdate(metadata)).isTrue();
+        assertThat(columns(KernelRepositoryGenerator.requestUpdateColumns(metadata)))
+                .containsExactly("order_number", "slug");
+        assertThat(columns(KernelRepositoryGenerator.requestStoredColumns(metadata))).containsExactly("code");
+        assertThat(columns(KernelRepositoryGenerator.updateColumns(metadata)))
+                .containsExactly("order_number", "code", "slug");
+        assertThat(repository(metadata))
+                .contains("UPDATE orders SET order_number = ?, slug = ? WHERE id = ?")
+                .contains("SELECT code FROM orders WHERE id = ?")
+                .contains("UPDATE orders SET order_number = ?, code = ?, slug = ? WHERE id = ?")
+                .contains("INSERT INTO orders (id, order_number, code, slug) VALUES (?, ?, ?, ?)");
+    }
+
+    @Test
     @DisplayName("an entity without read-only fields has one update and no updateFromRequest")
     void noReadOnlyFieldNoRequestUpdate() {
         DomainMetadata metadata = order().audited(true).fields(List.of(ORDER_NUMBER)).build();

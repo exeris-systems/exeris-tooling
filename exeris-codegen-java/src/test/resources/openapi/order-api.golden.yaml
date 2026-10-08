@@ -277,6 +277,11 @@ components:
           type: string
           format: uuid
           readOnly: true
+        version:
+          type: integer
+          format: int64
+          description: The version of the stored row
+          readOnly: true
         createdAt:
           type: string
           format: date-time

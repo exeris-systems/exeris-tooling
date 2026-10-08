@@ -13,7 +13,8 @@ slug: adr/ADR-090
   the decision is implemented on `main` (`exeris-tooling` #223) · amended 2026-10-08 (Amendment 1 —
   an update keeps every server-owned column, not only the owner) · amended 2026-10-08 (Amendment 2 —
   a request body does not write read-only fields, and the update schema is the body the update
-  writes from)
+  writes from) · Amendment 3 proposed 2026-10-08 (the create validates the body it carries, and
+  `inCreate` / `inUpdate` shape the bodies like `readOnly`)
 - **Deciders:** the founder (finding **T36**)
 - **Repo:** `exeris-tooling`
 - **Scope:** tooling / codegen pipeline — emitted repository, handler, error types, OpenAPI, TypeScript
@@ -465,3 +466,64 @@ published schema. `handleCreate` still checks every field; an action route check
   in the response and in a later `GET`; a `PUT` forging it back leaves the action's value. With the
   `PUT` route calling `update`, the test fails on the forged value; with `update` keeping the
   read-only fields, it fails on the action's.
+
+## Amendment 3 — the create validates the body it carries, and `inCreate` / `inUpdate` shape the bodies like `readOnly` (2026-10-08)
+
+**Status:** Proposed *(narrows Amendment 2's "What the amendment leaves unchanged" for
+`handleCreate`'s validation; extends Amendment 2's read-only rule to `@Field(inUpdate = false)`; §1
+to §5 and Amendments 1 and 2 are otherwise unchanged)*
+
+**Deciders:** the founder (acceptance pending).
+
+Amendment 2 left `handleCreate` checking every field. A field marked `required` and `readOnly` is
+out of the `…CreateDto`, so a `POST` that follows the published schema carries no value for it and
+the handler answered `400`. The same holds for the key, the owner and a UNIVERSE entity's shared
+scope, which the repository fills and the schema leaves out. `@Field(inCreate = false)` and
+`@Field(inUpdate = false)` are declared on the field and carried into the metadata, and neither
+shaped any Java output: the create and update schemas listed such a field, the update wrote it, and
+both handlers validated it.
+
+**Each body-carrying route validates the fields its published body lists.**
+`ServerOwnedFields#notInCreateBody` is the set the create body leaves out: the key, the owner, a
+UNIVERSE entity's shared scope, the read-only fields and the fields marked `inCreate = false`.
+`OpenApiComponentsBuilder` builds the `…CreateDto` from it and `KernelValidationRules#onCreate`
+selects the create route's `@Validation` guards from it, so the schema and the guard cannot list
+different fields. A field with a `required` rule that the body does not list is no longer refused on
+`POST`.
+
+**`inUpdate = false` is read-only on the `PUT` path.** `ServerOwnedFields#readOnlyFields` becomes
+`fixedOnRequestUpdate`: the domain fields marked `readOnly = true` or `inUpdate = false` that play no
+system role. They are out of `updateFromRequest`'s `SET` list and read back, out of the
+`…UpdateDto` and unvalidated on `PUT`; `update`, which an action drives, writes them, as Amendment 2
+decides for a read-only field. A field in a system role keeps that role's rule.
+
+**The insert is unchanged.** It writes the entity it is handed, so a `POST` body that names a
+read-only or `inCreate = false` field still stores that value; the schema does not list it and the
+generated client never sends it.
+
+**The entity schema lists the version.** A versioned entity that declares no field of the
+version's name gets a `readOnly` `integer`/`int64` property under the version's role name on the
+entity schema, as the `…UpdateDto` has it since Amendment 2: the response carries the stored version
+the next `PUT` sends back.
+
+### Consequences of the amendment
+
+- **Breaking for a client that set an `inUpdate = false` field through `PUT`.** The value is
+  ignored and the stored one is returned; an action changes it. The regeneration note is
+  `docs/migration/0.10.0/java-13-create-and-update-follow-the-published-schemas.md`.
+- An entity with an `inUpdate = false` field gains `updateFromRequest` on its repository and
+  service, as an entity with a read-only field does.
+- The TypeScript `…Update` type still lists an `inUpdate = false` field, which the form sends as
+  loaded; aligning it is an `exeris-codegen-ts` change.
+
+### Verification of the amendment
+
+- `ServerOwnedFieldsTest`, `KernelValidationRulesTest` — the create and update sets per field kind.
+- `OpenApiComponentsBuilderTest` — the create and update bodies per flag; the entity schema's
+  undeclared version.
+- `KernelHandlerGeneratorTest`, `KernelHandlerTestGeneratorTest` — the guard of each route lists the
+  fields its body carries.
+- `KernelRepositoryServerOwnedUpdateTest` — an `inUpdate = false` field is out of
+  `updateFromRequest`'s `SET` list and read back.
+- `LifecycleFlagsBootE2ETest` boots the emitted application: a `POST` and a `PUT` that follow the
+  schemas are accepted, a forged `inUpdate = false` value is ignored and an action's change is stored.

@@ -93,6 +93,28 @@ final class KernelValidationRules {
                 .toList();
     }
 
+    /**
+     * The rules the create route enforces: those of the fields the create body carries. A field
+     * {@link ServerOwnedFields#notInCreateBody} names is left out of the published create schema, so
+     * a body that follows the schema does not carry it and the create does not refuse it for that.
+     */
+    static List<FieldRules> onCreate(DomainMetadata metadata) {
+        Set<String> notInBody = ServerOwnedFields.notInCreateBody(metadata);
+        return of(metadata.fields()).stream()
+                .filter(fr -> !notInBody.contains(fr.field().name()))
+                .toList();
+    }
+
+    /** The rules of the fields at least one of the two body-carrying routes validates. */
+    static List<FieldRules> onEitherBody(DomainMetadata metadata) {
+        Set<String> notInCreate = ServerOwnedFields.notInCreateBody(metadata);
+        Set<String> notInUpdate = ServerOwnedFields.notInUpdateBody(metadata);
+        return of(metadata.fields()).stream()
+                .filter(fr -> !notInCreate.contains(fr.field().name())
+                        || !notInUpdate.contains(fr.field().name()))
+                .toList();
+    }
+
     private static List<Rule> rulesFor(FieldMetadata f) {
         boolean nullCheck = f.required() && !isPrimitive(f.type());
         boolean strChecks = isStringType(f.type())
