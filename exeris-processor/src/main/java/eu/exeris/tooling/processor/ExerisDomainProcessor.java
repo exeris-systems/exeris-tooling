@@ -846,8 +846,8 @@ public class ExerisDomainProcessor extends AbstractProcessor {
      * {@code SystemFieldsMetadata.primaryKeyField}, is the one no generator honours — the schema
      * emits {@code id UUID PRIMARY KEY} unconditionally, the repository identifies rows through
      * {@code " WHERE id = ?"}, and every by-id handler binds {@code {id}}. Extracting it would move
-     * the annotation out of the never-read audit while leaving its effect at zero, which is the
-     * failure mode this repository spent 0.8.0 removing. It stays unextracted, and C0 keeps
+     * the annotation out of the never-read audit while leaving its effect at zero, so the audit
+     * would stop reporting an annotation that changes nothing. It stays unextracted, and C0 keeps
      * reporting it, until the slice that renames the key across the SQL, the repository and the
      * route template lands.
      */
