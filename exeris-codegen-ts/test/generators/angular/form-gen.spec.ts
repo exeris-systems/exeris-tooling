@@ -1473,6 +1473,24 @@ describe('FormGenerator — a MANY_TO_ONE foreign key is picked from its target 
     expect(content.match(/TagService/g)).toHaveLength(2);
   });
 
+  it('leaves the record being edited out of a relationship to the entity itself', () => {
+    const tag = domain({
+      entityName: 'Tag',
+      fields: [field({ name: 'id', type: 'java.util.UUID' }), field({ name: 'parentId', type: 'java.util.UUID' })],
+      relationships: [{ name: 'parentId', targetEntity: 'Tag', type: 'MANY_TO_ONE' } as DomainMetadata['relationships'][number]],
+    });
+    expect(emit(tag, [tag])).toContain(
+      '  readonly parentIdOptions = computed(() =>\n'
+      + '    pickerOptions(this.parentIdOptionsResource.hasValue() ? this.parentIdOptionsResource.value() : undefined)\n'
+      + '      .filter((option) => !this.editMode() || option.value !== String(this.id() ?? this.current()?.id)),\n'
+      + '  );',
+    );
+  });
+
+  it('offers every record of another target', () => {
+    expect(emit(order(false), [order(false), product])).not.toContain('.filter((option) =>');
+  });
+
   it('imports a target named like a framework symbol by its service class only', () => {
     const component = domain({
       entityName: 'Component',

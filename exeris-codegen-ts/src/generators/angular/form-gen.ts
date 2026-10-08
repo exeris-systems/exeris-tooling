@@ -355,7 +355,13 @@ export class FormGenerator implements CodeGenerator {
       lines.push('');
       lines.push(`  private readonly ${resource} = rxResource({ stream: () => this.${pickerServiceMember(picker.target)}.findAll({ size: ${MAX_PAGE_SIZE} }) });`);
       lines.push(`  readonly ${pickerOptionsName(f.name)} = computed(() =>`);
-      lines.push(`    pickerOptions(this.${resource}.hasValue() ? this.${resource}.value() : undefined${labelArg}),`);
+      if (picker.target === entityName) {
+        lines.push(`    pickerOptions(this.${resource}.hasValue() ? this.${resource}.value() : undefined${labelArg})`);
+        // A record is never offered as its own parent: the edited record's id is left out.
+        lines.push(`      .filter((option) => !this.editMode() || option.value !== String(this.id() ?? this.current()?.${idField})),`);
+      } else {
+        lines.push(`    pickerOptions(this.${resource}.hasValue() ? this.${resource}.value() : undefined${labelArg}),`);
+      }
       lines.push('  );');
       lines.push(`  readonly ${pickerUnlistedName(f.name)} = computed(() => {`);
       lines.push(`    const value = this.formModel().${f.name};`);
