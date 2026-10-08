@@ -209,5 +209,41 @@ check(
   ].join('\n'),
 );
 
+// (5) The generated server's update is a full replacement: the PUT body is decoded into the whole
+// entity and every column but the key and the owner is written from it. The Update type and schema
+// are the record as read without those two, they agree in both directions, and a body that leaves
+// out a required field, a read-only one included, does not type-check.
+check(
+  'full-replacement-update',
+  [DomainMetadataSchema.parse({
+    packageName: 'com.shop',
+    entityName: 'Ledger',
+    dataScope: 'TENANT',
+    fields: [
+      { name: 'id', type: 'java.util.UUID' },
+      { name: 'title', type: 'String', required: true },
+      { name: 'code', type: 'String', readOnly: true, required: true },
+      { name: 'note', type: 'String' },
+      { name: 'tenantId', type: 'java.util.UUID' },
+    ],
+  })],
+  [],
+  [],
+  [
+    "import type { z } from 'zod';",
+    "import type { Ledger, LedgerUpdate } from './types';",
+    "import { LedgerUpdateSchema } from './schemas';",
+    '',
+    'type Parsed = z.infer<typeof LedgerUpdateSchema>;',
+    'export const fromSchema = (p: Parsed): LedgerUpdate => p;',
+    'export const toSchema = (u: LedgerUpdate): Parsed => u;',
+    'export const fromLoaded = (loaded: Ledger): LedgerUpdate => ({ ...loaded, title: "renamed" });',
+    '',
+    "// @ts-expect-error — `code` is missing",
+    "export const missing: LedgerUpdate = { title: 'x' };",
+    '',
+  ].join('\n'),
+);
+
 rmSync(join(pkgRoot, '.verify-tmp'), { recursive: true, force: true });
-console.log('✓ Generated frontend data layer type-checks (with-enums + zero-enums + two-peers-same-entity + versioned-update).');
+console.log('✓ Generated frontend data layer type-checks (with-enums + zero-enums + two-peers-same-entity + versioned-update + full-replacement-update).');

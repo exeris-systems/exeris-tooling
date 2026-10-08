@@ -160,5 +160,11 @@
     "since": "0.10",
     "adr": "ADR-092",
     "justification": "Additive: a new configuration key whose default keeps the old output, and init writes it at that default. With render ssg and the scaffold on, ng build prerenders to HTML each @View page whose path has no parameter or wildcard and that binds no entity, and the '' redirect as a redirect page; every other route, the entity routes included, renders in the browser through a ** Client entry, served from index.csr.html. The three server files are seeds. With scaffold false render emits nothing. A consumer that keeps the default regenerates byte-identical output."
+  },
+  {
+    "signature": "<Entity>Update: Partial<<Entity>Create> -> Omit<<Entity>, key | owner> (& { <versionField>: <type> } when versioned); <Entity>UpdateSchema: <Entity>CreateSchema.partial() -> <Entity>Schema.omit({ key, owner }) (.extend({ <versionField> }) when versioned); local and peer DTOs",
+    "since": "0.10",
+    "adr": "ADR-092",
+    "justification": "The generated server's update is a full replacement: the handler decodes the PUT body into the whole entity, validates it with the create rules, and the repository's UPDATE writes every column but the key and a tenant-partitioned entity's owner, so a property left out is stored as null. The update type and schema are therefore the entity record without the key, which the path carries, and without the owner, which the update never writes; read-only fields, the audit createdAt and a UNIVERSE entity's shared scope stay, since the update writes them from the body. Required fields are required. The edit form already sent the loaded record with its values over it, so its request body is unchanged. docs/MIGRATION-0.x-to-1.0.md 0.10.0 carries the step."
   }
 ]
