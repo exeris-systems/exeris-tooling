@@ -67,10 +67,8 @@ export class EventHandlerGenerator implements CodeGenerator {
     ];
   }
 
-  private generateEventHandlerContent(domain: DomainMetadata, context: GeneratorContext): string {
+  private generateEventHandlerContent(domain: DomainMetadata, _context: GeneratorContext): string {
     const { entityName, events = [] } = domain;
-    const kebab = DslMapper.toKebabCase(entityName);
-    const camel = DslMapper.toCamelCase(entityName);
 
     const eventTypes = events.map(e => `'${e.name}'`).join(' | ');
     const eventInterfaces = this.generateEventInterfaces(events, domain);
@@ -318,7 +316,6 @@ export interface ${entityName}${pascalName}Event {
 
   private generateAnnouncementMethod(event: DomainEventMetadata, entityName: string): string {
     const pascalName = this.toPascalCase(event.name);
-    const camelName = DslMapper.toCamelCase(event.name);
 
     // Determine announcement priority based on event name
     const isDestructive = event.name.toLowerCase().includes('deleted') ||
@@ -332,12 +329,7 @@ export interface ${entityName}${pascalName}Event {
   }`;
   }
 
-  private generateEventBusService(domains: DomainMetadata[], context: GeneratorContext): string {
-    const allEventTypes = domains
-      .flatMap(d => d.events || [])
-      .map(e => `'${e.name}'`)
-      .filter((v, i, a) => a.indexOf(v) === i); // Unique
-
+  private generateEventBusService(_domains: DomainMetadata[], _context: GeneratorContext): string {
     return `${fileHeader({
       title: 'Central Event Bus Service',
       lead: ['', 'Manages real-time event subscriptions via SSE/WebSocket/WebTransport.', 'Provides a unified event stream for all domain events.', ''],

@@ -35,7 +35,6 @@ export class StoreGenerator implements CodeGenerator {
 
   generate(domain: DomainMetadata, context: GeneratorContext): GeneratedFile | null {
     const kebab = DslMapper.toKebabCase(domain.entityName);
-    const camel = DslMapper.toCamelCase(domain.entityName);
     const content = this.generateStoreContent(domain, context);
 
     return {
@@ -46,12 +45,10 @@ export class StoreGenerator implements CodeGenerator {
     };
   }
 
-  private generateStoreContent(domain: DomainMetadata, context: GeneratorContext): string {
+  private generateStoreContent(domain: DomainMetadata, _context: GeneratorContext): string {
     const { entityName, softDelete } = domain;
     const modelName = modelTypeName(entityName);
     const kebab = DslMapper.toKebabCase(entityName);
-    const camel = DslMapper.toCamelCase(entityName);
-    const pluralCamel = camel + 's';
     const noun = tsSingleQuoted((domain.displayName ?? entityName).toLowerCase());
     const pluralNoun = tsSingleQuoted((domain.pluralName ?? DslMapper.pluralName(entityName)).toLowerCase());
 
