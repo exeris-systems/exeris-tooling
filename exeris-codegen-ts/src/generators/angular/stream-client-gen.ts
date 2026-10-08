@@ -52,12 +52,12 @@ import { fileHeaderLines } from '../file-header.js';
 export { GeneratedFile };
 
 /**
- * Whether the entity gets a live-view stream client.
+ * Whether the entity gets a stream client (the live view and the spectate stream).
  *
- * Not for a tenant-partitioned entity: the kernel stream routes carry no tenant guard and the
- * handler's producer subscribes to the event bus unfiltered, so a tenant-partitioned entity's
- * stream would deliver every tenant's events to every subscriber. The client is emitted once the
- * server guards the route.
+ * Not for a tenant-partitioned entity: the kernel event descriptor carries no isolation key, so
+ * the collection-wide live view could not filter its events by tenant and would deliver every
+ * tenant's events to every subscriber; the processor refuses `realTimeApi` on such an entity, and
+ * the client is emitted once the event carries the key.
  */
 export function hasLiveViewClient(domain: DomainMetadata): boolean {
   return domain.realTimeApi && !isTenantPartitioned(domain);
