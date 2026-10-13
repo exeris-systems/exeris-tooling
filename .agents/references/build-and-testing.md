@@ -16,7 +16,7 @@ mvn -pl exeris-e2e-tests -am test -Dtest=KernelCodegenCompileTest -Dsurefire.fai
 mvn -pl exeris-e2e-tests -am test -Dtest=KernelCodegenE2ETest -Dsurefire.failIfNoSpecifiedTests=false
 
 # Architecture rules (ArchUnit) across the tooling modules
-mvn -pl exeris-processor,exeris-codegen-core,exeris-codegen-java,exeris-codegen-maven-plugin,exeris-diagnostics -am test -Dtest='*ArchitectureTest' -Dsurefire.failIfNoSpecifiedTests=false
+mvn -pl exeris-processor,exeris-codegen-core,exeris-codegen-java,exeris-codegen-maven-plugin,exeris-diagnostics,exeris-initializr -am test -Dtest='*ArchitectureTest' -Dsurefire.failIfNoSpecifiedTests=false
 
 # TypeScript codegen build and tests (standalone npm project)
 cd exeris-codegen-ts && npm install && npm test
@@ -42,13 +42,13 @@ cd exeris-codegen-ts && npm install && npm test
 | Layer | Module / Test Class | Verification Target |
 |:---|:---|:---|
 | Processor Unit | `exeris-processor/src/test/` | Element parsing, AST record extraction, diagnostic reporting |
-| Architecture | `*ArchitectureTest` in the processor, codegen-core, codegen-java, Maven plugin and diagnostics modules | ArchUnit rules over each module's main bytecode: dependency sets, banned calls, no host framework |
+| Architecture | `*ArchitectureTest` in the processor, codegen-core, codegen-java, Maven plugin, diagnostics and initializr modules | ArchUnit rules over each module's main bytecode: dependency sets, banned calls, no host framework |
 | Dependency ban | `ban-host-and-kernel-runtime` enforcer execution | No host framework or kernel runtime on the processor's or the generators' resolved graph |
 | Codegen Compile Gate | `KernelCodegenCompileTest` | In-memory `JavaCompiler` compiles emitted code against kernel SPI |
 | Emitted-Java lint gate | `EmittedLintGateTest` in `exeris-e2e-tests` | Emitted Java compiled with `-Xlint:all`; any unaccepted warning fails |
 | OpenAPI golden | `KernelOpenApiGoldenDocumentTest` in `exeris-codegen-java` | Emitted OpenAPI document compared byte for byte with a committed golden |
 | Strict-audit registry keys | `StrictAuditRegistryKeysTest` in `exeris-processor` | Every strict-audit registry key resolves against the SDK annotations |
-| Module lint | Checkstyle at `validate`, PMD at `verify` | Main sources of the five Java modules; a finding fails the build |
+| Module lint | Checkstyle at `validate`, PMD at `verify` | Main sources of the six Java modules; a finding fails the build |
 | Codegen Snapshot E2E | `KernelCodegenE2ETest` | Substring and structural assertions on emitted Java artefacts |
 | Generated Tests E2E | `GeneratedTestsE2ETest` | Executes emitted JUnit 5 + AssertJ tests against emitted services |
 | TypeScript Suite | `exeris-codegen-ts/` | Vitest assertions on Angular services, components, and sagas |
