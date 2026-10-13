@@ -4,7 +4,7 @@ type: roadmap
 visibility: public
 owning-repo: exeris-tooling
 status: active
-last-verified: 2026-10-08
+last-verified: 2026-10-13
 ---
 
 # Exeris Tooling — Roadmap to 1.0.0 GA
@@ -1883,7 +1883,7 @@ never-invoked emitter start emitting, and its output did not build.
       `/orders` or `/orders/{id}/edit` returns `index.html` while a JSON GET, a POST and an
       `EventSource` request reach the backend; under `render: 'ssg'` the navigation gets the client
       shell. `proxy.conf.json` stays a seed path, so an existing copy is released, not deleted.
-      The `event-gen.ts` endpoint below is unchanged: it names a route no server serves (S4).
+      The `event-gen.ts` endpoint below is a separate decision, settled in S4 (#383).
 
       **Three more `/api` sites survive the same fix** (found in the #191 review, verified against
       real CLI output). None reproduces the 404 today; all three are the same `''`-vs-`/api`
@@ -1908,7 +1908,7 @@ never-invoked emitter start emitting, and its output did not build.
         shipped default generates against `''`, and twelve assertions — three of them named
         "byte-for-byte with the kernel streamRoute" — pinned URLs no `exeris-gen` run has produced
         since #191. Now `?? ''`, and those twelve fixtures assert what the tool emits.
-      - [ ] `event-gen.ts` — the emitted `EventBusService` defaults to
+      - [x] `event-gen.ts` — the emitted `EventBusService` defaulted to
         `endpoint: '/api/v1/events/stream'`. A fourth site, raised in the #209 review and confirmed
         against the Java side: this one is **not** a prefix problem and stripping `/api/v1` would
         not fix it. The kernel registers stream routes per entity — `KernelStreamHandlerGenerator`
@@ -1917,7 +1917,9 @@ never-invoked emitter start emitting, and its output did not build.
         prefix. The emitted bus connects to a route the emitted server never serves. What it should
         connect to (fan-in over the per-entity streams, a consumer-supplied aggregate endpoint, or
         nothing until the kernel serves one) is a design question, not a transcription, which is
-        why it is filed here rather than folded into the prefix fix.
+        why it is filed here rather than folded into the prefix fix. Decided in ADR-044
+        Amendment 2 and landed in #383: the consumer supplies `eventBusEndpoint`, there is no
+        default, and `EventBusService` is not emitted without it.
       - [x] `backend-strategy.ts:310` — `KernelStrategy.generateClientCode` builds
         `transformPath('/api', entityPath)` with the prefix hardcoded past any config. It has **no
         production caller at all** (only its own two tests), making it a third emitter wired by
@@ -3886,27 +3888,38 @@ are in [`docs/0.10.0-release-plan.md`](docs/0.10.0-release-plan.md). T12 + T17 i
 there, and does not hold the cut. Track C, `@SagaTransition` and T48 slice C2 are conditional: each
 enters only if its upstream half is final first.
 
-- [ ] **J0 build hygiene** (no gate, does not hold the cut): Checkstyle and PMD on the tooling's own
+- [x] **J0 build hygiene** (no gate, does not hold the cut): Checkstyle and PMD on the tooling's own
       Java (warn-only first, then enforcing per module), ArchUnit policy tests, the javadoc gate in diff
       mode, and lint of emitted Java in the e2e compile gate.
       *Landed:* the warn-only lint and its baseline (#321), the ArchUnit policy tests and the enforcer
       dependency ban (#325), the javadoc gate over modules brought to it (#326), enforcement in
       `exeris-diagnostics`, `exeris-codegen-core` and `exeris-codegen-maven-plugin` (#327) and then
       in `exeris-codegen-java` and `exeris-processor` (#340), so all five modules enforce, and the
-      lint gate over emitted Java (#353). `.sonarcloud.properties` excludes `src/it` from
-      copy-paste detection (#341).
-      *Open:* SonarCloud analysis from CI with coverage in place of automatic analysis.
-- [ ] **T53 in full** (RFC accepted as ADR-105; gate: ADR-105): `@RouteAccess` + `permissions` compiled into `RouteRequirement`. D10 resolves
-      with it.
+      lint gate over emitted Java (#353); SonarCloud analysis runs from CI after `mvn verify` with the
+      JaCoCo and vitest lcov coverage, and the root POM excludes `src/it` from copy-paste detection
+      (#377, which replaces automatic analysis and drops `.sonarcloud.properties`).
+- [ ] **T53, the seam (J3a)** (RFC accepted as ADR-105; founder ruling 2026-10-13: 0.10.0 cuts with
+      the seam only): J3-1 (ADR-105, #359) and J3-2 (#369). The extraction, the table, the OpenAPI
+      security block and the data half of S3 move to 0.11.0 (see **0.11.0**). D10 resolves with S3's
+      data-independent half.
       *Landed:* J3-2 (#369), the seam: `Application` binds `HTTP_ROUTE_POLICY` and a generated
-      policy abstains everywhere. *Open:* J3-1, J3-3 and J3-4, and the S3 front half.
-- [ ] **TS wave S6 — `@View` pages for exeris-web:** CUSTOM blocks compile with their props, LIST
+      policy abstains everywhere; J3-1 is ADR-105 itself (#359).
+      *Moved to 0.11.0:* J3-3 (processor extraction, the obligation-12 table, `route-policy.json`
+      and its conformance test), J3-4 (the ADR-079 OpenAPI security block) and the data half of S3,
+      gated on exeris-sdk#161 in a final SDK 0.13; the latest final SDK is 0.12.0, which 0.10.0 pins.
+      *Open in 0.10.0:* S3's data-independent half (ADR-105 obligations 22 and 23): the invented
+      `<ENTITY>_PERMISSIONS` constants and the role bypass are deleted, the bearer interceptor is
+      emitted only when a route demands identity (none does yet), and
+      `KernelStrategy.getDefaultHeaders` is deleted.
+- [x] **TS wave S6 — `@View` pages for exeris-web:** CUSTOM blocks compile with their props, LIST
       items are `<li>`, the generated `<h1>` can be omitted, pages-only output into an existing app with
       manifest-owned rewrites, a views-only `init`, and opt-in SSG. HERO's look waits on `.exeris-hero`
       in `@exeris/ui-kit` 0.5; SEO fields, a per-view heading switch and typed block props wait on the
       SDK presentation IR.
-      *Open:* #334 (CUSTOM blocks, props, LIST, heading), #335 (pages-only, owned writes, init), #337
+      *Landed:* #334 (CUSTOM blocks, props, LIST, heading), #335 (pages-only, owned writes, init), #337
       (SSG).
+      *Open, upstream or conditional:* the HERO look (`@exeris/ui-kit` 0.5), SEO metadata and the
+      per-view heading switch, and typed block props (SDK presentation IR).
 - [ ] Track C (SDK record changes), `@SagaTransition`, T12 + T17.
 - [ ] **EV1-stream per-action driver** (ADR-044 amendment first): the streaming action runs, and its
       triggered events stream back. Moved from 0.9.0 on 2026-10-02; the open questions are under
@@ -3916,7 +3929,8 @@ enters only if its upstream half is final first.
       reserved frame names.
       *Landed (S4):* the TS spectate client of a `GLOBAL` entity (#384); the per-action TS clients
       for tenant-partitioned entities (#385).
-      *Open:* the result frame, which waits on exeris-sdk#191.
+      *Open:* the result frame, which waits on exeris-sdk#191; the live view and spectate route of a
+      tenant-partitioned entity wait on exeris-kernel#600 (T59).
 - [ ] **T59 — tenant isolation on stream routes** (the same ADR-044 amendment): the tenant guard in
       the entity-level and the per-action stream handler, an RLS `findById` before a per-action stream
       opens, and an isolation key on the events a live view forwards, so a stream delivers only its
@@ -3960,18 +3974,18 @@ enters only if its upstream half is final first.
       *Landed:* the dead `KernelStrategy` methods are deleted (#323); codegen-ts has an
       `eslint.config.mjs` and `build.yml` runs `npm run lint` before vitest (#348); and `npm start`
       proxies the entity paths through `proxy.conf.js` with the `bypass` (#351).
-- [ ] **Issues placed in 0.10.0:** #304 (form gaps), #271 (one header helper, done in #322), #309
-      (`GraphMetadata.queries` written `null` when not extracted, done in #317), #310 (an entity
-      with no `id` field — a processor error, done in #316 as `EXT-PROC-1015`; the TS model always
-      carrying `id` is open, wave S2).
+- [x] **Issues placed in 0.10.0:** #304 (form gaps, closed by #350 and #366), #271 (one header
+      helper, done in #322), #309 (`GraphMetadata.queries` written `null` when not extracted, done in
+      #317), #310 (an entity with no `id` field — a processor error, done in #316 as
+      `EXT-PROC-1015`; the TS model carries the key `primaryKeyField` names, done in #363).
       *Landed:* #304 items 1-3 (#350): an `inCreate = false, inUpdate = true` field gets an edit
       control, a self-referencing picker skips the record being edited, a failed options request
       shows an error. *Decided:* #304 item 4, the 100-row picker, is a recorded limit: the picker
       lists one page of the ADR-096 list route (`MAX_SIZE` 100) and says so beside the select when
       the response reports rows beyond it (`last` false). Server-side search on the list route (an
       ADR-096 amendment, Java and TS) and a combobox on it, once `@angular/aria` is stable, are
-      0.11.0 work. *Open:* the TS half of #310.
-- [ ] **Debts with no gate** (Java wave J2, TS wave S2): the `@DomainEvent` strict-mode call site
+      0.11.0 work (#366).
+- [x] **Debts with no gate** (Java wave J2, TS wave S2): the `@DomainEvent` strict-mode call site
       (T11), the T30 classpath check in `exeris:generate`, a golden OpenAPI document compared on
       both JDK rows, a reflective check of the inert-registry keys against the SDK, the T58 residue
       (`Partial<Create>` sent over `PUT`), and the `TODO` that `form-gen.ts` writes into generated
@@ -3988,14 +4002,16 @@ enters only if its upstream half is final first.
       (ADR-090 Amendment 1); a `PUT` keeps the read-only fields through `updateFromRequest` while
       an action's `update` writes them, and the `<Entity>UpdateDto` describes the body the update
       writes from (ADR-090 Amendment 2, #374); the same two decisions for the Java update (#367) and
-      the TS update type, schema and edit body (#368, #375); `-Aexeris.strict` reports a name
-      written on a nested-class `@DomainEvent` (#370, closes #358).
+      the TS update type, schema and edit body (#368, #375); the create and update bodies follow the
+      published schemas, and the create body leaves out every server-owned field (ADR-090
+      Amendments 3 and 4, #380, #382, #381); `-Aexeris.strict` reports a name written on a
+      nested-class `@DomainEvent` (#370, closes #358).
 - [x] **Jackson pins and a release-readiness check** (#346): Jackson 3.2.3 and 2.18.11, with a
       check that the pins are consistent before a release.
-- [ ] **ADR-044 Amendment 2** also decides the GET route for a per-action stream (`EventSource` is
+- [x] **ADR-044 Amendment 2** also decides the GET route for a per-action stream (`EventSource` is
       GET-only) and the `EventBusService` default endpoint, which no server route serves.
-      *Landed:* the GET route, J4-2 (#372). *Open:* the endpoint is decided (the consumer supplies
-      it, or `EventBusService` is not emitted; no fan-in route), and its emission is wave S4.
+      *Landed:* the GET route, J4-2 (#372); the endpoint, S4 (#383): the consumer supplies it as
+      `eventBusEndpoint`, there is no default, and `EventBusService` is not emitted without it.
 - [x] **Triage two dog-food findings this file does not record yet:** the repository's
       `save`/`update` split with no upsert, and codegen-ts writing LF into a CRLF tree (triaged
       below).
@@ -4067,6 +4083,10 @@ Pairs with SDK 0.13, which 0.10.0 does not wait for. Order, gates and the Java/T
       grouped sections in the generated forms and detail views.
 - [ ] **J3 + S2 `@Blob`**, **J4 + S3 `@Channel`**: each after its wave 0 ADR.
 - [ ] **J5 + S4 `@QueryParam`, `@NavMenu`, `@Tab`**: after exeris-sdk#186.
+- [ ] **J6 + S5 T53 route policy, the data half**: processor extraction of `permissions` and
+      `routeAccess`, the obligation-12 table, `route-policy.json` with its conformance test, the
+      OpenAPI security block (ADR-079), and the TS guards that read the declared names
+      (ADR-105 J3-3, J3-4 and S3). Gate: exeris-sdk#161 in a final SDK 0.13.
 
 Not in 0.11.0: `@Encrypted` / `@RowLevelSecurity` (C2) and `@GraphQuery`, with the reasons in the
 plan.
