@@ -4,7 +4,6 @@
  * Defines the contract for different backend implementations.
  * Each strategy handles:
  * - API client configuration
- * - Header injection (RLS, tenant, auth)
  * - Path transformation
  * - Error mapping
  * - Retry logic
@@ -36,19 +35,6 @@ export interface ClientConfig {
   timeout: number;
   /** Credentials mode */
   credentials: 'include' | 'same-origin' | 'omit';
-}
-
-export interface TenantContext {
-  /** Current tenant ID for RLS */
-  tenantId?: string;
-  /** Current user ID */
-  userId?: string;
-  /** Correlation ID for distributed tracing */
-  correlationId?: string;
-  /** Trace ID for observability */
-  traceId?: string;
-  /** JWT access token */
-  accessToken?: string;
 }
 
 export interface RetryConfig {
@@ -87,12 +73,6 @@ export interface BackendStrategy {
    * Get API client configuration.
    */
   getClientConfig(): ClientConfig;
-
-  /**
-   * Get default headers for API requests.
-   * Includes RLS headers, auth tokens, correlation IDs.
-   */
-  getDefaultHeaders(context: TenantContext): Record<string, string>;
 
   /**
    * Transform API path based on kernel conventions.
@@ -199,32 +179,6 @@ export class KernelStrategy implements BackendStrategy {
       timeout: 30000,
       credentials: 'include',
     };
-  }
-
-  getDefaultHeaders(context: TenantContext): Record<string, string> {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-    };
-
-    // RLS headers for multi-tenancy
-    if (context.tenantId) {
-      headers['X-Tenant-Id'] = context.tenantId;
-    }
-    if (context.userId) {
-      headers['X-User-Id'] = context.userId;
-    }
-    if (context.correlationId) {
-      headers['X-Correlation-Id'] = context.correlationId;
-    }
-    if (context.traceId) {
-      headers['X-Trace-Id'] = context.traceId;
-    }
-    if (context.accessToken) {
-      headers['Authorization'] = `Bearer ${context.accessToken}`;
-    }
-
-    return headers;
   }
 
   transformPath(basePath: string, entityPath: string): string {

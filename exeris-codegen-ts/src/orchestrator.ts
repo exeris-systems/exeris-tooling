@@ -27,7 +27,8 @@ import { generateSchemaSpec, generateServiceSpec } from './generators/angular/sp
 import { generateSaga } from './generators/angular/saga-gen.js';
 import { generateStore } from './generators/angular/store-gen.js';
 import { generateAppBarrel, generateAppStructure, RETIRED_SCAFFOLD_SEED_PATHS, SCAFFOLD_SEED_PATHS } from './generators/angular/app-structure-gen.js';
-import { AUTH_SERVICE_PATH } from './generators/angular/guard-gen.js';
+import { AUTH_SERVICE_PATH, GuardGenerator } from './generators/angular/guard-gen.js';
+import { generateAuthInterceptor } from './generators/angular/auth-interceptor-gen.js';
 import { generateViewRoutesAggregate } from './generators/angular/view-routes-gen.js';
 import { generateView, generateViewRoute } from './generators/angular/view-gen.js';
 import { generateHttpErrorHelper, needsHttpErrorHelper } from './generators/angular/http-error-gen.js';
@@ -35,6 +36,7 @@ import { generatePeerTypes } from './generators/api/peer-type-gen.js';
 import type { PeerContract } from './peers/peer-contract.js';
 import { deriveScaffoldNeeds } from './core/scaffold-needs.js';
 import { withPrimaryKey } from './core/primary-key.js';
+import { demandsIdentity, deriveRouteRequirements, type RouteRequirementRow } from './core/route-requirements.js';
 
 /** The output-file shape the writer consumes. The per-shape generators return richer objects
  *  (artifactType and the rest); those are structurally assignable here, and composition copies
@@ -84,13 +86,19 @@ export { generateEnumTypes, type EnumMetadataForGen } from './generators/api/enu
  * deliberately NOT threaded into `generateAppStructure` — the app barrel and the app's own
  * `types/index.ts` must not re-export a peer's types, or two peers' `Order` would meet in
  * one namespace, which is the T40 break at mesh scale.
+ *
+ * `routeRequirements` is the access each generated route demands (ADR-105), in the row shape of
+ * `contract/route-policy.json`; it defaults to the rows the metadata declares. When some row
+ * demands identity the tree carries the bearer interceptor and the auth service it reads the token
+ * from, and `app.config.ts` registers the interceptor; otherwise none of the three is emitted.
  */
 export function buildGeneratedFiles(
   declaredDomains: DomainMetadata[],
   enums: EnumMetadataForGen[],
   config: GeneratorConfig,
   views: ViewMetadata[] = [],
-  declaredPeers: PeerContract[] = []
+  declaredPeers: PeerContract[] = [],
+  routeRequirements?: readonly RouteRequirementRow[]
 ): OutputFile[] {
   const generatedFiles: OutputFile[] = [];
 
@@ -186,6 +194,16 @@ export function buildGeneratedFiles(
     appTree.push(generateHttpErrorHelper());
   }
 
+  // The bearer interceptor is the one emitted code that sends a token, so it exists exactly when
+  // the kernel application refuses some route to a caller without one. Its token source is the
+  // auth service seed, emitted with it.
+  const authInterceptor = demandsIdentity(routeRequirements ?? deriveRouteRequirements(domains));
+  if (authInterceptor) {
+    appTree.push(generateAuthInterceptor(config));
+    const authService = new GuardGenerator().generateAggregate(domains, ctx).find((f) => f.path === AUTH_SERVICE_PATH);
+    if (authService) appTree.push(authService);
+  }
+
   // The stream-client barrels, and the StreamFrame module the action stream clients share.
   // Both generators return nothing when no entity has a stream route.
   if (config.generateServices) {
@@ -242,7 +260,8 @@ export function buildGeneratedFiles(
   // (HTTP client, dev proxy, API environment, optional dependencies) is read off the composed
   // tree, so it never carries a backend piece no emitted file uses.
   if (!contractsOnly && config.scaffold) {
-    generatedFiles.push(...generateAppStructure(domains, enums, config, views, deriveScaffoldNeeds(domains, appTree)));
+    const needs = { ...deriveScaffoldNeeds(domains, appTree), authInterceptor };
+    generatedFiles.push(...generateAppStructure(domains, enums, config, views, needs));
   }
 
   return generatedFiles;
