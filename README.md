@@ -88,17 +88,19 @@ sh first-build.sh      # the two passes of the first build, below
 The project is a POM on `exeris-app-parent` of the initializr's own version, depending on
 `exeris-app-starter`, a JDBC driver and the generated tests' JUnit 5 and AssertJ; one
 `@ExerisDomain` entity (`--entity`, default `Item`); `first-build.sh`; and a README that says how to
-run it. `--database=postgresql` (default `h2`) also writes a `docker-compose.yml`. The generated
-migrations are PostgreSQL SQL, so an application that runs, rather than only builds and tests, is
-generated with PostgreSQL.
+run it. The database is PostgreSQL, with a `docker-compose.yml` that starts the server, unless you
+pass `--database=h2`. An H2 project builds and runs the generated tests but cannot run the application: the
+generated migrations are PostgreSQL SQL.
 
-`--topology` picks one of the three shapes of ADR-091 Amendment 1:
+`--topology` picks one of two of the shapes of ADR-091 Amendment 1:
 
 | `--topology` | What it writes |
 |---|---|
 | `backend-only` (default) | The Maven project above. |
 | `e2e` | The Maven project under `backend/`, and under `frontend/` an npm project whose `npm run generate` runs `@exeris/codegen-ts` on the backend build's metadata and writes the Angular application into `frontend/app/`. |
-| `frontend-only` | An npm project that runs `@exeris/codegen-ts` on a backend's published contract artifact (ADR-048), named in `exeris-codegen.json`. |
+
+A frontend with no backend of its own is not written yet
+([#391](https://github.com/exeris-systems/exeris-tooling/issues/391)).
 
 The initializr refuses to write into a directory that is not empty unless you pass `--force`, and
 writes a ZIP archive instead with `--zip=<file>`. `--help` lists every switch. The exit status is `0`

@@ -396,8 +396,9 @@ consumer project as a directory or a ZIP archive.
    module or declares a `@CapabilityModule`; an application adds a capability itself.
    `exeris:verify-capabilities`, which the parent binds, has nothing to verify on such a build and
    passes.
-4. **The database is a scaffold default.** `--database=h2|postgresql` picks the JDBC driver the POM
-   declares and the run configuration the README documents. The non-scope entry "Choosing a JDBC
+4. **The database is a scaffold default, PostgreSQL unless asked otherwise.** `--database` picks the
+   JDBC driver the POM declares and the run configuration the README documents: `postgresql`, the
+   default, which also writes a `docker-compose.yml`, or `h2`. The non-scope entry "Choosing a JDBC
    driver" still holds for the starter. The initializr picking a driver for a new project sets a
    default that the application owns from its first commit.
    - The community kernel driver reads its configuration from `exeris.*` system properties and
@@ -408,20 +409,25 @@ consumer project as a directory or a ZIP archive.
    - `exeris.persistence.runMigrations` applies the kernel's own tables, not the application's. The
      generated migrations are PostgreSQL SQL, which the application applies with Flyway or `psql`.
      A PostgreSQL project's README starts the server it adds in `docker-compose.yml`, applies the
-     migrations and starts the application. H2 builds the project and runs its generated tests with
-     no server, but runs none of the generated migrations, and its README says so.
+     migrations and starts the application. H2 builds the project and runs its generated tests, and
+     cannot run the application: it runs none of the generated migrations. Its README says so.
 5. **The first build takes two passes** (D2). `first-build.sh` runs `mvn -Dexeris.codegen.skip=true
    compile`, then `mvn verify`, with no `clean` between them: the sequence of obligation 7's fixture.
-6. **The three topologies are Amendment 1's three shapes.** The initializr writes no Angular source;
-   an Angular application is the TypeScript emitter's output. What each topology writes as of this
-   amendment, and what waits:
+6. **Two topologies, Amendment 1's shapes 1 and 3.** The initializr writes no Angular source; an
+   Angular application is the TypeScript emitter's output, and `@exeris/codegen-ts` is published to
+   npmjs in lockstep with the reactor (0.9.0 onward). What each topology writes as of this amendment,
+   and what waits:
 
    | `--topology` | Shape | Writes | Waits for |
    |---|---|---|---|
    | `backend-only`, the default | 1 | `pom.xml`, `first-build.sh`, the entity, `README.md`, `.gitignore`; with PostgreSQL, `docker-compose.yml` | — |
-   | `e2e` | 3, the same-build case | The backend under `backend/`. Under `frontend/`, a `package.json` alone: `@exeris/codegen-ts` at the initializr's version, and a `generate` script that runs `exeris-gen generate --input ../backend/target/classes/exeris-metadata --output app`. The emitter writes the Angular application, with its own `package.json`, into `frontend/app/`, and the initializr writes no file under it. | Shape 3's opt-in to `exeris-app-parent`, which would run the emitter in the Maven build. Until it exists, `npm run generate` runs after a backend build. |
-   | `frontend-only` | 2 | A `package.json` whose `generate` script runs `exeris-gen generate`, and an `exeris-codegen.json` naming one peer, `backend`, whose contract artifact (ADR-048) is expected at `contracts/backend`. It writes no local metadata directory. | Shape 2's npm starter, and resolving a contract artifact by its coordinate. A backend writes `cap-manifest.json`, without which a directory is not a contract artifact, only when it declares a `@CapabilityModule`, which a project from point 3 does not. From peers alone, `exeris-gen` writes each peer's types and no Angular application. |
+   | `e2e` | 3, the same-build case | The backend under `backend/`. Under `frontend/`, a `package.json` alone: `@exeris/codegen-ts` at the initializr's version, and a `generate` script that runs `exeris-gen generate --input ../backend/target/classes/exeris-metadata --output app`. The emitter writes the Angular application, with its own `package.json`, into `frontend/app/`, and the initializr writes no file under it. | Shape 3's opt-in to `exeris-app-parent`, which would run the emitter in the Maven build. Without it, `npm run generate` runs the emitter after a backend build. |
 
+   **Shape 2, a frontend with no backend of its own, is not written in 0.10.0.** Its source is a
+   backend's published contract artifact (ADR-048 §1), whose `cap-manifest.json` `CodegenPipeline`
+   writes only for a build that declares a `@CapabilityModule`, which a backend from point 3 does
+   not. The topology returns when ADR-048 gives a backend without `@CapabilityModule` a way to publish
+   its contract artifact (exeris-tooling#391).
 7. **The command line follows ADR-097's.**
    - `exeris-initializr` is a reactor module whose jar is shaded with its one dependency,
      `exeris-diagnostics`, with `Main-Class` `eu.exeris.tooling.initializr.cli.InitializrCliMain`
@@ -430,22 +436,24 @@ consumer project as a directory or a ZIP archive.
      does not use.
    - Every argument is a `--switch=value` or a flag. An unknown switch, a positional argument, a
      switch given twice or without its value, and a value the request does not accept exit with
-     status 2 and `EXT-GEN-3005`.
+     status 2 and `EXT-INIT-5001`.
    - A directory that is not empty, or an archive file that exists, is refused unless `--force` is
-     given: exit 1 and `EXT-GEN-3006`, with nothing written. With `--force`, a file at a path the
+     given: exit 1 and `EXT-INIT-5002`, with nothing written. With `--force`, a file at a path the
      project writes is replaced and every other file is kept. A failed write exits 1 with
-     `EXT-GEN-3007`. A successful run exits 0.
+     `EXT-INIT-5003`. A successful run exits 0.
    - `--version` prints the version of point 2, `--help` the usage, and `--zip=<file>` writes an
      archive instead of a directory.
-   - The three identifiers are allocated in ADR-095's `GEN` area, in its errors group, and listed in
-     `docs/diagnostics.md`.
+   - The three identifiers are the first of ADR-095's `INIT` area (ADR-095 Amendment 2), and are
+     listed in `docs/diagnostics.md`.
    - It is published to Maven Central with the reactor and managed in `exeris-tooling-bom`, and is
      in none of `exeris-app-bom`, `exeris-app-parent` or `exeris-app-starter`: it is a tool, not a
      dependency of an application.
 8. **Verification.** Two fixtures in obligation 7's module, `initializr-backend` and
    `initializr-e2e`, run the jar the reactor built. Each builds the project it wrote with the two
    passes, against the reactor's own artefacts, and checks the generated sources and that the
-   generated tests pass. The e2e fixture also checks that the frontend's `generate` script reads the
+   generated tests pass. The fixtures pass `--database=h2`: the offline reactor build resolves the
+   H2 driver from the reactor's own repository, and building and testing need no database server.
+   The e2e fixture also checks that the frontend's `generate` script reads the
    directory the backend build wrote. A failsafe suite in `exeris-initializr` runs the jar as a
    separate process and checks its manifest, `--version` and exit statuses.
 
